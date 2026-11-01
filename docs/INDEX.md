@@ -87,6 +87,7 @@ for the documents about something, `python scripts/docs.py covers PATH` for thos
 | [Reverb](spec/reverb.md) | spec | current | The built-in algorithmic reverb - its parameters, signal flow (input band, early reflections and their families, a measured feedback delay network per Density, chorus, freeze, stereo), how Live's Reverb imports into it, and how close it comes to Live's renders |
 | [Sample map](spec/sample-map.md) | spec | draft | How the sample map behaves: samples laid out by how they sound, coloured by kind, as a cloud or a grid, previewed by pointing, dragged into the project; NKS preset previews in the same map |
 | [Sampler](spec/sampler.md) | spec | draft | Suhina's sample and granular instrument, sample loading and SDK panel |
+| [Saturator](spec/saturator.md) | spec | planned | The built-in saturator - its parameters, its eight curves as formulas, the Color filters and their inverse, the post clip, the low-latency oversampling, how Live's Saturator imports into it, and how close it comes to Live's renders |
 | [Suhina device graph (`.sd`)](spec/sd-device-format.md) | spec | current | Version 6 of the data-only Suhina device graph format, SDK, track loading, and device revision migrations |
 | [Custom device panels](spec/sdk-custom-ui.md) | spec | current | Self-contained device canvases, image assets, drawing expressions and programmable parameter controls |
 | [SDK node reference](spec/sdk-nodes.md) | spec | current | Every executable SDK node, ports, defaults, formulas, state and real-time limits |

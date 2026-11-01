@@ -242,6 +242,71 @@ fn delay_steps_outside_their_lists_are_left_out() {
     assert_eq!(warnings.len(), 1, "{warnings:?}");
 }
 
+/// Live's Saturator with every value away from its default, as the calibration set of the
+/// device notes stores it.
+const SATURATOR_CHANGED: [(&str, &str); 18] = [
+    ("PreDrive", "-14.4"),
+    ("PreDcFilter", "true"),
+    ("Type", "1"),
+    ("ColorOn", "false"),
+    ("BaseDrive", "-14.4"),
+    ("ColorFrequency", "206.1277004"),
+    ("ColorWidth", "0.7"),
+    ("ColorDepth", "1"),
+    ("PostClip", "1"),
+    ("PostDrive", "-1"),
+    ("DryWet", "0"),
+    ("BassShaperThreshold", "-49"),
+    ("WsDrive", "0"),
+    ("WsLin", "0.3"),
+    ("WsCurve", "0.7"),
+    ("WsDamp", "1"),
+    ("WsPeriod", "1"),
+    ("WsDepth", "1"),
+];
+
+#[test]
+fn saturator_takes_every_parameter_in_our_units() {
+    let xml: String = SATURATOR_CHANGED.iter().map(|(name, value)| manual_xml(name, value)).collect();
+    let (id, params, warnings) = mapped("Saturator", &xml);
+    assert_eq!(id, "saturator");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(params.len(), 18);
+    let expected = [
+        ("drive", -14.4),
+        ("dcFilter", 1.0),
+        ("type", 1.0),
+        ("color", 0.0),
+        // -14.4 dB of the shelf's 36 is -40 %; 1 dB of the bell's 24 is about 4.2 %.
+        ("colorLow", -0.4),
+        ("colorFrequency", 206.1277004),
+        ("colorWidth", 0.7),
+        ("colorHigh", 1.0 / 24.0),
+        ("postClip", 1.0),
+        ("output", -1.0),
+        ("mix", 0.0),
+        ("threshold", -49.0),
+        ("shaperDrive", 0.0),
+        ("shaperLinear", 0.3),
+        ("shaperCurve", 0.7),
+        ("shaperDamp", 1.0),
+        ("shaperPeriod", 1.0),
+        ("shaperDepth", 1.0),
+    ];
+    for (id, value) in expected {
+        let got = param(&params, id);
+        assert!((got - value).abs() < 1e-9, "{id}: {got} against {value}");
+    }
+}
+
+#[test]
+fn saturator_steps_outside_their_lists_are_left_out() {
+    let xml = manual_xml("Type", "8") + &manual_xml("PostClip", "-1") + &manual_xml("PreDrive", "loud");
+    let (_, params, warnings) = mapped("Saturator", &xml);
+    assert!(params.is_empty(), "{params:?}");
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+}
+
 /// The parameters and warnings `builtin` maps from a `MidiPitcher` element holding `inner`,
 /// checked to land on Suhina's pitch effect.
 fn pitch_from(inner: &str) -> (Vec<DeviceParam>, Vec<String>) {
@@ -427,4 +492,122 @@ fn eq_eight_odd_values_are_noted() {
 fn other_devices_are_not_mapped() {
     let doc = roxmltree::Document::parse("<Compressor2/>").unwrap_or_else(|e| panic!("{e}"));
     assert!(builtin(doc.root_element(), &mut |_| {}).is_none());
+}
+
+/// A Simpler or Sampler element as Live stores it, with the values these tests change. A part
+/// is `MultiSamplePart` elements' insides; `globals` the device's other elements.
+fn sampler_xml(tag: &str, parts: &[String], globals: &str) -> String {
+    let parts: String = parts.iter().map(|p| format!("<MultiSamplePart>{p}</MultiSamplePart>")).collect();
+    format!(
+        "<{tag}><Player><MultiSampleMap><SampleParts>{parts}</SampleParts></MultiSampleMap></Player>{globals}</{tag}>"
+    )
+}
+
+/// A zone of `frames` frames at 48 kHz, playing `start` … `end` from root `root`.
+fn zone(start: u32, end: u32, root: u32, extra: &str) -> String {
+    format!(
+        r#"<KeyRange><Min Value="0"/><Max Value="127"/></KeyRange><VelocityRange><Min Value="1"/><Max Value="127"/></VelocityRange>
+        <RootKey Value="{root}"/><Detune Value="0"/><Panorama Value="0"/><Volume Value="1.58489585"/>
+        <SampleStart Value="{start}"/><SampleEnd Value="{end}"/>
+        <SampleRef><FileRef><RelativePath Value="Samples/Imported/0 Lead Vocals.wav"/><Path Value="E:/Set/Samples/Imported/0 Lead Vocals.wav"/></FileRef>
+        <DefaultDuration Value="11452800"/><DefaultSampleRate Value="48000"/></SampleRef>{extra}"#
+    )
+}
+
+fn sampler_from(xml: &str) -> (Option<SamplerImport>, Vec<String>) {
+    let doc = roxmltree::Document::parse(xml).unwrap_or_else(|e| panic!("{e}"));
+    let mut warnings = Vec::new();
+    let import = sampler(doc.root_element(), &mut |w| warnings.push(w));
+    (import, warnings)
+}
+
+#[test]
+fn a_one_zone_sampler_plays_its_region_from_its_root() {
+    // As the UK Garage set's vocal Sampler: a 0.2 s region of a long file, root 73, the zone at
+    // +4 dB and the device at -12 dB, no velocity, five voices' index.
+    let globals = [
+        r#"<VolumeAndPan>"#,
+        &manual_xml("Volume", "-12"),
+        &manual_xml("VolumeVelScale", "0"),
+        &manual_xml("Panorama", "0"),
+        r#"<Envelope>"#,
+        &manual_xml("AttackTime", "0.1000000015"),
+        &manual_xml("DecayTime", "599.999878"),
+        &manual_xml("SustainLevel", "1"),
+        &manual_xml("ReleaseTime", "50.0000038"),
+        r#"</Envelope></VolumeAndPan>"#,
+        r#"<Filter>"#,
+        &manual_xml("IsOn", "true"),
+        r#"<Slot><Value><SimplerFilter>"#,
+        &manual_xml("Type", "0"),
+        &manual_xml("Freq", "22000"),
+        &manual_xml("Res", "0.09090908617"),
+        r#"</SimplerFilter></Value></Slot></Filter>"#,
+        r#"<Globals><NumVoices Value="5"/><RetriggerMode Value="true"/><PlaybackMode Value="0"/></Globals>"#,
+    ]
+    .concat();
+    let xml = sampler_xml("MultiSampler", &[zone(6398104, 6407909, 73, "")], &globals);
+    let (import, warnings) = sampler_from(&xml);
+    let import = import.unwrap_or_else(|| panic!("not mapped"));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let p = &import.params;
+    assert!((param(p, "start") - 6398104. / 11452800.).abs() < 1e-12);
+    assert!((param(p, "end") - 6407910. / 11452800.).abs() < 1e-12);
+    assert_eq!(param(p, "root"), 73.);
+    assert!((param(p, "gain") - (-12. + 20. * 1.58489585f64.log10())).abs() < 1e-9, "{}", param(p, "gain"));
+    assert_eq!(param(p, "velocity"), 0.);
+    assert_eq!(param(p, "playback"), 0., "Classic without a loop holds while the key is down");
+    assert_eq!(param(p, "filter"), 0., "a low-pass open above hearing is no filter");
+    assert_eq!(param(p, "poly"), 6.);
+    assert!((param(p, "attack") - 0.0001).abs() < 1e-9 && (param(p, "release") - 0.05).abs() < 1e-6);
+    assert_eq!(
+        import.file,
+        Some(("Samples/Imported/0 Lead Vocals.wav".into(), Some("E:/Set/Samples/Imported/0 Lead Vocals.wav".into())))
+    );
+}
+
+#[test]
+fn a_slicing_simpler_takes_its_method_sensitivity_and_voices() {
+    let extra = r#"<SlicingThreshold Value="100"/><SlicingBeatGrid Value="4"/><SlicingRegions Value="8"/><SlicingStyle Value="0"/>"#;
+    let globals = [
+        r#"<VolumeAndPan><OneShotEnvelope>"#,
+        &manual_xml("SustainMode", "0"),
+        r#"</OneShotEnvelope></VolumeAndPan>"#,
+        r#"<Globals><PlaybackMode Value="2"/></Globals><SimplerSlicing><PlaybackMode Value="0"/></SimplerSlicing>"#,
+    ]
+    .concat();
+    let (import, _) = sampler_from(&sampler_xml("OriginalSimpler", &[zone(0, 11452799, 60, extra)], &globals));
+    let p = import.unwrap_or_else(|| panic!("not mapped")).params;
+    assert_eq!(
+        ["mode", "slice_by", "sensitivity", "slice_overlap", "slice_release"].map(|id| param(&p, id)),
+        [2., 0., 1., 0., 0.]
+    );
+    assert_eq!((param(&p, "start"), param(&p, "end")), (0., 1.));
+}
+
+#[test]
+fn manual_slices_become_fractions_of_the_file() {
+    let extra = r#"<SlicingStyle Value="3"/><ManualSlicePoints><SlicePoint TimeInSeconds="23.86" Rank="0"/><SlicePoint TimeInSeconds="nan" Rank="0"/><SlicePoint TimeInSeconds="999" Rank="0"/></ManualSlicePoints>"#;
+    let globals = r#"<Globals><PlaybackMode Value="2"/></Globals>"#;
+    let (import, _) = sampler_from(&sampler_xml("OriginalSimpler", &[zone(0, 11452799, 60, extra)], globals));
+    let slices = import.unwrap_or_else(|| panic!("not mapped")).slices;
+    assert_eq!(slices.len(), 1, "a broken and an outside point are left out: {slices:?}");
+    assert!((slices[0] - 23.86 * 48000. / 11452800.).abs() < 1e-12);
+}
+
+#[test]
+fn a_sampler_with_several_samples_stays_a_placeholder() {
+    let xml = sampler_xml("MultiSampler", &[zone(0, 100, 60, ""), zone(0, 100, 72, "")], "");
+    let (import, warnings) = sampler_from(&xml);
+    assert!(import.is_none());
+    assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn a_sampler_without_values_is_still_a_sampler() {
+    // Nothing stored but the element: the device keeps its defaults where nothing was read.
+    let (import, warnings) = sampler_from("<OriginalSimpler/>");
+    let import = import.unwrap_or_else(|| panic!("not mapped"));
+    assert!(import.file.is_none() && import.slices.is_empty() && warnings.is_empty());
+    assert_eq!(param(&import.params, "playback"), 0.);
 }

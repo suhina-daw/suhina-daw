@@ -3,7 +3,7 @@ description: How a device stored in a Live Set is brought into Suhina: the three
 read_when: device import, importing devices, importing MIDI effects, device mapping, placeholder device, Operator, Live device to Suhina device, which device imports into what, golden renders of imported sets
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-01
 covers:
   - crates/als/src/devices.rs
 ---
@@ -86,13 +86,16 @@ comes in as it (otherwise as a placeholder):
 | Echo | modulation delay | own delay lines | planned |
 | Reverb | reverb ([spec](reverb.md)) | own | DSP done; import done |
 | Hybrid Reverb | convolution and algorithmic reverb | own convolution, the reverb | planned |
-| Saturator, Roar | multi-stage saturation | own, oversampled | planned |
+| Saturator | saturator ([spec](saturator.md)) | own, oversampled | DSP done; import done |
+| Roar | multi-stage saturation | own, oversampled | planned |
 | EQ Eight | EQ ([spec](eq.md)) | own (`dsp` state-variable filters) | DSP done; import done (no analyser, Audition or oversampling yet) |
 | Auto Filter | filter | own (`dsp` filters) | planned |
 | Operator | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine done; Operator's algorithms, waveforms and filter, and import, planned |
 | Wavetable | wavetable synth | Vital (GPL-3.0), under its own name | planned |
 | Drift, Analog | subtractive synth | own, Surge XT (GPL-3.0) for reference | planned |
-| Simpler, Sampler, Drum Rack | sampler, drum sampler | own | planned |
+| Simpler, Sampler | sampler ([spec](sampler.md)) | own | DSP done; import done for Simpler and a Sampler with one sample ([`als-format.md`](als-format.md) › Simpler and Sampler); several samples wait for zones (#739) |
+| Audio Effect Rack, Instrument Rack | device group ([spec](device-groups.md)) | | import done: chains as branches with volume, pan, mute and solo, their devices read like a track's, macro names and positions ([`als-format.md`](als-format.md) › Audio Effect Rack and Instrument Rack); macro mappings and an Instrument Rack's key and velocity zones not yet |
+| Drum Rack | drum sampler | own | planned |
 | Collision, Tension, Electric | physical-modelling synth | Mutable Instruments Rings and Elements (MIT) | planned |
 
 ## Devices Suhina cannot run

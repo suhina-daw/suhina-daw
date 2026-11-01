@@ -48,15 +48,15 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # `docs.py stamp` reads each document's history; a shallow clone would date them all.
           fetch-depth: 0
       - name: Install ALSA headers (cpal)
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: docs/commands.md
         run: cargo run --quiet -p suhina-cli -- commands --markdown > docs/commands.md
       - name: last_verified of the documents changed on main
@@ -79,7 +79,7 @@ jobs:
           python3 scripts/parity/charts.py
       # Every document, since `stamp` may change any of them; publish copies back only the ones
       # that differ and checks what changed in them.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: generated-docs
           path: |
@@ -105,14 +105,14 @@ jobs:
       - name: Token of the docs bot app
         id: app-token
         if: env.HAS_APP == 'true'
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ steps.app-token.outputs.token || github.token }}
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: generated-docs
           path: ${{ runner.temp }}/generated

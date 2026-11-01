@@ -3,7 +3,7 @@ description: Planned device groups - several devices on a track as one unit, wit
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-01
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/groups.rs
@@ -434,8 +434,10 @@ For the maintainer; each has the choice this spec made, so work can start withou
     role is the first thing that would need one. It is a third kind with its own placement rules (MIDI
     effects only, on a track that plays notes); nothing here forecloses it, and it is not planned until
     MIDI effects exist.
-11. **Importing other formats' grouped devices** onto device groups: a section of
-    [device import](device-import.md) once the model lands, from our own test files.
+11. **Importing other formats' grouped devices** onto device groups: done for Live's Audio
+    Effect Rack and Instrument Rack ([`als-format.md`](als-format.md) › Audio Effect Rack and
+    Instrument Rack), observed in the user's own sets; macro mappings wait for a set that shows
+    where Live stores them, and an Instrument Rack's zones for key ranges (9).
 
 ## Implementation plan
 

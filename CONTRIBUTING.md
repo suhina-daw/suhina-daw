@@ -55,9 +55,10 @@
 Every crate in `Cargo.lock`, with all features on and for every platform, must have a licence
 that [`deny.toml`](deny.toml) allows: the list in AGENTS.md rule 10, plus a few exceptions, each
 named for one crate with the reason. Dependencies come from crates.io only, and a crate with an
-open RustSec advisory fails unless `deny.toml` ignores it with a reason. The **Dependencies**
-workflow (`.github/workflows/deny.yml`) runs this on every pull request. Run it locally with the
-version pinned in that workflow:
+open RustSec advisory fails unless `deny.toml` ignores it with a reason. The `ci` check runs this
+on every pull request and in the merge queue (`.github/workflows/deny.yml`, called from `ci.yml`),
+and `deny.toml` needs the owner's review like the workflows. Run it locally with the version pinned
+in that workflow:
 
 ```sh
 cargo install cargo-deny --version 0.20.2 --locked
@@ -74,6 +75,16 @@ of them in the merge queue at once conflict; queue one, and after it merges ask 
 update that changes an API needs the code changed in the same pull request. One that cannot be
 fixed there goes in the `cargo-major` group's `exclude-patterns` in `.github/dependabot.yml`, so it
 comes in a pull request of its own and the rest of the group can merge.
+
+**GitHub Actions are pinned to a commit.** Every `uses:` line in `.github/workflows/` names the
+action's full commit SHA, with the version it is in a comment beside it
+(`actions/checkout@3d3c42e5… # v7.0.1`), never a tag or a branch: a tag such as `v7` or a branch
+such as `stable` can be moved to other code by whoever gets into the action's repository, and
+that code then runs with the job's secrets, or builds the nightly. Dependabot updates the SHA
+and the comment together. A new action is added the same way: the SHA of the release's commit
+from the action's own repository, not a fork (`git ls-remote https://github.com/<owner>/<repo>
+refs/tags/<tag>^{}`). Workflows of this repository (`uses: ./.github/workflows/…`) are not
+actions and need no SHA.
 
 When it rejects a licence, prefer another crate. Add an exception only for a licence that is
 GPLv3-compatible, for the crate that needs it, with a comment saying what the crate is for and
@@ -141,6 +152,11 @@ not one from another maintainer. Parity scripts run without environment secrets;
 documentation is published in a separate job that does not execute them. Changes confined to
 `scripts/parity/` therefore follow the usual review and `ready to merge` process. Keep parity
 code out of jobs that use environment secrets.
+
+**The updater needs the owner's review too.** Suhina installs and runs what its updater downloads,
+so the same approval applies to `crates/update/` and the updater's two files in `crates/ui`, and a
+check fails a pull request that changes where the updater downloads from
+([`docs/spec/updates.md` › Where builds come from](docs/spec/updates.md#where-builds-come-from)).
 
 ## Clean-room
 

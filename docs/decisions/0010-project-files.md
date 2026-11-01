@@ -3,7 +3,7 @@ description: Suhina's own project file (.suhina): versioned JSON of the model, w
 read_when: project file, save, open, backup, autosave, recovery, .suhina, .locr, file extension, native format, project.save, templates, new project, blank project, unsaved changes, recent projects
 type: decision
 status: current
-last_verified: 2026-10-30
+last_verified: 2026-11-01
 covers:
   - crates/project-file
   - crates/session/src/lib.rs
@@ -147,6 +147,17 @@ dropped that data on its next save, without a word. Decided ([#763](https://gith
 - `.sd` device files follow the same rule ([spec](../spec/sd-device-format.md) › Versions).
 
 ## Consequences
+
+### Sampler source corrections (2026-10-27, issue #1026)
+
+Project version 5 stores sampler source corrections in the versioned
+`suhina/sample_edits` extension, described in [the sampler spec](../spec/sampler.md#source-correction-storage).
+Only user-authored pins and suppressed candidate identities persist; transient
+analysis is derived from the source. Both lists have a 4096-entry limit. The old
+source reference and manual map remain readable. Loading a replacement source
+clears its source-specific corrections in the same undoable command. Preparation
+decodes immutable correction resources before graph adoption, so audio processing
+does not parse files or allocate their storage.
 
 - Edits can be kept; templates and new projects work.
 - `.suhina` files can be read and written by agents and scripts without Suhina.

@@ -53,8 +53,10 @@ describe a file. Read only the ones that match your task.
    ("drum sampler", not "drum rack"). User-facing text may name a format it imports or exports.
    The `daw-compare` skill checks text before it is posted.
 10. **GPL-compatible dependencies only** (MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL,
-    GPL-3.0; not GPL-2.0-only or non-commercial). Run `cargo deny check` before adding or updating
-    one ([CONTRIBUTING.md › Dependencies](CONTRIBUTING.md#dependencies)).
+    GPL-3.0; not GPL-2.0-only or non-commercial). The `ci` check runs `cargo-deny`; `deny.toml` has a
+    code owner, so the pull request that adds a dependency is not the one that permits its licence.
+    Run `cargo deny check` before adding or updating one
+    ([CONTRIBUTING.md › Dependencies](CONTRIBUTING.md#dependencies)).
 11. **No links to private agent sessions** (`https://claude.ai/code/session_...`) in commits,
     pull requests, issues or comments, even when the tool adds one. The `Co-Authored-By:`
     trailer stays.

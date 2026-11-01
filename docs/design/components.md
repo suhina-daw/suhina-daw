@@ -3,7 +3,7 @@ description: Measurements, states and tokens of every UI component, from the min
 read_when: widget sizes, marker row, clip slot states, value field, slider, knob, toggle, meter, track header levels, device panel, piano roll layout, audition button, velocity lane top edge, ghost menu, ghost notes look, Scale menu, scale rows, key column mark, folded rows
 type: spec
 status: draft
-last_verified: 2026-10-29
+last_verified: 2026-11-01
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/session/session_view.rs
@@ -129,7 +129,7 @@ the view with the detail area, status bar.
 | Drop overlay | While a project file is dragged over the window: `window.background` at 45 % over the view and "Drop to open" in 13 px `text.primary`, fading in and out with the animations |
 | Browser | 300 px wide by default, dragged from 200 px to half the window by a 4 px handle at its inner edge (`border`, `border.strong` under the pointer); left of the view, or right (Settings › Browser); Ctrl+B and View › Show browser hide and show it. See Browser below |
 | Detail splitter | 6 px, `control.background`, a 32 × 2 grip in `text.hint` in the middle; the cursor shows which way it moves |
-| Detail area | Under the view (and under the browser too with Settings › Devices › Device panels › **Detail area width** on Full width, the browser then ending above it), 200 px by default, resizable from 80 px (120 px while it shows the piano roll) to all but 160 px of the view; dragged below half that it collapses to the splitter along the bottom, which is dragged up to open it again ([clip editor](../spec/ui-clip-editor.md) › Least height and closing), and at least as tall as the tallest open embedded plug-in editor; Shift+Tab hides and shows it. Shows the selected track's device chain; `AudioEffect` panels show visible signal-flow nodes and fitted parameter sliders; a selected clip (on the arrangement, or in a slot) shows its properties and, beside them, the chain of the track it is on: in a row (220 px per device at least, 272 px for a generated parameter list), or stacked in a column beside the view (272 px by default, resizable), as Settings › Devices › Device panels sets. With nothing selected: "Select a track or a clip to see it here" in `text.hint` ("Select a track or a clip" in the stacked column) |
+| Detail area | Under the view (and under the browser too with Settings › Devices › Device panels › **Detail area width** on Full width, the browser then ending above it), 200 px for a device row alone, which is open at that height or closed, never in between, so its panels are never cut off; a clip editor (including its Devices tab) is resizable from 80 px (120 px while it shows the piano roll) to all but 160 px of the view; dragged below half that it collapses to the splitter along the bottom, which is dragged up to open it again ([clip editor](../spec/ui-clip-editor.md) › Least height and closing), and at least as tall as the tallest open embedded plug-in editor; Shift+Tab hides and shows it. Shows the selected track's device chain; `AudioEffect` panels show visible signal-flow nodes and fitted parameter sliders; a selected clip (on the arrangement, or in a slot) shows its properties and, beside them, the chain of the track it is on: in a row (220 px per device at least, 272 px for a generated parameter list), or stacked in a column beside the view (272 px by default, resizable), as Settings › Detail area sets. With nothing selected: "Select a track or a clip to see it here" in `text.hint` ("Select a track or a clip" in the stacked column) |
 | Status bar | 20 px, `panel.background`: the last message on the left (10 px, `text.secondary`, errors in the recording red), "N tracks · M scenes" on the right (10 px, `text.hint`), followed by " · backed up 14:05" once the active project has been backed up in this run. There is no separate info view |
 
 ## Browser
@@ -253,7 +253,7 @@ fader and toggles stay in line across the mixer.
 | Output | 16 px across the strip: "→" (14 px, 10 px `text.hint`) and the output dropdown the rest of the row ("Main" or a group track, as the Arrangement header's; `track.setOutput`). Its menu lists Main and every group track but the track itself |
 | Device list | 16 px rows, one per device in chain order: its name in 10 px `text.secondary` 4 px in (`text.hint` while the device is off), "plug-in" right in 9 px `text.hint` for a plug-in; `control.hoverBackground` hovered, `control.activeBackground` for the picked devices, the same ones the detail area's chain lights. The wheel scrolls it. "No devices" in 10 px `text.hint` when the chain is empty. A click picks the device, selects the track and opens the detail area on its devices; Ctrl (Cmd) adds a device to the picks or takes it out, Shift picks the run from the last one; a double-click opens a plug-in's editor. Delete (`device.removeMany`), Ctrl+C, Ctrl+X and Ctrl+V (`device.copy`, `device.paste`, after the last pick) and Ctrl+D (`device.duplicateMany`: copies right after the last pick, which become the picks; the clipboard stays; the picks must be in one chain or branch) act on the picks, in the strip and in the chain alike, and a panel's X on one of several picks removes them all. A row or a chain's panel dragged onto another track's column, header, strip or lane moves the device there (`device.moveToTrack`), with Ctrl held copies it; a label beside the pointer says which |
 | Send knob | A knob with the return's letter in its centre (8 px mono `text.hint`), pointer `text.value` (`text.primary` hovered); −70 dB … +6 dB over the travel. A 1.5 px `text.value` dot under it when the send is before the fader |
-| Knob | 22 px; circle r 9, `control.background` fill, 1 px `text.hint` stroke; pointer 1.5 px from centre to r 8; travel −135° … +135°; pan pointer `text.primary`, sends `#C9C4BB` |
+| Knob | 22 px; circle r 9, `control.background` fill, 1 px `text.hint` stroke; pointer 1.5 px from centre to r 8; travel −135° … +135°; pan pointer `text.primary`, sends `#C9C4BB`. A vertical fader's cap or a horizontal slider's handle moves as far as the pointer, which hides and holds still while it is dragged; past either end it waits and turns back at once, and on release the pointer is on it. While a knob, a device dial or a value field is dragged the pointer hides and the mouse's raw motion, scaled to points, moves the value, so a long drag never stops at the screen's edge; the pointer also stays where the drag began (X11 cannot lock it, so it moves on hidden). A device with no raw motion (a pen in absolute mode, a remote session) moves the value by the pointer's own movement instead, unlocked. The pointer shows again when the buttons are released or the window loses focus, and a drag that lost focus moves nothing until the next press |
 | Toggles | 18 px at the bottom, at every height: track on (the track number, or the return's letter, in 10 px mono) and, 2 px apart, solo ("S" in 10 px) and cue ("C" in 10 px), a quarter each; on a track that plays notes or audio, solo, cue and arm take a fifth each and track on the rest |
 | Background | `panel.background` behind the parts; a double-click on it or on the name (not on a control or a device row) selects the track and shows its devices in the detail area, opening it if it was hidden |
 | Track on | On: `#C9C4BB` with `window.background` text. Off: `control.background` with `text.hint` |
@@ -349,13 +349,15 @@ path text and a Remove button on the right. Add folder… opens the system folde
 The list scrolls with the page, and its note says that each grant includes subfolders.
 
 Options › Settings (Ctrl+,) opens a dialog over the window until it is closed (Close, Escape or
-Ctrl+, again): the view stays behind it, dimmed with `window.background` at 60 % and taking no
+Ctrl+, again): the view stays behind it, dimmed with `window.background` at 60 % (all but the status bar, which
+stays undimmed so a message from the page can be read) and taking no
 clicks, wheel or pinch (they reach only the dialog, as with every dialog over the window);
 embedded plug-in editors hide while it shows. Adjusting a control removes the tint during
 the adjustment; it returns immediately on release, while background input stays blocked.
 Drag the title to move the embedded panel within the main window.
 Open in window moves Settings to a native resizable window, with Dock to return;
-that window does not dim the main view or hide its plug-in editors. Detached Settings
+that window does not dim the main view or hide its plug-in editors, and shows the status in a
+20 px bar of its own at the bottom. Detached Settings
 uses a solid background rather than sampling the main window's content.
 The dialog is at most 772 × 720 px (6 px
 less than the window on each side when that is smaller), `window.background` with a 1 px
