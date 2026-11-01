@@ -54,8 +54,8 @@ lane, the grid and zoom, and the `note.*` commands.
   › Clip properties). **Devices** puts the track's device chain where the piano roll was: the clip
   column stays on the left (on top when stacked) with the switch in it, and the chain fills the
   rest. The MIDI clip retains its resizable detail area in both tabs. A device row alone has
-  two states: open at 200 logical pixels or closed. Dragging the splitter down past half the
-  least height closes it, dragging it up opens it whole; no height in between cuts its panels.
+  two states: open at 200 logical pixels or closed. Dragging the splitter down past half that(
+  )height closes it, dragging it up opens it whole; no height in between cuts its panels.
   Dropping an instrument, effect or plug-in there adds it to
   that track as it always does. **Clip** brings the piano roll back. **Ctrl+Shift+D** (the keymap
   action `view.devices`) and **View › Show devices** / **Show clip** do the same; they open the
