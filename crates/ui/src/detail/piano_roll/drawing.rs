@@ -5,10 +5,14 @@
 
 use super::*;
 
-/// The key column: the keys it draws, what a press plays and what Ctrl+click or Ctrl+drag
-/// selects. A plain press and drag up or down plays the keys the pointer passes over, one at a
-/// time; Ctrl+click selects every note of a pitch and Ctrl+drag the notes of every pitch the
-/// drag passes over, without playing anything.
+/// The key the drag at height `y` is on: the row there, or the nearest one in view above or below.
+fn key_at_height(layout: &Layout, y: f32) -> Option<u8> {
+    layout.key_at(y.clamp(layout.grid.top() + 0.5, layout.grid.bottom() - 0.5))
+}
+
+/// The key column: a press selects the notes of that key and plays it, and a drag up or down makes
+/// that a range of keys, the key under the pointer playing. Shift adds the range to the selection;
+/// Ctrl selects without playing anything.
 pub(super) fn key_column(
     ui: &mut Ui,
     keys: &Rect,
@@ -22,34 +26,37 @@ pub(super) fn key_column(
         return;
     }
     let response = ui.interact(*keys, Id::new("piano-roll-keys"), Sense::click_and_drag());
-    let hovered = ui.ctx().pointer_hover_pos().and_then(|p| keys.contains(p).then(|| layout.key_at(p.y)).flatten());
-    let pressed = response.interact_pointer_pos().filter(|p| keys.contains(*p)).and_then(|p| layout.key_at(p.y));
-    let selecting = inputs.command || inputs.shift;
-    // The pointer is down in the column: the key under it plays, or is selected with Ctrl.
+    // The key under the pointer anywhere along the rows: the strip names it and the keys light it.
+    let rows = layout.strip.union(*keys).union(layout.grid);
+    let hovered = ui.ctx().pointer_hover_pos().filter(|p| rows.contains(*p)).and_then(|p| layout.key_at(p.y));
+    let down = ui.input(|i| i.pointer.primary_down());
+    let pressed = response.interact_pointer_pos().and_then(|p| key_at_height(layout, p.y));
     if let Some(key) = pressed
-        && ui.input(|i| i.pointer.primary_down())
+        && down
     {
         state.focused = true;
-        match state.gesture {
-            // A Ctrl or Shift drag that began here keeps selecting the keys it passes over; the
-            // selection is only replaced once, when it began.
-            Some(Gesture::KeySelect { add }) => state.select_pitches(clip, &[key], add),
-            _ if selecting => {
-                let add = inputs.shift;
-                state.gesture = Some(Gesture::KeySelect { add });
-                state.select_pitches(clip, &[key], add);
+        let (anchor, silent) = match state.gesture {
+            Some(Gesture::KeySelect { anchor, silent }) => (anchor, silent),
+            _ => {
+                let silent = inputs.command && !inputs.shift;
+                state.gesture = Some(Gesture::KeySelect { anchor: key, silent });
+                state.begin_key_selection(key, inputs.shift);
+                (key, silent)
             }
-            _ => play_key(state, clip, actions, key),
+        };
+        state.select_key_range(clip, &layout.rows, anchor, key);
+        if !silent {
+            play_key(state, clip, actions, key);
         }
     }
-    // Let go, or the pointer off the column: the note goes off. A gesture that belongs to
-    // another part of the piano roll (the grid's) is left alone.
-    let ours = matches!(state.gesture, Some(Gesture::KeySelect { .. })) || state.playing_key().is_some();
-    if ours && (ui.input(|i| i.pointer.any_released()) || (state.playing_key().is_some() && hovered.is_none())) {
+    // Let go: the note goes off and the range joins the selection's ranges. A gesture that belongs
+    // to another part of the piano roll (the grid's) is left alone.
+    if matches!(state.gesture, Some(Gesture::KeySelect { .. })) && !down {
         state.gesture = None;
         if let Some(action) = state.key_release(clip) {
             actions.push(action);
         }
+        state.end_key_selection(clip);
     }
     state.hover_key = hovered;
 }
@@ -211,7 +218,8 @@ pub(super) fn draw(
     preview: Option<Effect>,
     played: (f64, f64),
 ) {
-    let painter = ui.painter_at(layout.keys.union(layout.ruler).union(layout.grid).union(layout.lane));
+    let painter =
+        ui.painter_at(layout.strip.union(layout.keys).union(layout.ruler).union(layout.grid).union(layout.lane));
     let grid_painter = painter.with_clip_rect(layout.grid);
     let first_key = layout.key_at(layout.grid.bottom() - 0.5).unwrap_or(0);
     let last_key = layout.key_at(layout.grid.top() + 0.5).unwrap_or(127);
@@ -223,8 +231,6 @@ pub(super) fn draw(
     let grid_style = part_style("piano-grid", &[]);
     let row_style = part_style("piano-row", &[]);
     let black_row_style = part_style("piano-row-black", &[]);
-    let key_style = part_style("piano-key", &[]);
-    let black_key_style = part_style("piano-key-black", &[]);
     crate::kit::native_css::set_variable("--clip-colour", crate::kit::native_css::hex(clip.color));
     let note_style = part_style("piano-note", &[]);
     let selected_style = part_style("piano-note", &[HostState::Selected]);
@@ -254,8 +260,13 @@ pub(super) fn draw(
             _ => scale_view::row_fill(clip.scale, key, is_black(key)),
         };
         grid_painter.fill_background(row, 0.0, fill);
+        // The row under the pointer, so it can be followed to the strip that names it.
+        if state.hover_key() == Some(key) {
+            grid_painter.rect_filled(row, 0.0, theme::text_primary().gamma_multiply(0.05));
+        }
         grid_painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(line_colour(key % 12 == 0)));
     }
+    draw_ranges(&grid_painter, layout, state);
 
     // Vertical lines: the grid, bars stronger; the ruler's bar numbers.
     let first_beat = layout.beat_at(layout.grid.left()).max(0.0);
@@ -403,16 +414,15 @@ pub(super) fn draw(
             // The stroke is bringing this note back: a solid edge says so before the button is up.
             grid_painter.rect_stroke(rect, 0.0, Stroke::new(1.0, theme::text_hint()), StrokeKind::Inside);
         }
-        if rect.width() >= 28.0 && rect.height() >= 10.0 {
-            widgets::text_in(
-                &grid_painter,
-                rect.shrink2(Vec2::new(3.0, 0.0)),
-                Align2::LEFT_CENTER,
-                &key_name(note.key),
-                theme::mono_font(theme::TEXT_TINY),
-                style.color.unwrap_or_else(theme::text_inverse),
-            );
-        }
+        // Every note says which it is; on a block too small for its name, as much as fits.
+        let readable = if alpha >= 0.55 { theme::text_inverse() } else { theme::text_primary() };
+        grid_painter.with_clip_rect(rect.intersect(layout.grid)).text(
+            Pos2::new(rect.left() + 2.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            key_name(note.key),
+            theme::mono_font(theme::TEXT_TINY),
+            style.color.unwrap_or(readable),
+        );
         // Its velocity stem.
         let x = rect.left().round() + 0.5;
         let top = layout.lane.bottom() - 2.0 - velocity_height(note.velocity, layout.lane);
@@ -452,48 +462,14 @@ pub(super) fn draw(
     }
     painter.hline(layout.lane.x_range(), layout.lane.top() + 0.5, theme::hairline(theme::border_strong()));
 
-    // The key column: keys, every C named.
-    let key_painter = painter.with_clip_rect(layout.keys);
-    key_painter.fill_background(layout.keys, 0.0, black_key_style.background.unwrap_or_else(theme::window_background));
-    for key in (first_key..=last_key).filter(|k| layout.rows.shows(*k)) {
-        let top = layout.y_of(key);
-        let row = Rect::from_min_max(
-            Pos2::new(layout.keys.left(), top),
-            Pos2::new(layout.keys.right(), top + layout.key_height),
-        );
-        // The key under the pointer and the key that is playing are lit.
-        let lit = state.hover_key() == Some(key) || state.playing_key() == Some(key);
-        let own = if is_black(key) { black_key_style } else { key_style };
-        let fill = if lit {
-            theme::control_hover()
-        } else if let Some(own) = own.background {
-            own
-        } else if is_black(key) {
-            theme::window_background()
-        } else {
-            theme::control_background()
-        };
-        key_painter.fill_background(row.shrink2(Vec2::new(0.0, 0.5)), 0.0, fill);
-        scale_view::key_mark(&key_painter, clip.scale, key, row);
-        // Folded, every row is named: the keys beside each other are no longer neighbours.
-        if (key % 12 == 0 || layout.rows.folded()) && layout.key_height >= 8.0 {
-            widgets::text_in(
-                &key_painter,
-                row.shrink2(Vec2::new(3.0, 0.0)),
-                Align2::LEFT_CENTER,
-                &key_name(key),
-                theme::mono_font(theme::TEXT_TINY),
-                own.color.unwrap_or_else(theme::text_secondary),
-            );
-        }
-    }
+    draw_keys(&painter, layout, clip, state);
     let corner = Rect::from_min_max(
-        Pos2::new(layout.keys.left(), layout.ruler.top()),
+        Pos2::new(layout.strip.left(), layout.ruler.top()),
         Pos2::new(layout.keys.right(), layout.ruler.bottom()),
     );
     painter.fill_background(corner, 0.0, theme::panel_background());
     let lane_keys = Rect::from_min_max(
-        Pos2::new(layout.keys.left(), layout.lane.top()),
+        Pos2::new(layout.strip.left(), layout.lane.top()),
         Pos2::new(layout.keys.right(), layout.lane.bottom()),
     );
     painter.fill_background(lane_keys, 0.0, theme::panel_background());
@@ -501,7 +477,7 @@ pub(super) fn draw(
         let font = theme::mono_font(theme::TEXT_TINY);
         widgets::text_in(
             &painter,
-            Rect::from_min_size(lane_keys.min, Vec2::new(KEYS - 3.0, 10.0)),
+            Rect::from_min_size(lane_keys.min, Vec2::new(lane_keys.width() - 3.0, 10.0)),
             Align2::RIGHT_CENTER,
             "127",
             font.clone(),

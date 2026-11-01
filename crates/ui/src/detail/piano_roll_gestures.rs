@@ -28,6 +28,8 @@ const VELOCITY_PER_POINT: f64 = 1.0;
 pub(super) const AUDITION_SECONDS: f64 = 0.3;
 /// The most keys one audition sounds together.
 const MAX_AUDITION_KEYS: usize = 16;
+/// How long after each other notes selected together sound, in seconds.
+const AUDITION_STEP: f64 = 0.12;
 /// How far either side of the velocity lane's top edge the pointer grabs it, in points.
 const LANE_EDGE: f32 = 3.0;
 /// The heights the lane's top edge can be dragged to, in points; the five key rows the grid
@@ -166,8 +168,27 @@ pub(super) fn draw_velocity_label(ui: &Ui, layout: &Layout, clip: &PianoClip, gr
 }
 
 impl PianoRollState {
+    /// The keys `keys` sound one after the other, when the toolbar's Audition is on: notes selected
+    /// together. Each key once, at most a handful; what was still waiting its turn is dropped.
+    pub(super) fn audition_one_by_one(&mut self, keys: impl IntoIterator<Item = u8>) {
+        if !self.audition {
+            return;
+        }
+        self.audition_queue.clear();
+        for key in keys {
+            if self.audition_queue.len() >= MAX_AUDITION_KEYS {
+                break;
+            }
+            if key <= 127 && !self.audition_queue.contains(&key) {
+                self.audition_queue.push_back(key);
+            }
+        }
+        self.audition_next = 0.0;
+    }
+
     /// The keys an audition sounds at the end of this frame, when the toolbar's Audition is on:
-    /// those of notes just drawn, moved or transposed. Each key once, at most a handful.
+    /// those of notes pressed, selected, drawn, moved or transposed. Each key once, at most a
+    /// handful.
     pub(super) fn audition_keys(&mut self, keys: impl IntoIterator<Item = u8>) {
         if !self.audition {
             return;
@@ -196,6 +217,39 @@ impl PianoRollState {
     /// `track`. The window counts the time; nothing waits on the audio thread.
     pub(super) fn audition_frame(&mut self, ui: &Ui, track: Option<u64>, actions: &mut Vec<Action>) {
         let now = ui.input(|i| i.time);
+        // The next of the notes that sound one by one, when it is its turn.
+        if !self.audition {
+            self.audition_queue.clear();
+        }
+        if self.audition_pending.is_empty()
+            && now >= self.audition_next
+            && let Some(key) = self.audition_queue.pop_front()
+        {
+            self.audition_pending.push(key);
+            self.audition_next = now + AUDITION_STEP;
+        }
+        if !self.audition_queue.is_empty() {
+            ui.ctx()
+                .request_repaint_after(Duration::from_secs_f64((self.audition_next - now).clamp(0.0, AUDITION_STEP)));
+        }
+        // A press holds what it sounds: the same keys asked for again, while the press lasts or as
+        // it ends, go on sounding, and so a drag sounds a new note only at a new pitch.
+        let held = self.audition_press;
+        self.audition_press = held && ui.input(|i| i.pointer.primary_down());
+        if held && self.audition_off.is_some() {
+            let same = {
+                let (mut asked, mut sounding) = (self.audition_pending.clone(), self.audition_sounding.clone());
+                asked.sort_unstable();
+                sounding.sort_unstable();
+                asked == sounding
+            };
+            if same {
+                self.audition_pending.clear();
+            }
+            if let Some((_, until)) = &mut self.audition_off {
+                *until = now + AUDITION_SECONDS;
+            }
+        }
         if let Some((sounding, until)) = self.audition_off
             && (now >= until || !self.audition_pending.is_empty())
         {
@@ -228,6 +282,7 @@ impl PianoRollState {
     /// `preview.noteOff`, or `None` when nothing sounds.
     pub fn stop_audition(&mut self) -> Option<Action> {
         self.audition_pending.clear();
+        self.audition_queue.clear();
         self.audition_sounding.clear();
         let (track, _) = self.audition_off.take()?;
         Some(Action::new("preview.noteOff", json!({ "track": track })))

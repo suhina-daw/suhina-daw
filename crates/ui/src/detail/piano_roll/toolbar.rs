@@ -272,7 +272,7 @@ pub(super) fn toolbar(
             own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, row.height().max(8.0))),
         )
     };
-    let x = std::cell::Cell::new(row.left() + KEYS - 4.0);
+    let x = std::cell::Cell::new(row.left() + TOOLBAR_INSET);
     let place = || {
         let area = Rect::from_min_size(Pos2::new(x.get(), row.top() + (row.height() - size.y) / 2.0), size);
         x.set(area.right() + gap);

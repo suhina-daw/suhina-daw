@@ -128,7 +128,8 @@ pub struct ViewSettings {
     pub automation_click_anywhere: bool,
     /// Clip menus carry a name field that renames in place, instead of Rename (off by default).
     pub menu_name_field: bool,
-    /// Notes moved onto others of the same key and start replace them (on by default).
+    /// Notes placed over others of their key replace them (on by default); Settings shows it the
+    /// other way round, as Allow stacked notes.
     pub notes_replace: bool,
     /// Pasting onto a selected arrangement clip replaces that clip at its start.
     pub replace_clip: bool,

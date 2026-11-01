@@ -409,7 +409,7 @@ clip gain), `.track-button` (solo, cue, arm, track-on, monitor, automation), `.t
 | Arrangement header `.arrangement .track-header` | `.track-name`, `.track-number`, `#control-track-on`, `#control-solo`, `#control-cue`, `#control-arm`, `#control-automation`, `#control-monitor`, `.fold`, `#arrangement-volume`, `#arrangement-pan`, `.send`, `.value-fill`, `.value-handle` |
 | Timeline `.arrangement` | `.ruler`, `.ruler-number`, `.ruler-tick`, `.loop-region`, `.loop-line`, `.playhead`, `.clip`, `.clip-name`, `.clip-waveform`, `.clip-notes`, `.clip-gain`, `.clip-fade-handle`, `.add-track`, `#add-midi-track`, `#add-audio-track`, `#add-return-track` |
 | Launcher and mixer `.session`, `.mixer` | `.track-column`, `.slot`, `.scene`, `.scene-column`, `#mixer-volume`, `#mixer-pan`, `#mixer-send-N`, `.fader`, `.fader-cap`, `.fader-rail`, `.fader-scale`, `.meter`, `#mixer-divider` |
-| Piano roll `.piano-roll` | `.piano-grid`, `.piano-row`, `.piano-row-black`, `.piano-key`, `.piano-key-black`, `.piano-note`, `.velocity`, `.piano-tool` with `#piano-<tool>`, `.midi-tools` (`#quantise-amount`), `.clip-info`, `.editor-tab` |
+| Piano roll `.piano-roll` | `.piano-grid`, `.piano-row`, `.piano-row-black`, `.piano-key`, `.piano-key-black`, `.piano-key-c`, `.piano-key-hover`, `.piano-key-black-hover`, `.piano-key-line`, `.piano-scale-mark`, `.piano-scale-strip`, `.piano-range`, `.piano-note`, `.velocity`, `.piano-tool` with `#piano-<tool>`, `.midi-tools` (`#quantise-amount`), `.clip-info`, `.editor-tab` |
 | Browser `.browser` | `.browser-place`, `.browser-row`, `.browser-play`, `.browser-tag-dot`, `.browser-preview-wave`, `#browser-search` (`.text-input`) |
 | Devices `.device`, `#device-<id>` | `.device-header`, `.device-control`, `.slider`, `.slider-rail`, `.slider-fill`, `.slider-handle`, `.knob`, `.value` |
 | Dialogs `.settings`, `.dialog`, `.start-page`, `.plugin-manager` | `.button` (also egui's check boxes and drop-downs), `.button:checked` (a chosen item), `.text-input`, `.settings-nav`, `.progress`, `.progress-fill`, `.menu`, `.popup` |
@@ -453,7 +453,9 @@ Classes, each the native element it styles:
 | `.divider` | the line between a strip's device list and its controls (`#mixer-divider`) |
 | `.clip-name`, `.clip-waveform`, `.clip-notes`, `.clip-gain`, `.clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles |
 | `.value-handle`, `.fader-rail` | the handle where a level bar's fill ends; a fader's rail |
-| `.piano-grid`, `.piano-row`, `.piano-row-black`, `.piano-key`, `.piano-key-black`, `.piano-note`, `.velocity` | the piano roll's grid, its rows, its keys, the notes and their velocity stems |
+| `.piano-grid`, `.piano-row`, `.piano-row-black`, `.piano-key`, `.piano-key-black`, `.piano-note`, `.velocity` | the piano roll's grid, its rows, its keys (with `:selected` and `:playing`), the notes and their velocity stems |
+| `.piano-key-c`, `.piano-key-hover`, `.piano-key-black-hover`, `.piano-key-line`, `.piano-scale-mark` | a C key, a key under the pointer, the line between white keys, the mark on a key in the clip's scale |
+| `.piano-scale-strip`, `.piano-range` | the strip left of the keys that names the octaves and the row under the pointer, and a range selected from the keys |
 | `.piano-tool`, `.midi-tools`, `.clip-info`, `.editor-tab` | the piano roll's tool buttons, the MIDI tools column, the clip's column and the **Clip** / **Devices** tabs |
 | `.device`, `.device-header` | a device's panel in the device chain, and its header row |
 

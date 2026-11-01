@@ -8,6 +8,8 @@ use super::*;
 /// Where things are this frame.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Layout {
+    /// The scale strip left of the keys.
+    pub(super) strip: Rect,
     pub(super) keys: Rect,
     pub(super) ruler: Rect,
     pub(super) grid: Rect,

@@ -213,7 +213,17 @@ fn clip(notes: Vec<Note>) -> PianoClip {
 /// A layout 200 points tall at 10 points a row, scrolled to the top, with `rows`.
 fn folded_layout(rows: KeyRows) -> Layout {
     let grid = Rect::from_min_size(Pos2::new(36.0, 24.0), Vec2::new(400.0, 200.0));
-    Layout { keys: grid, ruler: grid, grid, lane: grid, scroll: Vec2::ZERO, beat_width: 40.0, key_height: 10.0, rows }
+    Layout {
+        strip: grid,
+        keys: grid,
+        ruler: grid,
+        grid,
+        lane: grid,
+        scroll: Vec2::ZERO,
+        beat_width: 40.0,
+        key_height: 10.0,
+        rows,
+    }
 }
 
 #[test]
@@ -349,14 +359,51 @@ fn keys_stop_at_the_limits_and_never_make_notes_shorter_than_a_step() {
     assert!(state.key_action("pianoRoll.shorter", &clip, 0.0, None).is_none());
     state.selected = BTreeSet::from([1]);
     assert_eq!(
-        params(state.key_action("pianoRoll.shorter", &clip, 0.0, None)).map(|p| p["by"].clone()),
-        Some(json!(-0.25))
+        params(state.key_action("pianoRoll.shorter", &clip, 0.0, None)).map(|p| p["lengths"].clone()),
+        Some(json!([0.75]))
     );
-    // Without a selection copy is left for the clip; Ctrl+A and Escape change only the view.
+    // Without a selection copy does nothing here; Ctrl+A and Escape change only the view.
     state.selected.clear();
     assert!(state.key_action("selection.copy", &clip, 0.0, None).is_none());
     assert!(state.key_action("pianoRoll.selectAll", &clip, 0.0, None).is_none());
     assert_eq!(state.selected, BTreeSet::from([0, 1]));
     assert!(state.key_action("pianoRoll.deselect", &clip, 0.0, None).is_none());
     assert!(state.selected.is_empty());
+}
+
+#[test]
+fn a_longer_key_goes_to_the_next_line_or_the_next_note_of_the_key() {
+    let notes = [note(0.0, 0.3, 60), note(0.4, 0.25, 60), note(1.0, 0.25, 60), note(0.2, 1.0, 62)];
+    let grid = TimelineGrid::new(0.25, 400.0, 4.0, MIN_LINE_SPACING);
+    let end = |index: usize, longer, stops| key_step_end(&notes[index], &notes, grid, longer, stops);
+    // Off the grid at 0.3: the next line would be 0.5, and the next note of its key is at 0.4.
+    assert!((end(0, true, true) - 0.4).abs() < 1e-9);
+    // Allowed to stack, the next note does not stop it.
+    assert!((end(0, true, false) - 0.5).abs() < 1e-9);
+    // Off the grid at 0.65, the next line is 0.75 and the next note far enough.
+    assert!((end(1, true, true) - 0.75).abs() < 1e-9);
+    // Touching the next note, or the last of its key: it stays, or goes on to the line.
+    let touching = [note(0.0, 0.4, 60), note(0.4, 0.25, 60)];
+    assert!((key_step_end(&touching[0], &touching, grid, true, true) - 0.4).abs() < 1e-9);
+    assert!((end(3, true, true) - 1.25).abs() < 1e-9);
+    // Shorter: the line before, and never less than a step from the start.
+    assert!((end(3, false, true) - 0.75 - 0.25).abs() < 1e-9);
+    assert!((end(1, false, true) - 0.65).abs() < 1e-9, "a step long already");
+}
+
+#[test]
+fn replaced_notes_leave_the_selection_on_the_same_notes() {
+    let mut state = PianoRollState { selected: BTreeSet::from([1, 3, 5]), ..PianoRollState::default() };
+    state.notes_replaced(&[2, 3]);
+    assert_eq!(state.selected, BTreeSet::from([1, 3]));
+}
+
+#[test]
+fn which_keys_are_named() {
+    use crate::settings::PianoKeyNames::{All, OnlyC, White};
+    assert!(named(60, OnlyC, false, 12.0) && !named(62, OnlyC, false, 12.0));
+    assert!(named(62, White, false, 12.0) && !named(61, White, false, 12.0));
+    assert!(named(61, All, false, 12.0));
+    assert!(named(61, OnlyC, true, 12.0), "folded rows are all named");
+    assert!(!named(60, All, true, 7.0), "low rows have no room");
 }

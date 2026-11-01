@@ -786,7 +786,12 @@ These native parts take the sheet (the theme package README lists every selector
   up across strips. After placement, an anchored part that overlaps another part (other than
   one containing the other, as the meter in the fader's column) or the toggles is not drawn.
 - **Piano roll:** `.piano-grid` (background; `border-color` for the lines), `.piano-row`,
-  `.piano-row-black` (without a scale), `.piano-key`, `.piano-key-black`, `.piano-note` with
+  `.piano-row-black` (without a scale); the keys: `.piano-key` and `.piano-key-black` (background,
+  a `background-image` gradient in place of the key style's shading, `color` for the names,
+  `:selected` and `:playing`), `.piano-key-c`, `.piano-key-hover`, `.piano-key-black-hover`,
+  `.piano-key-line` and `.piano-scale-mark` (their backgrounds); `.piano-scale-strip` (background,
+  `border-color`, `color`) and `.piano-range` (background, `border-color`: a range selected from the
+  keys). What the sheet sets wins over the key style chosen in the piano roll; `.piano-note` with
   `--clip-colour`, `:selected` and `:muted` (background, border, radius, `color` for its name),
   `.velocity` (`color` of the stems), `.ruler`; the tool buttons `.piano-tool` with
   `#piano-<tool>` ids, `:checked` and artwork `piano.<tool>`; `.midi-tools`, `.clip-info`,

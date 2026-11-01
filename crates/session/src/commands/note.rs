@@ -5,6 +5,14 @@
 
 use super::*;
 
+/// Whether the notes a command places replace what is under them.
+const REPLACE: Param = optional(
+    "replace",
+    ParamType::Bool,
+    "true: no two notes of a key overlap afterwards. A note the placed ones cover whole is removed, one they \
+     cover in part is cut back, and the result lists the removed notes as replaced (default false: notes may overlap)",
+);
+
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.list",
@@ -23,6 +31,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_INDEX,
             CLIP_SCENE,
             param("notes", ParamType::Notes, "the notes, each {time, length, key, velocity?}; at most 10000"),
+            REPLACE,
         ],
         kind: CommandKind::Edit,
         run: notes::add,
@@ -47,12 +56,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             NOTES,
             optional("beats", ParamType::Number, "beats to move by, later when positive"),
             optional("semitones", ParamType::Integer, "semitones to move by, higher when positive"),
-            optional(
-                "replace",
-                ParamType::Bool,
-                "true removes a note the moved ones land on: the same key and the same start (default false: \
-                 both play)",
-            ),
+            REPLACE,
         ],
         kind: CommandKind::Edit,
         run: notes::move_notes,
@@ -74,6 +78,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Number,
                 "instead: beats to move each start by (negative is earlier), each end kept where it is",
             ),
+            optional(
+                "lengths",
+                ParamType::Numbers,
+                "instead: one length in beats (above 0) per entry of notes, in the same order",
+            ),
+            REPLACE,
         ],
         kind: CommandKind::Edit,
         run: notes::resize,
@@ -112,6 +122,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param("grid", ParamType::Text, "the grid, as launcher.setQuantization takes it: 1/16, 1/8T, 1 bar, ..."),
             optional("amount", ParamType::Number, "how far towards the line, 0 to 100 percent (default 100: onto it)"),
             optional("ends", ParamType::Bool, "also move each note's end to the nearest line (default false)"),
+            REPLACE,
         ],
         kind: CommandKind::Edit,
         run: notes::quantize,
@@ -146,6 +157,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Number,
                 "where the first copied note starts, in beats; default: right after the copied notes",
             ),
+            REPLACE,
         ],
         kind: CommandKind::Edit,
         run: notes::paste,
@@ -162,6 +174,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             NOTES,
             optional("beats", ParamType::Number, "instead of right after: beats from the notes to the copies"),
             optional("semitones", ParamType::Integer, "semitones from the notes to the copies, higher when positive"),
+            REPLACE,
         ],
         kind: CommandKind::Edit,
         run: notes::duplicate,
@@ -260,8 +273,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.legato",
-        label: "Make each note of a MIDI clip last until the next note of its key starts, at least a hundredth of a beat; the last of a key keeps its length",
-        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION],
+        label: "Make each note of a MIDI clip last until the next one starts, on any key; notes that start together end together, and the last ones keep their length",
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE],
         kind: CommandKind::Edit,
         run: note_tools::legato,
         policy: Policy::DEFAULT,

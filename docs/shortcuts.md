@@ -124,7 +124,7 @@ status bar.
 | In the piano roll: select every note, clear the selection (`pianoRoll.selectAll`, `.deselect`) | Ctrl+A; Escape |
 | In the piano roll: move the selected notes one grid step earlier, later (`pianoRoll.earlier`, `.later`) | Left; Right |
 | In the piano roll: move the selected notes a semitone, an octave up or down (`pianoRoll.up`, `.down`, `.octaveUp`, `.octaveDown`) | Up, Down; Shift+Up, Shift+Down |
-| In the piano roll: make the selected notes a grid step shorter, longer (`pianoRoll.shorter`, `.longer`; never shorter than a step) | Shift+Left; Shift+Right |
+| In the piano roll: take the selected notes' ends to the previous, the next grid line, or to the next note of the key (`pianoRoll.shorter`, `.longer`; never shorter than a step) | Shift+Left; Shift+Right |
 | In the piano roll: switch between the Select and Draw tools (`pianoRoll.draw`, [spec](spec/ui-clip-editor.md) › Drawing notes) | B |
 | In the piano roll: make the grid finer, coarser (`pianoRoll.gridNarrow`, `.gridWiden`, [spec](spec/ui-clip-editor.md) › Grid and snapping) | Ctrl+1; Ctrl+2 |
 | In the piano roll: turn the triplet grid on or off (`pianoRoll.gridTriplet`) | Ctrl+3 |

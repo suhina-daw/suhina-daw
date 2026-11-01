@@ -367,3 +367,40 @@ fn audition_sounds_a_note_drawn_with_the_draw_tool() {
     assert_eq!(after.len(), before.len() + 1, "the click drew a note");
     assert_eq!(h.state().piano_roll().auditioning(), [before[2].key], "and it sounds");
 }
+
+/// With the audition on, a press on a note sounds it at once, and dragging it sounds each new
+/// pitch while the button is still down (#939).
+#[test]
+fn audition_sounds_a_note_on_the_press_and_at_each_pitch_of_a_drag() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    h.state_mut().piano_roll_mut().audition = true;
+    h.run();
+    let first = notes(&h)[0];
+    let rect = note_rect(&h, &first);
+    let at = rect.center();
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    assert_eq!(h.state().piano_roll().auditioning(), [first.key], "on the press");
+    let up = at + egui::vec2(0.0, -2.0 * rect.height());
+    h.input_mut().events.push(egui::Event::PointerMoved(up));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerMoved(up + egui::vec2(0.0, -0.5)));
+    h.step();
+    assert_ne!(h.state().piano_roll().auditioning(), [first.key], "a new pitch while it is held");
+    assert!(!h.state().piano_roll().auditioning().is_empty());
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: up,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+}

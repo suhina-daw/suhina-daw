@@ -1498,28 +1498,24 @@
     ]
   },
   "ClipEditor/Piano roll/notes_replace": {
-    "sourceFingerprint": "ef4d9aa388c88f74f45d83e321965b25c08659a42ee56308cdce8f29d0b39223",
-    "summary": "Replace a note only when a moved note lands on the same pitch and start.",
-    "description": "In the piano roll, the grid where MIDI notes are edited, moving a note can land it on an existing note with the same pitch and start time. With replacement on, the existing note is removed. Merely overlapping part of another note does not meet that condition. This preference applies to moves; copying by dragging uses the separate duplicate action.",
+    "sourceFingerprint": "4c6da9443fab38899775232e3db1e315e19e22fa18929c40a4429a619a43d1df",
+    "summary": "Choose whether notes of one pitch may overlap in the piano roll.",
+    "description": "In the piano roll, the grid where MIDI notes are edited, a note can be drawn, moved, resized, pasted, duplicated, quantised or made legato over other notes of the same pitch. With this off, the note replaces them: a note it covers whole is removed, one that starts before it ends where it starts, and one that runs on past it starts where it ends. Shift+Right also stops at the next note of the pitch. With it on, notes may overlap, and nothing else changes. The same choice is in the View menu in the piano roll's top left corner.",
     "options": [
       {
-        "name": "On",
-        "description": "Replace the existing note at the same pitch and start. This is the default."
+        "name": "Off",
+        "description": "Notes of one pitch never overlap: a note placed over others replaces them. This is the default."
       },
       {
-        "name": "Off",
-        "description": "Keep both notes when a move lands them at the same pitch and start."
+        "name": "On",
+        "description": "Notes of one pitch may overlap, and both play."
       }
     ],
-    "whenToChange": "Keep this on when rearranging a melody and you want one note at each start and pitch. Turn it off to retain coincident notes.",
+    "whenToChange": "Keep this off so no stray notes hide under longer ones. Turn it on for layered notes on one pitch.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
-      "crates/ui/src/settings.rs",
       "crates/ui/src/settings/view_settings.rs",
       "crates/ui/src/app.rs",
-      "crates/ui/src/arrangement/arrangement_view.rs",
-      "docs/spec/arrangement-editing.md",
-      "crates/ui/src/detail/piano_roll.rs",
       "crates/session/src/notes.rs",
       "docs/spec/ui-clip-editor.md"
     ]
@@ -2319,6 +2315,60 @@
       "crates/output/src/lib.rs",
       "docs/decisions/0020-latency-and-its-readout.md",
       "docs/spec/cue-output.md"
+    ]
+  },
+  "ClipEditor/Piano roll/piano_key_style": {
+    "sourceFingerprint": "cfc5e326e24d1f1db40416e096ae0a2c6d9f90756452f3bc54f3e56207b6f5ab",
+    "summary": "Choose how light the piano roll's keys are drawn.",
+    "description": "The keys at the left of the piano roll, the grid where MIDI notes are edited, are drawn like a keyboard in one of three styles. A theme can set anything about the keys in its sheet, and what it sets wins: when it sets their colours, this choice has no effect and the View menu in the piano roll's top left corner shows Theme. The same choice is in that menu.",
+    "options": [
+      {
+        "name": "Bone",
+        "description": "Light keys that stand out from the dark grid. This is the default."
+      },
+      {
+        "name": "Stone",
+        "description": "Keys between light and dark."
+      },
+      {
+        "name": "Night",
+        "description": "Dark keys that sit back with the rest of the window."
+      }
+    ],
+    "whenToChange": "Pick the one that is easiest on your eyes; it changes nothing but how the keys look.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/app.rs",
+      "crates/ui/src/detail/piano_roll/keys.rs",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "ClipEditor/Piano roll/piano_key_names": {
+    "sourceFingerprint": "983b1670fa7a604d49659cbd467e45461d2ed1c3a70837a9593ea54794c8c822",
+    "summary": "Choose which keys at the left of the piano roll show their names.",
+    "description": "The keys at the left of the piano roll, the grid where MIDI notes are edited, can name only the C of each octave, every white key, or every key. Rows lower than 8 points have no room for a name and show none, and a folded view, which leaves keys out, names every row. The notes in the grid always show their names, whatever this says. The same choice is in the View menu in the piano roll's top left corner.",
+    "options": [
+      {
+        "name": "Only C",
+        "description": "Only the C of each octave is named. This is the default."
+      },
+      {
+        "name": "White keys",
+        "description": "Every white key is named."
+      },
+      {
+        "name": "All keys",
+        "description": "Every key is named, black keys too."
+      }
+    ],
+    "whenToChange": "Name more keys while you learn where notes are, or when tall rows leave room for them.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/app.rs",
+      "crates/ui/src/detail/piano_roll/keys.rs",
+      "docs/spec/ui-clip-editor.md"
     ]
   }
 }

@@ -87,6 +87,98 @@ pub(crate) fn clip_mut(p: &mut Project, at: ClipAt) -> Option<&mut Clip> {
     }
 }
 
+/// Whether `params` asks that the notes a command places replace what is under them.
+pub(crate) fn replaces(params: &Value) -> bool {
+    params.get("replace").and_then(Value::as_bool) == Some(true)
+}
+
+/// Makes room for the notes at `placed`, so no two notes of a key overlap where they are: a note
+/// covered whole is removed, one that starts before a placed note ends where that note starts,
+/// and one that runs on past a placed note starts where that note ends. Placed notes overlapping
+/// each other are treated the same way, the later one winning. Returns the removed notes' indices
+/// as they were, in rising order; later notes close up, so the caller moves its indices with
+/// [`after_removal`].
+pub(crate) fn replace_under(notes: &mut Vec<Note>, placed: &[usize]) -> Vec<usize> {
+    let mut removed = Vec::new();
+    let mut sorted: Vec<usize> = placed.iter().copied().filter(|i| *i < notes.len()).collect();
+    sorted.sort_unstable();
+    // Each key's placed notes in time order, as (start, end, index), not overlapping each other.
+    let mut by_key: Vec<Vec<(f64, f64, usize)>> = vec![Vec::new(); 128];
+    let mut order = sorted.clone();
+    order.sort_by(|a, b| notes[*a].time.total_cmp(&notes[*b].time).then(a.cmp(b)));
+    for index in order {
+        let note = notes[index];
+        let Some(row) = by_key.get_mut(usize::from(note.key)) else { continue };
+        if let Some(last) = row.last_mut().filter(|last| last.1 > note.time + EPSILON) {
+            if last.0 >= note.time - EPSILON {
+                removed.push(last.2);
+                row.pop();
+            } else {
+                last.1 = note.time;
+                let shortened = last.2;
+                notes[shortened].duration = note.time - notes[shortened].time;
+            }
+        }
+        row.push((note.time, note.time + note.duration, index));
+    }
+    for index in 0..notes.len() {
+        if sorted.binary_search(&index).is_ok() {
+            continue;
+        }
+        let note = notes[index];
+        let Some(row) = by_key.get(usize::from(note.key)) else { continue };
+        let end = note.time + note.duration;
+        let mut start = note.time;
+        let mut head = None;
+        let first = row.partition_point(|p| p.1 <= start + EPSILON);
+        for p in row.get(first..).unwrap_or(&[]) {
+            if p.0 >= end - EPSILON {
+                break;
+            }
+            if start < p.0 - EPSILON {
+                // It starts first: it keeps what comes before the placed note.
+                head = Some(p.0);
+                break;
+            }
+            // Covered from its start: what runs on past the placed note is what is left.
+            start = p.1;
+        }
+        if let Some(cut) = head {
+            notes[index].time = start;
+            notes[index].duration = cut - start;
+        } else if start >= end - EPSILON {
+            removed.push(index);
+        } else if start != note.time {
+            notes[index].time = start;
+            notes[index].duration = end - start;
+        }
+    }
+    removed.sort_unstable();
+    removed.dedup();
+    for index in removed.iter().rev() {
+        notes.remove(*index);
+    }
+    removed
+}
+
+/// A command's `result`, with the notes it `replaced` when it was asked to replace any.
+pub(crate) fn with_replaced(params: &Value, mut result: Value, replaced: &[usize]) -> Value {
+    if replaces(params) {
+        result["replaced"] = json!(replaced);
+    }
+    result
+}
+
+/// Where the notes at `indices` are once the notes at `removed` have gone; a removed note has no
+/// place.
+pub(crate) fn after_removal(indices: &[usize], removed: &[usize]) -> Vec<usize> {
+    indices
+        .iter()
+        .filter(|i| removed.binary_search(i).is_err())
+        .map(|i| i - removed.partition_point(|r| r < i))
+        .collect()
+}
+
 /// How many clips, on the arrangement and in the launcher, play `content`.
 fn placements(p: &Project, content: ContentId) -> usize {
     let arranged = p.arrangement.lanes.iter().flat_map(|l| &l.clips).filter(|c| c.content == content).count();
@@ -355,34 +447,26 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
                 *slot = *note;
             }
         }
-        // A moved note landing on another, the same key from the same start, takes its place.
-        let replace = params.get("replace").and_then(Value::as_bool) == Some(true);
-        let covered: Vec<usize> = if replace {
-            (0..notes.len())
-                .filter(|i| !moved.contains(i))
-                .filter(|i| {
-                    changed.iter().any(|(_, m)| m.key == notes[*i].key && (m.time - notes[*i].time).abs() < EPSILON)
-                })
-                .filter(|_| beats.abs() >= EPSILON || semitones != 0)
-                .collect()
+        // Moved notes replace what they land on; a move of nothing replaces nothing.
+        let replaced = if replaces(params) && (beats.abs() >= EPSILON || semitones != 0) {
+            replace_under(notes, &moved)
         } else {
             Vec::new()
         };
-        for index in covered.iter().rev() {
-            notes.remove(*index);
-        }
-        // The moved notes' indices after the covered ones went.
-        let now: Vec<usize> = moved.iter().map(|i| i - covered.iter().filter(|c| *c < i).count()).collect();
-        Ok(json!({ "notes": now, "replaced": covered }))
+        Ok(json!({ "notes": after_removal(&moved, &replaced), "replaced": replaced }))
     })
 }
 
 pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let (length, by, start_by) =
         (optional_number(params, "length")?, optional_number(params, "by")?, optional_number(params, "startBy")?);
-    if [length.is_some(), by.is_some(), start_by.is_some()].iter().filter(|given| **given).count() != 1 {
+    let each = length_list(params)?;
+    if [length.is_some(), by.is_some(), start_by.is_some(), each.is_some()].iter().filter(|given| **given).count() != 1
+    {
         return Err(
-            "give length (beats), by (beats to add) or startBy (beats to move the starts by), one of them".into()
+            "give length (beats), by (beats to add), startBy (beats to move the starts by) or lengths (one per note), \
+             one of them"
+                .into(),
         );
     }
     if start_by.is_some_and(|b| b.abs() > MAX_BEAT) {
@@ -390,6 +474,24 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
     }
     edit_notes(&mut session.project, params, |notes| {
         let resized = indices(params, notes.len())?;
+        // One value per entry of `notes`, in the order given; a repeated index takes its last.
+        let mut lengths = std::collections::BTreeMap::new();
+        if let Some(each) = &each {
+            let named = params.get("notes").and_then(Value::as_array).ok_or("notes must be a list of note indices")?;
+            if each.len() != named.len() {
+                return Err(format!(
+                    "lengths must have one value per note: {} notes, {} lengths",
+                    named.len(),
+                    each.len()
+                )
+                .into());
+            }
+            for (value, new) in named.iter().zip(each) {
+                if let Some(index) = value.as_u64().and_then(|i| usize::try_from(i).ok()) {
+                    lengths.insert(index, *new);
+                }
+            }
+        }
         let mut changes = Vec::with_capacity(resized.len());
         for &index in &resized {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -401,10 +503,11 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
             if !(0.0..=MAX_BEAT).contains(&time) {
                 return Err(format!("note {index} would start at beat {time}, outside 0 to {MAX_BEAT}").into());
             }
-            let new = match (length, start_by) {
-                (Some(length), _) => length,
-                (None, Some(_)) => note.time + note.duration - time,
-                (None, None) => note.duration + by.unwrap_or(0.0),
+            let new = match (lengths.get(&index), length, start_by) {
+                (Some(each), _, _) => *each,
+                (None, Some(length), _) => length,
+                (None, None, Some(_)) => note.time + note.duration - time,
+                (None, None, None) => note.duration + by.unwrap_or(0.0),
             };
             if !(new > 0.0 && new <= MAX_BEAT) {
                 return Err(format!(
@@ -420,8 +523,28 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
                 note.duration = new;
             }
         }
-        Ok(json!({ "notes": resized }))
+        let replaced = if replaces(params) { replace_under(notes, &resized) } else { Vec::new() };
+        Ok(with_replaced(params, json!({ "notes": after_removal(&resized, &replaced) }), &replaced))
     })
+}
+
+/// `params.lengths`: one length in beats per entry of `notes`; `None` when left out.
+fn length_list(params: &Value) -> Result<Option<Vec<f64>>, CommandError> {
+    let list = match params.get("lengths") {
+        None | Some(Value::Null) => return Ok(None),
+        Some(v) => v.as_array().ok_or("lengths must be a list of lengths in beats, one per note")?,
+    };
+    if list.len() > MAX_NOTES_PER_COMMAND {
+        return Err(format!("at most {MAX_NOTES_PER_COMMAND} lengths in one command, got {}", list.len()).into());
+    }
+    list.iter()
+        .map(|v| {
+            v.as_f64()
+                .filter(|v| *v > 0.0 && *v <= MAX_BEAT)
+                .ok_or_else(|| CommandError::from(format!("each of lengths must be above 0 and at most {MAX_BEAT}")))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
 
 pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -571,7 +694,8 @@ pub(crate) fn quantize(session: &mut Session, params: &Value) -> Result<Value, C
                 note.duration = duration;
             }
         }
-        Ok(json!({ "notes": chosen, "moved": moved }))
+        let replaced = if replaces(params) && moved > 0 { replace_under(notes, &chosen) } else { Vec::new() };
+        Ok(with_replaced(params, json!({ "notes": after_removal(&chosen, &replaced), "moved": moved }), &replaced))
     })
 }
 
@@ -629,7 +753,9 @@ fn append(session: &mut Session, params: &Value, added: Vec<Note>) -> Result<Val
         }
         let first = notes.len();
         notes.extend(added);
-        Ok(json!({ "added": (first..notes.len()).collect::<Vec<_>>(), "count": notes.len() }))
+        let new: Vec<usize> = (first..notes.len()).collect();
+        let replaced = if replaces(params) { replace_under(notes, &new) } else { Vec::new() };
+        Ok(with_replaced(params, json!({ "added": after_removal(&new, &replaced), "count": notes.len() }), &replaced))
     })
 }
 
