@@ -368,8 +368,8 @@ impl App {
         if geometry.is_none() {
             let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
             let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
-            let response =
-                ui.interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
+            let sense = Sense::click_and_drag();
+            let response = ui.interact(splitter, Id::new("detail-splitter"), sense).on_hover_cursor(cursor);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
             // A double-click closes the detail area, as a double-click on a split view's divider does
             // on macOS; a double-click on the closed splitter opens it at its default size.
@@ -444,6 +444,15 @@ impl App {
                             return;
                         }
                         d.insert_temp(id.with("manual-revision"), version);
+                        if let Some(edits) =
+                            device.sample_edit_data().and_then(suhina_device_api::sample_edits::SampleEdits::decode)
+                        {
+                            d.insert_temp(id.with("slice-edits"), std::sync::Arc::new(edits));
+                        } else {
+                            d.remove::<std::sync::Arc<suhina_device_api::sample_edits::SampleEdits>>(
+                                id.with("slice-edits"),
+                            );
+                        }
                         if let Some(points) = device.sample_slices() {
                             d.insert_temp(id.with("manual-points"), std::sync::Arc::<[f64]>::from(points));
                         } else {

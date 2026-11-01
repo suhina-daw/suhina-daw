@@ -144,7 +144,10 @@ pub(super) fn graph_controls(
             let themed = crate::kit::style_class::computed().is_some_and(|c| c.width.is_some());
             let width = if graph.canvas.is_none() && themed { (body.width() - 8.0).max(120.0) } else { COMPACT_WIDTH };
             let mut cells = list_cells(graph, width, list_height);
-            let custom_size = graph.canvas.as_ref().map_or(Vec2::ZERO, |c| Vec2::new(c.size[0], c.size[1]));
+            let custom_size = graph
+                .canvas
+                .as_ref()
+                .map_or(Vec2::ZERO, |c| crate::detail::device_canvas::fitted_size(c, body.height()));
             let nodes_height = graph.nodes.len() as f32 * NODE_ROW;
             let extent = cells.iter().fold(Vec2::new(body.width().max(custom_size.x), custom_size.y), |size, rect| {
                 Vec2::new(size.x.max(rect.right()), size.y.max(rect.bottom()))

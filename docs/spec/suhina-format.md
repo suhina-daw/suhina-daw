@@ -11,14 +11,14 @@ covers:
 
 # The .suhina project file
 
-Suhina's own project file ([ADR 0010](../decisions/0010-project-files.md)), version 4. It is
+Suhina's own project file ([ADR 0010](../decisions/0010-project-files.md)), version 5. It is
 UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 ([ADR 0001](../decisions/0001-daw-neutral-model.md)); this lists them and what a reader accepts.
 
 ```json
 {
   "format": "suhina",
-  "version": 4,
+  "version": 5,
   "project": {
     "transport": { "tempo_bpm": 120.0, "time_signature": [4, 4] },
     "tracks": [ … ], "channels": [ … ], "contents": [ … ],
@@ -31,7 +31,7 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 
 ## Rules
 
-- `format` is `"suhina"` and `version` a whole number from 1 to the newest the reader knows (4);
+- `format` is `"suhina"` and `version` a whole number from 1 to the newest the reader knows (5);
   anything else is refused, and the message names the format the file gave or the newest version
   the reader knows. A writer always writes the newest version (*Versions* below). Files saved
   before 2026-10-13 named another format and are not read
@@ -82,6 +82,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | 2 | Device groups, written only when a project held one ([device groups](device-groups.md) › Project file) | #147 |
 | 3 | Written by every file: the first version that rises with every change | #893 |
 | 4 | An automation point's `curve` as two control points, `[x1, y1, x2, y2]`, each from -0.5 to 1.5 (a split's halves lie outside 0 to 1); a bend from earlier versions reads as the mirrored curve; take lanes, `arrangement.takes` ([recording](recording.md#take-lanes)) | #914, #916 |
+| 5 | Versioned sampler source corrections in the `suhina/sample_edits` device extension ([sampler](sampler.md#source-correction-storage)) | Issue #1026 |
 
 ## Parts
 

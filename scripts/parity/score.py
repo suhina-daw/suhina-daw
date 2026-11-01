@@ -237,7 +237,8 @@ CHAPTERS = [
      "Device groups: Ctrl+G groups picked devices, parallel branches with volume, pan, mute and "
      "solo in the group's panel, a mix against the dry signal and an output gain, instruments "
      "layered on the same notes, plug-ins inside, latency compensated, groups nested four deep, "
-     "moved and duplicated by command, devices inside groups picked and Ctrl+A picking a whole chain. No macros, key/velocity/chain zones, drum pads or group "
+     "moved and duplicated by command, devices inside groups picked and Ctrl+A picking a whole chain; "
+     "a Live Set's Audio Effect and Instrument Racks import as groups with their chains and devices, keeping the first eight macros' names and positions. No macro mappings, key/velocity/chain zones, drum pads or group "
      "presets."),
     (26, "Automation and Editing Envelopes", 22, 0.58, "partial",
      "Envelopes for track volume, pan and mute, built-in, .sd and plug-in device parameters: breakpoints "
@@ -267,7 +268,7 @@ CHAPTERS = [
      "graphs run before the instrument too. The other 7 documented MIDI effects are missing."),
     (31, "Live Instrument Reference", 120, 0.12, "started",
      "FM synth and single-source sample/granular instrument against 13 instruments; "
-     "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; no multisample zones, "
+     "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades, editable automatic slice boundaries with persistent corrections, source-tempo grid/snap and stereo waveform navigation, and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; Simpler and a one-sample Sampler from a Live Set import as the sampler with their sample, region, tuning, envelope, filter and slicing; no multisample zones, "
      "drum sampler, wavetable, subtractive or physical modelling yet."),
     (32, "Max for Live", 6, 0.05, "planned",
      "ADR 0021 defines data-only .sd graphs with a Rust SDK, DSP runtime and custom UI nodes; typed sample resources, polyphonic voice/grain subgraphs, slicing, stretch and versioned components are executable through the Rust host API; "

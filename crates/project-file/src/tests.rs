@@ -1110,6 +1110,12 @@ fn every_feature() -> Project {
     let (track, clip) = (lane.track.unwrap(), lane.clips[0].clone());
     project.arrangement.takes =
         vec![TakeLane { track, name: "Take 1".into(), clips: vec![Clip { id: ClipId::NONE, ..clip }], color: None }];
+    let mut sample_edits = b"SSE1".to_vec();
+    sample_edits.extend_from_slice(&1u32.to_le_bytes());
+    sample_edits.extend_from_slice(&0.3f64.to_le_bytes());
+    sample_edits.push(2);
+    sample_edits.extend_from_slice(&1i64.to_le_bytes());
+    project.channels[0].devices[0].set_sample_edit_data(sample_edits).unwrap();
     project
 }
 
@@ -1143,6 +1149,9 @@ fn a_file_of_every_version_reads() {
                     point.curve = Curve::STRAIGHT;
                 }
             }
+        }
+        if version < 5 {
+            expected.channels[0].devices[0].clear_sample_edits();
         }
         assert_eq!(from_json(&text), Ok(expected), "version {version}");
     }

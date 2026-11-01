@@ -298,8 +298,8 @@ from `true` to `false`) and `UserName@Value` (empty unless renamed).
 gain of EQ Eight is `Bands.2/ParameterA/Gain/Manual` (+3 dB stored as `3`). `LastPresetRef`
 points at the default preset the device was loaded from. The importer keeps them as
 placeholders, except the ones that have a Suhina counterpart: those become Suhina devices
-with their parameters mapped (`crates/als/src/devices.rs`: the Utility, below, the Delay and
-Reverb, whose element tables are in [`delay.md`](delay.md) › Import and
+with their parameters mapped (`crates/als/src/devices.rs`: the Utility, below, Simpler and a one-sample Sampler (below), racks as device groups (below), the
+Delay and Reverb, whose element tables are in [`delay.md`](delay.md) › Import and
 [`reverb.md`](reverb.md) › Import, the Saturator, in [`saturator.md`](saturator.md) › Import, EQ Eight, `Eq8`, in [`eq.md`](eq.md) › Import, and the MIDI effect Pitch, `MidiPitcher`, whose element
 table is in [`pitch.md`](pitch.md) › Import). A MIDI track's MIDI effects come first in its
 `Devices`, before the instrument.
@@ -373,6 +373,99 @@ Still open: how Mid/Side between the ends scales mid and side in the sound (the 
 linear in the display; Suhina keeps one at full and turns the other down linearly), and
 whether Width and Mid/Side sound like Suhina's at the same settings. Both need bounces of
 `118` and of the 50M and 50S files (`120-utility-midside-mid-50M.als`, `…-50S.als`).
+
+### Simpler and Sampler (`OriginalSimpler`, `MultiSampler`)
+
+Observed in two sets the user made in Live 12: a Simpler in Slice mode on a 93-second loop
+(`SameProjectWhat.als`) and a Sampler with one sample on a vocal track (`UK Garage 1#3.als`,
+track `31-0 Lead Vocals`). Neither is committed (they hold the user's own audio). Simpler and
+Sampler store the same structure; `Globals/IsSimpler@Value` tells them apart.
+
+The samples are `Player/MultiSampleMap/SampleParts/MultiSamplePart` elements, one per zone; a
+Simpler has one. Their values are plain `@Value`s. The rest of the device are automatable values
+in `<path>/Manual@Value`. A Sampler with more than one zone stays a placeholder with a warning
+(several samples wait for the sampler's zones, #739). Everything else becomes Suhina's `sampler`
+(`crates/als/src/devices.rs`), named after the Live device unless the user renamed it.
+
+| Element (under the part) | Observed | Suhina `sampler` |
+|---|---|---|
+| `SampleRef/FileRef/RelativePath`, `Path` | relative to the set, and absolute | the sample file and its absolute path, found as audio clips' files are |
+| `SampleRef/DefaultDuration`, `DefaultSampleRate` | frames, Hz | to turn frames and seconds into fractions of the file |
+| `SampleStart`, `SampleEnd` | frames, the end inclusive: a 0.2 s region `6398104` … `6407909` of an 11 452 800-frame file | the region `start` … `end`, with Simpler's start and length below |
+| `RootKey` | `73` on the vocal, `60` on the loop | `root` |
+| `Detune` | cents | added to `cents` |
+| `Volume` | linear: `1.58489585` (+4 dB) | added to `gain` in dB |
+| `Panorama` | -1 … 1 | added to `pan` |
+| `KeyRange/Min`, `Max`; `VelocityRange/Min`, `Max` | 0 … 127; 1 … 127 | `key_low`, `key_high`; `velocity_low`, `velocity_high` as fractions of 127 |
+| `SampleWarpProperties/IsWarped`, `WarpMode` | `false`; `4` | `warp`; mode `4` (Complex, as on clips) is `Smooth`, others keep the default with a warning |
+| `SlicingStyle` | `0` | `slice_by`: Transient, Beat, Region, Manual in the same order **(hypothesis beyond 0)** |
+| `SlicingThreshold` | `100` with Sensitivity at 100 % | `sensitivity` = value / 100 |
+| `SlicingRegions` | `8` | `slice_regions` |
+| `SlicingBeatGrid` | `4` | not mapped yet (warning when slicing by Beat) |
+| `ManualSlicePoints/SlicePoint@TimeInSeconds` | seconds in the file | Manual slicing's boundaries, as fractions of the file |
+| `SlicePoints/SlicePoint` | every onset Live found (440 on the loop, each with `Rank` and `NormalizedEnergy`) | not read: Suhina finds its own |
+
+| Element (under the device) | Observed | Suhina `sampler` |
+|---|---|---|
+| `Globals/PlaybackMode@Value` | `2` with Slice shown; `0` on the Sampler | `0` Classic: `playback` Gate, or Loop with `LoopOn`; `1` One-Shot: `playback` One shot (Gate with `SustainMode` 1); `2` Slicing: `mode` Slice |
+| `Player/LoopModulators/SampleStart`, `SampleLength` | fractions of the region: `0`, `1` | moves `start` and `end` within the region |
+| `Player/LoopModulators/LoopOn`, `LoopLength` | `false`, `1` | `loop_start` = `end` less `LoopLength` of the played length, `loop_end` = `end` |
+| `Player/Reverse` | true/false | `reverse` |
+| `Pitch/TransposeKey`, `TransposeFine` | semitones, cents | `pitch`, `cents` |
+| `VolumeAndPan/Volume` | dB: `-12` | `gain` (with the zone's volume), -60 … 12; a zone at zero is -60, the sampler's silence |
+| `VolumeAndPan/Panorama` | -1 … 1 | `pan` (with the zone's) |
+| `VolumeAndPan/VolumeVelScale` | `0.35` on the Simpler, `0` on the Sampler | `velocity` |
+| `VolumeAndPan/Envelope/AttackTime`, `DecayTime`, `ReleaseTime`; `SustainLevel` | ms: `0.1`, `600`, `50`; `1` | `attack`, `decay`, `release` in seconds; `sustain` |
+| `VolumeAndPan/OneShotEnvelope/FadeInTime`, `FadeOutTime`; `SustainMode` | ms: `0.1`; `0` with Trigger lit | One-Shot's `fade_in`, `fade_out` in ms; `SustainMode` 0 Trigger, 1 Gate: Slicing's `slice_release` Play to end or Release on key up |
+| `SimplerSlicing/PlaybackMode@Value` | `0` with Mono shown | `slice_overlap`: Mono, Poly, Through **(hypothesis beyond 0)** |
+| `Filter/IsOn`; `Filter/Slot/Value/SimplerFilter/Type` | `true`; `0` | off: `filter` Off. Type 0 Low-pass, 1 High-pass, 2 Band-pass, 3 Notch become `filter` 1 … 4 **(hypothesis beyond 0)**; 4 Morph a low-pass with a warning. A low-pass at 20 kHz or above with no envelope is no filter: `filter` Off |
+| `SimplerFilter/Freq`, `Res`, `Slope` | Hz: `22000`; `0`, `0.09`; `true` | `cutoff` (20 … 20 000); `resonance` = 0.707 · 14.14^Res (no resonance at 0, about 10 at 1); `filter_slope` 24 dB when true |
+| `SimplerFilter/Envelope/IsOn`, `Amount`, the times and sustain | semitones, ms | `filter_env` = Amount / 12 octaves; `filter_attack`, `filter_decay`, `filter_sustain`, `filter_release` |
+| `Pitch/Envelope/IsOn`; `…/SimplerPitchEnvelope/Amount`, `AttackTime`, `DecayTime` | `true`, `0`, ms | when on: `pitch_env` semitones, `pitch_attack`, `pitch_decay` |
+| `Lfo/IsOn` | `true` on the Simpler | not mapped yet (warning when on) |
+| `Globals/NumVoices@Value` | `5` with 6 voices shown | an index into 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 20, 24, 32: `poly`; one voice is `voice_mode` Mono **(hypothesis beyond 5)** |
+| `Globals/RetriggerMode@Value` | `true` | `retrigger` |
+| `Globals/PortamentoMode`, `PortamentoTime` | `0`; ms | above 0: `glide` in seconds |
+
+Still open: Slicing's first note (Suhina uses the part's `RootKey`; whether Live starts slices at
+another key needs a set with a MIDI clip playing them), the Beat grid's values, the LFO's units,
+and which of the stored onsets Live plays at a sensitivity (on the loop, at 100 % Live drew about
+50 of its 440).
+
+### Audio Effect Rack and Instrument Rack (`AudioEffectGroupDevice`, `InstrumentGroupDevice`)
+
+Observed in the user's own 196 Live 12 sets (none committed): 419 Audio Effect Racks (270 with
+one chain, 97 with two, the rest more), 87 Instrument Racks and 168 Drum Racks. A rack becomes a
+Suhina device group ([device groups](device-groups.md)), each chain a branch; a Drum Rack stays a
+placeholder (its pads need the drum sampler). Every one of the 194 sets that open imports, with
+506 groups among them.
+
+A rack's chains are `Branches/AudioEffectBranch` (effect rack) or `Branches/InstrumentBranch`;
+a chain's devices are `DeviceChain/AudioToAudioDeviceChain/Devices` or
+`DeviceChain/MidiToAudioDeviceChain/Devices`, read like a track's chain (plug-ins with their
+state, Simpler, Reverb, racks inside racks).
+
+| Element | Observed | Suhina |
+|---|---|---|
+| `On/Manual` | true/false | the group's `enabled` |
+| `UserName` | empty unless renamed | the group's name; empty: "Audio Effect Rack" or "Instrument Rack" |
+| chain `Name/UserName`, `Name/EffectiveName` | the effective name lists the chain's devices: `FabFilter Saturn 2 \| OTT \| Auto-Tune Pro \| …` | the branch's name (the user's name first); neither: `Chain N` |
+| chain `MixerDevice/Volume/Manual` | linear gain, as a track's: `1` (3 644 chains), `0.5011872053` (−6 dB), `0.2511886358` (−12 dB); range `0.000316` … `1.995` | the branch's `volume`; a negative value keeps unity |
+| chain `MixerDevice/Panorama/Manual` | -1 … 1: `-0.390625`, `0.390625` | the branch's `pan`, clamped |
+| chain `MixerDevice/Speaker/Manual` | `false` on a muted chain | the branch's `mute` = not `Speaker` |
+| chain `IsSoloed@Value` | `true` on a soloed chain | the branch's `solo` |
+| chain `ZoneSettings/KeyRange`, `VelocityRange` (Instrument Rack) | `0` … `127`, `1` … `127` in the sets seen | not mapped yet: every branch plays every note, with a warning when a zone is narrower |
+| `MacroControls.0` … `.15/Manual` | 0 … 127: `71`, `63.5` | the first eight are `macro.1` … `macro.8` = value / 127; a later one moved or named gives a warning |
+| `MacroDisplayNames.0` … `.15@Value` | `Macro 1` … by default, `PUNCH`, `BODY` | the first eight macros' names |
+
+Limits, each with a warning: more than 16 chains keeps the first 16, a rack nested deeper than
+four groups is a placeholder, and a channel keeps its first 64 devices counted at every depth.
+
+Still open: where Live stores which parameters a macro moves. The macro elements hold only their
+value, range and automation target, and no element in the sets names a macro by index except a
+plug-in's `PowerMacroControlIndex` (the device switch, `-1` when unmapped), so the mappings are
+not imported. A set with one macro mapped to one known parameter would show it. Also open: the
+chain selector (`BranchSelectorRange`, `0` … `0` in every chain seen).
 
 ### MIDI effects
 
