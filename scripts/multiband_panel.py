@@ -423,21 +423,23 @@ def meter(cid, bounds, visible=None):
     """The output's peak: its level now in dB over two meters (accent and text, as the design), and
     the scale they span (`meterRange`, 0 at the top), which dragging up or down widens or narrows."""
     _, _, w, h = bounds
-    top, bottom = 26.0, h - 2.0
+    # Its bottom number ends where the knobs' values do; Peak and its value centre over the bars.
+    top, bottom = 30.0, h - 6.0
+    center = w / 2.0
     span = bottom - top
     rng = par("meterRange")
     peak = maximum(readout(OUTPUT_LEFT), readout(OUTPUT_RIGHT))
     drawing = [
-        text(w / 2.0, 0.0, "Peak", tint(TEXT, 150), 10.0, center=True),
-        value_text(w / 2.0, 11.0, maximum(-99.9, peak), size=11.0, decimals=1, center=True),
+        text(center, 0.0, "Peak", tint(TEXT, 150), 10.0, center=True),
+        value_text(center, 11.0, maximum(-99.9, peak), size=11.0, decimals=1, center=True),
     ]
     for i, (index, color) in enumerate(((OUTPUT_LEFT, tint(ACCENT, 170)), (OUTPUT_RIGHT, TEXT))):
-        bx = 2.0 + i * 7.0
+        bx = center - 6.5 + i * 7.0
         level = maximum(0.0, add(1.0, mul(maximum(mul(rng, -1.0), minimum(0.0, readout(index))), reciprocal(rng))))
         drawing.append(rect(bx, top, 6.0, span, CONTROL, 2.0))
         drawing.append(rect(bx, sub(bottom, mul(level, span)), 6.0, mul(level, span), color, 2.0))
     for k in (0.0, 0.5, 1.0):
-        drawing.append(value_text(17.0, top + span * k - 6.0, mul(rng, -k), size=10.0, decimals=0, color=tint(TEXT, 140)))
+        drawing.append(value_text(center + 8.5, top + span * k - 6.0, mul(rng, -k), size=10.0, decimals=0, color=tint(TEXT, 140)))
     return {"visible_when": visible, "id": cid, "name": "Output meter",
             "tooltip": "Output peak. Drag up or down to change the meter's range (now its bottom number, in dB); "
                        "double click resets it to 60 dB", "bounds": bounds,
@@ -524,11 +526,11 @@ def band_knobs(bid, x0, y0, visible, tag):
 
 
 def compact():
-    """Design D in the device row (870 x 168): the band view at the left; a row of switches and
+    """Design D in the device row (886 x 168): the band view at the left; a row of switches and
     presets over the chosen band's column (name, curve, power, solo), its knob grid, the global
-    column (Amount, Time, Output) and the meters. While the strip is open the band view gives way
+    column (Amount, Time, Output), the meters and the presets. While the strip is open the band view gives way
     to the three bands' curves and the rest moves left into the chosen band's column."""
-    w, h = 870.0, 168.0
+    w, h = 886.0, 168.0
     sx, sy, sw, sh = 4.0, 4.0, 416.0, 160.0
     controls = [graphic("band_view", "Band view", [sx, sy, sw, sh], band_view(0.0, 0.0, sw, sh), closed())]
     for i, (bid, name, color) in enumerate(BANDS):
@@ -564,11 +566,12 @@ def compact():
         controls.append(knob("time", "Time", [702.0 + dx, 96.0, 36.0, 70.0], mul(par("time"), 100.0), " %", 0, True,
                              state, tag))
         controls.append(knob("output", "Output", [738.0 + dx, 96.0, 36.0, 70.0], par("output"), "", 1, False, state, tag))
-        # The presets in a column of their own, then the meter at the right edge.
-        controls.append(separator(f"sep_presets{tag}", 777.0 + dx, 24.0, 140.0, state))
-        controls.append(preset_button(f"preset_default{tag}", "Default", 0, [782.0 + dx, 24.0, 44.0, 18.0], state))
-        controls.append(preset_button(f"preset_ott{tag}", "OTT", 1, [782.0 + dx, 46.0, 44.0, 18.0], state))
-        controls.append(meter(f"meter{tag}", [828.0 + dx, 4.0, 40.0, 162.0], state))
+        # The meter after the global column, then the presets in a column of their own at the right edge.
+        controls.append(separator(f"sep_meter{tag}", 777.0 + dx, 24.0, 140.0, state))
+        controls.append(meter(f"meter{tag}", [782.0 + dx, 4.0, 48.0, 148.0], state))
+        controls.append(separator(f"sep_presets{tag}", 833.0 + dx, 24.0, 140.0, state))
+        controls.append(preset_button(f"preset_default{tag}", "Default", 0, [838.0 + dx, 24.0, 44.0, 18.0], state))
+        controls.append(preset_button(f"preset_ott{tag}", "OTT", 1, [838.0 + dx, 46.0, 44.0, 18.0], state))
     # Handles last, so they are over everything they cross.
     controls += handles("", sx, sy, sw, sh, closed())
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": [], "controls": controls,
