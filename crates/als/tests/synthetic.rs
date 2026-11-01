@@ -594,6 +594,11 @@ fn leaves_out_time_signatures_past_a_sixteenth() {
         import.project.transport.time_signature_changes,
         [TimeSignatureChange { bar: 1, time_signature: ts(3, 16) }]
     );
+    assert!(
+        import.warnings.iter().any(|w| w.contains("code 498") && w.contains("not understood")),
+        "{:?}",
+        import.warnings
+    );
 }
 
 #[test]
