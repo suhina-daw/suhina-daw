@@ -356,6 +356,23 @@ fn an_adaptive_grid_follows_the_zoom_and_the_keys_change_it() {
 }
 
 #[test]
+fn a_lanes_menu_changes_the_grid_and_sends_no_command() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = egui_kittest::Harness::builder().build_ui_state(
+        |ui, (state, actions): &mut (ArrangementViewState, Vec<Action>)| {
+            empty_lane_menu(ui, TrackId(1), true, false, state, actions);
+        },
+        (ArrangementViewState::default(), Vec::new()),
+    );
+    h.run();
+    h.get_by_label("1/8").click_accesskit();
+    h.run();
+    let (state, actions) = h.state();
+    assert_eq!(state.grid.label(), "1/8");
+    assert!(actions.is_empty(), "{actions:?}");
+}
+
+#[test]
 fn snap_off_draws_the_lines_and_does_not_snap() {
     // Snap off keeps its value's lines (1/16 here), as the piano roll's grid does.
     let grid = arrangement_grid(PianoGrid::from_value("none"), 400.0, 4.0);

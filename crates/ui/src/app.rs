@@ -80,8 +80,7 @@ use self::control_bar::*;
 use self::drops::*;
 use self::keys::*;
 
-/// Launch quantisation choices, as `launcher.setQuantization` takes them; the Arrangement
-/// view's grid follows the same value.
+/// Launch quantisation choices, as `launcher.setQuantization` takes them.
 pub(crate) const QUANTIZATION: [&str; 14] = [
     "none", "8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32",
 ];

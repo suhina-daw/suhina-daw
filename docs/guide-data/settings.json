@@ -1602,7 +1602,7 @@
       ],
       "sourceFingerprint": "7ebeceb6b937e4d2ea1865f82f441757207a7415c11494210d322a63b52162c7",
       "helpStatus": "reviewed",
-      "description": "A timing grid draws beat divisions and supplies the steps that edited notes snap to. The control bar’s value also controls Arrangement placement and clip-launch timing. Linking the piano roll makes its menu and grid shortcuts change that shared value too. The shared control bar cannot represent adaptive grids or a 1/32 triplet, so those choices are unavailable while linked. This chooses the grid source, not the notes’ timing: existing notes are not automatically moved.",
+      "description": "A timing grid draws beat divisions and supplies the steps that edited notes snap to. The control bar’s value is the launch quantisation, which sets when launched clips start. Linking the piano roll makes its menu and grid shortcuts change that value too, so choosing a grid there changes launch timing. The control bar cannot represent adaptive grids or a 1/32 triplet, so those choices are unavailable while linked. This chooses the grid source, not the notes’ timing: existing notes are not automatically moved.",
       "options": [
         {
           "name": "Its own",

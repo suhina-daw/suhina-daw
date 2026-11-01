@@ -555,8 +555,7 @@ impl Session {
         self.sync.player.as_mut().and_then(Player::take_live_input)
     }
 
-    /// The launch quantisation `launcher.setQuantization` set last (1 bar until then); the
-    /// Arrangement view's grid follows it too.
+    /// The launch quantisation `launcher.setQuantization` set last (1 bar until then).
     pub fn quantization(&self) -> Quantization {
         self.live.quantization
     }
