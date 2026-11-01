@@ -3,7 +3,7 @@ description: User guide to the keyboard shortcuts, one entry per action with its
 read_when: user guide, keyboard shortcuts, what does this key do, list of keys, every shortcut explained, keybindings, hotkeys, action ids, which action a key runs, back up keys, share keymap, keymap.json, rebind a key, keys for agents
 type: howto
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-29
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs

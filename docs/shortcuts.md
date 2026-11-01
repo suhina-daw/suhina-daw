@@ -3,7 +3,7 @@ description: Keyboard shortcuts in the desktop app: the default keys, the keymap
 read_when: shortcuts, keys, keymap, Ctrl+drag copies notes, Alt+drag velocity, left edge, keymap.json, keymap preset, workflow mode, workflow menu, workflow settings, Custom mode, double-click, Draw-first, Select-first, Mouse-first, mouse switches, right click deletes, left click draws, Alt right plays, rebind, cut copy paste, duplicate, mute clips, hotkeys, quantise, Ctrl+U, piano roll keys, tool keys, number keys choose a tool, arrow keys, select all, mute tool key, grid keys, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, narrow grid, widen grid, triplet grid, snap to grid, Z, Shift+Z, zoom to selection, zoom to clip, ruler zoom
 type: howto
 status: current
-last_verified: 2026-10-25
+last_verified: 2026-10-29
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs

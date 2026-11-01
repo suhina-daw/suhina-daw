@@ -3,7 +3,7 @@ description: How sends and return tracks behave: what a send taps (before or aft
 read_when: send, sends, return track, returns, pre-fader, post-fader, track.setSend, track.setSendMode, return.add, return.remove, return.rename, send knob, effect return, aux
 type: spec
 status: draft
-last_verified: 2026-10-15
+last_verified: 2026-10-28
 covers:
   - crates/engine/src/sends.rs
   - crates/engine/src/sends_tests.rs

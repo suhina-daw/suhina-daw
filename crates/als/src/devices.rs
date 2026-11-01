@@ -24,6 +24,7 @@ pub(crate) fn builtin(
         "StereoGain" => Some(("utility", "Utility", utility(node, warn))),
         "Reverb" => Some(("reverb", "Reverb", reverb(node, warn))),
         "Delay" => Some(("delay", "Delay", delay(node, warn))),
+        "Saturator" => Some(("saturator", "Saturator", saturator(node, warn))),
         "Eq8" => Some(("eq", "EQ", eq(node, warn))),
         "FilterEQ3" => Some(("dj-eq", "DJ EQ", eq3(node, warn))),
         "MidiPitcher" => Some(("pitch", "Pitch", pitch(node, warn))),
@@ -157,6 +158,36 @@ fn delay(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
     p.set("lfoToTime", manual(node, "Modulation_AmountTime"));
     p.set("lfoToFilter", manual(node, "Modulation_AmountFilter"));
     p.set("mix", manual(node, "DryWet"));
+    p.0
+}
+
+/// Color Low and High at ±100 %: Live stores their gains in decibels.
+const SATURATOR_COLOR_LOW_DB: f64 = 36.0;
+const SATURATOR_COLOR_HIGH_DB: f64 = 24.0;
+
+/// Live's Saturator as Suhina's `saturator` (`docs/spec/saturator.md` › Import).
+fn saturator(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
+    let mut p = Params::default();
+    let flag = |name| manual_flag(node, name).map(toggle);
+    p.set("drive", manual(node, "PreDrive"));
+    p.set("type", step(node, "Type", 8, "Saturator curve type", warn));
+    p.set("threshold", manual(node, "BassShaperThreshold"));
+    p.set("postClip", step(node, "PostClip", 3, "Saturator post clip mode", warn));
+    p.set("output", manual(node, "PostDrive"));
+    p.set("mix", manual(node, "DryWet"));
+    p.set("color", flag("ColorOn"));
+    // The Color amounts are stored as the filters' gains in dB; ours are fractions of the most.
+    p.set("colorLow", manual(node, "BaseDrive").map(|db| db / SATURATOR_COLOR_LOW_DB));
+    p.set("colorHigh", manual(node, "ColorDepth").map(|db| db / SATURATOR_COLOR_HIGH_DB));
+    p.set("colorFrequency", manual(node, "ColorFrequency"));
+    p.set("colorWidth", manual(node, "ColorWidth"));
+    p.set("shaperDrive", manual(node, "WsDrive"));
+    p.set("shaperCurve", manual(node, "WsCurve"));
+    p.set("shaperDepth", manual(node, "WsDepth"));
+    p.set("shaperLinear", manual(node, "WsLin"));
+    p.set("shaperDamp", manual(node, "WsDamp"));
+    p.set("shaperPeriod", manual(node, "WsPeriod"));
+    p.set("dcFilter", flag("PreDcFilter"));
     p.0
 }
 

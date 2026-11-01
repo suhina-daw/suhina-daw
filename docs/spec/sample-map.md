@@ -3,7 +3,7 @@ description: How the sample map behaves: samples laid out by how they sound, col
 read_when: sample map, similarity, sound map, browse by sound, t-SNE, UMAP, point cloud, grid layout, similar samples, kick snare hat categories, audio features, MFCC, NKS, preset previews, soundmap commands
 type: spec
 status: draft
-last_verified: 2026-10-25
+last_verified: 2026-10-29
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs

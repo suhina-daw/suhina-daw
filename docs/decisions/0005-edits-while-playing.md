@@ -3,7 +3,7 @@ description: How edits reach an engine that is already playing — a new graph b
 read_when: edit while playing, graph swap, renderer rebuild, Controller::update, live edits, volume change not heard, LOOP-26
 type: decision
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-28
 covers:
   - crates/engine/src/lib.rs
   - crates/engine/src/swap.rs

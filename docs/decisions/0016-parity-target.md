@@ -3,7 +3,7 @@ description: What Suhina measures itself against in another DAW, what it deliber
 read_when: parity, feature comparison, how far are we from Live, scope of the project, what Suhina does not aim at, milestone for recording, automation, MIDI editing, MIDI effects, devices
 type: decision
 status: draft
-last_verified: 2026-10-19
+last_verified: 2026-10-28
 ---
 
 # 0016: Parity target: what Suhina compares itself to, and what it leaves out

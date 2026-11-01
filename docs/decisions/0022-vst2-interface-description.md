@@ -1,10 +1,10 @@
 ---
-description: Where the VST2 interface description comes from — the VeSTige header as Ardour distributes it, pinned to one commit, ported to Rust with its notice kept, as the one named exception to the clean-room rule; checked by our own mock plug-in, probe and tests; legal advice before a release ships it
+description: Where the VST2 interface description comes from — the VeSTige header as Ardour distributes it, pinned to one commit, ported to Rust with its notice kept, as the one named exception to the clean-room rule; checked by our own mock plug-in, probe and tests; amended 2026-10-31 to allow shipping VST2-enabled builds
 read_when: VST2, VST 2, AEffect, ABI, opcode, dispatcher, audioMaster, clean-room, reverse engineering, VeSTige, vestige.h, Ardour, LMMS, vst2sdk, FST, yabridge, plug-in interface description, VST trademark, provenance
 type: decision
 status: accepted
 built: no
-last_verified: 2026-10-24
+last_verified: 2026-10-31
 ---
 
 # 0022: VST2: where the interface description comes from
@@ -91,13 +91,31 @@ has approved their use.
    binary or feature name (`suhina-plugin-host`, feature `vst2`, `DeviceKind::Vst2`). The format is
    named only where a format has to be named — the plug-in manager's format column, the spec, the
    project file's device kind, import text — which is nominative use; README's trademark note stays.
-   This decision permits implementing VST2 hosting; it does not approve shipping it. **Legal advice
-   precedes a release that ships it** (ADR 0006), and VST2-enabled builds are not distributed until
-   that is resolved.
-6. **If the answer changes, this ADR changes.** A credible new claim against the header, an
-   interface document Steinberg publishes itself, or legal advice against shipping is a reason to
-   amend decision 1. The spec and the tests stay as they are either way: they describe the interface,
-   and where a fact is observed they do not depend on its source.
+   VST2-enabled builds may be distributed, and the `vst2` feature may be on by default; release
+   notes name VST2 hosting as built on VeSTige.
+   *Amended 2026-10-31, see Amendment: shipping VST2.*
+6. **If the answer changes, this ADR changes.** A request or claim from Steinberg, a credible new
+   claim against the header, or an interface document Steinberg publishes itself does not by
+   itself stop distribution; it is a reason to reconsider, and the outcome (keep shipping, answer
+   the claim, or turn the default off) is recorded as an amendment. Legal advice against shipping
+   turns the default off. Turning it off removes only the `vst2` feature: a project's VST2 device
+   is then opened with the installed VST3 that declares it replaces it, or stays a *missing
+   plug-in* the user can relink by hand (ADR 0006 decision 8). The spec and the tests stay as they
+   are either way: they describe the interface, and where a fact is observed they do not depend
+   on its source.
+   *Amended 2026-10-31, see Amendment: shipping VST2.*
+
+## Amendment: shipping VST2 (2026-10-31)
+
+[PR 1076](https://github.com/suhina-daw/suhina-daw/pull/1076). The gate in decision 5, legal
+advice before a release ships VST2, is lifted: VST2-enabled builds may be distributed. The gate
+existed because of Steinberg's SDK, and decisions 1 to 3 already keep it out. What ships is the
+pinned VeSTige header, ported with its GPL-2.0-or-later notice, and facts observed by our own probe
+and tests; Ardour, LMMS and yabridge have distributed hosts on the same header for years, and the
+2018 DMCA notice did not remove it (see Context). This is the project's judgement, not legal
+advice, and it makes no claim that a court has approved the header. The naming rules of decision 5
+stay. Decision 6 now says what a claim or request does: it starts a reconsideration recorded as an
+amendment, it does not stop distribution by itself; legal advice against shipping does.
 
 ## Alternatives considered
 
@@ -121,9 +139,8 @@ has approved their use.
   plug-ins settle what the header does not.
 - The ported files carry GPL-2.0-or-later notices inside a GPL-3.0-or-later program, as the MSFA
   (Apache-2.0) and Signalsmith (MIT) ports carry theirs.
-- Nothing here ships VST2 by itself. The licence question (Steinberg no longer licenses new VST2
-  hosts), the trademark line and the legal advice before release stay, and ADR 0006 decision 8 — a
-  project's VST2 plug-in is played by its VST3 or CLAP copy meanwhile — stands.
+- VST2-enabled builds may ship (amendment of 2026-10-31). The trademark line stays, and a claim
+  or legal advice against shipping is handled as decision 6 says.
 - ADR 0006's *Not decided yet* item for VST2 moves here; the format, scanning, editor and process
   decisions in 0006 are unchanged.
 

@@ -95,6 +95,7 @@ exists in `devices/`, passes its tests and runs in track chains.
 | modulation delay | own delay lines | planned |
 | reverb: algorithmic, early reflections, damped feedback delay network, chorus, freeze | own | done |
 | convolution reverb | own convolution | planned |
+| saturator: eight curves, Color filters and their inverse, post clip, waveshaper, dry/wet | own, oversampled | done |
 | multi-stage saturation | own, oversampled | planned |
 | EQ: eight bands of eight types, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q | own (`dsp` state-variable filters) | done; analyser, Audition and a curve display planned |
 | filter | own (`dsp` filters) | planned |
@@ -240,6 +241,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   linear mix law ([delay](docs/spec/delay.md), [reverb](docs/spec/reverb.md),
   [import](docs/spec/device-import.md))
 - the Pitch MIDI effect, with its settings ([pitch](docs/spec/pitch.md))
+- a saturator; a Live Set's Saturator comes in as it with its panel settings, Hi-Quality aside
+  (Suhina always oversamples) ([saturator](docs/spec/saturator.md))
 - an eight-band EQ; the matching device in a Live Set comes in as it with both curves of every
   band, its mode, Scale and Adaptive Q; its oversampling option is noted and not used
   ([EQ](docs/spec/eq.md), [import](docs/spec/device-import.md))

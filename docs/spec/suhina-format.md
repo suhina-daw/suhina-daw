@@ -3,7 +3,7 @@ description: The layout of Suhina's own project file (.suhina), field by field, 
 read_when: .suhina layout, markers in the file, project file fields, clip id, lane id, scene id, next_id, file without ids, writing a project file by hand or from an agent, format version, version history, newer file refused, base64 state, muted note, note flags, clip scale, default_scale, scale root and mode
 type: spec
 status: current
-last_verified: 2026-10-25
+last_verified: 2026-10-29
 covers:
   - crates/project-file/src/lib.rs
   - crates/model/src/ids.rs

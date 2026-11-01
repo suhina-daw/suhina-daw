@@ -317,8 +317,8 @@ force a rewrite of everything built on it, so it is not something we clean up la
   notice kept. It is a third-party reverse-engineering result, which the next list otherwise
   forbids; the project accepts this one source on the record ADR 0022 keeps. The exception covers
   that file only: not Steinberg's VST2 SDK, not leaked code, not FST, not `vst2sdk`, not any other
-  header or write-up, and not material from any other reverse engineering. Permission to implement
-  is not permission to ship: a release with VST2 hosting still needs what ADR 0022 › 5 asks.
+  header or write-up, and not material from any other reverse engineering. VST2-enabled builds
+  may also be distributed, under ADR 0022 › 5 as amended on 2026-10-31.
 
 **Not allowed:**
 
