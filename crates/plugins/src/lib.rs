@@ -379,6 +379,11 @@ impl EditorPlacer {
         self.send(&Message::PlaceEditor { instance: self.instance, placement })
     }
 
+    /// What the title bar of the editor's own window says; `false` when the host is gone.
+    pub fn title(&self, title: &str) -> bool {
+        self.send(&Message::EditorTitle { instance: self.instance, title: title.to_string() })
+    }
+
     /// Asks the embedded editor to take `width` × `height` pixels; `false` when the host is gone.
     pub fn fit(&self, width: u32, height: u32) -> bool {
         self.send(&Message::FitEditor { instance: self.instance, width, height })

@@ -1165,6 +1165,12 @@ impl Vst3Plugin {
     }
 
     /// Puts an embedded editor where the engine says.
+    pub(crate) fn set_editor_title(&self, title: &str) {
+        if let Some(editor) = &self.editor {
+            editor.set_title(title);
+        }
+    }
+
     pub(crate) fn place_editor(&self, placement: crate::window::Placement) {
         if let Some(editor) = &self.editor {
             editor.place(placement);

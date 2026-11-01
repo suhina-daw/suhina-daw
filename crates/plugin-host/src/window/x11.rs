@@ -245,6 +245,22 @@ impl Drop for Window {
     }
 }
 
+/// Sets what window `id`'s title bar says.
+pub(crate) fn set_title(id: WindowId, title: &str) {
+    with_open(id, |open| {
+        let (window, name, utf8) = (open.window, open.atoms._NET_WM_NAME, open.atoms.UTF8_STRING);
+        let _ = open.connection.change_property8(
+            PropMode::REPLACE,
+            window,
+            AtomEnum::WM_NAME,
+            AtomEnum::STRING,
+            title.as_bytes(),
+        );
+        let _ = open.connection.change_property8(PropMode::REPLACE, window, name, utf8, title.as_bytes());
+        let _ = open.connection.flush();
+    });
+}
+
 /// Resizes window `id` so its inside is `size` (a plug-in asked for it).
 pub(crate) fn resize(id: WindowId, size: Size) {
     with_open(id, |open| {

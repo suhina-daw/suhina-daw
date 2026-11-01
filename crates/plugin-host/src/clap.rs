@@ -629,6 +629,12 @@ impl ClapPlugin {
     }
 
     /// Puts an embedded editor where the engine says.
+    pub(crate) fn set_editor_title(&self, title: &str) {
+        if let Some(editor) = &self.editor {
+            crate::window::set_title(editor.window.id(), title);
+        }
+    }
+
     pub(crate) fn place_editor(&self, placement: crate::window::Placement) {
         if let Some(editor) = &self.editor {
             crate::window::place(editor.window.id(), placement);

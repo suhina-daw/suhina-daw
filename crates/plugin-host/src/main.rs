@@ -333,6 +333,15 @@ impl Loaded {
         }
     }
 
+    /// Sets what the title bar of the editor's window says.
+    fn set_editor_title(&self, title: &str) {
+        match self {
+            Self::Clap(plugin) => plugin.set_editor_title(title),
+            Self::Vst3(plugin) => plugin.set_editor_title(title),
+            Self::Test { .. } => {}
+        }
+    }
+
     /// Puts an embedded editor where the engine says.
     fn place_editor(&self, placement: window::Placement) {
         match self {
@@ -886,6 +895,12 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
         Message::PlaceEditor { instance, placement } => {
             if let Some(loaded) = instances.get(&instance) {
                 loaded.place_editor(placement);
+            }
+            return None;
+        }
+        Message::EditorTitle { instance, title } => {
+            if let Some(loaded) = instances.get(&instance) {
+                loaded.set_editor_title(&title);
             }
             return None;
         }

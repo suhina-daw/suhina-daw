@@ -334,6 +334,9 @@ struct Instance {
     /// fit it (an ARA editor in the clip's place), and what the host was last asked.
     fit_wanted: Option<(u32, u32)>,
     fit_sent: Option<(u32, u32)>,
+    /// What the title bar of the editor's own window should say, and what the host was last told.
+    title_wanted: Option<String>,
+    title_sent: Option<String>,
     /// The editor is being closed to open again the other way (the embedding setting changed).
     reopen_editor: bool,
     /// An embedded editor cannot open on this system (macOS: a view of the host's process
@@ -415,6 +418,8 @@ impl Instance {
             editor_wanted: None,
             fit_wanted: None,
             fit_sent: None,
+            title_wanted: None,
+            title_sent: None,
             reopen_editor: false,
             force_floating: false,
             counts: None,
@@ -461,8 +466,20 @@ impl Instance {
         sent
     }
 
+    /// Tells the editor's window its title now, as [`Instance::send_placement`].
+    fn send_title(&mut self, title: &str) -> bool {
+        let Some(placer) = self.placer() else { return false };
+        let sent = placer.title(title);
+        if !sent {
+            self.placer = None;
+        }
+        sent
+    }
+
     /// The editor is closed (or gone with its process).
     fn editor_gone(&mut self) {
+        self.title_wanted = None;
+        self.title_sent = None;
         self.editor_open = false;
         self.editor_size = None;
         self.placement_wanted = None;
@@ -999,6 +1016,14 @@ impl Rack {
             }
         }
         for instance in self.instances.values_mut() {
+            if let Some(wanted) = instance.title_wanted.take() {
+                if instance.title_sent.as_ref() != Some(&wanted) && instance.send_title(&wanted) {
+                    instance.title_sent = Some(wanted.clone());
+                }
+                instance.title_wanted = Some(wanted);
+            }
+        }
+        for instance in self.instances.values_mut() {
             if let Some(fit) = instance.fit_wanted
                 && instance.fit_sent != Some(fit)
                 && instance.send_fit(fit)
@@ -1103,6 +1128,15 @@ impl Rack {
             self.sample_rate = sample_rate;
         }
         let devices = plugin_devices(project);
+        for device in &devices {
+            let Some(instance) = self.instances.get_mut(&device.key) else { continue };
+            if instance.editor_open && !instance.editor_embedded {
+                instance.title_wanted = Some(editor_title_of(project, device));
+            } else {
+                instance.title_wanted = None;
+                instance.title_sent = None;
+            }
+        }
         let mut changed = false;
         // Devices that are gone.
         let gone: Vec<u64> = self.instances.keys().copied().filter(|k| !devices.iter().any(|d| d.key == *k)).collect();
@@ -1964,6 +1998,33 @@ fn start(launch: Launch, state: Option<SavedState>) -> Result<(Plugin, PluginAud
         }
     }
     Ok((plugin, audio, refused))
+}
+
+/// The title of `device`'s editor window, from the project as it is now.
+fn editor_title_of(project: &Project, device: &suhina_engine::PluginDevice) -> String {
+    let track = match device.track {
+        Some(suhina_model::TrackId::MAIN) => "Main".to_string(),
+        Some(track) => project.shown_track_name(track),
+        None => String::new(),
+    };
+    let name = project
+        .channel(device.channel)
+        .and_then(|c| suhina_model::device_at(&c.devices, &device.path))
+        .map_or("", |d| d.name.as_str());
+    editor_title(&track, name)
+}
+
+/// What an editor's window says: the track as the views show it, and the plug-in's name unless
+/// the track's already says it, so "2 Serum 2" for Serum 2 on the track "# Serum 2" and
+/// "2 Bass – Serum 2" on "# Bass", which tells two plug-ins of one track apart.
+fn editor_title(track: &str, plugin: &str) -> String {
+    if track.is_empty() {
+        plugin.to_string()
+    } else if track.contains(plugin) {
+        track.to_string()
+    } else {
+        format!("{track} – {plugin}")
+    }
 }
 
 #[cfg(test)]
