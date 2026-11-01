@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The ARA document a plug-in that edits clips is loaded with (ADR 0028): the audio clips on
+//! The ARA document a plug-in that edits clips is loaded with (ADR 0033): the audio clips on
 //! its track's arrangement lanes as playback regions, each file they play as an audio source in
 //! shared memory.
 //!
@@ -114,7 +114,7 @@ impl Layout {
 
     /// For each region, in order, the modification its new one is a copy of, as it was in
     /// `before` (the layout the plug-in has): a clip that got its own content keeps its edits
-    /// (ADR 0028 decision 5). The same clip playing another content now (its notes copied on
+    /// (ADR 0033 decision 5). The same clip playing another content now (its notes copied on
     /// edit) copies what it played; a new clip copies the region of the same file whose span
     /// holds its own (a paste, a split's second part), the narrowest one. `None` for a
     /// modification the plug-in has already, or with nothing to copy.

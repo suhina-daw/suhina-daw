@@ -64,7 +64,7 @@ lane, the grid and zoom, and the `note.*` commands.
   edits clips (below).
 - **Built ([#594](https://github.com/suhina-daw/suhina-daw/issues/594)):** an **audio clip on a
   track whose plug-in edits clips** (ARA, such as a pitch editor; [ADR
-  0028](../decisions/0028-ara-hosting.md)) has that plug-in's editor where a MIDI clip has its piano
+  0028](../decisions/0033-ara-hosting.md)) has that plug-in's editor where a MIDI clip has its piano
   roll: the clip column on the left, the editor in the rest, embedded in the window whatever
   Settings › Plug-ins says for other editors (Windows, X11 on Linux; macOS opens it in a window of
   its own), asked to take the room there as the piano roll does (`fit_editor`; a plug-in that
@@ -76,7 +76,7 @@ lane, the grid and zoom, and the `note.*` commands.
   clip, and selecting another clip on the track shows that one. The editor opens on its own the
   first time a clip is shown; closed, the area offers **Open editor**, and it stays closed for that
   clip until the clip is selected again. The clip column has the **Clip / Devices** switch, which
-  works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The plug-in belongs to the clip (ADR 0028 › Amendment: the ARA plug-in belongs to the clip,
+  works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The plug-in belongs to the clip (ADR 0033 › Amendment: the ARA plug-in belongs to the clip,
   #990): the clip's right-click menu has **Edit with** and the plug-in's name for a clip that does
   not play through it yet, **Open in** for one that does, and **Stop editing with** to take it off
   (`clip.setAra`); **Alt+M** (`view.araEditor`) is Edit with or Open in for the selected clip: it

@@ -117,7 +117,7 @@ pub struct Launch {
     /// the instance a process of its own.
     pub group: Option<String>,
     /// The ARA document to bind the plug-in to as it loads, for an ARA plug-in on a track
-    /// (ADR 0028); `None` for every other plug-in.
+    /// (ADR 0033); `None` for every other plug-in.
     pub ara: Option<protocol::AraDocument>,
 }
 
@@ -834,7 +834,7 @@ impl Plugin {
         self.latency
     }
 
-    /// Whether the plug-in supports ARA (it can edit clips, ADR 0028), as the host found when
+    /// Whether the plug-in supports ARA (it can edit clips, ADR 0033), as the host found when
     /// it loaded it: true even when the scan did not see it, or it was loaded without a document.
     pub fn edits_clips(&self) -> bool {
         self.edits_clips
@@ -1172,7 +1172,7 @@ impl Plugin {
     }
 
     /// The edits of one modification (`content-<id>`) of a plug-in bound to an ARA document and
-    /// its source (the pool key), stored on their own to give another track's plug-in (ADR 0028
+    /// its source (the pool key), stored on their own to give another track's plug-in (ADR 0033
     /// step 6): the plug-in's document archive id and the bytes. Waits for the answer.
     pub fn ara_export(&mut self, modification: &str, source: &str) -> Result<(String, Vec<u8>), PluginError> {
         let instance = self.instance;

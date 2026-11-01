@@ -302,7 +302,7 @@ pub struct Device {
     /// The device's parameters over the arrangement, one lane per parameter (by the same id as
     /// in `params`), for plug-ins and built-in effects and instruments alike.
     pub automation: Vec<AutomationLane>,
-    /// The channel's ARA plug-in that edits its clips (ADR 0028 › Amendment: the ARA plug-in
+    /// The channel's ARA plug-in that edits its clips (ADR 0033 › Amendment: the ARA plug-in
     /// belongs to the clip, #990): always its first device, not shown in its device list.
     pub clip_host: bool,
     pub extensions: Extensions,
@@ -592,7 +592,7 @@ pub struct Clip {
     /// The clip's own colour; `None` shows its track's, so a new clip takes the track's colour
     /// and follows it. A clip moved to another track keeps the colour it had.
     pub color: Option<Rgb>,
-    /// The clip plays through its channel's ARA plug-in, the clip host (ADR 0028 › Amendment: the
+    /// The clip plays through its channel's ARA plug-in, the clip host (ADR 0033 › Amendment: the
     /// ARA plug-in belongs to the clip, #990): its raw audio is edited there, then its gain and
     /// fades follow. Arrangement audio clips only.
     pub ara: bool,

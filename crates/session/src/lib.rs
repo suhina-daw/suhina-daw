@@ -672,7 +672,7 @@ impl Session {
         self.plugins.place_editors(&keyed);
     }
 
-    /// Tells the plug-ins on `track` that edit clips (ARA, ADR 0028) which of its arrangement
+    /// Tells the plug-ins on `track` that edit clips (ARA, ADR 0033) which of its arrangement
     /// clips is selected, so their editors show it; `None` selects none. Never waits for a host.
     pub fn select_ara_clip(&mut self, track: suhina_model::TrackId, clip: Option<suhina_model::ClipId>) {
         let Some(channel) = self.project.track(track).and_then(|t| t.channel) else {
@@ -702,7 +702,7 @@ impl Session {
         self.ara_tracks().into_iter().find(|(t, _)| *t == track).map(|(_, device)| device)
     }
 
-    /// Whether clips' edits are still on their way to another track's plug-in (ADR 0028 step 6):
+    /// Whether clips' edits are still on their way to another track's plug-in (ADR 0033 step 6):
     /// a clip moved there with its edits kept, waiting for that plug-in to run with it.
     pub fn carrying_ara_edits(&self) -> bool {
         self.plugins.carrying()

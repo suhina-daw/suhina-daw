@@ -105,7 +105,7 @@ workspace forbids.
    turns it into the group: `file:<path>` (every plug-in in one file or shell together),
    `vendor:<name>` (the file's group when the vendor is unknown) or none. An ARA plug-in is
    never hosted alone: `instance` is refused for it and read as the file's group
-   ([ADR 0028](0028-ara-hosting.md) decision 2).
+   ([ADR 0033](0033-ara-hosting.md) decision 2).
    *Built (#108): one round trip for consecutive plug-ins of a process.* A block may name
    instances of the same process to run after the link's own (`Link::send_joint`, up to 63;
    the engine sends at most 16 plug-ins a block). The host keeps each instance's audio
@@ -140,7 +140,7 @@ workspace forbids.
      decision 2); the host reads them into a list made beforehand, so neither side allocates.
      Two more kinds carry the song: `Transport` (playing, position in samples) and `Tempo`, sent
      with every block to a plug-in that follows the song (one loaded with an ARA document,
-     [ADR 0028](0028-ara-hosting.md)), which a VST3 host puts in the block's process context.
+     [ADR 0033](0033-ara-hosting.md)), which a VST3 host puts in the block's process context.
      A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers,
      pitch bend and channel pressure (aftertouch, #812) as parameter changes at their frame
      through the plug-in's `IMidiMapping` (asked for the first MIDI channel only: some plug-ins
@@ -171,7 +171,7 @@ workspace forbids.
      the project's values in step with it — no undo step of its own, and a change since the
      last save.
    - **Where the shared memory lives, and who frees it.** The engine's side makes each region
-     (a link's, or an ARA audio source's, ADR 0028) and the host opens it by an address; the
+     (a link's, or an ARA audio source's, ADR 0033) and the host opens it by an address; the
      operating system frees it when both have let go of it, however they end, so a crash or a
      kill leaves nothing (`crates/ipc/src/shm.rs`, #805):
      - *Windows:* a mapping backed by the page file, named `Local\suhina-ipc-<pid>-<n>-<nanos>`
@@ -205,13 +205,13 @@ workspace forbids.
      state save and load, latency changes, editor open and close, ping. *Built:* protocol
      version 12 (`ara_playback` comes unasked when an ARA plug-in asks the transport to play,
      stop or move, and `ara_notes` when the notes it found in a region change,
-     [ADR 0028](0028-ara-hosting.md)); version 11 (the two below together with `transport_key`, which a host sends unasked when
+     [ADR 0033](0033-ara-hosting.md)); version 11 (the two below together with `transport_key`, which a host sends unasked when
      Space is pressed in a plug-in's window, so the engine starts or stops playback); version 10
      (`memory` comes unasked once a second: the host's process reports its resident memory, and
      `host_memory` reads the running hosts' reports for the control bar's total); version 9
      (`load` may carry an ARA document, `ara_update` changes it, `ara_select` tells its editor
      the selected clip and `fit_editor` asks an embedded editor to take the room it has,
-     [ADR 0028](0028-ara-hosting.md)); version 8 (`latency_changed` comes unasked when a running plug-in reports another
+     [ADR 0033](0033-ara-hosting.md)); version 8 (`latency_changed` comes unasked when a running plug-in reports another
      latency; see *Latency* below); version 7 (`open_editor` says whether the editor is `embedded` in the engine's window,
      `place_editor` puts it there and is not answered, and `editor_resized` comes unasked when
      a plug-in gives its editor a new size, decision 10); version 6: `open_editor` names the
@@ -471,7 +471,7 @@ workspace forbids.
    `suhina_plugins::scan` and `scan_pool` for CLAP and VST3:
    - A VST3 bundle with a `moduleinfo.json` (JSON5) is read from it without loading anything.
      Both ways note whether a plug-in supports ARA (an `ARA Main Factory Class` paired with it,
-     [ADR 0028](0028-ara-hosting.md)).
+     [ADR 0033](0033-ara-hosting.md)).
    - Everything else goes to a few long-lived `suhina-plugin-host --scan-worker` processes
      (half the processor's threads, at most 4), each reading file after file. A worker that
      crashes or hangs on a file is ended, the file is marked failed with the reason, and a new
@@ -613,7 +613,7 @@ workspace forbids.
   editors). Decided after native CLAP and VST3 work and the cost of the yabridge path has been
   measured; yabridge's code (GPL-3.0) can be read for how it solves the same problems.
 - macOS block sync and audio workgroup details, after the prototype.
-- Audio Units on macOS, LV2 on Linux. ARA (LOOP-15) is [ADR 0028](0028-ara-hosting.md) (proposed).
+- Audio Units on macOS, LV2 on Linux. ARA (LOOP-15) is [ADR 0033](0033-ara-hosting.md) (proposed).
 
 ## Consequences
 

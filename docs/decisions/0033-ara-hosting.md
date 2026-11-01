@@ -23,7 +23,7 @@ covers:
   - third_party/ara-api
 ---
 
-# 0028: ARA hosting
+# 0033: ARA hosting
 
 - **Date:** 2026-10-17
 - **Epic:** [#587](https://github.com/suhina-daw/suhina-daw/issues/587), under plug-in hosting

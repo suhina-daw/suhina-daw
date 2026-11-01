@@ -320,7 +320,7 @@ impl Loaded {
         }
     }
 
-    /// The edits of one modification and its source, stored on their own (ADR 0028 step 6).
+    /// The edits of one modification and its source, stored on their own (ADR 0033 step 6).
     fn ara_export(&self, modification: &str, source: &str) -> Result<(String, Vec<u8>), String> {
         match self {
             Self::Vst3(plugin) => plugin.ara_export(modification, source),
