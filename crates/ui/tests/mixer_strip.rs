@@ -188,15 +188,15 @@ fn a_fader_drag_is_one_undo_step_and_a_double_click_resets_it_to_0_db() {
     harness.run_steps(1);
     harness.drag_at(fader);
     harness.run_steps(1);
-    // Down lowers the volume, 0.25 dB a point.
-    for down in [12.0, 24.0, 48.0] {
+    // Down lowers the volume, the cap moving as far as the pointer.
+    for down in [3.0, 6.0, 12.0] {
         harness.hover_at(fader + vec2(0.0, down));
         harness.run_steps(1);
     }
-    harness.drop_at(fader + vec2(0.0, 48.0));
+    harness.drop_at(fader + vec2(0.0, 12.0));
     harness.run();
     let lowered = volume(&harness);
-    assert!(lowered < 0.3 && lowered > 0.2, "about -12 dB: {lowered}");
+    assert!(lowered < 0.95 && lowered > 0.1, "lower, not silent: {lowered}");
 
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();

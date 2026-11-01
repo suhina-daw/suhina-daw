@@ -95,7 +95,7 @@ const RECENT_IN_MENU: usize = 10;
 /// The projects a closing window is letting go of: their names and threads.
 type LettingGo = Vec<(String, std::thread::JoinHandle<()>)>;
 
-/// How long frames keep coming after a command, for the audio thread to take it at a large buffer.
+/// How long frames keep coming after a transport command, for the audio thread to take it at a large buffer.
 const ACTION_SETTLE: std::time::Duration = std::time::Duration::from_millis(300);
 /// How long a closing window waits for its projects' plug-ins to be let go of before it closes
 /// anyway ([`closing_dialog`]).
@@ -345,7 +345,7 @@ pub struct App {
     quit_now: bool,
     /// Projects whose state checks are still on control workers before the save prompt.
     quit_checks: Option<Vec<ProjectId>>,
-    /// Until when frames keep coming after the last command ran.
+    /// Until when frames keep coming after the last transport command ran.
     actions_settle: Option<std::time::Instant>,
     /// The window is closing: the projects being let go of and since when; it closes once they
     /// are, or after [`QUIT_WAIT`].
@@ -3449,7 +3449,8 @@ impl App {
         // A transport command changes no revision, and the audio thread takes it at its next block:
         // frames keep coming until then, so the play start marker it moved shows without waiting
         // for the pointer to move.
-        if ran > 0 {
+        let plays = self.session().and_then(Session::player).and_then(suhina_session::Player::output_info).is_some();
+        if plays && actions.iter().any(|action| action.id.starts_with("transport.")) {
             self.actions_settle = Some(std::time::Instant::now() + ACTION_SETTLE);
         }
         if self.actions_settle.is_some_and(|until| std::time::Instant::now() < until) {

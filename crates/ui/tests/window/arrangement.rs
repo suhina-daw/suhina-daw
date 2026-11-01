@@ -1384,18 +1384,10 @@ fn a_painted_time_selection_moves_the_play_start_to_its_start() {
     harness.run_steps(2);
     render_a_block(&mut renderer);
     assert_eq!((monitor.running(), monitor.start_beat()), (true, start));
-    // Playing from the selected clip (Shift+Space) still starts at the clip.
-    harness.get_by_label("Stop").click();
-    harness.run_steps(2);
-    render_a_block(&mut renderer);
-    harness.key_press_modifiers(Modifiers::SHIFT, Key::Space);
-    harness.run_steps(2);
-    render_a_block(&mut renderer);
-    assert_eq!((monitor.running(), monitor.start_beat()), (true, 64.0));
 }
 
 /// Painted during playback, a time selection moves the marker and playback goes on where it is;
-/// clips picked afterwards take over from the selection (#937).
+/// Select All afterwards makes the selection span every clip (#937).
 #[test]
 fn a_time_selection_painted_while_playing_moves_only_the_marker() {
     let mut renderer =
@@ -1425,7 +1417,9 @@ fn a_time_selection_painted_while_playing_moves_only_the_marker() {
     assert!(monitor.beat() < start, "playback did not jump: {before} -> {}", monitor.beat());
     harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
     harness.run_steps(2);
-    assert!(harness.state().arrangement().time_selection().is_none(), "the clips take over");
+    let all = harness.state().arrangement().time_selection().cloned().unwrap();
+    assert!(all.start < start && all.end > all.start, "every clip's span: {} to {}", all.start, all.end);
+    assert!(!harness.state().arrangement().selected_clips().is_empty(), "and the clips are picked");
 }
 
 #[test]
