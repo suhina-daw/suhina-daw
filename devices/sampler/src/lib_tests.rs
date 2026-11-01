@@ -130,6 +130,60 @@ fn source_bpm_sets_speed_independently_of_loop_length_and_trim() {
 }
 
 #[test]
+fn warp_tempo_keeps_the_speed_until_a_length_is_set() {
+    for seconds in [1, 4] {
+        let mut s = Sampler::new();
+        s.load_sample(48000, 1, vec![0.2f32; seconds * 48000].into());
+        // The length is set first because setting one clears the tempo; at 0.25 beats it alone
+        // would play these several times too fast.
+        for (id, value) in [("warp_beats", 0.25), ("warp_tempo", 120.), ("warp", 1.), ("attack", 0.), ("sustain", 1.)] {
+            set(&mut s, id, value);
+        }
+        note(&mut s, 60);
+        render(&mut s, 4800, 64);
+        assert!((s.sample_position().unwrap() - 0.1 / seconds as f32).abs() < 1e-6, "{seconds} s");
+        set(&mut s, "start", 0.25);
+        set(&mut s, "end", 0.75);
+        note(&mut s, 60);
+        let before = s.sample_positions().into_iter().flatten().last().unwrap();
+        s.process(&ProcessContext { tempo: 60., ..ProcessContext::default() }, &mut vec![0.; 9600]);
+        let after = s.sample_positions().into_iter().flatten().last().unwrap();
+        assert!((after - before - 0.05 / seconds as f32).abs() < 1e-6, "a trim must not alter the speed");
+    }
+    let mut s = Sampler::new();
+    s.load_sample(48000, 1, vec![0.2f32; 4 * 48000].into());
+    for (id, value) in [("warp_tempo", 120.), ("warp", 1.), ("attack", 0.), ("sustain", 1.), ("warp_beats", 2.)] {
+        set(&mut s, id, value);
+    }
+    note(&mut s, 60);
+    render(&mut s, 4800, 64);
+    assert!(
+        (s.sample_position().unwrap() - 0.1).abs() < 1e-6,
+        "a length set afterwards takes over: four times as fast"
+    );
+}
+
+#[test]
+fn the_lowest_gain_is_silence() {
+    let mut s = loaded();
+    set(&mut s, "gain", -60.);
+    s.prepare(48000.).unwrap();
+    set(&mut s, "attack", 0.);
+    note(&mut s, 60);
+    assert!(render(&mut s, 4800, 64).iter().all(|sample| *sample == 0.));
+    // Turned down during a note, it fades to nothing.
+    let mut s = loaded();
+    s.prepare(48000.).unwrap();
+    set(&mut s, "attack", 0.);
+    set(&mut s, "sustain", 1.);
+    note(&mut s, 60);
+    set(&mut s, "gain", -60.);
+    let out = render(&mut s, 24000, 64);
+    assert!(out[..960].iter().any(|sample| *sample != 0.));
+    assert!(out[12000 * 2..].iter().all(|sample| *sample == 0.));
+}
+
+#[test]
 fn changing_warp_during_a_held_note_keeps_its_head_and_audio() {
     let mut s = loaded();
     for (id, value) in [("playback", 2.), ("warp", 1.), ("attack", 0.), ("sustain", 1.)] {
@@ -302,6 +356,7 @@ fn compact_panel_keeps_controls_reachable_on_its_pages() {
                     | "grain_env"
                     | "envelope_tab"
                     | "warp_beats"
+                    | "warp_tempo"
                     | "crossfade"
                     | "source_numerator"
                     | "source_denominator"

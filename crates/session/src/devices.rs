@@ -96,7 +96,10 @@ pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value
             param.value = if param.id == "first_beat" { 0. } else { 1. };
         }
     }
-    for (id, value) in [("warp_beats", beats), ("source_bpm", bpm)] {
+    // With no tempo found, Warp keeps the original speed at the tempo of this moment, whatever
+    // the source's length or trim.
+    let warp_tempo = if bpm > 0. { 0. } else { fallback.clamp(1., 999.) };
+    for (id, value) in [("warp_beats", beats), ("source_bpm", bpm), ("warp_tempo", warp_tempo)] {
         if let Some(p) = device.params.iter_mut().find(|p| p.id == id) {
             p.value = value;
         } else {
@@ -157,6 +160,7 @@ pub(crate) fn edit_sample_slice(session: &mut Session, params: &Value) -> Result
     }
     let value = |id: &str, default| device.params.iter().find(|p| p.id == id).map_or(default, |p| p.value);
     let method = value("slice_by", 0.) as u8;
+    let trim = (value("start", 0.), value("end", 1.));
     let existing = match device.sample_edit_data() {
         Some(bytes) => SampleEdits::decode(bytes).ok_or("unsupported or malformed source corrections")?,
         None => {
@@ -199,7 +203,12 @@ pub(crate) fn edit_sample_slice(session: &mut Session, params: &Value) -> Result
             pins.retain(|point| *point != previous);
         }
         if matches!(operation, "add" | "move") {
-            pins.push(position("point")?);
+            let point = position("point")?;
+            // Outside the trim it would not play, and a move would lose the boundary it replaces.
+            if point <= trim.0 || point >= trim.1 {
+                return Err("the boundary must be between the sample's Start and End".into());
+            }
+            pins.push(point);
         }
     }
     let edits = SampleEdits::new(pins, suppressed)?;
@@ -1137,6 +1146,13 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
         && let Some(index) = suhina_device_sdk::sampler::INFO.param_index("source_bpm")
     {
         edits.push((index, "source_bpm".into(), value));
+    }
+    if param == "warp_beats"
+        && matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler")
+        && device.params.iter().any(|p| p.id == "warp_tempo")
+        && let Some(index) = suhina_device_sdk::sampler::INFO.param_index("warp_tempo")
+    {
+        edits.push((index, "warp_tempo".into(), 0.));
     }
     let mut messages = Vec::new();
     let mut off = false;

@@ -145,6 +145,9 @@ const HOP: f64 = 0.005;
 const LOOKBACK: f64 = 0.05;
 /// The shortest time between two hits, and from a hit to the source region's edges.
 const MIN_GAP: f64 = 0.05;
+/// A hit's start is where the rises before it fall under this share of its own: smaller ones
+/// belong to something slower under it, such as a fade.
+const ONSET_SHARE: f64 = 0.1;
 /// The bands a source's hits are looked for in, low and high edge in Hz (0: none).
 const BANDS: [(f64, f64); 4] = [(0., 200.), (200., 1200.), (1200., 5000.), (5000., 0.)];
 
@@ -312,9 +315,10 @@ impl SliceAnalysis {
             if rise <= 0. || !strongest {
                 continue;
             }
-            // The hit starts where the level began to rise, one step before it.
+            // The hit starts where the level began to rise, one step before it, at most the gap
+            // back: two hits over one long rise keep a boundary each.
             let mut first = n;
-            while first > 0 && rises.get(first - 1).is_some_and(|r| *r > 0.) {
+            while first > 0 && n - first < gap && rises.get(first - 1).is_some_and(|r| *r >= rise * ONSET_SHARE) {
                 first -= 1;
             }
             let at = first.saturating_sub(1).saturating_mul(hop) as f64 / frames as f64;

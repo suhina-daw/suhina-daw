@@ -1236,6 +1236,33 @@ fn automatic_boundary_drag_dispatches_one_correction_on_release() {
 }
 
 #[test]
+fn boundary_dragged_past_the_end_stays_inside_the_trim() {
+    let panel = suhina_device_registry::panel("sampler").unwrap();
+    let canvas = panel.ui.clone().unwrap();
+    let parameters: Vec<_> = panel
+        .parameters
+        .iter()
+        .map(|parameter| {
+            let value = match parameter.id.as_str() {
+                "mode" | "slice_by" => 2.,
+                "slice_regions" => 4.,
+                "end" => 0.6,
+                _ => parameter.default,
+            };
+            GraphParameter::new(parameter, value)
+        })
+        .collect();
+    let field = Rect::from_min_max(Pos2::new(68., 4.), Pos2::new(894., 92.));
+    let from = Pos2::new(SampleView::default().x(0.25, field), 80.);
+    let to = Pos2::new(SampleView::default().x(0.9, field), 80.);
+    let actions = pointer_gesture(&canvas, &parameters, from, Some(to));
+    assert_eq!(actions.len(), 1, "{actions:?}");
+    assert_eq!(actions[0].params["operation"], "move");
+    assert!((actions[0].params["point"].as_f64().unwrap() - 0.6).abs() < 1e-4, "{:?}", actions[0].params);
+    assert!(actions[0].params["point"].as_f64().unwrap() < 0.6);
+}
+
+#[test]
 fn stereo_peaks_preserve_separate_channel_levels() {
     let source = suhina_engine::AudioData { sample_rate: 48000, channels: 2, samples: [0.1, 0.8].repeat(16) };
     assert!(sample_channel_peaks(&source, (0, 16), Some(0)).iter().all(|peak| *peak == 0.1));

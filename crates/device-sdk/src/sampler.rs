@@ -122,8 +122,14 @@ pub const PARAMS: &[ParamInfo] = &[
     ParamInfo::choice("slice_overlap", "Slice voices", &["Mono", "Poly", "Through"], 1),
     ParamInfo::integer("source_numerator", "Beats per bar", (1, 16), 4, Unit::None),
     ParamInfo::choice("source_denominator", "Beat unit", &["2", "4", "8", "16"], 1),
+    continuous("warp_tempo", "Warp tempo", 0., 999., 0., Unit::None),
 ];
 use crate::modulation::lfo_hz;
+
+/// The gain as a factor: the lowest setting is silence.
+fn gain_factor(decibels: f64) -> f64 {
+    if decibels <= -60. { 0. } else { 10f64.powf(decibels / 20.) }
+}
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "sampler", name: "Sampler", role: Role::Instrument, params: PARAMS };
 
@@ -349,7 +355,7 @@ impl Device for Sampler {
         self.phase = 0.;
         self.lfo_cycle = 0;
         self.bend = 0.;
-        self.gain = 10f64.powf(self.values[18] / 20.);
+        self.gain = gain_factor(self.values[18]);
         self.grain_gain = 1. / (self.values[23] * self.values[22] / 1000. * 0.5).clamp(1., 16.);
         self.pan = self.values[19];
     }
@@ -358,6 +364,7 @@ impl Device for Sampler {
             && self.values.get(index).is_some_and(|old| *old != value)
         {
             self.values[83] = 0.;
+            self.values[93] = 0.;
         }
         let warp_enabled = self.values[77] > 0.;
         if let Some((p, v)) = PARAMS.get(index).zip(self.values.get_mut(index)) {
@@ -707,7 +714,7 @@ impl Sampler {
             }
         }
         let target_grain_gain = 1. / (p[23] * p[22] / 1000. * 0.5).min(grain_limit as f64 * 0.5).max(1.);
-        let target_gain = 10f64.powf(p[18] / 20.);
+        let target_gain = gain_factor(p[18]);
         self.block_grain_limit = grain_limit;
         self.block_grain_gain = target_grain_gain;
         self.block_gain = target_gain;
@@ -738,6 +745,10 @@ impl Sampler {
             let lfo = modulation * p[38];
             let volume = 1. - p[54] * (modulation + 1.) * 0.5;
             self.gain += (target_gain - self.gain) * (1. / (0.005 * self.rate));
+            // A fade to silence ends there, never in ever smaller numbers.
+            if target_gain == 0. && self.gain < 1e-9 {
+                self.gain = 0.;
+            }
             self.grain_gain += (target_grain_gain - self.grain_gain) * (1. / (0.005 * self.rate));
             self.pan += (p[19] - self.pan) * (1. / (0.005 * self.rate));
             for (index, v) in self.voices.iter_mut().enumerate() {
@@ -788,6 +799,8 @@ impl Sampler {
                     }
                     let speed = if p[83] > 0. {
                         self.tempo / p[83]
+                    } else if p[93] > 0. {
+                        self.tempo / p[93]
                     } else {
                         (p[2] - p[1]) * total / self.source_rate * self.tempo / (60. * p[79])
                     }

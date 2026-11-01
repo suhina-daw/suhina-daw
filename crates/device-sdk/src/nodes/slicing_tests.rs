@@ -97,6 +97,29 @@ fn hits_in_a_loop_are_found_where_they_start() {
 }
 
 #[test]
+fn hits_over_a_slow_fade_start_at_the_hit() {
+    // A tone fading in rises in every reading, so the level never stops rising under the clicks.
+    let mut buffer = vec![0f32; (RATE * 1.2) as usize];
+    for (i, sample) in buffer.iter_mut().enumerate() {
+        let t = i as f64 / RATE;
+        let fade = 10f64.powf((-40. + 40. * t / 1.2) / 20.) * 0.5;
+        let mut x = fade * (t * 100. * std::f64::consts::TAU).sin();
+        for hit in [0.4, 0.8] {
+            if (0. ..0.003).contains(&(t - hit)) {
+                let sign = if ((t - hit) * 16000.) as usize % 2 == 0 { 1. } else { -1. };
+                x += 0.06 * (-(t - hit) / 0.0008).exp() * sign;
+            }
+        }
+        *sample = x as f32;
+    }
+    let found = transients(&buffer, 0.5);
+    assert_eq!(found.len(), 2, "{found:?}");
+    for (point, hit) in found.iter().zip([0.4, 0.8]) {
+        assert!((point * 1.2 - hit).abs() < 0.01, "{point} for {hit}");
+    }
+}
+
+#[test]
 fn a_quiet_hit_needs_more_sensitivity() {
     let mut buffer = vec![0f32; (RATE * 1.) as usize];
     tone(&mut buffer, 0., 200., 0.3);

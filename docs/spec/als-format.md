@@ -412,7 +412,7 @@ in `<path>/Manual@Value`. A Sampler with more than one zone stays a placeholder 
 | `Player/LoopModulators/LoopOn`, `LoopLength` | `false`, `1` | `loop_start` = `end` less `LoopLength` of the played length, `loop_end` = `end` |
 | `Player/Reverse` | true/false | `reverse` |
 | `Pitch/TransposeKey`, `TransposeFine` | semitones, cents | `pitch`, `cents` |
-| `VolumeAndPan/Volume` | dB: `-12` | `gain` (with the zone's volume), -60 … 12 |
+| `VolumeAndPan/Volume` | dB: `-12` | `gain` (with the zone's volume), -60 … 12; a zone at zero is -60, the sampler's silence |
 | `VolumeAndPan/Panorama` | -1 … 1 | `pan` (with the zone's) |
 | `VolumeAndPan/VolumeVelScale` | `0.35` on the Simpler, `0` on the Sampler | `velocity` |
 | `VolumeAndPan/Envelope/AttackTime`, `DecayTime`, `ReleaseTime`; `SustainLevel` | ms: `0.1`, `600`, `50`; `1` | `attack`, `decay`, `release` in seconds; `sustain` |

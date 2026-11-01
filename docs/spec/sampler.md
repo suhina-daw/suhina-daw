@@ -194,7 +194,7 @@ Sample/Slice/Grain buttons and their glyphs sit at the left. Editor tabs sit at 
 The waveform and recording controls remain visible when the editor is open.
 Velocity-to-volume is the Vel knob; the filter envelope's amount and its velocity and key
 amounts are under More. Tuning and note range are under More; gain and pan are knobs on the
-normal page.
+normal page. Gain's lowest setting, -60 dB, is silence.
 Glide is under More and affects Mono playback.
 Playback uses a Gate/One shot/Loop menu plus Reverse and Retrigger. Retrigger is
 on by default: a reused voice starts from the sample region's beginning. With it
@@ -313,7 +313,9 @@ a boundary to delete it, or drag a boundary to move it. The drag previews locall
 and dispatches one `device.editSampleSlice` command on release. The context menu
 also offers numerical editing, deletion and Regenerate slices. Regeneration clears
 pins and suppressions for the current method in one undo step. Pins survive method
-changes, sensitivity changes and trimming. Transient suppressions identify source
+changes, sensitivity changes and trimming. A boundary is added or moved only between Start
+and End: a drag stops there, the numeric field's range ends there, and the command refuses a
+point outside them. Transient suppressions identify source
 frames; Beat and Region suppressions identify their method and grid ordinal.
 Clicking a slice selects it and auditions it through the shared preview-note commands; its
 number and MIDI note are in the context menu; note release is scheduled by the host even when
@@ -361,9 +363,10 @@ pages; More replaces this source row.
 
 `warp` defaults off and `warp_mode` defaults to Rhythmic. Source BPM is the
 original tempo of the file. Loading a source initializes it from metadata or its
-filename, then the existing loop-tempo detector. If none is available, Source BPM remains zero; the legacy warp length is initialized
-from the current tempo so enabling Warp retains the original speed without asserting
-a detected musical grid. Source replacement recalculates its tempo; source and tempo undo together
+filename, then the existing loop-tempo detector. If none is available, Source BPM remains zero and the hidden `warp_tempo` parameter holds
+the current tempo, so enabling Warp retains the original speed, whatever the source's length
+or trim, without asserting a detected musical grid. Setting `warp_beats` clears `warp_tempo`.
+The legacy warp length is still initialized on loading. Source replacement recalculates its tempo; source and tempo undo together
 and persist through save/reopen. With Warp on, speed is project BPM / Source BPM.
 For example, a 120 BPM loop plays at its original speed in a 120 BPM project and
 half speed in a 60 BPM project, regardless of its length or Start/End trimming.

@@ -51,6 +51,21 @@ fn slice_corrections_persist_and_regenerate_in_one_undo_step() {
     assert!(edits.pins().is_empty() && edits.suppressed().is_empty());
     session.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(*session.project(), changed);
+    // A boundary goes between Start and End, or nowhere: a move out would lose the one it replaces.
+    session.execute("device.setParam", &json!({"track":1,"device":0,"param":"start","value":0.5})).unwrap();
+    let trimmed = session.project().clone();
+    for operation in [
+        json!({"operation":"add","point":0.4}),
+        json!({"operation":"add","point":0.5}),
+        json!({"operation":"move","previous":0.3,"point":0.4}),
+    ] {
+        let mut params = operation;
+        params["track"] = json!(1);
+        params["device"] = json!(0);
+        assert!(session.execute("device.editSampleSlice", &params).is_err());
+        assert_eq!(*session.project(), trimmed);
+    }
+    session.execute("device.editSampleSlice", &json!({"track":1,"device":0,"operation":"add","point":0.6})).unwrap();
 }
 
 #[test]
@@ -89,6 +104,7 @@ fn loading_samples_initializes_original_tempo_instead_of_forcing_four_beats() {
         let loaded = session.execute("device.loadSample", &json!({"track":1,"device":0,"path":file})).unwrap();
         assert_eq!(loaded["source_bpm"], bpm);
         assert_eq!(param(&session, "source_bpm"), bpm);
+        assert_eq!(param(&session, "warp_tempo"), if bpm > 0. { 0. } else { 120. });
         assert!(
             (param(&session, "warp_beats") - seconds as f64 * if bpm > 0. { bpm } else { 120. } / 60.).abs() < 1e-6
         );

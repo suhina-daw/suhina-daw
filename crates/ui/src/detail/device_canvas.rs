@@ -299,6 +299,9 @@ fn sample_waveform(
     let edit_loop = value("mode") == 0. && value("playback") == 2.;
     let active_start = f64::from(value(if edit_loop { "loop_start" } else { "start" }));
     let active_end = f64::from(value(if edit_loop { "loop_end" } else { "end" }));
+    // Where a boundary can be moved to, kept off the edges: the values here are rounded to f32.
+    let boundary_low = active_start + 1e-6;
+    let boundary_high = (active_end - 1e-6).max(boundary_low);
     let source_id = sample_source_id(track, device);
     let view_id = source_id.with("view");
     let old = ui.ctx().data(|d| d.get_temp::<(Option<Arc<suhina_engine::AudioData>>, SampleView)>(view_id));
@@ -495,7 +498,7 @@ fn sample_waveform(
                     .map_or(selection_start, |(_, value)| value);
                 ui.horizontal(|ui| {
                     ui.label("Boundary (source fraction)");
-                    ui.add(egui::DragValue::new(&mut position).speed(0.0001).range(0.000000001..=0.999999999));
+                    ui.add(egui::DragValue::new(&mut position).speed(0.0001).range(boundary_low..=boundary_high));
                 });
                 ui.ctx().data_mut(|d| d.insert_temp(numeric_id, (selection_start, position)));
                 if ui.button("Apply boundary").clicked() {
@@ -643,6 +646,8 @@ fn sample_waveform(
             let mut points = state.points.to_vec();
             if let Some(point) = points.get_mut(index) {
                 *point = snap(state.points[index] + f64::from(delta.x / field.width()) * state.view.span)
+                    .max(boundary_low)
+                    .min(boundary_high)
                     .clamp(f64::EPSILON, 1. - f64::EPSILON);
                 let destination = *point;
                 points.sort_unstable_by(f64::total_cmp);
