@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-10-30
+last_verified: 2026-11-01
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/gradient_editor.rs

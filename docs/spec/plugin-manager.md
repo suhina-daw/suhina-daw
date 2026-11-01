@@ -3,7 +3,7 @@ description: The plug-in manager and the plug-in folders: every plug-in and ever
 read_when: plug-in manager, manage plug-ins, switch a plug-in off, disable plug-in, blocklist, plug-in folders, VST2 folder, folder format, scan again, failed plug-ins, incompatible architecture, Intel plug-in on Apple silicon, plugin.setEnabled, plugin.setFolderEnabled, plugin.scanFile
 type: spec
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-30
 covers:
   - crates/ui/src/settings/plugin_manager.rs
   - crates/ui/src/settings/settings_view.rs
