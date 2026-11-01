@@ -1101,19 +1101,29 @@ impl Plugin {
     /// [`Plugin::open_editor`] in a window that `owner` (the engine's window: a Win32 `HWND`,
     /// an X11 window id) owns: it floats above it and goes with it.
     pub fn open_editor_owned(&mut self, owner: Option<u64>) -> Result<(u32, u32), PluginError> {
-        self.open_editor_in(owner, false)
+        self.open_editor_in(owner, false, None)
+    }
+
+    /// [`Plugin::open_editor_owned`], its window saying `title` from the moment it opens.
+    pub fn open_editor_titled(&mut self, owner: Option<u64>, title: &str) -> Result<(u32, u32), PluginError> {
+        self.open_editor_in(owner, false, Some(title.to_string()))
     }
 
     /// [`Plugin::open_editor`] as a child inside the engine's window `owner` (a Win32 `HWND`,
     /// an X11 window id), hidden until [`Plugin::place_editor`] puts it somewhere in it.
     pub fn open_editor_embedded(&mut self, owner: u64) -> Result<(u32, u32), PluginError> {
-        self.open_editor_in(Some(owner), true)
+        self.open_editor_in(Some(owner), true, None)
     }
 
-    fn open_editor_in(&mut self, owner: Option<u64>, embedded: bool) -> Result<(u32, u32), PluginError> {
+    fn open_editor_in(
+        &mut self,
+        owner: Option<u64>,
+        embedded: bool,
+        title: Option<String>,
+    ) -> Result<(u32, u32), PluginError> {
         let instance = self.instance;
         let reply = self.request(
-            &Message::OpenEditor { instance, owner, embedded },
+            &Message::OpenEditor { instance, owner, embedded, title },
             "open_editor",
             |m| matches!(m, Message::EditorOpened { instance: i, .. } if *i == instance),
         )?;

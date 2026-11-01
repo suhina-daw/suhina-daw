@@ -591,7 +591,11 @@ impl ClapPlugin {
     }
 
     /// Opens the plug-in's editor as `mode` says (or returns the size of the one open).
-    pub(crate) fn open_editor(&mut self, mode: crate::window::Mode) -> Result<crate::window::Size, String> {
+    pub(crate) fn open_editor(
+        &mut self,
+        mode: crate::window::Mode,
+        title: Option<&str>,
+    ) -> Result<crate::window::Size, String> {
         if let Some(editor) = &self.editor {
             return Ok(editor.size);
         }
@@ -610,7 +614,7 @@ impl ClapPlugin {
             .map(|s| crate::window::Size { width: s.width.clamp(1, 16_384), height: s.height.clamp(1, 16_384) })
             .unwrap_or(crate::window::Size { width: 800, height: 600 });
         let resizable = gui.can_resize(&handle) && mode == crate::window::Mode::Floating;
-        let window = match crate::window::Window::open_as(mode, &self.name, size, resizable) {
+        let window = match crate::window::Window::open_as(mode, title.unwrap_or(&self.name), size, resizable) {
             Ok(window) => window,
             Err(e) => {
                 gui.destroy(&handle);

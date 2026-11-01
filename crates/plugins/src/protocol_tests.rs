@@ -132,8 +132,9 @@ fn every_message_round_trips() {
         Message::Param { instance: 5, param: gain() },
         Message::ParamChanged { instance: 5, id: 7, value: 0.125 },
         Message::ParamChanged { instance: u32::MAX, id: u32::MAX, value: f64::MAX },
-        Message::OpenEditor { instance: 6, owner: None, embedded: false },
-        Message::OpenEditor { instance: 6, owner: Some(0x0012_0F3A), embedded: true },
+        Message::OpenEditor { instance: 6, owner: None, embedded: false, title: None },
+        Message::OpenEditor { instance: 6, owner: Some(0x0012_0F3A), embedded: true, title: None },
+        Message::OpenEditor { instance: 6, owner: Some(1), embedded: false, title: Some("2 Serum 2".into()) },
         Message::EditorOpened { instance: 6, width: 800, height: 600 },
         Message::PlaceEditor {
             instance: 6,

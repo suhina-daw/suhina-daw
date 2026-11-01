@@ -439,6 +439,8 @@ pub enum Message {
         instance: u32,
         owner: Option<u64>,
         embedded: bool,
+        /// What the title bar of its own window says from the start; the plug-in's name without.
+        title: Option<String>,
     },
     EditorOpened {
         instance: u32,
@@ -666,8 +668,8 @@ impl Message {
             Self::ParamChanged { instance, id, value } => {
                 json!({ "op": "param_changed", "instance": instance, "id": id, "value": value })
             }
-            Self::OpenEditor { instance, owner, embedded } => {
-                json!({ "op": "open_editor", "instance": instance, "owner": owner, "embedded": embedded })
+            Self::OpenEditor { instance, owner, embedded, title } => {
+                json!({ "op": "open_editor", "instance": instance, "owner": owner, "embedded": embedded, "title": title })
             }
             Self::EditorOpened { instance, width, height } => {
                 json!({ "op": "editor_opened", "instance": instance, "width": width, "height": height })
@@ -827,6 +829,10 @@ impl Message {
                     Some(v) => Some(v.as_u64()?),
                 },
                 embedded: value.get("embedded")?.as_bool()?,
+                title: match value.get("title") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(v.as_str()?.to_string()),
+                },
             },
             "editor_opened" => {
                 Self::EditorOpened { instance: instance()?, width: small("width")?, height: small("height")? }

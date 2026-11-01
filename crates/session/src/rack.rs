@@ -334,6 +334,8 @@ struct Instance {
     /// fit it (an ARA editor in the clip's place), and what the host was last asked.
     fit_wanted: Option<(u32, u32)>,
     fit_sent: Option<(u32, u32)>,
+    /// The title the editor's own window opens with, the last one known.
+    editor_title: Option<String>,
     /// What the title bar of the editor's own window should say, and what the host was last told.
     title_wanted: Option<String>,
     title_sent: Option<String>,
@@ -418,6 +420,7 @@ impl Instance {
             editor_wanted: None,
             fit_wanted: None,
             fit_sent: None,
+            editor_title: None,
             title_wanted: None,
             title_sent: None,
             reopen_editor: false,
@@ -1131,7 +1134,9 @@ impl Rack {
         for device in &devices {
             let Some(instance) = self.instances.get_mut(&device.key) else { continue };
             if instance.editor_open && !instance.editor_embedded {
-                instance.title_wanted = Some(editor_title_of(project, device));
+                let title = editor_title_of(project, device);
+                instance.editor_title = Some(title.clone());
+                instance.title_wanted = Some(title);
             } else {
                 instance.title_wanted = None;
                 instance.title_sent = None;
@@ -1783,6 +1788,13 @@ impl Rack {
     /// at once: the host making a window that the app's window owns waits for the app's window
     /// thread, which must not be waiting for the host meanwhile. Embedded (the setting), it
     /// opens hidden inside that window until [`Rack::place_editors`] puts it somewhere.
+    /// What the editor of the plug-in device `key` is called when it opens.
+    pub(crate) fn name_editor(&mut self, key: u64, title: String) {
+        if let Some(instance) = self.instances.get_mut(&key) {
+            instance.editor_title = Some(title);
+        }
+    }
+
     pub fn open_editor(&mut self, key: u64) -> Result<Option<(u32, u32)>, CommandError> {
         if self.lent_out(key, true) {
             return Ok(None);
@@ -1796,11 +1808,12 @@ impl Rack {
                     let wanted = if i.ara_sources.is_empty() { self.embed } else { !i.ara_float };
                     wanted && !i.force_floating
                 });
+                let title = self.instances.get(&key).and_then(|i| i.editor_title.clone());
                 self.lend(key, move |control| {
-                    let opened = if embed {
-                        control.open_editor_embedded(owner)
-                    } else {
-                        control.open_editor_owned(Some(owner))
+                    let opened = match &title {
+                        _ if embed => control.open_editor_embedded(owner),
+                        Some(title) => control.open_editor_titled(Some(owner), title),
+                        None => control.open_editor_owned(Some(owner)),
                     };
                     Done::Opened(opened.map_err(|e| e.to_string()))
                 })?;
@@ -2001,7 +2014,7 @@ fn start(launch: Launch, state: Option<SavedState>) -> Result<(Plugin, PluginAud
 }
 
 /// The title of `device`'s editor window, from the project as it is now.
-fn editor_title_of(project: &Project, device: &suhina_engine::PluginDevice) -> String {
+pub(crate) fn editor_title_of(project: &Project, device: &suhina_engine::PluginDevice) -> String {
     let track = match device.track {
         Some(suhina_model::TrackId::MAIN) => "Main".to_string(),
         Some(track) => project.shown_track_name(track),

@@ -1024,12 +1024,16 @@ impl Vst3Plugin {
     }
 
     /// Opens the plug-in's editor as `mode` says (or returns the size of the one open).
-    pub(crate) fn open_editor(&mut self, mode: crate::window::Mode) -> Result<crate::window::Size, String> {
+    pub(crate) fn open_editor(
+        &mut self,
+        mode: crate::window::Mode,
+        title: Option<&str>,
+    ) -> Result<crate::window::Size, String> {
         if let Some(editor) = &self.editor {
             return Ok(editor.size());
         }
         let controller = self.controller.as_ref().ok_or("the plug-in has no editor")?;
-        let editor = crate::vst3_editor::Editor::open(controller, mode, &self.name)?;
+        let editor = crate::vst3_editor::Editor::open(controller, mode, title.unwrap_or(&self.name))?;
         let size = editor.size();
         self.editor = Some(editor);
         Ok(size)
