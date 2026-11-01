@@ -4,7 +4,7 @@ read_when: plug-in, plugin host, CLAP, VST3, VST2, sandbox, out of process, IPC,
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-31
+last_verified: 2026-11-02
 covers:
   - crates/ipc/**
   - crates/plugins/**

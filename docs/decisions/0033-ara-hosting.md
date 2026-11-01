@@ -4,7 +4,7 @@ read_when: ARA, ARA2, Melodyne, pitch editor, audio random access, playback regi
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-10-31
+last_verified: 2026-11-02
 covers:
   - crates/model/src/overlap.rs
   - crates/session/src/commands.rs

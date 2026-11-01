@@ -3,7 +3,7 @@ description: How recording works: MIDI and audio takes into a clip slot or the a
 read_when: recording, record, take, record button, clip.record, transport.record, count-in, transport.setCountIn, record.state, MIDI recording, audio recording, Recorded folder, latency compensation of a take, overdub, loopback
 type: spec
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/record_tests.rs

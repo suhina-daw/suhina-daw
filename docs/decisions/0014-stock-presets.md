@@ -4,7 +4,7 @@ read_when: preset, stock preset, factory preset, preset contribution, CC0, prese
 type: decision
 status: accepted
 built: partly
-last_verified: 2026-10-16
+last_verified: 2026-11-02
 covers:
   - presets/**
   - .github/PULL_REQUEST_TEMPLATE/preset.md

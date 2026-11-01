@@ -3,7 +3,7 @@ description: How much of Ableton Live 12's documented functionality Suhina has t
 read_when: Asking where the project stands against Live, planning parity work, or deciding which milestone closes which gap.
 type: plan
 status: draft
-last_verified: 2026-10-19
+last_verified: 2026-11-01
 covers:
   - scripts/parity/**
   - .github/workflows/parity-notice.yml

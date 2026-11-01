@@ -3,7 +3,7 @@ description: How the claim bot moves an issue's card on the project board, holds
 read_when: claim, /claim, /claim @user, claim for someone else, on behalf, /unclaim, /hold, /ready, claim bot, project board, PROJECT_TOKEN, status automation, good first issue, lapsed claim, duplicate pull request, feature not agreed, project sync, board out of date, cards missing from the board, Touches, overlapping work, overlap, blocked by, blocked, dependency, Depends on, stacked pull requests, merge order, trusted contributor, TRUSTED_CONTRIBUTORS, maintainer, who may claim, claim limit, too many claims
 type: howto
 status: current
-last_verified: 2026-10-31
+last_verified: 2026-11-01
 covers:
   - .github/workflows/trusted-requests.yml
   - scripts/test_trusted_requests.py

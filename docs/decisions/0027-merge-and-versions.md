@@ -4,7 +4,7 @@ read_when: merge, three-way merge, conflict, common ancestor, version, version b
 type: decision
 status: proposed
 built: no
-last_verified: 2026-10-15
+last_verified: 2026-11-02
 covers:
   - crates/project-file/src/lib.rs
   - crates/session/src/commands.rs

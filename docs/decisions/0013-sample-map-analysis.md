@@ -4,7 +4,7 @@ read_when: sample map, soundmap crate, audio features, MFCC, spectral centroid, 
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-21
+last_verified: 2026-11-02
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs

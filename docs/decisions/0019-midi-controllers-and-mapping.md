@@ -4,7 +4,7 @@ read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-10-28
+last_verified: 2026-11-02
 ---
 
 # 0019: MIDI controllers and mapping

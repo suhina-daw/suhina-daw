@@ -3,7 +3,7 @@ description: Planned key inputs - a device whose detector reads another channel'
 read_when: sidechain, key input, key source, tap point, pre FX, post FX, post fader, routing, aux input, aux output, multi-out, multiple outputs, bus, audio port, region version, protocol version, VST2 bus, device input
 type: spec
 status: planned
-last_verified: 2026-10-15
+last_verified: 2026-11-02
 covers:
   - crates/model/src/lib.rs
   - crates/engine/src/chain.rs

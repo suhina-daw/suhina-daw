@@ -3,7 +3,7 @@ description: Device groups - several devices on a track as one unit, with parall
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/groups.rs

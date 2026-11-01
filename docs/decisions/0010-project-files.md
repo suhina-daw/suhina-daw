@@ -4,7 +4,7 @@ read_when: project file, save, open, backup, autosave, recovery, .suhina, .locr,
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/project-file
   - crates/session/src/lib.rs

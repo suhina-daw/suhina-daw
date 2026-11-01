@@ -3,7 +3,7 @@ description: What a MIDI controller can do in Suhina - sources, targets, ranges,
 read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback
 type: spec
 status: planned
-last_verified: 2026-10-28
+last_verified: 2026-11-02
 ---
 
 # MIDI controllers and mapping

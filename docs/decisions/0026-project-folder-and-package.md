@@ -4,7 +4,7 @@ read_when: project folder, manifest, asset hash, BLAKE3, collect, packaged proje
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-10-24
+last_verified: 2026-11-02
 covers:
   - crates/project-file/src/lib.rs
   - crates/session/src/lib.rs

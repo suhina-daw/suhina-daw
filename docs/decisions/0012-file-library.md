@@ -4,7 +4,7 @@ read_when: file index, library index, folder scan, watching folders, notify, ino
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-18
+last_verified: 2026-11-02
 covers:
   - crates/library/**
   - crates/session/src/library.rs

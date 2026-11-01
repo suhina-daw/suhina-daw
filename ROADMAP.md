@@ -201,6 +201,10 @@ refused or suspended, never by losing its edits.
   track's selected audio input. Sample replacement is undoable; missing sources can
   be relinked. Multisample zones remain planned.
 
+- Sampler has visible Sample/Slice/Grain modes, a source-tempo grid with snap,
+  editable automatic boundaries with persistent corrections, stereo waveform lanes,
+  pointer-anchored zoom, slice selection and audition, and separate slice overlap/release controls.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
