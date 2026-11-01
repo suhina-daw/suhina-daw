@@ -21,6 +21,26 @@
 //! A plug-in may report another latency while it runs. Between messages the main thread asks
 //! each instance whether it did (restarting its processing first where the format asks for
 //! that) and tells the engine unasked (`latency_changed`).
+//!
+//! In detail: The `suhina-plugin-host` executable: answers control messages and serves plug-ins'
+//! main-thread callbacks on its main thread, and runs several instances, each with its own link and
+//! audio thread; a block may name other instances of the process to run after the link's own, which
+//! that audio thread runs in turn before it answers (`audio`, each instance's processing behind a
+//! lock of its own). Loads CLAP plug-ins (`clap:<file>[#<id>]`, through `clack-host`) and VST3
+//! plug-ins (`vst3:<bundle>[#<class id>]`, through the `vst3` bindings), every audio port a CLAP
+//! plug-in declares with its channels (the link's stereo on the main ports), stereo in and out for
+//! VST3 (no input for an instrument), notes and controllers, parameters, editors in a window of
+//! their own or embedded as a child in the engine's window where the engine says (Windows, X11 on
+//! Linux), with state and latency, and test plug-ins (`test:clap`, `test:clap-ports`,
+//! `test:clap-delay`, `test:vst3`, `test:gain`, `test:crash-after:<n>`, `test:hang-after:<n>`,
+//! `test:slow-load:<ms>`, `test:delay-after:<n>:<frames>`, `test:busy:<µs>`). A plug-in that
+//! reports another latency while it runs is restarted as its format asks and the engine is told
+//! unasked (`latency_changed`). `--scan <file>` and `--scan-worker` describe plug-in files for the
+//! scanner. ARA (ADR 0033): a VST3 instance loaded with a document is bound to a document
+//! controller the host builds from it (`ara`, over bindings generated from the vendored ARA
+//! headers, `ara_sys`), reads the sources' shared memory and keeps the plug-in's edits in its
+//! state. The second crate allowed `unsafe`: opening plug-in files and the VST3 COM calls, each
+//! block documented.
 
 mod ara;
 #[allow(
@@ -350,7 +370,7 @@ impl Loaded {
         }
     }
 
-    /// The edits of one modification and its source, stored on their own (ADR 0028 step 6).
+    /// The edits of one modification and its source, stored on their own (ADR 0033 step 6).
     fn ara_export(&self, modification: &str, source: &str) -> Result<(String, Vec<u8>), String> {
         match self {
             Self::Vst3(plugin) => plugin.ara_export(modification, source),

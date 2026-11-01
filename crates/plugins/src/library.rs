@@ -98,7 +98,7 @@ pub fn group_for(hosting: Hosting, plugin: &PluginInfo) -> Option<String> {
         Hosting::Vendor if plugin.vendor.trim().is_empty() => Some(file()),
         Hosting::Vendor => Some(format!("vendor:{}", plugin.vendor.trim())),
         // An ARA plug-in's instances and the document they edit live in one process
-        // (ADR 0028 decision 2), so a choice saved before the plug-in was known to support ARA
+        // (ADR 0033 decision 2), so a choice saved before the plug-in was known to support ARA
         // gives way to the default.
         Hosting::Instance if plugin.ara => Some(file()),
         Hosting::Instance => None,

@@ -8,4 +8,4 @@ the guide, written for any agent or person; this skill only points Claude Code a
 
 A pull request that needs *How to check it* also updates the parity measurement in the same
 change, or says `Parity: no change` and why: see the guide's section on it and
-[`AGENTS.md` › Before you finish a task](../../../AGENTS.md#4-before-you-finish-a-task).
+[`docs/workflow.md`](../../../docs/workflow.md) › What a pull request carries.

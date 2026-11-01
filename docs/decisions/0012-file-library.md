@@ -2,8 +2,9 @@
 description: How the browser's folders are indexed, kept on disk and kept up to date (start-up check, file-system watching, polling), and the limits that protect it from hostile folders
 read_when: file index, library index, folder scan, watching folders, notify, inotify, polling, network drive, browser.json, library crate, search speed
 type: decision
-status: current
-last_verified: 2026-10-18
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - crates/library/**
   - crates/session/src/library.rs
@@ -11,7 +12,6 @@ covers:
 
 # 0012: The file library: an index on disk, watched
 
-- **Status:** accepted
 - **Date:** 2026-10-12
 
 ## Context

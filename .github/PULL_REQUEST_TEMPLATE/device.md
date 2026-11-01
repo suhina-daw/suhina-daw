@@ -38,5 +38,5 @@
       and `python scripts/rename_suhina.py --check` pass.
 
 **Documented**
-- [ ] AGENTS.md's crate map, ROADMAP › Built-in effects and instruments, and
+- [ ] the crate table in `docs/architecture.md`, ROADMAP › Built-in effects and instruments, and
       `docs/spec/device-import.md` if it imports another product's device.

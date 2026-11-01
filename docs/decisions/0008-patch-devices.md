@@ -2,13 +2,13 @@
 description: Proposed way for the community to build devices as Pure Data patches (plugdata, libpd) with access to commands, and how imported Max devices are kept
 read_when: Pure Data, Pd, plugdata, libpd, patch, patch device, community devices, Max for Live, Max device, amxd, scripting devices, collect and save
 type: decision
-status: draft
-last_verified: 2026-10-19
+status: proposed
+built: no
+last_verified: 2026-11-02
 ---
 
 # 0008: Patch devices
 
-- **Status:** proposed
 - **Date:** 2026-10-11
 - **Task:** project item "Patch devices: Pure Data patches with access to commands"
 

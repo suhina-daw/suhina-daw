@@ -3,7 +3,7 @@ description: What the level meters measure (tracks, groups, returns, the main ou
 read_when: level meter, meters, peak, RMS, clip indicator, clipping, peak hold, mixer.levels, mixer.resetClip, MeterMonitor, track header meter, mixer strip meter, dBFS
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/meters.rs
   - crates/engine/src/meters_tests.rs
@@ -36,6 +36,11 @@ without changing the scale, ballistics or clip reset behaviour.
 Levels are linear, 1.0 being full scale (0 dBFS). A centred track at unity volume playing a
 full-scale audio clip reads 0 dB; the built-in sine voice of a note at full velocity reads
 −12 dB.
+
+**Sampler read heads.** Sample instruments also publish up to 32 voice positions per metered
+track, in fixed atomic slots beside the levels: read heads, not audio levels. An inactive voice
+is absent, so no stale line stays on the waveform. A chain writes them through the meter slots
+it was assigned, so the render callback does not search the meter rows for each chain.
 
 ## Ballistics
 
@@ -116,11 +121,4 @@ Both need an engine playing the project (`suhina-cli play --launcher`, the MCP s
   a clip) keeps them.
 - A track whose path to the output has a volume of zero after its own (a group at −inf) reads
   silence, as nothing of it is heard.
-- Meters of the cue output and of track inputs come with them (ROADMAP).
-
-Sample instruments additionally publish up to 32 independent voice positions in fixed
-atomic slots per metered track. These are read heads, separate from audio levels;
-inactive voices are absent and do not leave a stale waveform line.
-
-Sampler voice positions are published through the assigned chain-to-meter slots;
-the render callback does not search all meter rows for each chain.
+- The cue output and track inputs have no meters yet (ROADMAP).

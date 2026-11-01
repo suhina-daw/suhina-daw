@@ -3,7 +3,7 @@ description: Self-contained device canvases, image assets, drawing expressions a
 read_when: custom SDK control, device background, icon, photo, texture, XY pad, drawing API, image asset
 type: spec
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs
@@ -299,26 +299,8 @@ Values are unique integers inside the bound parameter range; 1..128 entries with
 nonempty labels of at most 128 bytes are accepted. It can bind a numeric parameter
 without Choice options. Selecting an entry writes its value, not its array index.
 Menus scroll when needed, using a fixed-width solid scrollbar that does not expand
-on hover. Delay uses this node to expose actual note divisions,
+on hover. The Delay ([delay](delay.md) › Panel layout) uses this node to expose actual note divisions,
 triplet/dotted suffixes and sixteenth-note step counts while retaining saved values.
-
-## Delay example layout
-
-Delay uses independent SDK UI nodes throughout its 944 by 168 logical-pixel panel.
-Including the host header and padding, it fits a 200-pixel device slot.
-Time and Feedback occupy the left; Tone and Motion follow, with Mix at the far right. The only graph is Tone's filter response. All sections stay visible.
-
-Left and Right timing columns flank the link icon in Time; the link button shares the
-vertical center of the timing menus. Beats/ms buttons switch between
-explicit note-length menus and millisecond fields. Link mirrors timing edits; each column has a synchronized offset field. Freeze sits
-below Feedback and Ping Pong below Mix. Repitch/Fade/Jump remain in Time. Tone exposes filter enable,
-centre frequency and octave width; Motion exposes rate mode/value, waveform,
-delay/filter depth and morph. Speed appears once: a number in Hz/Time modes and
-a ValueMenu in synchronized modes. The obsolete `lfo_expanded` parameter remains hidden for
-saved-parameter compatibility and no longer affects presentation.
-
-The host resolves widget text, surfaces, borders and accents from the active Suhina
-theme at render time. No authored purple accent or device header is required.
 
 ## Reusable functional widgets
 
@@ -411,17 +393,5 @@ Point drags use displacement from the original press, not absolute hit-rectangle
 coordinates, and emit shared parameter commands grouped for undo. Points support
 Shift precision, keyboard arrows and double-click default reset. Readouts remain
 separate widgets, so the graph's surface does not darken surrounding fields.
-
-`SampleWaveform` supports anchored vertical zoom and horizontal pan on empty space.
-Source/loop handles, slice lines and voice heads share its view transform. Peaks
-are overlaid with solid two-pixel orange marker lines, without outlines;
-source/loop handles use the same colour. The Slice by selector reserves room
-for its full caption and arrow alongside the region and fade fields.
-Peaks are rebuilt for the visible range, and areas outside S/E are gray. Manual lines
-have horizontal resize cursors; double-click adds/removes a line. Line drags
-preview locally without preparing an audio graph per frame; releasing commits
-`device.setSampleSlices` once, as one undo step. Playback uses the committed map
-until release, then new notes use the edited map. View navigation
-never changes project data. The host resets the view when source audio changes.
 
 `WaveformPreview { shape }` draws a theme-aware oscillator preview. Its X binding controls rate (linear or logarithmic), and `shape` references a zero-based waveform parameter (0..5 or 0..6). It uses a Position gesture with no Y binding. The SDK owns the drawing; device authors only supply the widget and bindings.

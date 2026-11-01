@@ -8,6 +8,13 @@
 //! a [`Backend`], the windows' outputs added back with their weighting divided out, and the stems
 //! brought back to the source's rate and channels. [`BandSplitter`] is a backend with no weights
 //! that runs the whole pipeline in tests. Nothing here touches the audio thread or the disk.
+//!
+//! In detail: Stem separation (spec (`docs/spec/stem-separation.md`), planned in steps): a source
+//! brought to a model's sample rate and channels (`resample`, a windowed-sinc resampler), cut into
+//! the model's windows with the last one padded, each handed to a `Backend`, and the windows'
+//! outputs added back with their weighting divided out (`chunk`); limits on every shape and source
+//! (`shape`); progress per window and cancel between windows. `BandSplitter` is a backend with no
+//! weights that runs the pipeline in tests. No model, runtime, command or session wiring yet.
 
 pub mod backend;
 pub mod band_splitter;
