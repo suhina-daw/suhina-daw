@@ -476,15 +476,15 @@ impl<const N: usize> ParamBank<N> {
     }
 }
 
+/// Most live values a device hands its panel ([`Device::readouts`]).
+pub const MAX_READOUTS: usize = 32;
+
 /// A built-in instrument or effect.
 ///
 /// `new`-style constructors, [`prepare`](Self::prepare) and dropping run off the audio thread
 /// and may allocate. [`reset`](Self::reset), [`set_param`](Self::set_param),
 /// [`param`](Self::param) and [`process`](Self::process) run on the audio thread: they never
 /// allocate, free, lock, block, log or do I/O, and never panic, whatever values they get.
-/// Most live values a device hands its panel ([`Device::readouts`]).
-pub const MAX_READOUTS: usize = 32;
-
 pub trait Device: Send {
     /// Current normalized sample read position, when a sample voice is active.
     fn sample_position(&self) -> Option<f32> {
