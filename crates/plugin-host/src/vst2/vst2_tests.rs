@@ -292,11 +292,15 @@ fn the_mock_and_the_probe_agree_on_the_conversation() {
     assert_eq!(mock.time_sample_rate(), Some(SAMPLE_RATE));
 
     // The gain the block applied and the idle turned, as the report shows it. The host set
-    // the parameter to 0.25 before asking for the chunk, so the round trip is 0.25 to 0.25.
-    assert_eq!(mock.parameters(), vec![(0, 0.25)]);
+    // the parameter to 0.25 before asking for the chunk and moved it while the chunk was
+    // out; the chunk's hand-back restores through the chunk itself, so the notes end at
+    // that wait's change and the report has the whole trip.
+    assert_eq!(mock.parameters(), vec![(0, 0.25), (0, 0.75)]);
     assert_eq!(mock.gain(), EDIT_GAIN);
     assert!(report.contains("effGetChunk (assumed 23)"), "the report marks its assumptions");
-    assert!(report.contains("parameter 0 was Some(0.25), is Some(0.25)"));
+    assert!(
+        report.contains("parameter 0 was 0.250000, took 0.750000 for the wait, and the chunk brought 0.250000 back")
+    );
 }
 
 /// A chunk the plug-in gave comes back to it whole: the round trip a project's saved

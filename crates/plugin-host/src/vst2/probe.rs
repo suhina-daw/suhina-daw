@@ -42,6 +42,11 @@ const MAX_PARAMS: usize = 64;
 /// Most bytes the probe copies out of one chunk (a plug-in's size is not trusted; the copy
 /// trusts the plug-in to have as many as it said, capped here).
 const MAX_CHUNK: usize = 1024 * 1024;
+
+/// The value the probe moves the first parameter to while its chunk is out, so the
+/// hand-back means something: the value the chunk held must come back past a change the
+/// probe made itself.
+const CHUNK_WAIT_CHANGE: f32 = 0.75;
 /// Most events the probe takes from one list.
 const MAX_EVENTS: usize = 1024;
 /// Most entries each of the probe's records keeps: a plug-in can call back without limit
@@ -627,6 +632,13 @@ impl Probe {
             return;
         }
         let size = claimed;
+        // A zero-byte chunk is no state to hand back: whatever a plug-in answers with no
+        // bytes claimed, the round trip of nothing proves nothing the report should stand
+        // for.
+        if size == 0 {
+            self.line(format!("  {} -> no chunk bytes: the round trip is skipped", EffectOp::GetChunk.name()));
+            return;
+        }
         let mut chunk = vec![0u8; size];
         for (slot, i) in chunk.iter_mut().zip(0..size) {
             let byte = chunk_pointer.cast::<u8>().wrapping_add(i);
@@ -637,14 +649,28 @@ impl Probe {
         let head: Vec<String> = chunk.iter().take(8).map(|b| format!("{b:02x}")).collect();
         self.line(format!("  {} -> {size} bytes: {}", EffectOp::GetChunk.name(), head.join(" ")));
         // Hand the chunk back and see whether what it holds came back: the mock's chunk is
-        // its gain.
+        // its gain. A change of the probe's own in between makes the hand-back mean
+        // something — the plug-in runs a value the chunk does not hold while it waits, so
+        // the value after is what the chunk brought. What a plug-in's saved chunk holds
+        // instead of its parameters, the values line says for what they are.
         let before = self.parameter(0).ok();
+        let moved = self.set_parameter(0, CHUNK_WAIT_CHANGE).ok().is_some();
         if let Err(e) = self.set_chunk(&chunk) {
             self.line(format!("  {e}"));
             return;
         }
         let after = self.parameter(0).ok();
-        self.line(format!("  {} handed it back: parameter 0 was {before:?}, is {after:?}", EffectOp::SetChunk.name()));
+        match (before, moved, after) {
+            (Some(before), true, Some(after)) => self.line(format!(
+                "  {} handed it back: parameter 0 was {before:.6}, took {CHUNK_WAIT_CHANGE:.6} for the wait, and the chunk brought {after:.6} back",
+                EffectOp::SetChunk.name()
+            )),
+            (before, moved, after) => self.line(format!(
+                "  {} handed it back: parameter 0 was {before:?} and is {after:?} ({}: the two values the chunk was taken over are its own)",
+                EffectOp::SetChunk.name(),
+                if moved { "the first parameter has no reading" } else { "the first parameter cannot be set" },
+            )),
+        }
     }
 
     /// Hands the plug-in a chunk.
