@@ -38,7 +38,7 @@ Two facts decide the shape of this:
    rewritten on every callback.
 2. **Half of it is not ours to set.** The device's own buffer is Suhina's to choose on ASIO and in
    WASAPI exclusive mode, and Windows' in WASAPI shared mode, where the stream plays the period the
-   system gives the device (ADR 0006 › the block). A readout that does not say which of the two it
+   system gives the device ([plug-in hosting](../spec/plugin-hosting.md) › Block sync and the deadline). A readout that does not say which of the two it
    is showing cannot be acted on.
 
 ## What the number is, and what it is not
@@ -88,7 +88,7 @@ Two facts decide the shape of this:
 ## The buffer is a separate decision
 
 What a chosen buffer size means, what may be asked of a device's driver, and how Suhina renders
-when the device's buffer is not hers to set, is ADR 0006 › the block. This ADR assumes it and does
+when the device's buffer is not hers to set, is in [plug-in hosting](../spec/plugin-hosting.md) › Block sync and the deadline. This ADR assumes it and does
 not repeat it; a readout that shows the two numbers apart is what makes that decision visible.
 
 ## Consequences

@@ -161,9 +161,9 @@ Applying a macro:
   macro's value and the mapped parameters' resulting values, so a project opened without macro
   support still sounds the same.
 - **Plug-ins:** the session sends the computed value as `set_param` (ADR 0006 › 3), which reaches
-  the processor at the start of the next block. That is block-accurate, not sample-accurate, until
-  the engine automates plug-in parameters (ADR 0006 › Consequences, *Not built yet*); then a macro
-  becomes parameter events at their frames like any automation. Mapping a plug-in parameter needs
+  the processor at the start of the next block. That is block-accurate. Automation reaches a plug-in as
+  parameter events at their frames ([plug-in hosting](plugin-hosting.md) › Events in a block,
+  #109), and a macro can take the same path once it is built. Mapping a plug-in parameter needs
   the plug-in running (its parameter list comes from `get_params`); a mapping to a plug-in that is
   missing is kept and does nothing.
 

@@ -77,8 +77,7 @@ lane, the grid and zoom, and the `note.*` commands.
   clip, and selecting another clip on the track shows that one. The editor opens on its own the
   first time a clip is shown; closed, the area offers **Open editor**, and it stays closed for that
   clip until the clip is selected again. The clip column has the **Clip / Devices** switch, which
-  works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The plug-in belongs to the clip (ADR 0033 › Amendment: the ARA plug-in belongs to the clip,
-  #990): the clip's right-click menu has **Edit with** and the plug-in's name for a clip that does
+  works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The plug-in belongs to the clip ([ARA hosting](ara-hosting.md) › The plug-in belongs to the clip): the clip's right-click menu has **Edit with** and the plug-in's name for a clip that does
   not play through it yet, **Open in** for one that does, and **Stop editing with** to take it off
   (`clip.setAra`); **Alt+M** (`view.araEditor`) is Edit with or Open in for the selected clip: it
   selects **Clip**, opens the detail area and the editor. They work on any audio clip in the
