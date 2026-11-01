@@ -143,7 +143,7 @@ pub(super) fn graph_controls(
             // (`.device { width }`): then it follows the panel, its scroll bar aside.
             let themed = crate::kit::style_class::computed().is_some_and(|c| c.width.is_some());
             let width = if graph.canvas.is_none() && themed { (body.width() - 8.0).max(120.0) } else { COMPACT_WIDTH };
-            let cells = list_cells(graph, width, list_height);
+            let mut cells = list_cells(graph, width, list_height);
             let custom_size = graph.canvas.as_ref().map_or(Vec2::ZERO, |c| Vec2::new(c.size[0], c.size[1]));
             let nodes_height = graph.nodes.len() as f32 * NODE_ROW;
             let extent = cells.iter().fold(Vec2::new(body.width().max(custom_size.x), custom_size.y), |size, rect| {
@@ -151,7 +151,20 @@ pub(super) fn graph_controls(
             });
             // A list scrolling down has its columns side by side all the way: a line keeps them apart.
             let scrolls = graph.canvas.is_none() && extent.y + nodes_height > body.height() + 0.5;
-            let (_, body) = ui.allocate_space(Vec2::new(extent.x, extent.y + nodes_height));
+            // Its columns' left edges, with room between them.
+            let mut separators: Vec<f32> = Vec::new();
+            if scrolls {
+                for cell in &mut cells {
+                    if cell.left() > 0.0 {
+                        if separators.last().is_none_or(|x| *x < cell.left()) {
+                            separators.push(cell.left());
+                        }
+                        *cell = cell.translate(Vec2::new(super::LIST_GAP, 0.0));
+                    }
+                }
+            }
+            let gaps = separators.len() as f32 * super::LIST_GAP;
+            let (_, body) = ui.allocate_space(Vec2::new(extent.x + gaps, extent.y + nodes_height));
             let painter = &ui.painter_at(body.intersect(ui.clip_rect()));
             node_rows(painter, body, graph);
             if let Some(canvas) = &graph.canvas {
@@ -159,15 +172,9 @@ pub(super) fn graph_controls(
                 crate::detail::device_canvas::show(ui, rect, canvas, &graph.parameters, track, at, actions);
             }
             let origin = Vec2::new(body.left(), body.top() + nodes_height);
-            if scrolls {
-                let lines = cells.iter().map(|c| c.left()).filter(|x| *x > 0.0);
-                let mut drawn = f32::NEG_INFINITY;
-                for x in lines {
-                    if x > drawn {
-                        drawn = x;
-                        painter.vline(origin.x + x - 3.0, body.y_range(), theme::hairline(theme::border_strong()));
-                    }
-                }
+            for (index, x) in separators.iter().enumerate() {
+                let x = origin.x + x + super::LIST_GAP * (index as f32 + 0.5);
+                painter.vline(x, body.y_range(), theme::hairline(theme::border_strong()));
             }
             for (parameter, cell) in graph.parameters.iter().filter(|p| !hidden.contains(&p.id)).zip(&cells) {
                 parameter_cell(ui, painter, cell.translate(origin), parameter, track, at, actions);

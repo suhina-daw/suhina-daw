@@ -194,8 +194,14 @@ impl App {
             .map(|(k, r)| (k.clone(), r.editor_embedded))
             .collect();
         self.editor_in_chain = !embedded.is_empty();
+        // What an editor in the chain needs at its full size: it may take the view's room above.
+        let scale = ui.ctx().pixels_per_point();
+        let editor_needs = embedded
+            .iter()
+            .filter_map(|(_, embedded)| *embedded)
+            .map(|(_, height)| detail_view::row_height_with_editor(height, scale))
+            .fold(0.0, f32::max);
         if !stacked {
-            let scale = ui.ctx().pixels_per_point();
             let needed = embedded
                 .iter()
                 .filter(|(key, _)| !self.fitted_editors.contains(key))
@@ -332,7 +338,8 @@ impl App {
             // Only the chain shown: no taller than its panels, but never held under the area's
             // default height. A chain of short panels (a plug-in whose editor is not embedded,
             // or no devices at all) would otherwise keep the area too short to drag up.
-            self.detail_height = self.detail_height.clamp(least, (area.height() - MIN_VIEW).max(least));
+            let most = (area.height() - MIN_VIEW).max(editor_needs.min(area.height() - SPLITTER)).max(least);
+            self.detail_height = self.detail_height.clamp(least, most);
             // A track's devices, reached by clicking the track, are open at one height or closed; the
             // height the user drags is the clip's, its editor's and the devices reached from it.
             let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
