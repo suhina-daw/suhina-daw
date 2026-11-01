@@ -21,17 +21,25 @@ its `INFO` and finds parameters by id, so the change is mostly the device's own 
    project stores each value by the parameter's id (`suhina_model::DeviceParam`), so an old
    project that lacks the new id gets its default.
 2. **Use it** in the DSP through the device's `ParamBank` (`params.get(param::NAME)`), smoothed
-   where a jump would click. Nothing on the audio thread allocates.
+   where a jump would click. Nothing on the audio thread allocates. A Dry/Wet is always id `mix`,
+   name "Dry/Wet", 0 to 1 in `Unit::Percent`, blending `dry + (wet - dry) * mix` through its own
+   smoother, as in `devices/compressor/src/lib.rs`.
 3. **Panel:** place a control with the same `id` in `devices/<name>/panel.json` (or in the Rust
-   layout for `sampler`). A parameter the layout leaves out still shows in the generated list.
-   `cargo test -p suhina-device-registry` fails on a layout naming a parameter the device lacks.
+   layout for `sampler`). An expanded panel places every control by hand at absolute bounds:
+   widen its `size` when there is no room, and add the id to `hidden_parameters`, which lists the
+   parameters the layout draws so the generated list does not show them twice. A parameter the
+   layout leaves out still shows in the generated list. `cargo test -p suhina-device-registry`
+   fails on a layout naming a parameter the device lacks.
 4. **Tests** in `devices/<name>/src/tests.rs`: what the parameter does to a test signal
    (`suhina_device_api::conformance::test_signal`). The conformance checks in
    `crates/device-registry/tests/conformance.rs` run on every listed device by themselves.
 5. **Importing:** when another format's device maps onto this one, its reader in
    `crates/als/src/devices.rs` sets the new parameter, with a test in
    `crates/als/src/devices_tests.rs`, and `docs/spec/device-import.md` says so.
-6. **Documents:** the device's spec in `docs/spec/<name>.md`, when it has one.
+6. **Documents:** the device's spec in `docs/spec/<name>.md`, when it has one; the parameter
+   count in the device's line of `scripts/parity/devices.json` (the report built from it,
+   `docs/research/parity-live-12.md`, is regenerated on `main`); and the crate's row in
+   `docs/architecture.md` when it names the parameters.
 7. **Build the app and look at the panel** (`docs/workflow.md` › Built-in devices and settings).
 
 ## A new built-in device

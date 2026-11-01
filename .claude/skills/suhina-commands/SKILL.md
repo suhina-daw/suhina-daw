@@ -13,7 +13,10 @@ Every change a user makes to a project is a command (AGENTS.md rule 6). The regi
 1. **Find its namespace module**: `crates/session/src/commands/<namespace>.rs` holds the
    `COMMANDS` of `<namespace>.*` and the functions that run them (`clip.rs` holds `clip.*`). A new
    namespace gets a module there, a `mod` line and an entry in `NAMESPACES` in
-   `crates/session/src/commands.rs`.
+   `crates/session/src/commands.rs`. Some namespaces sit beside the code they drive instead:
+   `library.*` in `crates/session/src/library.rs`, `plugin.*` in `crates/session/src/plugins.rs`,
+   `audio.*` and `output.*` in `audio.rs`, `midi.*` in `midi.rs`, `soundmap.*` in `soundmap.rs`,
+   and part of `project.*` in `projects.rs` and `backup.rs`. `NAMESPACES` lists them all.
 2. **Add a `CommandSpec`** to that `COMMANDS`: `id` in `area.verb` form (stable: agents call it),
    a one-line `label`, `params` built with `param`/`optional` and a `ParamType` (shared ones such
    as `CLIPS` and `MARKER` are constants beside them), `kind`, `run`, and `policy`:
@@ -23,6 +26,10 @@ Every change a user makes to a project is a command (AGENTS.md rule 6). The regi
    - `agents: Agents::Denied(..)` or `Agents::NotWhenAttached(Agents::SETTINGS)` for what an agent
      may not run (ADR 0028).
    A parameter that names a file is `ParamType::Path`, so MCP confines it to the project's roots.
+   Its type confines a file or folder the command reads. One it writes (`PathKind::WriteFile`,
+   `PathKind::WriteFolder`) needs the command's own case in `confine` in
+   `crates/automation/src/confine.rs`, with a test in `confine_tests.rs`. Without it, the path
+   sweep in `crates/automation/src/server.rs` fails. `docs/mcp.md` describes each such rule.
 3. **Read the parameters** with `Args` (`crates/session/src/commands/args.rs`) in new code. Only
    `marker.*` uses it so far (#764 › 1); older commands read `params` by hand, and a new
    parameter on one follows the code around it.
