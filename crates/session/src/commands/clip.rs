@@ -162,7 +162,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Read,
         run: copy_clips,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "clip.cut",
@@ -170,7 +170,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[CLIPS],
         kind: CommandKind::Edit,
         run: cut_clips,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "clip.paste",
@@ -598,7 +598,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Edit,
         run: files::add_files,
-        policy: Policy::CRITICAL,
+        policy: Policy { after: After::Recent(Recent::Files), ..Policy::CRITICAL },
     },
     CommandSpec {
         id: "clip.create",

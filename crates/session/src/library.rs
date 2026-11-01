@@ -906,7 +906,7 @@ fn tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
 
 /// Records what a successful command added to a project among the recent items
 /// (`docs/spec/browser.md` › Sidebar).
-pub(crate) fn record_use(library: &mut Library, id: &str, params: &Value, result: &Value) {
+pub(crate) fn record_use(library: &mut Library, recent: crate::Recent, params: &Value, result: &Value) {
     let mut record = |group: Group, item: String| {
         let _ = library.record(group, &item);
     };
@@ -923,8 +923,8 @@ pub(crate) fn record_use(library: &mut Library, id: &str, params: &Value, result
             record(Group::Presets, if voice > 1 { format!("{path}#{voice}") } else { path });
         }
     };
-    match id {
-        "clip.addFiles" => {
+    match recent {
+        crate::Recent::Files => {
             let skipped: Vec<&str> = result["skipped"]
                 .as_array()
                 .map(|s| s.iter().filter_map(|x| x["path"].as_str()).collect())
@@ -942,7 +942,7 @@ pub(crate) fn record_use(library: &mut Library, id: &str, params: &Value, result
                 record(group, absolute.display().to_string());
             }
         }
-        "device.add" | "track.add" => {
+        crate::Recent::Device => {
             if let Some(path) = params.get("sd").and_then(Value::as_str) {
                 record(Group::Effects, path.to_string());
             } else if params.get("preset").is_some_and(|p| !p.is_null()) {
@@ -955,16 +955,15 @@ pub(crate) fn record_use(library: &mut Library, id: &str, params: &Value, result
                 }
             }
         }
-        "device.addSd" => {
+        crate::Recent::SdFile => {
             if let Some(path) = params.get("path").and_then(Value::as_str) {
                 record(Group::Effects, path.to_string());
             }
         }
-        "device.addPlugin" => {
+        crate::Recent::Plugin => {
             if let Some(name) = params.get("plugin").and_then(Value::as_str) {
                 record(Group::Plugins, format!("plugin:{name}"));
             }
         }
-        _ => {}
     }
 }

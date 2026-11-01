@@ -19,7 +19,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Read,
         run: save,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Saves, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "project.info",

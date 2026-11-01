@@ -143,7 +143,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[param("tracks", ParamType::Tracks, "the tracks to copy (ids or names), in project order")],
         kind: CommandKind::Read,
         run: copy_tracks,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "track.cut",
@@ -151,7 +151,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[param("tracks", ParamType::Tracks, "the tracks to cut (ids or names)")],
         kind: CommandKind::Edit,
         run: cut_tracks,
-        policy: Policy::CRITICAL,
+        policy: Policy { after: After::Copies, ..Policy::CRITICAL },
     },
     CommandSpec {
         id: "track.paste",
@@ -324,7 +324,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Edit,
         run: files::add_track,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Recent(Recent::Device), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "track.setSend",

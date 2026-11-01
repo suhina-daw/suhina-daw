@@ -123,7 +123,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
         kind: CommandKind::Read,
         run: notes::copy,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "note.cut",
@@ -131,7 +131,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
         kind: CommandKind::Edit,
         run: notes::cut,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "note.paste",

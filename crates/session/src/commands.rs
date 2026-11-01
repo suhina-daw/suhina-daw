@@ -381,15 +381,51 @@ pub struct Policy {
     pub critical: bool,
     /// Whether an agent may run it over MCP (ADR 0028).
     pub agents: Agents,
+    /// What the open projects do once it has run (#764 › 1).
+    pub after: After,
+    /// A preview: with no project open it runs in the previews' own session, not on a project.
+    pub previews: bool,
 }
 
 impl Policy {
-    /// Heard, not critical, open to agents.
-    pub const DEFAULT: Self = Self { heard: true, critical: false, agents: Agents::Allowed };
+    /// Heard, not critical, open to agents, nothing after it.
+    pub const DEFAULT: Self =
+        Self { heard: true, critical: false, agents: Agents::Allowed, after: After::Nothing, previews: false };
     /// An edit only seen: a name, a colour, a marker.
     pub const UNHEARD: Self = Self { heard: false, ..Self::DEFAULT };
     /// Backed up before it runs.
     pub const CRITICAL: Self = Self { critical: true, ..Self::DEFAULT };
+    /// A preview of a file or a device, which plays with or without a project.
+    pub const PREVIEW: Self = Self { previews: true, ..Self::DEFAULT };
+}
+
+/// What [`crate::Projects`] does after a command that succeeded, besides what the command did
+/// to its project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum After {
+    Nothing,
+    /// It filled a clipboard, which every open project shares.
+    Copies,
+    /// It saved the project: the tab takes the file's name, its backups need no offering, and the
+    /// audio it plays is trusted from then on.
+    Saves,
+    /// It added something the browser lists among the recent items (`docs/spec/browser.md` ›
+    /// Sidebar).
+    Recent(Recent),
+}
+
+/// Which recent items a command adds to, and from which of its parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Recent {
+    /// The files of `paths` that were placed: samples, Stems and MIDI files.
+    Files,
+    /// The built-in device, plug-in, `.sd` file or preset the command added (`id`, `device`,
+    /// `sd`, `preset`).
+    Device,
+    /// The `.sd` file at `path`.
+    SdFile,
+    /// The plug-in named by `plugin`.
+    Plugin,
 }
 
 /// Who may run a command over MCP.

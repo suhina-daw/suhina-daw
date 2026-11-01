@@ -81,7 +81,9 @@ impl Session {
     /// id, and for an edit, works out which undo step and which drag it belongs to.
     fn prepare<'a>(&mut self, id: &str, params: &'a Value) -> Result<Prepared<'a>, CommandError> {
         let spec = commands().iter().find(|c| c.id == id).ok_or_else(|| unknown_command(id))?;
-        let gesture = if id == "device.setParam" {
+        // A command that takes `gesture` and `continuous` makes one undo step of a drag that way.
+        let drags = spec.params.iter().any(|p| p.name == "gesture");
+        let gesture = if drags {
             match params.get("gesture") {
                 None => None,
                 Some(Value::String(s)) if !s.is_empty() && s.len() <= 128 => Some(s.as_str()),
@@ -90,7 +92,7 @@ impl Session {
         } else {
             None
         };
-        let continuous = id == "device.setParam" && params.get("continuous").and_then(Value::as_bool) == Some(true);
+        let continuous = drags && params.get("continuous").and_then(Value::as_bool) == Some(true);
         if (spec.kind == CommandKind::Edit && !continuous && gesture.is_none()) || spec.kind == CommandKind::History {
             self.history.param_gesture = None;
         }
