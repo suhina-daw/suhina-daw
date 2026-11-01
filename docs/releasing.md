@@ -233,8 +233,10 @@ branch* by hand. The test build never runs on the queue.
 `changes` job skips fmt, clippy and the tests when every changed file is documentation (`docs/`,
 any `.md`, `LICENSE`, `NOTICE`), a script under `scripts/` or a file under `.github/`: no Rust
 build or test reads them. A change to `ci.yml` itself still runs every job. The `docs` job runs on
-every change, so the script tests and the tests of the claim bot and the Depends on check still run; in the Actions tab the
-skipped jobs show as skipped and `ci` passes.
+every change, so the script tests and the tests of the claim bot and the Depends on check still run,
+and so do the Depends on check itself and the settings guide export; `cargo deny` skips with the
+build jobs, since only a Rust change can change a dependency. In the Actions tab the skipped jobs
+show as skipped and `ci` passes.
 
 **The build cache.** Only `main` saves `ci.yml`'s Rust cache; pull requests and the merge queue
 restore `main`'s. The repository's caches share GitHub's 10 GB, and when every pull request push
@@ -254,8 +256,11 @@ The queue is a setting, not code: Settings › Rules (or Branches) › the rule 
 merge queue**, with the merge method used today, a group size of about 5 and *Only merge
 non-failing pull requests*. With a queue, *Require branches to be up to date before merging* is not
 needed. Every check the rule requires must come from a workflow that runs on `merge_group`; today
-those are `ci` and `Depends on` ([`claim-bot.md`](claim-bot.md) › The Depends on check), and a check
-required from another workflow would keep the queue waiting.
+that is `ci` alone, and a check required from another workflow would keep the queue waiting. The
+checks that have workflows of their own (`cargo deny`, the Depends on check,
+[`claim-bot.md`](claim-bot.md) › The Depends on check, and the settings guide export) are called
+from `ci.yml` as its jobs, so `ci` goes red with them: a check main does not require can fail
+without stopping a merge, and the `ready to merge` label queues a pull request on `ci` alone.
 
 Without a queue, turn off *Require branches to be up to date before merging* and merge each green
 pull request without updating it; CI on `main`, which runs on every push, catches the rare

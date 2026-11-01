@@ -18,6 +18,7 @@ mod buses_tests;
 mod chain;
 #[cfg(test)]
 mod chain_tests;
+mod clock;
 mod count_in;
 mod cpu;
 mod crossfade;
@@ -931,7 +932,7 @@ impl Renderer {
     /// of the block's playing time, so a late plug-in costs its own sound, not the device's
     /// deadline. `None` offline.
     fn deadline(&self, frames: usize) -> Option<Instant> {
-        self.deadline_at(frames, Instant::now())
+        self.deadline_at(frames, crate::clock::now())
     }
 
     fn deadline_at(&self, frames: usize, now: Instant) -> Option<Instant> {

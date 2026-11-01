@@ -5,6 +5,10 @@
 /.github/ @juhamikael
 /scripts/ @juhamikael
 
+# What `cargo deny` allows (AGENTS.md rule 10): a pull request that adds a dependency must not be
+# the one that permits its licence.
+/deny.toml @juhamikael
+
 # The updater installs and runs what it downloads, so where it looks needs the same approval
 # (docs/spec/updates.md › Where builds come from). Keep in step with WATCHED in
 # scripts/updater_source.py.
