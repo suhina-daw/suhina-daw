@@ -70,9 +70,9 @@ STATUSES = ("current", "draft", "planned", "superseded")
 # A decision (an ADR) has its own: whether it is in force, and in `built` how far it is built.
 DECISION_STATUSES = ("proposed", "accepted", "superseded", "rejected")
 BUILT = ("no", "partly", "yes")
-# What the structure checks (docs/README.md) report as: a warning while the tree is cleaned up
-# (#759, phase 1), an error once it is.
-STRUCTURE_LEVEL = "warning"
+# What the structure checks (docs/README.md) report as: warnings while the tree was cleaned up
+# (#759), errors since it is clean.
+STRUCTURE_LEVEL = "error"
 STALE_AFTER_DAYS = 90
 # `stamp` reads history from this day on: before it, pull requests set last_verified by hand.
 STAMP_FROM = "2026-10-17"
