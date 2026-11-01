@@ -1236,6 +1236,38 @@ fn automatic_boundary_drag_dispatches_one_correction_on_release() {
 }
 
 #[test]
+fn slice_and_marker_edits_name_a_device_inside_a_group_by_its_path() {
+    let panel = suhina_device_registry::panel("sampler").unwrap();
+    let canvas = panel.ui.clone().unwrap();
+    let with = |values: &[(&str, f64)]| -> Vec<_> {
+        panel
+            .parameters
+            .iter()
+            .map(|parameter| {
+                let value = values.iter().find(|(id, _)| *id == parameter.id).map_or(parameter.default, |(_, v)| *v);
+                GraphParameter::new(parameter, value)
+            })
+            .collect()
+    };
+    let at = crate::detail::detail_view::DeviceAt(vec![2, 0]);
+    let field = Rect::from_min_max(Pos2::new(68., 4.), Pos2::new(894., 92.));
+    let from = Pos2::new(SampleView::default().x(0.25, field), 80.);
+    let to = Pos2::new(SampleView::default().x(0.3, field), 80.);
+    // A manual boundary moved.
+    let manual = with(&[("mode", 2.), ("slice_by", 3.), ("slice_1", 0.25)]);
+    let actions = pointer_gesture_at(&canvas, &manual, &at, from, Some(to), 1);
+    assert!(actions.iter().any(|a| a.id == "device.setSampleSlices" && a.params["device"] == "2/0"), "{actions:?}");
+    // The S marker dragged, then double-clicked back to its default.
+    let plain = with(&[]);
+    let marker = Pos2::new(68., 10.);
+    let actions = pointer_gesture_at(&canvas, &plain, &at, marker, Some(Pos2::new(68. + 206.5, 10.)), 1);
+    assert!(!actions.is_empty());
+    assert!(actions.iter().all(|a| a.params["device"] == "2/0"), "{actions:?}");
+    let actions = pointer_gesture_at(&canvas, &plain, &at, marker, None, 2);
+    assert!(actions.iter().any(|a| a.params["param"] == "start" && a.params["device"] == "2/0"), "{actions:?}");
+}
+
+#[test]
 fn boundary_dragged_past_the_end_stays_inside_the_trim() {
     let panel = suhina_device_registry::panel("sampler").unwrap();
     let canvas = panel.ui.clone().unwrap();
@@ -1366,6 +1398,17 @@ fn pointer_gesture_with_clicks(
     drag_to: Option<Pos2>,
     clicks: usize,
 ) -> Vec<Action> {
+    let at = crate::detail::detail_view::DeviceAt(vec![0]);
+    pointer_gesture_at(canvas, parameters, &at, position, drag_to, clicks)
+}
+fn pointer_gesture_at(
+    canvas: &Arc<DeviceUi>,
+    parameters: &[GraphParameter],
+    at: &crate::detail::detail_view::DeviceAt,
+    position: Pos2,
+    drag_to: Option<Pos2>,
+    clicks: usize,
+) -> Vec<Action> {
     let ctx = egui::Context::default();
     ctx.data_mut(|d| {
         d.insert_temp(
@@ -1414,7 +1457,7 @@ fn pointer_gesture_with_clicks(
                     canvas,
                     parameters,
                     TrackId(1),
-                    &crate::detail::detail_view::DeviceAt(vec![0]),
+                    at,
                     &mut actions,
                 )
             },

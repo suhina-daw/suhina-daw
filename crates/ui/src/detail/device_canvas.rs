@@ -214,7 +214,13 @@ fn nearest_slice(points: &[f64], view: SampleView, field: Rect, pointer: Pos2, s
             (view.x(points[a], field) - pointer.x).abs().total_cmp(&(view.x(points[b], field) - pointer.x).abs())
         })
 }
-fn slice_edit(actions: &mut Vec<Action>, track: TrackId, device: usize, points: Vec<f64>, continued: bool) {
+fn slice_edit(
+    actions: &mut Vec<Action>,
+    track: TrackId,
+    device: &serde_json::Value,
+    points: Vec<f64>,
+    continued: bool,
+) {
     actions.push(Action::new(
         "device.setSampleSlices",
         json!({"track":track.0,"device":device,"points":points,"continue":continued}),
@@ -622,7 +628,7 @@ fn sample_waveform(
                     edit_boundary(actions, "delete", points.get(index).copied(), None);
                 } else {
                     points.remove(index);
-                    slice_edit(actions, track, device, points, false);
+                    slice_edit(actions, track, &address, points, false);
                 }
             } else {
                 let point = snap(view.point(pointer.x, field));
@@ -631,7 +637,7 @@ fn sample_waveform(
                         edit_boundary(actions, "add", None, Some(point));
                     } else {
                         points.push(point);
-                        slice_edit(actions, track, device, points, false);
+                        slice_edit(actions, track, &address, points, false);
                     }
                 }
             }
@@ -657,7 +663,7 @@ fn sample_waveform(
                     if correction_mode {
                         edit_boundary(actions, "move", state.points.get(index).copied(), Some(destination));
                     } else {
-                        slice_edit(actions, track, device, points.clone(), false);
+                        slice_edit(actions, track, &address, points.clone(), false);
                     }
                 }
                 manual_points = Arc::from(points);
@@ -942,13 +948,13 @@ fn sample_waveform(
             if let Some(p) = parameters.iter().find(|p| p.id == id) {
                 actions.push(Action::new(
                     "device.setParam",
-                    json!({"track":track.0,"device":device,"param":id,"value":p.default,"continuous":false}),
+                    json!({"track":track.0,"device":address,"param":id,"value":p.default,"continuous":false}),
                 ));
             }
         } else if (response.dragged() || response.drag_stopped())
             && let Some(pos) = response.interact_pointer_pos()
         {
-            actions.push(Action::new("device.setParam", json!({"track": track.0, "device": device, "param": id, "value": ((snap(view.point(pos.x,field)) - f64::from(origin)) / f64::from(span)).clamp(0., 1.), "continuous": !response.drag_stopped()})));
+            actions.push(Action::new("device.setParam", json!({"track": track.0, "device": address, "param": id, "value": ((snap(view.point(pos.x,field)) - f64::from(origin)) / f64::from(span)).clamp(0., 1.), "continuous": !response.drag_stopped()})));
         }
     }
     if inline_recording {
@@ -1943,7 +1949,7 @@ pub(crate) fn show(
                 let mut popup = egui::Popup::menu(&response);
                 if response.double_clicked() {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Bool(false)));
-                    control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":device,"param":p.id,"value":p.default,"continuous":false,"gesture":control.id})));
+                    control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":at.value(),"param":p.id,"value":p.default,"continuous":false,"gesture":control.id})));
                 } else if key_open {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
