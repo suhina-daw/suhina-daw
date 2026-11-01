@@ -145,6 +145,26 @@ class Discord(unittest.TestCase):
         self.assertNotIn("more on the release page", post)
 
 
+class Titles(unittest.TestCase):
+    def test_squash_merge_keeps_its_subject(self):
+        self.assertEqual(rn.title_of("Clip fades: shapes (#12)", ""), "Clip fades: shapes (#12)")
+
+    def test_merge_commit_takes_the_pull_request_title(self):
+        title = rn.title_of(
+            "Merge pull request #1037 from o/feature/slice",
+            "\nSampler: Slice workflow and panel\n\nMore text.\n",
+        )
+        self.assertEqual(title, "Sampler: Slice workflow and panel (#1037)")
+
+    def test_merge_commit_without_a_body_keeps_its_subject(self):
+        subject = "Merge pull request #5 from o/fix/x"
+        self.assertEqual(rn.title_of(subject, "  \n"), subject)
+
+    def test_other_merges_keep_their_subject(self):
+        subject = "Merge branch 'main' into feature/x"
+        self.assertEqual(rn.title_of(subject, "Body"), subject)
+
+
 class Nightly(unittest.TestCase):
     def test_lists_changes_and_counts_internal_ones(self):
         notes = rn.nightly_notes(["A (#1)"], 1, "base", REPO)
