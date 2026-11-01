@@ -64,7 +64,9 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 The version rises with every change to what a file holds, additions included, and every file is
 written as the newest ([ADR 0010](../decisions/0010-project-files.md) › Amendment: format
 versions). A reader refuses a newer file, so an older Suhina never opens one and drops what it
-does not know when it saves. Every older version is still read.
+does not know when it saves. Every older version is still read, with one exception: a start or
+scene time signature with a denominator other than 1, 2, 4, 8 or 16 (/32, /64 and the like) is
+refused in every version. No file holds one, and Suhina is pre-alpha, so nothing reads them.
 
 A change to what is written:
 
