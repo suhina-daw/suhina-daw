@@ -5336,6 +5336,7 @@ name = "suhina-device-fm-synth"
 version = "0.0.1"
 dependencies = [
  "suhina-device-api",
+ "suhina-dsp",
 ]
 
 [[package]]

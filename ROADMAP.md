@@ -98,7 +98,7 @@ exists in `devices/`, passes its tests and runs in track chains.
 | multi-stage saturation | own, oversampled | planned |
 | EQ: eight bands of eight types, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q | own (`dsp` state-variable filters) | done; analyser, Audition and a curve display planned |
 | filter | own (`dsp` filters) | planned |
-| FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine (32 algorithms) done; more waveforms and a filter planned |
+| FM synth: six operators, 43 algorithms, waveforms and drawn partials, DX7 and time envelopes, filter and shaper, two LFOs, modulation matrix, spread, randomizer ([spec](docs/spec/fm-synth.md)) | MSFA (Apache-2.0) via Dexed, own parts around it | done; import from Live Sets planned |
 | wavetable synth | Vital (GPL-3.0), under its own name | planned |
 | subtractive synth | own, Surge XT (GPL-3.0) for reference | planned |
 | sampler | own | single-source Simple/Grain instrument, SDK panel, source loading and recording, tempo-synchronised sample Warp with six selectable modes and automatically initialized, editable source BPM |
@@ -140,7 +140,8 @@ refused or suspended, never by losing its edits.
 
 ## What works now
 
-<!-- A new bullet goes in a file of its own under docs/works-now/ (its README says how), not here. -->
+<!-- FM Synth as a full FM instrument: operator waveforms and drawn partials, envelopes in seconds that loop, a filter and shaper per note, a second LFO up to audio rate, a modulation matrix, stereo spread, its own panel, and Random, which gives a sound new values by section (`device.randomize`).
+- A new bullet goes in a file of its own under docs/works-now/ (its README says how), not here. -->
 
 - Audio settings can open the active ASIO driver's native control panel, and
   show the engine block separately from the measured driver callback size.

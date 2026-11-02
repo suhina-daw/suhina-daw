@@ -113,7 +113,7 @@ impl Layout {
         }
         crate::validate_parameters(&parameters).map_err(fail)?;
         for ui in [&self.ui, &self.expanded].into_iter().flatten() {
-            ui.validate(&parameters).map_err(fail)?;
+            ui.validate_within(&parameters, &crate::ui::Limits::BUILT_IN).map_err(fail)?;
         }
         if let Some(header) = &self.header {
             if header.size[1] > HEADER_HEIGHT || header.size[0] > HEADER_WIDTH {

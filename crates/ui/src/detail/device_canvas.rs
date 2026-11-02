@@ -1988,6 +1988,27 @@ pub(crate) fn show(
             );
             continue;
         }
+        if control.gesture == UiGesture::Randomize {
+            let response = ui
+                .interact(bounds, ui.id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
+                .on_hover_text(&control.tooltip);
+            paint_control(
+                &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
+                &painter,
+                control,
+                drawings,
+                bounds,
+                parameters,
+                &loaded,
+                Some(&response),
+                canvas.accent_on,
+            );
+            if response.clicked() {
+                actions.push(Action::new("device.randomize", json!({ "track": track.0, "device": at.value() })));
+            }
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &control.name));
+            continue;
+        }
         if let UiGesture::Preset(index) = control.gesture {
             let response = ui
                 .interact(bounds, ui.id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
