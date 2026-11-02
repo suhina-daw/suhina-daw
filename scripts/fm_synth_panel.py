@@ -115,7 +115,7 @@ def picture(flags, w, h, size):
         if not heard:
             draws.append(rect(x + 1.0, y + 1.0, size - 2.0, size - 2.0, DISPLAY, 1.0))
         if size >= 12.0:
-            draws.append(text(x + size / 2.0, y + 1.0, str(n), PANEL if heard else color, size - 5.0, center=True))
+            draws.append(text(x + size / 2.0, y + 1.0, str(n), PANEL if heard else color, max(size - 5.0, 8.0), center=True))
     return draws
 
 
@@ -452,7 +452,7 @@ def expanded_operator(x, y, w):
             limit = 0.0 if i < 16 else (1.0 if i < 32 else 2.0)
             visible = both(shown, maximum(0.0, minimum(1.0, mul(sub(par(p("partials")), limit - 0.5), 2.0))))
             controls.append({"visible_when": visible, "id": f"{pid}{tag}", "name": f"Partial {i + 1}", "tooltip": f"Partial {i + 1}",
-                             "bounds": [x + 4.0 + i * bar_w, bars_y + 26.0, bar_w - 1.0, bars_h - 8.0], "gesture": "position", "x": None,
+                             "bounds": [x + 4.0 + i * bar_w, bars_y + 26.0, bar_w, bars_h - 8.0], "gesture": "position", "x": None,
                              "y": {"parameter": pid, "logarithmic": False, "drag_scale": 1.0},
                              "drawing": [rect(0.0, sub(bars_h - 8.0, mul(par(pid), bars_h - 8.0)), bar_w - 1.0, mul(par(pid), bars_h - 8.0), ACCENT)]})
     return controls
@@ -550,7 +550,7 @@ def expanded():
     controls += algorithm_pictures(4.0, 310.0, 340.0, 200.0, "_x", 18.0)
     controls.append(separator("x_sep_left", 356.0, 4.0, h - 8.0))
     controls += tabs("panel.expandedPage", EXPANDED_PAGES, 362.0, 4.0, 72.0, 22.0, "x_page")
-    x, y, mid = 362.0, 32.0, 500.0
+    x, y, mid = 362.0, 32.0, 520.0
     controls += expanded_operator(x, y, mid)
     controls += expanded_filter(x, y, mid)
     controls += expanded_lfo(x, y, mid)
@@ -558,14 +558,14 @@ def expanded():
     controls += expanded_matrix(x, y)
     controls += expanded_algorithm(x, y)
     controls += expanded_random(x, y)
-    controls.append(separator("x_sep_right", 870.0, 4.0, h - 8.0))
+    controls.append(separator("x_sep_right", 888.0, 4.0, h - 8.0))
     right = [("volume", "Volume", par("volume"), " dB", 1, False), ("time", "Time", percent("time"), " %", 0, False), ("tone", "Tone", percent("tone"), " %", 0, False),
              ("spread", "Spread", percent("spread"), " %", 0, False), ("pan", "Pan", percent("pan"), " %", 0, False), ("panByKey", "Pan by key", percent("panByKey"), " %", 0, False),
              ("panRandom", "Random pan", percent("panRandom"), " %", 0, False), ("voices", "Voices", par("voices"), "", 0, False), ("retrigger", "Retrigger", True),
              ("antialias", "Antialias", True), ("interpolation", "Interpolation", True), ("transpose", "Transpose", par("transpose"), " st", 0, False),
              ("pitchBendRange", "Bend range", par("pitchBendRange"), " st", 0, False), ("pitchBendStep", "Bend step", par("pitchBendStep"), " st", 0, False),
              ("portamento", "Glide", True), ("glissando", "Glissando", True), ("portamentoTime", "Glide time", par("portamentoTime"), "", 0, False)]
-    controls += form(right, 876.0, 4.0, None, "_xr", columns=3, w=96.0, h=34.0)
+    controls += form(right, 892.0, 4.0, None, "_xr", columns=3, w=92.0, h=34.0)
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": [], "controls": controls,
             "hidden_parameters": every_parameter()}
 
