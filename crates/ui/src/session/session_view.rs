@@ -131,7 +131,7 @@ pub struct SessionViewState {
     pub shown_device: Option<(TrackId, usize)>,
     /// The devices picked in the window (the strips' lists and the detail area's chain light the
     /// same ones); the window sets it before each frame.
-    pub device_picks: Vec<(TrackId, crate::detail::detail_view::DeviceAt)>,
+    pub device_picks: Vec<(TrackId, crate::interaction::device_at::DeviceAt)>,
     /// What a strip's device list was asked this frame, for the window to do.
     pub device_event: Option<DeviceEvent>,
     /// A strip's device row was clicked: the window opens the detail area on the track.
