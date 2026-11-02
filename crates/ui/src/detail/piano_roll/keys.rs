@@ -386,11 +386,8 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
     let font = theme::mono_font(theme::TEXT_TINY);
     let first = layout.key_at(layout.grid.bottom() - 0.5).unwrap_or(0);
     let last = layout.key_at(layout.grid.top() + 0.5).unwrap_or(127);
-    // A drag here names the row it holds, the pointer being hidden.
-    let pointer = match state.strip_drag {
-        Some(drag) => layout.key_at(layout.grid.top() - layout.scroll.y + drag.row * layout.key_height),
-        None => state.hover_key(),
-    };
+    // A drag here has no pointer to name a row for.
+    let pointer = state.hover_key().filter(|_| state.strip_drag.is_none());
     for key in (first..=last).filter(|k| k.is_multiple_of(12) && layout.rows.shows(*k) && pointer != Some(*k)) {
         let centre = Pos2::new(strip.center().x, layout.y_of(key) + layout.key_height / 2.0);
         painter.text(centre, Align2::CENTER_CENTER, key_name(key), font.clone(), text);
@@ -415,7 +412,7 @@ pub(super) struct StripDrag {
     from: Pos2,
     moved: Vec2,
     height: f32,
-    pub(super) row: f32,
+    row: f32,
 }
 
 /// A drag in the scale strip: sideways it makes the rows taller (right) or lower (left), and up or

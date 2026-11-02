@@ -415,8 +415,7 @@ pull up.
 - **Built:** a drag in the scale strip left of the keys changes the row height sideways (to the right,
   taller) and scrolls the rows up and down, the row where it began staying under the pointer: the
   ruler's drag the other way round (› Key column and scale strip). During both drags the pointer is
-  hidden, as on a value control, and comes back where it was pressed; the strip names the row the
-  drag holds.
+  hidden, as on a value control, and comes back where it was pressed; the strip names no row.
 
 ## Drawing notes
 

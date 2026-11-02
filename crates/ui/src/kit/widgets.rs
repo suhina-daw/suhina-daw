@@ -126,10 +126,15 @@ pub fn value_drag_returns_to(ctx: &egui::Context, at: Pos2) {
 }
 
 /// Keeps the pointer hidden while a value drag holds it, called after the views: the last icon set
-/// in a frame wins, and egui shows the pointer again for any other icon.
+/// in a frame wins, and egui shows the pointer again for any other icon. The frame it comes back has
+/// an icon of its own: the windowing layer only acts on a change of icon, so without one a view that
+/// hides the pointer for a shape of its own (a magnifier) would stay hidden in name only, the pointer
+/// shown over its shape.
 pub fn hide_pointer_during_value_drag(ctx: &egui::Context) {
-    if ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_some() {
-        ctx.set_cursor_icon(egui::CursorIcon::None);
+    match ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())) {
+        Some(drag) if drag.released => ctx.set_cursor_icon(egui::CursorIcon::Default),
+        Some(_) => ctx.set_cursor_icon(egui::CursorIcon::None),
+        None => {}
     }
 }
 

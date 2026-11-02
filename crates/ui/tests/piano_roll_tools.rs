@@ -969,3 +969,31 @@ fn a_rectangle_over_a_little_of_a_note_covers_all_of_it() {
     let bar = h.get_by_label_contains("Selected in time").rect();
     assert!(bar.left() <= row.left() + 1.0 && bar.right() >= row.right() - 1.0, "{bar:?} covers {row:?}");
 }
+
+/// While a drag in the strip zooms there is no pointer, and the strip names no row.
+#[test]
+fn a_drag_in_the_strip_names_no_row() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let at = h.get_by_label("Row height strip").rect().center();
+    let to = at + egui::vec2(30.0, 0.0);
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerMoved(to));
+    h.step();
+    assert!(h.query_by_label_contains("Row under the pointer").is_none());
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.run();
+}

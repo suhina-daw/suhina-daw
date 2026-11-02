@@ -222,3 +222,17 @@ fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
     ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
     assert_eq!(run(false, true), egui::CursorIcon::ResizeVertical);
 }
+
+/// The frame the pointer comes back the icon changes, so a view that hides the pointer next frame
+/// (a magnifier under it) is a change the windowing layer acts on.
+#[test]
+fn the_frame_a_value_drag_lets_go_the_pointers_icon_changes() {
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        ui.ctx().data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { raw: true, back: None, released: true }));
+        ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+        hide_pointer_during_value_drag(ui.ctx());
+    });
+    output.textures_delta.clear();
+    assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::Default);
+}
