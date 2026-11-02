@@ -567,11 +567,11 @@ fn a_slots_context_menu_renames_its_clip() {
     harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
     harness.run();
     assert!(harness.query_by_label_contains("Rename clip Walk").is_some(), "the menu carries the clip's name field");
-    harness.get_by_label_contains("Rename clip Walk").click();
+    harness.get_by_label("Rename clip Walk").click();
     harness.run();
     harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
     harness.run();
-    harness.get_by_label_contains("Rename clip Walk").type_text("Walk the bass");
+    harness.get_by_label("Rename clip Walk").type_text("Walk the bass");
     harness.run();
     harness.key_press(Key::Enter);
     harness.run();
