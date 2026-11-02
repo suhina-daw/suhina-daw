@@ -348,13 +348,18 @@ fn load_project(args: &Args) -> Result<(Project, AudioPool, suhina_engine::Devic
         Source::Demo => (demo_project(), AudioPool::new(), suhina_engine::DeviceAssets::new()),
         Source::Als(path) => {
             // A Suhina project (.suhina) or a Live Set to import.
-            let (session, warnings) = suhina_session::Session::open(path).map_err(|e| e.message().to_owned())?;
-            let folder = path.parent().unwrap_or(std::path::Path::new("."));
+            // Opened, and its audio trusted, as the window and the MCP server do (#764 › 3).
             let started = std::time::Instant::now();
-            let (audio, audio_warnings) = suhina_media::load_project_audio(session.project(), folder);
-            for warning in warnings.iter().chain(&audio_warnings) {
+            let options = suhina_session::OpenOptions { audio: true };
+            // The person's library (browser.json beside the settings), for what they trust outside
+            // the project's folder: the files they saved projects with, their library folders.
+            let mut projects = suhina_session::Projects::new();
+            projects.set_file_library(suhina_library::Library::new(suhina_plugins::library::settings_folder()));
+            let (session, warnings) = projects.open_path(path, options).map_err(|e| e.message().to_owned())?;
+            for warning in &warnings {
                 eprintln!("warning: {warning}");
             }
+            let audio = session.audio().clone();
             if !audio.files.is_empty() {
                 eprintln!("audio: {} files decoded in {:.1} s", audio.files.len(), started.elapsed().as_secs_f64());
             }

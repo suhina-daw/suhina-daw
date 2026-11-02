@@ -37,6 +37,8 @@ pub(super) fn project_audio(session: &Session, project: &Project) -> (suhina_med
 pub(super) struct AudioSnapshot {
     folder: Option<PathBuf>,
     have: suhina_media::AudioPool,
+    /// What the session trusts outside its folder (#764 › 3).
+    trusted: suhina_media::Trusted,
 }
 
 pub(super) fn audio_snapshot(session: &Session) -> AudioSnapshot {
@@ -44,13 +46,13 @@ pub(super) fn audio_snapshot(session: &Session) -> AudioSnapshot {
         .audio_folder()
         .map(Path::to_path_buf)
         .or_else(|| session.source().and_then(|s| s.parent()).map(Path::to_path_buf));
-    AudioSnapshot { folder, have: session.audio().clone() }
+    AudioSnapshot { folder, have: session.audio().clone(), trusted: session.trusted().clone() }
 }
 
 impl AudioSnapshot {
     /// The pool `project` plays, decoding the files the session has not, and the warnings.
     pub(super) fn complete(self, project: &Project) -> (suhina_media::AudioPool, Vec<String>) {
-        let AudioSnapshot { folder, mut have } = self;
+        let AudioSnapshot { folder, mut have, trusted } = self;
         let missing = project
             .contents
             .iter()
@@ -58,8 +60,9 @@ impl AudioSnapshot {
             .any(|lane| matches!(&lane.data, LaneData::Audio(region) if !have.files.contains_key(&region.file)));
         let mut warnings = Vec::new();
         if missing {
-            let (loaded, found) =
-                suhina_media::load_project_audio(project, folder.as_deref().unwrap_or(Path::new(".")));
+            // Trusted as the session trusts it, so a render reads what the project plays.
+            let folder = folder.as_deref().unwrap_or(Path::new("."));
+            let (loaded, found) = suhina_media::load_project_audio_trusted(project, folder, &trusted);
             for (key, data) in loaded.files {
                 have.files.entry(key).or_insert(data);
             }

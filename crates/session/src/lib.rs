@@ -100,7 +100,8 @@ pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
 pub use player::{OutputHandle, Player};
 pub use plugins::{device_plugin, plugin_commands};
 pub use projects::{
-    MAX_OPEN_PROJECTS, ProjectId, Projects, all_commands, commands_markdown, params_of, policy, project_commands,
+    MAX_OPEN_PROJECTS, OpenOptions, ProjectId, Projects, all_commands, commands_markdown, params_of, policy,
+    project_commands,
 };
 pub use rack::{
     BlockCounts, Hosted, OfflinePlugins, PluginEnv, PluginProgress, PluginReport, PluginStatus, ProcessGroup, Rack,

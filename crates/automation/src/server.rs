@@ -348,7 +348,10 @@ impl SuhinaMcp {
         let output = self.audio_output;
         let result = self
             .with_projects(move |projects| {
-                let (opened, mut warnings) = Session::open(&path).map_err(String::from)?;
+                // Opened as the window and the CLI open it; its audio is decoded, trusted as they
+                // trust it, when the server plays it (#764 › 3).
+                let options = suhina_session::OpenOptions { audio: output };
+                let (opened, mut warnings) = projects.open_path(&path, options).map_err(String::from)?;
                 let id = projects.add(opened, None).map_err(String::from)?;
                 let session = projects.session_mut(Some(id)).map_err(String::from)?;
                 let mut info = session.execute("project.info", &json!({})).map_err(String::from)?;
