@@ -239,7 +239,7 @@ fn a_nested_group_reports_its_latency_to_the_outer_one() {
     let assets = crate::DeviceAssets::new();
     let mut plugins = crate::Plugins::new();
     let audio = crate::AudioPool::new();
-    let mut builder = crate::group::Builder {
+    let mut builder = crate::slot_factory::SlotFactory {
         sample_rate: SR,
         audio: &audio,
         assets: &assets,
@@ -400,7 +400,7 @@ fn a_file_device_in_a_group_is_known_by_its_file() {
         let mut cab = device("nam-cab-loader", &[]);
         cab.state = Some(state.to_vec());
         let outer = group(vec![branch(vec![cab.clone()])], &[]);
-        let mut builder = crate::group::Builder {
+        let mut builder = crate::slot_factory::SlotFactory {
             sample_rate: SR,
             audio: &audio,
             assets: &assets,

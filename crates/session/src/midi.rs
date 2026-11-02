@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use serde_json::{Value, json};
 use suhina_engine::{LiveEvent, LiveSender, LiveSource};
 
+use crate::commands::Args;
 use crate::commands::{CommandKind, CommandSpec, ParamType, param};
 use crate::{Agents, CommandError, Policy, Projects};
 
@@ -205,8 +206,8 @@ fn inputs(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 }
 
 fn set_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let port = params.get("port").and_then(Value::as_str).map(str::trim).ok_or("port must be a text")?;
-    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let port = Args::new(params).raw_str("port").map(str::trim).ok_or("port must be a text")?;
+    let enabled = Args::new(params).bool("enabled")?;
     let midi = projects.midi_mut();
     let system = midi.system.clone().ok_or_else(no_midi)?;
     let ports = system.ports().map_err(|e| CommandError(format!("the MIDI inputs could not be listed: {e}")))?;

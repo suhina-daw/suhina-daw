@@ -19,7 +19,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Read,
         run: save,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Saves, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "project.info",
@@ -152,14 +152,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
 ];
 
 fn save(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let copy = match params.get("copy") {
-        None | Some(Value::Null) => false,
+    let copy = match Args::new(params).value("copy") {
+        None => false,
         Some(Value::Bool(b)) => *b,
         Some(_) => return Err("copy must be true or false".into()),
     };
-    let path = match params.get("path") {
+    let path = match Args::new(params).value("path") {
         Some(Value::String(path)) if !path.trim().is_empty() => std::path::PathBuf::from(path.trim()),
-        Some(Value::String(_)) | None | Some(Value::Null) => match session.source() {
+        Some(Value::String(_)) | None => match session.source() {
             Some(source) if suhina_project_file::is_project_file(source) => source.to_path_buf(),
             _ => return Err("the project has no .suhina file yet; give a path to save it to".into()),
         },

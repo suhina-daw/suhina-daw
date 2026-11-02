@@ -10,6 +10,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
+mod audio_data;
 pub mod automation;
 mod build;
 mod comping;
@@ -23,10 +24,19 @@ pub use tempo::{
     Meter, TempoMap, TempoPoint, TimeSignatureChange, valid_bpm,
 };
 
+pub use audio_data::{AudioData, AudioPool};
 pub use groups::{
     Branch, DeviceGroup, MACROS, MAX_BRANCHES, MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_MACRO_MAPPINGS, Macro,
     MacroMapping, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups, walk_devices,
 };
+
+/// The extension of a Suhina project file, without the dot.
+pub const PROJECT_EXTENSION: &str = "suhina";
+
+/// Whether `path` names a project file by its extension, `.suhina` in either case.
+pub fn is_project_file(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(PROJECT_EXTENSION))
+}
 pub use ids::{ClipId, ClipPlace, IdsExhausted, LaneId, SceneId};
 
 mod launch;

@@ -9,6 +9,7 @@
 use serde_json::{Value, json};
 use suhina_model::{LaunchMapping, MappingSource, MappingTarget, Project};
 
+use crate::commands::Args;
 use crate::commands::{column_index, scene_index, track_id};
 use crate::{CommandError, Session};
 
@@ -17,14 +18,14 @@ pub const MAX_MAPPINGS: usize = 1024;
 
 fn source(params: &Value) -> Result<MappingSource, CommandError> {
     let what = "a key (key:Q, key:Space) or a MIDI note (note:<channel 1-16>:<note 0-127>)";
-    let text = params.get("source").and_then(Value::as_str).ok_or_else(|| format!("source must be {what}"))?;
+    let text = Args::new(params).raw_str("source").ok_or_else(|| format!("source must be {what}"))?;
     MappingSource::from_name(text).ok_or_else(|| format!("source must be {what}, got {text:?}").into())
 }
 
 /// The target `params.target` names, with the track and scene it needs, checked against the
 /// project: the track has slots and the scene exists.
 fn target(p: &Project, params: &Value) -> Result<MappingTarget, CommandError> {
-    let kind = params.get("target").and_then(Value::as_str).ok_or("target must be slot, scene or stop")?;
+    let kind = Args::new(params).raw_str("target").ok_or("target must be slot, scene or stop")?;
     let track = || -> Result<_, CommandError> {
         column_index(p, params)?;
         track_id(p, params)
@@ -86,7 +87,7 @@ pub(crate) fn add_mapping(session: &mut Session, params: &Value) -> Result<Value
 
 pub(crate) fn remove_mapping(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &session.project;
-    let removed: Vec<LaunchMapping> = match (params.get("source"), params.get("target")) {
+    let removed: Vec<LaunchMapping> = match (Args::new(params).value("source"), Args::new(params).value("target")) {
         (Some(_), None) => {
             let source = source(params)?;
             p.launcher.mappings.iter().filter(|m| m.source == source).cloned().collect()

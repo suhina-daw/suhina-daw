@@ -381,15 +381,51 @@ pub struct Policy {
     pub critical: bool,
     /// Whether an agent may run it over MCP (ADR 0028).
     pub agents: Agents,
+    /// What the open projects do once it has run (#764 › 1).
+    pub after: After,
+    /// A preview: with no project open it runs in the previews' own session, not on a project.
+    pub previews: bool,
 }
 
 impl Policy {
-    /// Heard, not critical, open to agents.
-    pub const DEFAULT: Self = Self { heard: true, critical: false, agents: Agents::Allowed };
+    /// Heard, not critical, open to agents, nothing after it.
+    pub const DEFAULT: Self =
+        Self { heard: true, critical: false, agents: Agents::Allowed, after: After::Nothing, previews: false };
     /// An edit only seen: a name, a colour, a marker.
     pub const UNHEARD: Self = Self { heard: false, ..Self::DEFAULT };
     /// Backed up before it runs.
     pub const CRITICAL: Self = Self { critical: true, ..Self::DEFAULT };
+    /// A preview of a file or a device, which plays with or without a project.
+    pub const PREVIEW: Self = Self { previews: true, ..Self::DEFAULT };
+}
+
+/// What [`crate::Projects`] does after a command that succeeded, besides what the command did
+/// to its project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum After {
+    Nothing,
+    /// It filled a clipboard, which every open project shares.
+    Copies,
+    /// It saved the project: the tab takes the file's name, its backups need no offering, and the
+    /// audio it plays is trusted from then on.
+    Saves,
+    /// It added something the browser lists among the recent items (`docs/spec/browser.md` ›
+    /// Sidebar).
+    Recent(Recent),
+}
+
+/// Which recent items a command adds to, and from which of its parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Recent {
+    /// The files of `paths` that were placed: samples, Stems and MIDI files.
+    Files,
+    /// The built-in device, plug-in, `.sd` file or preset the command added (`id`, `device`,
+    /// `sd`, `preset`).
+    Device,
+    /// The `.sd` file at `path`.
+    SdFile,
+    /// The plug-in named by `plugin`.
+    Plugin,
 }
 
 /// Who may run a command over MCP.
@@ -629,7 +665,7 @@ fn tracks(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
 
 fn clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = session.project();
-    let only = match params.get("track") {
+    let only = match Args::new(params).value("track") {
         Some(_) => Some(track_id(p, params)?),
         None => None,
     };
@@ -686,14 +722,14 @@ fn loop_value(p: &Project) -> Value {
 
 /// `params.enabled`: true or false, or `None` when left out.
 fn optional_enabled(params: &Value) -> Result<Option<bool>, CommandError> {
-    match params.get("enabled") {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value("enabled") {
+        None => Ok(None),
         Some(v) => v.as_bool().map(Some).ok_or_else(|| "enabled must be true or false".into()),
     }
 }
 
 fn set_loop(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (start, end) = (number(params, "start")?, number(params, "end")?);
+    let (start, end) = (Args::new(params).f64("start")?, Args::new(params).f64("end")?);
     if !(0.0..MAX_START_BEAT).contains(&start) {
         return Err(format!("start must be from 0 and before {MAX_START_BEAT}, got {start}").into());
     }
@@ -731,7 +767,10 @@ pub(crate) fn gain_of_db(db: f64) -> f64 {
 
 /// The ids in `params.tracks`, each resolved like a track parameter.
 pub(crate) fn track_list(p: &Project, params: &Value) -> Result<Vec<TrackId>, CommandError> {
-    let list = params.get("tracks").and_then(Value::as_array).ok_or("tracks must be a list of track ids or names")?;
+    let list = Args::new(params)
+        .value("tracks")
+        .and_then(Value::as_array)
+        .ok_or("tracks must be a list of track ids or names")?;
     let mut ids = Vec::new();
     for value in list {
         let id = track_at(p, &json!({ "track": value }), "track")?;
@@ -762,7 +801,7 @@ pub(crate) fn group_tracks(session: &mut Session, params: &Value) -> Result<Valu
     if deepest + 1 > MAX_GROUP_DEPTH {
         return Err(format!("groups nest at most {MAX_GROUP_DEPTH} deep; this grouping would go deeper").into());
     }
-    let name = match params.get("name") {
+    let name = match Args::new(params).value("name") {
         None => "Group".to_string(),
         Some(v) => v.as_str().filter(|n| !n.trim().is_empty()).ok_or("name must be a text, not empty")?.to_string(),
     };
@@ -833,7 +872,8 @@ pub(crate) fn remove_track(p: &mut Project, track: TrackId, channel: ChannelId) 
 /// The clips `params.clips` names, each `{ "track": …, "index": n }` as `project.clips` lists
 /// them: at least one, without duplicates, every one of them there.
 pub(crate) fn clip_list(p: &Project, params: &Value) -> Result<Vec<(TrackId, usize)>, CommandError> {
-    let list = params.get("clips").and_then(Value::as_array).ok_or("clips must be a list of {track, index}")?;
+    let list =
+        Args::new(params).value("clips").and_then(Value::as_array).ok_or("clips must be a list of {track, index}")?;
     let mut out: Vec<(TrackId, usize)> = Vec::new();
     for entry in list {
         let track = track_at(p, entry, "track")?;
@@ -862,7 +902,10 @@ pub(crate) fn clip_list(p: &Project, params: &Value) -> Result<Vec<(TrackId, usi
 /// The lane of `params.track` and the clip index in it, checked.
 pub(crate) fn lane_and_index(p: &Project, params: &Value) -> Result<(usize, usize), CommandError> {
     let track = track_id(p, params)?;
-    let index = params.get("index").and_then(Value::as_u64).ok_or("index must be a whole number from project.clips")?;
+    let index = Args::new(params)
+        .value("index")
+        .and_then(Value::as_u64)
+        .ok_or("index must be a whole number from project.clips")?;
     let lane =
         p.arrangement.lanes.iter().position(|l| l.track == Some(track)).ok_or("the track has no arrangement lane")?;
     let count = p.arrangement.lanes.get(lane).map_or(0, |l| l.clips.len());
@@ -905,7 +948,7 @@ pub(crate) fn new_content_id(p: &Project) -> Result<suhina_model::ContentId, Com
 
 /// `clip.renameMany {clips, name}` (#693).
 fn rename_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let name = match params.get("name") {
+    let name = match Args::new(params).value("name") {
         Some(Value::String(name)) => name.trim().to_string(),
         _ => return Err("name must be a text (empty clears it)".into()),
     };
@@ -1031,13 +1074,13 @@ fn send(session: &mut Session, command: LaunchCommand) -> Result<(), CommandErro
 
 fn play(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     session.player_mut()?;
-    let start = match params.get("from") {
+    let start = match Args::new(params).value("from") {
         None => None,
         Some(Value::String(s)) if s == "marker" => None,
         Some(Value::String(s)) if s == "clip" => Some(clip_start(&session.project, params)?),
         Some(other) => return Err(format!("from must be \"marker\" or \"clip\", got {other}").into()),
     };
-    if start.is_none() && (params.get("track").is_some() || params.get("index").is_some()) {
+    if start.is_none() && (Args::new(params).has("track") || Args::new(params).has("index")) {
         return Err("track and index go with from: \"clip\"".into());
     }
     // The marker moves first, so playback starts there; while playing, that is a jump.
@@ -1062,7 +1105,7 @@ fn clip_start(p: &Project, params: &Value) -> Result<f64, CommandError> {
 }
 
 fn stop(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let command = match params.get("return") {
+    let command = match Args::new(params).value("return") {
         None => LaunchCommand::Stop,
         Some(Value::String(s)) if s == "marker" => LaunchCommand::Stop,
         Some(Value::String(s)) if s == "here" => LaunchCommand::StopHere,
@@ -1079,7 +1122,7 @@ fn signature_text(ts: TimeSignature) -> String {
 }
 
 fn set_quantization(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let text = params.get("value").and_then(Value::as_str).ok_or("value must be a string such as \"1 bar\"")?;
+    let text = Args::new(params).raw_str("value").ok_or("value must be a string such as \"1 bar\"")?;
     let quantization = parse_quantization(text)?;
     session.set_quantization(quantization)?;
     Ok(json!({ "quantization": text.trim() }))
@@ -1130,7 +1173,8 @@ pub(crate) fn column_index(p: &Project, params: &Value) -> Result<usize, Command
 /// The 0-based scene index of the 1-based `params.scene`.
 pub(crate) fn scene_index(p: &Project, params: &Value) -> Result<usize, CommandError> {
     let count = p.launcher.scenes.len();
-    let number = params.get("scene").and_then(Value::as_u64).ok_or("scene must be a whole number from 1")?;
+    let number =
+        Args::new(params).value("scene").and_then(Value::as_u64).ok_or("scene must be a whole number from 1")?;
     usize::try_from(number)
         .ok()
         .and_then(|n| n.checked_sub(1))
@@ -1163,7 +1207,7 @@ pub(crate) fn track_or_main_id(p: &Project, params: &Value) -> Result<TrackId, C
 /// [`track_or_main_id`] for `params[key]`.
 pub(crate) fn track_or_main_at(p: &Project, params: &Value, key: &str) -> Result<TrackId, CommandError> {
     let main = p.main_channel().is_some();
-    match params.get(key) {
+    match Args::new(params).value(key) {
         Some(Value::Number(n)) if main && n.as_u64() == Some(u64::from(TrackId::MAIN.0)) => Ok(TrackId::MAIN),
         Some(Value::String(name))
             if main
@@ -1178,7 +1222,7 @@ pub(crate) fn track_or_main_at(p: &Project, params: &Value, key: &str) -> Result
 
 /// Resolves the track id or name in `params[key]`.
 pub(crate) fn track_at(p: &Project, params: &Value, key: &str) -> Result<TrackId, CommandError> {
-    match params.get(key) {
+    match Args::new(params).value(key) {
         Some(Value::Number(n)) => {
             let id = n.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("track id must be a whole number")?;
             p.tracks
@@ -1230,22 +1274,6 @@ pub(crate) fn device_channel_read<'a>(session: &'a Session, params: &Value) -> R
 fn channel_of<'a>(p: &'a Project, track: &Track) -> Option<&'a Channel> {
     let id = track.channel?;
     p.channel(id)
-}
-
-pub(crate) fn number(params: &Value, name: &str) -> Result<f64, CommandError> {
-    params
-        .get(name)
-        .and_then(Value::as_f64)
-        .filter(|n| n.is_finite())
-        .ok_or_else(|| format!("{name} must be a number").into())
-}
-
-/// Like [`number`], but also accepts the string "-inf".
-pub(crate) fn number_or_neg_infinity(params: &Value, name: &str) -> Result<f64, CommandError> {
-    match params.get(name) {
-        Some(Value::String(s)) if s == "-inf" => Ok(f64::NEG_INFINITY),
-        _ => number(params, name),
-    }
 }
 
 /// Linear gain to decibels, rounded to 0.01 dB; `None` (JSON null) for silence.

@@ -755,10 +755,7 @@ impl SoundMap {
             return;
         }
         let path = dir.join(layout_file_name(key));
-        let temporary = path.with_extension("bin.tmp");
-        if std::fs::write(&temporary, layout_to_bytes(positions)).is_ok() {
-            let _ = std::fs::rename(&temporary, &path);
-        }
+        let _unkept = suhina_fs::write_atomic(&path, layout_to_bytes(positions));
         // Keep only the newest layouts.
         let Ok(entries) = std::fs::read_dir(&dir) else { return };
         let mut layouts: Vec<(std::time::SystemTime, PathBuf)> = entries
@@ -867,10 +864,7 @@ impl SoundMap {
         let Some(dir) = self.data_folder.clone() else { return Ok(()) };
         std::fs::create_dir_all(&dir).map_err(|e| format!("could not keep the kind: {e}"))?;
         let file = dir.join(HAND_KINDS_FILE);
-        let temporary = file.with_extension("txt.tmp");
-        std::fs::write(&temporary, hand_kinds_to_text(kinds))
-            .and_then(|()| std::fs::rename(&temporary, &file))
-            .map_err(|e| format!("could not keep the kind: {e}"))
+        suhina_fs::write_atomic(&file, hand_kinds_to_text(kinds)).map_err(|e| format!("could not keep the kind: {e}"))
     }
 }
 

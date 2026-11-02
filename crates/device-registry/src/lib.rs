@@ -11,56 +11,173 @@ use suhina_device_api::{Device, DeviceInfo};
 use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
 
+/// One built-in device: everything the rest of Suhina asks the registry about it, in one row
+/// (#764 › 9). [`DEVICES`], [`create`], [`layout`], [`panel`] and [`is_file_device`] read this
+/// table, so a new device is one row here.
+pub struct Entry {
+    pub info: &'static DeviceInfo,
+    /// A new device at its defaults.
+    make: fn() -> Box<dyn Device>,
+    /// Where its panel's layout comes from.
+    layout: LayoutSource,
+    /// It runs a file whose path its `Device::state` holds (docs/spec/nam-amp-and-cab.md).
+    pub runs_a_file: bool,
+}
+
+/// Where a device's panel layout comes from (ADR 0021 › Amendment: device panels).
+enum LayoutSource {
+    /// None: the generated parameter list.
+    Generated,
+    /// `devices/<name>/panel.json`.
+    Json(&'static str),
+    /// Built in Rust by the device crate.
+    Rust(fn() -> Layout),
+}
+
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const DEVICES: [&DeviceInfo; 17] = [
-    &suhina_device_fm_synth::INFO,
-    &suhina_device_sampler::INFO,
-    &suhina_device_utility::INFO,
-    &suhina_device_auto_pan::INFO,
-    &suhina_device_dj_eq::INFO,
-    &suhina_device_eq::INFO,
-    &suhina_device_vinyl_distortion::INFO,
-    &suhina_device_overdrive::INFO,
-    &suhina_device_saturator::INFO,
-    &suhina_device_compressor::INFO,
-    &suhina_device_multiband::INFO,
-    &suhina_device_limiter::INFO,
-    &suhina_device_nam_amp_modeler::INFO,
-    &suhina_device_nam_cab_loader::INFO,
-    &suhina_device_delay::INFO,
-    &suhina_device_reverb::INFO,
-    &suhina_device_pitch::INFO,
+pub const ENTRIES: [Entry; 17] = [
+    Entry {
+        info: &suhina_device_fm_synth::INFO,
+        make: || Box::new(suhina_device_fm_synth::FmSynth::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/fm-synth/panel.json")),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_sampler::INFO,
+        make: || Box::new(suhina_device_sampler::Sampler::new()),
+        layout: LayoutSource::Rust(suhina_device_sampler::layout),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_utility::INFO,
+        make: || Box::new(suhina_device_utility::Utility::new()),
+        layout: LayoutSource::Generated,
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_auto_pan::INFO,
+        make: || Box::new(suhina_device_auto_pan::AutoPan::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/auto-pan/panel.json")),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_dj_eq::INFO,
+        make: || Box::new(suhina_device_dj_eq::DjEq::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/dj-eq/panel.json")),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_eq::INFO,
+        make: || Box::new(suhina_device_eq::Eq::new()),
+        layout: LayoutSource::Generated,
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_vinyl_distortion::INFO,
+        make: || Box::new(suhina_device_vinyl_distortion::VinylDistortion::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/vinyl-distortion/panel.json")),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_overdrive::INFO,
+        make: || Box::new(suhina_device_overdrive::Overdrive::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/overdrive/panel.json")),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_saturator::INFO,
+        make: || Box::new(suhina_device_saturator::Saturator::new()),
+        layout: LayoutSource::Generated,
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_compressor::INFO,
+        make: || Box::new(suhina_device_compressor::Compressor::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/compressor/panel.json")),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_multiband::INFO,
+        make: || Box::new(suhina_device_multiband::Multiband::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/multiband/panel.json")),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_limiter::INFO,
+        make: || Box::new(suhina_device_limiter::Limiter::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/limiter/panel.json")),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_nam_amp_modeler::INFO,
+        make: || Box::new(suhina_device_nam_amp_modeler::NamAmp::new()),
+        layout: LayoutSource::Generated,
+        runs_a_file: true,
+    },
+    Entry {
+        info: &suhina_device_nam_cab_loader::INFO,
+        make: || Box::new(suhina_device_nam_cab_loader::CabLoader::new()),
+        layout: LayoutSource::Generated,
+        runs_a_file: true,
+    },
+    Entry {
+        info: &suhina_device_delay::INFO,
+        make: || Box::new(suhina_device_delay::Delay::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/delay/panel.json")),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_reverb::INFO,
+        make: || Box::new(suhina_device_reverb::Reverb::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/reverb/panel.json")),
+        runs_a_file: false,
+    },
+    Entry {
+        info: &suhina_device_pitch::INFO,
+        make: || Box::new(suhina_device_pitch::Pitch::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/pitch/panel.json")),
+        runs_a_file: false,
+    },
 ];
+
+/// What each entry is, in the order of [`ENTRIES`].
+pub const DEVICES: [&DeviceInfo; ENTRIES.len()] = {
+    let mut out = [ENTRIES[0].info; ENTRIES.len()];
+    let mut i = 0;
+    while i < ENTRIES.len() {
+        out[i] = ENTRIES[i].info;
+        i += 1;
+    }
+    out
+};
+
+fn entry(id: &str) -> Option<&'static Entry> {
+    ENTRIES.iter().find(|entry| entry.info.id == id)
+}
 
 /// What the device with this id is, or `None` for an unknown id.
 pub fn info(id: &str) -> Option<&'static DeviceInfo> {
-    DEVICES.iter().copied().find(|info| info.id == id)
+    entry(id).map(|entry| entry.info)
 }
 
 /// The layout of the device with this id, when it has one (ADR 0021 › Amendment: device panels
 /// for built-in devices): the `.sd` UI part only, its parameters named by id. A device crate
-/// gives it in Rust, or as `devices/<name>/panel.json` listed in [`LAYOUT_FILES`].
+/// gives it in Rust, or as `devices/<name>/panel.json`.
 pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
-    if id == "sampler" {
-        return Some(Ok(suhina_device_sampler::layout()));
+    match entry(id)?.layout {
+        LayoutSource::Generated => None,
+        LayoutSource::Json(text) => Some(Layout::from_json(text)),
+        LayoutSource::Rust(make) => Some(Ok(make())),
     }
-    LAYOUT_FILES.iter().find(|(file_id, _)| *file_id == id).map(|(_, text)| Layout::from_json(text))
 }
 
-/// The layouts kept as JSON next to a device crate, by device id.
-pub const LAYOUT_FILES: &[(&str, &str)] = &[
-    ("compressor", include_str!("../../../devices/compressor/panel.json")),
-    ("multiband", include_str!("../../../devices/multiband/panel.json")),
-    ("overdrive", include_str!("../../../devices/overdrive/panel.json")),
-    ("reverb", include_str!("../../../devices/reverb/panel.json")),
-    ("limiter", include_str!("../../../devices/limiter/panel.json")),
-    ("dj-eq", include_str!("../../../devices/dj-eq/panel.json")),
-    ("auto-pan", include_str!("../../../devices/auto-pan/panel.json")),
-    ("vinyl-distortion", include_str!("../../../devices/vinyl-distortion/panel.json")),
-    ("delay", include_str!("../../../devices/delay/panel.json")),
-    ("pitch", include_str!("../../../devices/pitch/panel.json")),
-    ("fm-synth", include_str!("../../../devices/fm-synth/panel.json")),
-];
+/// The ids of the devices whose layout is a `panel.json`, with its text.
+pub fn layout_files() -> impl Iterator<Item = (&'static str, &'static str)> {
+    ENTRIES.iter().filter_map(|entry| match entry.layout {
+        LayoutSource::Json(text) => Some((entry.info.id, text)),
+        LayoutSource::Generated | LayoutSource::Rust(_) => None,
+    })
+}
 
 /// The panel of the device with this id: its parameters from its `DeviceInfo`, laid out by its
 /// layout, or the generated parameter list when it has none or its layout does not load.
@@ -99,26 +216,7 @@ pub fn panel(id: &str) -> Option<&'static Panel> {
 /// A new device with this id at its defaults, prepared for 48 kHz, or `None` for an unknown
 /// id. Allocates: call it off the audio thread.
 pub fn create(id: &str) -> Option<Box<dyn Device>> {
-    Some(match id {
-        "sampler" => Box::new(suhina_device_sampler::Sampler::new()),
-        "fm-synth" => Box::new(suhina_device_fm_synth::FmSynth::new()),
-        "utility" => Box::new(suhina_device_utility::Utility::new()),
-        "auto-pan" => Box::new(suhina_device_auto_pan::AutoPan::new()),
-        "dj-eq" => Box::new(suhina_device_dj_eq::DjEq::new()),
-        "eq" => Box::new(suhina_device_eq::Eq::new()),
-        "vinyl-distortion" => Box::new(suhina_device_vinyl_distortion::VinylDistortion::new()),
-        "overdrive" => Box::new(suhina_device_overdrive::Overdrive::new()),
-        "saturator" => Box::new(suhina_device_saturator::Saturator::new()),
-        "compressor" => Box::new(suhina_device_compressor::Compressor::new()),
-        "multiband" => Box::new(suhina_device_multiband::Multiband::new()),
-        "limiter" => Box::new(suhina_device_limiter::Limiter::new()),
-        "nam-amp-modeler" => Box::new(suhina_device_nam_amp_modeler::NamAmp::new()),
-        "nam-cab-loader" => Box::new(suhina_device_nam_cab_loader::CabLoader::new()),
-        "delay" => Box::new(suhina_device_delay::Delay::new()),
-        "reverb" => Box::new(suhina_device_reverb::Reverb::new()),
-        "pitch" => Box::new(suhina_device_pitch::Pitch::new()),
-        _ => return None,
-    })
+    entry(id).map(|entry| (entry.make)())
 }
 
 /// The file a file-backed device runs, already read and parsed or decoded (docs/spec/nam-amp-and-cab.md):
@@ -133,7 +231,7 @@ pub enum DeviceAsset {
 
 /// The ids whose devices run a file stored in `Device::state` (docs/spec/nam-amp-and-cab.md).
 pub fn is_file_device(id: &str) -> bool {
-    matches!(id, "nam-amp-modeler" | "nam-cab-loader")
+    entry(id).is_some_and(|entry| entry.runs_a_file)
 }
 
 /// A new device with this id, its defaults, and `asset` already loaded — `None` for an id that

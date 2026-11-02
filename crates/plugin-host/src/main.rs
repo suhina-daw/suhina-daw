@@ -58,6 +58,7 @@ mod ara;
 mod ara_sys;
 mod audio;
 mod clap;
+mod hosted;
 mod param_notes;
 mod processors;
 mod run_loop;
@@ -68,10 +69,6 @@ mod test_vst3;
 #[cfg(feature = "vst2")]
 mod vst2;
 mod vst3;
-mod vst3_editor;
-mod vst3_events;
-mod vst3_message;
-mod vst3_params;
 mod window;
 
 use std::collections::BTreeMap;
@@ -82,10 +79,9 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use hosted::{Loaded, TestPlugin};
 use interprocess::TryClone;
-use processors::Processor;
 use suhina_ipc::Served;
-use suhina_plugins::ParamInfo;
 use suhina_plugins::protocol::{Message, VERSION};
 
 /// How long loading waits for a new instance's audio thread to serve, so that blocks naming it
@@ -292,231 +288,6 @@ fn scan_worker() -> ! {
     std::process::exit(0);
 }
 
-/// What is loaded.
-enum Loaded {
-    Clap(clap::ClapPlugin),
-    Vst3(vst3::Vst3Plugin),
-    /// `reported` is the latency the engine was last told.
-    Test {
-        processor: Arc<dyn Processor>,
-        stop: Arc<AtomicBool>,
-        audio: thread::JoinHandle<()>,
-        reported: u32,
-    },
-}
-
-impl Loaded {
-    fn latency(&self) -> u32 {
-        match self {
-            Self::Clap(plugin) => plugin.latency(),
-            Self::Vst3(plugin) => plugin.latency(),
-            Self::Test { processor, .. } => processor.latency(),
-        }
-    }
-
-    /// A latency the plug-in reported since this was last asked, after restarting its
-    /// processing where its format asks for that: the engine is to be told.
-    /// The notes an ARA plug-in found in its regions since the last call (#720).
-    fn take_ara_analysis(&self) -> Option<Option<f32>> {
-        match self {
-            Self::Vst3(plugin) => plugin.take_ara_analysis(),
-            Self::Clap(_) | Self::Test { .. } => None,
-        }
-    }
-
-    fn take_ara_notes(&self) -> Vec<(String, Vec<suhina_plugins::protocol::AraNote>, bool)> {
-        match self {
-            Self::Vst3(plugin) => plugin.take_ara_notes(),
-            Self::Clap(_) | Self::Test { .. } => Vec::new(),
-        }
-    }
-
-    fn latency_changed(&mut self) -> Option<u32> {
-        match self {
-            Self::Clap(plugin) => plugin.latency_changed(),
-            Self::Vst3(plugin) => plugin.latency_changed(),
-            Self::Test { processor, reported, .. } => {
-                let now = processor.latency();
-                (now != *reported).then(|| {
-                    *reported = now;
-                    now
-                })
-            }
-        }
-    }
-
-    fn open_editor(&mut self, mode: window::Mode, title: Option<&str>) -> Result<window::Size, String> {
-        match self {
-            Self::Clap(plugin) => plugin.open_editor(mode, title),
-            Self::Vst3(plugin) => plugin.open_editor(mode, title),
-            Self::Test { .. } => Err("the plug-in has no editor".into()),
-        }
-    }
-
-    /// Sets what the title bar of the editor's window says.
-    fn set_editor_title(&self, title: &str) {
-        match self {
-            Self::Clap(plugin) => plugin.set_editor_title(title),
-            Self::Vst3(plugin) => plugin.set_editor_title(title),
-            Self::Test { .. } => {}
-        }
-    }
-
-    /// Puts an embedded editor where the engine says.
-    fn place_editor(&self, placement: window::Placement) {
-        match self {
-            Self::Clap(plugin) => plugin.place_editor(placement),
-            Self::Vst3(plugin) => plugin.place_editor(placement),
-            Self::Test { .. } => {}
-        }
-    }
-
-    /// Brings a plug-in's ARA document in line with the track's clips.
-    fn ara_update(&mut self, document: &suhina_plugins::protocol::AraDocument) -> Result<(), String> {
-        match self {
-            Self::Vst3(plugin) => plugin.ara_update(document),
-            _ => Err("only a VST3 plug-in can be bound to an ARA document".into()),
-        }
-    }
-
-    /// The edits of one modification and its source, stored on their own (ADR 0033 step 6).
-    fn ara_export(&self, modification: &str, source: &str) -> Result<(String, Vec<u8>), String> {
-        match self {
-            Self::Vst3(plugin) => plugin.ara_export(modification, source),
-            _ => Err("only a VST3 plug-in can be bound to an ARA document".into()),
-        }
-    }
-
-    /// Gives the plug-in edits another track's stored, for one of its modifications.
-    fn ara_import(&self, id: &str, bytes: &[u8], from: &str, to: &str, source: &str) -> Result<(), String> {
-        match self {
-            Self::Vst3(plugin) => plugin.ara_import(id, bytes, from, to, source),
-            _ => Err("only a VST3 plug-in can be bound to an ARA document".into()),
-        }
-    }
-
-    /// Whether the plug-in supports ARA.
-    fn edits_clips(&self) -> bool {
-        matches!(self, Self::Vst3(plugin) if plugin.edits_clips())
-    }
-
-    /// Tells a plug-in bound to an ARA document which region the engine has selected.
-    fn ara_select(&self, region: Option<&str>) {
-        if let Self::Vst3(plugin) = self {
-            plugin.ara_select(region);
-        }
-    }
-
-    /// A size the open editor got since this was last asked, to tell the engine.
-    fn editor_resized(&mut self) -> Option<window::Size> {
-        match self {
-            Self::Clap(plugin) => plugin.editor_resized(),
-            Self::Vst3(plugin) => plugin.editor_resized(),
-            Self::Test { .. } => None,
-        }
-    }
-
-    fn close_editor(&mut self) {
-        match self {
-            Self::Clap(plugin) => plugin.close_editor(),
-            Self::Vst3(plugin) => plugin.close_editor(),
-            Self::Test { .. } => {}
-        }
-    }
-
-    /// Keeps an open editor in step with its window; whether the user closed it.
-    fn editor_tick(&mut self) -> bool {
-        match self {
-            Self::Clap(plugin) => plugin.editor_tick(),
-            Self::Vst3(plugin) => plugin.editor_tick(),
-            Self::Test { .. } => false,
-        }
-    }
-
-    fn params(&mut self) -> Result<Vec<ParamInfo>, String> {
-        match self {
-            Self::Clap(plugin) => Ok(plugin.params()),
-            Self::Vst3(plugin) => Ok(plugin.params()),
-            Self::Test { .. } => Ok(Vec::new()),
-        }
-    }
-
-    fn set_param(&mut self, id: u32, value: f64) -> Result<ParamInfo, String> {
-        match self {
-            Self::Clap(plugin) => plugin.set_param(id, value),
-            Self::Vst3(plugin) => plugin.set_param(id, value),
-            Self::Test { .. } => Err(format!("no parameter {id}")),
-        }
-    }
-
-    /// The component's state and, for VST3, the controller's.
-    fn state(&mut self) -> Result<(Vec<u8>, Option<Vec<u8>>), String> {
-        match self {
-            Self::Clap(plugin) => Ok((plugin.state()?, None)),
-            Self::Vst3(plugin) => Ok((plugin.state()?, plugin.controller_state())),
-            Self::Test { processor, .. } => Ok((processor.state(), None)),
-        }
-    }
-
-    fn set_state(&mut self, data: &[u8], controller: Option<&[u8]>) -> Result<(), String> {
-        match self {
-            Self::Clap(plugin) => plugin.set_state(data),
-            Self::Vst3(plugin) => plugin.set_state(data, controller),
-            Self::Test { processor, .. } => processor.set_state(data),
-        }
-    }
-
-    fn tick(&mut self) -> Vec<(u32, f64)> {
-        match self {
-            // What a CLAP plug-in changed itself comes out with the blocks as output parameter
-            // events, which its audio thread hands over here; its listing still read its values
-            // again as they stand.
-            Self::Clap(plugin) => plugin.tick(),
-            Self::Vst3(plugin) => plugin.tick(),
-            Self::Test { .. } => Vec::new(),
-        }
-    }
-
-    /// Closes the editor, stops the audio thread and lets go of the plug-in. An audio thread
-    /// that does not stop is stuck in the plug-in's code: the plug-in is then left as it is
-    /// (never deactivated or freed under it), so the other instances go on.
-    fn unload(self) {
-        match self {
-            Self::Clap(mut plugin) => {
-                plugin.close_editor();
-                if plugin.stop_audio(UNLOAD_WAIT) {
-                    drop(plugin);
-                } else {
-                    std::mem::forget(plugin);
-                }
-            }
-            Self::Vst3(mut plugin) => {
-                suhina_plugins::trace!("vst3 unload: stop audio");
-                if plugin.stop_audio(UNLOAD_WAIT) {
-                    // The editor closes and the plug-in goes from the main loop, after the engine
-                    // has its answer: an editor embedded in the engine's window is a child of a
-                    // window of the engine's process, and taking it down sends that window
-                    // messages the engine answers only once it stops waiting for this unload
-                    // (Melodyne held both for as long as the engine waited, #816). One that has
-                    // not settled since it loaded waits for that too.
-                    plugin.leave_document();
-                    let at = Instant::now() + SETTLE.saturating_sub(plugin.age());
-                    suhina_plugins::trace!("vst3 unload: audio stopped; editor closed and released from the main loop");
-                    SETTLING.with(|settling| settling.borrow_mut().push((at, plugin)));
-                } else {
-                    plugin.close_editor();
-                    std::mem::forget(plugin);
-                }
-            }
-            Self::Test { stop, audio, .. } => {
-                if audio_stopped(&stop, Some(&audio), UNLOAD_WAIT) {
-                    let _ = audio.join();
-                }
-            }
-        }
-    }
-}
-
 fn load(
     instance: u32,
     plugin: &str,
@@ -544,10 +315,10 @@ fn start(
         || plugin == "test:clap-delay"
         || plugin == "test:clap-ports"
     {
-        return clap::ClapPlugin::load(plugin, instance, served, sample_rate).map(Loaded::Clap);
+        return clap::ClapPlugin::load(plugin, instance, served, sample_rate).map(|p| Box::new(p) as Loaded);
     }
     if plugin.starts_with("vst3:") || plugin == "test:vst3" || plugin == "test:vst3-mix" {
-        return vst3::Vst3Plugin::load(plugin, instance, served, sample_rate, ara).map(Loaded::Vst3);
+        return vst3::Vst3Plugin::load(plugin, instance, served, sample_rate, ara).map(|p| Box::new(p) as Loaded);
     }
     if ara.is_some() {
         return Err("only a VST3 plug-in can be bound to an ARA document".into());
@@ -563,7 +334,7 @@ fn start(
         })
         .map_err(|e| e.to_string())?;
     let reported = processor.latency();
-    Ok(Loaded::Test { processor, stop, audio, reported })
+    Ok(Box::new(TestPlugin { processor, stop, audio, reported }))
 }
 
 /// Writes one message to the engine.
@@ -870,9 +641,7 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
         }
         Message::Reconfigure { instance, sample_rate } => {
             let result = match instances.get_mut(&instance) {
-                Some(Loaded::Clap(plugin)) => plugin.reconfigure(sample_rate),
-                Some(Loaded::Vst3(plugin)) => plugin.reconfigure(sample_rate),
-                Some(Loaded::Test { .. }) => Err("this test processor cannot reconfigure".into()),
+                Some(plugin) => plugin.reconfigure(sample_rate),
                 None => return Some(missing(instance)),
             };
             match result {
@@ -946,10 +715,8 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
             }
         }
         Message::FitEditor { instance, width, height } => {
-            match instances.get_mut(&instance) {
-                Some(Loaded::Vst3(plugin)) => plugin.fit_editor(window::Size { width, height }),
-                Some(Loaded::Clap(plugin)) => plugin.fit_editor(window::Size { width, height }),
-                _ => {}
+            if let Some(plugin) = instances.get_mut(&instance) {
+                plugin.fit_editor(window::Size { width, height });
             }
             return None;
         }
@@ -965,7 +732,7 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
             }
             Message::EditorClosed { instance }
         }
-        Message::GetParams { instance } => match instances.get_mut(&instance).map(Loaded::params) {
+        Message::GetParams { instance } => match instances.get_mut(&instance).map(|p| p.params()) {
             Some(Ok(params)) => Message::Params { instance, params },
             Some(Err(message)) => failed(instance, message),
             None => missing(instance),
@@ -977,7 +744,7 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
                 None => missing(instance),
             }
         }
-        Message::GetState { instance } => match instances.get_mut(&instance).map(Loaded::state) {
+        Message::GetState { instance } => match instances.get_mut(&instance).map(|p| p.state()) {
             Some(Ok((data, controller))) => Message::State { instance, data, controller },
             Some(Err(message)) => failed(instance, message),
             None => missing(instance),

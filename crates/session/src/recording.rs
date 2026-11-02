@@ -24,6 +24,7 @@ use suhina_model::{
 
 use crate::files::TrackKind;
 
+use crate::commands::Args;
 use crate::commands::{column_index, scene_index, track_id};
 use crate::record_writer::{Order, RecordThread, Report};
 use crate::{CommandError, Session};
@@ -1032,7 +1033,7 @@ pub(crate) fn record_sample(session: &mut Session, params: &Value) -> Result<Val
         .and_then(Value::as_u64)
         .and_then(|v| usize::try_from(v).ok())
         .ok_or("device must be an index")?;
-    let on = params.get("on").and_then(Value::as_bool).ok_or("on must be a boolean")?;
+    let on = Args::new(params).value("on").and_then(Value::as_bool).ok_or("on must be a boolean")?;
     let (running, clock, launch, start_marker, _) =
         session.clock().ok_or("open an audio output before recording a sample")?;
     if !on {
@@ -1074,7 +1075,7 @@ pub(crate) fn record_sample(session: &mut Session, params: &Value) -> Result<Val
 /// `transport.record`: records every armed track into the arrangement, or ends every take.
 pub(crate) fn record_arrangement(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     session.player_mut()?;
-    let on = params.get("on").and_then(Value::as_bool).ok_or("on must be true or false")?;
+    let on = Args::new(params).bool("on")?;
     let (running, clock, launch, start_marker, _) =
         session.clock().ok_or("no audio engine is attached; open the project in the app or with --audio")?;
     if !on {

@@ -936,7 +936,7 @@ impl App {
     /// editor counts as unsaved before the window asks whether to save.
     fn check_plugin_edits(&mut self, id: ProjectId) {
         if let Some(session) = self.projects.get_mut(id) {
-            session.check_plugin_edits();
+            session.rack_mut().check_edits();
         }
     }
 
@@ -987,7 +987,7 @@ impl App {
         ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         if !self.unsaved_prompt_open() {
             let mut pending = self.quit_checks.take().unwrap_or_else(|| self.projects.ids());
-            pending.retain(|id| self.projects.get_mut(*id).is_some_and(|s| !s.poll_plugin_edits()));
+            pending.retain(|id| self.projects.get_mut(*id).is_some_and(|s| !s.rack_mut().poll_edits()));
             if !pending.is_empty() {
                 self.quit_checks = Some(pending);
                 ctx.request_repaint_after(std::time::Duration::from_millis(10));
@@ -3208,13 +3208,13 @@ impl App {
                                 .iter()
                                 .flat_map(|l| &l.clips)
                                 .filter(|c| c.audio)
-                                .filter_map(|c| Some((c.id, session.clip_notes(c.id)?.clone())))
+                                .filter_map(|c| Some((c.id, session.rack().clip_notes(c.id)?.clone())))
                                 .collect();
                             timeline.ara_activity = timeline
                                 .lanes
                                 .iter()
                                 .filter(|l| l.clips.iter().any(|c| c.audio))
-                                .filter_map(|l| Some((l.track, session.ara_activity(l.track)?)))
+                                .filter_map(|l| Some((l.track, session.rack().ara_activity(l.track)?)))
                                 .collect();
                             if !timeline.ara_activity.is_empty() {
                                 // Its progress moves without input.

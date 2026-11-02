@@ -44,7 +44,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
 ];
 
 fn set_main_volume(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let db = number_or_neg_infinity(params, "db")?;
+    let db = Args::new(params).f64_or_neg_infinity("db")?;
     if db > MAX_VOLUME_DB {
         return Err(format!("db must be at most +{MAX_VOLUME_DB}, got {db}").into());
     }

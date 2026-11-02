@@ -227,7 +227,7 @@ impl Renderer {
     /// (#916): one whose note is gone (deleted, or its clip deleted or moved away) is released,
     /// one still there ends where its note now ends. Arranged time `time`. Never allocates.
     fn follow_arranged_notes(&mut self, time: u64) {
-        let position = self.position;
+        let position = self.transport.position;
         let Self { graph, voices, next_event, .. } = self;
         let started = graph.events.get(..*next_event).unwrap_or_default();
         let launcher = &graph.launcher;
@@ -263,9 +263,9 @@ impl Renderer {
         let param_seq = swap.param_seq;
         let mut old = std::mem::replace(&mut self.graph, swap.graph);
         // The playhead stays on the same beat when the tempo map changed.
-        if self.running && *old.tempo != *self.graph.tempo {
-            self.time_at_origin = crate::tempo::rescale(old_time, &old.tempo, &self.graph.tempo);
-            self.origin = self.position;
+        if self.transport.running && *old.tempo != *self.graph.tempo {
+            self.transport.time_at_origin = crate::tempo::rescale(old_time, &old.tempo, &self.graph.tempo);
+            self.transport.origin = self.transport.position;
         }
         let was_on_map = old.launcher.follows_map();
         self.graph.launcher.adopt(&mut old.launcher, swap.scenes);
@@ -348,12 +348,12 @@ impl Renderer {
         let time = self.time();
         // Cursors into the new lists: what has started by now has been handled.
         self.next_event = self.graph.events.partition_point(|e| e.start < time);
-        if self.running {
+        if self.transport.running {
             self.follow_arranged_notes(time);
         }
         self.next_audio = self.graph.audio_events.partition_point(|a| a.event.start < time);
         self.active_audio_count = 0;
-        if self.running {
+        if self.transport.running {
             for (index, arranged) in self.graph.audio_events.iter_mut().enumerate().take(self.next_audio) {
                 if arranged.event.end > time && self.active_audio_count < MAX_AUDIO_VOICES {
                     if let Some(slot) = self.active_audio.get_mut(self.active_audio_count) {
@@ -377,7 +377,7 @@ impl Renderer {
         // moved to where the playhead was expected.
         self.graph.ahead.adopt_from(&mut old.ahead);
         self.underruns_before += old.ahead.underruns();
-        if self.running {
+        if self.transport.running {
             // A swap a few frames off where it was expected keeps the voices rendered for it: the
             // reader drops the frames already past or waits out the few not yet due. Moving them
             // emptied every stretched clip's ring at each edit, and a large project dropped out
@@ -403,11 +403,11 @@ impl Renderer {
     /// Publishes the playhead for the controller.
     pub(crate) fn publish_position(&self) {
         let monitor = &self.graph.launcher.monitor;
-        monitor.position.store(self.position, Ordering::Relaxed);
+        monitor.position.store(self.transport.position, Ordering::Relaxed);
         monitor.arrangement.store(self.time(), Ordering::Relaxed);
         monitor.stretch_underruns.store(self.stretch_underruns(), Ordering::Relaxed);
         monitor.frames_per_beat.store(self.graph.tempo.start_per_beat().to_bits(), Ordering::Relaxed);
-        monitor.start_beat.store(self.start_beat.to_bits(), Ordering::Relaxed);
+        monitor.start_beat.store(self.transport.start_beat.to_bits(), Ordering::Relaxed);
     }
 }
 

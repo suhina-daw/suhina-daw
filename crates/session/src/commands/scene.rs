@@ -116,8 +116,8 @@ fn even_slots(p: &mut Project) {
 
 /// An optional scene name: trimmed text, empty when left out.
 fn scene_name(params: &Value) -> Result<String, CommandError> {
-    match params.get("name") {
-        None | Some(Value::Null) => Ok(String::new()),
+    match Args::new(params).value("name") {
+        None => Ok(String::new()),
         Some(Value::String(name)) => Ok(name.trim().to_string()),
         Some(_) => Err("name must be a text".into()),
     }
@@ -129,8 +129,8 @@ fn insert_scene(session: &mut Session, params: &Value) -> Result<Value, CommandE
     if count >= MAX_SCENES {
         return Err(format!("the project has {count} scenes, as many as it can have").into());
     }
-    let at = match params.get("scene") {
-        None | Some(Value::Null) => count,
+    let at = match Args::new(params).value("scene") {
+        None => count,
         Some(value) => value
             .as_u64()
             .and_then(|n| usize::try_from(n).ok())
@@ -195,7 +195,7 @@ fn delete_scene(session: &mut Session, params: &Value) -> Result<Value, CommandE
 
 fn rename_scene(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let scene = scene_index(&session.project, params)?;
-    let name = match params.get("name") {
+    let name = match Args::new(params).value("name") {
         Some(Value::String(name)) => name.trim().to_string(),
         _ => return Err("name must be a text (empty clears it)".into()),
     };
@@ -221,8 +221,8 @@ fn set_scene_tempo(session: &mut Session, params: &Value) -> Result<Value, Comma
 
 fn set_scene_time_signature(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let scene = scene_index(&session.project, params)?;
-    let part = |key: &str| match params.get(key) {
-        None | Some(Value::Null) => Ok(None),
+    let part = |key: &str| match Args::new(params).value(key) {
+        None => Ok(None),
         Some(value) => value
             .as_u64()
             .and_then(|n| u8::try_from(n).ok())

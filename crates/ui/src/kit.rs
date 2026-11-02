@@ -24,5 +24,6 @@ pub mod theme;
 pub mod theme_css;
 pub mod theme_preview;
 pub mod theme_vars;
+pub mod time_axis;
 pub mod waveform;
 pub mod widgets;

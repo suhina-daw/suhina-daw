@@ -9,14 +9,14 @@
 use serde_json::{Value, json};
 use suhina_model::{ArrangementLane, Clip, ClipContent, Project, TrackId};
 
-use crate::commands::{clip_list, make_room, new_content_id, number, track_at, track_list};
+use crate::commands::{Args, clip_list, make_room, new_content_id, track_at, track_list};
 use crate::editing::{content_rate, split};
 use crate::{CommandError, Session};
 
 /// The span a command names: `tracks`, and `start` before `end`, both at least 0.
 fn span(p: &Project, params: &Value) -> Result<(Vec<TrackId>, f64, f64), CommandError> {
     let tracks = track_list(p, params)?;
-    let (start, end) = (number(params, "start")?, number(params, "end")?);
+    let (start, end) = (Args::new(params).f64("start")?, Args::new(params).f64("end")?);
     if !(start >= 0.0 && end > start && end.is_finite()) {
         return Err(format!("start and end must be beats with 0 ≤ start < end, got {start} and {end}").into());
     }
@@ -130,8 +130,8 @@ fn inside(p: &Project, tracks: &[TrackId], start: f64, end: f64) -> Vec<Value> {
 /// is clips of its own; answers with the clips inside it.
 /// `range.insertTime {start, end}` (#713): empty time as long as the span, at its start.
 pub(crate) fn insert_time(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let start = number(params, "start")?;
-    let end = number(params, "end")?;
+    let start = Args::new(params).f64("start")?;
+    let end = Args::new(params).f64("end")?;
     if start < 0.0 || end <= start + 1e-6 || end > suhina_engine::MAX_START_BEAT {
         return Err(
             format!("start and end must be from 0 to {}, end after start", suhina_engine::MAX_START_BEAT).into()
@@ -289,7 +289,7 @@ pub(crate) fn cut_range(session: &mut Session, params: &Value) -> Result<Value, 
 /// the same tracks; answers with the copies.
 pub(crate) fn duplicate_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let (tracks, start, end) = span(&session.project, params)?;
-    let stack = params.get("stack").and_then(Value::as_bool).unwrap_or(false);
+    let stack = Args::new(params).flag("stack")?;
     let parts = pieces(&session.project, &tracks, start, end);
     if parts.is_empty() {
         return Err("nothing plays in the selection".into());
@@ -345,18 +345,18 @@ type Edited = Option<(u64, usize, suhina_model::ContentId, String)>;
 /// last, of the clips' kind, made in the same step.
 pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let chosen = clip_list(&session.project, params)?;
-    let beats = number(params, "beats")?;
-    let stack = params.get("stack").and_then(Value::as_bool).unwrap_or(false);
-    let copy = params.get("copy").and_then(Value::as_bool).unwrap_or(false);
-    let by = match params.get("tracksBy") {
-        None | Some(Value::Null) => None,
+    let beats = Args::new(params).f64("beats")?;
+    let stack = Args::new(params).flag("stack")?;
+    let copy = Args::new(params).flag("copy")?;
+    let by = match Args::new(params).value("tracksBy") {
+        None => None,
         Some(v) => Some(v.as_i64().ok_or("tracksBy must be a whole number of tracks")?),
     };
-    let new_track = params.get("toNewTrack").and_then(Value::as_bool).unwrap_or(false);
+    let new_track = Args::new(params).flag("toNewTrack")?;
     // A clip a plug-in edits (ADR 0033), going to another track: its edits go along, the
     // plug-in added there when it has none (`keep`), or it starts there without them (`new`).
-    let keep_edits = match params.get("araEdits") {
-        None | Some(Value::Null) => false,
+    let keep_edits = match Args::new(params).value("araEdits") {
+        None => false,
         Some(v) => match v.as_str() {
             Some("keep") => true,
             Some("new") => false,
@@ -383,8 +383,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
             Some((key, device, clip.content, source))
         })
         .collect();
-    if [params.get("toTrack").is_some_and(|v| !v.is_null()), by.is_some(), new_track].iter().filter(|b| **b).count() > 1
-    {
+    if [Args::new(params).has("toTrack"), by.is_some(), new_track].iter().filter(|b| **b).count() > 1 {
         return Err("give one of toTrack, tracksBy and toNewTrack".into());
     }
     // Each clip's track after the move, by its own: the tracks that hold clips, in the order the
@@ -421,13 +420,13 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         let id = added["track"].as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("the new track has no id")?;
         Some(TrackId(id))
     } else {
-        match params.get("toTrack") {
+        match Args::new(params).value("toTrack") {
             Some(v) if !v.is_null() => Some(track_at(&session.project, params, "toTrack")?),
             _ => None,
         }
     };
-    let keep = match params.get("color") {
-        None | Some(Value::Null) => None,
+    let keep = match Args::new(params).value("color") {
+        None => None,
         Some(_) => crate::clip_color::parse_color(params, "color")?,
     };
     if to.is_some() && !new_track && chosen.iter().any(|(track, _)| *track != chosen[0].0) {

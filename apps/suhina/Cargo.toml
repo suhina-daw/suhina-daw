@@ -15,6 +15,7 @@ path = "src/main.rs"
 asio = ["suhina-output/asio"]
 
 [dependencies]
+suhina-fs.workspace = true
 # The main window's native handle, for plug-in editors to float above it.
 raw-window-handle = "0.6"  # MIT OR Apache-2.0 OR Zlib
 suhina-engine.workspace = true

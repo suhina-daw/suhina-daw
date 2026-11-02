@@ -13,6 +13,7 @@ use std::time::{Duration, Instant, SystemTime};
 use serde_json::{Value, json};
 use suhina_model::Project;
 
+use crate::commands::Args;
 use crate::commands::{CommandKind, CommandSpec, ParamType, optional};
 use crate::{CommandError, Policy, ProjectId, Projects};
 
@@ -398,16 +399,7 @@ fn save_journal(path: Option<&Path>, entries: &[Entry]) {
 
 /// `text` to a temporary file beside `path`, which is then renamed to it.
 fn write_atomically(path: &Path, text: &[u8]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".saving");
-    let temporary = PathBuf::from(temporary);
-    std::fs::write(&temporary, text)?;
-    std::fs::rename(&temporary, path).inspect_err(|_| {
-        let _gone = std::fs::remove_file(&temporary);
-    })
+    suhina_fs::write_atomic(path, text)
 }
 
 /// The entry as an offer, when its backup is there and newer than its project file (or the
@@ -702,13 +694,13 @@ static BACKUP_COMMANDS: &[CommandSpec<Projects>] = &[CommandSpec {
 }];
 
 fn autosave(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let flag = |name: &str| match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
+    let flag = |name: &str| match Args::new(params).value(name) {
+        None => Ok(None),
         Some(Value::Bool(b)) => Ok(Some(*b)),
         Some(_) => Err(CommandError(format!("{name} must be true or false"))),
     };
-    let interval = match params.get("interval") {
-        None | Some(Value::Null) => None,
+    let interval = match Args::new(params).value("interval") {
+        None => None,
         Some(Value::String(text)) => Some(Interval::parse(text).ok_or_else(|| {
             let names: Vec<String> = Interval::ALL.iter().map(|i| i.name()).collect();
             CommandError(format!("interval must be one of {}", names.join(", ")))

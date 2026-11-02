@@ -15,6 +15,7 @@
 //! its output is then read at the project's sample rate with linear interpolation. Transpose is
 //! the stretcher's own pitch shift.
 
+use crate::tempo::TempoClock;
 use std::sync::Arc;
 
 use suhina_model::{AudioRegion, Clip, StretchMode, TempoMap};
@@ -66,32 +67,34 @@ struct Place {
     turn: u64,
 }
 
-/// When a clip's beats play: seconds after the clip's start.
-enum Clock<'a> {
-    /// At one tempo, in bpm.
-    Constant(f64),
-    /// Through a tempo map counted in frames at `sample_rate`, for a clip that starts at song
-    /// beat `start`.
-    Map { map: &'a TempoMap, start: f64, sample_rate: f64 },
+/// When a clip's beats play: seconds after the clip's start, which is at song beat `start`, on
+/// the arrangement's [`TempoClock`] at `sample_rate`.
+struct Clock {
+    tempo: TempoClock,
+    start: f64,
+    sample_rate: f64,
 }
 
-impl Clock<'_> {
+impl Clock {
     /// Seconds from the clip's start to `played` beats into it.
     fn seconds(&self, played: f64) -> f64 {
-        match self {
-            Self::Constant(bpm) => played * (60.0 / bpm),
-            Self::Map { map, start, sample_rate } => (map.time_at(start + played) - map.time_at(*start)) / sample_rate,
-        }
+        self.tempo.seconds_from(self.start, played, self.sample_rate)
+    }
+
+    /// Seconds the `beats` from `played` beats into the clip take.
+    fn seconds_over(&self, played: f64, beats: f64) -> f64 {
+        self.tempo.seconds_over(self.start, played, beats, self.sample_rate)
+    }
+
+    /// Seconds between `from` and `to` beats into the clip.
+    fn seconds_between(&self, from: f64, to: f64) -> f64 {
+        self.tempo.seconds_between(self.start, from, to, self.sample_rate)
     }
 
     /// The most beats a piece starting `played` beats into the clip may last: up to the next
     /// tempo change, and a sixteenth during a ramp. Unlimited at a constant tempo.
     fn piece_limit(&self, played: f64) -> f64 {
-        let Self::Map { map, start, .. } = self else { return f64::INFINITY };
-        let song = start + played;
-        let next_change = map.next_break_after(song + 1e-9).map_or(f64::INFINITY, |b| b - song);
-        let ramp = if map.ramps_at(song + 1e-9) { RAMP_PIECE_BEATS } else { f64::INFINITY };
-        next_change.min(ramp)
+        self.tempo.steady_beats(self.start + played, RAMP_PIECE_BEATS)
     }
 }
 
@@ -109,7 +112,8 @@ fn playlist(
     if !(tempo_bpm.is_finite() && tempo_bpm > 0.0) {
         return None;
     }
-    playlist_on(clip, region, data, &Clock::Constant(tempo_bpm))
+    let clock = Clock { tempo: TempoClock::constant(tempo_bpm, 1.0), start: clip.start, sample_rate: 1.0 };
+    playlist_on(clip, region, data, &clock)
 }
 
 /// The playlist on any [`Clock`]: at a constant tempo the pieces are exactly the ones it has
@@ -124,8 +128,8 @@ fn playlist_on(
     if markers.len() < 2 || markers.windows(2).any(|w| matches!(w, [a, b] if b.1 <= a.1)) {
         return None;
     }
-    if let Clock::Constant(bpm) = clock
-        && !(bpm.is_finite() && *bpm > 0.0)
+    if let TempoClock::Constant { bpm, .. } = clock.tempo
+        && !(bpm.is_finite() && bpm > 0.0)
     {
         return None;
     }
@@ -153,10 +157,7 @@ fn playlist_on(
             [next_marker, loop_end, Some(clip_end), tempo_cut].into_iter().flatten().fold(f64::INFINITY, f64::min);
         let src_start = seconds_at(&markers, beat) * file_rate;
         let src_end = seconds_at(&markers, next) * file_rate;
-        let out_seconds = match clock {
-            Clock::Constant(bpm) => (next - beat) * (60.0 / bpm),
-            Clock::Map { .. } => clock.seconds(played + (next - beat)) - clock.seconds(played),
-        };
+        let out_seconds = clock.seconds_over(played, next - beat);
         let rate = (src_end - src_start) / file_rate / out_seconds;
         if !(rate.is_finite() && rate > 0.0) {
             return None;
@@ -178,10 +179,7 @@ fn playlist_on(
     if played < clip.length - 1e-9 {
         // Cut at the cap: keep whole loops and repeat them, or refuse the clip.
         let (Some(first), Some(last)) = (first_loop, last_loop) else { return None };
-        let out = match clock {
-            Clock::Constant(bpm) => (last.1 - first.1) * (60.0 / bpm),
-            Clock::Map { .. } => clock.seconds(last.1) - clock.seconds(first.1),
-        };
+        let out = clock.seconds_between(first.1, last.1);
         let repeat = Repeat { first: first.0, out, stream: last.2 - first.2 };
         if last.0 <= first.0 || !(repeat.out > 0.0 && repeat.stream > 0.0) {
             return None;
@@ -285,7 +283,14 @@ impl StretchVoice {
         if !(tempo_bpm.is_finite() && tempo_bpm > 0.0) {
             return None;
         }
-        Self::with_clock(clip, region, data, &Clock::Constant(tempo_bpm), sample_rate)
+        let rate = f64::from(sample_rate);
+        Self::with_clock(
+            clip,
+            region,
+            data,
+            &Clock { tempo: TempoClock::constant(tempo_bpm, rate), start: clip.start, sample_rate: rate },
+            sample_rate,
+        )
     }
 
     /// [`StretchVoice::new`] for a clip on an arrangement whose tempo follows `map` (counted in
@@ -295,13 +300,13 @@ impl StretchVoice {
         clip: &Clip,
         region: &AudioRegion,
         data: Arc<AudioData>,
-        map: &TempoMap,
+        map: &Arc<TempoMap>,
         sample_rate: u32,
     ) -> Option<Self> {
         if map.is_constant() {
             return Self::new(clip, region, data, map.start_bpm(), sample_rate);
         }
-        let clock = Clock::Map { map, start: clip.start, sample_rate: f64::from(sample_rate) };
+        let clock = Clock { tempo: TempoClock::of(map), start: clip.start, sample_rate: f64::from(sample_rate) };
         Self::with_clock(clip, region, data, &clock, sample_rate)
     }
 

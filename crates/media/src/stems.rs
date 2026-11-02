@@ -13,7 +13,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use serde_json::Value;
-use suhina_engine::AudioData;
+use suhina_model::AudioData;
 use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;

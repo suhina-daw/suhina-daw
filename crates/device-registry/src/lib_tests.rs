@@ -39,7 +39,7 @@ fn every_layout_loads_and_names_only_its_devices_parameters() {
             assert_eq!(panel_ids(&panel), info.params.iter().map(|p| p.id).collect::<Vec<_>>());
         }
     }
-    for (id, _) in LAYOUT_FILES {
+    for (id, _) in layout_files() {
         assert!(super::info(id).is_some(), "panel.json for unknown device {id}");
     }
     assert!(layout("sampler").is_some(), "the sampler has its own layout");
@@ -109,7 +109,7 @@ fn every_device_has_a_panel_with_its_parameters() {
 
 #[test]
 fn every_json_layout_fits_its_canvases_and_reaches_every_parameter() {
-    for (id, _) in LAYOUT_FILES {
+    for (id, _) in layout_files() {
         let panel = panel(id).unwrap();
         if let Some(compact) = &panel.ui {
             assert!(compact.size[1] <= builtin::COMPACT_HEIGHT, "{id}: the compact canvas scrolls");
@@ -148,6 +148,17 @@ fn every_listed_device_can_be_made_and_ids_are_unique() {
     }
     assert!(create("no-such-device").is_none());
     assert!(info("").is_none());
+}
+
+#[test]
+fn only_the_nam_devices_run_a_file_and_every_row_is_found_by_its_id() {
+    let files: Vec<&str> = ENTRIES.iter().filter(|e| e.runs_a_file).map(|e| e.info.id).collect();
+    assert_eq!(files, ["nam-amp-modeler", "nam-cab-loader"]);
+    for (entry, info) in ENTRIES.iter().zip(DEVICES) {
+        assert_eq!(entry.info, info);
+        assert_eq!(is_file_device(info.id), entry.runs_a_file);
+    }
+    assert!(!is_file_device("no-such-device"));
 }
 
 #[test]

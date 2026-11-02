@@ -46,7 +46,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Edit,
         run: devices::add,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Recent(Recent::Device), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "device.addSd",
@@ -63,7 +63,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Edit,
         run: devices::add_sd,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Recent(Recent::SdFile), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "device.updateSd",
@@ -103,7 +103,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[DEVICE_TRACK, DEVICES],
         kind: CommandKind::Read,
         run: devices::copy,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "device.paste",
@@ -349,7 +349,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Edit,
         run: devices::add_plugin,
-        policy: Policy::CRITICAL,
+        policy: Policy { after: After::Recent(Recent::Plugin), ..Policy::CRITICAL },
     },
     CommandSpec {
         id: "device.plugin",

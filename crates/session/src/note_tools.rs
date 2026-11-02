@@ -16,9 +16,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 use suhina_model::{Note, Scale, ScaleMode};
 
-use crate::notes::{
-    MAX_BEAT, MAX_NOTES_PER_COMMAND, edit_notes, indices, midi_velocity, notes_of, optional_number, velocity_of,
-};
+use crate::commands::Args;
+use crate::notes::{MAX_BEAT, MAX_NOTES_PER_COMMAND, edit_notes, indices, midi_velocity, notes_of, velocity_of};
 use crate::{CommandError, Session};
 
 /// The default of `note.humanize`'s `time`, in beats.
@@ -83,15 +82,15 @@ fn fresh_seed() -> u64 {
 
 /// The seed the call uses: `params.seed` when given, a fresh one otherwise.
 fn seed_of(params: &Value) -> Result<u64, CommandError> {
-    match params.get("seed") {
-        None | Some(Value::Null) => Ok(fresh_seed()),
+    match Args::new(params).value("seed") {
+        None => Ok(fresh_seed()),
         Some(value) => value.as_u64().ok_or_else(|| "seed must be a whole number, 0 or more".into()),
     }
 }
 
 /// Whether the command acts on every note of the clip (`notes` left out).
 fn whole_clip(params: &Value) -> bool {
-    matches!(params.get("notes"), None | Some(Value::Null))
+    !Args::new(params).has("notes")
 }
 
 /// The notes the command acts on: the named ones, or every note of the clip, in rising order.
@@ -138,8 +137,8 @@ fn velocity_param(params: &Value, key: &str) -> Result<f64, CommandError> {
 /// it is missing.
 pub(crate) fn root_of(params: &Value) -> Result<u8, CommandError> {
     let unknown = || CommandError::from("root must be a key name such as C, F# or Bb, or a whole number 0 to 11");
-    match params.get("root") {
-        None | Some(Value::Null) => Ok(0),
+    match Args::new(params).value("root") {
+        None => Ok(0),
         Some(Value::String(name)) => {
             let mut chars = name.chars();
             let Some(letter) = chars.next() else { return Err(unknown()) };
@@ -174,8 +173,8 @@ pub(crate) fn root_of(params: &Value) -> Result<u8, CommandError> {
 
 /// The mode `params[key]` names, one of the model's ([`ScaleMode::name`]); `None` when missing.
 pub(crate) fn mode_of(params: &Value, key: &str) -> Result<Option<ScaleMode>, CommandError> {
-    let name = match params.get(key) {
-        None | Some(Value::Null) => return Ok(None),
+    let name = match Args::new(params).value(key) {
+        None => return Ok(None),
         Some(Value::String(name)) => name.as_str(),
         Some(_) => return Err(format!("{key} must be a text such as major or blues").into()),
     };
@@ -188,7 +187,7 @@ pub(crate) fn mode_of(params: &Value, key: &str) -> Result<Option<ScaleMode>, Co
 /// The scale `note.fitToScale` fits to: `root` and `scale` when either is given (C and major for
 /// the one left out), else the clip's own scale, else C major.
 fn fit_scale(session: &Session, params: &Value) -> Result<Scale, CommandError> {
-    let named = params.get("root").is_some_and(|v| !v.is_null()) || params.get("scale").is_some_and(|v| !v.is_null());
+    let named = Args::new(params).has("root") || Args::new(params).has("scale");
     let own = if named { None } else { crate::scales::scale_of_clip(&session.project, params)? };
     let scale = match own {
         Some(scale) => Some(scale),
@@ -200,8 +199,8 @@ fn fit_scale(session: &Session, params: &Value) -> Result<Scale, CommandError> {
 /// `note.setMuted`: mutes the named notes (`muted: true`), unmutes them (`false`), or flips each
 /// one when `muted` is left out. The result names every note and the state it now has.
 pub(crate) fn set_muted(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let muted = match params.get("muted") {
-        None | Some(Value::Null) => None,
+    let muted = match Args::new(params).value("muted") {
+        None => None,
         Some(value) => Some(value.as_bool().ok_or("muted must be true or false")?),
     };
     edit_notes(&mut session.project, params, |notes| {
@@ -220,11 +219,11 @@ pub(crate) fn set_muted(session: &mut Session, params: &Value) -> Result<Value, 
 /// a random draw in ±`velocity` MIDI steps, each kept within its range. The same `seed` gives the
 /// same result, so a call can be repeated.
 pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let beats = optional_number(params, "time")?.unwrap_or(DEFAULT_HUMANIZE_BEATS);
+    let beats = Args::new(params).opt_f64("time")?.unwrap_or(DEFAULT_HUMANIZE_BEATS);
     if !(0.0..=MAX_HUMANIZE_BEATS).contains(&beats) {
         return Err(format!("time must be 0 to {MAX_HUMANIZE_BEATS} beats, got {beats}").into());
     }
-    let steps = optional_number(params, "velocity")?.unwrap_or(DEFAULT_HUMANIZE_STEPS);
+    let steps = Args::new(params).opt_f64("velocity")?.unwrap_or(DEFAULT_HUMANIZE_STEPS);
     if !(0.0..=127.0).contains(&steps) {
         return Err(format!("velocity must be 0 to 127 MIDI steps, got {steps}").into());
     }
@@ -376,7 +375,7 @@ pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, Com
 /// `note.stretch`: stretches the acted notes in time about the earliest of their starts, starts
 /// and lengths alike; a result outside the model's range fails the whole command.
 pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let factor = optional_number(params, "factor")?.ok_or("give factor, how much to stretch by (0.01 to 100)")?;
+    let factor = Args::new(params).opt_f64("factor")?.ok_or("give factor, how much to stretch by (0.01 to 100)")?;
     if !(MIN_FACTOR..=MAX_FACTOR).contains(&factor) {
         return Err(format!("factor must be {MIN_FACTOR} to {MAX_FACTOR}, got {factor}").into());
     }
@@ -418,7 +417,7 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
 /// `note.randomizeVelocity`: moves each velocity by a random draw in ±`amount` MIDI steps, each
 /// kept within 1 to 127. The same `seed` gives the same result.
 pub(crate) fn randomize_velocity(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let steps = optional_number(params, "amount")?.unwrap_or(DEFAULT_RANDOMIZE_STEPS);
+    let steps = Args::new(params).opt_f64("amount")?.unwrap_or(DEFAULT_RANDOMIZE_STEPS);
     if !(0.0..=127.0).contains(&steps) {
         return Err(format!("amount must be 0 to 127 MIDI steps, got {steps}").into());
     }

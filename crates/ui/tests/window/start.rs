@@ -318,7 +318,7 @@ fn help_about_shows_the_version_and_copies_it() {
     assert!(harness.query_by_label_contains(version).is_none());
     harness.get_by_label("Help").click();
     harness.run();
-    harness.get_by_label_contains("About Suhina").click();
+    harness.get_by_label("About Suhina").click();
     harness.run();
     // The logo heads the dialog, above the version it names.
     let logo = harness.get_by_label("Suhina").rect();

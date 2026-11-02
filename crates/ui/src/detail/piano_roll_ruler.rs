@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 use crate::detail::piano_roll::{PianoClip, PianoRollState, note_grid};
 use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme;
+use crate::kit::time_axis::PIANO_ROLL_BEAT_WIDTHS;
 use crate::kit::widgets::Action;
 
 /// Height of the loop row at the top of the ruler, of the bar in it, and how far from a handle or
@@ -31,7 +32,6 @@ const BEAT_LIMIT: f64 = 120_000.0;
 /// How much a point of vertical drag on the ruler zooms time: down zooms in.
 const ZOOM_PER_POINT: f32 = 0.01;
 /// The range of points per beat, as the wheel zooms it.
-const BEAT_WIDTH_RANGE: (f32, f32) = (4.0, 400.0);
 const EPSILON: f64 = 1e-9;
 
 /// A clip's start marker, length and loop, as the ruler shows and changes them.
@@ -116,21 +116,7 @@ pub struct RulerState {
 }
 
 /// The time axis: the x of beat 0 and the points per beat.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Axis {
-    pub origin: f32,
-    pub beat_width: f32,
-}
-
-impl Axis {
-    pub fn x_of(&self, beat: f64) -> f32 {
-        self.origin + beat as f32 * self.beat_width
-    }
-
-    pub fn beat_at(&self, x: f32) -> f64 {
-        f64::from((x - self.origin) / self.beat_width.max(f32::MIN_POSITIVE))
-    }
-}
+pub use crate::kit::time_axis::TimeViewport as Axis;
 
 /// What a press at `pos` in the `ruler` grabs: in the loop row a handle (the nearer one when both
 /// are in reach) or the bar between them; under it the start marker or the end marker. `None`
@@ -318,8 +304,8 @@ pub fn interact(
                 // The beat that was under the pointer stays under it: sideways it follows the
                 // pointer (a scroll), and up and down the time around it grows or shrinks.
                 let beat = axis(state).beat_at(pos.x - delta.x);
-                state.beat_width =
-                    (state.beat_width * (delta.y * ZOOM_PER_POINT).exp()).clamp(BEAT_WIDTH_RANGE.0, BEAT_WIDTH_RANGE.1);
+                state.beat_width = (state.beat_width * (delta.y * ZOOM_PER_POINT).exp())
+                    .clamp(*PIANO_ROLL_BEAT_WIDTHS.start(), *PIANO_ROLL_BEAT_WIDTHS.end());
                 state.scroll.x = (beat as f32 * state.beat_width - (pos.x - left)).max(0.0);
             }
             None => {}

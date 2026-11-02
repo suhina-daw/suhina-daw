@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use suhina_engine::{AudioPool, DeviceAssets};
 use suhina_model::Project;
 
+use crate::commands::Args;
 use crate::commands::{CommandKind, CommandSpec, ParamType, optional, param};
 use crate::{Agents, CommandError, Player, Policy, Projects};
 
@@ -148,7 +149,7 @@ impl OutputChoice {
     pub fn with_params(&self, params: &Value) -> Result<Self, CommandError> {
         let mut next = self.clone();
         let text = |key: &str| -> Result<Option<Option<String>>, CommandError> {
-            match params.get(key) {
+            match Args::new(params).value(key) {
                 None => Ok(None),
                 Some(Value::String(s)) if s.trim().is_empty() => Ok(Some(None)),
                 Some(Value::String(s)) => Ok(Some(Some(s.trim().to_string()))),
@@ -156,7 +157,7 @@ impl OutputChoice {
             }
         };
         let number = |key: &str, max: u32| -> Result<Option<Option<u32>>, CommandError> {
-            match params.get(key) {
+            match Args::new(params).value(key) {
                 None => Ok(None),
                 Some(v) => match v.as_u64() {
                     Some(0) => Ok(Some(None)),
@@ -185,13 +186,13 @@ impl OutputChoice {
             }
             next.buffer_frames = frames;
         }
-        if let Some(exclusive) = params.get("exclusive") {
+        if let Some(exclusive) = Args::new(params).value("exclusive") {
             next.exclusive = exclusive.as_bool().ok_or("exclusive must be true or false")?;
         }
         if let Some(pair) = number("cue_pair", u32::from(MAX_CUE_PAIR))? {
             next.cue_pair = pair.and_then(|p| u16::try_from(p).ok());
         }
-        if let Some(input) = params.get("input") {
+        if let Some(input) = Args::new(params).value("input") {
             next.input = InputChoice::from_text(input.as_str().ok_or("input must be a text")?);
         }
         Ok(next)
@@ -216,7 +217,7 @@ impl OutputChoice {
     /// This choice with the cue volume `params.db` gives (`output.setCueVolume`): from silence
     /// (-inf, or below -150) to [`MAX_CUE_DB`].
     pub fn with_cue_volume(&self, params: &Value) -> Result<Self, CommandError> {
-        let db = match params.get("db") {
+        let db = match Args::new(params).value("db") {
             Some(Value::String(s)) if s.trim().eq_ignore_ascii_case("-inf") => f64::NEG_INFINITY,
             Some(v) => v.as_f64().ok_or("db must be a number, or \"-inf\" for silence")?,
             None => return Err("db must be a number, or \"-inf\" for silence".into()),
@@ -567,10 +568,10 @@ fn set_output(projects: &mut Projects, params: &Value) -> Result<Value, CommandE
 
 fn set_cue_pair(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     projects.ensure_output_can_close()?;
-    if params.get("pair").is_none() {
+    if !Args::new(params).has("pair") {
         return Err("pair must be a whole number from 0 (the main output) to 31".into());
     }
-    let choice = projects.output_choice().with_params(&json!({ "cue_pair": params.get("pair") }))?;
+    let choice = projects.output_choice().with_params(&json!({ "cue_pair": Args::new(params).value("pair") }))?;
     // Checked against the device when there is an audio system; else only chosen, as
     // `audio.setOutput` chooses.
     if let Some(system) = projects.audio_system() {
