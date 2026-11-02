@@ -1869,12 +1869,14 @@ fn the_arrow_keys_move_a_focused_handle_along_its_travel() {
     let canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, binding);
     let hz = parameter("hz", true);
     let size = Vec2::new(400.0, 100.0);
-    let mut events = click_to_focus(Pos2::new(200.0, 50.0));
+    // 1 kHz is ln(50) / ln(1000) of the way from 20 Hz to 20 kHz.
+    let grab = Pos2::new(400.0 * (50.0_f32.ln() / 1000.0_f32.ln()), 50.0);
+    let mut events = click_to_focus(grab);
     events.push(key(egui::Key::ArrowRight));
     let value = last_value(&frames(&canvas, size, std::slice::from_ref(&hz), events)).expect("the key moved it");
     // 1 % of three decades up from 1 kHz.
     assert!((value - 1_071.5).abs() < 1.0, "{value}");
-    let mut events = click_to_focus(Pos2::new(200.0, 50.0));
+    let mut events = click_to_focus(grab);
     events.push(key(egui::Key::ArrowUp));
     assert!(frames(&canvas, size, &[hz], events).is_empty(), "up is across a handle that moves sideways");
 }
