@@ -211,7 +211,7 @@ fn clicks_and_a_rectangle_select_notes() {
     // The rectangle starts inside the grid, not in the key column at its left (a clip whose
     // first note starts at the clip's start begins at the grid's left edge).
     let around = a.union(b).expand(3.0);
-    let from = pos2(grid.left() + 2.0, around.top());
+    let from = pos2(grid.left() + 2.0, around.top().max(grid.top() + 1.0));
     drag(&mut h, from, around.right_bottom(), Modifiers::NONE);
     assert_eq!(selected(&h), [0, 1]);
     // Nothing in the project changed.

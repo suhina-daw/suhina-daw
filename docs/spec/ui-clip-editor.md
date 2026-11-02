@@ -255,7 +255,7 @@ of keys grows and shrinks.
 
 ### Least height and closing
 
-**Built:** the smallest open piano roll is 120 px of detail area (in a row under the view): the
+**Built:** the smallest open piano roll is 132 px of detail area (in a row under the view): the
 toolbar, the ruler and at least five key rows at the default 12 px row height, with the clip
 column beside them showing its title (the clip's name) and its Track, Start, Length, Loop and
 Notes rows whole. The splitter, dragged down, stops at that height. Above it the view keeps its
@@ -611,8 +611,8 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **Built ([#1113](https://github.com/suhina-daw/suhina-daw/issues/1113)):** with **Allow stacked
   notes** off (the default), a note drawn, moved, resized, pasted, duplicated, quantised or made
   legato replaces the notes of its key under it: a note it covers whole is removed, one that starts
-  before it ends where it starts, and one that runs on past it starts where it ends. On, notes of a
-  key may overlap. The commands take this as `replace`, so the CLI and MCP choose too; left out,
+  before it ends where it starts, and one that runs on past it starts where it ends. A paint stroke
+  paints only the gaps: it adds nothing that would start inside a note. On, notes of a key may overlap. The commands take this as `replace`, so the CLI and MCP choose too; left out,
   notes may overlap.
 - **Built ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** the pointer over the
   first few pixels of a note shows a resize cursor too; dragging there moves the start of every

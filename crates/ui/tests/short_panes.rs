@@ -25,7 +25,7 @@ const SIZE: (f32, f32) = (1280.0, 800.0);
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
 const CLIP_START: f64 = 64.0;
 /// The piano roll's least height (› Least height and closing).
-const LEAST: f32 = 120.0;
+const LEAST: f32 = 132.0;
 
 fn window() -> Harness<'static, App> {
     let mut app = App::new();

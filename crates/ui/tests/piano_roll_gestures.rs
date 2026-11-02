@@ -283,9 +283,9 @@ fn the_lane_top_edge_makes_the_lane_taller_or_shorter_within_limits() {
     let before = notes(&h);
     let height = lane(&h).height();
     let edge = h.get_by_label("Velocity lane top edge").rect().center();
-    drag(&mut h, edge, edge - vec2(0.0, 40.0), Modifiers::NONE);
+    drag(&mut h, edge, edge - vec2(0.0, 20.0), Modifiers::NONE);
     let taller = lane(&h).height();
-    assert!((taller - height - 40.0).abs() < 2.0, "{height} -> {taller}");
+    assert!((taller - height - 20.0).abs() < 2.0, "{height} -> {taller}");
     assert!(h.state().piano_roll().lane_height().is_some());
     // Down a long way: no shorter than 24 points.
     let edge = h.get_by_label("Velocity lane top edge").rect().center();

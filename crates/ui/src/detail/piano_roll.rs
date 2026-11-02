@@ -68,7 +68,7 @@ const LEAST_KEY_ROWS: f32 = 5.0;
 /// The least height of the detail area while it shows the piano roll: the toolbar, the ruler and
 /// five key rows at the default row height, and beside them the clip column's title and its five
 /// rows (`docs/spec/ui-clip-editor.md` › Least height and closing).
-pub const LEAST_HEIGHT: f32 = 120.0;
+pub const LEAST_HEIGHT: f32 = 132.0;
 /// The toolbar's icon size and the space between its buttons, in points.
 const TOOL_ICON: f32 = 14.0;
 const TOOL_GAP: f32 = 3.0;

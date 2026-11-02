@@ -278,10 +278,18 @@ pub(super) fn commit(
             actions.push(Action::new("note.split", params));
         }
         (Gesture::Paint, _) => {
-            // A painted note on top of one already there (same key, same start) is left out.
+            // A painted note on top of one already there (same key, same start) is left out, and so,
+            // where notes do not stack, is one that would start inside it: a stroke paints the gaps.
+            let inside = state.notes_replace;
             let stroke: Vec<Note> = std::mem::take(&mut state.stroke)
                 .into_iter()
-                .filter(|p| !clip.notes.iter().any(|n| n.key == p.key && (n.time - p.time).abs() < EPSILON))
+                .filter(|p| {
+                    !clip.notes.iter().any(|n| {
+                        n.key == p.key
+                            && ((n.time - p.time).abs() < EPSILON
+                                || (inside && n.time < p.time && p.time < n.time + n.duration - EPSILON))
+                    })
+                })
                 .collect();
             if !stroke.is_empty() {
                 actions.push(state.add_action(clip, &stroke));
