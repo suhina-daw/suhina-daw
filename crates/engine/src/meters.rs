@@ -17,7 +17,7 @@
 //! the renderer's half: the meter ballistics and the monitor it publishes to.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use suhina_model::{ChannelId, ChannelRole, Project, TrackId};
 
@@ -37,6 +37,17 @@ pub const RMS_SECONDS: f64 = 0.3;
 const FLOOR: f32 = 1e-6;
 /// The track id of an unused row.
 const NO_TRACK: u32 = u32::MAX;
+/// Devices of one track, inside its groups too, whose live values reach their panels; the ones
+/// after these show none.
+pub const MAX_READOUT_DEVICES: usize = 8;
+/// Where a device's path starts ([`readout_step`]).
+pub(crate) const READOUT_PATH: u64 = 0xcbf2_9ce4_8422_2325;
+
+/// A device's path one step further, as a number that fits an atomic: FNV-1a over the steps, never
+/// 0, which marks an unused entry.
+pub(crate) fn readout_step(path: u64, step: usize) -> u64 {
+    ((path ^ step as u64).wrapping_mul(0x0100_0000_01b3)).max(1)
+}
 
 /// One meter's level as last published: per channel (left, right), linear (1.0 is 0 dBFS).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -49,6 +60,31 @@ pub struct Level {
     pub clipped: bool,
 }
 
+/// A device's live values as bits: an array this long has no `Default` of its own.
+#[derive(Debug)]
+struct Readouts([AtomicU32; suhina_device_api::MAX_READOUTS]);
+
+impl Default for Readouts {
+    fn default() -> Self {
+        Self(std::array::from_fn(|_| AtomicU32::new(0)))
+    }
+}
+
+impl std::ops::Deref for Readouts {
+    type Target = [AtomicU32; suhina_device_api::MAX_READOUTS];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// One device's live values, and whose they are.
+#[derive(Debug, Default)]
+struct DeviceReadouts {
+    /// The device's path ([`readout_step`]), 0 for none.
+    device: AtomicU64,
+    values: Readouts,
+}
+
 #[derive(Debug, Default)]
 struct Row {
     track: AtomicU32,
@@ -57,6 +93,7 @@ struct Row {
     clipped: AtomicBool,
     sample: std::sync::atomic::AtomicU64,
     voices: [AtomicU32; 32],
+    readouts: [DeviceReadouts; MAX_READOUT_DEVICES],
 }
 
 impl Row {
@@ -117,6 +154,15 @@ impl MeterMonitor {
             (value >= 0.).then_some(value)
         })
     }
+    /// The live values the device at `path` on `track`'s channel (its index, or its path through
+    /// groups: position, branch, position) last handed its panel, or `None` when it hands none.
+    pub fn readouts(&self, track: TrackId, path: &[usize]) -> Option<[f32; suhina_device_api::MAX_READOUTS]> {
+        let row = self.row(track)?;
+        let key = path.iter().fold(READOUT_PATH, |key, &step| readout_step(key, step));
+        let entry = row.readouts.iter().find(|entry| entry.device.load(Ordering::Acquire) == key)?;
+        Some(std::array::from_fn(|i| f32::from_bits(entry.values[i].load(Ordering::Relaxed))))
+    }
+
     /// The main output's level.
     pub fn main(&self) -> Level {
         self.main.level()
@@ -310,6 +356,15 @@ impl Levels {
                     })
                     .unwrap_or(0);
                 row.sample.store(packed, Ordering::Release);
+                let mut entries = row.readouts.iter();
+                chain.readouts(&mut |device, values| {
+                    let Some(entry) = entries.next() else { return };
+                    for (slot, value) in entry.values.iter().zip(values) {
+                        slot.store(value.to_bits(), Ordering::Relaxed);
+                    }
+                    entry.device.store(device, Ordering::Release);
+                });
+                entries.for_each(|entry| entry.device.store(0, Ordering::Release));
             }
         }
         for (chain, slot) in chains.iter().zip(&self.chain_slots) {
@@ -404,6 +459,7 @@ impl MeterWriter {
     pub(crate) fn assign(&mut self, tracks: &[TrackId]) {
         for (slot, row) in self.monitor.tracks.iter().enumerate() {
             row.sample.store(0, Ordering::Relaxed);
+            row.readouts.iter().for_each(|entry| entry.device.store(0, Ordering::Relaxed));
             let id = tracks.get(slot).map_or(NO_TRACK, |t| t.0);
             if row.track.load(Ordering::Relaxed) == id {
                 continue;
@@ -512,5 +568,21 @@ mod sample_position_tests {
         assert_eq!(writer.monitor.sample_position(TrackId(8), 2), None);
         writer.assign(&[TrackId(7)]);
         assert_eq!(writer.monitor.sample_position(TrackId(7), 2), None);
+    }
+
+    #[test]
+    fn readouts_belong_to_their_device_and_clear_on_graph_swap() {
+        let mut writer = MeterWriter::new(48000);
+        writer.assign(&[TrackId(7)]);
+        let row = writer.monitor.row(TrackId(7)).unwrap();
+        assert_eq!(writer.monitor.readouts(TrackId(7), &[0]), None);
+        row.readouts[0].values[1].store((-4.5f32).to_bits(), Ordering::Relaxed);
+        row.readouts[0].device.store(readout_step(READOUT_PATH, 2), Ordering::Release);
+        assert_eq!(writer.monitor.readouts(TrackId(7), &[2]).map(|r| r[1]), Some(-4.5));
+        assert_eq!(writer.monitor.readouts(TrackId(7), &[1]), None);
+        assert_eq!(writer.monitor.readouts(TrackId(7), &[2, 0, 0]), None);
+        assert_eq!(writer.monitor.readouts(TrackId(8), &[2]), None);
+        writer.assign(&[TrackId(7)]);
+        assert_eq!(writer.monitor.readouts(TrackId(7), &[2]), None);
     }
 }

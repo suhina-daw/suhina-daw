@@ -476,6 +476,9 @@ impl<const N: usize> ParamBank<N> {
     }
 }
 
+/// Most live values a device hands its panel ([`Device::readouts`]).
+pub const MAX_READOUTS: usize = 35;
+
 /// A built-in instrument or effect.
 ///
 /// `new`-style constructors, [`prepare`](Self::prepare) and dropping run off the audio thread
@@ -492,6 +495,13 @@ pub trait Device: Send {
         let mut positions = [None; 32];
         positions[0] = self.sample_position();
         positions
+    }
+
+    /// Live values for the device's panel (a band's level, its gain change), read after each
+    /// block: up to [`MAX_READOUTS`], in an order the device's panel knows. `None` for a device
+    /// that shows none. Runs on the audio thread: no allocation.
+    fn readouts(&self) -> Option<[f32; MAX_READOUTS]> {
+        None
     }
 
     fn info(&self) -> &'static DeviceInfo;

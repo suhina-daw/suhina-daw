@@ -12,7 +12,7 @@ use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
 
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const DEVICES: [&DeviceInfo; 16] = [
+pub const DEVICES: [&DeviceInfo; 17] = [
     &suhina_device_fm_synth::INFO,
     &suhina_device_sampler::INFO,
     &suhina_device_utility::INFO,
@@ -23,6 +23,7 @@ pub const DEVICES: [&DeviceInfo; 16] = [
     &suhina_device_overdrive::INFO,
     &suhina_device_saturator::INFO,
     &suhina_device_compressor::INFO,
+    &suhina_device_multiband::INFO,
     &suhina_device_limiter::INFO,
     &suhina_device_nam_amp_modeler::INFO,
     &suhina_device_nam_cab_loader::INFO,
@@ -49,6 +50,7 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
 /// The layouts kept as JSON next to a device crate, by device id.
 pub const LAYOUT_FILES: &[(&str, &str)] = &[
     ("compressor", include_str!("../../../devices/compressor/panel.json")),
+    ("multiband", include_str!("../../../devices/multiband/panel.json")),
     ("overdrive", include_str!("../../../devices/overdrive/panel.json")),
     ("reverb", include_str!("../../../devices/reverb/panel.json")),
     ("limiter", include_str!("../../../devices/limiter/panel.json")),
@@ -63,6 +65,18 @@ pub const LAYOUT_FILES: &[(&str, &str)] = &[
 /// The panel of the device with this id: its parameters from its `DeviceInfo`, laid out by its
 /// layout, or the generated parameter list when it has none or its layout does not load.
 /// Made once per id while Suhina runs, off the audio thread. `None` for an unknown id.
+/// The layouts that do not load, by device id with the reason: such a device shows the generated
+/// parameter list instead, so the app writes these to its log at start.
+pub fn layout_errors() -> Vec<(&'static str, String)> {
+    DEVICES
+        .iter()
+        .filter_map(|info| match layout(info.id)? {
+            Err(e) => Some((info.id, e.to_string())),
+            Ok(layout) => layout.panel(info).err().map(|e| (info.id, e.to_string())),
+        })
+        .collect()
+}
+
 pub fn panel(id: &str) -> Option<&'static Panel> {
     /// Every device's panel, in the order of [`DEVICES`].
     static PANELS: OnceLock<Vec<Panel>> = OnceLock::new();
@@ -96,6 +110,7 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
         "overdrive" => Box::new(suhina_device_overdrive::Overdrive::new()),
         "saturator" => Box::new(suhina_device_saturator::Saturator::new()),
         "compressor" => Box::new(suhina_device_compressor::Compressor::new()),
+        "multiband" => Box::new(suhina_device_multiband::Multiband::new()),
         "limiter" => Box::new(suhina_device_limiter::Limiter::new()),
         "nam-amp-modeler" => Box::new(suhina_device_nam_amp_modeler::NamAmp::new()),
         "nam-cab-loader" => Box::new(suhina_device_nam_cab_loader::CabLoader::new()),

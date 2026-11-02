@@ -87,6 +87,16 @@ and descriptions, and the files themselves.
    parameter values. A render of a short phrase through each preset is added when the device has
    golden renders.
 
+## Amendment: established style names (2026-10-29)
+
+A name that several products use for a style of sound, and that no one holds as a mark for audio
+software, is a style name rather than an imitation of a product, as "Opto" or "Vari-mu" name a kind
+of compressor. Such a name may be a preset's or a quick preset's name. "OTT" (heavy upward and
+downward compression on three bands) is one: other multiband compressors offer an "OTT" quick
+setting, the name was checked in TMView on 2026-10-28 and is held by no one for audio software,
+and it is not Suhina's branding. The preset's values are still Suhina's own, and a style name is
+never a product's or a device's name.
+
 ## Consequences
 
 - `.github/PULL_REQUEST_TEMPLATE/preset.md` and the *Preset contribution* issue form ask for the

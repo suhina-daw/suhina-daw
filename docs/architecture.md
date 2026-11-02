@@ -101,7 +101,7 @@ The engine runs them in chains on tracks, made through `device-registry`.
 reads the program's RAM for the control bar and the plug-in hosts' reports theirs, which `plugins::host_memory` adds together. Design tokens in `theme.rs`; the colours are the theme in use (`themes.rs` keeps the list). No windowing or GPU code, so tests drive it headless (egui_kittest). | engine, session, plugins, library, media, output, soundmap, device-api, device-registry, device-sdk, update |
 | `suhina-cli` | The command line: render, play, mcp (with `--audio`, the MIDI inputs too). | all of the above |
 | `suhina` | The desktop app: opens and makes projects, runs `ui` in an eframe window with `output` playing, starts the browser's library, shows the system's file dialogs (`rfd`), keeps the settings, keymap and theme files, opens the MIDI inputs, builds the macOS menu bar (`mac_menu.rs`), draws see-through backgrounds where the GPU allows (`surface.rs`), and lets agents work on the open projects ([ADR 0028](decisions/0028-mcp-in-the-running-app.md)). | engine, session, media, library, plugins, output, midi, ui, update |
-| `dsp` | Signal-processing blocks for devices: conversions and smoothing, followers, filters (biquads, state-variable, first-order, crossovers), LFOs with tempo sync, waveshapers, oversamplers, delay lines and allpasses, a resampler and IR convolution. Real-time safe, panic-free on any input ([ADR 0004](decisions/0004-built-in-devices.md) › 1). | nothing |
+| `dsp` | Signal-processing blocks for devices: conversions and smoothing, followers, filters (biquads, state-variable, first-order, crossovers), LFOs with tempo sync, waveshapers, oversamplers, delay lines and allpasses, a band spectrum for panels (`Analyser`), a resampler and IR convolution. Real-time safe, panic-free on any input ([ADR 0004](decisions/0004-built-in-devices.md) › 1). | nothing |
 | `device-registry` | Every built-in effect, instrument or MIDI effect by its stable id: makes the device a project's `DeviceKind::Builtin` names, lists them, and gives its panel (`panel`: its parameters from `DeviceInfo` and its layout, or the generated list; ADR 0021 › Amendment: device panels). | device-api, device-sdk, devices/* |
 | `device-api` | The `Device` trait, `DeviceInfo` (an effect, an instrument or a MIDI effect) and `ParamInfo` (plain values in their unit, conversion to knob travel), `NoteEvent` for instruments and MIDI effects (with the clip's `MusicalScale`), and the contract tests every device runs (`conformance::check`, with note checks for instruments and event checks for MIDI effects). | nothing |
 | `device-sdk` | Builds, validates, serializes and prepares data-only `.sd` effect, MIDI-effect and instrument graphs ([ADR 0021](decisions/0021-device-graph-files.md), [format](spec/sd-device-format.md), [nodes](spec/sdk-nodes.md)): the node catalog, polyphonic voice and grain graphs, generated parameter UI and custom panels ([spec](spec/sdk-custom-ui.md)). Graphs run over bounded buffers allocated when prepared, sample-accurate for parameters and MIDI. No executable code in `.sd` files. | dsp, stretch, device-api, serde, serde_json, base64, image (PNG/JPEG) |
@@ -117,6 +117,7 @@ reads the program's RAM for the control bar and the plug-in hosts' reports their
 | `devices/overdrive` | Pedal-style overdrive: a band into a biased, asymmetric soft curve at twice the sample rate, then tone, dynamics, dry/wet and output; 31 frames of latency. | dsp, device-api |
 | `devices/saturator` | Saturator: eight curves (Analog Clip to a six-amount waveshaper) after a drive, Color filters before the curve and their exact inverse after it, a post clip, output and dry/wet, at four times the sample rate through two IIR half-bands ([spec](spec/saturator.md)); 4 frames of latency. | dsp, device-api |
 | `devices/compressor` | Compressor: stereo-linked feed-forward, peak detector on a high-passed side-chain, soft knee, attack and release in decibels, input and output gain, dry/wet for parallel compression; no latency. | dsp, device-api |
+| `devices/multiband` | Multiband: three bands split by 24 dB/octave Linkwitz-Riley crossovers (the low band through the upper all-pass, so they sum flat); per band an input gain, one level follower on the mean of both sides (on `\|x\|` in Peak mode, `x²` in RMS mode, time constants of a setting / 8 scaled by Time), an above and a below stage with quadratic knees and a shared gain limit, Amount scaling every gain in decibels; no latency ([spec](spec/multiband.md)). | dsp, device-api |
 | `devices/limiter` | Brickwall peak limiter: threshold as a drive into the ceiling, release, 1.5 ms lookahead (a sliding minimum and a moving average), so no sample comes out over the ceiling; the lookahead is its latency. | dsp, device-api |
 | `devices/delay` | Stereo delay: one line per side read with cubic interpolation, a Butterworth band-pass inside the feedback loop, times synced to the tempo or free, an LFO on the time and the band, Repitch/Fade/Jump, ping-pong and freeze ([spec](spec/delay.md)); no latency. | dsp, device-api |
 | `devices/reverb` | Algorithmic reverb: input band, Live's early-reflection taps and their families, a measured feedback delay network of 4 to 10 lines with allpasses and damping in the loop, chorus, freeze and a stereo rotation ([spec](spec/reverb.md)); no latency. | dsp, device-api |
@@ -356,7 +357,9 @@ Source identity participates in graph transfer,
 so replacing a sample cannot keep an old voice reading the previous source.
 The sample instrument publishes up to 32 independent voice positions through the
 Device API and fixed atomic meter slots; the UI polls them without audio-thread
-allocation or locking.
+allocation or locking. Any built-in device hands its panel up to 35 live values the same way
+(`Device::readouts`, up to eight devices of a track, inside its groups too; the UI gives them to its canvas as
+`#r0` … `#r34`, [ADR 0032](decisions/0032-device-readouts.md)).
 
 ### SDK panel widgets
 
@@ -448,7 +451,8 @@ The main thread and the audio thread share nothing mutable. They talk in two dir
   `launcher.state` reports too — the control bar draws the CPU load from it; and a
   `MeterMonitor` (each track's and the main output's peak and RMS level per side and clip
   indicator, measured every block by the `meters` module and stored as atomics; read by
-  `mixer.levels` and the window's meters, [spec](spec/level-meters.md)). While recording, two
+  `mixer.levels` and the window's meters, [spec](spec/level-meters.md); the same rows carry a
+  device's readouts to its panel, ADR 0032). While recording, two
   rings carry what the armed tracks play out (`Controller::take_recorder`), each piece stamped
   with the beat that was heard when it was played; the recording thread empties them
   ([spec](spec/recording.md)).
