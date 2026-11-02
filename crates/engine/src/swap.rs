@@ -537,14 +537,18 @@ impl Controller {
     /// Makes the renderer play `project` from now on, keeping what is playing (ADR 0005): builds
     /// it on this thread and swaps it in about [`SWAP_AHEAD_SECONDS`] from now. Fails if the
     /// project cannot be rendered or the renderer has not taken the previous updates yet.
-    pub fn update(&mut self, project: &Project) -> Result<(), String> {
+    pub fn update(&mut self, project: &Project) -> Result<(), crate::ControlError> {
         self.update_with_scenes(project, None)
     }
 
     /// Like [`Controller::update`], for a project whose launcher differs from the one sent
     /// before by the inserted or removed scene `scenes` ([`SceneShift::between`]): what each
     /// column plays and has queued moves with its slot.
-    pub fn update_with_scenes(&mut self, project: &Project, scenes: Option<SceneShift>) -> Result<(), String> {
+    pub fn update_with_scenes(
+        &mut self,
+        project: &Project,
+        scenes: Option<SceneShift>,
+    ) -> Result<(), crate::ControlError> {
         let updater = &mut self.updater;
         let collect_began = std::time::Instant::now();
         updater.collect();
@@ -559,7 +563,7 @@ impl Controller {
             &mut plugins,
             None,
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(crate::ControlError::Build)?;
         crate::build_report::add(&format!("old graphs dropped {:.1} ms", collect_took.as_secs_f64() * 1000.0));
         let sent = Arc::clone(&graph.tempo);
         updater.live_volumes = live_volumes(&graph);
@@ -593,7 +597,7 @@ impl Controller {
         // only when the swap is sure to be queued (this is the queue's one producer), or those
         // voices would go with this graph.
         if updater.swaps.is_full() {
-            return Err("the audio engine has not taken the previous edits yet".to_string());
+            return Err(crate::ControlError::Full("edits"));
         }
         if let Some(thread) = updater.stretch.as_mut() {
             let began = std::time::Instant::now();
@@ -611,7 +615,7 @@ impl Controller {
         updater
             .swaps
             .push(Swap { graph, at, arrangement, param_seq: updater.param_seq, scenes })
-            .map_err(|_| "the audio engine has not taken the previous edits yet".to_string())
+            .map_err(|_| crate::ControlError::Full("edits"))
             .map(|()| updater.tempo = sent)
     }
 
@@ -619,26 +623,32 @@ impl Controller {
     /// among `track`'s channel's devices, from the start of the next audio block, without
     /// building a new graph. The project should hold the new value already, so the next graph
     /// built from it keeps it. Fails if the message queue is full.
-    pub fn set_device_param(&mut self, track: TrackId, device: usize, param: usize, value: f64) -> Result<(), String> {
+    pub fn set_device_param(
+        &mut self,
+        track: TrackId,
+        device: usize,
+        param: usize,
+        value: f64,
+    ) -> Result<(), crate::ControlError> {
         let updater = &mut self.updater;
         // A fader move ([`crate::MIXER_VOLUME`]) only reaches a track whose chain can take it.
         if device == crate::MIXER_VOLUME && !updater.live_volumes.contains(&track) {
-            return Err("the track's volume takes a new graph".to_string());
+            return Err(crate::ControlError::NeedsGraph("the track's volume"));
         }
         // A send's turn only reaches a send the playing graph has.
         let target = TrackId(u32::try_from(param).unwrap_or(u32::MAX));
         if device == crate::MIXER_SEND && !updater.live_sends.contains(&(track, target)) {
-            return Err("the send takes a new graph".to_string());
+            return Err(crate::ControlError::NeedsGraph("the send"));
         }
         // A pan on a lane, or a group's, takes a new graph.
         if device == crate::MIXER_PAN && (!updater.live_pans.contains(&track) || !value.is_finite()) {
-            return Err("the track's pan takes a new graph".to_string());
+            return Err(crate::ControlError::NeedsGraph("the track's pan"));
         }
         let seq = updater.param_seq + 1;
         updater
             .params
             .push(ParamChange { seq, track, device, param, value })
-            .map_err(|_| "the audio engine has not taken the previous parameter changes yet".to_string())?;
+            .map_err(|_| crate::ControlError::Full("parameter changes"))?;
         updater.param_seq = seq;
         Ok(())
     }
@@ -658,13 +668,10 @@ impl Controller {
     /// Sends the running plug-in `processor` for the plug-in device `key` to the audio thread:
     /// it plays from the next block in which a graph has its slot, replacing any processor
     /// there (a restarted plug-in replaces its crashed one). Fails if the queue is full.
-    pub fn send_plugin(&mut self, key: u64, processor: Box<dyn PluginProcessor>) -> Result<(), String> {
+    pub fn send_plugin(&mut self, key: u64, processor: Box<dyn PluginProcessor>) -> Result<(), crate::ControlError> {
         let updater = &mut self.updater;
         updater.collect();
-        updater
-            .plugins
-            .push((key, processor))
-            .map_err(|_| "the audio engine has not taken the previous plug-ins yet".to_string())
+        updater.plugins.push((key, processor)).map_err(|_| crate::ControlError::Full("plug-ins"))
     }
 
     /// Drops processors the audio thread has given back (replaced, or of removed devices), and
@@ -699,7 +706,12 @@ impl Controller {
 
     /// Previews `data` from `from` seconds at `gain` (linear), replacing any preview (ADR 0011).
     /// Fails if the queue is full.
-    pub fn preview_sample(&mut self, data: Arc<crate::AudioData>, from: f64, gain: f32) -> Result<(), String> {
+    pub fn preview_sample(
+        &mut self,
+        data: Arc<crate::AudioData>,
+        from: f64,
+        gain: f32,
+    ) -> Result<(), crate::ControlError> {
         let from = if from.is_finite() { from.max(0.0) } else { 0.0 };
         let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
         self.preview.send(crate::preview::PreviewCommand::Sample { data, from, gain })
@@ -708,7 +720,7 @@ impl Controller {
     /// Previews notes ([`crate::preview_notes`] makes them) through their track's instrument,
     /// or through their fallback instrument when the track has none; the fallback plays at
     /// `gain` (linear). Replaces any preview. Fails if the queue is full.
-    pub fn preview_notes(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), String> {
+    pub fn preview_notes(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), crate::ControlError> {
         let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
         self.preview.send(crate::preview::PreviewCommand::Notes { notes: Box::new(notes), gain })
     }
@@ -716,14 +728,14 @@ impl Controller {
     /// Starts the notes ([`crate::preview_notes`] makes them) and holds them until
     /// [`Controller::preview_note_off`]: the piano roll's key column (`preview.noteOn`).
     /// Replaces any preview. Fails if the queue is full.
-    pub fn preview_note_on(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), String> {
+    pub fn preview_note_on(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), crate::ControlError> {
         let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
         self.preview.send(crate::preview::PreviewCommand::Hold { notes: Box::new(notes), gain })
     }
 
     /// Releases the held note of `key`, or every held note when `key` is `None`. Fails if the
     /// queue is full.
-    pub fn preview_note_off(&mut self, key: Option<u8>) -> Result<(), String> {
+    pub fn preview_note_off(&mut self, key: Option<u8>) -> Result<(), crate::ControlError> {
         self.preview.send(crate::preview::PreviewCommand::Release { key })
     }
 
@@ -738,13 +750,13 @@ impl Controller {
 
     /// Changes the level of what is previewed now to `gain` (linear), gliding there without a
     /// click. Fails if the queue is full.
-    pub fn preview_gain(&mut self, gain: f32) -> Result<(), String> {
+    pub fn preview_gain(&mut self, gain: f32) -> Result<(), crate::ControlError> {
         let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
         self.preview.send(crate::preview::PreviewCommand::Gain(gain))
     }
 
     /// Stops the preview. Fails if the queue is full.
-    pub fn preview_stop(&mut self) -> Result<(), String> {
+    pub fn preview_stop(&mut self) -> Result<(), crate::ControlError> {
         self.preview.send(crate::preview::PreviewCommand::Stop)
     }
 

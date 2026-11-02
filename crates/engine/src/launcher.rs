@@ -538,8 +538,8 @@ impl Controller {
 
     /// Queues a command for the start of the next audio block. Fails only if the queue is full,
     /// which means the renderer is not running.
-    pub fn send(&mut self, command: LaunchCommand) -> Result<(), String> {
-        self.producer.push(command).map_err(|_| "the audio engine is not taking commands (queue full)".to_string())
+    pub fn send(&mut self, command: LaunchCommand) -> Result<(), crate::ControlError> {
+        self.producer.push(command).map_err(|_| crate::ControlError::Full("commands"))
     }
 
     pub fn monitor(&self) -> &LauncherMonitor {

@@ -161,6 +161,18 @@ impl From<&str> for CommandError {
     }
 }
 
+impl From<suhina_media::MediaError> for CommandError {
+    fn from(e: suhina_media::MediaError) -> Self {
+        Self(e.0)
+    }
+}
+
+impl From<suhina_engine::ControlError> for CommandError {
+    fn from(e: suhina_engine::ControlError) -> Self {
+        Self(e.to_string())
+    }
+}
+
 impl From<suhina_model::IdsExhausted> for CommandError {
     fn from(e: suhina_model::IdsExhausted) -> Self {
         Self(e.to_string())

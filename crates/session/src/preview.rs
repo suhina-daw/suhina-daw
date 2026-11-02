@@ -40,7 +40,7 @@ pub(crate) fn play(session: &mut Session, params: &Value) -> Result<Value, Comma
         Some(FileKind::Sample | FileKind::Stems) => {
             let data = session.preview_audio(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             let seconds = data.frames() as f64 / f64::from(data.sample_rate.max(1));
-            session.player_mut()?.controller_mut().preview_sample(data, from, gain).map_err(CommandError)?;
+            session.player_mut()?.controller_mut().preview_sample(data, from, gain).map_err(CommandError::from)?;
             Ok(json!({ "path": path.display().to_string(), "kind": "sample", "seconds": seconds }))
         }
         Some(FileKind::Midi) => {
@@ -60,7 +60,7 @@ pub(crate) fn play(session: &mut Session, params: &Value) -> Result<Value, Comma
             let fallback = controller.preview_instrument();
             let prepared = suhina_engine::preview_notes(notes, bpm, rate, track, fallback);
             let seconds = prepared.length as f64 / f64::from(rate.max(1));
-            controller.preview_notes(prepared, gain).map_err(CommandError)?;
+            controller.preview_notes(prepared, gain).map_err(CommandError::from)?;
             Ok(json!({ "path": path.display().to_string(), "kind": "midi", "seconds": seconds, "bpm": bpm }))
         }
         _ => Err(format!("{}: only samples and MIDI files can be previewed", path.display()).into()),
@@ -81,12 +81,12 @@ pub(crate) fn set_gain(session: &mut Session, params: &Value) -> Result<Value, C
     session.player_mut()?;
     let db = gain_db(params)?.ok_or("gain must be decibels, at most 12")?;
     let gain = 10f64.powf(db / 20.0) as f32;
-    session.player_mut()?.controller_mut().preview_gain(gain).map_err(CommandError)?;
+    session.player_mut()?.controller_mut().preview_gain(gain).map_err(CommandError::from)?;
     Ok(json!({ "gain": db }))
 }
 
 pub(crate) fn stop(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
-    session.player_mut()?.controller_mut().preview_stop().map_err(CommandError)?;
+    session.player_mut()?.controller_mut().preview_stop().map_err(CommandError::from)?;
     Ok(json!({ "stopped": true }))
 }
 
@@ -115,7 +115,7 @@ pub(crate) fn note_on(session: &mut Session, params: &Value) -> Result<Value, Co
         Some(track),
         fallback,
     );
-    controller.preview_note_on(notes, gain).map_err(CommandError)?;
+    controller.preview_note_on(notes, gain).map_err(CommandError::from)?;
     match keys.as_slice() {
         [key] if Args::new(params).value("keys").is_none_or(Value::is_null) => {
             Ok(json!({ "track": track.0, "key": key, "velocity": midi }))
@@ -163,6 +163,6 @@ pub(crate) fn note_off(session: &mut Session, params: &Value) -> Result<Value, C
                 .ok_or("key must be a whole number from 0 to 127")?,
         ),
     };
-    session.player_mut()?.controller_mut().preview_note_off(key).map_err(CommandError)?;
+    session.player_mut()?.controller_mut().preview_note_off(key).map_err(CommandError::from)?;
     Ok(json!({ "key": key }))
 }

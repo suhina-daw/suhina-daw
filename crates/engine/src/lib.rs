@@ -20,6 +20,8 @@
 
 mod ahead;
 pub use assets::DeviceAssets;
+pub use control_error::ControlError;
+mod control_error;
 pub use suhina_device_sdk::{DeviceAsset, DeviceFactory, Devices};
 mod assets;
 mod audio;

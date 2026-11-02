@@ -122,6 +122,7 @@ fn write_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result<(), Strin
         &suhina_media::write::AudioFileSpec::float_wav(sample_rate),
         WriteMode::Replace,
     )
+    .map_err(String::from)
 }
 
 /// One step of a launch script: the command `id` with `params`, run when the render reaches

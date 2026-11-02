@@ -212,7 +212,7 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
                     info.tempo = header.tempo;
                     info.key = header.key;
                 }
-                Err(e) => info.error = Some(e),
+                Err(e) => info.error = Some(e.into()),
             }
             if whole {
                 match suhina_media::decode_file(path) {
@@ -224,7 +224,7 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
                         info.data = Some(data);
                         info.error = None;
                     }
-                    Err(e) => info.error = Some(e),
+                    Err(e) => info.error = Some(e.into()),
                 }
             }
         }
@@ -238,7 +238,7 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
                 info.tempo = midi.tempo_bpm.map(|bpm| Tempo { bpm, source: TempoSource::Metadata });
                 info.notes = Some(Arc::new(notes));
             }
-            Err(e) => info.error = Some(e),
+            Err(e) => info.error = Some(e.into()),
         },
         _ => {}
     }
