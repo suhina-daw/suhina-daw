@@ -57,7 +57,8 @@ impl Circuit {
 pub struct MultimodeSettings {
     pub sample_rate: f64,
     pub response: Response,
-    /// Two sections rather than one.
+    /// Two sections rather than one, each with the square root of the Q, so the slope changes how
+    /// fast it falls and not how high a resonance stands.
     pub steep: bool,
     pub frequency: f64,
     pub q: f64,
@@ -80,12 +81,13 @@ pub struct Multimode {
 impl Multimode {
     /// Takes new settings and keeps the state.
     pub fn set(&mut self, s: &MultimodeSettings) {
+        let q = if s.steep { s.q.sqrt() } else { s.q };
         let c = match s.response {
-            Response::LowPass => SvfCoefficients::lowpass(s.sample_rate, s.frequency, s.q),
-            Response::HighPass => SvfCoefficients::highpass(s.sample_rate, s.frequency, s.q),
-            Response::BandPass => SvfCoefficients::bandpass(s.sample_rate, s.frequency, s.q),
-            Response::Notch => SvfCoefficients::notch(s.sample_rate, s.frequency, s.q),
-            Response::Morph => SvfCoefficients::morph(s.sample_rate, s.frequency, s.q, s.morph),
+            Response::LowPass => SvfCoefficients::lowpass(s.sample_rate, s.frequency, q),
+            Response::HighPass => SvfCoefficients::highpass(s.sample_rate, s.frequency, q),
+            Response::BandPass => SvfCoefficients::bandpass(s.sample_rate, s.frequency, q),
+            Response::Notch => SvfCoefficients::notch(s.sample_rate, s.frequency, q),
+            Response::Morph => SvfCoefficients::morph(s.sample_rate, s.frequency, q, s.morph),
         };
         for section in &mut self.sections {
             section.set(c);
@@ -163,6 +165,19 @@ mod tests {
         let mut steep = settings(Response::LowPass);
         steep.steep = true;
         assert!(gain_at(&steep, 4_000.0) < gain_at(&settings(Response::LowPass), 4_000.0) * 0.5);
+    }
+
+    #[test]
+    fn a_resonance_stands_as_high_at_either_slope() {
+        for q in [0.5, 2.0, 12.0] {
+            let mut s = settings(Response::LowPass);
+            s.q = q;
+            let one = gain_at(&s, 1_000.0);
+            s.steep = true;
+            let two = gain_at(&s, 1_000.0);
+            assert!((one / q - 1.0).abs() < 0.05, "{q}: {one}");
+            assert!((two / q - 1.0).abs() < 0.05, "{q}: {two}");
+        }
     }
 
     #[test]

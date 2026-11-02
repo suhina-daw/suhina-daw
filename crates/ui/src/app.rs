@@ -3445,9 +3445,10 @@ impl App {
         // Reading the plug-ins' states before asking whether to save, when the window is closed.
         self.frame_trace.mark("quit check");
         // The views drew before the actions and drops of this frame ran: when the project changed,
-        // ask for a frame at once, so what the user just did (a moved clip, a file that landed)
-        // is on screen without waiting for another click or pointer move.
-        if self.revision != revision {
+        // or a command ran that may have changed what shows without changing the project's revision
+        // (a button on a device's panel), ask for a frame at once, so what the user just did is on
+        // screen without waiting for another click or pointer move.
+        if self.revision != revision || !actions.is_empty() {
             ui.ctx().request_repaint();
         }
         // A transport command changes no revision, and the audio thread takes it at its next block:

@@ -19,6 +19,16 @@ use crate::kernel;
 use crate::patch::{self, Patch};
 use crate::tables::{N, Tables};
 
+/// Of how far a time envelope's level has to go, the share a block goes: about 15 ms for all of it.
+const LEVEL_GLIDE: i32 = 12;
+/// The level a time envelope stands on, a block nearer to where its knob is, so a drag of the knob
+/// is heard as a move rather than in steps. The rates and levels envelope has its own way there.
+fn heard_level(now: &mut i32, wanted: i32) -> i32 {
+    let distance = wanted - *now;
+    *now = if distance.abs() < LEVEL_GLIDE { wanted } else { *now + distance / LEVEL_GLIDE };
+    *now
+}
+
 /// Feedback 1..=7 shifts the fed-back signal by `FEEDBACK_BITDEPTH - feedback`.
 const FEEDBACK_BITDEPTH: i32 = 8;
 
@@ -258,6 +268,8 @@ pub struct Note {
     pitch_offset: i32,
     /// Each operator's output level as the envelopes read it, for a time envelope.
     out_level: [i32; 6],
+    /// [`heard_level`]'s place on the way to `out_level`.
+    level_now: [i32; 6],
     /// The block's modulation, for what follows the kernel.
     mods: Option<Mods>,
     x: NoteExt,
@@ -274,6 +286,9 @@ impl Note {
             .min(127);
             let out_level = ((out_level << 5) + scale_velocity(velocity, o.velocity_sens)).max(0);
             if let Some(slot) = self.out_level.get_mut(op) {
+                *slot = out_level;
+            }
+            if let Some(slot) = self.level_now.get_mut(op) {
                 *slot = out_level;
             }
             let rate_scaling = scale_rate(key, o.rate_scaling);
@@ -478,7 +493,9 @@ impl Note {
                     0
                 } else {
                     // The level the DX7 envelope reaches at full, then the envelope in decibels.
-                    let full = (self.out_level.get(op).copied().unwrap_or(0) + 4_032 - 4_256).max(16) << 16;
+                    let wanted = self.out_level.get(op).copied().unwrap_or(0);
+                    let heard = self.level_now.get_mut(op).map_or(wanted, |now| heard_level(now, wanted));
+                    let full = (heard + 4_032 - 4_256).max(16) << 16;
                     full.saturating_add((*db / DB_PER_DOUBLING * ONE_DOUBLING) as i32).max(0)
                 };
             }

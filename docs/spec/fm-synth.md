@@ -51,6 +51,17 @@ end level; with an operator's slopes at 0 its attack is linear and its decay and
 One per note, off by default: low-pass, high-pass, band-pass, notch and morph at 12 or 24 dB/octave,
 in a clean circuit or one of four driven circuits of Suhina's own; frequency, resonance, drive,
 envelope amount, frequency by velocity and by key; then a shaper with its own drive and dry/wet.
+Resonance raises a low-pass's or high-pass's level at the cutoff evenly in decibels, from -6 dB to +28 dB,
+at either slope: two sections share the Q, so the slope changes how fast it falls and not how loud a
+resonance is.
+
+## Moving a control on a sounding note
+
+A drag sends a new value every frame of the window, far apart in sound. What can be heard stepping
+glides there over about 15 ms instead: the filter's frequency, resonance, morph and drive, the shaper's
+drive and dry/wet, Tone, Volume, Pan, a time envelope's sustain, a time-envelope operator's level and an
+operator's feedback. With nothing sounding a change is simply there, and the rates-and-levels envelopes
+keep their own way to a level, as a voice file's sound depends on it.
 
 ## LFOs
 
@@ -97,10 +108,13 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
 - **Envelopes.** The picture moves with its times and levels, and each stage's end is one dot, dragged
   in time and level at once. **ADSR** and **Rates** choose the model. A rates-and-levels stage further
   right has a lower rate. A line marks where the key goes up.
-- **The filter's picture** is its response, with frequency and resonance on one dot, for each type and
-  through Morph. The filter's envelope is in the expanded panel.
-- **The LFO's picture** is two cycles of its wave, quietly, and in colour as much of it as reaches the
-  sound. Its rate reads in hertz on the free ranges and is a note length on the synced one.
+- **The filter's picture** is its response, for each type and through Morph, with a line at the cutoff
+  and frequency and resonance on one dot. On a low-pass or a high-pass the dot lies on the curve. The
+  filter's envelope is in the expanded panel.
+- **The LFO's picture** is its wave, quietly, and in colour as much of it as reaches the sound after its
+  amount and its envelope. More cycles fit as its rate rises (two seconds' worth on the low range), and
+  while it is on they run, at its rate up to three cycles a second. Its rate reads in hertz on the free
+  ranges and is a note length on the synced one.
 - **Selecting.** A click on an operator's number, its envelope picture or its square in the algorithm
   picture selects it. The row is lighter while selected and the picture rings it; a row dims while its
   operator is off.

@@ -107,6 +107,41 @@ pub struct FilterExt {
     pub env: EnvSettings,
 }
 
+/// How long a knob's move on a sounding note takes to arrive, in seconds: a drag sends a value every
+/// frame of the window, far apart in sound, and this makes of them a sweep rather than steps.
+pub const GLIDE_SECONDS: f64 = 0.015;
+
+/// `share` of the way from `now` to `target`, and there at last rather than ever nearer.
+pub fn glide(now: f32, target: f32, share: f32) -> f32 {
+    let next = now + (target - now) * share;
+    if (target - next).abs() < 1e-4 { target } else { next }
+}
+
+/// What the filter's and the shaper's knobs read while they glide to where they were set.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct FilterGlide {
+    pub frequency: f32,
+    pub resonance: f32,
+    pub morph: f32,
+    pub drive_db: f32,
+    pub shaper_drive_db: f32,
+    pub shaper_mix: f32,
+}
+
+impl FilterGlide {
+    /// One block toward `f`, `share` of the way. Frequency goes by ratio, as it is heard.
+    pub fn follow(&mut self, f: &FilterExt, share: f32) {
+        let ratio = f.frequency / self.frequency.max(1.0);
+        self.frequency =
+            if share >= 1.0 || (ratio - 1.0).abs() < 1e-3 { f.frequency } else { self.frequency * ratio.powf(share) };
+        self.resonance = glide(self.resonance, f.resonance, share);
+        self.morph = glide(self.morph, f.morph, share);
+        self.drive_db = glide(self.drive_db, f.drive_db, share);
+        self.shaper_drive_db = glide(self.shaper_drive_db, f.shaper_drive_db, share);
+        self.shaper_mix = glide(self.shaper_mix, f.shaper_mix, share);
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LfoExt {
     pub on: bool,
@@ -415,6 +450,8 @@ impl Ext {
 pub struct Frame<'a> {
     pub ext: &'a Ext,
     pub drawn: &'a [DrawnWave],
+    /// The filter's knobs as they are heard now.
+    pub filter: FilterGlide,
     pub sample_rate: f32,
     pub clock: Clock,
     /// Seconds since the last reset, for a free-running LFO.
@@ -488,6 +525,12 @@ fn next_random(state: &mut u32) -> f32 {
 }
 
 /// Hertz for the LFO's rate (0 to 1) in its low or high range: 50 s to 30 Hz, 8 Hz to 12 kHz.
+/// The filter's Q from its resonance, 0 to 1: its peak rises evenly in decibels, as a level is
+/// heard, from -6 dB to +28 dB at the cutoff.
+pub(crate) fn filter_q(resonance: f32) -> f32 {
+    0.5 * 49f32.powf(resonance)
+}
+
 fn rate_hertz(range: usize, rate: f32) -> f32 {
     let (low, high) = if range == 1 { (8.0f32, 12_000.0f32) } else { (0.02f32, 30.0f32) };
     low * (high / low).powf(rate.clamp(0.0, 1.0))
@@ -515,8 +558,16 @@ pub struct NoteExt {
     lfo_noise: f32,
     /// The LFO over the block, after its amount.
     pub lfo: [f32; N],
+    /// Each operator's own feedback on its way to where it was set.
+    pub op_feedback: [f32; 6],
     filter: Multimode,
+    /// Where the filter and the shaper ended the last block, for this one to start from.
     filter_cutoff: f32,
+    filter_q: f32,
+    filter_morph: f32,
+    filter_drive: f32,
+    shaper_drive: f32,
+    shaper_mix: f32,
     filter_set: bool,
     tone_z: f32,
 }
@@ -540,8 +591,14 @@ impl Default for NoteExt {
             lfo_hold: 0.0,
             lfo_noise: 0.0,
             lfo: [0.0; N],
+            op_feedback: [0.0; 6],
             filter: Multimode::default(),
             filter_cutoff: 0.0,
+            filter_q: 0.0,
+            filter_morph: 0.0,
+            filter_drive: 0.0,
+            shaper_drive: 0.0,
+            shaper_mix: 0.0,
             filter_set: false,
             tone_z: 0.0,
         }
@@ -576,6 +633,7 @@ impl NoteExt {
             let hertz = f64::from(rate_hertz(ext.lfo.range, ext.lfo.rate));
             self.lfo_phase = (frame.elapsed * hertz).fract();
         }
+        self.op_feedback = std::array::from_fn(|op| ext.ops.get(op).map_or(0.0, |o| o.feedback));
         self.filter.reset();
         self.filter_set = false;
         self.tone_z = 0.0;
@@ -783,6 +841,7 @@ impl NoteExt {
 
     fn run_filter(&mut self, out: &mut [f32; N], frame: &Frame, mods: &Mods) {
         let f = &frame.ext.filter;
+        let knobs = frame.filter;
         let by_velocity = f.by_velocity * (self.velocity - 0.5) * 2.0 * 4.0;
         let by_key = f.by_key * (self.key - CENTRE_KEY) / 12.0;
         let env_amount = (f.env_amount + mods.sum(dest::FILTER_ENV)).clamp(-1.0, 1.0);
@@ -790,14 +849,21 @@ impl NoteExt {
             + by_velocity
             + by_key
             + mods.sum(dest::FILTER_FREQ) * FILTER_ENV_OCTAVES;
-        let target = f.frequency * 2f32.powf(moved);
-        let resonance = (f.resonance + mods.sum(dest::FILTER_RES)).clamp(0.0, 1.0);
-        let q = 0.5 + 24.0 * resonance * resonance;
-        let morph = (f.morph + mods.sum(dest::FILTER_MORPH)).rem_euclid(1.0);
-        let drive_db = (f.drive_db + mods.sum(dest::FILTER_DRIVE) * 24.0).clamp(0.0, 36.0);
+        let target = knobs.frequency * 2f32.powf(moved);
+        let resonance = (knobs.resonance + mods.sum(dest::FILTER_RES)).clamp(0.0, 1.0);
+        let q = filter_q(resonance);
+        let morph = (knobs.morph + mods.sum(dest::FILTER_MORPH)).rem_euclid(1.0);
+        let drive_db = (knobs.drive_db + mods.sum(dest::FILTER_DRIVE) * 24.0).clamp(0.0, 36.0);
         let drive = 10f32.powf(drive_db / 20.0);
         let lfo_to_filter = frame.ext.lfo.on && frame.ext.lfo.to_filter;
-        let from = if self.filter_set { self.filter_cutoff } else { target };
+        // A new note starts where it is; a sounding one goes there across the block.
+        let (from, from_q, from_morph, from_drive) = if self.filter_set {
+            (self.filter_cutoff, self.filter_q, self.filter_morph, self.filter_drive)
+        } else {
+            (target, q, morph, drive)
+        };
+        // The morph wraps around, and the short way is a jump it may take.
+        let from_morph = if (morph - from_morph).abs() > 0.5 { morph } else { from_morph };
         let mut settings = MultimodeSettings {
             sample_rate: f64::from(frame.sample_rate),
             response: f.response,
@@ -808,36 +874,49 @@ impl NoteExt {
             circuit: f.circuit,
             drive: f64::from(drive),
         };
-        for (chunk, part) in out.chunks_mut(FILTER_STEP).enumerate() {
-            let t = (chunk + 1) as f32 * FILTER_STEP as f32 / N as f32;
+        // A moving Q, morph or drive scales the output, so each step of it is a small click: while
+        // one moves the filter follows every sample. A moving cutoff has no such steps.
+        let step = if from_q != q || from_morph != morph || from_drive != drive { 1 } else { FILTER_STEP };
+        for (chunk, part) in out.chunks_mut(step).enumerate() {
+            let t = (chunk + 1) as f32 * step as f32 / N as f32;
             let mut cutoff = from * (target / from.max(1.0)).powf(t.min(1.0));
             if lfo_to_filter {
-                let lfo = self.lfo.get(chunk * FILTER_STEP).copied().unwrap_or(0.0);
+                let lfo = self.lfo.get(chunk * step).copied().unwrap_or(0.0);
                 cutoff *= 2f32.powf(lfo * FILTER_LFO_OCTAVES);
             }
             settings.frequency = f64::from(cutoff);
+            settings.q = f64::from(from_q + (q - from_q) * t.min(1.0));
+            settings.morph = f64::from(from_morph + (morph - from_morph) * t.min(1.0));
+            settings.drive = f64::from(from_drive + (drive - from_drive) * t.min(1.0));
             self.filter.set(&settings);
             for s in part {
                 *s = self.filter.process(f64::from(*s)) as f32;
             }
         }
-        self.filter_cutoff = target;
-        self.filter_set = true;
-
-        if f.shaper != 0 && f.shaper_mix > 0.0 {
-            let drive_db = (f.shaper_drive_db + mods.sum(dest::SHAPER_DRIVE) * 24.0).clamp(0.0, 36.0);
-            let drive = 10f32.powf(drive_db / 20.0);
-            for s in out.iter_mut() {
-                let x = *s * drive;
+        let shaper_db = (knobs.shaper_drive_db + mods.sum(dest::SHAPER_DRIVE) * 24.0).clamp(0.0, 36.0);
+        let shaper_drive = 10f32.powf(shaper_db / 20.0);
+        let (from_shaper_drive, from_shaper_mix) =
+            if self.filter_set { (self.shaper_drive, self.shaper_mix) } else { (shaper_drive, knobs.shaper_mix) };
+        if f.shaper != 0 && (knobs.shaper_mix > 0.0 || from_shaper_mix > 0.0) {
+            for (i, s) in out.iter_mut().enumerate() {
+                let t = (i + 1) as f32 / N as f32;
+                let x = *s * (from_shaper_drive + (shaper_drive - from_shaper_drive) * t);
                 let shaped = match f.shaper {
                     1 => x.tanh(),
                     2 => x.clamp(-1.0, 1.0),
                     3 => (x * std::f32::consts::FRAC_PI_2).sin(),
                     _ => suhina_dsp::shape::sine_fold(f64::from(x)) as f32,
                 };
-                *s += (shaped - *s) * f.shaper_mix;
+                *s += (shaped - *s) * (from_shaper_mix + (knobs.shaper_mix - from_shaper_mix) * t);
             }
         }
+        self.filter_cutoff = target;
+        self.filter_q = q;
+        self.filter_morph = morph;
+        self.filter_drive = drive;
+        self.shaper_drive = shaper_drive;
+        self.shaper_mix = knobs.shaper_mix;
+        self.filter_set = true;
     }
 }
 

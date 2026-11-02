@@ -6,7 +6,7 @@
 //! whenever none of those is in use, so old sounds stay exact (ADR 0034).
 
 use crate::core::{self, Buses, FB_IN, FB_OUT, LEVEL_THRESHOLD, OUT_BUS_ADD, OpParams};
-use crate::ext::{Frame, Mods, NoteExt};
+use crate::ext::{Frame, Mods, NoteExt, glide};
 use crate::tables::{LG_N, N, Tables};
 use crate::wave::{self, TABLE};
 
@@ -18,6 +18,9 @@ enum Source<'a> {
 }
 
 const ONE: f32 = (1u32 << 24) as f32;
+
+/// Of how far an operator's feedback has to go, the share a block goes: about 15 ms for all of it.
+const FEEDBACK_GLIDE: f32 = 0.085;
 
 /// Renders a block of a note into `output`. `fb_shift` 16 or more turns the voice's feedback off.
 #[allow(clippy::too_many_arguments)]
@@ -77,7 +80,13 @@ pub fn render(
             // The voice's feedback, on the algorithm's loop.
             let voice_loop = !modulated && flags & (FB_IN | FB_OUT) == FB_IN | FB_OUT && fb_shift < 16;
             let own = (settings.map_or(0.0, |o| o.feedback) + mods.feedback).clamp(0.0, 1.0);
-            let own_loop = !modulated && !voice_loop && own > 0.0;
+            // It moves across the block, so turning it is heard as a move rather than in steps.
+            let own_from = x.op_feedback.get(op).copied().unwrap_or(own);
+            if let Some(slot) = x.op_feedback.get_mut(op) {
+                *slot = glide(own_from, own, FEEDBACK_GLIDE);
+            }
+            let own_to = x.op_feedback.get(op).copied().unwrap_or(own);
+            let own_loop = !modulated && !voice_loop && (own_from > 0.0 || own_to > 0.0);
             let mut state = if voice_loop { *fb } else { x.op_fb.get(op).copied().unwrap_or([0; 2]) };
             let voice_shift = (fb_shift + 1).clamp(0, 31);
 
@@ -101,7 +110,8 @@ pub fn render(
                     modulation = modulation.wrapping_add(state[0].wrapping_add(state[1]) >> voice_shift);
                 } else if own_loop {
                     let sum = state[0].wrapping_add(state[1]) as f32;
-                    modulation = modulation.wrapping_add((sum * own * 0.25) as i32);
+                    let amount = own_from + (own_to - own_from) * (i + 1) as f32 / N as f32;
+                    modulation = modulation.wrapping_add((sum * amount * 0.25) as i32);
                 }
                 let at = phase.wrapping_add(modulation);
                 let y = match &source {

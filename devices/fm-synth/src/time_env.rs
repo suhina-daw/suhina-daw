@@ -238,7 +238,10 @@ impl TimeEnv {
                     }
                 }
             }
-            Stage::Sustain => self.value = s.sustain,
+            // Set while the note holds, it glides there rather than stepping.
+            Stage::Sustain => {
+                self.value = crate::ext::glide(self.value, s.sustain, seconds / crate::ext::GLIDE_SECONDS as f32);
+            }
             Stage::Release => {
                 let p = self.position / s.release.max(0.0005);
                 let end = if self.amp && s.end <= SILENCE_DB { -80.0 } else { s.end };

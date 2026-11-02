@@ -1863,6 +1863,15 @@ fn a_handles_offset_moves_where_it_is_grabbed() {
 }
 
 #[test]
+fn a_panel_reads_the_clock_and_its_parameters_by_name() {
+    let parameters = [parameter("level", false)];
+    let values = Values { time: 2.5, ..Values::new(&parameters) };
+    assert_eq!(values.read(suhina_device_sdk::ui::TIME_ID, false, false), 2.5);
+    assert_eq!(values.read("level", false, false), parameters[0].value);
+    assert_eq!(values.read("nothing", false, false), 0.0);
+}
+
+#[test]
 fn a_point_moves_both_its_parameters_as_one_gesture() {
     let mut canvas = one_control([200.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("a"));
     let control = &mut Arc::make_mut(&mut canvas).controls[0];
@@ -1940,8 +1949,15 @@ fn dragging_across_bars_draws_each_of_them_as_one_undo_step() {
         vec![],
     ];
     let actions = frames(&canvas, Vec2::splat(100.0), &parameters, events);
-    let value_of =
-        |id: &str| actions.iter().rev().find(|a| a.params["param"] == id).and_then(|a| a.params["value"].as_f64());
+    // What the stroke set: the action that closes it repeats a bar's stored value, which this
+    // test's parameters never take up.
+    let value_of = |id: &str| {
+        actions
+            .iter()
+            .rev()
+            .find(|a| a.params["param"] == id && a.params["continuous"] == true)
+            .and_then(|a| a.params["value"].as_f64())
+    };
     // A straight line from the press to the release, read at each bar's middle: the fast drag
     // leaves no bar out.
     assert!(value_of("a").is_some_and(|v| v > 0.6), "{actions:?}");

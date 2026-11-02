@@ -197,6 +197,8 @@ Paths have at most 256 points; filled paths must be convex. Arc tessellation is 
 A plot is a curve from one expression: `samples` points (2..512) from `from` to `to` along x, each at the height `y`
 gives while the parameter `#x` reads its share of the way, 0 to 1, kept between `top` and `bottom`. One expression
 read many times keeps a large response curve small in the file, and each parameter is looked up once per plot.
+`#time` reads the host's clock in seconds, and while a canvas's `animate_when` (a value expression) is above zero
+the host keeps drawing it, about 30 frames a second, so a drawing can move by itself.
 Text can append a parameter's current value with bounded decimal precision. Numeric drawing
 values can be literals or bounded expressions (parameter, normalized parameter, add, multiply, min, max,
 sine, cosine, exponential, natural logarithm, equality and oscillator waveforms). Expression depth is at most 16, with 32768 expression nodes per canvas;

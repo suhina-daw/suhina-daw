@@ -71,12 +71,18 @@ STAGE_GAP = 7.0
 ROW_GAP = 2.0
 # The filter's picture: 20 Hz to 20 kHz across, as hearing spreads pitch, and decibels up and down.
 FILTER_TOP_DB, FILTER_BOTTOM_DB = 30.0, -60.0
+# The filter's Q at no resonance and at all of it (filter_q in devices/fm-synth/src/ext.rs).
+FILTER_Q_LOW, FILTER_Q_HIGH = 0.5, 24.5
 DB_PER_LOG = 10.0 / math.log(10.0)
 # The second LFO's waves (params.rs) as the SDK's preview shapes (dsp::lfo::Shape::ALL).
 LFO_SHAPES = [0, 4, 1, 3, 2, 5, 5]
 NOISE_WAVE = 6
 SYNC_RANGE = 2
 LFO_RANGES = {0: (0.02, 30.0), 1: (8.0, 12_000.0)}
+# The note lengths of its synced range, in beats (REPEAT_BEATS in devices/fm-synth/src/params.rs).
+REPEAT_BEATS = [0.125, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0, 16.0]
+# How long its picture lasts on the free range, in seconds: more cycles fit the faster it goes.
+LFO_WINDOW = 2.0
 
 
 def every_parameter():
@@ -436,9 +442,10 @@ def r_power(power):
 
 
 def filter_damping():
-    """1 / Q squared, with the device's Q from resonance (devices/fm-synth/src/ext.rs)."""
-    q = add(0.5, mul(24.0, mul(par("filterRes"), par("filterRes"))))
-    return {"op": "exp", "value": mul({"op": "log", "value": q}, -2.0)}
+    """1 / Q squared of one section, with the device's Q from resonance. Two sections have the square
+    root of the Q each (crates/dsp/src/multimode.rs)."""
+    log_q = add(math.log(FILTER_Q_LOW), mul(par("filterRes"), math.log(FILTER_Q_HIGH / FILTER_Q_LOW)))
+    return {"op": "exp", "value": mul(log_q, add(par("filterSlope"), -2.0))}
 
 
 def filter_numerators():
@@ -486,8 +493,10 @@ def filter_x(hz, w):
 
 def filter_picture(x, y, w, h, tag, visible=None):
     """The filter's response with its frequency and resonance on one dot, on a log scale of hertz."""
-    zero = (FILTER_TOP_DB) * h / (FILTER_TOP_DB - FILTER_BOTTOM_DB)
-    ground = [rect(0.0, 0.0, w, h, DISPLAY, 3.0), line([0.0, zero], [w, zero], GRID)]
+    per_db = h / (FILTER_TOP_DB - FILTER_BOTTOM_DB)
+    zero = FILTER_TOP_DB * per_db
+    cutoff = mul(add({"op": "log", "value": par("filterFreq")}, -math.log(20.0)), w / math.log(1000.0))
+    ground = [rect(0.0, 0.0, w, h, DISPLAY, 3.0), line([0.0, zero], [w, zero], GRID), line([cutoff, 0.0], [cutoff, h], tint(HIGHLIGHT, 60))]
     for hz, name in ((100.0, "100"), (1000.0, "1k"), (10000.0, "10k")):
         at = filter_x(hz, w)
         ground += [line([at, 0.0], [at, h], GRID), text(at + 3.0, h - 12.0, name, QUIET, 9.0)]
@@ -500,7 +509,10 @@ def filter_picture(x, y, w, h, tag, visible=None):
                                 both(shown, is_off("filterOn"))))
     controls.append(graphic(f"filter_off{tag}", "The filter is off", [x, y, 90.0, 16.0], [text(6.0, 2.0, "The filter is off", QUIET, 10.0)],
                             both(visible, is_off("filterOn"))))
-    controls.append(point(f"filter_point{tag}", "Frequency and resonance", [x, y, w, zero], "filterFreq", "filterRes", visible, log_x=True))
+    # At the cutoff a low-pass or a high-pass stands at its Q, so the dot lies on the curve.
+    high = (FILTER_TOP_DB - 20.0 * math.log10(FILTER_Q_HIGH)) * per_db
+    low = (FILTER_TOP_DB - 20.0 * math.log10(FILTER_Q_LOW)) * per_db
+    controls.append(point(f"filter_point{tag}", "Frequency and resonance", [x, y + high, w, low - high], "filterFreq", "filterRes", visible, log_x=True))
     return controls
 
 
@@ -509,19 +521,49 @@ def lfo_rate_hz(index):
     return {"op": "exp", "value": add(math.log(low), mul(par("lfo2Rate"), math.log(high / low)))}
 
 
-def lfo_curve(w, h, amplitude, color):
+def lfo_motion(index):
+    """On a range: how many cycles its picture holds, and how many pass a second, as fast as an eye can follow."""
+    if index == 0:
+        hz = lfo_rate_hz(0)
+        return minimum(24.0, maximum(0.25, mul(hz, LFO_WINDOW))), minimum(3.0, hz)
+    if index == 1:
+        return add(1.0, mul(par("lfo2Rate"), 23.0)), 1.0
+    per_beat = balanced_sum([mul(equal(par("lfo2Sync"), float(i)), 1.0 / beats) for i, beats in enumerate(REPEAT_BEATS)])
+    return minimum(24.0, mul(per_beat, 4.0)), minimum(3.0, mul(per_beat, 2.0))
+
+
+def lfo_envelope():
+    """How much of the LFO its envelope lets through across the picture."""
+    p = "lfoEnv."
+    t = mul(par("#x"), LFO_WINDOW)
+    over = lambda pid: {"op": "exp", "value": mul({"op": "log", "value": par(pid)}, -1.0)}
+    up = minimum(1.0, maximum(0.0, mul(t, over(f"{p}attack"))))
+    down = minimum(1.0, maximum(0.0, mul(sub(t, par(f"{p}attack")), over(f"{p}decay"))))
+    initial, peak, sustain = par(f"{p}initial"), par(f"{p}peak"), par(f"{p}sustain")
+    return add(add(initial, mul(sub(peak, initial), up)), mul(sub(sustain, peak), down))
+
+
+def lfo_curve(w, h, amplitude, color, shown, speed):
+    """Its wave across the picture, running while it is on."""
     shape = balanced_sum([mul(equal(par("lfo2Wave"), float(i)), float(s)) for i, s in enumerate(LFO_SHAPES) if s])
-    cycles = mul(par("#x"), add(2.0, mul(equal(par("lfo2Wave"), float(NOISE_WAVE)), 14.0)))
+    noise = add(1.0, mul(equal(par("lfo2Wave"), float(NOISE_WAVE)), 7.0))
+    cycles = add(mul(mul(par("#time"), is_on("lfoOn")), speed), mul(par("#x"), mul(shown, noise)))
     y = sub(h / 2.0, mul(amplitude, {"op": "wave", "shape": shape, "cycles": cycles}))
-    return {"kind": "plot", "from": 0.0, "to": w, "top": 0.0, "bottom": h, "samples": 96, "y": y, "color": color, "width": 1.5}
+    return {"kind": "plot", "from": 0.0, "to": w, "top": 0.0, "bottom": h, "samples": 240, "y": y, "color": color, "width": 1.5}
 
 
 def lfo_picture(x, y, w, h, tag, visible=None):
-    """Two cycles of the second LFO: its wave quietly, and in the accent how much of it reaches the sound."""
+    """The second LFO: its wave quietly, and in colour as much of it as reaches the sound. More cycles
+    fit as its rate rises, they run while it is on, and its amount and envelope shape the colour."""
     reach = h / 2.0 - 5.0
-    draws = [rect(0.0, 0.0, w, h, DISPLAY, 3.0), line([0.0, h / 2.0], [w, h / 2.0], GRID), lfo_curve(w, h, reach, QUIET),
-             lfo_curve(w, h, mul(par("lfo2Amount"), reach), SPECTRUM_COLOR)]
-    return [graphic(f"lfo_picture{tag}", "LFO wave", [x, y, w, h], draws, visible)]
+    controls = [graphic(f"lfo_ground{tag}", "LFO wave", [x, y, w, h], [rect(0.0, 0.0, w, h, DISPLAY, 3.0), line([0.0, h / 2.0], [w, h / 2.0], GRID)], visible)]
+    for index in range(3):
+        shown, speed = lfo_motion(index)
+        reached = mul(mul(par("lfo2Amount"), reach), lfo_envelope())
+        controls.append(graphic(f"lfo_wave_{index}{tag}", "LFO wave", [x, y, w, h],
+                                [lfo_curve(w, h, reach, QUIET, shown, speed), lfo_curve(w, h, reached, SPECTRUM_COLOR, shown, speed)],
+                                both(visible, equal(par("lfo2Range"), float(index)))))
+    return controls
 
 
 def lfo_rate_knob(x, y, w, h, visible, tag):
@@ -576,13 +618,14 @@ def op_frequency(n, bounds, tag):
     turn = mul(coarse, math.pi / 2.0)
     decade = sub(sub(sub(1.5, cos(turn)), sin(turn)), mul(0.5, cos(mul(coarse, math.pi))))
     hertz = {"op": "exp", "value": mul(add(decade, mul(fine, 0.01)), math.log(10.0))}
-    low = sub(1.0, maximum(0.0, minimum(1.0, sub(decade, 1.0))))
+    # The decade is a whole number but for rounding: halfway decides, so one of the two shows.
+    low, high = maximum(0.0, sub(1.5, decade)), maximum(0.0, sub(decade, 1.5))
     fixed = is_on(f"op{n}.mode")
     def readout(cid, value, suffix, decimals, visible, prefix=""):
         return graphic(f"op{n}_freq_{cid}{tag}", f"Operator {n} frequency", [x, y, w, h],
                        [value_text(w / 2.0, (h - 13.0) / 2.0, value, prefix=prefix, suffix=suffix, size=11.0, decimals=decimals, center=True)], visible)
     return [readout("ratio", ratio, "", 2, is_off(f"op{n}.mode"), prefix="×"),
-            readout("low", hertz, " Hz", 1, both(fixed, low)), readout("high", hertz, " Hz", 0, both(fixed, sub(1.0, low)))]
+            readout("low", hertz, " Hz", 1, both(fixed, low)), readout("high", hertz, " Hz", 0, both(fixed, high))]
 
 
 def op_toggle(n, bounds, tag):
@@ -862,7 +905,8 @@ def compact():
     controls.append(more("random_settings", 6, [1070.0, 68.0, 66.0, 20.0]))
     controls.append(meter("meter", [1140.0, 4.0, 36.0, h - 8.0]))
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": [], "controls": controls,
-            "hidden_parameters": every_parameter(), "accent_on": True}
+            "hidden_parameters": every_parameter(), "accent_on": True,
+            "animate_when": both(equal(par("panel.page"), 3.0), is_on("lfoOn"))}
 
 
 # A cell of a grid: it is given its bounds, whether it shows and the canvas's tag.
@@ -1144,7 +1188,8 @@ def expanded():
     controls.append(separator("x_sep_right", 888.0, 4.0, h - 8.0))
     controls += expanded_right(896.0, 2.0, 280.0)
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": [], "controls": controls,
-            "hidden_parameters": every_parameter(), "accent_on": True}
+            "hidden_parameters": every_parameter(), "accent_on": True,
+            "animate_when": both(equal(par("panel.expandedPage"), 2.0), is_on("lfoOn"))}
 
 
 def check_colours(value):

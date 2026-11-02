@@ -60,6 +60,10 @@ pub struct DeviceUi {
     /// Whether a button that is on fills with the accent (`true`) or the control's active colour.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub accent_on: bool,
+    /// While this is above zero the host keeps drawing the canvas, about 30 frames a second, for
+    /// a drawing that moves with `#time` ([`TIME_ID`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animate_when: Option<UiValue>,
     /// Quick presets its `preset` buttons apply.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub presets: Vec<UiPreset>,
@@ -107,6 +111,7 @@ impl Default for DeviceUi {
             hidden_parameters: Vec::new(),
             strip: false,
             accent_on: false,
+            animate_when: None,
             presets: Vec::new(),
             style: None,
         }
@@ -525,6 +530,8 @@ pub const THEME_PALETTE_TOKENS: [([u8; 3], &str); 5] =
 pub const EXPANDED_ID: &str = "#expanded";
 /// What a [`Draw::Plot`]'s `y` reads for its share of the way along the curve, 0 to 1.
 pub const PLOT_X_ID: &str = "#x";
+/// What an expression reads for the host's clock, in seconds, for a drawing that moves by itself.
+pub const TIME_ID: &str = "#time";
 
 /// Most quick presets on one canvas.
 pub const MAX_UI_PRESETS: usize = 32;
@@ -589,7 +596,7 @@ impl DeviceUi {
             .iter()
             .map(|p| p.id.as_str())
             .chain(READOUT_IDS)
-            .chain([EXPANDED_ID, PLOT_X_ID])
+            .chain([EXPANDED_ID, PLOT_X_ID, TIME_ID])
             .collect::<HashSet<_>>();
         let ids = parameters.iter().map(|p| p.id.as_str()).collect::<HashSet<_>>();
         let mut asset_ids = HashSet::new();
@@ -636,6 +643,9 @@ impl DeviceUi {
         }
         let mut controls = HashSet::new();
         let mut expression_budget = limits.expressions;
+        if let Some(animate) = &self.animate_when {
+            animate.validate(&readouts, 0, &mut expression_budget)?;
+        }
         for c in &self.controls {
             if c.widget.is_some() && !c.drawing.is_empty() {
                 return Err(fail("widget and drawing are mutually exclusive"));

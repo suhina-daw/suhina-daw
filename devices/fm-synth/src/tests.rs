@@ -558,6 +558,14 @@ fn the_filter_takes_the_top_off_and_its_envelope_opens_it() {
 }
 
 #[test]
+fn resonance_raises_the_filters_peak_evenly_in_decibels() {
+    let db = |resonance: f32| 20.0 * crate::ext::filter_q(resonance).log10();
+    assert!((db(0.0) + 6.02).abs() < 0.01, "{}", db(0.0));
+    assert!((db(1.0) - 27.78).abs() < 0.01, "{}", db(1.0));
+    assert!((db(0.5) - (db(0.0) + db(1.0)) / 2.0).abs() < 0.01, "{}", db(0.5));
+}
+
+#[test]
 fn a_resonant_filter_moving_fast_stays_finite() {
     let mut s = synth();
     set(&mut s, "op1.wave", wave_index("Square 64"));
@@ -656,4 +664,87 @@ fn a_new_parameter_left_at_its_default_changes_nothing() {
         s.set_param(i, info.default);
     }
     assert_eq!(plain, note(&mut s, 60, 4_800));
+}
+
+/// How sharply a signal turns: its largest second difference. A click stands out from a smooth wave.
+fn sharpest(signal: &[f32]) -> f32 {
+    signal.windows(3).map(|w| (w[0] - 2.0 * w[1] + w[2]).abs()).fold(0.0, f32::max)
+}
+
+/// Holds a note and moves `id` from `from` to `to` the way a drag does, a step every 512 frames: how
+/// sharply the sound turns while it moves, against how sharply it turns at rest at either end.
+fn click_ratio(setup: &[(&str, f64)], id: &str, from: f64, to: f64, key: u8) -> f32 {
+    let start = |value: f64| {
+        let mut s = synth();
+        for (name, v) in setup {
+            set(&mut s, name, *v);
+        }
+        set(&mut s, id, value);
+        let held = left(&play(&mut s, &[(0, on(key, 0.8))], 24_000));
+        (s, sharpest(&held[12_000..]))
+    };
+    let rest = start(from).1.max(start(to).1).max(1e-6);
+    let (mut s, _) = start(from);
+    const STEPS: usize = 40;
+    let mut moving = Vec::new();
+    for step in 1..=STEPS {
+        set(&mut s, id, from + (to - from) * step as f64 / STEPS as f64);
+        moving.extend(left(&play(&mut s, &[], 512)));
+    }
+    sharpest(&moving) / rest
+}
+
+/// What to hear a control move on: a name, the settings under it, the control, and from where to where.
+type Sweep = (&'static str, Vec<(&'static str, f64)>, &'static str, f64, f64);
+
+#[test]
+fn moving_a_control_on_a_held_note_does_not_click() {
+    let filter = [("filterOn", 1.0), ("filterFreq", 800.0), ("filterRes", 0.6), ("filterSlope", 1.0)];
+    let with = |extra: &[(&'static str, f64)]| {
+        let mut all: Vec<(&'static str, f64)> = filter.to_vec();
+        all.extend_from_slice(extra);
+        all
+    };
+    let time = [("op1.envMode", 1.0)];
+    let fm = [("op2.level", 70.0)];
+    let lfo = [("lfoOn", 1.0), ("lfo2Amount", 0.3)];
+    let cases: Vec<Sweep> = vec![
+        ("filter freq up", with(&[]), "filterFreq", 300.0, 3_000.0),
+        ("filter freq down", with(&[]), "filterFreq", 3_000.0, 300.0),
+        ("filter freq high res", with(&[("filterRes", 0.9)]), "filterFreq", 300.0, 3_000.0),
+        ("filter res up", with(&[]), "filterRes", 0.0, 1.0),
+        ("filter res down", with(&[]), "filterRes", 1.0, 0.0),
+        ("band-pass res", with(&[("filterType", 2.0)]), "filterRes", 0.0, 1.0),
+        ("high-pass freq", with(&[("filterType", 1.0)]), "filterFreq", 300.0, 3_000.0),
+        ("notch freq", with(&[("filterType", 3.0)]), "filterFreq", 300.0, 3_000.0),
+        ("morph", with(&[("filterType", 4.0)]), "filterMorph", 0.0, 0.99),
+        ("drive", with(&[("filterCircuit", 1.0)]), "filterDrive", 0.0, 24.0),
+        ("shaper drive", with(&[("shaper", 1.0)]), "shaperDrive", 0.0, 24.0),
+        ("shaper mix", with(&[("shaper", 2.0), ("shaperDrive", 12.0)]), "shaperMix", 0.0, 1.0),
+        ("volume", vec![], "volume", -24.0, 0.0),
+        ("pan", vec![], "pan", -1.0, 1.0),
+        ("tone", vec![], "tone", 1.0, 0.1),
+        ("op level", vec![], "op1.level", 99.0, 60.0),
+        ("op level time", time.to_vec(), "op1.level", 99.0, 60.0),
+        ("modulator level", vec![], "op2.level", 0.0, 80.0),
+        ("op feedback", fm.to_vec(), "op2.feedback", 0.0, 0.8),
+        ("voice feedback", fm.to_vec(), "feedback", 0.0, 7.0),
+        ("fine", vec![], "op1.fine", 0.0, 50.0),
+        ("detune", vec![], "op1.detune", -7.0, 7.0),
+        ("env sustain", time.to_vec(), "op1.env.sustain", -30.0, 0.0),
+        ("env peak", time.to_vec(), "op1.env.peak", -30.0, 0.0),
+        ("level 3", vec![], "op1.level3", 60.0, 99.0),
+        ("lfo amount", lfo[..1].to_vec(), "lfo2Amount", 0.0, 1.0),
+        ("lfo rate", lfo.to_vec(), "lfo2Rate", 0.2, 0.9),
+        ("time", time.to_vec(), "time", -1.0, 1.0),
+        ("mod amount", vec![("mod.velocity.dest1", 1.0)], "mod.velocity.amount1", 0.0, 1.0),
+    ];
+    for (name, setup, id, from, to) in cases {
+        assert!(index(id) != usize::MAX, "{id}");
+        // A low note turns gently, so a click stands out of it the most.
+        for key in [60, 36] {
+            let ratio = click_ratio(&setup, id, from, to, key);
+            assert!(ratio < 3.0, "{name} on key {key}: it turns {ratio} times as sharply while it moves");
+        }
+    }
 }

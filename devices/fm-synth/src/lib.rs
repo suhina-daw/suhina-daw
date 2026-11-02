@@ -40,10 +40,10 @@ use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, ParamBank, ProcessContext, Role,
     check_sample_rate, controller,
 };
-use suhina_dsp::{FirstOrder, FirstOrderCoefficients};
+use suhina_dsp::OnePole;
 
 use crate::core::Buses;
-use crate::ext::{Ext, Frame};
+use crate::ext::{Ext, FilterGlide, Frame, GLIDE_SECONDS, glide};
 use crate::lfo::Lfo;
 use crate::params::{COUNT, EXTENDED, GLOBAL, OP_PARAMS, PARAMS, PERFORMANCE, op};
 pub use crate::patch::Patch;
@@ -155,7 +155,11 @@ pub struct FmSynth {
     target_pan: [f32; 2],
     /// Below 1, a low-pass over the sum.
     tone: f64,
-    tone_filter: [FirstOrder; 2],
+    /// Where Tone is on its way there.
+    tone_now: f64,
+    tone_filter: [OnePole; 2],
+    /// The filter's knobs on their way to where they were set, per sounding note.
+    filter_glide: FilterGlide,
     /// What the voice file does not hold.
     ext: Box<Ext>,
     /// By engine order, as [`Ext::ops`].
@@ -204,7 +208,9 @@ impl FmSynth {
             pan: [1.0; 2],
             target_pan: [1.0; 2],
             tone: 1.0,
-            tone_filter: [FirstOrder::new(FirstOrderCoefficients::lowpass(DEFAULT_SAMPLE_RATE, 20_000.0)); 2],
+            tone_now: 1.0,
+            tone_filter: [OnePole::new(1.0 / (std::f64::consts::TAU * 20_000.0), DEFAULT_SAMPLE_RATE); 2],
+            filter_glide: FilterGlide::default(),
             ext: Box::default(),
             drawn: vec![DrawnWave::new(); 6],
             retrigger: true,
@@ -324,10 +330,7 @@ impl FmSynth {
                 params::SPREAD => self.spread = value as f32,
                 params::VOICE_COUNT => self.voices = (value as usize).clamp(1, VOICES),
                 params::RETRIGGER => self.retrigger = on,
-                params::TONE => {
-                    self.tone = value;
-                    self.set_tone_filter();
-                }
+                params::TONE => self.tone = value,
                 i if (params::ROUTES..params::VOLUME).contains(&i) => {
                     let (source, field) = ((i - params::ROUTES) / 4, (i - params::ROUTES) % 4);
                     let route: &mut ModRoute = match source {
@@ -351,10 +354,10 @@ impl FmSynth {
 
     /// Tone from 0 to 1 is a low-pass from 200 Hz to 20 kHz; at 1 there is no filter.
     fn set_tone_filter(&mut self) {
-        let frequency = (200.0 * 100f64.powf(self.tone)).min(self.sample_rate * 0.45);
-        let coefficients = FirstOrderCoefficients::lowpass(self.sample_rate, frequency);
+        let frequency = (200.0 * 100f64.powf(self.tone_now)).min(self.sample_rate * 0.45);
+        let seconds = 1.0 / (std::f64::consts::TAU * frequency);
         for filter in &mut self.tone_filter {
-            filter.set(coefficients);
+            filter.set_seconds(seconds, self.sample_rate);
         }
     }
 
@@ -439,6 +442,7 @@ impl FmSynth {
         let frame = Frame {
             ext: &self.ext,
             drawn: &self.drawn,
+            filter: self.filter_glide,
             sample_rate: self.sample_rate as f32,
             clock: self.clock,
             elapsed: self.elapsed,
@@ -523,6 +527,18 @@ impl FmSynth {
     }
 
     fn render_block(&mut self) {
+        // Knobs glide while something sounds; with nothing sounding a change is simply there.
+        let share = if self.slots.iter().any(|s| s.live) {
+            (1.0 - (-(N as f64) / (self.sample_rate * GLIDE_SECONDS)).exp()) as f32
+        } else {
+            1.0
+        };
+        self.filter_glide.follow(&self.ext.filter, share);
+        if self.tone_now != self.tone {
+            let tone = f64::from(glide(self.tone_now as f32, self.tone as f32, share));
+            self.tone_now = if share >= 1.0 { self.tone } else { tone };
+            self.set_tone_filter();
+        }
         if self.changed {
             for slot in self.slots.iter_mut().filter(|s| s.live) {
                 slot.note.retune(&self.patch, slot.sounding, slot.velocity, &self.tables);
@@ -547,6 +563,7 @@ impl FmSynth {
         let frame = Frame {
             ext: &self.ext,
             drawn: &self.drawn,
+            filter: self.filter_glide,
             sample_rate: self.sample_rate as f32,
             clock: self.clock,
             elapsed: self.elapsed,
@@ -571,24 +588,31 @@ impl FmSynth {
                 mix(&mut sum, &samples, slot.twin_gains, gain, pan);
             }
         }
-        if self.tone < 1.0 {
-            let [left, right] = &mut self.tone_filter;
-            for s in &mut sum {
-                s[0] = left.process(f64::from(s[0])) as f32;
-                s[1] = right.process(f64::from(s[1])) as f32;
+        // The filter always runs, so it knows the signal when Tone leaves 1, and comes in over the
+        // top of its range rather than at once.
+        let wet = ((1.0 - self.tone_now) * 20.0).clamp(0.0, 1.0) as f32;
+        let [left, right] = &mut self.tone_filter;
+        for s in &mut sum {
+            let l = left.process(f64::from(s[0])) as f32;
+            let r = right.process(f64::from(s[1])) as f32;
+            if wet > 0.0 {
+                s[0] += (l - s[0]) * wet;
+                s[1] += (r - s[1]) * wet;
             }
         }
         let start = self.gain;
-        let step = (self.target_gain - start) / N as f32;
+        let end_gain = glide(start, self.target_gain, share);
+        let step = (end_gain - start) / N as f32;
         let pan = self.pan;
-        let pan_step = [(self.target_pan[0] - pan[0]) / N as f32, (self.target_pan[1] - pan[1]) / N as f32];
+        let end_pan = [glide(pan[0], self.target_pan[0], share), glide(pan[1], self.target_pan[1], share)];
+        let pan_step = [(end_pan[0] - pan[0]) / N as f32, (end_pan[1] - pan[1]) / N as f32];
         for (i, (out, s)) in self.block.iter_mut().zip(sum).enumerate() {
             let t = (i + 1) as f32;
             let gain = start + step * t;
             *out = [s[0] * gain * (pan[0] + pan_step[0] * t), s[1] * gain * (pan[1] + pan_step[1] * t)];
         }
-        self.gain = self.target_gain;
-        self.pan = self.target_pan;
+        self.gain = end_gain;
+        self.pan = end_pan;
         self.elapsed += N as f64 / self.sample_rate;
     }
 
@@ -654,11 +678,14 @@ impl Device for FmSynth {
         self.position = N;
         self.gain = self.target_gain;
         self.pan = self.target_pan;
+        self.filter_glide.follow(&self.ext.filter, 1.0);
+        self.tone_now = self.tone;
+        self.set_tone_filter();
         self.random = RANDOM_SEED;
         self.elapsed = 0.0;
         self.settle_drawn();
         for filter in &mut self.tone_filter {
-            filter.reset();
+            filter.reset(0.0);
         }
         self.changed = false;
     }

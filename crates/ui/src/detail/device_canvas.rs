@@ -1291,21 +1291,30 @@ fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
 }
 /// A canvas's parameters by id. A large panel holds thousands of controls, most of them hidden, and
 /// each asks after its parameters every frame.
-struct Values<'a>(std::collections::HashMap<&'a str, &'a GraphParameter>);
+struct Values<'a> {
+    by_id: std::collections::HashMap<&'a str, &'a GraphParameter>,
+    /// What `#time` reads, in seconds.
+    time: f64,
+}
 
 impl<'a> Values<'a> {
     /// The first of a name wins, as a search through the list would have it.
     fn new(parameters: &'a [GraphParameter]) -> Self {
-        Self(parameters.iter().rev().map(|p| (p.id.as_str(), p)).collect())
+        Self { by_id: parameters.iter().rev().map(|p| (p.id.as_str(), p)).collect(), time: 0.0 }
     }
 
     fn get(&self, id: &str) -> Option<&'a GraphParameter> {
-        self.0.get(id).copied()
+        self.by_id.get(id).copied()
     }
 
     /// What an expression reads for `id`.
     fn read(&self, id: &str, norm: bool, log: bool) -> f64 {
-        self.get(id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
+        match self.get(id) {
+            Some(p) if norm => normalized(p, log),
+            Some(p) => p.value,
+            None if id == suhina_device_sdk::ui::TIME_ID => self.time,
+            None => 0.0,
+        }
     }
 }
 
@@ -2028,7 +2037,10 @@ pub(crate) fn show(
     let stretch = Vec2::new(rect.width() / canvas.size[0].max(1.0), rect.height() / canvas.size[1].max(1.0));
     let stretch = if canvas.strip { stretch } else { stretch.max(Vec2::splat(1.0)) };
     let stretch = if (stretch - Vec2::splat(1.0)).length() < 0.001 { Vec2::splat(1.0) } else { stretch };
-    let values = Values::new(parameters);
+    let values = Values { time: ui.input(|i| i.time), ..Values::new(parameters) };
+    if canvas.animate_when.as_ref().is_some_and(|v| v.evaluate(&|id, norm, log| values.read(id, norm, log)) > 0.0) {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+    }
     paint_scaled(&painter, &canvas.layers, rect.min, &values, &loaded, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;

@@ -121,6 +121,19 @@ fn handles_bind_an_axis_or_two_and_presets_name_declared_values() {
 }
 
 #[test]
+fn a_panel_that_moves_names_what_it_moves_on() {
+    let params = [Parameter::new("on", "On", (0., 1.), 0.)];
+    let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
+    ui.animate_when = Some(UiValue::parameter("on", false));
+    ui.layers.push(Draw::rect([0., 0., 10., 10.], [255; 4]));
+    ui.validate(&params).unwrap();
+    ui.animate_when = Some(UiValue::parameter("nothing", false));
+    assert!(ui.validate(&params).is_err(), "an unknown parameter");
+    ui.animate_when = Some(UiValue::parameter(TIME_ID, false));
+    ui.validate(&params).unwrap();
+}
+
+#[test]
 fn a_plot_reads_its_position_and_limits_its_samples() {
     let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.)];
     let plot = |samples: u16, y: UiValue| Draw::Plot {
