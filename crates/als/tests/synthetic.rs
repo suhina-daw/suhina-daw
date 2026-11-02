@@ -615,12 +615,13 @@ fn reads_tempo_and_time_signature_changes() {
     let import = read_xml(&xml).unwrap();
     let t = &import.project.transport;
     assert_eq!(t.tempo_bpm, 120.0);
+    // Compared without the ids the project gave them.
     assert_eq!(
-        t.tempo_changes,
+        t.tempo_changes.iter().map(|p| TempoPoint { id: Default::default(), ..*p }).collect::<Vec<_>>(),
         [
-            TempoPoint { beat: 8.0, bpm: 140.0, ramp: true },
-            TempoPoint { beat: 16.0, bpm: 140.0, ramp: true },
-            TempoPoint { beat: 16.0, bpm: 90.0, ramp: false },
+            TempoPoint { id: Default::default(), beat: 8.0, bpm: 140.0, ramp: true },
+            TempoPoint { id: Default::default(), beat: 16.0, bpm: 140.0, ramp: true },
+            TempoPoint { id: Default::default(), beat: 16.0, bpm: 90.0, ramp: false },
         ]
     );
     let ts = |numerator, denominator| TimeSignature { numerator, denominator };
@@ -650,7 +651,10 @@ fn malformed_tempo_and_time_signature_events_are_left_out() {
     let import = read_xml(&xml).unwrap();
     let t = &import.project.transport;
     // The one good tempo point is a step: nothing before it is a breakpoint to glide from.
-    assert_eq!(t.tempo_changes, [TempoPoint { beat: 12.0, bpm: 100.0, ramp: false }]);
+    assert_eq!(
+        t.tempo_changes.iter().map(|p| TempoPoint { id: Default::default(), ..*p }).collect::<Vec<_>>(),
+        [TempoPoint { id: Default::default(), beat: 12.0, bpm: 100.0, ramp: false }]
+    );
     assert_eq!(t.time_signature_changes.len(), 1);
     assert_eq!(t.time_signature_changes[0].bar, 4);
     assert!(import.warnings.iter().any(|w| w.contains("not on a bar line")), "{:?}", import.warnings);

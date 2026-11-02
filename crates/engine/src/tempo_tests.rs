@@ -16,11 +16,11 @@ use crate::{AudioData, AudioPool, LaunchCommand, Quantization, Renderer, render_
 const SR: u32 = 48_000;
 
 fn step(beat: f64, bpm: f64) -> TempoPoint {
-    TempoPoint { beat, bpm, ramp: false }
+    TempoPoint { id: Default::default(), beat, bpm, ramp: false }
 }
 
 fn ramp(beat: f64, bpm: f64) -> TempoPoint {
-    TempoPoint { beat, bpm, ramp: true }
+    TempoPoint { id: Default::default(), beat, bpm, ramp: true }
 }
 
 fn clip(start: f64, length: f64) -> Clip {

@@ -47,7 +47,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "project.markers",
-        label: "List the arrangement's markers (named positions on the timeline) in beat order, with index, beat and name",
+        label: "List the arrangement's markers (named positions on the timeline) in beat order, with index, id, beat and name",
         params: &[],
         kind: CommandKind::Read,
         run: markers,

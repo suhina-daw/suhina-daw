@@ -1007,18 +1007,24 @@ fn markers_are_added_moved_renamed_and_deleted_in_beat_order() {
         [(16.0, "Hook".to_string()), (16.0, "Marker 3".to_string()), (32.0, "Marker 2".to_string())]
     );
     let listed = run(&mut session, "project.markers", json!({})).unwrap();
-    assert_eq!(listed[2], json!({ "index": 2, "beat": 32.0, "name": "Marker 2" }));
+    let id = session.project().arrangement.markers[2].id.0;
+    assert_eq!(listed[2], json!({ "index": 2, "id": id, "beat": 32.0, "name": "Marker 2" }));
+    // A marker named by its id is found where it is now.
+    run(&mut session, "marker.rename", json!({ "index": { "id": id }, "name": "Outro" })).unwrap();
+    assert_eq!(session.project().arrangement.markers[2].name, "Outro");
+    run(&mut session, "marker.rename", json!({ "index": { "id": id }, "name": "Marker 2" })).unwrap();
+    assert!(run(&mut session, "marker.rename", json!({ "index": { "id": 9999 }, "name": "x" })).is_err());
 
     // A default name skips one in use.
     run(&mut session, "marker.delete", json!({ "index": 1 })).unwrap();
     let added = run(&mut session, "marker.add", json!({ "beat": 0 })).unwrap();
     assert_eq!(added["name"], "Marker 3");
 
-    // Each edit is one undo step.
-    for _ in 0..7 {
+    // Each edit is one undo step (the two renames by id too); the counter stays past the ids.
+    for _ in 0..9 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
-    assert_eq!(session.project(), &project());
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
 }
 
 #[test]

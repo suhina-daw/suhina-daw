@@ -49,7 +49,12 @@ fn gain(id: &str, points: &[(f64, f64)]) -> Device {
             param: "0".into(),
             points: points
                 .iter()
-                .map(|&(beat, value)| AutomationPoint { beat, value, curve: Default::default() })
+                .map(|&(beat, value)| AutomationPoint {
+                    id: Default::default(),
+                    beat,
+                    value,
+                    curve: Default::default(),
+                })
                 .collect(),
             enabled: true,
         }],

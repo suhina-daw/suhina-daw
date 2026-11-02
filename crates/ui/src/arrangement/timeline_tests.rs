@@ -8,8 +8,10 @@ use crate::demo::demo_project;
 fn the_ruler_marks_tempo_and_time_signature_changes() {
     use suhina_engine::model::{TempoPoint, TimeSignature, TimeSignatureChange};
     let mut project = demo_project();
-    project.transport.tempo_changes =
-        vec![TempoPoint { beat: 16.0, bpm: 140.0, ramp: false }, TempoPoint { beat: 32.0, bpm: 97.5, ramp: true }];
+    project.transport.tempo_changes = vec![
+        TempoPoint { id: Default::default(), beat: 16.0, bpm: 140.0, ramp: false },
+        TempoPoint { id: Default::default(), beat: 32.0, bpm: 97.5, ramp: true },
+    ];
     project.transport.time_signature_changes =
         vec![TimeSignatureChange { bar: 4, time_signature: TimeSignature { numerator: 7, denominator: 8 } }];
     let timeline = Timeline::build(&project, None);

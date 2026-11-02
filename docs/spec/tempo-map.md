@@ -152,8 +152,10 @@ scene's tempo and signature until it is started again.
 
 ## Commands
 
-All are edits with one undo step. Tempo points are numbered from 1 in beat order, as
-`tempo.points` lists them; bars are numbered from 1, as shown.
+All are edits with one undo step. Tempo points are numbered from 0 in beat order, as
+`tempo.points` lists them, each with an `id` a command may name it by instead (`"point": {"id":
+7}`, #763 › 1); bars are numbered from 1, as shown, since a bar number is a place in the music,
+not an index into a list.
 
 | Command | Params | Does |
 |---|---|---|

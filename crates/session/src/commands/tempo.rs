@@ -8,7 +8,7 @@ use super::*;
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "tempo.points",
-        label: "List the tempo map: the start tempo and every tempo change (numbered from 1), the start time signature and every time-signature change",
+        label: "List the tempo map: the start tempo and every tempo change (numbered from 0, with its id), the start time signature and every time-signature change",
         params: &[],
         kind: CommandKind::Read,
         run: crate::tempo::points,
@@ -34,7 +34,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "tempo.movePoint",
         label: "Move a tempo change to another beat, or change its tempo or whether it ramps",
         params: &[
-            param("point", ParamType::Integer, "tempo point number, from 1, as in tempo.points"),
+            param("point", ParamType::Item, "the tempo change: its number, from 0, or {\"id\": n}, as in tempo.points"),
             optional("beat", ParamType::Number, "the new beat, after 0"),
             optional("bpm", ParamType::Number, "the new tempo, 20 to 999"),
             optional("ramp", ParamType::Bool, "whether it glides from the tempo before"),
@@ -46,7 +46,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "tempo.deletePoint",
         label: "Remove a tempo change",
-        params: &[param("point", ParamType::Integer, "tempo point number, from 1, as in tempo.points")],
+        params: &[param(
+            "point",
+            ParamType::Item,
+            "the tempo change: its number, from 0, or {\"id\": n}, as in tempo.points",
+        )],
         kind: CommandKind::Edit,
         run: crate::tempo::delete_point,
         policy: Policy::DEFAULT,

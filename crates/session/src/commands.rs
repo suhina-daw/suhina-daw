@@ -90,6 +90,8 @@ impl ParamType {
             Self::Clip => "clip",
             Self::DevicePath => "device path",
             Self::NameOrNumber => "name or number",
+            Self::Item => "index or id",
+            Self::Items => "indices or ids",
             Self::Path(PathKind::File) => "file",
             Self::Path(PathKind::Files) => "files",
             Self::Path(PathKind::Folder) => "folder",
@@ -123,6 +125,8 @@ impl ParamType {
             Self::Clip => "a clip id or name",
             Self::DevicePath => "a device index or path, or {\"id\": its device_id}",
             Self::NameOrNumber => "a name or a number",
+            Self::Item => "an index, from 0, or {\"id\": n}",
+            Self::Items => "a list of indices, from 0, or {\"id\": n}",
             Self::Path(_) => "a path",
         }
     }
@@ -139,6 +143,7 @@ impl ParamType {
             // A device by its place, or by its id: `{"id": 7}` (#763 › 1).
             Self::DevicePath => id_or_name(value) || value.get("id").is_some_and(Value::is_u64),
             Self::NameOrNumber => value.is_number() || value.is_string(),
+            Self::Item => value.is_u64() || value.get("id").is_some_and(Value::is_u64),
             Self::Decibels => value.is_number() || value.is_string(),
             Self::AutomationValue => value.is_number() || value.is_string() || value.is_boolean(),
             Self::Curve => {
@@ -148,6 +153,7 @@ impl ParamType {
             | Self::Path(PathKind::File | PathKind::Folder | PathKind::WriteFile)
             | Self::Path(PathKind::WriteFolder | PathKind::LibraryItem | PathKind::Place) => value.is_string(),
             Self::Tracks | Self::Texts | Self::Integers | Self::Notes | Self::Numbers | Self::Clips => value.is_array(),
+            Self::Items => value.is_array(),
             Self::Path(PathKind::Files) => value.is_array(),
             Self::Range => value.is_object(),
         }
@@ -209,6 +215,11 @@ pub enum ParamType {
     DevicePath,
     /// A name, or a number standing for it: a scale's root, "C#" or 1.
     NameOrNumber,
+    /// One of a list's items: its index (from 0), or `{"id": n}` with its id, which names it
+    /// wherever it has moved (a marker, an automation point, a tempo change; #763 › 1).
+    Item,
+    /// A list of [`ParamType::Item`]s.
+    Items,
     /// A place on disk the command reads or writes, as text (a list of them for
     /// [`PathKind::Files`]). An agent's is checked against its roots before the command runs
     /// (`suhina-automation`'s `confine`), by this kind.
@@ -327,14 +338,21 @@ const AUTOMATED_DEVICE: Param = optional(
     ParamType::Integer,
     "device index on the track, from 0, as in track.devices; left out for the track's mixer",
 );
-const POINT: Param =
-    param("point", ParamType::Integer, "point index on the lane, from 0 in beat order, as in automation.list");
+const POINT: Param = param(
+    "point",
+    ParamType::Item,
+    "the point: its index on the lane, from 0 in beat order, or {\"id\": n} with its id, as in automation.list",
+);
 const CURVE: Param = optional(
     "curve",
     ParamType::Curve,
     "shape of the segment to the next point: [x1, y1, x2, y2], the two control points of a cubic Bezier from (0, 0) to (1, 1) in (share of the time, share of the way), each from 0 to 1 (from -0.5 to 1.5 for the halves of a split, which can lie outside); or one bend from -1 to 1 for the mirrored curve (0 straight, the default; above 0 fast first, below 0 slow first)",
 );
-const MARKER: Param = param("index", ParamType::Integer, "marker index, from 0, as in project.markers");
+const MARKER: Param = param(
+    "index",
+    ParamType::Item,
+    "the marker: its index, from 0 in beat order, or {\"id\": n} with its id, as in project.markers",
+);
 /// `clip.delete` takes a list of arrangement clips, or one clip by `track` with `index` or `scene`.
 const DELETE_CLIPS: Param = optional(
     "clips",
@@ -512,13 +530,17 @@ impl<T> CommandSpec<T> {
                 | ParamType::Notes
                 | ParamType::Numbers
                 | ParamType::Clips
+                | ParamType::Items
                 | ParamType::Path(PathKind::Files) => json!("array"),
                 ParamType::Number => json!("number"),
                 ParamType::Integer => json!("integer"),
                 ParamType::Bool => json!("boolean"),
                 ParamType::AutomationValue => json!(["number", "string", "boolean"]),
                 ParamType::Curve => json!(["number", "array"]),
-                ParamType::Track | ParamType::Clip | ParamType::DevicePath => json!(["integer", "string"]),
+                ParamType::Track | ParamType::Clip => json!(["integer", "string"]),
+                // A device or an item by its place, or by its id as `{"id": n}` (#763 › 1).
+                ParamType::DevicePath => json!(["integer", "string", "object"]),
+                ParamType::Item => json!(["integer", "object"]),
                 ParamType::Decibels | ParamType::NameOrNumber => json!(["number", "string"]),
                 ParamType::Range => json!("object"),
                 ParamType::Text | ParamType::Path(_) => json!("string"),
@@ -1070,7 +1092,7 @@ fn markers(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
         markers
             .iter()
             .enumerate()
-            .map(|(index, m)| json!({ "index": index, "beat": m.beat, "name": m.name }))
+            .map(|(index, m)| json!({ "index": index, "id": m.id.0, "beat": m.beat, "name": m.name }))
             .collect(),
     ))
 }

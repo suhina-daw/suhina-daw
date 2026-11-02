@@ -149,7 +149,7 @@ fn transport_commands_need_a_player() {
         let missing: Vec<_> = spec.params.iter().filter(|p| p.required && !params.contains_key(p.name)).collect();
         for p in missing {
             let value = match p.ty {
-                ParamType::Integer | ParamType::DevicePath => json!(0),
+                ParamType::Integer | ParamType::DevicePath | ParamType::Item => json!(0),
                 ParamType::Number | ParamType::Decibels => json!(1.0),
                 ParamType::Bool => json!(true),
                 _ => json!("x"),

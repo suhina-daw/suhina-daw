@@ -318,8 +318,10 @@ impl Reader {
                 // beside it (the glide arrives, then the tempo jumps); after a jump it replaces it.
                 let ramp = previous.is_some_and(|p| p < time);
                 match transport.tempo_changes.last_mut().filter(|p| p.beat == time) {
-                    Some(last) if !last.ramp => *last = TempoPoint { beat: time, bpm, ramp: false },
-                    _ => transport.tempo_changes.push(TempoPoint { beat: time, bpm, ramp }),
+                    Some(last) if !last.ramp => {
+                        *last = TempoPoint { id: Default::default(), beat: time, bpm, ramp: false }
+                    }
+                    _ => transport.tempo_changes.push(TempoPoint { id: Default::default(), beat: time, bpm, ramp }),
                 }
             }
             previous = Some(time.max(0.0));

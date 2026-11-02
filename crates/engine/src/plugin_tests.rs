@@ -187,7 +187,7 @@ fn a_plug_in_effect_processes_the_tracks_sound() {
 fn a_plug_in_is_told_the_loop_in_beats_and_in_seconds_through_the_tempo_map() {
     // 120 BPM to beat 4, then 60: the loop from beat 2 to 8 is 1 s to 2 s + 4 s.
     let mut p = project(vec![note(0.0, 1.0, 60)], 8.0, vec![plug(vst3())]);
-    p.transport.tempo_changes = vec![TempoPoint { beat: 4.0, bpm: 60.0, ramp: false }];
+    p.transport.tempo_changes = vec![TempoPoint { id: Default::default(), beat: 4.0, bpm: 60.0, ramp: false }];
     p.transport.loop_range = Some(LoopRange { start: 2.0, end: 8.0 });
     p.transport.loop_enabled = true;
     let stand = Stand::new(Behaviour::Gain(1.0));

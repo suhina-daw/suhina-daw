@@ -168,7 +168,7 @@ fn adding_a_section_inserts_empty_time_and_moves_everything_after_it() {
     let mut p = project();
     p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(2))).unwrap().clips[0].start = 8.0;
     p.arrangement.markers.push(Marker::new(8.0, "Chorus"));
-    p.transport.tempo_changes.push(TempoPoint { beat: 8.0, bpm: 90.0, ramp: false });
+    p.transport.tempo_changes.push(TempoPoint { id: Default::default(), beat: 8.0, bpm: 90.0, ramp: false });
     p.transport
         .time_signature_changes
         .push(TimeSignatureChange { bar: 2, time_signature: TimeSignature { numerator: 3, denominator: 4 } });
@@ -206,7 +206,12 @@ fn adding_a_section_refuses_to_push_any_beat_past_the_end_of_the_song() {
     let cases: [(&str, Put); 3] = [
         ("the loop's end", |p, last, _| p.transport.loop_range = Some(LoopRange { start: 1.0, end: last - 1000.0 })),
         ("a tempo change", |p, last, _| {
-            p.transport.tempo_changes.push(TempoPoint { beat: last - 1000.0, bpm: 90.0, ramp: false });
+            p.transport.tempo_changes.push(TempoPoint {
+                id: Default::default(),
+                beat: last - 1000.0,
+                bpm: 90.0,
+                ramp: false,
+            });
         }),
         ("an automation point", |p, last, main| {
             p.channels[main].automation.push(AutomationLane {

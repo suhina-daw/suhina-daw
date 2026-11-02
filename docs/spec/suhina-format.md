@@ -88,6 +88,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | 5 | Versioned sampler source corrections in the `suhina/sample_edits` device extension ([sampler](sampler.md#source-correction-storage)) | Issue #1026 |
 | 6 | A device's `id`, from the project's object counter ([ADR 0025](../decisions/0025-object-identity.md)); an earlier file's devices get theirs in document order | #763 › 1 |
 | 7 | A macro mapping's `device` is the target device's `id`, not its path in the group; an earlier file's path is read as the device at that place | #763 › 1 |
+| 8 | Markers, automation points and tempo changes have an `id` from the project's counter; an earlier file's get theirs in document order after the devices' (markers, then the channels' points, then the tempo changes) | #763 › 1 |
 
 ## Parts
 

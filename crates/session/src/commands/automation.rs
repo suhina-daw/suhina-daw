@@ -66,8 +66,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             AUTOMATED,
             param(
                 "points",
-                ParamType::Numbers,
-                "point indices on the lane, from 0 in beat order, as in automation.list",
+                ParamType::Items,
+                "the points: indices on the lane, from 0 in beat order, or {\"id\": n} with their ids, as in automation.list",
             ),
             optional(
                 "beats",
@@ -98,8 +98,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             AUTOMATED,
             param(
                 "points",
-                ParamType::Numbers,
-                "point indices on the lane, from 0 in beat order, as in automation.list",
+                ParamType::Items,
+                "the points: indices on the lane, from 0 in beat order, or {\"id\": n} with their ids, as in automation.list",
             ),
         ],
         kind: CommandKind::Edit,
@@ -142,8 +142,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("end", ParamType::Number, "the range's end, an arrangement beat after start"),
             optional(
                 "points",
-                ParamType::Integers,
-                "instead of a range: point indices, from 0, as in automation.list; pasted, they go in among the lane's points from the first of them",
+                ParamType::Items,
+                "instead of a range: points by index, from 0, or {\"id\": n}, as in automation.list; pasted, they go in among the lane's points from the first of them",
             ),
         ],
         kind: CommandKind::Read,
@@ -190,8 +190,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("end", ParamType::Number, "the range's end, an arrangement beat after start"),
             optional(
                 "point",
-                ParamType::Integer,
-                "instead of a range: the point, from 0, whose segment from the point before gets the shape (the first point's: to the next)",
+                ParamType::Item,
+                "instead of a range: the point, by index from 0 or {\"id\": n}, whose segment from the point before gets the shape (the first point's: to the next)",
             ),
             param(
                 "shape",
@@ -270,8 +270,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("end", ParamType::Number, "the range's end, an arrangement beat after start"),
             optional(
                 "points",
-                ParamType::Integers,
-                "instead of a range: point indices, from 0; only they move, around the middle of the line over their span",
+                ParamType::Items,
+                "instead of a range: points by index, from 0, or {\"id\": n}; only they move, around the middle of the line over their span",
             ),
             param(
                 "factor",

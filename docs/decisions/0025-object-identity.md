@@ -264,6 +264,14 @@ device in document order a new id. A file before version 6 gives its devices ids
 after the other objects'. Commands name a device by it as `"device": {"id": 7}`, and report it as
 `device_id`, since a device's `id` already says what it is (a built-in's or a plug-in's).
 
+Decided since: **markers, automation points and tempo changes too** (#763 › 1, `.suhina` version
+8), from the same counter. A command that takes a marker's `index`, a lane's `point` or `points`, or
+a tempo change's `point` takes `{"id": n}` in its place, found where it is now; `project.markers`,
+`automation.list` and `tempo.points` list each one's `id`, and the commands that add one return it.
+A copy is a new object: `assign_ids` gives the later of two with one id a new one. Two points are
+equal without their ids, so a range tool that draws a line again as it was changes nothing. Notes
+stay named by their index in a clip, out of scope for this (#763 › 1).
+
 Decided since: **an imported `.als` gets fresh ids.** Its own id space is separate and its object-id
 counter is not ours to reinterpret; the importer gives every lane, clip and scene a new id in
 document order and keeps nothing of the set's ids.

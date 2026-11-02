@@ -237,10 +237,19 @@ fn a_split_s_curve_plays_as_the_whole_did() {
         assert!(cut.before.to_array().iter().any(|v| !(0.0..=1.0).contains(v)), "{cut:?}");
         let again = cut.before.split(1.0 / 3.0).unwrap();
         split.points[0].curve = again.before;
-        split
-            .points
-            .insert(1, AutomationPoint { beat: 2.0, value: -1.0 + 2.0 * cut.share * again.share, curve: again.after });
-        split.points.insert(2, AutomationPoint { beat: 6.0, value: -1.0 + 2.0 * cut.share, curve: cut.after });
+        split.points.insert(
+            1,
+            AutomationPoint {
+                id: Default::default(),
+                beat: 2.0,
+                value: -1.0 + 2.0 * cut.share * again.share,
+                curve: again.after,
+            },
+        );
+        split.points.insert(
+            2,
+            AutomationPoint { id: Default::default(), beat: 6.0, value: -1.0 + 2.0 * cut.share, curve: cut.after },
+        );
         let (old, new) = (
             Envelope::new(&whole, 1000.0, false, Position::Value).unwrap(),
             Envelope::new(&split, 1000.0, false, Position::Value).unwrap(),

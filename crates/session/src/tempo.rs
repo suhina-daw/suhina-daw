@@ -14,13 +14,13 @@ use crate::{CommandError, Session};
 /// Tempos the commands take, as `transport.setTempo` does.
 const BPM: std::ops::RangeInclusive<f64> = 20.0..=999.0;
 
-/// The start tempo and every change, numbered.
+/// The start tempo and every change, numbered from 0, with its id (#763 › 1).
 fn tempo_list(t: &Transport) -> Value {
     let points: Vec<Value> = t
         .tempo_changes
         .iter()
         .enumerate()
-        .map(|(i, p)| json!({ "point": i + 1, "beat": p.beat, "bpm": p.bpm, "ramp": p.ramp }))
+        .map(|(i, p)| json!({ "point": i, "id": p.id.0, "beat": p.beat, "bpm": p.bpm, "ramp": p.ramp }))
         .collect();
     json!({ "start_bpm": t.tempo_bpm, "points": points })
 }
@@ -72,23 +72,35 @@ fn insert_point(changes: &mut Vec<TempoPoint>, point: TempoPoint) -> Result<(), 
 
 pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let point = TempoPoint {
+        id: Default::default(),
         beat: beat_param(params)?,
         bpm: bpm_param(params)?,
         ramp: Args::new(params).opt_bool("ramp")?.unwrap_or(false),
     };
     let transport = &mut session.project.transport;
     insert_point(&mut transport.tempo_changes, point)?;
-    Ok(tempo_list(transport))
+    // The new change's id, for the commands that name it next.
+    session.project.assign_ids()?;
+    let id = session.project.transport.tempo_changes.iter().find(|p| p.beat == point.beat && p.ramp == point.ramp);
+    let mut out = tempo_list(&session.project.transport);
+    out["id"] = json!(id.map(|p| p.id.0));
+    Ok(out)
 }
 
-/// The index of `params.point` (from 1) among the changes.
+/// The index of `params.point` among the changes: its number, from 0, or `{"id": n}` with its id
+/// (#763 › 1).
 fn point_index(t: &Transport, params: &Value) -> Result<usize, CommandError> {
     let count = t.tempo_changes.len();
-    let number =
-        Args::new(params).value("point").and_then(Value::as_u64).ok_or("point must be a whole number from 1")?;
+    let item = Args::new(params).value("point").ok_or("point must name a tempo change, as in tempo.points")?;
+    if let Some(id) = item.get("id") {
+        let id = id.as_u64().and_then(|n| u32::try_from(n).ok()).map(suhina_model::TempoPointId);
+        return id
+            .and_then(|id| t.tempo_changes.iter().position(|p| p.id == id))
+            .ok_or_else(|| format!("no tempo change has id {}", item["id"]).into());
+    }
+    let number = item.as_u64().ok_or("point must be a whole number from 0, or {\"id\": n}")?;
     usize::try_from(number)
         .ok()
-        .and_then(|n| n.checked_sub(1))
         .filter(|i| *i < count)
         .ok_or_else(|| format!("tempo point {number} does not exist; the project has {count}").into())
 }
@@ -104,8 +116,12 @@ pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value,
     let changes = &mut session.project.transport.tempo_changes;
     let Some(old) = changes.get(index).copied() else { return Err("the tempo point is missing".into()) };
     changes.remove(index);
-    let point =
-        TempoPoint { beat: beat.unwrap_or(old.beat), bpm: bpm.unwrap_or(old.bpm), ramp: ramp.unwrap_or(old.ramp) };
+    let point = TempoPoint {
+        id: old.id,
+        beat: beat.unwrap_or(old.beat),
+        bpm: bpm.unwrap_or(old.bpm),
+        ramp: ramp.unwrap_or(old.ramp),
+    };
     insert_point(changes, point)?;
     Ok(tempo_list(&session.project.transport))
 }

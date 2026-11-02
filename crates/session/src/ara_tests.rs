@@ -126,7 +126,8 @@ fn a_looped_clip_is_a_region_for_each_pass_of_one_modification() {
 fn the_document_carries_the_songs_tempo_map_and_time_signatures() {
     let (mut project, audio) = project();
     // 120 bpm, then 60 from beat 8; 4/4, then 3/4 from bar 2 (beat 8).
-    project.transport.tempo_changes = vec![suhina_model::TempoPoint { beat: 8.0, bpm: 60.0, ramp: false }];
+    project.transport.tempo_changes =
+        vec![suhina_model::TempoPoint { id: Default::default(), beat: 8.0, bpm: 60.0, ramp: false }];
     project.transport.time_signature_changes = vec![suhina_model::TimeSignatureChange {
         bar: 2,
         time_signature: suhina_model::TimeSignature { numerator: 3, denominator: 4 },

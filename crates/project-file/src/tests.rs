@@ -47,7 +47,7 @@ fn everything() -> Project {
         AutomationLane {
             param: "volume".into(),
             points: vec![
-                AutomationPoint { beat: 0.0, value: 0.0, curve: Curve::bend(0.5) },
+                AutomationPoint { id: Default::default(), beat: 0.0, value: 0.0, curve: Curve::bend(0.5) },
                 AutomationPoint::new(8.0, 1.25),
             ],
             enabled: true,
@@ -60,7 +60,7 @@ fn everything() -> Project {
             automation: vec![AutomationLane {
                 param: "volume".into(),
                 points: vec![
-                    AutomationPoint { beat: 1.0, value: -12.0, curve: Curve::bend(-0.75) },
+                    AutomationPoint { id: Default::default(), beat: 1.0, value: -12.0, curve: Curve::bend(-0.75) },
                     AutomationPoint::new(3.5, 0.0),
                 ],
                 enabled: false,
@@ -100,11 +100,17 @@ fn everything() -> Project {
                 param: "3".into(),
                 points: vec![
                     // Two control points outside the mirrored family: from version 4.
-                    AutomationPoint { beat: 0.0, value: 0.0, curve: Curve { x1: 0.1, y1: 0.7, x2: 0.825, y2: 0.525 } },
+                    AutomationPoint {
+                        id: Default::default(),
+                        beat: 0.0,
+                        value: 0.0,
+                        curve: Curve { x1: 0.1, y1: 0.7, x2: 0.825, y2: 0.525 },
+                    },
                     AutomationPoint::new(4.0, 1.0),
                     // A split's half, outside the unit square (version 4 too); the last point's
                     // curve plays nothing but is kept.
                     AutomationPoint {
+                        id: Default::default(),
                         beat: 4.0,
                         value: 0.5,
                         curve: Curve { x1: 1.195_800_350_656_066_6, y1: 0.0, x2: 0.5, y2: -0.293_128_413_857_272_2 },
@@ -133,8 +139,8 @@ fn everything() -> Project {
             loop_range: Some(LoopRange { start: 4.0, end: 12.5 }),
             loop_enabled: true,
             tempo_changes: vec![
-                TempoPoint { beat: 14.0, bpm: 90.0, ramp: false },
-                TempoPoint { beat: 30.5, bpm: 140.25, ramp: true },
+                TempoPoint { id: Default::default(), beat: 14.0, bpm: 90.0, ramp: false },
+                TempoPoint { id: Default::default(), beat: 30.5, bpm: 140.25, ramp: true },
             ],
             time_signature_changes: vec![TimeSignatureChange {
                 bar: 4,
@@ -945,6 +951,7 @@ fn without_ids(project: &Project) -> String {
     fn strip_devices(devices: &mut Value) {
         for device in devices.as_array_mut().into_iter().flatten() {
             device.as_object_mut().map(|d| d.remove("id"));
+            strip(&mut device["automation"]);
             for branch in device["kind"]["branches"].as_array_mut().into_iter().flatten() {
                 strip_devices(&mut branch["devices"]);
             }
@@ -953,7 +960,9 @@ fn without_ids(project: &Project) -> String {
     let mut file: Value = serde_json::from_str(&to_json(project)).unwrap();
     strip(&mut file["project"]["arrangement"]);
     strip(&mut file["project"]["launcher"]);
+    strip(&mut file["project"]["transport"]);
     for channel in file["project"]["channels"].as_array_mut().into_iter().flatten() {
+        strip(&mut channel["automation"]);
         strip_devices(&mut channel["devices"]);
     }
     file["project"].as_object_mut().unwrap().remove("next_id");
@@ -1171,11 +1180,31 @@ fn every_feature() -> Project {
     renumbered(project)
 }
 
+/// Every automation point without its id.
+fn forget_point_ids(project: &mut Project) {
+    fn devices(list: &mut [Device]) {
+        for device in list {
+            device.automation.iter_mut().flat_map(|l| &mut l.points).for_each(|p| p.id = PointId::NONE);
+            if let Some(group) = device.as_group_mut() {
+                group.branches.iter_mut().for_each(|b| devices(&mut b.devices));
+            }
+        }
+    }
+    for channel in &mut project.channels {
+        channel.automation.iter_mut().flat_map(|l| &mut l.points).for_each(|p| p.id = PointId::NONE);
+        devices(&mut channel.devices);
+    }
+}
+
 /// `project` with its devices' ids given again in document order, right after the other objects'
 /// ids, as a reader gives them to a file written before devices had ids (version 6).
 fn renumbered(mut project: Project) -> Project {
     // `forget_ids` keeps each macro mapping on its device while the ids are gone.
     project.channels.iter_mut().flat_map(|c| &mut c.devices).for_each(Device::forget_ids);
+    // Markers, automation points and tempo changes got theirs with version 8, after the devices.
+    project.arrangement.markers.iter_mut().for_each(|m| m.id = MarkerId::NONE);
+    project.transport.tempo_changes.iter_mut().for_each(|t| t.id = TempoPointId::NONE);
+    forget_point_ids(&mut project);
     project.next_id = project.max_object_id() + 1;
     project.assign_ids().unwrap();
     project

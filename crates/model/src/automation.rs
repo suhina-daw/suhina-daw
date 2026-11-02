@@ -517,7 +517,13 @@ impl AutomationLane {
 impl AutomationPoint {
     /// A point on a straight segment.
     pub fn new(beat: f64, value: f64) -> Self {
-        Self { beat, value, curve: Curve::STRAIGHT }
+        Self { id: crate::PointId::NONE, beat, value, curve: Curve::STRAIGHT }
+    }
+}
+
+impl PartialEq for AutomationPoint {
+    fn eq(&self, other: &Self) -> bool {
+        self.beat == other.beat && self.value == other.value && self.curve == other.curve
     }
 }
 

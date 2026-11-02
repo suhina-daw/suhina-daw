@@ -552,7 +552,7 @@ fn a_running_plug_in_shows_the_parameters_it_lists_as_a_generated_list() {
 fn automation_replaces_a_plug_ins_listed_text_with_the_value_it_plays() {
     use suhina_engine::model::{AutomationLane, AutomationPoint};
     let mut project = with_plugin();
-    let point = |beat, value| AutomationPoint { beat, value, curve: Default::default() };
+    let point = |beat, value| AutomationPoint { id: Default::default(), beat, value, curve: Default::default() };
     project.channels[0].devices[0].automation = vec![
         AutomationLane { param: "1".into(), points: vec![point(0.0, 0.75), point(8.0, 0.75)], enabled: true },
         AutomationLane { param: "2".into(), points: vec![point(0.0, 3.0), point(8.0, 3.0)], enabled: true },

@@ -60,8 +60,14 @@ fn marker_beat(args: Args) -> Result<f64, CommandError> {
     Ok(beat)
 }
 
-/// `index`, checked to name a marker.
+/// `index`, checked to name a marker: its index, or `{"id": n}` with its id (#763 › 1).
 fn marker_index(p: &Project, args: Args) -> Result<usize, CommandError> {
+    if let Some(id) = args.value("index").and_then(|v| v.get("id")) {
+        let id = id.as_u64().and_then(|n| u32::try_from(n).ok()).map(suhina_model::MarkerId);
+        return id.and_then(|id| p.arrangement.markers.iter().position(|m| m.id == id)).ok_or_else(|| {
+            format!("no marker has id {}", args.value("index").map_or(Value::Null, |v| v["id"].clone())).into()
+        });
+    }
     let index = args.index("index", "from project.markers")?;
     let count = p.arrangement.markers.len();
     (index < count)
@@ -85,7 +91,10 @@ fn add_marker(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         }
     };
     let index = markers.insert_marker(Marker::new(beat, name.clone()));
-    Ok(json!({ "index": index, "beat": beat, "name": name }))
+    // The new marker's id, for the commands that name it next.
+    session.project.assign_ids()?;
+    let id = session.project.arrangement.markers.get(index).map(|m| m.id.0);
+    Ok(json!({ "index": index, "id": id, "beat": beat, "name": name }))
 }
 
 fn move_marker(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -95,9 +104,9 @@ fn move_marker(session: &mut Session, params: &Value) -> Result<Value, CommandEr
     let arrangement = &mut session.project.arrangement;
     let mut marker = arrangement.markers.remove(index);
     marker.beat = beat;
-    let name = marker.name.clone();
+    let (name, id) = (marker.name.clone(), marker.id.0);
     let index = arrangement.insert_marker(marker);
-    Ok(json!({ "index": index, "beat": beat, "name": name }))
+    Ok(json!({ "index": index, "id": id, "beat": beat, "name": name }))
 }
 
 fn rename_marker(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

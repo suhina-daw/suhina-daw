@@ -154,7 +154,7 @@ fn warp_turned_on_marks_the_audio_s_end_at_the_song_s_tempo_now() {
 fn warp_turned_on_for_a_clip_whose_content_plays_at_another_tempo_elsewhere_gets_its_own_copy() {
     let mut p = project();
     p.transport.tempo_bpm = 120.0;
-    p.transport.tempo_changes = vec![TempoPoint { beat: 20.0, bpm: 90.0, ramp: false }];
+    p.transport.tempo_changes = vec![TempoPoint { id: Default::default(), beat: 20.0, bpm: 90.0, ramp: false }];
     p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(3))).unwrap().clips.push(Clip::new(
         ContentId(1),
         24.0,
@@ -198,7 +198,7 @@ fn warp_turned_on_for_a_clip_whose_content_plays_at_another_tempo_elsewhere_gets
 fn warp_turned_on_again_for_marked_audio_another_clip_plays_at_another_tempo_gets_its_own_copy() {
     let mut p = project();
     p.transport.tempo_bpm = 120.0;
-    p.transport.tempo_changes = vec![TempoPoint { beat: 20.0, bpm: 90.0, ramp: false }];
+    p.transport.tempo_changes = vec![TempoPoint { id: Default::default(), beat: 20.0, bpm: 90.0, ramp: false }];
     let markers = vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 8.0, audio_time: 4.0 }];
     if let LaneData::Audio(region) = &mut p.contents[0].lanes[0].data {
         region.warp_markers = markers.clone();
@@ -253,7 +253,7 @@ fn warp_turned_on_in_a_slot_marks_the_audio_s_end_at_the_song_s_tempo_not_the_ar
     // beat 2) does not reach it, and its 4 s are 8 beats at the song's 120.
     let mut p = project();
     p.transport.tempo_bpm = 120.0;
-    p.transport.tempo_changes = vec![TempoPoint { beat: 2.0, bpm: 60.0, ramp: false }];
+    p.transport.tempo_changes = vec![TempoPoint { id: Default::default(), beat: 2.0, bpm: 60.0, ramp: false }];
     p.launcher.scenes = vec![Scene::default()];
     p.launcher.columns = vec![LauncherColumn {
         track: TrackId(3),

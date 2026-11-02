@@ -48,6 +48,20 @@ fn fill_device_ids(
     Ok(())
 }
 
+/// The automation lanes of `devices` and the devices in their groups, depth first: a group's own
+/// lanes before those of the devices in it.
+fn collect_device_lanes<'a>(devices: &'a mut [Device], lanes: &mut Vec<&'a mut crate::AutomationLane>) {
+    for device in devices {
+        let Device { automation, kind, .. } = device;
+        lanes.extend(automation.iter_mut());
+        if let crate::DeviceKind::Group(group) = kind {
+            for branch in &mut group.branches {
+                collect_device_lanes(&mut branch.devices, lanes);
+            }
+        }
+    }
+}
+
 /// Identifies a [`Clip`], on the arrangement or in a launcher slot. Stays the same
 /// when the clip is moved, trimmed or edited; a copy gets a new one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
@@ -86,7 +100,21 @@ macro_rules! object_id {
     )*};
 }
 
-object_id!(ClipId, LaneId, SceneId, DeviceId);
+/// Identifies an arrangement [`Marker`](crate::Marker) (#763 › 1). Stays the same when the
+/// marker moves or is renamed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct MarkerId(pub u32);
+
+/// Identifies an [`AutomationPoint`](crate::AutomationPoint) on a lane (#763 › 1). Stays the same
+/// when the point is dragged; a point a range tool draws anew gets a new one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct PointId(pub u32);
+
+/// Identifies a [`TempoPoint`](crate::TempoPoint), a change in the tempo map (#763 › 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct TempoPointId(pub u32);
+
+object_id!(ClipId, LaneId, SceneId, DeviceId, MarkerId, PointId, TempoPointId);
 
 /// The counter has reached the largest id there is: the project can name no more objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,7 +179,10 @@ impl Project {
         let clips = self.all_clips().map(|c| c.id.0);
         let scenes = self.launcher.scenes.iter().map(|s| s.id.0);
         let devices = self.all_devices().map(|d| d.id.0);
-        lanes.chain(clips).chain(scenes).chain(devices).max().unwrap_or(0)
+        let markers = self.arrangement.markers.iter().map(|m| m.id.0);
+        let points = self.all_automation_points().map(|p| p.id.0);
+        let tempo = self.transport.tempo_changes.iter().map(|t| t.id.0);
+        lanes.chain(clips).chain(scenes).chain(devices).chain(markers).chain(points).chain(tempo).max().unwrap_or(0)
     }
 
     /// Moves the counter past every id in use, then gives every lane, clip and scene that has no
@@ -192,7 +223,57 @@ impl Project {
         for channel in &mut self.channels {
             fill_device_ids(&mut channel.devices, counter, &mut seen, &mut Vec::new())?;
         }
+        // Markers, automation points and tempo points the same way: one that has no id, or one an
+        // earlier one has (a copied lane's points), gets the next.
+        let mut seen = std::collections::HashSet::new();
+        for marker in &mut self.arrangement.markers {
+            if !marker.id.is_some() || !seen.insert(marker.id) {
+                marker.id = MarkerId(counter.take()?);
+                seen.insert(marker.id);
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        for point in self.all_automation_points_mut() {
+            if !point.id.is_some() || !seen.insert(point.id) {
+                point.id = PointId(counter.take()?);
+                seen.insert(point.id);
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        for point in &mut self.transport.tempo_changes {
+            if !point.id.is_some() || !seen.insert(point.id) {
+                point.id = TempoPointId(counter.take()?);
+                seen.insert(point.id);
+            }
+        }
         Ok(())
+    }
+
+    /// Every automation point, the channels' lanes first (each channel's mixer lanes, then its
+    /// devices' lanes depth first), in lane order.
+    pub fn all_automation_points(&self) -> impl Iterator<Item = &crate::AutomationPoint> {
+        self.channels.iter().flat_map(|c| {
+            let devices = crate::walk_devices(&c.devices).into_iter().flat_map(|(_, d)| &d.automation);
+            c.automation.iter().chain(devices).flat_map(|lane| &lane.points)
+        })
+    }
+
+    /// Every automation point, to change, in the order of [`Project::all_automation_points`].
+    fn all_automation_points_mut(&mut self) -> impl Iterator<Item = &mut crate::AutomationPoint> {
+        let mut lanes: Vec<&mut crate::AutomationLane> = Vec::new();
+        for channel in &mut self.channels {
+            lanes.extend(channel.automation.iter_mut());
+            collect_device_lanes(&mut channel.devices, &mut lanes);
+        }
+        lanes.into_iter().flat_map(|lane| lane.points.iter_mut())
+    }
+
+    /// The lane and place of the automation point `id`: where it is now.
+    pub fn automation_point(&self, id: PointId) -> Option<&crate::AutomationPoint> {
+        if !id.is_some() {
+            return None;
+        }
+        self.all_automation_points().find(|p| p.id == id)
     }
 
     /// Every device on every channel, depth-first: a group before the devices in it.

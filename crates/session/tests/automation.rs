@@ -183,7 +183,10 @@ fn mixer_points_are_added_moved_and_deleted_with_undo() {
     assert_eq!(volume.param, "volume");
     assert_eq!(
         volume.points,
-        [AutomationPoint { beat: 0.0, value: 0.0, curve: Curve::bend(0.5) }, AutomationPoint::new(4.0, 1.0)]
+        [
+            AutomationPoint { id: Default::default(), beat: 0.0, value: 0.0, curve: Curve::bend(0.5) },
+            AutomationPoint::new(4.0, 1.0)
+        ]
     );
 
     // Moving the first point past the second puts it second.
@@ -214,7 +217,8 @@ fn mixer_points_are_added_moved_and_deleted_with_undo() {
     for _ in 0..6 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
-    assert_eq!(session.project(), &project());
+    // The counter stays past the ids the points had: an id is never handed out twice.
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
 }
 
 /// A whole-number parameter's lane, placed as the engine places it: a value between two whole

@@ -342,10 +342,13 @@ fn a_split_segment_plays_as_the_whole_did() {
     for c in curves {
         for t in [0.01, 0.125, 0.25, 0.375, 0.5, 0.75, 0.99] {
             let cut = c.split(t).unwrap();
-            let whole = [AutomationPoint { beat: 0.0, value: 0.0, curve: c }, AutomationPoint::new(8.0, 1.0)];
+            let whole = [
+                AutomationPoint { id: Default::default(), beat: 0.0, value: 0.0, curve: c },
+                AutomationPoint::new(8.0, 1.0),
+            ];
             let halves = [
-                AutomationPoint { beat: 0.0, value: 0.0, curve: cut.before },
-                AutomationPoint { beat: 8.0 * t, value: cut.share, curve: cut.after },
+                AutomationPoint { id: Default::default(), beat: 0.0, value: 0.0, curve: cut.before },
+                AutomationPoint { id: Default::default(), beat: 8.0 * t, value: cut.share, curve: cut.after },
                 AutomationPoint::new(8.0, 1.0),
             ];
             // The second half split again at its middle.
@@ -354,6 +357,7 @@ fn a_split_segment_plays_as_the_whole_did() {
                 halves[0],
                 AutomationPoint { curve: again.before, ..halves[1] },
                 AutomationPoint {
+                    id: Default::default(),
                     beat: 4.0 * t + 4.0,
                     value: cut.share + (1.0 - cut.share) * again.share,
                     curve: again.after,

@@ -72,9 +72,9 @@ fn slice(points: &[AutomationPoint], start: f64, end: f64, stepped: bool, taper:
         let index = points.partition_point(|p| p.beat <= beat);
         index.checked_sub(1).and_then(|i| points.get(i)).map_or(Curve::STRAIGHT, |p| p.curve)
     };
-    let mut out = vec![AutomationPoint { beat: start, value: first, curve: curve_at(start) }];
+    let mut out = vec![AutomationPoint { id: Default::default(), beat: start, value: first, curve: curve_at(start) }];
     out.extend(points.iter().filter(|p| p.beat > start && p.beat < end).copied());
-    out.push(AutomationPoint { beat: end, value: last, curve: Curve::STRAIGHT });
+    out.push(AutomationPoint { id: Default::default(), beat: end, value: last, curve: Curve::STRAIGHT });
     out
 }
 
@@ -97,14 +97,14 @@ fn replace(
     if let Some((before, _)) = edges
         && inner.first().is_none_or(|p| p.beat > start || (p.value - before).abs() > SAME)
     {
-        out.push(AutomationPoint { beat: start, value: before, curve: Curve::STRAIGHT });
+        out.push(AutomationPoint { id: Default::default(), beat: start, value: before, curve: Curve::STRAIGHT });
     }
     let last_inner = inner.last().copied();
     out.extend(inner);
     if let Some((_, after)) = edges
         && last_inner.is_none_or(|p| p.beat < end || (p.value - after).abs() > SAME)
     {
-        out.push(AutomationPoint { beat: end, value: after, curve: after_curve });
+        out.push(AutomationPoint { id: Default::default(), beat: end, value: after, curve: after_curve });
     }
     out.extend(points.iter().filter(|p| p.beat > end).copied());
     out
@@ -141,13 +141,9 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
     if let Some(list) = Args::new(params).value("points").filter(|v| !v.is_null()) {
         let lane = points_of(session, &target)?;
         let mut picked: Vec<AutomationPoint> = Vec::new();
-        for value in list.as_array().ok_or("points must be a list of point indices")? {
-            let index = value
-                .as_u64()
-                .and_then(|n| usize::try_from(n).ok())
-                .ok_or("each point is a point index, from 0, as in automation.list")?;
-            picked
-                .push(*lane.get(index).ok_or_else(|| format!("the lane has no point {index}; it has {}", lane.len()))?);
+        for value in list.as_array().ok_or("points must be a list of points")? {
+            let index = crate::automation::point_at(value, &lane)?;
+            picked.extend(lane.get(index).copied());
         }
         picked.sort_by(|a, b| a.beat.total_cmp(&b.beat));
         let (Some(first), Some(last)) = (picked.first().map(|p| p.beat), picked.last().map(|p| p.beat)) else {
@@ -188,6 +184,7 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
         .points
         .iter()
         .map(|&(offset, position, curve)| AutomationPoint {
+            id: Default::default(),
             beat: start + offset,
             value: target.value_at_position(session, position),
             curve,
@@ -348,8 +345,10 @@ pub(crate) fn simplify(session: &mut Session, params: &Value) -> Result<Value, C
     let lane = Lane { target: &target, session };
     let old: Vec<(f64, f64, Curve)> = inside.iter().map(|p| (p.beat, lane.position(p.value), p.curve)).collect();
     let Some(fitted) = crate::automation_fit::simplify(&old, tolerance) else { return Ok(unchanged) };
-    let kept: Vec<AutomationPoint> =
-        fitted.iter().map(|f| AutomationPoint { beat: f.beat, value: lane.value(f.place), curve: f.curve }).collect();
+    let kept: Vec<AutomationPoint> = fitted
+        .iter()
+        .map(|f| AutomationPoint { id: Default::default(), beat: f.beat, value: lane.value(f.place), curve: f.curve })
+        .collect();
     let mut merged: Vec<AutomationPoint> = points.iter().filter(|p| p.beat < start).copied().collect();
     merged.extend(kept);
     merged.extend(points.iter().filter(|p| p.beat > end).copied());
@@ -404,9 +403,19 @@ pub(crate) fn smooth(session: &mut Session, params: &Value) -> Result<Value, Com
             if d > SAME {
                 let (Some(from), Some(to)) = (at(p.beat - d), at(p.beat + d)) else { break };
                 let middle = lane.value((lane.position(from) + lane.position(to)) / 2.0);
-                out.push(AutomationPoint { beat: p.beat - d, value: from, curve: Curve::bend(-bend) });
-                out.push(AutomationPoint { beat: p.beat, value: middle, curve: Curve::bend(bend) });
-                out.push(AutomationPoint { beat: p.beat + d, value: to, curve: q.curve });
+                out.push(AutomationPoint {
+                    id: Default::default(),
+                    beat: p.beat - d,
+                    value: from,
+                    curve: Curve::bend(-bend),
+                });
+                out.push(AutomationPoint {
+                    id: Default::default(),
+                    beat: p.beat,
+                    value: middle,
+                    curve: Curve::bend(bend),
+                });
+                out.push(AutomationPoint { id: Default::default(), beat: p.beat + d, value: to, curve: q.curve });
                 rounded += 1;
                 i += 2;
                 continue;
@@ -425,9 +434,19 @@ pub(crate) fn smooth(session: &mut Session, params: &Value) -> Result<Value, Com
             if let (Some(into), Some(out_of)) = (at(p.beat - d), at(p.beat + d))
                 && d > SAME
             {
-                out.push(AutomationPoint { beat: p.beat - d, value: into, curve: Curve::bend(bend) });
+                out.push(AutomationPoint {
+                    id: Default::default(),
+                    beat: p.beat - d,
+                    value: into,
+                    curve: Curve::bend(bend),
+                });
                 out.push(AutomationPoint { curve: Curve::bend(-bend), ..p });
-                out.push(AutomationPoint { beat: p.beat + d, value: out_of, curve: Curve::STRAIGHT });
+                out.push(AutomationPoint {
+                    id: Default::default(),
+                    beat: p.beat + d,
+                    value: out_of,
+                    curve: Curve::STRAIGHT,
+                });
                 rounded += 1;
                 i += 1;
                 continue;
@@ -456,13 +475,8 @@ pub(crate) fn scale_range(session: &mut Session, params: &Value) -> Result<Value
         None => None,
         Some(list) => {
             let mut out = Vec::new();
-            for value in list.as_array().ok_or("points must be a list of point indices")? {
-                let index = value
-                    .as_u64()
-                    .and_then(|n| usize::try_from(n).ok())
-                    .filter(|&n| n < points.len())
-                    .ok_or_else(|| format!("each point is a point index, from 0; the lane has {}", points.len()))?;
-                out.push(index);
+            for value in list.as_array().ok_or("points must be a list of points")? {
+                out.push(crate::automation::point_at(value, &points)?);
             }
             Some(out)
         }
@@ -630,7 +644,7 @@ fn fill(
                 }
                 continue;
             }
-            inner.push(AutomationPoint { beat, value, curve: Curve::bend(curve) });
+            inner.push(AutomationPoint { id: Default::default(), beat, value, curve: Curve::bend(curve) });
         }
     }
     let points = points_of(session, target)?;
@@ -685,12 +699,8 @@ pub(crate) fn insert_shape(session: &mut Session, params: &Value) -> Result<Valu
             (start, end, (low, low + depth), asked.unwrap_or(1))
         }
         Some(v) => {
-            let index =
-                v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("point must be a point index, from 0")?;
             let points = points_of(session, &target)?;
-            if index >= points.len() {
-                return Err(format!("the lane has no point {index}; it has {}", points.len()).into());
-            }
+            let index = crate::automation::point_at(v, &points)?;
             let (start, end, a, b) = segment(session, &target, &points, index)?;
             let (low, high) = if (a - b).abs() < SAME { (0.0, 1.0) } else { (a.min(b), a.max(b)) };
             // Less than the whole depth: as much of the way between the two heights, around
@@ -710,7 +720,7 @@ mod tests {
     use suhina_model::automation::Plain;
 
     fn p(beat: f64, value: f64) -> AutomationPoint {
-        AutomationPoint { beat, value, curve: Curve::STRAIGHT }
+        AutomationPoint { id: Default::default(), beat, value, curve: Curve::STRAIGHT }
     }
 
     #[test]
