@@ -112,6 +112,16 @@ fn a_released_note_fades_and_the_voice_is_free_again() {
 }
 
 #[test]
+fn a_released_note_ends_though_its_level_4_is_above_zero() {
+    let mut s = synth();
+    s.set_param(index("op1.level4"), 70.0);
+    let out = left(&play(&mut s, &[(0, on(60, 1.0)), (4_800, off(60))], 48_000 * 5));
+    assert!(peak(&out[4_800..48_000]) > 1e-3, "it holds level 4 for a moment");
+    assert!(peak(&out[48_000 * 4..]) < 1e-4, "{}", peak(&out[48_000 * 4..]));
+    assert!(s.slots.iter().all(|slot| !slot.note.is_playing()));
+}
+
+#[test]
 fn velocity_sensitivity_makes_soft_notes_quieter() {
     let level = |velocity: f32| {
         let mut s = synth();

@@ -459,6 +459,13 @@ pub enum UiGesture {
     Preset(u16),
     /// Run the device's randomizer (`device.randomize`).
     Randomize,
+    /// Set the X parameter to a literal value and open the device's expanded panel, for a button
+    /// that goes to one of its pages.
+    Expand(u16),
+    /// One column of a drawing: a press on it and a drag over its neighbours set each one's Y
+    /// parameter to the pointer's height, as one undo step, and the X parameter, if it has one, to
+    /// this value, as a wave drawn by hand asks for the wave that plays it.
+    Draw(u16),
 }
 
 /// A quick preset a canvas button applies: parameter values by id. Parameters it leaves out keep
@@ -651,15 +658,17 @@ impl DeviceUi {
                                 | UiGesture::Tab(_)
                                 | UiGesture::Preset(_)
                                 | UiGesture::Randomize
+                                | UiGesture::Expand(_)
                         )
                     }
                     Widget::Disclosure { .. } => c.gesture == UiGesture::Toggle,
-                    Widget::Handle { span, .. } => {
+                    Widget::Handle { span, offset, .. } => {
                         c.gesture == UiGesture::Position
                             && c.x.is_some() != c.y.is_some()
                             && span.as_ref().is_none_or(|span| {
                                 span.iter().all(|v| v.validate(&readouts, 0, &mut expression_budget).is_ok())
                             })
+                            && offset.as_ref().is_none_or(|v| v.validate(&readouts, 0, &mut expression_budget).is_ok())
                     }
                     Widget::Number { .. } | Widget::Knob { .. } | Widget::Dial { .. } | Widget::Stepper { .. } => {
                         c.gesture == UiGesture::Drag && c.x.is_none() && c.y.is_some()
@@ -742,6 +751,12 @@ impl DeviceUi {
             }
             if let Some(condition) = &c.visible_when {
                 condition.validate(&readouts, 0, &mut expression_budget)?;
+            }
+            if matches!(c.gesture, UiGesture::Expand(_)) && c.x.is_none() {
+                return Err(fail("an expand gesture binds X to the parameter it sets"));
+            }
+            if matches!(c.gesture, UiGesture::Draw(_)) && (c.y.is_none() || c.widget.is_some()) {
+                return Err(fail("a draw gesture binds Y and has no widget"));
             }
             if c.gesture == UiGesture::Randomize {
                 if !matches!(c.widget, Some(Widget::Button { .. })) || c.x.is_some() || c.y.is_some() {

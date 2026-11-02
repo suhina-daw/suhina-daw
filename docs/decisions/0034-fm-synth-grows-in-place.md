@@ -36,7 +36,9 @@ rejected: two FM instruments would share most of their work and leave users choo
    files limit the algorithm to 1..=32; the parameter also reaches the new algorithms.
 5. **Two envelope models.** Each operator selects the DX7 rates and levels or an envelope in time.
    The second cannot be expressed in the first: rates do not convert to seconds exactly, and loop and
-   sync modes have no place in it. Both produce the level the kernels read.
+   sync modes have no place in it. Both produce the level the kernels read. The parameter's default
+   is the DX7 model, which an old project and a voice file rely on; `device.add` starts a new device
+   in time, as that is what a musician reads first.
 6. **Ported files stay ported.** Changes to them are recorded in their notices; new files are
    GPL-3.0-or-later. Shared DSP goes in `crates/dsp` (AGENTS.md rule 8).
 7. **Harmonics are parameters.** A drawn waveform is 64 parameters per operator, hidden from
@@ -56,3 +58,6 @@ rejected: two FM instruments would share most of their work and leave users choo
   one, and controls for other operators are hidden with `visible_when`.
 - Spread doubles the work of a voice while it is on; 32 voices with spread is the case to measure.
 - Sample-accurate modulation runs a separate kernel path, so the ported path stays untouched.
+- One deliberate difference from the original engine: a released note with a level 4 above zero holds
+  it for a second and falls silent within about two more, where the original held it until the voice
+  was taken. To a player a note that never ends is a hung note. The golden renders do not reach it.

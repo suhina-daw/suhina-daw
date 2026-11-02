@@ -62,6 +62,11 @@ pub const LAYOUT_FILES: &[(&str, &str)] = &[
     ("fm-synth", include_str!("../../../devices/fm-synth/panel.json")),
 ];
 
+/// What a device just added to a project starts with beside its parameters' defaults.
+pub fn new_device_params(id: &str) -> &'static [(&'static str, f64)] {
+    if id == suhina_device_fm_synth::INFO.id { &suhina_device_fm_synth::params::NEW_DEVICE } else { &[] }
+}
+
 /// New values for a device's randomizer from its current `values`, in parameter order: which
 /// parameters change and to what. `None` for a device without a randomizer.
 pub fn randomize(id: &str, values: &[f64], seed: Option<u32>, amount: Option<f64>) -> Option<Vec<(usize, f64)>> {

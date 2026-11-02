@@ -1297,7 +1297,11 @@ fn handle(
     painter: &egui::Painter,
     (canvas, bounds, stretch): (Rect, Rect, Vec2),
     control: &suhina_device_sdk::ui::CustomControl,
-    (line_color, span): ([u8; 4], Option<&[suhina_device_sdk::ui::UiValue; 2]>),
+    (line_color, span, offset): (
+        [u8; 4],
+        Option<&[suhina_device_sdk::ui::UiValue; 2]>,
+        Option<&suhina_device_sdk::ui::UiValue>,
+    ),
     parameters: &[GraphParameter],
     (track, at): (TrackId, &crate::detail::detail_view::DeviceAt),
     actions: &mut Vec<Action>,
@@ -1313,6 +1317,10 @@ fn handle(
     let lookup = |id: &str, norm: bool, log: bool| {
         parameters.iter().find(|p| p.id == id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
     };
+    let bounds = offset.map_or(bounds, |by| {
+        let by = by.evaluate(&lookup);
+        bounds.translate(if vertical { Vec2::new(by * stretch.x, 0.0) } else { Vec2::new(0.0, by * stretch.y) })
+    });
     let (from, to) = span.map_or_else(
         || if vertical { (bounds.top(), bounds.bottom()) } else { (bounds.left(), bounds.right()) },
         |[a, b]| {
@@ -1619,6 +1627,7 @@ fn control_selected(control: &CustomControl, parameters: &[GraphParameter]) -> b
         parameters.iter().find(|parameter| parameter.id == binding.parameter).is_some_and(|parameter| {
             match control.gesture {
                 UiGesture::Set(target) | UiGesture::Tab(target) => parameter.value == f64::from(target),
+                UiGesture::Expand(_) => false,
                 _ => normalized(parameter, binding.logarithmic) >= 0.5,
             }
         })
@@ -1879,6 +1888,26 @@ fn fitted_control_bounds(control: &CustomControl, height_reduction: f32) -> [f32
     [x, y, w, h]
 }
 
+/// The undo gesture of every bar a stroke of a `draw` control passes.
+const DRAW_GESTURE: &str = "draw";
+
+/// The pointer's way since the last frame while a stroke of `draw` controls goes on: a stroke
+/// starts on a press on one of them and ends with the button's release, wherever that is.
+fn draw_stroke(ui: &egui::Ui, id: egui::Id) -> Option<(Pos2, Pos2)> {
+    let (down, now) = ui.input(|i| (i.pointer.primary_down(), i.pointer.latest_pos()));
+    let last = ui.data(|data| data.get_temp::<Pos2>(id))?;
+    match now.filter(|_| down) {
+        Some(now) => {
+            ui.data_mut(|data| data.insert_temp(id, now));
+            Some((last, now))
+        }
+        None => {
+            ui.data_mut(|data| data.remove::<Pos2>(id));
+            None
+        }
+    }
+}
+
 pub(crate) fn show(
     ui: &mut egui::Ui,
     rect: Rect,
@@ -1919,6 +1948,8 @@ pub(crate) fn show(
     paint_scaled(&painter, &canvas.layers, rect.min, parameters, &loaded, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;
+    let stroke_id = ui.id().with(("sd-draw", track.0, device));
+    let stroke = draw_stroke(ui, stroke_id);
     for (control, drawings) in canvas.controls.iter().zip(&loaded.controls) {
         if sample_panel
             && control
@@ -1975,17 +2006,148 @@ pub(crate) fn show(
             );
             continue;
         }
-        if let Some(Widget::Handle { color: line_color, span }) = &control.widget {
+        if let Some(Widget::Handle { color: line_color, span, offset }) = &control.widget {
             handle(
                 ui,
                 &painter,
                 (rect, bounds, stretch),
                 control,
-                (*line_color, span.as_ref()),
+                (*line_color, span.as_ref(), offset.as_ref()),
                 parameters,
                 (track, at),
                 actions,
             );
+            continue;
+        }
+        if let UiGesture::Draw(wanted) = control.gesture {
+            let response = ui
+                .interact(
+                    bounds,
+                    ui.id().with(("sd-custom", track.0, device, &control.id)),
+                    egui::Sense::click_and_drag(),
+                )
+                .on_hover_text(&control.tooltip);
+            paint_control(
+                &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
+                &painter,
+                control,
+                drawings,
+                bounds,
+                parameters,
+                &loaded,
+                Some(&response),
+                canvas.accent_on,
+            );
+            let Some((binding, p)) = control
+                .y
+                .as_ref()
+                .and_then(|binding| Some((binding, parameters.iter().find(|p| p.id == binding.parameter)?)))
+            else {
+                continue;
+            };
+            if response.is_pointer_button_down_on() || response.clicked() {
+                response.request_focus();
+            }
+            // Where the stroke passed this bar: this frame's stretch of it, or for the press that
+            // starts one, the pointer itself.
+            let pressed = response.is_pointer_button_down_on() || response.clicked();
+            let pointer = ui.input(|i| i.pointer.latest_pos());
+            let stretch_now = stroke.or_else(|| pointer.filter(|_| pressed).map(|at| (at, at)));
+            if stroke.is_none()
+                && pressed
+                && let Some(at) = pointer
+            {
+                ui.data_mut(|data| data.insert_temp(stroke_id, at));
+            }
+            let height = stretch_now
+                .filter(|(a, b)| a.x.min(b.x) < bounds.right() && a.x.max(b.x) >= bounds.left())
+                .map(|(a, b)| {
+                    let along = if (b.x - a.x).abs() > 0.5 {
+                        ((bounds.center().x - a.x) / (b.x - a.x)).clamp(0.0, 1.0)
+                    } else {
+                        1.0
+                    };
+                    a.y + (b.y - a.y) * along
+                })
+                .map(|y| f64::from(((bounds.bottom() - y) / bounds.height()).clamp(0.0, 1.0)));
+            let focused = response.has_focus();
+            let (up, shift) = ui.input(|i| {
+                (
+                    i32::from(focused && i.key_pressed(egui::Key::ArrowUp))
+                        - i32::from(focused && i.key_pressed(egui::Key::ArrowDown)),
+                    i.modifiers.shift,
+                )
+            });
+            let keyed = (up != 0)
+                .then(|| normalized(p, binding.logarithmic) + f64::from(up) * if shift { 0.001 } else { 0.01 });
+            let ended = response.drag_stopped() || response.clicked() || keyed.is_some();
+            if let Some(x) = control.x.as_ref().filter(|_| height.is_some())
+                && parameters.iter().any(|w| w.id == x.parameter && w.value != f64::from(wanted))
+            {
+                actions.push(Action::new(
+                    "device.setParam",
+                    json!({
+                        "track": track.0, "device": at.value(), "param": x.parameter, "value": wanted,
+                        "continuous": true, "gesture": DRAW_GESTURE
+                    }),
+                ));
+            }
+            if let Some(next) = height.or(keyed) {
+                let value = p.min + next.clamp(0.0, 1.0) * (p.max - p.min);
+                if value != p.value || ended {
+                    actions.push(Action::new(
+                        "device.setParam",
+                        json!({
+                            "track": track.0, "device": at.value(), "param": p.id, "value": value,
+                            "continuous": !ended, "gesture": DRAW_GESTURE
+                        }),
+                    ));
+                }
+            } else if ended {
+                // The stroke ended over another bar: this one, where it began, closes the step.
+                actions.push(Action::new(
+                    "device.setParam",
+                    json!({
+                        "track": track.0, "device": at.value(), "param": p.id, "value": p.value,
+                        "continuous": false, "gesture": DRAW_GESTURE
+                    }),
+                ));
+            }
+            response.widget_info(|| {
+                let mut info = egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &control.name);
+                info.current_text_value = Some(format!("{}: {} {}", p.name, p.value, p.unit));
+                info
+            });
+            continue;
+        }
+        if let UiGesture::Expand(page) = control.gesture {
+            let response = ui
+                .interact(bounds, ui.id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
+                .on_hover_text(&control.tooltip);
+            paint_control(
+                &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
+                &painter,
+                control,
+                drawings,
+                bounds,
+                parameters,
+                &loaded,
+                Some(&response),
+                canvas.accent_on,
+            );
+            if response.clicked() {
+                if let Some(x) = &control.x {
+                    actions.push(Action::new(
+                        "device.setParam",
+                        json!({
+                            "track": track.0, "device": at.value(), "param": x.parameter, "value": page,
+                            "continuous": false, "gesture": control.id
+                        }),
+                    ));
+                }
+                crate::detail::detail_view::open_expanded(ui.ctx(), track, at.clone());
+            }
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &control.name));
             continue;
         }
         if control.gesture == UiGesture::Randomize {

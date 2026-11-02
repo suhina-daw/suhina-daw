@@ -589,9 +589,15 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     };
     let info = suhina_device_registry::info(id)
         .ok_or_else(|| format!("no built-in effect or instrument {id:?}; device.list lists them"))?;
-    let params_of_preset = preset
-        .as_ref()
-        .map_or_else(Vec::new, |p| p.params.iter().map(|(id, value)| DeviceParam::new(*id, *value)).collect());
+    let params_of_preset = preset.as_ref().map_or_else(
+        || {
+            suhina_device_registry::new_device_params(info.id)
+                .iter()
+                .map(|(id, value)| DeviceParam::new(*id, *value))
+                .collect()
+        },
+        |p| p.params.iter().map(|(id, value)| DeviceParam::new(*id, *value)).collect(),
+    );
     let device =
         Device { params: params_of_preset, ..Device::new(info.name, DeviceKind::Builtin(info.id.to_string())) };
     if let Some(value) = crate::device_groups::insert_into_group(session, params, device.clone())? {

@@ -4,6 +4,29 @@
 use super::*;
 
 #[test]
+fn the_fm_synths_panel_shows_every_algorithm_and_draws_its_partials() {
+    use suhina_device_sdk::ui::UiGesture;
+    let panel = panel("fm-synth").unwrap();
+    let (compact, expanded) = (panel.ui.as_ref().unwrap(), panel.expanded.as_ref().unwrap());
+    let count = |canvas: &suhina_device_sdk::ui::DeviceUi, prefix: &str| {
+        canvas.controls.iter().filter(|c| c.id.starts_with(prefix)).count()
+    };
+    assert_eq!(count(compact, "algorithm_picture_"), 43);
+    assert_eq!(count(expanded, "x_pick_"), 43);
+    for canvas in [compact, expanded] {
+        let bars = canvas.controls.iter().filter(|c| matches!(c.gesture, UiGesture::Draw(_))).count();
+        assert_eq!(bars, 6 * (16 + 32 + 64));
+    }
+    assert!(compact.controls.iter().any(|c| matches!(c.gesture, UiGesture::Expand(6))));
+    let drawn = suhina_device_fm_synth::params::WAVES.iter().position(|w| *w == "Drawn");
+    let wanted = compact.controls.iter().find_map(|c| match c.gesture {
+        UiGesture::Draw(wave) => Some(usize::from(wave)),
+        _ => None,
+    });
+    assert_eq!(wanted, drawn, "drawing asks for the Drawn wave");
+}
+
+#[test]
 fn a_dx7_voice_is_a_preset_for_the_fm_synth() {
     use suhina_device_fm_synth::patch::{Patch, write_bank, write_voice};
     let mut patch = Patch::default();

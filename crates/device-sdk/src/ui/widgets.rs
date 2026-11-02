@@ -203,11 +203,14 @@ pub enum Widget {
     /// binding gives a vertical line moved sideways, a Y binding a horizontal one moved up and
     /// down. The value maps to the control's bounds as `position` does. `span` limits the line
     /// (and where it is grabbed) across the other axis, in canvas units; the whole bounds
-    /// without it.
+    /// without it. `offset` moves the bounds along its travel, in canvas units, for a value that
+    /// starts where another ends.
     Handle {
         color: [u8; 4],
         #[serde(default)]
         span: Option<[crate::ui::UiValue; 2]>,
+        #[serde(default)]
+        offset: Option<crate::ui::UiValue>,
     },
 }
 impl CustomControl {
@@ -298,7 +301,9 @@ impl Widget {
         if let Self::Graphic { drawing } = self {
             return drawing.clone();
         }
-        if let (Self::Button { label, .. }, UiGesture::Preset(_) | UiGesture::Randomize) = (self, control.gesture) {
+        if let (Self::Button { label, .. }, UiGesture::Preset(_) | UiGesture::Randomize | UiGesture::Expand(_)) =
+            (self, control.gesture)
+        {
             // A quick preset's button has no parameter of its own: a plain face and its name.
             return vec![rect(0., 0., w.into(), height, [46, 45, 42, 255]), text(w / 2., 0., label, TEXT, true)];
         }

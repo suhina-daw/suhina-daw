@@ -1837,7 +1837,93 @@ fn click_to_focus(position: Pos2) -> Vec<Vec<egui::Event>> {
 }
 
 fn handle_widget() -> Option<Widget> {
-    Some(Widget::Handle { color: [255, 255, 255, 255], span: None })
+    Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: None })
+}
+
+#[test]
+fn a_handles_offset_moves_where_it_is_grabbed() {
+    let mut canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("level"));
+    let control = &mut Arc::make_mut(&mut canvas).controls[0];
+    control.bounds = [0.0, 0.0, 200.0, 100.0];
+    control.widget = Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: Some(100.0.into()) });
+    // At half its travel, a handle over 0..200 moved by 100 is at 200, and 300 is its 1.0.
+    let (grab, to) = (Pos2::new(200.0, 50.0), Pos2::new(250.0, 50.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let actions = frames(&canvas, Vec2::new(400.0, 100.0), &[parameter("level", false)], events);
+    let value = last_value(&actions).expect("the handle was dragged");
+    assert!((value - 0.75).abs() < 0.01, "{value}");
+}
+
+/// Four bars 25 wide over partials `a` to `d`, with `wave` for the X binding of each.
+fn bars() -> (Arc<DeviceUi>, Vec<GraphParameter>) {
+    let mut canvas = one_control([100.0, 100.0], false, None, UiGesture::Draw(3), UiBinding::new("a"));
+    let template = canvas.controls[0].clone();
+    Arc::make_mut(&mut canvas).controls = ["a", "b", "c", "d"]
+        .iter()
+        .enumerate()
+        .map(|(i, id)| CustomControl {
+            id: format!("bar_{id}"),
+            bounds: [i as f32 * 25.0, 0.0, 25.0, 100.0],
+            x: Some(UiBinding::new("wave")),
+            y: Some(UiBinding::new(id)),
+            ..template.clone()
+        })
+        .collect();
+    let mut parameters: Vec<GraphParameter> = ["a", "b", "c", "d"].iter().map(|id| parameter(id, false)).collect();
+    parameters.push(GraphParameter { min: 0.0, max: 3.0, value: 0.0, ..parameter("wave", false) });
+    (canvas, parameters)
+}
+
+#[test]
+fn dragging_across_bars_draws_each_of_them_as_one_undo_step() {
+    let (canvas, parameters) = bars();
+    let (from, to) = (Pos2::new(5.0, 25.0), Pos2::new(95.0, 75.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(from)],
+        press(from, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+        vec![],
+    ];
+    let actions = frames(&canvas, Vec2::splat(100.0), &parameters, events);
+    let value_of =
+        |id: &str| actions.iter().rev().find(|a| a.params["param"] == id).and_then(|a| a.params["value"].as_f64());
+    // A straight line from the press to the release, read at each bar's middle: the fast drag
+    // leaves no bar out.
+    assert!(value_of("a").is_some_and(|v| v > 0.6), "{actions:?}");
+    assert!(value_of("b").is_some_and(|v| v > 0.5 && v < 0.75), "{actions:?}");
+    assert!(value_of("c").is_some_and(|v| v > 0.25 && v < 0.5), "{actions:?}");
+    assert!(value_of("d").is_some_and(|v| v < 0.4), "{actions:?}");
+    assert_eq!(value_of("wave"), Some(3.0), "drawing asks for the wave that plays it");
+    assert!(actions.iter().all(|a| a.params["gesture"] == actions[0].params["gesture"]));
+    assert_eq!(actions.last().map(|a| a.params["continuous"].as_bool()), Some(Some(false)), "the stroke ends");
+}
+
+#[test]
+fn a_click_on_a_bar_sets_only_that_bar() {
+    let (canvas, parameters) = bars();
+    let at = Pos2::new(30.0, 50.0);
+    let events = vec![vec![egui::Event::PointerMoved(at)], press(at, true), press(at, false), vec![]];
+    let actions = frames(&canvas, Vec2::splat(100.0), &parameters, events);
+    assert!(actions.iter().any(|a| a.params["param"] == "b"), "{actions:?}");
+    assert!(!actions.iter().any(|a| a.params["param"] == "a" || a.params["param"] == "c"), "{actions:?}");
+}
+
+#[test]
+fn an_expand_button_goes_to_its_page_and_opens_the_panel() {
+    let mut canvas = one_control([60.0, 60.0], false, None, UiGesture::Expand(6), UiBinding::new("page"));
+    Arc::make_mut(&mut canvas).controls[0].widget =
+        Some(Widget::Button { label: "%".into(), off_label: None, indicator: false });
+    let page = GraphParameter { min: 0.0, max: 6.0, value: 0.0, ..parameter("page", false) };
+    let at = Pos2::new(30.0, 30.0);
+    let events = vec![vec![egui::Event::PointerMoved(at)], press(at, true), press(at, false), vec![]];
+    let actions = frames(&canvas, Vec2::splat(60.0), &[page], events);
+    assert_eq!(last_value(&actions), Some(6.0));
 }
 
 fn last_value(actions: &[Action]) -> Option<f64> {

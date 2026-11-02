@@ -28,16 +28,28 @@ const AUDIBLE_LEVEL: f64 = 80.0;
 const AUDIBLE_PEAK_DB: f64 = -6.0;
 /// The lowest and highest a randomized filter goes, so it does not close the sound off.
 const FILTER_RANGE: (f64, f64) = (300.0, 12_000.0);
+/// An operator's fields in the rates and levels model, the first eight of its parameters.
+const RATE_FIELDS: usize = 8;
+const RATE_1: usize = 0;
+const RATE_4: usize = 3;
+/// The slowest a randomized heard operator starts and ends, so a note speaks and stops: DX7 rates
+/// (higher is faster) and seconds.
+const SLOWEST_RATE_1: f64 = 30.0;
+const SLOWEST_RATE_4: f64 = 40.0;
+const LONGEST_ATTACK: f64 = 2.0;
+const LONGEST_RELEASE: f64 = 5.0;
 
 fn section_of_env(field: usize) -> bool {
     !matches!(field, env::LOOP | env::REPEAT | env::LOOP_TIME)
 }
 
-/// The section parameter `index` belongs to, if the randomizer touches it.
+/// The section parameter `index` belongs to, if the randomizer touches it. Level 4 is left out, as
+/// a heard operator rests at it after its release, and so is the device's Time, which would slow
+/// every envelope at once.
 fn section(index: usize) -> Option<usize> {
     if index < GLOBAL {
         return match index % OP_PARAMS {
-            0..=15 => Some(ENVELOPES),
+            0..=6 | 8..=15 => Some(ENVELOPES),
             params::op::LEVEL => Some(LEVELS),
             18 | params::op::DETUNE => Some(RATIOS),
             _ => None,
@@ -55,7 +67,6 @@ fn section(index: usize) -> Option<usize> {
     match index {
         params::PAN | params::PAN_BY_KEY | params::PAN_RANDOM | params::SPREAD => Some(STEREO),
         params::TONE => Some(FILTER),
-        params::TIME => Some(ENVELOPES),
         i if (params::FILTER..params::FILTER_ENV).contains(&i) => {
             (i - params::FILTER != params::filter::ON).then_some(FILTER)
         }
@@ -145,6 +156,23 @@ fn moved(index: usize, value: f64, share: f64, random: &mut Random) -> f64 {
     }
 }
 
+/// Whether operator `operator` (0 is operator 1) uses its time envelope.
+fn uses_time(values: &[f64], operator: usize) -> bool {
+    values.get(params::OP_EXT + operator * OP_EXT_FIELDS + opx::ENV_MODE).is_some_and(|v| *v >= 0.5)
+}
+
+/// Whether `index` is the envelope model its operator does not use, which nothing would hear.
+fn unused_envelope(values: &[f64], index: usize) -> bool {
+    if index < GLOBAL {
+        return index % OP_PARAMS < RATE_FIELDS && uses_time(values, index / OP_PARAMS);
+    }
+    if (params::OP_EXT..params::DRAWN).contains(&index) {
+        let (operator, field) = ((index - params::OP_EXT) / OP_EXT_FIELDS, (index - params::OP_EXT) % OP_EXT_FIELDS);
+        return field >= opx::ENV && !uses_time(values, operator);
+    }
+    false
+}
+
 /// New values for what differs from `values` (every parameter in order, as a whole voice). `seed`
 /// picks the result; `amount` scales the sections' percentages over the stored Amount. Sections
 /// and their locks are read from `values`. The seed moves on, so the next call without one differs.
@@ -163,6 +191,9 @@ pub fn randomize(values: &[f64], seed: Option<u32>, amount: Option<f64>) -> Vec<
     for index in 0..params::PANEL {
         let Some(s) = section(index) else { continue };
         let Some(Some(share)) = shares.get(s).copied() else { continue };
+        if s == ENVELOPES && unused_envelope(values, index) {
+            continue;
+        }
         // The partials of an operator count only while it plays its drawn wave.
         if (params::DRAWN..params::PANEL).contains(&index) {
             let operator = (index - params::DRAWN) / HARMONICS;
@@ -178,6 +209,9 @@ pub fn randomize(values: &[f64], seed: Option<u32>, amount: Option<f64>) -> Vec<
         }
     }
     keep_audible(&mut out);
+    if shares.get(ENVELOPES).copied().flatten().is_some() {
+        keep_notes_ending(&mut out);
+    }
 
     if seed.is_none()
         && let Some(slot) = out.get_mut(params::RANDOM_SEED)
@@ -185,6 +219,29 @@ pub fn randomize(values: &[f64], seed: Option<u32>, amount: Option<f64>) -> Vec<
         *slot = f64::from((seed_now + 1) % 100_000);
     }
     out.iter().enumerate().filter(|(i, v)| values.get(*i).copied() != Some(**v)).map(|(i, v)| (i, *v)).collect()
+}
+
+/// Every operator heard directly starts soon and falls silent soon after its key goes up.
+fn keep_notes_ending(out: &mut [f64]) {
+    let algorithm = out.get(GLOBAL + 8).map_or(0, |v| (*v as usize).saturating_sub(1));
+    for operator in (0..6).filter(|operator| core::is_carrier(algorithm, 5 - operator)) {
+        let time = uses_time(out, operator);
+        let base = operator * OP_PARAMS;
+        let envelope = params::OP_EXT + operator * OP_EXT_FIELDS + opx::ENV;
+        let mut limit = |index: usize, change: &dyn Fn(f64) -> f64| {
+            if let Some(slot) = out.get_mut(index) {
+                *slot = change(*slot);
+            }
+        };
+        if time {
+            limit(envelope + env::ATTACK, &|v| v.min(LONGEST_ATTACK));
+            limit(envelope + env::RELEASE, &|v| v.min(LONGEST_RELEASE));
+        } else {
+            limit(base + RATE_1, &|v| v.max(SLOWEST_RATE_1));
+            limit(base + RATE_4, &|v| v.max(SLOWEST_RATE_4));
+            limit(base + RATE_FIELDS - 1, &|_| 0.0);
+        }
+    }
 }
 
 /// At least one operator heard directly sounds, and the filter stays open enough.
@@ -299,6 +356,46 @@ mod tests {
                 "seed {seed}"
             );
         }
+    }
+
+    #[test]
+    fn a_note_still_ends_after_randomizing() {
+        let mut v = defaults();
+        v[index("op1.level4")] = 60.0;
+        v[index("op1.rate4")] = 0.0;
+        v[index("op2.level4")] = 60.0;
+        for seed in 0..50 {
+            let mut out = v.clone();
+            for (i, value) in randomize(&v, Some(seed), Some(1.0)) {
+                out[i] = value;
+            }
+            // Operator 1 is heard in the first algorithm, operator 2 is not.
+            assert_eq!(out[index("op1.level4")], 0.0, "seed {seed}");
+            assert!(out[index("op1.rate4")] >= SLOWEST_RATE_4, "seed {seed}");
+            assert_eq!(out[index("op2.level4")], 60.0, "seed {seed}");
+            assert_eq!(out[index("time")], 0.0, "seed {seed}");
+        }
+        v[index("op1.envMode")] = 1.0;
+        v[index("op1.env.release")] = 60.0;
+        let release = randomize(&v, Some(1), Some(1.0)).into_iter().find(|(i, _)| *i == index("op1.env.release"));
+        assert!(release.is_some_and(|(_, value)| value <= LONGEST_RELEASE));
+    }
+
+    #[test]
+    fn only_the_envelope_an_operator_uses_moves() {
+        let mut v = defaults();
+        v[index("op1.envMode")] = 1.0;
+        let changes = randomize(&v, Some(5), Some(1.0));
+        assert!(!changes.iter().any(|(i, _)| *i == index("op1.rate2") || *i == index("op2.env.decay")));
+        assert!(changes.iter().any(|(i, _)| *i == index("op1.env.decay")));
+    }
+
+    #[test]
+    fn a_locked_envelope_section_keeps_a_level_4() {
+        let mut v = defaults();
+        v[params::RANDOM_SECTIONS + ENVELOPES * 3 + 2] = 1.0;
+        v[index("op1.level4")] = 60.0;
+        assert!(!randomize(&v, Some(2), Some(1.0)).iter().any(|(i, _)| *i == index("op1.level4")));
     }
 
     #[test]

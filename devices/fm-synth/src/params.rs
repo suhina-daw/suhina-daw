@@ -75,6 +75,17 @@ pub const SECTIONS: [&str; 10] =
 const PANEL_COUNT: usize = 5 + 3 * SECTIONS.len();
 pub const COUNT: usize = PANEL + PANEL_COUNT;
 
+/// What a new FM Synth starts with beside the defaults: envelopes in time. The defaults stay the
+/// DX7 model, which an old project without these values and a voice file rely on.
+pub const NEW_DEVICE: [(&str, f64); 6] = [
+    ("op1.envMode", 1.0),
+    ("op2.envMode", 1.0),
+    ("op3.envMode", 1.0),
+    ("op4.envMode", 1.0),
+    ("op5.envMode", 1.0),
+    ("op6.envMode", 1.0),
+];
+
 /// Fields of a time envelope, in parameter order.
 pub mod env {
     pub const ATTACK: usize = 0;

@@ -27,15 +27,18 @@ scaling and velocity sensitivity, as before, and new:
 
 - **Wave:** sine (the default), triangle, saw, square, two noises, 4-bit and 8-bit sines, digital saw
   and square, or drawn. Band-limited tables are chosen by pitch.
-- **Harmonics:** 64 amplitudes for the drawn wave, edited in 16, 32 or 64 partials. Repeat continues
-  the drawn partials upward as they fade; Normalize keeps the level steady.
+- **Harmonics:** 64 amplitudes for the drawn wave, edited in 16, 32 or 64 partials: a press and a drag
+  across the bars draws them, as one undo step, and switches the operator to the Drawn wave. Repeat
+  continues the drawn partials upward as they fade; Normalize keeps the level steady.
 - **Feedback** per operator, for an operator nothing else modulates; the voice's own feedback stays.
 - **Phase** at the start of a note, **Retrigger**, and **frequency by velocity** with an optional
   quantize to whole ratios.
 
 ## Envelopes
 
-Each operator selects **Rates and levels** (the DX7 model and the default) or **Time**: initial,
+Each operator selects **Rates and levels** (the DX7 model, for old projects and voice files) or
+**Time**, which a newly added device starts with. A released note with a level 4 above zero holds it
+for a second and then falls silent, so every note ends. Time has initial,
 attack, peak, decay, sustain and release, in seconds and decibels, time by velocity and by key, and a
 loop mode: off, loop (from the sustain, after the loop time), beat (at the repeat length from the note),
 sync (the first repeat at the song's nearest sixteenth, then by the repeat length, as beat while the song
@@ -82,6 +85,8 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
 - **Expanded panel (1180 by 640):** operators on the left, the page in the middle, sections on the
   right. Pages: Operator, Filter, LFO, Pitch, Matrix, Algorithm and Random.
 - It opens on Env with operator 1 selected. Selected operator and page are hidden parameters.
+- An envelope's picture moves with its times and levels. Its levels are dragged up and down on it, and
+  a time envelope's attack, decay and release sideways. The Env page has **Time** and **Rates**.
 - Algorithm pictures are computed from the engine's table. An operator heard directly is filled, one
   that modulates is outlined, and the selected one takes the accent.
 
@@ -100,6 +105,9 @@ Importing the instrument from a Live Set waits for sets authored to observe it
 `device.randomize` takes the device, a seed, an amount and per-section percentages and locks, and
 sets the new values as one undo step. Sections: envelopes, levels, waves, filter, LFO, pitch envelope,
 modulation, stereo, ratios and algorithm; the last two are off by default, since they change a sound
-most. A value moves from where it is, by at most its section's percentage of its range. The device's
-rules keep a result audible: at least one carrier keeps its level, ratios stay whole unless asked, the
-filter does not close entirely. Random on the panel runs at once; `%` opens its settings.
+most. A value moves from where it is, by at most its section's percentage of its range; only the
+envelope model an operator uses moves, and the device's Time and level 4 stay. The device's rules keep a
+result audible and playable: at least one carrier keeps its level, ratios stay whole unless asked, the
+filter does not close entirely, and while the envelopes take part every carrier starts within about 2
+seconds and ends soon after its key goes up. Random on the panel runs at once; `%` opens its settings in
+the expanded panel.

@@ -59,6 +59,32 @@ fn graphics_need_no_binding_and_a_negative_drag_scale_is_allowed() {
 }
 
 #[test]
+fn draw_and_expand_gestures_need_their_bindings() {
+    let params = [Parameter::new("bar", "Bar", (0., 1.), 0.), Parameter::new("page", "Page", (0., 6.), 0.)];
+    let control = |id: &str, widget, gesture, x, y| CustomControl {
+        id: id.into(),
+        name: id.into(),
+        tooltip: String::new(),
+        bounds: [0., 0., 20., 20.],
+        widget,
+        gesture,
+        x,
+        y,
+        drawing: vec![],
+        visible_when: None,
+    };
+    let button = || Some(Widget::Button { label: "%".into(), off_label: None, indicator: false });
+    let with = |c| DeviceUi { size: [200., 60.], controls: vec![c], ..DeviceUi::default() };
+    let bar = || Some(UiBinding::new("bar"));
+    let page = || Some(UiBinding::new("page"));
+    with(control("a", None, UiGesture::Draw(2), page(), bar())).validate(&params).unwrap();
+    with(control("b", button(), UiGesture::Expand(6), page(), None)).validate(&params).unwrap();
+    assert!(with(control("c", None, UiGesture::Draw(2), page(), None)).validate(&params).is_err());
+    assert!(with(control("d", button(), UiGesture::Expand(6), None, None)).validate(&params).is_err());
+    assert!(with(control("e", button(), UiGesture::Draw(2), None, bar())).validate(&params).is_err());
+}
+
+#[test]
 fn handles_bind_one_axis_and_presets_name_declared_values() {
     let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.)];
     let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
@@ -67,7 +93,7 @@ fn handles_bind_one_axis_and_presets_name_declared_values() {
         name: "Cut".into(),
         tooltip: String::new(),
         bounds: [0., 0., 200., 60.],
-        widget: Some(Widget::Handle { color: [255; 4], span: Some([0.0.into(), readout(0)]) }),
+        widget: Some(Widget::Handle { color: [255; 4], span: Some([0.0.into(), readout(0)]), offset: None }),
         gesture: UiGesture::Position,
         x: Some(UiBinding::new("cut")),
         y: None,

@@ -182,7 +182,10 @@ and height fits node rows, canvas and stock controls. Setting `size` does not sc
 
 A built-in device's layout ships with Suhina and may hold 2048 controls and 32768 drawing commands;
 a `.sd` file keeps the limits below. A button with the gesture `"randomize"` and no binding runs
-`device.randomize` on its device.
+`device.randomize` on its device. A button with `{"expand": 6}` sets its X parameter to 6 and opens the
+device's expanded panel. A control with `{"draw": 22}` and a Y binding is one column of a drawing: a press
+on it and a drag over its neighbours set each one's Y parameter to the pointer's height, the way between
+two frames included, as one undo step; its X binding, if it has one, is set to 22 as well.
 
 Canvas size is 24..8192 logical pixels per axis. Up to 128 custom controls and 1024 total drawing
 commands are accepted. Each control has a unique id, accessible name, tooltip, bounds, drawings,
@@ -220,7 +223,7 @@ widget are not resolved against the theme as widgets' are; they name the theme's
 accent (any alpha). A drawing coloured `[3, 0, 1]` … `[3, 0, 6]` (any alpha) takes a theme token: `--device-display`
 (a display's dark ground, default `#0a1117`), `--device-series-1` … `3` (a device's series, such as
 its bands; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`) `--device-highlight` (`#ffcf7a`) and `--device-spectrum` (`#3fc4e4`), from
-the theme's CSS custom property of that name or the default, with the drawing's alpha. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture A clicked handle takes the focus, and the arrow keys along its travel then move it 1 % of the way (0.1 % with Shift).
+the theme's CSS custom property of that name or the default, with the drawing's alpha. A handle's optional `offset` moves its bounds along its travel, in canvas units, for a value that starts where another ends. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture A clicked handle takes the focus, and the arrow keys along its travel then move it 1 % of the way (0.1 % with Shift).
 `position`, one binding) draws a line where its parameter is, across its bounds (an X binding: a
 vertical line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 5 points
 of it: dragging sets the value from the pointer as `position` does, a double click resets it, and a

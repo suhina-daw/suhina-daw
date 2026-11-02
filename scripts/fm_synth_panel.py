@@ -24,6 +24,8 @@ ROW_H = 28.0
 COMPACT = (1180.0, 168.0)
 EXPANDED = (1180.0, 640.0)
 PAGES = ["Env", "Wave", "Filter", "LFO", "Pitch", "Mod"]
+# The index of the Drawn wave in devices/fm-synth/src/params.rs.
+DRAWN_WAVE = 22
 EXPANDED_PAGES = ["Operator", "Filter", "LFO", "Pitch", "Matrix", "Algorithm", "Random"]
 SECTIONS = [("envelopes", "Envelopes"), ("levels", "Levels"), ("waves", "Waves"), ("filter", "Filter"), ("lfo", "LFO"),
             ("pitchEnv", "Pitch envelope"), ("modulation", "Modulation"), ("stereo", "Stereo"), ("ratios", "Ratios"),
@@ -67,8 +69,9 @@ def every_parameter():
 def algorithms():
     """The engine's table: per algorithm, per operator from 6 to 1, its flags."""
     source = Path("devices/fm-synth/src/core.rs").read_text(encoding="utf-8")
-    table = source[source.index("const ALGORITHMS"):source.index("];", source.index("const ALGORITHMS"))]
+    table = source[source.index("const ALGORITHMS"):source.index("\n];", source.index("const ALGORITHMS"))]
     rows = re.findall(r"\[(0x[0-9a-f]{2}(?:, 0x[0-9a-f]{2}){5})\]", table)
+    assert len(rows) == 43, len(rows)
     return [[int(v, 16) for v in row.split(", ")] for row in rows]
 
 
@@ -103,7 +106,7 @@ def picture(flags, w, h, size):
     for d, row in layers.items():
         y = (h - size) / 2.0 if top == 0 else h - size - (d * (h - size)) / top
         for i, n in enumerate(row):
-            position[n] = ((i + 0.5) * w / len(row) - size / 2.0, y)
+            position[n] = (4.0 + (i + 0.5) * w / len(row) - size / 2.0, 4.0 + y)
     draws = []
     for s, d in edges:
         a, b = position[s], position[d]
@@ -170,30 +173,110 @@ def percent(pid):
     return mul(par(pid), 100.0)
 
 
-def point(cid, name, bounds, pid, axis, log, visible):
+def point(cid, name, bounds, pid, axis, log, visible, span=None, offset=None):
     """A handle that shows where its value is, dragged along `axis`."""
-    control = handle(cid, name, bounds, pid, axis, log=log, visible=visible)
+    control = handle(cid, name, bounds, pid, axis, log=log, span=span, visible=visible)
     control["widget"]["color"] = tint(HIGHLIGHT, 170)
+    control["widget"]["offset"] = offset
     return control
 
 
+# Where the stages of an envelope's picture fall, as shares of its width: attack and decay each get
+# up to one stretch by their time, on a logarithmic scale; release starts at a fixed place.
+TIME_STRETCH = 0.24
+RELEASE_AT = 0.72
+RELEASE_STRETCH = 0.28
+
+
+def env_x(prefix, w):
+    """The ends of a time envelope's attack and decay and of its release, in its picture."""
+    attack = mul(par(f"{prefix}attack", True, True), w * TIME_STRETCH)
+    decay = add(attack, mul(par(f"{prefix}decay", True, True), w * TIME_STRETCH))
+    release = add(w * RELEASE_AT, mul(par(f"{prefix}release", True, True), w * RELEASE_STRETCH))
+    return attack, decay, release
+
+
 def env_curve(prefix, w, h, top, bottom, color):
-    """A time envelope's shape: fixed stages with its levels; `top` and `bottom` are its range."""
+    """A time envelope's shape, moving with its times and levels; `top` and `bottom` are its range."""
     span = top - bottom
 
     def y(pid):
         return add(mul(sub(top, minimum(top, maximum(bottom, par(pid)))), (h - 8.0) / span), 4.0)
-    points = [[0.0, y(f"{prefix}initial")], [w * 0.2, y(f"{prefix}peak")], [w * 0.45, y(f"{prefix}sustain")],
-              [w * 0.75, y(f"{prefix}sustain")], [w, y(f"{prefix}end")]]
+    attack, decay, release = env_x(prefix, w)
+    points = [[0.0, y(f"{prefix}initial")], [attack, y(f"{prefix}peak")], [decay, y(f"{prefix}sustain")],
+              [w * RELEASE_AT, y(f"{prefix}sustain")], [release, y(f"{prefix}end")], [w, y(f"{prefix}end")]]
     return [rect(0.0, 0.0, w, h, DISPLAY, 3.0), path(points, color, 1.5)]
+
+
+def env_handles(prefix, tag, x, y, w, h, visible):
+    """What is dragged on a time envelope's picture: its times sideways, its levels up and down.
+    A handle's bounds are its parameter's range, so it sits where the picture has the value."""
+    attack, decay, release = env_x(prefix, w)
+    levels, zone = [x, y + 4.0, w, h - 8.0], w * TIME_STRETCH
+    return [
+        point(f"{prefix}attack_handle{tag}", "Attack", [x, y, zone, h], f"{prefix}attack", "x", True, visible),
+        point(f"{prefix}decay_handle{tag}", "Decay", [x, y, zone, h], f"{prefix}decay", "x", True, visible, offset=attack),
+        point(f"{prefix}release_handle{tag}", "Release", [x + w * RELEASE_AT, y, w * RELEASE_STRETCH, h], f"{prefix}release", "x", True, visible),
+        point(f"{prefix}initial_handle{tag}", "Initial", levels, f"{prefix}initial", "y", False, visible, span=[x, x + 14.0]),
+        point(f"{prefix}peak_handle{tag}", "Peak", levels, f"{prefix}peak", "y", False, visible, span=[add(x - 8.0, attack), add(x + 8.0, attack)]),
+        point(f"{prefix}sustain_handle{tag}", "Sustain", levels, f"{prefix}sustain", "y", False, visible, span=[add(x + 2.0, decay), x + w * RELEASE_AT]),
+        point(f"{prefix}end_handle{tag}", "End", levels, f"{prefix}end", "y", False, visible, span=[x + w - 14.0, x + w]),
+    ]
+
+
+def dx_x(n, w):
+    """Where a DX7 envelope's first three stages end in its picture: a lower rate is a longer stage."""
+    def stage(i):
+        return mul(sub(99.0, par(f"op{n}.rate{i}")), w * TIME_STRETCH / 99.0)
+    first = stage(1)
+    second = add(first, stage(2))
+    return first, second, add(second, stage(3))
+
+
+def dx_end(n, w):
+    return add(w * RELEASE_AT, mul(sub(99.0, par(f"op{n}.rate4")), w * RELEASE_STRETCH / 99.0))
 
 
 def dx_curve(n, w, h, color):
-    """A DX7 envelope's shape: its four levels at even steps."""
+    """A DX7 envelope's shape, moving with its rates and levels."""
     def y(field_name):
         return add(mul(sub(99.0, par(f"op{n}.{field_name}")), (h - 8.0) / 99.0), 4.0)
-    points = [[0.0, y("level4")], [w * 0.2, y("level1")], [w * 0.45, y("level2")], [w * 0.75, y("level3")], [w, y("level4")]]
+    first, second, third = dx_x(n, w)
+    points = [[0.0, y("level4")], [first, y("level1")], [second, y("level2")], [third, y("level3")],
+              [w * RELEASE_AT, y("level3")], [dx_end(n, w), y("level4")], [w, y("level4")]]
     return [rect(0.0, 0.0, w, h, DISPLAY, 3.0), path(points, color, 1.5)]
+
+
+def dx_handles(n, tag, x, y, w, h, visible):
+    """A DX7 envelope's four levels, dragged up and down on its picture."""
+    first, second, third = dx_x(n, w)
+    levels = [x, y + 4.0, w, h - 8.0]
+    spans = ([add(x - 8.0, first), add(x + 8.0, first)], [add(x - 8.0, second), add(x + 8.0, second)],
+             [add(x + 2.0, third), x + w * RELEASE_AT - 2.0], [add(x + 2.0, dx_end(n, w)), x + w])
+    return [point(f"op{n}.level{i + 1}_handle{tag}", f"Level {i + 1}", levels, f"op{n}.level{i + 1}", "y", False, visible, span=span)
+            for i, span in enumerate(spans)]
+
+
+def partial_bars(n, x, y, w, h, tag, visible):
+    """One operator's partials as bars, as many as it edits: a press and a drag across them draws,
+    and drawing plays the Drawn wave."""
+    p = f"op{n}."
+    tooltip = "Drag across the bars to draw the wave; drawing switches the operator to the Drawn wave"
+    controls = []
+    for choice, count in enumerate((16, 32, 64)):
+        shown = both(visible, equal(par(f"{p}partials"), float(choice)))
+        step = w / count
+        width = max(step, 8.0)
+        for i in range(count):
+            pid = f"{p}h{i + 1}"
+            at = min(x + i * step, x + w - width)
+            value = mul(par(pid), h)
+            controls.append({"visible_when": shown, "id": f"{pid}_{count}{tag}", "name": f"Partial {i + 1}", "tooltip": tooltip,
+                             "bounds": [at, y, width, h], "gesture": {"draw": DRAWN_WAVE},
+                             "x": {"parameter": f"{p}wave", "logarithmic": False, "drag_scale": 1.0},
+                             "y": {"parameter": pid, "logarithmic": False, "drag_scale": 1.0},
+                             "drawing": [rect(0.0, sub(h, value), max(step - 1.0, 1.0), value, ACCENT)]})
+    return controls
 
 
 def op_row(n, x, y, h, tag, wide):
@@ -210,8 +293,8 @@ def op_row(n, x, y, h, tag, wide):
                 dx_curve(n, 66.0 * scale, h - 4.0, TEXT), equal(par(f"op{n}.envMode"), 0.0)),
     ]
     at = x + 26.0 + 66.0 * scale + 4.0
-    controls.append(button(f"op{n}.mode{tag}", f"op{n}.mode", "Hz", [at, y + 2.0, 24.0, h - 4.0], off_label="Ratio"))
-    at += 28.0
+    controls.append(button(f"op{n}.mode{tag}", f"op{n}.mode", "Hz", [at, y + 2.0, 34.0, h - 4.0], off_label="Ratio"))
+    at += 37.0
     for pid, caption, width in ((f"op{n}.coarse", "Coarse", 46.0), (f"op{n}.fine", "Fine", 42.0), (f"op{n}.level", "Level", 46.0)):
         controls.append(field(pid, caption, [at, y + 2.0, width, h - 4.0], par(pid), tag=tag))
         at += width + 3.0
@@ -312,13 +395,15 @@ def display(x, y, w, h, tag):
                                 env_curve(f"op{n}.env.", w, h, 0.0, -70.0, ACCENT) + [heading], time))
         controls.append(graphic(f"display_rates_{n}{tag}", f"Operator {n} envelope", [x, y, w, h],
                                 dx_curve(n, w, h, ACCENT) + [heading], rates))
-        bar_w = (w - 12.0) / 16.0
+        controls += env_handles(f"op{n}.env.", tag, x, y, w, h, time)
+        controls += dx_handles(n, tag, x, y, w, h, rates)
+        controls.append(choose(f"mode_time_{n}{tag}", f"op{n}.envMode", "Time", 1, [x + w - 110.0, y + 2.0, 40.0, 18.0], shown))
+        controls.append(choose(f"mode_rates_{n}{tag}", f"op{n}.envMode", "Rates", 0, [x + w - 68.0, y + 2.0, 64.0, 18.0], shown))
         draws = [rect(0.0, 0.0, w, h, DISPLAY, 3.0), text(6.0, 4.0, f"Operator {n} partials", tint(TEXT, 170), 10.0)]
-        for i in range(16):
-            draws.append(rect(6.0 + i * bar_w, sub(h - 4.0, mul(par(f"op{n}.h{i + 1}"), h - 24.0)), bar_w - 2.0,
-                              mul(par(f"op{n}.h{i + 1}"), h - 24.0), ACCENT))
         controls.append(graphic(f"display_wave_{n}{tag}", f"Operator {n} partials", [x, y, w, h], draws, both(selected(n), page(1))))
         controls.append(menu(f"op{n}.wave", "Wave", [x + w - 96.0, y + 2.0, 92.0, 18.0], both(selected(n), page(1)), tag))
+        controls.append(menu(f"op{n}.partials", "Partials", [x + w - 150.0, y + 2.0, 50.0, 18.0], both(selected(n), page(1)), tag))
+        controls += partial_bars(n, x + 6.0, y + 24.0, w - 12.0, h - 28.0, tag, both(selected(n), page(1)))
     controls.append(graphic(f"display_filter{tag}", "Filter envelope", [x, y, w, h],
                             env_curve("filterEnv.", w, h, 1.0, 0.0, [3, 0, 4, 255]) + [text(6.0, 4.0, "Filter envelope", tint(TEXT, 170), 10.0)], page(2)))
     controls.append(menu("filterType", "Filter Type", [x + w - 96.0, y + 2.0, 92.0, 18.0], page(2), tag))
@@ -374,7 +459,9 @@ def compact():
     controls.append(dial("spread", "Spread", 966.0, 84.0, percent("spread"), " %"))
     controls.append(dial("volume", "Volume", 1016.0, 84.0, par("volume"), " dB", 1))
     controls.append(random_button("random", "Random", [1072.0, 4.0, 62.0, 22.0]))
-    controls.append(choose("random_settings", "panel.expandedPage", "%", 6, [1072.0, 30.0, 62.0, 22.0]))
+    settings = button("random_settings", "panel.expandedPage", "%", [1072.0, 30.0, 62.0, 22.0], gesture={"expand": 6})
+    settings["tooltip"] = "Open the randomizer's settings in the expanded panel"
+    controls.append(settings)
     controls.append(meter("meter", [1140.0, 4.0, 36.0, h - 8.0]))
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": [], "controls": controls,
             "hidden_parameters": every_parameter(), "accent_on": True}
@@ -420,12 +507,8 @@ def expanded_operator(x, y, w):
         controls.append(graphic(f"x_rates_{n}", f"Operator {n} envelope", [x, y + 24.0, w, 130.0], dx_curve(n, w, 130.0, ACCENT), rates))
         controls.append(choose(f"x_mode_time_{n}", p("envMode"), "Time", 1, [x, y, 70.0, 20.0], shown))
         controls.append(choose(f"x_mode_rates_{n}", p("envMode"), "Rates and levels", 0, [x + 74.0, y, 110.0, 20.0], shown))
-        # Handles over the curve: attack, decay and release sideways, each in its own stretch,
-        # sustain up and down; each shows where its value is.
-        controls.append(point(f"x_attack_{n}", "Attack", [x, y + 24.0, w * 0.2, 130.0], f"{e}attack", "x", True, time))
-        controls.append(point(f"x_decay_{n}", "Decay", [x + w * 0.2, y + 24.0, w * 0.25, 130.0], f"{e}decay", "x", True, time))
-        controls.append(point(f"x_release_{n}", "Release", [x + w * 0.75, y + 24.0, w * 0.25, 130.0], f"{e}release", "x", True, time))
-        controls.append(point(f"x_sustain_{n}", "Sustain", [x + w * 0.45, y + 24.0, w * 0.3, 130.0], f"{e}sustain", "y", False, time))
+        controls += env_handles(e, tag, x, y + 24.0, w, 130.0, time)
+        controls += dx_handles(n, tag, x, y + 24.0, w, 130.0, rates)
         controls += env_form(e, x, y + 160.0, time, tag, " dB", True)
         controls += form([(p(f"rate{i}"), f"Rate {i}", par(p(f"rate{i}")), "", 0, False) for i in range(1, 5)]
                          + [(p(f"level{i}"), f"Level {i}", par(p(f"level{i}")), "", 0, False) for i in range(1, 5)]
@@ -445,22 +528,14 @@ def expanded_operator(x, y, w):
         controls.append(menu(p("oddEven"), "Partials used", [x + 214.0, bars_y, 70.0, 18.0], shown, tag))
         controls.append(button(f"{p('normalize')}{tag}", p("normalize"), "Normalize", [x + 288.0, bars_y, 70.0, 18.0], visible=shown))
         controls.append(graphic(f"x_bars_bg_{n}", "Partials", [x, bars_y + 22.0, w, bars_h], [rect(0.0, 0.0, w, bars_h, DISPLAY, 3.0)], shown))
-        bar_w = (w - 8.0) / 64.0
-        for i in range(64):
-            pid = p(f"h{i + 1}")
-            # One partial's bar: dragging up or down sets it.
-            limit = 0.0 if i < 16 else (1.0 if i < 32 else 2.0)
-            visible = both(shown, maximum(0.0, minimum(1.0, mul(sub(par(p("partials")), limit - 0.5), 2.0))))
-            controls.append({"visible_when": visible, "id": f"{pid}{tag}", "name": f"Partial {i + 1}", "tooltip": f"Partial {i + 1}",
-                             "bounds": [x + 4.0 + i * bar_w, bars_y + 26.0, bar_w, bars_h - 8.0], "gesture": "position", "x": None,
-                             "y": {"parameter": pid, "logarithmic": False, "drag_scale": 1.0},
-                             "drawing": [rect(0.0, sub(bars_h - 8.0, mul(par(pid), bars_h - 8.0)), bar_w - 1.0, mul(par(pid), bars_h - 8.0), ACCENT)]})
+        controls += partial_bars(n, x + 4.0, bars_y + 26.0, w - 8.0, bars_h - 8.0, tag, shown)
     return controls
 
 
 def expanded_filter(x, y, w):
     shown = equal(par("panel.expandedPage"), 1.0)
     controls = [graphic("x_filter_env", "Filter envelope", [x, y, w, 130.0], env_curve("filterEnv.", w, 130.0, 1.0, 0.0, MODULATOR), shown)]
+    controls += env_handles("filterEnv.", "_x", x, y, w, 130.0, shown)
     controls += form([("filterOn", "On", True), ("filterType", "Type"), ("filterSlope", "Slope"), ("filterCircuit", "Circuit"),
                       ("filterFreq", "Freq", par("filterFreq"), " Hz", 0, True), ("filterRes", "Res", percent("filterRes"), " %", 0, False),
                       ("filterMorph", "Morph", percent("filterMorph"), " %", 0, False), ("filterDrive", "Drive", par("filterDrive"), " dB", 1, False),
@@ -474,6 +549,7 @@ def expanded_filter(x, y, w):
 def expanded_lfo(x, y, w):
     shown = equal(par("panel.expandedPage"), 2.0)
     controls = [graphic("x_lfo_env", "LFO envelope", [x, y, w, 100.0], env_curve("lfoEnv.", w, 100.0, 1.0, 0.0, SPECTRUM_COLOR), shown)]
+    controls += env_handles("lfoEnv.", "_x", x, y, w, 100.0, shown)
     controls += form([("lfoOn", "On", True), ("lfo2Wave", "Wave"), ("lfo2Range", "Range"), ("lfo2Sync", "Sync"),
                       ("lfo2Rate", "Rate", percent("lfo2Rate"), " %", 0, False), ("lfo2Amount", "Amount", percent("lfo2Amount"), " %", 0, False),
                       ("lfo2ByKey", "Rate by key", percent("lfo2ByKey"), " %", 0, False), ("lfo2ByVel", "Amt by vel", percent("lfo2ByVel"), " %", 0, False),
@@ -489,6 +565,7 @@ def expanded_lfo(x, y, w):
 def expanded_pitch(x, y, w):
     shown = equal(par("panel.expandedPage"), 3.0)
     controls = [graphic("x_pitch_env", "Pitch envelope", [x, y, w, 100.0], env_curve("pitchEnv.", w, 100.0, 48.0, -48.0, HIGHLIGHT), shown)]
+    controls += env_handles("pitchEnv.", "_x", x, y, w, 100.0, shown)
     controls += form([("pitchEnvOn", "On", True), ("pitchEnvAmount", "Amount", percent("pitchEnvAmount"), " %", 0, False),
                       ("pitchEnvToLfo", "To LFO", True), ("pitchEnvDestB", "Dest B"),
                       ("pitchEnvAmountB", "Amount B", percent("pitchEnvAmountB"), " %", 0, False)] + [(f"pitchEnvToOp{n}", f"To op {n}", True) for n in OPS]
@@ -518,7 +595,7 @@ def expanded_matrix(x, y):
 def expanded_algorithm(x, y):
     shown = equal(par("panel.expandedPage"), 5.0)
     controls = []
-    size = (60.0, 58.0)
+    size = (56.0, 58.0)
     for i, flags in enumerate(algorithms()):
         cx, cy = x + (i % 9) * (size[0] + 2.0), y + (i // 9) * (size[1] + 2.0)
         controls.append(graphic(f"x_picker_{i + 1}", f"Algorithm {i + 1}", [cx, cy, size[0], size[1] - 14.0],
