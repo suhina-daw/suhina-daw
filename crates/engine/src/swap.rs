@@ -498,6 +498,10 @@ fn apply_param(chains: &mut [crate::chain::Chain], change: ParamChange) {
             chain.set_live_volume(change.value);
         } else if change.device == crate::MIXER_PAN {
             chain.set_live_pan(change.value);
+        } else if change.device == crate::MIXER_BRANCH {
+            if let Some((group, branch, value)) = crate::branch_of_param(change.param) {
+                chain.set_live_branch(group, branch, value, change.value);
+            }
         } else if change.device == crate::MIXER_SEND {
             chain.set_live_send(TrackId(u32::try_from(change.param).unwrap_or(u32::MAX)), change.value);
         } else {

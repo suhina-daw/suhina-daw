@@ -90,26 +90,35 @@ pub(super) fn value_row(
     }
 }
 
-/// A branch value (volume or pan) dragged: shown from a draft while the drag lasts and set with
-/// one command when it ends, so a drag is one undo step.
-pub(super) fn branch_value(ui: &Ui, id: Id, stored: f64, dragged: &Dragged, min: f64, max: f64) -> (f64, Option<f64>) {
+/// A branch's value under a drag of its row: the value to show, and the value to send with
+/// whether it continues the drag's undo step. Every frame that moves it sends it, so a playing
+/// group is heard following the drag (#763 › 4); every frame after the first continues the step,
+/// so the drag is one undo step. A reset sends the default on its own step.
+pub(super) fn branch_value(
+    ui: &Ui,
+    id: Id,
+    stored: f64,
+    dragged: &Dragged,
+    min: f64,
+    max: f64,
+) -> (f64, Option<(f64, bool)>) {
     let draft = ui.data(|d| d.get_temp::<f64>(id));
     if dragged.reset {
         ui.data_mut(|d| d.remove::<f64>(id));
         // Both reset to 0: 0 dB, or the centre.
-        return (stored, Some(0.0f64.clamp(min, max)));
+        return (stored, Some((0.0f64.clamp(min, max), false)));
     }
+    let last = draft.unwrap_or(stored);
+    let next = (last + dragged.delta).clamp(min, max);
     if dragged.dragging {
-        let next = (draft.unwrap_or(stored) + dragged.delta).clamp(min, max);
         ui.data_mut(|d| d.insert_temp(id, next));
-        return (next, None);
+        return (next, (next != last || draft.is_none() && next != stored).then_some((next, draft.is_some())));
     }
     if dragged.ended {
         ui.data_mut(|d| d.remove::<f64>(id));
-        let value = (draft.unwrap_or(stored) + dragged.delta).clamp(min, max);
-        return (value, (value != stored).then_some(value));
+        return (next, (next != last).then_some((next, draft.is_some())));
     }
-    (draft.unwrap_or(stored), None)
+    (last, None)
 }
 
 /// Where a loop's start or end may be dragged: the start from 0 to a quarter beat before the end,
@@ -305,20 +314,23 @@ pub(super) fn group_panel(
         let dragged = value_row(ui, painter, volume, volume_id.with("drag"), "", &db_text(shown_db), 0.1);
         let stored = if branch.volume_db.is_finite() { branch.volume_db } else { -70.0 };
         let (_, set) = branch_value(ui, volume_id, stored, &dragged, -70.0, 6.0);
-        if let Some(db) = set {
+        if let Some((db, more)) = set {
             actions.push(Action::new(
                 "branch.setVolume",
-                json!({ "track": track.0, "device": at, "branch": index, "db": commands::exact_db_param(db, -70.0) }),
+                json!({
+                    "track": track.0, "device": at, "branch": index,
+                    "db": commands::exact_db_param(db, -70.0), "continue": more,
+                }),
             ));
         }
         let pan_id = Id::new(("branch-pan", track.0, &device.at, index));
         let shown_pan = ui.data(|d| d.get_temp::<f64>(pan_id)).unwrap_or(branch.pan);
         let dragged = value_row(ui, painter, pan, pan_id.with("drag"), "", &pan_text(shown_pan), 0.01);
         let (_, set) = branch_value(ui, pan_id, branch.pan, &dragged, -1.0, 1.0);
-        if let Some(value) = set {
+        if let Some((value, more)) = set {
             actions.push(Action::new(
                 "branch.setPan",
-                json!({ "track": track.0, "device": at, "branch": index, "pan": value }),
+                json!({ "track": track.0, "device": at, "branch": index, "pan": value, "continue": more }),
             ));
         }
 

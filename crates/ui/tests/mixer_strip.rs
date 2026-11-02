@@ -725,3 +725,42 @@ fn session_track_type_stays_in_the_header_with_the_mixer_collapsed() {
     harness.run();
     assert_eq!(harness.state().session().map(|s| s.project().clone()), before);
 }
+
+/// A branch's volume sends each frame of its drag, so a playing group follows it, and the drag is
+/// one undo step (#763 › 4).
+#[test]
+fn a_branch_volume_drag_is_sent_while_it_lasts_and_is_one_undo_step() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    harness.run();
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    let volume = |h: &Harness<'static, App>| {
+        drums(h).iter().find_map(Device::as_group).map(|g| g.branches[0].volume).expect("a device group")
+    };
+    let row = harness.get_by_label(" 0.0 dB").rect().center();
+    harness.hover_at(row);
+    harness.run();
+    harness.drag_at(row);
+    harness.step();
+    harness.hover_at(row + egui::vec2(20.0, 0.0));
+    harness.step();
+    harness.step();
+    let during = volume(&harness);
+    assert!(during > 1.0, "heard while the drag lasts: {during}");
+    harness.hover_at(row + egui::vec2(40.0, 0.0));
+    harness.step();
+    harness.step();
+    harness.drop_at(row + egui::vec2(40.0, 0.0));
+    harness.step();
+    harness.run();
+    let after = volume(&harness);
+    assert!(after > during, "{during} -> {after}");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(volume(&harness), 1.0, "the drag was one undo step");
+}

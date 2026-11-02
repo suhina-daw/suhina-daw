@@ -902,3 +902,62 @@ fn a_clip_is_renamed_by_scene_or_index_and_undo_brings_the_name_back() {
         "the undo walks back to the name the fixture's content had"
     );
 }
+
+/// A branch's fader reaches a playing group as a message, as a track's does, so a drag of it is
+/// heard while it lasts and never waits for a new graph (#763 › 4).
+#[test]
+fn a_branch_fader_is_a_message_to_the_playing_group() {
+    use suhina_model::{Branch, Device, DeviceGroup, DeviceKind};
+    let mut project = project();
+    let utility = || Device::new("Utility", DeviceKind::Builtin("utility".into()));
+    let branches = vec![
+        Branch { devices: vec![utility()], ..Branch::new("A") },
+        Branch { devices: vec![utility()], ..Branch::new("B") },
+    ];
+    project.channels[0].devices.push(Device::group("Group", DeviceGroup::with_branches(branches)));
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut session = Session::new(project);
+    session.attach_player(Player::new(renderer.controller(), None));
+    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    let loud = beat_peaks(&mut renderer, 2)[1];
+    // The engine's queue of new graphs full: a message still goes through.
+    let mut full = None;
+    for i in 0..64 {
+        if let Err(e) = run(&mut session, "track.setMute", json!({ "tracks": ["Pad"], "mute": i % 2 == 0 })) {
+            full = Some(e);
+            break;
+        }
+    }
+    assert!(full.is_some());
+    let fader = |db: f64, more: bool| json!({ "track": "Drums", "device": 0, "branch": 1, "db": db, "continue": more });
+    run(&mut session, "branch.setVolume", fader(-12.0, false)).unwrap();
+    run(&mut session, "branch.setVolume", fader(-200.0, true)).unwrap();
+    run(&mut session, "branch.setMute", json!({ "track": "Drums", "device": 0, "branch": 0, "mute": false })).unwrap();
+    // Heard without the graphs: branch B silent leaves half the sound.
+    let half = beat_peaks(&mut renderer, 2)[1];
+    assert!((half / loud - 0.5).abs() < 0.01, "{loud} -> {half}");
+    // The drag was one undo step: undoing it brings branch B back.
+    let groups = |s: &Session| s.project().channels[0].devices[0].as_group().map(|g| g.branches[1].volume);
+    assert_eq!(groups(&session), Some(0.0));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(groups(&session), Some(1.0));
+}
+
+/// `track.adjustVolume` is a fader move too: a message to the playing graph (#763 › 4).
+#[test]
+fn adjusting_a_volume_is_a_message_to_the_playing_graph() {
+    let (mut session, mut renderer) = playing();
+    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    let loud = beat_peaks(&mut renderer, 2)[1];
+    let mut full = false;
+    for i in 0..64 {
+        if run(&mut session, "track.setMute", json!({ "tracks": ["Pad"], "mute": i % 2 == 0 })).is_err() {
+            full = true;
+            break;
+        }
+    }
+    assert!(full, "the queue of new graphs is full");
+    run(&mut session, "track.adjustVolume", json!({ "tracks": ["Drums"], "db": -12.0 })).unwrap();
+    let quieter = beat_peaks(&mut renderer, 2)[1];
+    assert!((quieter / loud - 0.2512).abs() < 0.01, "{loud} -> {quieter}");
+}

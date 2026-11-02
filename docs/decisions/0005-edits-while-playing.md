@@ -161,7 +161,10 @@ sounding clips is rebuilt from the edited project at the swap.
   smoothed like a fader (a one-pole low pass at about 25 Hz). Where that cannot do it (a volume
   or pan on a lane, a group, a send that starts from silence), the message is refused and the
   edit builds a graph as before. A knob of a track that is not heard (muted, outside a solo)
-  changes nothing played, and keeps the playing graph.
+  changes nothing played, and keeps the playing graph. A branch of a device group at the top of
+  a chain takes the same path for its volume, pan, mute and solo (`MIXER_BRANCH`, #763 › 4): the
+  running group keeps each branch's values and moves its smoothed gains to the new ones; a group
+  inside another still builds a graph.
 - Offline rendering stays the oracle (rule 4): tests swap graphs inside an offline render and
   compare against renders of the edited project.
 

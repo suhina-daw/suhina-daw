@@ -165,6 +165,43 @@ pub const MIXER_SEND: usize = usize::MAX - 1;
 /// ([`Controller::set_device_param`]): the value is the channel's new pan, -1 to 1; the playing
 /// graph takes it without a new graph where the track's chain can.
 pub const MIXER_PAN: usize = usize::MAX - 2;
+/// The device index of a parameter message that moves a branch of a device group at the top of
+/// a track's chain ([`Controller::set_device_param`]): the parameter is [`branch_param`], the
+/// value the branch's new linear volume, pan (-1 to 1), or mute or solo (1 on, 0 off). A group
+/// inside another takes a new graph (#763 › 4).
+pub const MIXER_BRANCH: usize = usize::MAX - 3;
+
+/// What a [`MIXER_BRANCH`] message moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchValue {
+    Volume = 0,
+    Pan = 1,
+    Mute = 2,
+    Solo = 3,
+}
+
+/// The parameter of a [`MIXER_BRANCH`] message: the group's place among the channel's devices,
+/// the branch and what moves.
+pub fn branch_param(group: usize, branch: usize, value: BranchValue) -> usize {
+    (group.min(BRANCH_PARAM_GROUPS - 1) * BRANCH_PARAM_BRANCHES + branch.min(BRANCH_PARAM_BRANCHES / 4 - 1) * 4)
+        + value as usize
+}
+
+const BRANCH_PARAM_BRANCHES: usize = 4 * 1024;
+const BRANCH_PARAM_GROUPS: usize = 1 << 20;
+
+/// The group, branch and value a [`MIXER_BRANCH`] parameter names; `None` for one no
+/// [`branch_param`] gives.
+pub(crate) fn branch_of_param(param: usize) -> Option<(usize, usize, BranchValue)> {
+    let value = match param % 4 {
+        0 => BranchValue::Volume,
+        1 => BranchValue::Pan,
+        2 => BranchValue::Mute,
+        _ => BranchValue::Solo,
+    };
+    let group = param / BRANCH_PARAM_BRANCHES;
+    (group < BRANCH_PARAM_GROUPS).then_some((group, (param % BRANCH_PARAM_BRANCHES) / 4, value))
+}
 
 /// Whether `project` plays the send from `source` to return `target`: both heard, a level above
 /// silence, no loop. A send that plays neither before an edit nor after it changes nothing the

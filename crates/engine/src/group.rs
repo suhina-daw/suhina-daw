@@ -115,6 +115,9 @@ pub(crate) struct BranchRun {
     /// another branch is soloed.
     left: Smoothed,
     right: Smoothed,
+    /// Its volume, pan, mute and solo, which its gains follow: a message moves them while the
+    /// group plays (#763 › 4).
+    mix: BranchMix,
     /// The delay its devices add together, in frames.
     pub(crate) latency: u32,
     /// Delays its output by what it lacks of the group's latency, so every branch lines up.
@@ -166,6 +169,7 @@ impl SlotFactory<'_> {
                 buffer: vec![0.0; MAX_BLOCK * 2],
                 left: Smoothed::new(0.0, self.sample_rate),
                 right: Smoothed::new(0.0, self.sample_rate),
+                mix: BranchMix { volume: branch.volume, pan: branch.pan, mute: branch.mute, solo: branch.solo },
                 latency: 0,
                 delay: Delay::new(0),
             };
@@ -182,7 +186,7 @@ impl SlotFactory<'_> {
                     run.sample_edits.push(built.edits);
                 }
             }
-            let (left, right) = heard_gains(branch, any_solo);
+            let (left, right) = run.mix.heard_gains(any_solo);
             (run.left.value, run.left.target, run.right.value, run.right.target) = (left, left, right, right);
             ids.push(run.ids.join(","));
             branches.push(run);
@@ -230,10 +234,21 @@ pub(crate) fn compensation(latencies: impl Iterator<Item = u32>, cap: u32) -> (u
     (most, latencies.iter().map(|&l| most - l).collect())
 }
 
-/// A branch's gains while `any_solo` says whether a branch of its group is soloed: 0 while it
-/// is muted or left out by a solo, else [`branch_gains`].
-fn heard_gains(branch: &suhina_model::Branch, any_solo: bool) -> (f32, f32) {
-    if branch.mute || (any_solo && !branch.solo) { (0.0, 0.0) } else { branch_gains(branch.volume, branch.pan) }
+/// What a branch's gains follow.
+#[derive(Debug, Clone, Copy)]
+struct BranchMix {
+    volume: f64,
+    pan: f64,
+    mute: bool,
+    solo: bool,
+}
+
+impl BranchMix {
+    /// Its gains while `any_solo` says whether a branch of its group is soloed: 0 while it is
+    /// muted or left out by a solo, else [`branch_gains`].
+    fn heard_gains(&self, any_solo: bool) -> (f32, f32) {
+        if self.mute || (any_solo && !self.solo) { (0.0, 0.0) } else { branch_gains(self.volume, self.pan) }
+    }
 }
 
 /// A branch's gains: its volume, and its pan by the equal-power law a track's channel uses,
@@ -257,6 +272,29 @@ pub(crate) fn is_instrument(slot: &Slot) -> bool {
 
 impl GroupSlot {
     /// Sets its parameter `param` ([`GROUP_PARAMS`] order). Never allocates.
+    /// Moves branch `branch`'s volume (linear, at most +6 dB), pan (-1 to 1), mute or solo (on
+    /// at 0.5 and above): its gains, and with a solo every branch's, go to their new targets and
+    /// get there smoothed. Ignored for a branch it does not have or a value that is not finite.
+    /// Never allocates.
+    pub(crate) fn set_branch(&mut self, branch: usize, what: crate::BranchValue, value: f64) {
+        if !value.is_finite() {
+            return;
+        }
+        let Some(run) = self.branches.get_mut(branch) else { return };
+        match what {
+            crate::BranchValue::Volume => run.mix.volume = value.clamp(0.0, suhina_model::automation::MAX_VOLUME),
+            crate::BranchValue::Pan => run.mix.pan = value.clamp(-1.0, 1.0),
+            crate::BranchValue::Mute => run.mix.mute = value >= 0.5,
+            crate::BranchValue::Solo => run.mix.solo = value >= 0.5,
+        }
+        let any_solo = self.branches.iter().any(|b| b.mix.solo);
+        for run in &mut self.branches {
+            let (left, right) = run.mix.heard_gains(any_solo);
+            run.left.target = left;
+            run.right.target = right;
+        }
+    }
+
     pub(crate) fn set_param(&mut self, param: usize, value: f64) {
         let Some(&(_, min, max, _)) = GROUP_PARAMS.get(param) else { return };
         if !value.is_finite() {

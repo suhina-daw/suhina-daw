@@ -575,8 +575,9 @@ pub(crate) fn branch_set_volume(session: &mut Session, params: &Value) -> Result
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;
         branch.volume = volume;
-        Ok(json!({ "branch": index, "volume_db": crate::commands::to_db(volume) }))
+        Ok((index, json!({ "branch": index, "volume_db": crate::commands::to_db(volume) })))
     })
+    .map(|(index, value)| live_branch(session, params, index, suhina_engine::BranchValue::Volume, volume, value))
 }
 
 /// `branch.setPan {track, device, branch, pan}`.
@@ -589,8 +590,9 @@ pub(crate) fn branch_set_pan(session: &mut Session, params: &Value) -> Result<Va
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;
         branch.pan = pan;
-        Ok(json!({ "branch": index, "pan": pan }))
+        Ok((index, json!({ "branch": index, "pan": pan })))
     })
+    .map(|(index, value)| live_branch(session, params, index, suhina_engine::BranchValue::Pan, pan, value))
 }
 
 /// `branch.setMute {track, device, branch, mute}`: its devices keep running.
@@ -600,7 +602,10 @@ pub(crate) fn branch_set_mute(session: &mut Session, params: &Value) -> Result<V
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;
         branch.mute = mute;
-        Ok(json!({ "branch": index, "mute": mute }))
+        Ok((index, json!({ "branch": index, "mute": mute })))
+    })
+    .map(|(index, value)| {
+        live_branch(session, params, index, suhina_engine::BranchValue::Mute, f64::from(u8::from(mute)), value)
     })
 }
 
@@ -611,8 +616,35 @@ pub(crate) fn branch_set_solo(session: &mut Session, params: &Value) -> Result<V
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;
         branch.solo = solo;
-        Ok(json!({ "branch": index, "solo": solo }))
+        Ok((index, json!({ "branch": index, "solo": solo })))
     })
+    .map(|(index, value)| {
+        live_branch(session, params, index, suhina_engine::BranchValue::Solo, f64::from(u8::from(solo)), value)
+    })
+}
+
+/// After a branch's volume, pan, mute or solo changed: a playing engine takes it as a message
+/// when the group is at the top of its chain, as a track's fader is (#763 › 4); a group inside
+/// another takes a new graph. Hands `value`, the command's result, back.
+fn live_branch(
+    session: &mut Session,
+    params: &Value,
+    branch: usize,
+    what: suhina_engine::BranchValue,
+    level: f64,
+    value: Value,
+) -> Value {
+    let Ok(track) = crate::commands::track_or_main_id(&session.project, params) else { return value };
+    let Some(channel) = session.project.channel_of_track(track) else { return value };
+    if let Ok([group]) = device_path(&channel.devices, params, "device").as_deref() {
+        session.sync.mixer_edits = vec![crate::ParamEdit {
+            track,
+            device: suhina_engine::MIXER_BRANCH,
+            param: suhina_engine::branch_param(*group, branch, what),
+            value: level,
+        }];
+    }
+    value
 }
 
 /// A device group as `track.devices` lists it: its parameters, branches (each with its devices,

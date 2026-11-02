@@ -347,7 +347,10 @@ its own `format` name, holding the group's device exactly as the project file wr
 ## Commands
 
 Every behaviour above is a command (AGENTS.md rule 6, ADR 0002); each edit is one undo step and a
-playing engine hears it at once (ADR 0005).
+playing engine hears it at once (ADR 0005). A drag of a branch's volume or pan in the panel sends every frame, the
+first one starting an undo step and the rest continuing it, so the drag is heard as it moves and is
+one undo step; for a group at the top of a chain the playing graph takes it as a message
+(ADR 0005 › Amendment, #763 › 4).
 
 **Addressing devices inside groups.** Today `device` is a device's index on the track. It becomes a
 *device path*: an integer still means a top-level device, so every existing call keeps working;
@@ -371,8 +374,8 @@ is branch 1 of the group at 2, before its device 3. `track.devices` lists a grou
 | `branch.remove` | edit | `track`; `device`; `branch` (integer) | Removes a branch with its devices and their mappings. The last branch cannot be removed. |
 | `branch.duplicate` | edit | `track`; `device`; `branch` | Copies a branch next to itself. |
 | `branch.rename` | edit | `track`; `device`; `branch`; `name` (text) | Renames a branch. |
-| `branch.setVolume` | edit | `track`; `device`; `branch`; `db` (number) | As `track.setVolume`, in decibels. |
-| `branch.setPan` | edit | `track`; `device`; `branch`; `pan` (number, −1 … 1) | As `track.setPan`. |
+| `branch.setVolume` | edit | `track`; `device`; `branch`; `db` (number); `continue` (bool, optional) | As `track.setVolume`, in decibels; `continue` adds a drag's frame to its undo step. |
+| `branch.setPan` | edit | `track`; `device`; `branch`; `pan` (number, −1 … 1); `continue` (bool, optional) | As `track.setPan`. |
 | `branch.setMute` | edit | `track`; `device`; `branch`; `mute` (bool) | Mutes a branch; its devices keep running. |
 | `branch.setSolo` | edit | `track`; `device`; `branch`; `solo` (bool) | Solos a branch within its group. |
 | `macro.rename` | edit | `track`; `device` (group); `macro` (integer 1 … 8); `name` (text) | Renames a macro. |
