@@ -329,8 +329,9 @@ pub(super) fn commit(
                 }
             }
             state.swept.clear();
-            // It reached no note: what it covered is selected in time.
-            if state.selected.is_empty() {
+            // What it covered is selected in time, the empty parts too. One that added to a
+            // selection has no one stretch: the bar shows the notes' extent.
+            if !*add || state.selected.is_empty() {
                 let (start, end) = swept_span(note_grid(clip, layout.beat_width), layout, rect);
                 state.select_span(start, end);
             }

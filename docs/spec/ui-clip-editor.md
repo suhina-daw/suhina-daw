@@ -564,13 +564,14 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   **insert mark** there, on the grid line before the pointer (Alt: where it is): a line down the rows
   with a flag on the ruler, where a paste goes. Dragging from an empty spot draws a rectangle; when
   it is let go, the notes it touches are selected (with Shift, added to the selection).
-- **Built:** a rectangle let go having reached no note selects **in time**: the stretch from the grid
-  line before its left edge to the one after its right edge, on every row, shown as a tint with an
-  edge at each end. With nothing selected, the edit keys and the toolbar's buttons act on the notes
-  that start in it. A press anywhere that selects something else, Escape or another clip ends it.
+- **Built:** a rectangle let go selects **in time** too: the stretch from the grid line before its
+  left edge to the one after its right edge, the empty parts included, so a copy of its notes goes
+  after all of it. One that added to a selection (Shift) selects no stretch, unless nothing is
+  selected. A rectangle that reached no note shows the stretch on every row, as a tint with an edge at
+  each end, and the edit keys and the toolbar's buttons act on the notes that start in it. A press
+  anywhere that selects something else, Escape or another clip ends it.
 - **Built:** a bar along the ruler's lower edge shows what is selected in time: what a rectangle covers
-  while it is drawn, the time selection, or from the selected notes' earliest start to their latest
-  end.
+  while it is drawn, the stretch, or from the selected notes' earliest start to their latest end.
 - **Built:** the selection lives in the window only; it is not part of the project and is not an
   undo step. It is cleared when another clip is shown.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344)):** while the piano roll has
@@ -697,7 +698,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   they were copied from. Duplicate puts the copy right after the selection's end (the selection spans
   from its earliest start to its latest end). Pasted and duplicated notes are selected; the notes they
   land on stay, or go when notes do not stack.
-- With a time selection, Duplicate and Paste put the notes that start in it one stretch on, as far in
+- With a time selection, Duplicate and Paste put its notes (the selected ones, or those that start in it) one stretch on, as far in
   as they were, and the time selection goes on to that stretch with the copies selected, so the keys
   run again carry on after them. With no note in the stretch, Duplicate does nothing. **Ctrl+Z** on
   such a copy, or on a copy of selected notes, brings back what was selected before it.

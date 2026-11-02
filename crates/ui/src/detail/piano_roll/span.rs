@@ -115,11 +115,12 @@ impl PianoRollState {
         self.insert_at = None;
     }
 
-    /// A rectangle let go having reached no note: what it covered is selected in time.
+    /// A rectangle let go: what it covered is selected in time, the empty parts too, with the notes
+    /// it selected.
     pub(super) fn select_span(&mut self, start: f64, end: f64) {
         self.clear_span();
         if end - start > EPSILON {
-            self.span = Some(TimeSpan { start, end, with: BTreeSet::new() });
+            self.span = Some(TimeSpan { start, end, with: self.selected.clone() });
         }
     }
 

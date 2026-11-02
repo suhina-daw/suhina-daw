@@ -577,3 +577,25 @@ fn a_key_never_moves_a_note_past_the_furthest_start() {
     assert!(state.key_action("pianoRoll.later", &clip, 0.0, None).is_none());
     assert_eq!(state.span.as_ref().map(|s| s.start), Some(limit), "the stretch stays with it");
 }
+
+/// A rectangle that reached notes keeps its whole stretch: a copy goes after the empty part too.
+#[test]
+fn a_rectangle_that_reached_notes_copies_by_its_whole_stretch() {
+    let clip = clip(vec![note(0.0, 0.5, 60), note(5.0, 0.5, 60)]);
+    let mut state = PianoRollState { notes_replace: false, ..focused_on(&clip) };
+    state.selected = BTreeSet::from([0]);
+    state.select_span(0.0, 2.0);
+    state.settle_selection(&clip.notes);
+    assert_eq!(state.acting(), &BTreeSet::from([0]));
+    let copy = state.key_action("selection.duplicate", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(copy, Some(json!({ "track": 1, "index": 0, "notes": [0], "beats": 2.0 })));
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((2.0, 4.0)));
+}
+
+/// A longer key from a triplet line a command rounded goes on to the next line.
+#[test]
+fn a_longer_key_goes_on_along_triplet_lines() {
+    let grid = TimelineGrid { step: 1.0 / 3.0, bar_beats: 4.0, snaps: true };
+    let first = note(0.0, 0.333333, 60);
+    assert!((key_step_end(&first, &[first], grid, true, true) - 2.0 / 3.0).abs() < 1e-9);
+}

@@ -941,3 +941,17 @@ fn the_rows_zoom_in_a_long_way() {
     let height = h.state().piano_roll().key_height;
     assert!(height > 100.0, "{height}");
 }
+
+/// A rectangle that reaches a note and goes on past it keeps the empty part selected in time.
+#[test]
+fn a_rectangle_over_a_note_keeps_its_whole_stretch() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let first = notes(&h)[0];
+    let row = note_rect(&h, &first);
+    let to = egui::pos2(row.right() + 60.0, row.center().y + 1.0);
+    drag_keys(&mut h, row.left_top() - egui::vec2(-1.0, 1.0), to, Modifiers::NONE);
+    assert!(!h.state().piano_roll().selected.is_empty());
+    let bar = h.get_by_label_contains("Selected in time").rect();
+    assert!(bar.right() >= to.x - 1.0, "{bar:?} reaches {to:?}");
+}
