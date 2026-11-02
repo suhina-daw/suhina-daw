@@ -7,7 +7,7 @@
 
 use suhina_model::{LaunchMode, LaunchQuantization, LaunchSettings};
 
-use super::{ClipPlan, Launcher, Pending, Playing, Quantization, Queued};
+use super::{ClipLauncher, ClipPlan, Pending, Playing, Quantization, Queued};
 
 /// A slot clip's launch settings, ready for the audio thread.
 #[derive(Debug, Clone, Copy, Default)]
@@ -36,7 +36,7 @@ impl SlotLaunch {
     }
 }
 
-impl Launcher {
+impl ClipLauncher {
     /// The grid a launch of `slot` in `column` waits for: the clip's own, or the global one.
     pub(super) fn slot_quantization(&self, column: usize, slot: usize) -> Quantization {
         self.columns

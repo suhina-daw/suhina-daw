@@ -677,7 +677,7 @@ pub(crate) struct Column {
     overrides_since: Option<u64>,
 }
 
-pub(crate) struct Launcher {
+pub(crate) struct ClipLauncher {
     pub(crate) columns: Vec<Column>,
     scene_tempos: Vec<Option<f64>>,
     scene_signatures: Vec<Option<TimeSignature>>,
@@ -700,7 +700,7 @@ pub(crate) struct Launcher {
     voices: prepare::Voices,
 }
 
-impl Launcher {
+impl ClipLauncher {
     pub(crate) fn new(
         project: &Project,
         audio: &AudioPool,
@@ -779,11 +779,11 @@ impl Launcher {
     /// Takes over `old`'s runtime state at a graph swap (ADR 0005): what each column plays, fades
     /// and has queued, the beat, tempo and quantisation, and the control queue and monitor (the
     /// new graph's own go back with the old graph). A slot whose stretched audio has not changed
-    /// keeps its prepared stretch voice ([`Launcher::take_voices`]); any other playing stretch
+    /// keeps its prepared stretch voice ([`ClipLauncher::take_voices`]); any other playing stretch
     /// voice is moved to where its clip is. Slots carry over by index, or along `shift` when a
     /// scene was inserted or removed. A column or slot that no longer exists is dropped. Never
     /// allocates.
-    pub(crate) fn adopt(&mut self, old: &mut Launcher, shift: Option<SceneShift>) {
+    pub(crate) fn adopt(&mut self, old: &mut ClipLauncher, shift: Option<SceneShift>) {
         std::mem::swap(&mut self.monitor, &mut old.monitor);
         std::mem::swap(&mut self.control, &mut old.control);
         self.random = old.random;
@@ -821,7 +821,7 @@ impl Launcher {
         self.columns.get(column as usize).is_some_and(|c| c.overrides_since.is_some())
     }
 
-    /// Like [`Launcher::overrides`], at frame `position` of the block just rendered.
+    /// Like [`ClipLauncher::overrides`], at frame `position` of the block just rendered.
     pub(crate) fn overrides_at(&self, column: u32, position: u64) -> bool {
         self.columns.get(column as usize).and_then(|c| c.overrides_since).is_some_and(|since| since <= position)
     }

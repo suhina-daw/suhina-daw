@@ -10,7 +10,7 @@ use suhina_device_api::{Device, Role};
 use suhina_model::DeviceKind;
 
 use crate::automation::DeviceLanes;
-use crate::chain::Slot;
+use crate::chain::DeviceSlot;
 use crate::plugin::{PluginDevice, PluginSlot, Plugins};
 use crate::plugin_params::SlotParams;
 
@@ -32,7 +32,7 @@ pub(crate) struct SlotFactory<'a> {
 /// A slot built for a stored device: the slot, its identity for graph swaps, its parameter
 /// values, its latency and its manual sample slices.
 pub(crate) struct Built {
-    pub(crate) slot: Slot,
+    pub(crate) slot: DeviceSlot,
     pub(crate) id: String,
     pub(crate) values: Vec<f64>,
     pub(crate) latency: u32,
@@ -85,7 +85,7 @@ impl SlotFactory<'_> {
         };
         let latency = if stored.enabled { info.latency } else { 0 };
         Some(Built {
-            slot: Slot::Plugin(slot),
+            slot: DeviceSlot::Plugin(slot),
             id: format!("plugin:{key:016x}"),
             values: Vec::new(),
             latency,
@@ -125,7 +125,8 @@ impl SlotFactory<'_> {
         device.reset();
         let latency = device.latency();
         // A built-in MIDI effect runs on the events, before the instrument (#678).
-        let kind = if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) };
+        let kind =
+            if info.role == Role::MidiEffect { DeviceSlot::MidiDevice(device) } else { DeviceSlot::Device(device) };
         Some(Built {
             slot: kind,
             id: crate::chain::device_identity(id, stored, self.audio, self.devices),
@@ -165,7 +166,8 @@ impl SlotFactory<'_> {
         }
         device.reset();
         let device: Box<dyn suhina_device_api::Device> = Box::new(device);
-        let built = if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) };
+        let built =
+            if info.role == Role::MidiEffect { DeviceSlot::MidiDevice(device) } else { DeviceSlot::Device(device) };
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         bytes.hash(&mut hasher);

@@ -280,7 +280,7 @@ already cleans up.
   last two live today (`crates/engine/src/chain.rs`).
 - The key buffer passes the **alignment delay** (above) before the reader sees it.
 - A chain runs its devices as it does now; a slot with a key is handed `(buffer, key)` instead of `buffer`
-  (`Slot::Device` and `Slot::Plugin` both).
+  (`DeviceSlot::Device` and `DeviceSlot::Plugin` both).
 - Order: chains are sorted topologically over sum and key edges (above). A key edge is not a summing target: it
   does not make its source a bus and does not change any gain.
 - Offline renders run this code unchanged (AGENTS.md rule 4), so the golden renders are the oracle: a keyed
@@ -394,7 +394,7 @@ be true, and they belong in the `.sd` work rather than after it:
    description like a built-in's), and it runs the same conformance checks. What is left for keys: its ports
    from the graph's declarations, and its `process` taking `Inputs` like every other device.
 
-The engine runs a graph through the same `Slot::Device` and `Slot::MidiDevice` as a built-in, so the key input
+The engine runs a graph through the same `DeviceSlot::Device` and `DeviceSlot::MidiDevice` as a built-in, so the key input
 is one path for built-ins and graphs, and one more for plug-ins. A graph reports a latency of 0: its delay nodes
 are the sound (an echo), not delay to compensate (`docs/spec/sdk-nodes.md`).
 

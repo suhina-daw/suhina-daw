@@ -110,7 +110,7 @@ pub use cpu::CpuMonitor;
 pub use cue::MAX_CUE_GAIN;
 pub use group::{GROUP_PARAMS, SILENT_DB, group_param_index, group_param_values};
 pub use input::MAX_INPUT_CHANNELS;
-use launcher::Launcher;
+use launcher::ClipLauncher;
 pub use launcher::{
     ColumnStatus, Controller, LaunchCommand, LauncherMonitor, MAX_START_BEAT, PlayingMeter, Quantization, Queued,
     SceneShift,
@@ -360,7 +360,7 @@ struct HostedClip {
 
 /// A note with its position resolved to sample frames and its mix resolved from the channel.
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct NoteEvent {
+struct ArrangedNote {
     start: u64,
     end: u64,
     frequency: f64,
@@ -1281,7 +1281,7 @@ impl Renderer {
                 *to = *from;
             }
         }
-        self.meters.measure(meters::Meter::Main, out, frames);
+        self.meters.measure(meters::MeterTarget::Main, out, frames);
         self.block_frame = 0;
     }
 
@@ -1713,7 +1713,7 @@ fn collect_notes(
     map: &TempoMap,
     (track, gain_left, gain_right, column, bus, meter): (TrackId, f32, f32, u32, u32, u32),
     scale: Option<MusicalScale>,
-    events: &mut Vec<NoteEvent>,
+    events: &mut Vec<ArrangedNote>,
 ) {
     let LaneData::Notes(notes) = &lane.data else { return };
     if !(clip.length.is_finite() && clip.length > 0.0 && clip.start.is_finite() && clip.offset.is_finite()) {
@@ -1738,7 +1738,7 @@ fn collect_notes(
                 continue;
             }
             let end = (start + note.duration.max(0.0)).min(clip_end);
-            events.push(NoteEvent {
+            events.push(ArrangedNote {
                 start: to_frame(start),
                 end: to_frame(end),
                 frequency: 440.0 * 2f64.powf((f64::from(note.key) - 69.0) / 12.0),

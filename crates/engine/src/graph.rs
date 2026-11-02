@@ -13,7 +13,7 @@ pub(crate) struct Graph {
     /// The tracks that hear the audio input, and whether each is heard this block.
     pub(crate) inputs: Vec<input::InputRoute>,
     pub(crate) inputs_heard: Vec<bool>,
-    pub(crate) events: Vec<NoteEvent>,
+    pub(crate) events: Vec<ArrangedNote>,
     pub(crate) audio_events: Vec<ArrangedAudio>,
     /// Warped clips stretched as they play (ADR 0003), rendered ahead and mixed block by block.
     pub(crate) stretch_events: Vec<StretchEvent>,
@@ -21,7 +21,7 @@ pub(crate) struct Graph {
     pub(crate) hosted: Vec<HostedClip>,
     pub(crate) ahead: AheadReader,
     pub(crate) length: u64,
-    pub(crate) launcher: Launcher,
+    pub(crate) launcher: ClipLauncher,
     /// The tempo map counted in frames: every beat of this graph is placed through it
     /// (`docs/spec/tempo-map.md`).
     pub(crate) tempo: Arc<TempoMap>,
@@ -274,7 +274,7 @@ impl Graph {
         ahead.set_heard(&stretch_heard);
         let rings_took = rings_began.elapsed();
         let launcher_began = std::time::Instant::now();
-        let launcher = Launcher::new(project, audio, sample_rate, &chains, Arc::clone(&tempo));
+        let launcher = ClipLauncher::new(project, audio, sample_rate, &chains, Arc::clone(&tempo));
         let launcher_took = launcher_began.elapsed();
         let levels_began = std::time::Instant::now();
         let levels = meters::Levels::build(project, &chains);

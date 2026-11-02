@@ -392,7 +392,7 @@ uses device paths when these commands land; the command list itself is generated
 
 ## Engine
 
-- A chain's slots (`Slot`, `crates/engine/src/chain.rs`) gain `Slot::Group`: its branches, each a
+- A chain's slots (`DeviceSlot`, `crates/engine/src/chain.rs`) gain `DeviceSlot::Group`: its branches, each a
   list of slots with its own buffer of `MAX_BLOCK` frames, the dry buffer, the delay lines and the
   smoothed gains, all made when the graph is built. Running a group copies the input into each
   branch buffer, runs the branches, delays, scales and sums them; nothing allocates, locks or
@@ -455,7 +455,7 @@ it.
    each; `.suhina` version 2 (written then only with a group), round-trip tests; the depth-first plug-in
    key in `plugin_devices`. ADR 0001 gets an amendment. *Nothing audible yet: the engine passes a
    group through.*
-2. **Engine: groups in the chain.** `Slot::Group` with branches, volume, pan, mute, solo, mix and
+2. **Engine: groups in the chain.** `DeviceSlot::Group` with branches, volume, pan, mute, solo, mix and
    gain; built-in devices only; golden renders (two branches, one muted, one soloed, mix at 0, 0.5,
    1), passthrough exactness for a group of one empty branch, block-size independence and the
    real-time rules. ADR 0004 gets a decision.

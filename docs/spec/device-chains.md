@@ -112,7 +112,7 @@ to the same return with the same delay (`crates/engine/src/sends.rs`).
 
 ## Device groups
 
-Behaviour as the user sees it: [device groups](device-groups.md). `Slot::Group` holds its branches, each a
+Behaviour as the user sees it: [device groups](device-groups.md). `DeviceSlot::Group` holds its branches, each a
 list of slots with a buffer of its own, all made when the graph is built
 (`crates/engine/src/group.rs`). Every branch gets a copy of the group's input and runs its
 slots one after another over the same span the chain runs, with the same note events, so an

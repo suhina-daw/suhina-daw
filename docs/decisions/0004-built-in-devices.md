@@ -106,7 +106,7 @@ decision 9.
     moved, so the sound does not depend on the block size (5) and the device smooths each step.
 12. **Sends feed return chains**, a return being a bus like a group's, in one topological order
     over outputs and sends; a send that would close a loop is left out.
-13. **A device group is one slot of a chain** (`Slot::Group`): branches with buffers of their
+13. **A device group is one slot of a chain** (`DeviceSlot::Group`): branches with buffers of their
     own, summed at their volume and pan and mixed with the dry input, with latency compensated
     inside the group.
 14. **Built-in MIDI effects change the events before the instrument** through

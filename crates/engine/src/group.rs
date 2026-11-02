@@ -21,7 +21,7 @@ use suhina_device_api::{NoteEvent, ProcessContext, Role};
 use suhina_model::DeviceParam;
 
 use crate::automation::DeviceLanes;
-use crate::chain::{MAX_BLOCK, Slot};
+use crate::chain::{DeviceSlot, MAX_BLOCK};
 use crate::plugin::{Delay, PluginSlot};
 use crate::slot_factory::{Built, SlotFactory};
 
@@ -99,7 +99,7 @@ impl Smoothed {
 
 /// One branch of a running group.
 pub(crate) struct BranchRun {
-    pub(crate) slots: Vec<Slot>,
+    pub(crate) slots: Vec<DeviceSlot>,
     /// Each slot's device in the stored branch: one that cannot run has no slot.
     positions: Vec<usize>,
     /// Each slot's parameter values, as the chain keeps them, so a graph swap can set the new
@@ -223,7 +223,7 @@ impl SlotFactory<'_> {
             midi_scratch: Vec::with_capacity(MAX_EVENTS),
         };
         Some(Built {
-            slot: Slot::Group(Box::new(slot)),
+            slot: DeviceSlot::Group(Box::new(slot)),
             id: format!("group[{}]", ids.join("|")),
             values,
             latency,
@@ -245,7 +245,7 @@ pub(crate) fn compensation(latencies: impl Iterator<Item = u32>, cap: u32) -> (u
 /// Hands `visit` the live values of each device among `slots` and inside their groups, with the
 /// device's path (`crate::meters::readout_step`) from `parent`. Never allocates.
 pub(crate) fn visit_readouts(
-    slots: &[Slot],
+    slots: &[DeviceSlot],
     positions: &[usize],
     parent: u64,
     visit: &mut dyn FnMut(u64, [f32; suhina_device_api::MAX_READOUTS]),
@@ -253,12 +253,12 @@ pub(crate) fn visit_readouts(
     for (slot, &position) in slots.iter().zip(positions) {
         let path = crate::meters::readout_step(parent, position);
         match slot {
-            Slot::Device(device) => {
+            DeviceSlot::Device(device) => {
                 if let Some(values) = device.readouts() {
                     visit(path, values);
                 }
             }
-            Slot::Group(group) => {
+            DeviceSlot::Group(group) => {
                 for (index, branch) in group.branches.iter().enumerate() {
                     let branch_path = crate::meters::readout_step(path, index);
                     visit_readouts(&branch.slots, &branch.positions, branch_path, visit);
@@ -295,12 +295,12 @@ fn branch_gains(volume: f64, pan: f64) -> (f32, f32) {
     ((left * scale) as f32, (right * scale) as f32)
 }
 
-pub(crate) fn is_instrument(slot: &Slot) -> bool {
+pub(crate) fn is_instrument(slot: &DeviceSlot) -> bool {
     match slot {
-        Slot::Device(device) => device.info().role == Role::Instrument,
-        Slot::Plugin(slot) => slot.instrument,
-        Slot::Group(group) => group.instrument,
-        Slot::MidiDevice(_) => false,
+        DeviceSlot::Device(device) => device.info().role == Role::Instrument,
+        DeviceSlot::Plugin(slot) => slot.instrument,
+        DeviceSlot::Group(group) => group.instrument,
+        DeviceSlot::MidiDevice(_) => false,
     }
 }
 
@@ -309,7 +309,7 @@ pub(crate) fn is_instrument(slot: &Slot) -> bool {
 /// [`crate::group_number`] counts: a group that does not run still takes its number, and so do
 /// those inside it. Never allocates.
 pub(crate) fn number_groups(
-    slots: &mut [Slot],
+    slots: &mut [DeviceSlot],
     positions: &[usize],
     devices: &[suhina_model::Device],
     counter: &mut usize,
@@ -320,7 +320,7 @@ pub(crate) fn number_groups(
         *counter += 1;
         let slot = positions.iter().position(|&p| p == index).and_then(|slot| slots.get_mut(slot));
         match slot {
-            Some(Slot::Group(running)) => {
+            Some(DeviceSlot::Group(running)) => {
                 running.number = number;
                 for (b, branch) in group.branches.iter().enumerate() {
                     match running.branches.get_mut(b) {
@@ -335,9 +335,9 @@ pub(crate) fn number_groups(
 }
 
 /// The running group numbered `number` among `slots` and inside them. Never allocates.
-pub(crate) fn find_group(slots: &mut [Slot], number: usize) -> Option<&mut GroupSlot> {
+pub(crate) fn find_group(slots: &mut [DeviceSlot], number: usize) -> Option<&mut GroupSlot> {
     for slot in slots {
-        if let Slot::Group(group) = slot {
+        if let DeviceSlot::Group(group) = slot {
             if group.number == number {
                 return Some(group);
             }
@@ -398,7 +398,7 @@ impl GroupSlot {
         for branch in &mut self.branches {
             branch.lanes.plan(time, frames);
             for slot in &mut branch.slots {
-                if let Slot::Group(group) = slot {
+                if let DeviceSlot::Group(group) = slot {
                     group.plan(time, frames);
                 }
             }
@@ -433,7 +433,7 @@ impl GroupSlot {
                 running.slots.iter_mut().zip(&new.values).zip(new.slots.iter_mut()).enumerate()
             {
                 match (slot, new_slot) {
-                    (Slot::Device(device) | Slot::MidiDevice(device), _) => {
+                    (DeviceSlot::Device(device) | DeviceSlot::MidiDevice(device), _) => {
                         if let Some(samples) = device.samples() {
                             if let Some(points) = new.sample_slices.get_mut(position) {
                                 samples.swap_sample_slices(points);
@@ -450,8 +450,8 @@ impl GroupSlot {
                             device.set_param(index, value);
                         }
                     }
-                    (Slot::Group(group), Slot::Group(new_group)) => group.adopt(new_group),
-                    (Slot::Plugin(running), Slot::Plugin(fresh)) => running.adopt(fresh),
+                    (DeviceSlot::Group(group), DeviceSlot::Group(new_group)) => group.adopt(new_group),
+                    (DeviceSlot::Plugin(running), DeviceSlot::Plugin(fresh)) => running.adopt(fresh),
                     _ => {}
                 }
             }
@@ -530,7 +530,7 @@ pub(crate) struct PluginSlots<'a> {
 
 /// One list being walked: slots, or a group's branches.
 enum Frame<'a> {
-    Slots(std::slice::IterMut<'a, Slot>),
+    Slots(std::slice::IterMut<'a, DeviceSlot>),
     Branches(std::slice::IterMut<'a, BranchRun>),
 }
 
@@ -538,7 +538,7 @@ enum Frame<'a> {
 const STACK: usize = 2 + 2 * suhina_model::MAX_DEVICE_GROUP_DEPTH;
 
 impl<'a> PluginSlots<'a> {
-    pub(crate) fn new(slots: &'a mut [Slot]) -> Self {
+    pub(crate) fn new(slots: &'a mut [DeviceSlot]) -> Self {
         let mut stack: [Option<Frame<'a>>; STACK] = std::array::from_fn(|_| None);
         stack[0] = Some(Frame::Slots(slots.iter_mut()));
         Self { stack, len: 1 }
@@ -564,8 +564,8 @@ impl<'a> Iterator for PluginSlots<'a> {
                 Frame::Branches(branches) => branches.next().map(Err),
             };
             match next {
-                Some(Ok(Slot::Plugin(plugin))) => return Some(plugin),
-                Some(Ok(Slot::Group(group))) => self.push(Frame::Branches(group.branches.iter_mut())),
+                Some(Ok(DeviceSlot::Plugin(plugin))) => return Some(plugin),
+                Some(Ok(DeviceSlot::Group(group))) => self.push(Frame::Branches(group.branches.iter_mut())),
                 Some(Ok(_)) => {}
                 Some(Err(branch)) => self.push(Frame::Slots(branch.slots.iter_mut())),
                 None => {
@@ -594,7 +594,7 @@ pub(crate) struct Span<'a> {
 /// in `pending` (frames counted from the block's start). A plug-in runs its round trip and waits
 /// for it within the deadline. Never allocates.
 pub(crate) fn run_slots(
-    slots: &mut [Slot],
+    slots: &mut [DeviceSlot],
     buffer: &mut [f32],
     pending: &mut Vec<(usize, NoteEvent)>,
     span_events: &mut Vec<(usize, NoteEvent)>,
@@ -605,11 +605,11 @@ pub(crate) fn run_slots(
     let Span { from, to, context, sample_rate, deadline } = run;
     for (index, slot) in slots.iter_mut().enumerate() {
         match slot {
-            Slot::Device(device) => {
+            DeviceSlot::Device(device) => {
                 crate::chain::run_device(device, index, buffer, from, to, pending, lanes, context, sample_rate);
             }
             // A built-in MIDI effect (#678) changes the branch's events as in a chain.
-            Slot::MidiDevice(device) => {
+            DeviceSlot::MidiDevice(device) => {
                 crate::chain::run_midi_device(
                     device,
                     index,
@@ -621,7 +621,7 @@ pub(crate) fn run_slots(
                 );
                 std::mem::swap(pending, midi_scratch);
             }
-            Slot::Plugin(plugin) => {
+            DeviceSlot::Plugin(plugin) => {
                 let last = (to - from).saturating_sub(1);
                 span_events.clear();
                 span_events.extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
@@ -630,7 +630,7 @@ pub(crate) fn run_slots(
                     plugin.run(span, span_events, deadline);
                 }
             }
-            Slot::Group(group) => group.run(buffer, from, to, pending, context, sample_rate, deadline),
+            DeviceSlot::Group(group) => group.run(buffer, from, to, pending, context, sample_rate, deadline),
         }
     }
 }

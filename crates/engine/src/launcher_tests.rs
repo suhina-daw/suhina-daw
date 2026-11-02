@@ -640,7 +640,7 @@ fn a_bar_before_where_a_scene_set_the_bars_starts_before_the_playhead() {
     // 5 is in the bar from beat 4, not at beat 8 after the playhead.
     let p = project(Vec::new(), vec![Vec::new()]);
     let map = Arc::new(p.transport.tempo_map(f64::from(SR)));
-    let mut launcher = super::Launcher::new(&p, &AudioPool::new(), SR, &[], map);
+    let mut launcher = super::ClipLauncher::new(&p, &AudioPool::new(), SR, &[], map);
     launcher.bars.follows_map = false;
     launcher.bars.bar_beats = 4.0;
     launcher.bars.bar_origin = 8.0;
