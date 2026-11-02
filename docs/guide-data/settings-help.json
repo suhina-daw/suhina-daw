@@ -2357,6 +2357,7 @@
       "crates/ui/src/settings/settings_rows.rs",
       "crates/session/src/commands/take.rs",
       "docs/spec/recording.md"
-    ]
+    ],
+    "options": []
   }
 }
