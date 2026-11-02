@@ -486,11 +486,14 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   about one heavy plug-in, and a slow or hung plug-in holds up only its own track
   ([#151](https://github.com/suhina-daw/suhina-daw/issues/151)).
 - Still to do: checking an imported Live Set
-  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), Wayland and
-  macOS editors, VST2 hosting — decided in
+  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), and the
+  Wayland editors — VST2 hosting decided in
   [ADR 0022](docs/decisions/0022-vst2-interface-description.md) (VeSTige, pinned; the
-  2026-10-31 amendment allows shipping) and begun
-  with the interface layer, the mock and the probe
+  2026-10-31 amendment allows shipping) and built in: the interface layer, the mock and the
+  probe, the host that runs a VST2 plug-in on the same boundary as the other formats, the
+  scan of the VST folders and added folders, a project's VST2 plug-in that has no VST3 or
+  CLAP copy running through it with its saved bank, and its editor in a window of its own or
+  embedded where the platform allows (Windows, X11)
   ([#1066](https://github.com/suhina-daw/suhina-daw/issues/1066),
   [spec](docs/spec/plugin-vst2.md)).
 

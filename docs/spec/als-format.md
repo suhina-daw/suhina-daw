@@ -8,7 +8,7 @@ covers:
   - crates/als/src/lib.rs
   - crates/als/src/devices.rs
   - crates/als/src/scale.rs
-  - crates/als/src/vst2.rs
+  - crates/plugins/src/vst2.rs
   - crates/als/tests/synthetic.rs
   - crates/als/tests/corpus.rs
 ---
@@ -325,7 +325,7 @@ catalog for 21 different VST3 plug-ins across 169 Live Sets, all equal.
 
 Plug-in state is the plug-in vendor's own format. Suhina keeps it verbatim and hands it back
 to the plug-in. For VST2, `VstPreset` also says how the `Buffer` is laid out, and the importer
-wraps it in the standard VST2 bank (an `.fxb` file's contents, `crates/als/src/vst2.rs`), which
+wraps it in the standard VST2 bank (an `.fxb` file's contents, `crates/plugins/src/vst2.rs`), which
 is what the model keeps and what a VST3 version of the plug-in reads. The bank's layout follows
 the VST3 SDK's `vst2persistence.h` (MIT, linked from ADR 0006), not the VST2 SDK:
 
