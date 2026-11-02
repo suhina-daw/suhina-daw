@@ -1,3 +1,6 @@
+// Copyright (C) 2026 The Suhina contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! A `.sd` graph as a [`Device`] like any built-in (#763 › 6): the engine runs it through the
 //! same slot, automation and smoothing paths, and it passes the same conformance checks.
 //!
