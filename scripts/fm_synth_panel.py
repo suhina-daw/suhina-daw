@@ -477,7 +477,7 @@ def filter_curve(numerator, w, h, color):
     per_db = h / (FILTER_TOP_DB - FILTER_BOTTOM_DB)
     slope = mul(per_db * DB_PER_LOG, add(1.0, par("filterSlope")))
     y = add(FILTER_TOP_DB * per_db, mul(gone, slope))
-    return {"kind": "plot", "from": 0.0, "to": w, "top": 0.0, "bottom": h, "samples": 72, "y": y, "color": color, "width": 1.5}
+    return {"kind": "plot", "from": 0.0, "to": w, "top": 0.0, "bottom": h, "samples": 240, "y": y, "color": color, "width": 1.5}
 
 
 def filter_x(hz, w):
