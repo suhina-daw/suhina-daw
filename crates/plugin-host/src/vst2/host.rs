@@ -316,7 +316,8 @@ fn answer(
         // thread it goes into the lock-free slots; anywhere else, under the lock those
         // threads may take.
         Some(HostOp::Automate) => {
-            let id = u32::try_from(index).unwrap_or(0);
+            // A negative index names no parameter, and must not become the first one.
+            let Ok(id) = u32::try_from(index) else { return 0 };
             if shared.restoring.load(Ordering::Acquire) {
                 // The value the plug-in just had restored: not an edit.
                 return 0;
@@ -454,8 +455,21 @@ impl Vst2Plugin {
     /// link's block size at `sample_rate` and starts serving blocks from `served` on an audio
     /// thread, as instance `instance` of the process.
     pub(crate) fn load(spec: &str, instance: u32, served: Served, sample_rate: f64) -> Result<Self, String> {
-        let max_frames = served.max_frames() as usize;
         let (module, effect, wanted_id) = open(spec)?;
+        Self::start_opened(spec, module, effect, wanted_id, instance, served, sample_rate)
+    }
+
+    /// [`Self::load`] from the effect the entry gave back.
+    fn start_opened(
+        spec: &str,
+        module: Module,
+        effect: *mut AEffect,
+        wanted_id: Option<String>,
+        instance: u32,
+        served: Served,
+        sample_rate: f64,
+    ) -> Result<Self, String> {
+        let max_frames = served.max_frames() as usize;
         // SAFETY: the effect the entry gave back, read by value once, on this thread. The
         // call fields, flags and counts are copied here and never read from the plug-in's
         // struct again, so no thread races the plug-in over them.
@@ -536,6 +550,8 @@ impl Vst2Plugin {
             usize::try_from(opened.numInputs).unwrap_or(0).min(MAX_CHANNELS),
             usize::try_from(opened.numOutputs).unwrap_or(0).min(MAX_CHANNELS),
         );
+        plugin.params = usize::try_from(opened.numParams).unwrap_or(0).min(MAX_PARAMS);
+        plugin.latency = latency_of(&opened);
         // The id a scan named is the opened one, the same describe publishes. A shell's
         // member named by its id never quietly loads the file's first effect instead.
         let opened_id = format!("{:08X}", opened.uniqueID as u32);
@@ -563,7 +579,10 @@ impl Vst2Plugin {
         if plugin.name.is_empty() {
             plugin.name = spec.strip_prefix("vst2:").unwrap_or(spec).to_string();
         }
-        plugin.start_audio(served)?;
+        if let Err(why) = plugin.start_audio(served) {
+            plugin.close();
+            return Err(why);
+        }
         Ok(plugin)
     }
 

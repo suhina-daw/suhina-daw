@@ -56,6 +56,12 @@ fn standard_format(path: &Path) -> FolderFormat {
     }
 }
 
+/// The format of the standard folder at `path`. A folder `CLAP_PATH` names is the user's choice
+/// of place, so its name says nothing: it is taken for every format, and its `.clap` files found.
+fn folder_format(path: &Path, clap_path: &[PathBuf]) -> FolderFormat {
+    if clap_path.iter().any(|folder| folder == path) { FolderFormat::Any } else { standard_format(path) }
+}
+
 /// Which host process a plug-in's instances run in (ADR 0006, decision 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Hosting {
@@ -321,8 +327,9 @@ impl Library {
         self.load();
         let mut list: Vec<Folder> = Vec::new();
         let standard = if self.standard { standard_folders() } else { Vec::new() };
+        let clap_path = crate::scan::clap_path_folders();
         for path in standard {
-            let format = standard_format(&path);
+            let format = folder_format(&path, &clap_path);
             list.push(Folder { enabled: !self.off.contains(&path), path, format, standard: true });
         }
         for (path, format) in &self.custom {

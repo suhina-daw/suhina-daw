@@ -278,12 +278,15 @@ pub fn standard_folders() -> Vec<PathBuf> {
         folders.push(PathBuf::from("/usr/lib/vst"));
         folders.push(PathBuf::from("/usr/local/lib/vst"));
     }
-    if let Some(paths) = std::env::var_os("CLAP_PATH") {
-        folders.extend(std::env::split_paths(&paths));
-    }
+    folders.extend(clap_path_folders());
     folders.retain(|f| f.is_dir());
     folders.dedup();
     folders
+}
+
+/// The folders `CLAP_PATH` names.
+pub fn clap_path_folders() -> Vec<PathBuf> {
+    std::env::var_os("CLAP_PATH").map(|paths| std::env::split_paths(&paths).collect()).unwrap_or_default()
 }
 
 /// The plug-in files under `folders`: files or bundle folders named `*.clap` or `*.vst3` (a

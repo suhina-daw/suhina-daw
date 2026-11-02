@@ -394,7 +394,8 @@ tried).
 any folder, standard or added, can be switched off without removing it; its plug-ins leave
 the catalog with the next scan. A folder for every format takes `.clap` and `.vst3` files
 (and `.vst` bundles on macOS); a plain library (`.dll`, `.so`) can be anything and loading it
-runs its code, so those are taken from a VST2 folder only.
+runs its code, so those are taken from a VST2 folder only. A folder `CLAP_PATH` names is a folder for every
+format, whatever its name.
 - Plug-ins can be switched off (`plugin.setEnabled`, the plug-in manager). One switched off
 stays in the catalog and in `plugin.list`, but sessions get the catalog without it: it is
 not offered in the browser, not found by name, and a project that uses it finds it

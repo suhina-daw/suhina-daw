@@ -461,7 +461,7 @@ another header (ADR 0022 decision 2).
   #1072). With the host's vendor and product strings cut to their text and terminator (`host.rs`),
   it loads, opens its editor and plays through the host *(observed, Windows
   x86-64)*.
-- The state through the host *(observed, Windows x86-64)*: `an_installed_plugins_state_comes_back_through_the_host`
+- The state through the host *(observed, Windows x86-64)*: `an_installed_plugins_state_goes_through_the_host_and_it_keeps_running`
   saved and restored the state of ten installed plug-ins, each staying alive. The bytes read back were
   the same for most of them; they differed for three, whose
   saved state need not be the same bytes twice. That test does not hear whether the settings took.

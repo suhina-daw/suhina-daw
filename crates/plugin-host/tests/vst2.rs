@@ -15,13 +15,15 @@ mod common;
 use common::user_closes_windows;
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use suhina_ipc::{Event, EventKind, Outcome};
 use suhina_plugins::{Launch, Plugin};
 
 /// How long anything waits for the host process.
 const PATIENT: Duration = Duration::from_secs(20);
+/// More than a plug-in's start may take, so the wait ends with the start's own answer.
+const STARTED: Duration = Duration::from_secs(600);
 /// The gain the mock starts with, and the one its idle knob turns it to.
 const DEFAULT_GAIN: f32 = 0.5;
 /// The latency the mock reports, in the field the host assumes holds it.
@@ -256,24 +258,6 @@ fn saved_gain(project: &Project) -> Option<f32> {
     Some(f32::from_le_bytes(bytes))
 }
 
-/// Sets blocks moving while the session looks after its plug-ins, until `done` holds. The
-/// callback decides when to stop waiting: `false` and the loop keeps going, `true` and it is
-/// over. A status that means a refused start fails at once; the session has no signal for a
-/// plug-in that started, so the wait is as `engine.rs`'s, with its bound.
-fn until(session: &mut Session, renderer: &mut Renderer, mut done: impl FnMut(&mut Session) -> bool) {
-    let mut block = vec![0.0f32; 256 * 2];
-    let deadline = Instant::now() + PATIENT;
-    loop {
-        session.sync_plugins();
-        renderer.process(&mut block);
-        if done(session) {
-            return;
-        }
-        assert!(Instant::now() < deadline, "the device did not start in time");
-        std::thread::sleep(Duration::from_millis(5));
-    }
-}
-
 /// The central test of #1066: a project naming a VST2 plug-in that only exists as VST2 opens,
 /// the installed plug-in loads with its saved settings, plays with them, and the state read
 /// back is the settings, unchanged, to save.
@@ -287,14 +271,10 @@ fn a_project_s_vst2_plug_in_plays_with_its_saved_settings() {
     session.set_plugin_env(vst2_env());
     let device = json!({ "track": 1, "device": 0 });
     // The device is found and starts — the direct host, no VST3 or CLAP copy standing in.
-    // A refused start is named and stops the wait at once.
-    until(&mut session, &mut renderer, |s| {
-        let heard = s.execute("device.plugin", &device).unwrap();
-        let status = heard["status"].as_str().unwrap_or_default();
-        assert!(!matches!(status, "failed" | "crashed"), "the device did not get going: {heard}");
-        status == "running"
-    });
+    // The start itself is bounded by the launch's timeout, so this only waits for its answer.
+    session.wait_for_plugins(STARTED);
     let heard = session.execute("device.plugin", &device).unwrap();
+    assert_eq!(heard["status"], "running", "the device got going: {heard}");
     assert_eq!(heard["plugin"]["found"], "itself", "the VST2 plug-in itself, not a stand-in: {heard}");
 
     // It plays with the saved settings: the render's gain is the bank's.
@@ -392,21 +372,17 @@ fn the_mock_s_embedded_editor_opens_and_takes_its_placement() {
         eprintln!("no window system for editors; the editor part is skipped here");
         return;
     }
+    let parent = common::ParentWindow::open();
     let (mut plugin, _audio) = start();
-    // The engine's owner: the test has no window of Suhina's to name, so the exit is the SAME
-    // one a non-windowing engine has: the host refuses it and reports why.
-    match plugin.open_editor_embedded(0) {
-        Ok((width, height)) => {
-            assert_eq!((width, height), EDITOR_SIZE, "the size the rect declared");
-            let placement =
-                suhina_plugins::Placement { x: 0, y: 0, clip_x: 0, clip_y: 0, clip_width: 100, clip_height: 100 };
-            assert!(plugin.place_editor(placement).unwrap_or_else(|e| panic!("{e}")), "the placement went out");
-            assert!(
-                plugin.fit_editor(EDITOR_SIZE.0, EDITOR_SIZE.1).unwrap_or_else(|e| panic!("{e}")),
-                "the fit went out"
-            );
-        }
-        Err(e) => eprintln!("embedded refused, as this runner's windowing says: {e}"),
+    if !common::embeds_editors_here() {
+        let refused = plugin.open_editor_embedded(parent.id()).err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(refused.contains("window of its own"), "the embedded open says why it cannot: {refused:?}");
+        return;
     }
+    let (width, height) = plugin.open_editor_embedded(parent.id()).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!((width, height), EDITOR_SIZE, "the size the rect declared");
+    let placement = suhina_plugins::Placement { x: 0, y: 0, clip_x: 0, clip_y: 0, clip_width: 100, clip_height: 100 };
+    assert!(plugin.place_editor(placement).unwrap_or_else(|e| panic!("{e}")), "the placement went out");
+    assert!(plugin.fit_editor(EDITOR_SIZE.0, EDITOR_SIZE.1).unwrap_or_else(|e| panic!("{e}")), "the fit went out");
     plugin.close_editor().unwrap_or_else(|e| panic!("{e}"));
 }

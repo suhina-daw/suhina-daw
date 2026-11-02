@@ -332,6 +332,58 @@ fn an_answer_to_a_chunk_is_no_refusal() {
     finished(plugin);
 }
 
+/// A call with a negative index names no parameter: it never becomes an edit of the first.
+#[test]
+fn an_automate_call_with_a_negative_index_edits_nothing() {
+    let (_link, mut plugin) = loaded(FIRST + 40);
+    let automate = |plugin: &Vst2Plugin, index: i32| {
+        let op = super::HostOp::Automate.value();
+        // SAFETY: the callback the plug-in holds, for the effect this test loaded.
+        unsafe { super::host_callback(plugin.effect, op, index, 0, std::ptr::null_mut(), 0.25) };
+    };
+    automate(&plugin, 0);
+    assert!(plugin.tick().contains(&(0, 0.25)), "a real index is an edit");
+    automate(&plugin, -1);
+    assert!(!plugin.tick().contains(&(0, 0.25)), "a negative index is none");
+    finished(plugin);
+}
+
+/// A plug-in that fills its parameter count and its delay as it opens runs with those.
+#[test]
+fn the_parameters_and_the_latency_are_read_after_it_opens() {
+    unsafe extern "C" fn fills_as_it_opens(
+        effect: *mut super::AEffect,
+        opcode: i32,
+        _index: i32,
+        _value: isize,
+        _ptr: *mut std::ffi::c_void,
+        _opt: f32,
+    ) -> isize {
+        if opcode == super::EffectOp::Open.value() {
+            // SAFETY: the test's own effect, on this thread, with no audio served yet.
+            unsafe {
+                (*effect).numParams = 3;
+            }
+            // SAFETY: as above.
+            unsafe {
+                (*effect).empty3[0] = 77;
+            }
+        }
+        0
+    }
+    let (mut effect, mock) = crate::vst2::test_vst2::mock(Some(super::host_callback));
+    effect.dispatcher = Some(fills_as_it_opens);
+    let pointer: *mut super::AEffect = &mut *effect;
+    let link = Link::create(2, 256).unwrap_or_else(|e| panic!("{e}"));
+    let served = Served::open(&link.address()).unwrap_or_else(|e| panic!("{e}"));
+    let module = Module::Mock(effect, mock);
+    let plugin = Vst2Plugin::start_opened("test:vst2", module, pointer, None, FIRST + 41, served, 48_000.0)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(plugin.params, 3);
+    assert_eq!(plugin.latency(), 77);
+    finished(plugin);
+}
+
 /// A plug-in that declares no editor is told so, with no window made for it.
 #[test]
 fn a_plug_in_without_the_editor_flag_opens_no_editor() {

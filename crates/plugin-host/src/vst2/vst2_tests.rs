@@ -415,8 +415,9 @@ fn a_block_whose_replacing_is_gone_takes_the_deprecated_call() {
         report.contains("process (deprecated; the flag said replacing and it had none)"),
         "the fallback is what the report names\n{report}"
     );
-    // The sound went through: the mock's gain (0.5) applied to the ramp the block carries.
+    // The sound went through: the gain the probe set (0.25) applied to the ramp the block carries.
     assert!(!report.contains("the plug-in has no process call"));
+    assert!(report.contains("out[0][last] 0.073"), "the ramp's last frame (7/24) at that gain\n{report}");
 }
 
 /// The strings the probe answers an entry with stay inside a short buffer: the whole assumed

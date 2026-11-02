@@ -85,7 +85,7 @@ fn an_installed_plugins_editor_opens() {
 /// read after it is the same bytes, which a plug-in need not promise.
 #[test]
 #[ignore = "needs SUHINA_PLUGIN; looks into one installed plug-in by hand"]
-fn an_installed_plugins_state_comes_back_through_the_host() {
+fn an_installed_plugins_state_goes_through_the_host_and_it_keeps_running() {
     let Some(launch) = launch() else {
         eprintln!("SUHINA_PLUGIN not set; nothing to look into");
         return;

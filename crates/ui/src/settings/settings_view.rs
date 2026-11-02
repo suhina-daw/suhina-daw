@@ -1941,6 +1941,7 @@ fn plugin_folders(
         "vst3" => "VST3",
         "clap" => "CLAP",
         "vst2" => "VST2",
+        "any" if cfg!(target_os = "macos") => "CLAP, VST3 and VST2",
         _ => "CLAP and VST3",
     };
 
