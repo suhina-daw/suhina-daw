@@ -18,6 +18,14 @@ fn readouts_read_the_hosts_values_and_refuse_an_index_past_the_last() {
 }
 
 #[test]
+fn a_parameter_id_cannot_take_the_name_of_a_host_value() {
+    for id in ["#r0", "#expanded", "#mine"] {
+        assert!(crate::validate_parameters(&[Parameter::new(id, "Name", (0., 1.), 0.)]).is_err(), "{id}");
+    }
+    assert!(crate::validate_parameters(&[Parameter::new("r0", "Name", (0., 1.), 0.)]).is_ok());
+}
+
+#[test]
 fn graphics_need_no_binding_and_a_negative_drag_scale_is_allowed() {
     let params = [Parameter::new("slope", "Slope", (0., 2.), 1.)];
     let mut ui = DeviceUi { size: [100., 100.], ..DeviceUi::default() };

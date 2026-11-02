@@ -52,6 +52,34 @@ pub fn expanded_device(ctx: &egui::Context, detail: &Detail) -> Option<(TrackId,
     found.map(|device| (track, device.clone()))
 }
 
+/// Gives every canvas among `devices`, inside their groups too, what the host hands it:
+/// `#expanded` (1 for the device at `open`) and the device's live values from `readouts`. Returns
+/// whether any device had live values.
+pub fn give_host_values(
+    devices: &mut [DeviceBox],
+    open: Option<&DeviceAt>,
+    readouts: &mut dyn FnMut(&DeviceAt) -> Option<[f32; suhina_device_api::MAX_READOUTS]>,
+) -> bool {
+    let mut live = false;
+    for device in devices {
+        if let Some(group) = device.group.as_mut() {
+            for branch in &mut group.branches {
+                live |= give_host_values(&mut branch.devices, open, readouts);
+            }
+        }
+        let Some(graph) = device.graph.as_mut() else { continue };
+        let is_open = open == Some(&device.at);
+        graph
+            .parameters
+            .push(GraphParameter::host_value(suhina_device_sdk::ui::EXPANDED_ID, if is_open { 1.0 } else { 0.0 }));
+        if let Some(values) = readouts(&device.at) {
+            graph.parameters.extend(values.iter().enumerate().filter_map(|(i, &v)| GraphParameter::readout(i, v)));
+            live = true;
+        }
+    }
+    live
+}
+
 /// Draws `device`'s expanded panel over `area` (the main area), on top of the views: a title row
 /// with its name and a close button, then its canvas, centred and scrolled when the area is
 /// smaller. A canvas marked `strip` opens instead as a strip at the bottom of `area`, over the
@@ -67,7 +95,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     // a half times its own size), the strip as tall as the scaled canvas; the views stay above.
     // The strip's height: its canvas's at the strip's width unless the header was dragged; kept
     // per device while the app runs.
-    let height_id = Id::new(("device-expanded-height", &device.name));
+    let height_id = Id::new(("device-expanded-height", track.0, &device.at));
     let fitted = ROW + PAD + size.y * ((area.width() - PAD * 2.0) / size.x).clamp(0.5, 2.5) + PAD * 2.0;
     let wanted = ui.ctx().data(|d| d.get_temp::<f32>(height_id)).unwrap_or(fitted);
     let slice = if canvas.strip {

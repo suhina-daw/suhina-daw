@@ -260,7 +260,7 @@ CHAPTERS = [
     (29, "Live Audio Effect Reference", 139, 0.23, "partial",
      "Suhina has 12 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, "
      "overdrive, saturator, compressor, multiband, limiter, delay, reverb) against 42 documented audio effects; the EQ, "
-     "delay and reverb take every parameter of their counterparts, the saturator all but Hi-Quality, the multiband all but the side-chain, several others are close in kind but far "
+     "delay and reverb take every parameter of their counterparts, the saturator all but Hi-Quality, the multiband all but the side-chain and the band merge buttons, several others are close in kind but far "
      "narrower in parameters and modes."),
     (30, "Live MIDI Effect Reference", 13, 0.10, "started",
      "One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key "

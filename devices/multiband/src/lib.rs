@@ -334,7 +334,10 @@ impl Multiband {
     }
 
     fn frequency_targets(&self) -> [f32; 2] {
-        [self.value(param::LOW_CROSSOVER).log2() as f32, self.value(param::HIGH_CROSSOVER).log2() as f32]
+        // Their ranges overlap: the lower of the two splits first, whichever it is, so there are
+        // always three bands in order.
+        let (low, high) = (self.value(param::LOW_CROSSOVER), self.value(param::HIGH_CROSSOVER));
+        [low.min(high).log2() as f32, low.max(high).log2() as f32]
     }
 
     fn current_frequencies(&self) -> (f64, f64) {

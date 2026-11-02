@@ -9,6 +9,7 @@ covers:
   - crates/device-api/src/lib.rs
   - crates/engine/src/meters.rs
   - crates/engine/src/chain.rs
+  - crates/engine/src/group.rs
   - crates/ui/src/app/detail_area.rs
   - crates/device-sdk/src/ui.rs
 ---
@@ -28,12 +29,13 @@ and a panel is drawn by the UI thread at its own pace.
 1. **`Device::readouts() -> Option<[f32; MAX_READOUTS]>`** (35 values, default `None`), read after
    each block. The device keeps the values in its own fixed array, updated in `process`; their
    order is the device's and its panel's agreement, written down in the device's spec.
-2. **One device per track publishes**, the first in its chain that returns `Some`, like the
-   Sampler's read head: `Chain::readouts` finds it and `Levels::finish` stores its values in the
-   track's meter row (35 `AtomicU32`s and the device's position + 1). Storing is a handful of
-   relaxed atomic writes per block; nothing allocates or waits. A graph swap clears the row.
+2. **Every device that returns `Some` publishes, inside device groups too**, up to eight per
+   track (`MAX_READOUT_DEVICES`): `Chain::readouts` walks the chain and its groups and
+   `Levels::finish` stores each device's values in the track's meter row (35 `AtomicU32`s and the
+   device's path as a number, `readout_step`). Storing is a handful of relaxed atomic writes per
+   block; nothing allocates or waits. A graph swap clears the row.
 3. **The UI hands them to the canvas as values `#r0` … `#r34`** beside the parameters
-   (`MeterMonitor::readouts(track, device)`, then `GraphParameter::readout`). They are never listed
+   (`MeterMonitor::readouts(track, path)`, then `GraphParameter::readout`). They are never listed
    or changed by a control. A canvas reads them with the `readout` expression or names them in a
    drawing; validation accepts these ids in drawings, never in bindings. The UI repaints at about
    30 frames per second while a device publishes. `#expanded` (1 while the device's expanded
@@ -44,6 +46,6 @@ and a panel is drawn by the UI thread at its own pace.
 - A device adds a display without new channels or threads; the values arrive at most one block late
   and a frame is drawn from the latest. Values in between are lost, so a device smooths what it
   shows (a follower, a falling peak).
-- Only one device per track shows live values at a time. A second one needs the row to carry more
-  than one device; the table grows then, not the trait.
+- A meter row holds eight devices' values whether a track uses them or not, about 1.2 KB, so the
+  table of 512 tracks takes about 600 KB. A ninth device on a track shows no live values.
 - Plug-ins have no readouts; their own editors show theirs.

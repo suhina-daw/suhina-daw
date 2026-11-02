@@ -1338,7 +1338,10 @@ fn handle(
         .interact(grab, id, egui::Sense::click_and_drag())
         .on_hover_cursor(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical })
         .on_hover_text(&control.tooltip);
-    let hot = response.hovered() || response.dragged();
+    if response.clicked() || response.drag_started() {
+        response.request_focus();
+    }
+    let hot = response.hovered() || response.dragged() || response.has_focus();
     let stroke = Stroke::new(if hot { 3.0 } else { 2.0 }, color(line_color));
     painter.line_segment(line, stroke);
     let grip = Rect::from_center_size(
@@ -1346,21 +1349,44 @@ fn handle(
         Vec2::splat(if hot { 9.0 } else { 7.0 }),
     );
     painter.rect_filled(grip, 1.0, color(line_color));
+    let at_travel = |t: f64| {
+        let t = t.clamp(0.0, 1.0);
+        if binding.logarithmic && p.min > 0.0 {
+            (p.min.ln() + t * (p.max.ln() - p.min.ln())).exp()
+        } else {
+            p.min + t * (p.max - p.min)
+        }
+    };
+    // The arrow keys along its travel move a focused handle 1 % of it, 0.1 % with Shift.
+    let (up, down) = if vertical {
+        (egui::Key::ArrowRight, egui::Key::ArrowLeft)
+    } else {
+        (egui::Key::ArrowUp, egui::Key::ArrowDown)
+    };
+    let keys = if response.has_focus() {
+        // The arrows stay with the handle instead of moving the focus on.
+        ui.memory_mut(|m| {
+            let arrows = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, ..Default::default() };
+            m.set_focus_lock_filter(response.id, arrows);
+        });
+        ui.input(|i| {
+            f64::from(i32::from(i.key_pressed(up)) - i32::from(i.key_pressed(down)))
+                * if i.modifiers.shift { 0.001 } else { 0.01 }
+        })
+    } else {
+        0.0
+    };
     let value = if response.double_clicked() {
         Some(p.default)
+    } else if keys != 0.0 {
+        Some(at_travel(normalized(p, binding.logarithmic) + keys))
     } else if response.dragged() || response.drag_stopped() {
         response.interact_pointer_pos().map(|pos| {
-            let t = f64::from(if vertical {
+            at_travel(f64::from(if vertical {
                 (pos.x - bounds.left()) / bounds.width()
             } else {
                 (bounds.bottom() - pos.y) / bounds.height()
-            })
-            .clamp(0.0, 1.0);
-            if binding.logarithmic && p.min > 0.0 {
-                (p.min.ln() + t * (p.max.ln() - p.min.ln())).exp()
-            } else {
-                p.min + t * (p.max - p.min)
-            }
+            }))
         })
     } else {
         None
@@ -1884,10 +1910,11 @@ pub(crate) fn show(
         painter.fill_background(rect, 0.0, crate::kit::style_class::background(background));
         crate::kit::native_css::background_rounded(&painter, rect, 0.);
     }
-    // A canvas shown larger than its own size (an expanded strip) is stretched to it on each axis;
-    // one shown shorter is fitted by its controls (`fitted_size`), not squeezed.
-    let stretch = Vec2::new(rect.width() / canvas.size[0].max(1.0), rect.height() / canvas.size[1].max(1.0))
-        .max(Vec2::splat(1.0));
+    // A strip is scaled to the rect it is shown in on each axis, smaller too, as it has no scroll
+    // bar. Any other canvas shown larger is stretched the same way; one shown shorter is fitted by
+    // its controls (`fitted_size`), not squeezed.
+    let stretch = Vec2::new(rect.width() / canvas.size[0].max(1.0), rect.height() / canvas.size[1].max(1.0));
+    let stretch = if canvas.strip { stretch } else { stretch.max(Vec2::splat(1.0)) };
     let stretch = if (stretch - Vec2::splat(1.0)).length() < 0.001 { Vec2::splat(1.0) } else { stretch };
     paint_scaled(&painter, &canvas.layers, rect.min, parameters, &loaded, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
@@ -2295,7 +2322,8 @@ pub(crate) fn show(
             } else {
                 0
             };
-            let key_delta = (if axis == 0 { dx } else { dy }) + step_click;
+            // A negative scale steps the other way too; a stepper's own buttons keep their direction.
+            let key_delta = (if axis == 0 { dx } else { dy }) * binding.drag_scale.signum() as i32 + step_click;
             if key_delta != 0
                 && !matches!(
                     control.gesture,

@@ -79,7 +79,9 @@ comes back without a jump.
 
 Per frame, with the left and right sides through the same filters:
 
-1. **Crossovers.** Each side splits at the low crossover into low and the rest, the rest at the
+1. **Crossovers.** Their ranges overlap, so the lower of the two values is the low crossover
+   whichever parameter holds it, and crossed values still give three bands in order. Each side
+   splits at the low crossover into low and the rest, the rest at the
    high crossover into mid and high (24 dB/octave Linkwitz-Riley, −6 dB at each crossover), and
    the low band goes through the high crossover's all-pass, so the three bands add up to a flat
    magnitude (an all-pass; measured flat to 0.011 dB at three crossover pairs, ours to 0.01 dB).
@@ -150,6 +152,8 @@ the three band colours and the gain line are theme tokens (`--device-display`,
   its two meters, which end with the knobs' values and are dragged up or down to change their range (`meterRange`, its bottom number; the band bars share that scale, and every meter falls to nothing within two seconds of silence); and at the right edge the Default and OTT presets in a column of their own. While the expanded strip is open the band view gives way to the
   three bands' curves side by side, each with its power button and Solo, and the rest moves left
   into the chosen band's column.
+- **Keyboard**: a crossover or threshold line takes the focus when clicked, then the arrow keys
+  along its travel move it 1 % of the way (0.1 % with Shift).
 - **Expanded** (1200 × 160, `strip`: a strip over the device row scaled to its width, its header
   with the name and Close, dragged up or down to change its height): the band view stretched to it
   with its handles and a dB scale.
@@ -168,8 +172,9 @@ What `Device::readouts` holds, from the block's last frame:
 |---|---|
 | 0, 2, 4 | the low, mid and high band's level as its follower reads it, smoothed over 80 ms for the display, dB (-100 when off) |
 | 1, 3, 5 | that band's gain change from its stages, scaled by Amount, smoothed the same way, dB (0 when off) |
-| 6, 7 | the output's peak, left and right, dBFS, falling with a 0.3 s time constant |
+| 6, 7 | the output's peak, left and right, dBFS, falling with a 0.145 s time constant (about 60 dB per second) |
 | 8 – 31 | the input spectrum: 24 bands spaced evenly in log frequency from 20 Hz to 20 kHz, each a band-pass with an RMS follower that rises in 10 ms and falls in 300 ms (`suhina_dsp::Analyser`), dB |
+| 32, 33, 34 | the low, mid and high band's peak after its gain stages, dBFS, falling like the output's |
 
 ## Import
 

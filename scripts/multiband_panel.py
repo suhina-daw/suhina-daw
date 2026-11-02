@@ -152,7 +152,9 @@ def value_text(x, y, value, prefix="", suffix="", color=TEXT, size=9.0, decimals
 
 
 def edges(x0, w):
-    return [x0, log_x(par("lowCrossover"), x0, w), log_x(par("highCrossover"), x0, w), x0 + w]
+    """The bands' edges: the crossovers in order, as the device uses them when they are crossed."""
+    low, high = par("lowCrossover"), par("highCrossover")
+    return [x0, log_x(minimum(low, high), x0, w), log_x(maximum(low, high), x0, w), x0 + w]
 
 
 def dashed(x_from, x_to, y, color, width=1.3, dashes=14):
@@ -165,8 +167,9 @@ def dashed(x_from, x_to, y, color, width=1.3, dashes=14):
 def band_change_at(centre, xs_hz):
     """The gain change of the band a frequency `centre` (Hz) falls in."""
     ln_c = math.log(centre)
-    above_low = step(sub(ln_c, {"op": "log", "value": par("lowCrossover")}))
-    above_high = step(sub(ln_c, {"op": "log", "value": par("highCrossover")}))
+    low, high = par("lowCrossover"), par("highCrossover")
+    above_low = step(sub(ln_c, {"op": "log", "value": minimum(low, high)}))
+    above_high = step(sub(ln_c, {"op": "log", "value": maximum(low, high)}))
     return add(readout(1), add(mul(sub(readout(3), readout(1)), above_low), mul(sub(readout(5), readout(3)), above_high)))
 
 
@@ -225,8 +228,8 @@ def band_view(x0, y0, w, h, big=False):
         ring = 6.0 if big else 5.0
         draws += [circle([middle, above], ring, color), circle([middle, above], ring - 2.0, DISPLAY)]
     # The crossovers: a line, a grip at the bottom and the frequency beside it.
-    for i, pid in ((1, "lowCrossover"), (2, "highCrossover")):
-        x = xs[i]
+    for pid in ("lowCrossover", "highCrossover"):
+        x = log_x(par(pid), x0, w)
         draws.append(line([x, y0], [x, y0 + h], ACCENT, 2.0))
         draws.append(circle([x, y0 + h - (16.0 if big else 12.0)], 7.0 if big else 5.0, ACCENT))
         draws.append(text(add(x, -46.0), y0 + h - (34.0 if big else 28.0), "", ACCENT, value_size, parameter=pid,

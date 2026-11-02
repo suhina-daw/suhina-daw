@@ -117,7 +117,7 @@ reads the program's RAM for the control bar and the plug-in hosts' reports their
 | `devices/overdrive` | Pedal-style overdrive: a band into a biased, asymmetric soft curve at twice the sample rate, then tone, dynamics, dry/wet and output; 31 frames of latency. | dsp, device-api |
 | `devices/saturator` | Saturator: eight curves (Analog Clip to a six-amount waveshaper) after a drive, Color filters before the curve and their exact inverse after it, a post clip, output and dry/wet, at four times the sample rate through two IIR half-bands ([spec](spec/saturator.md)); 4 frames of latency. | dsp, device-api |
 | `devices/compressor` | Compressor: stereo-linked feed-forward, peak detector on a high-passed side-chain, soft knee, attack and release in decibels, input and output gain, dry/wet for parallel compression; no latency. | dsp, device-api |
-| `devices/multiband` | Multiband: three bands split by 24 dB/octave Linkwitz-Riley crossovers (the low band through the upper all-pass, so they sum flat); per band an input gain, one level follower on the mean of both sides (on `|x|` in Peak mode, `x²` in RMS mode, time constants of a setting / 8 scaled by Time), an above and a below stage with quadratic knees and a shared gain limit, Amount scaling every gain in decibels; no latency ([spec](spec/multiband.md)). | dsp, device-api |
+| `devices/multiband` | Multiband: three bands split by 24 dB/octave Linkwitz-Riley crossovers (the low band through the upper all-pass, so they sum flat); per band an input gain, one level follower on the mean of both sides (on `\|x\|` in Peak mode, `x²` in RMS mode, time constants of a setting / 8 scaled by Time), an above and a below stage with quadratic knees and a shared gain limit, Amount scaling every gain in decibels; no latency ([spec](spec/multiband.md)). | dsp, device-api |
 | `devices/limiter` | Brickwall peak limiter: threshold as a drive into the ceiling, release, 1.5 ms lookahead (a sliding minimum and a moving average), so no sample comes out over the ceiling; the lookahead is its latency. | dsp, device-api |
 | `devices/delay` | Stereo delay: one line per side read with cubic interpolation, a Butterworth band-pass inside the feedback loop, times synced to the tempo or free, an LFO on the time and the band, Repitch/Fade/Jump, ping-pong and freeze ([spec](spec/delay.md)); no latency. | dsp, device-api |
 | `devices/reverb` | Algorithmic reverb: input band, Live's early-reflection taps and their families, a measured feedback delay network of 4 to 10 lines with allpasses and damping in the loop, chorus, freeze and a stereo rotation ([spec](spec/reverb.md)); no latency. | dsp, device-api |
@@ -358,7 +358,7 @@ so replacing a sample cannot keep an old voice reading the previous source.
 The sample instrument publishes up to 32 independent voice positions through the
 Device API and fixed atomic meter slots; the UI polls them without audio-thread
 allocation or locking. Any built-in device hands its panel up to 35 live values the same way
-(`Device::readouts`, a track's first device that has them; the UI gives them to its canvas as
+(`Device::readouts`, up to eight devices of a track, inside its groups too; the UI gives them to its canvas as
 `#r0` … `#r34`, [ADR 0032](decisions/0032-device-readouts.md)).
 
 ### SDK panel widgets

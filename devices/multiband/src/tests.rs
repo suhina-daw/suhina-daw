@@ -64,6 +64,17 @@ fn fast(extra: &[(usize, f64)]) -> Vec<(usize, f64)> {
 suhina_device_api::conformance_test!(Multiband::new());
 
 #[test]
+fn crossed_crossovers_split_like_the_same_two_in_order() {
+    let mut crossed = device(&[(param::LOW_CROSSOVER, 3_000.0), (param::HIGH_CROSSOVER, 300.0)]);
+    let mut ordered = device(&[(param::LOW_CROSSOVER, 300.0), (param::HIGH_CROSSOVER, 3_000.0)]);
+    let mut a = sine(1_000.0, -12.0, 4_800);
+    let mut b = a.clone();
+    crossed.process(&ProcessContext::default(), &mut a);
+    ordered.process(&ProcessContext::default(), &mut b);
+    assert_eq!(a, b);
+}
+
+#[test]
 fn the_three_bands_sum_flat_at_their_defaults() {
     for hz in [50.0, 120.0, 400.0, 1_000.0, 2_500.0, 8_000.0] {
         let gain = steady_gain_at(hz, &[], -12.0);

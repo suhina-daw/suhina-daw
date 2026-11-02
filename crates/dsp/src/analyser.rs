@@ -34,7 +34,7 @@ impl<const N: usize> Analyser<N> {
             if centre < 0.45 * sample_rate {
                 Biquad::new(Coefficients::bandpass(sample_rate, centre, q))
             } else {
-                Biquad::default()
+                Biquad::new(Coefficients { b0: 0.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 })
             }
         });
         Self { filters, power: [0.0; N], follower: AttackRelease::new(rise, fall, sample_rate) }
@@ -76,6 +76,19 @@ mod tests {
     use super::*;
 
     const SR: f64 = 48_000.0;
+
+    #[test]
+    fn bands_over_45_percent_of_the_rate_stay_silent() {
+        let mut analyser = Analyser::<24>::new(8_000.0, 20.0, 20_000.0, (0.05, 0.05));
+        let hz = Analyser::<24>::centre(12, 20.0, 20_000.0);
+        for n in 0..8_000 {
+            analyser.process((std::f64::consts::TAU * hz * n as f64 / 8_000.0).sin());
+        }
+        let levels = analyser.levels();
+        for (band, level) in levels.iter().enumerate().skip(18) {
+            assert!(*level < levels[12] - 60.0, "band {band}: {level} against {}", levels[12]);
+        }
+    }
 
     #[test]
     fn a_sine_lights_its_own_band_most() {

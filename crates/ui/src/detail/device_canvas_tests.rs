@@ -1763,3 +1763,138 @@ fn a_negative_that_rounds_to_zero_shows_no_minus_sign() {
     assert_eq!(fixed(-0.6, 0), "-1");
     assert_eq!(fixed(-12.5, 1), "-12.5");
 }
+
+/// A canvas of `size` with one control over all of it, on the parameter `id`.
+fn one_control(
+    size: [f32; 2],
+    strip: bool,
+    widget: Option<Widget>,
+    gesture: UiGesture,
+    binding: UiBinding,
+) -> Arc<DeviceUi> {
+    Arc::new(DeviceUi {
+        size,
+        strip,
+        controls: vec![CustomControl {
+            widget,
+            visible_when: None,
+            id: "control".into(),
+            name: "Control".into(),
+            tooltip: String::new(),
+            bounds: [0.0, 0.0, size[0], size[1]],
+            gesture,
+            x: Some(binding),
+            y: None,
+            drawing: vec![],
+        }],
+        ..DeviceUi::default()
+    })
+}
+
+/// Shows `canvas` over `size`, a frame for each list of events, and returns what it dispatched.
+fn frames(
+    canvas: &Arc<DeviceUi>,
+    size: Vec2,
+    parameters: &[GraphParameter],
+    frames: Vec<Vec<egui::Event>>,
+) -> Vec<Action> {
+    let ctx = egui::Context::default();
+    let at = crate::detail::detail_view::DeviceAt::at(0);
+    let mut actions = Vec::new();
+    for events in frames {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size + Vec2::splat(12.0))),
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            show(ui, Rect::from_min_size(Pos2::ZERO, size), canvas, parameters, TrackId(1), &at, &mut actions)
+        });
+        output.textures_delta.clear();
+    }
+    actions
+}
+
+fn press(position: Pos2, pressed: bool) -> Vec<egui::Event> {
+    vec![
+        egui::Event::PointerMoved(position),
+        egui::Event::PointerButton {
+            pos: position,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        },
+    ]
+}
+
+fn key(key: egui::Key) -> Vec<egui::Event> {
+    vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]
+}
+
+/// A click at `position` that gives the control there the focus, and two frames for it to settle.
+fn click_to_focus(position: Pos2) -> Vec<Vec<egui::Event>> {
+    vec![vec![egui::Event::PointerMoved(position)], press(position, true), press(position, false), vec![], vec![]]
+}
+
+fn handle_widget() -> Option<Widget> {
+    Some(Widget::Handle { color: [255, 255, 255, 255], span: None })
+}
+
+fn last_value(actions: &[Action]) -> Option<f64> {
+    actions.last().and_then(|a| a.params["value"].as_f64())
+}
+
+#[test]
+fn a_strip_narrower_than_its_canvas_scales_down_and_its_handles_follow() {
+    let binding = UiBinding::new("level");
+    let canvas = one_control([1200.0, 160.0], true, handle_widget(), UiGesture::Position, binding);
+    let level = parameter("level", false);
+    // The handle at half its travel is at x 300 of a strip 600 wide, not at the canvas's x 600.
+    let grab = Pos2::new(300.0, 40.0);
+    let to = Pos2::new(450.0, 40.0);
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let actions = frames(&canvas, Vec2::new(600.0, 80.0), &[level], events);
+    let value = last_value(&actions).expect("the handle was dragged");
+    assert!((value - 0.75).abs() < 0.01, "{value}");
+}
+
+#[test]
+fn the_arrow_keys_move_a_focused_handle_along_its_travel() {
+    let binding = UiBinding { parameter: "hz".into(), logarithmic: true, drag_scale: 1.0 };
+    let canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, binding);
+    let hz = parameter("hz", true);
+    let size = Vec2::new(400.0, 100.0);
+    let mut events = click_to_focus(Pos2::new(200.0, 50.0));
+    events.push(key(egui::Key::ArrowRight));
+    let value = last_value(&frames(&canvas, size, std::slice::from_ref(&hz), events)).expect("the key moved it");
+    // 1 % of three decades up from 1 kHz.
+    assert!((value - 1_071.5).abs() < 1.0, "{value}");
+    let mut events = click_to_focus(Pos2::new(200.0, 50.0));
+    events.push(key(egui::Key::ArrowUp));
+    assert!(frames(&canvas, size, &[hz], events).is_empty(), "up is across a handle that moves sideways");
+}
+
+#[test]
+fn a_negative_drag_scale_steps_a_discrete_control_the_other_way() {
+    let step = |drag_scale: f32| {
+        let binding = UiBinding { parameter: "count".into(), logarithmic: false, drag_scale };
+        let canvas = one_control([60.0, 60.0], false, None, UiGesture::Drag, binding);
+        let count = GraphParameter {
+            control: suhina_device_sdk::ParameterControl::Integer,
+            min: 0.0,
+            max: 10.0,
+            value: 5.0,
+            ..parameter("count", false)
+        };
+        let mut events = click_to_focus(Pos2::new(30.0, 30.0));
+        events.push(key(egui::Key::ArrowRight));
+        last_value(&frames(&canvas, Vec2::splat(60.0), &[count], events))
+    };
+    assert_eq!(step(1.0), Some(6.0));
+    assert_eq!(step(-1.0), Some(4.0));
+}
