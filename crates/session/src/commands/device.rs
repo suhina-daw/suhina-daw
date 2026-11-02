@@ -307,6 +307,23 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "device.randomize",
+        label: "Give a device with a randomizer (the FM Synth) new values, moved from the current ones by each section's percentage, as one undo step; sections and locks are its random.* parameters",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            optional(
+                "seed",
+                ParamType::Number,
+                "whole number that picks the result, 0 or more; without it the device's stored seed is used and moves on",
+            ),
+            optional("amount", ParamType::Number, "0..1 over the sections' percentages; without it the device's Amount"),
+        ],
+        kind: CommandKind::Edit,
+        run: devices::randomize,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "device.setAutomation",
         label: "Automate a built-in, .sd or plug-in device parameter over the arrangement: points of beat and value, a straight line between them; no points removes the automation (automation.addPoint edits one point)",
         params: &[

@@ -231,7 +231,7 @@ pub const SOURCES: [&str; 4] = ["wheel", "foot", "breath", "pressure"];
 
 const CURVES: &[&str] = &["-Lin", "-Exp", "+Exp", "+Lin"];
 const MODES: &[&str] = &["Ratio", "Fixed"];
-const WAVES: &[&str] = &["Triangle", "Saw Down", "Saw Up", "Square", "Sine", "Sample & Hold"];
+const LFO_WAVES: &[&str] = &["Triangle", "Saw Down", "Saw Up", "Square", "Sine", "Sample & Hold"];
 
 macro_rules! op_params {
     ($n:literal, $level:literal) => {
@@ -324,7 +324,7 @@ const GLOBALS: [ParamInfo; GLOBAL_COUNT] = [
     ParamInfo::integer("lfoPitchDepth", "LFO Pitch Depth", (0, 99), 0, Unit::None),
     ParamInfo::integer("lfoAmpDepth", "LFO Amp Depth", (0, 99), 0, Unit::None),
     ParamInfo::toggle("lfoKeySync", "LFO Key Sync", true),
-    ParamInfo::choice("lfoWave", "LFO Wave", WAVES, 0),
+    ParamInfo::choice("lfoWave", "LFO Wave", LFO_WAVES, 0),
     ParamInfo::integer("pitchModSens", "Pitch Mod Sensitivity", (0, 7), 3, Unit::None),
     ParamInfo::integer("transpose", "Transpose", (-24, 24), 0, Unit::None),
 ];

@@ -62,6 +62,12 @@ pub const LAYOUT_FILES: &[(&str, &str)] = &[
     ("fm-synth", include_str!("../../../devices/fm-synth/panel.json")),
 ];
 
+/// New values for a device's randomizer from its current `values`, in parameter order: which
+/// parameters change and to what. `None` for a device without a randomizer.
+pub fn randomize(id: &str, values: &[f64], seed: Option<u32>, amount: Option<f64>) -> Option<Vec<(usize, f64)>> {
+    (id == suhina_device_fm_synth::INFO.id).then(|| suhina_device_fm_synth::random::randomize(values, seed, amount))
+}
+
 /// The panel of the device with this id: its parameters from its `DeviceInfo`, laid out by its
 /// layout, or the generated parameter list when it has none or its layout does not load.
 /// Made once per id while Suhina runs, off the audio thread. `None` for an unknown id.

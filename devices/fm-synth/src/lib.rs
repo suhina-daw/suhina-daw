@@ -27,6 +27,7 @@ mod kernel;
 mod lfo;
 pub mod params;
 pub mod patch;
+pub mod random;
 pub mod tables;
 mod time_env;
 mod voice;

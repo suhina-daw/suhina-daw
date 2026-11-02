@@ -25,7 +25,7 @@ fn lists_the_built_in_devices_and_their_parameters() {
     let algorithm = fm["params"].as_array().unwrap().iter().find(|p| p["id"] == "algorithm").unwrap();
     assert_eq!(
         (algorithm["kind"].as_str(), algorithm["min"].as_f64(), algorithm["max"].as_f64()),
-        (Some("integer"), Some(1.0), Some(32.0))
+        (Some("integer"), Some(1.0), Some(43.0))
     );
     let utility = list.as_array().unwrap().iter().find(|d| d["id"] == "utility").unwrap();
     assert_eq!(utility["role"], "effect");
@@ -42,9 +42,9 @@ fn devices_are_added_set_switched_and_removed_with_undo() {
     let added = run(&mut session, "device.add", json!({ "track": "Keys", "id": "fm-synth" })).unwrap();
     assert_eq!(added["device"], 0);
     let set =
-        run(&mut session, "device.setParam", json!({ "track": 1, "device": 0, "param": "algorithm", "value": 40 }))
+        run(&mut session, "device.setParam", json!({ "track": 1, "device": 0, "param": "algorithm", "value": 400 }))
             .unwrap();
-    assert_eq!(set["value"], 32.0, "limited to the range");
+    assert_eq!(set["value"], 43.0, "limited to the range");
     run(&mut session, "device.setParam", json!({ "track": 1, "device": 0, "param": "algorithm", "value": 5.4 }))
         .unwrap();
     run(&mut session, "device.setEnabled", json!({ "track": 1, "device": 2, "enabled": false })).unwrap();
@@ -1239,4 +1239,30 @@ fn a_gesture_on_a_device_in_a_group_is_one_undo_step() {
     assert_ne!(session.project(), &before);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project(), &before);
+}
+
+#[test]
+fn the_randomizer_moves_a_device_as_one_undo_step_and_repeats_from_a_seed() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "fm-synth" })).unwrap();
+    let randomized = run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "seed": 5 })).unwrap();
+    assert!(randomized["changed"].as_u64().unwrap() > 0);
+    let params = session.project().channels[0].devices[0].params.clone();
+    assert!(!params.is_empty());
+
+    run(&mut session, "history.undo", json!({})).unwrap();
+    assert!(session.project().channels[0].devices[0].params.is_empty());
+    run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "seed": 5 })).unwrap();
+    assert_eq!(session.project().channels[0].devices[0].params, params);
+}
+
+#[test]
+fn the_randomizer_refuses_what_it_cannot_do() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "fm-synth" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "utility" })).unwrap();
+    assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 1 })).is_err());
+    assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 9 })).is_err());
+    assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "seed": -1 })).is_err());
+    assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "amount": 2 })).is_err());
 }
