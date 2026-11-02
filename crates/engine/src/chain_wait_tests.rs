@@ -94,6 +94,58 @@ impl PluginProcessor for Timed {
     }
 }
 
+/// A plug-in whose blocks take the times in `delays`, one each. One it is late with stays out, as
+/// in a real host: until its answer is due, it takes no block.
+struct Catching {
+    name: &'static str,
+    delays: std::vec::IntoIter<Duration>,
+    due: Option<Instant>,
+    result: Vec<f32>,
+    log: Arc<Mutex<Vec<Hand>>>,
+}
+
+impl Catching {
+    fn answer_in(&self, until: Instant) -> bool {
+        let Some(due) = self.due else { return true };
+        Manual::advance_to(until.min(due));
+        clock::now() >= due
+    }
+}
+
+impl PluginProcessor for Catching {
+    fn process(&mut self, _: &mut [f32], _: &[(usize, NoteEvent)], _: Duration) -> bool {
+        false
+    }
+
+    fn send(&mut self, buffer: &[f32], _: &[(usize, NoteEvent)], _: Duration) -> Sent {
+        let sent = clock::now();
+        if self.due.is_some_and(|due| due > sent) {
+            return Sent::Refused;
+        }
+        let due = sent + self.delays.next().unwrap_or(QUICK);
+        self.due = Some(due);
+        self.result = buffer.to_vec();
+        self.log.lock().unwrap().push(Hand { name: self.name, sent, due });
+        Sent::Out
+    }
+
+    fn poll(&mut self, until: Instant) -> bool {
+        self.answer_in(until)
+    }
+
+    fn ready(&mut self, until: Instant) -> bool {
+        self.answer_in(until)
+    }
+
+    fn wait(&mut self, buffer: &mut [f32], timeout: Duration) -> bool {
+        if !self.answer_in(clock::now() + timeout) {
+            return false;
+        }
+        buffer.copy_from_slice(&self.result[..buffer.len()]);
+        true
+    }
+}
+
 fn plug() -> Device {
     let mut d = device("plug-in", &[]);
     d.kind = DeviceKind::Vst3 { id: "565354416263646566".into() };
@@ -257,6 +309,56 @@ fn a_hung_plug_in_holds_up_only_its_own_chain_and_only_until_the_deadline() {
     // The hung plug-in missed, and the one after it, handed the block past the deadline, too.
     assert!(missed[0] >= 1, "{missed:?}");
     assert_eq!(&missed[1..], [0, 0], "the other chains answered in time");
+}
+
+/// A plug-in that takes longer than a whole block over a burst of work (the notes of a start or a
+/// stop) misses that block only: the next block goes to it as soon as it has caught up, in time
+/// for that block's deadline, rather than being refused and lost too (#506). While its chain waits
+/// for that, the other chain goes on.
+#[test]
+fn a_plug_in_catching_up_costs_that_block_only_and_holds_up_no_other_chain() {
+    const BURST: Duration = Duration::from_millis(140);
+    let p = tracks(vec![vec![plug()], vec![plug()]]);
+    let log: Arc<Mutex<Vec<Hand>>> = Arc::default();
+    Manual::start();
+    let stands: Vec<Box<dyn PluginProcessor>> = vec![
+        Box::new(Catching {
+            name: "slow",
+            delays: vec![BURST, QUICK].into_iter(),
+            due: None,
+            result: Vec::new(),
+            log: Arc::clone(&log),
+        }),
+        Box::new(Timed::new("other", 0.5, QUICK, &log)),
+    ];
+    let mut plugs = Plugins::new();
+    for (found, stand) in plugin_devices(&p).into_iter().zip(stands) {
+        plugs.insert(found.key, EFFECT, stand);
+    }
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugs),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let started = clock::now();
+    play(&mut renderer, 1);
+    let missed: Vec<u64> = renderer.graph.chains.iter_mut().map(|c| c.missed()).collect();
+    assert_eq!(missed, [1, 0], "the burst is past the block's deadline");
+
+    // The next block starts in time, with the burst over a little into it.
+    let second = started + Duration::from_secs_f64(FRAMES as f64 / f64::from(SR));
+    assert!(second < started + BURST);
+    Manual::advance_to(second);
+    play(&mut renderer, 1);
+    let log = log.lock().unwrap().clone();
+    let last = |name: &str| *log.iter().rev().find(|hand| hand.name == name).unwrap();
+    assert_eq!(last("other").sent, second, "the other chain did not wait for the plug-in catching up: {log:?}");
+    assert!(last("slow").sent >= started + BURST, "{log:?}");
+    assert_eq!(log.iter().filter(|hand| hand.name == "slow").count(), 2, "not refused: {log:?}");
+    let missed: Vec<u64> = renderer.graph.chains.iter_mut().map(|c| c.missed()).collect();
+    assert_eq!(missed, [1, 0], "the burst cost its own block only");
 }
 
 /// An offline render sounds the same whatever order the chains' plug-ins answer in, and the

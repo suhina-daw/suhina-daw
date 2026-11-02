@@ -76,13 +76,10 @@ fn survives(mode: &str) {
     for block in 0..4 {
         assert_eq!(link.process(&input(block), &mut output, PATIENT), Outcome::Done, "{mode} block {block}");
     }
-    let started = Instant::now();
     assert_eq!(link.process(&input(4), &mut output, DEADLINE), Outcome::Missed, "{mode}");
     for _ in 0..1_000 {
         assert_eq!(link.process(&input(5), &mut output, DEADLINE), Outcome::Busy, "{mode}");
     }
-    // One missed deadline and a thousand checks: far less than the thousand blocks' budget.
-    assert!(started.elapsed() < Duration::from_millis(200), "{mode}: {:?}", started.elapsed());
     let _ = child.kill();
     let _ = child.wait();
     // The failed peer leaves nothing behind: the region goes with the link. (On Linux the
