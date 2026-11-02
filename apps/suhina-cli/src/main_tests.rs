@@ -79,12 +79,14 @@ fn a_project_files_device_params_reach_the_render() {
 }
 
 #[test]
-fn demo_project_is_valid_and_renders_two_bars() {
-    let project = demo_project();
+fn the_demo_project_is_the_apps_and_renders_its_arrangement() {
+    // The window's demo project, one for both (#764 › 12): 48 bars at 122 bpm.
+    let project = suhina_session::demo_project();
     assert_eq!(project.validate(), Ok(()));
-    let samples = suhina_engine::render_offline(&project, 48_000, 512, suhina_session::devices()).unwrap();
-    let seconds = samples.len() as f64 / 2.0 / 48_000.0;
-    assert!((4.0..4.2).contains(&seconds), "{seconds} s");
+    let samples = suhina_engine::render_offline(&project, 8_000, 512, suhina_session::devices()).unwrap();
+    let seconds = samples.len() as f64 / 2.0 / 8_000.0;
+    let length = 192.0 * 60.0 / 122.0;
+    assert!((length - 1.0..length + 1.0).contains(&seconds), "{seconds} s");
     let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
     assert!(peak > 0.1 && peak <= 1.0, "peak {peak}");
 }
@@ -141,7 +143,7 @@ fn a_source_render_writes_the_nodes_sum_alone() {
         audio_output: suhina_session::OutputChoice::default(),
     };
     render(&args(&whole, None)).unwrap();
-    render(&args(&chords, Some("Chords"))).unwrap();
+    render(&args(&chords, Some("Keys"))).unwrap();
     let chords_peak = peak_of(&chords);
     assert!(chords_peak > 0.1, "the node sounds alone: {chords_peak}");
     assert!(peak_of(&whole) > chords_peak, "the whole mix sums its tracks over one of them");
@@ -171,7 +173,7 @@ fn play_args_take_a_project_but_no_output() {
 
 #[test]
 fn scene_replaces_the_arrangement_with_its_clips() {
-    let mut project = demo_project();
+    let mut project = suhina_session::demo_project();
     let clip = project.arrangement.lanes[0].clips[0].clone();
     project.launcher = Launcher {
         mappings: Vec::new(),
@@ -208,12 +210,22 @@ fn fm_plays_every_note_track_with_a_voice_from_a_bank() {
     assert!(load_voice(&FmChoice { voices: Some(path.clone()), voice: 40 }).is_err());
     assert!(fm_synth(&["voices".into(), path.display().to_string()]).is_ok());
 
-    let mut project = demo_project();
+    let mut project = suhina_session::demo_project();
     put_fm_synth_on_note_tracks(&mut project, &loaded);
     // Twice: the synth replaces the instrument it put there before.
     put_fm_synth_on_note_tracks(&mut project, &loaded);
-    assert!(project.channels.iter().all(|c| c.devices.len() == 1));
-    let stored = &project.channels[0].devices[0];
+    // The note tracks' channels hold the synth alone; the demo's audio tracks, returns and main
+    // channel are left as they are.
+    let note_channels: Vec<usize> = project
+        .tracks
+        .iter()
+        .filter(|t| t.content.notes)
+        .filter_map(|t| project.channels.iter().position(|c| Some(c.id) == t.channel))
+        .collect();
+    assert!(!note_channels.is_empty());
+    assert!(note_channels.iter().all(|&c| project.channels[c].devices.len() == 1));
+    let first = note_channels[0];
+    let stored = &project.channels[first].devices[0];
     assert_eq!(stored.kind, DeviceKind::Builtin("fm-synth".into()));
     assert!(stored.params.iter().any(|p| p.id == "op2.coarse" && p.value == 3.0));
     let samples = suhina_engine::render_offline(&project, 48_000, 512, suhina_session::devices()).unwrap();
@@ -223,9 +235,9 @@ fn fm_plays_every_note_track_with_a_voice_from_a_bank() {
 
     // A MIDI effect leading a chain stays before the synth.
     let pitch = Device::new("Pitch", DeviceKind::Builtin("pitch".into()));
-    project.channels[0].devices.insert(0, pitch);
+    project.channels[first].devices.insert(0, pitch);
     put_fm_synth_on_note_tracks(&mut project, &loaded);
-    let ids: Vec<&DeviceKind> = project.channels[0].devices.iter().map(|d| &d.kind).collect();
+    let ids: Vec<&DeviceKind> = project.channels[first].devices.iter().map(|d| &d.kind).collect();
     assert_eq!(ids, [&DeviceKind::Builtin("pitch".into()), &DeviceKind::Builtin("fm-synth".into())]);
 }
 

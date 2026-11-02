@@ -345,7 +345,7 @@ fn parse_args(args: &[String], command: Command) -> Result<Args, String> {
 /// applies `--scene`.
 fn load_project(args: &Args) -> Result<(Project, AudioPool, suhina_engine::DeviceAssets), String> {
     let (project, audio, assets) = match &args.source {
-        Source::Demo => (demo_project(), AudioPool::new(), suhina_engine::DeviceAssets::new()),
+        Source::Demo => (suhina_session::demo_project(), AudioPool::new(), suhina_engine::DeviceAssets::new()),
         Source::Als(path) => {
             // A Suhina project (.suhina) or a Live Set to import.
             // Opened, and its audio trusted, as the window and the MCP server do (#764 › 3).
@@ -510,99 +510,6 @@ fn render(args: &Args) -> Result<(), String> {
         println!("wrote the cue to {}", cue.display());
     }
     Ok(())
-}
-
-/// Two bars at 120 bpm: a bass line and a chord pattern on separate tracks, each placed twice.
-fn demo_project() -> Project {
-    let note = |time: f64, duration: f64, key: u8, velocity: f32| Note {
-        time,
-        duration,
-        key,
-        velocity,
-        release_velocity: 0.5,
-        channel: 0,
-        muted: false,
-    };
-    let track = |id: u32, name: &str| Track {
-        id: TrackId(id),
-        name: name.into(),
-        color: None,
-        content: ContentKinds { notes: true, audio: false },
-        channel: Some(ChannelId(id)),
-        parent: None,
-        midi_input: Default::default(),
-        audio_input: Default::default(),
-        extensions: Extensions::default(),
-    };
-    let channel = |id: u32, name: &str, volume: f64, pan: f64| Channel {
-        id: ChannelId(id),
-        name: name.into(),
-        role: ChannelRole::Regular,
-        volume,
-        pan,
-        mute: false,
-        solo: false,
-        cue: false,
-        output: None,
-        sends: Vec::new(),
-        devices: Vec::new(),
-        extensions: Extensions::default(),
-        automation: Vec::new(),
-    };
-    let content = |id: u32, name: &str, notes: Vec<Note>| ClipContent {
-        id: ContentId(id),
-        name: name.into(),
-        length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
-        extensions: Extensions::default(),
-        scale: None,
-    };
-    let clip = |content: u32, start: f64| Clip {
-        id: Default::default(),
-        content: ContentId(content),
-        start,
-        length: 4.0,
-        offset: 0.0,
-        loop_range: None,
-        enabled: true,
-        fade_in: 0.0,
-        fade_out: 0.0,
-        fade_in_curve: Default::default(),
-        fade_out_curve: Default::default(),
-        follow_action: Default::default(),
-        launch: Default::default(),
-        color: None,
-        ara: false,
-        extensions: Extensions::default(),
-    };
-
-    let bass = (0..8).map(|i| note(f64::from(i) * 0.5, 0.4, if i % 4 == 3 { 43 } else { 36 }, 0.9)).collect();
-    let chords = [0.0, 1.5, 2.5].into_iter().flat_map(|t| [60, 64, 67].map(|k| note(t, 0.75, k, 0.5))).collect();
-
-    Project {
-        tracks: vec![track(1, "Bass"), track(2, "Chords")],
-        channels: vec![channel(1, "Bass", 0.9, 0.0), channel(2, "Chords", 0.6, 0.3)],
-        contents: vec![content(1, "Bass", bass), content(2, "Chords", chords)],
-        arrangement: Arrangement {
-            lanes: vec![
-                ArrangementLane {
-                    id: Default::default(),
-                    name: "Bass".into(),
-                    track: Some(TrackId(1)),
-                    clips: vec![clip(1, 0.0), clip(1, 4.0)],
-                },
-                ArrangementLane {
-                    id: Default::default(),
-                    name: "Chords".into(),
-                    track: Some(TrackId(2)),
-                    clips: vec![clip(2, 0.0), clip(2, 4.0)],
-                },
-            ],
-            markers: Vec::new(),
-            takes: Vec::new(),
-        },
-        ..Project::default()
-    }
 }
 
 #[cfg(test)]

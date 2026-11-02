@@ -167,7 +167,8 @@ crates/ui/src/
                  timeline_grid (the lines and snapping of the arrangement, piano roll and automation)
   kit/           what every view draws with: theme, widgets, meter, motion, logo, waveform, scroll,
                  surface (backgrounds that set the window's pixels)
-  demo.rs        the demo project the app opens with `--demo` and the tests draw
+  demo           `suhina_session::demo_project`, re-exported: the demo project the app and the
+                 CLI open with `--demo` and the tests draw
 ```
 
 The rule: a view uses `interaction/`, `kit/` and the stored settings, never another view's

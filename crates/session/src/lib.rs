@@ -40,6 +40,7 @@ mod clip_edges;
 mod clip_shape;
 mod clipboards;
 mod commands;
+mod demo;
 mod device_files;
 mod device_groups;
 mod devices;
@@ -91,6 +92,7 @@ pub use commands::{
     After, Agents, CommandKind, CommandSpec, Effect, Param, ParamType, PathKind, Policy, Recent, Run, Target, commands,
     parse_quantization,
 };
+pub use demo::{demo_project, grouped_project};
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::{MAX_FILES, file_tempo};
 pub use library::{Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items};
