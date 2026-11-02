@@ -13,9 +13,10 @@
 //! The engine works in blocks of 64 frames ([`tables::N`]) on a grid that runs from the last
 //! reset: a note, a controller or a parameter change takes effect at the next block boundary,
 //! so the output never depends on how the host divides a stream, and timing is exact to 64
-//! frames (1.3 ms at 48 kHz). The engine is mono; both sides carry the same signal.
+//! frames (1.3 ms at 48 kHz). Notes sum to a stereo pair: each has its pan, and spread plays a
+//! second, detuned note panned away from the first.
 //!
-//! Sixteen voices; a new note takes the voice already on its pitch, then a silent one, then the
+//! Sixteen voices by default, up to 32; at one, notes play legato. A new note takes the voice already on its pitch, then a silent one, then the
 //! oldest released one, then the oldest. The engine files carry their own notices (Apache-2.0);
 //! the rest of this crate is Suhina's own.
 
@@ -34,18 +35,23 @@ use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, ParamBank, ProcessContext, Role,
     check_sample_rate, controller,
 };
+use suhina_dsp::{FirstOrder, FirstOrderCoefficients};
 
 use crate::core::Buses;
 use crate::lfo::Lfo;
-use crate::params::{COUNT, GLOBAL, OP_PARAMS, PARAMS, PERFORMANCE, op};
+use crate::params::{COUNT, EXTENDED, GLOBAL, OP_PARAMS, PARAMS, PERFORMANCE, op};
 pub use crate::patch::Patch;
 use crate::tables::{N, Tables};
 use crate::voice::{Controllers, ModRoute, Note};
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "fm-synth", name: "FM Synth", role: Role::Instrument, params: &PARAMS };
 
-/// Notes that can sound at once.
-pub const VOICES: usize = 16;
+/// The most notes that can sound at once; the Voices parameter chooses how many do.
+pub const VOICES: usize = 32;
+/// How far spread at full detunes each of a note's two sides: 20 cents, Q24 per octave.
+const SPREAD_DETUNE: f32 = (1u32 << 24) as f32 * 20.0 / 1200.0;
+/// Where random pan starts after a reset.
+const RANDOM_SEED: u32 = 0x9e37_79b9;
 
 /// One voice at full scale in the engine's output.
 const FULL_SCALE: f32 = (1u32 << 28) as f32;
@@ -65,6 +71,36 @@ struct Slot {
     live: bool,
     /// Order of key presses, for stealing the oldest.
     seq: i64,
+    /// The detuned second note, played while `spread` holds.
+    twin: Note,
+    spread: bool,
+    /// Left and right gains of `note` and of `twin`, read when the note started.
+    gains: [f32; 2],
+    twin_gains: [f32; 2],
+}
+
+impl Slot {
+    fn release(&mut self, tables: &Tables) {
+        self.note.key_up(tables);
+        if self.spread {
+            self.twin.key_up(tables);
+        }
+    }
+}
+
+/// Left and right gains for `pan` (-1 to 1): the far side falls, the centre is untouched.
+fn balance(pan: f32) -> [f32; 2] {
+    let pan = pan.clamp(-1.0, 1.0);
+    [(1.0 - pan).min(1.0), (1.0 + pan).min(1.0)]
+}
+
+/// Adds a block of a note to a stereo sum at `gains`.
+fn mix(sum: &mut [[f32; 2]; N], out: &[i32; N], gains: [f32; 2]) {
+    for (s, &v) in sum.iter_mut().zip(out) {
+        let v = (v as f32 / FULL_SCALE).clamp(-1.0, 1.0);
+        s[0] += v * gains[0];
+        s[1] += v * gains[1];
+    }
 }
 
 impl Default for Slot {
@@ -78,6 +114,10 @@ impl Default for Slot {
             sustained: false,
             live: false,
             seq: -1,
+            twin: Note::default(),
+            spread: false,
+            gains: [1.0; 2],
+            twin_gains: [1.0; 2],
         }
     }
 }
@@ -93,7 +133,19 @@ pub struct FmSynth {
     lfo: Lfo,
     sustain: bool,
     buses: Buses,
-    block: [f32; N],
+    block: [[f32; 2]; N],
+    sample_rate: f64,
+    voices: usize,
+    spread: f32,
+    pan_by_key: f32,
+    pan_random: f32,
+    /// For random pan; starts over at a reset, so a render repeats.
+    random: u32,
+    pan: [f32; 2],
+    target_pan: [f32; 2],
+    /// Below 1, a low-pass over the sum.
+    tone: f64,
+    tone_filter: [FirstOrder; 2],
     position: usize,
     gain: f32,
     target_gain: f32,
@@ -120,7 +172,17 @@ impl FmSynth {
             lfo: Lfo::default(),
             sustain: false,
             buses: Buses::default(),
-            block: [0.0; N],
+            block: [[0.0; 2]; N],
+            sample_rate: DEFAULT_SAMPLE_RATE,
+            voices: 16,
+            spread: 0.0,
+            pan_by_key: 0.0,
+            pan_random: 0.0,
+            random: RANDOM_SEED,
+            pan: [1.0; 2],
+            target_pan: [1.0; 2],
+            tone: 1.0,
+            tone_filter: [FirstOrder::new(FirstOrderCoefficients::lowpass(DEFAULT_SAMPLE_RATE, 20_000.0)); 2],
             position: N,
             gain: 1.0,
             target_gain: 1.0,
@@ -138,8 +200,14 @@ impl FmSynth {
         self.patch
     }
 
-    /// Loads a voice: every voice parameter takes its value (performance parameters stay).
+    /// Loads a voice: every voice parameter takes its value, what a voice file does not hold
+    /// goes back to neutral (performance parameters stay).
     pub fn load_patch(&mut self, patch: &Patch) {
+        for (i, info) in PARAMS.iter().enumerate().skip(EXTENDED) {
+            if i != params::VOICE_COUNT {
+                self.set_param(i, info.default);
+            }
+        }
         for op_index in 0..6 {
             let stored = 5 - op_index;
             let o = patch.op(stored);
@@ -222,6 +290,15 @@ impl FmSynth {
                     c.portamento_time = (value * 127.0 / 99.0).round().clamp(0.0, 127.0) as usize
                 }
                 params::VOLUME => self.target_gain = 10f32.powf(value as f32 / 20.0),
+                params::PAN => self.target_pan = balance(value as f32),
+                params::PAN_BY_KEY => self.pan_by_key = value as f32,
+                params::PAN_RANDOM => self.pan_random = value as f32,
+                params::SPREAD => self.spread = value as f32,
+                params::VOICE_COUNT => self.voices = (value as usize).clamp(1, VOICES),
+                params::TONE => {
+                    self.tone = value;
+                    self.set_tone_filter();
+                }
                 i if (params::ROUTES..params::VOLUME).contains(&i) => {
                     let (source, field) = ((i - params::ROUTES) / 4, (i - params::ROUTES) % 4);
                     let route: &mut ModRoute = match source {
@@ -243,12 +320,37 @@ impl FmSynth {
         }
     }
 
+    /// Tone from 0 to 1 is a low-pass from 200 Hz to 20 kHz; at 1 there is no filter.
+    fn set_tone_filter(&mut self) {
+        let frequency = (200.0 * 100f64.powf(self.tone)).min(self.sample_rate * 0.45);
+        let coefficients = FirstOrderCoefficients::lowpass(self.sample_rate, frequency);
+        for filter in &mut self.tone_filter {
+            filter.set(coefficients);
+        }
+    }
+
+    /// The next number from -1 to 1 for random pan (xorshift).
+    fn next_random(&mut self) -> f32 {
+        let mut x = self.random;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.random = x;
+        (x as f32 / u32::MAX as f32) * 2.0 - 1.0
+    }
+
     /// The voice for a new note sounding `sounding`, in this order: the voice already sounding
     /// that pitch, so a repeated key neither doubles nor cancels itself; a silent voice; the
     /// released voice that started first; the voice that started first.
     fn pick_voice(&self, sounding: i32) -> usize {
         let first_started = |wanted: &dyn Fn(&Slot) -> bool| {
-            self.slots.iter().enumerate().filter(|(_, s)| wanted(s)).min_by_key(|(_, s)| s.seq).map(|(i, _)| i)
+            self.slots
+                .iter()
+                .take(self.voices)
+                .enumerate()
+                .filter(|(_, s)| wanted(s))
+                .min_by_key(|(_, s)| s.seq)
+                .map(|(i, _)| i)
         };
         first_started(&|s| s.live && s.note.is_playing() && s.sounding == sounding)
             .or_else(|| first_started(&|s| !s.live || !s.note.is_playing()))
@@ -263,6 +365,22 @@ impl FmSynth {
         if !self.slots.iter().any(|s| s.down) {
             self.lfo.key_down();
         }
+        // One voice plays legato: a key pressed over a held one moves the pitch, the envelopes
+        // run on.
+        if self.voices == 1
+            && let Some(slot) = self.slots.first_mut()
+            && slot.live
+            && slot.down
+            && slot.note.is_playing()
+        {
+            slot.key = key;
+            slot.sounding = sounding;
+            slot.note.retune(&self.patch, sounding, slot.velocity, &self.tables);
+            if slot.spread {
+                slot.twin.retune(&self.patch, sounding, slot.velocity, &self.tables);
+            }
+            return;
+        }
         let index = self.pick_voice(sounding);
         let glide = self.controllers.portamento && self.controllers.portamento_time > 0;
         // A glide starts from wherever the previous note's pitch is now.
@@ -274,16 +392,39 @@ impl FmSynth {
             .map(|s| s.note);
         let (sustain, seq, sync) = (self.sustain, self.next_seq, self.patch.osc_key_sync());
         self.next_seq += 1;
+        let random = if self.pan_random > 0.0 { self.next_random() * self.pan_random } else { 0.0 };
+        let note_pan = (f32::from(key) - 60.0) / 60.0 * self.pan_by_key + random;
+        let spread = self.spread;
         let Some(slot) = self.slots.get_mut(index) else { return };
         // A voice taken over while it sounds keeps its phases, so the change does not click.
         let was_sounding = slot.live && slot.note.is_playing();
-        *slot = Slot { key, sounding, velocity, down: true, sustained: sustain, live: true, seq, note: slot.note };
+        *slot = Slot {
+            key,
+            sounding,
+            velocity,
+            down: true,
+            sustained: sustain,
+            live: true,
+            seq,
+            note: slot.note,
+            twin: slot.twin,
+            spread: spread > 0.0,
+            gains: balance(note_pan - spread),
+            twin_gains: balance(note_pan + spread),
+        };
         slot.note.init(&self.patch, sounding, velocity, &self.tables);
+        slot.note.set_pitch_offset((spread * SPREAD_DETUNE) as i32);
+        if slot.spread {
+            slot.twin.init(&self.patch, sounding, velocity, &self.tables);
+            slot.twin.set_pitch_offset(-(spread * SPREAD_DETUNE) as i32);
+        }
         if sync && !was_sounding {
             slot.note.sync_oscillators();
+            slot.twin.sync_oscillators();
         }
         if let Some(from) = glide_from {
             slot.note.take_portamento(&from);
+            slot.twin.take_portamento(&from);
         }
         self.last_slot = Some(index);
     }
@@ -296,7 +437,7 @@ impl FmSynth {
             if sustain {
                 slot.sustained = true;
             } else {
-                slot.note.key_up(tables);
+                slot.release(tables);
             }
         }
     }
@@ -306,7 +447,7 @@ impl FmSynth {
         if !down {
             for slot in &mut self.slots {
                 if slot.sustained && !slot.down {
-                    slot.note.key_up(&self.tables);
+                    slot.release(&self.tables);
                     slot.sustained = false;
                 }
             }
@@ -319,7 +460,7 @@ impl FmSynth {
             if slot.down || slot.sustained {
                 slot.down = false;
                 slot.sustained = false;
-                slot.note.key_up(&self.tables);
+                slot.release(&self.tables);
             }
         }
     }
@@ -328,25 +469,43 @@ impl FmSynth {
         if self.changed {
             for slot in self.slots.iter_mut().filter(|s| s.live) {
                 slot.note.retune(&self.patch, slot.sounding, slot.velocity, &self.tables);
+                if slot.spread {
+                    slot.twin.retune(&self.patch, slot.sounding, slot.velocity, &self.tables);
+                }
             }
             self.changed = false;
         }
         let lfo = self.lfo.next(&self.tables);
         let delay = self.lfo.delay();
-        let mut sum = [0.0f32; N];
+        let mut sum = [[0.0f32; 2]; N];
         for slot in self.slots.iter_mut().filter(|s| s.live && s.note.is_playing()) {
             let mut out = [0i32; N];
             slot.note.compute(&mut out, lfo, delay, &self.controllers, &mut self.buses, &self.tables);
-            for (s, v) in sum.iter_mut().zip(out) {
-                *s += (v as f32 / FULL_SCALE).clamp(-1.0, 1.0);
+            mix(&mut sum, &out, slot.gains);
+            if slot.spread {
+                let mut out = [0i32; N];
+                slot.twin.compute(&mut out, lfo, delay, &self.controllers, &mut self.buses, &self.tables);
+                mix(&mut sum, &out, slot.twin_gains);
+            }
+        }
+        if self.tone < 1.0 {
+            let [left, right] = &mut self.tone_filter;
+            for s in &mut sum {
+                s[0] = left.process(f64::from(s[0])) as f32;
+                s[1] = right.process(f64::from(s[1])) as f32;
             }
         }
         let start = self.gain;
         let step = (self.target_gain - start) / N as f32;
+        let pan = self.pan;
+        let pan_step = [(self.target_pan[0] - pan[0]) / N as f32, (self.target_pan[1] - pan[1]) / N as f32];
         for (i, (out, s)) in self.block.iter_mut().zip(sum).enumerate() {
-            *out = s * (start + step * (i + 1) as f32);
+            let t = (i + 1) as f32;
+            let gain = start + step * t;
+            *out = [s[0] * gain * (pan[0] + pan_step[0] * t), s[1] * gain * (pan[1] + pan_step[1] * t)];
         }
         self.gain = self.target_gain;
+        self.pan = self.target_pan;
     }
 }
 
@@ -363,6 +522,8 @@ impl Device for FmSynth {
     fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
         let sample_rate = check_sample_rate(sample_rate)?;
         *self.tables = Tables::new(sample_rate);
+        self.sample_rate = sample_rate;
+        self.set_tone_filter();
         self.reset();
         Ok(())
     }
@@ -382,9 +543,14 @@ impl Device for FmSynth {
         c.pressure = 0;
         c.refresh();
         self.buses = Buses::default();
-        self.block = [0.0; N];
+        self.block = [[0.0; 2]; N];
         self.position = N;
         self.gain = self.target_gain;
+        self.pan = self.target_pan;
+        self.random = RANDOM_SEED;
+        for filter in &mut self.tone_filter {
+            filter.reset();
+        }
         self.changed = false;
     }
 
@@ -403,8 +569,7 @@ impl Device for FmSynth {
                 self.render_block();
                 self.position = 0;
             }
-            let s = self.block.get(self.position).copied().unwrap_or(0.0);
-            *frame = [s, s];
+            *frame = self.block.get(self.position).copied().unwrap_or([0.0; 2]);
             self.position += 1;
         }
     }

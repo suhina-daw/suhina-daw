@@ -142,7 +142,7 @@ fn more_notes_than_voices_steal_the_oldest() {
     let out = play(&mut s, &events, 4_800);
     assert!(out.iter().all(|x| x.is_finite()));
     let keys: Vec<u8> = s.slots.iter().filter(|slot| slot.down).map(|slot| slot.key).collect();
-    assert_eq!(keys.len(), VOICES);
+    assert_eq!(keys.len(), 16);
     // The four oldest (40 to 43) were taken over.
     assert!((44..60).all(|k| keys.contains(&k)), "{keys:?}");
 }
@@ -370,4 +370,77 @@ fn compare(all: Vec<Scenario>, dir: &std::path::Path) {
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+fn stereo(s: &mut FmSynth, frames: usize) -> Vec<[f32; 2]> {
+    let mut buffer = vec![0.0f32; frames * 2];
+    s.process(&suhina_device_api::ProcessContext::default(), &mut buffer);
+    buffer.chunks_exact(2).map(|c| [c[0], c[1]]).collect()
+}
+
+fn energy(frames: &[[f32; 2]], side: usize) -> f32 {
+    frames.iter().map(|f| f[side] * f[side]).sum()
+}
+
+#[test]
+fn by_default_both_sides_carry_the_same_signal() {
+    let mut s = synth();
+    s.event(on(60, 1.0));
+    assert!(stereo(&mut s, 2_048).iter().all(|f| f[0] == f[1]));
+}
+
+#[test]
+fn pan_moves_the_sound_to_one_side() {
+    let mut s = synth();
+    s.set_param(crate::params::PAN, 1.0);
+    s.reset();
+    s.event(on(60, 1.0));
+    let out = stereo(&mut s, 2_048);
+    assert!(energy(&out, 0) == 0.0 && energy(&out, 1) > 0.0);
+}
+
+#[test]
+fn spread_makes_the_sides_differ_and_is_read_when_a_note_starts() {
+    let mut s = synth();
+    s.set_param(crate::params::SPREAD, 0.5);
+    s.event(on(60, 1.0));
+    let out = stereo(&mut s, 4_096);
+    assert!(out.iter().any(|f| (f[0] - f[1]).abs() > 1e-4));
+    let mut late = synth();
+    late.event(on(60, 1.0));
+    late.set_param(crate::params::SPREAD, 0.5);
+    assert!(stereo(&mut late, 2_048).iter().all(|f| f[0] == f[1]));
+}
+
+#[test]
+fn one_voice_keeps_the_envelope_running_over_a_second_key() {
+    let mut s = synth();
+    s.set_param(crate::params::VOICE_COUNT, 1.0);
+    s.event(on(60, 1.0));
+    stereo(&mut s, 512);
+    s.event(on(67, 1.0));
+    stereo(&mut s, 512);
+    let down: Vec<u8> = s.slots.iter().filter(|slot| slot.down).map(|slot| slot.key).collect();
+    assert_eq!(down, [67]);
+}
+
+#[test]
+fn tone_takes_the_top_off() {
+    let bright = {
+        let mut s = synth();
+        s.event(on(84, 1.0));
+        energy(&stereo(&mut s, 4_096), 0)
+    };
+    let mut s = synth();
+    s.set_param(crate::params::TONE, 0.0);
+    s.event(on(84, 1.0));
+    assert!(energy(&stereo(&mut s, 4_096), 0) < bright * 0.5);
+}
+
+#[test]
+fn a_voice_resets_what_its_file_does_not_hold() {
+    let mut s = synth();
+    s.set_param(crate::params::SPREAD, 0.7);
+    s.load_patch(&Patch::default());
+    assert_eq!(s.param(crate::params::SPREAD), Some(0.0));
 }

@@ -3,7 +3,8 @@
 
 //! The FM synth's parameters: 22 per operator (operators 1 to 6), the voice's global ones in
 //! the order a voice stores them, then performance settings (bend, portamento, what the
-//! wheels and pedals do, volume).
+//! wheels and pedals do, volume), then the parts the DX7 format does not have (ADR 0034): each
+//! is neutral by default, so an old project and a voice file sound as they did.
 
 use suhina_device_api::{ParamInfo, Scale, Unit};
 
@@ -23,7 +24,16 @@ pub const PORTAMENTO_TIME: usize = PERFORMANCE + 4;
 /// Four parameters (range, pitch, amp, EG bias) per source, in [`SOURCES`] order.
 pub const ROUTES: usize = PERFORMANCE + 5;
 pub const VOLUME: usize = ROUTES + 16;
-pub const COUNT: usize = VOLUME + 1;
+/// Index of the first parameter a voice file does not hold.
+pub const EXTENDED: usize = VOLUME + 1;
+pub const PAN: usize = EXTENDED;
+pub const PAN_BY_KEY: usize = EXTENDED + 1;
+pub const PAN_RANDOM: usize = EXTENDED + 2;
+pub const SPREAD: usize = EXTENDED + 3;
+pub const VOICE_COUNT: usize = EXTENDED + 4;
+pub const TONE: usize = EXTENDED + 5;
+const EXTENDED_COUNT: usize = 6;
+pub const COUNT: usize = EXTENDED + EXTENDED_COUNT;
 
 /// Fields of an operator, in parameter order (the first 21 are its stored bytes).
 pub mod op {
@@ -173,6 +183,15 @@ const GLOBAL_GROUPS: [&str; GLOBAL_COUNT] = [
 const VOLUME_PARAM: ParamInfo =
     ParamInfo::continuous("volume", "Volume", (-70.0, 6.0), 0.0, Unit::Decibels, Scale::Linear);
 
+const EXTENDED_PARAMS: [ParamInfo; EXTENDED_COUNT] = [
+    ParamInfo::continuous("pan", "Pan", (-1.0, 1.0), 0.0, Unit::Balance, Scale::Linear).in_group("Output"),
+    ParamInfo::continuous("panByKey", "Pan by Key", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
+    ParamInfo::continuous("panRandom", "Random Pan", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
+    ParamInfo::continuous("spread", "Spread", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
+    ParamInfo::integer("voices", "Voices", (1, 32), 16, Unit::None).in_group("Performance"),
+    ParamInfo::continuous("tone", "Tone", (0.0, 1.0), 1.0, Unit::Percent, Scale::Linear).in_group("Output"),
+];
+
 const fn build() -> [ParamInfo; COUNT] {
     let mut out = [VOLUME_PARAM; COUNT];
     let mut i = 0;
@@ -202,6 +221,11 @@ const fn build() -> [ParamInfo; COUNT] {
             r += 1;
         }
         s += 1;
+    }
+    let mut e = 0;
+    while e < EXTENDED_COUNT {
+        out[EXTENDED + e] = EXTENDED_PARAMS[e];
+        e += 1;
     }
     out
 }

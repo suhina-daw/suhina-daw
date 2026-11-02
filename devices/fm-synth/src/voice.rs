@@ -6,7 +6,7 @@
 // Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE in this crate).
 // Changes: translated to Rust; standard tuning only (no scale files, no MTS-ESP, no MPE);
 // `retune` replaces `update` and keeps envelope stages; overflow-prone arithmetic is done in 64
-// bits or wraps as the C code did.
+// bits or wraps as the C code did; a pitch offset for a note's detuned twin (spread).
 
 //! One sounding note: six operators with their envelopes and pitches, the pitch envelope, and
 //! modulation from the LFO and the controllers.
@@ -247,6 +247,8 @@ pub struct Note {
     pitch_mod_depth: i32,
     pitch_mod_sens: i32,
     porta_pitch: [i32; 6],
+    /// Added to the pitch of ratio operators, Q24 per octave.
+    pitch_offset: i32,
 }
 
 impl Note {
@@ -315,6 +317,11 @@ impl Note {
         self.amp_mod_depth = (p.byte(patch::LFO_AMP_DEPTH) * 165) >> 6;
     }
 
+    /// Detunes the note: `offset` is Q24 per octave, 0 is none.
+    pub fn set_pitch_offset(&mut self, offset: i32) {
+        self.pitch_offset = offset;
+    }
+
     /// Glides from where `from` is heading.
     pub fn take_portamento(&mut self, from: &Note) {
         self.porta_pitch = from.porta_pitch;
@@ -373,7 +380,7 @@ impl Note {
             }
         }
         let pitch_base = bend;
-        let pitch_mod = pitch_mod.wrapping_add(pitch_base);
+        let pitch_mod = pitch_mod.wrapping_add(pitch_base).wrapping_add(self.pitch_offset);
 
         // Amplitude: the LFO or a controller, and the EG bias.
         let lfo_amp = i64::from((1 << 24) - lfo);
