@@ -26,6 +26,9 @@ use crate::kit::widgets::{self, Action};
 const VELOCITY_PER_POINT: f64 = 1.0;
 /// How long an auditioned note sounds before the window lets it go, in seconds.
 pub(super) const AUDITION_SECONDS: f64 = 0.3;
+/// How long a note the selecting rectangle reaches sounds, in seconds: a quick sweep is a quick run
+/// of short notes.
+const SWEEP_SECONDS: f64 = 0.12;
 /// The most keys one audition sounds together.
 const MAX_AUDITION_KEYS: usize = 16;
 /// How far either side of the velocity lane's top edge the pointer grabs it, in points.
@@ -235,7 +238,8 @@ impl PianoRollState {
                 "preview.noteOn",
                 json!({ "track": track, "keys": keys, "velocity": self.last_velocity }),
             ));
-            self.audition_off = Some((track, now + AUDITION_SECONDS));
+            let sweeping = matches!(self.gesture, Some(super::Gesture::Select { .. }));
+            self.audition_off = Some((track, now + if sweeping { SWEEP_SECONDS } else { AUDITION_SECONDS }));
             self.audition_sounding = keys;
         }
         if let Some((_, until)) = self.audition_off {

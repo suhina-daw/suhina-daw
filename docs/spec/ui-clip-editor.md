@@ -411,8 +411,9 @@ pull up.
   The arrow keys still move notes by a semitone or an octave. Ghost notes on a key that is not
   shown are not drawn. Picking a fold centres the notes again. It is window state, kept until
   Suhina closes and the same for every clip: not a command, not saved, not an undo step.
-- **Built:** a drag up or down in the scale strip left of the keys changes the row height, the row
-  under the pointer staying where it is (› Key column and scale strip).
+- **Built:** a drag in the scale strip left of the keys changes the row height sideways (to the right,
+  taller) and scrolls the rows up and down, the row where it began staying under the pointer: the
+  ruler's drag the other way round (› Key column and scale strip).
 
 ## Drawing notes
 
@@ -518,9 +519,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   draw it, not when the button is let go, and for as long as the button is held. A drag sounds the
   notes at each new pitch they reach, and moving them in time only sounds nothing new. A note added
   to the selection (a click, Shift+click) sounds at once, so notes sound in the order they were
-  picked. Notes a rectangle selects sound together when it is let go, with no delay between them,
-  and a drag on the keys sounds each key as it reaches it. A key sounds once, however many of its
-  notes were selected. Notes
+  picked. A selecting rectangle sounds each note as it reaches it, for 0.12 s, so a quick sweep is a
+  quick run of short notes, and nothing sounds again when it is let go. A drag on the keys sounds
+  each key as it reaches it. A key sounds once, however many of its notes were reached together. Notes
   moved by the arrow keys and those a stroke drew sound where they are. Each sounding is one
   `preview.noteOn` with its keys (at most 16, each once) at the velocity a new note takes, and a
   `preview.noteOff` 0.3 s after the last reason to sound. The window counts the time; nothing on the

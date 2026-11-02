@@ -19,7 +19,7 @@ const BLACK_NAME_INSET: f32 = 4.0;
 const LEAST_NAMED_ROW: f32 = 8.0;
 /// The name of the row under the pointer, in the scale strip.
 const POINTER_NAME: Vec2 = Vec2::new(23.0, 13.0);
-/// How much one point of a drag in the scale strip scales the rows, down making them taller.
+/// How much one point of a sideways drag in the scale strip scales the rows, right making them taller.
 const STRIP_ZOOM_PER_POINT: f32 = 0.012;
 /// The size of the magnifier drawn for the pointer where a drag zooms.
 const MAGNIFIER_RADIUS: f32 = 5.0;
@@ -401,8 +401,9 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
     }
 }
 
-/// A drag up or down in the scale strip makes the rows shorter or taller; the row where the drag
-/// began stays under the pointer's height.
+/// A drag in the scale strip: sideways it makes the rows taller (right) or lower (left), and up or
+/// down it scrolls them, the row where the drag began staying under the pointer. The ruler does the
+/// same the other way round.
 pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRollState) {
     if strip.width() < 1.0 || strip.height() < 1.0 {
         return;
@@ -413,15 +414,15 @@ pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRoll
         state.magnifier = true;
     }
     if response.drag_started() {
-        let from = ui.input(|i| i.pointer.press_origin()).map_or(strip.center().y, |p| p.y);
-        let row = (from - grid.top() + state.scroll.y) / state.key_height;
-        state.strip_drag = Some((from, state.key_height, row));
+        let from = ui.input(|i| i.pointer.press_origin()).unwrap_or(strip.center());
+        let row = (from.y - grid.top() + state.scroll.y) / state.key_height;
+        state.strip_drag = Some((from.x, state.key_height, row));
     }
     match (state.strip_drag, response.interact_pointer_pos()) {
         (Some((from, height, row)), Some(now)) if response.dragged() => {
-            let wanted = height * ((now.y - from) * STRIP_ZOOM_PER_POINT).exp();
+            let wanted = height * ((now.x - from) * STRIP_ZOOM_PER_POINT).exp();
             state.key_height = wanted.clamp(KEY_HEIGHT_RANGE.0, KEY_HEIGHT_RANGE.1);
-            state.scroll.y = row * state.key_height - (from - grid.top());
+            state.scroll.y = row * state.key_height - (now.y - grid.top());
             state.scrolled_by_hand = true;
         }
         _ if !response.dragged() => state.strip_drag = None,
@@ -560,9 +561,20 @@ impl PianoRollState {
         self.key_live = None;
     }
 
-    /// The notes at `indices` sound at once, each key once.
-    pub(super) fn audition_together(&mut self, clip: &PianoClip, indices: &[usize]) {
-        self.audition_keys(indices.iter().filter_map(|i| clip.notes.get(*i)).map(|n| n.key));
+    /// The rectangle a drag is selecting with is at `rect`: the notes it has just reached sound at
+    /// once, each key once.
+    pub(super) fn audition_swept(&mut self, layout: &Layout, clip: &PianoClip, rect: Rect) {
+        let inside: BTreeSet<usize> = clip
+            .notes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| layout.note_rect(n).intersects(rect))
+            .map(|(i, _)| i)
+            .collect();
+        let reached: Vec<u8> =
+            inside.difference(&self.swept).filter_map(|i| clip.notes.get(*i)).map(|n| n.key).collect();
+        self.audition_keys(reached);
+        self.swept = inside;
     }
 
     /// Whether notes this command places replace what is under them (Allow stacked notes off).

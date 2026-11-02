@@ -153,7 +153,8 @@ pub struct PianoRollState {
     /// drag began.
     pub(super) key_live: Option<(u8, u8)>,
     pub(super) key_base: BTreeSet<usize>,
-    /// A drag in the scale strip: where it began, the row height then and the row at the press.
+    /// A drag in the scale strip: how far right it began, the row height then and the row at the
+    /// press.
     pub(super) strip_drag: Option<(f32, f32, f32)>,
     /// The pointer is where a drag zooms (the strip, the ruler) this frame.
     pub(crate) magnifier: bool,
@@ -210,6 +211,8 @@ pub struct PianoRollState {
     pub(super) audition_pending: Vec<u8>,
     pub(super) audition_off: Option<(u64, f64)>,
     pub(super) audition_sounding: Vec<u8>,
+    /// The notes the selecting rectangle is on, so only those it has just reached sound.
+    pub(super) swept: BTreeSet<usize>,
     /// A press in the grid holds what it sounds until it is let go.
     pub(super) audition_press: bool,
     /// Which other clips show as ghost notes, picked in the toolbar's ghost menu; kept until
@@ -271,6 +274,7 @@ impl Default for PianoRollState {
             audition_pending: Vec::new(),
             audition_off: None,
             audition_sounding: Vec::new(),
+            swept: BTreeSet::new(),
             audition_press: false,
             ghost_source: GhostSource::default(),
             fold: Fold::default(),

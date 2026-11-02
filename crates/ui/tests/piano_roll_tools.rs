@@ -842,9 +842,10 @@ fn dragging_the_keys_selects_ranges_and_shift_adds_one() {
     assert_eq!(notes(&h), before, "selection only");
 }
 
-/// A drag in the scale strip changes the row height, and the row under it stays where it is.
+/// A drag sideways in the scale strip changes the row height and the row under it stays where it
+/// is; a drag up or down scrolls the rows with the pointer.
 #[test]
-fn dragging_the_scale_strip_zooms_the_rows() {
+fn dragging_the_scale_strip_zooms_sideways_and_scrolls_up_and_down() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
     let first = notes(&h)[0];
@@ -852,10 +853,17 @@ fn dragging_the_scale_strip_zooms_the_rows() {
     let height = h.state().piano_roll().key_height;
     let at = egui::pos2(strip.center().x, note_rect(&h, &first).center().y);
     let before = note_rect(&h, &first).center().y;
-    drag_keys(&mut h, at, at + egui::vec2(0.0, 40.0), Modifiers::NONE);
-    assert!(h.state().piano_roll().key_height > height, "down makes the rows taller");
+    drag_keys(&mut h, at, at + egui::vec2(40.0, 0.0), Modifiers::NONE);
+    let taller = h.state().piano_roll().key_height;
+    assert!(taller > height, "to the right makes the rows taller");
     assert!((note_rect(&h, &first).center().y - before).abs() < 2.0, "the row stays");
     assert_eq!(notes(&h)[0], first, "the view only");
+
+    // Scrolled up a little first, there is room to follow the pointer down.
+    let scroll = h.state().piano_roll().scroll.y;
+    drag_keys(&mut h, at, at + egui::vec2(0.0, -10.0), Modifiers::NONE);
+    assert_eq!(h.state().piano_roll().key_height, taller, "up and down leave the height");
+    assert!(h.state().piano_roll().scroll.y != scroll, "the rows move with the pointer");
 }
 
 /// The corner's menu keeps its choices in the settings.

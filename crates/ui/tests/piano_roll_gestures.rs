@@ -404,3 +404,40 @@ fn audition_sounds_a_note_on_the_press_and_at_each_pitch_of_a_drag() {
     });
     h.step();
 }
+
+/// With the audition on, the selecting rectangle sounds each note as it reaches it, not when it is
+/// let go.
+#[test]
+fn audition_sounds_notes_as_the_selecting_rectangle_reaches_them() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    h.state_mut().piano_roll_mut().audition = true;
+    h.run();
+    let first = notes(&h)[0];
+    let rect = note_rect(&h, &first);
+    // From an empty spot above the note, down onto it.
+    let from = rect.left_top() + egui::vec2(-rect.width().min(4.0), -3.0 * rect.height());
+    let grid = h.get_by_label_contains("Piano roll,").rect();
+    let from = egui::pos2(from.x.max(grid.left() + 1.0), from.y);
+    h.input_mut().events.push(egui::Event::PointerMoved(from));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerMoved(rect.center()));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerMoved(rect.center() + egui::vec2(0.5, 0.0)));
+    h.step();
+    assert!(h.state().piano_roll().auditioning().contains(&first.key), "while the drag lasts");
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: rect.center(),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+}

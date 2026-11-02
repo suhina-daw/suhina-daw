@@ -307,13 +307,12 @@ pub(super) fn commit(
             if !*add {
                 state.selected.clear();
             }
-            let mut added = Vec::new();
             for (i, note) in clip.notes.iter().enumerate() {
-                if layout.note_rect(note).intersects(rect) && state.selected.insert(i) {
-                    added.push(i);
+                if layout.note_rect(note).intersects(rect) {
+                    state.selected.insert(i);
                 }
             }
-            state.audition_together(clip, &added);
+            state.swept.clear();
         }
         _ => {}
     }
