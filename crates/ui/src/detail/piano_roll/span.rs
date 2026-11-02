@@ -44,6 +44,11 @@ pub(super) fn swept_span(grid: TimelineGrid, layout: &Layout, rect: Rect) -> (f6
     (start, end.min(f64::from(BEAT_LIMIT)))
 }
 
+/// The notes `set` once the notes `replaced` (in order) are gone: those left, at their new indices.
+pub(super) fn after_replaced(set: &BTreeSet<usize>, replaced: &[usize]) -> BTreeSet<usize> {
+    set.iter().filter(|i| replaced.binary_search(i).is_err()).map(|i| i - replaced.partition_point(|r| r < i)).collect()
+}
+
 impl PianoRollState {
     /// Brings the selection and what hangs on it up to date with the clip's `notes`, before anything
     /// uses them. Copies that are gone were undone: the selection before them comes back.
@@ -130,13 +135,13 @@ impl PianoRollState {
 
     /// A command's replaced notes moved the indices: what hangs on the selection follows (see
     /// [`Self::notes_replaced`]).
-    pub(super) fn span_notes_replaced(&mut self, remap: impl Fn(&BTreeSet<usize>) -> BTreeSet<usize>) {
+    pub(super) fn span_notes_replaced(&mut self, replaced: &[usize]) {
         if let Some(span) = &mut self.span {
-            span.with = remap(&span.with);
+            span.with = after_replaced(&span.with, replaced);
         }
         for step in &mut self.span_undo {
-            step.selected = remap(&step.selected);
-            step.copies = remap(&step.copies);
+            step.selected = after_replaced(&step.selected, replaced);
+            step.copies = after_replaced(&step.copies, replaced);
         }
     }
 

@@ -609,11 +609,8 @@ impl PianoRollState {
     /// the same notes as the indices close up.
     pub fn notes_replaced(&mut self, replaced: &[usize]) {
         let moved = |index: usize| index - replaced.partition_point(|r| *r < index);
-        let remap = |set: &BTreeSet<usize>| -> BTreeSet<usize> {
-            set.iter().filter(|i| replaced.binary_search(i).is_err()).map(|i| moved(*i)).collect()
-        };
-        self.selected = remap(&self.selected);
-        self.span_notes_replaced(remap);
+        self.selected = after_replaced(&self.selected, replaced);
+        self.span_notes_replaced(replaced);
         self.click_added = self.click_added.map(moved);
     }
 }
