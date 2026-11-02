@@ -78,6 +78,27 @@ impl SvfCoefficients {
         Self::new(sample_rate, frequency, 1.0, q, [1.0, -k, 0.0])
     }
 
+    /// 12 dB/octave band-pass with unity gain at `frequency`.
+    pub fn bandpass(sample_rate: f64, frequency: f64, q: f64) -> Self {
+        let k = 1.0 / usable_q(q);
+        Self::new(sample_rate, frequency, 1.0, q, [0.0, k, 0.0])
+    }
+
+    /// A response moving with `position`, 0 to 1 and round again: low-pass, band-pass (¼),
+    /// high-pass (½), notch (¾) and back to low-pass, crossfaded between them.
+    pub fn morph(sample_rate: f64, frequency: f64, q: f64, position: f64) -> Self {
+        let k = 1.0 / usable_q(q);
+        let responses = [[0.0, 0.0, 1.0], [0.0, k, 0.0], [1.0, -k, -1.0], [1.0, -k, 0.0], [0.0, 0.0, 1.0]];
+        let position = if position.is_finite() { position.clamp(0.0, 1.0) } else { 0.0 } * 4.0;
+        let from = (position as usize).min(3);
+        let t = position - from as f64;
+        let (Some(a), Some(b)) = (responses.get(from), responses.get(from + 1)) else {
+            return Self::lowpass(sample_rate, frequency, q);
+        };
+        let m = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+        Self::new(sample_rate, frequency, 1.0, q, m)
+    }
+
     /// Bell boosting or cutting `gain_db` at `frequency`: the cookbook peaking filter, whose Q
     /// sets the width between its half-gain points.
     pub fn bell(sample_rate: f64, frequency: f64, q: f64, gain_db: f64) -> Self {

@@ -22,11 +22,15 @@
 
 mod core;
 mod env;
+mod ext;
+mod kernel;
 mod lfo;
 pub mod params;
 pub mod patch;
 pub mod tables;
+mod time_env;
 mod voice;
+mod wave;
 
 #[cfg(test)]
 mod tests;
@@ -38,11 +42,14 @@ use suhina_device_api::{
 use suhina_dsp::{FirstOrder, FirstOrderCoefficients};
 
 use crate::core::Buses;
+use crate::ext::{Ext, Frame};
 use crate::lfo::Lfo;
 use crate::params::{COUNT, EXTENDED, GLOBAL, OP_PARAMS, PARAMS, PERFORMANCE, op};
 pub use crate::patch::Patch;
 use crate::tables::{N, Tables};
+use crate::time_env::Clock;
 use crate::voice::{Controllers, ModRoute, Note};
+use crate::wave::DrawnWave;
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "fm-synth", name: "FM Synth", role: Role::Instrument, params: &PARAMS };
 
@@ -52,9 +59,6 @@ pub const VOICES: usize = 32;
 const SPREAD_DETUNE: f32 = (1u32 << 24) as f32 * 20.0 / 1200.0;
 /// Where random pan starts after a reset.
 const RANDOM_SEED: u32 = 0x9e37_79b9;
-
-/// One voice at full scale in the engine's output.
-const FULL_SCALE: f32 = (1u32 << 28) as f32;
 
 /// A voice and the key it plays.
 #[derive(Debug, Clone, Copy)]
@@ -94,10 +98,15 @@ fn balance(pan: f32) -> [f32; 2] {
     [(1.0 - pan).min(1.0), (1.0 + pan).min(1.0)]
 }
 
-/// Adds a block of a note to a stereo sum at `gains`.
-fn mix(sum: &mut [[f32; 2]; N], out: &[i32; N], gains: [f32; 2]) {
+/// Adds a block of a note to a stereo sum at `gains`, with the block's own gain and pan.
+fn mix(sum: &mut [[f32; 2]; N], out: &[f32; N], gains: [f32; 2], gain: f32, pan: f32) {
+    let gains = if pan == 0.0 && gain == 1.0 {
+        gains
+    } else {
+        let moved = balance(pan);
+        [gains[0] * moved[0] * gain, gains[1] * moved[1] * gain]
+    };
     for (s, &v) in sum.iter_mut().zip(out) {
-        let v = (v as f32 / FULL_SCALE).clamp(-1.0, 1.0);
         s[0] += v * gains[0];
         s[1] += v * gains[1];
     }
@@ -146,6 +155,15 @@ pub struct FmSynth {
     /// Below 1, a low-pass over the sum.
     tone: f64,
     tone_filter: [FirstOrder; 2],
+    /// What the voice file does not hold.
+    ext: Box<Ext>,
+    /// By engine order, as [`Ext::ops`].
+    drawn: Vec<DrawnWave>,
+    /// A key on an already sounding pitch restarts that voice rather than taking another.
+    retrigger: bool,
+    clock: Clock,
+    /// Seconds since the last reset.
+    elapsed: f64,
     position: usize,
     gain: f32,
     target_gain: f32,
@@ -161,6 +179,7 @@ impl Default for FmSynth {
 
 impl FmSynth {
     pub fn new() -> Self {
+        wave::prepare_bank();
         let mut synth = Self {
             params: ParamBank::new(&PARAMS),
             patch: Patch::default(),
@@ -183,6 +202,11 @@ impl FmSynth {
             target_pan: [1.0; 2],
             tone: 1.0,
             tone_filter: [FirstOrder::new(FirstOrderCoefficients::lowpass(DEFAULT_SAMPLE_RATE, 20_000.0)); 2],
+            ext: Box::default(),
+            drawn: vec![DrawnWave::new(); 6],
+            retrigger: true,
+            clock: Clock::default(),
+            elapsed: 0.0,
             position: N,
             gain: 1.0,
             target_gain: 1.0,
@@ -203,7 +227,7 @@ impl FmSynth {
     /// Loads a voice: every voice parameter takes its value, what a voice file does not hold
     /// goes back to neutral (performance parameters stay).
     pub fn load_patch(&mut self, patch: &Patch) {
-        for (i, info) in PARAMS.iter().enumerate().skip(EXTENDED) {
+        for (i, info) in PARAMS.iter().enumerate().take(params::PANEL).skip(EXTENDED) {
             if i != params::VOICE_COUNT {
                 self.set_param(i, info.default);
             }
@@ -295,6 +319,7 @@ impl FmSynth {
                 params::PAN_RANDOM => self.pan_random = value as f32,
                 params::SPREAD => self.spread = value as f32,
                 params::VOICE_COUNT => self.voices = (value as usize).clamp(1, VOICES),
+                params::RETRIGGER => self.retrigger = on,
                 params::TONE => {
                     self.tone = value;
                     self.set_tone_filter();
@@ -315,7 +340,7 @@ impl FmSynth {
                     }
                     c.refresh();
                 }
-                _ => {}
+                i => self.ext.apply(i, value),
             }
         }
     }
@@ -326,6 +351,16 @@ impl FmSynth {
         let coefficients = FirstOrderCoefficients::lowpass(self.sample_rate, frequency);
         for filter in &mut self.tone_filter {
             filter.set(coefficients);
+        }
+    }
+
+    /// The note's number for the matrix's Random source; drawn only when it is used, so a render
+    /// that does not use it keeps its random pan.
+    fn next_note_random(&mut self) -> f32 {
+        if self.ext.matrix.get(params::MATRIX_SOURCES - 1).is_some_and(|r| r.iter().any(|(to, _)| *to != 0)) {
+            self.next_random()
+        } else {
+            0.0
         }
     }
 
@@ -352,7 +387,8 @@ impl FmSynth {
                 .min_by_key(|(_, s)| s.seq)
                 .map(|(i, _)| i)
         };
-        first_started(&|s| s.live && s.note.is_playing() && s.sounding == sounding)
+        let retrigger = self.retrigger;
+        first_started(&|s| retrigger && s.live && s.note.is_playing() && s.sounding == sounding)
             .or_else(|| first_started(&|s| !s.live || !s.note.is_playing()))
             .or_else(|| first_started(&|s| !s.down && !s.sustained))
             .or_else(|| first_started(&|_| true))
@@ -395,6 +431,19 @@ impl FmSynth {
         let random = if self.pan_random > 0.0 { self.next_random() * self.pan_random } else { 0.0 };
         let note_pan = (f32::from(key) - 60.0) / 60.0 * self.pan_by_key + random;
         let spread = self.spread;
+        let matrix_random = self.next_note_random();
+        let frame = Frame {
+            ext: &self.ext,
+            drawn: &self.drawn,
+            sample_rate: self.sample_rate as f32,
+            clock: self.clock,
+            elapsed: self.elapsed,
+            pressure: 0.0,
+            bend: 0.0,
+            wheel: 0.0,
+            foot: 0.0,
+            breath: 0.0,
+        };
         let Some(slot) = self.slots.get_mut(index) else { return };
         // A voice taken over while it sounds keeps its phases, so the change does not click.
         let was_sounding = slot.live && slot.note.is_playing();
@@ -413,14 +462,18 @@ impl FmSynth {
             twin_gains: balance(note_pan + spread),
         };
         slot.note.init(&self.patch, sounding, velocity, &self.tables);
+        slot.note.start_ext(&self.patch, &frame, sounding, velocity, matrix_random);
         slot.note.set_pitch_offset((spread * SPREAD_DETUNE) as i32);
         if slot.spread {
             slot.twin.init(&self.patch, sounding, velocity, &self.tables);
+            slot.twin.start_ext(&self.patch, &frame, sounding, velocity, matrix_random);
             slot.twin.set_pitch_offset(-(spread * SPREAD_DETUNE) as i32);
         }
         if sync && !was_sounding {
             slot.note.sync_oscillators();
             slot.twin.sync_oscillators();
+            slot.note.set_start_phases(&frame);
+            slot.twin.set_start_phases(&frame);
         }
         if let Some(from) = glide_from {
             slot.note.take_portamento(&from);
@@ -475,17 +528,43 @@ impl FmSynth {
             }
             self.changed = false;
         }
+        for (op, wave) in self.drawn.iter_mut().enumerate() {
+            if self.ext.drawn_dirty.get(op).copied().unwrap_or(false)
+                && let Some(o) = self.ext.ops.get(op)
+                && (o.wave == wave::DRAWN)
+            {
+                let played = wave::played(&o.partials, &o.drawn);
+                let settled = wave.follow(&played, o.drawn.normalize, false);
+                if settled && let Some(flag) = self.ext.drawn_dirty.get_mut(op) {
+                    *flag = false;
+                }
+            }
+        }
+        let frame = Frame {
+            ext: &self.ext,
+            drawn: &self.drawn,
+            sample_rate: self.sample_rate as f32,
+            clock: self.clock,
+            elapsed: self.elapsed,
+            pressure: self.controllers.pressure as f32 / 127.0,
+            bend: (self.controllers.pitch_bend - 0x2000) as f32 / 8_192.0,
+            wheel: self.controllers.wheel as f32 / 127.0,
+            foot: self.controllers.foot as f32 / 127.0,
+            breath: self.controllers.breath as f32 / 127.0,
+        };
         let lfo = self.lfo.next(&self.tables);
         let delay = self.lfo.delay();
         let mut sum = [[0.0f32; 2]; N];
         for slot in self.slots.iter_mut().filter(|s| s.live && s.note.is_playing()) {
             let mut out = [0i32; N];
-            slot.note.compute(&mut out, lfo, delay, &self.controllers, &mut self.buses, &self.tables);
-            mix(&mut sum, &out, slot.gains);
+            slot.note.compute(&mut out, lfo, delay, &self.controllers, &mut self.buses, &self.tables, &frame);
+            let (samples, gain, pan) = slot.note.finish(&out, &frame);
+            mix(&mut sum, &samples, slot.gains, gain, pan);
             if slot.spread {
                 let mut out = [0i32; N];
-                slot.twin.compute(&mut out, lfo, delay, &self.controllers, &mut self.buses, &self.tables);
-                mix(&mut sum, &out, slot.twin_gains);
+                slot.twin.compute(&mut out, lfo, delay, &self.controllers, &mut self.buses, &self.tables, &frame);
+                let (samples, gain, pan) = slot.twin.finish(&out, &frame);
+                mix(&mut sum, &samples, slot.twin_gains, gain, pan);
             }
         }
         if self.tone < 1.0 {
@@ -506,6 +585,22 @@ impl FmSynth {
         }
         self.gain = self.target_gain;
         self.pan = self.target_pan;
+        self.elapsed += N as f64 / self.sample_rate;
+    }
+
+    /// Brings every drawn wave to what its operator asks for at once.
+    fn settle_drawn(&mut self) {
+        for (op, wave) in self.drawn.iter_mut().enumerate() {
+            if let Some(o) = self.ext.ops.get(op)
+                && self.ext.drawn_dirty.get(op).copied().unwrap_or(false)
+                && o.wave == wave::DRAWN
+            {
+                wave.follow(&wave::played(&o.partials, &o.drawn), o.drawn.normalize, true);
+                if let Some(flag) = self.ext.drawn_dirty.get_mut(op) {
+                    *flag = false;
+                }
+            }
+        }
     }
 }
 
@@ -548,6 +643,8 @@ impl Device for FmSynth {
         self.gain = self.target_gain;
         self.pan = self.target_pan;
         self.random = RANDOM_SEED;
+        self.elapsed = 0.0;
+        self.settle_drawn();
         for filter in &mut self.tone_filter {
             filter.reset();
         }
@@ -563,7 +660,8 @@ impl Device for FmSynth {
         self.params.param(index)
     }
 
-    fn process(&mut self, _: &ProcessContext, buffer: &mut [f32]) {
+    fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
+        self.clock = Clock { tempo: context.tempo_or_default(), beat: context.beat, playing: context.playing };
         for frame in buffer.as_chunks_mut::<2>().0 {
             if self.position >= N {
                 self.render_block();

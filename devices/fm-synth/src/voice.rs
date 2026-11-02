@@ -6,13 +6,16 @@
 // Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE in this crate).
 // Changes: translated to Rust; standard tuning only (no scale files, no MTS-ESP, no MPE);
 // `retune` replaces `update` and keeps envelope stages; overflow-prone arithmetic is done in 64
-// bits or wraps as the C code did; a pitch offset for a note's detuned twin (spread).
+// bits or wraps as the C code did; a pitch offset for a note's detuned twin (spread); hooks for
+// Suhina's own parts (`ext.rs`, `kernel.rs`), neutral unless they are used.
 
 //! One sounding note: six operators with their envelopes and pitches, the pitch envelope, and
 //! modulation from the LFO and the controllers.
 
 use crate::core::{self, Buses, OpParams};
 use crate::env::{Env, PitchEnv, scale_out_level};
+use crate::ext::{Frame, Mods, NoteExt, is_silent};
+use crate::kernel;
 use crate::patch::{self, Patch};
 use crate::tables::{N, Tables};
 
@@ -72,6 +75,10 @@ const EXP_SCALE: [u8; 33] = [
 
 const PITCH_MOD_SENS: [i32; 8] = [0, 10, 20, 33, 55, 92, 153, 255];
 const AMP_MOD_SENS: [i32; 4] = [0, 4_342_338, 7_171_437, 16_777_216];
+
+/// Decibels per doubling of a level, which is `ONE_DOUBLING` in the engine's Q24 log.
+const DB_PER_DOUBLING: f32 = 6.0206;
+const ONE_DOUBLING: f32 = (1u32 << 24) as f32;
 
 /// How much a controller (wheel, foot, breath, pressure) does and to what.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -249,6 +256,11 @@ pub struct Note {
     porta_pitch: [i32; 6],
     /// Added to the pitch of ratio operators, Q24 per octave.
     pitch_offset: i32,
+    /// Each operator's output level as the envelopes read it, for a time envelope.
+    out_level: [i32; 6],
+    /// The block's modulation, for what follows the kernel.
+    mods: Option<Mods>,
+    x: NoteExt,
 }
 
 impl Note {
@@ -261,6 +273,9 @@ impl Note {
                 + scale_level(key, o.break_point, o.left_depth, o.right_depth, o.left_curve, o.right_curve))
             .min(127);
             let out_level = ((out_level << 5) + scale_velocity(velocity, o.velocity_sens)).max(0);
+            if let Some(slot) = self.out_level.get_mut(op) {
+                *slot = out_level;
+            }
             let rate_scaling = scale_rate(key, o.rate_scaling);
             if let Some(env) = self.env.get_mut(op) {
                 env.init(o.rates, o.levels, out_level, rate_scaling, t);
@@ -285,6 +300,9 @@ impl Note {
                 + scale_level(key, o.break_point, o.left_depth, o.right_depth, o.left_curve, o.right_curve))
             .min(127);
             let out_level = ((out_level << 5) + scale_velocity(velocity, o.velocity_sens)).max(0);
+            if let Some(slot) = self.out_level.get_mut(op) {
+                *slot = out_level;
+            }
             if let Some(env) = self.env.get_mut(op) {
                 env.retune(o.rates, o.levels, out_level, scale_rate(key, o.rate_scaling), t);
             }
@@ -317,6 +335,27 @@ impl Note {
         self.amp_mod_depth = (p.byte(patch::LFO_AMP_DEPTH) * 165) >> 6;
     }
 
+    /// Starts Suhina's own parts for a key going down.
+    pub fn start_ext(&mut self, p: &Patch, frame: &Frame, key: i32, velocity: i32, random: f32) {
+        let coarse: [i32; 6] = std::array::from_fn(|op| p.op(op).coarse);
+        self.x.start(frame, key, velocity, random, &coarse);
+        // A note started without sync keeps its phases unless its operator retriggers.
+        for (op, o) in frame.ext.ops.iter().enumerate() {
+            if o.retrigger
+                && let Some(param) = self.params.get_mut(op)
+            {
+                param.phase = o.phase;
+            }
+        }
+    }
+
+    /// Starts operators with the phases the synth gives them, where sync restarts them.
+    pub fn set_start_phases(&mut self, frame: &Frame) {
+        for (param, o) in self.params.iter_mut().zip(&frame.ext.ops) {
+            param.phase = o.phase;
+        }
+    }
+
     /// Detunes the note: `offset` is Q24 per octave, 0 is none.
     pub fn set_pitch_offset(&mut self, offset: i32) {
         self.pitch_offset = offset;
@@ -336,6 +375,7 @@ impl Note {
     }
 
     pub fn key_up(&mut self, t: &Tables) {
+        self.x.key_up();
         for env in &mut self.env {
             env.key_down(false, t);
         }
@@ -345,7 +385,9 @@ impl Note {
     /// Whether any operator heard directly still sounds.
     pub fn is_playing(&self) -> bool {
         self.initialised
-            && self.env.iter().enumerate().any(|(op, env)| core::is_carrier(self.algorithm, op) && env.is_active())
+            && self.env.iter().enumerate().any(|(op, env)| {
+                core::is_carrier(self.algorithm, op) && self.x.op_active(op).unwrap_or_else(|| env.is_active())
+            })
     }
 
     /// Adds one block of the note to `out`.
@@ -357,7 +399,10 @@ impl Note {
         c: &Controllers,
         buses: &mut Buses,
         t: &Tables,
+        frame: &Frame,
     ) {
+        let carriers: [bool; 6] = std::array::from_fn(|op| core::is_carrier(self.algorithm, op));
+        let mods = self.x.begin_block(frame, &carriers);
         // Pitch: the LFO (faded in by its delay) or a controller, whichever is deeper, plus the
         // pitch envelope and the bend.
         let depth = (self.pitch_mod_depth as u32).wrapping_mul(lfo_delay as u32); // Q32
@@ -407,8 +452,9 @@ impl Note {
                 continue;
             }
             let target = self.base_pitch.get(op).copied().unwrap_or(0);
+            let moved = mods.pitch.get(op).copied().unwrap_or(0);
             if self.fixed.get(op).copied().unwrap_or(false) {
-                param.freq = t.freq(target.wrapping_add(pitch_base));
+                param.freq = t.freq(target.wrapping_add(pitch_base).wrapping_add(mods.fixed));
             } else {
                 let mut pitch = target;
                 if let Some(current) = self.porta_pitch.get_mut(op)
@@ -422,10 +468,23 @@ impl Note {
                     let next = if up { current.saturating_add(porta_rate) } else { current.saturating_sub(porta_rate) };
                     *current = if (up && next > target) || (!up && next < target) { target } else { next };
                 }
-                param.freq = t.freq(pitch.wrapping_add(pitch_mod));
+                param.freq = t.freq(pitch.wrapping_add(pitch_mod).wrapping_add(moved));
             }
 
             let mut level = env.next(t);
+            if let Some(Some(db)) = mods.time_db.get(op) {
+                level = if is_silent(*db) {
+                    0
+                } else {
+                    // The level the DX7 envelope reaches at full, then the envelope in decibels.
+                    let full = (self.out_level.get(op).copied().unwrap_or(0) + 4_032 - 4_256).max(16) << 16;
+                    full.saturating_add((*db / DB_PER_DOUBLING * ONE_DOUBLING) as i32).max(0)
+                };
+            }
+            let offset = mods.level_db.get(op).copied().unwrap_or(0.0);
+            if offset != 0.0 {
+                level = level.saturating_add((offset / DB_PER_DOUBLING * ONE_DOUBLING) as i32).max(0);
+            }
             let sens = self.amp_mod_sens.get(op).copied().unwrap_or(0);
             if sens != 0 {
                 let amount = ((u64::from(amp_mod) * sens as u64) >> 24) as u32;
@@ -436,6 +495,30 @@ impl Note {
             }
             param.level_in = level;
         }
-        core::render(out, &mut self.params, self.algorithm, &mut self.fb, self.fb_shift, buses, t);
+        if mods.kernel {
+            kernel::render(
+                out,
+                &mut self.params,
+                self.algorithm,
+                &mut self.fb,
+                self.fb_shift,
+                &mut self.x,
+                buses,
+                t,
+                frame,
+                &mods,
+            );
+        } else {
+            core::render(out, &mut self.params, self.algorithm, &mut self.fb, self.fb_shift, buses, t);
+        }
+        self.mods = Some(mods);
+    }
+
+    /// The block just computed, after the filter, ready to mix: samples, gain and pan.
+    pub fn finish(&mut self, out: &[i32; N], frame: &Frame) -> ([f32; N], f32, f32) {
+        match self.mods {
+            Some(mods) => (self.x.finish(out, frame, &mods), mods.gain, mods.pan),
+            None => (self.x.finish(out, frame, &Mods::off()), 1.0, 0.0),
+        }
     }
 }

@@ -444,3 +444,206 @@ fn a_voice_resets_what_its_file_does_not_hold() {
     s.load_patch(&Patch::default());
     assert_eq!(s.param(crate::params::SPREAD), Some(0.0));
 }
+
+fn set(s: &mut FmSynth, id: &str, value: f64) {
+    s.set_param(index(id), value);
+}
+
+fn wave_index(name: &str) -> f64 {
+    params::WAVES.iter().position(|w| *w == name).unwrap_or(0) as f64
+}
+
+/// How rough a signal is: its change from frame to frame against its size.
+fn roughness(signal: &[f32]) -> f32 {
+    let change: f32 = signal.windows(2).map(|w| (w[1] - w[0]).abs()).sum();
+    change / signal.iter().map(|v| v.abs()).sum::<f32>().max(1e-6)
+}
+
+fn note(s: &mut FmSynth, key: u8, frames: usize) -> Vec<f32> {
+    left(&play(s, &[(0, on(key, 1.0))], frames))
+}
+
+#[test]
+fn a_saw_is_rougher_than_the_sine() {
+    let sine = note(&mut synth(), 48, 4_800);
+    let mut s = synth();
+    set(&mut s, "op1.wave", wave_index("Saw 64"));
+    let saw = note(&mut s, 48, 4_800);
+    assert!(peak(&saw) > 0.1);
+    assert!(roughness(&saw[1_000..]) > roughness(&sine[1_000..]) * 1.5);
+}
+
+#[test]
+fn every_wave_plays_and_stays_finite() {
+    for wave in 0..params::WAVES.len() {
+        let mut s = synth();
+        set(&mut s, "op1.wave", wave as f64);
+        let out = note(&mut s, 60, 2_048);
+        assert!(out.iter().all(|v| v.is_finite()), "{}", params::WAVES[wave]);
+        assert!(peak(&out) > 0.01, "{}", params::WAVES[wave]);
+    }
+}
+
+#[test]
+fn a_drawn_wave_plays_its_partials() {
+    let mut s = synth();
+    set(&mut s, "op1.wave", wave_index("Drawn"));
+    set(&mut s, "op1.h1", 0.0);
+    set(&mut s, "op1.h2", 1.0);
+    s.reset();
+    // The second partial alone is the note an octave up.
+    let out = note(&mut s, 69, 24_000);
+    assert!((frequency(&out[4_800..], SR) - 880.0).abs() < 5.0, "{}", frequency(&out[4_800..], SR));
+}
+
+#[test]
+fn feedback_on_an_operator_changes_its_sound() {
+    let plain = note(&mut synth(), 60, 4_800);
+    let mut s = synth();
+    set(&mut s, "op1.feedback", 0.8);
+    let fed = note(&mut s, 60, 4_800);
+    assert!(plain.iter().zip(&fed).any(|(a, b)| (a - b).abs() > 1e-3));
+    assert!(roughness(&fed[1_000..]) > roughness(&plain[1_000..]));
+}
+
+#[test]
+fn a_time_envelope_shapes_and_ends_a_note() {
+    let mut s = synth();
+    set(&mut s, "op1.envMode", 1.0);
+    set(&mut s, "op1.env.attack", 0.05);
+    set(&mut s, "op1.env.decay", 0.05);
+    set(&mut s, "op1.env.sustain", -12.0);
+    set(&mut s, "op1.env.release", 0.05);
+    let out = left(&play(&mut s, &[(0, on(69, 1.0)), (24_000, off(69))], 48_000));
+    let level = |from: usize, to: usize| peak(&out[from..to]);
+    assert!(level(0, 240) < level(2_400, 4_800), "the attack rises");
+    assert!(level(12_000, 24_000) < level(2_400, 4_800), "the decay falls");
+    assert!(level(40_000, 48_000) < 1e-3, "the release ends it");
+    let playing = s.slots.iter().filter(|slot| slot.live && slot.note.is_playing()).count();
+    assert_eq!(playing, 0);
+}
+
+#[test]
+fn the_filter_takes_the_top_off_and_its_envelope_opens_it() {
+    let mut s = synth();
+    set(&mut s, "op1.wave", wave_index("Saw 64"));
+    let open = note(&mut s, 48, 4_800);
+    let mut s = synth();
+    set(&mut s, "op1.wave", wave_index("Saw 64"));
+    set(&mut s, "filterOn", 1.0);
+    set(&mut s, "filterFreq", 300.0);
+    let closed = note(&mut s, 48, 4_800);
+    assert!(roughness(&closed[1_000..]) < roughness(&open[1_000..]) * 0.7);
+
+    let mut s = synth();
+    set(&mut s, "op1.wave", wave_index("Saw 64"));
+    set(&mut s, "filterOn", 1.0);
+    set(&mut s, "filterFreq", 100.0);
+    set(&mut s, "filterEnv", 1.0);
+    set(&mut s, "filterEnv.peak", 1.0);
+    set(&mut s, "filterEnv.sustain", 0.0);
+    set(&mut s, "filterEnv.decay", 0.05);
+    let swept = note(&mut s, 48, 24_000);
+    assert!(roughness(&swept[100..1_000]) > roughness(&swept[20_000..]));
+}
+
+#[test]
+fn a_resonant_filter_moving_fast_stays_finite() {
+    let mut s = synth();
+    set(&mut s, "op1.wave", wave_index("Square 64"));
+    set(&mut s, "filterOn", 1.0);
+    set(&mut s, "filterRes", 1.0);
+    set(&mut s, "filterCircuit", 4.0);
+    set(&mut s, "filterDrive", 24.0);
+    set(&mut s, "shaper", 4.0);
+    set(&mut s, "shaperDrive", 24.0);
+    set(&mut s, "lfoOn", 1.0);
+    set(&mut s, "lfo2Range", 1.0);
+    set(&mut s, "lfo2Rate", 1.0);
+    set(&mut s, "lfo2Amount", 1.0);
+    set(&mut s, "lfo2ToFilter", 1.0);
+    let out = note(&mut s, 60, 24_000);
+    assert!(out.iter().all(|v| v.is_finite()));
+}
+
+#[test]
+fn the_new_lfo_moves_the_pitch() {
+    let plain = note(&mut synth(), 69, 24_000);
+    let mut s = synth();
+    set(&mut s, "lfoOn", 1.0);
+    set(&mut s, "lfo2Rate", 0.6);
+    set(&mut s, "lfo2Amount", 0.2);
+    let moved = note(&mut s, 69, 24_000);
+    assert!(plain.iter().zip(&moved).any(|(a, b)| (a - b).abs() > 1e-2));
+}
+
+#[test]
+fn the_pitch_envelope_moves_the_note_in_semitones() {
+    let mut s = synth();
+    set(&mut s, "pitchEnvOn", 1.0);
+    set(&mut s, "pitchEnv.peak", 12.0);
+    set(&mut s, "pitchEnv.sustain", 12.0);
+    let out = note(&mut s, 69, 24_000);
+    assert!((frequency(&out[4_800..], SR) - 880.0).abs() < 5.0, "{}", frequency(&out[4_800..], SR));
+}
+
+#[test]
+fn the_matrix_routes_a_source_to_a_destination() {
+    let quiet = {
+        let mut s = synth();
+        set(&mut s, "mod.velocity.dest1", 21.0);
+        set(&mut s, "mod.velocity.amount1", -1.0);
+        peak(&note(&mut s, 69, 4_800))
+    };
+    assert!(quiet < peak(&note(&mut synth(), 69, 4_800)) * 0.1, "{quiet}");
+}
+
+#[test]
+fn every_algorithm_sounds_and_voice_files_stop_at_the_formats_last() {
+    for algorithm in 1..=43 {
+        let mut s = synth();
+        set(&mut s, "algorithm", f64::from(algorithm));
+        for op in 1..=6 {
+            set(&mut s, &format!("op{op}.level"), 90.0);
+        }
+        let out = note(&mut s, 60, 2_048);
+        assert!(out.iter().all(|v| v.is_finite()) && peak(&out) > 0.01, "algorithm {algorithm}");
+    }
+    let mut s = synth();
+    set(&mut s, "algorithm", 43.0);
+    assert_eq!(usize::from(s.patch().to_voice()[patch::ALGORITHM]), 31);
+}
+
+#[test]
+fn the_output_does_not_depend_on_how_a_stream_is_divided() {
+    let build = || {
+        let mut s = synth();
+        set(&mut s, "op1.wave", wave_index("Saw 16"));
+        set(&mut s, "op1.envMode", 1.0);
+        set(&mut s, "filterOn", 1.0);
+        set(&mut s, "filterFreq", 2_000.0);
+        set(&mut s, "lfoOn", 1.0);
+        set(&mut s, "lfo2Amount", 0.3);
+        set(&mut s, "spread", 0.4);
+        s.event(on(60, 1.0));
+        s
+    };
+    let mut whole = vec![0.0f32; 8_192];
+    build().process(&ProcessContext::default(), &mut whole);
+    let mut parts = vec![0.0f32; 8_192];
+    let mut s = build();
+    for chunk in parts.chunks_mut(333 * 2) {
+        s.process(&ProcessContext::default(), chunk);
+    }
+    assert_eq!(whole, parts);
+}
+
+#[test]
+fn a_new_parameter_left_at_its_default_changes_nothing() {
+    let plain = note(&mut synth(), 60, 4_800);
+    let mut s = synth();
+    for (i, info) in PARAMS.iter().enumerate().skip(params::EXTENDED) {
+        s.set_param(i, info.default);
+    }
+    assert_eq!(plain, note(&mut s, 60, 4_800));
+}
