@@ -476,29 +476,20 @@ impl<const N: usize> ParamBank<N> {
     }
 }
 
-/// A built-in instrument or effect.
-///
-/// `new`-style constructors, [`prepare`](Self::prepare) and dropping run off the audio thread
-/// and may allocate. [`reset`](Self::reset), [`set_param`](Self::set_param),
-/// [`param`](Self::param) and [`process`](Self::process) run on the audio thread: they never
-/// allocate, free, lock, block, log or do I/O, and never panic, whatever values they get.
-pub trait Device: Send {
+/// A device that plays a sample: the host hands it decoded audio, manual slices and source
+/// corrections off the audio thread, and reads where its voices are. Only a sample instrument
+/// implements it ([`Device::samples`]), so every other device carries none of it (#764 › 9).
+pub trait SampleSource {
     /// Current normalized sample read position, when a sample voice is active.
     fn sample_position(&self) -> Option<f32> {
         None
     }
+
     /// Independent sample read heads; inactive voices are None. No allocation.
     fn sample_positions(&self) -> [Option<f32>; 32] {
         let mut positions = [None; 32];
         positions[0] = self.sample_position();
         positions
-    }
-
-    fn info(&self) -> &'static DeviceInfo;
-
-    /// Refresh block context before MIDI events, including events at frame zero. Never allocates.
-    fn set_context(&mut self, context: &ProcessContext) {
-        let _ = context;
     }
 
     /// Share host-owned decoded PCM without copying it. Called off the audio thread.
@@ -535,6 +526,31 @@ pub trait Device: Send {
     /// Exchange prepared corrections during adoption; never release their last owner here.
     fn swap_sample_edits(&mut self, edits: &mut Option<std::sync::Arc<sample_edits::SampleEdits>>) {
         let _ = edits;
+    }
+}
+
+/// A built-in instrument or effect.
+///
+/// `new`-style constructors, [`prepare`](Self::prepare) and dropping run off the audio thread
+/// and may allocate. [`reset`](Self::reset), [`set_param`](Self::set_param),
+/// [`param`](Self::param) and [`process`](Self::process) run on the audio thread: they never
+/// allocate, free, lock, block, log or do I/O, and never panic, whatever values they get.
+pub trait Device: Send {
+    fn info(&self) -> &'static DeviceInfo;
+
+    /// The device as a sample player, when it is one; `None` by default.
+    fn samples(&mut self) -> Option<&mut dyn SampleSource> {
+        None
+    }
+
+    /// The device as a sample player to read from, when it is one; `None` by default.
+    fn samples_ref(&self) -> Option<&dyn SampleSource> {
+        None
+    }
+
+    /// Refresh block context before MIDI events, including events at frame zero. Never allocates.
+    fn set_context(&mut self, context: &ProcessContext) {
+        let _ = context;
     }
 
     /// Gets ready to run at `sample_rate`, allocating whatever that needs, and clears all state.

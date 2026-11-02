@@ -232,7 +232,7 @@ impl Chain {
     pub(crate) fn sample_positions(&self) -> Option<(usize, [Option<f32>; 32])> {
         self.slots.iter().zip(&self.positions).find_map(|(slot, &position)| match slot {
             Slot::Device(device) => {
-                let positions = device.sample_positions();
+                let positions = device.samples_ref()?.sample_positions();
                 positions.iter().any(Option::is_some).then_some((position, positions))
             }
             _ => None,
@@ -1128,11 +1128,13 @@ impl Chain {
         {
             match (slot, fresh) {
                 (Slot::Device(device) | Slot::MidiDevice(device), _) => {
-                    if let Some(points) = self.sample_slices.get_mut(position) {
-                        device.swap_sample_slices(points);
-                    }
-                    if let Some(edits) = self.sample_edits.get_mut(position) {
-                        device.swap_sample_edits(edits);
+                    if let Some(samples) = device.samples() {
+                        if let Some(points) = self.sample_slices.get_mut(position) {
+                            samples.swap_sample_slices(points);
+                        }
+                        if let Some(edits) = self.sample_edits.get_mut(position) {
+                            samples.swap_sample_edits(edits);
+                        }
                     }
                     // A parameter that follows a lane keeps its running value until the lane
                     // sets it in the next block.
@@ -1843,7 +1845,7 @@ mod sampler_regressions {
     #[test]
     fn sampler_fit_beats_follows_project_tempo_during_a_held_note() {
         let mut sampler = suhina_device_registry::create("sampler").unwrap();
-        sampler.load_sample(48000, 1, vec![0.2; 48000].into());
+        sampler.samples().unwrap().load_sample(48000, 1, vec![0.2; 48000].into());
         for (id, value) in [("warp", 1.), ("warp_beats", 4.), ("attack", 0.), ("sustain", 1.)] {
             sampler.set_param(sampler.info().param_index(id).unwrap(), value);
         }
@@ -1860,20 +1862,20 @@ mod sampler_regressions {
             &context,
             48_000.0,
         );
-        assert!((sampler.sample_position().unwrap() - 0.005).abs() < 1e-6);
+        assert!((sampler.samples_ref().unwrap().sample_position().unwrap() - 0.005).abs() < 1e-6);
         context.tempo = 60.;
         run_device(&mut sampler, 0, &mut buffer, 0, 480, &[], &DeviceLanes::none(), &context, 48_000.0);
-        assert!((sampler.sample_position().unwrap() - 0.0075).abs() < 1e-6);
+        assert!((sampler.samples_ref().unwrap().sample_position().unwrap() - 0.0075).abs() < 1e-6);
         sampler.set_param(sampler.info().param_index("warp_beats").unwrap(), 2.);
         run_device(&mut sampler, 0, &mut buffer, 0, 480, &[], &DeviceLanes::none(), &context, 48_000.0);
-        assert!((sampler.sample_position().unwrap() - 0.0125).abs() < 1e-6);
+        assert!((sampler.samples_ref().unwrap().sample_position().unwrap() - 0.0125).abs() < 1e-6);
     }
     #[test]
     fn first_beat_slice_uses_context_before_frame_zero_note() {
         let mut sampler = suhina_device_registry::create("sampler").unwrap();
         let source =
             std::sync::Arc::new(crate::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.5; 96000] });
-        sampler.load_shared_sample(48000, 1, source.clone());
+        sampler.samples().unwrap().load_shared_sample(48000, 1, source.clone());
         assert_eq!(std::sync::Arc::strong_count(&source), 2, "PCM must be shared");
         for (id, value) in [("playback", 3.), ("slice_by", 1.), ("sensitivity", 0.4), ("attack", 0.), ("sustain", 1.)] {
             sampler.set_param(sampler.info().param_index(id).unwrap(), value);

@@ -6,7 +6,7 @@ use super::{NodeInfo, PortInfo};
 use crate::native_node::NativeNode;
 use crate::{DeviceSdkError, NodeKind, PreparedEffect, ProcessContext};
 use std::any::Any;
-use suhina_device_api::{Device, NoteEvent};
+use suhina_device_api::{Device, NoteEvent, SampleSource};
 pub(crate) const SAMPLER: NodeInfo = NodeInfo {
     kind: "sampler",
     name: "Sampler",

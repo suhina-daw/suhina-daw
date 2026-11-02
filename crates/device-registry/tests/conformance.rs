@@ -15,7 +15,9 @@ fn with_test_sample(mut device: Box<dyn Device>) -> Box<dyn Device> {
     if device.info().role == Role::Instrument {
         let sine: Arc<[f32]> =
             (0..48_000).map(|i| (i as f32 * std::f32::consts::TAU * 220.0 / 48_000.0).sin() * 0.2).collect();
-        device.load_sample(48_000, 1, sine);
+        if let Some(samples) = device.samples() {
+            samples.load_sample(48_000, 1, sine);
+        }
     }
     device
 }

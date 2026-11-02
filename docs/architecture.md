@@ -372,7 +372,7 @@ do not add DSP graph nodes or run on the audio thread.
 
 Sampler read-head positions travel through the engine meter monitor as atomic values. The UI reads them without accessing audio-thread device state.
 
-Host-owned AudioData implements AsRef<[f32]> so sample instruments share decoded PCM through Device::load_shared_sample without a copy. SDK transient analyses are shared by source identity and format in an off-thread weak cache, which retains no unused source or analysis. Device::set_context receives each block context before its MIDI events, including events at frame zero.
+Host-owned AudioData implements AsRef<[f32]> so sample instruments share decoded PCM through `SampleSource::load_shared_sample` (a device that plays samples gives it from `Device::samples`, #764 › 9) without a copy. SDK transient analyses are shared by source identity and format in an off-thread weak cache, which retains no unused source or analysis. Device::set_context receives each block context before its MIDI events, including events at frame zero.
 
 Registered zero-latency audio effects used as `native_effect` graph kernels resolve in
 `device-registry::compile_graph`. Track chains and nested device groups use this same factory;

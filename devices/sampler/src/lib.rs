@@ -114,6 +114,7 @@ mod tests;
 mod slice_tests {
     use super::*;
     use std::sync::Arc;
+    use suhina_device_api::SampleSource as _;
     use suhina_device_api::{Device, NoteEvent, ProcessContext};
     fn set(s: &mut Sampler, id: &str, value: f64) {
         s.set_param(PARAMS.iter().position(|p| p.id == id).unwrap(), value);
@@ -170,6 +171,7 @@ mod slice_tests {
 mod dynamic_slice_tests {
     use super::*;
     use std::sync::Arc;
+    use suhina_device_api::SampleSource as _;
     use suhina_device_api::{Device, NoteEvent, ProcessContext};
     #[test]
     fn manual_maps_beyond_legacy_and_midi_limits_crop_and_swap_without_stopping_voices() {

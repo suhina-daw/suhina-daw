@@ -96,14 +96,17 @@ impl SlotFactory<'_> {
     fn builtin(&self, id: &str, stored: &suhina_model::Device, lanes: &mut DeviceLanes, slot: usize) -> Option<Built> {
         let asset = crate::assets::stored_path(id, stored.state.as_deref()).and_then(|path| self.assets.get(path));
         let mut device = suhina_device_registry::create_with(id, asset)?;
-        // What a chain gives its Sampler: the decoded sample and the manual slices.
-        if let Some(source) = stored.sample_file().and_then(|file| self.audio.files.get(file)) {
-            device.load_shared_sample(source.sample_rate, source.channels, source.clone());
-        }
+        // What a chain gives a device that plays samples: the decoded sample, the manual slices
+        // and the source corrections.
         let slices: Option<std::sync::Arc<[f64]>> = stored.sample_slices().map(std::sync::Arc::from);
-        device.load_sample_slices(slices.clone());
         let edits = crate::assets::sample_edits(stored);
-        device.load_sample_edits(edits.clone());
+        if let Some(samples) = device.samples() {
+            if let Some(source) = stored.sample_file().and_then(|file| self.audio.files.get(file)) {
+                samples.load_shared_sample(source.sample_rate, source.channels, source.clone());
+            }
+            samples.load_sample_slices(slices.clone());
+            samples.load_sample_edits(edits.clone());
+        }
         device.prepare(f64::from(self.sample_rate)).ok()?;
         let info = device.info();
         let mut values: Vec<f64> = info.params.iter().map(|p| p.default).collect();

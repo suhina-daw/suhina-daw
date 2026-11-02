@@ -315,11 +315,13 @@ impl GroupSlot {
             {
                 match (slot, new_slot) {
                     (Slot::Device(device) | Slot::MidiDevice(device), _) => {
-                        if let Some(points) = new.sample_slices.get_mut(position) {
-                            device.swap_sample_slices(points);
-                        }
-                        if let Some(edits) = new.sample_edits.get_mut(position) {
-                            device.swap_sample_edits(edits);
+                        if let Some(samples) = device.samples() {
+                            if let Some(points) = new.sample_slices.get_mut(position) {
+                                samples.swap_sample_slices(points);
+                            }
+                            if let Some(edits) = new.sample_edits.get_mut(position) {
+                                samples.swap_sample_edits(edits);
+                            }
                         }
                         // A parameter that follows a lane keeps its running value until the lane
                         // sets it in the next block.

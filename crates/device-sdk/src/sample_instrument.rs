@@ -5,7 +5,9 @@
 //! (`devices/sampler`) both run this [`Sampler`], so it lives here rather than in the device
 //! (#763 › 5). Bounded: voices, slices and buffers have fixed limits.
 use std::sync::Arc;
-use suhina_device_api::{Device, DeviceError, DeviceInfo, NoteEvent, ParamInfo, ProcessContext, Role, Scale, Unit};
+use suhina_device_api::{
+    Device, DeviceError, DeviceInfo, NoteEvent, ParamInfo, ProcessContext, Role, SampleSource, Scale, Unit,
+};
 use suhina_dsp::{Biquad, Coefficients};
 
 use crate::nodes::stretch as warp;
@@ -282,7 +284,7 @@ fn source_fade(position: f64, start: f64, end: f64, fade_in: f64, fade_out: f64,
 fn random(seed: &mut u32) -> f64 {
     crate::nodes::random::bipolar(seed)
 }
-impl Device for Sampler {
+impl SampleSource for Sampler {
     fn sample_position(&self) -> Option<f32> {
         self.sample_positions().into_iter().flatten().next()
     }
@@ -300,29 +302,6 @@ impl Device for Sampler {
             Some((position / frames as f64) as f32)
         })
     }
-    fn info(&self) -> &'static DeviceInfo {
-        &INFO
-    }
-    fn swap_sample_slices(&mut self, slices: &mut Option<Arc<[f64]>>) {
-        std::mem::swap(&mut self.manual_slices, slices);
-    }
-    fn load_sample_edits(&mut self, edits: Option<Arc<suhina_device_api::sample_edits::SampleEdits>>) {
-        self.sample_edits = edits;
-    }
-    fn swap_sample_edits(&mut self, edits: &mut Option<Arc<suhina_device_api::sample_edits::SampleEdits>>) {
-        std::mem::swap(&mut self.sample_edits, edits);
-    }
-    fn load_sample_slices(&mut self, slices: Option<Arc<[f64]>>) {
-        self.manual_slices = slices.map(|points| {
-            let mut points: Vec<_> = points.iter().copied().filter(|v| v.is_finite() && *v > 0. && *v < 1.).collect();
-            points.sort_unstable_by(f64::total_cmp);
-            points.dedup();
-            Arc::from(points)
-        });
-    }
-    fn load_sample(&mut self, rate: u32, channels: u16, samples: Arc<[f32]>) {
-        self.load_shared_sample(rate, channels, Arc::new(samples));
-    }
     fn load_shared_sample(&mut self, rate: u32, channels: u16, samples: Arc<dyn AsRef<[f32]> + Send + Sync>) {
         let pcm = samples.as_ref().as_ref();
         if !(1000..=384000).contains(&rate)
@@ -337,6 +316,37 @@ impl Device for Sampler {
         self.source_rate = f64::from(rate);
         self.warp = (0..32).map(|_| warp::Voice::new(self.rate)).collect();
         self.reset();
+    }
+    fn load_sample(&mut self, rate: u32, channels: u16, samples: Arc<[f32]>) {
+        self.load_shared_sample(rate, channels, Arc::new(samples));
+    }
+    fn load_sample_slices(&mut self, slices: Option<Arc<[f64]>>) {
+        self.manual_slices = slices.map(|points| {
+            let mut points: Vec<_> = points.iter().copied().filter(|v| v.is_finite() && *v > 0. && *v < 1.).collect();
+            points.sort_unstable_by(f64::total_cmp);
+            points.dedup();
+            Arc::from(points)
+        });
+    }
+    fn swap_sample_slices(&mut self, slices: &mut Option<Arc<[f64]>>) {
+        std::mem::swap(&mut self.manual_slices, slices);
+    }
+    fn load_sample_edits(&mut self, edits: Option<Arc<suhina_device_api::sample_edits::SampleEdits>>) {
+        self.sample_edits = edits;
+    }
+    fn swap_sample_edits(&mut self, edits: &mut Option<Arc<suhina_device_api::sample_edits::SampleEdits>>) {
+        std::mem::swap(&mut self.sample_edits, edits);
+    }
+}
+impl Device for Sampler {
+    fn samples(&mut self) -> Option<&mut dyn SampleSource> {
+        Some(self)
+    }
+    fn samples_ref(&self) -> Option<&dyn SampleSource> {
+        Some(self)
+    }
+    fn info(&self) -> &'static DeviceInfo {
+        &INFO
     }
     fn prepare(&mut self, rate: f64) -> Result<(), DeviceError> {
         suhina_device_api::check_sample_rate(rate)?;
@@ -610,6 +620,8 @@ fn grain_window(table: &[f64; 2049], phase: f64) -> f64 {
 
 #[cfg(test)]
 mod grain_window_tests {
+    use suhina_device_api::SampleSource as _;
+
     #[test]
     fn grain_normalization_smooths_voice_count_changes_independently_of_master_gain() {
         use suhina_device_api::{Device, NoteEvent, ProcessContext};

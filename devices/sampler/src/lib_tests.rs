@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+use suhina_device_api::SampleSource as _;
 use suhina_device_api::{Device, NoteEvent, ProcessContext};
 
 fn loaded() -> Sampler {
