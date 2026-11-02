@@ -2298,7 +2298,7 @@ fn take_lanes_are_added_from_their_menu_and_picked_and_deleted_by_their_headers(
     };
     harness.get_by_label("Drums Take 1").click_secondary();
     harness.run();
-    assert!(harness.query_all_by_label_contains("8 Bars").count() > 0, "the grid is in the menu");
+    assert!(harness.query_all_by_label_contains("Narrow grid").count() > 0, "the grid is in the menu");
     harness.get_by_label("Add take").click();
     harness.run();
     assert_eq!(names(&harness), ["Take 1", "Take 2", "Take 3"]);
