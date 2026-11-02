@@ -177,9 +177,11 @@ impl App {
             }
             // While the piano roll has the keyboard, the edit keys act on its notes, or on nothing
             // when it has none to act on: never on the clip or the view behind it.
-            "selection.delete" if self.piano_has_keyboard() => actions.extend(self.piano_roll.delete_selected()),
+            "selection.delete" if self.piano_has_keyboard() || self.piano_edits_focused_clip() => {
+                actions.extend(self.piano_roll.delete_selected())
+            }
             "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate"
-                if self.piano_has_keyboard() =>
+                if self.piano_has_keyboard() || self.piano_edits_focused_clip() =>
             {
                 actions.extend(self.piano_key(action))
             }

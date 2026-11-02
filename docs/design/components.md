@@ -722,7 +722,7 @@ mono `text.hint`; the chosen entries are highlighted as selected, and an entry t
 cannot hold is greyed out while the piano roll follows it. Then the
 **Hide editor** button: a box as tall as the tool buttons with a 1.1 px × in `text.secondary`
 (`text.primary` on `control.hoverBackground` hovered), 3 px from the right edge. The piano roll's
-least height is 132 px of detail area (the toolbar, the 36 px ruler and five 12 px key rows; the
+least height is 132 px of detail area, 148 px with several clips picked for their 16 px strip (the toolbar, the 36 px ruler and five 12 px key rows; the
 velocity lane is left out when it would leave fewer than five rows or be under 12 px). The lane's
 top edge (the 1 px `border.strong` line over it) is grabbed within 3 px either side, the pointer a
 vertical resize cursor: dragged, the lane is 24 to 480 px tall, never leaving fewer than five key

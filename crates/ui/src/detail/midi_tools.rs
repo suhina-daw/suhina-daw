@@ -70,6 +70,8 @@ pub struct Tools<'a> {
     pub selected: &'a BTreeSet<usize>,
     /// The clip's length in beats.
     pub length: f64,
+    /// A time selection with no note in it: the tools act on nothing, not on the whole clip.
+    pub nothing: bool,
 }
 
 impl Tools<'_> {
@@ -102,7 +104,11 @@ impl Tools<'_> {
 
     /// What the head says the tools act on.
     fn head(&self) -> &'static str {
-        if self.selected.is_empty() { "Whole clip" } else { "Selected notes" }
+        match (self.selected.is_empty(), self.nothing) {
+            (false, _) => "Selected notes",
+            (true, true) => "No notes in time",
+            (true, false) => "Whole clip",
+        }
     }
 
     /// How many notes the tools act on.
@@ -355,6 +361,7 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
     if button(ui, "Transpose", &small) {
         let mut params = tools.params();
         params["semitones"] = json!(settings.transpose);
+        state.replacing(&mut params);
         actions.push(Action::new("note.move", params));
     }
 

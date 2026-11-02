@@ -460,11 +460,12 @@ impl Default for ArrangementViewState {
 pub type LaneClips = (TrackId, Vec<(ClipId, f64, f64)>);
 
 impl TimeSelection {
-    /// This selection gone on over `tracks` from `start` to `end`: the time and the tracks of both.
-    pub(super) fn gone_on(&self, tracks: &[TrackId], start: f64, end: f64) -> Self {
+    /// This selection gone on over `tracks` from `start` to `end`, painted in `row` of a stack if in
+    /// one: the time and the tracks of both, and a row only while both are in it.
+    pub(super) fn gone_on(&self, tracks: &[TrackId], start: f64, end: f64, row: Option<(usize, usize)>) -> Self {
         let mut all = self.tracks.clone();
         all.extend(tracks.iter().filter(|t| !self.tracks.contains(t)));
-        let row = self.row.filter(|_| all == self.tracks);
+        let row = self.row.filter(|_| all == self.tracks && self.row == row);
         Self { tracks: all, start: self.start.min(start), end: self.end.max(end), row }
     }
 }

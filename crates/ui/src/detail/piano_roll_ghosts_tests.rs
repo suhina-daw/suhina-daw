@@ -190,5 +190,6 @@ fn picked_clips_get_a_bar_each_and_their_notes_find_them() {
         + first_pass(&placement(edited, edited_clip)).unwrap().content;
     let bar = ghosts.picked.iter().find(|bar| bar.clip == other).unwrap();
     assert_eq!(bar.start, want, "where it lies in time");
+    assert!(!ghosts.notes.is_empty());
     assert!(ghosts.notes.iter().all(|note| note.clip == other));
 }

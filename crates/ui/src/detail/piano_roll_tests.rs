@@ -716,7 +716,8 @@ fn legato_ends_the_last_notes_where_the_clip_goes_on() {
     let notes = [note(0.0, 0.5, 60), note(1.0, 0.5, 62), note(2.0, 0.5, 64)];
     let address = json!({});
     let until = |selected: &BTreeSet<usize>, span| {
-        crate::detail::midi_tools::Tools { address: &address, notes: &notes, selected, length: 8.0 }.legato_until(span)
+        crate::detail::midi_tools::Tools { address: &address, notes: &notes, selected, length: 8.0, nothing: false }
+            .legato_until(span)
     };
     let none = BTreeSet::new();
     assert_eq!(until(&none, None), 8.0, "every note: to the clip's end");

@@ -73,6 +73,8 @@ const LEAST_KEY_ROWS: f32 = 5.0;
 /// five key rows at the default row height, and beside them the clip column's title and its five
 /// rows (`docs/spec/ui-clip-editor.md` › Least height and closing).
 pub const LEAST_HEIGHT: f32 = 132.0;
+/// The height of the strip that shows several picked clips, which the least height grows by.
+pub const CLIP_STRIP: f32 = 16.0;
 /// The toolbar's icon size and the space between its buttons, in points.
 const TOOL_ICON: f32 = 14.0;
 const TOOL_GAP: f32 = 3.0;
@@ -221,9 +223,8 @@ pub fn show(
     let whole = area;
     let area = Rect::from_min_max(Pos2::new(area.left(), toolbar_rect.bottom()), area.max);
     // Several clips picked: their strip, over the ruler (› Several clips picked).
-    let clip_row = (clip.ghosts.picked.len() > 1).then(|| {
-        Rect::from_min_max(area.min, Pos2::new(area.right(), area.top() + clip_strip::CLIP_STRIP.min(area.height())))
-    });
+    let clip_row = (clip.ghosts.picked.len() > 1)
+        .then(|| Rect::from_min_max(area.min, Pos2::new(area.right(), area.top() + CLIP_STRIP.min(area.height()))));
     let area = clip_row.map_or(area, |row| Rect::from_min_max(Pos2::new(area.left(), row.bottom()), area.max));
     let lane_height = velocity_lane_height(area.height() - RULER, state.key_height, state.lane_wanted);
     let strip = Rect::from_min_max(

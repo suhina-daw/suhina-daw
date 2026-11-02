@@ -7,8 +7,6 @@
 
 use super::*;
 
-/// The strip's height, in points.
-pub(super) const CLIP_STRIP: f32 = 16.0;
 /// How strongly a clip's bar shows its colour while another has the focus.
 const OTHER_BAR: f32 = 0.5;
 

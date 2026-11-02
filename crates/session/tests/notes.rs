@@ -786,3 +786,12 @@ fn legato_takes_the_last_notes_to_until() {
         "not before they start"
     );
 }
+
+/// Legato replaces only under the notes it lengthened, not under a selected note it left alone.
+#[test]
+fn legato_replaces_only_under_the_notes_it_lengthens() {
+    let mut session = session_of(&[(0.0, 0.5, 60), (1.0, 1.0, 60), (1.2, 0.5, 60), (2.0, 0.5, 62)]);
+    let params = json!({ "track": 1, "index": 0, "notes": [0, 1, 3], "replace": true });
+    run(&mut session, "note.legato", params).unwrap();
+    assert_eq!(spans(&session), [(0.0, 1.0, 60), (1.0, 1.0, 60), (1.2, 0.5, 60), (2.0, 0.5, 62)]);
+}

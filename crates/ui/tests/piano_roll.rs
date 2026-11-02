@@ -499,3 +499,26 @@ fn the_keys_leave_the_notes_alone_when_the_piano_roll_does_not_have_the_keyboard
     assert_eq!(notes(&h), before);
     assert!(!h.state().session().unwrap().can_undo());
 }
+
+/// With two clips picked the strip shows both, a click on a bar gives its clip the focus, and the keys
+/// act on that clip's notes: an arrow moves one, and Delete takes one note, not the clips.
+#[test]
+fn with_two_clips_picked_the_keys_act_on_the_focused_clip() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    h.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    h.get_by_label("Clip Walk on Bass at bar 17").click();
+    h.run();
+    h.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    h.run();
+    h.get_by_label_contains("Beat B in the piano roll").click();
+    h.run();
+    let before = notes(&h);
+    pick(&mut h, 0);
+    key(&mut h, Modifiers::NONE, Key::ArrowUp);
+    assert_eq!(notes(&h)[0].key, before[0].key + 1);
+    key(&mut h, Modifiers::NONE, Key::Delete);
+    assert_eq!(notes(&h).len(), before.len() - 1);
+    assert!(h.query_by_label("Clip Walk on Bass at bar 17").is_some(), "the clips stay");
+    assert!(h.query_by_label(CLIP).is_some(), "the clips stay");
+}

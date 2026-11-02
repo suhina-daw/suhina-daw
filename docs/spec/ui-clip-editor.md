@@ -777,7 +777,8 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   edited one brightest; a click on a bar, or on a clip's faint note with the Select tool, gives it
   the focus, as a double-click of the right button on a faint note does. The **Focus** switch at
   the strip's left keeps the focus on the clip picked first. Keys and selections act on the
-  focused clip.
+  focused clip: with notes selected the edit keys act on them, and with none selected on the clips.
+  The least height grows by the strip's 16 px.
 - **Built ([#699](https://github.com/suhina-daw/suhina-daw/issues/699)):** the column edits the
   clip, each change one undo step:
   - **Loop** is a switch (`clip.setLoop`). An audio clip that loops has **Loop start** and **Loop
@@ -908,9 +909,11 @@ button opens its clip in the editor.
   first time round, not every pass on top of each other. Muted notes are not drawn.
 - **Drawing.** Ghost notes are drawn under the clip's own notes and over the grid's rows, as
   plain rectangles in their own track's colour at 25 % opacity: no name, no edge, no velocity
-  stem. They are never hit-tested: a click, a double-click or a drag on a ghost note does what it
-  does on the empty grid (a click with the Select tool clears the selection, a double-click adds a
-  note there), and a ghost is never selected, moved or listed by `note.list`. For readers and
+  stem. A click, a double-click or a drag on a ghost note does what it does on the empty grid (a
+  click with the Select tool clears the selection, a double-click adds a note there), apart from a
+  double-click of the right button, which opens its clip, and the clicks that give one of several
+  picked clips the focus (› Several clips picked). A ghost is never selected, moved or listed by
+  `note.list`. For readers and
   tests each ghost in view is labelled "Ghost note E1 at beat 0 from Bass" (key, content beat,
   track), a label that only describes and senses nothing.
 - **Limits.** At most 20 000 ghost notes are mapped for one clip and at most 512 of those in view
@@ -944,7 +947,7 @@ button opens its clip in the editor.
   hiding it never changes the notes or the selection. The column is narrower than the properties
   column and scrolls on its own when the detail area is short.
 - Its head says what the tools act on: **Selected notes** while notes are selected, otherwise
-  **Whole clip**, with the count under it (`4 notes` or `12 of 12 notes`). The tools with a
+  **Whole clip**, or **No notes in time** when a time selection holds no note start and the tools act on nothing, with the count under it (`4 notes` or `12 of 12 notes`). The tools with a
   setting of their own (Transpose's semitones, Humanise's **Time** and **Velocity**, the scale's
   root and mode, the velocity tools) keep what was last typed until Suhina closes, as the quantise
   block's settings do.

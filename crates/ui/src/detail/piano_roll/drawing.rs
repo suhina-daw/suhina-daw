@@ -404,8 +404,8 @@ pub(super) fn draw(
         let radius = style.radius.unwrap_or(0.0);
         let own =
             if selected { selected_note_color(clip.color, theme::accent(), theme::text_primary()) } else { clip.color };
-        // Selected, it stays bright enough to tell at any velocity.
-        let alpha = if selected { alpha.max(0.75) } else { alpha };
+        // Selected, it stays bright enough to tell at any velocity; a muted note stays faded.
+        let alpha = if selected && !muted { alpha.max(0.75) } else { alpha };
         grid_painter.rect_filled(rect, radius, style.background.unwrap_or(own).gamma_multiply(alpha));
         if let Some(border) = style.border {
             grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);

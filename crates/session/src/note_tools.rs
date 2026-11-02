@@ -355,7 +355,7 @@ pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, Com
         }
         order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         let until = optional_number(params, "until")?;
-        let mut changed = 0;
+        let mut lengthened = Vec::new();
         for &(time, index) in &order {
             // The first start after this one; none for the last notes, which keep their length.
             let next = order.partition_point(|n| n.0 <= time + EPSILON);
@@ -368,10 +368,11 @@ pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, Com
             let note = notes.get_mut(index).ok_or("a note is missing")?;
             if length != note.duration {
                 note.duration = length;
-                changed += 1;
+                lengthened.push(index);
             }
         }
-        let replaced = if replaces(params) && changed > 0 { replace_under(notes, &named) } else { Vec::new() };
+        let changed = lengthened.len();
+        let replaced = if replaces(params) && changed > 0 { replace_under(notes, &lengthened) } else { Vec::new() };
         Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced), "changed": changed }), &replaced))
     })
 }

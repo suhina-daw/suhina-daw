@@ -602,13 +602,20 @@ impl App {
                 // (the quantise settings and Ctrl+U still work: › Other note tools).
                 if piano_roll.tools_open && !stacked {
                     let selected = piano_roll.acting().clone();
+                    // A time selection with no note in it gives the tools nothing to act on.
+                    let nothing = selected.is_empty() && piano_roll.span_end().is_some();
                     let tools = crate::detail::midi_tools::Tools {
                         address: &piano.address,
                         notes: &piano.notes,
                         selected: &selected,
                         length: piano.length,
+                        nothing,
                     };
+                    let before = actions.len();
                     rest = crate::detail::midi_tools::show(ui, rest, &tools, piano_roll, actions);
+                    if nothing {
+                        actions.truncate(before);
+                    }
                 }
                 let seeks = matches!(piano.address.get("clip"), Some(serde_json::Value::Number(_)));
                 let cx = piano_roll::Context { options, keymap: &keymap, copied, playhead, start_marker, seeks };
@@ -731,7 +738,9 @@ impl App {
         let piano = self.settings.device_layout != DeviceLayout::Stack
             && self.detail_showing == detail_view::Showing::Clip
             && self.piano_clip(self.shown_clip()).is_some();
-        if piano { piano_roll::LEAST_HEIGHT } else { 80.0 }
+        // Several clips picked: their strip takes room from the rows.
+        let strip = if self.arrangement.selected_clips().len() > 1 { piano_roll::CLIP_STRIP } else { 0.0 };
+        if piano { piano_roll::LEAST_HEIGHT + strip } else { 80.0 }
     }
 
     /// The clip the detail area shows: the Arrangement view's selected clip, or the Launcher view's
@@ -823,6 +832,19 @@ impl App {
             }
     }
 
+    /// Whether the edit keys act on the piano roll's selected notes although several clips are picked:
+    /// it was pressed last and notes of the focused clip are selected. With none, the keys are the
+    /// clips'.
+    pub(super) fn piano_edits_focused_clip(&self) -> bool {
+        self.piano_roll.focused
+            && !self.piano_roll.selected.is_empty()
+            && self.detail_open
+            && self.detail_showing == detail_view::Showing::Clip
+            && self.shown == View::Arrangement
+            && self.arrangement.selected_clips().len() > 1
+            && self.piano_clip(self.shown_clip()).is_some()
+    }
+
     /// What a key does in the piano roll, when it shows a clip and has the keyboard.
     pub(super) fn piano_key(&mut self, action: &str) -> Option<Action> {
         if self.detail_showing == detail_view::Showing::Devices {
@@ -834,8 +856,6 @@ impl App {
                 .selected_slot
                 .map(|(t, s)| detail_view::ClipRef::Slot(t, s))
                 .and_then(|clip| self.piano_clip(Some(clip)))?,
-            // Several clips picked: the keys are theirs, not one clip's notes.
-            View::Arrangement if self.arrangement.selected_clips().len() > 1 => return None,
             View::Arrangement => self
                 .arrangement
                 .selected_clip()

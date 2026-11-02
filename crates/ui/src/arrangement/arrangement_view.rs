@@ -740,7 +740,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let selected = state.time_selection.clone();
         let kept = state.painted_from.get_or_insert_with(|| selected.filter(|_| shift)).clone();
         state.time_selection = match kept {
-            Some(kept) => Some(kept.gone_on(&tracks, start, end)),
+            Some(kept) => Some(kept.gone_on(&tracks, start, end, None)),
             None => (end - start > 1e-6).then_some(TimeSelection { tracks, start, end, row: None }),
         };
         if ui.input(|i| !i.pointer.primary_down()) {
@@ -1063,7 +1063,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let beat_at = |x: f32, free: bool| {
             grid_now.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free, true)
         };
+        // Shift goes on from a time selection, wherever the drag begins and whatever the tool.
+        let goes_on = ui.input(|i| i.modifiers.shift) && state.time_selection.is_some();
         if drawing
+            && !goes_on
             && body.drag_started_by(egui::PointerButton::Primary)
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
         {
@@ -1073,8 +1076,6 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         {
             state.marquee = Some(origin);
             state.marquee_scroll = state.scroll;
-            // Shift goes on from a time selection, wherever the drag begins.
-            let goes_on = ui.input(|i| i.modifiers.shift) && state.time_selection.is_some();
             state.marquee_time = state.tool == ArrangementTool::Range
                 || goes_on
                 || if state.time_select_ctrl {
@@ -1341,7 +1342,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let selected = state.time_selection.clone();
             let kept = state.painted_from.get_or_insert_with(|| selected.filter(|_| shift)).clone();
             state.time_selection = match kept {
-                Some(kept) => Some(kept.gone_on(&tracks, start, end)),
+                Some(kept) => Some(kept.gone_on(&tracks, start, end, row)),
                 None => (end - start > 1e-6 && !tracks.is_empty()).then_some(TimeSelection { tracks, start, end, row }),
             };
             if done {
