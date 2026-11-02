@@ -1250,7 +1250,7 @@ fn the_randomizer_moves_a_device_as_one_undo_step_and_repeats_from_a_seed() {
     let params = session.project().channels[0].devices[0].params.clone();
     assert!(!params.is_empty());
 
-    run(&mut session, "history.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
     assert!(session.project().channels[0].devices[0].params.is_empty());
     run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "seed": 5 })).unwrap();
     assert_eq!(session.project().channels[0].devices[0].params, params);
