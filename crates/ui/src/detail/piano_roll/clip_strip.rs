@@ -46,10 +46,11 @@ pub(super) fn show(
     // The clips, over the grid.
     let bars = Rect::from_x_y_ranges(layout.grid.x_range(), row.y_range());
     let painter = ui.painter_at(bars);
+    let height = row.height() / clip.ghosts.strip_rows().max(1) as f32;
     for (index, bar) in clip.ghosts.picked.iter().enumerate() {
         let rect = Rect::from_x_y_ranges(
             layout.x_of(bar.start)..=layout.x_of(bar.start + bar.length).max(layout.x_of(bar.start) + 2.0),
-            row.y_range(),
+            row.top() + bar.row as f32 * height..=row.top() + (bar.row + 1) as f32 * height,
         )
         .shrink2(Vec2::new(0.0, 1.0));
         let color = if bar.edited { bar.color } else { bar.color.gamma_multiply(OTHER_BAR) };

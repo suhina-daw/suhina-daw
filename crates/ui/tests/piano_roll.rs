@@ -514,9 +514,10 @@ fn with_two_clips_picked_the_keys_act_on_the_focused_clip() {
     h.get_by_label_contains("Beat B in the piano roll").click();
     h.run();
     let before = notes(&h);
-    pick(&mut h, 0);
+    let shown = before.iter().position(|n| h.query_by_label(&note_label(n)).is_some()).unwrap();
+    pick(&mut h, shown);
     key(&mut h, Modifiers::NONE, Key::ArrowUp);
-    assert_eq!(notes(&h)[0].key, before[0].key + 1);
+    assert_eq!(notes(&h)[shown].key, before[shown].key + 1);
     key(&mut h, Modifiers::NONE, Key::Delete);
     assert_eq!(notes(&h).len(), before.len() - 1);
     assert!(h.query_by_label("Clip Walk on Bass at bar 17").is_some(), "the clips stay");

@@ -739,7 +739,9 @@ impl App {
             && self.detail_showing == detail_view::Showing::Clip
             && self.piano_clip(self.shown_clip()).is_some();
         // Several clips picked: their strip takes room from the rows.
-        let strip = if self.arrangement.selected_clips().len() > 1 { piano_roll::CLIP_STRIP } else { 0.0 };
+        let picked = self.arrangement.selected_clips().len();
+        let rows = if picked > 1 { picked.min(crate::detail::piano_roll_ghosts::MAX_STRIP_ROWS) } else { 0 };
+        let strip = piano_roll::CLIP_STRIP * rows as f32;
         if piano { piano_roll::LEAST_HEIGHT + strip } else { 80.0 }
     }
 

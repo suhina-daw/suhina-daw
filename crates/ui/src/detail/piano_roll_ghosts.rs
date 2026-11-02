@@ -103,6 +103,29 @@ pub struct PickedBar {
     pub color: Color32,
     /// Whether it is the clip being edited.
     pub edited: bool,
+    /// Its row of the strip, from the top: clips at the same time lie one above the other.
+    pub row: usize,
+}
+
+/// How many rows the strip of picked clips has at most; further clips at the same time share the last.
+pub const MAX_STRIP_ROWS: usize = 4;
+
+/// Gives each bar the first row free where it starts, the earliest bars first.
+fn lay_out_bars(bars: &mut [PickedBar]) {
+    let mut order: Vec<usize> = (0..bars.len()).collect();
+    order.sort_by(|a, b| {
+        let start = |i: &usize| bars.get(*i).map_or(0.0, |bar| bar.start);
+        start(a).total_cmp(&start(b))
+    });
+    let mut ends = [f64::NEG_INFINITY; MAX_STRIP_ROWS];
+    for index in order {
+        let Some(bar) = bars.get_mut(index) else { continue };
+        let row = ends.iter().position(|end| *end <= bar.start + 1e-9).unwrap_or(MAX_STRIP_ROWS - 1);
+        bar.row = row;
+        if let Some(end) = ends.get_mut(row) {
+            *end = end.max(bar.start + bar.length);
+        }
+    }
 }
 
 /// A clip the menu's Clip list offers: where it is, and its name with its track and place.
@@ -124,6 +147,11 @@ pub struct Ghosts {
 }
 
 impl Ghosts {
+    /// How many rows the strip of picked clips takes.
+    pub fn strip_rows(&self) -> usize {
+        self.picked.iter().map(|bar| bar.row + 1).max().unwrap_or(0)
+    }
+
     /// Whether `clip` is one of the clips picked together with the edited one.
     pub fn is_picked(&self, clip: ClipRef) -> bool {
         self.picked.iter().any(|bar| bar.clip == clip)
@@ -254,8 +282,10 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
             name: format!("{} - {}", project.shown_track_name(track), content),
             color: Color32::from_rgb(rgb.0, rgb.1, rgb.2),
             edited: clip == edited,
+            row: 0,
         });
     }
+    lay_out_bars(&mut ghosts.picked);
     for clip in picked.iter().copied().filter(|c| *c != edited) {
         if ghosts.notes.len() >= MAX_GHOSTS {
             break;

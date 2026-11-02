@@ -193,3 +193,24 @@ fn picked_clips_get_a_bar_each_and_their_notes_find_them() {
     assert!(!ghosts.notes.is_empty());
     assert!(ghosts.notes.iter().all(|note| note.clip == other));
 }
+
+/// Clips at the same time get a row each, clips apart share one, and more than fit share the last.
+#[test]
+fn bars_at_the_same_time_lie_one_above_the_other() {
+    let bar = |start: f64, length: f64| PickedBar {
+        clip: ClipRef::Slot(TrackId(1), 0),
+        start,
+        length,
+        name: String::new(),
+        color: Color32::RED,
+        edited: false,
+        row: 0,
+    };
+    let rows = |mut bars: Vec<PickedBar>| {
+        lay_out_bars(&mut bars);
+        bars.iter().map(|bar| bar.row).collect::<Vec<_>>()
+    };
+    assert_eq!(rows(vec![bar(0.0, 4.0), bar(0.0, 4.0), bar(0.0, 4.0)]), [0, 1, 2]);
+    assert_eq!(rows(vec![bar(4.0, 4.0), bar(0.0, 4.0)]), [0, 0], "side by side");
+    assert_eq!(rows(vec![bar(0.0, 4.0); 6]), [0, 1, 2, 3, 3, 3]);
+}

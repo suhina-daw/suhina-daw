@@ -774,11 +774,11 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   notes are, and the view runs on over them. The column lists the picked clips, the one being
   edited marked **Editing**; a click on another gives it the focus. A strip over the ruler shows
   each picked clip as a bar in its track's colour where it lies in time, with its name, and the
-  edited one brightest; a click on a bar, or on a clip's faint note with the Select tool, gives it
+  edited one brightest; clips at the same time lie one above the other, in up to four rows; a click on a bar, or on a clip's faint note with the Select tool, gives it
   the focus, as a double-click of the right button on a faint note does. The **Focus** switch at
   the strip's left keeps the focus on the clip picked first. Keys and selections act on the
   focused clip: with notes selected the edit keys act on them, and with none selected on the clips.
-  The least height grows by the strip's 16 px.
+  The least height grows by 16 px for each row the strip can take.
 - **Built ([#699](https://github.com/suhina-daw/suhina-daw/issues/699)):** the column edits the
   clip, each change one undo step:
   - **Loop** is a switch (`clip.setLoop`). An audio clip that loops has **Loop start** and **Loop
