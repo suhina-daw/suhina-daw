@@ -54,26 +54,9 @@ pub(crate) enum Slot {
     Device(Box<dyn Device>),
     /// A built-in MIDI effect: it changes the chain's events, not its sound.
     MidiDevice(Box<dyn Device>),
-    Sd(suhina_device_sdk::PreparedEffect),
-    InstrumentSd(suhina_device_sdk::PreparedEffect),
-    MidiSd(suhina_device_sdk::PreparedMidiEffect),
     Plugin(PluginSlot),
     /// A device group: branches of slots summed (`docs/spec/device-groups.md`).
     Group(Box<crate::group::GroupSlot>),
-}
-
-impl Slot {
-    /// Sets parameter `index` of a built-in or data-only (`.sd`) device, in the device's own
-    /// order. A plug-in's parameters and a group's go through their own paths and are left alone
-    /// here. Never allocates.
-    pub(crate) fn set_parameter(&mut self, index: usize, value: f64) {
-        match self {
-            Slot::Device(device) | Slot::MidiDevice(device) => device.set_param(index, value),
-            Slot::Sd(effect) | Slot::InstrumentSd(effect) => effect.set_parameter(index, value),
-            Slot::MidiSd(effect) => effect.set_parameter(index, value),
-            Slot::Plugin(_) | Slot::Group(_) => {}
-        }
-    }
 }
 
 pub(crate) struct Chain {
@@ -288,7 +271,7 @@ impl Chain {
         let mut instrument = slots.iter().any(crate::group::is_instrument);
         // MIDI effects with no instrument after them play the notes they change as the sine
         // tones the track would play without them (ADR 0004 › 14).
-        let is_midi = |slot: &Slot| matches!(slot, Slot::MidiDevice(_) | Slot::MidiSd(_));
+        let is_midi = |slot: &Slot| matches!(slot, Slot::MidiDevice(_));
         if !instrument && slots.iter().any(is_midi) {
             let at = slots.iter().take_while(|slot| is_midi(slot)).count();
             device_lanes.insert_slot(at);
@@ -585,32 +568,8 @@ impl Chain {
                         span_events,
                         midi_scratch,
                         device_lanes,
-                        SdRun { from, to, context },
+                        EventSpan { from, to, context },
                     );
-                    std::mem::swap(pending, midi_scratch);
-                    *stage += 1;
-                }
-                Slot::Sd(effect) => {
-                    run_sd_effect(effect, *stage, buffer, device_lanes, SdRun { from, to, context });
-                    *stage += 1;
-                }
-                Slot::InstrumentSd(instrument) => {
-                    span_events.clear();
-                    let last = (to - from).saturating_sub(1);
-                    span_events.extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
-                    run_sd_instrument(
-                        instrument,
-                        *stage,
-                        buffer,
-                        span_events,
-                        midi_scratch,
-                        device_lanes,
-                        SdRun { from, to, context },
-                    );
-                    *stage += 1;
-                }
-                Slot::MidiSd(effect) => {
-                    run_sd_midi(effect, *stage, pending, midi_scratch, device_lanes, SdRun { from, to, context });
                     std::mem::swap(pending, midi_scratch);
                     *stage += 1;
                 }
@@ -945,32 +904,8 @@ impl Chain {
                         span_events,
                         midi_scratch,
                         device_lanes,
-                        SdRun { from, to, context },
+                        EventSpan { from, to, context },
                     );
-                    std::mem::swap(pending, midi_scratch);
-                    index += 1;
-                }
-                Slot::Sd(effect) => {
-                    run_sd_effect(effect, index, buffer, device_lanes, SdRun { from, to, context });
-                    index += 1;
-                }
-                Slot::InstrumentSd(instrument) => {
-                    span_events.clear();
-                    let last = (to - from).saturating_sub(1);
-                    span_events.extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
-                    run_sd_instrument(
-                        instrument,
-                        index,
-                        buffer,
-                        span_events,
-                        midi_scratch,
-                        device_lanes,
-                        SdRun { from, to, context },
-                    );
-                    index += 1;
-                }
-                Slot::MidiSd(effect) => {
-                    run_sd_midi(effect, index, pending, midi_scratch, device_lanes, SdRun { from, to, context });
                     std::mem::swap(pending, midi_scratch);
                     index += 1;
                 }
@@ -1101,12 +1036,6 @@ impl Chain {
                     *slot = device.param(param).unwrap_or(value);
                 }
             }
-            Some(slot @ (Slot::Sd(_) | Slot::InstrumentSd(_) | Slot::MidiSd(_))) => {
-                slot.set_parameter(param, value);
-                if let Some(slot) = self.params.get_mut(index).and_then(|values| values.get_mut(param)) {
-                    *slot = value;
-                }
-            }
             Some(Slot::Plugin(plugin)) => {
                 if let Ok(id) = u32::try_from(param) {
                     plugin.params.set(id, value);
@@ -1152,13 +1081,6 @@ impl Chain {
                         values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
                     {
                         device.set_param(index, value);
-                    }
-                }
-                (slot @ (Slot::Sd(_) | Slot::InstrumentSd(_) | Slot::MidiSd(_)), _) => {
-                    for (index, &value) in
-                        values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
-                    {
-                        slot.set_parameter(index, value);
                     }
                 }
                 (Slot::Plugin(running), Slot::Plugin(fresh)) => running.adopt(fresh),
@@ -1378,10 +1300,10 @@ pub(crate) enum Placed {
     NoSlot(Box<dyn PluginProcessor>),
 }
 
-/// Runs a built-in device (slot `slot` of its chain) over the block's frames `from..to`,
-/// split where a note event or a change of a parameter that follows a lane falls; at one frame
-/// the parameter changes before the note. Each span gets the song position of its own first
-/// frame, as [`run_sd_effect`] gives it.
+/// Runs a built-in or `.sd` device (slot `slot` of its chain) over the block's frames
+/// `from..to`, split where a note event or a change of a parameter that follows a lane falls; at
+/// one frame the parameter changes before the note. Each span gets the song position of its own
+/// first frame.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_device(
     device: &mut Box<dyn Device>,
@@ -1421,101 +1343,10 @@ pub(crate) fn run_device(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct SdRun<'a> {
+pub(crate) struct EventSpan<'a> {
     pub(crate) from: usize,
     pub(crate) to: usize,
     pub(crate) context: &'a ProcessContext,
-}
-
-pub(crate) fn run_sd_effect(
-    effect: &mut suhina_device_sdk::PreparedEffect,
-    slot: usize,
-    buffer: &mut [f32],
-    lanes: &DeviceLanes,
-    run: SdRun<'_>,
-) {
-    let mut at = run.from;
-    for change in lanes.changes(slot, run.from, run.to) {
-        let end = change.frame.max(at).min(run.to);
-        if let Some(span) = buffer.get_mut(at * 2..end * 2) {
-            effect.process_context(&span_context(run.context, at, effect.sample_rate()), span);
-        }
-        effect.set_parameter(change.param, change.value);
-        at = end;
-    }
-    if let Some(span) = buffer.get_mut(at * 2..run.to * 2) {
-        effect.process_context(&span_context(run.context, at, effect.sample_rate()), span);
-    }
-}
-
-pub(crate) fn run_sd_instrument(
-    instrument: &mut suhina_device_sdk::PreparedEffect,
-    slot: usize,
-    buffer: &mut [f32],
-    events: &[(usize, NoteEvent)],
-    scratch: &mut Vec<(usize, NoteEvent)>,
-    lanes: &DeviceLanes,
-    run: SdRun<'_>,
-) {
-    let mut at = run.from;
-    for change in lanes.changes(slot, run.from, run.to) {
-        let end = change.frame.max(at).min(run.to);
-        run_sd_instrument_span(instrument, buffer, at, end, events, scratch, run);
-        instrument.set_parameter(change.param, change.value);
-        at = end;
-    }
-    run_sd_instrument_span(instrument, buffer, at, run.to, events, scratch, run);
-}
-
-fn run_sd_instrument_span(
-    instrument: &mut suhina_device_sdk::PreparedEffect,
-    buffer: &mut [f32],
-    start: usize,
-    end: usize,
-    events: &[(usize, NoteEvent)],
-    scratch: &mut Vec<(usize, NoteEvent)>,
-    run: SdRun<'_>,
-) {
-    if end <= start {
-        return;
-    }
-    scratch.clear();
-    scratch.extend(events.iter().filter_map(|&(frame, event)| {
-        (frame >= start.saturating_sub(run.from) && frame < end.saturating_sub(run.from))
-            .then_some((frame.saturating_sub(start.saturating_sub(run.from)), event))
-    }));
-    if let Some(span) = buffer.get_mut(start * 2..end * 2) {
-        instrument.process_instrument_context(
-            &span_context(run.context, start, instrument.sample_rate()),
-            scratch,
-            span,
-        );
-    }
-}
-
-pub(crate) fn run_sd_midi(
-    effect: &mut suhina_device_sdk::PreparedMidiEffect,
-    slot: usize,
-    events: &[(usize, NoteEvent)],
-    output: &mut Vec<(usize, NoteEvent)>,
-    lanes: &DeviceLanes,
-    run: SdRun<'_>,
-) {
-    output.resize(events.len().saturating_mul(2).min(output.capacity()), (0, NoteEvent::AllNotesOff));
-    let mut written = 0;
-    let mut changes = lanes.changes(slot, run.from, run.to).peekable();
-    for event in events {
-        while let Some(change) = changes.next_if(|change| change.frame <= event.0) {
-            effect.set_parameter(change.param, change.value);
-        }
-        if let Some(dest) = output.get_mut(written..) {
-            written += effect.process(std::slice::from_ref(event), dest);
-        }
-    }
-    for change in changes {
-        effect.set_parameter(change.param, change.value);
-    }
-    output.truncate(written);
 }
 
 /// Runs a built-in MIDI effect (slot `slot` of its chain) over the block's frames `from..to`:
@@ -1531,7 +1362,7 @@ pub(crate) fn run_midi_device(
     input: &mut Vec<(usize, NoteEvent)>,
     output: &mut Vec<(usize, NoteEvent)>,
     lanes: &DeviceLanes,
-    run: SdRun<'_>,
+    run: EventSpan<'_>,
 ) {
     output.clear();
     let mut start = run.from;
@@ -1539,12 +1370,12 @@ pub(crate) fn run_midi_device(
     for change in lanes.changes(slot, run.from, run.to) {
         let end = change.frame.clamp(start, run.to);
         if end > start {
-            midi_span(device, events, &mut next, input, output, SdRun { from: start, to: end, ..run }, false);
+            midi_span(device, events, &mut next, input, output, EventSpan { from: start, to: end, ..run }, false);
         }
         device.set_param(change.param, change.value);
         start = end;
     }
-    midi_span(device, events, &mut next, input, output, SdRun { from: start, ..run }, true);
+    midi_span(device, events, &mut next, input, output, EventSpan { from: start, ..run }, true);
 }
 
 /// One span `from..to` of [`run_midi_device`]: the events from `next` that fall before `to`
@@ -1556,10 +1387,10 @@ fn midi_span(
     next: &mut usize,
     input: &mut Vec<(usize, NoteEvent)>,
     output: &mut Vec<(usize, NoteEvent)>,
-    span: SdRun<'_>,
+    span: EventSpan<'_>,
     rest: bool,
 ) {
-    let SdRun { from: start, to: end, context } = span;
+    let EventSpan { from: start, to: end, context } = span;
     let frames = end.saturating_sub(start);
     let final_frame = frames.saturating_sub(1);
     input.clear();
@@ -1745,16 +1576,18 @@ mod sd_tests {
             Node::new("out", NodeKind::MidiOutput),
         ];
         graph.connections = vec![Connection::new("in", "transpose"), Connection::new("transpose", "out")];
-        let mut effect = graph.compile_midi().unwrap();
+        let mut effect: Box<dyn Device> = Box::new(suhina_device_sdk::GraphDevice::midi(&graph).unwrap());
         let events = [(150, NoteEvent::On { key: 60, velocity: 0.8 })];
+        let mut input = Vec::with_capacity(1);
         let mut output = Vec::with_capacity(1);
-        run_sd_midi(
+        run_midi_device(
             &mut effect,
             0,
             &events,
+            &mut input,
             &mut output,
             &DeviceLanes::none(),
-            SdRun { from: 100, to: 200, context: &ProcessContext::default() },
+            EventSpan { from: 100, to: 200, context: &ProcessContext::default() },
         );
         assert_eq!(output, [(150, NoteEvent::On { key: 72, velocity: 0.8 })]);
     }

@@ -16,7 +16,9 @@ Everything around the device (the wrapper, the panel, saving, automation, old pr
 its `INFO` and finds parameters by id, so the change is mostly the device's own crate.
 
 1. **Append** a `ParamInfo` to `PARAMS` in `devices/<name>/src/lib.rs`
-   (`ParamInfo::continuous`, `toggle`, `choice`), and its index to `mod param`, raising `COUNT`.
+   (`ParamInfo::continuous`, `toggle`, `integer`, `choice`; in a group,
+   `ParamInfo::in_group("LFO").continuous(…)`), and its index to `mod param`, raising `COUNT`.
+   `PARAMS` and `INFO` are `static`s built in `const` code (`DeviceInfo::new`).
    Append, never insert or reorder: indices are what `set_param` and the tests use, and a
    project stores each value by the parameter's id (`suhina_model::DeviceParam`), so an old
    project that lacks the new id gets its default.

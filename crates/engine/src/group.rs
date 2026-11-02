@@ -264,9 +264,8 @@ pub(crate) fn is_instrument(slot: &Slot) -> bool {
     match slot {
         Slot::Device(device) => device.info().role == Role::Instrument,
         Slot::Plugin(slot) => slot.instrument,
-        Slot::InstrumentSd(_) => true,
         Slot::Group(group) => group.instrument,
-        Slot::MidiDevice(_) | Slot::Sd(_) | Slot::MidiSd(_) => false,
+        Slot::MidiDevice(_) => false,
     }
 }
 
@@ -367,13 +366,6 @@ impl GroupSlot {
                             values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
                         {
                             device.set_param(index, value);
-                        }
-                    }
-                    (slot @ (Slot::Sd(_) | Slot::InstrumentSd(_) | Slot::MidiSd(_)), _) => {
-                        for (index, &value) in
-                            values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
-                        {
-                            slot.set_parameter(index, value);
                         }
                     }
                     (Slot::Group(group), Slot::Group(new_group)) => group.adopt(new_group),
@@ -533,23 +525,6 @@ pub(crate) fn run_slots(
             Slot::Device(device) => {
                 crate::chain::run_device(device, index, buffer, from, to, pending, lanes, context, sample_rate);
             }
-            Slot::Sd(effect) => {
-                crate::chain::run_sd_effect(effect, index, buffer, lanes, crate::chain::SdRun { from, to, context });
-            }
-            Slot::InstrumentSd(instrument) => {
-                span_events.clear();
-                let last = (to - from).saturating_sub(1);
-                span_events.extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
-                crate::chain::run_sd_instrument(
-                    instrument,
-                    index,
-                    buffer,
-                    span_events,
-                    midi_scratch,
-                    lanes,
-                    crate::chain::SdRun { from, to, context },
-                );
-            }
             // A built-in MIDI effect (#678) changes the branch's events as in a chain.
             Slot::MidiDevice(device) => {
                 crate::chain::run_midi_device(
@@ -559,18 +534,7 @@ pub(crate) fn run_slots(
                     span_events,
                     midi_scratch,
                     lanes,
-                    crate::chain::SdRun { from, to, context },
-                );
-                std::mem::swap(pending, midi_scratch);
-            }
-            Slot::MidiSd(effect) => {
-                crate::chain::run_sd_midi(
-                    effect,
-                    index,
-                    pending,
-                    midi_scratch,
-                    lanes,
-                    crate::chain::SdRun { from, to, context },
+                    crate::chain::EventSpan { from, to, context },
                 );
                 std::mem::swap(pending, midi_scratch);
             }

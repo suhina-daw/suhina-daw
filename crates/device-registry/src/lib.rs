@@ -378,6 +378,21 @@ pub fn compile_graph(
     compile_graph_with_samples(graph, rate, &Default::default())
 }
 
+/// A `.sd` graph as a device like any built-in (#763 › 6), its native nodes made from this
+/// registry and its sample nodes reading `samples`. Off the audio thread.
+pub fn graph_device(
+    graph: &suhina_device_sdk::DeviceGraph,
+    rate: f64,
+    samples: suhina_device_sdk::sample_resource::PreparedSamples,
+) -> Result<suhina_device_sdk::GraphDevice, suhina_device_sdk::DeviceSdkError> {
+    if graph.role == suhina_device_sdk::DeviceRole::MidiEffect {
+        return suhina_device_sdk::GraphDevice::midi(graph);
+    }
+    let compiled = graph.clone();
+    let compile = move |rate| compile_graph_with_samples(&compiled, rate, &samples);
+    suhina_device_sdk::GraphDevice::audio(graph, rate, Box::new(compile))
+}
+
 /// Prepare graph resources supplied by the host; decoding and retirement stay off-thread.
 pub fn compile_graph_with_samples(
     graph: &suhina_device_sdk::DeviceGraph,

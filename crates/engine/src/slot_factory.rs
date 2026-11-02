@@ -6,7 +6,7 @@
 //! a device behaves the same in both: its sample, its file, its automation lanes, its parameters
 //! clamped and overlaid on the defaults, and its identity for graph swaps.
 
-use suhina_device_api::Role;
+use suhina_device_api::{Device, Role};
 use suhina_model::DeviceKind;
 
 use crate::automation::DeviceLanes;
@@ -148,27 +148,22 @@ impl SlotFactory<'_> {
             .ok()?;
             samples.insert("sample", std::sync::Arc::new(asset)).ok()?;
         }
-        let rate = f64::from(self.sample_rate);
-        let mut built = match graph.role {
-            suhina_device_sdk::DeviceRole::Effect => {
-                Slot::Sd(suhina_device_registry::compile_graph_with_samples(&graph, rate, &samples).ok()?)
-            }
-            suhina_device_sdk::DeviceRole::MidiEffect => Slot::MidiSd(graph.compile_midi().ok()?),
-            suhina_device_sdk::DeviceRole::Instrument => {
-                Slot::InstrumentSd(suhina_device_registry::compile_graph_with_samples(&graph, rate, &samples).ok()?)
-            }
-        };
-        lanes.add_sd(slot, &graph.parameters, &stored.automation, self.frames_per_beat);
-        let mut values = Vec::with_capacity(graph.parameters.len());
-        for (index, parameter) in graph.parameters.iter().enumerate() {
+        let mut device = suhina_device_registry::graph_device(&graph, f64::from(self.sample_rate), samples).ok()?;
+        let info = device.info().clone();
+        lanes.add(slot, &device, &stored.automation, self.frames_per_beat);
+        let mut values = Vec::with_capacity(info.params.len());
+        for (index, parameter) in info.params.iter().enumerate() {
             let value = stored
                 .params
                 .iter()
                 .find(|value| value.id == parameter.id)
                 .map_or(parameter.default, |value| parameter.clamp(value.value));
-            built.set_parameter(index, lanes.initial(slot, index).unwrap_or(value));
+            device.set_param(index, lanes.initial(slot, index).unwrap_or(value));
             values.push(value);
         }
+        device.reset();
+        let device: Box<dyn suhina_device_api::Device> = Box::new(device);
+        let built = if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) };
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         bytes.hash(&mut hasher);
