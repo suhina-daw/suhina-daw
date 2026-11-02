@@ -123,8 +123,10 @@ status bar.
 | In the piano roll: choose the Select, Draw, Paint, Erase, Slice, Mute tool (`pianoRoll.tool1` … `.tool6`, [spec](spec/ui-clip-editor.md) › Drawing notes, › Muting) | 1, 2, 3, 4, 5, 6 |
 | In the piano roll: select every note, clear the selection (`pianoRoll.selectAll`, `.deselect`) | Ctrl+A; Escape |
 | In the piano roll: move the selected notes one grid step earlier, later (`pianoRoll.earlier`, `.later`) | Left; Right |
+| In the piano roll: move the selected notes a fine step (a 1/128 note) earlier, later, off the grid (`pianoRoll.earlierFine`, `.laterFine`) | Alt+Left; Alt+Right |
 | In the piano roll: move the selected notes a semitone, an octave up or down (`pianoRoll.up`, `.down`, `.octaveUp`, `.octaveDown`) | Up, Down; Shift+Up, Shift+Down |
 | In the piano roll: take the selected notes' ends to the previous, the next grid line, or to the next note of the key (`pianoRoll.shorter`, `.longer`; never shorter than a step) | Shift+Left; Shift+Right |
+| In the piano roll: make the selected notes a fine step shorter, longer, off the grid, stopping at the next note of the key (`pianoRoll.shorterFine`, `.longerFine`) | Alt+Shift+Left; Alt+Shift+Right |
 | In the piano roll: switch between the Select and Draw tools (`pianoRoll.draw`, [spec](spec/ui-clip-editor.md) › Drawing notes) | B |
 | In the piano roll: make the grid finer, coarser (`pianoRoll.gridNarrow`, `.gridWiden`, [spec](spec/ui-clip-editor.md) › Grid and snapping) | Ctrl+1; Ctrl+2 |
 | In the piano roll: turn the triplet grid on or off (`pianoRoll.gridTriplet`) | Ctrl+3 |

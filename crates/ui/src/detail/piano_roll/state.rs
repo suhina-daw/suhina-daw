@@ -7,6 +7,8 @@ use super::*;
 
 /// The furthest the piano roll reaches, in beats: the engine's furthest start.
 pub(super) const BEAT_LIMIT: f32 = 120_000.0;
+/// How far Alt and an arrow key moves or resizes notes, in beats: a 1/128 note, finer than any grid.
+const FINE_STEP: f64 = 0.03125;
 
 /// The grid step in beats for the control bar's value; 0 for none.
 pub fn grid_step(quantization: Quantization, bar_beats: f64) -> f64 {
@@ -428,8 +430,9 @@ impl PianoRollState {
         }
         params["notes"] = json!(acting.iter().collect::<Vec<_>>());
         let grid = note_grid(clip, self.beat_width);
+        let free = matches!(action, "pianoRoll.earlierFine" | "pianoRoll.laterFine");
         let moves = |beats: f64, keys: i32| {
-            let (beats, moved) = move_delta(beats, keys, &chosen, grid, false);
+            let (beats, moved) = move_delta(beats, keys, &chosen, grid, free);
             // A pitch move that does not fit leaves the pitch alone, so no note changes its name.
             (beats, if moved == keys { keys } else { 0 })
         };
@@ -450,13 +453,17 @@ impl PianoRollState {
                 self.replacing(&mut params);
                 return Some(Action::new("note.duplicate", params));
             }
-            "pianoRoll.shorter" | "pianoRoll.longer" => {
-                // To the next or the previous grid line, per note: one command, one undo step.
+            "pianoRoll.shorter" | "pianoRoll.longer" | "pianoRoll.shorterFine" | "pianoRoll.longerFine" => {
+                // To the next or the previous grid line, or a fine step on, per note: one command,
+                // one undo step.
+                let longer = matches!(action, "pianoRoll.longer" | "pianoRoll.longerFine");
+                let fine = matches!(action, "pianoRoll.shorterFine" | "pianoRoll.longerFine");
+                let grid = if fine { TimelineGrid { step: FINE_STEP, snaps: false, ..grid } } else { grid };
                 let mut named = Vec::new();
                 let mut lengths = Vec::new();
                 for &index in &acting {
                     let Some(note) = clip.notes.get(index) else { continue };
-                    let end = key_step_end(note, &clip.notes, grid, action == "pianoRoll.longer", self.notes_replace);
+                    let end = key_step_end(note, &clip.notes, grid, longer, self.notes_replace);
                     if (end - note.time - note.duration).abs() > EPSILON {
                         named.push(index);
                         lengths.push(round_beat(end - note.time));
@@ -471,6 +478,8 @@ impl PianoRollState {
             }
             "pianoRoll.earlier" => ("note.move", moves(-grid.step, 0).0, 0),
             "pianoRoll.later" => ("note.move", moves(grid.step, 0).0, 0),
+            "pianoRoll.earlierFine" => ("note.move", moves(-FINE_STEP, 0).0, 0),
+            "pianoRoll.laterFine" => ("note.move", moves(FINE_STEP, 0).0, 0),
             "pianoRoll.up" => ("note.move", 0.0, moves(0.0, 1).1),
             "pianoRoll.down" => ("note.move", 0.0, moves(0.0, -1).1),
             "pianoRoll.octaveUp" => ("note.move", 0.0, moves(0.0, 12).1),

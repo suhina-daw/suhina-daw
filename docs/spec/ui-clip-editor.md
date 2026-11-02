@@ -583,6 +583,8 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 
 ## Moving
 
+- **Built:** **Alt+Left** and **Alt+Right** move the selection a 1/128 note, off the grid, finer than
+  any grid value.
 - **Built:** dragging a selected note (or any note, which selects it first unless it is already in
   the selection) moves the whole selection: sideways in time, snapped by whole grid steps (Alt:
   freely), up and down by semitones. The notes are shown where they go while dragging; the move is
@@ -620,6 +622,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   a note already touching the next one stays, and with **Allow stacked notes** on the next note stops
   nothing. **Shift+Left** takes each end to the previous grid line, and no note gets shorter than one
   step. One `note.resize` with `lengths`, one undo step; with snapping off, a whole step either way.
+  With **Alt** held too, the end goes a 1/128 note either way, off the grid, under the same limits.
 - **Built ([#1113](https://github.com/suhina-daw/suhina-daw/issues/1113)):** with **Allow stacked
   notes** off (the default), a note drawn, moved, resized, pasted, duplicated, quantised or made
   legato replaces the notes of its key under it: a note it covers whole is removed, one that starts
@@ -1000,6 +1003,7 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Left, Right | Moves the selection one grid step earlier, later |
 | Up, Down; Shift+Up, Shift+Down | Moves the selection a semitone; an octave |
 | Shift+Left, Shift+Right | Takes the selection's ends to the previous, the next grid line, or to the next note of the key (› Resizing) |
+| Alt+Left, Alt+Right; Alt+Shift+Left, Alt+Shift+Right | Moves the selection, or changes its length, by a 1/128 note, off the grid (› Moving, › Resizing) |
 | Ctrl+C, Ctrl+X, Ctrl+V | Copies, cuts, pastes notes |
 | Ctrl+D, or Ctrl+B with Draw-first | Duplicates the selected notes (› Keymap presets) |
 | Ctrl+Z, Ctrl+Shift+Z | Undo, redo (as everywhere) |

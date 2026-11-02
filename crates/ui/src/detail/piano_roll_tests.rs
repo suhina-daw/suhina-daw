@@ -599,3 +599,29 @@ fn a_longer_key_goes_on_along_triplet_lines() {
     let first = note(0.0, 0.333333, 60);
     assert!((key_step_end(&first, &[first], grid, true, true) - 2.0 / 3.0).abs() < 1e-9);
 }
+
+/// Alt and an arrow key goes a fine step, off the grid; with Shift it changes the length that way.
+#[test]
+fn alt_and_an_arrow_key_go_a_fine_step_off_the_grid() {
+    let clip = clip(vec![note(1.0, 1.0, 60), note(2.25, 1.0, 60)]);
+    let mut state = PianoRollState { notes_replace: false, ..focused_on(&clip) };
+    state.selected = BTreeSet::from([0]);
+    let params = |action: Option<Action>| action.map(|a| (a.id, a.params));
+    let (id, later) = params(state.key_action("pianoRoll.laterFine", &clip, 0.0, None)).unwrap();
+    assert_eq!((id, later["beats"].as_f64()), ("note.move", Some(0.03125)));
+    let (_, earlier) = params(state.key_action("pianoRoll.earlierFine", &clip, 0.0, None)).unwrap();
+    assert_eq!(earlier["beats"].as_f64(), Some(-0.03125));
+    let (id, longer) = params(state.key_action("pianoRoll.longerFine", &clip, 0.0, None)).unwrap();
+    assert_eq!((id, longer["lengths"][0].as_f64()), ("note.resize", Some(1.03125)));
+    let (_, shorter) = params(state.key_action("pianoRoll.shorterFine", &clip, 0.0, None)).unwrap();
+    assert_eq!(shorter["lengths"][0].as_f64(), Some(0.96875));
+}
+
+#[test]
+fn a_fine_step_longer_stops_at_the_next_note_of_the_key() {
+    let clip = clip(vec![note(1.0, 1.24, 60), note(2.25, 1.0, 60)]);
+    let mut state = focused_on(&clip);
+    state.selected = BTreeSet::from([0]);
+    let longer = state.key_action("pianoRoll.longerFine", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(longer.and_then(|p| p["lengths"][0].as_f64()), Some(1.25));
+}
