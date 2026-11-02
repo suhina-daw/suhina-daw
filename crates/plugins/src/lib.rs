@@ -1627,12 +1627,12 @@ mod tests {
     fn living_process() -> (HostProcess, Sender<Message>) {
         let (address, name) = control_name().unwrap();
         let listener = ListenerOptions::new().name(name).create_sync().unwrap();
-        let remote = thread::spawn({
-            let address = address.clone();
-            move || connect(&address).unwrap()
-        });
+        // A listener takes a connection made before it is asked, so a connection that fails ends
+        // the test here and `accept` has no one to wait for. The remote half lives until then:
+        // one that is gone by `accept` leaves it nothing to take.
+        let remote = connect(&address).unwrap();
         let control = listener.accept().unwrap();
-        remote.join().unwrap();
+        drop(remote);
         // A child that lives on and ends by itself. `timeout` waits for a key and errors when
         // there is no console to take it from; a ping to no host waits without input.
         let mut child = Command::new(if cfg!(windows) { "cmd" } else { "sleep" });
