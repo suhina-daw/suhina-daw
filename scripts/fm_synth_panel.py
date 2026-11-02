@@ -426,7 +426,7 @@ def expanded_operator(x, y, w):
         controls.append(point(f"x_decay_{n}", "Decay", [x + w * 0.2, y + 24.0, w * 0.25, 130.0], f"{e}decay", "x", True, time))
         controls.append(point(f"x_release_{n}", "Release", [x + w * 0.75, y + 24.0, w * 0.25, 130.0], f"{e}release", "x", True, time))
         controls.append(point(f"x_sustain_{n}", "Sustain", [x + w * 0.45, y + 24.0, w * 0.3, 130.0], f"{e}sustain", "y", False, time))
-        controls += env_form(e, x, y + 160.0, time, tag, " dB", False)
+        controls += env_form(e, x, y + 160.0, time, tag, " dB", True)
         controls += form([(p(f"rate{i}"), f"Rate {i}", par(p(f"rate{i}")), "", 0, False) for i in range(1, 5)]
                          + [(p(f"level{i}"), f"Level {i}", par(p(f"level{i}")), "", 0, False) for i in range(1, 5)]
                          + [(p("breakPoint"), "Break point", par(p("breakPoint")), "", 0, False), (p("leftDepth"), "Left depth", par(p("leftDepth")), "", 0, False),

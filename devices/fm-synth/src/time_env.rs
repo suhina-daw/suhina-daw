@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! An envelope in seconds beside the DX7 model (ADR 0034): initial, attack, peak, decay, sustain,
-//! release, and a loop mode. An operator's runs in decibels, with a linear attack and exponential
-//! decay and release; the filter's, the pitch's and the LFO's run in their own units with slopes
-//! and an end level.
+//! release, an end level, slopes and a loop mode. An operator's runs in decibels, so with its slopes
+//! at 0 its attack is linear and its decay and release exponential; the filter's, the pitch's and
+//! the LFO's run in their own units.
 
 /// What happens while a key stays down.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -213,7 +213,7 @@ impl TimeEnv {
                 let p = self.position / s.attack.max(0.0005);
                 self.value = if self.amp {
                     let (a, b) = (gain(self.from), gain(s.peak));
-                    decibels(a + (b - a) * p.min(1.0))
+                    decibels(a + (b - a) * bend(p, s.attack_slope))
                 } else {
                     self.from + (s.peak - self.from) * bend(p, s.attack_slope)
                 };
@@ -224,8 +224,7 @@ impl TimeEnv {
             }
             Stage::Decay => {
                 let p = self.position / s.decay.max(0.0005);
-                let slope = if self.amp { 0.0 } else { s.decay_slope };
-                self.value = self.from + (s.sustain - self.from) * bend(p, slope);
+                self.value = self.from + (s.sustain - self.from) * bend(p, s.decay_slope);
                 if p >= 1.0 {
                     self.value = s.sustain;
                     if s.mode == LoopMode::Trigger {
@@ -242,8 +241,8 @@ impl TimeEnv {
             Stage::Sustain => self.value = s.sustain,
             Stage::Release => {
                 let p = self.position / s.release.max(0.0005);
-                let (end, slope) = if self.amp { (-80.0, 0.0) } else { (s.end, s.release_slope) };
-                self.value = self.from + (end - self.from) * bend(p, slope);
+                let end = if self.amp && s.end <= SILENCE_DB { -80.0 } else { s.end };
+                self.value = self.from + (end - self.from) * bend(p, s.release_slope);
                 if p >= 1.0 {
                     self.value = end;
                     self.stage = Stage::Done;
@@ -377,7 +376,7 @@ mod tests {
 
     #[test]
     fn an_operator_envelope_runs_in_decibels_and_falls_to_silence() {
-        let s = EnvSettings { initial: -70.0, peak: 0.0, sustain: -6.0, release: 0.05, ..settings() };
+        let s = EnvSettings { initial: -70.0, peak: 0.0, sustain: -6.0, release: 0.05, end: -70.0, ..settings() };
         let mut env = TimeEnv::default();
         env.start(&s, 0.5, 60.0, true, &Clock::default());
         assert_eq!(run(&mut env, &s, 0.5, true).last().copied(), Some(-6.0));
