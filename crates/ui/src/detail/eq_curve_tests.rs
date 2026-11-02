@@ -141,20 +141,21 @@ fn the_analyser_draws_on_its_own_scale_across_the_display() {
 #[test]
 fn a_band_rises_quickly_and_falls_slowly_across_frames() {
     // The follower as the panel drives it: one step a frame, 30 ms apart. A band ten frames
-    // into a louder reading is nearly there; ten frames into a quieter one it has fallen
-    // some but is far from down — the fall is what keeps the area flowing.
+    // into a louder reading is sitting on its louder reading (the 20 ms attack); ten frames
+    // into a quieter one it has barely left it — a peak hangs for the eye, the way a
+    // spectrum's held line reads, and falls on the seconds scale.
     let follower = AttackRelease::new(ANALYSER_ATTACK, ANALYSER_RELEASE, 1.0 / 0.030);
     let mut shown = -60.0;
     for _ in 0..10 {
         shown = follower.rise(shown, -10.0);
     }
-    assert!(shown > -16.0, "300 ms of rising brings the band near its louder reading, {shown}");
+    assert!(((shown + 10.0).abs()) < 4.0, "300 ms of rising sits on the louder reading, {shown}");
     let top = shown;
     for _ in 0..10 {
         shown = follower.rise(shown, -60.0);
     }
-    assert!(shown < top - 20.0, "the band did fall, {shown} from {top}");
-    assert!(shown > -45.0, "but 300 ms on it is still well above its quieter reading, {shown}");
+    assert!(shown < top - 3.0, "the band did fall, {shown} from {top}");
+    assert!(shown > top - 18.0, "but 300 ms on it is still most of the way up, {shown} against {top}");
 }
 
 #[test]

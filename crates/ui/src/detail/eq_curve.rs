@@ -55,7 +55,10 @@ const DRAWN_RATE: f64 = DEFAULT_SAMPLE_RATE;
 /// The types whose gain shapes the response; the cuts and the notch have no gain.
 const GAIN_TYPES: [usize; 3] = [2, 3, 5];
 /// How many bands the analyser folds the spectrum into over the display's frequency range.
-const ANALYSER_BANDS: usize = 64;
+/// 128 keeps a sine tone's spike narrow: at 440 Hz a band spans 13 Hz, so the transforms
+/// closest to the tone carry its peak alone and the columns beside it read the skirts —
+/// Live's sharpness.
+const ANALYSER_BANDS: usize = 128;
 /// The analyser's own vertical scale across the display's height: this level in dB at the top
 /// edge, this at the bottom. The line is not read against the gain grid — normal material
 /// sits far below a ±15 dB grid, so on the grid the line would fall below the display and
@@ -67,11 +70,13 @@ const ANALYSER_DB: (f64, f64) = (0.0, -60.0);
 const ANALYSER_FILL: f32 = 0.45;
 /// How long a band's shown level takes to rise to a louder reading, in seconds: quick enough
 /// that a kick still punches the area up.
-const ANALYSER_ATTACK: f64 = 0.05;
+const ANALYSER_ATTACK: f64 = 0.02;
 /// How long a band's shown level takes to fall after a quieter reading, in seconds: the fresh
 /// transform of each 43 ms window flickers window to window, especially on percussive
-/// material, and a slow fall is what turns that flicker into a flowing shape.
-const ANALYSER_RELEASE: f64 = 0.35;
+/// material, and a slow fall is what turns that flicker into a flowing shape. At 1.2 s a
+/// struck tone's peak hangs where the reader can see it fall, the way a spectrum's held line
+/// reads instead of flickering bars.
+const ANALYSER_RELEASE: f64 = 1.2;
 
 /// The analyser's filled area's grey: the theme's secondary grey scaled to [`ANALYSER_FILL`] of
 /// its value, opaque, so the area reads as a solid shape over the grid behind it
@@ -531,9 +536,11 @@ fn draw_dots(
         } else {
             (colors.panel_background, colors.border, colors.text_secondary)
         };
-        painter.circle_filled(at, 7.5, fill);
-        painter.circle_stroke(at, 7.5, Stroke::new(if band.on { 1.5 } else { 1.0 }, ring));
-        painter.text(at, Align2::CENTER_CENTER, (index + 1).to_string(), theme::ui_font(9.0), ink);
+        // The dots are small so the analyser's reading stays visible beneath them; the
+        // pointer's own 22-point square keeps the drag comfortable.
+        painter.circle_filled(at, 5.5, fill);
+        painter.circle_stroke(at, 5.5, Stroke::new(if band.on { 1.5 } else { 1.0 }, ring));
+        painter.text(at, Align2::CENTER_CENTER, (index + 1).to_string(), theme::ui_font(8.0), ink);
         if response.clicked() || response.drag_started() {
             selection.1 = index;
         }
@@ -622,19 +629,14 @@ fn draw_strip(
         Vec2::new(STRIPS[2], STRIPS[3]),
     );
     let painter = ui.painter_at(group);
-    let slot = Rect::from_min_size(Pos2::new(group.center().x - 13.0, group.top() + 13.0), Vec2::new(26.0, 24.0));
+    // The strip's face is the dial the NAM panels' and the canvases' wheels take: a caption
+    // over, the wheel in the middle of a 40-point band, the value under.
     painter.text(
         Pos2::new(group.center().x, group.top()),
         Align2::CENTER_TOP,
         ["Freq", "Gain", "Q"][field],
         theme::ui_font(9.0),
         colors.text_secondary,
-    );
-    painter.rect_filled(slot, 3.0, colors.window_background);
-    painter.rect_stroke(slot, 3.0, Stroke::new(1.0, colors.border), egui::StrokeKind::Inside);
-    painter.line_segment(
-        [Pos2::new(slot.center().x, slot.top() + 3.0), Pos2::new(slot.center().x, slot.bottom() - 3.0)],
-        Stroke::new(1.0, colors.border),
     );
     let text = if parameter.id.ends_with("Frequency") {
         frequency_text(parameter.value)
@@ -644,20 +646,21 @@ fn draw_strip(
         format!("{:.2}", parameter.value)
     };
     painter.text(
-        Pos2::new(group.center().x, group.bottom() - 12.0),
+        Pos2::new(group.center().x, group.bottom() - 11.0),
         Align2::CENTER_CENTER,
         text.clone(),
-        theme::ui_font(10.0),
+        theme::mono_font(10.0),
         colors.text_value,
     );
+    let dial_center = Pos2::new(group.center().x, group.top() + 15.0 + 19.0);
     let response = ui
         .interact(
-            Rect::from_min_size(Pos2::new(group.left(), group.top() + 11.0), Vec2::new(group.width(), 28.0)),
+            Rect::from_min_size(Pos2::new(group.left(), group.top() + 13.0), Vec2::new(group.width(), 40.0)),
             address.ids.with(("eq-strip", field)),
             Sense::click_and_drag(),
         )
         .on_hover_text(format!(
-            "{}: drag vertically; Shift for precision; double-click resets; the arrow keys step it.",
+            "{}: drag; Shift for precision; double-click resets; the arrow keys step it.",
             parameter.name
         ))
         .on_hover_cursor(egui::CursorIcon::ResizeVertical);
@@ -669,6 +672,7 @@ fn draw_strip(
     if response.clicked() || response.dragged() {
         response.request_focus();
     }
+
     let normalized = |p: &GraphParameter, value: f64| {
         if logarithmic && p.min > 0.0 {
             ((value.max(p.min).ln() - p.min.ln()) / (p.max.ln() - p.min.ln())).clamp(0.0, 1.0)
@@ -686,13 +690,9 @@ fn draw_strip(
         }
     };
     let at = normalized(parameter, parameter.value);
-    let thumb_y = slot.bottom() - 5.0 - (slot.height() - 10.0) * at as f32;
-    painter.circle_filled(
-        Pos2::new(slot.center().x, thumb_y),
-        5.0,
-        if response.dragged() { colors.accent } else { colors.control_hover },
-    );
-    painter.circle_stroke(Pos2::new(slot.center().x, thumb_y), 5.0, Stroke::new(1.0, colors.border));
+    // The dial's pointer follows the drag: at the value held while held, and the fresh one
+    // while it moves (the state the mixer's own value fields show).
+    crate::kit::widgets::knob(&painter, dial_center, 38.0, at as f32, colors.text_primary, Some(&response));
     let held = response.is_pointer_button_down_on();
     let state_id = response.id.with("start");
     let start = ui.ctx().data_mut(|d| {
