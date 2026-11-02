@@ -331,15 +331,24 @@ fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f
     // the area from nothing every 30 ms and percussive material reads as a flicker.
     let shown_id = egui::Id::new(("eq-spectrum-shown", track.0, device));
     let now = ui.input(|i| i.time);
-    let stored = ui.ctx().data(|d| d.get_temp::<([f32; ANALYSER_BANDS], f64)>(shown_id));
-    let last = stored.map_or(now, |(_, last)| last);
-    let mut shown = stored.map_or(bands, |(shown, _)| shown);
+    // The glide's held levels belong to one monitor: a session switch reuses the same
+    // track and device keys, and the next session's first frames would glide from the
+    // previous session's levels. The monitor's Weak is stored with the levels, and the
+    // levels are kept only while theWeak points at the monitor whose bands produced them.
+    let owner: std::sync::Weak<suhina_engine::MeterMonitor> = Arc::downgrade(&monitor);
+    let stored = ui
+        .ctx()
+        .data(|d| d.get_temp::<(std::sync::Weak<suhina_engine::MeterMonitor>, [f32; ANALYSER_BANDS], f64)>(shown_id));
+    let (mut shown, last) = match stored {
+        Some((kept, shown, last)) if kept.ptr_eq(&owner) => (shown, last),
+        _ => (bands, now),
+    };
     let frame = 1.0 / (now - last).clamp(1.0e-3, 1.0);
     let follower = AttackRelease::new(ANALYSER_ATTACK, ANALYSER_RELEASE, frame);
     for (shown, target) in shown.iter_mut().zip(bands.iter()) {
         *shown = follower.rise(f64::from(*shown), f64::from(*target)).clamp(-90.0, 30.0) as f32;
     }
-    ui.ctx().data_mut(|d| d.insert_temp(shown_id, (shown, now)));
+    ui.ctx().data_mut(|d| d.insert_temp(shown_id, (owner, shown, now)));
     Some(shown)
 }
 

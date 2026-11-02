@@ -402,6 +402,21 @@ fn a_skipped_device_keeps_the_watch_at_its_project_position() {
 }
 
 #[test]
+fn a_stopped_transport_keeps_the_watched_ring_empty() {
+    // The chain runs silent blocks while the transport is stopped; a device's output is then
+    // silence, and appending it would pull the analyser's held spectrum to silence. The spec
+    // asks the opposite: the line holds what it last read (docs/spec/eq.md › The analyser).
+    let loud = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[])]);
+    let mut stopped =
+        Renderer::build(&loud, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::STOPPED).unwrap();
+    let binding = stopped.controller().meter_monitor_arc();
+    let spectrum = binding.spectrum();
+    spectrum.watch(0, TrackId(1), 0);
+    blocks(&mut stopped, 4, 480);
+    assert!(spectrum.samples(TrackId(1), 0).is_none(), "the silent blocks left the ring empty");
+}
+
+#[test]
 fn a_held_note_ends_when_an_edit_takes_it_away_while_playing() {
     // An 8-beat note sounds; at 0.5 s an edit deletes its clip, deletes the note, or shortens it
     // to 1.5 beats (0.75 s): the instrument lets it go then, not at its old end (#916).

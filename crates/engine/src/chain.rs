@@ -693,8 +693,11 @@ impl Chain {
             return true;
         }
         let to = frames.min(MAX_BLOCK);
-        let capture =
-            self.spectrum.as_deref().map(|spectrum| Capture { watched: spectrum.watched(self.track), spectrum });
+        let capture = self.spectrum.as_deref().map(|spectrum| Capture {
+            watched: spectrum.watched(self.track),
+            spectrum,
+            running: self.context.playing,
+        });
         let Self {
             slots,
             buffer,
@@ -1067,8 +1070,11 @@ impl Chain {
     /// event over at its frame.
     fn run(&mut self, frame: usize) {
         let to = frame.min(MAX_BLOCK);
-        let capture =
-            self.spectrum.as_deref().map(|spectrum| Capture { watched: spectrum.watched(self.track), spectrum });
+        let capture = self.spectrum.as_deref().map(|spectrum| Capture {
+            watched: spectrum.watched(self.track),
+            spectrum,
+            running: self.context.playing,
+        });
         let Self {
             slots,
             buffer,
@@ -1369,6 +1375,12 @@ pub(crate) const ANSWER_SLICE: Duration = Duration::from_micros(50);
 struct Capture<'a> {
     watched: [Option<spectrum::Watched>; spectrum::ROWS],
     spectrum: &'a spectrum::Spectrum,
+    /// The transport's state for the block. While it is stopped, the chain buffer was
+    /// cleared this block: no input but a live monitor's reaches it, so appends of nothing
+    /// replace the ring's samples and the analyser's held spectrum decays towards silence
+    /// (docs/spec/eq.md › The analyser: the line holds what was last read). A live monitor's
+    /// input keeps the buffer from silence, so its appends still go.
+    running: bool,
 }
 
 impl Capture<'_> {
@@ -1382,6 +1394,9 @@ impl Capture<'_> {
             return;
         };
         let output = buffer.get(from * 2..to * 2).unwrap_or(&[]);
+        if !self.running && output.iter().all(|sample| sample.abs() <= 1.0e-6) {
+            return;
+        }
         self.spectrum.append(row, watch.generation, output, to - from);
     }
 }

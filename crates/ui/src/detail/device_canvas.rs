@@ -1975,6 +1975,8 @@ pub(crate) fn show(
             );
             continue;
         }
+        // The EqCurve is host-drawn: the SDK's validator only lets the built-in EQ's own
+        // parameter set claim the shape, so this canvas can only be its panel.
         if matches!(control.widget, Some(Widget::EqCurve)) {
             let _role = crate::kit::style_class::enter("eq-curve");
             let mut styled_ui = crate::kit::style_class::ui(ui);

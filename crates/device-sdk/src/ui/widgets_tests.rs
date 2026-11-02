@@ -16,11 +16,26 @@ fn the_eq_curves_display_takes_no_binding_and_draws_nothing_of_its_own() {
         y,
         drawing: vec![],
     };
+    // The bands the built-in EQ names: a graph file without them is not the EQ's panel.
+    let bands: Vec<Parameter> = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"]
+        .iter()
+        .flat_map(|band| {
+            ["Frequency", "Gain", "Q"]
+                .iter()
+                .map(move |part| Parameter::new(format!("{band}{part}"), format!("{band} {part}"), (0., 1.), 0.))
+        })
+        .collect();
     let ui = DeviceUi { controls: vec![control(None, None)], ..DeviceUi::default() };
-    assert!(ui.validate(&[]).is_ok(), "the display finds its bands on the host side");
+    assert!(ui.validate(&bands).is_ok(), "the display finds its bands among the EQ's parameters");
     assert!(ui.controls[0].drawings().is_empty(), "the host draws it");
     let ui = DeviceUi { controls: vec![control(Some(UiBinding::new("x")), None)], ..DeviceUi::default() };
-    assert!(ui.validate(&[]).is_err(), "a binding would name one parameter where the bands are forty");
+    assert!(ui.validate(&bands).is_err(), "a binding would name one parameter where the bands are forty");
+    // A canvas naming fewer than the twenty-four bands is not the EQ's panel to draw.
+    let ui = DeviceUi { controls: vec![control(None, None)], ..DeviceUi::default() };
+    assert!(ui.validate(&[]).is_err(), "no bands, no curve");
+    let short: Vec<Parameter> = bands.iter().take(bands.len() - 1).cloned().collect();
+    let ui = DeviceUi { controls: vec![control(None, None)], ..DeviceUi::default() };
+    assert!(ui.validate(&short).is_err(), "one band short is still not the EQ's panel");
 }
 
 #[test]
