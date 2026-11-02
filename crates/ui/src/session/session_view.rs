@@ -1001,7 +1001,7 @@ fn column_body(
                 ui,
                 response,
                 column.track,
-                scene,
+                number,
                 slot.launch,
                 slot.state == SlotState::Playing,
                 actions,
@@ -1016,7 +1016,7 @@ fn column_body(
             && !state.double_click_does_nothing
             && launch.as_ref().is_some_and(Response::double_clicked)
         {
-            actions.push(Action::new("clip.create", json!({ "track": column.track.0, "scene": scene })));
+            actions.push(Action::new("clip.create", json!({ "track": column.track.0, "scene": number })));
             // The new clip is selected, so the detail area shows it.
             state.select_slot(column.track, scene);
         }
@@ -1040,7 +1040,7 @@ fn column_body(
             // now.
             let menu_open = [&launch, &select].into_iter().flatten().any(egui::Response::context_menu_opened);
             if !menu_open {
-                ui.ctx().data_mut(|d| d.remove::<String>(Id::new(("slot-rename", column.track, scene))));
+                ui.ctx().data_mut(|d| d.remove::<String>(Id::new(("slot-rename", column.track, number))));
             }
             for response in [&launch, &select].into_iter().flatten() {
                 if response.clicked() || response.secondary_clicked() {
@@ -1060,10 +1060,10 @@ fn column_body(
                 // The menu stays open on a click inside: the rename's field and button live here.
                 egui::Popup::context_menu(response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(
                     |ui| {
-                        menus::slot_menu(ui, column.track, scene, &slot.name, has_clip, can_paste, actions);
+                        menus::slot_menu(ui, column.track, number, &slot.name, has_clip, can_paste, actions);
                         if let Some(launch) = slot.launch {
                             ui.separator();
-                            crate::session::slot_launch::launch_menu(ui, column.track, scene, launch, actions);
+                            crate::session::slot_launch::launch_menu(ui, column.track, number, launch, actions);
                         }
                     },
                 );
@@ -1071,14 +1071,14 @@ fn column_body(
         } else if let (Some(response), Some(launch)) = (&launch, slot.launch) {
             egui::Popup::context_menu(response)
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                .show(|ui| crate::session::slot_launch::launch_menu(ui, column.track, scene, launch, actions));
+                .show(|ui| crate::session::slot_launch::launch_menu(ui, column.track, number, launch, actions));
         }
         let selected = state.selected_slot == Some(key);
         // The name's place, for a rename in place (Ctrl+R).
         let pass = ui.ctx().cumulative_pass_nr();
         ui.ctx().data_mut(|d| {
             d.insert_temp(
-                egui::Id::new((crate::app::NAME_RECT_SLOT, u64::from(column.track.0), scene as u64)),
+                egui::Id::new((crate::app::NAME_RECT_SLOT, u64::from(column.track.0), number as u64)),
                 crate::app::NameSpot {
                     rect,
                     pass,
@@ -1289,9 +1289,9 @@ fn scene_column(
                 keys.pick(target);
             } else if scene.playing {
                 // A playing row's click stops its clips; anything else launches.
-                actions.push(Action::new("scene.stop", json!({ "scene": scene.number - 1 })));
+                actions.push(Action::new("scene.stop", json!({ "scene": scene.number })));
             } else {
-                actions.push(Action::new("scene.launch", json!({ "scene": scene.number - 1 })));
+                actions.push(Action::new("scene.launch", json!({ "scene": scene.number })));
             }
         }
         // A click in the menu's text fields keeps it open; its buttons close it.

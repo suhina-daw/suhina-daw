@@ -43,7 +43,7 @@ pub(crate) fn set_follow_action(session: &mut Session, params: &Value) -> Result
     if let Some(clip) = slot.and_then(|s| s.clip.as_mut()) {
         clip.follow_action = follow;
     }
-    Ok(json!({ "scene": scene, "follow_action": describe(&follow) }))
+    Ok(json!({ "scene": scene + 1, "follow_action": describe(&follow) }))
 }
 
 /// A follow action as commands report it.

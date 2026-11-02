@@ -38,7 +38,7 @@ pub(super) const WARP_MODES: [(StretchMode, &str, &str); 6] = [
 pub(super) fn on_clip(at: ClipRef, params: serde_json::Value) -> serde_json::Value {
     let mut named = match at {
         ClipRef::Arrangement(_, clip) => json!({ "clip": clip.0 }),
-        ClipRef::Slot(track, scene) => json!({ "track": track.0, "scene": scene }),
+        ClipRef::Slot(track, scene) => json!({ "track": track.0, "scene": scene + 1 }),
     };
     if let (Some(map), serde_json::Value::Object(more)) = (named.as_object_mut(), params) {
         map.extend(more);

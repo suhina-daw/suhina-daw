@@ -106,13 +106,15 @@ UI, CLI, control channel and MCP server all dispatch commands by id. We take the
    whose graph does not fit is not an error: the project keeps the value, and
    `Session::catch_up_player`, which the window calls every frame, sends it again until the engine
    has it.
-10. **Lists count from 0.** A position in a list a command reports or takes counts from 0:
-    scenes, tempo changes, markers, automation points, notes, devices, clips by index and a take's
-    pieces ([#763](https://github.com/suhina-daw/suhina-daw/issues/763) › 1). Scenes, tempo
-    changes and take pieces counted from 1 before 2026-11-03, and so did the `.suhina` file's
-    launch mappings before version 8. A number that names a place in the music or is part of a
-    name keeps how it reads: bars from 1, a follow action's `jump N`, a scene's "Scene 3", a take's
-    number ("Take 3"). The window shows scenes from 1 and converts at the command.
+10. **Lists count from 0, scenes from 1.** A position in a list a command reports or takes counts
+    from 0: tempo changes, markers, automation points, notes, devices, clips by index and a take's
+    pieces ([#763](https://github.com/suhina-daw/suhina-daw/issues/763) › 1). Scenes count from 1,
+    in every command, result and file, because that is how a person meets them: the window numbers
+    them from 1 and a new project names them "1", "2", "3", so an agent asked to "launch scene 3"
+    sends 3 (decided 2026-11-03; #1149 had moved them to 0 and was reverted before it merged). A
+    number that names a place in the music or is part of a name keeps how it reads too: bars from
+    1, a follow action's `jump N`, a take's number ("Take 3"). Tempo changes and take pieces
+    counted from 1 before 2026-11-03.
 11. **What a command runs on and what it does are two things.** A spec's `kind` is a `Target`
     (one project, the open projects, the plug-ins, a running plug-in, the library, audio and MIDI)
     and an `Effect` (read, edit with an undo step, history, transport, or a change outside a

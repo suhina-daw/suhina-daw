@@ -389,7 +389,7 @@ fn a_reopen_keeps_the_marker_the_launched_clips_and_the_quantization() {
         session.execute("launcher.setQuantization", &json!({ "value": "1/4" })).unwrap();
         session.execute("transport.setPosition", &json!({ "beats": 4.0 })).unwrap();
         session.execute("transport.play", &json!({})).unwrap();
-        session.execute("clip.launch", &json!({ "track": 1, "scene": 0 })).unwrap();
+        session.execute("clip.launch", &json!({ "track": 1, "scene": 1 })).unwrap();
     }
     // Long enough for the launch at the next beat, and a bit of the clip.
     for _ in 0..30 {
@@ -400,7 +400,7 @@ fn a_reopen_keeps_the_marker_the_launched_clips_and_the_quantization() {
         let monitor = session.player().unwrap().monitor();
         assert_eq!(monitor.column(0).unwrap().playing, Some(0), "the clip plays");
         // A launch on the second track waits for the next beat when the output reopens.
-        session.execute("clip.launch", &json!({ "track": 2, "scene": 0 })).unwrap();
+        session.execute("clip.launch", &json!({ "track": 2, "scene": 1 })).unwrap();
     }
     stand.run_latest();
     let (beat, elapsed) = {

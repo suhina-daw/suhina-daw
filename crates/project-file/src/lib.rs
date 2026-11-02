@@ -111,7 +111,7 @@ pub fn from_json(text: &str) -> Result<Project, ProjectFileError> {
     if version == 0 || version > VERSION {
         return Err(format!("the project is version {version}; this Suhina reads up to version {VERSION}").into());
     }
-    let project = read_project(root.get("project").ok_or("the project is missing")?, version)?;
+    let project = read_project(root.get("project").ok_or("the project is missing")?)?;
     project.validate().map_err(|errors| {
         let list: Vec<String> = errors.iter().take(5).map(ToString::to_string).collect();
         format!("the project does not hold together: {}", list.join("; "))
@@ -639,7 +639,7 @@ fn clip_value(c: &Clip) -> Value {
     out
 }
 
-/// A launch mapping; its scene counts from 0, as in the commands (from version 8, #763 › 1).
+/// A launch mapping; its scene counts from 1, as in the commands.
 fn mapping_value(m: &LaunchMapping) -> Value {
     let mut out = json!({ "source": m.source.name(), "target": m.target.kind() });
     if let Some(map) = out.as_object_mut() {
@@ -647,7 +647,7 @@ fn mapping_value(m: &LaunchMapping) -> Value {
             map.insert("track".into(), json!(track.0));
         }
         if let Some(scene) = m.target.scene() {
-            map.insert("scene".into(), json!(scene));
+            map.insert("scene".into(), json!(scene.saturating_add(1)));
         }
     }
     out
@@ -878,8 +878,7 @@ fn time_signature_changes(t: &Obj) -> Result<Vec<TimeSignatureChange>, ProjectFi
         .collect()
 }
 
-/// The project of a file of `version`.
-fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError> {
+fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
     let p = object(value, "project")?;
     let transport = match p.get("transport") {
         None | Some(Value::Null) => Transport::default(),
@@ -1014,7 +1013,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
             }
             let mut mappings: Vec<LaunchMapping> = Vec::new();
             for (i, v) in list(l, "mappings", "project.launcher")?.iter().enumerate() {
-                let mapping = read_mapping(v, &format!("project.launcher.mappings[{i}]"), version)?;
+                let mapping = read_mapping(v, &format!("project.launcher.mappings[{i}]"))?;
                 if mappings.iter().any(|m| m.source == mapping.source) {
                     return Err(ProjectFileError(format!(
                         "project.launcher.mappings[{i}]: {} is mapped twice",
@@ -1522,9 +1521,9 @@ fn read_follow(c: &Obj, at: &str) -> Result<FollowAction, ProjectFileError> {
 }
 
 /// A launch mapping: `source` (`key:Q`, `note:1:60`), `target` (slot, scene or stop) and the
-/// `track` and `scene` the target needs, the scene from 0 (from version 8, #763 › 1; from 1
-/// before). The track need not exist: a mapping whose track is gone is kept, unused.
-fn read_mapping(value: &Value, at: &str, version: u64) -> Result<LaunchMapping, ProjectFileError> {
+/// `track` and 1-based `scene` the target needs. The track need not exist: a mapping whose track
+/// is gone is kept, unused.
+fn read_mapping(value: &Value, at: &str) -> Result<LaunchMapping, ProjectFileError> {
     let m = object(value, at)?;
     let name = match m.get("source") {
         Some(Value::String(name)) => name.as_str(),
@@ -1534,9 +1533,6 @@ fn read_mapping(value: &Value, at: &str, version: u64) -> Result<LaunchMapping, 
         .ok_or_else(|| ProjectFileError(format!("{at}.source: unknown source {name:?}")))?;
     let scene = || -> Result<usize, ProjectFileError> {
         let number: usize = whole(m, "scene", at)?;
-        if version >= 8 {
-            return Ok(number);
-        }
         number.checked_sub(1).ok_or_else(|| ProjectFileError(format!("{at}.scene: scenes count from 1")))
     };
     let track = || whole(m, "track", at).map(TrackId);

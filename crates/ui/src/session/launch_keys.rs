@@ -134,7 +134,7 @@ pub fn target_params(target: MappingTarget) -> serde_json::Value {
         params["track"] = json!(track.0);
     }
     if let Some(scene) = target.scene() {
-        params["scene"] = json!(scene);
+        params["scene"] = json!(scene + 1);
     }
     params
 }
@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(keys.handle(&project, &repeat, &mut actions), Outcome::Taken);
         assert_eq!(keys.handle(&project, &key(Key::Q, false), &mut actions), Outcome::Taken);
         assert_eq!(ids(&actions), ["clip.launch", "clip.release"]);
-        assert_eq!(actions[0].params, json!({ "track": 1, "scene": 0 }));
+        assert_eq!(actions[0].params, json!({ "track": 1, "scene": 1 }));
         // Unmapped keys and keys with a modifier are the shortcuts'.
         assert_eq!(keys.handle(&project, &key(Key::W, true), &mut actions), Outcome::Pass);
         let ctrl = KeyEvent { modifiers: true, ..key(Key::Q, true) };
@@ -253,8 +253,8 @@ mod tests {
         assert_eq!(keys.handle(&project, &key(Key::W, true), &mut actions), Outcome::Taken);
         assert_eq!(keys.handle(&project, &key(Key::Delete, true), &mut actions), Outcome::Taken);
         assert_eq!(ids(&actions), ["launcher.addMapping", "launcher.removeMapping"]);
-        assert_eq!(actions[0].params, json!({ "target": "scene", "scene": 0, "source": "key:W" }));
-        assert_eq!(actions[1].params, json!({ "target": "scene", "scene": 0 }));
+        assert_eq!(actions[0].params, json!({ "target": "scene", "scene": 1, "source": "key:W" }));
+        assert_eq!(actions[1].params, json!({ "target": "scene", "scene": 1 }));
         // Picking it again drops it; Escape leaves the mode.
         keys.pick(MappingTarget::Scene { scene: 0 });
         assert_eq!(keys.mode.selected, None);
@@ -267,7 +267,7 @@ mod tests {
     fn targets_give_the_commands_their_parameters() {
         assert_eq!(
             target_params(MappingTarget::Slot { track: TrackId(3), scene: 1 }),
-            json!({ "target": "slot", "track": 3, "scene": 1 })
+            json!({ "target": "slot", "track": 3, "scene": 2 })
         );
         assert_eq!(target_params(MappingTarget::Stop { track: TrackId(3) }), json!({ "target": "stop", "track": 3 }));
     }

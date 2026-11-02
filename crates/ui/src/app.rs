@@ -2496,7 +2496,7 @@ impl App {
                 {
                     let at = |key: &str| result[key].as_u64().and_then(|i| usize::try_from(i).ok());
                     let clip = result["clip"].as_u64().and_then(|c| u32::try_from(c).ok()).map(ClipId);
-                    match (clip.filter(|_| at("scene").is_none()), at("scene")) {
+                    match (clip.filter(|_| at("scene").is_none()), at("scene").and_then(|s| s.checked_sub(1))) {
                         (Some(clip), _) => self.arrangement.select_clip(track, clip),
                         (None, Some(scene)) => self.view.select_slot(track, scene),
                         (None, None) => self.view.selected = Some(track),

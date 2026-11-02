@@ -72,13 +72,13 @@ fn assert_in_step(session: &Session) {
 #[test]
 fn inserting_a_scene_adds_a_row_of_empty_slots_and_undo_removes_it() {
     let mut session = Session::new(project());
-    assert_eq!(run(&mut session, "scene.insert", json!({ "scene": 1, "name": " Break " })).unwrap()["scene"], 1);
+    assert_eq!(run(&mut session, "scene.insert", json!({ "scene": 2, "name": " Break " })).unwrap()["scene"], 2);
     assert_eq!(names(&session), ["Intro", "Break", "Drop"]);
     assert_in_step(&session);
     let row: Vec<&Slot> = session.project().launcher.columns.iter().map(|c| &c.slots[1]).collect();
     assert!(row.iter().all(|s| s.clip.is_none() && s.has_stop));
     // Left out, the scene goes after the last one.
-    assert_eq!(run(&mut session, "scene.insert", json!({})).unwrap()["scene"], 3);
+    assert_eq!(run(&mut session, "scene.insert", json!({})).unwrap()["scene"], 4);
     assert_eq!(names(&session), ["Intro", "Break", "Drop", ""]);
     run(&mut session, "edit.undo", json!({})).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -89,8 +89,8 @@ fn inserting_a_scene_adds_a_row_of_empty_slots_and_undo_removes_it() {
 #[test]
 fn duplicating_a_scene_copies_its_clips_below_it() {
     let mut session = Session::new(project());
-    run(&mut session, "scene.setTempo", json!({ "scene": 1, "bpm": 140 })).unwrap();
-    assert_eq!(run(&mut session, "scene.duplicate", json!({ "scene": 1 })).unwrap()["scene"], 2);
+    run(&mut session, "scene.setTempo", json!({ "scene": 2, "bpm": 140 })).unwrap();
+    assert_eq!(run(&mut session, "scene.duplicate", json!({ "scene": 2 })).unwrap()["scene"], 3);
     let p = session.project();
     assert_eq!(names(&session), ["Intro", "Drop", "Drop"]);
     assert_eq!(p.launcher.scenes[2].tempo_bpm, Some(140.0));
@@ -111,11 +111,11 @@ fn duplicating_a_scene_copies_its_clips_below_it() {
 #[test]
 fn deleting_a_scene_removes_its_row_but_never_the_last_scene() {
     let mut session = Session::new(project());
-    assert_eq!(run(&mut session, "scene.delete", json!({ "scene": 0 })).unwrap()["deleted"], 0);
+    assert_eq!(run(&mut session, "scene.delete", json!({ "scene": 1 })).unwrap()["deleted"], 1);
     assert_eq!(names(&session), ["Drop"]);
     assert_in_step(&session);
     assert_eq!(session.project().launcher.columns[1].slots[0].clip.as_ref().unwrap().content, ContentId(3));
-    let err = run(&mut session, "scene.delete", json!({ "scene": 0 })).unwrap_err();
+    let err = run(&mut session, "scene.delete", json!({ "scene": 1 })).unwrap_err();
     assert!(err.contains("last scene"), "{err}");
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project(), &project());
@@ -124,20 +124,20 @@ fn deleting_a_scene_removes_its_row_but_never_the_last_scene() {
 #[test]
 fn a_scene_is_renamed_and_given_a_tempo_and_time_signature() {
     let mut session = Session::new(project());
-    run(&mut session, "scene.rename", json!({ "scene": 0, "name": "Verse" })).unwrap();
-    run(&mut session, "scene.setTempo", json!({ "scene": 0, "bpm": 96.5 })).unwrap();
-    let set = run(&mut session, "scene.setTimeSignature", json!({ "scene": 0, "numerator": 7, "denominator": 8 }));
+    run(&mut session, "scene.rename", json!({ "scene": 1, "name": "Verse" })).unwrap();
+    run(&mut session, "scene.setTempo", json!({ "scene": 1, "bpm": 96.5 })).unwrap();
+    let set = run(&mut session, "scene.setTimeSignature", json!({ "scene": 1, "numerator": 7, "denominator": 8 }));
     assert_eq!(set.unwrap()["time_signature"], "7/8");
     let grid = run(&mut session, "project.launcher", json!({})).unwrap();
     let id = session.project().launcher.scenes[0].id.0;
     assert_eq!(
         grid["scenes"][0],
-        json!({ "scene": 0, "id": id, "name": "Verse", "tempo_bpm": 96.5, "time_signature": "7/8" })
+        json!({ "scene": 1, "id": id, "name": "Verse", "tempo_bpm": 96.5, "time_signature": "7/8" })
     );
     // Leaving the values out clears them; an empty name clears the name.
-    run(&mut session, "scene.setTempo", json!({ "scene": 0 })).unwrap();
-    run(&mut session, "scene.setTimeSignature", json!({ "scene": 0, "numerator": null, "denominator": null })).unwrap();
-    run(&mut session, "scene.rename", json!({ "scene": 0, "name": "  " })).unwrap();
+    run(&mut session, "scene.setTempo", json!({ "scene": 1 })).unwrap();
+    run(&mut session, "scene.setTimeSignature", json!({ "scene": 1, "numerator": null, "denominator": null })).unwrap();
+    run(&mut session, "scene.rename", json!({ "scene": 1, "name": "  " })).unwrap();
     let id = session.project().launcher.scenes[0].id;
     assert_eq!(session.project().launcher.scenes[0], Scene { id, ..Scene::default() });
     for _ in 0..6 {
@@ -150,27 +150,27 @@ fn a_scene_is_renamed_and_given_a_tempo_and_time_signature() {
 fn malformed_scene_parameters_are_refused_and_change_nothing() {
     let mut session = Session::new(project());
     let bad = [
-        ("scene.insert", json!({ "scene": 99 })),
-        ("scene.insert", json!({ "scene": 3 })),
+        ("scene.insert", json!({ "scene": 0 })),
+        ("scene.insert", json!({ "scene": 4 })),
         ("scene.insert", json!({ "scene": "two" })),
         ("scene.insert", json!({ "name": 3 })),
         ("scene.duplicate", json!({})),
-        ("scene.duplicate", json!({ "scene": 2 })),
+        ("scene.duplicate", json!({ "scene": 3 })),
         ("scene.delete", json!({ "scene": -1 })),
-        ("scene.delete", json!({ "scene": 99.5 })),
-        ("scene.rename", json!({ "scene": 99 })),
-        ("scene.rename", json!({ "scene": 99, "name": false })),
-        ("scene.rename", json!({ "scene": 8, "name": "X" })),
-        ("scene.setTempo", json!({ "scene": 99, "bpm": 10 })),
-        ("scene.setTempo", json!({ "scene": 99, "bpm": 1000 })),
-        ("scene.setTempo", json!({ "scene": 99, "bpm": "fast" })),
-        ("scene.setTimeSignature", json!({ "scene": 99, "numerator": 3 })),
-        ("scene.setTimeSignature", json!({ "scene": 99, "numerator": 0, "denominator": 4 })),
-        ("scene.setTimeSignature", json!({ "scene": 99, "numerator": 100, "denominator": 4 })),
-        ("scene.setTimeSignature", json!({ "scene": 99, "numerator": 3, "denominator": 3 })),
-        ("scene.setTimeSignature", json!({ "scene": 99, "numerator": 300, "denominator": 4 })),
-        ("scene.setTimeSignature", json!({ "scene": 99, "numerator": "3", "denominator": 4 })),
-        ("scene.setTempo", json!({ "scene": 99, "bpm": 120, "colour": "red" })),
+        ("scene.delete", json!({ "scene": 1.5 })),
+        ("scene.rename", json!({ "scene": 1 })),
+        ("scene.rename", json!({ "scene": 1, "name": false })),
+        ("scene.rename", json!({ "scene": 9, "name": "X" })),
+        ("scene.setTempo", json!({ "scene": 1, "bpm": 10 })),
+        ("scene.setTempo", json!({ "scene": 1, "bpm": 1000 })),
+        ("scene.setTempo", json!({ "scene": 1, "bpm": "fast" })),
+        ("scene.setTimeSignature", json!({ "scene": 1, "numerator": 3 })),
+        ("scene.setTimeSignature", json!({ "scene": 1, "numerator": 0, "denominator": 4 })),
+        ("scene.setTimeSignature", json!({ "scene": 1, "numerator": 100, "denominator": 4 })),
+        ("scene.setTimeSignature", json!({ "scene": 1, "numerator": 3, "denominator": 3 })),
+        ("scene.setTimeSignature", json!({ "scene": 1, "numerator": 300, "denominator": 4 })),
+        ("scene.setTimeSignature", json!({ "scene": 1, "numerator": "3", "denominator": 4 })),
+        ("scene.setTempo", json!({ "scene": 1, "bpm": 120, "colour": "red" })),
     ];
     for (id, params) in bad {
         assert!(run(&mut session, id, params.clone()).is_err(), "{id} {params} was accepted");
@@ -207,23 +207,23 @@ fn playing_scenes(session: &mut Session) -> Vec<Value> {
 #[test]
 fn playing_clips_stay_with_their_slots_when_scenes_are_inserted_or_deleted() {
     let (mut session, mut renderer) = playing();
-    run(&mut session, "scene.launch", json!({ "scene": 1 })).unwrap();
-    advance(&mut renderer, BEAT);
-    assert_eq!(playing_scenes(&mut session), [json!(1), json!(1)]);
-    // A scene inserted above: the playing row moves down to scene 2 and keeps playing.
-    run(&mut session, "scene.insert", json!({ "scene": 0 })).unwrap();
+    run(&mut session, "scene.launch", json!({ "scene": 2 })).unwrap();
     advance(&mut renderer, BEAT);
     assert_eq!(playing_scenes(&mut session), [json!(2), json!(2)]);
-    // Undo removes it again, and the row is scene 1 once more.
+    // A scene inserted above: the playing row moves down to scene 3 and keeps playing.
+    run(&mut session, "scene.insert", json!({ "scene": 1 })).unwrap();
+    advance(&mut renderer, BEAT);
+    assert_eq!(playing_scenes(&mut session), [json!(3), json!(3)]);
+    // Undo removes it again, and the row is scene 2 once more.
     run(&mut session, "edit.undo", json!({})).unwrap();
     advance(&mut renderer, BEAT);
-    assert_eq!(playing_scenes(&mut session), [json!(1), json!(1)]);
+    assert_eq!(playing_scenes(&mut session), [json!(2), json!(2)]);
     // Deleting the scene above moves the row up; deleting the playing scene stops its clips.
-    run(&mut session, "scene.delete", json!({ "scene": 0 })).unwrap();
+    run(&mut session, "scene.delete", json!({ "scene": 1 })).unwrap();
     advance(&mut renderer, BEAT);
-    assert_eq!(playing_scenes(&mut session), [json!(0), json!(0)]);
+    assert_eq!(playing_scenes(&mut session), [json!(1), json!(1)]);
     run(&mut session, "scene.insert", json!({})).unwrap();
-    run(&mut session, "scene.delete", json!({ "scene": 0 })).unwrap();
+    run(&mut session, "scene.delete", json!({ "scene": 1 })).unwrap();
     advance(&mut renderer, BEAT);
     assert_eq!(playing_scenes(&mut session), [Value::Null, Value::Null]);
 }
@@ -231,12 +231,12 @@ fn playing_clips_stay_with_their_slots_when_scenes_are_inserted_or_deleted() {
 #[test]
 fn a_launched_scene_sets_the_time_signature_the_transport_counts_in() {
     let (mut session, mut renderer) = playing();
-    run(&mut session, "scene.setTimeSignature", json!({ "scene": 1, "numerator": 3, "denominator": 4 })).unwrap();
-    run(&mut session, "scene.setTempo", json!({ "scene": 1, "bpm": 60 })).unwrap();
+    run(&mut session, "scene.setTimeSignature", json!({ "scene": 2, "numerator": 3, "denominator": 4 })).unwrap();
+    run(&mut session, "scene.setTempo", json!({ "scene": 2, "bpm": 60 })).unwrap();
     advance(&mut renderer, 256);
     let state = run(&mut session, "launcher.state", json!({})).unwrap();
     assert_eq!(state["time_signature"], "4/4");
-    run(&mut session, "scene.launch", json!({ "scene": 1 })).unwrap();
+    run(&mut session, "scene.launch", json!({ "scene": 2 })).unwrap();
     // At 60 bpm a beat lasts a second: four seconds is beat 4, the second beat of bar 2 in 3/4.
     advance(&mut renderer, 4 * SR as usize + 256);
     let state = run(&mut session, "launcher.state", json!({})).unwrap();
@@ -248,12 +248,12 @@ fn a_launched_scene_sets_the_time_signature_the_transport_counts_in() {
 #[test]
 fn follow_tempo_map_takes_the_transport_back_from_a_scene() {
     let (mut session, mut renderer) = playing();
-    run(&mut session, "scene.setTimeSignature", json!({ "scene": 1, "numerator": 3, "denominator": 4 })).unwrap();
-    run(&mut session, "scene.setTempo", json!({ "scene": 1, "bpm": 60 })).unwrap();
+    run(&mut session, "scene.setTimeSignature", json!({ "scene": 2, "numerator": 3, "denominator": 4 })).unwrap();
+    run(&mut session, "scene.setTempo", json!({ "scene": 2, "bpm": 60 })).unwrap();
     advance(&mut renderer, 256);
     let state = run(&mut session, "launcher.state", json!({})).unwrap();
     assert_eq!(state["follows_tempo_map"], true);
-    run(&mut session, "scene.launch", json!({ "scene": 1 })).unwrap();
+    run(&mut session, "scene.launch", json!({ "scene": 2 })).unwrap();
     advance(&mut renderer, 2 * SR as usize);
     let state = run(&mut session, "launcher.state", json!({})).unwrap();
     assert_eq!((state["follows_tempo_map"].clone(), state["tempo_bpm"].clone()), (json!(false), json!(60.0)));

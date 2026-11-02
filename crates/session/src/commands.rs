@@ -334,7 +334,7 @@ const DEVICES: Param = param(
     "device indices on the track, from 0, or paths through groups such as \"2/1/0\", as in track.devices; at least one",
 );
 const RETURN: Param = param("return", ParamType::Track, "return track id or name, from project.tracks");
-const SCENE: Param = param("scene", ParamType::Integer, "scene number, from 0, as in project.launcher");
+const SCENE: Param = param("scene", ParamType::Integer, "scene number, from 1, as in project.launcher");
 /// A clip command's clip by its id (ADR 0025): it stays the same when other clips move.
 const CLIP: Param = optional(
     "clip",
@@ -351,7 +351,7 @@ const CLIP_INDEX: Param = optional(
     "an arrangement clip's index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
 );
 const CLIP_SCENE: Param =
-    optional("scene", ParamType::Integer, "instead of index: the clip in the track's slot of this scene, from 0");
+    optional("scene", ParamType::Integer, "instead of index: the clip in the track's slot of this scene, from 1");
 /// A scale's root and mode, for `clip.setScale` and `project.setDefaultScale`.
 const SCALE_ROOT: Param = optional(
     "root",
@@ -1254,9 +1254,10 @@ pub(crate) fn column_index(p: &Project, params: &Value) -> Result<usize, Command
 pub(crate) fn scene_index(p: &Project, params: &Value) -> Result<usize, CommandError> {
     let count = p.launcher.scenes.len();
     let number =
-        Args::new(params).value("scene").and_then(Value::as_u64).ok_or("scene must be a whole number from 0")?;
+        Args::new(params).value("scene").and_then(Value::as_u64).ok_or("scene must be a whole number from 1")?;
     usize::try_from(number)
         .ok()
+        .and_then(|n| n.checked_sub(1))
         .filter(|i| *i < count)
         .ok_or_else(|| format!("scene {number} does not exist; the project has {count} scenes").into())
 }
@@ -1452,7 +1453,7 @@ pub(crate) fn resolve_clip_ids<T>(
                 out.insert("clips".into(), json!([{ "track": track.0, "index": index }]));
             }
             ClipPlace::Slot { slot, .. } if takes("scene") => {
-                out.insert("scene".into(), json!(slot));
+                out.insert("scene".into(), json!(slot + 1));
             }
             ClipPlace::Lane { .. } => {
                 return Err(format!("clip {id} is on the arrangement; {} takes a clip slot's clip", spec.id).into());

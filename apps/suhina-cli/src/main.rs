@@ -87,7 +87,7 @@ options:
   -o, --output       output WAV path (render only)
   --cue <cue.wav>    render only: also write the cue (the tracks whose cue is on, after their
                      own volume and pan) to this WAV file, as long as the main one
-  --scene <n>        use scene n (from 0, as project.launcher numbers them) instead of the arrangement
+  --scene <n>        use scene n (1-based) of the clip launcher instead of the arrangement
   --launcher         play only: start stopped and read launcher commands (scene 2, clip Bass 1,
                      stop Bass, quit, help) from standard input
   --sample-rate      sample rate in Hz (render: default 48000; play: the device's when left out)
@@ -278,7 +278,7 @@ fn parse_args(args: &[String], command: Command) -> Result<Args, String> {
             "--scene" => {
                 let value = it.next().ok_or("--scene needs a number")?;
                 let n: usize = value.parse().map_err(|_| format!("invalid scene number: {value}"))?;
-                scene = Some(n);
+                scene = Some(n.checked_sub(1).ok_or("scenes are numbered from 1")?);
                 None
             }
             "--launcher" => {

@@ -66,11 +66,11 @@ fn sampler_drop_replaces_source_without_creating_clips() {
 fn slots_and_empty_space_take_scenes_and_new_tracks() {
     let items = [item("/s/a.wav", ItemKind::Sample)];
     let slot = plan(&items, DropTarget::Slot { track: TrackId(1), scene: 2 }, false, "rhythmic", false, &name).unwrap();
-    assert_eq!(slot.commands[0].1["scene"], 2);
+    assert_eq!(slot.commands[0].1["scene"], 3);
     let empty =
         plan(&items, DropTarget::NewTracks { beat: None, scene: Some(0) }, true, "tonal", false, &name).unwrap();
     assert!(empty.commands[0].1.get("track").is_none());
-    assert_eq!((empty.commands[0].1["scene"].as_u64(), empty.commands[0].1["warp"].as_str()), (Some(0), Some("tonal")));
+    assert_eq!((empty.commands[0].1["scene"].as_u64(), empty.commands[0].1["warp"].as_str()), (Some(1), Some("tonal")));
     assert_eq!(empty.label, "New audio track");
     assert!(
         plan(&items, DropTarget::Track(TrackId(1)), false, "rhythmic", false, &name).is_none(),

@@ -70,7 +70,7 @@ fn press_and_release(mode: LaunchMode) -> (Vec<Action>, Vec<Action>) {
 
 #[test]
 fn a_slot_launches_as_the_button_goes_down() {
-    let launch = Action::new("clip.launch", json!({ "track": 2, "scene": 1 }));
+    let launch = Action::new("clip.launch", json!({ "track": 2, "scene": 2 }));
     let (pressed, released) = press_and_release(LaunchMode::Trigger);
     assert_eq!(pressed, std::slice::from_ref(&launch));
     // A trigger clip does not listen for the release.
@@ -79,8 +79,8 @@ fn a_slot_launches_as_the_button_goes_down() {
 
 #[test]
 fn gate_and_repeat_clips_hear_the_release() {
-    let launch = Action::new("clip.launch", json!({ "track": 2, "scene": 1 }));
-    let release = Action::new("clip.release", json!({ "track": 2, "scene": 1 }));
+    let launch = Action::new("clip.launch", json!({ "track": 2, "scene": 2 }));
+    let release = Action::new("clip.release", json!({ "track": 2, "scene": 2 }));
     for mode in [LaunchMode::Gate, LaunchMode::Repeat] {
         let (pressed, released) = press_and_release(mode);
         assert_eq!(pressed, std::slice::from_ref(&launch), "{mode:?}");
@@ -95,7 +95,7 @@ fn a_click_without_the_mouse_launches_once() {
     let mut harness = view(LaunchMode::Gate);
     harness.get_by_label(SLOT).click_accesskit();
     harness.run();
-    assert_eq!(harness.state().actions, [Action::new("clip.launch", json!({ "track": 2, "scene": 1 }))]);
+    assert_eq!(harness.state().actions, [Action::new("clip.launch", json!({ "track": 2, "scene": 2 }))]);
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn the_right_click_menu_sets_the_launch_settings() {
         harness.state().actions.clone()
     };
     let slot = |extra: serde_json::Value| {
-        let mut params = json!({ "track": 2, "scene": 1 });
+        let mut params = json!({ "track": 2, "scene": 2 });
         params.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
         params
     };

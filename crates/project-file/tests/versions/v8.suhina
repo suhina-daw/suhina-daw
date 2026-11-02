@@ -763,13 +763,13 @@
       ],
       "mappings": [
         {
-          "scene": 1,
+          "scene": 2,
           "source": "key:Q",
           "target": "slot",
           "track": 2
         },
         {
-          "scene": 0,
+          "scene": 1,
           "source": "note:10:36",
           "target": "scene"
         },

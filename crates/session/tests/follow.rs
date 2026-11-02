@@ -67,10 +67,10 @@ fn set_follow_action_changes_what_is_given_and_undoes_in_one_step() {
     let result = run(
         &mut session,
         "clip.setFollowAction",
-        json!({ "track": "Drums", "scene": 0, "enabled": true, "actionA": "Next", "actionB": "jump 2", "chanceB": 25 }),
+        json!({ "track": "Drums", "scene": 1, "enabled": true, "actionA": "Next", "actionB": "jump 2", "chanceB": 25 }),
     )
     .unwrap();
-    assert_eq!(result["scene"], 0);
+    assert_eq!(result["scene"], 1);
     assert_eq!(result["follow_action"]["action_b"], "jump 2");
     let expected = FollowAction {
         enabled: true,
@@ -83,7 +83,7 @@ fn set_follow_action_changes_what_is_given_and_undoes_in_one_step() {
     assert_eq!(follow_of(&session, 1), FollowAction::default(), "other slots are left alone");
 
     // Unlinked with a time of its own; the rest stays.
-    run(&mut session, "clip.setFollowAction", json!({ "track": 1, "scene": 0, "linked": false, "time": 6.5 })).unwrap();
+    run(&mut session, "clip.setFollowAction", json!({ "track": 1, "scene": 1, "linked": false, "time": 6.5 })).unwrap();
     assert_eq!(follow_of(&session, 0), FollowAction { linked: false, time: 6.5, ..expected });
 
     // The launcher listing shows it.
@@ -106,25 +106,25 @@ fn set_follow_action_changes_what_is_given_and_undoes_in_one_step() {
 fn malformed_parameters_change_nothing() {
     let mut session = Session::new(project());
     let cases = [
-        (json!({ "track": "Drums", "scene": 0 }), "give enabled"),
-        (json!({ "track": "Drums", "scene": 2, "enabled": true }), "that slot has no clip"),
-        (json!({ "track": "Drums", "scene": 3, "enabled": true }), "scene 3 does not exist"),
-        (json!({ "track": "Drums", "scene": -1, "enabled": true }), "scene must be"),
-        (json!({ "track": "Nobody", "scene": 0, "enabled": true }), "Nobody"),
-        (json!({ "track": "Drums", "scene": 0, "enabled": "yes" }), "enabled must be true or false"),
-        (json!({ "track": "Drums", "scene": 0, "linked": 1 }), "linked must be true or false"),
-        (json!({ "track": "Drums", "scene": 0, "time": 0 }), "time must be more than 0"),
-        (json!({ "track": "Drums", "scene": 0, "time": -2 }), "time must be more than 0"),
-        (json!({ "track": "Drums", "scene": 0, "time": 1e9 }), "at most 100000 beats"),
-        (json!({ "track": "Drums", "scene": 0, "time": "4 bars" }), "time must be a number"),
-        (json!({ "track": "Drums", "scene": 0, "actionA": "sideways" }), "actionA must be nothing, stop"),
-        (json!({ "track": "Drums", "scene": 0, "actionB": 3 }), "actionB must be a text"),
-        (json!({ "track": "Drums", "scene": 0, "actionA": "jump 4" }), "scene 4 does not exist"),
-        (json!({ "track": "Drums", "scene": 0, "actionA": "jump 0" }), "actionA must be"),
-        (json!({ "track": "Drums", "scene": 0, "actionA": "jump x" }), "actionA must be"),
-        (json!({ "track": "Drums", "scene": 0, "chanceA": 101 }), "chanceA must be a whole number from 0 to 100"),
-        (json!({ "track": "Drums", "scene": 0, "chanceB": -1 }), "chanceB must be a whole number"),
-        (json!({ "track": "Drums", "scene": 0, "chanceB": 2.5 }), "chanceB must be a whole number"),
+        (json!({ "track": "Drums", "scene": 1 }), "give enabled"),
+        (json!({ "track": "Drums", "scene": 3, "enabled": true }), "that slot has no clip"),
+        (json!({ "track": "Drums", "scene": 4, "enabled": true }), "scene 4 does not exist"),
+        (json!({ "track": "Drums", "scene": 0, "enabled": true }), "scene 0 does not exist"),
+        (json!({ "track": "Nobody", "scene": 1, "enabled": true }), "Nobody"),
+        (json!({ "track": "Drums", "scene": 1, "enabled": "yes" }), "enabled must be true or false"),
+        (json!({ "track": "Drums", "scene": 1, "linked": 1 }), "linked must be true or false"),
+        (json!({ "track": "Drums", "scene": 1, "time": 0 }), "time must be more than 0"),
+        (json!({ "track": "Drums", "scene": 1, "time": -2 }), "time must be more than 0"),
+        (json!({ "track": "Drums", "scene": 1, "time": 1e9 }), "at most 100000 beats"),
+        (json!({ "track": "Drums", "scene": 1, "time": "4 bars" }), "time must be a number"),
+        (json!({ "track": "Drums", "scene": 1, "actionA": "sideways" }), "actionA must be nothing, stop"),
+        (json!({ "track": "Drums", "scene": 1, "actionB": 3 }), "actionB must be a text"),
+        (json!({ "track": "Drums", "scene": 1, "actionA": "jump 4" }), "scene 4 does not exist"),
+        (json!({ "track": "Drums", "scene": 1, "actionA": "jump 0" }), "actionA must be"),
+        (json!({ "track": "Drums", "scene": 1, "actionA": "jump x" }), "actionA must be"),
+        (json!({ "track": "Drums", "scene": 1, "chanceA": 101 }), "chanceA must be a whole number from 0 to 100"),
+        (json!({ "track": "Drums", "scene": 1, "chanceB": -1 }), "chanceB must be a whole number"),
+        (json!({ "track": "Drums", "scene": 1, "chanceB": 2.5 }), "chanceB must be a whole number"),
     ];
     for (params, expected) in cases {
         let err = run(&mut session, "clip.setFollowAction", params.clone()).unwrap_err();
@@ -140,8 +140,8 @@ fn a_follow_action_set_while_playing_takes_the_column_to_the_next_clip() {
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
-    run(&mut session, "clip.setFollowAction", json!({ "track": "Drums", "scene": 0, "enabled": true })).unwrap();
-    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 0 })).unwrap();
+    run(&mut session, "clip.setFollowAction", json!({ "track": "Drums", "scene": 1, "enabled": true })).unwrap();
+    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
     let mut buffer = vec![0.0f32; 2 * 256];
     let mut advance = |frames: usize| {
         for _ in 0..frames / 256 {

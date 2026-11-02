@@ -70,7 +70,7 @@ pub(crate) fn locate(p: &Project, params: &Value) -> Result<(ClipAt, ContentId, 
                 .find(|(_, c)| c.track == track)
                 .ok_or("the track has no clip slots")?;
             let missing = || format!("scene {scene} does not exist; the track has {} slots", column.slots.len());
-            let s = usize::try_from(scene).ok().ok_or_else(missing)?;
+            let s = usize::try_from(scene).ok().and_then(|s| s.checked_sub(1)).ok_or_else(missing)?;
             let slot = column.slots.get(s).ok_or_else(missing)?;
             let clip = slot.clip.as_ref().ok_or_else(|| format!("the slot of scene {scene} is empty"))?;
             (ClipAt::Slot(c, s), clip)

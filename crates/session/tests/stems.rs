@@ -143,7 +143,7 @@ fn a_stems_file_dropped_on_a_group_goes_into_it_and_into_a_scene() {
     let ids: Vec<u32> = session.project().tracks.iter().take(2).map(|t| t.id.0).collect();
     let outer = run(&mut session, "track.group", json!({ "tracks": ids, "name": "Set" })).unwrap();
     let outer = TrackId(outer["track"].as_u64().unwrap() as u32);
-    run(&mut session, "clip.addFiles", json!({ "paths": [path.display().to_string()], "track": outer.0, "scene": 1 }))
+    run(&mut session, "clip.addFiles", json!({ "paths": [path.display().to_string()], "track": outer.0, "scene": 2 }))
         .unwrap();
     let p = session.project();
     assert_eq!(p.validate(), Ok(()));

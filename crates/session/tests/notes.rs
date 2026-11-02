@@ -105,7 +105,7 @@ fn notes_are_listed_with_midi_velocities() {
     assert_eq!(listed.as_array().map(Vec::len), Some(3));
     // An empty MIDI clip has none; a slot's clip is named by its scene.
     assert_eq!(run(&mut session, "note.list", json!({ "track": 1, "index": 1 })).unwrap(), json!([]));
-    let slot = run(&mut session, "note.list", json!({ "track": 1, "scene": 0 })).unwrap();
+    let slot = run(&mut session, "note.list", json!({ "track": 1, "scene": 1 })).unwrap();
     assert_eq!(slot[0]["key"], 48);
 }
 
@@ -137,7 +137,7 @@ fn an_empty_clip_and_a_slot_clip_take_notes() {
     let one = json!([{ "time": 0.0, "length": 1.0, "key": 60 }]);
     run(&mut session, "note.add", json!({ "track": 1, "index": 1, "notes": one })).unwrap();
     assert_eq!(notes(&session, 2).len(), 1);
-    run(&mut session, "note.add", json!({ "track": 1, "scene": 0, "notes": one })).unwrap();
+    run(&mut session, "note.add", json!({ "track": 1, "scene": 1, "notes": one })).unwrap();
     assert_eq!(notes(&session, 5).len(), 2);
 }
 
@@ -237,12 +237,12 @@ fn malformed_params_are_refused_and_change_nothing() {
         // Which clip.
         ("note.list", json!({ "track": 9, "index": 0 }), "does not exist"),
         ("note.list", json!({ "track": 1 }), "give index"),
-        ("note.list", json!({ "track": 1, "index": 0, "scene": 99 }), "not both"),
+        ("note.list", json!({ "track": 1, "index": 0, "scene": 1 }), "not both"),
         ("note.list", json!({ "track": 1, "index": 7 }), "clip index 7"),
         ("note.list", json!({ "track": 1, "index": -1 }), "whole number"),
-        ("note.list", json!({ "track": 1, "scene": 1 }), "empty"),
-        ("note.list", json!({ "track": 1, "scene": 99 }), "scene 99 does not exist"),
-        ("note.list", json!({ "track": 2, "scene": 99 }), "no clip slots"),
+        ("note.list", json!({ "track": 1, "scene": 2 }), "empty"),
+        ("note.list", json!({ "track": 1, "scene": 0 }), "scene 0"),
+        ("note.list", json!({ "track": 2, "scene": 1 }), "no clip slots"),
         ("note.list", json!({ "track": 1, "index": 2 }), "audio clip"),
         ("note.add", json!({ "track": 1, "index": 2, "notes": one }), "audio clip"),
         ("note.add", json!({ "track": 1, "index": 3, "notes": one }), "pattern"),
@@ -390,7 +390,7 @@ fn a_launcher_clip_sharing_an_arrangement_clips_content_is_copied_when_edited() 
     run(
         &mut session,
         "note.add",
-        json!({ "track": 1, "scene": 1, "notes": [{ "time": 3.0, "length": 1.0, "key": 50 }] }),
+        json!({ "track": 1, "scene": 2, "notes": [{ "time": 3.0, "length": 1.0, "key": 50 }] }),
     )
     .unwrap();
     assert_eq!(notes(&session, 1), original);
@@ -499,7 +499,7 @@ fn copied_notes_paste_with_their_spacing_after_the_copy_or_at_a_time() {
     undoes(&mut session, 1, &before);
     // At a time, into another clip, and again (the clipboard stays).
     run(&mut session, "note.paste", json!({ "track": 1, "index": 1, "time": 0.5 })).unwrap();
-    run(&mut session, "note.paste", json!({ "track": 1, "scene": 0, "time": 8 })).unwrap();
+    run(&mut session, "note.paste", json!({ "track": 1, "scene": 1, "time": 8 })).unwrap();
     let empty = notes(&session, 2);
     assert_eq!(empty.iter().map(|n| (n.time, n.key)).collect::<Vec<_>>(), [(0.5, 64), (1.5, 67)]);
     assert_eq!(notes(&session, 5).len(), 3);
@@ -543,7 +543,7 @@ fn malformed_clipboard_commands_are_refused_and_change_nothing() {
         ("note.copy", json!({ "track": 1, "index": 0, "notes": [9] }), "note 9 does not exist"),
         ("note.copy", json!({ "track": 1, "index": 2, "notes": [0] }), "audio clip"),
         ("note.cut", json!({ "track": 1, "index": 0, "notes": [-1] }), "whole number"),
-        ("note.cut", json!({ "track": 1, "scene": 1, "notes": [0] }), "empty"),
+        ("note.cut", json!({ "track": 1, "scene": 2, "notes": [0] }), "empty"),
         ("note.duplicate", json!({ "track": 1, "index": 0, "notes": "all" }), "list"),
         ("note.duplicate", json!({ "track": 1, "index": 1, "notes": [0] }), "does not exist"),
     ];
@@ -658,7 +658,7 @@ fn malformed_splits_are_refused_and_change_nothing() {
         ("note.split", json!({ "track": 1, "index": 0, "at": 1.0 }), "notes must be"),
         ("note.split", json!({ "track": 1, "index": 0, "notes": [9], "at": 1.0 }), "note 9 does not exist"),
         ("note.split", json!({ "track": 1, "index": 2, "notes": [0], "at": 1.0 }), "audio clip"),
-        ("note.split", json!({ "track": 1, "scene": 1, "notes": [0], "at": 1.0 }), "empty"),
+        ("note.split", json!({ "track": 1, "scene": 2, "notes": [0], "at": 1.0 }), "empty"),
     ];
     for (id, params, error) in cases {
         let got = run(&mut session, id, params.clone());

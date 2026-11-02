@@ -121,7 +121,7 @@ pub fn launcher_clip(project: &Project, track: TrackId, scene: usize, quantizati
         offset: clip.offset,
         loop_range: clip.loop_range.map(|l| (l.start, l.end)),
     };
-    piano.address = json!({ "track": track.0, "scene": scene });
+    piano.address = json!({ "track": track.0, "scene": scene + 1 });
     Some(piano)
 }
 

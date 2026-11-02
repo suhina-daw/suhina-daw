@@ -243,7 +243,7 @@ pub fn render_launch_script(
 pub fn scene_as_arrangement(project: &Project, scene: usize) -> Result<Project, String> {
     let count = project.launcher.scenes.len();
     if scene >= count {
-        return Err(format!("scene {scene} does not exist; the project has {count} scenes"));
+        return Err(format!("scene {} does not exist; the project has {count} scenes", scene.saturating_add(1)));
     }
     let lanes = project
         .launcher

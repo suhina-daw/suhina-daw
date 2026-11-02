@@ -167,7 +167,7 @@ fn only_the_named_notes_move_and_a_slot_clip_quantises_too() {
     let result = run(&mut session, json!({ "track": 1, "index": 0, "notes": [2, 0, 2], "grid": "1/4" })).unwrap();
     assert_eq!(result, json!({ "notes": [0, 2], "moved": 2 }));
     close(&starts(&session), &[0.0, 1.1, 2.0]);
-    run(&mut session, json!({ "track": "Keys", "scene": 0, "grid": "1/4" })).unwrap();
+    run(&mut session, json!({ "track": "Keys", "scene": 1, "grid": "1/4" })).unwrap();
     close(&notes(&session, 3).iter().map(|n| n.time).collect::<Vec<_>>(), &[0.0, 1.0, 2.0]);
     // An empty clip has nothing to move, and stays as it was.
     let before = session.project().clone();

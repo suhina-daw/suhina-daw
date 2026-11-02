@@ -41,7 +41,7 @@ fn clicking_a_clip_launches_it() {
     let mut harness = view();
     assert_eq!(
         clicked(&mut harness, "Launch Walk on Bass (scene 2)"),
-        [Action::new("clip.launch", json!({ "track": 2, "scene": 1 }))]
+        [Action::new("clip.launch", json!({ "track": 2, "scene": 2 }))]
     );
 }
 
@@ -50,18 +50,18 @@ fn clicking_an_empty_slot_with_a_stop_button_stops_the_track() {
     let mut harness = view();
     assert_eq!(
         clicked(&mut harness, "Stop Keys (scene 1)"),
-        [Action::new("clip.launch", json!({ "track": 3, "scene": 0 }))]
+        [Action::new("clip.launch", json!({ "track": 3, "scene": 1 }))]
     );
 }
 
 #[test]
 fn scenes_and_stop_buttons_send_their_commands() {
     let mut harness = view();
-    assert_eq!(clicked(&mut harness, "Launch scene 3 Build"), [Action::new("scene.launch", json!({ "scene": 2 }))]);
+    assert_eq!(clicked(&mut harness, "Launch scene 3 Build"), [Action::new("scene.launch", json!({ "scene": 3 }))]);
     // A playing row's click stops its clips.
     harness.state_mut().grid.scenes[2].playing = true;
     harness.run();
-    assert_eq!(clicked(&mut harness, "Stop scene 3 Build"), [Action::new("scene.stop", json!({ "scene": 2 }))]);
+    assert_eq!(clicked(&mut harness, "Stop scene 3 Build"), [Action::new("scene.stop", json!({ "scene": 3 }))]);
     harness.state_mut().grid.scenes[2].playing = false;
     harness.run();
     assert_eq!(clicked(&mut harness, "Stop Drums"), [Action::new("track.stop", json!({ "track": 1 }))]);
@@ -76,9 +76,9 @@ fn scenes_and_stop_buttons_send_their_commands() {
 fn a_scene_menu_inserts_duplicates_and_deletes_scenes() {
     let mut harness = view();
     for (entry, action) in [
-        ("Insert scene below", Action::new("scene.insert", json!({ "scene": 3 }))),
-        ("Duplicate scene", Action::new("scene.duplicate", json!({ "scene": 2 }))),
-        ("Delete scene", Action::new("scene.delete", json!({ "scene": 2 }))),
+        ("Insert scene below", Action::new("scene.insert", json!({ "scene": 4 }))),
+        ("Duplicate scene", Action::new("scene.duplicate", json!({ "scene": 3 }))),
+        ("Delete scene", Action::new("scene.delete", json!({ "scene": 3 }))),
     ] {
         harness.state_mut().actions.clear();
         harness.get_by_label("Launch scene 3 Build").click_secondary();
@@ -218,7 +218,7 @@ fn a_clips_name_selects_it_and_its_mark_launches_it() {
     // A launch selects the clip too, unless Select on launch is off.
     assert_eq!(
         clicked(&mut harness, "Launch Chords 1 on Keys (scene 2)"),
-        [Action::new("clip.launch", json!({ "track": 3, "scene": 1 }))]
+        [Action::new("clip.launch", json!({ "track": 3, "scene": 2 }))]
     );
     assert_eq!(harness.state().state.selected_slot, Some((TrackId(3), 1)));
     harness.state_mut().state.keep_selection_on_launch = true;
@@ -256,7 +256,7 @@ fn a_slots_menu_copies_its_clip_and_pastes_once_something_is_copied() {
     harness.state_mut().actions.clear();
     harness.get_by_label_contains("Copy").click();
     harness.run();
-    assert_eq!(harness.state().actions, [Action::new("clip.copy", json!({ "track": 2, "scene": 1 }))]);
+    assert_eq!(harness.state().actions, [Action::new("clip.copy", json!({ "track": 2, "scene": 2 }))]);
 
     // Nothing copied: Paste is there but does nothing.
     harness.get_by_label("Stop Keys (scene 1)").click_secondary();
@@ -275,7 +275,7 @@ fn a_slots_menu_copies_its_clip_and_pastes_once_something_is_copied() {
     harness.state_mut().actions.clear();
     harness.get_by_label_contains("Paste").click();
     harness.run();
-    assert_eq!(harness.state().actions, [Action::new("clip.paste", json!({ "track": 3, "scene": 0 }))]);
+    assert_eq!(harness.state().actions, [Action::new("clip.paste", json!({ "track": 3, "scene": 1 }))]);
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn clicking_a_slot_selects_it_and_still_launches_or_stops() {
     let mut harness = view();
     assert_eq!(
         clicked(&mut harness, "Stop Keys (scene 1)"),
-        [Action::new("clip.launch", json!({ "track": 3, "scene": 0 }))]
+        [Action::new("clip.launch", json!({ "track": 3, "scene": 1 }))]
     );
     assert_eq!(harness.state().state.selected_slot, Some((suhina_engine::model::TrackId(3), 0)));
     clicked(&mut harness, "Launch Walk on Bass (scene 2)");
@@ -435,7 +435,7 @@ fn launching_a_clip_greys_the_arrangement_until_back_to_arrangement() {
     // Launch a clip while the transport plays, on a fine grid so it fires at once.
     harness.state_mut().projects_mut().execute("transport.play", &json!({})).unwrap();
     harness.state_mut().projects_mut().execute("launcher.setQuantization", &json!({ "value": "1/32" })).unwrap();
-    harness.state_mut().projects_mut().execute("clip.launch", &json!({ "track": 1, "scene": 0 })).unwrap();
+    harness.state_mut().projects_mut().execute("clip.launch", &json!({ "track": 1, "scene": 1 })).unwrap();
     for _ in 0..30 {
         harness.step();
         std::thread::sleep(std::time::Duration::from_millis(10));

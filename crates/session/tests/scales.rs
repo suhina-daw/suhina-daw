@@ -151,7 +151,7 @@ fn set_scale_sets_the_root_and_mode_and_undo_takes_it_back() {
 #[test]
 fn off_clears_the_scale_and_a_call_that_changes_nothing_is_no_undo_step() {
     let mut session = Session::new(project());
-    run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 0, "root": "C", "mode": "major" })).unwrap();
+    run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 1, "root": "C", "mode": "major" })).unwrap();
     let slot = |s: &Session| {
         let clip = s.project().launcher.columns[0].slots[0].clip.as_ref().unwrap();
         s.project().content(clip.content).and_then(|c| c.scale)
@@ -159,14 +159,14 @@ fn off_clears_the_scale_and_a_call_that_changes_nothing_is_no_undo_step() {
     assert_eq!(slot(&session), scale(0, ScaleMode::Major));
     // The same scale again changes nothing and leaves the undo history as it was.
     let steps = |s: &mut Session| run(s, "project.info", json!({})).unwrap()["can_undo"].clone();
-    let done = run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 0, "root": 0, "mode": "major" }));
+    let done = run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 1, "root": 0, "mode": "major" }));
     assert_eq!(done.unwrap()["changed"], json!(false));
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(slot(&session), None, "one undo took back the first call");
     assert_eq!(steps(&mut session), json!(false));
 
     run(&mut session, "edit.redo", json!({})).unwrap();
-    let done = run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 0, "off": true }));
+    let done = run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 1, "off": true }));
     assert_eq!(done, Ok(json!({ "scale": null, "changed": true })));
     assert_eq!(slot(&session), None);
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -190,8 +190,8 @@ fn bad_input_is_refused_and_changes_nothing() {
         (json!({ "track": 1, "index": 0, "off": true, "root": "C" }), "not both"),
         (json!({ "track": 1, "index": 2, "root": "C" }), "audio clip"),
         (json!({ "track": 1, "index": 9, "root": "C" }), "does not exist"),
-        (json!({ "track": 1, "scene": 1, "root": "C" }), "empty"),
-        (json!({ "track": 1, "index": 0, "scene": 0, "root": "C" }), "not both"),
+        (json!({ "track": 1, "scene": 2, "root": "C" }), "empty"),
+        (json!({ "track": 1, "index": 0, "scene": 1, "root": "C" }), "not both"),
         (json!({ "track": 7, "index": 0, "root": "C" }), "track"),
         (json!({ "track": 1, "index": 0, "root": "C", "colour": "red" }), "unknown parameter"),
     ] {
@@ -230,7 +230,7 @@ fn new_midi_clips_take_the_default_scale_and_existing_ones_keep_theirs() {
     assert_eq!(scale_at(&session, 0), None, "a clip that exists keeps no scale");
 
     // clip.create in an empty slot and in the arrangement: both take A minor.
-    run(&mut session, "clip.create", json!({ "track": 1, "scene": 1 })).unwrap();
+    run(&mut session, "clip.create", json!({ "track": 1, "scene": 2 })).unwrap();
     let made = session.project().launcher.columns[0].slots[1].clip.as_ref().unwrap().content;
     assert_eq!(session.project().content(made).and_then(|c| c.scale), scale(9, ScaleMode::Minor));
     let at = run(&mut session, "clip.create", json!({ "track": 1, "start": 16 })).unwrap();

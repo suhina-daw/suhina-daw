@@ -29,7 +29,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "scene",
                 ParamType::Integer,
-                "number the new scene gets, from 0 to one past the last scene; after the last scene if left out",
+                "number the new scene gets, from 1 to one past the last scene; after the last scene if left out",
             ),
             optional("name", ParamType::Text, "the new scene's name; empty if left out"),
         ],
@@ -93,13 +93,13 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
 fn launch_scene(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let scene = scene_index(session.project(), params)?;
     send(session, LaunchCommand::LaunchScene { scene })?;
-    Ok(json!({ "scene": scene, "queued": "launch" }))
+    Ok(json!({ "scene": scene + 1, "queued": "launch" }))
 }
 
 fn stop_scene(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let scene = scene_index(session.project(), params)?;
     send(session, LaunchCommand::StopScene { scene })?;
-    Ok(json!({ "scene": scene, "queued": "stop" }))
+    Ok(json!({ "scene": scene + 1, "queued": "stop" }))
 }
 
 /// Scenes a project can have; inserting stops there.
@@ -134,8 +134,9 @@ fn insert_scene(session: &mut Session, params: &Value) -> Result<Value, CommandE
         Some(value) => value
             .as_u64()
             .and_then(|n| usize::try_from(n).ok())
+            .and_then(|n| n.checked_sub(1))
             .filter(|i| *i <= count)
-            .ok_or_else(|| format!("scene must be a whole number from 0 to {count}"))?,
+            .ok_or_else(|| format!("scene must be a whole number from 1 to {}", count + 1))?,
     };
     let name = scene_name(params)?;
     even_slots(p);
@@ -144,7 +145,7 @@ fn insert_scene(session: &mut Session, params: &Value) -> Result<Value, CommandE
     for column in &mut p.launcher.columns {
         column.slots.insert(at, Slot { clip: None, has_stop: true });
     }
-    Ok(json!({ "scene": at }))
+    Ok(json!({ "scene": at + 1 }))
 }
 
 fn duplicate_scene(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -175,7 +176,7 @@ fn duplicate_scene(session: &mut Session, params: &Value) -> Result<Value, Comma
         }
         column.slots.insert(scene + 1, slot);
     }
-    Ok(json!({ "scene": scene + 1 }))
+    Ok(json!({ "scene": scene + 2 }))
 }
 
 fn delete_scene(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -189,7 +190,7 @@ fn delete_scene(session: &mut Session, params: &Value) -> Result<Value, CommandE
     for column in &mut p.launcher.columns {
         column.slots.remove(scene);
     }
-    Ok(json!({ "deleted": scene }))
+    Ok(json!({ "deleted": scene + 1 }))
 }
 
 fn rename_scene(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -201,7 +202,7 @@ fn rename_scene(session: &mut Session, params: &Value) -> Result<Value, CommandE
     if let Some(s) = session.project.launcher.scenes.get_mut(scene) {
         s.name.clone_from(&name);
     }
-    Ok(json!({ "scene": scene, "name": name }))
+    Ok(json!({ "scene": scene + 1, "name": name }))
 }
 
 fn set_scene_tempo(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -215,7 +216,7 @@ fn set_scene_tempo(session: &mut Session, params: &Value) -> Result<Value, Comma
     if let Some(s) = session.project.launcher.scenes.get_mut(scene) {
         s.tempo_bpm = bpm;
     }
-    Ok(json!({ "scene": scene, "tempo_bpm": bpm }))
+    Ok(json!({ "scene": scene + 1, "tempo_bpm": bpm }))
 }
 
 fn set_scene_time_signature(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -244,5 +245,5 @@ fn set_scene_time_signature(session: &mut Session, params: &Value) -> Result<Val
     if let Some(s) = session.project.launcher.scenes.get_mut(scene) {
         s.time_signature = signature;
     }
-    Ok(json!({ "scene": scene, "time_signature": signature.map(signature_text) }))
+    Ok(json!({ "scene": scene + 1, "time_signature": signature.map(signature_text) }))
 }

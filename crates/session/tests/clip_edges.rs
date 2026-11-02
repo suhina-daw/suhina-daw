@@ -260,7 +260,7 @@ fn warp_turned_on_in_a_slot_marks_the_audio_s_end_at_the_song_s_tempo_not_the_ar
         slots: vec![Slot { clip: Some(Clip::new(ContentId(1), 0.0, 8.0)), has_stop: true }],
     }];
     let mut session = Session::new(p);
-    run(&mut session, "clip.setAudio", json!({ "track": 3, "scene": 0, "warp": true })).unwrap();
+    run(&mut session, "clip.setAudio", json!({ "track": 3, "scene": 1, "warp": true })).unwrap();
     // The arrangement's clip of the same content plays at 120 then 60, so the slot's clip got its
     // own copy (#874).
     let slot = session.project().launcher.columns[0].slots[0].clip.as_ref().unwrap().content;

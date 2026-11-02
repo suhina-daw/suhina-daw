@@ -269,7 +269,7 @@ impl App {
                     self.status = Status::Hint("Click a clip slot first".into());
                     return;
                 };
-                let params = json!({ "track": track.0, "scene": scene });
+                let params = json!({ "track": track.0, "scene": scene + 1 });
                 actions.push(Action::new(if action == "selection.copy" { "clip.copy" } else { "clip.paste" }, params));
             }
             // Cut and duplicate of a slot's clip wait for launcher clip commands; Delete works,
@@ -427,7 +427,7 @@ impl App {
                         })
                     {
                         self.view.selected_slot = None;
-                        actions.push(Action::new("clip.delete", json!({ "track": track.0, "scene": scene })));
+                        actions.push(Action::new("clip.delete", json!({ "track": track.0, "scene": scene + 1 })));
                     }
                     return;
                 }
@@ -500,7 +500,7 @@ impl App {
                         let grid = self.session().map(|s| TrackGrid::build(s.project(), None))?;
                         let slot = grid.columns.iter().find(|c| c.track == track)?.slots.get(scene)?;
                         (slot.state != crate::interaction::grid::SlotState::Empty)
-                            .then(|| (json!({ "track": track.0, "scene": scene }), slot.name.clone()))
+                            .then(|| (json!({ "track": track.0, "scene": scene + 1 }), slot.name.clone()))
                     }),
                 };
                 match target {
@@ -798,7 +798,7 @@ impl App {
             }
             "selection.launch" => {
                 if let (View::Session, Some((track, scene))) = (self.shown, self.view.selected_slot) {
-                    actions.push(Action::new("clip.launch", json!({ "track": track.0, "scene": scene })));
+                    actions.push(Action::new("clip.launch", json!({ "track": track.0, "scene": scene + 1 })));
                 }
             }
             // Points selected on an automation lane: the arrows move them, a grid step in time or a
@@ -1225,16 +1225,11 @@ fn mixer_value(
     }
 }
 
-/// A scene as the window shows it: from 1, where the commands count from 0.
-fn shown_scene(scene: &serde_json::Value) -> String {
-    scene.as_u64().map_or_else(|| scene.to_string(), |n| n.saturating_add(1).to_string())
-}
-
 /// A mapping command's target in words: "track 2 scene 1", "scene 3", "the stop button of track 2".
 pub(super) fn mapping_target(p: &serde_json::Value) -> String {
     match p["target"].as_str() {
-        Some("slot") => format!("track {} scene {}", p["track"], shown_scene(&p["scene"])),
-        Some("scene") => format!("scene {}", shown_scene(&p["scene"])),
+        Some("slot") => format!("track {} scene {}", p["track"], p["scene"]),
+        Some("scene") => format!("scene {}", p["scene"]),
         _ => format!("the stop button of track {}", p["track"]),
     }
 }
@@ -1243,8 +1238,8 @@ pub(super) fn mapping_target(p: &serde_json::Value) -> String {
 pub(super) fn describe(action: &Action) -> Option<String> {
     let p = &action.params;
     Some(match action.id {
-        "clip.launch" => format!("Launched scene {} on track {}", shown_scene(&p["scene"]), p["track"]),
-        "scene.launch" => format!("Launched scene {}", shown_scene(&p["scene"])),
+        "clip.launch" => format!("Launched scene {} on track {}", p["scene"], p["track"]),
+        "scene.launch" => format!("Launched scene {}", p["scene"]),
         "track.stop" => format!("Stopping track {}", p["track"]),
         "launcher.stopAll" => "Stopping all clips".into(),
         "launcher.addMapping" => format!(
@@ -1265,9 +1260,7 @@ pub(super) fn describe(action: &Action) -> Option<String> {
         }
         "transport.setTempo" => format!("Tempo {}", p["bpm"]),
         "clip.copy" => "Copied the clip".into(),
-        "clip.paste" if p.get("scene").is_some() => {
-            format!("Pasted into scene {} on track {}", shown_scene(&p["scene"]), p["track"])
-        }
+        "clip.paste" if p.get("scene").is_some() => format!("Pasted into scene {} on track {}", p["scene"], p["track"]),
         "clip.paste" => "Pasted the clip".into(),
         "edit.undo" => "Undone".into(),
         "edit.redo" => "Redone".into(),

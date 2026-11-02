@@ -64,7 +64,7 @@ impl FollowInfo {
 
     /// `clip.setFollowAction` for this clip, changing what `change` holds.
     fn action(&self, change: Value) -> Action {
-        let mut params = json!({ "track": self.track.0, "scene": self.scene });
+        let mut params = json!({ "track": self.track.0, "scene": self.scene + 1 });
         if let (Some(params), Value::Object(change)) = (params.as_object_mut(), change) {
             params.extend(change);
         }
@@ -345,7 +345,7 @@ mod tests {
         let info = FollowInfo::build(&demo_project(), TrackId(2), 1).expect("the clip");
         let action = info.action(json!({ "chanceA": 40 }));
         assert_eq!(action.id, "clip.setFollowAction");
-        assert_eq!(action.params, json!({ "track": 2, "scene": 1, "chanceA": 40 }));
+        assert_eq!(action.params, json!({ "track": 2, "scene": 2, "chanceA": 40 }));
     }
 
     #[test]

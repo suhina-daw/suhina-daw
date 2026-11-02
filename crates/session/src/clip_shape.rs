@@ -45,13 +45,13 @@ fn length(value: Option<&Value>, key: &str) -> Result<f64, CommandError> {
     Ok(length)
 }
 
-/// What names the clip `id` at `at` in a result: its `clip` id, and `index` or `scene` (from 0).
+/// What names the clip `id` at `at` in a result: its `clip` id, and `index` or `scene` (from 1).
 fn address(at: ClipAt, id: suhina_model::ClipId) -> Map<String, Value> {
     let mut out = Map::new();
     out.insert("clip".into(), json!(id.0));
     match at {
         ClipAt::Arrangement(_, index) => out.insert("index".into(), json!(index)),
-        ClipAt::Slot(_, slot) => out.insert("scene".into(), json!(slot)),
+        ClipAt::Slot(_, slot) => out.insert("scene".into(), json!(slot.saturating_add(1))),
     };
     out
 }
