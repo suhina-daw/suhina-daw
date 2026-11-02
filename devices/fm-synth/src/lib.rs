@@ -616,10 +616,9 @@ fn seven_bit(value: f32) -> i32 {
 impl Device for FmSynth {
     fn readouts(&self) -> Option<[f32; suhina_device_api::MAX_READOUTS]> {
         let mut out = [0.0; suhina_device_api::MAX_READOUTS];
-        if let [left, right, ..] = &mut out {
-            *left = self.peaks[0];
-            *right = self.peaks[1];
-        }
+        let [left, right, ..] = &mut out;
+        *left = self.peaks[0];
+        *right = self.peaks[1];
         Some(out)
     }
 
