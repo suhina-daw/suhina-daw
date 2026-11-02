@@ -648,7 +648,7 @@ fn an_editor_is_owned_by_the_engines_window() {
     assert_ne!(owner, 0);
     let p = project(8.0, false, vec![plugin_device("vst3")]);
     let (mut session, mut renderer) = session(p, false);
-    session.set_editor_owner(Some(owner as u64));
+    session.rack_mut().set_owner(Some(owner as u64));
     until(&mut session, &mut renderer, "starting", |s| s["status"] == "running");
     // The editor opens in the background: the session's thread (the app's window thread)
     // must not wait for the host, which waits for the owner window while it makes the editor's.
