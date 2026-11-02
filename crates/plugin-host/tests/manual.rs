@@ -80,6 +80,39 @@ fn an_installed_plugins_editor_opens() {
     plugin.close_editor().unwrap();
 }
 
+/// Loads the plug-in through the host, plays blocks, and hands it back the state it saved: the
+/// round trip a project's settings stand on, with an installed plug-in. Prints whether the state
+/// read after it is the same bytes, which a plug-in need not promise.
+#[test]
+#[ignore = "needs SUHINA_PLUGIN; looks into one installed plug-in by hand"]
+fn an_installed_plugins_state_comes_back_through_the_host() {
+    let Some(launch) = launch() else {
+        eprintln!("SUHINA_PLUGIN not set; nothing to look into");
+        return;
+    };
+    let timeout = launch.timeout;
+    let (mut plugin, mut audio) = Plugin::start(launch).unwrap_or_else(|e| panic!("start: {e}"));
+    let params = plugin.params().unwrap_or_else(|e| panic!("params: {e}"));
+    eprintln!("loaded: {} parameters, latency {} frames", params.len(), plugin.latency());
+    let input = vec![0.0f32; 512 * 2];
+    let mut output = vec![0.0f32; 512 * 2];
+    let mut play = |audio: &mut suhina_plugins::PluginAudio| {
+        for _ in 0..8 {
+            let outcome = audio.process_with_events(&input, &[], &mut output, timeout);
+            assert_eq!(outcome, suhina_ipc::Outcome::Done, "the block came back");
+        }
+    };
+    play(&mut audio);
+    let saved = plugin.save_state().unwrap_or_else(|e| panic!("save: {e}"));
+    eprintln!("saved {} bytes", saved.data.len());
+    let bytes = saved.data.clone();
+    plugin.load_state(saved).unwrap_or_else(|e| panic!("load: {e}"));
+    play(&mut audio);
+    let again = plugin.save_state().unwrap_or_else(|e| panic!("save again: {e}"));
+    eprintln!("restored; read back {} bytes, the same: {}", again.data.len(), again.data == bytes);
+    assert_eq!(plugin.health(), suhina_plugins::Health::Running, "the host stayed alive");
+}
+
 /// `--vst2-probe test:vst2`: the whole probe tool over the built-in mock, from the argument
 /// to the printed report, as it runs by hand. A test of the tool, not of the mock: the
 /// mock's own half of the conversation is checked in the crate's unit tests.

@@ -18,9 +18,8 @@
 //!   or an ignored test against a real plug-in turns it into *observed*. A mock written from
 //!   the same assumption cannot: it would agree with us by construction.
 //!
-//! Nothing here loads a project's plug-in yet: the host process gains the interface, the mock
-//! and `--vst2-probe`. The host through the engine's boundary (step 4 of #1066) comes after,
-//! on the same interface.
+//! [`host`] runs a project's plug-in through the engine's boundary on this interface; the mock
+//! and `--vst2-probe` check it.
 
 pub(crate) mod host;
 pub(crate) mod probe;
@@ -622,6 +621,28 @@ pub(crate) unsafe fn c_str(ptr: *const c_void, cap: usize) -> Option<String> {
     Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
+/// Whether the C string at `ptr` is `text`, reading no further than the first difference or
+/// its end, and allocating nothing: a host answers `audioMasterCanDo` on the audio thread too.
+///
+/// # Safety
+///
+/// `ptr` must be null or point at a zero-terminated string, or at `text`'s length in readable
+/// bytes and one more.
+pub(crate) unsafe fn c_str_is(ptr: *const c_void, text: &str) -> bool {
+    if ptr.is_null() {
+        return false;
+    }
+    for (i, wanted) in text.bytes().chain(std::iter::once(0)).enumerate() {
+        let byte = ptr.cast::<u8>().wrapping_add(i);
+        // SAFETY: bytes up to the first difference; a zero differs from every byte of `text`
+        // but its terminator, so a terminated string is never read past its end.
+        if unsafe { *byte } != wanted {
+            return false;
+        }
+    }
+    true
+}
+
 /// One MIDI event of a `VstEvents` list, as this layer reads it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct MidiEvent {
@@ -647,22 +668,24 @@ pub(crate) unsafe fn read_events(events: *const vestige::VstEvents, max: usize) 
         return None;
     }
     // SAFETY: the struct the caller vouched for; only its count is read here.
-    let count = unsafe { (*events).numEvents };
+    let count = unsafe { std::ptr::addr_of!((*events).numEvents) };
+    // SAFETY: as above; a plug-in's list need not be aligned for its pointers.
+    let count = unsafe { count.read_unaligned() };
     let count = usize::try_from(count).unwrap_or(0).min(max);
     // SAFETY: as above; the event pointers begin where the struct's flexible array member
     // does, at its end.
-    let pointers = unsafe { (*events).events.as_ptr() };
+    let pointers = unsafe { std::ptr::addr_of!((*events).events) }.cast::<*mut vestige::VstEvent>();
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
         let pointer = pointers.wrapping_add(i);
         // SAFETY: the `i`-th of the `count` pointers behind the struct.
-        let event = unsafe { pointer.read() };
+        let event = unsafe { pointer.read_unaligned() };
         if event.is_null() {
             break;
         }
         // SAFETY: one event the sender pointed at, read by value; its `dump` is the size of
         // a MIDI event whichever kind it is.
-        let midi = unsafe { *event.cast::<vestige::VstMidiEvent>() };
+        let midi = unsafe { event.cast::<vestige::VstMidiEvent>().read_unaligned() };
         let data = if midi.r#type == vestige::kVstMidiType { midi.midiData.map(|b| b as u8) } else { [0; 4] };
         out.push(MidiEvent { kind: midi.r#type, delta_samples: midi.deltaSamples, data });
     }
@@ -774,8 +797,9 @@ impl EffectInfo {
         if effect.is_null() {
             return None;
         }
-        // SAFETY: one struct read by value, the caller's `AEffect`.
-        let effect = unsafe { *effect };
+        // SAFETY: one struct read by value, the caller's `AEffect`. Not aligned for its pointers:
+        // installed plug-ins give effects on a 4-byte boundary (observed).
+        let effect = unsafe { effect.read_unaligned() };
         Some(Self {
             num_programs: effect.numPrograms,
             num_params: effect.numParams,

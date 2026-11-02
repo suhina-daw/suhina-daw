@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use suhina_ipc::{Event, EventKind, Link, Outcome, Served};
 
-use super::Vst2Plugin;
+use super::{Module, Vst2Plugin};
 use crate::vst2::test_vst2::LATENCY;
 
 /// How long a block waits for its answer.
@@ -214,6 +214,7 @@ fn a_bank_shape_neither_reader_took_is_refused() {
 fn declared_channel_counts_over_the_cap_are_refused() {
     assert!(super::channel_cap(0, 0).is_none(), "a silent plug-in's counts might be none");
     assert!(super::channel_cap(super::MAX_CHANNELS, super::MAX_CHANNELS).is_none());
+    assert!(super::channel_cap(0, 130).is_none(), "an installed instrument's outputs");
     let Some(what) = super::channel_cap(super::MAX_CHANNELS + 1, 0) else {
         panic!("over the cap is refused");
     };
@@ -241,6 +242,123 @@ fn the_arrangement_s_loop_in_seconds_is_no_vst2_cycle() {
     assert_eq!(flags & super::vestige::kVstCyclePosValid, 0, "the cycle stays invalid without beats");
     assert_eq!(plugin.shared.time.cycle_start.load(Ordering::Relaxed), 0, "no seconds in a beat field");
     assert_ne!(flags & super::vestige::kVstTransportPlaying, 0, "the transport itself was told");
+    finished(plugin);
+}
+
+/// The arrangement's loop in beats tells a plug-in whether it is on: the positions stay valid
+/// and the active flag follows.
+#[test]
+fn the_loop_s_state_follows_its_switch() {
+    let (mut link, plugin) = loaded(FIRST + 9);
+    let input: Vec<f32> = vec![0.0; 512];
+    let flags = |link: &mut Link, on: bool| {
+        let cycle = Event { frame: 0, note: -1, kind: EventKind::Cycle { on, start: 4.0, end: 8.0 } };
+        let _output = block(link, &input, &[cycle]);
+        plugin.shared.time.flags.load(Ordering::Relaxed)
+    };
+    let on = flags(&mut link, true);
+    assert_ne!(on & super::vestige::kVstTransportCycleActive, 0, "on");
+    assert_ne!(on & super::vestige::kVstCyclePosValid, 0);
+    let off = flags(&mut link, false);
+    assert_eq!(off & super::vestige::kVstTransportCycleActive, 0, "off");
+    assert_ne!(off & super::vestige::kVstCyclePosValid, 0, "the positions are still the loop's");
+    finished(plugin);
+}
+
+/// A block's parameter event reaches the plug-in only for a parameter it declared, in its range.
+#[test]
+fn a_block_s_parameter_stays_inside_what_the_plug_in_declared() {
+    let (mut link, plugin) = loaded(FIRST + 10);
+    let Module::Mock(_, mock) = &plugin.module else { panic!("the mock") };
+    let input: Vec<f32> = vec![0.0; 512];
+    let param = |id, value| Event { frame: 0, note: -1, kind: EventKind::Param { id, value } };
+    let _output = block(&mut link, &input, &[param(5000, 0.5), param(0, 7.0)]);
+    assert_eq!(mock.parameters(), vec![(0, 1.0)], "only the declared parameter, in its range");
+    finished(plugin);
+}
+
+/// A plug-in that asks its host from any call of a block is answered as the audio thread it runs
+/// on: from the instance this thread serves, so without the instance table's lock.
+#[test]
+fn every_call_of_a_block_asks_its_host_without_the_table_lock() {
+    let (mut link, plugin) = loaded(FIRST + 11);
+    let Module::Mock(_, mock) = &plugin.module else { panic!("the mock") };
+    let input: Vec<f32> = vec![0.0; 512];
+    let note = Event { frame: 0, note: -1, kind: EventKind::NoteOn { channel: 0, key: 60, velocity: 1.0 } };
+    let change = Event { frame: 0, note: -1, kind: EventKind::Param { id: 0, value: 0.5 } };
+    let _output = block(&mut link, &input, &[change, note]);
+    let levels: Vec<Option<isize>> = mock
+        .asks()
+        .iter()
+        .filter(|call| call.op == super::HostOp::GetCurrentProcessLevel.value())
+        .map(|call| call.answer)
+        .collect();
+    // `setParameter`, `effProcessEvents` and the audio call.
+    assert_eq!(levels, vec![Some(super::process_level::REALTIME); 3]);
+    finished(plugin);
+}
+
+/// What an `effSetChunk` answer means is not observed, so a non-zero one fails nothing.
+#[test]
+fn an_answer_to_a_chunk_is_no_refusal() {
+    unsafe extern "C" fn answers_one(
+        _effect: *mut super::AEffect,
+        _opcode: i32,
+        _index: i32,
+        _value: isize,
+        _ptr: *mut std::ffi::c_void,
+        _opt: f32,
+    ) -> isize {
+        1
+    }
+    let (_link, mut plugin) = loaded(FIRST + 12);
+    let real = plugin.dispatcher.replace(answers_one);
+    let bank = suhina_plugins::vst2::bank(
+        &suhina_plugins::vst2::Preset {
+            kind: suhina_plugins::vst2::CHUNK_BANK,
+            id: 7,
+            version: 1,
+            programs: 1,
+            current: 0,
+            parameters: 1,
+            little_endian: false,
+        },
+        &0.25f32.to_le_bytes(),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    let restored = plugin.set_state(&bank);
+    plugin.dispatcher = real;
+    assert_eq!(restored, Ok(()));
+    finished(plugin);
+}
+
+/// A plug-in that declares no editor is told so, with no window made for it.
+#[test]
+fn a_plug_in_without_the_editor_flag_opens_no_editor() {
+    let (_link, mut plugin) = loaded(FIRST + 13);
+    plugin.flags &= !super::effect_flags::HAS_EDITOR;
+    let refused = plugin.open_editor(crate::window::Mode::Floating);
+    assert_eq!(refused.err().as_deref(), Some("the plug-in has no editor"));
+    finished(plugin);
+}
+
+/// The strings a plug-in asks for are written with their terminator and nothing past it: the
+/// buffer's size is an assumption, and a shorter one must not be overrun.
+#[test]
+fn the_host_s_strings_stay_inside_a_short_buffer() {
+    let (_link, plugin) = loaded(FIRST + 14);
+    for op in [super::HostOp::GetVendorString, super::HostOp::GetProductString] {
+        let mut buffer = [0xAAu8; 16];
+        let ptr = buffer.as_mut_ptr().cast::<std::ffi::c_void>();
+        assert_eq!(super::answer_at_entry(op.value(), ptr), 1);
+        assert_eq!(&buffer[..7], b"Suhina\0");
+        assert!(buffer[7..].iter().all(|b| *b == 0xAA), "{op:?}: nothing past the terminator");
+        let mut buffer = [0xAAu8; 16];
+        let ptr = buffer.as_mut_ptr().cast::<std::ffi::c_void>();
+        assert_eq!(super::answer(&plugin.shared, false, op.value(), 0, 0, ptr, 0.0), 1);
+        assert_eq!(&buffer[..7], b"Suhina\0");
+        assert!(buffer[7..].iter().all(|b| *b == 0xAA), "{op:?}: nothing past the terminator");
+    }
     finished(plugin);
 }
 

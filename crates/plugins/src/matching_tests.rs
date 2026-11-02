@@ -81,6 +81,37 @@ fn a_vst2_plug_in_with_a_standing_in_copy_prefers_it() {
     assert_eq!(matched.map(|m| m.plugin.format()), Some("vst3"));
 }
 
+/// The exact VST2 plug-in is installed, and VST3s only match it by name: those promise nothing
+/// about its state, so the plug-in itself plays it.
+#[test]
+fn the_exact_vst2_plug_in_comes_before_a_vst3_found_by_name() {
+    let (id, name) = (0x5368_5449, "Suhina Synth");
+    let file = |file: &str, plugin: serde_json::Value| json!({ "path": PathBuf::from(file).display().to_string(), "modified": 1, "size": 1, "plugins": [plugin] });
+    let shape = if cfg!(target_os = "macos") {
+        "Synth.vst"
+    } else if cfg!(windows) {
+        "Synth.dll"
+    } else {
+        "Synth.so"
+    };
+    let vst2 = |id: u32| json!({ "id": format!("{id:08X}"), "name": name, "vendor": "Suhina", "version": "1", "features": [], "replaces": [] });
+    let newer = file("/vst3/Synth2.vst3", vst3("0123456789ABCDEF0123456789ABCDEF", "Suhina Synth 2", "Suhina", &[]));
+    let same = file("/vst3/Synth.vst3", vst3("FEDCBA9876543210FEDCBA9876543210", name, "Suhina", &[]));
+    for other in [newer.clone(), same.clone()] {
+        let text = json!({ "version": 2, "entries": [file(format!("/vst2/{shape}").as_str(), vst2(id)), other] });
+        let catalog = Catalog::from_json(&text.to_string());
+        assert_eq!(found(catalog.match_vst2(id, name)).map(|(_, how)| how), Some(How::Itself));
+    }
+    // Two plug-ins with the same id are no answer: the name decides.
+    let text = json!({ "version": 2, "entries": [
+        file(format!("/vst2/{shape}").as_str(), vst2(id)),
+        file(format!("/other/{shape}").as_str(), vst2(id)),
+        same,
+    ]});
+    let catalog = Catalog::from_json(&text.to_string());
+    assert_eq!(found(catalog.match_vst2(id, name)).map(|(_, how)| how), Some(How::SameName));
+}
+
 #[test]
 fn a_version_inside_the_name_finds_the_newer_module() {
     // Ozone's modules put the version between the brand and the module's name.

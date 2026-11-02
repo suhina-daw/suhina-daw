@@ -142,7 +142,8 @@ fn a_state_given_to_a_running_plug_in_is_not_reported_as_an_edit() {
     plugin.load_state(bank).unwrap_or_else(|e| panic!("{e}"));
     // The value took (the listing reads it) and no edit comes back for it.
     assert_eq!(plugin.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.25);
-    std::thread::sleep(Duration::from_millis(100));
+    // Two round trips: the host's main loop has run a whole turn, its reports sent, by the second.
+    assert!(plugin.ping() && plugin.ping());
     assert!(plugin.take_param_edits().is_empty(), "the restore is not an edit");
 }
 
@@ -257,17 +258,18 @@ fn saved_gain(project: &Project) -> Option<f32> {
 
 /// Sets blocks moving while the session looks after its plug-ins, until `done` holds. The
 /// callback decides when to stop waiting: `false` and the loop keeps going, `true` and it is
-/// over. A status that means a refused start fails at once — the plug-in machinery does its
-/// own bounding (the process's launch timeout), so the check does not depend on how busy the
-/// runner the test runs on is.
+/// over. A status that means a refused start fails at once; the session has no signal for a
+/// plug-in that started, so the wait is as `engine.rs`'s, with its bound.
 fn until(session: &mut Session, renderer: &mut Renderer, mut done: impl FnMut(&mut Session) -> bool) {
     let mut block = vec![0.0f32; 256 * 2];
+    let deadline = Instant::now() + PATIENT;
     loop {
         session.sync_plugins();
         renderer.process(&mut block);
         if done(session) {
             return;
         }
+        assert!(Instant::now() < deadline, "the device did not start in time");
         std::thread::sleep(Duration::from_millis(5));
     }
 }
@@ -364,11 +366,10 @@ fn the_editor_the_user_closed_is_taken_down_and_opens_again() {
     assert!(plugin.editor_open(), "opened");
     if user_closes_windows() {
         common::close_editor_window(plugin.process_id());
-        let deadline = Instant::now() + PATIENT;
-        while plugin.editor_open() {
-            assert!(Instant::now() < deadline, "the editor the user closed never closed for the host");
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        // The close is queued for the window now. Two round trips: the host's main loop has run
+        // a whole turn over it, and said so, by the second.
+        assert!(plugin.ping() && plugin.ping());
+        assert!(!plugin.editor_open(), "the editor the user closed closed for the host");
     } else {
         plugin.close_editor().unwrap_or_else(|e| panic!("{e}"));
         assert!(!plugin.editor_open());

@@ -44,12 +44,14 @@ pub struct Folder {
     pub standard: bool,
 }
 
-/// The format a standard folder holds, from its name (`…/VST3`, `…/CLAP`, `~/.clap`).
+/// The format a standard folder holds, from its name (`…/VST3`, `…/CLAP`, `~/.clap`, the VST2
+/// conventions `standard_folders` names).
 fn standard_format(path: &Path) -> FolderFormat {
     let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     match name.trim_start_matches('.') {
         "vst3" => FolderFormat::Vst3,
         "clap" => FolderFormat::Clap,
+        "vst" | "vst2" | "vstplugins" | "shared" => FolderFormat::Vst2,
         _ => FolderFormat::Any,
     }
 }

@@ -71,8 +71,7 @@ An entry that returns null is taken as the plug-in declining to load **(assumed)
 answer that is not null is checked for the `AEffect` magic before anything else is called
 **(assumed)**. A call a plug-in makes of its host from inside its entry, before the effect
 exists — it cannot know its effect yet — needs the host's identity answered: the probe's
-first run against installed plug-ins *(observed)* showed two of them (Audiomodern's
-Filterstep, TAL-NoiseMaker) asking `audioMasterVersion` with a null effect and giving up on
+first run against installed plug-ins *(observed)* showed two of them asking `audioMasterVersion` with a null effect and giving up on
 the load when the answer was 0, which the host had answered when this host treated such
 calls as nothing to answer. `VSTPluginMain` is the entry name that answered *(observed)*.
 
@@ -222,8 +221,8 @@ file keeps is the standard VST2 bank either way: `CcnK`, then `FBCh` for a chunk
 `FxBk` for a program bank, big-endian — the layouts the VST3 SDK's `vst2persistence.h`
 describes (MIT), which the Live Set importer already reads and writes
 ([`crates/plugins/src/vst2.rs`](../../crates/plugins/src/vst2.rs)), one home for the importer, the VST3 hand-over and this host.
-A plug-in's chunk is copied out at once and capped at 1 MiB; a chunk's size is the plug-in's
-own claim, not trusted.
+A plug-in's chunk is copied out at once and capped, at 256 MiB in the host and 1 MiB in the
+probe's round trip; a chunk's size is the plug-in's own claim, not trusted.
 
 ## The mock plug-in and the probe
 
@@ -265,7 +264,8 @@ file gives back), a macOS bundle's executable looked up as a VST3 bundle's is, o
 
 The one shape the interface forces, which the other formats do not, is the audio-master
 callback: one global function with only the effect pointer to say who is asking. The audio
-thread says which instance it is serving in a thread-local set around each `process` call —
+thread says which instance it is serving in a thread-local set around each block, its
+`setParameter` and `effProcessEvents` calls with its audio call —
 no lock, so the audio thread never takes one — and a call from any other thread (an editor's,
 a plug-in's worker) finds its instance by its effect under a lock those threads may take.
 What the callback answers on the audio thread comes from atomics and lock-free slots only:
@@ -302,9 +302,8 @@ contract, as every host gives*).
   chunk-less one's parameters as one program in a `CcnK`…`FxBk` bank (the other programs are
   not saved — a limit, below). Loading takes the chunk bank's chunk (`effSetChunk`), a
   program bank's current program (set as the program, then its values as parameters,
-  *(assumed)* order), or a bare chunk. A `effSetChunk` answer that is not zero is read as a
-  refusal *(assumed)*: the plug-in runs with its defaults and the caller is told, never
-  silently restored. A payload whose shape is a standard bank's own (`CcnK` and a bank kind
+  *(assumed)* order), or a bare chunk. What `effSetChunk` answers is not observed, so
+  no answer fails the restore: the trace and the probe's report show it (*Open questions*). A payload whose shape is a standard bank's own (`CcnK` and a bank kind
   in their places) that neither reader took is refused too: a cut-short bank is an error, not
   raw bytes the plug-in would take for its own state.
 
@@ -355,15 +354,19 @@ category, then close — in the disposable scan worker the other formats use
 ([`crates/plugin-host/src/vst2/host.rs`](../../crates/plugin-host/src/vst2/host.rs) ›
 `describe`). A VST2 plug-in is a `.vst` bundle on macOS, a `.dll` on Windows or a `.so` on
 Linux; the system's VST folders are standard ones and any folder can be added for the
-format (`plugin.addFolder { folder, format: "vst2" }`), where before the build refused it.
+format (`plugin.addFolder { folder, format: "vst2" }`). A `.dll` or a `.so` can be any library
+and loading one runs its code, so only a folder for VST2 takes those; a folder for every format
+takes the `.vst` bundles of macOS and no plain library.
 The plug-in manager and the browser name the format `vst2` where a format is named. A
 scanned VST2 plug-in's id is its unique id as eight hex digits — the form the model keeps
 for a VST2 device ([`DeviceKind::Vst2`](../../crates/model)) — so a project's device and a
 scanned plug-in meet by it.
 
-A project's VST2 device is still played by its installed VST3 or CLAP copy when one stands
-in for it (ADR 0006 decision 8); the plug-in **itself** — found by its id in the catalog,
-`How::Itself` — is the last resort, and its saved state is its own native form. The state's
+A project's VST2 device is still played by an installed VST3 that declares it replaces it or
+whose class id comes from its id (ADR 0006 decision 8). Next comes the plug-in **itself**, found
+by its id in the catalog when exactly one has it (`How::Itself`), its saved state its own native
+form. A VST3 found only by name or as a newer version comes after, as it promises nothing about
+the state. The state's
 bank forms are one code path for the importer, the hand-over and this host
 ([`crates/plugins/src/vst2.rs`](../../crates/plugins/src/vst2.rs)).
 
@@ -382,8 +385,8 @@ Two of the shapes are settled by the editor tests against installed plug-ins; th
 - The rect: `effEditGetRect`'s `ptr` is a pointer slot the plug-in fills with a pointer to
   its own rect, whose four 16-bit fields are top, left, bottom and right — the size the
   corners span *(observed*: the first read took the pointer's bytes for the rect and made a
-  window one pixel wide; with the indirection, an installed Filterstep editor reads
-  1024 × 768 and TAL-NoiseMaker's 1270 × 695, both their real sizes*)*. The host asks again
+  window one pixel wide; with the indirection, two installed editors read
+  1024 × 768 and 1270 × 695, both their real sizes*)*. The host asks again
   as the editor opens: many plug-ins fill the rect only then.
 - The native handle `effEditOpen` takes per platform: a Win32 `HWND` on Windows, the content
   view's pointer on macOS, the X11 id on Linux (*assumed*; the editor tests' mock and the
@@ -438,26 +441,61 @@ another header (ADR 0022 decision 2).
 - Whether a plug-in calls its host from inside its entry, and with what effect pointer.
 - The buffer sizes of the string op-codes (64 for the name, 128 for the others, assumed).
 - The return conventions: the mock answers 0 for a filled request and the probe answers 1
-  for its filled strings; what real plug-ins answer for theirs is recorded by the probe.
+  for its filled strings; the probe's report shows what a plug-in answers each dispatcher call.
+  What the answers to `effSetChunk` and `effEditOpen` mean is unobserved, so neither fails
+  anything: an editor is offered by `effFlagsHasEditor`, and the host's trace shows both answers.
 - `effGetChunk`'s `index` meaning (bank against program) and the answer being the size.
-- The `CanDo` strings' spelling, and which side asks which. Arturia's Acid V answered
+- The `CanDo` strings' spelling, and which side asks which. One installed instrument answered
   `effCanDo` with a third value, **-1**, on `receiveVstEvents` *(observed)*: the layer's
   yes/no read of 1 and 0 stands, and a -1 means the plug-in declaring itself undecided.
-- The events a plug-in sends its host: Acid V sent real MIDI rastered to its own step
+- The events a plug-in sends its host: one installed instrument sent real MIDI rastered to its own step
   (`audioMasterProcessEvents` during `process`) *(observed)* — the window's "no channel yet"
   note gains a real example.
-- Entries that crash: three of the 72 scanned files crashed inside their entry calls,
-  taking only their disposable probe process with them — the crash behaviour the design
-  requires, a scan's failure list the place they show. The cause is theirs; the host never
-  reads a plug-in's code.
+- Crashes while probing *(observed)*: three causes were found, two of them the probe's own. Writing
+  the host's strings at the whole assumed size overran one installed plug-in's buffer in its entry, and
+  `effEditIdle` without an editor open took another down; the probe now does neither, and
+  both plug-ins' state came back through the host. One installed instrument still crashes with an access violation inside its entry, right after asking
+  `audioMasterVersion` and `audioMasterGetProductString`, in `--scan` as in the probe and with or
+  without a sandbox. It stays in its disposable process and a scan lists it as failed. While another
+  host runs the same file it loads and plays here too, and it crashes again once that host has
+  closed, so that host's process gives it something ours does not. It crashed the same with a
+  512 MB stack for the thread that ran it, with an external application manifest beside the
+  host's executable, and with a window open and OLE initialised. The cause is unknown, and the host
+  never reads a plug-in's code.
+- The state through the host *(observed, Windows x86-64)*: `an_installed_plugins_state_comes_back_through_the_host`
+  saved and restored the state of ten installed plug-ins, each staying alive. The bytes read back were
+  the same for most of them; they differed for three, whose
+  saved state need not be the same bytes twice. That test does not hear whether the settings took.
 - A shell file (several plug-ins in one): the pinned header has `effShellGetNextPlugin` and
   nothing of the members' ids, so the scan lists the file's first plug-in and its spec
   checks the id it names; the members' own listing and loading is open until the probe sees
   what a shell answers.
-- The state chunk's forms: a real plug-in's chunk (Filterstep's began `VC2!` and came back
+- The state chunk's forms: a real plug-in's chunk (one began with a four-byte tag of its own and came back
   whole through the assumed `effGetChunk`/`effSetChunk` pair, with the size as the answer)
   *(observed for the ones met so far)*; whether a plug-in ever answers the bank-index
   `index` reading 1 (the current program) is unobserved.
+- The `effSetChunk` answer *(observed)*: it means no one thing. On Windows x86-64, chunks handed
+  back to plug-ins that had just given them were answered 0 by nine plug-ins, 1 by five and the chunk's size by three. So a host reads no refusal from it. What a refusal
+  looks like, if a plug-in has one, is still unobserved.
+- `effEditOpen`'s answer: unobserved. The probe opens no window; the host's trace shows the answer.
+- Channel counts *(observed)*: Another installed instrument declares 0 inputs and 130 outputs to this host, where other
+  hosts on the same machine see 16. A plug-in over 256 is refused; the link carries a plug-in's
+  first channels. It loads and takes its chunk, then crashes in its first `processReplacing`, in the
+  probe as in the host, right after asking `audioMasterGetTime`; the cause is unknown. Outside any
+  sandbox it crashes the same. It crashed the same without `effStartProcess`, without events,
+  without the chunk's round trip, with `audioMasterGetTime` answered 0, with `ptr1` set by the host,
+  with 64-byte aligned buffers, after 20 s of idle calls, with its editor open (`effEditOpen`
+  answered 1), with a 512 MB stack for the thread that ran it, with an external application
+  manifest beside the host's executable, and with the host's name answered as another's; the calls
+  its entry makes to the host are the same ones it makes in the hosts it runs in. The probe
+  hands it a non-empty input array for its zero inputs and asks `effGetVstVersion` after `effOpen`,
+  as other hosts do, so neither is the difference. Another host plays the same file on the same
+  machine, and the 130 says the plug-in shapes itself from something it learns about its host;
+  what, is not found in what a host hands it, and the host never reads a plug-in's code.
+- Effect alignment *(observed)*: two installed plug-ins' entries gave an `AEffect` on a 4-byte
+  boundary (Windows x86-64), so every read of one is an unaligned read.
+- Flags that change in `effOpen` *(observed)*: One installed plug-in's went from `0x1031` to `0x1231` as it
+  opened, so the host reads them from the opened effect, and the probe's report shows both.
 - Where an installed plug-in keeps its latency — settled as far as a probe can: over 67
   installed plug-ins run through the probe (one per file, disposable), 52 held a non-zero
   number in the first four of VeSTige's twelve zero bytes — 44 on 33 of them, 32 on 8, 16

@@ -418,11 +418,13 @@ workspace forbids.
    the SDK writes them (`moduleinfo.json`, the model): on Windows the first three fields of the
    COM GUID layout are turned back into numbers, so the text matches across scanning, the
    module's own description and imported projects.
-8. **VST2: through VST3, no VST2 host for now.** A project that names a VST2 plug-in is opened
-   with the installed VST3 that declares it replaces it, and the saved VST2 state is handed to
-   it. Without such a VST3 the device stays in the project as a *missing plug-in* with its state
-   intact, and the user can relink it by hand to a VST3 or CLAP version. Hosting VST2 itself is
-   a separate decision (below).
+8. **VST2: through a VST3 copy where one is installed, else the plug-in itself.** A project that
+   names a VST2 plug-in is opened with the installed VST3 that declares it replaces it or whose
+   class id is derived from its id, and the saved VST2 state is handed to it. Without such a VST3,
+   the scanned VST2 plug-in with the project's id runs through the VST2 host with its saved state
+   ([ADR 0022](0022-vst2-interface-description.md)). Without that either, a VST3 found by name
+   may stand in, or the device stays in the project as a *missing plug-in* with its state intact,
+   and the user can relink it by hand to a VST3 or CLAP version. *Amended 2026-11-01.*
 
    *Finding the replacement* (`crates/plugins/src/matching.rs`, `plugin.check`). The catalog is
    searched in order of how sure the answer is: the same id; an installed VST3 that declares it
@@ -430,12 +432,13 @@ workspace forbids.
    `Plugin Compatibility Class`, which the scanner asks through `IPluginCompatibility`); a VST3
    whose class id is derived from the VST2 id by the SDK's convention (`VST`, the 4-byte id, the
    first nine bytes of the name in lower case; the name part is not compared, as a project keeps
-   the name its host showed); the same name once build words (`x64`, `64bit`, `.64`) and a
+   the name its host showed); the scanned VST2 plug-in itself, by its id, when exactly one has
+   it; the same name once build words (`x64`, `64bit`, `.64`) and a
    leading vendor name are set aside, or the name without its number when the installed
    plug-in's version starts with that number (`Synth 5` finds a VST3 named `Synth` whose
    version is 5.x and whose class id follows no convention); and last the nearest newer version
    of the same name (`Synth` → `Synth 2`, `EQ 2` → `EQ 3`, and with the number inside
-   the name, `Suite 8 Imager` → `Suite 11 Imager`). Only the first three promise that the state carries over;
+   the name, `Suite 8 Imager` → `Suite 11 Imager`). Only the first four promise that the state carries over;
    for the last two the state is handed over and the plug-in decides, and the result says
    which (`keeps_state`). Vendors declare their own older builds rather than older products:
    an `EQ 3` module declares the VST2 builds of `EQ 3`, not `EQ 2`, which is why the name
@@ -603,7 +606,7 @@ workspace forbids.
 
 - **Hosting VST2 directly.** Where the interface description comes from is decided in
   [ADR 0022](0022-vst2-interface-description.md): the VeSTige header as Ardour distributes it,
-  pinned. Built behind the host's `vst2` feature, off by default: the port with its notice, the
+  pinned. Built behind the host's `vst2` feature, on by default: the port with its notice, the
   mock plug-in and probe, the host, the scan, the editors and a project's last-resort choice of
   it, written up in `docs/spec/plugin-vst2.md`. The work is
   [#1066](https://github.com/suhina-daw/suhina-daw/issues/1066). The process, scanning, editor and

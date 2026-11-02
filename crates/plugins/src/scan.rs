@@ -78,10 +78,12 @@ impl FolderFormat {
     }
 
     /// Whether a file named like `path` is a plug-in of this format. A VST2 plug-in is a
-    /// `.vst` bundle on macOS, a `.dll` on Windows and a `.so` on Linux.
+    /// `.vst` bundle on macOS, a `.dll` on Windows and a `.so` on Linux. A `.dll` or a `.so` can
+    /// be any library, and loading one runs its code, so only a folder for VST2 takes those;
+    /// a folder for every format takes the `.vst` bundles, which are nothing else.
     fn takes(self, path: &Path) -> bool {
         match self {
-            Self::Any => has_extension(path, "clap") || is_vst3(path) || is_vst2(path),
+            Self::Any => has_extension(path, "clap") || is_vst3(path) || (cfg!(target_os = "macos") && is_vst2(path)),
             Self::Vst3 => is_vst3(path),
             Self::Clap => has_extension(path, "clap"),
             Self::Vst2 => is_vst2(path),

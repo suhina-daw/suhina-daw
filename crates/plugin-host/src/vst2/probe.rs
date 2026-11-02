@@ -55,7 +55,7 @@ const MAX_EVENTS: usize = 1024;
 const MAX_CALLS: usize = 4096;
 /// Most channels a plug-in may declare before the probe refuses its block (the probe's
 /// arrays are sized from the declaration, so the cap bounds them).
-const MAX_CHANNELS: usize = 64;
+const MAX_CHANNELS: usize = 256;
 /// The events the probe sends in its block: a note on and its off, a fifth and a quarter of
 /// the block in.
 pub(crate) const BLOCK_EVENTS: [([u8; 4], i32); 2] = [([0x90, 60, 100, 0], 100), ([0x80, 60, 64, 0], 200)];
@@ -185,7 +185,12 @@ pub(crate) unsafe extern "C" fn host_callback(
     };
     let answer = match &state {
         Some(state) => answer(effect, opcode, index, value, ptr, opt, state),
-        None => answer_at_entry(opcode, index, value, ptr, opt),
+        None => {
+            // An entry's asks go in no record, so a crash in the entry still shows them.
+            let answer = answer_at_entry(opcode, index, value, ptr, opt);
+            eprintln!("  the entry asked op-code {opcode} (index {index}, value {value}) -> {answer}");
+            answer
+        }
     };
     // An entry's call has no instance to record in; the report shows the entry's answers by
     // the plug-in, whose own records carry them.
@@ -197,7 +202,7 @@ pub(crate) unsafe extern "C" fn host_callback(
 
 /// What the probe answers while a plug-in's entry runs, before the effect exists: its
 /// identity and what it can do, and nothing an instance has a part in.
-fn answer_at_entry(opcode: i32, index: i32, value: isize, ptr: *mut c_void, opt: f32) -> isize {
+pub(super) fn answer_at_entry(opcode: i32, index: i32, value: isize, ptr: *mut c_void, opt: f32) -> isize {
     let _ = (index, value, opt);
     match HostOp::from_value(opcode) {
         Some(HostOp::Version) => HOST_VERSION,
@@ -211,13 +216,15 @@ fn answer_at_entry(opcode: i32, index: i32, value: isize, ptr: *mut c_void, opt:
         }
         Some(HostOp::GetLanguage) => vestige::kVstLangEnglish as isize,
         Some(HostOp::GetVendorString) => {
-            // SAFETY: the caller's buffer, of the size the op-code is assumed to give.
-            unsafe { write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina") };
+            // SAFETY: the caller's buffer must hold the string and its NUL byte; writing only
+            // that needs the least of the buffer, whose size is the op-code's assumption (the
+            // whole assumed size overran one installed plug-in's, in its entry: observed).
+            unsafe { write_text(ptr, "Suhina".len() + 1, "Suhina") };
             1
         }
         Some(HostOp::GetProductString) => {
             // SAFETY: as above.
-            unsafe { write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina VST2 probe") };
+            unsafe { write_text(ptr, "Suhina VST2 probe".len() + 1, "Suhina VST2 probe") };
             1
         }
         Some(HostOp::GetVendorVersion) => 1,
@@ -245,7 +252,7 @@ fn answer(
                 return 0;
             }
             // SAFETY: one read of the caller's effect, its id field.
-            unsafe { (*effect).uniqueID as isize }
+            unsafe { effect.read_unaligned().uniqueID as isize }
         }
         // Noted; nothing to do.
         Some(HostOp::Idle)
@@ -378,6 +385,7 @@ impl Probe {
         // The library, and the executable that is loaded for a bundle path — the resolution
         // the host's own load uses ([`crate::vst2::host::load_library`]), so a probe and a
         // host never disagree about where a plug-in's code is.
+        eprintln!("loading {}", path.display());
         let library = crate::vst2::host::load_library(path)?;
         let mut answered_by = "";
         let mut effect = std::ptr::null_mut();
@@ -385,6 +393,7 @@ impl Probe {
             // SAFETY: the symbol the library exports under the assumed name, if it does.
             let symbol = unsafe { library.get::<Entry>(name.as_bytes()).map_err(|e| format!("{name}: {e}")) };
             let Ok(symbol) = symbol else { continue };
+            eprintln!("calling the entry {name}");
             // SAFETY: the entry of the plug-in, called with the probe's callback as it is
             // assumed to take it; a plug-in that crashes here takes this process, which is
             // the probe's to lose.
@@ -403,7 +412,7 @@ impl Probe {
             ));
         }
         // SAFETY: one field read of the effect the entry returned.
-        let magic = unsafe { (*effect).magic };
+        let magic = unsafe { effect.read_unaligned().magic };
         if magic != vestige::kEffectMagic {
             return Err(format!(
                 "the effect {} gave back has the magic {magic:#x}, not VeSTige's {:#x}",
@@ -450,8 +459,10 @@ impl Probe {
     ) -> Result<isize, String> {
         let effect = self.effect();
         // SAFETY: the effect the probe holds; one field read.
-        let dispatcher = unsafe { (*effect).dispatcher };
+        let dispatcher = unsafe { effect.read_unaligned().dispatcher };
         let Some(dispatcher) = dispatcher else { return Err(format!("{}: no dispatcher", op.name())) };
+        // Said before the call: a plug-in that crashes in it takes the report with it.
+        eprintln!("calling {} (index {index})", op.name());
         // SAFETY: the dispatcher of the plug-in the probe holds, with this call's arguments;
         // a plug-in that crashes here takes this disposable process.
         Ok(unsafe { dispatcher(effect, op.value(), index, value, ptr, opt) })
@@ -461,8 +472,9 @@ impl Probe {
     pub(super) fn parameter(&mut self, index: i32) -> Result<f32, String> {
         let effect = self.effect();
         // SAFETY: the effect the probe holds; one field read.
-        let get = unsafe { (*effect).getParameter };
+        let get = unsafe { effect.read_unaligned().getParameter };
         let Some(get) = get else { return Err("the plug-in has no getParameter".into()) };
+        eprintln!("calling getParameter (index {index})");
         // SAFETY: the plug-in's own call, with the effect it belongs to.
         Ok(unsafe { get(effect, index) })
     }
@@ -471,8 +483,9 @@ impl Probe {
     pub(super) fn set_parameter(&mut self, index: i32, value: f32) -> Result<(), String> {
         let effect = self.effect();
         // SAFETY: the effect the probe holds; one field read.
-        let set = unsafe { (*effect).setParameter };
+        let set = unsafe { effect.read_unaligned().setParameter };
         let Some(set) = set else { return Err("the plug-in has no setParameter".into()) };
+        eprintln!("calling setParameter (index {index})");
         // SAFETY: the plug-in's own call, with the effect it belongs to.
         unsafe { set(effect, index, value) };
         Ok(())
@@ -541,6 +554,8 @@ impl Probe {
 
     /// Opens the plug-in and sets its sizes, as a host does before anything else.
     fn open(&mut self) {
+        // SAFETY: the effect the probe holds, read by value.
+        let before = unsafe { EffectInfo::of(self.effect()) };
         self.line("open (the rate in the call's float and the size in its value are assumed):");
         for (op, value, opt) in [
             (EffectOp::Open, 0, 0.0),
@@ -548,9 +563,26 @@ impl Probe {
             (EffectOp::SetBlockSize, BLOCK_SIZE as isize, 0.0),
         ] {
             match self.send(op, 0, value, std::ptr::null_mut(), opt) {
-                Ok(_) => self.line(format!("  {}", op.name())),
+                Ok(answer) => self.line(format!("  {} -> {answer}", op.name())),
                 Err(e) => self.line(format!("  {e}")),
             }
+        }
+        // What it is once open, which the report's head could not know: a plug-in may fill its
+        // counts and flags in `effOpen`.
+        // SAFETY: the effect the probe holds, read by value.
+        let after = unsafe { EffectInfo::of(self.effect()) };
+        if let Some(info) = after {
+            self.line(format!(
+                "  after effOpen{}: {} programs, {} parameters, {} in, {} out, flags {:#x}, id {}, version {}",
+                if before == after { " (as before it)" } else { " (changed by it)" },
+                info.num_programs,
+                info.num_params,
+                info.num_inputs,
+                info.num_outputs,
+                info.flags,
+                info.unique_id,
+                info.version,
+            ));
         }
     }
 
@@ -573,7 +605,7 @@ impl Probe {
         ] {
             let mut field = vec![0 as c_char; room];
             match self.send(op, 0, 0, field.as_mut_ptr().cast::<c_void>(), 0.0) {
-                Ok(_) => self.line(format!("  {} -> \"{}\"", op.name(), field_text(&field))),
+                Ok(answer) => self.line(format!("  {} -> {answer}, \"{}\"", op.name(), field_text(&field))),
                 Err(e) => self.line(format!("  {e}")),
             }
         }
@@ -611,14 +643,17 @@ impl Probe {
             let mut unit = vec![0 as c_char; vestige::VestigeMaxLabelLen];
             let mut display = vec![0 as c_char; vestige::VestigeMaxLabelLen];
             let asked = self.send(EffectOp::GetParamName, index, 0, name.as_mut_ptr().cast::<c_void>(), 0.0);
-            let _ = self.send(EffectOp::GetParamLabel, index, 0, unit.as_mut_ptr().cast::<c_void>(), 0.0);
-            let _ = self.send(EffectOp::GetParamDisplay, index, 0, display.as_mut_ptr().cast::<c_void>(), 0.0);
+            let labelled = self.send(EffectOp::GetParamLabel, index, 0, unit.as_mut_ptr().cast::<c_void>(), 0.0);
+            let shown = self.send(EffectOp::GetParamDisplay, index, 0, display.as_mut_ptr().cast::<c_void>(), 0.0);
             let value = self.parameter(index);
             let (unit, display) = (field_text(&unit), field_text(&display));
             match (asked, value) {
-                (Ok(_), Ok(value)) => {
-                    self.line(format!("  {index}: \"{}\" (\"{unit}\", \"{display}\") = {value:.6}", field_text(&name)))
-                }
+                (Ok(answer), Ok(value)) => self.line(format!(
+                    "  {index}: \"{}\" (\"{unit}\", \"{display}\") = {value:.6} (answers: name {answer}, label {}, display {})",
+                    field_text(&name),
+                    answer_text(&labelled),
+                    answer_text(&shown),
+                )),
                 (Err(e), _) => self.line(format!("  {e}")),
                 (_, Err(e)) => self.line(format!("  {e}")),
             }
@@ -696,9 +731,12 @@ impl Probe {
         // instead of its parameters, the values line says for what they are.
         let before = self.parameter(0).ok();
         let moved = self.set_parameter(0, CHUNK_WAIT_CHANGE).ok().is_some();
-        if let Err(e) = self.set_chunk(&chunk) {
-            self.line(format!("  {e}"));
-            return;
+        match self.set_chunk(&chunk) {
+            Ok(answer) => self.line(format!("  {} -> {answer}", EffectOp::SetChunk.name())),
+            Err(e) => {
+                self.line(format!("  {e}"));
+                return;
+            }
         }
         let after = self.parameter(0).ok();
         match (before, moved, after) {
@@ -714,10 +752,10 @@ impl Probe {
         }
     }
 
-    /// Hands the plug-in a chunk.
-    fn set_chunk(&mut self, chunk: &[u8]) -> Result<(), String> {
+    /// Hands the plug-in a chunk; what it answered, for the report.
+    fn set_chunk(&mut self, chunk: &[u8]) -> Result<isize, String> {
         let size = isize::try_from(chunk.len()).unwrap_or(0);
-        self.send(EffectOp::SetChunk, 0, size, chunk.as_ptr().cast::<c_void>().cast_mut(), 0.0).map(|_| ())
+        self.send(EffectOp::SetChunk, 0, size, chunk.as_ptr().cast::<c_void>().cast_mut(), 0.0)
     }
 
     /// One block, with events: resume, start, play, idle, stop, suspend — the cycle a host
@@ -729,7 +767,7 @@ impl Probe {
             (EffectOp::StartProcess, 0, "the process cycle opens"),
         ] {
             match self.send(op, 0, value, std::ptr::null_mut(), 0.0) {
-                Ok(_) => self.line(format!("  {} ({what})", op.name())),
+                Ok(answer) => self.line(format!("  {} -> {answer} ({what})", op.name())),
                 Err(e) => self.line(format!("  {e}")),
             }
         }
@@ -758,6 +796,7 @@ impl Probe {
             self.line(format!(
                 "  the block is refused: the plug-in declares {ins} in and {outs_declared} out, over the {MAX_CHANNELS}-channel cap"
             ));
+            self.end_cycle();
             return;
         }
         let frames = BLOCK_SIZE;
@@ -768,17 +807,21 @@ impl Probe {
         let effect = self.effect();
         let (process, what) = if replacing {
             // SAFETY: the effect the probe holds; one field read.
-            match unsafe { (*effect).processReplacing } {
+            match unsafe { effect.read_unaligned().processReplacing } {
                 Some(call) => (Some(call), "processReplacing"),
                 None => {
                     // SAFETY: as above, for the deprecated call.
-                    (unsafe { (*effect).process }, "process (deprecated; the flag said replacing and it had none)")
+                    (
+                        unsafe { effect.read_unaligned().process },
+                        "process (deprecated; the flag said replacing and it had none)",
+                    )
                 }
             }
         } else {
             // SAFETY: as above, for the deprecated call.
-            (unsafe { (*effect).process }, "process (deprecated; the flag said no replacing)")
+            (unsafe { effect.read_unaligned().process }, "process (deprecated; the flag said no replacing)")
         };
+        eprintln!("calling {what}");
         let sent = process.map(|process| {
             // SAFETY: the plug-in's own call, with the buffers and frames given.
             unsafe { process(effect, in_pointers.as_mut_ptr(), out_pointers.as_mut_ptr(), frames as i32) };
@@ -793,19 +836,26 @@ impl Probe {
             )),
             None => self.line("  the plug-in has no process call"),
         }
-        // An editor's idle, where a plug-in with a panel reports the user's moves: only a
-        // plug-in that declares an editor gets one (a call without an editor open is one
-        // some plug-ins take badly).
-        if info.is_some_and(|info| info.flags & effect_flags::HAS_EDITOR != 0)
-            && let Err(e) = self.send(EffectOp::EditIdle, 0, 0, std::ptr::null_mut(), 0.0)
-        {
-            self.line(format!("  {e}"));
+        // An editor's idle, where a plug-in with a panel reports the user's moves: only the mock
+        // gets one. The probe opens no editor, and an installed plug-in's idle without one open
+        // took its process down (observed); the host idles only an open editor.
+        if matches!(self.plug, Probed::Mock(..)) {
+            match self.send(EffectOp::EditIdle, 0, 0, std::ptr::null_mut(), 0.0) {
+                Ok(answer) => self.line(format!("  {} -> {answer}", EffectOp::EditIdle.name())),
+                Err(e) => self.line(format!("  {e}")),
+            }
         }
+        self.end_cycle();
+    }
+
+    /// Closes the process cycle [`Probe::block`] opened, on every way out of it: a plug-in is
+    /// never closed resumed, so a crash in the close stays the plug-in's own.
+    fn end_cycle(&mut self) {
         for (op, value, what) in
             [(EffectOp::StopProcess, 0, "the process cycle closes"), (EffectOp::MainsChanged, 0, "suspend")]
         {
             match self.send(op, 0, value, std::ptr::null_mut(), 0.0) {
-                Ok(_) => self.line(format!("  {} ({what})", op.name())),
+                Ok(answer) => self.line(format!("  {} -> {answer} ({what})", op.name())),
                 Err(e) => self.line(format!("  {e}")),
             }
         }
@@ -814,7 +864,7 @@ impl Probe {
     /// Closes the plug-in.
     fn close(&mut self) {
         match self.send(EffectOp::Close, 0, 0, std::ptr::null_mut(), 0.0) {
-            Ok(_) => self.line("effClose"),
+            Ok(answer) => self.line(format!("effClose -> {answer}")),
             Err(e) => self.line(e),
         }
     }
@@ -855,6 +905,11 @@ impl Probe {
 /// The signal the probe feeds the plug-in: a ramp, so a gain shows in every sample.
 fn ramp(frame: usize) -> f32 {
     (frame % 24) as f32 / 24.0
+}
+
+/// A dispatcher call's answer, or that it could not be made, for the report.
+fn answer_text(answer: &Result<isize, String>) -> String {
+    answer.as_ref().map_or_else(|e| format!("not made ({e})"), isize::to_string)
 }
 
 /// `yes` or `no`, for the report.

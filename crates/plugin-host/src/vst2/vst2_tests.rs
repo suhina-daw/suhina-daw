@@ -301,6 +301,18 @@ fn the_mock_and_the_probe_agree_on_the_conversation() {
     assert_eq!(mock.parameters(), vec![(0, 0.25), (0, 0.75)]);
     assert_eq!(mock.gain(), EDIT_GAIN);
     assert!(report.contains("effGetChunk (assumed 23)"), "the report marks its assumptions");
+    // Every dispatcher call's answer is in the report: what settles the return conventions.
+    for line in [
+        "effOpen -> 0",
+        "effSetChunk (assumed 24) -> 0",
+        "effMainsChanged -> 0 (resume",
+        "effStopProcess -> 0",
+        "effClose -> 0",
+        "after effOpen (as before it)",
+        "effGetEffectName -> 0, \"Suhina Test Gain\"",
+    ] {
+        assert!(report.contains(line), "{line}: {report}");
+    }
     assert!(
         report.contains("parameter 0 was 0.250000, took 0.750000 for the wait, and the chunk brought 0.250000 back")
     );
@@ -405,4 +417,71 @@ fn a_block_whose_replacing_is_gone_takes_the_deprecated_call() {
     );
     // The sound went through: the mock's gain (0.5) applied to the ramp the block carries.
     assert!(!report.contains("the plug-in has no process call"));
+}
+
+/// The strings the probe answers an entry with stay inside a short buffer: the whole assumed
+/// size overran one installed plug-in's.
+#[test]
+fn the_probe_s_strings_stay_inside_a_short_buffer() {
+    for (op, text) in [(HostOp::GetVendorString, "Suhina"), (HostOp::GetProductString, "Suhina VST2 probe")] {
+        let mut buffer = [0xAAu8; 32];
+        let answer = super::probe::answer_at_entry(op.value(), 0, 0, buffer.as_mut_ptr().cast(), 0.0);
+        assert_eq!(answer, 1);
+        assert_eq!(&buffer[..text.len()], text.as_bytes());
+        assert_eq!(buffer[text.len()], 0);
+        assert!(buffer[text.len() + 1..].iter().all(|b| *b == 0xAA), "{op:?}: nothing past the terminator");
+    }
+}
+
+/// An effect on a 4-byte boundary, as installed plug-ins give them, reads as any other.
+#[test]
+fn an_effect_on_a_four_byte_boundary_reads_whole() {
+    let (effect, _mock) = test_vst2::mock(None);
+    let mut room = vec![0u64; std::mem::size_of::<AEffect>() / 8 + 2];
+    let at = room.as_mut_ptr().cast::<u8>().wrapping_add(4).cast::<AEffect>();
+    // SAFETY: inside `room`, which holds an `AEffect` and more past the offset.
+    unsafe { at.write_unaligned(*effect) };
+    // SAFETY: the effect just written.
+    let info = unsafe { EffectInfo::of(at) };
+    assert_eq!(info.map(|info| info.unique_id), Some(test_vst2::UNIQUE_ID));
+}
+
+/// A plug-in over the channel cap is refused its block, and its cycle closes before its close.
+#[test]
+fn a_plug_in_over_the_channel_cap_is_suspended_before_it_closes() {
+    let (mut effect, mock) = test_vst2::mock(None);
+    effect.numOutputs = 257;
+    let report = Probe::over_mock(effect, mock.clone()).run();
+    assert!(report.contains("the block is refused"), "{report}");
+    let ops: Vec<i32> = mock.calls().iter().map(|call| call.op).collect();
+    let at = |op: EffectOp| ops.iter().rposition(|sent| *sent == op.value());
+    let close = at(EffectOp::Close);
+    assert!(close.is_some(), "the plug-in closes");
+    assert!(at(EffectOp::StopProcess) < close, "the cycle first");
+    assert!(at(EffectOp::MainsChanged) < close, "suspended first");
+    assert!(at(EffectOp::StopProcess).is_some() && at(EffectOp::MainsChanged).is_some());
+    assert_eq!(mock.resumed_and_processing(), (false, false));
+}
+
+/// A plug-in that fills its fields in `effOpen` shows them after it: the report says so.
+#[test]
+fn the_report_shows_the_effect_as_it_stands_after_it_opens() {
+    unsafe extern "C" fn fills_as_it_opens(
+        effect: *mut AEffect,
+        opcode: i32,
+        _index: i32,
+        _value: isize,
+        _ptr: *mut std::ffi::c_void,
+        _opt: f32,
+    ) -> isize {
+        if opcode == EffectOp::Open.value() {
+            // SAFETY: the test's own effect, on this thread.
+            unsafe { (*effect).numOutputs = 7 };
+        }
+        0
+    }
+    let (mut effect, mock) = test_vst2::mock(None);
+    effect.dispatcher = Some(fills_as_it_opens);
+    let report = Probe::over_mock(effect, mock).run();
+    assert!(report.contains("after effOpen (changed by it): 1 programs, 1 parameters, 2 in, 7 out"), "{report}");
 }

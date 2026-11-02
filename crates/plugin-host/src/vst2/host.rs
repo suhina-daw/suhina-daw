@@ -11,7 +11,7 @@
 //! The one shape the interface forces, which the other formats do not, is the audio-master
 //! callback: one global function with only the effect pointer to say who is asking. The
 //! audio thread says which instance it is serving in a thread-local set around each
-//! `process` call (no lock, so the audio thread never takes one); a call from any other
+//! block (no lock, so the audio thread never takes one); a call from any other
 //! thread — an editor's, a plug-in's own worker — finds the instance by its effect, under a
 //! lock those threads may take. What the callback answers on the audio thread comes from
 //! atomics and lock-free slots only.
@@ -32,10 +32,11 @@ use suhina_ipc::{Event, EventKind, Served};
 use suhina_plugins::ParamInfo;
 
 use super::vestige::{self, AEffect, VstEvents, VstMidiEvent};
-use super::{EffectOp, HOST_VERSION, HostOp, automation_state, c_str, can_do, effect_flags, process_level};
+use super::{EffectOp, HOST_VERSION, HostOp, automation_state, c_str_is, can_do, effect_flags, process_level};
 
-/// Most channels a plug-in may declare before its counts are cut off.
-const MAX_CHANNELS: usize = 64;
+/// Most channels a plug-in may declare before it is refused. An installed instrument declares
+/// 130 outputs (observed); the link carries its first ones.
+const MAX_CHANNELS: usize = 256;
 /// Most parameters listed, and set from a program bank.
 const MAX_PARAMS: usize = 4096;
 /// Most bytes one state chunk may hold.
@@ -224,9 +225,8 @@ fn answer_at_entry(opcode: i32, ptr: *mut c_void) -> isize {
         // The id that is being loaded: the entry does not know it yet.
         Some(HostOp::CurrentId) => 0,
         Some(HostOp::CanDo) => {
-            // SAFETY: the plug-in's C string, read with a bound.
-            let asked = unsafe { c_str(ptr, 128) }.unwrap_or_default();
-            isize::from(CAN_DO.contains(&asked.as_str()))
+            // SAFETY: the plug-in's C string, read no further than its end.
+            isize::from(CAN_DO.iter().any(|name| unsafe { c_str_is(ptr, name) }))
         }
         Some(HostOp::GetLanguage) => vestige::kVstLangEnglish as isize,
         Some(HostOp::GetVendorString) => {
@@ -238,7 +238,7 @@ fn answer_at_entry(opcode: i32, ptr: *mut c_void) -> isize {
         }
         Some(HostOp::GetProductString) => {
             // SAFETY: as above.
-            unsafe { super::write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina") };
+            unsafe { super::write_text(ptr, "Suhina".len() + 1, "Suhina") };
             1
         }
         Some(HostOp::GetVendorVersion) => 1,
@@ -377,15 +377,14 @@ fn answer(
         }
         Some(HostOp::GetProductString) => {
             // SAFETY: as above.
-            unsafe { super::write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina") };
+            unsafe { super::write_text(ptr, "Suhina".len() + 1, "Suhina") };
             1
         }
         Some(HostOp::GetVendorVersion) => 1,
         // *Assumed:* `ptr` names what is asked; 1 is yes.
         Some(HostOp::CanDo) => {
-            // SAFETY: the plug-in's C string, read with a bound.
-            let asked = unsafe { c_str(ptr, 128) }.unwrap_or_default();
-            isize::from(CAN_DO.contains(&asked.as_str()))
+            // SAFETY: the plug-in's C string, read no further than its end.
+            isize::from(CAN_DO.iter().any(|name| unsafe { c_str_is(ptr, name) }))
         }
         // From VeSTige: 1 is English.
         Some(HostOp::GetLanguage) => vestige::kVstLangEnglish as isize,
@@ -460,7 +459,7 @@ impl Vst2Plugin {
         // SAFETY: the effect the entry gave back, read by value once, on this thread. The
         // call fields, flags and counts are copied here and never read from the plug-in's
         // struct again, so no thread races the plug-in over them.
-        let read = unsafe { *effect };
+        let read = unsafe { effect.read_unaligned() };
         if read.magic != vestige::kEffectMagic {
             return Err(format!("the plug-in {spec:?} did not give a VST2 effect"));
         }
@@ -525,13 +524,14 @@ impl Vst2Plugin {
         // them as it opens, and the audio this host serves is sized from what it carries.
         // SAFETY: the effect this host holds, read by value once, on this thread, with no
         // audio served yet.
-        let opened = unsafe { *effect };
+        let opened = unsafe { effect.read_unaligned() };
         let inputs = usize::try_from(opened.numInputs).unwrap_or(0);
         let outputs = usize::try_from(opened.numOutputs).unwrap_or(0);
         if let Some(what) = channel_cap(inputs, outputs) {
             let _ = plugin.send(EffectOp::Close, 0, 0, std::ptr::null_mut(), 0.0);
             return Err(format!("the plug-in {spec:?} {what}"));
         }
+        plugin.flags = opened.flags;
         plugin.buses = (
             usize::try_from(opened.numInputs).unwrap_or(0).min(MAX_CHANNELS),
             usize::try_from(opened.numOutputs).unwrap_or(0).min(MAX_CHANNELS),
@@ -583,6 +583,7 @@ impl Vst2Plugin {
             max_frames: self.max_frames,
             link_channels: 0,
             buses: self.buses,
+            params: self.params,
             in_buffers: Vec::new(),
             out_buffers: Vec::new(),
             in_pointers: Vec::new(),
@@ -720,7 +721,7 @@ impl Vst2Plugin {
             return None;
         }
         // SAFETY: the effect this host holds, read by value once, on this thread.
-        let read = unsafe { *self.effect };
+        let read = unsafe { self.effect.read_unaligned() };
         let (inputs, outputs) = (
             usize::try_from(read.numInputs).unwrap_or(0).min(MAX_CHANNELS),
             usize::try_from(read.numOutputs).unwrap_or(0).min(MAX_CHANNELS),
@@ -760,7 +761,7 @@ impl Vst2Plugin {
         self.shared.sample_rate.store(sample_rate.to_bits(), Ordering::Relaxed);
         self.shared.time.sample_rate.store(sample_rate.to_bits(), Ordering::Relaxed);
         // SAFETY: as at load, on this thread, its audio stopped.
-        let read = unsafe { *self.effect };
+        let read = unsafe { self.effect.read_unaligned() };
         self.latency = latency_of(&read);
         self.start_audio(served)?;
         Ok(self.latency)
@@ -844,12 +845,10 @@ impl Vst2Plugin {
     fn set_state_inner(&mut self, data: &[u8]) -> Result<(), String> {
         if let Some(chunk) = suhina_plugins::vst2::chunk(data) {
             let size = isize::try_from(chunk.len()).unwrap_or(0);
-            let taken = self.send(EffectOp::SetChunk, 0, size, chunk.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
-            // *Assumed:* a non-zero answer is a refusal. A plug-in that refuses runs with its
-            // defaults and the caller is told, not silently restored.
-            if taken != 0 {
-                return Err("the plug-in refused the state".into());
-            }
+            let answer = self.send(EffectOp::SetChunk, 0, size, chunk.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
+            // What the answer means is not observed, so it fails nothing (the spec's open
+            // questions); the trace and the probe's report show it.
+            suhina_plugins::trace!("vst2 {}: effSetChunk answered {answer}", self.instance);
             return Ok(());
         }
         if let Some((current, values)) = suhina_plugins::vst2::program(data) {
@@ -877,10 +876,8 @@ impl Vst2Plugin {
         }
         if !data.is_empty() {
             let size = isize::try_from(data.len()).unwrap_or(0);
-            let taken = self.send(EffectOp::SetChunk, 0, size, data.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
-            if taken != 0 {
-                return Err("the plug-in refused the state".into());
-            }
+            let answer = self.send(EffectOp::SetChunk, 0, size, data.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
+            suhina_plugins::trace!("vst2 {}: effSetChunk answered {answer}", self.instance);
         }
         Ok(())
     }
@@ -895,17 +892,23 @@ impl Vst2Plugin {
         if let Some(size) = self.editor.as_ref().map(|editor| editor.size) {
             return Ok(size);
         }
+        if self.flags & effect_flags::HAS_EDITOR == 0 {
+            return Err("the plug-in has no editor".into());
+        }
         let before = self.edit_rect()?;
         let size = before.size();
         let window = crate::window::Window::open_as(mode, &self.name, size, false)
             .map_err(|e| format!("the editor did not open: {e}"))?;
         self.shared.has_editor.store(true, Ordering::Release);
         // SAFETY: the window's native handle, which stays open while the editor does.
-        let opened =
-            self.send(EffectOp::EditOpen, 0, 0, window.handle(), 0.0).map(|answer| answer != 0).unwrap_or(true);
-        if !opened {
-            self.editor_close();
-            return Err("the plug-in's editor did not open".into());
+        match self.send(EffectOp::EditOpen, 0, 0, window.handle(), 0.0) {
+            // What the answer means is not observed, so it fails nothing (the spec's open
+            // questions); the trace shows it. The flag above says whether there is an editor.
+            Ok(answer) => suhina_plugins::trace!("vst2 {}: effEditOpen answered {answer}", self.instance),
+            Err(why) => {
+                self.editor_close();
+                return Err(format!("the plug-in's editor did not open: {why}"));
+            }
         }
         // Many plug-ins fill their rect only as they open: asked again, the editor's real
         // size is what the window takes now.
@@ -934,7 +937,7 @@ impl Vst2Plugin {
             return Ok(EditorRect::BLANK);
         }
         // SAFETY: the rect the plug-in pointed the host at, read by value, its 8 bytes.
-        let rect = unsafe { *slot };
+        let rect = unsafe { slot.read_unaligned() };
         suhina_plugins::trace!(
             "vst2 rect: top {}, left {}, bottom {}, right {}",
             rect.top,
@@ -1186,6 +1189,8 @@ struct Told {
     beat: bool,
     bar: bool,
     cycle: bool,
+    /// Whether the last cycle told was on.
+    cycle_on: bool,
     changed: bool,
 }
 
@@ -1203,6 +1208,8 @@ struct Vst2Block {
     max_frames: usize,
     link_channels: usize,
     buses: (usize, usize),
+    /// How many parameters the plug-in declared: a block's event names no other.
+    params: usize,
     in_buffers: Vec<Vec<f32>>,
     out_buffers: Vec<Vec<f32>>,
     /// The channel pointer arrays, built once and refilled per block without allocating.
@@ -1235,6 +1242,12 @@ unsafe impl Send for Vst2Block {}
 impl crate::audio::Block for Vst2Block {
     fn process(&mut self, input: &[f32], events: &[Event], output: &mut [f32]) {
         let frames = input.len().checked_div(self.link_channels).unwrap_or(0);
+        // Say which instance this thread serves, for every call of the block: a plug-in may ask
+        // its host from `setParameter` and `effProcessEvents` as from its audio call, and the
+        // answer never takes the lock of the instance table.
+        SERVING.with(|serving| {
+            *serving.borrow_mut() = Some(self.shared.clone());
+        });
         // The song's place, and the events that become MIDI or parameter calls.
         self.midis.clear();
         for event in events {
@@ -1264,8 +1277,9 @@ impl crate::audio::Block for Vst2Block {
                 // The arrangement's loop in seconds is another kind of fact and faces no
                 // PPQ on its way in; a second-based start in a field of beats would be
                 // nonsense, so it is left for the formats that takes seconds.
-                EventKind::Cycle { start, end, .. } => {
+                EventKind::Cycle { on, start, end } => {
                     self.time.cycle = true;
+                    self.time.cycle_on = on;
                     self.shared.time.cycle_start.store(f64::from(start).to_bits(), Ordering::Relaxed);
                     self.shared.time.cycle_end.store(f64::from(end).to_bits(), Ordering::Relaxed);
                 }
@@ -1274,10 +1288,16 @@ impl crate::audio::Block for Vst2Block {
                 // A parameter's value reaches the plug-in through `setParameter` before the
                 // block's audio, at its frame's place in the order the engine sent (the
                 // interface has no sample-accurate parameters; *assumed*).
+                // A parameter the plug-in did not declare, or a value that is no number, never
+                // reaches it: the number may come from a project made with another version.
                 EventKind::Param { id, value } => {
-                    if let (Some(set), Ok(index)) = (self.set_parameter, i32::try_from(id)) {
-                        // SAFETY: the plug-in's own call, on this audio thread.
-                        unsafe { set(self.effect, index, value) };
+                    let declared = usize::try_from(id).is_ok_and(|id| id < self.params);
+                    if let (true, true, Some(set), Ok(index)) =
+                        (declared, value.is_finite(), self.set_parameter, i32::try_from(id))
+                    {
+                        // SAFETY: the plug-in's own call, on this audio thread, for a parameter
+                        // it declared.
+                        unsafe { set(self.effect, index, value.clamp(0.0, 1.0)) };
                     }
                 }
                 EventKind::NoteOn { channel, key, velocity } => {
@@ -1319,6 +1339,9 @@ impl crate::audio::Block for Vst2Block {
         if self.time.cycle {
             flags |= vestige::kVstCyclePosValid;
         }
+        if self.time.cycle_on {
+            flags |= vestige::kVstTransportCycleActive;
+        }
         self.shared.time.flags.store(flags, Ordering::Relaxed);
         // The events, before the audio (the interface's one list for the block; *assumed*).
         if !self.midis.is_empty() {
@@ -1349,11 +1372,6 @@ impl crate::audio::Block for Vst2Block {
         for (slot, channel) in self.out_pointers.iter_mut().zip(&mut self.out_buffers) {
             *slot = channel.as_mut_ptr();
         }
-        // Say which instance this thread serves, so the plug-in's host calls answer it
-        // without a lock; the process call, then the thread's word taken back.
-        SERVING.with(|serving| {
-            *serving.borrow_mut() = Some(self.shared.clone());
-        });
         // `processReplacing` where the flag says so, the deprecated `process` otherwise (its
         // outputs add, so they were zeroed). A plug-in that declares the flag and gives no
         // replacing call falls back to `process` too: the zeroed outputs make it the same.
@@ -1434,7 +1452,7 @@ fn open(spec: &str) -> Result<(Module, *mut AEffect, Option<String>), String> {
 pub(crate) fn describe(spec: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String> {
     let (_module, effect, _) = open(spec)?;
     // SAFETY: the effect the entry gave back, read by value once, on this thread.
-    let read = unsafe { *effect };
+    let read = unsafe { effect.read_unaligned() };
     if read.magic != vestige::kEffectMagic {
         return Err(format!("the plug-in {spec:?} did not give a VST2 effect"));
     }
@@ -1452,7 +1470,7 @@ pub(crate) fn describe(spec: &str) -> Result<Vec<suhina_plugins::scan::PluginInf
     // `effOpen` gives the scan its real shape, not the blank it opened with).
     // SAFETY: the effect the entry gave back, read by value, on this thread, before the
     // plug-in is closed again.
-    let read = unsafe { *effect };
+    let read = unsafe { effect.read_unaligned() };
     let mut name = vec![0 as std::ffi::c_char; vestige::VestigeMaxNameLen];
     let mut vendor = vec![0 as std::ffi::c_char; vestige::VestigeMaxLabelLen];
     let mut product = vec![0 as std::ffi::c_char; vestige::VestigeMaxLabelLen];

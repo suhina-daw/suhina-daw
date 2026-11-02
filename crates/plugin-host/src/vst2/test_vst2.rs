@@ -398,6 +398,8 @@ unsafe extern "C" fn dispatcher(
             0
         }
         Some(EffectOp::ProcessEvents) => {
+            // A plug-in may ask its host from here, as from its audio call.
+            let _ = mock.ask(effect, HostOp::GetCurrentProcessLevel, 0, 0, std::ptr::null_mut(), 0.0);
             // Assumed: `ptr` points at the `VstEvents` list; the count of events taken is
             // the answer.
             // SAFETY: the list the host handed the mock, read with a bound (`read_events`
@@ -524,9 +526,10 @@ unsafe extern "C" fn dispatcher(
 /// recorded; only the mock's one parameter takes the value.
 unsafe extern "C" fn set_parameter(effect: *mut AEffect, index: i32, value: f32) {
     // SAFETY: the effect is the mock's.
-    if let Some(mock) = unsafe { mock_of(effect) }
-        && let Ok(mut inner) = mock.0.lock()
-    {
+    let Some(mock) = (unsafe { mock_of(effect) }) else { return };
+    // A plug-in may ask its host from here, as from its audio call.
+    let _ = mock.ask(effect, HostOp::GetCurrentProcessLevel, 0, 0, std::ptr::null_mut(), 0.0);
+    if let Ok(mut inner) = mock.0.lock() {
         bound(&mut inner.parameters);
         inner.parameters.push((index, value));
         if index == 0 && value.is_finite() {

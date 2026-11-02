@@ -185,18 +185,16 @@ impl Catalog {
         if let Some(plugin) = derived().find(|p| p.id.eq_ignore_ascii_case(&exact)).or_else(|| derived().next()) {
             return found(How::Vst2Id, plugin);
         }
-        self.match_name(name).or_else(|| {
-            // No VST3 or CLAP copy stands in: the scanned VST2 plug-in itself, by its id
-            // (decision 8: the copies are preferred while any is installed). Two plug-ins
-            // can share a four-character id, and the first of them is no answer: the device
-            // stays unresolved, for the user to relink by hand.
-            let wanted = format!("{id:08X}");
-            let mut found = self.plugins().filter(|p| p.format() == "vst2" && p.id == wanted);
-            match (found.next(), found.next()) {
-                (Some(plugin), None) => Some(Match { plugin, how: How::Itself }),
-                _ => None,
-            }
-        })
+        // No copy stands in: the scanned VST2 plug-in itself, by its id, before any guess by
+        // name, which promises nothing about the saved state (decision 8: only a real copy is
+        // preferred). Two plug-ins can share a four-character id, and the first of them is no
+        // answer: the name decides, or the device stays unresolved for the user to relink.
+        let wanted = format!("{id:08X}");
+        let mut itself = self.plugins().filter(|p| p.format() == "vst2" && p.id == wanted);
+        if let (Some(plugin), None) = (itself.next(), itself.next()) {
+            return found(How::Itself, plugin);
+        }
+        self.match_name(name)
     }
 
     /// The installed plug-in for a CLAP device with id `id`, saved under `name`.

@@ -107,8 +107,9 @@ fn finds_plugin_files_in_folders() {
     assert!(standard_folders().iter().all(|f| f.is_dir()));
 }
 
-/// A VST2 folder's files are found for its format and for `Any`: a `.vst` bundle on macOS, a
-/// `.dll` on Windows, a `.so` on Linux — and nothing else of the folder's.
+/// A VST2 folder's files are found for its format: a `.vst` bundle on macOS, a `.dll` on Windows,
+/// a `.so` on Linux, and nothing else of the folder's. A folder for every format takes the
+/// bundle, which is nothing else, and no plain library, which can be anything.
 #[cfg(feature = "vst2")]
 #[test]
 fn a_vst2_folder_s_files_are_found() {
@@ -126,7 +127,7 @@ fn a_vst2_folder_s_files_are_found() {
     let found = find_files_of(&[(dir.clone(), FolderFormat::Vst2)]);
     assert_eq!(found, vec![dir.join(shape)], "only the format's files");
     let any = find_files(std::slice::from_ref(&dir));
-    assert!(any.contains(&dir.join(shape)), "Any takes the VST2 file too");
+    assert_eq!(any.contains(&dir.join(shape)), cfg!(target_os = "macos"), "Any takes no plain library");
     // The vst folders of this system are standard, whether or not anything is in them.
     let _ = standard_folders();
 }
@@ -233,12 +234,9 @@ fn a_folder_gives_only_its_formats_files() {
     // vst2/, then vst3/.
     assert_eq!(name(find_files_of(&folders)), ["a.clap", vst2_file, "c.vst3"]);
     assert_eq!(name(find_files_of(&[(dir.join("clap"), FolderFormat::Any)])), ["a.clap", "b.vst3"]);
-    // The VST2 folder for Any gives its own shape only.
-    assert_eq!(
-        name(find_files_of(&[(dir.join("vst2"), FolderFormat::Any)])),
-        [vst2_file.to_string()],
-        "the other system's library file is not a plug-in file here"
-    );
+    // For every format: the `.vst` bundle, and no library of any system.
+    let any: Vec<String> = if cfg!(target_os = "macos") { vec![vst2_file.to_string()] } else { Vec::new() };
+    assert_eq!(name(find_files_of(&[(dir.join("vst2"), FolderFormat::Any)])), any);
 }
 
 #[test]
