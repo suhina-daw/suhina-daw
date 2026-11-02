@@ -301,7 +301,10 @@ fn frequency_text(frequency: f64) -> String {
 fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f32; ANALYSER_BANDS]> {
     let monitor = ui.ctx().data(|d| d.get_temp::<Arc<MeterMonitor>>(egui::Id::new("eq-spectrum")))?;
     let spectrum = monitor.spectrum();
-    spectrum.watch(device % spectrum::ROWS, track, device);
+    // The watch's generation so the held levels know when the row's owner changed: a graph
+    // swap resets the watch (and the ring with it), and levels keyed only by track and
+    // device would glide from the previous device's spectrum for about a second.
+    let watch_generation = spectrum.watch(device % spectrum::ROWS, track, device);
     let (samples, _) = spectrum.samples(track, device)?;
     // While the engine renders the device, the count moves and the panel comes back for the
     // next window; when the engine stops, the count stops and the line holds the last
@@ -334,7 +337,7 @@ fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f
     // attack, down with the release — the DSP crate's follower, the compressor's own block,
     // driven once a frame at the frame's own step. Without it each window's transform redraws
     // the area from nothing every 30 ms and percussive material reads as a flicker.
-    let shown_id = egui::Id::new(("eq-spectrum-shown", track.0, device));
+    let shown_id = egui::Id::new(("eq-spectrum-shown", track.0, device, watch_generation));
     let now = ui.input(|i| i.time);
     // The glide's held levels belong to one monitor: a session switch reuses the same
     // track and device keys, and the next session's first frames would glide from the
