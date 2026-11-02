@@ -39,7 +39,7 @@ pub(super) fn key_column(
         let (anchor, silent) = match state.gesture {
             Some(Gesture::KeySelect { anchor, silent }) => (anchor, silent),
             _ => {
-                let silent = inputs.command && !inputs.shift;
+                let silent = inputs.command;
                 state.gesture = Some(Gesture::KeySelect { anchor: key, silent });
                 state.begin_key_selection(key, inputs.shift);
                 (key, silent)

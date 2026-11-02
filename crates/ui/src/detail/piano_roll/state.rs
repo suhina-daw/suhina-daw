@@ -376,7 +376,7 @@ impl PianoRollState {
             if let Some(time) = time {
                 params["time"] = json!(round_beat(time));
             }
-            self.select_copies((count..count.saturating_add(copied)).collect());
+            self.select_copies((count..count.saturating_add(copied)).collect(), &clip.notes);
             self.replacing(&mut params);
             return Some(Action::new("note.paste", params));
         }
@@ -446,7 +446,7 @@ impl PianoRollState {
                 if let Some(span) = &self.span {
                     params["beats"] = json!(round_beat(span.end - span.start));
                 }
-                self.select_copies((count..count.saturating_add(chosen.len())).collect());
+                self.select_copies((count..count.saturating_add(chosen.len())).collect(), &clip.notes);
                 self.replacing(&mut params);
                 return Some(Action::new("note.duplicate", params));
             }
@@ -478,6 +478,10 @@ impl PianoRollState {
             _ => return None,
         };
         if beats == 0.0 && keys == 0 {
+            return None;
+        }
+        // Past the furthest start the command would refuse it, and nothing may have moved.
+        if chosen.iter().any(|n| n.time + beats > f64::from(BEAT_LIMIT)) {
             return None;
         }
         self.audition_moved(&chosen, keys);

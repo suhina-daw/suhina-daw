@@ -5,6 +5,8 @@
 //! chose when it reached no note, the bar that shows the selection's extent over the grid, the mark
 //! a click leaves where a paste goes, and how a copy carries the stretch on.
 
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use super::*;
 
 /// Height of the bar along the ruler's lower edge that shows what is selected in time, the width of
@@ -26,12 +28,29 @@ pub(super) struct TimeSpan {
     pub(super) with: BTreeSet<usize>,
 }
 
-/// What a copy (the duplicate key, a paste) left behind, to go back to when it is undone.
+/// What a copy (the duplicate key, a paste) left behind, to go back to when it is undone: the
+/// selection then, the copies it made, and the clip's notes then, by their hash. Notes back as they
+/// were say the copy was undone, even where it replaced as many notes as it made.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpanStep {
     span: Option<TimeSpan>,
     selected: BTreeSet<usize>,
     copies: BTreeSet<usize>,
+    notes: u64,
+}
+
+/// A hash of what `notes` hold.
+fn notes_hash(notes: &[Note]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    notes.len().hash(&mut hasher);
+    for note in notes {
+        note.time.to_bits().hash(&mut hasher);
+        note.duration.to_bits().hash(&mut hasher);
+        note.key.hash(&mut hasher);
+        note.velocity.to_bits().hash(&mut hasher);
+        note.muted.hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 /// The stretch a selecting rectangle covers: from the grid line before its left edge to the one after
@@ -51,11 +70,11 @@ pub(super) fn after_replaced(set: &BTreeSet<usize>, replaced: &[usize]) -> BTree
 
 impl PianoRollState {
     /// Brings the selection and what hangs on it up to date with the clip's `notes`, before anything
-    /// uses them. Copies that are gone were undone: the selection before them comes back.
+    /// uses them. Notes back as they were before a copy mean it was undone: the selection before it
+    /// comes back.
     pub(super) fn settle_selection(&mut self, notes: &[Note]) {
         let count = notes.len();
-        if self.selected.iter().any(|i| *i >= count)
-            && self.span_undo.last().is_some_and(|step| step.copies == self.selected)
+        if self.span_undo.last().is_some_and(|step| step.copies == self.selected && step.notes == notes_hash(notes))
             && let Some(step) = self.span_undo.pop()
         {
             self.span = step.span;
@@ -104,9 +123,9 @@ impl PianoRollState {
         }
     }
 
-    /// Copies are about to become the selection, indices `copies`: a time selection goes on to the
-    /// stretch after it, so the next copy lands after these, and an undo comes back here.
-    pub(super) fn select_copies(&mut self, copies: BTreeSet<usize>) {
+    /// Copies are about to become the selection, indices `copies`, made from `notes`: a time selection
+    /// goes on to the stretch after it, so the next copy lands after these, and an undo comes back here.
+    pub(super) fn select_copies(&mut self, copies: BTreeSet<usize>, notes: &[Note]) {
         let next = self.span.as_ref().map(|span| TimeSpan {
             start: span.end,
             end: span.end + (span.end - span.start),
@@ -119,6 +138,7 @@ impl PianoRollState {
             span: self.span.take(),
             selected: std::mem::take(&mut self.selected),
             copies: copies.clone(),
+            notes: notes_hash(notes),
         });
         self.span = next;
         self.selected = copies;
@@ -134,13 +154,12 @@ impl PianoRollState {
     }
 
     /// A command's replaced notes moved the indices: what hangs on the selection follows (see
-    /// [`Self::notes_replaced`]).
+    /// [`Self::notes_replaced`]). What an undo brings back keeps its indices, as the notes come back too.
     pub(super) fn span_notes_replaced(&mut self, replaced: &[usize]) {
         if let Some(span) = &mut self.span {
             span.with = after_replaced(&span.with, replaced);
         }
-        for step in &mut self.span_undo {
-            step.selected = after_replaced(&step.selected, replaced);
+        if let Some(step) = self.span_undo.last_mut() {
             step.copies = after_replaced(&step.copies, replaced);
         }
     }

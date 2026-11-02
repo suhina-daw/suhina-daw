@@ -154,9 +154,12 @@ pub(crate) fn replace_under(notes: &mut Vec<Note>, placed: &[usize]) -> Vec<usiz
     }
     removed.sort_unstable();
     removed.dedup();
-    for index in removed.iter().rev() {
-        notes.remove(*index);
-    }
+    let mut index = 0;
+    notes.retain(|_| {
+        let keep = removed.binary_search(&index).is_err();
+        index += 1;
+        keep
+    });
     removed
 }
 
@@ -516,13 +519,16 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
             }
             changes.push((index, time, new));
         }
+        // A resize that changes nothing replaces nothing, as a move of nothing does.
+        let mut changed = false;
         for (index, time, new) in changes {
             if let Some(note) = notes.get_mut(index) {
+                changed |= (note.time - time).abs() >= EPSILON || (note.duration - new).abs() >= EPSILON;
                 note.time = time;
                 note.duration = new;
             }
         }
-        let replaced = if replaces(params) { replace_under(notes, &resized) } else { Vec::new() };
+        let replaced = if replaces(params) && changed { replace_under(notes, &resized) } else { Vec::new() };
         Ok(with_replaced(params, json!({ "notes": after_removal(&resized, &replaced) }), &replaced))
     })
 }

@@ -190,6 +190,17 @@ fn a_moved_note_with_replace_takes_the_place_of_the_one_it_lands_on() {
     assert_eq!(notes(&session, 1), stacked);
 }
 
+/// A resize to the length a note has changes nothing, so it replaces nothing under it.
+#[test]
+fn a_resize_of_nothing_replaces_nothing() {
+    let mut session = session_of(&[(0.0, 2.0, 60), (1.0, 0.5, 60)]);
+    let still = json!({ "track": 1, "index": 0, "notes": [0], "length": 2.0, "replace": true });
+    assert_eq!(run(&mut session, "note.resize", still).unwrap()["replaced"], json!([]));
+    let by_nothing = json!({ "track": 1, "index": 0, "notes": [0], "by": 0.0, "replace": true });
+    assert_eq!(run(&mut session, "note.resize", by_nothing).unwrap()["replaced"], json!([]));
+    assert_eq!(spans(&session), [(0.0, 2.0, 60), (1.0, 0.5, 60)]);
+}
+
 /// `notes` as (time, length, key), for a rule about where they are.
 fn spans(session: &Session) -> Vec<(f64, f64, u8)> {
     notes(session, 1).iter().map(|n| (n.time, n.duration, n.key)).collect()

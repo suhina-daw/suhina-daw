@@ -145,7 +145,10 @@ fn style_colours(style: PianoKeyStyle) -> KeyColours {
 
 /// Whether the theme's sheet sets the keys' colours, so a key style has no say over them.
 pub(super) fn theme_sets_keys() -> bool {
-    part_style("piano-key", &[]).background.is_some() || part_style("piano-key-black", &[]).background.is_some()
+    part_style("piano-key", &[]).background.is_some()
+        || part_style("piano-key-black", &[]).background.is_some()
+        || has_gradient("piano-key")
+        || has_gradient("piano-key-black")
 }
 
 /// Whether the sheet gives `class` a gradient: it is then painted in place of the style's shading.

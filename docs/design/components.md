@@ -129,7 +129,7 @@ the view with the detail area, status bar.
 | Drop overlay | While a project file is dragged over the window: `window.background` at 45 % over the view and "Drop to open" in 13 px `text.primary`, fading in and out with the animations |
 | Browser | 300 px wide by default, dragged from 200 px to half the window by a 4 px handle at its inner edge (`border`, `border.strong` under the pointer); left of the view, or right (Settings › Browser); Ctrl+B and View › Show browser hide and show it. See Browser below |
 | Detail splitter | 6 px, `control.background`, a 32 × 2 grip in `text.hint` in the middle; the cursor shows which way it moves |
-| Detail area | Under the view (and under the browser too with Settings › Devices › Device panels › **Detail area width** on Full width, the browser then ending above it), 200 px for a device row alone, which is open at that height or closed, never in between, so its panels are never cut off; a clip editor (including its Devices tab) is resizable from 80 px (120 px while it shows the piano roll) to all but 160 px of the view; dragged below half that it collapses to the splitter along the bottom, which is dragged up to open it again ([clip editor](../spec/ui-clip-editor.md) › Least height and closing), and at least as tall as the tallest open embedded plug-in editor; Shift+Tab hides and shows it. Shows the selected track's device chain; `AudioEffect` panels show visible signal-flow nodes and fitted parameter sliders; a selected clip (on the arrangement, or in a slot) shows its properties and, beside them, the chain of the track it is on: in a row (220 px per device at least, 272 px for a generated parameter list), or stacked in a column beside the view (272 px by default, resizable), as Settings › Detail area sets. With nothing selected: "Select a track or a clip to see it here" in `text.hint` ("Select a track or a clip" in the stacked column) |
+| Detail area | Under the view (and under the browser too with Settings › Devices › Device panels › **Detail area width** on Full width, the browser then ending above it), 200 px for a device row alone, which is open at that height or closed, never in between, so its panels are never cut off; a clip editor (including its Devices tab) is resizable from 80 px (132 px while it shows the piano roll) to all but 160 px of the view; dragged below half that it collapses to the splitter along the bottom, which is dragged up to open it again ([clip editor](../spec/ui-clip-editor.md) › Least height and closing), and at least as tall as the tallest open embedded plug-in editor; Shift+Tab hides and shows it. Shows the selected track's device chain; `AudioEffect` panels show visible signal-flow nodes and fitted parameter sliders; a selected clip (on the arrangement, or in a slot) shows its properties and, beside them, the chain of the track it is on: in a row (220 px per device at least, 272 px for a generated parameter list), or stacked in a column beside the view (272 px by default, resizable), as Settings › Detail area sets. With nothing selected: "Select a track or a clip to see it here" in `text.hint` ("Select a track or a clip" in the stacked column) |
 | Status bar | 20 px, `panel.background`: the last message on the left (10 px, `text.secondary`, errors in the recording red), "N tracks · M scenes" on the right (10 px, `text.hint`), followed by " · backed up 14:05" once the active project has been backed up in this run. There is no separate info view |
 
 ## Browser
@@ -658,7 +658,7 @@ eases over 120 ms. The clip's name keeps 6 px clear of it and is shortened with 
 
 ## Clip editor (MIDI)
 
-Built so far (`crates/ui/src/detail/piano_roll.rs`, the ruler in `crates/ui/src/detail/piano_roll_ruler.rs`): the 24 px ruler (the 8 px clip loop row over 16 px of bar numbers and lines, with the start and end markers), the 36 px
+Built so far (`crates/ui/src/detail/piano_roll.rs`, the ruler in `crates/ui/src/detail/piano_roll_ruler.rs`): the 36 px ruler (the 14 px clip loop row over 22 px of bar numbers and lines, with the start and end markers), the 26 px scale strip, the 60 px
 key column, the note rows, notes and the velocity lane (72 px, or 30 % of the detail area's height
 when that is less, with 127 and 1 in its scale column). Rows are drawn as white-key rows
 (`panel.background`) and black-key rows (`window.background`) until the clip has a scale; with
@@ -675,8 +675,7 @@ A rectangle being dragged is a 1 px `text.secondary` outline. The toolbar is bui
 `panel.background` with a
 1 px `border` under it, 28 px at Large (the default) and 33 px at Larger, with the 14 px icon box,
 the 3 px gap and the 1.1 px strokes scaled by the same factor (so at Large the box is 17.5 px and
-the stroke 1.4 px), and never taller than the room the editor has; from where the grid starts
-(36 px in), the tools Select, Draw, Paint,
+the stroke 1.4 px), and never taller than the room the editor has; 32 px in from the left, the tools Select, Draw, Paint,
 Erase, Slice and Mute as icons drawn in code (1.1 px strokes at Normal: an arrow, a pencil, a
 brush, a slanted eraser block with a lighter rubbing end, a blade, and a speaker with a cross),
 3 px apart, the chosen one `control.activeBackground` with a `text.primary`
@@ -723,7 +722,7 @@ mono `text.hint`; the chosen entries are highlighted as selected, and an entry t
 cannot hold is greyed out while the piano roll follows it. Then the
 **Hide editor** button: a box as tall as the tool buttons with a 1.1 px × in `text.secondary`
 (`text.primary` on `control.hoverBackground` hovered), 3 px from the right edge. The piano roll's
-least height is 120 px of detail area (the toolbar, the 24 px ruler and five 12 px key rows; the
+least height is 132 px of detail area (the toolbar, the 36 px ruler and five 12 px key rows; the
 velocity lane is left out when it would leave fewer than five rows or be under 12 px). The lane's
 top edge (the 1 px `border.strong` line over it) is grabbed within 3 px either side, the pointer a
 vertical resize cursor: dragged, the lane is 24 to 480 px tall, never leaving fewer than five key

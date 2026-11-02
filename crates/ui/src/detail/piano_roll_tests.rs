@@ -546,3 +546,34 @@ fn a_rectangle_covers_whole_grid_steps() {
 fn the_velocity_lane_stays_through_a_zoom() {
     assert_eq!(velocity_lane_height(300.0, DEFAULT_KEY_HEIGHT, None), velocity_lane_height(300.0, 160.0, None));
 }
+
+/// A copy that replaced as many notes as it made leaves the note count as it was: the undo is told
+/// by the notes being back.
+#[test]
+fn undoing_a_copy_that_replaced_a_note_brings_the_selection_back() {
+    let clip = clip(vec![note(1.0, 0.5, 60), note(3.0, 0.5, 60)]);
+    let mut state = span_state(&clip, 0.0, 2.0);
+    let _ = state.key_action("selection.duplicate", &clip, 0.0, None);
+    state.notes_replaced(&[1]);
+    state.selecting_new = false;
+    // The copy in the replaced note's place, as many notes as before.
+    let mut after = clip.notes.clone();
+    if let Some(copy) = after.get_mut(1) {
+        copy.velocity = 0.5;
+    }
+    state.settle_selection(&after);
+    assert_eq!(state.selected, BTreeSet::from([1]), "the copy stays selected");
+    state.settle_selection(&clip.notes);
+    assert!(state.selected.is_empty());
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 2.0)));
+    assert_eq!(state.acting(), &BTreeSet::from([0]));
+}
+
+#[test]
+fn a_key_never_moves_a_note_past_the_furthest_start() {
+    let limit = f64::from(BEAT_LIMIT);
+    let clip = clip(vec![note(limit, 0.5, 60)]);
+    let mut state = span_state(&clip, limit, limit + 1.0);
+    assert!(state.key_action("pianoRoll.later", &clip, 0.0, None).is_none());
+    assert_eq!(state.span.as_ref().map(|s| s.start), Some(limit), "the stretch stays with it");
+}
