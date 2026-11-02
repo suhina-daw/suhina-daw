@@ -308,7 +308,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "device.randomize",
-        label: "Give a device with a randomizer (the FM Synth) new values, moved from the current ones by each section's percentage, as one undo step; sections and locks are its random.* parameters",
+        label: "Give a device with a randomizer (the FM Synth) new values, moved from the current ones by each section's percentage, as one undo step; its sections are its random.* parameters",
         params: &[
             DEVICE_TRACK,
             DEVICE,

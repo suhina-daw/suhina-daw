@@ -18,6 +18,15 @@ fn the_fm_synths_panel_shows_every_algorithm_and_draws_its_partials() {
         assert_eq!(bars, 6 * (16 + 32 + 64));
     }
     assert!(compact.controls.iter().any(|c| matches!(c.gesture, UiGesture::Expand(6))));
+    // An operator's square in the picture selects it, in every algorithm and on both canvases.
+    for canvas in [compact, expanded] {
+        let squares = canvas.controls.iter().filter(|c| c.id.starts_with("pick_op")).count();
+        assert_eq!(squares, 43 * 6);
+    }
+    // A card on the Algorithm page takes the click anywhere on it, its picture included.
+    let card = expanded.controls.iter().find(|c| c.id == "x_pick_5").unwrap();
+    assert!(matches!(card.gesture, UiGesture::Set(5)));
+    assert!(card.bounds[3] > 40.0, "the whole card, not its number");
     let drawn = suhina_device_fm_synth::params::WAVES.iter().position(|w| *w == "Drawn");
     let wanted = compact.controls.iter().find_map(|c| match c.gesture {
         UiGesture::Draw(wave) => Some(usize::from(wave)),

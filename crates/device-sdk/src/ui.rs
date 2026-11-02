@@ -267,6 +267,10 @@ impl UiValue {
     pub fn evaluate(&self, parameter: &impl Fn(&str, bool, bool) -> f64) -> f32 {
         self.eval(parameter, 0).clamp(-16384.0, 16384.0) as f32
     }
+    /// The value as a number to write rather than a place to draw, so without a coordinate's limit.
+    pub fn number(&self, parameter: &impl Fn(&str, bool, bool) -> f64) -> f64 {
+        self.eval(parameter, 0)
+    }
     fn eval(&self, parameter: &impl Fn(&str, bool, bool) -> f64, depth: usize) -> f64 {
         if depth > 16 {
             return 0.0;
@@ -426,6 +430,20 @@ pub enum Draw {
         rect: [UiValue; 4],
         colors: [Color; 4],
     },
+    /// A curve from one expression: `samples` points from `from` to `to` along x, each at the
+    /// height `y` gives while the parameter `#x` ([`PLOT_X_ID`]) reads its share of the way, 0 to
+    /// 1, kept between `top` and `bottom`.
+    Plot {
+        from: UiValue,
+        to: UiValue,
+        top: UiValue,
+        bottom: UiValue,
+        samples: u16,
+        y: UiValue,
+        color: Color,
+        #[serde(default = "one")]
+        width: f32,
+    },
 }
 impl Draw {
     pub fn rect(rect: [f32; 4], color: Color) -> Self {
@@ -505,6 +523,8 @@ pub const THEME_PALETTE_TOKENS: [([u8; 3], &str); 5] =
 
 /// The id a canvas reads to know whether its device's expanded panel is open (1) or not (0).
 pub const EXPANDED_ID: &str = "#expanded";
+/// What a [`Draw::Plot`]'s `y` reads for its share of the way along the curve, 0 to 1.
+pub const PLOT_X_ID: &str = "#x";
 
 /// Most quick presets on one canvas.
 pub const MAX_UI_PRESETS: usize = 32;
@@ -565,8 +585,12 @@ impl DeviceUi {
             return Err(fail("panel style exceeds 64 KiB or contains NUL"));
         }
         // Drawings may also read the device's live values (a text's value, a parameter lookup).
-        let readouts =
-            parameters.iter().map(|p| p.id.as_str()).chain(READOUT_IDS).chain([EXPANDED_ID]).collect::<HashSet<_>>();
+        let readouts = parameters
+            .iter()
+            .map(|p| p.id.as_str())
+            .chain(READOUT_IDS)
+            .chain([EXPANDED_ID, PLOT_X_ID])
+            .collect::<HashSet<_>>();
         let ids = parameters.iter().map(|p| p.id.as_str()).collect::<HashSet<_>>();
         let mut asset_ids = HashSet::new();
         let mut pixels = 0u64;
@@ -664,7 +688,7 @@ impl DeviceUi {
                     Widget::Disclosure { .. } => c.gesture == UiGesture::Toggle,
                     Widget::Handle { span, offset, .. } => {
                         c.gesture == UiGesture::Position
-                            && c.x.is_some() != c.y.is_some()
+                            && (c.x.is_some() || c.y.is_some())
                             && span.as_ref().is_none_or(|span| {
                                 span.iter().all(|v| v.validate(&readouts, 0, &mut expression_budget).is_ok())
                             })
@@ -882,6 +906,13 @@ impl Draw {
                 rect.iter().collect()
             }
             Self::Gradient { rect, .. } => rect.iter().collect(),
+            Self::Plot { from, to, top, bottom, samples, y, width: w, .. } => {
+                width(*w)?;
+                if !(2..=512).contains(samples) {
+                    return Err(fail("a plot takes 2..512 samples"));
+                }
+                vec![from, to, top, bottom, y]
+            }
             Self::Circle { center, radius, .. } => center.iter().chain([radius]).collect(),
             Self::Line { from, to, width: w, .. } => {
                 width(*w)?;

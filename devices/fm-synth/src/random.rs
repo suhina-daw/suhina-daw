@@ -182,9 +182,8 @@ pub fn randomize(values: &[f64], seed: Option<u32>, amount: Option<f64>) -> Vec<
     let mut random = Random::new(seed_now);
     let amount = amount.unwrap_or_else(|| value(params::RANDOM_AMOUNT)).clamp(0.0, 1.0);
     let shares: [Option<f64>; SECTIONS.len()] = std::array::from_fn(|s| {
-        let at = params::RANDOM_SECTIONS + s * 3;
-        let (share, on, locked) = (value(at), value(at + 1) >= 0.5, value(at + 2) >= 0.5);
-        (on && !locked).then_some(share)
+        let at = params::RANDOM_SECTIONS + s * 2;
+        (value(at + 1) >= 0.5).then_some(value(at))
     });
 
     let mut out: Vec<f64> = values.to_vec();
@@ -304,7 +303,7 @@ mod tests {
         }
         // Half the range at most, for a continuous one at 50 %.
         let mut small = v.clone();
-        let at = params::RANDOM_SECTIONS + STEREO * 3;
+        let at = params::RANDOM_SECTIONS + STEREO * 2;
         small[at] = 0.5;
         let spread = index("spread");
         for seed in 0..50 {
@@ -324,14 +323,14 @@ mod tests {
             assert!(!changes.iter().any(|(i, _)| *i == index("algorithm") || *i == index("op1.coarse")), "{seed}");
         }
         let mut asked = v.clone();
-        asked[params::RANDOM_SECTIONS + ALGORITHM * 3 + 1] = 1.0;
+        asked[params::RANDOM_SECTIONS + ALGORITHM * 2 + 1] = 1.0;
         assert!((0..20).any(|seed| randomize(&asked, Some(seed), None).iter().any(|(i, _)| *i == index("algorithm"))));
     }
 
     #[test]
-    fn a_locked_section_keeps_its_values() {
+    fn a_section_turned_off_keeps_its_values() {
         let mut v = defaults();
-        v[params::RANDOM_SECTIONS + FILTER * 3 + 2] = 1.0;
+        v[params::RANDOM_SECTIONS + FILTER * 2 + 1] = 0.0;
         let changes = randomize(&v, Some(11), Some(1.0));
         assert!(!changes.iter().any(|(i, _)| *i == index("filterRes") || *i == index("filterFreq")));
     }
@@ -339,7 +338,7 @@ mod tests {
     #[test]
     fn something_heard_directly_always_sounds() {
         let mut v = defaults();
-        v[params::RANDOM_SECTIONS + ALGORITHM * 3 + 1] = 1.0;
+        v[params::RANDOM_SECTIONS + ALGORITHM * 2 + 1] = 1.0;
         for op in 0..6 {
             v[op * OP_PARAMS + params::op::LEVEL] = 0.0;
         }
@@ -391,9 +390,9 @@ mod tests {
     }
 
     #[test]
-    fn a_locked_envelope_section_keeps_a_level_4() {
+    fn an_envelope_section_turned_off_keeps_a_level_4() {
         let mut v = defaults();
-        v[params::RANDOM_SECTIONS + ENVELOPES * 3 + 2] = 1.0;
+        v[params::RANDOM_SECTIONS + ENVELOPES * 2 + 1] = 0.0;
         v[index("op1.level4")] = 60.0;
         assert!(!randomize(&v, Some(2), Some(1.0)).iter().any(|(i, _)| *i == index("op1.level4")));
     }

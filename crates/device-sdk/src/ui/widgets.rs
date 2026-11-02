@@ -199,18 +199,23 @@ pub enum Widget {
     Graphic {
         drawing: Vec<Draw>,
     },
-    /// A line across the control that moves with its one binding and is dragged directly: an X
-    /// binding gives a vertical line moved sideways, a Y binding a horizontal one moved up and
-    /// down. The value maps to the control's bounds as `position` does. `span` limits the line
-    /// (and where it is grabbed) across the other axis, in canvas units; the whole bounds
-    /// without it. `offset` moves the bounds along its travel, in canvas units, for a value that
-    /// starts where another ends.
+    /// A line across the control that moves with its binding and is dragged directly: an X binding
+    /// gives a vertical line moved sideways, a Y binding a horizontal one moved up and down. The
+    /// value maps to the control's bounds as `position` does, the other way along an axis whose
+    /// binding has a negative `drag_scale`. `span` limits the line (and where it is grabbed)
+    /// across the other axis, in canvas units; the whole bounds without it. `offset` moves the
+    /// bounds along its travel (sideways with an X binding), in canvas units, for a value that
+    /// starts where another ends. With both bindings it is a point: a dot at both values, dragged
+    /// on both axes as one undo step. `dot` draws a one-axis handle the same way, in the middle
+    /// of its line.
     Handle {
         color: [u8; 4],
         #[serde(default)]
         span: Option<[crate::ui::UiValue; 2]>,
         #[serde(default)]
         offset: Option<crate::ui::UiValue>,
+        #[serde(default)]
+        dot: bool,
     },
 }
 impl CustomControl {
@@ -254,7 +259,7 @@ fn resolve_widget_draw(draw: &mut Draw, palette: &WidgetPalette) {
         | Draw::Circle { color, .. }
         | Draw::Text { color, .. }
         | Draw::Value { color, .. } => resolve(color),
-        Draw::Line { color, .. } | Draw::Arc { color, .. } => resolve(color),
+        Draw::Line { color, .. } | Draw::Arc { color, .. } | Draw::Plot { color, .. } => resolve(color),
         Draw::Path { color, fill, .. } => {
             resolve(color);
             if let Some(fill) = fill {

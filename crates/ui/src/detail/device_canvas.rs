@@ -1289,124 +1289,185 @@ fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
     ctx.data_mut(|d| d.insert_temp(key, cache));
     loaded
 }
-/// A `handle` widget: its line where its parameter is, grabbed within a few pixels of it and
-/// dragged along its axis; a double click resets it. Every drag is one undo gesture.
+/// A canvas's parameters by id. A large panel holds thousands of controls, most of them hidden, and
+/// each asks after its parameters every frame.
+struct Values<'a>(std::collections::HashMap<&'a str, &'a GraphParameter>);
+
+impl<'a> Values<'a> {
+    /// The first of a name wins, as a search through the list would have it.
+    fn new(parameters: &'a [GraphParameter]) -> Self {
+        Self(parameters.iter().rev().map(|p| (p.id.as_str(), p)).collect())
+    }
+
+    fn get(&self, id: &str) -> Option<&'a GraphParameter> {
+        self.0.get(id).copied()
+    }
+
+    /// What an expression reads for `id`.
+    fn read(&self, id: &str, norm: bool, log: bool) -> f64 {
+        self.get(id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
+    }
+}
+
+/// One axis of a handle: the binding and the parameter it moves.
+#[derive(Clone, Copy)]
+struct HandleAxis<'a> {
+    logarithmic: bool,
+    drag_scale: f32,
+    parameter: &'a GraphParameter,
+}
+
+impl HandleAxis<'_> {
+    /// How far along its travel the value is. A negative drag scale runs the travel the other way
+    /// (a rate: further along is slower).
+    fn share(self) -> f64 {
+        let share = normalized(self.parameter, self.logarithmic);
+        if self.drag_scale < 0.0 { 1.0 - share } else { share }
+    }
+
+    /// The value at `share` of its travel.
+    fn value_at(self, share: f64) -> f64 {
+        let share = share.clamp(0.0, 1.0);
+        let t = if self.drag_scale < 0.0 { 1.0 - share } else { share };
+        let p = self.parameter;
+        if self.logarithmic && p.min > 0.0 {
+            (p.min.ln() + t * (p.max.ln() - p.min.ln())).exp()
+        } else {
+            p.min + t * (p.max - p.min)
+        }
+    }
+}
+
+/// A line or a point on a drawing, dragged directly ([`Widget::Handle`]).
 #[allow(clippy::too_many_arguments)]
 fn handle(
     ui: &mut egui::Ui,
     painter: &egui::Painter,
     (canvas, bounds, stretch): (Rect, Rect, Vec2),
     control: &suhina_device_sdk::ui::CustomControl,
-    (line_color, span, offset): (
+    (line_color, span, offset, dot): (
         [u8; 4],
         Option<&[suhina_device_sdk::ui::UiValue; 2]>,
         Option<&suhina_device_sdk::ui::UiValue>,
+        bool,
     ),
     parameters: &[GraphParameter],
     (track, at): (TrackId, &crate::detail::detail_view::DeviceAt),
     actions: &mut Vec<Action>,
 ) {
-    /// How far from its line a handle is grabbed, in points.
+    /// How far from its line or dot a handle is grabbed, in points.
     const GRAB: f32 = 7.0;
-    let (binding, vertical) = match (&control.x, &control.y) {
-        (Some(b), None) => (b, true),
-        (None, Some(b)) => (b, false),
-        _ => return,
+    let axis = |binding: Option<&'_ suhina_device_sdk::ui::UiBinding>| {
+        binding.and_then(|binding| {
+            let parameter = parameters.iter().find(|p| p.id == binding.parameter)?;
+            Some((binding.logarithmic, binding.drag_scale, parameter))
+        })
     };
-    let Some(p) = parameters.iter().find(|p| p.id == binding.parameter) else { return };
+    let (x_axis, y_axis) = (axis(control.x.as_ref()), axis(control.y.as_ref()));
+    let x_axis = x_axis.map(|(logarithmic, drag_scale, parameter)| HandleAxis { logarithmic, drag_scale, parameter });
+    let y_axis = y_axis.map(|(logarithmic, drag_scale, parameter)| HandleAxis { logarithmic, drag_scale, parameter });
     let lookup = |id: &str, norm: bool, log: bool| {
         parameters.iter().find(|p| p.id == id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
     };
     let bounds = offset.map_or(bounds, |by| {
         let by = by.evaluate(&lookup);
-        bounds.translate(if vertical { Vec2::new(by * stretch.x, 0.0) } else { Vec2::new(0.0, by * stretch.y) })
+        bounds.translate(if x_axis.is_some() { Vec2::new(by * stretch.x, 0.0) } else { Vec2::new(0.0, by * stretch.y) })
     });
-    let (from, to) = span.map_or_else(
-        || if vertical { (bounds.top(), bounds.bottom()) } else { (bounds.left(), bounds.right()) },
-        |[a, b]| {
-            let (origin, scale) = if vertical { (canvas.top(), stretch.y) } else { (canvas.left(), stretch.x) };
-            (origin + a.evaluate(&lookup) * scale, origin + b.evaluate(&lookup) * scale)
-        },
-    );
-    let n = normalized(p, binding.logarithmic) as f32;
-    let (line, grab) = if vertical {
-        let x = bounds.left() + n * bounds.width();
-        let line = [Pos2::new(x, from), Pos2::new(x, to)];
-        (line, Rect::from_min_max(Pos2::new(x - GRAB, from), Pos2::new(x + GRAB, to)))
-    } else {
-        let y = bounds.bottom() - n * bounds.height();
-        let line = [Pos2::new(from, y), Pos2::new(to, y)];
-        (line, Rect::from_min_max(Pos2::new(from, y - GRAB), Pos2::new(to, y + GRAB)))
+    let across = |origin: f32, scale: f32, whole: (f32, f32)| {
+        span.map_or(whole, |[a, b]| (origin + a.evaluate(&lookup) * scale, origin + b.evaluate(&lookup) * scale))
+    };
+    let at_x = x_axis.map(|a| bounds.left() + a.share() as f32 * bounds.width());
+    let at_y = y_axis.map(|a| bounds.bottom() - a.share() as f32 * bounds.height());
+    // What is drawn and grabbed: a point at both values, or a line across the other axis.
+    let (line, center, grab) = match (at_x, at_y) {
+        (Some(x), Some(y)) => {
+            let center = Pos2::new(x, y);
+            (None, center, Rect::from_center_size(center, Vec2::splat(GRAB * 2.0)))
+        }
+        (Some(x), None) => {
+            let (from, to) = across(canvas.top(), stretch.y, (bounds.top(), bounds.bottom()));
+            let grab = Rect::from_min_max(Pos2::new(x - GRAB, from), Pos2::new(x + GRAB, to));
+            (Some([Pos2::new(x, from), Pos2::new(x, to)]), Pos2::new(x, (from + to) / 2.0), grab)
+        }
+        (None, Some(y)) => {
+            let (from, to) = across(canvas.left(), stretch.x, (bounds.left(), bounds.right()));
+            let grab = Rect::from_min_max(Pos2::new(from, y - GRAB), Pos2::new(to, y + GRAB));
+            (Some([Pos2::new(from, y), Pos2::new(to, y)]), Pos2::new((from + to) / 2.0, y), grab)
+        }
+        (None, None) => return,
     };
     if !grab.is_positive() {
         return;
     }
     let id = ui.id().with(("sd-handle", track.0, at.value().to_string(), &control.id));
-    let response = ui
-        .interact(grab, id, egui::Sense::click_and_drag())
-        .on_hover_cursor(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical })
-        .on_hover_text(&control.tooltip);
+    let cursor = match (x_axis.is_some(), y_axis.is_some()) {
+        (true, true) => egui::CursorIcon::Grab,
+        (true, false) => egui::CursorIcon::ResizeHorizontal,
+        _ => egui::CursorIcon::ResizeVertical,
+    };
+    let response =
+        ui.interact(grab, id, egui::Sense::click_and_drag()).on_hover_cursor(cursor).on_hover_text(&control.tooltip);
     if response.clicked() || response.drag_started() {
         response.request_focus();
     }
     let hot = response.hovered() || response.dragged() || response.has_focus();
-    let stroke = Stroke::new(if hot { 3.0 } else { 2.0 }, color(line_color));
-    painter.line_segment(line, stroke);
-    let grip = Rect::from_center_size(
-        if vertical { Pos2::new(line[0].x, line[0].y + 6.0) } else { Pos2::new(line[1].x - 6.0, line[0].y) },
-        Vec2::splat(if hot { 9.0 } else { 7.0 }),
-    );
-    painter.rect_filled(grip, 1.0, color(line_color));
-    let at_travel = |t: f64| {
-        let t = t.clamp(0.0, 1.0);
-        if binding.logarithmic && p.min > 0.0 {
-            (p.min.ln() + t * (p.max.ln() - p.min.ln())).exp()
-        } else {
-            p.min + t * (p.max - p.min)
+    match line.filter(|_| !dot) {
+        Some(line) => {
+            painter.line_segment(line, Stroke::new(if hot { 3.0 } else { 2.0 }, color(line_color)));
+            let grip = if at_x.is_some() {
+                Pos2::new(line[0].x, line[0].y + 6.0)
+            } else {
+                Pos2::new(line[1].x - 6.0, line[0].y)
+            };
+            painter.rect_filled(
+                Rect::from_center_size(grip, Vec2::splat(if hot { 9.0 } else { 7.0 })),
+                1.0,
+                color(line_color),
+            );
         }
-    };
+        None => {
+            let ring = Stroke::new(1.0, crate::kit::theme::palette().panel_background);
+            painter.circle(center, if hot { 5.5 } else { 4.0 }, color(line_color), ring);
+        }
+    }
     // The arrow keys along its travel move a focused handle 1 % of it, 0.1 % with Shift.
-    let (up, down) = if vertical {
-        (egui::Key::ArrowRight, egui::Key::ArrowLeft)
-    } else {
-        (egui::Key::ArrowUp, egui::Key::ArrowDown)
+    let keys = |up: egui::Key, down: egui::Key| {
+        ui.input(|i| {
+            f64::from(i32::from(i.key_pressed(up)) - i32::from(i.key_pressed(down)))
+                * if i.modifiers.shift { 0.001 } else { 0.01 }
+        })
     };
-    let keys = if response.has_focus() {
+    let (keys_x, keys_y) = if response.has_focus() {
         // The arrows stay with the handle instead of moving the focus on.
         ui.memory_mut(|m| {
             let arrows = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, ..Default::default() };
             m.set_focus_lock_filter(response.id, arrows);
         });
-        ui.input(|i| {
-            f64::from(i32::from(i.key_pressed(up)) - i32::from(i.key_pressed(down)))
-                * if i.modifiers.shift { 0.001 } else { 0.01 }
-        })
+        (keys(egui::Key::ArrowRight, egui::Key::ArrowLeft), keys(egui::Key::ArrowUp, egui::Key::ArrowDown))
     } else {
-        0.0
+        (0.0, 0.0)
     };
-    let value = if response.double_clicked() {
-        Some(p.default)
-    } else if keys != 0.0 {
-        Some(at_travel(normalized(p, binding.logarithmic) + keys))
-    } else if response.dragged() || response.drag_stopped() {
-        response.interact_pointer_pos().map(|pos| {
-            at_travel(f64::from(if vertical {
-                (pos.x - bounds.left()) / bounds.width()
-            } else {
-                (bounds.bottom() - pos.y) / bounds.height()
-            }))
-        })
-    } else {
-        None
-    };
-    if let Some(value) = value {
-        actions.push(Action::new(
-            "device.setParam",
-            json!({
-                "track": track.0, "device": at.value(), "param": p.id, "value": value,
-                "continuous": response.dragged() && !response.drag_stopped(), "gesture": control.id
-            }),
-        ));
+    let pointer = (response.dragged() || response.drag_stopped()).then(|| response.interact_pointer_pos()).flatten();
+    let along_x = pointer.map(|pos| (pos.x - bounds.left()) / bounds.width());
+    let along_y = pointer.map(|pos| (bounds.bottom() - pos.y) / bounds.height());
+    for (axis, keys, along) in [(x_axis, keys_x, along_x), (y_axis, keys_y, along_y)] {
+        let Some(axis) = axis else { continue };
+        let value = if response.double_clicked() {
+            Some(axis.parameter.default)
+        } else if keys != 0.0 {
+            Some(axis.value_at(axis.share() + keys))
+        } else {
+            along.map(|share| axis.value_at(f64::from(share)))
+        };
+        if let Some(value) = value {
+            actions.push(Action::new(
+                "device.setParam",
+                json!({
+                    "track": track.0, "device": at.value(), "param": axis.parameter.id, "value": value,
+                    "continuous": response.dragged() && !response.drag_stopped(), "gesture": control.id
+                }),
+            ));
+        }
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &control.name));
 }
@@ -1450,14 +1511,12 @@ fn paint_scaled(
     painter: &egui::Painter,
     drawings: &[Draw],
     origin: Pos2,
-    parameters: &[GraphParameter],
+    values: &Values,
     loaded: &Loaded,
     scale: Vec2,
 ) {
     let weight = scale.x.min(scale.y);
-    let lookup = |id: &str, norm: bool, log: bool| {
-        parameters.iter().find(|p| p.id == id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
-    };
+    let lookup = |id: &str, norm: bool, log: bool| values.read(id, norm, log);
     let value = |v: &UiValue| v.evaluate(&lookup);
     let point = |p: &[UiValue; 2]| origin + Vec2::new(value(&p[0]), value(&p[1])) * scale;
     let rectangle = |r: &[UiValue; 4]| {
@@ -1512,7 +1571,7 @@ fn paint_scaled(
                 painter.add(egui::Shape::line(points, Stroke::new(*width * weight, color(*c))));
             }
             Draw::Text { position, text, color: c, size, parameter, decimals, align, format } => {
-                let label = parameter.as_ref().and_then(|id| parameters.iter().find(|p| p.id == *id)).map_or_else(
+                let label = parameter.as_ref().and_then(|id| values.get(id)).map_or_else(
                     || text.clone(),
                     |p| match format {
                         TextFormat::Choice => {
@@ -1563,13 +1622,43 @@ fn paint_scaled(
                 crate::kit::widgets::paint_text(painter, position - offset, galley, ink);
             }
             Draw::Value { position, value: number, prefix, suffix, color: c, size, decimals, align } => {
-                let label = format!("{prefix}{}{suffix}", fixed(f64::from(value(number)), *decimals));
+                let label = format!("{prefix}{}{suffix}", fixed(number.number(&lookup), *decimals));
                 let ink = crate::kit::style_class::foreground(color(*c));
                 let font = crate::kit::theme::ui_font((*size * weight).clamp(1.0, 256.0));
                 let galley = painter.layout_no_wrap(label, font, ink);
                 let position = point(position);
                 let offset = if *align == TextAlign::Center { Vec2::new(galley.size().x / 2., 0.) } else { Vec2::ZERO };
                 crate::kit::widgets::paint_text(painter, position - offset, galley, ink);
+            }
+            Draw::Plot { from, to, top, bottom, samples, y, color: c, width } => {
+                let (from, to) = (value(from), value(to));
+                let (top, bottom) = (value(top), value(bottom));
+                let (top, bottom) = (top.min(bottom), top.max(bottom));
+                let last = (*samples).max(2) - 1;
+                // One expression read many times: each parameter is looked up once.
+                let known = std::cell::RefCell::new(Vec::<(String, bool, bool, f64)>::new());
+                let points = (0..=last)
+                    .map(|i| {
+                        let along = f64::from(i) / f64::from(last);
+                        let height = y.evaluate(&|id, norm, log| {
+                            if id == suhina_device_sdk::ui::PLOT_X_ID {
+                                return along;
+                            }
+                            let found = known
+                                .borrow()
+                                .iter()
+                                .find(|(k, n, l, _)| k == id && *n == norm && *l == log)
+                                .map(|entry| entry.3);
+                            found.unwrap_or_else(|| {
+                                let read = lookup(id, norm, log);
+                                known.borrow_mut().push((id.to_owned(), norm, log, read));
+                                read
+                            })
+                        });
+                        origin + Vec2::new(from + (to - from) * along as f32, height.clamp(top, bottom)) * scale
+                    })
+                    .collect();
+                painter.add(egui::Shape::line(points, Stroke::new(*width * weight, color(*c))));
             }
             Draw::Gradient { rect, colors } => {
                 let r = rectangle(rect);
@@ -1622,14 +1711,12 @@ fn paint_scaled(
         }
     }
 }
-fn control_selected(control: &CustomControl, parameters: &[GraphParameter]) -> bool {
+fn control_selected(control: &CustomControl, values: &Values) -> bool {
     control.x.iter().chain(control.y.iter()).any(|binding| {
-        parameters.iter().find(|parameter| parameter.id == binding.parameter).is_some_and(|parameter| {
-            match control.gesture {
-                UiGesture::Set(target) | UiGesture::Tab(target) => parameter.value == f64::from(target),
-                UiGesture::Expand(_) => false,
-                _ => normalized(parameter, binding.logarithmic) >= 0.5,
-            }
+        values.get(&binding.parameter).is_some_and(|parameter| match control.gesture {
+            UiGesture::Set(target) | UiGesture::Tab(target) => parameter.value == f64::from(target),
+            UiGesture::Expand(_) => false,
+            _ => normalized(parameter, binding.logarithmic) >= 0.5,
         })
     })
 }
@@ -1659,7 +1746,7 @@ fn paint_control(
     control: &suhina_device_sdk::ui::CustomControl,
     drawings: &[Draw],
     bounds: Rect,
-    parameters: &[GraphParameter],
+    values: &Values,
     loaded: &Loaded,
     response: Option<&egui::Response>,
     accent_on: bool,
@@ -1676,11 +1763,7 @@ fn paint_control(
     } else {
         drawings
     };
-    let value = |v: &UiValue| {
-        v.evaluate(&|id, norm, log| {
-            parameters.iter().find(|p| p.id == id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
-        })
-    };
+    let value = |v: &UiValue| v.evaluate(&|id, norm, log| values.read(id, norm, log));
     let native = Vec2::new(control.bounds[2], control.bounds[3]).max(Vec2::splat(1.0));
     let knob = matches!(control.widget, Some(Widget::Knob { .. } | Widget::Dial { .. }));
     let mut scale = (bounds.size() / native).clamp(Vec2::splat(1.0 / 8192.0), Vec2::splat(4096.0));
@@ -1699,7 +1782,7 @@ fn paint_control(
             })
         })
         .flatten();
-    let on = control_selected(control, parameters);
+    let on = control_selected(control, values);
     let state = response.map_or(crate::kit::skin::State::Normal, |r| crate::kit::skin::State::response(r, !knob && on));
     if control.x.as_ref().is_some_and(|b| b.parameter == "mode")
         && matches!(control.gesture, UiGesture::Set(_))
@@ -1761,7 +1844,7 @@ fn paint_control(
                 continue;
             }
         }
-        paint_scaled(painter, std::slice::from_ref(draw), origin, parameters, loaded, scale);
+        paint_scaled(painter, std::slice::from_ref(draw), origin, values, loaded, scale);
         if !knob_effects
             && matches!(draw, Draw::Circle { .. })
             && let Some((center, radius)) = circle
@@ -1945,7 +2028,8 @@ pub(crate) fn show(
     let stretch = Vec2::new(rect.width() / canvas.size[0].max(1.0), rect.height() / canvas.size[1].max(1.0));
     let stretch = if canvas.strip { stretch } else { stretch.max(Vec2::splat(1.0)) };
     let stretch = if (stretch - Vec2::splat(1.0)).length() < 0.001 { Vec2::splat(1.0) } else { stretch };
-    paint_scaled(&painter, &canvas.layers, rect.min, parameters, &loaded, stretch);
+    let values = Values::new(parameters);
+    paint_scaled(&painter, &canvas.layers, rect.min, &values, &loaded, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;
     let stroke_id = ui.id().with(("sd-draw", track.0, device));
@@ -1964,11 +2048,8 @@ pub(crate) fn show(
         {
             continue;
         }
-        if control.visible_when.as_ref().is_some_and(|v| {
-            v.evaluate(&|id, norm, log| {
-                parameters.iter().find(|p| p.id == id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
-            }) <= 0.0
-        }) {
+        if control.visible_when.as_ref().is_some_and(|v| v.evaluate(&|id, norm, log| values.read(id, norm, log)) <= 0.0)
+        {
             continue;
         }
         let [x, y, w, h] = fitted_control_bounds(control, reduction);
@@ -2006,13 +2087,13 @@ pub(crate) fn show(
             );
             continue;
         }
-        if let Some(Widget::Handle { color: line_color, span, offset }) = &control.widget {
+        if let Some(Widget::Handle { color: line_color, span, offset, dot }) = &control.widget {
             handle(
                 ui,
                 &painter,
                 (rect, bounds, stretch),
                 control,
-                (*line_color, span.as_ref(), offset.as_ref()),
+                (*line_color, span.as_ref(), offset.as_ref(), *dot),
                 parameters,
                 (track, at),
                 actions,
@@ -2033,7 +2114,7 @@ pub(crate) fn show(
                 control,
                 drawings,
                 bounds,
-                parameters,
+                &values,
                 &loaded,
                 Some(&response),
                 canvas.accent_on,
@@ -2130,7 +2211,7 @@ pub(crate) fn show(
                 control,
                 drawings,
                 bounds,
-                parameters,
+                &values,
                 &loaded,
                 Some(&response),
                 canvas.accent_on,
@@ -2160,7 +2241,7 @@ pub(crate) fn show(
                 control,
                 drawings,
                 bounds,
-                parameters,
+                &values,
                 &loaded,
                 Some(&response),
                 canvas.accent_on,
@@ -2181,7 +2262,7 @@ pub(crate) fn show(
                 control,
                 drawings,
                 bounds,
-                parameters,
+                &values,
                 &loaded,
                 Some(&response),
                 canvas.accent_on,
@@ -2214,7 +2295,7 @@ pub(crate) fn show(
                 control,
                 drawings,
                 bounds,
-                parameters,
+                &values,
                 &loaded,
                 None,
                 canvas.accent_on,
@@ -2298,7 +2379,7 @@ pub(crate) fn show(
             control,
             drawings,
             bounds,
-            parameters,
+            &values,
             &loaded,
             Some(&response),
             canvas.accent_on,

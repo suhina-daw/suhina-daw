@@ -78,17 +78,35 @@ The 32 of the DX7 format, then 11 for four operators. A voice file reaches only 
 
 Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json`.
 
-- **Device row (168 px high):** six operator rows (number, envelope picture, ratio or Hz, coarse, fine,
-  level, on), the algorithm with its picture and feedback, a display with the pages Env, Wave, Filter,
-  LFO, Pitch and Mod with eight dials that follow the page, then Time, Tone, Spread and Volume, Random,
-  `%` and meters. The Mod page shows routings; editing them needs the expanded panel.
-- **Expanded panel (1180 by 640):** operators on the left, the page in the middle, sections on the
-  right. Pages: Operator, Filter, LFO, Pitch, Matrix, Algorithm and Random.
+- **Device row (168 px high):** the operators as a table with its columns named once (number, envelope
+  picture, ratio or Hz with what coarse and fine come to, coarse, fine, level, on), the algorithm with its
+  picture and feedback, a display with the pages Env, Wave, Filter, LFO, Pitch, Mod and Voice with eight
+  dials that follow the page, then Time, Tone, Spread and Volume, Random with its amount and **More…**,
+  and meters. The display has a line of what the page chooses above its picture, so a menu never covers
+  it, and **More…** there opens the page's part of the expanded panel. The Mod page is the first route
+  of every source, edited in place, in the room of the display and the dials.
+- **Expanded panel (1180 by 640):** operators, the algorithm and Random on the left, the page in the
+  middle, sections on the right (Output, Stereo, Voices, Pitch, Quality). Pages: Operator, Filter, LFO,
+  Pitch, Matrix, Algorithm and Random. Each page goes in the order the sound does and names its groups;
+  a menu has its name over it, and a table (Matrix, Random) names its columns once.
 - It opens on Env with operator 1 selected. Selected operator and page are hidden parameters.
-- An envelope's picture moves with its times and levels. Its levels are dragged up and down on it, and
-  a time envelope's attack, decay and release sideways. The Env page has **Time** and **Rates**.
+- **What it shows.** Pictures use the scales hearing does: an operator's levels in decibels, the filter's
+  response in decibels over a logarithmic frequency axis, partials as what makes the timbre. Phase, which
+  the ear hardly hears, has a small place. A control that does nothing right now (Morph unless the type is Morph, Drive
+  on the Clean circuit) is dimmed and still answers. A dot on a tab says that section is on.
+- **Envelopes.** The picture moves with its times and levels, and each stage's end is one dot, dragged
+  in time and level at once. **ADSR** and **Rates** choose the model. A rates-and-levels stage further
+  right has a lower rate. A line marks where the key goes up.
+- **The filter's picture** is its response, with frequency and resonance on one dot, for each type and
+  through Morph. The filter's envelope is in the expanded panel.
+- **The LFO's picture** is two cycles of its wave, quietly, and in colour as much of it as reaches the
+  sound. Its rate reads in hertz on the free ranges and is a note length on the synced one.
+- **Selecting.** A click on an operator's number, its envelope picture or its square in the algorithm
+  picture selects it. The row is lighter while selected and the picture rings it; a row dims while its
+  operator is off.
 - Algorithm pictures are computed from the engine's table. An operator heard directly is filled, one
-  that modulates is outlined, and the selected one takes the accent.
+  that modulates is outlined, and its envelope in the row takes the same colour. A card on the Algorithm
+  page takes the click anywhere on it.
 
 **A theme changes styles only:** palette, `--device-display`, `--device-series-*`,
 `--device-highlight`, `--device-spectrum` and fonts. Layout is fixed.
@@ -102,12 +120,13 @@ Importing the instrument from a Live Set waits for sets authored to observe it
 
 ## Randomizer
 
-`device.randomize` takes the device, a seed, an amount and per-section percentages and locks, and
-sets the new values as one undo step. Sections: envelopes, levels, waves, filter, LFO, pitch envelope,
-modulation, stereo, ratios and algorithm; the last two are off by default, since they change a sound
-most. A value moves from where it is, by at most its section's percentage of its range; only the
+`device.randomize` takes the device, a seed and an amount, and sets the new values as one undo step. Each
+section has a share and says whether it changes or keeps its values (its `random.*` parameters). Sections:
+envelopes, levels, waves, filter, LFO, pitch envelope, modulation, stereo, ratios and algorithm; the last
+two keep theirs by default, since they change a sound most. A value moves from where it is, by at most its
+section's share of its range; only the
 envelope model an operator uses moves, and the device's Time and level 4 stay. The device's rules keep a
 result audible and playable: at least one carrier keeps its level, ratios stay whole unless asked, the
 filter does not close entirely, and while the envelopes take part every carrier starts within about 2
-seconds and ends soon after its key goes up. Random on the panel runs at once; `%` opens its settings in
-the expanded panel.
+seconds and ends soon after its key goes up. Random on the panel runs at once; its amount is beside it, and
+**More…** opens its page in the expanded panel.

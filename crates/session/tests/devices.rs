@@ -1247,13 +1247,14 @@ fn a_gesture_on_a_device_in_a_group_is_one_undo_step() {
 fn the_randomizer_moves_a_device_as_one_undo_step_and_repeats_from_a_seed() {
     let mut session = Session::new(project());
     run(&mut session, "device.add", json!({ "track": "Keys", "id": "fm-synth" })).unwrap();
+    let added = session.project().channels[0].devices[0].params.clone();
     let randomized = run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "seed": 5 })).unwrap();
     assert!(randomized["changed"].as_u64().unwrap() > 0);
     let params = session.project().channels[0].devices[0].params.clone();
-    assert!(!params.is_empty());
+    assert_ne!(params, added);
 
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert!(session.project().channels[0].devices[0].params.is_empty());
+    assert_eq!(session.project().channels[0].devices[0].params, added);
     run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "seed": 5 })).unwrap();
     assert_eq!(session.project().channels[0].devices[0].params, params);
 }

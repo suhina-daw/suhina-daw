@@ -1314,7 +1314,9 @@ fn exactly_one_sampler_mode_is_selected_for_each_mode() {
         let selected: Vec<_> = canvas
             .controls
             .iter()
-            .filter(|c| c.x.as_ref().is_some_and(|b| b.parameter == "mode") && control_selected(c, &parameters))
+            .filter(|c| {
+                c.x.as_ref().is_some_and(|b| b.parameter == "mode") && control_selected(c, &Values::new(&parameters))
+            })
             .collect();
         assert_eq!(selected.len(), 1);
         assert!(matches!(selected[0].gesture, UiGesture::Set(target) if f64::from(target) == mode));
@@ -1837,7 +1839,7 @@ fn click_to_focus(position: Pos2) -> Vec<Vec<egui::Event>> {
 }
 
 fn handle_widget() -> Option<Widget> {
-    Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: None })
+    Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: None, dot: false })
 }
 
 #[test]
@@ -1845,7 +1847,8 @@ fn a_handles_offset_moves_where_it_is_grabbed() {
     let mut canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("level"));
     let control = &mut Arc::make_mut(&mut canvas).controls[0];
     control.bounds = [0.0, 0.0, 200.0, 100.0];
-    control.widget = Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: Some(100.0.into()) });
+    control.widget =
+        Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: Some(100.0.into()), dot: false });
     // At half its travel, a handle over 0..200 moved by 100 is at 200, and 300 is its 1.0.
     let (grab, to) = (Pos2::new(200.0, 50.0), Pos2::new(250.0, 50.0));
     let events = vec![
@@ -1855,6 +1858,52 @@ fn a_handles_offset_moves_where_it_is_grabbed() {
         press(to, false),
     ];
     let actions = frames(&canvas, Vec2::new(400.0, 100.0), &[parameter("level", false)], events);
+    let value = last_value(&actions).expect("the handle was dragged");
+    assert!((value - 0.75).abs() < 0.01, "{value}");
+}
+
+#[test]
+fn a_point_moves_both_its_parameters_as_one_gesture() {
+    let mut canvas = one_control([200.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("a"));
+    let control = &mut Arc::make_mut(&mut canvas).controls[0];
+    control.bounds = [0.0, 0.0, 200.0, 100.0];
+    control.y = Some(UiBinding::new("b"));
+    let (grab, to) = (Pos2::new(100.0, 50.0), Pos2::new(150.0, 25.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let parameters = [parameter("a", false), parameter("b", false)];
+    let actions = frames(&canvas, Vec2::new(200.0, 100.0), &parameters, events);
+    let last_of = |id: &str| {
+        actions
+            .iter()
+            .rev()
+            .find(|a| a.params["param"] == id)
+            .map(|a| (a.params["value"].as_f64(), a.params["gesture"].clone()))
+    };
+    let (a, gesture_a) = last_of("a").expect("the point moved along x");
+    let (b, gesture_b) = last_of("b").expect("the point moved along y");
+    assert!((a.unwrap_or(0.0) - 0.75).abs() < 0.01, "{a:?}");
+    assert!((b.unwrap_or(0.0) - 0.75).abs() < 0.01, "{b:?}");
+    assert_eq!(gesture_a, gesture_b);
+}
+
+#[test]
+fn a_negative_drag_scale_runs_a_handles_travel_the_other_way() {
+    let binding = UiBinding { drag_scale: -1.0, ..UiBinding::new("level") };
+    let mut canvas = one_control([200.0, 100.0], false, handle_widget(), UiGesture::Position, binding);
+    Arc::make_mut(&mut canvas).controls[0].bounds = [0.0, 0.0, 200.0, 100.0];
+    let (grab, to) = (Pos2::new(100.0, 50.0), Pos2::new(50.0, 50.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let actions = frames(&canvas, Vec2::new(200.0, 100.0), &[parameter("level", false)], events);
     let value = last_value(&actions).expect("the handle was dragged");
     assert!((value - 0.75).abs() < 0.01, "{value}");
 }

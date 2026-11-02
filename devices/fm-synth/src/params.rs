@@ -72,7 +72,7 @@ pub const RANDOM_SEED: usize = PANEL + 4;
 pub const RANDOM_SECTIONS: usize = PANEL + 5;
 pub const SECTIONS: [&str; 10] =
     ["Envelopes", "Levels", "Waves", "Filter", "LFO", "Pitch envelope", "Modulation", "Stereo", "Ratios", "Algorithm"];
-const PANEL_COUNT: usize = 5 + 3 * SECTIONS.len();
+const PANEL_COUNT: usize = 5 + 2 * SECTIONS.len();
 pub const COUNT: usize = PANEL + PANEL_COUNT;
 
 /// What a new FM Synth starts with beside the defaults: envelopes in time. The defaults stay the
@@ -758,14 +758,14 @@ macro_rules! section_params {
             .in_group("Panel"),
             ParamInfo::toggle(concat!("random.", $p, ".on"), concat!("Randomize ", $name, " On"), $on)
                 .in_group("Panel"),
-            ParamInfo::toggle(concat!("random.", $p, ".lock"), concat!("Lock ", $name), false).in_group("Panel"),
         ]
     };
 }
 
 const PANEL_HEAD: [ParamInfo; 5] = [
     ParamInfo::integer("panel.op", "Selected Operator", (1, 6), 1, Unit::None).in_group("Panel"),
-    ParamInfo::choice("panel.page", "Page", &["Env", "Wave", "Filter", "LFO", "Pitch", "Mod"], 0).in_group("Panel"),
+    ParamInfo::choice("panel.page", "Page", &["Env", "Wave", "Filter", "LFO", "Pitch", "Mod", "Voice"], 0)
+        .in_group("Panel"),
     ParamInfo::choice(
         "panel.expandedPage",
         "Expanded Page",
@@ -778,7 +778,7 @@ const PANEL_HEAD: [ParamInfo; 5] = [
     ParamInfo::integer("random.seed", "Randomize Seed", (0, 99_999), 1, Unit::None).in_group("Panel"),
 ];
 
-const SECTION_PARAMS: [[ParamInfo; 3]; SECTIONS.len()] = [
+const SECTION_PARAMS: [[ParamInfo; 2]; SECTIONS.len()] = [
     section_params!("envelopes", "Envelopes", 0.6, true),
     section_params!("levels", "Levels", 0.4, true),
     section_params!("waves", "Waves", 0.3, true),
@@ -891,8 +891,8 @@ const fn build() -> [ParamInfo; COUNT] {
         i += 1;
     }
     i = 0;
-    while i < 3 * SECTIONS.len() {
-        out[at] = SECTION_PARAMS[i / 3][i % 3];
+    while i < 2 * SECTIONS.len() {
+        out[at] = SECTION_PARAMS[i / 2][i % 2];
         at += 1;
         i += 1;
     }
