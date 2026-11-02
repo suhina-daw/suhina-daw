@@ -4,7 +4,7 @@ read_when: collaboration, peer-to-peer, P2P, shared session, host and guest, pro
 type: decision
 status: proposed
 built: no
-last_verified: 2026-10-19
+last_verified: 2026-11-02
 covers:
   - crates/model/src/lib.rs
   - crates/session/src/lib.rs

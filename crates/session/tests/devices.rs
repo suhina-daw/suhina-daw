@@ -1250,3 +1250,41 @@ fn a_device_is_named_by_its_id_wherever_it_moves() {
     assert_eq!(new_ids.len(), old_ids.len());
     assert!(new_ids.iter().all(|id| !old_ids.contains(id)), "{old_ids:?} {new_ids:?}");
 }
+
+/// Sets `calls` as one gesture on `device`, the last call ending it, as a preset does.
+fn one_gesture(session: &mut Session, device: Value, calls: &[(&str, f64)]) {
+    for (i, (param, value)) in calls.iter().enumerate() {
+        let set = run(
+            session,
+            "device.setParam",
+            json!({"track":1,"device":device,"param":param,"value":value,"continuous":i + 1 < calls.len(),"gesture":"preset"}),
+        );
+        assert!(set.is_ok(), "{set:?}");
+    }
+}
+
+#[test]
+fn a_gesture_that_turns_a_lane_off_is_still_one_undo_step() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({"track":1,"id":"utility"})).unwrap();
+    run(&mut session, "automation.addPoint", json!({"track":1,"device":0,"param":"gain","beat":0,"value":6})).unwrap();
+    let before = session.project().clone();
+    one_gesture(&mut session, json!(0), &[("balance", 0.5), ("gain", 3.0), ("balance", 0.25)]);
+    assert_ne!(session.project(), &before);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before);
+}
+
+#[test]
+fn a_gesture_on_a_device_in_a_group_is_one_undo_step() {
+    let mut session = Session::new(project());
+    for _ in 0..2 {
+        run(&mut session, "device.add", json!({"track":1,"id":"utility"})).unwrap();
+    }
+    run(&mut session, "device.group", json!({"track":1,"device":0,"count":2,"name":"G"})).unwrap();
+    let before = session.project().clone();
+    one_gesture(&mut session, json!("0/0/1"), &[("gain", 3.0), ("balance", 0.5), ("gain", 6.0)]);
+    assert_ne!(session.project(), &before);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before);
+}

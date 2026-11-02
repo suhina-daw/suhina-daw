@@ -3,7 +3,7 @@ description: Tempo and time-signature changes over the song (the tempo map): ste
 read_when: tempo map, tempo change, tempo ramp, time-signature change, meter, bars, beats to samples, beat to frame, tempo.addPoint, timeSignature.add, bar ruler
 type: spec
 status: current
-last_verified: 2026-10-18
+last_verified: 2026-11-02
 covers:
   - crates/model/src/tempo.rs
   - crates/engine/src/tempo.rs
@@ -65,12 +65,16 @@ or frames at the sample rate. Nothing converts with the start tempo alone.
   `T0 / k × (exp(k t / 60) − 1)`. These are exact, so positions are worked out from the map and
   never added up frame by frame: a ramp minutes long does not drift.
 - At a constant tempo the arithmetic is the one the engine has always used (`beats × 60 / T ×
-  rate`), bit for bit, so a project without changes renders exactly as before.
+  rate`), bit for bit, so a project without changes renders exactly as before. In the engine
+  this is `TempoClock` (`crates/engine/src/tempo.rs`): the audio clips, their fades, the
+  stretched clips and the launcher's clock ask it, and it takes that fast path when the map is
+  constant and goes through the map otherwise. Sending a constant tempo through the map instead
+  moves a launched clip by a frame, so the fast path stays.
 - Malformed changes are ignored, not refused: a beat that is not finite, not after beat 0 or past
   beat 120 000, a tempo outside 1 to 999 bpm, more than 10 000 changes. Of two changes on one beat
   the later in the list wins, except a ramp followed by a step: the ramp arrives at its tempo,
   then the tempo jumps (a Live Set's glide that ends in a jump reads this way). The same for signature changes at bar 0, with an invalid signature
-  (a numerator outside 1 to 99, a denominator that is not 1, 2, 4, 8, 16, 32 or 64) or more than
+  (a numerator outside 1 to 99, a denominator that is not 1, 2, 4, 8 or 16) or more than
   10 000. (The project file refuses these, so they come only from an importer or a hand-edited
   model.)
 
@@ -154,7 +158,7 @@ All are edits with one undo step. Tempo points are numbered from 1 in beat order
 | `tempo.addPoint` | `beat` (> 0), `bpm` (20–999), `ramp?` (default false) | adds a change; one of the same kind (step or ramp) already on that beat is replaced |
 | `tempo.movePoint` | `point`, `beat?`, `bpm?`, `ramp?` | changes a point; moved onto a beat with a point of the same kind, it replaces that one |
 | `tempo.deletePoint` | `point` | removes a point |
-| `timeSignature.add` | `bar` (≥ 2), `numerator` (1–99), `denominator` (1, 2, 4, 8, 16, 32, 64) | adds a change at the start of the bar; one already there is replaced |
+| `timeSignature.add` | `bar` (≥ 2), `numerator` (1–99), `denominator` (1, 2, 4, 8, 16) | adds a change at the start of the bar; one already there is replaced |
 | `timeSignature.move` | `bar`, `to?`, `numerator?`, `denominator?` | moves a change to bar `to` or changes its signature |
 | `timeSignature.delete` | `bar` | removes the change at that bar |
 | `transport.followTempoMap` | | puts the launcher clock back on the map after a scene took it off (not an edit) |
@@ -172,13 +176,9 @@ by hand opens; a command never writes a value the file reader refuses.
 | Value | The commands set | A project file holds |
 |---|---|---|
 | Tempo | 20 to 999 bpm (`transport.setTempo`, `tempo.addPoint`, `scene.setTempo`) | 1 to 999 bpm, for the start tempo and every change |
-| Time signature change | numerator 1 to 99, denominator 1, 2, 4 … 64 (`timeSignature.add`) | the same |
-| Start time signature | as a change | each part 1 to 255 ([project file](suhina-format.md)) |
-| A scene's time signature | numerator 1 to 99, denominator 1, 2, 4, 8 or 16 (`scene.setTimeSignature`) | each part from 1 ([project file](suhina-format.md)) |
-
-Open: whether the start and scene time signatures in a file should follow the rule of a change
-(a denominator that is a power of two up to 64), as the commands already do; the file reader
-accepts any whole number from 1 there today.
+| Time signature change | numerator 1 to 99, denominator 1, 2, 4, 8 or 16 (`timeSignature.add`) | the same |
+| Start time signature | as a change | numerator 1 to 255, denominator 1, 2, 4, 8 or 16 ([project file](suhina-format.md)) |
+| A scene's time signature | numerator 1 to 99, denominator 1, 2, 4, 8 or 16 (`scene.setTimeSignature`) | numerator from 1, denominator 1, 2, 4, 8 or 16 ([project file](suhina-format.md)) |
 
 ## The Arrangement
 

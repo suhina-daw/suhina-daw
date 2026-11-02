@@ -3,7 +3,7 @@ description: Self-contained device canvases, image assets, drawing expressions a
 read_when: custom SDK control, device background, icon, photo, texture, XY pad, drawing API, image asset
 type: spec
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs
@@ -38,7 +38,13 @@ A device may also have an expanded panel: one larger fixed-size canvas (`device.
 A device with one has a button beside the X in its header, labelled **Expand** *name* (and
 **Close** *name*'s **expanded panel** while it is open). The panel opens over the main area with
 the device's name and a close button (**Close expanded panel**) along its top; its canvas is
-centred, and scrolls when the main area is smaller. The close button, Escape or a second click on
+centred, and scrolls when the main area is smaller. An expanded canvas with `"strip": true` opens
+instead as a strip at the bottom of the main area, over the device row, its canvas scaled to the
+strip on each axis, up or down, as a strip has no scroll bar (drawings, controls and pointer input alike; text and line widths by the smaller
+axis). The strip starts as tall as the canvas at the strip's width; dragging its header up or down
+changes its height (80 points to the whole main area, kept per device while the app runs) and a
+double click on the header fits it again. A canvas with `"accent_on": true` fills a
+button that is on with the theme's accent rather than the control's active colour. The close button, Escape or a second click on
 the header button closes it, and it closes by itself when its device is no longer shown (another
 track selected, the device removed). Its controls send the same `device.setParam` as the compact
 panel's, so undo, automation and presets do not depend on which is open. No zoom: canvases
@@ -60,7 +66,7 @@ is refused when it names a parameter its device lacks, gives one a control its r
 (a logarithmic slider below zero, a toggle outside 0..1), or draws a canvas the rules here refuse;
 the registry then shows the generated list. The registry's tests fail on such a layout, so a
 shipped one cannot drift from its device. A device crate gives its layout in Rust (the Sampler's
-`layout()`) or as `devices/<name>/panel.json`, listed in `suhina_device_registry::LAYOUT_FILES`:
+`layout()`) or as `devices/<name>/panel.json`, named in its row of `suhina_device_registry::ENTRIES`:
 
 ```json
 {
@@ -182,7 +188,7 @@ are local to the canvas or the control. Layer order is array order; controls dra
 Drawing commands: rectangle, circle, line, path, arc, text, image and four-corner gradient.
 Paths have at most 256 points; filled paths must be convex. Arc tessellation is bounded. Colours are RGBA byte quadruples.
 Text can append a parameter's current value with bounded decimal precision. Numeric drawing
-values can be literals or bounded expressions (parameter, normalized parameter, add, multiply,
+values can be literals or bounded expressions (parameter, normalized parameter, add, multiply, min, max,
 sine, cosine, exponential, natural logarithm, equality and oscillator waveforms). Expression depth is at most 16, with 32768 expression nodes per canvas;
 non-finite results become zero, finite values are bounded before drawing. This supports moving
 markers, response drawings, circular handles, segmented displays and meters driven by parameters.
@@ -202,12 +208,30 @@ Gestures: drag (relative X/Y), position (absolute pointer position, Y upward), t
 Bindings map normalized coordinates to parameter units with optional logarithmic mapping.
 Keyboard arrows edit axes, Shift provides fine adjustment, double click resets defaults;
 Space/Enter activate buttons. A gesture `{"set": 3}` sets the X parameter to the literal integer 3; its value must be inside the declared range. The control name and values are exposed to accessibility.
-A `{"tab": 2}` gesture selects value 2, or returns to zero when already selected.
+A `{"tab": 2}` gesture selects value 2, or returns to zero when already selected. A segmented `set` or `tab` button is drawn on while its parameter holds that value.
+A `graphic` widget (`{"kind": "graphic", "drawing": [...]}`) draws its own drawings and takes no
+input or binding (a display or a curve that must not catch drags). Drawings of a control without a
+widget are not resolved against the theme as widgets' are; they name the theme's palette as
+`[3, 1, 1]` text, `[3, 1, 2]` panel, `[3, 1, 3]` control, `[3, 1, 4]` border and `[3, 1, 5]`
+accent (any alpha). A drawing coloured `[3, 0, 1]` … `[3, 0, 6]` (any alpha) takes a theme token: `--device-display`
+(a display's dark ground, default `#0a1117`), `--device-series-1` … `3` (a device's series, such as
+its bands; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`) `--device-highlight` (`#ffcf7a`) and `--device-spectrum` (`#3fc4e4`), from
+the theme's CSS custom property of that name or the default, with the drawing's alpha. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture A clicked handle takes the focus, and the arrow keys along its travel then move it 1 % of the way (0.1 % with Shift).
+`position`, one binding) draws a line where its parameter is, across its bounds (an X binding: a
+vertical line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 5 points
+of it: dragging sets the value from the pointer as `position` does, a double click resets it, and a
+drag is one undo step. `span` (optional value expressions, canvas units) limits the line and where
+it is grabbed across the other axis. A `value` drawing (`{"kind": "value", "position": [x, y],
+"value": expression, "prefix", "suffix", "decimals", "color", "size", "align"}`) writes a number an
+expression computes. A `{"preset": 0}` gesture applies the canvas's quick preset 0: a button with no bindings that sets
+every value the preset holds (`"presets": [{"name": "OTT", "values": {"amount": 0.7}}]`, at most
+32 presets of 256 values, each id a declared parameter and each value in its range) as one undo
+step; parameters the preset leaves out keep their values.
 Tabs bind only X to a linear parameter whose minimum is zero; the positive tab
 value must be in range. Button widgets show exact-value selection for tabs.
 Click and Space/Enter share the same command and undo path.
 Edits dispatch `device.setParam` with a shared gesture id so a two-axis drag is one undo gesture.
-All bindings reference declared parameter ids, and values use their range/discrete clamping.
+A parameter id cannot start with `#`, which names the host's values. All bindings reference declared parameter ids, and values use their range/discrete clamping.
 A control's widget id belongs to its canvas, so a compact panel and an expanded one drawn together can
 both have a control of the same id. While a `drag` control moves a discrete parameter (integer, choice,
 toggle), the host keeps the unrounded drag position until the button is released, so a slow drag adds up
@@ -239,7 +263,7 @@ Stroke widths and rectangle corner radii are 0..128; text size is 8..48. Image `
 current value and unit to the prefix `text`. `decimals` is 0..8. Unknown fields are rejected.
 
 A value expression uses `op`: `parameter` has `parameter` (id), `normalized` (false), `logarithmic`
-(false); `add` and `multiply` have `a` and `b`; `sin` and `cos` have `value` (radians).
+(false); `add`, `multiply`, `min` and `max` have `a` and `b`; `readout` has `index` (0 – 34) and reads the device's live value of that index ([ADR 0032](../decisions/0032-device-readouts.md)), 0 while it hands none; drawings and `visible_when` may also name `#r0` … `#r34` and `#expanded` (1 while the device's expanded panel is open) as parameters, bindings never; `sin` and `cos` have `value` (radians).
 The `equal` expression has `a` and `b` and returns 1 when their difference is less than 0.0001, otherwise 0; use it for selected segment highlights.
 The parameter expression returns raw units unless `normalized` is true. Use the same
 `logarithmic` flag on bindings and normalized drawings.
@@ -367,7 +391,10 @@ parameter drag calibration. Position controls (envelope handles and XY pads) sta
 mapped directly to their canvas positions.
 
 `UiBinding.drag_scale` defaults to 1 and multiplies drag sensitivity only; it must
-be finite within 0.01..100. Position mapping and keyboard steps are unaffected.
+be finite and within 0.01..100 either way. A negative scale drags and steps the other way (a ratio
+knob over a slope: up is more ratio). Position mapping is unaffected. While a knob or slider is
+dragged the cursor is hidden and held where the drag began, the value following the mouse's raw
+motion, and it reappears there when the drag ends.
 Double-click resets every parameter input, including menus and segmented buttons,
 to its definition default. Passive widgets and host recording actions are excluded.
 `WaveformMenu` accepts six standard shapes, optionally a seventh Wander shape;

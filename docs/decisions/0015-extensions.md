@@ -4,7 +4,7 @@ read_when: extension, add-on, optional component, model weights, model licence, 
 type: decision
 status: proposed
 built: no
-last_verified: 2026-10-19
+last_verified: 2026-11-02
 ---
 
 # 0015: Extensions: optional components outside the tree

@@ -406,7 +406,10 @@ owned by it, as most hosts do: the window stays above Suhina, has no taskbar ent
 own and is minimised with it. Owning works on every system and keeps the editor apart from Suhina's
 own layout; embedding another process's window works only on X11 and Windows. The engine
 names its window in `open_editor` (`owner`: a Win32 `HWND`, an X11 window id); the host makes the editor's window owned by it (Win32 owner window, X11
-`WM_TRANSIENT_FOR`). Embedding is offered as a choice on top
+`WM_TRANSIENT_FOR`). The window's title bar names the track as the views show it and the plug-in,
+such as `2 Bass – Serum 2`, or only the track when its name already holds the plug-in's, as in
+`2 Serum 2`. It says so from the moment it opens and follows a rename or a move of the track.
+Embedding is offered as a choice on top
 of that, Options › Settings › Plug-ins › Editors: *Window* (the default) or *Device view*,
 where the editor shows inside the device panel as part of the chain, as the wrapper
 devices some users buy do by hand for one plug-in at a time. With *Device view* the engine

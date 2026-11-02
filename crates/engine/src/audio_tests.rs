@@ -41,7 +41,10 @@ fn event(clip: &Clip, region: &AudioRegion) -> AudioEvent {
         clip,
         region,
         ramp(),
-        Timing { frames_per_beat: 60.0 / 120.0 * f64::from(SR), tempo_bpm: 120.0, sample_rate: SR, map: None },
+        Timing {
+            clock: crate::tempo::TempoClock::Constant { bpm: 120.0, per_beat: 60.0 / 120.0 * f64::from(SR) },
+            sample_rate: SR,
+        },
         (1.0, 1.0),
     )
     .unwrap()
@@ -68,7 +71,10 @@ fn fades_are_fitted_to_the_clip_and_meet_the_click_guard() {
 /// stretcher refuses them (#164).
 #[test]
 fn a_zero_tempo_or_an_unplayable_sample_rate_is_no_event() {
-    let timing = |tempo_bpm: f64| Timing { frames_per_beat: 24_000.0, tempo_bpm, sample_rate: SR, map: None };
+    let timing = |tempo_bpm: f64| Timing {
+        clock: crate::tempo::TempoClock::Constant { bpm: tempo_bpm, per_beat: 24_000.0 },
+        sample_rate: SR,
+    };
     let c = clip(2.0, 0.0, None);
     assert!(AudioEvent::new(&c, &region(false, &[], 0.0), ramp(), timing(0.0), (1.0, 1.0)).is_none());
     assert!(AudioEvent::new(&c, &region(false, &[], 0.0), ramp(), timing(-120.0), (1.0, 1.0)).is_none());
@@ -94,7 +100,10 @@ fn a_huge_position_in_a_stereo_file_is_silence() {
         &clip(2.0, 0.0, None),
         &warped,
         stereo,
-        Timing { frames_per_beat: 60.0 / 120.0 * f64::from(SR), tempo_bpm: 120.0, sample_rate: SR, map: None },
+        Timing {
+            clock: crate::tempo::TempoClock::Constant { bpm: 120.0, per_beat: 60.0 / 120.0 * f64::from(SR) },
+            sample_rate: SR,
+        },
         (1.0, 1.0),
     )
     .unwrap();
@@ -194,7 +203,7 @@ fn outside_the_file_is_silent_and_bad_clips_are_rejected() {
             &clip(0.0, 0.0, None),
             &region(false, &[], 0.0),
             ramp(),
-            Timing { frames_per_beat: fpb, tempo_bpm: 120.0, sample_rate: SR, map: None },
+            Timing { clock: crate::tempo::TempoClock::Constant { bpm: 120.0, per_beat: fpb }, sample_rate: SR },
             (1.0, 1.0)
         )
         .is_none()
@@ -204,7 +213,7 @@ fn outside_the_file_is_silent_and_bad_clips_are_rejected() {
             &clip(f64::NAN, 0.0, None),
             &region(false, &[], 0.0),
             ramp(),
-            Timing { frames_per_beat: fpb, tempo_bpm: 120.0, sample_rate: SR, map: None },
+            Timing { clock: crate::tempo::TempoClock::Constant { bpm: 120.0, per_beat: fpb }, sample_rate: SR },
             (1.0, 1.0)
         )
         .is_none()
@@ -215,7 +224,7 @@ fn outside_the_file_is_silent_and_bad_clips_are_rejected() {
             &clip(1.0, 0.0, None),
             &region(false, &[], 0.0),
             empty,
-            Timing { frames_per_beat: fpb, tempo_bpm: 120.0, sample_rate: SR, map: None },
+            Timing { clock: crate::tempo::TempoClock::Constant { bpm: 120.0, per_beat: fpb }, sample_rate: SR },
             (1.0, 1.0)
         )
         .is_none()

@@ -175,6 +175,36 @@ pub struct GraphParameter {
 }
 
 impl GraphParameter {
+    /// A device's live value handed to its canvas (`#r0`…), which no list shows.
+    pub(crate) fn is_readout(&self) -> bool {
+        self.id.starts_with('#')
+    }
+
+    /// The live value `index` of a device for its canvas, as the SDK's `readout` expression
+    /// looks it up.
+    pub(crate) fn readout(index: usize, value: f32) -> Option<Self> {
+        let id = suhina_device_sdk::ui::READOUT_IDS.get(index)?;
+        Some(Self::host_value(id, value))
+    }
+
+    /// A value the host hands a canvas under `id` (`#r0`, `#expanded`): read like a parameter,
+    /// never shown in a list or changed by a control.
+    pub(crate) fn host_value(id: &str, value: f32) -> Self {
+        let value = if value.is_finite() { f64::from(value) } else { 0.0 };
+        Self {
+            text: String::new(),
+            default: 0.0,
+            ui: suhina_device_sdk::ParameterUi::default(),
+            control: ParameterControl::default(),
+            unit: String::new(),
+            id: id.into(),
+            name: id.into(),
+            min: value.min(0.0),
+            max: value.max(0.0).max(f64::MIN_POSITIVE),
+            value,
+        }
+    }
+
     /// `parameter` as a panel shows it, at `value`.
     pub(crate) fn new(parameter: &suhina_device_sdk::Parameter, value: f64) -> Self {
         Self {

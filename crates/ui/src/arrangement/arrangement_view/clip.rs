@@ -623,7 +623,7 @@ pub(super) fn clip_box<'a>(
             let mut committed = None;
             match widgets::drag_value(ui, &response, &mut preview, view.gain_db, 0.1, 1.0, CLIP_GAIN_RANGE, 0.0) {
                 Drag::Moving(v) => state.gain_drag = Some((key, v)),
-                Drag::Done(v) => {
+                Drag::Done(v) | Drag::Set(v) => {
                     state.gain_drag = None;
                     committed = Some(v);
                     let db = commands::db_param(v, CLIP_GAIN_RANGE.0);

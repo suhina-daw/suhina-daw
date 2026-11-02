@@ -3,7 +3,7 @@ description: Every executable SDK node, ports, defaults, formulas, state and rea
 read_when: SDK node reference, node ports, DSP primitives, graph authoring, AI device development
 type: spec
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-11-02
 covers:
   - crates/device-sdk/src/sample_resource.rs
   - crates/device-sdk/src/nodes/audio.rs

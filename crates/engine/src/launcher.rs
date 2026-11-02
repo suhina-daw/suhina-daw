@@ -696,8 +696,9 @@ pub(crate) struct Launcher {
     tempo_bpm: f64,
     /// The project's start tempo, which stretch voices are prepared for.
     project_tempo_bpm: f64,
-    /// The arrangement's tempo map in frames and its meter (`docs/spec/tempo-map.md`).
-    map: Arc<TempoMap>,
+    /// The arrangement's tempo, on the clock its tempo map in frames gives, and its meter
+    /// (`docs/spec/tempo-map.md`).
+    clock: crate::tempo::TempoClock,
     meter: Meter,
     /// The clock runs on the map; a scene tempo takes it off the map until the map is edited.
     pub(crate) follows_map: bool,
@@ -781,7 +782,7 @@ impl Launcher {
             bars_before: 0.0,
             pending_signature: None,
             meter,
-            map,
+            clock: crate::tempo::TempoClock::of(&map),
             follows_map: true,
             beat: 0.0,
             tempo_bpm: tempo,
@@ -812,7 +813,7 @@ impl Launcher {
         // An edited tempo map or meter puts the clock back on the map; otherwise a scene's tempo
         // and time signature stay, with their bars.
         self.pending_signature = old.pending_signature;
-        if *self.map == *old.map && self.meter == old.meter {
+        if self.clock == old.clock && self.meter == old.meter {
             self.tempo_bpm = old.tempo_bpm;
             self.follows_map = old.follows_map;
             self.time_signature = old.time_signature;
@@ -820,7 +821,7 @@ impl Launcher {
             self.bar_origin = old.bar_origin;
             self.bars_before = old.bars_before;
         } else {
-            self.tempo_bpm = self.map.bpm_at(self.beat);
+            self.tempo_bpm = self.clock.bpm_at(self.beat);
             self.follows_map = true;
         }
         let frames_per_beat = self.frames_per_beat_at_build;
@@ -877,13 +878,13 @@ impl Launcher {
     /// Whether the clock reads its beat from the tempo map: it follows the map and the map
     /// changes (a constant map is counted frame by frame, as it always was).
     fn on_map(&self) -> bool {
-        self.follows_map && !self.map.is_constant()
+        self.follows_map && self.clock.map().is_some()
     }
 
     /// Puts the tempo at the clock's beat, when the clock follows the map.
     pub(crate) fn tempo_from_map(&mut self) {
         if self.follows_map {
-            self.tempo_bpm = self.map.bpm_at(self.beat);
+            self.tempo_bpm = self.clock.bpm_at(self.beat);
         }
     }
 
@@ -1167,7 +1168,10 @@ fn plan_clip(
                 let tempo = project.transport.tempo_bpm;
                 // Launched clips are not on the arrangement's timeline: they are placed at the
                 // start tempo and follow the launcher clock.
-                let timing = Timing { frames_per_beat, tempo_bpm: tempo, sample_rate, map: None };
+                let timing = Timing {
+                    clock: crate::tempo::TempoClock::Constant { bpm: tempo, per_beat: frames_per_beat },
+                    sample_rate,
+                };
                 let Some(event) = AudioEvent::new(&placed, region, data.clone(), timing, gains) else { continue };
                 // Warped clips are time-stretched like arrangement clips; the stretch voice gets
                 // the region gain, the direct reader has it already.

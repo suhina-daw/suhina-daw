@@ -4,7 +4,7 @@ read_when: own ASIO driver, custom audio driver, universal ASIO driver, FlexASIO
 type: decision
 status: proposed
 built: no
-last_verified: 2026-10-15
+last_verified: 2026-11-02
 covers:
   - crates/output/src/exclusive.rs
   - crates/output/src/devices.rs

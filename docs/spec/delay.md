@@ -3,7 +3,7 @@ description: The built-in stereo delay - its parameters, signal flow, how a time
 read_when: delay, echo, delay device, feedback, ping pong, tempo-synced delay, sixteenths, repitch, fade, jump, freeze, band-pass in the feedback loop, importing Live's Delay, DelayLine elements
 type: spec
 status: current
-last_verified: 2026-10-19
+last_verified: 2026-11-02
 covers:
   - devices/delay/**
   - crates/dsp/src/delay.rs

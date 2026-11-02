@@ -4,7 +4,7 @@ read_when: MCP in the app, attach, suhina-cli mcp --attach, live agent edits, ag
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-28
+last_verified: 2026-11-02
 covers:
   - crates/automation/src/attach.rs
   - crates/automation/src/endpoint.rs

@@ -3,7 +3,7 @@ description: Author data-only effects, MIDI effects and instruments in Rust or w
 read_when: make an effect, MIDI effect or instrument, SDK tutorial, .sd example, node discovery
 type: howto
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-11-01
 covers:
   - crates/device-sdk/src/author.rs
   - crates/device-sdk/src/ui/widgets.rs
@@ -373,8 +373,8 @@ A built-in device (`devices/<name>`) is native Rust, not a `.sd` graph. Its pane
 SDK's UI part only: `suhina_device_sdk::builtin::Layout` holds a compact canvas (`ui`), an
 optional expanded one and how each parameter is presented, by parameter id. Parameters come
 from the device's `DeviceInfo`; a layout cannot declare one. A device crate gives its layout in
-Rust (the Sampler's `layout()`) or as `devices/<name>/panel.json`, listed in
-`suhina_device_registry::LAYOUT_FILES`; `suhina_device_registry::panel(id)` loads it by id, and
+Rust (the Sampler's `layout()`) or as `devices/<name>/panel.json`, named in the device's row of
+`suhina_device_registry::ENTRIES`; `suhina_device_registry::panel(id)` loads it by id, and
 a test fails when it names a parameter its device lacks. A device without a layout gets the
 generated list. See [sdk-custom-ui.md](spec/sdk-custom-ui.md) › Layouts for built-in devices.
 

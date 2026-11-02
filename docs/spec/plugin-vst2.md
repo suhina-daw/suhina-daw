@@ -3,7 +3,7 @@ description: The VST2 interface as Suhina holds it — the entry points, the AEf
 read_when: VST2, VST 2, AEffect, opcode, op-code, dispatcher, audioMaster, VstEvents, VstMidiEvent, VstTimeInfo, state chunk, effGetChunk, effSetChunk, VSTPluginMain, main_macho, vestige, mock VST2, probe, vst2 feature, test:vst2, --vst2-probe, SUHINA_TEST_VST2
 type: spec
 status: draft
-last_verified: 2026-10-30
+last_verified: 2026-11-01
 covers:
   - crates/plugin-host/src/vst2/**
   - crates/plugin-host/tests/manual.rs

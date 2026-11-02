@@ -4,7 +4,7 @@ read_when: latency, output latency, round-trip latency, monitoring latency, buff
 type: decision
 status: proposed
 built: no
-last_verified: 2026-10-15
+last_verified: 2026-11-02
 covers:
   - crates/output/src/lib.rs
   - crates/output/src/devices.rs

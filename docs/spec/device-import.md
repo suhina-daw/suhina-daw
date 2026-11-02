@@ -81,7 +81,7 @@ comes in as it (otherwise as a placeholder):
 | Compressor | compressor: stereo-linked, soft knee, side-chain high-pass, dry/wet | own | DSP done; import planned |
 | Glue Compressor | bus compressor | own, Airwindows (MIT) for reference | planned |
 | Limiter | limiter: brickwall, 1.5 ms lookahead | own | DSP done; import planned |
-| Multiband Dynamics | multiband dynamics, upward and downward | own crossovers and detectors | planned |
+| Multiband Dynamics | multiband: three bands, above and below stages ([spec](multiband.md)) | own crossovers and level followers | done; side-chain planned |
 | Delay | delay ([spec](delay.md)) | own delay lines | DSP done; import done |
 | Echo | modulation delay | own delay lines | planned |
 | Reverb | reverb ([spec](reverb.md)) | own | DSP done; import done |

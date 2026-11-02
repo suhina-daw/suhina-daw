@@ -4,7 +4,7 @@ read_when: MIDI input, MIDI controller, keyboard, arm, armed track, track.setArm
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-29
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/live.rs

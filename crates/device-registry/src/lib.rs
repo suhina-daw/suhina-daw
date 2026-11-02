@@ -55,7 +55,7 @@ enum LayoutSource {
 }
 
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const ENTRIES: [Entry; 16] = [
+pub const ENTRIES: [Entry; 17] = [
     Entry {
         info: &suhina_device_fm_synth::INFO,
         make: || Box::new(suhina_device_fm_synth::FmSynth::new()),
@@ -114,6 +114,12 @@ pub const ENTRIES: [Entry; 16] = [
         info: &suhina_device_compressor::INFO,
         make: || Box::new(suhina_device_compressor::Compressor::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/compressor/panel.json")),
+        file: None,
+    },
+    Entry {
+        info: &suhina_device_multiband::INFO,
+        make: || Box::new(suhina_device_multiband::Multiband::new()),
+        layout: LayoutSource::Json(include_str!("../../../devices/multiband/panel.json")),
         file: None,
     },
     Entry {
@@ -191,6 +197,18 @@ pub fn layout_files() -> impl Iterator<Item = (&'static str, &'static str)> {
         LayoutSource::Json(text) => Some((&*entry.info.id, text)),
         LayoutSource::Generated | LayoutSource::Rust(_) => None,
     })
+}
+
+/// The layouts that do not load, by device id with the reason: such a device shows the generated
+/// parameter list instead, so the app writes these to its log at start.
+pub fn layout_errors() -> Vec<(&'static str, String)> {
+    DEVICES
+        .iter()
+        .filter_map(|info| match layout(&info.id)? {
+            Err(e) => Some((&*info.id, e.to_string())),
+            Ok(layout) => layout.panel(info).err().map(|e| (&*info.id, e.to_string())),
+        })
+        .collect()
 }
 
 /// The panel of the device with this id: its parameters from its `DeviceInfo`, laid out by its

@@ -3,7 +3,7 @@ description: How much of Ableton Live 12's documented functionality Suhina has t
 read_when: Asking where the project stands against Live, planning parity work, or deciding which milestone closes which gap.
 type: plan
 status: draft
-last_verified: 2026-10-19
+last_verified: 2026-11-01
 covers:
   - scripts/parity/**
   - .github/workflows/parity-notice.yml
@@ -75,8 +75,8 @@ documentation and UI). The scope decision it leads to is
 | Same, over the scope the roadmap aims at (also without accessibility) | **about 32 %** |
 | Weighting each chapter by its numbered sections instead of its pages | **17 %** (the two weightings agree) |
 | Numbered manual sections | **344**, of which **111 (32 %)** sit in chapters Suhina has not started at all |
-| Built-in devices | **12** (10 effects, 1 MIDI effect, 1 instrument) against Live's 63 (42 audio effects, 8 MIDI effects, 13 instruments) |
-| Commands | **274**, every one reachable from the UI, the CLI and MCP |
+| Built-in devices | **13** (11 effects, 1 MIDI effect, 1 instrument) against Live's 63 (42 audio effects, 8 MIDI effects, 13 instruments) |
+| Commands | **275**, every one reachable from the UI, the CLI and MCP |
 | Still absent as whole features | MPE, Grooves, Tuning, Comping, Racks, Clip Envelopes, Push, Link, video, accessibility |
 <!-- parity:end -->
 
@@ -155,7 +155,7 @@ documented behaviour that exists today.
 | 26 | Automation and Editing Envelopes | 22 | 58 % | partial | Envelopes for track volume, pan and mute, built-in, .sd and plug-in device parameters: breakpoints with curved segments and jumps, saved, played in playback and renders (64-frame steps, ramped mixer gains), a manual change turning a lane off until re-enabled. Lanes under each track in the Arrangement: a parameter chooser with a search, the automated parameters first, devices and parameter groups folded under headings, points added, moved on the grid, selected and moved or deleted together, curves bent by dragging, re-enabled from the lane, a click near the line adding a point on it, a faint line at the value of a lane without points; a time range painted on a lane copied, pasted onto any lane, duplicated right after itself and deleted, and shapes inserted into it (sine, triangle, saws, square, ramps, curves, swell) with a depth and cycles a bar, live while dragged, into a point's segment from its menu or as the shape new points take; a curve handle half-way along each segment; a click adds a point on the line (anywhere, as a setting); a range's points scaled live, their corners and jumps rounded into curves or thinned to fewer bent segments, the arrows moving selected points; the automation under a clip moving, copying and duplicating with it, a box from a track picking its lanes' points. Missing recording, drawing with a pencil, plug-in lanes in the view, send, master and tempo automation, locking. |
 | 27 | Clip Envelopes | 13 | 0 % | absent | No clip envelopes. |
 | 28 | Working with Video | 6 | 0 % | absent | No video import or window. |
-| 29 | Live Audio Effect Reference | 139 | 21 % | partial | Suhina has 11 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, overdrive, saturator, compressor, limiter, delay, reverb) against 42 documented audio effects; the EQ, delay and reverb take every parameter of their counterparts, the saturator all but Hi-Quality, several others are close in kind but far narrower in parameters and modes. |
+| 29 | Live Audio Effect Reference | 139 | 23 % | partial | Suhina has 12 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, overdrive, saturator, compressor, multiband, limiter, delay, reverb) against 42 documented audio effects; the EQ, delay and reverb take every parameter of their counterparts, the saturator all but Hi-Quality, the multiband all but the side-chain and the band merge buttons, several others are close in kind but far narrower in parameters and modes. |
 | 30 | Live MIDI Effect Reference | 13 | 10 % | started | One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key window that blocks, folds or limits notes; its step buttons are planned. SDK MIDI-effect graphs run before the instrument too. The other 7 documented MIDI effects are missing. |
 | 31 | Live Instrument Reference | 120 | 12 % | started | FM synth and single-source sample/granular instrument against 13 instruments; graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades, editable automatic slice boundaries with persistent corrections, source-tempo grid/snap and stereo waveform navigation, and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; Simpler and a one-sample Sampler from a Live Set import as the sampler with their sample, region, tuning, envelope, filter and slicing; no multisample zones, drum sampler, wavetable, subtractive or physical modelling yet. |
 | 32 | Max for Live | 6 | 5 % | planned | ADR 0021 defines data-only .sd graphs with a Rust SDK, DSP runtime and custom UI nodes; typed sample resources, polyphonic voice/grain subgraphs, slicing, stretch and versioned components are executable through the Rust host API; visual graph editing is planned. Imported Max devices remain placeholders; no Max runtime. |
@@ -179,7 +179,7 @@ documented behaviour that exists today.
 |---|---|---|
 | Views and editing (ch 6-10, 16) | 140 | 47 % |
 | Browser, files, project (ch 4, 5) | 103 | 48 % |
-| Devices (ch 23-25, 29-31) | 338 | 21 % |
+| Devices (ch 23-25, 29-31) | 338 | 22 % |
 | Mixing, routing, I/O (ch 17, 18, 38) | 47 | 48 % |
 | Automation, envelopes (ch 26, 27) | 35 | 36 % |
 | Generative/transform (ch 11-15) | 67 | 7 % |
@@ -197,10 +197,10 @@ last table in this section.
 <!-- parity:begin device-counts -->
 | | Live 12 | Suhina equivalent exists | Suhina plans one (ROADMAP) | No counterpart named |
 |---|---|---|---|---|
-| Audio effects | 42 | 13 | 6 | 23 |
+| Audio effects | 42 | 13 | 5 | 23 |
 | MIDI effects | 8 | 1 | 0 | 7 |
 | Instruments | 13 | 2 | 8 | 3 |
-| **All** | **63** | **16** | **14** | **33** |
+| **All** | **63** | **16** | **13** | **33** |
 <!-- parity:end -->
 
 <!-- parity:begin device-none -->
@@ -241,7 +241,7 @@ does not name (Meld, Electric, Impulse, External Instrument).
 | Hybrid Reverb | 29.23 | convolution and algorithmic reverb | planned | ROADMAP: algorithmic and convolution reverb |
 | Limiter | 29.24 | brickwall limiter | equivalent | Suhina limiter (1.5 ms lookahead) |
 | Looper | 29.25 | live looping | none |  |
-| Multiband Dynamics | 29.26 | multiband dynamics | planned | ROADMAP: multiband dynamics |
+| Multiband Dynamics | 29.26 | multiband dynamics | close | Suhina multiband: three bands, above and below stages, Amount and Time, imported; no side-chain yet (docs/spec/multiband.md) |
 | Overdrive | 29.27 | overdrive pedal | equivalent | Suhina overdrive |
 | Pedal | 29.28 | distortion pedal | none |  |
 | Phaser-Flanger | 29.29 | phaser and flanger | none |  |
@@ -314,6 +314,7 @@ placeholders. None of them run today.
 | overdrive | effect | pedal-style: band, drive, tone, dynamics, dry/wet (7 parameters) |
 | saturator | effect | eight curves, Color filters and their inverse, post clip, waveshaper, dry/wet; oversampled (18 parameters) |
 | compressor | effect | stereo-linked, soft knee, side-chain high-pass, dry/wet (9 parameters) |
+| multiband | effect | three bands, above and below stages, solo, Amount, Time; live levels, gain change and spectrum on its panel (39 parameters) |
 | limiter | effect | brickwall, 1.5 ms lookahead (3 parameters) |
 | delay | effect | stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze (27 parameters) |
 | reverb | effect | algorithmic: input band, early reflections, feedback delay network with damping, chorus, freeze (32 parameters) |
@@ -353,7 +354,7 @@ or does something Live does not:
 <!-- parity:begin gap-table -->
 | Gap | Manual pages | Today | What closing it means |
 |---|---|---|---|
-| Devices: effects and instruments | 338 (ch 23-25, 29-31) | 21 % | 35 more audio effects and 12 more instruments, or a decision to cover the common ones only |
+| Devices: effects and instruments | 338 (ch 23-25, 29-31) | 22 % | 35 more audio effects and 12 more instruments, or a decision to cover the common ones only |
 | Browser and file management depth | 103 (ch 4, 5) | 48 % | collections, tag editor, project folders, collect files, unused files, packs, cloud |
 | Views and clip editing | 140 (ch 6-10, 16) | 47 % | MIDI note editor, clip view panels, time selections |
 | MIDI tools, MPE, grooves, tuning | 67 (ch 11-15) | 7 % | transformation and generative tools, MPE editing, groove pool, tuning systems |

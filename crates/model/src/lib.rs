@@ -20,8 +20,8 @@ pub mod names;
 mod tempo;
 
 pub use tempo::{
-    BarPosition, MAX_BPM, MAX_CHANGE_BEAT, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, MIN_BPM, Meter, TempoMap,
-    TempoPoint, TimeSignatureChange, valid_bpm,
+    BarPosition, MAX_BPM, MAX_CHANGE_BEAT, MAX_DENOMINATOR, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, MIN_BPM,
+    Meter, TempoMap, TempoPoint, TimeSignatureChange, valid_bpm,
 };
 
 pub use audio_data::{AudioData, AudioPool};

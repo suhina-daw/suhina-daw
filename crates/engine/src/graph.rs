@@ -89,10 +89,9 @@ impl Graph {
         };
 
         let tempo = Arc::new(project.transport.tempo_map(f64::from(sample_rate)));
-        let frames_per_beat = tempo.start_per_beat();
-        // Audio events follow the map only when it changes, so a constant tempo plays exactly as
-        // it always did.
-        let changing = (!tempo.is_constant()).then(|| Arc::clone(&tempo));
+        // Audio events follow the map only when it changes (the clock's fast path), so a constant
+        // tempo plays exactly as it always did.
+        let clock = crate::tempo::TempoClock::of_with(&tempo, bpm, tempo.start_per_beat());
         let column_of = |track: TrackId| {
             project
                 .launcher
@@ -170,7 +169,7 @@ impl Graph {
                                     end: to_frame(clip.start + clip.length),
                                     gain_left: gains.0 * gain,
                                     gain_right: gains.1 * gain,
-                                    fades: Fades::on_map(clip, &tempo, sample_rate),
+                                    fades: Fades::on(clip, &crate::tempo::TempoClock::of(&tempo), sample_rate),
                                     column,
                                     bus,
                                 });
@@ -197,7 +196,7 @@ impl Graph {
                                     end,
                                     gain_left: gains.0 * gain,
                                     gain_right: gains.1 * gain,
-                                    fades: Fades::on_map(clip, &tempo, sample_rate),
+                                    fades: Fades::on(clip, &crate::tempo::TempoClock::of(&tempo), sample_rate),
                                     column,
                                     bus,
                                     meter,
@@ -205,8 +204,7 @@ impl Graph {
                                 });
                                 continue;
                             }
-                            let timing =
-                                audio::Timing { frames_per_beat, tempo_bpm: bpm, sample_rate, map: changing.clone() };
+                            let timing = audio::Timing { clock: clock.clone(), sample_rate };
                             audio_events.extend(AudioEvent::new(clip, region, data.clone(), timing, gains).map(
                                 |event| ArrangedAudio {
                                     event,

@@ -144,6 +144,11 @@ fn with_state<R>(id: WindowId, f: impl FnOnce(&mut State) -> R) -> Option<R> {
 /// ([`Window::open_embedded`]), so nothing to do.
 pub(crate) fn place(_id: WindowId, _placement: Placement) {}
 
+/// Sets what window `id`'s title bar says.
+pub(crate) fn set_title(id: WindowId, title: &str) {
+    with_state(id, |s| s.window.setTitle(&NSString::from_str(title)));
+}
+
 /// Resizes window `id` so its inside is `size` (a plug-in asked for it).
 pub(crate) fn resize(id: WindowId, size: Size) {
     with_state(id, |s| {

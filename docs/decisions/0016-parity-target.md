@@ -4,7 +4,7 @@ read_when: parity, feature comparison, how far are we from Live, scope of the pr
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-10-28
+last_verified: 2026-11-02
 ---
 
 # 0016: Parity target: what Suhina compares itself to, and what it leaves out

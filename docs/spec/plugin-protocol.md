@@ -37,6 +37,7 @@ raises its version and adds a row here.
 | 12 | ARA: `ara_playback` and `ara_notes`, unasked |
 | 13 | ARA: `ara_export` and `ara_import`, a clip's edits carried to another track |
 | 14 | `param_changed`, unasked (#828); `ara_playback`'s `cycle` and `cycle_on`; `reconfigure` and `reconfigured` |
+| 15 | `open_editor` may carry the `title` of the editor's own window; `editor_title` changes it later (not answered) |
 
 **Block region** (`ipc::region`): 2, events as fixed 16-byte records with their frame; 3, the
 block's followers ([plug-in hosting](plugin-hosting.md) › One round trip). **ARA audio source**
@@ -53,9 +54,10 @@ Messages go over a local socket or pipe, one JSON object per message with an `op
   (`set_state` with a VST3 controller's state beside the component's), parameters, editors, and
   `reconfigure` (below). An `error` carries the instance of the request it answers.
 - **Editors:** `open_editor` names the window that owns the editor (`owner`: a Win32 `HWND` or an
-  X11 window id) and whether it is `embedded` in it; `place_editor` puts an embedded editor in
-  the window's pixels and is not answered; `fit_editor` asks an embedded editor to take the room
-  it has.
+  X11 window id), whether it is `embedded` in it, and the `title` of an editor in a window of its
+  own (without one, the plug-in's name, or a CLAP plug-in's id); `editor_title` changes that title and is not answered;
+  `place_editor` puts an embedded editor in the window's pixels and is not answered; `fit_editor`
+  asks an embedded editor to take the room it has.
 - **ARA** ([ADR 0033](../decisions/0033-ara-hosting.md)): `load` may carry a document,
   `ara_update` changes it, `ara_select` tells its editor the selected clip, and `ara_export` and
   `ara_import` carry a clip's edits to another track.

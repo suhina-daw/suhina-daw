@@ -4,7 +4,7 @@ read_when: preview, audition, preview voice, add a sample while playing, AudioPo
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-19
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/preview.rs
   - crates/engine/src/swap.rs
