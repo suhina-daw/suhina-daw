@@ -2188,27 +2188,82 @@ fn a_header_volume_and_pan_take_a_typed_number() {
     assert!((channel(&harness).pan + 0.5).abs() < 0.01, "pan typed: {}", channel(&harness).pan);
 }
 
-/// Parts of two takes that meet show a crossfade with a handle, and its drag sets the fades of
-/// both parts (#1078).
+/// Two takes of one audio content on the Loop track, with nothing on the track yet.
+fn window_with_audio_takes() -> Harness<'static, App> {
+    let (mut project, waveforms) = super::project_with_audio();
+    let lane = project.arrangement.lanes.iter_mut().find(|l| l.name == "Loop").unwrap();
+    let track = lane.track.unwrap();
+    let clip = suhina_engine::model::Clip { loop_range: None, length: 4.0, ..lane.clips.remove(0) };
+    for n in 1..=2 {
+        project.arrangement.takes.push(suhina_engine::model::TakeLane {
+            track,
+            name: format!("Take {n}"),
+            clips: vec![clip.clone()],
+            color: None,
+        });
+    }
+    project.assign_ids().unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    app.set_waveforms(waveforms);
+    let mut harness = window(app);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness
+}
+
+/// Parts of two audio takes that meet show one crossfade with a handle at each end, in place of
+/// their own fades at the cut, and a drag of either end sets the fades of both parts (#1078).
 #[test]
 fn a_crossfade_between_parts_of_two_takes_shows_and_its_handle_sets_its_length() {
-    let mut harness = window_with_drums_takes(8.0);
-    assert!(harness.query_by_label("Crossfade on Drums").is_none(), "nothing has been comped");
-    let track = |h: &Harness<'static, App>| {
-        let project = h.state().session().map(|s| s.project().clone()).unwrap();
-        project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap().0
-    };
-    let id = track(&harness);
+    let mut harness = window_with_audio_takes();
+    assert!(harness.query_by_label("Crossfade end on Loop").is_none(), "nothing has been comped");
+    let id = 30;
     // Different passes of the content, so the parts are of two takes.
+    let moved = json!({ "track": id, "takes": [2], "pieces": [1], "by": 4.0 });
+    harness.state_mut().run(&Action::new("take.movePieces", moved));
+    harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 1 })));
+    harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 2 })));
+    harness.run();
+    let at = harness.get_by_label("Crossfade end on Loop").rect().center();
+    drag_between(&mut harness, at, at + egui::vec2(20.0, 0.0));
+    let fades = |h: &Harness<'static, App>| {
+        let project = h.state().session().map(|s| s.project().clone()).unwrap();
+        let clips = &project.arrangement.lanes.iter().find(|l| l.track.map(|t| t.0) == Some(id)).unwrap().clips;
+        let out = clips.iter().map(|c| c.fade_out).fold(0.0, f64::max);
+        let into = clips.iter().map(|c| c.fade_in).fold(0.0, f64::max);
+        (out, into)
+    };
+    let (out, into) = fades(&harness);
+    assert!(out > 0.5, "the drag made it longer: {out}");
+    assert_eq!(out, into, "the two parts' fades are one crossfade");
+    // The other end mirrors it: dragged towards the cut, the crossfade gets shorter.
+    let at = harness.get_by_label("Crossfade start on Loop").rect().center();
+    drag_between(&mut harness, at, at + egui::vec2(10.0, 0.0));
+    let (shorter, into) = fades(&harness);
+    assert!(shorter < out, "{shorter} is shorter than {out}");
+    assert_eq!(shorter, into);
+    // The parts' fades at the cut have no handles of their own: with both parts picked, each shows
+    // only the handle of its outer edge.
+    harness.state_mut().run(&Action::new("selection.selectAll", json!({})));
+    harness.run();
+    let hits = |h: &Harness<'static, App>, which: &str| h.query_all_by_label_contains(which).count();
+    assert_eq!(hits(&harness, "Crossfade end on Loop"), 1, "the crossfade stays");
+    assert_eq!(hits(&harness, "Fade-out of"), 1, "only the last part's fade-out");
+    assert_eq!(hits(&harness, "Fade-in of"), 1, "only the first part's fade-in");
+}
+
+/// Notes do not crossfade: parts of two MIDI takes that meet show nothing over their cut.
+#[test]
+fn parts_of_two_midi_takes_show_no_crossfade() {
+    let mut harness = window_with_drums_takes(8.0);
+    let project = harness.state().session().map(|s| s.project().clone()).unwrap();
+    let id = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap().0;
     let moved = json!({ "track": id, "takes": [2], "pieces": [1], "by": 8.0 });
     harness.state_mut().run(&Action::new("take.movePieces", moved));
     harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 1 })));
     harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 2 })));
     harness.run();
-    let at = harness.get_by_label("Crossfade on Drums").rect().center();
-    drag_between(&mut harness, at, at + egui::vec2(20.0, 0.0));
-    let lane = harness.state().session().map(|s| s.project().clone()).unwrap();
-    let clips = &lane.arrangement.lanes.iter().find(|l| l.track.map(|t| t.0) == Some(id)).unwrap().clips;
-    let fade = clips.iter().find_map(|c| (c.fade_out > 0.5).then_some(c.fade_out));
-    assert!(fade.is_some(), "the drag made it longer: {clips:?}");
+    assert!(harness.query_by_label("Crossfade end on Drums").is_none());
 }

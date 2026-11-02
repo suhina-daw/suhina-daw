@@ -242,6 +242,8 @@ pub struct CompCut {
     pub track: TrackId,
     /// The part before the cut.
     pub left: ClipId,
+    /// The part after the cut.
+    pub right: ClipId,
     pub beat: f64,
     /// The crossfade's whole length, in beats.
     pub length: f64,
@@ -651,7 +653,7 @@ pub(crate) fn inside_lanes<T: std::borrow::Borrow<Lane>>(lanes: &[T], index: usi
     lanes.iter().skip(index.saturating_add(1)).take_while(|l| l.borrow().depth > depth).count()
 }
 
-/// The cuts where parts of two takes meet on a track, which crossfade (#1078).
+/// The cuts where audio parts of two takes meet on a track, which crossfade (#1078).
 fn comp_cuts(project: &Project) -> Vec<CompCut> {
     let bpm = project.transport.tempo_bpm;
     let mut cuts = Vec::new();
@@ -666,10 +668,15 @@ fn comp_cuts(project: &Project) -> Vec<CompCut> {
                 continue;
             };
             let (from, to) = (project.comp_source(track, left), project.comp_source(track, right));
-            if from.is_some() && to.is_some() && from != to && !left.ara && !right.ara {
+            // Notes do not fade, so only audio parts show one.
+            let audio = project
+                .content(left.content)
+                .is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))));
+            if audio && from.is_some() && to.is_some() && from != to && !left.ara && !right.ara {
                 cuts.push(CompCut {
                     track,
                     left: left.id,
+                    right: right.id,
                     beat,
                     length: Project::comp_crossfade_beats(left, right, bpm),
                     room: (left.length - left.fade_in).min(right.length - right.fade_out),

@@ -180,10 +180,15 @@ content of its own), so nothing extra is stored and a trimmed part keeps its tak
   of the two parts' fades at the cut, and 10 ms when neither has one. An audio part comped from a take
   gets fades as long as Settings › Arrangement › *Take crossfade* says (10, 20 or 40 ms, or a custom
   length), so its outer edges never click either. The setting is for parts comped from then on.
-- A cut with a crossfade shows a cross over the cut, at least wide enough to see, and a handle at its
-  top. **Dragging the handle** sideways sets the crossfade's length, up to the shorter part's, as
-  both parts' fades at the cut (`take.setCrossfade {clip, length?}`, one undo step); the pointer over
-  it says the length in milliseconds. A **double-click** puts it back to the length in Settings.
+- A cut between audio parts shows its crossfade as one thing over the cut, in place of the parts' own fades there:
+  a lit span with its two equal-power curves, half of it on each side of the cut and at least wide
+  enough to see. The parts' waveforms go on at full level up to the cut, and their fade handles at
+  the cut are gone; their outer edges keep theirs. With the pointer near, a square handle shows at
+  each top end of the span. **Dragging either** sets the crossfade's length, up to the shorter
+  part's: that end follows the pointer and the other mirrors it, and the length shows in
+  milliseconds meanwhile. It is stored as both parts' fades at the cut
+  (`take.setCrossfade {clip, length?}`, one undo step). A **double-click** on a handle puts it back
+  to the length in Settings.
 - **A part takes its takes along.** A clip on the track that is a part of a take takes what all the
   track's takes hold under it to where it lands, cut to its span, in the same undo step: moved
   (`clip.move`, `clip.moveMany`) the pieces leave where they were; copied (a Ctrl drag, Ctrl+C and

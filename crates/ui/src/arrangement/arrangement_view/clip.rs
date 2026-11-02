@@ -770,6 +770,10 @@ pub(super) fn clip_box<'a>(
     if clip.audio && fits && state.clip_drag.is_none_or(|d| !mine(&d)) && (pointer_in || selected || fading) {
         let grid = fade_grid;
         for edge in [FadeEdge::In, FadeEdge::Out] {
+            // The crossfade over the cut has the handles there.
+            if crossfades_at(timeline, clip.id, edge) {
+                continue;
+            }
             let (current, now, other) = match edge {
                 FadeEdge::In => (clip.fade_in, shown.fade_in, shown.fade_out),
                 FadeEdge::Out => (clip.fade_out, shown.fade_out, shown.fade_in),
@@ -955,6 +959,15 @@ pub(super) fn clip_box<'a>(
         }
     }
 
+    // At a cut the crossfade is drawn over it: the part plays on at full level up to there, so it
+    // draws no fade of its own.
+    if crossfades_at(timeline, clip.id, FadeEdge::In) {
+        shown.fade_in = 0.0;
+    }
+    if crossfades_at(timeline, clip.id, FadeEdge::Out) {
+        shown.fade_out = 0.0;
+    }
+
     // Copying (Ctrl held): the clip stays where it is drawn, and its copy shows where it lands.
     let copying = state.clip_drag.is_some_and(|d| d.copy || copy_key) && (at - clip.start).abs() > 1e-9;
     let paint_at = |start: f64| {
@@ -1095,26 +1108,7 @@ pub(super) fn clip_box<'a>(
     }
     for (edge, hover) in handles {
         let length = if edge == FadeEdge::In { shown.fade_in } else { shown.fade_out };
-        let handle = fade_handle(rect, edge, length as f32 * state.beat_width);
-        // `.clip-fade-handle`: its fill (`background-color`), border and radius, or the
-        // `clip.fade-handle` artwork.
-        let _style = crate::kit::style_class::enter("clip-fade-handle");
-        let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
-        let state = if hover > 0.5 { crate::kit::skin::State::Hover } else { crate::kit::skin::State::Normal };
-        if !crate::kit::skin::paint(&handle_painter, handle, "clip.fade-handle", state, fill, 0.0) {
-            let authored = crate::kit::style_class::computed();
-            if authored.as_ref().is_some_and(|c| c.authored.background || c.authored.border) {
-                crate::kit::native_css::surface(&handle_painter, handle, 0.0, fill);
-            } else {
-                handle_painter.rect_filled(handle, 0.0, fill);
-                handle_painter.rect_stroke(
-                    handle,
-                    0.0,
-                    theme::hairline(theme::window_background()),
-                    StrokeKind::Outside,
-                );
-            }
-        }
+        paint_fade_handle(&handle_painter, fade_handle(rect, edge, length as f32 * state.beat_width), hover);
     }
     for (edge, hover) in curves {
         let length = if edge == FadeEdge::In { shown.fade_in } else { shown.fade_out };
@@ -1123,6 +1117,24 @@ pub(super) fn clip_box<'a>(
         handle_painter.circle(center, CURVE_HANDLE / 2.0, fill, theme::hairline(theme::window_background()));
     }
     result
+}
+
+/// Draws a fade handle. `.clip-fade-handle` gives its fill (`background-color`), border and radius,
+/// or the `clip.fade-handle` artwork does.
+fn paint_fade_handle(painter: &egui::Painter, handle: Rect, hover: f32) {
+    let _style = crate::kit::style_class::enter("clip-fade-handle");
+    let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
+    let state = if hover > 0.5 { crate::kit::skin::State::Hover } else { crate::kit::skin::State::Normal };
+    if crate::kit::skin::paint(painter, handle, "clip.fade-handle", state, fill, 0.0) {
+        return;
+    }
+    let authored = crate::kit::style_class::computed();
+    if authored.as_ref().is_some_and(|c| c.authored.background || c.authored.border) {
+        crate::kit::native_css::surface(painter, handle, 0.0, fill);
+    } else {
+        painter.rect_filled(handle, 0.0, fill);
+        painter.rect_stroke(handle, 0.0, theme::hairline(theme::window_background()), StrokeKind::Outside);
+    }
 }
 
 /// The square of a fade handle: at the clip's top corner with no fade, at the fade's end along
@@ -2025,9 +2037,20 @@ pub(super) fn take_lanes(
     }
 }
 
-/// The crossfade at a cut between parts of two takes on a track (#1078): a cross over the cut, at
-/// least wide enough to see, and a handle at its top whose drag sets its length and whose
-/// double-click puts it back to the length in Settings.
+/// Whether `clip`'s `edge` is a cut between parts of two takes, where the crossfade stands in for
+/// its fade (#1078).
+fn crossfades_at(timeline: &Timeline, clip: ClipId, edge: FadeEdge) -> bool {
+    timeline.comp_cuts.iter().any(|c| match edge {
+        FadeEdge::In => c.right == clip,
+        FadeEdge::Out => c.left == clip,
+    })
+}
+
+/// The crossfade at a cut between parts of two takes on a track (#1078), in place of the parts' own
+/// fades there: its two curves over the span it plays in, half of it on each side of the cut, at
+/// least wide enough to see. A square handle at each top end, shown with the pointer near, sets its
+/// length: the end follows the pointer and the other end mirrors it. A double-click on one puts it
+/// back to the length in Settings.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn comp_crossfade(
     ui: &mut Ui,
@@ -2041,47 +2064,71 @@ pub(super) fn comp_crossfade(
 ) {
     let x = x_of(cut.beat);
     let held = state.comp_fade_drag.filter(|(clip, _)| *clip == cut.left);
-    if held.is_none() && (x < painter.clip_rect().left() - 12.0 || x > painter.clip_rect().right() + 12.0) {
-        return;
-    }
     let length = held.map_or(cut.length, |(_, length)| length);
     let half = ((length / 2.0) as f32 * state.beat_width).max(4.0);
-    let ink = theme::text_primary().gamma_multiply(0.85);
-    let line = Stroke::new(1.0, ink);
-    painter.line_segment([Pos2::new(x - half, row.top()), Pos2::new(x + half, row.bottom())], line);
-    painter.line_segment([Pos2::new(x - half, row.bottom()), Pos2::new(x + half, row.top())], line);
-    let centre = Pos2::new(x, row.top() + 6.0);
-    painter.add(egui::Shape::convex_polygon(
-        vec![
-            centre + Vec2::new(0.0, -5.0),
-            centre + Vec2::new(5.0, 0.0),
-            centre + Vec2::new(0.0, 5.0),
-            centre + Vec2::new(-5.0, 0.0),
-        ],
-        ink,
-        Stroke::NONE,
-    ));
-    let handle = Rect::from_center_size(centre, Vec2::splat(12.0));
-    let response = ui.interact(handle, Id::new(("comp-crossfade", cut.left.0)), Sense::click_and_drag());
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, format!("Crossfade on {track_name}"))
-    });
-    let ms = length * 60_000.0 / cut.bpm.max(1.0);
-    let response =
-        response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal).on_hover_text(format!("Crossfade {ms:.0} ms"));
-    if response.double_clicked() {
-        actions.push(Action::new("take.setCrossfade", json!({ "clip": cut.left.0 })));
-    } else if response.dragged()
-        && let Some(pointer) = ui.ctx().pointer_latest_pos()
-    {
-        // Out from the cut either way: the crossfade lies around the cut.
-        let beats = f64::from((pointer.x - x).abs() / state.beat_width.max(1e-3)) * 2.0;
-        state.comp_fade_drag = Some((cut.left, beats.clamp(1e-3, cut.room.max(1e-3))));
+    let view = painter.clip_rect();
+    if held.is_none() && (x + half + FADE_HANDLE < view.left() || x - half - FADE_HANDLE > view.right()) {
+        return;
     }
-    if response.drag_stopped()
-        && let Some((clip, length)) = state.comp_fade_drag.take()
-    {
-        actions.push(Action::new("take.setCrossfade", json!({ "clip": clip.0, "length": length })));
+    let span = Rect::from_x_y_ranges(x - half..=x + half, row.y_range());
+    let ms = length * 60_000.0 / cut.bpm.max(1.0);
+    let mut hover = 0.0f32;
+    let mut handles = Vec::new();
+    for (end, handle_x) in [("start", span.left() - FADE_HANDLE), ("end", span.right())] {
+        let handle = Rect::from_min_size(Pos2::new(handle_x.round(), row.top()), Vec2::splat(FADE_HANDLE));
+        let hit = handle.expand((FADE_HANDLE_HIT - FADE_HANDLE) / 2.0).intersect(view);
+        if hit.width() <= 0.0 || hit.height() <= 0.0 {
+            continue;
+        }
+        let id = Id::new(("comp-crossfade", cut.left.0, end));
+        let response = ui.interact(hit, id, Sense::click_and_drag());
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, format!("Crossfade {end} on {track_name}"))
+        });
+        let response =
+            response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal).on_hover_text(format!("Crossfade {ms:.0} ms"));
+        if response.double_clicked() {
+            state.comp_fade_drag = None;
+            actions.push(Action::new("take.setCrossfade", json!({ "clip": cut.left.0 })));
+        } else if response.dragged()
+            && let Some(pointer) = ui.ctx().pointer_latest_pos()
+        {
+            // From the cut out to the handle's inner side, so the handle stays under the pointer.
+            let out = ((pointer.x - x).abs() - FADE_HANDLE / 2.0).max(0.0);
+            let beats = f64::from(out / state.beat_width.max(1e-3)) * 2.0;
+            state.comp_fade_drag = Some((cut.left, beats.clamp(1e-3, cut.room.max(1e-3))));
+        }
+        if response.drag_stopped()
+            && let Some((clip, length)) = state.comp_fade_drag.take()
+        {
+            actions.push(Action::new("take.setCrossfade", json!({ "clip": clip.0, "length": length })));
+        }
+        let this = widgets::hover(ui, &response);
+        hover = hover.max(this);
+        handles.push((handle, this));
+    }
+    // A handle scrolled out of view mid-drag has no widget left to say the drag ended.
+    if !ui.input(|i| i.pointer.primary_down()) {
+        state.comp_fade_drag = state.comp_fade_drag.filter(|(clip, _)| *clip != cut.left);
+    }
+    let ink = theme::text_primary();
+    let active = if held.is_some() { 1.0 } else { hover };
+    painter.rect_filled(span, 0.0, ink.gamma_multiply(0.08 + 0.10 * active));
+    let equal = FadeCurve { shape: FadeShape::EqualPower, curve: 0.0 };
+    let line = Stroke::new(1.0, ink.gamma_multiply(0.85));
+    painter.line(fade_line(span, FadeEdge::Out, span.left(), span.right(), equal), line);
+    painter.line(fade_line(span, FadeEdge::In, span.left(), span.right(), equal), line);
+    if held.is_some() {
+        let label = Rect::from_center_size(span.center(), Vec2::new(64.0, 14.0));
+        let font = theme::mono_font(theme::TEXT_TINY);
+        widgets::text_in(painter, label, Align2::CENTER_CENTER, &format!("{ms:.0} ms"), font, ink);
+    }
+    let near = span.expand2(Vec2::new(24.0, 0.0));
+    let pointer_near = ui.ctx().pointer_latest_pos().is_some_and(|p| near.contains(p) && view.contains(p));
+    if pointer_near || held.is_some() {
+        for (handle, hover) in handles {
+            paint_fade_handle(painter, handle, hover);
+        }
     }
 }
 
