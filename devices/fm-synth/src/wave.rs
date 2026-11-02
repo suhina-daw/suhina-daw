@@ -322,9 +322,9 @@ mod tests {
 
     #[test]
     fn every_builtin_table_stays_in_range() {
-        for wave in 0..WAVES.len() {
+        for (wave, name) in WAVES.iter().enumerate() {
             if let Some(table) = builtin(wave, 1 << 14, true) {
-                assert!(table.iter().all(|v| v.abs() <= 1.0 + 1e-3), "{}", WAVES[wave]);
+                assert!(table.iter().all(|v| v.abs() <= 1.0 + 1e-3), "{name}");
             }
         }
     }

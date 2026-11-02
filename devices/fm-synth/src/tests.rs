@@ -375,7 +375,7 @@ fn compare(all: Vec<Scenario>, dir: &std::path::Path) {
 fn stereo(s: &mut FmSynth, frames: usize) -> Vec<[f32; 2]> {
     let mut buffer = vec![0.0f32; frames * 2];
     s.process(&suhina_device_api::ProcessContext::default(), &mut buffer);
-    buffer.chunks_exact(2).map(|c| [c[0], c[1]]).collect()
+    buffer.as_chunks::<2>().0.to_vec()
 }
 
 fn energy(frames: &[[f32; 2]], side: usize) -> f32 {
@@ -475,12 +475,12 @@ fn a_saw_is_rougher_than_the_sine() {
 
 #[test]
 fn every_wave_plays_and_stays_finite() {
-    for wave in 0..params::WAVES.len() {
+    for (wave, name) in params::WAVES.iter().enumerate() {
         let mut s = synth();
         set(&mut s, "op1.wave", wave as f64);
         let out = note(&mut s, 60, 2_048);
-        assert!(out.iter().all(|v| v.is_finite()), "{}", params::WAVES[wave]);
-        assert!(peak(&out) > 0.01, "{}", params::WAVES[wave]);
+        assert!(out.iter().all(|v| v.is_finite()), "{name}");
+        assert!(peak(&out) > 0.01, "{name}");
     }
 }
 
