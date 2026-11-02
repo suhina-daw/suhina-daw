@@ -142,7 +142,8 @@ fn a_value_drag_hides_the_pointer_until_the_button_is_up_or_the_window_loses_foc
     let shown = frame(pointer(Pos2::new(20.0, 0.0), Some(false)));
     let shown = [shown, frame(pointer(Pos2::new(20.0, 0.0), None))].concat();
     assert!(!held(&ctx));
-    assert!(shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
+    // The icon a view sets next shows it: a command would come after it and overrule a hidden one.
+    assert!(!shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
     // The release went to another window: losing focus gives the pointer back all the same.
     frame(pointer(Pos2::new(20.0, 20.0), None));
     frame(pointer(Pos2::new(20.0, 20.0), Some(true)));
@@ -151,7 +152,7 @@ fn a_value_drag_hides_the_pointer_until_the_button_is_up_or_the_window_loses_foc
     let unfocused = || egui::RawInput { focused: false, ..pointer(Pos2::new(20.0, 10.0), None) };
     let shown = [frame(unfocused()), frame(unfocused())].concat();
     assert!(!held(&ctx), "an unfocused window never holds the pointer");
-    assert!(shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
+    assert!(!shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
     // Focus back with the drag still going (the release never came): the pointer stays shown.
     let back = [frame(pointer(Pos2::new(20.0, 5.0), None)), frame(pointer(Pos2::new(20.0, 0.0), None))].concat();
     assert!(!held(&ctx), "only a new press takes the pointer again");
@@ -221,18 +222,4 @@ fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
     assert_eq!(run(true, true), egui::CursorIcon::None);
     ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
     assert_eq!(run(false, true), egui::CursorIcon::ResizeVertical);
-}
-
-/// The frame the pointer comes back the icon changes, so a view that hides the pointer next frame
-/// (a magnifier under it) is a change the windowing layer acts on.
-#[test]
-fn the_frame_a_value_drag_lets_go_the_pointers_icon_changes() {
-    let ctx = egui::Context::default();
-    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-        ui.ctx().data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { raw: true, back: None, released: true }));
-        ui.ctx().set_cursor_icon(egui::CursorIcon::None);
-        hide_pointer_during_value_drag(ui.ctx());
-    });
-    output.textures_delta.clear();
-    assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::Default);
 }

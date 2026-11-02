@@ -105,7 +105,9 @@ pub fn release_value_drag(ctx: &egui::Context) {
         return;
     };
     if drag.released {
-        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
+        // The next icon shows the pointer: nothing else may, as the window applies a command after
+        // the frame's icon, which would show it over a view that keeps it hidden for a shape of its
+        // own (a magnifier).
         ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
     } else if !ctx.input(|i| i.pointer.any_down() && i.focused) {
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
@@ -126,15 +128,10 @@ pub fn value_drag_returns_to(ctx: &egui::Context, at: Pos2) {
 }
 
 /// Keeps the pointer hidden while a value drag holds it, called after the views: the last icon set
-/// in a frame wins, and egui shows the pointer again for any other icon. The frame it comes back has
-/// an icon of its own: the windowing layer only acts on a change of icon, so without one a view that
-/// hides the pointer for a shape of its own (a magnifier) would stay hidden in name only, the pointer
-/// shown over its shape.
+/// in a frame wins, and egui shows the pointer again for any other icon.
 pub fn hide_pointer_during_value_drag(ctx: &egui::Context) {
-    match ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())) {
-        Some(drag) if drag.released => ctx.set_cursor_icon(egui::CursorIcon::Default),
-        Some(_) => ctx.set_cursor_icon(egui::CursorIcon::None),
-        None => {}
+    if ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_some() {
+        ctx.set_cursor_icon(egui::CursorIcon::None);
     }
 }
 
