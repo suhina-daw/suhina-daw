@@ -970,10 +970,23 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         clips.remove(index);
     }
     let mut placed: Vec<Value> = Vec::with_capacity(copied.len());
-    for (clip, content) in copied {
-        // The copy plays its own content, so editing one does not change the other.
-        let id = new_content_id(p)?;
-        p.contents.push(suhina_model::ClipContent { id, ..content });
+    let mut take_spans = Vec::new();
+    for (i, (clip, content)) in copied.into_iter().enumerate() {
+        // A part of a take in this project stays one, and takes its takes along (#1078); what came
+        // from another project does not know them.
+        let span = sources
+            .get(i)
+            .filter(|_| p.content(clip.content) == Some(&content))
+            .and_then(|from| crate::take_carry::span_of_part(p, *from, track, &clip, offset));
+        take_spans.extend(span);
+        // Any other copy plays its own content, so editing one does not change the other.
+        let id = if span.is_some() {
+            clip.content
+        } else {
+            let id = new_content_id(p)?;
+            p.contents.push(suhina_model::ClipContent { id, ..content });
+            id
+        };
         let at = clip.start + offset;
         let mut copy = Clip { id: p.new_clip_id()?, content: id, start: at, ..clip };
         copy.fit_fades();
@@ -988,6 +1001,7 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         let index = lane.clips.iter().position(|c| c.id == copy_id).unwrap_or_default();
         placed.push(json!({ "clip": copy_id.0, "track": track.0, "index": index, "start": at }));
     }
+    crate::take_carry::carry(p, &take_spans, true);
     // The automation that was under each clip, under its copy.
     for (i, (clip, _)) in session.clipboards.clips.clone().iter().enumerate() {
         if let Some(lanes) = under.get(i) {
@@ -1196,6 +1210,14 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
         for copy in &mut copies {
             copy.id = p.new_clip_id()?;
         }
+        // A part of a take takes what the takes hold under it along (#1078).
+        let take_spans: Vec<_> = copies
+            .iter()
+            .filter_map(|c| {
+                let original = Clip { start: c.start - c.length, ..c.clone() };
+                crate::take_carry::span_of_part(p, track, track, &original, c.length)
+            })
+            .collect();
         let covered: Vec<bool> = copies.iter().map(|c| p.takes_cover(track, c.start, c.start + c.length)).collect();
         let Some(lane) = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)) else { continue };
         for (copy, covered) in copies.into_iter().zip(covered) {
@@ -1208,6 +1230,7 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
             let index = lane.clips.iter().position(|c| c.id == copy_id).unwrap_or_default();
             made.push(json!({ "clip": copy_id.0, "track": track.0, "index": index, "start": copy_start }));
         }
+        crate::take_carry::carry(p, &take_spans, true);
     }
     for (track, at, lanes) in &carried {
         crate::automation_range::lay_under(session, *track, *at, lanes, true)?;
@@ -1309,8 +1332,7 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     };
     let mut clip = p.arrangement.lanes.get_mut(from_lane).ok_or("the lane is missing")?.clips.remove(index);
     // A part of a comp takes what its takes hold under it along (#1078).
-    let spans: Vec<_> = crate::take_carry::spans_of_part(p, track, to, &clip).into_iter().collect();
-    let by = start - clip.start;
+    let spans: Vec<_> = crate::take_carry::span_of_part(p, track, to, &clip, start - clip.start).into_iter().collect();
     clip.start = start;
     if to != track && clip.color.is_none() {
         clip.color = keep;
@@ -1325,7 +1347,7 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     lane.clips.push(clip);
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     let new_index = lane.clips.iter().position(|c| c.id == clip_id).unwrap_or_default();
-    if crate::take_carry::carry(p, &spans, by, false) {
+    if crate::take_carry::carry(p, &spans, false) {
         session.take_solo = None;
     }
     if let Some((from, end, lanes)) = carried {

@@ -1,25 +1,30 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What a part of a comp takes along when it moves (#1078, `docs/spec/recording.md` › Take lanes):
-//! what its track's takes hold under it goes where it goes. A move takes those pieces out of their
-//! lanes and a copy leaves them. They land on the same lanes when those are free there, and
-//! replace nothing: where a lane already holds something, they get new lanes, as many as they fill.
+//! What a part of a comp takes along when it moves or is copied (#1078, `docs/spec/recording.md` ›
+//! Take lanes): what its track's takes hold under it goes where it goes. A move takes those pieces
+//! out of their lanes and a copy leaves them there as well. What is already at the spot where a piece
+//! lands (the same content, lined up with the beats the same way) is the same audio, so it is not
+//! added twice. The rest lands on the same lanes when those are free there, and replaces nothing:
+//! where a lane already holds something else, it gets new lanes, as many as it fills.
 
-use suhina_model::{Clip, ContentId, Project, TakeLane, TrackId};
+use suhina_model::{Clip, Project, TakeLane, TrackId};
 
 use crate::commands::{content_at, make_room};
 
-/// A part of a comp that moves: the track it leaves and the one it lands on, the beats it covered
-/// and, for a copy with a content of its own, the content its pieces go over to.
-#[derive(Debug, Clone)]
+/// How far apart, in beats, two clips' alignments with their content may be and still be one.
+const ALIGNED: f64 = 1e-6;
+
+/// A part of a comp that moves or is copied: the track it leaves and the one it lands on, the beats
+/// it covered, and how far it goes.
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct Span {
     from: TrackId,
     to: TrackId,
     start: f64,
     end: f64,
-    content: ContentId,
-    pub(crate) remap: Option<(ContentId, ContentId)>,
+    by: f64,
+    content: suhina_model::ContentId,
 }
 
 impl Span {
@@ -29,20 +34,24 @@ impl Span {
     }
 }
 
-/// `clip`'s span when it is a part of a take on `from`; a clip of no take takes nothing along.
-pub(crate) fn spans_of_part(p: &Project, from: TrackId, to: TrackId, clip: &Clip) -> Option<Span> {
+/// Each take's index in `arrangement.takes` and its pieces going along.
+type Carried = Vec<(usize, Vec<Clip>)>;
+
+/// `clip`'s span, going `by` beats from `from` to `to`, when it is a part of a take on `from`; a
+/// clip of no take takes nothing along.
+pub(crate) fn span_of_part(p: &Project, from: TrackId, to: TrackId, clip: &Clip, by: f64) -> Option<Span> {
     p.comp_source(from, clip)?;
-    Some(Span { from, to, start: clip.start, end: clip.start + clip.length, content: clip.content, remap: None })
+    Some(Span { from, to, start: clip.start, end: clip.start + clip.length, by, content: clip.content })
 }
 
-/// Takes along what the takes hold under `spans`, `by` beats on. Answers whether a take lane left
-/// with nothing went, as the indices of the takes then change.
-pub(crate) fn carry(p: &mut Project, spans: &[Span], by: f64, copy: bool) -> bool {
+/// Takes along what the takes hold under `spans`. Answers whether a take lane left with nothing
+/// went, as the indices of the takes then change.
+pub(crate) fn carry(p: &mut Project, spans: &[Span], copy: bool) -> bool {
     let mut groups: Vec<(TrackId, TrackId)> = spans.iter().map(|s| (s.from, s.to)).collect();
     groups.sort_by_key(|(from, to)| (from.0, to.0));
     groups.dedup();
-    // Worked out before anything changes: each group's takes (their indices) and their pieces.
-    let cut: Vec<((TrackId, TrackId), Vec<(usize, Vec<Clip>)>)> = groups
+    // Worked out before anything changes: each group's takes and their pieces.
+    let cut: Vec<((TrackId, TrackId), Carried)> = groups
         .iter()
         .map(|&group| {
             let mine: Vec<&Span> = spans.iter().filter(|s| (s.from, s.to) == group).collect();
@@ -52,7 +61,7 @@ pub(crate) fn carry(p: &mut Project, spans: &[Span], by: f64, copy: bool) -> boo
                 .iter()
                 .enumerate()
                 .filter(|(_, take)| take.track == group.0)
-                .map(|(index, take)| (index, pieces_under(take, &mine, by)))
+                .map(|(index, take)| (index, pieces_under(take, &mine)))
                 .filter(|(_, pieces)| !pieces.is_empty())
                 .collect();
             (group, pieces)
@@ -79,8 +88,8 @@ pub(crate) fn carry(p: &mut Project, spans: &[Span], by: f64, copy: bool) -> boo
     emptied
 }
 
-/// What `take` holds under `spans`, cut to them and moved `by` beats.
-fn pieces_under(take: &TakeLane, spans: &[&Span], by: f64) -> Vec<Clip> {
+/// What `take` holds under `spans`, cut to them and moved as far as each goes.
+fn pieces_under(take: &TakeLane, spans: &[&Span]) -> Vec<Clip> {
     let mut out = Vec::new();
     for span in spans {
         for clip in &take.clips {
@@ -88,26 +97,45 @@ fn pieces_under(take: &TakeLane, spans: &[&Span], by: f64) -> Vec<Clip> {
             if end - start < 1e-9 {
                 continue;
             }
-            let mut piece = Clip {
-                start: (start + by).max(0.0),
+            out.push(Clip {
+                start: (start + span.by).max(0.0),
                 length: end - start,
                 offset: content_at(clip, start - clip.start, 1.0),
                 fade_in: 0.0,
                 fade_out: 0.0,
                 ..clip.clone()
-            };
-            if let Some((_, new)) = span.remap.filter(|(old, _)| *old == piece.content) {
-                piece.content = new;
-            }
-            out.push(piece);
+            });
         }
     }
     out
 }
 
-/// Puts `pieces` on `to`: on the lanes they belong on when all of those are free where they land,
-/// or else on new lanes, one for each take they came from.
-fn place(p: &mut Project, from: TrackId, to: TrackId, pieces: Vec<(usize, Vec<Clip>)>) {
+/// What of `piece` is not on `track`'s takes yet: a clip of the same content lined up the same way
+/// plays the same audio at the same place, so that much of the piece is there already.
+fn not_there_yet(p: &Project, track: TrackId, piece: Clip) -> Vec<Clip> {
+    let lined_up = piece.offset - piece.start;
+    let mut rest = vec![piece];
+    let on_track = p.arrangement.takes.iter().filter(|t| t.track == track).flat_map(|t| &t.clips);
+    for clip in on_track {
+        let same = rest.first().is_some_and(|r| r.content == clip.content);
+        if same && (clip.offset - clip.start - lined_up).abs() < ALIGNED {
+            make_room(&mut rest, clip.start, clip.start + clip.length);
+        }
+    }
+    rest
+}
+
+/// Puts `pieces` on `to`, leaving out what is there already: on the lanes they belong on when all
+/// of those are free where they land, or else on new lanes, one for each take they came from.
+fn place(p: &mut Project, from: TrackId, to: TrackId, pieces: Carried) {
+    let pieces: Carried = pieces
+        .into_iter()
+        .map(|(index, clips)| {
+            let rest: Vec<Clip> = clips.into_iter().flat_map(|piece| not_there_yet(p, to, piece)).collect();
+            (index, rest)
+        })
+        .filter(|(_, clips)| !clips.is_empty())
+        .collect();
     let on_target: Vec<usize> =
         (0..p.arrangement.takes.len()).filter(|&i| p.arrangement.takes.get(i).is_some_and(|t| t.track == to)).collect();
     let target = |at: usize, index: usize| if from == to { Some(index) } else { on_target.get(at).copied() };

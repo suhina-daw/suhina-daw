@@ -95,9 +95,23 @@ fn place(
     stack: bool,
 ) -> Result<Vec<Value>, CommandError> {
     let mut placed = Vec::with_capacity(pieces.len());
+    let mut spans = Vec::new();
     for (track, clip, content) in pieces {
-        let id = new_content_id(p)?;
-        p.contents.push(ClipContent { id, ..content });
+        // A part of a take in this project stays one, and takes its takes along (#1078); what came
+        // from another project does not know them.
+        let span = if p.content(clip.content) == Some(&content) {
+            crate::take_carry::span_of_part(p, track, track, &clip, offset)
+        } else {
+            None
+        };
+        spans.extend(span);
+        let id = if span.is_some() {
+            clip.content
+        } else {
+            let id = new_content_id(p)?;
+            p.contents.push(ClipContent { id, ..content });
+            id
+        };
         let at = clip.start + offset;
         let mut copy = Clip { id: p.new_clip_id()?, content: id, start: at, ..clip };
         copy.fit_fades();
@@ -112,6 +126,7 @@ fn place(
         let index = lane.clips.iter().position(|c| c.id == copy.id).unwrap_or_default();
         placed.push(json!({ "clip": copy.id.0, "track": track.0, "index": index, "start": at }));
     }
+    crate::take_carry::carry(p, &spans, true);
     Ok(placed)
 }
 
@@ -517,17 +532,18 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
     // Parts of a comp take what their takes hold under them along (#1078).
     let mut take_spans: Vec<crate::take_carry::Span> = Vec::new();
     for ((goes, clip), (from, _)) in taken.iter().zip(&came) {
-        take_spans.extend(crate::take_carry::spans_of_part(p, *from, *goes, clip));
+        take_spans.extend(crate::take_carry::span_of_part(p, *from, *goes, clip, beats));
     }
     if copy {
         for (_, clip) in &mut taken {
-            let id = new_content_id(p)?;
-            let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
-            p.contents.push(ClipContent { id, ..content });
-            for span in take_spans.iter_mut().filter(|s| s.is_of(clip)) {
-                span.remap = Some((clip.content, id));
+            // A part keeps playing its take's content, so it stays a part of that take; editing it
+            // gives it a content of its own then (copy on write, ADR 0001).
+            if !take_spans.iter().any(|s| s.is_of(clip)) {
+                let id = new_content_id(p)?;
+                let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
+                p.contents.push(ClipContent { id, ..content });
+                clip.content = id;
             }
-            clip.content = id;
             // A copy is a new clip (ADR 0025); a moved clip keeps its id.
             clip.id = p.new_clip_id()?;
         }
@@ -546,7 +562,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
         placed.push((track, clip));
     }
-    if crate::take_carry::carry(p, &take_spans, beats, copy) {
+    if crate::take_carry::carry(p, &take_spans, copy) {
         session.take_solo = None;
     }
     if !copy {

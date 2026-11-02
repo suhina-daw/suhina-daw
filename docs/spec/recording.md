@@ -184,13 +184,17 @@ content of its own), so nothing extra is stored and a trimmed part keeps its tak
   top. **Dragging the handle** sideways sets the crossfade's length, up to the shorter part's, as
   both parts' fades at the cut (`take.setCrossfade {clip, length?}`, one undo step); the pointer over
   it says the length in milliseconds. A **double-click** puts it back to the length in Settings.
-- **Moving a part takes its takes along.** A clip on the track that is a part of a take takes what
-  all the track's takes hold under it to where it lands, cut to its span (with `clip.move` and
-  `clip.moveMany`, in the same undo step; the pieces leave where they were, and for a copy they stay
-  there too). On the same lanes when those are free where they land; if any of them already holds
-  something there, nothing is replaced and the pieces get as many new lanes as they fill. Moved to
-  another track, they go on that track's first lanes when those are free, or on new lanes; a lane left
-  with nothing goes. A clip that is no part of a take moves alone.
+- **A part takes its takes along.** A clip on the track that is a part of a take takes what all the
+  track's takes hold under it to where it lands, cut to its span, in the same undo step: moved
+  (`clip.move`, `clip.moveMany`) the pieces leave where they were; copied (a Ctrl drag, Ctrl+C and
+  Ctrl+V, Ctrl+D, a duplicated time selection) they stay there as well. What is already at the spot
+  is not added twice: a clip of the same content, lined up with the beats the same way, plays the same
+  audio at the same place, so nothing extra is stored to recognise it. The rest goes on the same lanes
+  when those are free where it lands; if any of them holds something else there, nothing is replaced
+  and it gets as many new lanes as it fills. On another track it goes on that track's first lanes when
+  those are free, or on new lanes; a lane left with nothing goes. A clip that is no part of a take
+  moves alone, and a part pasted from another project does not know its takes. A copied part keeps
+  playing its take's content until it is edited (copy on write).
 - A take lane's header is drawn in a dark shade of the take's colour with a strip of the colour
   itself; its pieces are that colour, darkened where the comp does not use them.
 

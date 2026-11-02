@@ -383,6 +383,55 @@ fn a_clip_of_no_take_leaves_the_takes_alone() {
     assert_eq!(s.project().arrangement.takes, before);
 }
 
+/// A copied part leaves its takes where they are and takes them to the copy as well; copied to the
+/// very same spot again, nothing is added (#1078).
+#[test]
+fn a_copied_part_copies_its_takes_once_for_a_spot() {
+    let mut s = session();
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 3 })).unwrap();
+    let id = lane(&s)[0].id.0;
+    for _ in 0..2 {
+        run(&mut s, "clip.moveMany", json!({ "clips": [{ "clip": id }], "beats": 16, "copy": true })).unwrap();
+        assert_eq!(take_clips(&s, 0), [(0.0, 8.0, 0.0), (16.0, 8.0, 0.0)]);
+        assert_eq!(take_clips(&s, 1), [(0.0, 8.0, 8.0), (16.0, 8.0, 8.0)]);
+        assert_eq!(take_clips(&s, 2), [(0.0, 8.0, 16.0), (16.0, 8.0, 16.0)]);
+    }
+    assert_eq!(s.project().arrangement.takes.len(), 3, "no new lanes for what is there already");
+    let copy = lane(&s).into_iter().find(|c| c.start == 16.0).unwrap();
+    assert_eq!(source(&s, &copy), Some(2), "the copy is a part of that take");
+}
+
+/// A copy over something else on the lanes replaces nothing: it gets new lanes.
+#[test]
+fn a_part_copied_over_its_own_takes_gets_new_lanes() {
+    let mut s = session();
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 1 })).unwrap();
+    let id = lane(&s)[0].id.0;
+    run(&mut s, "clip.moveMany", json!({ "clips": [{ "clip": id }], "beats": 2, "copy": true })).unwrap();
+    assert_eq!(s.project().arrangement.takes.len(), 6);
+    assert_eq!(take_clips(&s, 0), [(0.0, 8.0, 0.0)]);
+    assert_eq!(take_clips(&s, 3), [(2.0, 8.0, 0.0)]);
+}
+
+/// Copy and paste, and duplicate, take the takes along too (#1078).
+#[test]
+fn pasting_and_duplicating_a_part_take_its_takes_along() {
+    let mut s = session();
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 2 })).unwrap();
+    let id = lane(&s)[0].id.0;
+    run(&mut s, "clip.copy", json!({ "clips": [{ "clip": id }] })).unwrap();
+    for _ in 0..2 {
+        run(&mut s, "clip.paste", json!({ "track": 1, "start": 16.0 })).unwrap();
+        assert_eq!(take_clips(&s, 1), [(0.0, 8.0, 8.0), (16.0, 8.0, 8.0)]);
+    }
+    assert_eq!(s.project().arrangement.takes.len(), 3);
+    let pasted = lane(&s).into_iter().find(|c| c.start == 16.0).unwrap();
+    assert_eq!(source(&s, &pasted), Some(1));
+    run(&mut s, "clip.duplicate", json!({ "clips": [{ "clip": id }] })).unwrap();
+    assert_eq!(take_clips(&s, 0), [(0.0, 8.0, 0.0), (8.0, 8.0, 0.0), (16.0, 8.0, 0.0)]);
+    assert_eq!(s.project().arrangement.takes.len(), 3);
+}
+
 /// A comped audio part fades as long as Settings says, and the handle's command sets the length
 /// at a cut and puts it back (#1078).
 #[test]
