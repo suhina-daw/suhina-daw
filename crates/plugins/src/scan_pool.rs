@@ -12,7 +12,7 @@
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
@@ -29,8 +29,6 @@ use crate::scan::{
 pub const SHELL_TIMEOUT: Duration = Duration::from_secs(180);
 /// Longest line a worker's answer may be.
 const MAX_LINE: u64 = 4 * 1024 * 1024;
-/// How long a worker whose input has closed may take to finish before it is ended.
-const FINISH_WAIT: Duration = Duration::from_millis(500);
 
 /// Whether `path` looks like a shell, which needs [`SHELL_TIMEOUT`].
 pub fn is_shell(path: &Path) -> bool {
@@ -99,8 +97,7 @@ pub fn module_info(bundle: &Path) -> Option<Vec<PluginInfo>> {
 /// A running worker: its process, its input, and the lines it prints.
 struct Worker {
     child: Child,
-    /// `None` once it has been told to finish.
-    input: Option<ChildStdin>,
+    input: ChildStdin,
     lines: Receiver<String>,
 }
 
@@ -136,31 +133,13 @@ impl Worker {
                 }
             }
         });
-        Ok(Self { child, input: Some(input), lines })
-    }
-
-    /// Tells the worker to finish by closing its input and waits up to `patience` for that; one
-    /// that has not finished by then is ended. Returns how it ended, when that can be told.
-    fn finish(&mut self, patience: Duration) -> Option<ExitStatus> {
-        self.input = None;
-        let deadline = Instant::now() + patience;
-        while Instant::now() < deadline {
-            match self.child.try_wait() {
-                Ok(None) => thread::sleep(Duration::from_millis(5)),
-                Ok(Some(status)) => return Some(status),
-                Err(_) => return None,
-            }
-        }
-        let _ = self.child.kill();
-        self.child.wait().ok()
+        Ok(Self { child, input, lines })
     }
 
     /// Asks for `file` and waits up to `timeout` for the answer. `Err` means the worker is
     /// gone (crashed, hung and ended); the text says why.
     fn read(&mut self, file: &str, timeout: Duration) -> Result<Scanned, String> {
-        let sent =
-            self.input.as_mut().is_some_and(|input| writeln!(input, "{file}").and_then(|()| input.flush()).is_ok());
-        if !sent {
+        if writeln!(self.input, "{file}").and_then(|()| self.input.flush()).is_err() {
             return Err(self.ended("crashed while loading"));
         }
         let deadline = Instant::now() + timeout;
@@ -200,7 +179,11 @@ impl Worker {
 
 impl Drop for Worker {
     fn drop(&mut self) {
-        self.finish(FINISH_WAIT);
+        // Ended at once rather than asked to finish: it has answered all it was asked and has
+        // nothing to save, and a normal exit would run the exit code of every plug-in it has
+        // loaded (they stay loaded for its life), all of them at once, which nothing here needs.
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -290,14 +273,12 @@ pub fn timeout_for(path: &str, normal: Duration) -> Duration {
 mod tests {
     use super::*;
 
-    /// `sort`, on every system, reads until its input ends, as a worker does. The patience only
-    /// guards against a hang: a child whose input stayed open would be ended when it ran out, and
-    /// that is not a success.
+    /// `sort`, on every system, reads until its input ends, as a worker does, and the input is
+    /// still open while `drop` runs: only ending the process lets `drop` come back.
     #[test]
-    fn a_worker_is_told_to_finish_by_closing_its_input() {
-        let mut worker = Worker::spawn(Command::new("sort")).unwrap_or_else(|e| panic!("{e}"));
-        let status = worker.finish(Duration::from_secs(60));
-        assert!(status.is_some_and(|s| s.success()), "{status:?}");
+    fn dropping_a_worker_ends_it() {
+        let worker = Worker::spawn(Command::new("sort")).unwrap_or_else(|e| panic!("{e}"));
+        drop(worker);
     }
 
     #[test]

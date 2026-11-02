@@ -355,23 +355,6 @@ fn the_library_scans_its_folders_and_remembers_across_starts() {
     assert_eq!(later.scan(true).unwrap().read.len(), 1);
 }
 
-/// What the scanner asks of a worker by closing its input: it finishes by itself.
-#[test]
-fn a_worker_finishes_by_itself_when_its_input_closes() {
-    let mut worker = suhina_plugins::host_command(&host())
-        .arg("--scan-worker")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    drop(worker.stdin.take());
-    let (sender, finished) = mpsc::channel();
-    std::thread::spawn(move || sender.send(worker.wait().unwrap()));
-    let status = finished.recv_timeout(PATIENT).unwrap_or_else(|e| panic!("it never finished ({e})"));
-    assert!(status.success(), "{status}");
-}
-
 #[test]
 fn worker_processes_read_many_files_and_survive_crashes_and_hangs() {
     use suhina_plugins::scan_pool::scan_files;
