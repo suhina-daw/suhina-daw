@@ -1,9 +1,11 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The engine waits for each chain's plug-ins as they answer (#151), with real host processes:
-//! two chains whose heavy plug-ins sit at different places take a block about as long as one
-//! heavy plug-in, not two, and a hung plug-in in a third chain holds up neither.
+//! The engine waits for each chain's plug-ins as they answer (#151), with real host processes: a
+//! chain goes on while another chain's plug-in is still out, and a hung plug-in costs its own
+//! chain the block. These tests count blocks and wait on a signal, so a slow machine gives the
+//! same result as a fast one; how long blocks take is measured by the `#[ignore]`d tests, and
+//! the engine's own tests check it on a manual clock (`crates/engine/src/chain_wait_tests.rs`).
 #![allow(clippy::panic, clippy::unwrap_used)] // test helpers outside #[test] functions
 
 use std::path::PathBuf;
@@ -18,6 +20,11 @@ use suhina_session::{BlockCounts, Hosted};
 
 const PATIENT: Duration = Duration::from_secs(20);
 const FRAMES: usize = 1024;
+/// A low sample rate gives the blocks a long deadline (60 % of 128 ms).
+const SR: u32 = 8000;
+/// Test plug-ins that signal each other, so they share a host process.
+const RING: &str = "test:ring";
+const AWAIT_RING: &str = "test:await-ring";
 /// Whether a link's doorbell sleeps until it is rung (a futex on Linux, an event on Windows).
 /// Elsewhere it yields for now (ADR 0006), so every waiting thread of the engine and the hosts
 /// keeps running, and on a machine with few cores how long a block takes says more about the
@@ -32,7 +39,7 @@ fn start(spec: &str, sample_rate: u32) -> (Plugin, Hosted) {
         max_frames: suhina_engine::MAX_BLOCK_FRAMES as u32,
         sample_rate: f64::from(sample_rate),
         timeout: PATIENT,
-        group: None,
+        group: [RING, AWAIT_RING].contains(&spec).then(|| "ring".to_string()),
         ara: None,
     };
     let (plugin, audio) = Plugin::start(launch).unwrap_or_else(|e| panic!("{spec}: {e}"));
@@ -132,7 +139,7 @@ fn project(chains: &[usize]) -> Project {
 }
 
 /// A renderer for `chains`, each a list of test plug-in specs, every plug-in in its own host
-/// process; the controls (kept so the hosts run) and each plug-in's counts, in order.
+/// process but [`RING`] and [`AWAIT_RING`]; the controls (kept so the hosts run) and each plug-in's counts, in order.
 fn start_chains(chains: &[Vec<&str>], sample_rate: u32) -> (Renderer, Vec<Plugin>, Vec<Arc<BlockCounts>>) {
     let lengths: Vec<usize> = chains.iter().map(|c| c.len()).collect();
     let p = project(&lengths);
@@ -155,6 +162,14 @@ fn start_chains(chains: &[Vec<&str>], sample_rate: u32) -> (Renderer, Vec<Plugin
     (renderer, controls, counts)
 }
 
+/// Runs `blocks` blocks of [`FRAMES`], one straight after the other.
+fn run(renderer: &mut Renderer, blocks: usize) {
+    let mut block = vec![0.0f32; FRAMES * 2];
+    for _ in 0..blocks {
+        renderer.process(&mut block);
+    }
+}
+
 /// Plays `blocks` blocks of [`FRAMES`] in real time, one every block's length; each block's
 /// time, sorted.
 fn play(renderer: &mut Renderer, blocks: usize, sample_rate: u32) -> Vec<Duration> {
@@ -171,14 +186,53 @@ fn play(renderer: &mut Renderer, blocks: usize, sample_rate: u32) -> Vec<Duratio
     times
 }
 
-/// Two chains of three plug-ins, a heavy one (20 ms a block) first in one and last in the other,
-/// and a third chain whose plug-in hangs after its first blocks. A low sample rate gives the
-/// blocks a long deadline (60 % of 128 ms). Stage by stage a block would take both heavy
-/// plug-ins one after the other, 40 ms; each chain going on as its own plug-in answers takes
-/// about 20 ms, and the hung plug-in costs its own chain only.
+/// A plug-in that stays out until the last plug-in of another chain has had the block: a chain
+/// that waited for the other chains' plug-ins would never get there. Offline every answer is
+/// waited for, so nothing here depends on how fast the machine is: were the chain held up, the
+/// plug-in out would use up `OFFLINE_TIMEOUT` and count as late.
 #[test]
-fn heavy_plug_ins_in_different_chains_cost_one_heavy_plug_in_and_a_hung_one_costs_nothing_else() {
-    const SR: u32 = 8000;
+fn a_chain_goes_on_while_another_chains_plug_in_is_still_out() {
+    const BLOCKS: u32 = 4;
+    let (mut renderer, _controls, counts) = start_chains(
+        &[vec![AWAIT_RING, "test:busy:200", "test:busy:200"], vec!["test:busy:200", "test:busy:200", RING]],
+        SR,
+    );
+    renderer.set_offline(true);
+    run(&mut renderer, BLOCKS as usize);
+    for (n, count) in counts.iter().enumerate() {
+        assert_eq!(count.read(), (BLOCKS, 0), "plug-in {n} was given every block and answered it");
+    }
+}
+
+/// A plug-in that hangs after its first blocks misses every block after them, however fast the
+/// machine is, and costs nothing but the sound of those: the next plug-in of its chain and the
+/// plug-ins of the other chain are still given every block.
+#[test]
+fn a_hung_plug_in_costs_its_chain_the_block_and_the_others_are_still_given_theirs() {
+    const BLOCKS: u32 = 8;
+    const ANSWERS: u32 = 2;
+    let (mut renderer, _controls, counts) = start_chains(
+        &[vec!["test:hang-after:2", "test:busy:200"], vec!["test:busy:200", "test:busy:5000", "test:busy:200"]],
+        SR,
+    );
+    run(&mut renderer, BLOCKS as usize);
+    for (n, count) in counts.iter().enumerate() {
+        assert_eq!(count.read().0, BLOCKS, "plug-in {n} was given every block");
+    }
+    let late = counts[0].read().1;
+    assert!(late >= BLOCKS - ANSWERS, "the hung plug-in answers only {ANSWERS} blocks: {late} late");
+}
+
+/// How long a block takes on the real clock, which a shared machine's scheduler can stretch at
+/// any time, so this says something only on an idle one. Two chains of three plug-ins, a heavy
+/// one (20 ms a block) first in one and last in the other, then a chain whose plug-in hangs after
+/// its first blocks. Stage by stage a block would take both heavy plug-ins one after the other,
+/// 40 ms; each chain going on as its own plug-in answers takes about 20 ms, and the hung plug-in
+/// costs its own chain only. Run with
+/// `cargo test -p suhina-plugin-host --release --test chain_wait block_times -- --ignored`.
+#[test]
+#[ignore = "bounds on elapsed time, for an idle machine"]
+fn block_times_with_heavy_and_hung_plug_ins() {
     let (mut renderer, _controls, counts) = start_chains(
         &[
             vec!["test:busy:20000", "test:busy:200", "test:busy:200"],
@@ -191,9 +245,6 @@ fn heavy_plug_ins_in_different_chains_cost_one_heavy_plug_in_and_a_hung_one_cost
     let times = play(&mut renderer, 20, SR);
     let median = times[times.len() / 2];
     assert!(median >= Duration::from_millis(20), "{times:?}");
-    for (n, count) in counts.iter().enumerate() {
-        assert_eq!(count.read().0, 24, "plug-in {n} was given every block");
-    }
     if DOORBELL_SLEEPS {
         assert!(
             median < Duration::from_millis(34),
@@ -215,15 +266,10 @@ fn heavy_plug_ins_in_different_chains_cost_one_heavy_plug_in_and_a_hung_one_cost
     // its miss at once; a yielding doorbell may wait a scheduler slice or two for that.
     let margin = Duration::from_millis(if DOORBELL_SLEEPS { 15 } else { 40 });
     assert!(longest < deadline + margin, "{longest:?} past the {deadline:?} deadline");
-    let (given, late) = counts[0].read();
-    assert!(given == 8 && late >= 5, "the hung plug-in missed its blocks: {given} given, {late} late");
-    for (n, count) in counts.iter().enumerate().skip(2) {
-        let (given, late) = count.read();
-        assert_eq!(given, 8, "plug-in {n} of the other chain was given every block");
-        // Where the doorbell yields (macOS), a busy runner can make any plug-in late now and
-        // then, so being on time is checked only where it sleeps, as above.
-        if DOORBELL_SLEEPS {
-            assert_eq!(late, 0, "plug-in {n} of the other chain was held up");
+    // Where the doorbell yields (macOS), any plug-in can be late now and then.
+    if DOORBELL_SLEEPS {
+        for (n, count) in counts.iter().enumerate().skip(2) {
+            assert_eq!(count.read().1, 0, "plug-in {n} of the other chain was held up");
         }
     }
 }

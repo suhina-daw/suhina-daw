@@ -22,10 +22,15 @@
 //!   takes `µs` microseconds (at most one second, sleeping) over a block that brings notes or
 //!   controllers, like a synthesizer that starts or resets its voices when playback
 //!   starts or stops (#506).
+//! - `test:ring`: passes audio through, and tells the `test:await-ring` plug-ins of its host
+//!   process that it has had a block.
+//! - `test:await-ring`: passes audio through, answering its block `n` (counting from 0) only once
+//!   the host process's `test:ring` plug-in has had `n + 1` blocks, however long that takes: put
+//!   in one group, the two show that one plug-in was given its block while the other's was out.
 
 use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::Duration;
 
 /// Something that processes blocks. Shared between the control thread (state) and the audio
@@ -77,6 +82,10 @@ pub(crate) fn create(plugin: &str) -> Result<std::sync::Arc<dyn Processor>, Stri
         Ok(std::sync::Arc::new(Busy(Duration::from_micros(u64::from(micros.min(1_000_000))))))
     } else if let Some(micros) = after("test:burst:") {
         Ok(std::sync::Arc::new(Burst(Duration::from_micros(u64::from(micros.min(1_000_000))))))
+    } else if plugin == "test:ring" {
+        Ok(std::sync::Arc::new(Ring))
+    } else if plugin == "test:await-ring" {
+        Ok(std::sync::Arc::new(AwaitRing(AtomicU32::new(0))))
     } else if let Some(n) = after("test:hang-after:") {
         Ok(std::sync::Arc::new(Failing { after: n, blocks: AtomicU32::new(0), hang: true }))
     } else {
@@ -161,6 +170,51 @@ impl Processor for Busy {
         for (o, i) in output.iter_mut().zip(input) {
             *o = i * 0.5;
         }
+    }
+
+    fn state(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn set_state(&self, _data: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// The blocks the `test:ring` plug-in of this process has had, and the signal that it had another.
+static RUNG: Mutex<u32> = Mutex::new(0);
+static RINGING: Condvar = Condvar::new();
+
+/// A `test:ring` plug-in.
+struct Ring;
+
+impl Processor for Ring {
+    fn process(&self, input: &[f32], output: &mut [f32]) {
+        output.copy_from_slice(input);
+        *RUNG.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        RINGING.notify_all();
+    }
+
+    fn state(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn set_state(&self, _data: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// A `test:await-ring` plug-in: the blocks it has had.
+struct AwaitRing(AtomicU32);
+
+impl Processor for AwaitRing {
+    fn process(&self, input: &[f32], output: &mut [f32]) {
+        let block = self.0.fetch_add(1, Ordering::Relaxed);
+        let mut rung = RUNG.lock().unwrap_or_else(PoisonError::into_inner);
+        while *rung <= block {
+            rung = RINGING.wait(rung).unwrap_or_else(PoisonError::into_inner);
+        }
+        output.copy_from_slice(input);
     }
 
     fn state(&self) -> Vec<u8> {
@@ -364,5 +418,25 @@ mod tests {
         burst.process_events(&[0.0; 4], &[suhina_ipc::Event::note_on(0, 0, 60, 1.0)], &mut output);
         assert!(started.elapsed() >= Duration::from_millis(5));
         assert!(create("test:burst:x").is_err());
+    }
+
+    #[test]
+    fn an_awaiting_plug_in_answers_each_block_once_the_ring_has_had_it() {
+        let ring = create("test:ring").unwrap();
+        let awaiting = create("test:await-ring").unwrap();
+        let mut output = [0.0f32; 2];
+        ring.process(&[1.0, 2.0], &mut output);
+        assert_eq!(output, [1.0, 2.0]);
+        let mut output = [0.0f32; 2];
+        awaiting.process(&[3.0, 4.0], &mut output);
+        assert_eq!(output, [3.0, 4.0]);
+        // Its next block waits for the ring's next one, on a thread of its own as in a host.
+        let waiting = std::thread::spawn(move || {
+            let mut output = [0.0f32; 2];
+            awaiting.process(&[5.0, 6.0], &mut output);
+            output
+        });
+        ring.process(&[1.0, 2.0], &mut [0.0f32; 2]);
+        assert_eq!(waiting.join().unwrap(), [5.0, 6.0]);
     }
 }
