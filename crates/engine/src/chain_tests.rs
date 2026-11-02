@@ -456,6 +456,38 @@ fn sdk_delay_tail_and_oscillator_phase_carry_through_graph_swaps() {
     }
 }
 
+/// A device inserted before a delay: the synth and the delay keep running by their ids
+/// (#763 › 1), so the echoes and the note carry on as if nothing changed, the new utility at
+/// unity passing them through. Without ids the whole chain starts again.
+#[test]
+fn running_devices_survive_an_insert_before_them_by_their_ids() {
+    let render = |ids: bool| {
+        let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), device("delay", &[])]);
+        if ids {
+            p.assign_ids().unwrap();
+        }
+        let mut edited = p.clone();
+        edited.channels[0].devices.insert(1, device("utility", &[]));
+        if ids {
+            edited.assign_ids().unwrap();
+        }
+        let inputs = || RenderInputs::from_audio(&crate::AudioPool::new());
+        let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+        let mut controller = renderer.controller();
+        // The edit lands while the delay still echoes the note.
+        let mut out = blocks(&mut renderer, 60, 480);
+        controller.update(&edited).unwrap();
+        out.extend(blocks(&mut renderer, 60, 480));
+        let mut untouched = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+        let reference = blocks(&mut untouched, 120, 480);
+        max_diff(&out, &reference)
+    };
+    let kept = render(true);
+    assert!(kept < 1e-4, "{kept}");
+    let restarted = render(false);
+    assert!(restarted > 1e-3, "without ids the delay starts empty: {restarted}");
+}
+
 /// #911: with the loop on over bars 3 to 10 and playback starting before a MIDI clip at bar 5,
 /// the clip's first note sounds on its beat, not later.
 #[test]

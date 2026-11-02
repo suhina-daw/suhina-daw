@@ -31,7 +31,7 @@
 use std::time::{Duration, Instant};
 
 use suhina_device_api::{Device, MusicalScale, NoteEvent, ProcessContext};
-use suhina_model::{Project, TrackId};
+use suhina_model::{DeviceId, Project, TrackId};
 
 use crate::automation::{DeviceLanes, MixLanes};
 use crate::plugin::{
@@ -67,9 +67,13 @@ pub(crate) struct Chain {
     /// Each device's index among the channel's devices in the project (disabled built-in,
     /// unknown and missing devices have no place in the chain).
     positions: Vec<usize>,
-    /// The project's device ids in order (a plug-in's by its key), so a graph swap can tell
-    /// whether a new chain holds the same devices as an old one.
+    /// What each slot runs (a built-in's id with its file or sample, a plug-in's key, a graph's
+    /// hash), so a graph swap can tell whether a new chain holds the same devices as an old one.
     ids: Vec<String>,
+    /// Each slot's device id in the project (#763 › 1), [`DeviceId::NONE`] for the sine tones
+    /// and a device without one: a graph swap keeps a running device that has the same id and
+    /// runs the same thing, wherever it now is in the chain.
+    device_ids: Vec<DeviceId>,
     sample_slices: Vec<Option<std::sync::Arc<[f64]>>>,
     sample_edits: Vec<Option<std::sync::Arc<suhina_device_api::sample_edits::SampleEdits>>>,
     /// Every parameter's value from the project (its default when the project has none), per
@@ -246,6 +250,7 @@ impl Chain {
         let mut slots: Vec<Slot> = Vec::new();
         let mut positions = Vec::new();
         let mut ids = Vec::new();
+        let mut device_ids = Vec::new();
         let mut params = Vec::new();
         let mut latency = 0u32;
         let mut device_lanes = DeviceLanes::none();
@@ -266,6 +271,7 @@ impl Chain {
             slots.push(built.slot);
             positions.push(position);
             ids.push(built.id);
+            device_ids.push(stored.id);
             params.push(built.values);
         }
         let mut instrument = slots.iter().any(crate::group::is_instrument);
@@ -278,6 +284,7 @@ impl Chain {
             slots.insert(at, Slot::Device(Box::new(SineTones::new(sample_rate))));
             positions.insert(at, usize::MAX);
             ids.insert(at, sine::INFO.id.to_string());
+            device_ids.insert(at, DeviceId::NONE);
             params.insert(at, Vec::new());
             instrument = true;
         }
@@ -304,6 +311,7 @@ impl Chain {
                 .collect(),
             positions,
             ids,
+            device_ids,
             params,
             instrument,
             latency,
@@ -352,6 +360,7 @@ impl Chain {
             slots: Vec::new(),
             positions: Vec::new(),
             ids: Vec::new(),
+            device_ids: Vec::new(),
             sample_slices: Vec::new(),
             sample_edits: Vec::new(),
             params: Vec::new(),
@@ -1053,41 +1062,26 @@ impl Chain {
         }
     }
 
-    /// Takes the running devices of `old` if it holds the same devices for the same track,
-    /// with this chain's parameter values and plug-in settings and `old`'s held notes. Never
-    /// allocates.
+    /// Takes the running devices of `old` for the same track, with this chain's parameter
+    /// values and plug-in settings and `old`'s held notes. When `old` holds the same devices in
+    /// the same order, all of them; otherwise each device of this chain that `old` runs under
+    /// the same id ([`DeviceId`]) and runs the same thing, wherever it moved (#763 › 1), so an
+    /// insert, a removal or a move keeps the other devices' tails, envelopes and LFOs. A device
+    /// group whose devices changed starts again as a whole. Returns whether it took anything.
+    /// Never allocates.
     pub(crate) fn adopt(&mut self, old: &mut Chain) -> bool {
-        if old.track != self.track || old.ids != self.ids {
+        if old.track != self.track {
             return false;
         }
-        std::mem::swap(&mut self.slots, &mut old.slots);
-        let lanes = &self.device_lanes;
-        for (position, ((slot, values), fresh)) in
-            self.slots.iter_mut().zip(&self.params).zip(old.slots.iter_mut()).enumerate()
-        {
-            match (slot, fresh) {
-                (Slot::Device(device) | Slot::MidiDevice(device), _) => {
-                    if let Some(samples) = device.samples() {
-                        if let Some(points) = self.sample_slices.get_mut(position) {
-                            samples.swap_sample_slices(points);
-                        }
-                        if let Some(edits) = self.sample_edits.get_mut(position) {
-                            samples.swap_sample_edits(edits);
-                        }
-                    }
-                    // A parameter that follows a lane keeps its running value until the lane
-                    // sets it in the next block.
-                    for (index, &value) in
-                        values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
-                    {
-                        device.set_param(index, value);
-                    }
+        if old.ids == self.ids {
+            std::mem::swap(&mut self.slots, &mut old.slots);
+            for position in 0..self.slots.len() {
+                if let Some(fresh) = old.slots.get_mut(position) {
+                    self.settle(position, fresh);
                 }
-                (Slot::Plugin(running), Slot::Plugin(fresh)) => running.adopt(fresh),
-                (Slot::Plugin(_), _) => {}
-                (Slot::Group(running), Slot::Group(fresh)) => running.adopt(fresh),
-                (Slot::Group(_), _) => {}
             }
+        } else if !self.take_by_id(old) {
+            return false;
         }
         self.held = old.held;
         self.next_off = old.next_off;
@@ -1096,6 +1090,63 @@ impl Chain {
         self.delay.adopt(&mut old.delay);
         self.adopt_sends(old);
         true
+    }
+
+    /// Swaps each slot of this chain with the slot of `old` that has its device id and runs the
+    /// same thing, so the running device comes here (and the fresh one goes to `old`, to be
+    /// dropped with it), and settles it. Returns whether any slot matched. Never allocates.
+    fn take_by_id(&mut self, old: &mut Chain) -> bool {
+        let mut taken = false;
+        for position in 0..self.slots.len() {
+            let (Some(&id), Some(what)) = (self.device_ids.get(position), self.ids.get(position)) else { continue };
+            if !id.is_some() {
+                continue;
+            }
+            let Some(j) = old.device_ids.iter().zip(&old.ids).position(|(&d, w)| d == id && w == what) else {
+                continue;
+            };
+            let (Some(slot), Some(running)) = (self.slots.get_mut(position), old.slots.get_mut(j)) else { continue };
+            std::mem::swap(slot, running);
+            // What is in `old` there now is this slot's fresh copy, never matched again.
+            if let Some(d) = old.device_ids.get_mut(j) {
+                *d = DeviceId::NONE;
+            }
+            if let Some(fresh) = old.slots.get_mut(j) {
+                self.settle(position, fresh);
+            }
+            taken = true;
+        }
+        taken
+    }
+
+    /// Gives the running device now at `position` what this chain was built with: its
+    /// parameter values (except those a lane sets in the next block), its sample slices and
+    /// corrections, and for a plug-in or a group the settings of `fresh`, the copy built for it.
+    /// Never allocates.
+    fn settle(&mut self, position: usize, fresh: &mut Slot) {
+        let lanes = &self.device_lanes;
+        let (Some(slot), Some(values)) = (self.slots.get_mut(position), self.params.get(position)) else { return };
+        match (slot, fresh) {
+            (Slot::Device(device) | Slot::MidiDevice(device), _) => {
+                if let Some(samples) = device.samples() {
+                    if let Some(points) = self.sample_slices.get_mut(position) {
+                        samples.swap_sample_slices(points);
+                    }
+                    if let Some(edits) = self.sample_edits.get_mut(position) {
+                        samples.swap_sample_edits(edits);
+                    }
+                }
+                // A parameter that follows a lane keeps its running value until the lane sets
+                // it in the next block.
+                for (index, &value) in values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index)) {
+                    device.set_param(index, value);
+                }
+            }
+            (Slot::Plugin(running), Slot::Plugin(fresh)) => running.adopt(fresh),
+            (Slot::Plugin(_), _) => {}
+            (Slot::Group(running), Slot::Group(fresh)) => running.adopt(fresh),
+            (Slot::Group(_), _) => {}
+        }
     }
 
     /// The plug-in slots, inside device groups too, for processors to find theirs. Never

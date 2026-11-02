@@ -4,7 +4,7 @@ read_when: edit while playing, graph swap, renderer rebuild, Controller::update,
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-28
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/lib.rs
   - crates/engine/src/swap.rs
@@ -145,6 +145,17 @@ bus and key that have started and not ended: found, the note ends where it now e
 it is released at once. Notes from the launcher, the piano roll's keys and live input are not
 marked, so an edit leaves them alone. Audio clips needed nothing: the new graph's list of
 sounding clips is rebuilt from the edited project at the swap.
+
+## Amendment: devices kept by their ids (2026-11-02)
+
+A chain carried its running devices over only when the new graph held the same devices in the
+same order, so inserting, removing or moving one device restarted every other device on the
+track: tails cut, LFOs back to their start. Devices now have ids (#763 › 1). When the order
+changed, the new chain takes each device the old one runs under the same id and running the same
+thing (the same built-in with the same file or sample, the same graph, the same plug-in key),
+wherever it now is, and settles it with the new parameter values; the others start fresh. A
+device group whose devices changed still starts again as a whole. The match runs on the audio
+thread without allocating (a scan of at most 64 slots).
 
 ## Consequences
 
