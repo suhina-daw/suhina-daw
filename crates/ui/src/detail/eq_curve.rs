@@ -655,10 +655,13 @@ fn draw_strip(
         theme::mono_font(10.0),
         colors.text_value,
     );
-    let dial_center = Pos2::new(group.center().x, group.top() + 15.0 + 19.0);
+    // The dial takes the room the row's bands leave: the caption to 12, the value from 37,
+    // and the group is 54 high - so the wheel is 24 points, centred between them. The
+    // earlier 38-point wheel ran into the value's text (a screenshot from Ari).
+    let dial_center = Pos2::new(group.center().x, group.top() + 25.0);
     let response = ui
         .interact(
-            Rect::from_min_size(Pos2::new(group.left(), group.top() + 13.0), Vec2::new(group.width(), 40.0)),
+            Rect::from_min_size(Pos2::new(group.left(), group.top() + 13.0), Vec2::new(group.width(), 28.0)),
             address.ids.with(("eq-strip", field)),
             Sense::click_and_drag(),
         )
@@ -695,7 +698,7 @@ fn draw_strip(
     let at = normalized(parameter, parameter.value);
     // The dial's pointer follows the drag: at the value held while held, and the fresh one
     // while it moves (the state the mixer's own value fields show).
-    crate::kit::widgets::knob(&painter, dial_center, 38.0, at as f32, colors.text_primary, Some(&response));
+    crate::kit::widgets::dial(&painter, dial_center, 24.0, at as f32, Some(&response));
     let held = response.is_pointer_button_down_on();
     let state_id = response.id.with("start");
     let start = ui.ctx().data_mut(|d| {
