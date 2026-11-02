@@ -176,7 +176,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         id,
         name,
         length: end - start,
-        lanes: vec![ContentLane { target: None, data }],
+        lanes: vec![ContentLane { target: None, data }].into(),
         extensions: Default::default(),
         scale,
     });

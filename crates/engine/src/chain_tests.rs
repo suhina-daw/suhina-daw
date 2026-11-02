@@ -42,7 +42,7 @@ pub(crate) fn project(notes: Vec<Note>, length: f64, devices: Vec<Device>) -> Pr
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -156,7 +156,7 @@ fn an_sd_effect_plays_its_stored_parameter_value() {
     for (stored, gain) in [(0.5, 0.5_f32), (3.0, 2.0)] {
         let mut effect = device("sd", &[("gain", stored)]);
         effect.kind = DeviceKind::Sd;
-        effect.state = graph.to_sd().ok().map(String::into_bytes);
+        effect.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
         let notes = vec![note(0.0, 1.0, 69)];
         let plain = render_offline(&project(notes.clone(), 1.0, vec![device("fm-synth", &[])]), SR, 512).unwrap();
         let processed = render_offline(&project(notes, 1.0, vec![device("fm-synth", &[]), effect]), SR, 512).unwrap();
@@ -181,7 +181,7 @@ fn an_sd_gain_graph_runs_in_the_offline_device_chain() {
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     let mut effect = device("sd", &[]);
     effect.kind = DeviceKind::Sd;
-    effect.state = graph.to_sd().ok().map(String::into_bytes);
+    effect.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     effect.automation = vec![AutomationLane {
         param: "gain".into(),
         points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(0.5, 0.0)],
@@ -213,7 +213,7 @@ fn an_sd_midi_effect_transposes_notes_before_the_instrument() {
         vec![suhina_device_sdk::Connection::new("in", "up"), suhina_device_sdk::Connection::new("up", "out")];
     let mut transpose = device("sd", &[]);
     transpose.kind = DeviceKind::Sd;
-    transpose.state = graph.to_sd().ok().map(String::into_bytes);
+    transpose.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     transpose.automation = vec![AutomationLane {
         param: "semitones".into(),
         points: vec![AutomationPoint::new(0.0, 12.0), AutomationPoint::new(0.5, 0.0)],
@@ -255,7 +255,7 @@ fn an_sd_instrument_renders_from_timestamped_note_events() {
     ];
     let mut instrument = device("sd", &[]);
     instrument.kind = DeviceKind::Sd;
-    instrument.state = graph.to_sd().ok().map(String::into_bytes);
+    instrument.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     let audio = render_offline(&project(vec![note(0.0, 0.1, 60)], 1.0, vec![instrument]), SR, 512).unwrap();
     assert!(audio.iter().any(|sample| sample.abs() > 0.01));
     assert!(audio.iter().skip(BEAT / 10 * 2).all(|sample| sample.abs() < 1e-6));
@@ -346,7 +346,7 @@ fn a_held_note_ends_when_an_edit_takes_it_away_while_playing() {
     let mut shorter = p.clone();
     for (project, notes) in [(&mut no_note, vec![]), (&mut shorter, vec![note(0.0, 1.5, 69)])] {
         project.contents[0].lanes =
-            vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(notes) }];
+            vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(notes) }].into();
     }
     for (name, edited, silent_from) in
         [("clip deleted", &no_clip, 24_000), ("note deleted", &no_note, 24_000), ("note shortened", &shorter, 36_000)]
@@ -419,7 +419,7 @@ fn sdk_device(name: &str) -> Device {
     let graph = sdk_examples::build(name).unwrap();
     let mut stored = device("sd", &[]);
     stored.kind = DeviceKind::Sd;
-    stored.state = Some(graph.to_sd().unwrap().into_bytes());
+    stored.state = Some(graph.to_sd().unwrap().into_bytes().into());
     stored
 }
 

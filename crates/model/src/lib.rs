@@ -43,10 +43,12 @@ mod launch;
 mod mapping;
 mod overlap;
 mod scale;
+mod shared;
 pub use launch::{LaunchMode, LaunchQuantization, LaunchSettings};
 pub use mapping::{KEY_NAME_MAX, LaunchMapping, MappingSource, MappingTarget};
 pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, TOUCH_TOLERANCE};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
+pub use shared::{Bytes, Shared};
 
 /// Identifies a [`Track`] within a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -302,7 +304,7 @@ pub struct Device {
     /// validated `.sd` graph JSON. For VST2 it is the standard VST2
     /// bank (an `.fxb` file's contents), which also a VST3 version standing in for the plug-in
     /// reads; for VST3 it is the component's state.
-    pub state: Option<Vec<u8>>,
+    pub state: Option<Bytes>,
     /// Parameter values set on the device. A built-in effect or instrument's
     /// (`DeviceKind::Builtin`) go by the parameter's stable id; a plug-in's by its parameter id
     /// (the number the plug-in gives it, written in decimal) in the plug-in's own range, and are
@@ -404,7 +406,7 @@ impl Device {
             self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "sample_reference"));
             self.extensions.0.push(Extension { format: "suhina".into(), key: "sample_reference".into(), data });
         } else {
-            self.state = Some(data);
+            self.state = Some(data.into());
         }
     }
 }
@@ -456,7 +458,8 @@ pub struct ClipContent {
     pub name: String,
     /// Length in beats.
     pub length: f64,
-    pub lanes: Vec<ContentLane>,
+    /// Shared between copies of the project until one of them changes a lane (#763 › 3).
+    pub lanes: Shared<Vec<ContentLane>>,
     pub extensions: Extensions,
     /// The scale the notes are written in, if any: the piano roll marks its keys
     /// ([ADR 0001](../../docs/decisions/0001-daw-neutral-model.md) › Amendment: clip scales).

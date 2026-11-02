@@ -49,7 +49,7 @@ fn project_built() -> Project {
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data }],
+        lanes: vec![ContentLane { target: None, data }].into(),
         extensions: Extensions::default(),
         scale: None,
     };

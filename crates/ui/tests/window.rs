@@ -204,7 +204,7 @@ pub(super) fn project_with_audio() -> (suhina_engine::model::Project, suhina_ui:
         id: ContentId(300),
         name: "Loop".into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     });

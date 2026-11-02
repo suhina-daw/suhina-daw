@@ -364,7 +364,7 @@ fn launcher_project_built() -> Project {
         id: suhina_model::ContentId(900),
         name: "loop".into(),
         length: 4.0,
-        lanes: vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(vec![note]) }],
+        lanes: vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(vec![note]) }].into(),
         extensions: suhina_model::Extensions::default(),
         scale: None,
     });

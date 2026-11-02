@@ -670,7 +670,8 @@ pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, Com
     let values: Vec<DeviceParam> =
         graph.parameters.iter().map(|parameter| DeviceParam::new(parameter.id.clone(), parameter.default)).collect();
     let state = graph.to_sd().map_err(|e| e.to_string())?.into_bytes();
-    let mut device = Device { state: Some(state), params: values, ..Device::new(graph.name.clone(), DeviceKind::Sd) };
+    let mut device =
+        Device { state: Some(state.into()), params: values, ..Device::new(graph.name.clone(), DeviceKind::Sd) };
     if let Some(path) = sample_path {
         device.set_sample_file(&path.display().to_string());
     }
@@ -751,7 +752,7 @@ pub(crate) fn update_sd(session: &mut Session, params: &Value) -> Result<Value, 
     let state = newer.to_sd().map_err(|e| e.to_string())?.into_bytes();
     let from_version = current.device_version;
     device.name = newer.name.clone();
-    device.state = Some(state);
+    device.state = Some(state.into());
     device.params = migrated.into_iter().map(|(id, value)| DeviceParam::new(id, value)).collect();
     Ok(
         json!({ "device": index, "id": newer.id, "name": newer.name, "from_version": from_version, "to_version": newer.device_version }),
@@ -1052,7 +1053,7 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
-    device.state = Some(absolute_text.as_bytes().to_vec());
+    device.state = Some(absolute_text.as_bytes().into());
     Ok(json!({ "device": path_value(&path), "file": absolute_text, "name": name }))
 }
 

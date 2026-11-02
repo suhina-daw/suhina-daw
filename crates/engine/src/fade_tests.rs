@@ -35,7 +35,7 @@ pub(crate) fn project(region: AudioRegion, length: f64, fade_in: f64, fade_out: 
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],

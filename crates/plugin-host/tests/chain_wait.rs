@@ -70,7 +70,8 @@ fn project(chains: &[usize]) -> Project {
                     channel: 0,
                     muted: false,
                 }]),
-            }],
+            }]
+            .into(),
             extensions: Extensions::default(),
             scale: None,
         }],

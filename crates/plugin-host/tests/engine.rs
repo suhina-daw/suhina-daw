@@ -118,7 +118,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -185,7 +185,7 @@ fn an_offline_render_plays_notes_on_a_plug_in_instrument() {
     // The VST3 test plug-in answers each note with its velocity on the note's frame and
     // reports 32 frames of latency; it is the track's instrument, so no sine voices play.
     let mut device = plugin_device("vst3");
-    device.state = Some(1.0f32.to_le_bytes().to_vec());
+    device.state = Some(1.0f32.to_le_bytes().to_vec().into());
     let p = project(2.0, true, vec![device]);
     let started = suhina_session::start_offline(&p, &AudioPool::new(), &env(), SR);
     assert!(started.notices.is_empty(), "{:?}", started.notices);
@@ -412,7 +412,7 @@ fn until(session: &mut Session, renderer: &mut Renderer, what: &str, done: impl 
 fn a_session_starts_its_projects_plug_ins_and_reports_the_missing_ones() {
     let mut missing = plugin_device("not-installed");
     missing.name = "Gone".into();
-    missing.state = Some(vec![1, 2, 3]);
+    missing.state = Some(vec![1, 2, 3].into());
     // A note long enough to still sound however long the plug-in takes to start.
     let p = project(256.0, false, vec![plugin_device("gain"), missing]);
     let (mut session, mut renderer) = session(p.clone(), true);
@@ -426,7 +426,7 @@ fn a_session_starts_its_projects_plug_ins_and_reports_the_missing_ones() {
     assert_eq!(listed[0]["plugin"]["status"], "running");
     assert_eq!(listed[0]["plugin"]["plugin"]["name"], "Test gain");
     // The missing plug-in keeps its state untouched, to be saved back as it was.
-    assert_eq!(session.project().channels[0].devices[1].state, Some(vec![1, 2, 3]));
+    assert_eq!(session.project().channels[0].devices[1].state.as_deref(), Some(&[1, 2, 3][..]));
     assert_eq!(session.project().channels[0].devices, p.channels[0].devices);
 
     // The plug-in is heard: the track at half its level, once the graph with it plays.

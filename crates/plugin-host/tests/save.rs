@@ -60,7 +60,7 @@ fn project() -> Project {
         // The catalog lists the built-in test plug-ins as CLAP (their file is not a `.vst3`).
         kind: DeviceKind::Clap { id: "vst3".into() },
         enabled: true,
-        state: Some(bank(0.25)),
+        state: Some(bank(0.25).into()),
         params: Vec::new(),
         clip_host: false,
         extensions: Extensions(vec![Extension {
@@ -70,8 +70,10 @@ fn project() -> Project {
         }]),
         automation: Vec::new(),
     };
-    let missing =
-        Device { state: Some(vec![1, 2, 3]), ..Device::new("Gone", DeviceKind::Clap { id: "not-installed".into() }) };
+    let missing = Device {
+        state: Some(vec![1, 2, 3].into()),
+        ..Device::new("Gone", DeviceKind::Clap { id: "not-installed".into() })
+    };
     Project {
         tracks: vec![Track {
             content: ContentKinds { notes: true, audio: false },
@@ -122,7 +124,7 @@ fn a_save_writes_the_state_the_running_plug_in_gives() {
     let devices = &file.project().channels[0].devices;
 
     // The plug-in's own state as it runs, not the bank the project came with.
-    assert_eq!(devices[0].state, Some(0.25f32.to_le_bytes().to_vec()));
+    assert_eq!(devices[0].state.as_deref(), Some(&0.25f32.to_le_bytes()[..]));
     let controllers: Vec<&Extension> = devices[0].extensions.0.iter().filter(|e| e.key == CONTROLLER).collect();
     assert_eq!(controllers.len(), 1, "one controller state, not the imported one and the new one");
     assert_eq!(controllers[0].data, b"controller");

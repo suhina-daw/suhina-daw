@@ -74,7 +74,7 @@ fn project(clip: bool) -> Project {
             id: ContentId(1),
             name: "take".into(),
             length: 2.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],

@@ -39,7 +39,7 @@ fn sd_device() -> Device {
         name: "Test Gain".into(),
         kind: DeviceKind::Sd,
         enabled: true,
-        state: graph.to_sd().ok().map(String::into_bytes),
+        state: graph.to_sd().ok().map(String::into_bytes).map(Into::into),
         params: Vec::new(),
         automation: Vec::new(),
         clip_host: false,

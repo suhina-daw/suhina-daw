@@ -182,7 +182,7 @@ fn a_projects_plugins_are_matched_to_the_installed_ones() {
     std::fs::write(settings.join("plugin-catalog.json"), catalog.to_string()).unwrap();
     let mut p = Projects::with_library(Library::new(Some(settings), dir.join("no-such-host")));
 
-    let device = |name: &str, kind: DeviceKind| Device { state: Some(vec![1, 2, 3]), ..Device::new(name, kind) };
+    let device = |name: &str, kind: DeviceKind| Device { state: Some(vec![1, 2, 3].into()), ..Device::new(name, kind) };
     let mut project = Project::default();
     project.channels.push(Channel {
         devices: vec![

@@ -547,7 +547,7 @@ fn demo_project() -> Project {
         id: ContentId(id),
         name: name.into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };

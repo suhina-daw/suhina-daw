@@ -398,7 +398,7 @@ fn a_file_device_in_a_group_is_known_by_its_file() {
     let mut plugins = crate::Plugins::new();
     let mut identity = |state: &[u8]| {
         let mut cab = device("nam-cab-loader", &[]);
-        cab.state = Some(state.to_vec());
+        cab.state = Some(state.to_vec().into());
         let outer = group(vec![branch(vec![cab.clone()])], &[]);
         let mut builder = crate::slot_factory::SlotFactory {
             sample_rate: SR,

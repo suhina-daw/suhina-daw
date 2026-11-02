@@ -176,7 +176,7 @@ fn sd_parameters_are_listed_and_use_their_control_scale() {
         name: "Test Filter".into(),
         kind: DeviceKind::Sd,
         enabled: true,
-        state: graph.to_sd().ok().map(String::into_bytes),
+        state: graph.to_sd().ok().map(String::into_bytes).map(Into::into),
         params: Vec::new(),
         automation: vec![lane],
         clip_host: false,
@@ -293,9 +293,10 @@ fn built_in_and_sd_parameters_carry_their_group() {
     graph.connections =
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     let state = graph.to_sd().ok().map(String::into_bytes);
-    channel
-        .devices
-        .push(suhina_engine::model::Device { state, ..suhina_engine::model::Device::new("Test Gain", DeviceKind::Sd) });
+    channel.devices.push(suhina_engine::model::Device {
+        state: state.map(Into::into),
+        ..suhina_engine::model::Device::new("Test Gain", DeviceKind::Sd)
+    });
     let params = Params::build(&project);
     let group = |device, id: &str| {
         params.param(track, &LaneKey { device: Some(device), param: id.into() }).and_then(|p| p.group.clone())

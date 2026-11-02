@@ -276,7 +276,7 @@ fn offline_the_order_plug_ins_answer_in_changes_nothing() {
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     let mut sd = device("sd", &[]);
     sd.kind = DeviceKind::Sd;
-    sd.state = graph.to_sd().ok().map(String::into_bytes);
+    sd.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     let mut p =
         tracks(vec![vec![plug(), device("utility", &[("gain", -6.0)]), plug()], vec![plug(), sd, plug(), plug()]]);
     for content in &mut p.contents {

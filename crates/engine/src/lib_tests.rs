@@ -47,7 +47,7 @@ fn project_with(lanes: Vec<ContentLane>, clips: Vec<Clip>, tracks: u32) -> Proje
             id: ContentId(1),
             name: "c".into(),
             length: 4.0,
-            lanes,
+            lanes: lanes.into(),
             extensions: Extensions::default(),
             scale: None,
         }],

@@ -179,7 +179,7 @@ fn audio_set_on_the_controller_is_heard_from_the_next_graph() {
     };
     let mut audio_project = project(Vec::new(), 2.0, Vec::new());
     audio_project.tracks[0].content = ContentKinds { notes: false, audio: true };
-    audio_project.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(region) }];
+    audio_project.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(region) }].into();
     let mut renderer =
         Renderer::build(&audio_project, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING)
             .unwrap();

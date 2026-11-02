@@ -639,7 +639,7 @@ pub(crate) fn place_clip(
         id,
         name: source.name.clone(),
         length,
-        lanes: vec![ContentLane { target: None, data: source.lane }],
+        lanes: vec![ContentLane { target: None, data: source.lane }].into(),
         extensions: Default::default(),
         scale,
     });

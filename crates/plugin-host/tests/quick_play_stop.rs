@@ -58,7 +58,7 @@ fn project(tracks: u32) -> Project {
             id: ContentId(1),
             name: "c".into(),
             length: 64.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],

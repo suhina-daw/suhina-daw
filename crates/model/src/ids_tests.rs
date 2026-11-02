@@ -24,7 +24,7 @@ fn project() -> Project {
             id: ContentId(1),
             name: String::new(),
             length: 4.0,
-            lanes: Vec::new(),
+            lanes: Vec::new().into(),
             extensions: Extensions::default(),
             scale: None,
         }],

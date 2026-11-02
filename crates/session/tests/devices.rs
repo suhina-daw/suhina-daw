@@ -213,7 +213,7 @@ fn sd_device_updates_migrate_values_atomically_and_undo_to_the_embedded_revision
     let device = &session.project().channels[0].devices[0];
     assert_eq!(device.name, "New Gain");
     assert_eq!(device.params, vec![DeviceParam::new("level", 1.75)]);
-    let state = String::from_utf8(device.state.clone().expect("updated graph is embedded")).unwrap();
+    let state = String::from_utf8(device.state.clone().expect("updated graph is embedded").to_vec()).unwrap();
     assert_eq!(DeviceGraph::from_sd(&state).unwrap().device_version, 2);
 
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -795,7 +795,7 @@ fn a_projects_stored_path_gets_the_extension_check() {
 
     let mut project = project();
     project.channels[0].devices.push(Device {
-        state: Some(impostor.display().to_string().into_bytes()),
+        state: Some(impostor.display().to_string().into_bytes().into()),
         ..Device::new("Amp", DeviceKind::Builtin("nam-amp-modeler".into()))
     });
     let file = dir.join("with-nam.suhina");
@@ -1141,7 +1141,8 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
                 channel: 0,
                 muted: false,
             }]),
-        }],
+        }]
+        .into(),
     });
     saved.arrangement.lanes.push(ArrangementLane {
         id: Default::default(),

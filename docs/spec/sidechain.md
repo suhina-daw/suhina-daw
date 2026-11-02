@@ -173,7 +173,7 @@ pub struct Device {
     pub name: String,
     pub kind: DeviceKind,
     pub enabled: bool,
-    pub state: Option<Vec<u8>>,
+    pub state: Option<Bytes>,
     pub params: Vec<DeviceParam>,
     /// The device's ports that read another signal (docs/spec/sidechain.md). Empty for almost every
     /// device. At most one entry in the first version.

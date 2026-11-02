@@ -517,7 +517,7 @@ fn expanded_device() -> Device {
         drawing: vec![],
     });
     graph.expanded = Some(big);
-    Device { state: Some(graph.to_sd().unwrap().into_bytes()), ..Device::new("Big Gain", DeviceKind::Sd) }
+    Device { state: Some(graph.to_sd().unwrap().into_bytes().into()), ..Device::new("Big Gain", DeviceKind::Sd) }
 }
 
 /// A device with an expanded panel has a button in its header that opens it over the main area;

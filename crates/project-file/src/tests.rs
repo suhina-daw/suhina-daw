@@ -69,12 +69,12 @@ fn everything() -> Project {
         },
         Device {
             enabled: false,
-            state: Some(vec![9, 8, 7, 0, 255]),
+            state: Some(vec![9, 8, 7, 0, 255].into()),
             extensions: ext("Vst3ControllerState"),
             ..Device::new("Verb", DeviceKind::Vst3 { id: "0123456789ABCDEF0123456789ABCDEF".into() })
         },
         Device {
-            state: Some(br#"{"format":"suhina-device","version":1}"#.to_vec()),
+            state: Some(br#"{"format":"suhina-device","version":1}"#.to_vec().into()),
             params: vec![DeviceParam::new("gain", 0.5)],
             automation: vec![AutomationLane {
                 param: "gain".into(),
@@ -83,14 +83,14 @@ fn everything() -> Project {
             }],
             ..Device::new("Community Gain", DeviceKind::Sd)
         },
-        Device { state: Some(Vec::new()), ..Device::new("Old", DeviceKind::Vst2 { id: 1_234_567 }) },
+        Device { state: Some(Vec::new().into()), ..Device::new("Old", DeviceKind::Vst2 { id: 1_234_567 }) },
         Device {
-            state: Some(b"/home/me/Suhina/NAM models/edge.nam".to_vec()),
+            state: Some(b"/home/me/Suhina/NAM models/edge.nam".to_vec().into()),
             params: vec![DeviceParam::new("inputGain", -3.5), DeviceParam::new("eqMidFreq", 800.0)],
             ..Device::new("Amp", DeviceKind::Builtin("nam-amp-modeler".into()))
         },
         Device {
-            state: Some(b"/home/me/Suhina/IRs/marshall.wav".to_vec()),
+            state: Some(b"/home/me/Suhina/IRs/marshall.wav".to_vec().into()),
             params: vec![DeviceParam::new("volume", -1.9)],
             ..Device::new("Cab", DeviceKind::Builtin("nam-cab-loader".into()))
         },
@@ -180,7 +180,8 @@ fn everything() -> Project {
                         Note::new(0.0, 1.0, 60, 0.75),
                         Note { release_velocity: 0.0, channel: 15, ..Note::new(1.5, 0.25, 127, 1.0) },
                     ]),
-                }],
+                }]
+                .into(),
                 extensions: ext("MidiClip"),
                 scale: None,
             },
@@ -206,7 +207,8 @@ fn everything() -> Project {
                         stream: Some(3),
                         ..AudioRegion::new("Samples/loop.wav")
                     }),
-                }],
+                }]
+                .into(),
                 extensions: Extensions::default(),
                 scale: None,
             },
@@ -852,7 +854,7 @@ fn an_empty_audio_region_is_left_alone_by_rebase_audio() {
         id: ContentId(900),
         name: "Audio clip".into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion { ..AudioRegion::new("") }) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion { ..AudioRegion::new("") }) }].into(),
         extensions: Extensions::default(),
         scale: None,
     });
@@ -1066,7 +1068,7 @@ fn with_a_group() -> Project {
     let mut inner = Device::group("Inner", DeviceGroup::default());
     if let Some(g) = inner.as_group_mut() {
         g.branches[0].devices.push(Device {
-            state: Some(vec![1, 2, 3]),
+            state: Some(vec![1, 2, 3].into()),
             ..Device::new("Synth", DeviceKind::Clap { id: "com.example.synth".into() })
         });
     }

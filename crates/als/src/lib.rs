@@ -683,7 +683,7 @@ impl Reader {
             name: user_name.or(plugin_name).unwrap_or("Plug-in").to_string(),
             kind,
             enabled,
-            state,
+            state: state.map(Into::into),
             params: Vec::new(),
             automation: Vec::new(),
             clip_host: false,
@@ -815,7 +815,7 @@ impl Reader {
             id,
             name: name.clone(),
             length: loop_end.max(out_marker).max(0.0),
-            lanes: vec![ContentLane { target: None, data }],
+            lanes: vec![ContentLane { target: None, data }].into(),
             extensions: Extensions::default(),
             scale,
         });

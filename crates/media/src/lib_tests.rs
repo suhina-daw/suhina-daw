@@ -30,7 +30,8 @@ fn project_with_audio(file: &str, absolute: Option<String>) -> Project {
             lanes: vec![ContentLane {
                 target: None,
                 data: LaneData::Audio(AudioRegion { absolute_file: absolute, ..AudioRegion::new(file) }),
-            }],
+            }]
+            .into(),
             extensions: Extensions::default(),
             scale: None,
         }],

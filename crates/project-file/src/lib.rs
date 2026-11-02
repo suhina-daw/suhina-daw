@@ -1242,7 +1242,7 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         name: text(d, "name", at)?,
         kind,
         enabled: flag(d, "enabled", true, at)?,
-        state: bytes(d, "state", at)?,
+        state: bytes(d, "state", at)?.map(Into::into),
         params,
         automation,
         clip_host: flag(d, "clip_host", false, at)?,
@@ -1337,7 +1337,7 @@ fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError
         id: ContentId(whole(c, "id", at)?),
         name: text(c, "name", at)?,
         length: float(c, "length", at)?,
-        lanes,
+        lanes: lanes.into(),
         extensions: extensions(c, at)?,
         scale: read_scale(c, "scale", at)?,
     })

@@ -140,7 +140,7 @@ mod tests {
                 id: ContentId(1),
                 name: "a".into(),
                 length: 2.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Audio(region("a.wav")) }],
+                lanes: vec![ContentLane { target: None, data: LaneData::Audio(region("a.wav")) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             }],

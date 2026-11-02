@@ -95,7 +95,8 @@ fn project() -> Project {
             lanes: vec![ContentLane {
                 target: None,
                 data: LaneData::Notes((0..8).map(|i| note(f64::from(i) * 0.5, 0.4, 43, 0.9)).collect()),
-            }],
+            }]
+            .into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -237,7 +238,7 @@ fn a_gather_keeps_the_reads_across_a_project_switch() {
     assert_eq!(opened.assign_ids(), Ok(()));
     // The project's saved state is the default gain; the plug-in loads with it.
     let gain_bytes = DEFAULT_GAIN.to_le_bytes().to_vec();
-    opened.channels[0].devices[0].state = Some(gain_bytes);
+    opened.channels[0].devices[0].state = Some(gain_bytes.into());
     let mut projects = suhina_session::Projects::new();
     let id =
         projects.add(Session::new(opened.clone()), Some("gain".into())).map_err(|e| e.message().to_string()).unwrap();

@@ -38,7 +38,7 @@ fn warped(id: u32, file: &str, seconds: f64) -> ClipContent {
         id: ContentId(id),
         name: file.into(),
         length: 2.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     }

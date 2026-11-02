@@ -192,7 +192,7 @@ fn next_ara_document() -> String {
 /// The state the project saved for `device`, with a VST3 controller's own state.
 fn saved_state(device: &Device) -> Option<SavedState> {
     let controller = device.extensions.0.iter().find(|e| e.key == "Vst3ControllerState").map(|e| e.data.clone());
-    device.state.clone().map(|data| SavedState { data, controller })
+    device.state.as_deref().map(|data| SavedState { data: data.to_vec(), controller })
 }
 
 /// A plug-in started off the session's thread.

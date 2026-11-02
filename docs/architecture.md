@@ -482,6 +482,8 @@ project directly.
 | Plugin | Acts on one of the project's running plug-ins: opens or closes its editor, restarts it (`device.openEditor`, `device.closeEditor`, `device.restart`). | none |
 | Audio | Lists or chooses the audio output (host, device, sample rate, buffer size) and reports on it (`audio.*`, on `Projects`); reopens the active project's output. Lists the MIDI inputs and turns them on or off (`midi.*`). | none |
 
+A snapshot is a copy of the `Project`, but its heavy parts are shared: a device's `state` is `Bytes` and a clip content's `lanes` are `Shared` (`suhina_model::Shared`, an `Arc` copied when an edit changes it), so an undo step costs what the edit touched (#763 › 3; `cargo run --release -p suhina-session --example undo_cost` measures it).
+
 **Edits while playing** ([ADR 0005](decisions/0005-edits-while-playing.md)): after an Edit or
 History command changes the project, the session calls `Player::update`. The controller builds a
 new `Graph` (everything the renderer derives from the project) on the main thread and the audio

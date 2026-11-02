@@ -45,7 +45,7 @@ pub(super) fn notes(id: u32, notes: Vec<Note>) -> ClipContent {
         id: ContentId(id),
         name: format!("c{id}"),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
         extensions: Extensions::default(),
         scale: None,
     }
@@ -666,7 +666,7 @@ fn launched_audio_loops_from_its_start_marker() {
         id: ContentId(1),
         name: "ramp".into(),
         length: 2.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -708,7 +708,7 @@ fn a_launched_clip_s_plan_leaves_its_stretcher_to_the_stretch_thread() {
         id: ContentId(1),
         name: "sine".into(),
         length: 3.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -744,7 +744,7 @@ fn launched_unwarped_audio_loops_over_the_whole_file() {
         id: ContentId(1),
         name: "hit".into(),
         length: 1.5,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -788,7 +788,7 @@ fn stretched_sine() -> (Project, AudioPool) {
         id: ContentId(1),
         name: "sine".into(),
         length: 2.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };

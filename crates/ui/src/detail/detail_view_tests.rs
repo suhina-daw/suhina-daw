@@ -288,7 +288,7 @@ fn an_audio_effect_shows_its_label_and_only_visible_nodes() {
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     let mut project = demo_project();
     project.channels[0].devices.push(Device {
-        state: graph.to_sd().ok().map(String::into_bytes),
+        state: graph.to_sd().ok().map(String::into_bytes).map(Into::into),
         ..Device::new("Example Gain", DeviceKind::Sd)
     });
     let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
@@ -329,9 +329,10 @@ fn every_sdk_control_renders_in_a_scrollable_device_panel() {
         graph.nodes = vec![Node::audio_input("in"), Node::gain("gain", "gain"), Node::audio_output("out")];
         graph.connections = vec![Connection::new("in", "gain"), Connection::new("gain", "out")];
         let mut project = demo_project();
-        project.channels[0]
-            .devices
-            .push(Device { state: Some(graph.to_sd().unwrap().into_bytes()), ..Device::new("UI", DeviceKind::Sd) });
+        project.channels[0].devices.push(Device {
+            state: Some(graph.to_sd().unwrap().into_bytes().into()),
+            ..Device::new("UI", DeviceKind::Sd)
+        });
         let detail = build(&project, Some(TrackId(1)), None);
         let ctx = egui::Context::default();
         theme::install(&ctx);
@@ -403,7 +404,7 @@ fn render_the_authored_control_gallery() {
     }
     let mut project = demo_project();
     project.channels[0].devices.push(Device {
-        state: Some(graph.to_sd().unwrap().into_bytes()),
+        state: Some(graph.to_sd().unwrap().into_bytes().into()),
         ..Device::new(graph.name.clone(), DeviceKind::Sd)
     });
     let detail = build(&project, Some(TrackId(1)), None);
@@ -425,7 +426,7 @@ fn render_sdk_example_with_stock_controls() {
     let graph = custom_panel::build().unwrap();
     let mut project = demo_project();
     project.channels[0].devices.push(Device {
-        state: Some(graph.to_sd().unwrap().into_bytes()),
+        state: Some(graph.to_sd().unwrap().into_bytes().into()),
         ..Device::new(graph.name.clone(), DeviceKind::Sd)
     });
     let detail = build(&project, Some(TrackId(1)), None);
@@ -447,7 +448,7 @@ fn render_sdk_example_in_a_narrow_panel() {
     let graph = custom_panel::build().unwrap();
     let mut project = demo_project();
     project.channels[0].devices.push(Device {
-        state: Some(graph.to_sd().unwrap().into_bytes()),
+        state: Some(graph.to_sd().unwrap().into_bytes().into()),
         ..Device::new(graph.name.clone(), DeviceKind::Sd)
     });
     let detail = build(&project, Some(TrackId(1)), None);
@@ -648,7 +649,7 @@ fn with_plugin() -> Project {
     let mut project = demo_project();
     project.channels[0]
         .devices
-        .push(Device { state: Some(vec![1, 2]), ..Device::new("Verb", DeviceKind::Vst3 { id: "ABC".into() }) });
+        .push(Device { state: Some(vec![1, 2].into()), ..Device::new("Verb", DeviceKind::Vst3 { id: "ABC".into() }) });
     project
 }
 
