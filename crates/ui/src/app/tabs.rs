@@ -54,6 +54,12 @@ impl App {
         if active == self.shown_project {
             return;
         }
+        // The carry and its hover name a slot or clip in the project being left: with another
+        // project active, their release would copy in the new project's coordinates. They let
+        // go as the switch does.
+        self.carry = None;
+        self.switch_hover = None;
+        self.device_carry = None;
         self.stash_shown();
         for gone in self.stashes.keys().copied().filter(|id| self.projects.get(*id).is_none()).collect::<Vec<_>>() {
             self.stashes.remove(&gone);

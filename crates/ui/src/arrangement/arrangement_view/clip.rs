@@ -302,15 +302,18 @@ pub(super) fn clip_box<'a>(
     let tool = state.tool;
     let paints = tool == ArrangementTool::Range || response.interact_pointer_pos().is_some_and(|p| in_body(p.y));
     // A drag that selects time rather than moving the clip: with Ctrl held, or from the clip's
-    // A drag that selects time rather than moving the clip: with Ctrl held, or from the clip's
-    // lower half on a lane tall enough to have one, as the setting says; with the Range tool,
-    // from anywhere (#991). The press's own place decides, so a held press knows before the
-    // drag is what it is holding: a time-selection's press grabs no clip.
-    let tool_pressed = tool == ArrangementTool::Range || tool == ArrangementTool::Select;
-    let press_selects_time = tool_pressed
-        && ui
+    // A drag that selects time rather than moving the clip: with the Range tool, from anywhere
+    // on a clip; with the Select tool, with Ctrl held or from the clip's lower half on a lane
+    // tall enough to have one, as the setting says (#991). The press's own place decides, so a
+    // held press knows before the drag is what it is holding: a time-selection's press grabs
+    // no clip.
+    let press_selects_time = match tool {
+        ArrangementTool::Range => ui.input(|i| i.pointer.press_origin()).is_some(),
+        ArrangementTool::Select => ui
             .input(|i| i.pointer.press_origin())
-            .is_some_and(|origin| if state.time_select_ctrl { command } else { selects_at(origin.y) });
+            .is_some_and(|origin| if state.time_select_ctrl { command } else { selects_at(origin.y) }),
+        _ => false,
+    };
     let selects_time = response.drag_started_by(egui::PointerButton::Primary) && press_selects_time;
     // The Split, Erase and Mute tools act on the clip clicked, and nothing else does (#991).
     let tool_click =
@@ -391,11 +394,22 @@ pub(super) fn clip_box<'a>(
         state.targeted = Some(lane.track);
     }
     // A press held on the clip before the pointer has moved enough for the drag to be decided:
-    // the view may switch under it (Tab), and the press then carries the clip like a drag. A
-    // time-selection's press grabs no clip: its origin said so above. A press that is let go
-    // dies at the frame's start (`begin_clip_carry`), even when this widget is gone by then.
-    if response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) && !press_selects_time {
-        state.pressed_clip = Some(key);
+    // the view may switch under it (Tab), and the press then carries the clip like a drag. Only
+    // the Select tool's press grabs: the others act on their click or paint time (#991). A
+    // time-selection's press grabs nothing — its origin said so, or the modifiers say so now.
+    // A press that is let go dies at the frame's start (`begin_clip_carry`), even when this
+    // widget is gone by then.
+    if response.is_pointer_button_down_on() && tool == ArrangementTool::Select && ui.input(|i| i.pointer.primary_down())
+    {
+        if press_selects_time {
+            // The modifiers of a time selection arrived while the button is still down: the
+            // press selects time now, and its record of a grab dies here.
+            if state.pressed_clip == Some(key) {
+                state.pressed_clip = None;
+            }
+        } else {
+            state.pressed_clip = Some(key);
+        }
     }
     if response.drag_started_by(egui::PointerButton::Primary) && !selects_time && tool == ArrangementTool::Select {
         state.clip_drag = Some(ClipDrag {

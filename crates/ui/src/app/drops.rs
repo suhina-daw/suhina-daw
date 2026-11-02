@@ -434,29 +434,36 @@ impl App {
         // before the release, so its widget could not clear its own. A live drag ends by its
         // own paths and is untouched. Through the frame of the release the record lives on, so
         // a let-go on the view switch's own frame — Tab and the release in one — still finds
-        // its target under the pointer.
-        let press_held =
-            ctx.input(|i| i.pointer.primary_down() || i.pointer.button_released(egui::PointerButton::Primary));
-        if !press_held {
+        // its target under the pointer. A new press clears as well: when a press follows an
+        // old one with no frame of no button down between, the old record would sit through
+        // both and be carried by the new press.
+        let (new_press, press_held) = ctx.input(|i| {
+            (
+                i.pointer.button_pressed(egui::PointerButton::Primary),
+                i.pointer.primary_down() || i.pointer.button_released(egui::PointerButton::Primary),
+            )
+        });
+        if new_press || !press_held {
             self.arrangement.clear_pressed_clip();
             self.view.pressed_slot = None;
         }
         let mut from_slot = self.view.slot_drag.take();
         if from_slot.is_none() && self.shown == View::Arrangement {
-            // A press held on a slot's clip when the view switched away from the Session —
-            // Tab, before the drag was even decided — carries it the same way.
+            // A press held on a slot's clip when the view switched away from the Launcher
+            // view — Tab, before the drag was even decided — carries it the same way.
             from_slot = self.view.pressed_slot.take();
         }
-        if let Some((track, scene)) = from_slot {
-            let name = self
-                .session()
-                .and_then(|s| {
-                    let p = s.project();
-                    let column = p.launcher.columns.iter().find(|c| c.track == track)?;
-                    let clip = column.slots.get(scene)?.clip.as_ref()?;
-                    p.content(clip.content).map(|c| c.name.clone())
-                })
-                .unwrap_or_default();
+        if let Some((track, scene)) = from_slot
+            && let Some(name) = self.session().and_then(|s| {
+                let p = s.project();
+                let column = p.launcher.columns.iter().find(|c| c.track == track)?;
+                let clip = column.slots.get(scene)?.clip.as_ref()?;
+                p.content(clip.content).map(|c| c.name.clone())
+            })
+        {
+            // A clip sought in the slot carries under its name, as a drag does. One that is
+            // there no more — deleted while the press was held — makes no carry: the release
+            // would report the empty slot, so there is nothing to let go of.
             ctx.stop_dragging();
             self.carry = Some(Carry { from: CarryFrom::Slot { track, scene }, name });
         }

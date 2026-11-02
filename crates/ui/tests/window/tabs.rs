@@ -142,6 +142,48 @@ fn tabs_switch_keep_each_projects_edits_and_close() {
     assert!(harness.query_by_label("Tab Untitled 1").is_none(), "one project shows no tabs");
 }
 
+/// A carry names a slot in the project it was made in: switching projects while it is held lets
+/// it go, so its release never copies the last project's clip into the new one.
+#[test]
+fn switching_project_while_a_clip_is_carried_lets_it_go() {
+    let mut harness = two_projects();
+    // The active one is the second. Press a slot's clip and Tab: the carry is live.
+    let from = harness.get_by_label("Select Walk on Bass (scene 2)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Arrangement);
+    // Ctrl+Tab switches to the first project while the press is still held. The view is the
+    // one shown, so the release probes the lanes of the project on screen.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Tab);
+    harness.run();
+    let ids = harness.state().projects().ids();
+    assert_eq!(harness.state().projects().active(), ids.first().copied(), "the first project is active");
+    assert_eq!(harness.state().view(), View::Arrangement);
+    let bass_before: Vec<(f64, f64)> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+        .unwrap_or_default();
+    // Bars 1 to 8 of Bass are empty; Root starts at bar 9, 8 points a beat.
+    let root = harness.get_by_label("Clip Root on Bass at bar 9").rect();
+    let to = egui::pos2(root.left() - 16.0 * 8.0, root.center().y);
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+    let bass: Vec<(f64, f64)> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+        .unwrap_or_default();
+    assert_eq!(bass, bass_before, "the switch let the carry go: nothing is copied");
+    assert!(!matches!(harness.state().status(), Status::Error(_)), "{:?}", harness.state().status());
+}
+
 #[test]
 fn opening_while_a_project_is_open_asks_and_can_remember() {
     let mut harness = window(demo_app());
