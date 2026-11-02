@@ -2032,18 +2032,6 @@ pub(crate) fn show(
             control.widget,
             Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator | Widget::Graphic { .. })
         ) {
-=======
-        if matches!(control.widget, Some(Widget::EqCurve)) {
-            let _role = crate::kit::style_class::enter("eq-curve");
-            let mut styled_ui = crate::kit::style_class::ui(ui);
-            let ui = &mut *styled_ui;
-            super::eq_curve::show(ui, bounds, parameters, track, device, actions);
-            continue;
-        }
-        if matches!(
-            control.widget,
-            Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator | Widget::Graphic { .. })
-        ) {
             paint_control(
                 &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
                 &painter,

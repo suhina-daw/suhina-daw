@@ -373,6 +373,35 @@ fn a_watched_devices_ring_holds_its_output() {
 }
 
 #[test]
+fn a_skipped_device_keeps_the_watch_at_its_project_position() {
+    // A disabled utility first: `build` omits it, so the chain's slot 0 is the enabled one
+    // at project position 1. The watch is keyed by the position, so the second utility's own
+    // output lands in its row and the first's ghost slot does not hand it its input instead
+    // (the analyser's line shows the watched device, not its slot's neighbour).
+    let muted = {
+        let mut skipped = device("utility", &[]);
+        skipped.enabled = false;
+        skipped
+    };
+    let eager = project(vec![note(0.0, 8.0, 60)], 8.0, vec![muted, device("utility", &[])]);
+    let mut renderer =
+        Renderer::build(&eager, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+            .unwrap();
+    let binding = renderer.controller().meter_monitor_arc();
+    let spectrum = binding.spectrum();
+    spectrum.watch(1, TrackId(1), 1);
+    blocks(&mut renderer, 4, 480);
+    let (samples, valid) = spectrum.samples(TrackId(1), 1).expect("the second device's ring holds its output");
+    assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
+    let ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(ring > 0.01, "the second utility's output is in its ring, peak {ring}");
+    assert!(
+        spectrum.samples(TrackId(1), 0).is_none(),
+        "the slot at position 0 was never run, so its ring reads nothing"
+    );
+}
+
+#[test]
 fn a_held_note_ends_when_an_edit_takes_it_away_while_playing() {
     // An 8-beat note sounds; at 0.5 s an edit deletes its clip, deletes the note, or shortens it
     // to 1.5 beats (0.75 s): the instrument lets it go then, not at its old end (#916).

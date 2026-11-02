@@ -25,6 +25,7 @@ fn eq_device() -> Device {
     Device {
         name: "EQ".into(),
         kind: DeviceKind::Builtin("eq".into()),
+        clip_host: false,
         enabled: true,
         state: None,
         params,
@@ -158,6 +159,7 @@ fn grouped_eq_project() -> Project {
     let group = Device {
         name: "Group".into(),
         kind: DeviceKind::Group(Box::new(suhina_engine::model::DeviceGroup::with_branches(vec![branch]))),
+        clip_host: false,
         enabled: true,
         state: None,
         params: suhina_engine::GROUP_PARAMS.iter().map(|&(id, _, _, default)| DeviceParam::new(id, default)).collect(),

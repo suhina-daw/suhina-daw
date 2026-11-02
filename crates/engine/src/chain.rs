@@ -712,6 +712,7 @@ impl Chain {
             sent_at,
             behind,
             caught_up,
+            positions,
             ara,
             ..
         } = self;
@@ -723,8 +724,10 @@ impl Chain {
                     run_device(device, *stage, buffer, from, to, pending, device_lanes, context, *sample_rate);
                     // The analyser hears the device's output, so its line shows what the
                     // device made of the sound (docs/spec/eq.md › The panel › The analyser).
+                    // The watch is keyed by the device's position in the project, not its
+                    // slot here: `build` omits a disabled device, and its slot then shifts.
                     if let Some(capture) = &capture {
-                        capture.append(*stage, buffer, from, to);
+                        capture.append(positions[*stage], buffer, from, to);
                     }
                     *stage += 1;
                 }
@@ -1078,6 +1081,7 @@ impl Chain {
             sample_rate,
             device_lanes,
             joined,
+            positions,
             ara,
             ..
         } = self;
@@ -1088,8 +1092,10 @@ impl Chain {
             match slot {
                 Slot::Device(device) => {
                     run_device(device, index, buffer, from, to, pending, device_lanes, context, *sample_rate);
+                    // The watch is keyed by the device's position in the project: `build`
+                    // omits a disabled device, and a slot index would shift the row.
                     if let Some(capture) = &capture {
-                        capture.append(index, buffer, from, to);
+                        capture.append(positions[index], buffer, from, to);
                     }
                     index += 1;
                 }
