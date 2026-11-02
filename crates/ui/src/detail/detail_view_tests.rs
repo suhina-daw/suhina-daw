@@ -978,7 +978,8 @@ fn a_list_with_a_canvas_or_placed_cells_keeps_its_positions() {
 
 #[test]
 fn host_values_reach_devices_inside_groups_with_or_without_live_values() {
-    use suhina_engine::model::{Branch, Channel, ChannelId, Device, DeviceGroup, DeviceKind, Project, Track};
+    use super::{Detail, DeviceAt, DeviceBox, build, give_host_values};
+    use suhina_engine::model::{Branch, Channel, ChannelId, Device, DeviceGroup, DeviceKind, Project, Track, TrackId};
     let multiband = || Device::new("Multiband", DeviceKind::Builtin("multiband".into()));
     let mut project = Project::default();
     project.tracks.push(Track { channel: Some(ChannelId(1)), ..Track::new(TrackId(1), "T") });
