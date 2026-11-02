@@ -56,7 +56,7 @@ pub fn kind_of(path: &Path) -> Option<FileKind> {
     if crate::stems::is_stems_path(path) {
         return Some(FileKind::Stems);
     }
-    if suhina_project_file::is_project_file(path) {
+    if suhina_model::is_project_file(path) {
         return Some(FileKind::Project);
     }
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();

@@ -452,18 +452,7 @@ impl Projects {
     /// Whether `id` is a command that fills a clipboard, after which [`Projects::share_clipboards`]
     /// gives every tab what it copied.
     pub fn copies(id: &str) -> bool {
-        matches!(
-            id,
-            "track.copy"
-                | "track.cut"
-                | "clip.copy"
-                | "clip.cut"
-                | "range.copy"
-                | "range.cut"
-                | "device.copy"
-                | "note.copy"
-                | "note.cut"
-        )
+        policy(id).is_some_and(|p| p.after == crate::After::Copies)
     }
 
     /// The session `id` names, or the active one when `id` is `None`.
@@ -704,13 +693,13 @@ impl Projects {
         let env = self.plugin_env();
         let (owner, embed) = (self.plugin_host.editor_owner, self.plugin_host.editor_embed);
         let Some(session) = self.get_mut(active) else { return Vec::new() };
-        session.set_plugin_env(env);
-        session.set_editor_owner(owner);
-        session.set_editor_embedding(embed);
+        session.rack_mut().set_env(env);
+        session.rack_mut().set_owner(owner);
+        session.rack_mut().set_embedding(embed);
         let notices = session.sync_plugins();
         // A plug-in that turned out to edit clips is remembered, so it starts with them from
         // now on (in every project) instead of loading twice.
-        let learned = session.take_ara_learned();
+        let learned = session.rack_mut().take_ara_learned();
         for spec in learned {
             if let Ok(true) = self.plugin_host.library.mark_ara(&spec) {
                 self.plugin_host.env = None;
@@ -740,7 +729,8 @@ impl Projects {
             return (spec.run)(self, params);
         }
         // With no project open, previews play in the previews' own session.
-        if project.is_none() && self.tabs.active.is_none() && PREVIEW_COMMANDS.contains(&id) {
+        let policy = policy(id);
+        if project.is_none() && self.tabs.active.is_none() && policy.is_some_and(|p| p.previews) {
             // Nothing plays yet: stopping opens no output.
             if id == "preview.stop" && self.preview.is_none() {
                 return Ok(json!({ "stopped": true }));
@@ -751,22 +741,26 @@ impl Projects {
         self.poll_plugins();
         let target = project.or(self.tabs.active);
         if let Some(target) = target
-            && policy(id).is_some_and(|p| p.critical)
+            && policy.is_some_and(|p| p.critical)
         {
             self.back_up_critical(target);
         }
         let result = self.session_mut(project)?.execute(id, params);
         self.poll_plugins();
-        if Self::copies(id) && result.is_ok() {
-            self.share_clipboards(target);
+        let Ok(value) = &result else { return result };
+        match policy.map_or(crate::After::Nothing, |p| p.after) {
+            crate::After::Nothing => {}
+            crate::After::Copies => self.share_clipboards(target),
+            crate::After::Recent(recent) => crate::library::record_use(&mut self.browser.files, recent, params, value),
+            crate::After::Saves => self.after_save(target, value),
         }
-        if let Ok(value) = &result {
-            crate::library::record_use(&mut self.browser.files, id, params, value);
-        }
-        // A project saved under a new name is shown by it; its backups need no offering.
-        if id == "project.save"
-            && let Ok(saved) = &result
-            && saved.get("copy") == Some(&Value::Bool(false))
+        result
+    }
+
+    /// After `project.save`: a project saved under a new name is shown by it and its backups need
+    /// no offering, and the audio it plays is the person's own choice from then on.
+    fn after_save(&mut self, target: Option<ProjectId>, saved: &Value) {
+        if saved.get("copy") == Some(&Value::Bool(false))
             && let Some(target) = target
         {
             if let Some(open) = self.tabs.open.iter_mut().find(|o| o.id == target)
@@ -778,10 +772,7 @@ impl Projects {
         }
         // The audio a saved project plays is the person's own choice: it opens with it again,
         // even from outside the project's folder.
-        if id == "project.save"
-            && result.is_ok()
-            && let Some(session) = target.and_then(|t| self.get(t))
-        {
+        if let Some(session) = target.and_then(|t| self.get(t)) {
             let files = session.loaded_audio_paths();
             let source = session.source().and_then(|s| std::path::absolute(s).ok());
             // The folders the audio came from outside the project's own, kept for this project.
@@ -805,7 +796,6 @@ impl Projects {
                 session.set_trusted(trusted);
             }
         }
-        result
     }
 
     fn activate(&mut self, id: ProjectId) {
@@ -874,9 +864,6 @@ pub fn commands_markdown() -> String {
     }
     out
 }
-
-/// The commands that run with no project open, in the previews' own session.
-const PREVIEW_COMMANDS: [&str; 2] = ["preview.play", "preview.stop"];
 
 fn no_project() -> CommandError {
     CommandError("no project is open".into())

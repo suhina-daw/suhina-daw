@@ -30,14 +30,13 @@
 
 use std::time::{Duration, Instant};
 
-use suhina_device_api::{Device, MusicalScale, NoteEvent, ProcessContext, Role};
-use suhina_model::{DeviceKind, Project, TrackId};
+use suhina_device_api::{Device, MusicalScale, NoteEvent, ProcessContext};
+use suhina_model::{Project, TrackId};
 
 use crate::automation::{DeviceLanes, MixLanes};
 use crate::plugin::{
     Delay, Followed, MAX_JOINED, OFFLINE_TIMEOUT, PluginProcessor, PluginSlot, Plugins, Sent, plugin_devices,
 };
-use crate::plugin_params::SlotParams;
 use crate::sends::SendOut;
 use crate::sine::{self, SineTones};
 
@@ -64,12 +63,15 @@ pub(crate) enum Slot {
 }
 
 impl Slot {
-    /// Sets parameter `index` of a data-only (`.sd`) device; other devices are left alone.
-    fn set_sd_parameter(&mut self, index: usize, value: f64) {
+    /// Sets parameter `index` of a built-in or data-only (`.sd`) device, in the device's own
+    /// order. A plug-in's parameters and a group's go through their own paths and are left alone
+    /// here. Never allocates.
+    pub(crate) fn set_parameter(&mut self, index: usize, value: f64) {
         match self {
+            Slot::Device(device) | Slot::MidiDevice(device) => device.set_param(index, value),
             Slot::Sd(effect) | Slot::InstrumentSd(effect) => effect.set_parameter(index, value),
             Slot::MidiSd(effect) => effect.set_parameter(index, value),
-            Slot::Device(_) | Slot::MidiDevice(_) | Slot::Plugin(_) | Slot::Group(_) => {}
+            Slot::Plugin(_) | Slot::Group(_) => {}
         }
     }
 }
@@ -262,168 +264,31 @@ impl Chain {
         // The main channel's chain is built for [`TrackId::MAIN`] (#687).
         let channel = project.channel_of_track(track)?;
         let keys = plugin_devices(project);
-        let frames_per_beat = 60.0 / project.transport.tempo_bpm * f64::from(sample_rate);
+        let frames_per_beat = crate::tempo::frames_per_beat(project.transport.tempo_bpm, f64::from(sample_rate));
         let mut slots: Vec<Slot> = Vec::new();
         let mut positions = Vec::new();
         let mut ids = Vec::new();
         let mut params = Vec::new();
         let mut latency = 0u32;
         let mut device_lanes = DeviceLanes::none();
+        let mut factory = crate::slot_factory::SlotFactory {
+            sample_rate,
+            audio,
+            assets,
+            plugins: &mut *plugins,
+            keys: &keys,
+            channel: channel.id,
+            frames_per_beat,
+        };
         for (position, stored) in channel.devices.iter().enumerate() {
-            let id = match &stored.kind {
-                DeviceKind::Builtin(id) if stored.enabled => id,
-                DeviceKind::Sd => {
-                    let Some(bytes) = stored.state.as_deref() else { continue };
-                    let Ok(text) = std::str::from_utf8(bytes) else { continue };
-                    let Ok(graph) = suhina_device_sdk::DeviceGraph::from_sd(text) else { continue };
-                    if !stored.enabled {
-                        continue;
-                    }
-                    let mut samples = suhina_device_sdk::sample_resource::PreparedSamples::default();
-                    if let Some(source) = stored.sample_file().and_then(|file| audio.files.get(file)) {
-                        let Ok(asset) = suhina_device_sdk::sample_resource::SampleAsset::new(
-                            source.clone(),
-                            source.sample_rate,
-                            source.channels,
-                        ) else {
-                            continue;
-                        };
-                        if samples.insert("sample", std::sync::Arc::new(asset)).is_err() {
-                            continue;
-                        }
-                    }
-                    let mut slot = match graph.role {
-                        suhina_device_sdk::DeviceRole::Effect => {
-                            let Ok(effect) = suhina_device_registry::compile_graph_with_samples(
-                                &graph,
-                                f64::from(sample_rate),
-                                &samples,
-                            ) else {
-                                continue;
-                            };
-                            Slot::Sd(effect)
-                        }
-                        suhina_device_sdk::DeviceRole::MidiEffect => {
-                            let Ok(effect) = graph.compile_midi() else { continue };
-                            Slot::MidiSd(effect)
-                        }
-                        suhina_device_sdk::DeviceRole::Instrument => {
-                            let Ok(instrument) = suhina_device_registry::compile_graph_with_samples(
-                                &graph,
-                                f64::from(sample_rate),
-                                &samples,
-                            ) else {
-                                continue;
-                            };
-                            Slot::InstrumentSd(instrument)
-                        }
-                    };
-                    let slot_index = slots.len();
-                    device_lanes.add_sd(slot_index, &graph.parameters, &stored.automation, frames_per_beat);
-                    let mut values = Vec::with_capacity(graph.parameters.len());
-                    for (index, parameter) in graph.parameters.iter().enumerate() {
-                        let stored_value = stored
-                            .params
-                            .iter()
-                            .find(|value| value.id == parameter.id)
-                            .map_or(parameter.default, |value| parameter.clamp(value.value));
-                        let value = device_lanes.initial(slot_index, index).unwrap_or(stored_value);
-                        slot.set_sd_parameter(index, value);
-                        values.push(stored_value);
-                    }
-                    params.push(values);
-                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                    use std::hash::{Hash, Hasher};
-                    bytes.hash(&mut hasher);
-                    stored.sample_file().hash(&mut hasher);
-                    stored
-                        .sample_file()
-                        .and_then(|file| audio.files.get(file))
-                        .map(std::sync::Arc::as_ptr)
-                        .hash(&mut hasher);
-                    slots.push(slot);
-                    positions.push(position);
-                    ids.push(format!("sd:{}:{:016x}", graph.id, hasher.finish()));
-                    continue;
-                }
-                DeviceKind::Clap { .. } | DeviceKind::Vst3 { .. } | DeviceKind::Vst2 { .. } => {
-                    let Some(key) =
-                        keys.iter().find(|d| d.channel == channel.id && d.path == [position]).map(|d| d.key)
-                    else {
-                        continue;
-                    };
-                    let Some(&info) = plugins.info.get(&key) else { continue };
-                    if stored.enabled {
-                        latency = latency.saturating_add(info.latency);
-                    }
-                    slots.push(Slot::Plugin(PluginSlot {
-                        key,
-                        processor: plugins.processors.remove(&key),
-                        instrument: info.instrument,
-                        latency: info.latency,
-                        enabled: stored.enabled,
-                        missed: 0,
-                        busy: 0,
-                        longest_us: 0,
-                        sent_at: None,
-                        params: SlotParams::new(stored, frames_per_beat),
-                    }));
-                    positions.push(position);
-                    ids.push(format!("plugin:{key:016x}"));
-                    params.push(Vec::new());
-                    continue;
-                }
-                DeviceKind::Group(group) => {
-                    if !stored.enabled {
-                        continue;
-                    }
-                    let mut builder = crate::group::Builder {
-                        sample_rate,
-                        audio,
-                        assets,
-                        plugins: &mut *plugins,
-                        keys: &keys,
-                        channel: channel.id,
-                        frames_per_beat,
-                    };
-                    let Some(built) = builder.group(stored, group, 0, &[position]) else { continue };
-                    latency = latency.saturating_add(built.latency);
-                    slots.push(built.slot);
-                    positions.push(position);
-                    ids.push(built.id);
-                    params.push(built.values);
-                    continue;
-                }
-                _ => continue,
-            };
-            let asset = crate::assets::stored_path(id, stored.state.as_deref()).and_then(|path| assets.get(path));
-            let Some(mut device) = suhina_device_registry::create_with(id, asset) else { continue };
-            if let Some(source) = stored.sample_file().and_then(|file| audio.files.get(file)) {
-                device.load_shared_sample(source.sample_rate, source.channels, source.clone());
-            }
-            device.load_sample_slices(stored.sample_slices().map(std::sync::Arc::from));
-            device.load_sample_edits(crate::assets::sample_edits(stored));
-            if device.prepare(f64::from(sample_rate)).is_err() {
+            let Some(built) = factory.device(stored, 0, &[position], (&mut device_lanes, slots.len())) else {
                 continue;
-            }
-            let info = device.info();
-            let mut values: Vec<f64> = info.params.iter().map(|p| p.default).collect();
-            for p in &stored.params {
-                if let Some(slot) = info.param_index(&p.id).and_then(|i| values.get_mut(i)) {
-                    *slot = p.value;
-                }
-            }
-            device_lanes.add(slots.len(), device.as_ref(), &stored.automation, frames_per_beat);
-            for (index, &value) in values.iter().enumerate() {
-                // A parameter that follows a lane starts where the lane starts.
-                device.set_param(index, device_lanes.initial(slots.len(), index).unwrap_or(value));
-            }
-            device.reset();
-            latency = latency.saturating_add(device.latency());
-            slots.push(if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) });
+            };
+            latency = latency.saturating_add(built.latency);
+            slots.push(built.slot);
             positions.push(position);
-            ids.push(device_identity(id, stored, audio));
-            params.push(values);
+            ids.push(built.id);
+            params.push(built.values);
         }
         let mut instrument = slots.iter().any(crate::group::is_instrument);
         // MIDI effects with no instrument after them play the notes they change as the sine
@@ -1232,7 +1097,7 @@ impl Chain {
                 }
             }
             Some(slot @ (Slot::Sd(_) | Slot::InstrumentSd(_) | Slot::MidiSd(_))) => {
-                slot.set_sd_parameter(param, value);
+                slot.set_parameter(param, value);
                 if let Some(slot) = self.params.get_mut(index).and_then(|values| values.get_mut(param)) {
                     *slot = value;
                 }
@@ -1286,7 +1151,7 @@ impl Chain {
                     for (index, &value) in
                         values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
                     {
-                        slot.set_sd_parameter(index, value);
+                        slot.set_parameter(index, value);
                     }
                 }
                 (Slot::Plugin(running), Slot::Plugin(fresh)) => running.adopt(fresh),

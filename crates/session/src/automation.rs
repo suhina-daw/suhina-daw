@@ -14,7 +14,7 @@ use suhina_model::automation::{
 };
 use suhina_model::{AutomationLane, AutomationPoint, DeviceKind, TrackId};
 
-use crate::commands::{device_channel, number, to_db, track_or_main_id};
+use crate::commands::{Args, device_channel, to_db, track_or_main_id};
 use crate::devices::{device_index, is_plugin, plugin_param_id, plugin_value, sd_graph};
 use crate::{CommandError, Session};
 
@@ -49,11 +49,11 @@ enum Kind {
 }
 
 pub(crate) fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
-    let param = params.get("param").and_then(Value::as_str).ok_or("param must be a parameter id")?;
+    let param = Args::new(params).raw_str("param").ok_or("param must be a parameter id")?;
     let track = track_or_main_id(&session.project, params)?;
     let channel = channel_of(session, track)?;
-    match params.get("device") {
-        None | Some(Value::Null) => {
+    match Args::new(params).value("device") {
+        None => {
             if mixer_range(param).is_none() {
                 return Err(format!(
                     "{param:?} is not a mixer parameter: volume, pan or mute (give device for a device's parameter)"
@@ -223,7 +223,7 @@ impl Target {
 }
 
 fn beat(params: &Value) -> Result<f64, CommandError> {
-    let beat = number(params, "beat")?;
+    let beat = Args::new(params).f64("beat")?;
     if !(0.0..=MAX_START_BEAT).contains(&beat) {
         return Err(format!("beat must be from 0 to {MAX_START_BEAT}, got {beat}").into());
     }
@@ -237,15 +237,15 @@ fn curve(params: &Value) -> Result<Option<Curve>, CommandError> {
         format!("curve must be [x1, y1, x2, y2], each from {CONTROL_MIN} to {CONTROL_MAX}, or a bend from -1 to 1")
             .into()
     };
-    match params.get("curve") {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value("curve") {
+        None => Ok(None),
         Some(Value::Array(list)) => {
             let values: Option<Vec<f64>> = list.iter().map(Value::as_f64).collect();
             let values: [f64; 4] = values.and_then(|v| v.try_into().ok()).ok_or_else(bad)?;
             Curve::from_array(values).map(Some).ok_or_else(bad)
         }
         Some(_) => {
-            let bend = number(params, "curve")?;
+            let bend = Args::new(params).f64("curve")?;
             if !(-1.0..=1.0).contains(&bend) {
                 return Err(bad());
             }
@@ -303,10 +303,10 @@ impl Kind {
 /// A value from `params[name]`: a number, or for the volume also "-inf"; for the mute also
 /// true or false.
 fn value(params: &Value, name: &str) -> Result<f64, CommandError> {
-    match params.get(name) {
+    match Args::new(params).value(name) {
         Some(Value::String(s)) if s == "-inf" => Ok(f64::NEG_INFINITY),
         Some(Value::Bool(b)) => Ok(if *b { 1.0 } else { 0.0 }),
-        _ => number(params, name),
+        _ => Args::new(params).f64(name),
     }
 }
 
@@ -325,8 +325,8 @@ fn point_index(params: &Value, count: usize) -> Result<usize, CommandError> {
 pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     let beat = beat(params)?;
-    let given = match params.get("value") {
-        None | Some(Value::Null) => None,
+    let given = match Args::new(params).value("value") {
+        None => None,
         Some(_) => Some(target.store(session, value(params, "value")?)?),
     };
     let curve = curve(params)?;
@@ -352,7 +352,7 @@ pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, 
     };
     let index = lane.insert(point);
     let enabled = lane.enabled;
-    if let Some(shape) = params.get("shape").and_then(Value::as_str) {
+    if let Some(shape) = Args::new(params).raw_str("shape") {
         if crate::automation_range::shape_points(shape).is_none() {
             return Err(format!("no shape {shape:?}; automation.insertShape lists them").into());
         }
@@ -390,9 +390,9 @@ fn on_envelope(lane: &mut AutomationLane, beat: f64, target: &Target) -> Result<
 
 pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
-    let new_beat = if params.get("beat").is_some_and(|v| !v.is_null()) { Some(beat(params)?) } else { None };
-    let new_value = match params.get("value") {
-        None | Some(Value::Null) => None,
+    let new_beat = if Args::new(params).has("beat") { Some(beat(params)?) } else { None };
+    let new_value = match Args::new(params).value("value") {
+        None => None,
         Some(_) => Some(target.store(session, value(params, "value")?)?),
     };
     let new_curve = curve(params)?;
@@ -426,7 +426,8 @@ pub(crate) fn delete_point(session: &mut Session, params: &Value) -> Result<Valu
 
 /// The point indices `params["points"]` names: each once, each on a lane of `count` points.
 fn point_list(params: &Value, count: usize) -> Result<Vec<usize>, CommandError> {
-    let list = params.get("points").and_then(Value::as_array).ok_or("points must be a list of point indices")?;
+    let list =
+        Args::new(params).value("points").and_then(Value::as_array).ok_or("points must be a list of point indices")?;
     if list.is_empty() {
         return Err("points must name at least one point".into());
     }
@@ -445,14 +446,6 @@ fn point_list(params: &Value, count: usize) -> Result<Vec<usize>, CommandError> 
         indices.push(index);
     }
     Ok(indices)
-}
-
-/// An optional number in `params[name]`.
-fn optional_number(params: &Value, name: &str) -> Result<Option<f64>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(_) => number(params, name).map(Some),
-    }
 }
 
 impl Target {
@@ -479,8 +472,8 @@ impl Target {
 /// must stay inside the arrangement.
 pub(crate) fn move_points(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
-    let beats = optional_number(params, "beats")?.unwrap_or(0.0);
-    let delta = optional_number(params, "value")?.unwrap_or(0.0);
+    let beats = Args::new(params).opt_f64("beats")?.unwrap_or(0.0);
+    let delta = Args::new(params).opt_f64("value")?.unwrap_or(0.0);
     let curve = curve(params)?;
     if beats == 0.0 && delta == 0.0 && curve.is_none() {
         return Err("give beats or value to move the points by, or a curve".into());
@@ -559,7 +552,7 @@ pub(crate) fn delete_points(session: &mut Session, params: &Value) -> Result<Val
 }
 
 pub(crate) fn clear(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let has_param = params.get("param").is_some_and(|v| !v.is_null());
+    let has_param = Args::new(params).has("param");
     if has_param {
         let target = target(session, params)?;
         let lanes = target.lanes(session)?;
@@ -569,8 +562,8 @@ pub(crate) fn clear(session: &mut Session, params: &Value) -> Result<Value, Comm
     }
     // Every lane of the mixer, or of the device.
     let track = track_or_main_id(&session.project, params)?;
-    let device = match params.get("device") {
-        None | Some(Value::Null) => None,
+    let device = match Args::new(params).value("device") {
+        None => None,
         Some(_) => Some(device_index(channel_of(session, track)?.devices.len(), params)?),
     };
     let channel = device_channel(session, params)?;
@@ -584,7 +577,7 @@ pub(crate) fn clear(session: &mut Session, params: &Value) -> Result<Value, Comm
 }
 
 pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let enabled = Args::new(params).bool("enabled")?;
     let target = target(session, params)?;
     let lane = target.lane(session)?;
     lane.enabled = enabled;

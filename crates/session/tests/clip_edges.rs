@@ -8,13 +8,13 @@
 use serde_json::json;
 use suhina_model::*;
 use suhina_session::{Session, blank_project};
+use suhina_test_support::ProjectBuilder;
 
 use crate::support::run;
 
 /// The blank project with an 8-beat audio clip (4 s at 120 BPM) at beat 4 on track 3, and a
 /// 4-beat MIDI clip at beat 0 on track 1.
 fn project() -> Project {
-    let mut p = blank_project();
     let region = AudioRegion {
         file: "loop.wav".into(),
         absolute_file: None,
@@ -28,27 +28,12 @@ fn project() -> Project {
         transpose: 0.0,
         stream: None,
     };
-    p.contents.push(ClipContent {
-        id: ContentId(1),
-        name: "Loop".into(),
-        length: 8.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
-        extensions: Extensions::default(),
-        scale: None,
-    });
-    p.contents.push(ClipContent {
-        id: ContentId(2),
-        name: "Riff".into(),
-        length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, 60, 0.8)]) }],
-        extensions: Extensions::default(),
-        scale: None,
-    });
-    p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(3))).unwrap().clips =
-        vec![Clip::new(ContentId(1), 4.0, 8.0)];
-    p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(1))).unwrap().clips =
-        vec![Clip::new(ContentId(2), 0.0, 4.0)];
-    p
+    ProjectBuilder::from(blank_project())
+        .audio(1, "Loop", 8.0, region)
+        .notes(2, "Riff", 4.0, vec![Note::new(0.0, 1.0, 60, 0.8)])
+        .clip(3, Clip::new(ContentId(1), 4.0, 8.0))
+        .clip(1, Clip::new(ContentId(2), 0.0, 4.0))
+        .build_without_ids()
 }
 
 fn first(session: &Session, track: u32) -> Clip {

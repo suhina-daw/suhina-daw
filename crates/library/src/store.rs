@@ -359,13 +359,8 @@ impl Store {
 
     /// Writes the store to `file`, through a file beside it that is moved over it.
     pub fn save(&self, file: &Path) -> std::io::Result<()> {
-        if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let temp = file.with_extension("json.part");
         let text = serde_json::to_string_pretty(&self.to_json()).map_err(std::io::Error::other)?;
-        std::fs::write(&temp, text)?;
-        std::fs::rename(&temp, file)
+        suhina_fs::write_atomic(file, text)
     }
 
     /// Puts `item` first in `group`.

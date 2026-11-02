@@ -399,7 +399,7 @@ fn render_the_workflow_menu_and_settings() {
     h.run();
     h.get_by_label("Workflow Select-first").click();
     h.run();
-    h.get_by_label_contains("Double-click on a note: Deletes it").hover();
+    h.get_by_label("Double-click on a note: Deletes it").hover();
     h.run();
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
     std::fs::create_dir_all(&out).unwrap();

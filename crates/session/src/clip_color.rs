@@ -9,13 +9,14 @@
 use serde_json::{Value, json};
 use suhina_model::Rgb;
 
+use crate::commands::Args;
 use crate::commands::track_id;
 use crate::{CommandError, Session};
 
 /// `"#rrggbb"`, or `None` for `"none"`.
 pub(crate) fn parse_color(params: &Value, key: &str) -> Result<Option<Rgb>, CommandError> {
     let bad = || CommandError(format!("{key} must be \"#rrggbb\" or \"none\""));
-    let text = params.get(key).and_then(Value::as_str).ok_or_else(bad)?;
+    let text = Args::new(params).raw_str(key).ok_or_else(bad)?;
     if text.eq_ignore_ascii_case("none") {
         return Ok(None);
     }
@@ -33,8 +34,8 @@ pub(crate) fn parse_color(params: &Value, key: &str) -> Result<Option<Rgb>, Comm
 pub(crate) fn set_clip_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let color = parse_color(params, "color")?;
     let track = track_id(&session.project, params)?;
-    let index = match params.get("index") {
-        None | Some(Value::Null) => None,
+    let index = match Args::new(params).value("index") {
+        None => None,
         Some(v) => Some(
             v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("index must be a clip index from project.clips")?,
         ),
@@ -64,7 +65,7 @@ pub(crate) fn set_clip_color(session: &mut Session, params: &Value) -> Result<Va
             }
         }
     }
-    Ok(json!({ "clips": changed, "color": params.get("color") }))
+    Ok(json!({ "clips": changed, "color": Args::new(params).value("color") }))
 }
 
 /// `track.renameClips {track}`: every clip of a track, in the arrangement and in its slots, takes

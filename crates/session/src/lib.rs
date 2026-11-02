@@ -88,7 +88,8 @@ pub use audio::{AudioSystem, InputChoice, LiveOutput, OutputChoice, OutputInfo, 
 pub use automation_range::{SHAPES as AUTOMATION_SHAPES, shape_points as automation_shape};
 pub use blank::{blank_project, blank_project_with};
 pub use commands::{
-    Agents, CommandKind, CommandSpec, Param, ParamType, PathKind, Policy, Run, commands, parse_quantization,
+    After, Agents, CommandKind, CommandSpec, Param, ParamType, PathKind, Policy, Recent, Run, commands,
+    parse_quantization,
 };
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::{MAX_FILES, file_tempo};
@@ -102,7 +103,7 @@ pub use projects::{
     MAX_OPEN_PROJECTS, ProjectId, Projects, all_commands, commands_markdown, params_of, policy, project_commands,
 };
 pub use rack::{
-    BlockCounts, Hosted, OfflinePlugins, PluginEnv, PluginProgress, PluginReport, PluginStatus, ProcessGroup,
+    BlockCounts, Hosted, OfflinePlugins, PluginEnv, PluginProgress, PluginReport, PluginStatus, ProcessGroup, Rack,
     is_instrument, plugin_group, start_offline,
 };
 pub use recording::{COUNT_IN_BARS, LiveTake, RECORDED_FOLDER};
@@ -641,10 +642,14 @@ impl Session {
         self.sync.player.take()
     }
 
-    /// Lets the session start the project's plug-ins: the catalog to find them in and how to
-    /// host them (ADR 0006). Without it plug-in devices pass the sound through.
-    pub fn set_plugin_env(&mut self, env: std::sync::Arc<PluginEnv>) {
-        self.plugins.set_env(env);
+    /// The project's running plug-ins (`Rack`): their progress, ARA state and edits.
+    pub fn rack(&self) -> &Rack {
+        &self.plugins
+    }
+
+    /// The project's running plug-ins, to set how they are hosted and to read their edits.
+    pub fn rack_mut(&mut self) -> &mut Rack {
+        &mut self.plugins
     }
 
     /// Brings the project's running plug-ins in line with it (starts new ones in the
@@ -655,30 +660,6 @@ impl Session {
         let notices = self.plugins.sync(&self.project, &self.audio.pool, self.sync.player.as_mut());
         crate::devices::keep_plugin_params_in_step(self);
         notices
-    }
-
-    /// How often the state of each running plug-in is read for backups and the unsaved-changes
-    /// check (every 30 seconds unless set). For tests, which need not wait that long.
-    pub fn set_plugin_read_interval(&mut self, every: std::time::Duration) {
-        self.plugins.set_save_every(every);
-    }
-
-    /// The plug-ins (by spec) found to edit clips over ARA since the last call although the
-    /// catalog did not say so ([`Rack::take_ara_learned`](crate::rack::Rack::take_ara_learned)).
-    pub fn take_ara_learned(&mut self) -> Vec<String> {
-        self.plugins.take_ara_learned()
-    }
-
-    /// The window plug-in editors open over, owned by it (a Win32 `HWND`, an X11 window id):
-    /// they float above it, have no taskbar entry of their own and go with it.
-    pub fn set_editor_owner(&mut self, owner: Option<u64>) {
-        self.plugins.set_owner(owner);
-    }
-
-    /// Whether plug-in editors open embedded in the owner window's device panel rather than
-    /// in windows of their own (the window's setting; nothing without an owner window).
-    pub fn set_editor_embedding(&mut self, embed: bool) {
-        self.plugins.set_embedding(embed);
     }
 
     /// Where the window shows the embedded plug-in editors this frame, each by its device
@@ -705,28 +686,10 @@ impl Session {
         }
     }
 
-    /// The notes the ARA plug-in that edits `clip` found in it, for the arrangement to draw
-    /// (#720): `None` when it has none, or its plug-in is bypassed or not running.
-    pub fn clip_notes(&self, clip: suhina_model::ClipId) -> Option<&ClipNotes> {
-        self.plugins.clip_notes(clip)
-    }
-
-    /// What an ARA plug-in on `track` is doing with its audio clips: its name, and how far its
-    /// analysis has come, or `None` while it loads. `None` when it is doing neither.
-    pub fn ara_activity(&self, track: suhina_model::TrackId) -> Option<(String, Option<f32>)> {
-        self.plugins.ara_activity(track)
-    }
-
     /// The first device on `track` that runs a plug-in bound to its audio clips (ARA), by its
     /// index in the track's chain.
     pub fn ara_device(&self, track: suhina_model::TrackId) -> Option<usize> {
         self.ara_tracks().into_iter().find(|(t, _)| *t == track).map(|(_, device)| device)
-    }
-
-    /// Whether clips' edits are still on their way to another track's plug-in (ADR 0033 step 6):
-    /// a clip moved there with its edits kept, waiting for that plug-in to run with it.
-    pub fn carrying_ara_edits(&self) -> bool {
-        self.plugins.carrying()
     }
 
     /// Takes the editor of the plug-in device `device` on `track`, one that edits clips, out of
@@ -784,11 +747,6 @@ impl Session {
             .filter_map(|(track, device, size)| Some((plugin_key_at(&self.project, *track, *device)?, *size)))
             .collect();
         self.plugins.fit_editors(&keyed);
-    }
-
-    /// How far the project's plug-ins have got with starting (all zero while it does not play).
-    pub fn plugin_progress(&self) -> PluginProgress {
-        self.plugins.progress()
     }
 
     /// Waits up to `timeout` until none of the project's plug-ins is still starting.
@@ -896,23 +854,9 @@ impl Session {
 
     /// Whether the project changed since it was opened or last saved, by a command or in a
     /// plug-in's editor (noticed as its state is read now and then; see
-    /// [`Session::check_plugin_edits`]).
+    /// [`Rack::check_edits`]).
     pub fn has_unsaved_changes(&self) -> bool {
         self.history.changes != self.history.saved_at || self.plugins.edited()
-    }
-
-    /// Reads the running plug-ins' states now, so a change made in a plug-in's editor since
-    /// the last read shows in [`Session::has_unsaved_changes`]: before asking whether to save
-    /// on close or quit. Waits at most one second for plug-ins that do not answer.
-    pub fn check_plugin_edits(&mut self) {
-        self.plugins.check_edits();
-    }
-
-    /// Advances a two-read check of all running plug-ins without waiting. Call each frame
-    /// until true before deciding whether to offer saving; processing and MIDI count too.
-    /// All rounds share one second, after which the last known states are used.
-    pub fn poll_plugin_edits(&mut self) -> bool {
-        self.plugins.poll_edits()
     }
 
     /// Saves the project as a Suhina project at `path` (`.suhina` is added when it does not end

@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use suhina_engine::model::Note;
+use suhina_model::Note;
 
 /// Largest file read.
 pub const MAX_BYTES: u64 = 16 * 1024 * 1024;

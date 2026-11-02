@@ -162,7 +162,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Read,
         run: copy_clips,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "clip.cut",
@@ -170,7 +170,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[CLIPS],
         kind: CommandKind::Edit,
         run: cut_clips,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "clip.paste",
@@ -598,7 +598,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Edit,
         run: files::add_files,
-        policy: Policy::CRITICAL,
+        policy: Policy { after: After::Recent(Recent::Files), ..Policy::CRITICAL },
     },
     CommandSpec {
         id: "clip.create",
@@ -644,7 +644,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
 /// addresses it (ADR 0033).
 fn audio_overlaps(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = session.project();
-    let only = match params.get("track") {
+    let only = match Args::new(params).value("track") {
         Some(_) => Some(track_id(p, params)?),
         None => None,
     };
@@ -682,7 +682,7 @@ fn audio_overlaps(session: &mut Session, params: &Value) -> Result<Value, Comman
 /// The clip `params` names: an arrangement clip by `index`, or the clip in a launcher slot by
 /// `scene`.
 fn clip_at(p: &Project, params: &Value) -> Result<ClipAt, CommandError> {
-    match (params.get("index"), params.get("scene")) {
+    match (Args::new(params).value("index"), Args::new(params).value("scene")) {
         (Some(_), Some(_)) => Err("give index or scene, not both".into()),
         (None, Some(_)) => {
             let (column, scene) = (column_index(p, params)?, scene_index(p, params)?);
@@ -697,7 +697,7 @@ fn clip_at(p: &Project, params: &Value) -> Result<ClipAt, CommandError> {
 }
 
 fn set_clip_gain(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let db = number_or_neg_infinity(params, "db")?;
+    let db = Args::new(params).f64_or_neg_infinity("db")?;
     if db > 24.0 {
         return Err(format!("db must be at most +24, got {db}").into());
     }
@@ -720,10 +720,10 @@ fn set_clip_gain(session: &mut Session, params: &Value) -> Result<Value, Command
 
 fn set_clip_fades(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let length_of = |name: &str| -> Result<Option<f64>, CommandError> {
-        match params.get(name) {
+        match Args::new(params).value(name) {
             None => Ok(None),
             Some(_) => {
-                let beats = number(params, name)?;
+                let beats = Args::new(params).f64(name)?;
                 if beats < 0.0 {
                     return Err(format!("{name} must be at least 0 beats, got {beats}").into());
                 }
@@ -732,7 +732,7 @@ fn set_clip_fades(session: &mut Session, params: &Value) -> Result<Value, Comman
         }
     };
     let shape_of = |name: &str| -> Result<Option<FadeShape>, CommandError> {
-        match params.get(name) {
+        match Args::new(params).value(name) {
             None => Ok(None),
             Some(Value::String(s)) => FadeShape::from_name(s).map(Some).ok_or_else(|| {
                 let names: Vec<&str> = FadeShape::ALL.iter().map(|s| s.name()).collect();
@@ -742,10 +742,10 @@ fn set_clip_fades(session: &mut Session, params: &Value) -> Result<Value, Comman
         }
     };
     let curve_of = |name: &str| -> Result<Option<f64>, CommandError> {
-        match params.get(name) {
+        match Args::new(params).value(name) {
             None => Ok(None),
             Some(_) => {
-                let curve = number(params, name)?;
+                let curve = Args::new(params).f64(name)?;
                 if !(-1.0..=1.0).contains(&curve) {
                     return Err(format!("{name} must be from -1 to +1, got {curve}").into());
                 }
@@ -813,9 +813,9 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     let p = &session.project;
     let mut copied: Vec<(Clip, ClipContent)> = Vec::new();
     let mut from: Vec<TrackId> = Vec::new();
-    match (params.get("clips"), params.get("scene")) {
+    match (Args::new(params).value("clips"), Args::new(params).value("scene")) {
         (Some(_), None) => {
-            if params.get("track").is_some() {
+            if Args::new(params).has("track") {
                 return Err("track goes with scene (a clip slot); clips names arrangement clips".into());
             }
             for (track, index) in clip_list(p, params)? {
@@ -872,32 +872,32 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     if session.clipboards.clips.is_empty() {
         return Err("nothing has been copied".into());
     }
-    let at = match (params.get("start"), params.get("scene")) {
+    let at = match (Args::new(params).value("start"), Args::new(params).value("scene")) {
         (Some(_), None) => {
-            let start = number(params, "start")?;
+            let start = Args::new(params).f64("start")?;
             if !(0.0..=MAX_START_BEAT).contains(&start) {
                 return Err(format!("start must be from 0 to {MAX_START_BEAT}, got {start}").into());
             }
             PasteAt::Beat(start)
         }
         (None, Some(_)) => {
-            if params.get("stack").is_some() {
+            if Args::new(params).has("stack") {
                 return Err("stack is for the arrangement (start); a slot holds one clip".into());
             }
             PasteAt::Slot(scene_index(&session.project, params)?)
         }
         _ => return Err("give either start (a beat in the arrangement) or scene (a clip slot)".into()),
     };
-    let stack = match params.get("stack") {
+    let stack = match Args::new(params).value("stack") {
         None => false,
         Some(v) => v.as_bool().ok_or("stack must be true or false")?,
     };
-    let replace = params.get("replace").map(|value| clip_param(&session.project, value)).transpose()?;
-    if replace.is_some() && (params.get("track").is_none() || !matches!(at, PasteAt::Beat(_))) {
+    let replace = Args::new(params).value("replace").map(|value| clip_param(&session.project, value)).transpose()?;
+    if replace.is_some() && (!Args::new(params).has("track") || !matches!(at, PasteAt::Beat(_))) {
         return Err("replace requires an arrangement track and start".into());
     }
     // No track: each copied clip goes back to the track it came from.
-    if params.get("track").is_none()
+    if !Args::new(params).has("track")
         && let PasteAt::Beat(start) = at
     {
         return crate::range::paste_to_sources(session, start, stack);
@@ -1001,8 +1001,8 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
 fn delete_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     // A list of arrangement clips goes as one; otherwise a launcher slot's clip is named by
     // `scene`, an arrangement clip by `index`, the way the note commands name the clip they edit.
-    if params.get("clips").is_some_and(|v| !v.is_null()) {
-        if ["track", "index", "scene"].iter().any(|k| params.get(*k).is_some_and(|v| !v.is_null())) {
+    if Args::new(params).has("clips") {
+        if ["track", "index", "scene"].iter().any(|k| Args::new(params).has(k)) {
             return Err("give clips, or track with index or scene, not both".into());
         }
         let clips = clip_list(&session.project, params)?;
@@ -1010,8 +1010,8 @@ fn delete_clips(session: &mut Session, params: &Value) -> Result<Value, CommandE
         return Ok(json!({ "deleted": deleted }));
     }
     let whole = |key: &str| -> Result<Option<u64>, CommandError> {
-        match params.get(key) {
-            None | Some(Value::Null) => Ok(None),
+        match Args::new(params).value(key) {
+            None => Ok(None),
             Some(v) => v.as_u64().map(Some).ok_or_else(|| format!("{key} must be a whole number").into()),
         }
     };
@@ -1048,7 +1048,7 @@ fn delete_clips(session: &mut Session, params: &Value) -> Result<Value, CommandE
 /// the new name (a pasted copy has a content of its own and keeps its name). An empty name
 /// clears it, and the launcher's slots then show "clip".
 fn rename_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let name = match params.get("name") {
+    let name = match Args::new(params).value("name") {
         Some(Value::String(name)) => name.trim().to_string(),
         _ => return Err("name must be a text (empty clears it)".into()),
     };
@@ -1062,23 +1062,23 @@ fn rename_clip(session: &mut Session, params: &Value) -> Result<Value, CommandEr
 /// `clip.shiftFades {clips, edge, beats}` (#715). Only an audio clip has fades, as in
 /// `clip.setFades`: a clip with no audio lane is left as it is and not counted in `clips`.
 fn shift_fades(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let fade_in = match params.get("edge").and_then(Value::as_str) {
+    let fade_in = match Args::new(params).raw_str("edge") {
         Some("in") => true,
         Some("out") => false,
         _ => return Err("edge must be in or out".into()),
     };
-    let beats = if params.get("beats").is_some() { number(params, "beats")? } else { 0.0 };
-    let curve = match params.get("curve") {
+    let beats = if Args::new(params).has("beats") { Args::new(params).f64("beats")? } else { 0.0 };
+    let curve = match Args::new(params).value("curve") {
         None => None,
         Some(_) => {
-            let curve = number(params, "curve")?;
+            let curve = Args::new(params).f64("curve")?;
             if !(-1.0..=1.0).contains(&curve) {
                 return Err(format!("curve must be from -1 to +1, got {curve}").into());
             }
             Some(curve)
         }
     };
-    if params.get("beats").is_none() && curve.is_none() {
+    if !Args::new(params).has("beats") && curve.is_none() {
         return Err("give beats, curve or both".into());
     }
     let p = &mut session.project;
@@ -1130,7 +1130,7 @@ fn set_clips_color(session: &mut Session, params: &Value) -> Result<Value, Comma
         let clip = lane.and_then(|l| l.clips.get_mut(*index)).ok_or("the clip is missing")?;
         clip.color = color;
     }
-    Ok(json!({ "clips": clips.len(), "color": params.get("color") }))
+    Ok(json!({ "clips": clips.len(), "color": Args::new(params).value("color") }))
 }
 
 /// Removes the clips named by `clips`, which must exist; returns how many went. Indices are read
@@ -1164,7 +1164,7 @@ fn clips_by_track(clips: &[(TrackId, usize)]) -> Vec<(TrackId, Vec<usize>)> {
 }
 
 fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let stack = match params.get("stack") {
+    let stack = match Args::new(params).value("stack") {
         None => false,
         Some(v) => v.as_bool().ok_or("stack must be true or false")?,
     };
@@ -1216,7 +1216,7 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
 }
 
 fn set_clip_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let enabled = Args::new(params).bool("enabled")?;
     let clips = clip_list(&session.project, params)?;
     let p = &mut session.project;
     let mut changed = 0;
@@ -1234,22 +1234,25 @@ fn set_clip_enabled(session: &mut Session, params: &Value) -> Result<Value, Comm
 
 fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_id(&session.project, params)?;
-    let index = params.get("index").and_then(Value::as_u64).ok_or("index must be a whole number from project.clips")?;
-    let start = number(params, "start")?;
+    let index = Args::new(params)
+        .value("index")
+        .and_then(Value::as_u64)
+        .ok_or("index must be a whole number from project.clips")?;
+    let start = Args::new(params).f64("start")?;
     if start < 0.0 {
         return Err(format!("start must be at least 0, got {start}").into());
     }
-    let stack = match params.get("stack") {
+    let stack = match Args::new(params).value("stack") {
         None => false,
         Some(v) => v.as_bool().ok_or("stack must be true or false")?,
     };
-    let to = match params.get("toTrack") {
+    let to = match Args::new(params).value("toTrack") {
         Some(_) => track_at(&session.project, params, "toTrack")?,
         None => track,
     };
     // The colour the clip shows on its track, kept when it goes to another (`color`).
-    let keep = match params.get("color") {
-        None | Some(Value::Null) => None,
+    let keep = match Args::new(params).value("color") {
+        None => None,
         Some(_) => crate::clip_color::parse_color(params, "color")?,
     };
     // An empty track of the other kind takes the clip's (#945).
@@ -1335,12 +1338,12 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
 fn move_slot(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let from_column = column_index(session.project(), params)?;
     let from_scene = scene_index(session.project(), params)?;
-    let to_track = match params.get("toTrack") {
-        None | Some(Value::Null) => None,
+    let to_track = match Args::new(params).value("toTrack") {
+        None => None,
         Some(_) => Some(track_at(&session.project, params, "toTrack")?),
     };
-    let to_scene: Option<usize> = match params.get("toScene") {
-        None | Some(Value::Null) => None,
+    let to_scene: Option<usize> = match Args::new(params).value("toScene") {
+        None => None,
         Some(v) => Some(
             v.as_u64()
                 .and_then(|n| usize::try_from(n).ok())

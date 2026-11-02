@@ -8,7 +8,7 @@
 use serde_json::{Value, json};
 use suhina_model::{MAX_CHANGE_BEAT, TempoPoint, TimeSignature, TimeSignatureChange, Transport};
 
-use crate::commands::number;
+use crate::commands::Args;
 use crate::{CommandError, Session};
 
 /// Tempos the commands take, as `transport.setTempo` does.
@@ -42,7 +42,7 @@ pub(crate) fn points(session: &mut Session, _: &Value) -> Result<Value, CommandE
 }
 
 fn beat_param(params: &Value) -> Result<f64, CommandError> {
-    let beat = number(params, "beat")?;
+    let beat = Args::new(params).f64("beat")?;
     if !(beat > 0.0 && beat <= MAX_CHANGE_BEAT) {
         return Err(format!("beat must be after 0 and at most {MAX_CHANGE_BEAT}, got {beat}").into());
     }
@@ -50,22 +50,11 @@ fn beat_param(params: &Value) -> Result<f64, CommandError> {
 }
 
 fn bpm_param(params: &Value) -> Result<f64, CommandError> {
-    let bpm = number(params, "bpm")?;
+    let bpm = Args::new(params).f64("bpm")?;
     if !BPM.contains(&bpm) {
         return Err(format!("bpm must be between 20 and 999, got {bpm}").into());
     }
     Ok(bpm)
-}
-
-fn optional_flag(params: &Value, name: &str) -> Result<Option<bool>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => v.as_bool().map(Some).ok_or_else(|| format!("{name} must be true or false").into()),
-    }
-}
-
-fn present(params: &Value, name: &str) -> bool {
-    params.get(name).is_some_and(|v| !v.is_null())
 }
 
 /// Puts `point` among the changes in beat order. A beat holds at most a ramp and a step, the
@@ -85,7 +74,7 @@ pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, 
     let point = TempoPoint {
         beat: beat_param(params)?,
         bpm: bpm_param(params)?,
-        ramp: optional_flag(params, "ramp")?.unwrap_or(false),
+        ramp: Args::new(params).opt_bool("ramp")?.unwrap_or(false),
     };
     let transport = &mut session.project.transport;
     insert_point(&mut transport.tempo_changes, point)?;
@@ -95,7 +84,8 @@ pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, 
 /// The index of `params.point` (from 1) among the changes.
 fn point_index(t: &Transport, params: &Value) -> Result<usize, CommandError> {
     let count = t.tempo_changes.len();
-    let number = params.get("point").and_then(Value::as_u64).ok_or("point must be a whole number from 1")?;
+    let number =
+        Args::new(params).value("point").and_then(Value::as_u64).ok_or("point must be a whole number from 1")?;
     usize::try_from(number)
         .ok()
         .and_then(|n| n.checked_sub(1))
@@ -105,9 +95,9 @@ fn point_index(t: &Transport, params: &Value) -> Result<usize, CommandError> {
 
 pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let index = point_index(&session.project.transport, params)?;
-    let beat = if present(params, "beat") { Some(beat_param(params)?) } else { None };
-    let bpm = if present(params, "bpm") { Some(bpm_param(params)?) } else { None };
-    let ramp = optional_flag(params, "ramp")?;
+    let beat = if Args::new(params).has("beat") { Some(beat_param(params)?) } else { None };
+    let bpm = if Args::new(params).has("bpm") { Some(bpm_param(params)?) } else { None };
+    let ramp = Args::new(params).opt_bool("ramp")?;
     if beat.is_none() && bpm.is_none() && ramp.is_none() {
         return Err("give at least one of beat, bpm and ramp".into());
     }
@@ -128,7 +118,10 @@ pub(crate) fn delete_point(session: &mut Session, params: &Value) -> Result<Valu
 
 /// `params.<name>` as a bar shown from 1, after the first bar; returned counted from 0.
 fn bar_param(params: &Value, name: &str) -> Result<u32, CommandError> {
-    let bar = params.get(name).and_then(Value::as_u64).ok_or_else(|| format!("{name} must be a whole number"))?;
+    let bar = Args::new(params)
+        .value(name)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| format!("{name} must be a whole number"))?;
     u32::try_from(bar)
         .ok()
         .filter(|b| *b >= 2)
@@ -137,8 +130,8 @@ fn bar_param(params: &Value, name: &str) -> Result<u32, CommandError> {
 }
 
 fn signature_part(params: &Value, name: &str) -> Result<Option<u8>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value(name) {
+        None => Ok(None),
         Some(v) => v
             .as_u64()
             .and_then(|n| u8::try_from(n).ok())
@@ -191,7 +184,7 @@ fn change_index(t: &Transport, params: &Value) -> Result<usize, CommandError> {
 
 pub(crate) fn move_signature(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let index = change_index(&session.project.transport, params)?;
-    let to = if present(params, "to") { Some(bar_param(params, "to")?) } else { None };
+    let to = if Args::new(params).has("to") { Some(bar_param(params, "to")?) } else { None };
     let numerator = signature_part(params, "numerator")?;
     let denominator = signature_part(params, "denominator")?;
     if to.is_none() && numerator.is_none() && denominator.is_none() {

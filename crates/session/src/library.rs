@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use suhina_device_api::Role;
 use suhina_library::{FileKind, FileSearch, Group, Item, Library, Query};
 
-use crate::commands::{CommandKind, CommandSpec, Param, ParamType, optional, param};
+use crate::commands::{Args, CommandKind, CommandSpec, Param, ParamType, optional, param};
 use crate::devices::role_name;
 use crate::{Agents, CommandError, PathKind, Policy, Projects, Session};
 
@@ -231,19 +231,10 @@ pub fn library_commands() -> &'static [CommandSpec<Projects>] {
     LIBRARY_COMMANDS
 }
 
-fn text<'a>(params: &'a Value, name: &str) -> Result<&'a str, CommandError> {
-    params
-        .get(name)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .ok_or_else(|| CommandError(format!("{name} must be a text")))
-}
-
 fn optional_text<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(_) => text(params, name).map(Some),
+    match Args::new(params).value(name) {
+        None => Ok(None),
+        Some(_) => Args::new(params).text(name).map(Some),
     }
 }
 
@@ -259,13 +250,13 @@ fn folders(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 }
 
 fn add_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let folder = text(params, "folder")?;
+    let folder = Args::new(params).text("folder")?;
     let added = projects.file_library_mut().add_folder(Path::new(folder)).map_err(CommandError)?;
     Ok(json!({ "folder": added.display().to_string() }))
 }
 
 fn remove_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let folder = text(params, "folder")?;
+    let folder = Args::new(params).text("folder")?;
     projects.file_library_mut().remove_folder(Path::new(folder)).map_err(CommandError)?;
     Ok(json!({ "removed": folder }))
 }
@@ -277,7 +268,7 @@ fn refresh(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
 }
 
 fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let folder = text(params, "folder")?;
+    let folder = Args::new(params).text("folder")?;
     let entries = projects.file_library_mut().list(Path::new(folder)).map_err(CommandError)?;
     let items: Vec<Value> = entries
         .into_iter()
@@ -597,8 +588,8 @@ pub fn prepare_search(
 }
 
 fn search(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let words = match params.get("text") {
-        None | Some(Value::Null) => "",
+    let words = match Args::new(params).value("text") {
+        None => "",
         Some(v) => v.as_str().ok_or("text must be a text")?,
     };
     let category = match optional_text(params, "category")? {
@@ -608,8 +599,8 @@ fn search(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
         }
     };
     let place = optional_text(params, "place")?;
-    let tags: Vec<String> = match params.get("tags") {
-        None | Some(Value::Null) => Vec::new(),
+    let tags: Vec<String> = match Args::new(params).value("tags") {
+        None => Vec::new(),
         Some(v) => v
             .as_array()
             .ok_or("tags must be a list of tag names")?
@@ -617,8 +608,8 @@ fn search(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
             .map(|t| t.as_str().map(str::to_string).ok_or("tags must be a list of tag names"))
             .collect::<Result<_, _>>()?,
     };
-    let limit = match params.get("limit") {
-        None | Some(Value::Null) => 0,
+    let limit = match Args::new(params).value("limit") {
+        None => 0,
         Some(v) => v
             .as_u64()
             .and_then(|n| usize::try_from(n).ok())
@@ -632,7 +623,7 @@ fn search(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
 }
 
 fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let key = text(params, "item")?;
+    let key = Args::new(params).text("item")?;
     let item = Item::parse(key).ok_or("item must be a path or an item key")?;
     let tags = projects.file_library_mut().item_tags(&item.key());
     let mut out = match &item {
@@ -737,7 +728,7 @@ fn pinned(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 }
 
 fn pin(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let key = text(params, "item")?;
+    let key = Args::new(params).text("item")?;
     let item = Item::parse(key).ok_or("item must be a path or an item key")?;
     let pinned = projects.file_library_mut().pin(&item.key()).map_err(CommandError)?;
     Ok(json!({ "item": item.key(), "pinned": true, "changed": pinned }))
@@ -752,11 +743,12 @@ const MAX_COPY_NAMES: u32 = 9999;
 /// one free there. A copy is made with a file that must not exist yet, so nothing in the folder
 /// is ever overwritten, even by a file that appeared meanwhile.
 fn copy_to(_projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let folder = PathBuf::from(text(params, "folder")?);
+    let folder = PathBuf::from(Args::new(params).text("folder")?);
     if !folder.is_dir() {
         return Err(format!("{} is not a folder that exists", folder.display()).into());
     }
-    let items = params.get("items").and_then(Value::as_array).ok_or("items must be a list of file paths")?;
+    let items =
+        Args::new(params).value("items").and_then(Value::as_array).ok_or("items must be a list of file paths")?;
     if items.is_empty() || items.len() > MAX_COPIES {
         return Err(format!("items must list from 1 to {MAX_COPIES} files").into());
     }
@@ -779,11 +771,12 @@ fn copy_to(_projects: &mut Projects, params: &Value) -> Result<Value, CommandErr
 /// one free there, as `library.copyTo` names them. A file already in that folder, one gone, or one
 /// an open project plays is left where it is and listed.
 fn move_to(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let folder = PathBuf::from(text(params, "folder")?);
+    let folder = PathBuf::from(Args::new(params).text("folder")?);
     if !folder.is_dir() {
         return Err(format!("{} is not a folder that exists", folder.display()).into());
     }
-    let items = params.get("items").and_then(Value::as_array).ok_or("items must be a list of file paths")?;
+    let items =
+        Args::new(params).value("items").and_then(Value::as_array).ok_or("items must be a list of file paths")?;
     if items.is_empty() || items.len() > MAX_COPIES {
         return Err(format!("items must list from 1 to {MAX_COPIES} files").into());
     }
@@ -872,7 +865,7 @@ fn copy_into(from: &Path, folder: &Path) -> Result<PathBuf, String> {
 }
 
 fn set_plugins_view(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let name = text(params, "view")?;
+    let name = Args::new(params).text("view")?;
     let view = suhina_library::store::PluginsView::parse(name)
         .ok_or_else(|| CommandError("view must be instruments or effects".into()))?;
     projects.file_library_mut().set_plugins_view(view).map_err(CommandError)?;
@@ -880,7 +873,7 @@ fn set_plugins_view(projects: &mut Projects, params: &Value) -> Result<Value, Co
 }
 
 fn unpin(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let key = text(params, "item")?;
+    let key = Args::new(params).text("item")?;
     let item = Item::parse(key).ok_or("item must be a path or an item key")?;
     let changed = projects.file_library_mut().unpin(&item.key()).map_err(CommandError)?;
     Ok(json!({ "item": item.key(), "pinned": false, "changed": changed }))
@@ -914,7 +907,7 @@ fn tags(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let library = projects.file_library_mut();
     let mut done = false;
-    if let Some(limit) = params.get("limit").filter(|v| !v.is_null()) {
+    if let Some(limit) = Args::new(params).value("limit").filter(|v| !v.is_null()) {
         let limit = limit.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("limit must be a whole number")?;
         library.set_tag_limit(limit).map_err(CommandError)?;
         done = true;
@@ -932,16 +925,16 @@ fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
 }
 
 fn remove_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let name = text(params, "name")?;
+    let name = Args::new(params).text("name")?;
     projects.file_library_mut().remove_tag(name).map_err(CommandError)?;
     Ok(json!({ "removed": name }))
 }
 
 fn tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let key = text(params, "item")?;
+    let key = Args::new(params).text("item")?;
     let item = Item::parse(key).ok_or("item must be a path or an item key")?;
-    let name = text(params, "tag")?;
-    let on = params.get("on").and_then(Value::as_bool).ok_or("on must be true or false")?;
+    let name = Args::new(params).text("tag")?;
+    let on = Args::new(params).bool("on")?;
     let library = projects.file_library_mut();
     library.tag(&item.key(), name, on).map_err(CommandError)?;
     Ok(json!({ "item": item.key(), "tags": library.item_tags(&item.key()) }))
@@ -949,7 +942,7 @@ fn tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
 
 /// Records what a successful command added to a project among the recent items
 /// (`docs/spec/browser.md` › Sidebar).
-pub(crate) fn record_use(library: &mut Library, id: &str, params: &Value, result: &Value) {
+pub(crate) fn record_use(library: &mut Library, recent: crate::Recent, params: &Value, result: &Value) {
     let mut record = |group: Group, item: String| {
         let _ = library.record(group, &item);
     };
@@ -960,14 +953,14 @@ pub(crate) fn record_use(library: &mut Library, id: &str, params: &Value, result
         }
     };
     let preset = |record: &mut dyn FnMut(Group, String), params: &Value| {
-        if let Some(path) = params.get("preset").and_then(Value::as_str) {
+        if let Some(path) = Args::new(params).raw_str("preset") {
             let path = crate::files::absolute(Path::new(path)).display().to_string();
-            let voice = params.get("voice").and_then(Value::as_u64).unwrap_or(1);
+            let voice = Args::new(params).value("voice").and_then(Value::as_u64).unwrap_or(1);
             record(Group::Presets, if voice > 1 { format!("{path}#{voice}") } else { path });
         }
     };
-    match id {
-        "clip.addFiles" => {
+    match recent {
+        crate::Recent::Files => {
             let skipped: Vec<&str> = result["skipped"]
                 .as_array()
                 .map(|s| s.iter().filter_map(|x| x["path"].as_str()).collect())
@@ -985,29 +978,30 @@ pub(crate) fn record_use(library: &mut Library, id: &str, params: &Value, result
                 record(group, absolute.display().to_string());
             }
         }
-        "device.add" | "track.add" => {
-            if let Some(path) = params.get("sd").and_then(Value::as_str) {
+        crate::Recent::Device => {
+            if let Some(path) = Args::new(params).raw_str("sd") {
                 record(Group::Effects, path.to_string());
-            } else if params.get("preset").is_some_and(|p| !p.is_null()) {
+            } else if Args::new(params).has("preset") {
                 preset(&mut record, params);
-            } else if let Some(id) = params.get("id").or_else(|| params.get("device")).and_then(Value::as_str) {
+            } else if let Some(id) =
+                Args::new(params).value("id").or_else(|| Args::new(params).value("device")).and_then(Value::as_str)
+            {
                 if suhina_device_registry::info(id).is_some() {
                     device(&mut record, id);
-                } else if id == params.get("device").and_then(Value::as_str).unwrap_or("") {
+                } else if id == Args::new(params).raw_str("device").unwrap_or("") {
                     record(Group::Plugins, format!("plugin:{id}"));
                 }
             }
         }
-        "device.addSd" => {
-            if let Some(path) = params.get("path").and_then(Value::as_str) {
+        crate::Recent::SdFile => {
+            if let Some(path) = Args::new(params).raw_str("path") {
                 record(Group::Effects, path.to_string());
             }
         }
-        "device.addPlugin" => {
-            if let Some(name) = params.get("plugin").and_then(Value::as_str) {
+        crate::Recent::Plugin => {
+            if let Some(name) = Args::new(params).raw_str("plugin") {
                 record(Group::Plugins, format!("plugin:{name}"));
             }
         }
-        _ => {}
     }
 }

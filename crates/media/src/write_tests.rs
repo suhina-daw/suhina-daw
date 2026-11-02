@@ -203,14 +203,14 @@ fn a_flac_written_to_the_file_decodes_like_the_whole_stream_encode() {
         stream.write(&mut sink).unwrap();
         sink.into_inner()
     };
-    let decode_of_bytes = |bytes: &[u8]| -> suhina_engine::AudioData {
+    let decode_of_bytes = |bytes: &[u8]| -> suhina_model::AudioData {
         let path = temp_file("whole-stream");
         std::fs::write(&path, bytes).unwrap();
         let decoded = decode_file(&path).unwrap();
         let _ = std::fs::remove_file(&path);
         decoded
     };
-    let decode_of_writer = |samples: &[f32], bits: usize| -> suhina_engine::AudioData {
+    let decode_of_writer = |samples: &[f32], bits: usize| -> suhina_model::AudioData {
         let path = temp_file("file-sunk");
         let spec = AudioFileSpec {
             format: AudioFormat::Flac,

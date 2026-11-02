@@ -35,6 +35,48 @@ fn every_command_is_listed_with_a_unique_id() {
     assert!(ids.iter().all(|id| id.contains('.')));
 }
 
+/// What follows a command is on its spec, so each spec that asks for it must take the parameters
+/// that step reads (#764 › 1).
+#[test]
+fn what_follows_a_command_reads_parameters_it_takes() {
+    use suhina_session::{After, Recent};
+    let takes = |spec: &suhina_session::CommandSpec, name: &str| spec.params.iter().any(|p| p.name == name);
+    let mut copies = Vec::new();
+    for spec in commands() {
+        match spec.policy.after {
+            After::Nothing => {}
+            After::Copies => copies.push(spec.id),
+            After::Saves => assert_eq!(spec.id, "project.save"),
+            After::Recent(Recent::Files) => assert!(takes(spec, "paths"), "{}", spec.id),
+            After::Recent(Recent::Device) => {
+                assert!(["id", "device", "sd", "preset"].iter().any(|p| takes(spec, p)), "{}", spec.id)
+            }
+            After::Recent(Recent::SdFile) => assert!(takes(spec, "path"), "{}", spec.id),
+            After::Recent(Recent::Plugin) => assert!(takes(spec, "plugin"), "{}", spec.id),
+        }
+        // Only playing and stopping a preview run with no project open.
+        assert_eq!(spec.policy.previews, ["preview.play", "preview.stop"].contains(&spec.id), "{}", spec.id);
+        if takes(spec, "gesture") {
+            assert!(takes(spec, "continuous"), "{} takes gesture without continuous", spec.id);
+        }
+    }
+    copies.sort_unstable();
+    assert_eq!(
+        copies,
+        [
+            "clip.copy",
+            "clip.cut",
+            "device.copy",
+            "note.copy",
+            "note.cut",
+            "range.copy",
+            "range.cut",
+            "track.copy",
+            "track.cut"
+        ]
+    );
+}
+
 #[test]
 fn reads_project_tracks_and_clips() {
     let mut session = Session::new(project());

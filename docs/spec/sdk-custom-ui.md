@@ -66,7 +66,7 @@ is refused when it names a parameter its device lacks, gives one a control its r
 (a logarithmic slider below zero, a toggle outside 0..1), or draws a canvas the rules here refuse;
 the registry then shows the generated list. The registry's tests fail on such a layout, so a
 shipped one cannot drift from its device. A device crate gives its layout in Rust (the Sampler's
-`layout()`) or as `devices/<name>/panel.json`, listed in `suhina_device_registry::LAYOUT_FILES`:
+`layout()`) or as `devices/<name>/panel.json`, named in its row of `suhina_device_registry::ENTRIES`:
 
 ```json
 {

@@ -514,7 +514,7 @@ pub fn preview_notes(
     fallback: Option<Box<dyn Device>>,
 ) -> PreviewNotes {
     let bpm = if bpm.is_finite() && bpm > 0.0 { bpm.clamp(1.0, 1000.0) } else { 120.0 };
-    let frames_per_beat = 60.0 / bpm * f64::from(sample_rate);
+    let frames_per_beat = crate::tempo::frames_per_beat(bpm, f64::from(sample_rate));
     let frames = |beats: f64| if beats.is_finite() { (beats.max(0.0) * frames_per_beat).round() as u64 } else { 0 };
     let mut list: Vec<PreviewNote> = notes
         .into_iter()

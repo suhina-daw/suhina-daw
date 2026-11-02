@@ -157,7 +157,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
 ];
 
 fn set_tempo(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let bpm = number(params, "bpm")?;
+    let bpm = Args::new(params).f64("bpm")?;
     if !(20.0..=999.0).contains(&bpm) {
         return Err(format!("bpm must be between 20 and 999, got {bpm}").into());
     }
@@ -183,20 +183,20 @@ fn set_loop_enabled(session: &mut Session, params: &Value) -> Result<Value, Comm
 }
 
 fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let on = params.get("on").and_then(Value::as_bool).ok_or("on must be true or false")?;
+    let on = Args::new(params).bool("on")?;
     // Without a level the metronome keeps the one it has (-6 dB to begin with).
-    let gain = match params.get("db") {
+    let gain = match Args::new(params).value("db") {
         None => None,
         Some(_) => {
-            let db = number_or_neg_infinity(params, "db")?;
+            let db = Args::new(params).f64_or_neg_infinity("db")?;
             if db > 6.0 {
                 return Err(format!("db must be at most +6, got {db}").into());
             }
             Some(if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) })
         }
     };
-    let sound = match params.get("sound") {
-        None | Some(Value::Null) => None,
+    let sound = match Args::new(params).value("sound") {
+        None => None,
         Some(Value::String(name)) => Some(
             suhina_engine::ClickSound::from_name(name)
                 .ok_or_else(|| CommandError(format!("sound must be beep, wood or soft, got {name}")))?,
@@ -219,7 +219,7 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
 }
 
 fn set_position(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let beats = number(params, "beats")?;
+    let beats = Args::new(params).f64("beats")?;
     if !(0.0..=MAX_START_BEAT).contains(&beats) {
         return Err(format!("beats must be between 0 and {MAX_START_BEAT}, got {beats}").into());
     }
@@ -228,7 +228,7 @@ fn set_position(session: &mut Session, params: &Value) -> Result<Value, CommandE
 }
 
 fn set_start(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let beats = number(params, "beats")?;
+    let beats = Args::new(params).f64("beats")?;
     if !(0.0..=MAX_START_BEAT).contains(&beats) {
         return Err(format!("beats must be between 0 and {MAX_START_BEAT}, got {beats}").into());
     }
@@ -237,7 +237,7 @@ fn set_start(session: &mut Session, params: &Value) -> Result<Value, CommandErro
 }
 
 fn jump(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let beats = number(params, "beats")?;
+    let beats = Args::new(params).f64("beats")?;
     if !(0.0..=MAX_START_BEAT).contains(&beats) {
         return Err(format!("beats must be between 0 and {MAX_START_BEAT}, got {beats}").into());
     }

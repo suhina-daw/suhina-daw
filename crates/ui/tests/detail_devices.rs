@@ -441,7 +441,7 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
         harness.query_by_label_contains("Amp Modeler: pack: Test amp").is_some(),
         "the open pack row lists the folder's pack"
     );
-    harness.get_by_label_contains("Amp Modeler: pack: Test amp").click();
+    harness.get_by_label("Amp Modeler: pack: Test amp").click();
     harness.run();
     assert_eq!(channel_device_state(&harness, 0), model_path.display().to_string());
     // The pack steppers step through the packs (one here: from none, into it).

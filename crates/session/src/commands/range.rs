@@ -36,7 +36,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[TRACKS, RANGE_START, RANGE_END],
         kind: CommandKind::Read,
         run: crate::range::copy_range,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "range.cut",
@@ -44,7 +44,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[TRACKS, RANGE_START, RANGE_END],
         kind: CommandKind::Edit,
         run: crate::range::cut_range,
-        policy: Policy::DEFAULT,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "range.duplicate",

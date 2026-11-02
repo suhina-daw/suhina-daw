@@ -7,6 +7,7 @@
 use serde_json::{Value, json};
 use suhina_model::{Channel, ChannelId, ChannelRole, ContentKinds, Project, Send, Track, TrackId};
 
+use crate::commands::Args;
 use crate::commands::{channel_param, remove_track, track_at};
 use crate::files::MAX_TRACKS;
 use crate::{CommandError, Session};
@@ -72,7 +73,7 @@ fn send_param<'a>(session: &'a mut Session, params: &Value) -> Result<(&'a mut S
 }
 
 pub(crate) fn set_send(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let db = match params.get("level") {
+    let db = match Args::new(params).value("level") {
         Some(Value::String(s)) if s == "-inf" => f64::NEG_INFINITY,
         Some(v) => v.as_f64().filter(|n| n.is_finite()).ok_or("level must be a number in dB or \"-inf\"")?,
         None => return Err("level must be a number in dB or \"-inf\"".into()),
@@ -107,7 +108,7 @@ pub(crate) fn set_send(session: &mut Session, params: &Value) -> Result<Value, C
 }
 
 pub(crate) fn set_send_mode(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let pre_fader = match params.get("mode").and_then(Value::as_str) {
+    let pre_fader = match Args::new(params).raw_str("mode") {
         Some(mode) if mode.eq_ignore_ascii_case("pre") => true,
         Some(mode) if mode.eq_ignore_ascii_case("post") => false,
         _ => return Err("mode must be \"pre\" (before the track's volume and pan) or \"post\"".into()),
@@ -133,8 +134,8 @@ pub(crate) fn add_return(session: &mut Session, params: &Value) -> Result<Value,
     if p.tracks.len() >= MAX_TRACKS {
         return Err(format!("a project holds at most {MAX_TRACKS} tracks").into());
     }
-    let name = match params.get("name") {
-        None | Some(Value::Null) => next_name(p),
+    let name = match Args::new(params).value("name") {
+        None => next_name(p),
         Some(v) => v.as_str().map(str::trim).filter(|n| !n.is_empty()).ok_or("name must be a text, not empty")?.into(),
     };
     let id = TrackId(p.tracks.iter().map(|t| t.id.0).max().unwrap_or(0).checked_add(1).ok_or("too many tracks")?);
@@ -179,7 +180,7 @@ pub(crate) fn remove_return(session: &mut Session, params: &Value) -> Result<Val
 }
 
 pub(crate) fn rename_return(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let name = params.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty());
+    let name = Args::new(params).raw_str("name").map(str::trim).filter(|n| !n.is_empty());
     let name = name.ok_or("name must be a text, not empty")?.to_string();
     let (track, channel) = return_at(&session.project, params, "return")?;
     let p = &mut session.project;
