@@ -90,7 +90,7 @@ comes in as it (otherwise as a placeholder):
 | Roar | multi-stage saturation | own, oversampled | planned |
 | EQ Eight | EQ ([spec](eq.md)) | own (`dsp` state-variable filters) | DSP done; import done (no analyser, Audition or oversampling yet) |
 | Auto Filter | filter | own (`dsp` filters) | planned |
-| Operator | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine done; Operator's algorithms, waveforms and filter, and import, planned |
+| Operator | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine done; time envelopes, waveforms, filter, algorithms and import in [#1139](https://github.com/suhina-daw/suhina-daw/issues/1139) |
 | Wavetable | wavetable synth | Vital (GPL-3.0), under its own name | planned |
 | Drift, Analog | subtractive synth | own, Surge XT (GPL-3.0) for reference | planned |
 | Simpler, Sampler | sampler ([spec](sampler.md)) | own | DSP done; import done for Simpler and a Sampler with one sample ([`als-format.md`](als-format.md) › Simpler and Sampler); several samples wait for zones (#739) |
