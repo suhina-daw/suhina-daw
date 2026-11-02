@@ -52,5 +52,13 @@ fn set_main_volume(session: &mut Session, params: &Value) -> Result<Value, Comma
         return Err("the project has no main channel".into());
     };
     main.volume = gain_of_db(db);
-    Ok(json!({ "volume_db": to_db(main.volume) }))
+    let volume = main.volume;
+    // A fader move, nothing else: a playing engine takes it as a message where it can (#763 › 4).
+    session.sync.mixer_edits = vec![crate::ParamEdit {
+        track: suhina_model::TrackId::MAIN,
+        device: suhina_engine::MIXER_VOLUME,
+        param: 0,
+        value: volume,
+    }];
+    Ok(json!({ "volume_db": to_db(volume) }))
 }

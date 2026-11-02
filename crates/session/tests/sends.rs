@@ -248,3 +248,32 @@ fn several_tracks_take_their_own_values_in_one_undo_step() {
         assert!(run(&mut session, "track.setMixerValues", bad.clone()).is_err(), "{bad}");
     }
 }
+
+/// A send turned up from silence is not in the playing graph: its first move builds one, and the
+/// rest of the drag reaches the engine as messages (#763 › 4).
+#[test]
+fn a_send_turned_up_from_silence_takes_one_graph_then_messages() {
+    let project = project();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
+    let mut session = Session::new(project);
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    let level = |db: f64, more: bool| json!({ "track": "Bass", "return": "A Return", "level": db, "continue": more });
+    run(&mut session, "track.setSend", level(-30.0, false)).unwrap();
+    // Every later graph waits: the engine's queue of new graphs fills.
+    let mut full = false;
+    for i in 0..64 {
+        if run(&mut session, "track.setMute", json!({ "tracks": ["Lead"], "mute": i % 2 == 0 })).is_err() {
+            full = true;
+            break;
+        }
+    }
+    assert!(full, "the queue of new graphs is full");
+    // Not continued, so a move that needed a new graph would fail here.
+    for db in [-24.0, -18.0, -12.0] {
+        run(&mut session, "track.setSend", level(db, false)).unwrap();
+    }
+    let mut out = vec![0.0f32; 960];
+    renderer.process(&mut out);
+}

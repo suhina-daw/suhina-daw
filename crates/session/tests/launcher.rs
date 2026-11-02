@@ -961,3 +961,43 @@ fn adjusting_a_volume_is_a_message_to_the_playing_graph() {
     let quieter = beat_peaks(&mut renderer, 2)[1];
     assert!((quieter / loud - 0.2512).abs() < 0.01, "{loud} -> {quieter}");
 }
+
+/// Fills the engine's queue of new graphs, so an edit that needs one fails.
+fn fill_graph_queue(session: &mut Session) {
+    let full =
+        (0..64).any(|i| run(session, "track.setMute", json!({ "tracks": ["Pad"], "mute": i % 2 == 0 })).is_err());
+    assert!(full, "the queue of new graphs is full");
+}
+
+/// A branch of a group inside another group, and the main fader, reach a playing engine as
+/// messages too (#763 › 4).
+#[test]
+fn a_nested_branch_and_the_main_fader_are_messages() {
+    use suhina_model::{Branch, Device, DeviceGroup, DeviceKind};
+    let mut project = project();
+    let utility = || Device::new("Utility", DeviceKind::Builtin("utility".into()));
+    let inner = Device::group(
+        "Inner",
+        DeviceGroup::with_branches(vec![
+            Branch { devices: vec![utility()], ..Branch::new("A") },
+            Branch { devices: vec![utility()], ..Branch::new("B") },
+        ]),
+    );
+    let outer =
+        Device::group("Outer", DeviceGroup::with_branches(vec![Branch { devices: vec![inner], ..Branch::new("X") }]));
+    project.channels[0].devices.push(outer);
+    project.channels.push(Channel { role: ChannelRole::Master, ..Channel::new(ChannelId(100), "Main") });
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
+    let mut session = Session::new(project);
+    session.attach_player(Player::new(renderer.controller(), None));
+    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    let loud = beat_peaks(&mut renderer, 2)[1];
+    fill_graph_queue(&mut session);
+    run(&mut session, "branch.setMute", json!({ "track": "Drums", "device": "0/0/0", "branch": 1, "mute": true }))
+        .unwrap();
+    let half = beat_peaks(&mut renderer, 2)[1];
+    assert!((half / loud - 0.5).abs() < 0.01, "{loud} -> {half}");
+    run(&mut session, "mixer.setMainVolume", json!({ "db": -6.0206 })).unwrap();
+    let quarter = beat_peaks(&mut renderer, 2)[1];
+    assert!((quarter / loud - 0.25).abs() < 0.01, "{loud} -> {quarter}");
+}

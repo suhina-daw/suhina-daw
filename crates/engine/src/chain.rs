@@ -285,6 +285,7 @@ impl Chain {
             device_ids.push(stored.id);
             params.push(built.values);
         }
+        crate::group::number_groups(&mut slots, &positions, &channel.devices, &mut 0);
         let mut instrument = slots.iter().any(crate::group::is_instrument);
         // MIDI effects with no instrument after them play the notes they change as the sine
         // tones the track would play without them (ADR 0004 › 14).
@@ -1009,8 +1010,9 @@ impl Chain {
                 for (frame, ([l, r], [cl, cr])) in pairs.enumerate() {
                     let (left, right) = mix.gains(frame);
                     let fader = live.at(frame);
-                    *l += cl * gain_left * left * fader;
-                    *r += cr * gain_right * right * fader;
+                    // The pan is (1, 1) unless the chain applies it live.
+                    *l += cl * gain_left * left * fader * pan.0.at(frame);
+                    *r += cr * gain_right * right * fader * pan.1.at(frame);
                 }
             }
         }
@@ -1040,9 +1042,8 @@ impl Chain {
     /// Moves a branch of the device group at `position` among the channel's devices from the next
     /// block, smoothed: its volume, pan, mute or solo (`docs/spec/device-groups.md`). Ignored for
     /// a position that holds no group. Never allocates.
-    pub(crate) fn set_live_branch(&mut self, position: usize, branch: usize, what: crate::BranchValue, value: f64) {
-        let Some(index) = self.positions.iter().position(|&p| p == position) else { return };
-        if let Some(Slot::Group(group)) = self.slots.get_mut(index) {
+    pub(crate) fn set_live_branch(&mut self, group: usize, branch: usize, what: crate::BranchValue, value: f64) {
+        if let Some(group) = crate::group::find_group(&mut self.slots, group) {
             group.set_branch(branch, what, value);
         }
     }
@@ -1546,6 +1547,11 @@ impl LiveVolume {
     /// The factor at frame `frame` of the block.
     pub(crate) fn at(&self, frame: usize) -> f32 {
         self.from + (self.to - self.from) * (frame as f32 / self.frames as f32)
+    }
+
+    /// Whether it is 1 through the block: nothing moved, or a move came back and settled.
+    pub(crate) fn unity(&self) -> bool {
+        self.from == 1.0 && self.to == 1.0
     }
 
     /// Whether it stays the same through the block.

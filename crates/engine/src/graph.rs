@@ -42,6 +42,13 @@ pub(crate) struct Graph {
     pub(crate) direct_delay: Delay,
     /// Every track's block of sound, for its level meter.
     pub(crate) levels: meters::Levels,
+    /// The main fader when the main channel runs no chain: the volume every track's gains were
+    /// built with, and a fader move since as a factor on the mix (#763 › 4). `None` when the
+    /// main channel runs a chain (its chain takes the move), is muted or has a volume lane.
+    pub(crate) main_fader: Option<(f64, crate::chain::LiveVolume)>,
+    /// The click's latency compensation while the main fader moves: the click is kept out of
+    /// the mix the fader scales, and delayed here as the mix is in `direct_delay`.
+    pub(crate) click_delay: Delay,
 }
 
 impl Graph {
@@ -308,8 +315,22 @@ impl Graph {
             capture,
             latency,
             direct_delay: Delay::new(latency as usize),
+            main_fader: main_fader(project, source),
+            click_delay: Delay::new(latency as usize),
         }))
     }
+}
+
+/// The main volume a live fader move is taken relative to, when the main channel runs no chain
+/// and its volume reaches every track's gains: not muted, not on a lane, above silence. A source
+/// render has none.
+fn main_fader(project: &Project, source: Option<TrackId>) -> Option<(f64, crate::chain::LiveVolume)> {
+    if source.is_some() || crate::buses::main_runs_chain(project) {
+        return None;
+    }
+    let main = project.main_channel()?;
+    (!main.mute && main.volume.is_finite() && main.volume > 0.0)
+        .then(|| (main.volume, crate::chain::LiveVolume::default()))
 }
 
 /// The channel `track`'s sounds play through, or the id the validation keeps out of reach: a

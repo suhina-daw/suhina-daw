@@ -534,3 +534,45 @@ fn a_pan_message_moves_a_branch_by_the_channel_law() {
     let left: f32 = out[10 * 960..].iter().step_by(2).map(|s| s.abs()).fold(0.0, f32::max);
     assert!(right < 1e-4 && left > 0.1, "left {left}, right {right}");
 }
+
+/// A branch of a group inside another group takes the message path too, named by the inner
+/// group's number (#763 › 4).
+#[test]
+fn a_branch_of_a_nested_group_moves_while_it_plays() {
+    use crate::{BranchValue, MIXER_BRANCH, branch_param, group_number};
+    let inner = || group(vec![branch(vec![device("utility", &[])]), branch(vec![device("utility", &[])])], &[]);
+    let devices = vec![device("utility", &[]), group(vec![branch(vec![inner()])], &[])];
+    assert_eq!(group_number(&devices, &[1]), Some(0));
+    assert_eq!(group_number(&devices, &[1, 0, 0]), Some(1));
+    assert_eq!(group_number(&devices, &[0]), None);
+    let project = project(vec![note(0.0, 8.0, 69)], 8.0, devices);
+    let play = || {
+        crate::Renderer::build(
+            &project,
+            RenderInputs::new(suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap()
+    };
+    let reference = blocks(&mut play(), 20, 480);
+    let mut renderer = play();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 10, 480);
+    controller.set_device_param(TrackId(1), MIXER_BRANCH, branch_param(1, 1, BranchValue::Mute), 1.0).unwrap();
+    out.extend(blocks(&mut renderer, 10, 480));
+    assert!((level_ratio(&out, &reference, 12 * 480..20 * 480) - 0.5).abs() < 0.01);
+}
+
+#[test]
+fn groups_are_numbered_depth_first_whether_they_run_or_not() {
+    use crate::group_number;
+    let mut off = group(vec![branch(vec![group(vec![branch(vec![])], &[])])], &[]);
+    off.enabled = false;
+    let devices = vec![off, group(vec![branch(vec![]), branch(vec![group(vec![branch(vec![])], &[])])], &[])];
+    assert_eq!(group_number(&devices, &[0]), Some(0));
+    assert_eq!(group_number(&devices, &[0, 0, 0]), Some(1));
+    assert_eq!(group_number(&devices, &[1]), Some(2));
+    assert_eq!(group_number(&devices, &[1, 1, 0]), Some(3));
+    assert_eq!(group_number(&devices, &[1, 0, 0]), None);
+}

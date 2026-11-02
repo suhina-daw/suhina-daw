@@ -1420,3 +1420,72 @@ fn devices_are_made_by_the_factory_the_renderer_is_given() {
     controller.update(&project).unwrap();
     assert!(counting.0.load(std::sync::atomic::Ordering::Relaxed) >= 3);
 }
+
+/// A main channel with volume 0.5 and nothing else: its volume reaches every track's gains.
+fn with_main(project: &mut Project, volume: f64) {
+    let mut main = project_with(Vec::new(), Vec::new(), 1).channels.remove(0);
+    (main.id, main.role, main.volume, main.output) = (ChannelId(9), ChannelRole::Master, volume, None);
+    main.devices.clear();
+    project.channels.push(main);
+}
+
+/// The main fader of a main channel with no chain moves as a message, from the next block and
+/// smoothed, without a new graph; the metronome is not scaled by it (#763 › 4).
+#[test]
+fn the_main_fader_moves_while_playing_and_leaves_the_click_alone() {
+    let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
+    with_main(&mut project, 0.5);
+    let play = || {
+        Renderer::build(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap()
+    };
+    let mut renderer = play();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 50, 480, |_| {});
+    controller.set_device_param(TrackId::MAIN, MIXER_VOLUME, 0, 0.25).unwrap();
+    out.extend(blocks(&mut renderer, 50, 480, |_| {}));
+    let now = 50 * 480;
+    let ratio = rms(&out, now + 6_000, now + 12_000) / rms(&out, now - 6_000, now - 1_200);
+    assert!((ratio - 0.5).abs() < 0.02, "{ratio}");
+    // A muted main channel takes a new graph.
+    let mut muted = project.clone();
+    muted.channels.last_mut().unwrap().mute = true;
+    let mut renderer = Renderer::new(&muted, SR, suhina_device_registry::factory()).unwrap();
+    assert!(renderer.controller().set_device_param(TrackId::MAIN, MIXER_VOLUME, 0, 0.25).is_err());
+
+    // The click of an empty project with a main fader moved to silence still sounds.
+    let mut empty = Project::default();
+    with_main(&mut empty, 1.0);
+    let mut renderer = Renderer::stopped(&empty, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    controller.set_device_param(TrackId::MAIN, MIXER_VOLUME, 0, 0.0).unwrap();
+    renderer.handle(LaunchCommand::SetMetronome { on: true, gain: Some(0.5) });
+    renderer.handle(LaunchCommand::Play);
+    let clicks = blocks(&mut renderer, 120, 480, |_| {});
+    assert_eq!(onsets(&clicks), [1, 24_001, 48_001]);
+}
+
+/// A track with a volume lane pans live: its pan is not on the lane (#763 › 4).
+#[test]
+fn a_track_with_a_volume_lane_pans_without_a_new_graph() {
+    let mut project = project_with(Vec::new(), Vec::new(), 1);
+    with_utility(&mut project);
+    project.channels[0].automation =
+        vec![AutomationLane { param: "volume".into(), points: vec![AutomationPoint::new(0.0, 0.8)], enabled: true }];
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    assert!(controller.set_device_param(TrackId(1), MIXER_PAN, 0, -1.0).is_ok());
+    // A pan lane keeps the knob off the message path.
+    project.channels[0].automation.push(AutomationLane {
+        param: "pan".into(),
+        points: vec![AutomationPoint::new(0.0, 0.0)],
+        enabled: true,
+    });
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
+    assert!(renderer.controller().set_device_param(TrackId(1), MIXER_PAN, 0, -1.0).is_err());
+}

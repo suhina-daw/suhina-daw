@@ -169,7 +169,7 @@ impl Renderer {
             plugins,
             retired_plugins,
             tempo: Arc::clone(&self.graph.tempo),
-            live_volumes: self.graph.chains.iter().filter(|c| c.built_volume.is_some()).map(|c| c.track).collect(),
+            live_volumes: live_volumes(&self.graph),
             live_sends: live_sends(&self.graph.chains),
             live_pans: self.graph.chains.iter().filter(|c| c.built_pan.is_some()).map(|c| c.track).collect(),
         }
@@ -215,7 +215,7 @@ impl Renderer {
     pub(crate) fn receive_params(&mut self) {
         let Some(consumer) = self.swap.params.as_mut() else { return };
         while let Ok(change) = consumer.pop() {
-            apply_param(&mut self.graph.chains, change);
+            apply_param(&mut self.graph, change);
             let recent = &mut self.swap.recent;
             if recent.len() < RECENT_PARAMS {
                 recent.push(change);
@@ -326,7 +326,7 @@ impl Renderer {
         order.sort_unstable_by_key(|&i| self.swap.recent.get(i).map_or(0, |c| c.seq));
         for &i in order.iter() {
             if let Some(&change) = self.swap.recent.get(i) {
-                apply_param(&mut self.graph.chains, change);
+                apply_param(&mut self.graph, change);
             }
         }
         // Sounding voices follow their track: its mix (volume, pan, mute) and its chain in the
@@ -490,13 +490,33 @@ fn park(parked: &mut Vec<(u64, Processor)>, retired: &mut Producer<Processor>, k
     }
 }
 
+/// The tracks whose fader a move reaches as a message: those whose chain was built with its
+/// volume, and the main channel's when the graph has its fader.
+fn live_volumes(graph: &Graph) -> Vec<TrackId> {
+    let chains = graph.chains.iter().filter(|c| c.built_volume.is_some()).map(|c| c.track);
+    chains.chain(graph.main_fader.is_some().then_some(TrackId::MAIN)).collect()
+}
+
 /// The sends of `chains` a knob's turn reaches as a message: (track, return).
 fn live_sends(chains: &[crate::chain::Chain]) -> Vec<(TrackId, TrackId)> {
     chains.iter().flat_map(|c| c.live_sends().map(move |target| (c.track, target))).collect()
 }
 
-fn apply_param(chains: &mut [crate::chain::Chain], change: ParamChange) {
-    if let Some(chain) = chains.iter_mut().find(|c| c.track == change.track) {
+fn apply_param(graph: &mut Graph, change: ParamChange) {
+    // The main fader of a main channel with no chain scales the whole mix.
+    if change.track == TrackId::MAIN
+        && change.device == crate::MIXER_VOLUME
+        && let Some((built, fader)) = graph.main_fader.as_mut()
+    {
+        if change.value.is_finite()
+            && change.value >= 0.0
+            && let Some(ratio) = crate::chain::live_ratio(change.value, *built)
+        {
+            fader.target = ratio;
+        }
+        return;
+    }
+    if let Some(chain) = graph.chains.iter_mut().find(|c| c.track == change.track) {
         if change.device == crate::MIXER_VOLUME {
             chain.set_live_volume(change.value);
         } else if change.device == crate::MIXER_PAN {
@@ -542,7 +562,7 @@ impl Controller {
         .map_err(|e| e.to_string())?;
         crate::build_report::add(&format!("old graphs dropped {:.1} ms", collect_took.as_secs_f64() * 1000.0));
         let sent = Arc::clone(&graph.tempo);
-        updater.live_volumes = graph.chains.iter().filter(|c| c.built_volume.is_some()).map(|c| c.track).collect();
+        updater.live_volumes = live_volumes(&graph);
         updater.live_sends = live_sends(&graph.chains);
         updater.live_pans = graph.chains.iter().filter(|c| c.built_pan.is_some()).map(|c| c.track).collect();
         let monitor = &self.monitor;

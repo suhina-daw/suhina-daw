@@ -128,6 +128,9 @@ pub(crate) struct BranchRun {
 
 /// A device group in a chain.
 pub(crate) struct GroupSlot {
+    /// Its number among the channel's groups, in depth-first order ([`crate::group_number`]):
+    /// what a branch message names it by.
+    pub(crate) number: usize,
     pub(crate) branches: Vec<BranchRun>,
     mix: Smoothed,
     gain: Smoothed,
@@ -206,6 +209,7 @@ impl SlotFactory<'_> {
             branch.delay = Delay::new(delay as usize);
         }
         let slot = GroupSlot {
+            number: usize::MAX,
             branches,
             // An instrument group has no dry signal.
             mix: Smoothed::new(if instrument { 1.0 } else { mix as f32 }, self.sample_rate),
@@ -298,6 +302,53 @@ pub(crate) fn is_instrument(slot: &Slot) -> bool {
         Slot::Group(group) => group.instrument,
         Slot::MidiDevice(_) => false,
     }
+}
+
+/// Numbers the groups among `slots` and inside them in depth-first order of the stored
+/// `devices` they were built from (`positions` maps a slot to its device), as
+/// [`crate::group_number`] counts: a group that does not run still takes its number, and so do
+/// those inside it. Never allocates.
+pub(crate) fn number_groups(
+    slots: &mut [Slot],
+    positions: &[usize],
+    devices: &[suhina_model::Device],
+    counter: &mut usize,
+) {
+    for (index, device) in devices.iter().enumerate() {
+        let Some(group) = device.as_group() else { continue };
+        let number = *counter;
+        *counter += 1;
+        let slot = positions.iter().position(|&p| p == index).and_then(|slot| slots.get_mut(slot));
+        match slot {
+            Some(Slot::Group(running)) => {
+                running.number = number;
+                for (b, branch) in group.branches.iter().enumerate() {
+                    match running.branches.get_mut(b) {
+                        Some(run) => number_groups(&mut run.slots, &run.positions, &branch.devices, counter),
+                        None => *counter += crate::count_groups(&branch.devices),
+                    }
+                }
+            }
+            _ => *counter += group.branches.iter().map(|b| crate::count_groups(&b.devices)).sum::<usize>(),
+        }
+    }
+}
+
+/// The running group numbered `number` among `slots` and inside them. Never allocates.
+pub(crate) fn find_group(slots: &mut [Slot], number: usize) -> Option<&mut GroupSlot> {
+    for slot in slots {
+        if let Slot::Group(group) = slot {
+            if group.number == number {
+                return Some(group);
+            }
+            for branch in &mut group.branches {
+                if let Some(found) = find_group(&mut branch.slots, number) {
+                    return Some(found);
+                }
+            }
+        }
+    }
+    None
 }
 
 impl GroupSlot {

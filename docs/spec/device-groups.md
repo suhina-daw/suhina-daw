@@ -351,7 +351,7 @@ its own `format` name, holding the group's device exactly as the project file wr
 Every behaviour above is a command (AGENTS.md rule 6, ADR 0002); each edit is one undo step and a
 playing engine hears it at once (ADR 0005). A drag of a branch's volume or pan in the panel sends every frame, the
 first one starting an undo step and the rest continuing it, so the drag is heard as it moves and is
-one undo step; for a group at the top of a chain the playing graph takes it as a message
+one undo step; the playing graph takes it as a message, for a group inside another too
 (ADR 0005 › Amendment, #763 › 4).
 
 **Addressing devices inside groups.** Today `device` is a device's index on the track. It becomes a
