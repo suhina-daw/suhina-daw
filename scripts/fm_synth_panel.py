@@ -20,12 +20,14 @@ from multiband_panel import (ACCENT, BORDER, CONTROL, DISPLAY, HIGHLIGHT, INVISI
 
 MODULATOR = [3, 0, 4, 255]
 CARRIER = [3, 0, 3, 255]
+# Each operator's colour, the same on its row, in the algorithm's picture and where something is sent to it.
+OP_COLORS = {1: [3, 0, 2, 255], 2: [3, 0, 3, 255], 3: [3, 0, 4, 255], 4: HIGHLIGHT, 5: SPECTRUM_COLOR, 6: ACCENT}
 CAPTION = tint(TEXT, 170)
 QUIET = tint(TEXT, 110)
 GRID = tint(TEXT, 30)
 FILL = tint(TEXT, 28)
 OPS = range(1, 7)
-COMPACT = (962.0, 168.0)
+COMPACT = (1078.0, 168.0)
 EXPANDED = (1400.0, 230.0)
 PAGES = ["Env", "Wave", "Filter", "LFO", "Pitch", "Algo", "Mod", "Voice"]
 # The index of the Drawn wave in devices/fm-synth/src/params.rs.
@@ -55,7 +57,7 @@ FILTER = ["filterOn", "filterType", "filterSlope", "filterCircuit", "filterFreq"
 LFO = ["lfoOn", "lfo2Wave", "lfo2Range", "lfo2Rate", "lfo2Sync", "lfo2Retrigger", "lfo2ByKey", "lfo2ByVel", "lfo2Amount"] + [
     f"lfo2ToOp{n}" for n in OPS] + ["lfo2ToFilter", "lfo2DestB", "lfo2AmountB"]
 PITCH = ["pitchEnvOn", "pitchEnvAmount"] + [f"pitchEnvToOp{n}" for n in OPS] + ["pitchEnvToLfo", "pitchEnvDestB", "pitchEnvAmountB"]
-PANEL_PARAMS = ["panel.op", "panel.page", "random.amount", "random.seed"] + [
+PANEL_PARAMS = ["panel.op", "panel.page", "panel.filterView", "random.amount", "random.seed"] + [
     f"random.{s}.{f}" for s, _ in SECTIONS for f in ("amount", "on")]
 # Where an operator row's columns fall, as (x, width).
 ROW_COMPACT = {"select": (2.0, 20.0), "mode": (24.0, 34.0), "freq": (60.0, 44.0), "coarse": (106.0, 32.0),
@@ -67,6 +69,10 @@ TIME_STRETCH = 0.24
 RELEASE_AT = 0.72
 RELEASE_STRETCH = 0.28
 STAGE_GAP = 7.0
+# Where a stage's curve is sampled, as shares of it.
+CURVE_SAMPLES = (0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875)
+# How far a stage's curve dot travels, in pixels.
+CURVE_TRAVEL = 36.0
 ROW_GAP = 2.0
 # The filter's picture: 20 Hz to 20 kHz across, as hearing spreads pitch, and decibels up and down.
 FILTER_TOP_DB, FILTER_BOTTOM_DB = 30.0, -60.0
@@ -161,7 +167,7 @@ def picture(flags, w, h, size, ring=False):
         draws.append(line([a[0] + size / 2.0, a[1] + size], [b[0] + size / 2.0, b[1]], tint(TEXT, 120), 1.0))
     for n, (x, y) in position.items():
         heard_now = n in carriers
-        color = CARRIER if heard_now else MODULATOR
+        color = OP_COLORS[n]
         if ring:
             on = selected(n)
             draws.append(rect(sub(x, mul(on, 3.0)), sub(y, mul(on, 3.0)), mul(on, size + 6.0), mul(on, size + 6.0), HIGHLIGHT, 3.0))
@@ -330,11 +336,11 @@ def dim(cid, bounds, when):
     return graphic(cid, "Inactive", bounds, [rect(0.0, 0.0, w, h, tint(PANEL, 165))], when)
 
 
-def point(cid, name, bounds, x_pid, y_pid, visible, log_x=False, flip_x=False, offset=None, span=None):
+def point(cid, name, bounds, x_pid, y_pid, visible, log_x=False, flip_x=False, offset=None, span=None, flip_y=False):
     """A dot on a picture, dragged along the axes it has parameters for."""
     return {"widget": {"kind": "handle", "color": HIGHLIGHT, "span": span, "offset": offset, "dot": True}, "visible_when": visible,
             "id": cid, "name": name, "tooltip": name, "bounds": bounds,
-            "gesture": "position", "x": binding(x_pid, log_x, flip_x), "y": binding(y_pid), "drawing": []}
+            "gesture": "position", "x": binding(x_pid, log_x, flip_x), "y": binding(y_pid, flip=flip_y), "drawing": []}
 
 
 def stage(share, span, gap):
@@ -350,15 +356,32 @@ def env_x(prefix, w, gap=STAGE_GAP):
     return attack, decay, release
 
 
-def env_shape(prefix, w, h, top, bottom, color, gap=STAGE_GAP):
-    """A time envelope's shape, moving with its times and levels; `top` and `bottom` are its range."""
-    span = top - bottom
+def bent(p, slope):
+    """How far along a stage its level is at `p`, as the engine's curve (bend in devices/fm-synth/src/time_env.rs)."""
+    rising = maximum(slope, 0.0)
+    falling = maximum(mul(slope, -1.0), 0.0)
+    fast = sub(1.0, {"op": "exp", "value": mul(math.log(1.0 - p), add(1.0, mul(rising, 4.0)))})
+    slow = {"op": "exp", "value": mul(math.log(p), add(1.0, mul(falling, 4.0)))}
+    return add(add(fast, slow), -p)
 
-    def y(pid):
-        return add(mul(sub(top, minimum(top, maximum(bottom, par(pid)))), (h - 8.0) / span), 4.0)
+
+def env_level(pid, h, top, bottom):
+    """Where the level `pid` lies in a picture `h` high, for a range from `top` to `bottom`."""
+    return add(mul(sub(top, minimum(top, maximum(bottom, par(pid)))), (h - 8.0) / (top - bottom)), 4.0)
+
+
+def env_shape(prefix, w, h, top, bottom, color, gap=STAGE_GAP):
+    """A time envelope's shape, moving with its times, levels and slopes; `top` and `bottom` are its range."""
+    y = lambda pid: env_level(pid, h, top, bottom)
     attack, decay, release = env_x(prefix, w, gap)
-    points = [[0.0, y(f"{prefix}initial")], [attack, y(f"{prefix}peak")], [decay, y(f"{prefix}sustain")],
-              [w * RELEASE_AT, y(f"{prefix}sustain")], [release, y(f"{prefix}end")], [w, y(f"{prefix}end")]]
+    keyup = w * RELEASE_AT
+
+    def curve(x0, y0, x1, y1, slope):
+        return [[add(x0, mul(sub(x1, x0), p)), add(y0, mul(sub(y1, y0), bent(p, par(slope))))] for p in CURVE_SAMPLES]
+    initial, peak, sustain, end = y(f"{prefix}initial"), y(f"{prefix}peak"), y(f"{prefix}sustain"), y(f"{prefix}end")
+    points = [[0.0, initial]] + curve(0.0, initial, attack, peak, f"{prefix}attackSlope") + [[attack, peak]]
+    points += curve(attack, peak, decay, sustain, f"{prefix}decaySlope") + [[decay, sustain], [keyup, sustain]]
+    points += curve(keyup, sustain, release, end, f"{prefix}releaseSlope") + [[release, end], [w, end]]
     return path(points, color, 1.5)
 
 
@@ -379,18 +402,30 @@ def env_picture(prefix, w, h, top, bottom, color, levels):
     return [rect(0.0, 0.0, w, h, DISPLAY, 3.0)] + env_grid(w, h, top, bottom, levels) + [env_shape(prefix, w, h, top, bottom, color)]
 
 
-def env_points(prefix, tag, x, y, w, h, visible):
-    """What is dragged on a time envelope's picture: each stage's end, in time and level at once."""
-    attack, _, _ = env_x(prefix, w)
+def env_points(prefix, tag, x, y, w, h, visible, top, bottom):
+    """What is dragged on a time envelope's picture: each stage's end, in time and level at once, and in
+    each stage's middle a dot that bends it, higher for a stage that rises quickly at first."""
+    attack, decay, release = env_x(prefix, w)
     zone = w * TIME_STRETCH - STAGE_GAP
-    top, tall = y + 4.0, h - 8.0
+    upper, tall = y + 4.0, h - 8.0
+    level = lambda pid: env_level(f"{prefix}{pid}", h, top, bottom)
+    keyup = w * RELEASE_AT
+
+    def bend_dot(name, slope, x0, x1, y0, y1, flip):
+        middle = add(x, mul(add(x0, x1), 0.5))
+        height = mul(add(level(y0), level(y1)), 0.5)
+        return point(f"{prefix}{slope}_point{tag}", name, [x, y, w, CURVE_TRAVEL], None, f"{prefix}{slope}", visible,
+                     offset=add(height, -CURVE_TRAVEL / 2.0), span=[add(middle, -6.0), add(middle, 6.0)], flip_y=flip)
     return [
-        point(f"{prefix}initial_point{tag}", "Initial level", [x, top, w, tall], None, f"{prefix}initial", visible, span=[x - 6.0, x + 6.0]),
-        point(f"{prefix}attack_point{tag}", "Attack and peak", [x + STAGE_GAP, top, zone, tall], f"{prefix}attack", f"{prefix}peak", visible, log_x=True),
-        point(f"{prefix}decay_point{tag}", "Decay and sustain", [x + STAGE_GAP, top, zone, tall], f"{prefix}decay", f"{prefix}sustain", visible, log_x=True,
+        point(f"{prefix}initial_point{tag}", "Initial level", [x, upper, w, tall], None, f"{prefix}initial", visible, span=[x - 6.0, x + 6.0]),
+        point(f"{prefix}attack_point{tag}", "Attack and peak", [x + STAGE_GAP, upper, zone, tall], f"{prefix}attack", f"{prefix}peak", visible, log_x=True),
+        point(f"{prefix}decay_point{tag}", "Decay and sustain", [x + STAGE_GAP, upper, zone, tall], f"{prefix}decay", f"{prefix}sustain", visible, log_x=True,
               offset=attack),
-        point(f"{prefix}release_point{tag}", "Release and end level", [x + w * RELEASE_AT + STAGE_GAP, top, w * RELEASE_STRETCH - STAGE_GAP, tall],
+        point(f"{prefix}release_point{tag}", "Release and end level", [x + keyup + STAGE_GAP, upper, w * RELEASE_STRETCH - STAGE_GAP, tall],
               f"{prefix}release", f"{prefix}end", visible, log_x=True),
+        bend_dot("Attack's curve", "attackSlope", 0.0, attack, "initial", "peak", False),
+        bend_dot("Decay's curve", "decaySlope", attack, decay, "peak", "sustain", True),
+        bend_dot("Release's curve", "releaseSlope", keyup, release, "sustain", "end", True),
     ]
 
 
@@ -443,7 +478,7 @@ def op_envelope(n, tag, x, y, w, h, shown):
     return [graphic(f"display_time_{n}{tag}", f"Operator {n} envelope", [x, y, w, h],
                     env_picture(f"op{n}.env.", w, h, 0.0, -70.0, ACCENT, [-20.0, -40.0, -60.0]), time),
             graphic(f"display_rates_{n}{tag}", f"Operator {n} envelope", [x, y, w, h], dx_picture(n, w, h, ACCENT), rates)
-            ] + env_points(f"op{n}.env.", tag, x, y, w, h, time) + dx_points(n, tag, x, y, w, h, rates)
+            ] + env_points(f"op{n}.env.", tag, x, y, w, h, time, 0.0, -70.0) + dx_points(n, tag, x, y, w, h, rates)
 
 
 def r_power(power):
@@ -663,6 +698,11 @@ def op_tuning(n, coarse_bounds, fine_bounds, tag, visible=None):
             field(fine, "Times the range", fine_bounds, power_of_ten(mul(par(fine), 0.01)), "×", 2, visible=fixed, tag=f"{tag}_hz", fill=None, plain=True)]
 
 
+def op_mark(cid, n, bounds, visible=None):
+    """Operator `n`'s colour along the left of `bounds`."""
+    return graphic(cid, f"Operator {n}'s colour", bounds, [rect(0.0, 2.0, 3.0, bounds[3] - 4.0, OP_COLORS[n], 1.0)], visible)
+
+
 def op_toggle(n, bounds, tag):
     """An operator's power: a small light, as six bright buttons in a column would outshout the sound's shape."""
     _, _, w, h = bounds
@@ -693,6 +733,7 @@ def op_row(n, columns, y, h, tag):
         graphic(f"op{n}_fixed{tag}", f"Operator {n} stays at one frequency", [mode_x - 1.0, y, tuning_w + 2.0, h], [rect(0.0, 0.0, tuning_w + 2.0, h, tint(HIGHLIGHT, 60), 3.0)],
                 both(on, is_on(f"op{n}.mode"))),
         button(f"op{n}.mode{tag}", f"op{n}.mode", "Hz", cell("mode"), visible=on, off_label="Ratio"),
+        op_mark(f"op{n}_mark{tag}", n, [cell("select")[0], y + 1.5, 8.0, h - 3.0]),
     ]
     controls += op_frequency(n, cell("freq"), tag, on)
     controls += op_tuning(n, cell("coarse"), cell("fine"), tag, on)
@@ -782,12 +823,7 @@ def op_dials(n, x, y, tag):
 def global_dials(x, y, tag):
     """The Filter, LFO, Pitch and Voice pages' dials."""
     pages = {
-        2: [("filterFreq", "Freq", par("filterFreq"), " Hz", 0, True), ("filterRes", "Res", percent("filterRes"), " %", 0, False),
-            ("filterDrive", "Drive", par("filterDrive"), " dB", 1, False), ("filterMorph", "Morph", percent("filterMorph"), " %", 0, False),
-            ("filterEnv", "Env", percent("filterEnv"), " %", 0, False), ("filterByVel", "By vel", percent("filterByVel"), " %", 0, False),
-            ("filterByKey", "By key", percent("filterByKey"), " %", 0, False), ("shaperMix", "Shaper", percent("shaperMix"), " %", 0, False)],
-        3: [None, ("lfo2Amount", "Amount", percent("lfo2Amount"), " %", 0, False),
-            ("lfo2ByKey", "By key", percent("lfo2ByKey"), " %", 0, False), ("lfo2ByVel", "By vel", percent("lfo2ByVel"), " %", 0, False),
+        3: [("lfo2ByKey", "By key", percent("lfo2ByKey"), " %", 0, False), ("lfo2ByVel", "By vel", percent("lfo2ByVel"), " %", 0, False), None, None,
             ("lfoEnv.attack", "Attack", ms("lfoEnv.attack"), " ms", 0, True), ("lfoEnv.decay", "Decay", ms("lfoEnv.decay"), " ms", 0, True),
             ("lfoEnv.sustain", "Sustain", par("lfoEnv.sustain"), "", 2, False), ("lfoEnv.release", "Release", ms("lfoEnv.release"), " ms", 0, True)],
         4: [("pitchEnv.initial", "Initial", par("pitchEnv.initial"), " st", 1, False), ("pitchEnv.attack", "Attack", ms("pitchEnv.attack"), " ms", 0, True),
@@ -799,7 +835,7 @@ def global_dials(x, y, tag):
         7: [("voices", "Voices", par("voices"), "", 0, False), ("portamentoTime", "Glide", par("portamentoTime"), "", 0, False),
             ("pitchBendRange", "Bend", par("pitchBendRange"), " st", 0, False), ("transpose", "Transp.", par("transpose"), " st", 0, False),
             ("pan", "Pan", percent("pan"), " %", 0, False), ("panByKey", "By key", percent("panByKey"), " %", 0, False),
-            ("panRandom", "Random", percent("panRandom"), " %", 0, False), None],
+            ("panRandom", "Random", percent("panRandom"), " %", 0, False), ("tone", "Tone", percent("tone"), " %", 0, False)],
     }
     controls = []
     for page, cells in pages.items():
@@ -809,13 +845,28 @@ def global_dials(x, y, tag):
                 continue
             pid, caption, value, suffix, decimals, log = cell
             controls.append(dial(pid, caption, x + (i % 4) * 50.0, y + (i // 4) * 80.0, value, suffix, decimals, log, shown, f"{tag}_p{page}"))
-    lfo = equal(par("panel.page"), 3.0)
-    controls += lfo_rate_knob(x, y, 50.0, 70.0, lfo, f"{tag}_p3")
-    # What does nothing right now looks it.
+    # The filter's dials follow its picture.
     filter_page = equal(par("panel.page"), 2.0)
-    controls.append(dim(f"dim_morph{tag}", [x + 150.0, y, 50.0, 70.0], both(filter_page, sub(1.0, equal(par("filterType"), 4.0)))))
-    controls.append(dim(f"dim_drive{tag}", [x + 100.0, y, 50.0, 70.0], both(filter_page, equal(par("filterCircuit"), 0.0))))
-    controls.append(dim(f"dim_shaper{tag}", [x + 150.0, y + 80.0, 50.0, 70.0], both(filter_page, equal(par("shaper"), 0.0))))
+    response = both(filter_page, equal(par("panel.filterView"), 0.0))
+    shaped = both(filter_page, equal(par("panel.filterView"), 1.0))
+    cell = lambda i: (x + (i % 4) * 50.0, y + (i // 4) * 80.0)
+    for i, (pid, caption, value, suffix, decimals, log) in enumerate((
+            ("filterDrive", "Drive", par("filterDrive"), " dB", 1, False), ("filterMorph", "Morph", percent("filterMorph"), " %", 0, False),
+            ("filterEnv", "Env", percent("filterEnv"), " %", 0, False), ("filterByVel", "By vel", percent("filterByVel"), " %", 0, False),
+            ("filterByKey", "By key", percent("filterByKey"), " %", 0, False), ("shaperDrive", "Sh. drive", par("shaperDrive"), " dB", 1, False),
+            ("shaperMix", "Sh. mix", percent("shaperMix"), " %", 0, False))):
+        controls.append(dial(pid, caption, *cell(i), value, suffix, decimals, log, response, f"{tag}_p2"))
+    controls += named_menu("shaper", "Shape", [x + 152.0, y + 88.0, 48.0, 38.0], response, f"{tag}_p2")
+    for i, (pid, caption, value, suffix, decimals, log) in enumerate((
+            ("filterEnv.attack", "Attack", ms("filterEnv.attack"), " ms", 0, True), ("filterEnv.decay", "Decay", ms("filterEnv.decay"), " ms", 0, True),
+            ("filterEnv.sustain", "Sustain", par("filterEnv.sustain"), "", 2, False), ("filterEnv.release", "Release", ms("filterEnv.release"), " ms", 0, True),
+            ("filterEnv.initial", "Initial", par("filterEnv.initial"), "", 2, False), ("filterEnv.peak", "Peak", par("filterEnv.peak"), "", 2, False),
+            ("filterEnv.end", "End", par("filterEnv.end"), "", 2, False), ("filterEnv", "Amount", percent("filterEnv"), " %", 0, False))):
+        controls.append(dial(pid, caption, *cell(i), value, suffix, decimals, log, shaped, f"{tag}_p2e"))
+    # What does nothing right now looks it.
+    controls.append(dim(f"dim_morph{tag}", [x + 50.0, y, 50.0, 70.0], both(response, sub(1.0, equal(par("filterType"), 4.0)))))
+    controls.append(dim(f"dim_drive{tag}", [x, y, 50.0, 70.0], both(response, equal(par("filterCircuit"), 0.0))))
+    controls.append(dim(f"dim_shaper{tag}", [x + 50.0, y + 80.0, 100.0, 70.0], both(response, equal(par("shaper"), 0.0))))
     return controls
 
 
@@ -845,29 +896,31 @@ def display(x, y, w, h, tag):
         controls.append(menu(f"op{n}.wave", "Wave", [x + 128.0, head_y, 116.0, 18.0], waved, tag))
         controls += partial_bars(n, x + 6.0, body_y + 2.0, w - 12.0, body_h - 8.0, tag, waved)
         controls.append(bars_note(f"bars_note_{n}{tag}", x + 2.0, body_y, w - 4.0, body_h - 2.0, n, waved))
-    # Filter
-    controls.append(switch("filterOn", "Filter", [x + 2.0, head_y, 30.0, 18.0], page(2), tag))
-    controls.append(menu("filterType", "Filter type", [x + 36.0, head_y, 84.0, 18.0], page(2), tag))
-    controls.append(menu("filterSlope", "Filter slope", [x + 124.0, head_y, 54.0, 18.0], page(2), tag))
-    controls.append(menu("filterCircuit", "Filter circuit", [x + 182.0, head_y, 62.0, 18.0], page(2), tag))
-    controls += filter_picture(x, body_y, w, body_h, tag, page(2))
+    # Filter: its response or its envelope in one picture.
+    response = both(page(2), equal(par("panel.filterView"), 0.0))
+    shaped = both(page(2), equal(par("panel.filterView"), 1.0))
+    controls.append(header_title(f"filter_title{tag}", "Filter", x, y + 1.0, page(2)))
+    controls.append(choose(f"filter_view_0{tag}", "panel.filterView", "Response", 0, [x + 56.0, head_y, 62.0, 18.0], page(2)))
+    controls.append(choose(f"filter_view_1{tag}", "panel.filterView", "Envelope", 1, [x + 120.0, head_y, 62.0, 18.0], page(2)))
+    controls += filter_picture(x, body_y, w, body_h, tag, response)
+    controls.append(graphic(f"filter_env_picture{tag}", "Filter envelope", [x, body_y, w, body_h], env_picture("filterEnv.", w, body_h, 1.0, 0.0, MODULATOR, [0.5]), shaped))
+    controls += env_points("filterEnv.", tag, x, body_y, w, body_h, shaped, 1.0, 0.0)
     # LFO
     sends = body_h - 22.0
-    controls.append(switch("lfoOn", "LFO", [x + 2.0, head_y, 30.0, 18.0], page(3), tag))
-    controls.append(menu("lfo2Wave", "LFO wave", [x + 36.0, head_y, 100.0, 18.0], page(3), tag))
-    controls.append(label_beside(f"lfo_rate_name{tag}", "Rate in", x + 142.0, head_y, 36.0, 18.0, page(3)))
-    controls.append(menu("lfo2Range", "LFO rate in", [x + 180.0, head_y, 64.0, 18.0], page(3), tag))
+    controls.append(header_title(f"lfo_title{tag}", "LFO", x, y + 1.0, page(3)))
     controls += lfo_picture(x, body_y, w, sends, tag, page(3))
     controls.append(label_beside(f"lfo_to{tag}", "To", x + 6.0, body_y + sends + 2.0, 20.0, 18.0, page(3)))
     for n in OPS:
-        controls.append(toggle(f"lfo2ToOp{n}", str(n), [x + 26.0 + (n - 1) * 33.0, body_y + sends + 2.0, 31.0, 18.0], page(3), tag))
+        at = x + 26.0 + (n - 1) * 33.0
+        controls.append(toggle(f"lfo2ToOp{n}", str(n), [at, body_y + sends + 2.0, 31.0, 18.0], page(3), tag))
+        controls.append(op_mark(f"lfo2ToOp{n}_mark{tag}", n, [at, body_y + sends + 2.0, 8.0, 18.0], page(3)))
     controls.append(toggle("lfo2ToFilter", "Filter", [x + 226.0, body_y + sends + 2.0, 58.0, 18.0], page(3), tag))
     # Pitch
     controls.append(switch("pitchEnvOn", "Pitch envelope", [x + 2.0, head_y, 30.0, 18.0], page(4), tag))
     controls.append(header_title(f"pitch_title{tag}", "Pitch envelope", x + 32.0, y + 1.0, page(4)))
     controls.append(graphic(f"pitch_picture{tag}", "Pitch envelope", [x, body_y, w, body_h],
                             env_picture("pitchEnv.", w, body_h, 48.0, -48.0, HIGHLIGHT, [24.0, 0.0, -24.0]), page(4)))
-    controls += env_points("pitchEnv.", tag, x, body_y, w, body_h, page(4))
+    controls += env_points("pitchEnv.", tag, x, body_y, w, body_h, page(4), 48.0, -48.0)
     # Algorithm
     controls.append(header_title(f"algorithm_title{tag}", "Algorithm", x, y + 1.0, page(5)))
     controls.append(stepper("algorithm", "Algorithm", [x + 76.0, head_y, 60.0, 18.0], tag, page(5)))
@@ -923,6 +976,23 @@ def stepper(pid, caption, bounds, tag="", visible=None):
             "y": binding(pid), "drawing": []}
 
 
+def main_blocks(x, tag):
+    """The LFO's and the filter's main controls, in view whatever the display shows."""
+    y = 2.0
+    controls = [switch("lfoOn", "LFO", [x, y, 30.0, 18.0], tag=tag), label_beside("lfo_main_name", "LFO", x + 36.0, y, 40.0, 18.0),
+                menu("lfo2Wave", "LFO wave", [x, y + 20.0, 82.0, 18.0], tag=tag), menu("lfo2Range", "LFO rate in", [x, y + 40.0, 82.0, 18.0], tag=tag),
+                toggle("lfo2Retrigger", "Retrigger", [x, y + 60.0, 82.0, 18.0], tag=tag)]
+    controls += lfo_rate_knob(x + 84.0, y, 46.0, 70.0, None, tag)
+    controls.append(dial("lfo2Amount", "Amount", x + 130.0, y, percent("lfo2Amount"), " %", tag=tag, w=46.0))
+    y = 84.0
+    controls += [switch("filterOn", "Filter", [x, y, 30.0, 18.0], tag=tag), label_beside("filter_main_name", "Filter", x + 36.0, y, 40.0, 18.0),
+                 menu("filterType", "Filter type", [x, y + 20.0, 82.0, 18.0], tag=tag), menu("filterSlope", "Filter slope", [x, y + 40.0, 82.0, 18.0], tag=tag),
+                 menu("filterCircuit", "Filter circuit", [x, y + 60.0, 82.0, 18.0], tag=tag)]
+    controls.append(dial("filterFreq", "Freq", x + 84.0, y, par("filterFreq"), " Hz", 0, True, tag=tag, w=46.0))
+    controls.append(dial("filterRes", "Res", x + 130.0, y, percent("filterRes"), " %", tag=tag, w=46.0))
+    return controls
+
+
 def compact():
     w, h = COMPACT
     controls = op_table(ROW_COMPACT, 1.0, 25.0, "")
@@ -936,14 +1006,14 @@ def compact():
     controls += global_dials(552.0, 4.0, "")
     controls.append(algorithm_legend("algorithm_legend", 552.0, 84.0, equal(par("panel.page"), 5.0)))
     controls.append(separator("sep_dials", 755.0, 4.0, h - 8.0))
-    controls.append(dial("time", "Time", 759.0, 4.0, percent("time"), " %"))
-    controls.append(dial("tone", "Tone", 809.0, 4.0, percent("tone"), " %"))
-    controls.append(dial("spread", "Spread", 759.0, 84.0, percent("spread"), " %"))
-    controls.append(dial("volume", "Volume", 809.0, 84.0, par("volume"), " dB", 1))
-    controls.append(random_button("random", "Random", [864.0, 4.0, 60.0, 24.0]))
-    controls.append(field("random.amount", "Amount", [864.0, 32.0, 60.0, 32.0], percent("random.amount"), " %"))
-    controls.append(more("random_settings", 8, [864.0, 68.0, 60.0, 20.0]))
-    controls.append(meter("meter", [928.0, 4.0, 30.0, h - 8.0]))
+    controls += main_blocks(759.0, "_main")
+    controls.append(separator("sep_main", 937.0, 4.0, h - 8.0))
+    controls.append(dial("spread", "Spread", 941.0, 4.0, percent("spread"), " %"))
+    controls.append(dial("volume", "Volume", 941.0, 84.0, par("volume"), " dB", 1))
+    controls.append(random_button("random", "Random", [995.0, 4.0, 56.0, 24.0]))
+    controls.append(field("random.amount", "Amount", [995.0, 32.0, 56.0, 32.0], percent("random.amount"), " %"))
+    controls.append(more("random_settings", 8, [995.0, 68.0, 56.0, 20.0]))
+    controls.append(meter("meter", [1053.0, 4.0, 24.0, h - 8.0]))
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": [], "controls": controls,
             "hidden_parameters": every_parameter(), "accent_on": True,
             "animate_when": both(equal(par("panel.page"), 3.0), is_on("lfoOn"))}
@@ -1064,7 +1134,7 @@ def expanded_filter(y, tag):
     controls = filter_picture(COLUMN_A, y, WIDE_A, BODY, tag, shown)
     controls.append(section("x_filter_env_title", "Filter envelope", COLUMN_B, y, WIDE_B, shown))
     controls.append(graphic("x_filter_env", "Filter envelope", [COLUMN_B, y + 18.0, WIDE_B, 86.0], env_picture("filterEnv.", WIDE_B, 86.0, 1.0, 0.0, MODULATOR, [0.5]), shown))
-    controls += env_points("filterEnv.", tag, COLUMN_B, y + 18.0, WIDE_B, 86.0, shown)
+    controls += env_points("filterEnv.", tag, COLUMN_B, y + 18.0, WIDE_B, 86.0, shown, 1.0, 0.0)
     controls += grid(env_fields("filterEnv.", ""), COLUMN_B, y + 108.0, shown, tag, columns=8, w=46.0, h=34.0, gap=4.0)
     controls.append(section("x_shaper_title", "Shaper", COLUMN_C, y, WIDE_C, shown))
     return controls + grid([f_menu("shaper", "Shape"), f_num("shaperDrive", "Drive", " dB", 1), f_pct("shaperMix", "Dry/wet")], COLUMN_C, y + 18.0, shown, tag, columns=3, w=122.0)
@@ -1075,7 +1145,7 @@ def expanded_lfo(y, tag):
     controls = lfo_picture(COLUMN_A, y, WIDE_A, BODY, tag, shown)
     controls.append(section("x_lfo_env_title", "LFO envelope", COLUMN_B, y, WIDE_B, shown))
     controls.append(graphic("x_lfo_env", "LFO envelope", [COLUMN_B, y + 18.0, WIDE_B, 86.0], env_picture("lfoEnv.", WIDE_B, 86.0, 1.0, 0.0, SPECTRUM_COLOR, [0.5]), shown))
-    controls += env_points("lfoEnv.", tag, COLUMN_B, y + 18.0, WIDE_B, 86.0, shown)
+    controls += env_points("lfoEnv.", tag, COLUMN_B, y + 18.0, WIDE_B, 86.0, shown, 1.0, 0.0)
     controls += grid(env_fields("lfoEnv.", ""), COLUMN_B, y + 108.0, shown, tag, columns=8, w=46.0, h=34.0, gap=4.0)
     x, w = COLUMN_C, WIDE_C
     controls.append(section("x_lfo_also", "Also to", x, y, w, shown))
@@ -1090,7 +1160,7 @@ def expanded_lfo(y, tag):
 def expanded_pitch(y, tag):
     shown = on_page(4)
     controls = [graphic("x_pitch_env", "Pitch envelope", [COLUMN_A, y, WIDE_A, BODY], env_picture("pitchEnv.", WIDE_A, BODY, 48.0, -48.0, HIGHLIGHT, [24.0, 0.0, -24.0]), shown)]
-    controls += env_points("pitchEnv.", tag, COLUMN_A, y, WIDE_A, BODY, shown)
+    controls += env_points("pitchEnv.", tag, COLUMN_A, y, WIDE_A, BODY, shown, 48.0, -48.0)
     controls.append(section("x_pitch_more", "Repeats and keys", COLUMN_B, y, WIDE_B, shown))
     prefix = "pitchEnv."
     controls += grid([f_menu(f"{prefix}loop", "Loop"), f_menu(f"{prefix}repeat", "Repeat"), f_ms(f"{prefix}loopTime", "Loop time"), f_both(f"{prefix}timeByVel", "By vel"),
@@ -1098,6 +1168,7 @@ def expanded_pitch(y, tag):
                      COLUMN_B, y + 18.0, shown, tag, columns=4, w=97.0)
     controls.append(section("x_pitch_to", "Goes to", COLUMN_B, y + 100.0, WIDE_B, shown))
     controls += grid([f_toggle(f"pitchEnvToOp{n}", f"Op {n}") for n in OPS] + [f_toggle("pitchEnvToLfo", "To LFO")], COLUMN_B, y + 118.0, shown, tag, columns=7, w=53.0, h=24.0)
+    controls += [op_mark(f"pitchEnvToOp{n}_mark", n, [COLUMN_B + (n - 1) * 57.0, y + 118.0, 8.0, 24.0], shown) for n in OPS]
     controls += grid([f_menu("pitchEnvDestB", "Also to"), f_both("pitchEnvAmountB", "Amount")], COLUMN_B, y + 146.0, shown, tag, columns=2, w=198.0)
     controls.append(section("x_pitch_classic", "Classic pitch envelope", COLUMN_C, y, WIDE_C, shown))
     return controls + grid([f_num(f"pitchRate{i}", f"Rate {i}") for i in range(1, 5)] + [f_num(f"pitchLevel{i}", f"Level {i}") for i in range(1, 5)], COLUMN_C, y + 18.0, shown, tag, columns=4, w=91.0)

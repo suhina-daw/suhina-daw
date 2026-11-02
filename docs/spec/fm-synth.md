@@ -89,12 +89,14 @@ The 32 of the DX7 format, then 11 for four operators. A voice file reaches only 
 
 Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json`.
 
-- **Device row (962 by 168):** the operators as a table with its columns named once (number, ratio or Hz
+- **Device row (1078 by 168):** the operators as a table with its columns named once (number, ratio or Hz
   with what coarse and fine come to, coarse, fine, level, on), one display with the pages Env, Wave,
-  Filter, LFO, Pitch, Algo, Mod and Voice and the eight dials that follow it, then Time, Tone, Spread and
-  Volume, Random with its amount and **More…**, and meters. The display has a line of what the page
-  chooses above its picture, so a menu never covers it. The Mod page is the first route of every source,
-  edited in place, in the room of the display and the dials.
+  Filter, LFO, Pitch, Algo, Mod and Voice and the eight dials that follow it, then the LFO's and the
+  filter's main controls, in view whatever the display shows, Spread and Volume, Random with its amount
+  and **More…**, and meters. The display has a line of what the page chooses above its picture, so a menu
+  never covers it. The Mod page is the first route of every source, edited in place, in the room of the
+  display and the dials.
+- **Each operator has a colour:** on its row, in the algorithm's picture, and where something is sent to it.
 - **Adding operators.** A new device starts with operator 1. An operator not in the sound shows only its
   number and its light, the first such row has **+ Add operator**, and in the algorithm's picture it is
   faint. An old project and a voice file keep their operators on.
@@ -113,12 +115,13 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
   response in decibels over a logarithmic frequency axis, partials as what makes the timbre. Phase, which
   the ear hardly hears, has a small place. A control that does nothing right now (Morph unless the type is Morph, Drive
   on the Clean circuit) is dimmed and still answers. A dot on a tab says that section is on.
-- **Envelopes.** The picture moves with its times and levels, and each stage's end is one dot, dragged
-  in time and level at once. **ADSR** and **Rates** choose the model. A rates-and-levels stage further
-  right has a lower rate. A line marks where the key goes up.
+- **Envelopes.** The picture moves with its times, levels and slopes, and each stage's end is one dot,
+  dragged in time and level at once. A smaller move of the dot in a stage's middle bends that stage.
+  **ADSR** and **Rates** choose the model. A rates-and-levels stage further right has a lower rate. A line
+  marks where the key goes up.
 - **The filter's picture** is its response, for each type and through Morph, with a line at the cutoff
-  and frequency and resonance on one dot. On a low-pass or a high-pass the dot lies on the curve. The
-  filter's envelope is in the larger view.
+  and frequency and resonance on one dot, or, with **Envelope** above it, its envelope, and the dials
+  follow. On a low-pass or a high-pass the dot lies on the curve.
 - **The LFO's picture** is its wave, quietly, and in colour as much of it as reaches the sound after its
   amount and its envelope. More cycles fit as its rate rises (two seconds' worth on the low range), and
   while it is on they run, at its rate up to three cycles a second. **Rate in** chooses Hz, Audio (hertz

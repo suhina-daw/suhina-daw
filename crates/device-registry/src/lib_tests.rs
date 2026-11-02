@@ -20,7 +20,12 @@ fn the_fm_synths_panel_shows_every_algorithm_and_draws_its_partials() {
     assert!(compact.controls.iter().any(|c| matches!(c.gesture, UiGesture::Expand(8))), "Random's way to its settings");
     // The larger view is a strip above the row, which stays in view, and is no higher than it needs.
     assert!(expanded.strip);
-    assert!(compact.size[0] < 1000.0 && expanded.size[1] < 240.0);
+    assert!(compact.size[0] < 1100.0 && expanded.size[1] < 240.0);
+    // The LFO's and the filter's main controls stay in view: nothing makes them follow the page.
+    for id in ["filterFreq_main", "filterRes_main", "filterType_main", "lfo2Wave_main", "lfo2Amount_main"] {
+        let control = compact.controls.iter().find(|c| c.id == id).unwrap();
+        assert!(control.visible_when.is_none(), "{id}");
+    }
     // A control that changes a value says what it is for, not how a mouse moves it.
     for canvas in [compact, expanded] {
         for control in canvas.controls.iter().filter(|c| !matches!(c.gesture, UiGesture::Draw(_))) {
