@@ -54,12 +54,15 @@ fn notes_hash(notes: &[Note]) -> u64 {
 }
 
 /// The stretch a selecting rectangle covers: from the grid line before its left edge to the one after
-/// its right edge, or its own edges without a snapping grid.
-pub(super) fn swept_span(grid: TimelineGrid, layout: &Layout, rect: Rect) -> (f64, f64) {
+/// its right edge, or its own edges without a snapping grid, and all of every note it touches.
+pub(super) fn swept_span(grid: TimelineGrid, layout: &Layout, notes: &[Note], rect: Rect) -> (f64, f64) {
     let start = grid.place(layout.beat_at(rect.left()), false, true);
     let right = layout.beat_at(rect.right()).max(0.0);
     let floor = grid.place(right, false, true);
     let end = if grid.snaps && right > floor + EPSILON { grid.next_line(floor) } else { floor };
+    let touched = || notes.iter().filter(|n| layout.note_rect(n).intersects(rect));
+    let start = touched().map(|n| n.time).fold(start, f64::min);
+    let end = touched().map(|n| n.time + n.duration).fold(end, f64::max);
     (start, end.min(f64::from(BEAT_LIMIT)))
 }
 
@@ -198,7 +201,7 @@ pub(super) fn draw_time_span(painter: &egui::Painter, layout: &Layout, state: &P
 /// covers, else the time selection or the selected notes' extent. The insert mark's flag beside it.
 pub(super) fn draw_span_bar(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRollState, live: Option<Rect>) {
     let grid = note_grid(clip, layout.beat_width);
-    let shown = live.map(|rect| swept_span(grid, layout, rect)).or_else(|| state.span_shown(clip));
+    let shown = live.map(|rect| swept_span(grid, layout, &clip.notes, rect)).or_else(|| state.span_shown(clip));
     let painter = ui.painter_at(layout.ruler);
     if let Some((start, end)) = shown {
         let color = part_style("piano-time-selection", &[]).border.unwrap_or_else(theme::accent);

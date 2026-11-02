@@ -565,8 +565,8 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   with a flag on the ruler, where a paste goes. Dragging from an empty spot draws a rectangle; when
   it is let go, the notes it touches are selected (with Shift, added to the selection).
 - **Built:** a rectangle let go selects **in time** too: the stretch from the grid line before its
-  left edge to the one after its right edge, the empty parts included, so a copy of its notes goes
-  after all of it. One that added to a selection (Shift) selects no stretch, unless nothing is
+  left edge to the one after its right edge, the empty parts included, and all of every note it
+  touches, however little of the note it reached, so a copy of its notes goes after all of it. One that added to a selection (Shift) selects no stretch, unless nothing is
   selected. A rectangle that reached no note shows the stretch on every row, as a tint with an edge at
   each end, and the edit keys and the toolbar's buttons act on the notes that start in it. A press
   anywhere that selects something else, Escape or another clip ends it.

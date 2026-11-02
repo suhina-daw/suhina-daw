@@ -955,3 +955,17 @@ fn a_rectangle_over_a_note_keeps_its_whole_stretch() {
     let bar = h.get_by_label_contains("Selected in time").rect();
     assert!(bar.right() >= to.x - 1.0, "{bar:?} reaches {to:?}");
 }
+
+/// A rectangle that touches a little of a note selects in time all of the note.
+#[test]
+fn a_rectangle_over_a_little_of_a_note_covers_all_of_it() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let first = notes(&h)[0];
+    let row = note_rect(&h, &first);
+    let at = egui::pos2(row.center().x, row.top() - 2.0);
+    drag_keys(&mut h, at, at + egui::vec2(2.0, 6.0), Modifiers::NONE);
+    assert!(h.state().piano_roll().selected.len() == 1, "{:?}", h.state().piano_roll().selected);
+    let bar = h.get_by_label_contains("Selected in time").rect();
+    assert!(bar.left() <= row.left() + 1.0 && bar.right() >= row.right() - 1.0, "{bar:?} covers {row:?}");
+}

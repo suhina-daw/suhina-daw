@@ -535,11 +535,18 @@ fn a_rectangle_covers_whole_grid_steps() {
     };
     let grid = TimelineGrid { step: 0.5, bar_beats: 4.0, snaps: true };
     let rect = Rect::from_min_max(Pos2::new(62.5, 10.0), Pos2::new(125.0, 20.0));
-    assert_eq!(swept_span(grid, &layout, rect), (0.5, 1.5));
+    assert_eq!(swept_span(grid, &layout, &[], rect), (0.5, 1.5));
     let on_lines = Rect::from_min_max(Pos2::new(50.0, 10.0), Pos2::new(150.0, 20.0));
-    assert_eq!(swept_span(grid, &layout, on_lines), (0.5, 1.5));
+    assert_eq!(swept_span(grid, &layout, &[], on_lines), (0.5, 1.5));
     let free = TimelineGrid { snaps: false, ..grid };
-    assert_eq!(swept_span(free, &layout, rect), (0.625, 1.25));
+    assert_eq!(swept_span(free, &layout, &[], rect), (0.625, 1.25));
+    // A note it touches is covered whole, however little of it the rectangle reached.
+    let long = note(0.25, 3.0, 60);
+    let middle = layout.note_rect(&long).center();
+    let sliver = Rect::from_min_max(Pos2::new(100.0, middle.y - 1.0), Pos2::new(110.0, middle.y + 1.0));
+    assert_eq!(swept_span(grid, &layout, &[long], sliver), (0.25, 3.25));
+    let clear = Rect::from_min_max(Pos2::new(100.0, middle.y + 40.0), Pos2::new(110.0, middle.y + 42.0));
+    assert_eq!(swept_span(grid, &layout, &[long], clear), (1.0, 1.5), "one it misses is not");
 }
 
 #[test]
