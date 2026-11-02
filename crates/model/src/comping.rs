@@ -20,6 +20,17 @@ impl TakeLane {
 }
 
 impl Project {
+    /// How long the crossfade at a cut between parts of two takes is, in milliseconds, while
+    /// neither part has a fade of its own there.
+    pub const COMP_CROSSFADE_MS: f64 = 10.0;
+
+    /// How long the crossfade at the cut between parts `left` and `right` is, in beats at `bpm`:
+    /// the longer of the fades they have there, or the default.
+    pub fn comp_crossfade_beats(left: &Clip, right: &Clip, bpm: f64) -> f64 {
+        let own = left.fade_out.max(right.fade_in);
+        if own > 0.0 { own } else { Self::COMP_CROSSFADE_MS * bpm / 60_000.0 }
+    }
+
     /// The number take `index` of `arrangement.takes` goes by on its track, as its lane shows and
     /// the take commands name it: the one in its name, which stays its own after others are
     /// deleted; a take named otherwise goes by its place among its track's takes named otherwise.

@@ -1577,7 +1577,19 @@ pub(super) fn take_lanes(
     let (scroll_x, beat_width) = (state.scroll.x, state.beat_width);
     let beat_of = |x: f32| ruler_beat(f64::from((x - at.time.min + scroll_x) / beat_width), grid, free);
     let raw_beat = |x: f32| f64::from((x - at.time.min + scroll_x) / beat_width);
-    let (ctrl, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+    let ctrl = ui.input(|i| i.modifiers.command);
+    // Which part of a piece moves it, as for a clip (`docs/spec/arrangement-editing.md`): the name
+    // bar, or the lower half; the whole piece when Ctrl selects time or it is too low for either.
+    let (name_bar_moves, select_ctrl) = (state.name_bar_moves, state.time_select_ctrl);
+    let moves_at = |rect: Rect, y: f32| {
+        if select_ctrl {
+            return true;
+        }
+        match clip_name_bar(rect).filter(|_| name_bar_moves) {
+            Some(bar) => y < bar.bottom(),
+            None => clip_grab_area(rect).is_none_or(|grab| y >= grab.top()),
+        }
+    };
     let mut rows: Vec<(usize, Rect)> = Vec::new();
     let mut y = at.top;
     for take in timeline.takes.iter().filter(|t| t.track == lane.track) {
@@ -1789,44 +1801,38 @@ pub(super) fn take_lanes(
             let beat = f64::from((pointer.x - at.time.min + scroll_x) / beat_width);
             if let Some(clip) = take.clips.iter().find(|c| (c.start..c.start + c.length).contains(&beat)) {
                 let rect = clip_rect(row, clip.start, clip.length, x_of);
+                if moves_at(rect, pointer.y) {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                }
                 painter.rect_stroke(rect, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
             }
         }
-        // With Ctrl the pointer says what a drag would do: move what is under it, or paint.
-        if ctrl
-            && state.take_area_drag.is_none()
-            && state.take_move.is_none()
-            && let Some(pointer) = body.hover_pos()
-        {
-            let beat = raw_beat(pointer.x);
-            let piece = take.clips.iter().position(|c| (c.start..c.start + c.length).contains(&beat));
-            let moves = piece.is_some_and(|p| shift || state.take_selected.contains(&(lane.track, take.number, p)));
-            ui.ctx().set_cursor_icon(if moves { egui::CursorIcon::Grab } else { egui::CursorIcon::Crosshair });
+        // With Ctrl a drag only paints an area, wherever it starts (#1078).
+        if ctrl && state.take_area_drag.is_none() && body.hover_pos().is_some() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }
-        // Ctrl and a drag from a picked piece moves the pieces picked on the grid, and Ctrl+Shift
-        // from any piece moves it or them freely; from anywhere else it paints an area (#1078).
         if body.drag_started()
-            && ctrl
             && let Some(pointer) = ui.input(|i| i.pointer.press_origin()).or(body.interact_pointer_pos())
         {
             let beat = raw_beat(pointer.x);
-            let under = take.clips.iter().position(|c| (c.start..c.start + c.length).contains(&beat));
-            let picked = under.is_some_and(|p| state.take_selected.contains(&(lane.track, take.number, p)));
-            match under.and_then(|p| take.clips.get(p).map(|c| (p, c.start))) {
-                Some((piece, start)) if picked || shift => {
-                    let pieces = if picked {
-                        let mine = state.take_selected.iter().filter(|(t, ..)| *t == lane.track);
-                        mine.map(|(_, n, p)| (*n, *p)).collect()
-                    } else {
-                        vec![(take.number, piece)]
-                    };
-                    state.take_move = Some(TakeMove { track: lane.track, pieces, start, grab: beat });
-                    state.take_area = None;
-                }
-                _ => {
-                    state.take_area_drag = Some((lane.track, take.number, beat_of(pointer.x)));
-                    state.clear_take_selection();
-                }
+            let under = take.clips.iter().enumerate().find(|(_, c)| (c.start..c.start + c.length).contains(&beat));
+            if ctrl {
+                state.take_area_drag = Some((lane.track, take.number, beat_of(pointer.x)));
+                state.clear_take_selection();
+            } else if let Some((piece, clip)) = under
+                && moves_at(clip_rect(row, clip.start, clip.length, x_of), pointer.y)
+            {
+                // The part of a piece that moves a clip moves the piece, or those picked with it,
+                // on the grid (Alt for no grid), as a clip's does.
+                let key = (lane.track, take.number, piece);
+                let pieces = if state.take_selected.contains(&key) {
+                    let mine = state.take_selected.iter().filter(|(t, ..)| *t == lane.track);
+                    mine.map(|(_, n, p)| (*n, *p)).collect()
+                } else {
+                    vec![(take.number, piece)]
+                };
+                state.take_move = Some(TakeMove { track: lane.track, pieces, start: clip.start, grab: beat });
+                state.take_area = None;
             }
         }
         // A piece's lower corners move its edges, bringing back the recording around it; a click
@@ -1899,6 +1905,7 @@ pub(super) fn take_lanes(
         // From where the button went down, not where the drag was recognised.
         if body.drag_started()
             && !ctrl
+            && state.take_move.is_none()
             && let Some(pointer) = ui.input(|i| i.pointer.press_origin()).or(body.interact_pointer_pos())
         {
             state.take_drag = Some((lane.track, take.number, beat_of(pointer.x)));
@@ -1980,7 +1987,7 @@ pub(super) fn take_lanes(
             painter.rect_stroke(lit, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
         }
     }
-    // Pieces being moved, shown where they would land: Ctrl keeps the grid, Ctrl+Shift is free.
+    // Pieces being moved, shown where they would land: on the grid, Alt for no grid.
     if let Some(drag) = state.take_move.clone().filter(|d| d.track == lane.track)
         && let Some(pointer) = pointer
     {
@@ -1989,7 +1996,7 @@ pub(super) fn take_lanes(
             Some((number, take.clips.get(index)?))
         };
         let earliest = drag.pieces.iter().filter_map(piece).map(|(_, c)| c.start).fold(f64::INFINITY, f64::min);
-        let target = ruler_beat(drag.start + raw_beat(pointer.x) - drag.grab, grid, shift);
+        let target = ruler_beat(drag.start + raw_beat(pointer.x) - drag.grab, grid, free);
         let by = (target - drag.start).max(-earliest);
         for (number, clip) in drag.pieces.iter().filter_map(piece) {
             if let Some((_, row)) = rows.iter().find(|(n, _)| *n == number) {
@@ -2015,6 +2022,66 @@ pub(super) fn take_lanes(
     // A corner scrolled out of view mid-drag has no widget left to say the drag ended.
     if !down {
         state.take_edge = state.take_edge.filter(|e| e.track != lane.track);
+    }
+}
+
+/// The crossfade at a cut between parts of two takes on a track (#1078): a cross over the cut, at
+/// least wide enough to see, and a handle at its top whose drag sets its length and whose
+/// double-click puts it back to the length in Settings.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn comp_crossfade(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    row: Rect,
+    cut: &crate::arrangement::timeline::CompCut,
+    track_name: &str,
+    state: &mut ArrangementViewState,
+    x_of: &dyn Fn(f64) -> f32,
+    actions: &mut Vec<Action>,
+) {
+    let x = x_of(cut.beat);
+    let held = state.comp_fade_drag.filter(|(clip, _)| *clip == cut.left);
+    if held.is_none() && (x < painter.clip_rect().left() - 12.0 || x > painter.clip_rect().right() + 12.0) {
+        return;
+    }
+    let length = held.map_or(cut.length, |(_, length)| length);
+    let half = ((length / 2.0) as f32 * state.beat_width).max(4.0);
+    let ink = theme::text_primary().gamma_multiply(0.85);
+    let line = Stroke::new(1.0, ink);
+    painter.line_segment([Pos2::new(x - half, row.top()), Pos2::new(x + half, row.bottom())], line);
+    painter.line_segment([Pos2::new(x - half, row.bottom()), Pos2::new(x + half, row.top())], line);
+    let centre = Pos2::new(x, row.top() + 6.0);
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            centre + Vec2::new(0.0, -5.0),
+            centre + Vec2::new(5.0, 0.0),
+            centre + Vec2::new(0.0, 5.0),
+            centre + Vec2::new(-5.0, 0.0),
+        ],
+        ink,
+        Stroke::NONE,
+    ));
+    let handle = Rect::from_center_size(centre, Vec2::splat(12.0));
+    let response = ui.interact(handle, Id::new(("comp-crossfade", cut.left.0)), Sense::click_and_drag());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, format!("Crossfade on {track_name}"))
+    });
+    let ms = length * 60_000.0 / cut.bpm.max(1.0);
+    let response =
+        response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal).on_hover_text(format!("Crossfade {ms:.0} ms"));
+    if response.double_clicked() {
+        actions.push(Action::new("take.setCrossfade", json!({ "clip": cut.left.0 })));
+    } else if response.dragged()
+        && let Some(pointer) = ui.ctx().pointer_latest_pos()
+    {
+        // Out from the cut either way: the crossfade lies around the cut.
+        let beats = f64::from((pointer.x - x).abs() / state.beat_width.max(1e-3)) * 2.0;
+        state.comp_fade_drag = Some((cut.left, beats.clamp(1e-3, cut.room.max(1e-3))));
+    }
+    if response.drag_stopped()
+        && let Some((clip, length)) = state.comp_fade_drag.take()
+    {
+        actions.push(Action::new("take.setCrossfade", json!({ "clip": clip.0, "length": length })));
     }
 }
 

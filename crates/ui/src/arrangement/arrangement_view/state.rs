@@ -182,6 +182,9 @@ pub struct ArrangementViewState {
     pub(super) take_move: Option<TakeMove>,
     /// A drag on a lower corner of a piece of a take, moving that edge (#1078).
     pub(super) take_edge: Option<TakeEdge>,
+    /// A drag on the handle of a crossfade between parts of two takes: the part before the cut
+    /// and the crossfade's length in beats so far (#1078).
+    pub(super) comp_fade_drag: Option<(ClipId, f64)>,
     /// Take pieces picked with Ctrl and a click (track, take number, piece from 0), which Delete
     /// deletes (#989).
     pub take_selected: Vec<(TrackId, usize, usize)>,
@@ -383,6 +386,7 @@ impl Default for ArrangementViewState {
             take_area_drag: None,
             take_move: None,
             take_edge: None,
+            comp_fade_drag: None,
             take_selected: Vec::new(),
             take_solo: None,
             stack_audio: false,

@@ -687,6 +687,23 @@ impl Cx<'_> {
         }
     }
 
+    /// The custom length of a take crossfade, in milliseconds.
+    pub fn take_crossfade_custom(&mut self, row: Rect) {
+        let mut value = self.settings.view.take_crossfade_custom;
+        let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
+        let response = crate::kit::widgets::number_input_at(
+            self.ui,
+            rect,
+            egui::DragValue::new(&mut value).range(1..=500).speed(1).suffix(" ms"),
+        );
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, self.name));
+        self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
+        if response.changed() {
+            self.settings.view.take_crossfade_custom = value;
+            self.outcome.changed = true;
+        }
+    }
+
     /// A switch for the yes/no setting `field` gives.
     pub fn on_off(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut bool) {
         let value = field(self.settings);

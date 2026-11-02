@@ -2320,5 +2320,43 @@
       "docs/decisions/0020-latency-and-its-readout.md",
       "docs/spec/cue-output.md"
     ]
+  },
+  "Arrangement/Take lanes/take_crossfade": {
+    "sourceFingerprint": "0c3883ec8a7c2d54c3c99d5bfd53d5f66c19219f9e09af80901748d49a93fe3e",
+    "description": "Sets the fades a part gets when it is copied from a take lane onto its track. Where parts of two takes meet, they crossfade for this long around the cut, and a part edge that meets nothing fades for this long so it does not click. It applies to parts copied from then on; parts already on the track keep their length.",
+    "whenToChange": "Choose a longer crossfade when cuts between takes are audible, for example on sustained notes or room sound; keep it short to keep sharp attacks at the cut.",
+    "options": [
+      {
+        "name": "10 ms",
+        "description": "A short crossfade that hides the click of a cut. This is the default."
+      },
+      {
+        "name": "20 ms",
+        "description": "A little softer, for most vocal and instrument takes."
+      },
+      {
+        "name": "40 ms",
+        "description": "Softer still, for sustained sounds."
+      },
+      {
+        "name": "Custom",
+        "description": "Uses the length set in Custom take crossfade."
+      }
+    ],
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/session/src/commands/take.rs",
+      "docs/spec/recording.md"
+    ]
+  },
+  "Arrangement/Take lanes/take_crossfade_custom": {
+    "sourceFingerprint": "34b3c6204a360f009ca2dd6a0343de78b1b1e081d390495530bc89afc2cf23df",
+    "description": "The crossfade length, from 1 to 500 milliseconds, used when Take crossfade is set to Custom. It has no effect with the other choices, and the row shows only with Custom.",
+    "whenToChange": "Set it when 10, 20 and 40 ms do not suit the material.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/session/src/commands/take.rs",
+      "docs/spec/recording.md"
+    ]
   }
 }

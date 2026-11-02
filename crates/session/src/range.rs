@@ -514,11 +514,19 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
             }
         }
     }
+    // Parts of a comp take what their takes hold under them along (#1078).
+    let mut take_spans: Vec<crate::take_carry::Span> = Vec::new();
+    for ((goes, clip), (from, _)) in taken.iter().zip(&came) {
+        take_spans.extend(crate::take_carry::spans_of_part(p, *from, *goes, clip));
+    }
     if copy {
         for (_, clip) in &mut taken {
             let id = new_content_id(p)?;
             let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
             p.contents.push(ClipContent { id, ..content });
+            for span in take_spans.iter_mut().filter(|s| s.is_of(clip)) {
+                span.remap = Some((clip.content, id));
+            }
             clip.content = id;
             // A copy is a new clip (ADR 0025); a moved clip keeps its id.
             clip.id = p.new_clip_id()?;
@@ -537,6 +545,9 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         lane.clips.push(clip.clone());
         lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
         placed.push((track, clip));
+    }
+    if crate::take_carry::carry(p, &take_spans, beats, copy) {
+        session.take_solo = None;
     }
     if !copy {
         for (track, start, end, lanes) in &carried {

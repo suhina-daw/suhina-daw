@@ -72,6 +72,7 @@ mod relink;
 mod scales;
 mod sends;
 mod soundmap;
+mod take_carry;
 mod tempo;
 mod track_copy;
 mod track_kind;
@@ -176,6 +177,9 @@ pub struct Session {
     source: Option<PathBuf>,
     history: history::History,
     clipboards: clipboards::Clipboards,
+    /// How long the fades of a part comped from a take are, in milliseconds (Settings ›
+    /// Arrangement › Take lanes, #1078): the crossfade where it meets a part of another take.
+    take_crossfade_ms: f64,
     /// The colours a track without one of its own shows, by its place among the tracks (the
     /// window's palette), and the one a new track gets instead, when set ([`Session::set_track_colours`]).
     track_colours: (Vec<suhina_model::Rgb>, Option<suhina_model::Rgb>),
@@ -209,6 +213,7 @@ impl Session {
             source: None,
             history: history::History::default(),
             clipboards: clipboards::Clipboards::default(),
+            take_crossfade_ms: Project::COMP_CROSSFADE_MS,
             track_colours: (Vec::new(), None),
             track_type_colours: None,
             new_clips_take_track_colour: false,
@@ -224,6 +229,18 @@ impl Session {
 
     /// The take lane heard in place of its track's clips (`take.solo`), by its track and its
     /// number on the track, from 1.
+    /// Sets how long the fades of parts comped from now on are, in milliseconds.
+    pub fn set_take_crossfade_ms(&mut self, ms: f64) {
+        if ms.is_finite() && ms > 0.0 {
+            self.take_crossfade_ms = ms;
+        }
+    }
+
+    /// How long the fades of a part comped now are, in beats at the project's tempo.
+    pub(crate) fn take_crossfade_beats(&self) -> f64 {
+        self.take_crossfade_ms * self.project.transport.tempo_bpm / 60_000.0
+    }
+
     pub fn take_solo(&self) -> Option<(suhina_model::TrackId, usize)> {
         let (track, index) = self.take_solo?;
         self.project.arrangement.takes.get(index).filter(|t| t.track == track)?;

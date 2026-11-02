@@ -72,6 +72,17 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "take.setCrossfade",
+        label: "Set how long the crossfade is at the cut between a comped part and the part of another take right after it; without a length, the length in Settings",
+        params: &[
+            param("clip", ParamType::Integer, "the clip id of the part before the cut"),
+            optional("length", ParamType::Number, "the whole crossfade, in beats"),
+        ],
+        kind: CommandKind::Edit,
+        run: set_crossfade,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "take.solo",
         label: "Hear a take lane in place of its track's clips (its S button), or the track again with take 0; not saved and not an undo step",
         params: &[TRACK, param("take", ParamType::Integer, "the take's number on the track, from 1, or 0 for none")],
@@ -213,6 +224,7 @@ fn area(params: &Value) -> Result<(f64, f64), CommandError> {
 /// `take.comp`: the take's clips, cut to `start` … `end`, laid on the track over what they
 /// cover, as new clips (docs/spec/recording.md › Take lanes).
 fn comp_take(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let fade = session.take_crossfade_beats();
     let p = &mut session.project;
     let track = track_id(p, params)?;
     let index = take_index(p, track, params)?;
@@ -237,13 +249,15 @@ fn comp_take(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         None | Some(Value::Null) => None,
         Some(_) => crate::clip_color::parse_color(params, "color")?,
     };
-    let clips = comp_part(p, track, index, from, to, color)?;
+    let clips = comp_part(p, track, index, from, to, color, fade)?;
     Ok(json!({ "track": track.0, "take": name, "start": from, "end": to, "clips": clips }))
 }
 
 /// Lays the part of take `index` (in `arrangement.takes`) from `from` to `to` on `track`'s lane,
 /// over what it covers, as new clips in `color`, or the take's own colour when it has one; a part
-/// with neither shows its take's colour in the window. Returns the clips' ids.
+/// with neither shows its take's colour in the window. An audio part gets fades of `fade` beats,
+/// so its edges never click and it crossfades that long with a part of another take it meets
+/// (#1078). Returns the clips' ids.
 fn comp_part(
     p: &mut Project,
     track: TrackId,
@@ -251,6 +265,7 @@ fn comp_part(
     from: f64,
     to: f64,
     color: Option<suhina_model::Rgb>,
+    fade: f64,
 ) -> Result<Vec<u32>, CommandError> {
     let take = p.arrangement.takes.get(index).ok_or("the take is missing")?.clone();
     let color = color.or(take.color);
@@ -262,8 +277,11 @@ fn comp_part(
         }
         let offset = content_at(clip, start - clip.start, 1.0);
         let mut piece = Clip { id: p.new_clip_id()?, start, length: end - start, offset, ..clip.clone() };
-        piece.fade_in = 0.0;
-        piece.fade_out = 0.0;
+        let audio =
+            p.content(piece.content).is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))));
+        piece.fade_in = if audio { fade } else { 0.0 };
+        piece.fade_out = piece.fade_in;
+        piece.fit_fades();
         if color.is_some() {
             piece.color = color;
         }
@@ -351,6 +369,7 @@ fn set_take_color(session: &mut Session, params: &Value) -> Result<Value, Comman
 /// above (`up`) or below (`down`) on its track, in turn round the takes that have something
 /// there (#989).
 fn swap_take(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let fade = session.take_crossfade_beats();
     let p = &mut session.project;
     let id = params.get("clip").and_then(Value::as_u64).ok_or("clip must be a clip id")?;
     let (track, clip) = p
@@ -381,7 +400,7 @@ fn swap_take(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     }
     let lane = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)).ok_or("the lane is missing")?;
     lane.clips.retain(|c| u64::from(c.id.0) != id);
-    let clips = comp_part(p, track, target, start, end, None)?;
+    let clips = comp_part(p, track, target, start, end, None, fade)?;
     let name = p.arrangement.takes.get(target).map(|t| t.name.clone()).unwrap_or_default();
     Ok(json!({ "track": track.0, "take": name, "clips": clips }))
 }
@@ -438,6 +457,50 @@ fn move_cut(session: &mut Session, params: &Value) -> Result<Value, CommandError
     Ok(json!({ "track": track.0, "cut": done }))
 }
 
+/// `take.setCrossfade {clip, length?}`: the crossfade at the cut after part `clip` made `length`
+/// beats long, as the two parts' fades there, up to the shorter part's length; without a length,
+/// as long as Settings says.
+fn set_crossfade(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let id = params.get("clip").and_then(Value::as_u64).ok_or("clip must be a clip id")?;
+    let length = match params.get("length") {
+        None | Some(Value::Null) => session.take_crossfade_beats(),
+        Some(v) => {
+            v.as_f64().filter(|l| l.is_finite() && *l > 0.0).ok_or("length must be a number of beats above 0")?
+        }
+    };
+    let p = &mut session.project;
+    let (lane, left, right) = p
+        .arrangement
+        .lanes
+        .iter()
+        .enumerate()
+        .find_map(|(at, l)| {
+            let left = l.clips.iter().position(|c| u64::from(c.id.0) == id)?;
+            let clip = l.clips.get(left)?;
+            let cut = clip.start + clip.length;
+            let right = l.clips.iter().position(|c| (c.start - cut).abs() < 1e-6 && c.id != clip.id)?;
+            let (track, other) = (l.track?, l.clips.get(right)?);
+            let takes = (p.comp_source(track, clip)?, p.comp_source(track, other)?);
+            (takes.0 != takes.1).then_some((at, left, right))
+        })
+        .ok_or("the clip has no part of another take right after it")?;
+    let clips = &mut p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?.clips;
+    let shortest = clips.get(left).map_or(0.0, |c| c.length).min(clips.get(right).map_or(0.0, |c| c.length));
+    let length = length.min(shortest);
+    let equal = suhina_model::FadeCurve { shape: suhina_model::FadeShape::EqualPower, curve: 0.0 };
+    if let Some(clip) = clips.get_mut(left) {
+        clip.fade_out = length;
+        clip.fade_out_curve = equal;
+        clip.fit_fades();
+    }
+    if let Some(clip) = clips.get_mut(right) {
+        clip.fade_in = length;
+        clip.fade_in_curve = equal;
+        clip.fit_fades();
+    }
+    Ok(json!({ "clip": id, "length": length }))
+}
+
 /// `take.solo {track, take}`: the take lane heard in place of its track's clips, or none with 0.
 fn solo_take(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_id(&session.project, params)?;
@@ -449,6 +512,7 @@ fn solo_take(session: &mut Session, params: &Value) -> Result<Value, CommandErro
 
 /// `take.promote {track, take}`: every piece of the take put on the track over what is there.
 fn promote_take(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let fade = session.take_crossfade_beats();
     let p = &mut session.project;
     let track = track_id(p, params)?;
     let index = take_index(p, track, params)?;
@@ -460,7 +524,7 @@ fn promote_take(session: &mut Session, params: &Value) -> Result<Value, CommandE
         .unwrap_or_default();
     let mut clips = Vec::new();
     for (from, to) in spans {
-        clips.extend(comp_part(p, track, index, from, to, None)?);
+        clips.extend(comp_part(p, track, index, from, to, None, fade)?);
     }
     Ok(json!({ "track": track.0, "clips": clips }))
 }

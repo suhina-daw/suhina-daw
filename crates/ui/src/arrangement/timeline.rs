@@ -232,10 +232,26 @@ pub struct Timeline {
     pub takes: Vec<TakeRow>,
     /// The takes recording into the arrangement now, set by the app every frame (#909).
     pub live_takes: Vec<suhina_session::LiveTake>,
+    /// The cuts between parts of two takes, drawn with their crossfades.
+    pub comp_cuts: Vec<CompCut>,
 }
 
-/// One take lane: its track, its number on the track (from 1, as `take.comp` names it), its
-/// name and its clips.
+/// A cut between parts of two takes on a track.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompCut {
+    pub track: TrackId,
+    /// The part before the cut.
+    pub left: ClipId,
+    pub beat: f64,
+    /// The crossfade's whole length, in beats.
+    pub length: f64,
+    /// The longest it can be: the shorter part's length, in beats.
+    pub room: f64,
+    /// Beats a minute, to say its length in milliseconds.
+    pub bpm: f64,
+}
+
+/// A take lane under a track.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TakeRow {
     pub track: TrackId,
@@ -460,6 +476,7 @@ impl Timeline {
         let main_volume_db =
             project.channels.iter().find(|c| c.role == ChannelRole::Master).map(|c| gain_to_db(c.volume));
         let takes = take_rows(project);
+        let comp_cuts = comp_cuts(project);
         let mut timeline = Self {
             recording_spans: Vec::new(),
             stack_rows,
@@ -485,6 +502,7 @@ impl Timeline {
             automation: crate::arrangement::automation_lanes::Params::build(project),
             takes,
             live_takes: Vec::new(),
+            comp_cuts,
         };
         timeline.follow(monitor);
         timeline
@@ -631,6 +649,36 @@ fn holds(project: &Project, group: TrackId, track: TrackId) -> bool {
 pub(crate) fn inside_lanes<T: std::borrow::Borrow<Lane>>(lanes: &[T], index: usize) -> usize {
     let depth = lanes.get(index).map_or(0, |l| l.borrow().depth);
     lanes.iter().skip(index.saturating_add(1)).take_while(|l| l.borrow().depth > depth).count()
+}
+
+/// The cuts where parts of two takes meet on a track, which crossfade (#1078).
+fn comp_cuts(project: &Project) -> Vec<CompCut> {
+    let bpm = project.transport.tempo_bpm;
+    let mut cuts = Vec::new();
+    for lane in &project.arrangement.lanes {
+        let Some(track) = lane.track else { continue };
+        if !project.arrangement.takes.iter().any(|t| t.track == track) {
+            continue;
+        }
+        for left in &lane.clips {
+            let beat = left.start + left.length;
+            let Some(right) = lane.clips.iter().find(|c| c.id != left.id && (c.start - beat).abs() < 1e-6) else {
+                continue;
+            };
+            let (from, to) = (project.comp_source(track, left), project.comp_source(track, right));
+            if from.is_some() && to.is_some() && from != to && !left.ara && !right.ara {
+                cuts.push(CompCut {
+                    track,
+                    left: left.id,
+                    beat,
+                    length: Project::comp_crossfade_beats(left, right, bpm),
+                    room: left.length.min(right.length),
+                    bpm,
+                });
+            }
+        }
+    }
+    cuts
 }
 
 /// The take lanes of tracks with at least [`TAKES_SHOWN_FROM`] takes, numbered per track.

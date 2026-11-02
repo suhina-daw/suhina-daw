@@ -121,27 +121,28 @@ greyed. They are where the best parts of each pass are picked and put together o
   click without Ctrl lets go of them all. **Delete** deletes the picked pieces
   (`take.deletePieces {track, take, pieces}`, one undo step per take), and a take left with no piece
   goes; the track's clips stay.
-- **Ctrl and a drag** from anywhere but a picked piece paints an **area** across the track's take
-  lanes: the lanes from the one the drag began on to the one under the pointer, between two beats
-  (on the grid; Alt for no grid). Pieces wholly inside it are picked too. **Delete** deletes what is
-  in the area (`take.deleteRange {track, takes, start, end}`) and **Ctrl+X** cuts it for pasting
+- **Ctrl and a drag** anywhere on a take lane only paints an **area** across the track's take lanes:
+  the lanes from the one the drag began on to the one under the pointer, between two beats (on the
+  grid; Alt for no grid). Pieces wholly inside it are picked too. **Delete** deletes what is in the
+  area (`take.deleteRange {track, takes, start, end}`) and **Ctrl+X** cuts it for pasting
   (`take.cutRange`), one undo step either way: a piece crossing an edge keeps its parts outside, and
   a take left with nothing goes. A click on a take lane, a clip or the time selection lets go of the
   area.
-- **Moving a piece:** **Ctrl and a drag** from a picked piece moves the pieces picked along the
-  timeline on the grid, each on its own lane, and **Ctrl+Shift and a drag** from any piece moves it,
-  or the pieces picked when it is one of them, freely (`take.movePieces {track, takes, pieces, by}`,
-  one undo step). A moved piece covers what it lands on in its lane and plays what it played. Parts
-  comped from it earlier stay where they are on the track and no longer count as its parts; a part
-  comped after the move does.
+- **Moving a piece:** a piece of a take moves as a clip does (Settings › Arrangement › *Clip drag
+  handle*, [arrangement editing](arrangement-editing.md)): a drag from its name bar, or from its lower
+  half, moves it along the timeline on the grid (Alt for no grid), with the pieces picked when it is
+  one of them, each on its own lane (`take.movePieces {track, takes, pieces, by}`, one undo step). A
+  moved piece covers what it lands on in its lane and plays what it played. Parts comped from it
+  earlier stay where they are on the track and no longer count as its parts; a part comped after the
+  move does.
 - **A piece's edges:** a piece's lower right and lower left corners drag its edges (on the grid; Alt
   for no grid; `take.trimPiece {track, take, piece, start?, end?}`). So what an area cut away comes
   back, and more: a take lane is a window on one continuous recording, its passes clips of one file
   at different offsets, so an audio piece goes on up to the end of that file, and takes all starting
   at bar 1 and pulled out fully form a staircase, the earliest the longest. A MIDI pass has a content
   of its own, so a MIDI piece stops where its pass ends. An edge also stops at the take's other pieces.
-- **Drag** across a take: the part dragged over (on the grid; Alt for no grid) is copied onto the
-  track over what is there, as new clips that start in the take where the part does. Each copy is
+- **Drag** across a take from the part of a piece that does not move it: the part dragged over (on
+  the grid; Alt for no grid) is copied onto the track over what is there, as new clips that start in the take where the part does. Each copy is
   one undo step.
 - **Right-click** a take's name or lane: **Recolor lane** gives the whole take a colour of its own
   and its parts on the track with it (`take.setColor`); **Recolor** colours only the piece of the
@@ -173,10 +174,23 @@ content of its own), so nothing extra is stored and a trimmed part keeps its tak
   shorter, each still playing its own take (`take.moveCut`).
 - Splitting a clip on the track (`clip.split`) splits every take lane of the track at the same
   beat, so the takes stay cut where the comp is.
-- Where two parts from different takes meet, they crossfade: the part before the cut plays on
-  5 ms past it and the part after it starts 5 ms before it, each through a 10 ms equal-power fade
-  (the engine works this out from the project when it builds its graph, so trims, swaps, splits
-  and undo keep it right; ARA clips are left out).
+- Where two parts from different takes meet, they crossfade: half of the length on each side of the
+  cut, with equal-power fades (the engine works this out from the project when it builds its graph,
+  so trims, swaps, splits and undo keep it right; ARA clips are left out). The length is the longer
+  of the two parts' fades at the cut, and 10 ms when neither has one. An audio part comped from a take
+  gets fades as long as Settings › Arrangement › *Take crossfade* says (10, 20 or 40 ms, or a custom
+  length), so its outer edges never click either. The setting is for parts comped from then on.
+- A cut with a crossfade shows a cross over the cut, at least wide enough to see, and a handle at its
+  top. **Dragging the handle** sideways sets the crossfade's length, up to the shorter part's, as
+  both parts' fades at the cut (`take.setCrossfade {clip, length?}`, one undo step); the pointer over
+  it says the length in milliseconds. A **double-click** puts it back to the length in Settings.
+- **Moving a part takes its takes along.** A clip on the track that is a part of a take takes what
+  all the track's takes hold under it to where it lands, cut to its span (with `clip.move` and
+  `clip.moveMany`, in the same undo step; the pieces leave where they were, and for a copy they stay
+  there too). On the same lanes when those are free where they land; if any of them already holds
+  something there, nothing is replaced and the pieces get as many new lanes as they fill. Moved to
+  another track, they go on that track's first lanes when those are free, or on new lanes; a lane left
+  with nothing goes. A clip that is no part of a take moves alone.
 - A take lane's header is drawn in a dark shade of the take's colour with a strip of the colour
   itself; its pieces are that colour, darkened where the comp does not use them.
 

@@ -1957,32 +1957,26 @@ fn ctrl_paints_an_area_across_take_lanes_and_delete_takes_it() {
     assert_eq!(take_pieces(&harness), before);
 }
 
-/// Ctrl+Shift and a drag moves the piece under it along its lane, freely; Ctrl and a drag from a
-/// picked piece moves it on the grid (#1078).
+/// A piece of a take moves as a clip does: a drag from its name bar moves it on the grid and leaves
+/// the other lanes, while a drag from its body comps and Ctrl there only paints (#1078).
 #[test]
-fn ctrl_shift_moves_a_piece_of_a_take_and_ctrl_moves_a_picked_one_on_the_grid() {
+fn a_take_piece_moves_from_its_name_bar_on_the_grid() {
     let mut harness = window_with_drums_takes(8.0);
     let before = take_pieces(&harness);
-    let from = harness.get_by_label("Comp from Drums Take 1").rect().left_center() + egui::vec2(20.0, 0.0);
-    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND | Modifiers::SHIFT));
+    let from = harness.get_by_label("Comp from Drums Take 1").rect().left_top() + egui::vec2(20.0, 5.0);
     drag_between(&mut harness, from, from + egui::vec2(77.0, 0.0));
-    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
     let moved = take_pieces(&harness);
     assert!(moved[0][0].0 > before[0][0].0, "{moved:?}");
     assert_eq!(moved[1], before[1], "the other lane stays");
-
-    let from = harness.get_by_label("Comp from Drums Take 2").rect().left_center() + egui::vec2(20.0, 0.0);
+    let by = moved[0][0].0 - before[0][0].0;
+    assert!((by * 16.0 - (by * 16.0).round()).abs() < 1e-6, "on the grid: {by}");
+    // With Ctrl the same drag only paints.
+    let now = take_pieces(&harness);
+    let from = harness.get_by_label("Comp from Drums Take 2").rect().left_top() + egui::vec2(20.0, 5.0);
     harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
-    harness.hover_at(from);
-    harness.drag_at(from);
-    harness.drop_at(from);
-    harness.run();
     drag_between(&mut harness, from, from + egui::vec2(77.0, 0.0));
     harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
-    let moved = take_pieces(&harness);
-    assert!(moved[1][0].0 > before[1][0].0, "{moved:?}");
-    let by = moved[1][0].0 - before[1][0].0;
-    assert!((by * 16.0 - (by * 16.0).round()).abs() < 1e-6, "on the grid: {by}");
+    assert_eq!(take_pieces(&harness), now, "Ctrl paints and moves nothing");
 }
 
 /// A piece's lower right corner drags its edge out, and the part of the recording comes back
@@ -2192,4 +2186,31 @@ fn a_header_volume_and_pan_take_a_typed_number() {
     harness.key_press(Key::Enter);
     harness.run();
     assert!((channel(&harness).pan + 0.5).abs() < 0.01, "pan typed: {}", channel(&harness).pan);
+}
+
+/// Parts of two takes that meet show a crossfade with a handle, and its drag sets the fades of
+/// both parts (#1078).
+#[test]
+fn a_crossfade_between_parts_of_two_takes_shows_and_its_handle_sets_its_length() {
+    let mut harness = window_with_drums_takes(8.0);
+    assert!(harness.query_by_label("Crossfade on Drums").is_none(), "nothing has been comped");
+    let track = |h: &Harness<'static, App>| {
+        let project = h.state().session().map(|s| s.project().clone()).unwrap();
+        project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap().0
+    };
+    let id = track(&harness);
+    // Different passes of the content, so the parts are of two takes.
+    let session = harness.state_mut().projects_mut().session_mut(None).unwrap();
+    session
+        .execute("take.movePieces", &serde_json::json!({ "track": id, "takes": [2], "pieces": [1], "by": 8.0 }))
+        .unwrap();
+    session.execute("take.comp", &serde_json::json!({ "track": id, "take": 1 })).unwrap();
+    session.execute("take.comp", &serde_json::json!({ "track": id, "take": 2 })).unwrap();
+    harness.run();
+    let at = harness.get_by_label("Crossfade on Drums").rect().center();
+    drag_between(&mut harness, at, at + egui::vec2(20.0, 0.0));
+    let lane = harness.state().session().map(|s| s.project().clone()).unwrap();
+    let clips = &lane.arrangement.lanes.iter().find(|l| l.track.map(|t| t.0) == Some(id)).unwrap().clips;
+    let fade = clips.iter().find_map(|c| (c.fade_out > 0.5).then_some(c.fade_out));
+    assert!(fade.is_some(), "the drag made it longer: {clips:?}");
 }

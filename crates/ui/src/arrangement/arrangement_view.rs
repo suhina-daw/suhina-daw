@@ -1574,6 +1574,14 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         paint_live_take(&painter.with_clip_rect(row.clip), row.time, lane, take, &x_of, state.beat_width, timeline);
     }
 
+    // The crossfades between parts of two takes, over the clips (#1078).
+    for cut in &timeline.comp_cuts {
+        let Some(row) = row_of_clips(cut.track) else { continue };
+        let Some(lane) = timeline.lanes.iter().find(|l| l.track == cut.track) else { continue };
+        let inside = painter.with_clip_rect(row.clip);
+        comp_crossfade(ui, &inside, row.time, cut, &lane.name, state, &x_of, actions);
+    }
+
     // The loop region, while looping is on: a line at its start and its end down every lane, the
     // returns and Main too, so the region reads in the lanes, not only in the brace over them. It
     // follows the brace while it is dragged. `.loop-line` gives its `color` and `width`.

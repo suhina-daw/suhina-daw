@@ -1308,6 +1308,9 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         }
     };
     let mut clip = p.arrangement.lanes.get_mut(from_lane).ok_or("the lane is missing")?.clips.remove(index);
+    // A part of a comp takes what its takes hold under it along (#1078).
+    let spans: Vec<_> = crate::take_carry::spans_of_part(p, track, to, &clip).into_iter().collect();
+    let by = start - clip.start;
     clip.start = start;
     if to != track && clip.color.is_none() {
         clip.color = keep;
@@ -1322,6 +1325,9 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     lane.clips.push(clip);
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     let new_index = lane.clips.iter().position(|c| c.id == clip_id).unwrap_or_default();
+    if crate::take_carry::carry(p, &spans, by, false) {
+        session.take_solo = None;
+    }
     if let Some((from, end, lanes)) = carried {
         crate::automation_range::clear_under(session, track, from, end, &lanes)?;
         crate::automation_range::lay_under(session, to, start, &lanes, to == track)?;

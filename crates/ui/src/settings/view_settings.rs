@@ -132,6 +132,11 @@ pub struct ViewSettings {
     pub notes_replace: bool,
     /// Pasting onto a selected arrangement clip replaces that clip at its start.
     pub replace_clip: bool,
+    /// How long the crossfade of a part comped from a take is: 10, 20 or 40 milliseconds, or 0
+    /// for [`Self::take_crossfade_custom`].
+    pub take_crossfade: u32,
+    /// The length in milliseconds when `take_crossfade` is custom.
+    pub take_crossfade_custom: u32,
     /// The window shows its own menu bar. The macOS app turns it off when the settings file does not
     /// say (`main.rs`), since the bar at the top of the screen has the same menus there.
     pub menu_bar: bool,
@@ -232,6 +237,8 @@ impl Default for ViewSettings {
             menu_name_field: false,
             notes_replace: true,
             replace_clip: false,
+            take_crossfade: 10,
+            take_crossfade_custom: 10,
             menu_bar: true,
             app_name_centered: false,
             bar_project_name: true,
@@ -262,6 +269,11 @@ impl Default for ViewSettings {
 }
 
 impl ViewSettings {
+    /// How long the crossfade of a part comped from a take is, in milliseconds.
+    pub fn take_crossfade_ms(&self) -> u32 {
+        if self.take_crossfade == 0 { self.take_crossfade_custom } else { self.take_crossfade }
+    }
+
     /// How a copy of a track with a taken name reads, as `track.paste` and `track.duplicate`
     /// take it: "wrapped" ("Bass (2)") or "hash" ("Bass #2").
     pub fn copy_suffix(&self) -> &'static str {
@@ -306,6 +318,11 @@ impl ViewSettings {
             "liquid_panel_strength = {}\nliquid_track_strength = {}\nliquid_clip_strength = {}\n",
             self.liquid.panels, self.liquid.tracks, self.liquid.clips,
         ) + &format!("replace_clip = {}\n", if self.replace_clip { "on" } else { "off" })
+            + &format!(
+                "take_crossfade = {}\ntake_crossfade_custom = {}\n",
+                if self.take_crossfade == 0 { "custom".to_string() } else { self.take_crossfade.to_string() },
+                self.take_crossfade_custom
+            )
             + &format!("menu_bar = {}\n", if self.menu_bar { "on" } else { "off" })
             + &format!(
                 "app_name_centered = {}\nbar_project_name = {}\nbar_project_timing = {}\nbar_project_centered = {}\n",
@@ -346,6 +363,11 @@ impl ViewSettings {
                 }
             }
             ("replace_clip", "on" | "off") => self.replace_clip = value == "on",
+            ("take_crossfade", "custom") => self.take_crossfade = 0,
+            ("take_crossfade", "10" | "20" | "40") => self.take_crossfade = value.parse().unwrap_or(10),
+            ("take_crossfade_custom", ms) if ms.parse::<u32>().is_ok_and(|ms| (1..=500).contains(&ms)) => {
+                self.take_crossfade_custom = ms.parse().unwrap_or(10);
+            }
             ("menu_bar", "on" | "off") => self.menu_bar = value == "on",
             ("liquid_panel_strength" | "liquid_track_strength" | "liquid_clip_strength", strength) => {
                 let Ok(strength) = strength.parse::<u32>() else { return false };
@@ -473,6 +495,8 @@ mod tests {
             arrangement_toolbar: true,
             default_grid: "adaptive narrow",
             replace_clip: true,
+            take_crossfade: 40,
+            take_crossfade_custom: 80,
             menu_bar: false,
             app_name_centered: true,
             bar_project_name: false,

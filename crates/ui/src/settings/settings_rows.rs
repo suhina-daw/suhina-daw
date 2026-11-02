@@ -343,6 +343,25 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Take lanes",
+        "Take crossfade",
+        "How long parts copied from take lanes fade into each other where they meet",
+        &["take_crossfade"],
+        |cx, r| {
+            cx.choose(r, &[("10 ms", 10), ("20 ms", 20), ("40 ms", 40), ("Custom", 0)], |s| &mut s.view.take_crossfade)
+        },
+    ),
+    row(
+        Page::Arrangement,
+        "Take lanes",
+        "Custom take crossfade",
+        "The length of the crossfade when Take crossfade is Custom",
+        &["take_crossfade_custom"],
+        |cx, r| cx.take_crossfade_custom(r),
+    )
+    .when(|s| s.view.take_crossfade == 0),
+    row(
+        Page::Arrangement,
         "Time and play",
         "Select time with",
         "How a drag over a clip selects time instead of moving the clip",

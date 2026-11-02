@@ -302,3 +302,107 @@ fn a_midi_takes_edge_stops_at_the_end_of_its_pass() {
     run(&mut s, "take.trimPiece", json!({ "track": 1, "take": 1, "piece": 1, "end": 100.0 })).unwrap();
     assert_eq!(take_clips(&s, 0), [(0.0, 8.0, 0.0)]);
 }
+
+/// A part moved takes what the takes hold under it along, each on its own lane (#1078).
+#[test]
+fn a_moved_part_takes_its_takes_along() {
+    let mut s = session();
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 3 })).unwrap();
+    run(&mut s, "clip.move", json!({ "track": 1, "index": 0, "start": 16.0 })).unwrap();
+    assert_eq!(take_clips(&s, 0), [(16.0, 8.0, 0.0)]);
+    assert_eq!(take_clips(&s, 1), [(16.0, 8.0, 8.0)]);
+    assert_eq!(take_clips(&s, 2), [(16.0, 8.0, 16.0)]);
+    assert_eq!(source(&s, &lane(&s)[0]), Some(2), "it is still that take's part");
+}
+
+/// Where the takes already hold something, what is carried replaces nothing: it gets as many new
+/// lanes as the part has takes.
+#[test]
+fn a_moved_part_over_other_takes_gets_new_lanes() {
+    let mut s = session();
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 1, "start": 0.0, "end": 4.0 })).unwrap();
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 2, "start": 4.0, "end": 8.0 })).unwrap();
+    run(&mut s, "clip.move", json!({ "track": 1, "index": 0, "start": 2.0 })).unwrap();
+    let names: Vec<&str> = s.project().arrangement.takes.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, ["Take 1", "Take 2", "Take 3", "Take 4", "Take 5", "Take 6"]);
+    assert_eq!(take_clips(&s, 0), [(4.0, 4.0, 4.0)]);
+    assert_eq!(take_clips(&s, 3), [(2.0, 4.0, 0.0)]);
+    assert_eq!(take_clips(&s, 4), [(2.0, 4.0, 8.0)]);
+    assert_eq!(take_clips(&s, 5), [(2.0, 4.0, 16.0)]);
+}
+
+/// Moved to another track, the takes go too; lanes left with nothing go.
+#[test]
+fn a_part_moved_to_another_track_takes_its_takes_there() {
+    let mut project = ProjectBuilder::new()
+        .audio_track(1, "Vox")
+        .audio_track(2, "Other")
+        .audio(1, "Recording", 24.0, AudioRegion::new("take.wav"))
+        .build();
+    let pass = |n: f64| Clip { offset: n * 8.0, ..Clip::new(ContentId(1), 0.0, 8.0) };
+    project.arrangement.takes = (0..2)
+        .map(|n| TakeLane {
+            track: TrackId(1),
+            name: format!("Take {}", n + 1),
+            clips: vec![pass(f64::from(n))],
+            color: None,
+        })
+        .collect();
+    let mut s = Session::new(project);
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 1 })).unwrap();
+    run(&mut s, "clip.move", json!({ "track": 1, "index": 0, "start": 8.0, "toTrack": 2 })).unwrap();
+    let takes = &s.project().arrangement.takes;
+    assert_eq!(takes.len(), 2);
+    assert!(takes.iter().all(|t| t.track == TrackId(2)));
+    assert_eq!(take_clips(&s, 0), [(8.0, 8.0, 0.0)]);
+    assert_eq!(take_clips(&s, 1), [(8.0, 8.0, 8.0)]);
+}
+
+/// A clip that is no part of a take moves alone.
+#[test]
+fn a_clip_of_no_take_leaves_the_takes_alone() {
+    let mut project =
+        ProjectBuilder::new().audio_track(1, "Vox").audio(1, "Recording", 24.0, AudioRegion::new("take.wav")).build();
+    project.arrangement.takes = vec![TakeLane {
+        track: TrackId(1),
+        name: "Take 1".into(),
+        clips: vec![Clip::new(ContentId(1), 0.0, 8.0)],
+        color: None,
+    }];
+    project.arrangement.lanes = vec![ArrangementLane {
+        id: LaneId(1),
+        name: String::new(),
+        track: Some(TrackId(1)),
+        // Three beats off the take: not a part of it.
+        clips: vec![Clip { offset: 3.0, ..Clip::new(ContentId(1), 0.0, 4.0) }],
+    }];
+    project.assign_ids().unwrap();
+    let before = project.arrangement.takes.clone();
+    let mut s = Session::new(project);
+    run(&mut s, "clip.move", json!({ "track": 1, "index": 0, "start": 16.0 })).unwrap();
+    assert_eq!(s.project().arrangement.takes, before);
+}
+
+/// A comped audio part fades as long as Settings says, and the handle's command sets the length
+/// at a cut and puts it back (#1078).
+#[test]
+fn comped_parts_fade_and_their_crossfade_is_set() {
+    let mut s = session();
+    s.set_take_crossfade_ms(40.0);
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 1, "start": 0.0, "end": 4.0 })).unwrap();
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 2, "start": 4.0, "end": 8.0 })).unwrap();
+    let parts = lane(&s);
+    let beats = 40.0 * s.project().transport.tempo_bpm / 60_000.0;
+    assert!((parts[0].fade_out - beats).abs() < 1e-9, "{}", parts[0].fade_out);
+    assert!((parts[1].fade_in - beats).abs() < 1e-9);
+    let left = parts[0].id.0;
+    run(&mut s, "take.setCrossfade", json!({ "clip": left, "length": 1.0 })).unwrap();
+    let parts = lane(&s);
+    assert_eq!((parts[0].fade_out, parts[1].fade_in), (1.0, 1.0));
+    run(&mut s, "take.setCrossfade", json!({ "clip": left, "length": 100.0 })).unwrap();
+    assert_eq!(lane(&s)[0].fade_out, 4.0, "no longer than the shorter part");
+    run(&mut s, "take.setCrossfade", json!({ "clip": left })).unwrap();
+    assert!((lane(&s)[0].fade_out - beats).abs() < 1e-9);
+    assert!(run(&mut s, "take.setCrossfade", json!({ "clip": lane(&s)[1].id.0 })).is_err(), "no part after it");
+    assert!(run(&mut s, "take.setCrossfade", json!({ "clip": left, "length": -1.0 })).is_err());
+}
