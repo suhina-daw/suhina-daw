@@ -14,17 +14,17 @@ fn vst3(id: &str, name: &str, vendor: &str, replaces: &[&str]) -> serde_json::Va
 fn catalog() -> Catalog {
     let entry = |file: &str, plugin: serde_json::Value| json!({ "path": PathBuf::from(file).display().to_string(), "modified": 1, "size": 1, "plugins": [plugin] });
     let text = json!({ "version": 2, "entries": [
-            entry("/vst3/Room.vst3", vst3(&vst2_class_id(0x5275_756D, "ValhallaRoom"), "ValhallaRoom", "Valhalla DSP, LLC", &[])),
-            entry("/vst3/Pro-Q 3.vst3", vst3("72C4DB717A4D459AB97E51745D84B39D", "Pro-Q 3", "FabFilter",
-                &["5653544651337066616266696C746572"])),
-            entry("/vst3/Pro-Q 4.vst3", vst3("ED57BD725C60467EA64DD2F400758B6F", "Pro-Q 4", "FabFilter", &[])),
-            entry("/vst3/Serum2.vst3", vst3("56534558667350736572756D20320000", "Serum 2", "Xfer Records", &[])),
-            entry("/vst3/Warmer.vst3", vst3("32ECDB19D0894B24AF976000F5D58DD7", "PSP VintageWarmer", "PSPaudioware.com", &[])),
-            entry("/vst3/Warmer2.vst3", vst3("32ECDB21D0894B26AF976002F5D58DD9", "PSP VintageWarmer2", "PSPaudioware.com", &[])),
+            entry("/vst3/Room.vst3", vst3(&vst2_class_id(0x4861_6C52, "HallRoom"), "HallRoom", "Hall DSP, LLC", &[])),
+            entry("/vst3/Bell-Q 3.vst3", vst3("11111111111111111111111111111103", "Bell-Q 3", "Acme",
+                &["5653544251337061636D65706C756769"])),
+            entry("/vst3/Bell-Q 4.vst3", vst3("11111111111111111111111111111104", "Bell-Q 4", "Acme", &[])),
+            entry("/vst3/Wavey2.vst3", vst3("56534557617650776176657920320000", "Wavey 2", "Wave Works", &[])),
+            entry("/vst3/Heater.vst3", vst3("22222222222222222222222222222201", "XY OldHeater", "XYaudio.example", &[])),
+            entry("/vst3/Heater2.vst3", vst3("22222222222222222222222222222202", "XY OldHeater2", "XYaudio.example", &[])),
             entry("/clap/thing.clap", json!({ "id": "com.example.thing", "name": "Thing", "vendor": "Example" })),
-            entry("/vst3/Ozone 11 Imager.vst3", vst3("5653545A41495A4F7A6F6E652050726F", "Ozone 11 Imager", "iZotope", &[])),
-            entry("/vst3/Ozone 11.vst3", vst3("5653545A41495A4F7A6F6E6520313100", "Ozone 11", "iZotope", &[])),
-            entry("/vst3/Nexus.vst3", json!({ "id": "ABCDEF019182FAEB726546584E455855", "name": "Nexus", "vendor": "reFX",
+            entry("/vst3/Suite 11 Imager.vst3", vst3("5653545375493173756974652050726F", "Suite 11 Imager", "Studio Maker", &[])),
+            entry("/vst3/Suite 11.vst3", vst3("56535453754932737569746520313100", "Suite 11", "Studio Maker", &[])),
+            entry("/vst3/Orbit.vst3", json!({ "id": "33333333333333333333333333333301", "name": "Orbit", "vendor": "Zeta",
                 "version": "5.1.0", "features": ["Instrument"], "replaces": [] })),
         ]})
         .to_string();
@@ -114,31 +114,31 @@ fn the_exact_vst2_plug_in_comes_before_a_vst3_found_by_name() {
 
 #[test]
 fn a_version_inside_the_name_finds_the_newer_module() {
-    // Ozone's modules put the version between the brand and the module's name.
+    // A suite's modules put the version between the brand and the module's name.
     assert_eq!(
-        found(catalog().match_vst2(0x5A4F_4938, "Ozone 8 Imager")),
-        Some(("Ozone 11 Imager", How::NewerVersion))
+        found(catalog().match_vst2(0x5375_4938, "Suite 8 Imager")),
+        Some(("Suite 11 Imager", How::NewerVersion))
     );
     assert_eq!(
-        found(catalog().match_vst3("00000000000000000000000000000000", "Ozone 9 Imager")),
-        Some(("Ozone 11 Imager", How::NewerVersion))
+        found(catalog().match_vst3("00000000000000000000000000000000", "Suite 9 Imager")),
+        Some(("Suite 11 Imager", How::NewerVersion))
     );
     // The suite is another product than its module, and a newer saved version finds nothing.
-    assert_eq!(found(catalog().match_vst2(0x5A4F_3800, "Ozone 8")), Some(("Ozone 11", How::NewerVersion)));
-    assert_eq!(found(catalog().match_vst2(0x5A4F_4999, "Ozone 12 Imager")), None);
-    assert_eq!(versioned(&["ozone".into(), "8".into(), "imager".into()]), (vec!["ozone".into(), "imager".into()], 8));
+    assert_eq!(found(catalog().match_vst2(0x5375_3800, "Suite 8")), Some(("Suite 11", How::NewerVersion)));
+    assert_eq!(found(catalog().match_vst2(0x5375_4999, "Suite 12 Imager")), None);
+    assert_eq!(versioned(&["suite".into(), "8".into(), "imager".into()]), (vec!["suite".into(), "imager".into()], 8));
     // A leading number is part of the name, not a version.
-    assert_eq!(versioned(&["2".into(), "caos".into()]), (vec!["2".into(), "caos".into()], 1));
+    assert_eq!(versioned(&["2".into(), "bands".into()]), (vec!["2".into(), "bands".into()], 1));
 }
 
 #[test]
 fn a_number_in_the_saved_name_is_the_installed_ones_version() {
-    // Nexus 5's VST3 is called Nexus, with a class id of its own; its version says 5.
-    assert_eq!(found(catalog().match_vst2(0x4E78_7335, "Nexus 5")), Some(("Nexus", How::SameName)));
-    assert_eq!(found(catalog().match_vst2(0x4E78_7335, "reFX Nexus 5 x64")), Some(("Nexus", How::SameName)));
-    assert_eq!(found(catalog().match_vst2(0x4E78_7334, "Nexus 4")), None);
+    // Orbit 5's VST3 is called Orbit, with a class id of its own; its version says 5.
+    assert_eq!(found(catalog().match_vst2(0x4F72_6235, "Orbit 5")), Some(("Orbit", How::SameName)));
+    assert_eq!(found(catalog().match_vst2(0x4F72_6235, "Zeta Orbit 5 x64")), Some(("Orbit", How::SameName)));
+    assert_eq!(found(catalog().match_vst2(0x4F72_6234, "Orbit 4")), None);
     // A VST2 build named with `.64`.
-    assert_eq!(found(catalog().match_vst2(0x4E78_7335, "Nexus.64")), Some(("Nexus", How::SameName)));
+    assert_eq!(found(catalog().match_vst2(0x4F72_6235, "Orbit.64")), Some(("Orbit", How::SameName)));
     assert_eq!(major_version("5.1.0"), Some(5));
     assert_eq!(major_version(" 12"), Some(12));
     assert_eq!(major_version("beta"), None);
@@ -149,43 +149,43 @@ fn the_vst2_class_id_follows_the_sdk_convention() {
     // 'Test' named "VST 2 Plug-in": VST, the id, then "vst 2 plu" in lower case.
     assert_eq!(vst2_class_id(0x5465_7374, "VST 2 Plug-in"), "56535454657374767374203220706C75");
     // Short names are padded with zeros.
-    assert_eq!(vst2_class_id(0x4F54_5421, "OTT"), "5653544F5454216F7474000000000000");
-    assert!(derived_from("56534558667350736572756D20320000", 0x5866_7350));
-    assert!(!derived_from("56534558667350736572756D20320000", 0x5866_7358));
+    assert_eq!(vst2_class_id(0x5859_5A21, "XYZ"), "56535458595A2178797A000000000000");
+    assert!(derived_from("56534557617650776176657920320000", 0x5761_7650));
+    assert!(!derived_from("56534557617650776176657920320000", 0x5761_7658));
 }
 
 #[test]
 fn devices_are_found_most_certain_first() {
     let catalog = catalog();
     // The same VST3 class, and one a newer plug-in says it replaces.
-    assert_eq!(found(catalog.match_vst3("ED57BD725C60467EA64DD2F400758B6F", "x")), Some(("Pro-Q 4", How::Same)));
-    assert_eq!(found(catalog.match_vst3("5653544651337066616266696C746572", "x")), Some(("Pro-Q 3", How::Declared)));
+    assert_eq!(found(catalog.match_vst3("11111111111111111111111111111104", "x")), Some(("Bell-Q 4", How::Same)));
+    assert_eq!(found(catalog.match_vst3("5653544251337061636D65706C756769", "x")), Some(("Bell-Q 3", How::Declared)));
     // A VST2 id that a VST3 plug-in declares, and one its class id is derived from.
-    assert_eq!(found(catalog.match_vst2(0x4651_3370, "FabFilter Pro-Q 3 x64")), Some(("Pro-Q 3", How::Declared)));
-    assert_eq!(found(catalog.match_vst2(0x5275_756D, "ValhallaRoom_x64")), Some(("ValhallaRoom", How::Vst2Id)));
+    assert_eq!(found(catalog.match_vst2(0x4251_3370, "Acme Bell-Q 3 x64")), Some(("Bell-Q 3", How::Declared)));
+    assert_eq!(found(catalog.match_vst2(0x4861_6C52, "HallRoom_x64")), Some(("HallRoom", How::Vst2Id)));
     // The same name with a different id, with build words and the vendor set aside.
-    assert_eq!(found(catalog.match_vst2(0x5070_5657, "PSP VintageWarmer")), Some(("PSP VintageWarmer", How::SameName)));
-    assert_eq!(found(catalog.match_vst2(1, "FabFilter Pro-Q 4 x64")), Some(("Pro-Q 4", How::SameName)));
+    assert_eq!(found(catalog.match_vst2(0x5879_4F48, "XY OldHeater")), Some(("XY OldHeater", How::SameName)));
+    assert_eq!(found(catalog.match_vst2(1, "Acme Bell-Q 4 x64")), Some(("Bell-Q 4", How::SameName)));
     // A newer version: the nearest one.
-    assert_eq!(found(catalog.match_vst2(0x4651_3270, "FabFilter Pro-Q 2 x64")), Some(("Pro-Q 3", How::NewerVersion)));
-    assert_eq!(found(catalog.match_vst2(0x5866_7358, "Serum_x64")), Some(("Serum 2", How::NewerVersion)));
+    assert_eq!(found(catalog.match_vst2(0x4251_3270, "Acme Bell-Q 2 x64")), Some(("Bell-Q 3", How::NewerVersion)));
+    assert_eq!(found(catalog.match_vst2(0x5761_7658, "Wavey_x64")), Some(("Wavey 2", How::NewerVersion)));
     // CLAP by id; nothing for unknown plug-ins, and an older version is not offered.
     assert_eq!(found(catalog.match_clap("com.example.thing", "x")), Some(("Thing", How::Same)));
-    assert_eq!(found(catalog.match_vst2(2, "Massive")), None);
-    assert_eq!(found(catalog.match_vst2(3, "Pro-Q 1")), Some(("Pro-Q 3", How::NewerVersion)));
+    assert_eq!(found(catalog.match_vst2(2, "Unknown")), None);
+    assert_eq!(found(catalog.match_vst2(3, "Bell-Q 1")), Some(("Bell-Q 3", How::NewerVersion)));
     assert_eq!(found(catalog.match_vst2(4, "")), None);
 }
 
 #[test]
 fn names_lose_build_words_and_vendors() {
-    assert_eq!(words("Kickstart-64bit"), ["kickstart"]);
-    assert_eq!(words("The Glue 64"), ["the", "glue"]);
-    assert_eq!(words("OTT_x64"), ["ott"]);
-    assert_eq!(product_words("FabFilter Pro-Q 2 x64", "FabFilter"), ["pro-q", "2"]);
-    assert_eq!(product_words("ValhallaRoom", "Valhalla DSP, LLC"), ["valhallaroom"]);
+    assert_eq!(words("Pump-64bit"), ["pump"]);
+    assert_eq!(words("The Paste 64"), ["the", "paste"]);
+    assert_eq!(words("XYZ_x64"), ["xyz"]);
+    assert_eq!(product_words("Acme Bell-Q 2 x64", "Acme"), ["bell-q", "2"]);
+    assert_eq!(product_words("HallRoom", "Hall DSP, LLC"), ["hallroom"]);
     // A name that is only the vendor keeps it.
-    assert_eq!(product_words("Sylenth1", "Sylenth1"), ["sylenth1"]);
-    assert_eq!(versioned(&words("Serum")), (vec!["serum".to_string()], 1));
-    assert_eq!(versioned(&words("PSP VintageWarmer2")), (vec!["psp".to_string(), "vintagewarmer".to_string()], 2));
-    assert_eq!(versioned(&words("CLA-2A")), (vec!["cla-2a".to_string()], 1));
+    assert_eq!(product_words("Zap1", "Zap1"), ["zap1"]);
+    assert_eq!(versioned(&words("Wavey")), (vec!["wavey".to_string()], 1));
+    assert_eq!(versioned(&words("XY OldHeater2")), (vec!["xy".to_string(), "oldheater".to_string()], 2));
+    assert_eq!(versioned(&words("ABC-2A")), (vec!["abc-2a".to_string()], 1));
 }

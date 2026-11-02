@@ -92,7 +92,7 @@ fn derived_from(class_id: &str, id: u32) -> bool {
 const BUILD_WORDS: &[&str] =
     &["x64", "x86", "x86_64", "64", "64bit", "32bit", "vst", "vst2", "vst3", "(x64)", "stereo"];
 
-/// A name's words in lower case without build words; `Kickstart-64bit` and `OTT_x64` lose the
+/// A name's words in lower case without build words; `Pump-64bit` and `XYZ_x64` lose the
 /// build suffix too.
 fn words(name: &str) -> Vec<String> {
     let mut list = Vec::new();
@@ -122,7 +122,7 @@ fn product_words(name: &str, vendor: &str) -> Vec<String> {
 }
 
 /// A product's words split into its name and version number: `synth 2` is (`synth`, 2), a
-/// name without a number is version 1. A number joined to the last word counts (`Warmer2`), and
+/// name without a number is version 1. A number joined to the last word counts (`Heater2`), and
 /// so does the one number word inside a name (`suite 8 imager` is (`suite imager`, 8): suites
 /// put the version between the brand and the module).
 fn versioned(words: &[String]) -> (Vec<String>, u32) {
