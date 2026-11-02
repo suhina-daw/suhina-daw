@@ -96,7 +96,7 @@ fn wait_running(session: &mut Session, renderer: &mut Renderer) {
 #[test]
 fn a_running_plug_in_read_again_and_again_is_no_unsaved_change() {
     let project = project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env_for("vst3"));
@@ -131,7 +131,7 @@ fn processor_change(id: &str) -> (Session, Renderer) {
         points: vec![AutomationPoint { beat: 0.0, value: 0.75, curve: Default::default() }],
         enabled: true,
     });
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     renderer.set_offline(true);
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));

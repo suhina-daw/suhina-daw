@@ -213,7 +213,9 @@ fn imported_pitch_follows_the_imported_clip_scale() {
         manual("PitchScaleDegrees", "2")
     );
     let imported = read_xml(&scaled_clip_set("true", "2", "2", &pitch)).unwrap().project;
-    let render = |p: &suhina_model::Project| suhina_engine::render_offline(p, 48_000, 512).unwrap();
+    let render = |p: &suhina_model::Project| {
+        suhina_engine::render_offline(p, 48_000, 512, suhina_device_registry::factory()).unwrap()
+    };
     let out = render(&imported);
     assert!(out.iter().any(|s| s.abs() > 0.05), "the note plays");
 

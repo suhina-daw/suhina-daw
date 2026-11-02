@@ -102,6 +102,8 @@ pub(crate) struct Updater {
     audio: Arc<AudioPool>,
     /// The file-backed devices' files ([docs/spec/nam-amp-and-cab.md]), for every graph built.
     assets: Arc<crate::DeviceAssets>,
+    /// What makes the devices of every graph built (#1147).
+    devices: crate::Devices,
     sample_rate: u32,
     stretch: Option<StretchThread>,
     params: Producer<ParamChange>,
@@ -158,6 +160,7 @@ impl Renderer {
             retired,
             audio: Arc::clone(&self.audio),
             assets: Arc::clone(&self.assets),
+            devices: Arc::clone(&self.devices),
             sample_rate: self.sample_rate,
             stretch: None,
             params,
@@ -527,8 +530,16 @@ impl Controller {
         updater.collect();
         let collect_took = collect_began.elapsed();
         let mut plugins = Plugins { info: updater.plugin_info.clone(), processors: HashMap::new(), carried: false };
-        let mut graph = Graph::build(project, &updater.audio, &updater.assets, updater.sample_rate, &mut plugins, None)
-            .map_err(|e| e.to_string())?;
+        let mut graph = Graph::build(
+            project,
+            &updater.audio,
+            &updater.assets,
+            &*updater.devices,
+            updater.sample_rate,
+            &mut plugins,
+            None,
+        )
+        .map_err(|e| e.to_string())?;
         crate::build_report::add(&format!("old graphs dropped {:.1} ms", collect_took.as_secs_f64() * 1000.0));
         let sent = Arc::clone(&graph.tempo);
         updater.live_volumes = graph.chains.iter().filter(|c| c.built_volume.is_some()).map(|c| c.track).collect();
@@ -696,10 +707,10 @@ impl Controller {
         self.preview.send(crate::preview::PreviewCommand::Release { key })
     }
 
-    /// A fallback instrument for [`crate::preview_notes`]: the FM synth with its first voice,
-    /// prepared at the renderer's rate.
+    /// A fallback instrument for [`crate::preview_notes`]: the device factory's preview
+    /// instrument, prepared at the renderer's rate.
     pub fn preview_instrument(&self) -> Option<Box<dyn suhina_device_api::Device>> {
-        let mut device = suhina_device_registry::create("fm-synth")?;
+        let mut device = self.updater.devices.preview_instrument()?;
         device.prepare(f64::from(self.updater.sample_rate)).ok()?;
         device.reset();
         Some(device)

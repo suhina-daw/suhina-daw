@@ -151,7 +151,7 @@ fn renderer_with_gate(specs: &[&str], sample_rate: u32, gate: bool) -> (Renderer
     }
     let renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
         sample_rate,
         RenderOptions::STOPPED,
     )

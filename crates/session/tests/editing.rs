@@ -21,7 +21,14 @@ const SR: u32 = 48_000;
 const BEAT: usize = SR as usize / 2;
 
 fn render(session: &Session) -> Vec<f32> {
-    render_offline_from(session.project(), RenderInputs::from_audio(session.audio()), SR, 512, None).unwrap()
+    render_offline_from(
+        session.project(),
+        RenderInputs::from_audio(session.audio(), suhina_session::devices()),
+        SR,
+        512,
+        None,
+    )
+    .unwrap()
 }
 
 /// The largest difference between two renders over the frames both have, outside `skip`.

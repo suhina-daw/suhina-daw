@@ -59,7 +59,7 @@ fn project_built(volume: f64) -> Project {
 /// A session at `volume` on "Lead", playing for two seconds in an offline renderer.
 fn played(volume: f64) -> (Session, Renderer) {
     let project = project(volume);
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "transport.play", json!({})).unwrap();

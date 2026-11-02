@@ -50,8 +50,13 @@ fn tab_only_switches_the_view() {
 #[test]
 fn the_control_bar_shows_the_cpu_load_only_while_an_engine_plays() {
     // With an engine attached as its player, the control bar shows the load.
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut session = Session::new(demo_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
@@ -86,8 +91,13 @@ fn the_control_bar_shows_the_ram_usage_whether_or_not_an_engine_plays() {
 #[test]
 fn the_view_switch_is_the_last_control_at_the_right_with_the_cpu_and_ram_left_of_it() {
     // With an engine attached, all four show: RAM, CPU, then the view switch at the edge.
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut session = Session::new(demo_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
@@ -110,8 +120,13 @@ fn the_view_switch_is_the_last_control_at_the_right_with_the_cpu_and_ram_left_of
 fn a_narrow_window_leaves_out_what_would_reach_the_position_readout() {
     // At the smallest window the app allows, the blocks that show keep their order and stay
     // right of the transport in the centre (play, stop and the 64 px position).
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut session = Session::new(demo_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();

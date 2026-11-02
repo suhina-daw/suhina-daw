@@ -20,6 +20,7 @@
 
 mod ahead;
 pub use assets::DeviceAssets;
+pub use suhina_device_sdk::{DeviceAsset, DeviceFactory, Devices};
 mod assets;
 mod audio;
 mod automation;
@@ -430,6 +431,8 @@ pub struct Renderer {
     audio: Arc<AudioPool>,
     /// The file-backed devices' files, for the next graph (docs/spec/nam-amp-and-cab.md).
     assets: Arc<DeviceAssets>,
+    /// What makes the devices of the next graph (#1147).
+    devices: Devices,
     swap: swap::SwapState,
     /// Stretch underruns counted by graphs swapped out.
     underruns_before: u64,
@@ -465,20 +468,29 @@ pub struct Renderer {
     meters: meters::MeterWriter,
 }
 
-/// What a render plays besides the project (#764 › 3): the decoded audio its clips name, the
-/// parsed models and IRs its file-backed devices run ([docs/spec/nam-amp-and-cab.md]), and its
-/// running plug-ins (ADR 0006). Empty by default: notes and built-in devices only.
-#[derive(Default)]
+/// What a render plays besides the project (#764 › 3): what makes its devices (#1147), the
+/// decoded audio its clips name, the parsed models and IRs its file-backed devices run
+/// ([docs/spec/nam-amp-and-cab.md]), and its running plug-ins (ADR 0006).
+///
+/// There is no default: every constructor takes the device factory, so a render cannot be made
+/// that plays no devices without saying so.
 pub struct RenderInputs {
+    pub devices: Devices,
     pub audio: AudioPool,
     pub assets: DeviceAssets,
     pub plugins: Plugins,
 }
 
 impl RenderInputs {
+    /// Inputs that make devices with `devices`, with no audio, files or plug-ins: notes and
+    /// built-in devices only.
+    pub fn new(devices: Devices) -> Self {
+        Self { devices, audio: AudioPool::default(), assets: DeviceAssets::default(), plugins: Plugins::default() }
+    }
+
     /// Inputs that play the audio clips whose files are in `audio`.
-    pub fn from_audio(audio: &AudioPool) -> Self {
-        Self { audio: audio.clone(), ..Self::default() }
+    pub fn from_audio(audio: &AudioPool, devices: Devices) -> Self {
+        Self { audio: audio.clone(), ..Self::new(devices) }
     }
 
     /// These inputs, with the file-backed devices running what `assets` holds.
@@ -564,13 +576,18 @@ impl Declick {
 
 impl Renderer {
     /// A renderer for the project's notes; audio clips stay silent. See [`Renderer::build`].
-    pub fn new(project: &Project, sample_rate: u32) -> Result<Self, RenderError> {
-        Self::build(project, RenderInputs::default(), sample_rate, RenderOptions::PLAYING)
+    pub fn new(project: &Project, sample_rate: u32, devices: Devices) -> Result<Self, RenderError> {
+        Self::build(project, RenderInputs::new(devices), sample_rate, RenderOptions::PLAYING)
     }
 
     /// A renderer whose transport is stopped, playing the audio clips whose files are in `audio`.
-    pub fn stopped(project: &Project, audio: &AudioPool, sample_rate: u32) -> Result<Self, RenderError> {
-        Self::build(project, RenderInputs::from_audio(audio), sample_rate, RenderOptions::STOPPED)
+    pub fn stopped(
+        project: &Project,
+        audio: &AudioPool,
+        sample_rate: u32,
+        devices: Devices,
+    ) -> Result<Self, RenderError> {
+        Self::build(project, RenderInputs::from_audio(audio, devices), sample_rate, RenderOptions::STOPPED)
     }
 
     /// A renderer for `project` that plays what `inputs` holds, started as `options` say.
@@ -580,8 +597,8 @@ impl Renderer {
         sample_rate: u32,
         options: RenderOptions,
     ) -> Result<Self, RenderError> {
-        let RenderInputs { audio, assets, mut plugins } = inputs;
-        let mut graph = Graph::build(project, &audio, &assets, sample_rate, &mut plugins, options.source)?;
+        let RenderInputs { devices, audio, assets, mut plugins } = inputs;
+        let mut graph = Graph::build(project, &audio, &assets, &*devices, sample_rate, &mut plugins, options.source)?;
         if plugins.carried {
             // The old note-off schedule died with its renderer, but the retained
             // instruments did not. Release those voices before chasing notes here.
@@ -613,6 +630,7 @@ impl Renderer {
             stretch_scratch: vec![0.0; STRETCH_BLOCK * 2],
             audio: Arc::new(audio),
             assets: Arc::new(assets),
+            devices,
             swap: swap::SwapState::default(),
             underruns_before: 0,
             metronome: metronome::Metronome::new(sample_rate),
@@ -1426,8 +1444,13 @@ fn split_cue(cue: Option<&mut [f32]>, at: usize) -> (Option<&mut [f32]>, Option<
 
 /// Renders the whole arrangement offline into interleaved stereo, `block_frames` at a time.
 /// Audio clips stay silent; see [`render_offline_from`].
-pub fn render_offline(project: &Project, sample_rate: u32, block_frames: usize) -> Result<Vec<f32>, RenderError> {
-    render_offline_from(project, RenderInputs::default(), sample_rate, block_frames, None)
+pub fn render_offline(
+    project: &Project,
+    sample_rate: u32,
+    block_frames: usize,
+    devices: Devices,
+) -> Result<Vec<f32>, RenderError> {
+    render_offline_from(project, RenderInputs::new(devices), sample_rate, block_frames, None)
 }
 
 /// Renders the whole arrangement offline into interleaved stereo, `block_frames` at a time,
@@ -1495,8 +1518,9 @@ pub fn render_launches(
     sample_rate: u32,
     commands: &[(f64, LaunchCommand)],
     seconds: f64,
+    devices: Devices,
 ) -> Result<Vec<f32>, RenderError> {
-    render_launches_from(project, RenderInputs::from_audio(audio), sample_rate, commands, seconds)
+    render_launches_from(project, RenderInputs::from_audio(audio, devices), sample_rate, commands, seconds)
 }
 
 /// [`render_launches`] playing what `inputs` holds. This is the same path a live

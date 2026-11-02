@@ -115,7 +115,7 @@ fn output(session: &Session, channel: u32) -> Option<ChannelId> {
 
 /// The loudest sample of the left and of the right channel (both the same here: nothing is panned).
 fn peaks(project: &Project) -> (f32, f32) {
-    let samples = suhina_engine::render_offline(project, 48_000, 512).unwrap();
+    let samples = suhina_engine::render_offline(project, 48_000, 512, suhina_session::devices()).unwrap();
     samples.as_chunks::<2>().0.iter().fold((0.0f32, 0.0f32), |(l, r), [a, b]| (l.max(a.abs()), r.max(b.abs())))
 }
 

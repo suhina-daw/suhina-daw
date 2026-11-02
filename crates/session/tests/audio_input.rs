@@ -40,7 +40,7 @@ impl AudioSystem for Stand {
         previous: Option<Player>,
     ) -> Result<Opened, String> {
         drop(previous);
-        let mut renderer = Renderer::stopped(project, audio, SR).unwrap();
+        let mut renderer = Renderer::stopped(project, audio, SR, suhina_session::devices()).unwrap();
         let (producer, consumer) = rtrb::RingBuffer::new(BLOCK * 2 * 64);
         renderer.set_audio_input(consumer, 2, Arc::new(AtomicU64::new(0)));
         let player = Player::new(renderer.controller(), None);

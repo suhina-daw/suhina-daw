@@ -74,7 +74,10 @@ session will hold it and `media` will write its stems (planned, #146). The built
 `device-api` and `device-sdk` depend on no Suhina runtime crate, and each device crate under
 `devices/` depends only on `dsp`, `device-api` and, for the SDK's widgets and runtimes,
 `device-sdk` ([ADR 0004](decisions/0004-built-in-devices.md) › 1).
-The engine runs them in chains on tracks, made through `device-registry`.
+The engine runs them in chains on tracks. It knows no device itself: it makes them with a
+`DeviceFactory` (`device-sdk`) it is handed in `RenderInputs`, and the session hands it the
+registry's (`suhina_session::devices()`, #1147). The engine depends on `device-registry` only for
+its tests.
 
 | Crate | Owns | Depends on |
 |---|---|---|
@@ -84,7 +87,7 @@ The engine runs them in chains on tracks, made through `device-registry`.
 | `als` | Reading Live Sets into `model`, with warnings for what it skips ([spec](spec/als-format.md)). One crate per format later. | model |
 | `flp` | Reading an FL Studio project's container and event stream: the `FLhd` header, the `FLdt` chunk, events with typed values and strings in the encoding the version event decides, every error with its offset ([spec](spec/flp-format.md)). No model mapping yet ([epic #271](https://github.com/suhina-daw/suhina-daw/issues/271)). | nothing |
 | `project-file` | Suhina's own project file (`.suhina`): the model as versioned JSON, written and read with nothing lost, every value checked; which paths are project files (`is_project_file`); audio paths moved when a project is saved elsewhere ([ADR 0010](decisions/0010-project-files.md), [spec](spec/suhina-format.md)). | model, fs |
-| `engine` | Turns a project into audio: note voices, audio clips with real-time stretching ([ADR 0003](decisions/0003-time-stretching.md)), the clip launcher ([spec](spec/clip-launching.md)), device chains with plug-in slots ([ADR 0004](decisions/0004-built-in-devices.md), [device chains](spec/device-chains.md)), the tempo map ([spec](spec/tempo-map.md)), latency compensation, sends, the preview voice ([ADR 0011](decisions/0011-preview-and-added-audio.md)), live notes and audio input ([ADR 0017](decisions/0017-inputs-and-latency.md)) and the cue bus. Main types: `Renderer`, `Controller`, `PluginProcessor`. Never touches files and never loads a plug-in. | model, stretch, dsp, device-api, device-registry, device-sdk |
+| `engine` | Turns a project into audio: note voices, audio clips with real-time stretching ([ADR 0003](decisions/0003-time-stretching.md)), the clip launcher ([spec](spec/clip-launching.md)), device chains with plug-in slots ([ADR 0004](decisions/0004-built-in-devices.md), [device chains](spec/device-chains.md)), the tempo map ([spec](spec/tempo-map.md)), latency compensation, sends, the preview voice ([ADR 0011](decisions/0011-preview-and-added-audio.md)), live notes and audio input ([ADR 0017](decisions/0017-inputs-and-latency.md)) and the cue bus. Main types: `Renderer`, `Controller`, `PluginProcessor`. Never touches files and never loads a plug-in. | model, stretch, dsp, device-api, device-sdk (`device-registry` for its tests only) |
 | `media` | Finds and decodes a project's audio (symphonia, on all cores) into an `AudioPool`; reads what a browser file is (`info`), MIDI files (`midi`), loop tempo (`tempo`) and Stems files (`stems`, [spec](spec/stems-format.md)); writes what an export renders (`write`: WAV, FLAC, Ogg Vorbis, MP3; [export](spec/export.md) › Formats). | model, mp3 (its tests: devices/compressor, devices/limiter) |
 | `mp3` | MP3 encoding through LAME 3.100's encoder, vendored as C source in `third_party/lame/` and compiled into a static library by the build ([ADR 0029](decisions/0029-mp3-encoder.md)): the settings, the encoder behind a safe API that owns and frees the C handle, the stream's blocks and flush, the LAME tag frame, and putting the finished file's bytes together. Never touches files; encoding runs on an export's path only, never in the audio callback. One of the three crates allowed `unsafe`. | nothing (cc) |
 | `library` | The browser's library ([ADR 0012](decisions/0012-file-library.md)): the folders the user added, an index of their samples, MIDI files, presets and projects kept on disk and up to date (checked at start, then watched with `notify` or polled), search, pins, recent items and colour tags in `browser.json`; finding files by name in the index or by walking a folder (`find`, for missing files). | media, fs |
@@ -303,7 +306,7 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
    warped clip placement (two stretchers each, so a fresh one takes over before every strong
    onset and transients stay on the grid; ADR 0003), the prepared launcher clips, the
    per-track gains (group and master chain included) and a device chain for each track whose
-   channel holds built-in effects and instruments, made through `device-registry` and prepared (ADR 0004;
+   channel holds built-in effects and instruments, made by the `DeviceFactory` in `RenderInputs` (the session passes `device-registry`'s) and prepared (ADR 0004;
    built-in MIDI effects change the chain's note events before its instrument, and each note
    carries its clip's scale for them; MIDI effects without an instrument after them get the
    engine's sine tones as one, `sine.rs`, ADR 0004 › 14); a

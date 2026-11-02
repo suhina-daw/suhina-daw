@@ -76,7 +76,7 @@ impl AudioSystem for Stand {
         previous: Option<Player>,
     ) -> Result<Opened, String> {
         drop(previous);
-        let mut renderer = Renderer::stopped(project, audio, SR).unwrap();
+        let mut renderer = Renderer::stopped(project, audio, SR, suhina_session::devices()).unwrap();
         let player = Player::new(renderer.controller(), None);
         self.renderers.lock().unwrap().push(renderer);
         Ok(Opened { player, notice: None, plugins_kept: true })

@@ -39,7 +39,7 @@ pub fn play(project: &Project, audio: &AudioPool, assets: &DeviceAssets, choice:
     let output = chosen_output(choice)?;
     let mut renderer = Renderer::build(
         project,
-        RenderInputs::from_audio(audio).with_assets(assets),
+        RenderInputs::from_audio(audio, suhina_session::devices()).with_assets(assets),
         output.sample_rate(),
         RenderOptions::PLAYING,
     )
@@ -120,7 +120,7 @@ pub fn launcher(
     let output = chosen_output(choice)?;
     let mut renderer = Renderer::build(
         &project,
-        RenderInputs::from_audio(audio).with_assets(assets).with_plugins(Plugins::new()),
+        RenderInputs::from_audio(audio, suhina_session::devices()).with_assets(assets).with_plugins(Plugins::new()),
         output.sample_rate(),
         RenderOptions::STOPPED,
     )

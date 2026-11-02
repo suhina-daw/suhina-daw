@@ -151,8 +151,13 @@ fn find(log: &[Hand], name: &str) -> Hand {
 #[test]
 fn a_large_device_period_does_not_cut_plugin_time_to_a_quarter_block() {
     let p = tracks(vec![vec![plug()]]);
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     renderer.set_render_lead(FRAMES, FRAMES * 2);
     let now = Instant::now();
     assert_eq!(renderer.deadline_at(FRAMES, now), Some(now + Duration::from_millis(64)));
@@ -161,8 +166,13 @@ fn a_large_device_period_does_not_cut_plugin_time_to_a_quarter_block() {
 #[test]
 fn a_queued_device_period_leaves_time_for_the_next_plugin_block() {
     let p = tracks(vec![vec![plug()]]);
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     renderer.set_render_lead(FRAMES * 2, FRAMES * 2);
     let now = Instant::now();
     assert_eq!(renderer.deadline_at(FRAMES, now), Some(now + Duration::from_millis(253)));
@@ -193,7 +203,8 @@ fn one_block_with_slow_plug_ins_at_different_places() -> Result<(), String> {
     ];
     let mut renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, stands)),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, stands)),
         SR,
         RenderOptions::PLAYING,
     )
@@ -235,7 +246,8 @@ fn a_hung_plug_in_holds_up_only_its_own_chain_and_only_until_the_deadline() {
     ];
     let mut renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, stands)),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, stands)),
         SR,
         RenderOptions::PLAYING,
     )
@@ -294,7 +306,8 @@ fn offline_the_order_plug_ins_answer_in_changes_nothing() {
         let stands = (0..5).map(|i| Timed::new(names[i], gains[i], delays[i], &log)).collect();
         crate::render_offline_from(
             &p,
-            RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, stands)),
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+                .with_plugins(plugins(&p, stands)),
             SR,
             512,
             None,
@@ -308,7 +321,7 @@ fn offline_the_order_plug_ins_answer_in_changes_nothing() {
     assert_eq!(at_once, first_slow);
     assert_eq!(at_once, last_slow);
     // And it is the plug-ins' sound: not the dry track.
-    let dry = crate::render_offline(&tracks(vec![vec![], vec![]]), SR, 512).unwrap();
+    let dry = crate::render_offline(&tracks(vec![vec![], vec![]]), SR, 512, suhina_device_registry::factory()).unwrap();
     assert!(max_diff(&at_once[..dry.len().min(at_once.len())], &dry) > 1e-3);
 }
 
@@ -318,7 +331,7 @@ fn late_plugin_diagnostics_capture_render_time_and_queue_lead() {
     let log = Arc::default();
     let mut renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new())
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
             .with_plugins(plugins(&p, vec![Timed::new("hung", 0.5, HUNG, &log)])),
         SR,
         RenderOptions::PLAYING,
@@ -335,8 +348,13 @@ fn late_plugin_diagnostics_capture_render_time_and_queue_lead() {
 #[test]
 fn queued_audio_covers_a_start_burst_longer_than_an_internal_chunk() {
     let p = tracks(vec![vec![plug()]]);
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     renderer.set_render_lead(FRAMES * 3, FRAMES);
     let now = Instant::now();
     assert_eq!(renderer.deadline_at(FRAMES * 2, now), Some(now + Duration::from_millis(381)));
@@ -348,7 +366,7 @@ fn internal_chunks_share_the_device_deadline_instead_of_restarting_it() {
     let log = Arc::default();
     let mut renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new())
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
             .with_plugins(plugins(&p, vec![Timed::new("instant", 0.5, Duration::ZERO, &log)])),
         SR,
         RenderOptions::PLAYING,

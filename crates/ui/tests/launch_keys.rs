@@ -20,7 +20,7 @@ use suhina_ui::{App, Status, View, kit::theme};
 /// launch is taken and says so. The renderer is kept so the engine's queue stays open.
 fn window() -> (Harness<'static, App>, Renderer) {
     let project = demo_project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     let mut app = App::new();

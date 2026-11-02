@@ -119,7 +119,7 @@ fn only_the_active_project_keeps_its_player() {
     let mut projects = Projects::new();
     let a = untitled(&mut projects);
     let project = Project::default();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
     projects.get_mut(a).unwrap().attach_player(Player::new(renderer.controller(), None));
     assert!(run(&mut projects, "launcher.state", json!({})).is_ok());
 

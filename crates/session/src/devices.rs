@@ -1073,7 +1073,7 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     let absolute = crate::files::absolute(std::path::Path::new(path));
     let absolute_text = absolute.display().to_string();
     let asset = session.load_device_file(&kind, &absolute_text).map_err(CommandError)?;
-    let name = asset.name(&absolute).unwrap_or_default();
+    let name = suhina_device_registry::asset_name(&asset, &absolute).unwrap_or_default();
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;

@@ -149,7 +149,7 @@ fn start_chains(chains: &[Vec<&str>], sample_rate: u32) -> (Renderer, Vec<Plugin
     }
     let renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
         sample_rate,
         RenderOptions::PLAYING,
     )

@@ -103,7 +103,8 @@ impl AudioSystem for Stand {
         if self.reject_next_open.swap(false, std::sync::atomic::Ordering::Relaxed) {
             return Err("test output unavailable".into());
         }
-        let mut renderer = Renderer::stopped(project, audio, choice.sample_rate.unwrap_or(SR)).unwrap();
+        let mut renderer =
+            Renderer::stopped(project, audio, choice.sample_rate.unwrap_or(SR), suhina_session::devices()).unwrap();
         let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.failed.lock().unwrap().push(Arc::clone(&failed));
         let player = Player::with_output(

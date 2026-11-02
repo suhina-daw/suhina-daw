@@ -236,7 +236,9 @@ fn the_priority_notice_is_told_once() {
 #[test]
 fn the_render_thread_says_its_priority_first() {
     let said = std::thread::spawn(|| {
-        let renderer = Renderer::stopped(&suhina_model::Project::default(), &AudioPool::new(), 48_000).unwrap();
+        let renderer =
+            Renderer::stopped(&suhina_model::Project::default(), &AudioPool::new(), 48_000, suhina_session::devices())
+                .unwrap();
         let (producer, _consumer) = ring(256);
         let (stop, progress) = (AtomicBool::new(true), Progress::default());
         let (joined, said) = mpsc::sync_channel(1);
@@ -304,7 +306,8 @@ fn eventually(mut done: impl FnMut() -> bool) -> bool {
 fn the_render_thread_keeps_less_ahead_while_a_track_is_armed() {
     use suhina_engine::{LaunchCommand, model};
     const BLOCK: usize = 128;
-    let mut renderer = Renderer::stopped(&model::Project::default(), &AudioPool::new(), 48_000).unwrap();
+    let mut renderer =
+        Renderer::stopped(&model::Project::default(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
     let mut controller = renderer.controller();
     let (producer, mut consumer) = ring(BLOCK);
     let progress = Arc::new(Progress::default());

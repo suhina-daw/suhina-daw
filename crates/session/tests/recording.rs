@@ -84,7 +84,7 @@ struct Rig {
 }
 
 fn rig(project: Project) -> Rig {
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let (input, consumer) = rtrb::RingBuffer::new(BLOCK * 64);
     renderer.set_audio_input(consumer, 1, Arc::new(AtomicU64::new(0)));
     let mut controller = renderer.controller();
@@ -235,7 +235,7 @@ fn the_arrangement_records_after_the_count_in() {
     assert_eq!(got.len(), 1, "{got:?}");
     assert!(close(got[0].0, 1.0) && close(got[0].1, 1.0) && got[0].2 == 62);
     // Rendered offline, the take plays what was played: sound from beat 1, gone after beat 2.
-    let out = suhina_engine::render_offline(rig.session.project(), SR, 256).unwrap();
+    let out = suhina_engine::render_offline(rig.session.project(), SR, 256, suhina_session::devices()).unwrap();
     let first = out.iter().position(|s| s.abs() > 1e-4).map(|i| i / 2).unwrap();
     assert!((BEAT..BEAT + 200).contains(&first), "{first}");
     let held = &out[BEAT * 3..BEAT * 3 + 400];

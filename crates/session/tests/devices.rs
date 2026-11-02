@@ -1183,13 +1183,18 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
     std::fs::remove_file(&wav).unwrap();
     let (audio, warnings) = suhina_media::decode_project_audio(&restored, &moved);
     assert!(warnings.is_empty(), "{warnings:?}");
-    let expected =
-        suhina_engine::render_offline_from(&restored, suhina_engine::RenderInputs::from_audio(&audio), 48000, 64, None)
-            .unwrap();
+    let expected = suhina_engine::render_offline_from(
+        &restored,
+        suhina_engine::RenderInputs::from_audio(&audio, suhina_session::devices()),
+        48000,
+        64,
+        None,
+    )
+    .unwrap();
     assert!(expected.iter().any(|v| v.abs() > 0.01));
     let actual = suhina_engine::render_offline_from(
         &restored,
-        suhina_engine::RenderInputs::from_audio(&audio),
+        suhina_engine::RenderInputs::from_audio(&audio, suhina_session::devices()),
         48000,
         257,
         None,

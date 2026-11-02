@@ -29,7 +29,9 @@ fn a_playing_tracks_meter_moves_and_its_clip_light_turns_off_on_a_click() {
     let mut project = demo_project();
     // Drums at +18 dB, loud enough to go over full scale.
     project.channels[0].volume = 8.0;
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();

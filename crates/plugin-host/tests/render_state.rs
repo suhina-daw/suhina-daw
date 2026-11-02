@@ -109,13 +109,13 @@ fn render(project: &Project) -> f32 {
     assert_eq!(started.running(), 1, "{:?}", started.notices);
     let wet = render_offline_from(
         project,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(started.plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(started.plugins),
         SR,
         256,
         None,
     )
     .unwrap();
-    let dry = render_offline(project, SR, 256).unwrap();
+    let dry = render_offline(project, SR, 256, suhina_session::devices()).unwrap();
     assert!(peak(&dry) > 0.1);
     peak(&wet) / peak(&dry)
 }
@@ -146,7 +146,7 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
     // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
-    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
@@ -192,7 +192,7 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
 fn a_duplicated_track_starts_its_plug_in_with_the_state_it_has_now() {
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
-    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());

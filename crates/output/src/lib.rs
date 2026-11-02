@@ -973,7 +973,9 @@ pub fn open_chosen(
                 };
                 let mut renderer = Renderer::build(
                     &project,
-                    RenderInputs::from_audio(&audio).with_assets(&assets).with_plugins(plugins),
+                    RenderInputs::from_audio(&audio, suhina_session::devices())
+                        .with_assets(&assets)
+                        .with_plugins(plugins),
                     output.sample_rate,
                     RenderOptions::STOPPED,
                 )

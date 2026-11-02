@@ -199,13 +199,22 @@ fn samples_go_one_after_another_on_a_track_at_their_length() {
     assert!(session.audio().files.contains_key(&region.file), "decoded into the session's pool");
 
     // The offline render plays them: the oracle for what was placed.
-    let renderer =
-        Renderer::build(session.project(), RenderInputs::from_audio(session.audio()), SR, RenderOptions::PLAYING)
-            .unwrap();
+    let renderer = Renderer::build(
+        session.project(),
+        RenderInputs::from_audio(session.audio(), suhina_session::devices()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     drop(renderer);
-    let out =
-        suhina_engine::render_offline_from(session.project(), RenderInputs::from_audio(session.audio()), SR, 512, None)
-            .unwrap();
+    let out = suhina_engine::render_offline_from(
+        session.project(),
+        RenderInputs::from_audio(session.audio(), suhina_session::devices()),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
     let at = |beat: f64| out[((beat * 0.5 + 0.05) * f64::from(SR)) as usize * 2].abs();
     assert!(at(4.0) > 0.1 && at(5.0) > 0.05, "{} {}", at(4.0), at(5.0));
     assert!(at(2.0) < 1e-6, "nothing before the clips");
@@ -279,7 +288,8 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     let column = session.project().launcher.columns.iter().position(|c| c.track == TrackId(3)).unwrap();
     let launch = [(0.0, suhina_engine::LaunchCommand::LaunchClip { column, slot: 0 })];
     let render = |session: &Session| {
-        suhina_engine::render_launches(session.project(), session.audio(), SR, &launch, 2.0).unwrap()
+        suhina_engine::render_launches(session.project(), session.audio(), SR, &launch, 2.0, suhina_session::devices())
+            .unwrap()
     };
     let at = |out: &[f32], seconds: f64| out[(seconds * f64::from(SR)) as usize * 2].abs();
     let out = render(&session);
@@ -493,7 +503,7 @@ fn a_sample_added_while_playing_reaches_the_engine() {
     let dir = temp_dir("playing");
     let sample = wav(&dir, "late.wav", 2.0, 0.5);
     let project = blank_project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "clip.addFiles", json!({ "paths": [text(&sample)], "track": 3, "start": 0.0 })).unwrap();
@@ -566,7 +576,7 @@ fn previews_need_a_player_and_show_in_the_launcher_state() {
     let project = blank_project();
     let mut session = Session::new(project.clone());
     assert!(run(&mut session, "preview.play", json!({ "path": text(&sample) })).is_err(), "no engine");
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     session.attach_player(Player::new(renderer.controller(), None));
     let out = run(&mut session, "preview.play", json!({ "path": text(&sample), "gain": 0.0 })).unwrap();
     assert_eq!(out["seconds"], 1.0);

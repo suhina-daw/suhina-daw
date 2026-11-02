@@ -127,7 +127,7 @@ pub(super) fn assert_onsets(out: &[f32], expected: &[usize]) {
 }
 
 pub(super) fn render(project: &Project, commands: &[(f64, LaunchCommand)], seconds: f64) -> Vec<f32> {
-    render_launches(project, &AudioPool::new(), SR, commands, seconds).unwrap()
+    render_launches(project, &AudioPool::new(), SR, commands, seconds, suhina_device_registry::factory()).unwrap()
 }
 
 /// One column: scene 1 loops a note on every beat, scene 2 a note on every off-beat.
@@ -250,7 +250,7 @@ fn scenes_launch_their_row_and_stop_buttons_stop_columns() {
             vec![with(clip(2, 1.0, true)), Slot { clip: None, has_stop: false }],
         ],
     );
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::LaunchScene { scene: 0 });
     let monitor = renderer.monitor();
     assert!(monitor.running());
@@ -283,7 +283,7 @@ fn stopping_a_scene_stops_its_rows_clips_and_leaves_the_empty_slots_tracks() {
             vec![with(clip(2, 1.0, true)), Slot { clip: None, has_stop: false }],
         ],
     );
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::LaunchScene { scene: 0 });
     let mut block = vec![0.0f32; 2 * 256];
     renderer.process(&mut block);
@@ -313,7 +313,7 @@ fn a_deactivated_clip_neither_plays_nor_stops_its_column() {
         vec![notes(1, vec![note(0.0, 60)]), notes(2, vec![note(0.5, 72)])],
         vec![vec![with(clip(1, 1.0, true)), with(off)]],
     );
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::LaunchScene { scene: 0 });
     let mut out = vec![0.0f32; 2 * BAR];
     renderer.process(&mut out);
@@ -361,7 +361,7 @@ fn a_scene_tempo_changes_the_tempo_at_the_launch() {
 #[test]
 fn a_clip_without_a_loop_plays_once_and_the_column_stops() {
     let p = project(vec![notes(1, vec![note(0.0, 60), note(1.0, 64)])], vec![vec![with(clip(1, 2.0, false))]]);
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let monitor = renderer.monitor();
     renderer.handle(LaunchCommand::LaunchClip { column: 0, slot: 0 });
     let mut out = vec![0.0f32; 2 * 3 * BEAT];
@@ -376,7 +376,7 @@ fn a_clip_without_a_loop_plays_once_and_the_column_stops() {
 fn notes_are_cut_at_the_loop_end() {
     let long = Note { duration: 4.0, ..note(0.0, 60) };
     let p = project(vec![notes(1, vec![long])], vec![vec![with(clip(1, 1.0, true))]]);
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::LaunchClip { column: 0, slot: 0 });
     let mut out = vec![0.0f32; 2 * (BEAT + 100)];
     renderer.process(&mut out);
@@ -396,8 +396,13 @@ fn a_launched_clip_takes_its_track_over_from_the_arrangement() {
         track: Some(TrackId(1)),
         clips: vec![looped],
     });
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     // The arrangement plays every beat of bar 1, then the off-beat clip takes over at bar 2.
     let mut out = vec![0.0f32; 2 * (BAR + 2 * BEAT)];
     let (first, rest) = out.split_at_mut(2 * (BEAT / 4));
@@ -431,8 +436,13 @@ fn back_to_arrangement_stops_the_launched_clip() {
         track: Some(TrackId(1)),
         clips: vec![looped],
     });
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut out = vec![0.0f32; 2 * (BAR + BEAT)];
     let (first, rest) = out.split_at_mut(2 * (BEAT / 4));
     renderer.process(first);
@@ -467,7 +477,7 @@ fn a_resumed_clip_plays_on_where_it_was() {
         renderer.handle(LaunchCommand::Play);
         renderer.handle(LaunchCommand::LaunchClip { column: 0, slot: 0 });
     };
-    let mut reference = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut reference = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     start(&mut reference);
     let mut expected = vec![0.0f32; 2 * BLOCK * blocks];
     for block in expected.chunks_mut(2 * BLOCK) {
@@ -476,7 +486,7 @@ fn a_resumed_clip_plays_on_where_it_was() {
 
     // The old renderer plays 5.3 beats from the marker, the clip launched at the next bar
     // (beat 4).
-    let mut old = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut old = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     start(&mut old);
     let split = 53 * BEAT / 10 / BLOCK;
     let mut out = vec![0.0f32; 2 * BLOCK * blocks];
@@ -490,7 +500,7 @@ fn a_resumed_clip_plays_on_where_it_was() {
     assert_eq!(marker, 1.0);
 
     // The monitor's numbers are the last block's start: the new renderer plays from there.
-    let mut new = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut new = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     for command in [
         LaunchCommand::SetPosition { beat: marker },
         LaunchCommand::Play,
@@ -517,7 +527,8 @@ fn a_resumed_clip_plays_on_where_it_was() {
 
 #[test]
 fn locate_moves_the_playhead_but_not_the_marker() {
-    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::stopped(&two_loops(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::SetPosition { beat: 2.0 });
     // Stopped: the playhead is at the marker, and stays there.
     renderer.handle(LaunchCommand::Locate { beat: 8.0 });
@@ -543,7 +554,7 @@ fn a_column_resumes_without_a_clip_and_the_tempo_carries_over() {
         track: Some(TrackId(1)),
         clips: vec![looped],
     });
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     // Stopped: ignored.
     renderer.handle(LaunchCommand::ResumeColumn { column: 0, slot: None, elapsed_beats: 0.0 });
     assert!(!renderer.monitor().column(0).unwrap().overrides_arrangement);
@@ -572,7 +583,7 @@ fn a_column_resumes_without_a_clip_and_the_tempo_carries_over() {
 #[test]
 fn commands_from_a_controller_take_the_same_path() {
     let p = two_loops();
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let mut controller = renderer.controller();
     controller.send(LaunchCommand::LaunchClip { column: 0, slot: 0 }).unwrap();
     let mut out = vec![0.0f32; 2 * 2 * BEAT];
@@ -602,7 +613,7 @@ fn a_column_added_while_playing_reports_its_state() {
     std::mem::swap(&mut grown.tracks, &mut more.tracks);
     std::mem::swap(&mut grown.channels, &mut more.channels);
     std::mem::swap(&mut grown.launcher, &mut more.launcher);
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let mut controller = renderer.controller();
     controller.send(LaunchCommand::LaunchClip { column: 0, slot: 0 }).unwrap();
     let mut block = vec![0.0f32; 2 * 512];
@@ -674,7 +685,7 @@ fn launched_audio_loops_from_its_start_marker() {
     let c = Clip { offset: 0.5, ..clip(1, 1.0, true) };
     let p = project(vec![content], vec![vec![with(c)]]);
     let launch = [(0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 })];
-    let out = render_launches(&p, &audio, SR, &launch, 1.0).unwrap();
+    let out = render_launches(&p, &audio, SR, &launch, 1.0, suhina_device_registry::factory()).unwrap();
     // A centred track at unity gain: the left sample is the ramp value.
     let left = |frame: usize| out[2 * frame];
     assert!((left(BEAT / 4) - 0.375).abs() < 0.01, "{}", left(BEAT / 4));
@@ -750,7 +761,7 @@ fn launched_unwarped_audio_loops_over_the_whole_file() {
     };
     let launch = [(0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 })];
     let looping = project(vec![content.clone()], vec![vec![with(clip(1, 1.5, true))]]);
-    let out = render_launches(&looping, &audio, SR, &launch, 2.0).unwrap();
+    let out = render_launches(&looping, &audio, SR, &launch, 2.0, suhina_device_registry::factory()).unwrap();
     let left = |out: &[f32], seconds: f64| out[2 * (seconds * f64::from(SR)) as usize];
     assert!((left(&out, 0.25) - 0.25).abs() < 0.01, "{}", left(&out, 0.25));
     // Past the end of the file it starts again from its beginning, pass after pass.
@@ -758,7 +769,7 @@ fn launched_unwarped_audio_loops_over_the_whole_file() {
     assert!((left(&out, 1.85) - 0.35).abs() < 0.01, "{}", left(&out, 1.85));
     // With its loop off the same clip plays once and the column falls silent.
     let once = project(vec![content], vec![vec![with(clip(1, 1.5, false))]]);
-    let out = render_launches(&once, &audio, SR, &launch, 2.0).unwrap();
+    let out = render_launches(&once, &audio, SR, &launch, 2.0, suhina_device_registry::factory()).unwrap();
     assert!((left(&out, 0.25) - 0.25).abs() < 0.01);
     assert!(out[2 * SR as usize..].iter().all(|s| *s == 0.0), "silent after the end");
 }
@@ -810,7 +821,7 @@ fn launched_warped_clips_are_stretched_and_keep_their_pitch() {
         (1.0, LaunchCommand::Stop),
         (1.5, LaunchCommand::LaunchClip { column: 0, slot: 0 }),
     ];
-    let out = render_launches(&p, &audio, SR, &launches, 2.5).unwrap();
+    let out = render_launches(&p, &audio, SR, &launches, 2.5, suhina_device_registry::factory()).unwrap();
     // Read directly at 0.9 times its speed the sine would sound at 396 Hz.
     let first = hz(&out, SR as usize / 5, 4 * SR as usize / 5);
     assert!((first - 440.0).abs() < 8.0, "{first} Hz");
@@ -826,7 +837,7 @@ fn after_a_tempo_change_warped_clips_follow_by_re_pitching() {
     let (mut p, audio) = stretched_sine();
     p.launcher.scenes[0].tempo_bpm = Some(60.0);
     let launches = [(0.0, LaunchCommand::LaunchScene { scene: 0 })];
-    let out = render_launches(&p, &audio, SR, &launches, 2.0).unwrap();
+    let out = render_launches(&p, &audio, SR, &launches, 2.0, suhina_device_registry::factory()).unwrap();
     // At half the tempo the direct reader plays the file at 0.9 x 0.5 = 0.45 times its speed:
     // 198 Hz. (Keeping the pitch at another tempo needs
     // real-time retargeting: docs/spec/clip-launching.md › Tempo changes.)
@@ -848,7 +859,13 @@ fn stretched_arrangement_clips_rewind_with_the_transport_and_give_way_to_launche
     p.contents.push(notes(2, Vec::new()));
     p.launcher.scenes.push(Scene::default());
     p.launcher.columns[0].slots.push(with(clip(2, 1.0, true)));
-    let mut renderer = Renderer::build(&p, RenderInputs::from_audio(&audio), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&audio, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let half = SR as usize / 2;
     let mut first = vec![0.0f32; 2 * half];
     renderer.process(&mut first);
@@ -887,7 +904,7 @@ fn hostile_commands_are_ignored() {
     ];
     let out = render(&p, &commands, 0.5);
     assert_eq!(onsets(&out).len(), 1);
-    assert!(render_launches(&p, &AudioPool::new(), SR, &[], f64::INFINITY).is_err());
+    assert!(render_launches(&p, &AudioPool::new(), SR, &[], f64::INFINITY, suhina_device_registry::factory()).is_err());
 }
 
 #[test]
@@ -937,7 +954,7 @@ fn a_clip_s_own_bar_quantisation_counts_bars_from_a_scene_time_signature() {
 fn the_meter_counts_bars_across_a_scene_time_signature() {
     let mut p = two_loops();
     p.launcher.scenes[1].time_signature = Some(TimeSignature { numerator: 3, denominator: 4 });
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let monitor = renderer.monitor();
     assert_eq!(monitor.meter(), PlayingMeter::default());
     renderer.handle(LaunchCommand::LaunchScene { scene: 1 });
@@ -999,7 +1016,8 @@ fn a_scene_shift_is_found_between_two_launchers() {
 /// where it is; the next start begins at the marker (#657).
 #[test]
 fn set_start_moves_the_marker_but_not_playback() {
-    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::stopped(&two_loops(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::Play);
     let mut block = vec![0.0f32; 2 * 512];
     renderer.process(&mut block);
@@ -1021,7 +1039,8 @@ fn set_start_moves_the_marker_but_not_playback() {
 /// cancels it, and with no quantisation it jumps at once (#657).
 #[test]
 fn a_jump_on_the_grid_waits_for_the_next_bar() {
-    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::stopped(&two_loops(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::Play);
     let mut block = vec![0.0f32; 2 * 512];
     // Half a bar in (two beats at 120 BPM, a second).
@@ -1058,7 +1077,8 @@ fn a_jump_on_the_grid_waits_for_the_next_bar() {
 
 #[test]
 fn reopening_during_stretch_preparation_resumes_at_the_playhead() {
-    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::stopped(&two_loops(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     // Hold the real read-ahead worker so Play must wait, as on a reopened device.
     let _worker = renderer.graph.ahead.take_worker_unfilled().unwrap();
     renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
@@ -1079,7 +1099,8 @@ fn reopening_during_stretch_preparation_resumes_at_the_playhead() {
 
 #[test]
 fn cancelling_a_restored_waiting_start_does_not_keep_the_resume_target() {
-    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::stopped(&two_loops(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let _worker = renderer.graph.ahead.take_worker_unfilled().unwrap();
     renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
     renderer.handle(LaunchCommand::Play);

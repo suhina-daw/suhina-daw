@@ -5243,6 +5243,7 @@ dependencies = [
  "roxmltree",
  "suhina-device-dj-eq",
  "suhina-device-pitch",
+ "suhina-device-registry",
  "suhina-engine",
  "suhina-model",
 ]

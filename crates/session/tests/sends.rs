@@ -168,8 +168,12 @@ fn returns_are_added_renamed_and_removed_with_their_sends() {
 
 #[test]
 fn a_send_set_by_command_is_heard_through_the_return() {
-    let peak =
-        |p: &Project| suhina_engine::render_offline(p, 48_000, 512).unwrap().iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let peak = |p: &Project| {
+        suhina_engine::render_offline(p, 48_000, 512, suhina_session::devices())
+            .unwrap()
+            .iter()
+            .fold(0.0f32, |m, s| m.max(s.abs()))
+    };
     let mut session = Session::new(project());
     run(&mut session, "track.setVolume", json!({ "tracks": ["Bass"], "db": "-inf" })).unwrap();
     assert!(peak(session.project()) < 1e-6);

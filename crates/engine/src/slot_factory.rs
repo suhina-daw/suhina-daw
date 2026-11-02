@@ -22,6 +22,7 @@ pub(crate) struct SlotFactory<'a> {
     pub(crate) sample_rate: u32,
     pub(crate) audio: &'a crate::AudioPool,
     pub(crate) assets: &'a crate::DeviceAssets,
+    pub(crate) devices: &'a dyn suhina_device_sdk::DeviceFactory,
     pub(crate) plugins: &'a mut Plugins,
     pub(crate) keys: &'a [PluginDevice],
     pub(crate) channel: suhina_model::ChannelId,
@@ -94,8 +95,9 @@ impl SlotFactory<'_> {
     }
 
     fn builtin(&self, id: &str, stored: &suhina_model::Device, lanes: &mut DeviceLanes, slot: usize) -> Option<Built> {
-        let asset = crate::assets::stored_path(id, stored.state.as_deref()).and_then(|path| self.assets.get(path));
-        let mut device = suhina_device_registry::create_with(id, asset)?;
+        let asset = crate::assets::stored_path(self.devices, id, stored.state.as_deref())
+            .and_then(|path| self.assets.get(path));
+        let mut device = self.devices.create(id, asset)?;
         // What a chain gives a device that plays samples: the decoded sample, the manual slices
         // and the source corrections.
         let slices: Option<std::sync::Arc<[f64]>> = stored.sample_slices().map(std::sync::Arc::from);
@@ -126,7 +128,7 @@ impl SlotFactory<'_> {
         let kind = if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) };
         Some(Built {
             slot: kind,
-            id: crate::chain::device_identity(id, stored, self.audio),
+            id: crate::chain::device_identity(id, stored, self.audio, self.devices),
             values,
             latency,
             slices,
@@ -148,7 +150,7 @@ impl SlotFactory<'_> {
             .ok()?;
             samples.insert("sample", std::sync::Arc::new(asset)).ok()?;
         }
-        let mut device = suhina_device_registry::graph_device(&graph, f64::from(self.sample_rate), samples).ok()?;
+        let mut device = self.devices.graph_device(&graph, f64::from(self.sample_rate), samples).ok()?;
         let info = device.info().clone();
         lanes.add(slot, &device, &stored.automation, self.frames_per_beat);
         let mut values = Vec::with_capacity(info.params.len());

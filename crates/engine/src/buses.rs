@@ -36,7 +36,7 @@ pub(crate) fn build(
     sample_rate: u32,
     plugins: &mut Plugins,
     column_of: impl Fn(TrackId) -> u32,
-    assets: &crate::DeviceAssets,
+    assets: (&crate::DeviceAssets, &dyn suhina_device_sdk::DeviceFactory),
     source: Option<TrackId>,
 ) -> (Vec<Chain>, u32) {
     // Every track with devices has a chain, a silent one too (muted, or not soloed): its
@@ -288,7 +288,7 @@ fn main_chain(
     audio: &crate::AudioPool,
     sample_rate: u32,
     plugins: &mut Plugins,
-    assets: &crate::DeviceAssets,
+    assets: (&crate::DeviceAssets, &dyn suhina_device_sdk::DeviceFactory),
 ) -> Option<Chain> {
     if !main_runs_chain(project) {
         return None;

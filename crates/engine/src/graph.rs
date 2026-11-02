@@ -53,6 +53,7 @@ impl Graph {
         project: &Project,
         audio: &AudioPool,
         assets: &crate::DeviceAssets,
+        devices: &dyn suhina_device_sdk::DeviceFactory,
         sample_rate: u32,
         plugins: &mut Plugins,
         source: Option<TrackId>,
@@ -112,7 +113,8 @@ impl Graph {
             hasher.finish()
         };
         let chains_began = std::time::Instant::now();
-        let (chains, latency) = buses::build(project, audio, sample_rate, plugins, column_of, assets, source);
+        let (chains, latency) =
+            buses::build(project, audio, sample_rate, plugins, column_of, (assets, devices), source);
         let chains_took = chains_began.elapsed();
         let mut voices_took = std::time::Duration::ZERO;
         // The source render's capture: the node's chain, its subtree's chains and a block

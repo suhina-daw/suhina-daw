@@ -36,8 +36,14 @@ fn channel<'a>(p: &'a Project, t: &Track) -> &'a Channel {
 }
 
 fn render(session: &Session) -> Vec<f32> {
-    suhina_engine::render_offline_from(session.project(), RenderInputs::from_audio(session.audio()), SR, 512, None)
-        .unwrap()
+    suhina_engine::render_offline_from(
+        session.project(),
+        RenderInputs::from_audio(session.audio(), suhina_session::devices()),
+        SR,
+        512,
+        None,
+    )
+    .unwrap()
 }
 
 use suhina_test_support::peak;

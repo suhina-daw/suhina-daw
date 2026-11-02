@@ -65,7 +65,7 @@ fn project_built() -> Project {
 
 fn playing() -> (Session, Renderer) {
     let project = project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     (session, renderer)

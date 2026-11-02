@@ -82,7 +82,7 @@ fn a_project_files_device_params_reach_the_render() {
 fn demo_project_is_valid_and_renders_two_bars() {
     let project = demo_project();
     assert_eq!(project.validate(), Ok(()));
-    let samples = suhina_engine::render_offline(&project, 48_000, 512).unwrap();
+    let samples = suhina_engine::render_offline(&project, 48_000, 512, suhina_session::devices()).unwrap();
     let seconds = samples.len() as f64 / 2.0 / 48_000.0;
     assert!((4.0..4.2).contains(&seconds), "{seconds} s");
     let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
@@ -216,7 +216,7 @@ fn fm_plays_every_note_track_with_a_voice_from_a_bank() {
     let stored = &project.channels[0].devices[0];
     assert_eq!(stored.kind, DeviceKind::Builtin("fm-synth".into()));
     assert!(stored.params.iter().any(|p| p.id == "op2.coarse" && p.value == 3.0));
-    let samples = suhina_engine::render_offline(&project, 48_000, 512).unwrap();
+    let samples = suhina_engine::render_offline(&project, 48_000, 512, suhina_session::devices()).unwrap();
     let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
     assert!(peak > 0.05 && peak <= 1.0, "peak {peak}");
     let _ = std::fs::remove_file(path);

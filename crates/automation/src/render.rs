@@ -81,7 +81,7 @@ pub fn render_wavs(
     let samples = match cue {
         None => render_offline_from(
             project,
-            RenderInputs::from_audio(audio).with_assets(assets).with_plugins(running),
+            RenderInputs::from_audio(audio, suhina_session::devices()).with_assets(assets).with_plugins(running),
             sample_rate,
             512,
             None,
@@ -90,7 +90,7 @@ pub fn render_wavs(
         Some(cue_path) => {
             let (main, cued) = render_offline_with_cue(
                 project,
-                RenderInputs::from_audio(audio).with_assets(assets).with_plugins(running),
+                RenderInputs::from_audio(audio, suhina_session::devices()).with_assets(assets).with_plugins(running),
                 sample_rate,
                 512,
                 1.0,
@@ -192,7 +192,7 @@ pub fn render_launch_script(
     let running: Plugins = std::mem::take(&mut started.plugins);
     let mut renderer = Renderer::build(
         project,
-        RenderInputs::from_audio(audio).with_plugins(running),
+        RenderInputs::from_audio(audio, suhina_session::devices()).with_plugins(running),
         sample_rate,
         RenderOptions::STOPPED,
     )

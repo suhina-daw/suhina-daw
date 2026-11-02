@@ -113,6 +113,12 @@ pub use soundmap::{scope_files, sound_map_commands};
 pub use suhina_plugins::Placement;
 pub use suhina_project_file::{EXTENSION as PROJECT_EXTENSION, is_project_file};
 
+/// What makes the devices a project names: the device registry, handed to every renderer the
+/// session, the app, the CLI and the MCP server build (#1147). The engine knows no device itself.
+pub fn devices() -> suhina_engine::Devices {
+    suhina_device_registry::factory()
+}
+
 /// Undo steps kept per session; the oldest are dropped first.
 const MAX_UNDO: usize = 256;
 
@@ -372,7 +378,7 @@ impl Session {
     /// for a NAM Amp Modeler, the IR's parent folder's name for a NAM Cab Loader. `None` while
     /// the file is not in the assets.
     pub fn device_asset_name(&self, path: &str) -> Option<String> {
-        self.device_files.assets.get(path)?.name(std::path::Path::new(path))
+        suhina_device_registry::asset_name(self.device_files.assets.get(path)?, std::path::Path::new(path))
     }
 
     /// Why a device's file is not in the assets, by the path: what a read gave, for a device

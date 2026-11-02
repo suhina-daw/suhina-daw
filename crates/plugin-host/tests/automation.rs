@@ -109,14 +109,14 @@ fn an_offline_render_plays_a_plug_ins_automation() {
             0.25
         }
     };
-    let dry = render_offline(&project(8.0, Vec::new()), SR, 512).unwrap();
+    let dry = render_offline(&project(8.0, Vec::new()), SR, 512, suhina_session::devices()).unwrap();
     for id in ["clap", "vst3"] {
         let p = project(8.0, vec![gain(id, &points)]);
         let started = suhina_session::start_offline(&p, &AudioPool::new(), &env(), SR);
         assert_eq!(started.running(), 1, "{id}: {:?}", started.notices);
         let wet = render_offline_from(
             &p,
-            RenderInputs::from_audio(&AudioPool::new()).with_plugins(started.plugins),
+            RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(started.plugins),
             SR,
             512,
             None,
@@ -151,7 +151,7 @@ fn a_session_sets_and_automates_a_running_plug_ins_parameter() {
     let mut device = gain("clap", &[]);
     device.automation.clear();
     let p = project(512.0, vec![device]);
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     renderer.set_offline(true);
     let mut session = Session::new(p);
     session.attach_player(Player::new(renderer.controller(), None));
@@ -213,7 +213,7 @@ fn a_shown_plug_ins_parameters_are_listed_in_the_background_for_its_panel() {
     let mut device = gain("clap", &[]);
     device.automation.clear();
     let p = project(512.0, vec![device]);
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     renderer.set_offline(true);
     let mut session = Session::new(p);
     session.attach_player(Player::new(renderer.controller(), None));

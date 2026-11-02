@@ -112,7 +112,7 @@ fn project_built() -> Project {
 /// A session with an offline renderer attached as its player.
 fn playing() -> (Session, Renderer) {
     let project = project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     (session, renderer)
@@ -275,7 +275,7 @@ fn the_quantisation_is_kept_without_a_player_and_handed_to_the_next() {
     run(&mut session, "launcher.setQuantization", json!({ "value": "none" })).unwrap();
 
     // The player attached now launches at once, as `none` says, not on its own default bar.
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
     advance(&mut renderer, BEAT / 3);
@@ -542,7 +542,7 @@ fn playing_with_clips() -> (Session, Renderer) {
         clips,
     };
     project.arrangement.lanes = vec![lane(1, vec![clip(4.0), clip(10.0)]), lane(2, vec![clip(2.0)])];
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     advance(&mut renderer, 1);
@@ -915,7 +915,7 @@ fn a_branch_fader_is_a_message_to_the_playing_group() {
         Branch { devices: vec![utility()], ..Branch::new("B") },
     ];
     project.channels[0].devices.push(Device::group("Group", DeviceGroup::with_branches(branches)));
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();

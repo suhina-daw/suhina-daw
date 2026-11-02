@@ -147,7 +147,9 @@ fn press_while_playing(harness: &mut Harness<'static, App>, renderer: &mut suhin
 #[test]
 fn a_pan_drag_is_heard_while_dragging_and_is_one_undo_step() {
     let project = drums_alone();
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
@@ -212,7 +214,9 @@ fn a_pan_drag_is_heard_while_dragging_and_is_one_undo_step() {
 #[test]
 fn a_volume_drag_in_the_arrangement_is_heard_while_dragging_and_is_one_undo_step() {
     let project = drums_alone();
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();

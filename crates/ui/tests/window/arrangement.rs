@@ -153,8 +153,13 @@ fn render_a_block(renderer: &mut suhina_engine::Renderer) {
 /// menu deletes it.
 #[test]
 fn markers_are_added_jumped_to_and_deleted_from_the_marker_row() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     let markers = |h: &Harness<'static, App>| -> Vec<(f64, String)> {
@@ -233,8 +238,13 @@ fn markers_are_added_jumped_to_and_deleted_from_the_marker_row() {
 /// and undo takes an edit back (`docs/spec/arrangement-editing.md` › Loop region).
 #[test]
 fn a_loop_region_is_drawn_resized_moved_and_toggled_in_the_loop_brace_row() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let looped = |h: &Harness<'static, App>| {
         let transport = h.state().session().map(|s| s.project().transport.clone()).unwrap_or_default();
@@ -282,8 +292,13 @@ fn a_loop_region_is_drawn_resized_moved_and_toggled_in_the_loop_brace_row() {
 
 #[test]
 fn a_click_on_the_ruler_moves_the_play_start_marker_on_the_grid() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     let ruler = harness.get_by_label("Ruler").rect();
@@ -340,8 +355,13 @@ fn a_click_on_the_ruler_moves_the_play_start_marker_on_the_grid() {
 
 #[test]
 fn play_starts_from_the_selected_clip_as_the_setting_says() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     let stop = |harness: &mut Harness<'static, App>, renderer: &mut suhina_engine::Renderer| {
@@ -1337,8 +1357,13 @@ fn ctrl_l_loops_the_time_selection_even_with_clips_in_it_selected() {
 /// its start when the button goes up, so Play starts there (#937).
 #[test]
 fn a_painted_time_selection_moves_the_play_start_to_its_start() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
@@ -1379,8 +1404,13 @@ fn a_painted_time_selection_moves_the_play_start_to_its_start() {
 /// Select All afterwards makes the selection span every clip (#937).
 #[test]
 fn a_time_selection_painted_while_playing_moves_only_the_marker() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
@@ -1581,8 +1611,13 @@ fn the_edit_keys_copy_cut_paste_and_duplicate_selected_tracks() {
 /// where it is; the ruler's seek waits for the next bar (#657).
 #[test]
 fn a_click_in_the_tracks_while_playing_moves_the_marker_not_playback() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     harness.get_by_label("Play").click();
@@ -1781,8 +1816,13 @@ fn renaming_in_place_starts_with_the_whole_name_selected() {
 /// arrangement (#951).
 #[test]
 fn a_click_on_the_piano_rolls_ruler_sets_where_playback_starts() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     // The clip at bar 17 (beat 64), its piano roll in the detail area.

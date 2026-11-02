@@ -239,34 +239,45 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
     entry(id).map(|entry| (entry.make)())
 }
 
-/// The file a device runs, already read and parsed or decoded (docs/spec/nam-amp-and-cab.md): a
-/// model for the Amp Modeler, an impulse response for the Cab Loader. The session keeps a map of
-/// these by the file's path; the engine hands the device the map's entry when it builds its
-/// chains. Only the device that read it knows what it holds.
-#[derive(Clone)]
-pub struct DeviceAsset {
-    /// The id of the device that read it.
-    device: &'static str,
-    data: Arc<AssetData>,
+pub use suhina_device_sdk::{DeviceAsset, DeviceFactory, Devices};
+
+/// What a panel calls the file `asset` holds, read from `path`: a NAM model's own name (its
+/// metadata), an IR's folder.
+pub fn asset_name(asset: &DeviceAsset, path: &Path) -> Option<String> {
+    file_kind(asset.device()).and_then(|file| (file.name)(path, asset.data()))
 }
 
-impl DeviceAsset {
-    /// The id of the device that runs it.
-    pub fn device(&self) -> &'static str {
-        self.device
+/// Every built-in device, as the factory the engine builds with (#1147).
+pub struct Registry;
+
+impl DeviceFactory for Registry {
+    fn create(&self, id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>> {
+        create_with(id, asset)
     }
 
-    /// What a panel calls this file, read from `path`: a NAM model's own name (its metadata), an
-    /// IR's folder.
-    pub fn name(&self, path: &Path) -> Option<String> {
-        file_kind(self.device).and_then(|file| (file.name)(path, &*self.data))
+    fn graph_device(
+        &self,
+        graph: &suhina_device_sdk::DeviceGraph,
+        rate: f64,
+        samples: suhina_device_sdk::sample_resource::PreparedSamples,
+    ) -> Result<suhina_device_sdk::GraphDevice, suhina_device_sdk::DeviceSdkError> {
+        graph_device(graph, rate, samples)
+    }
+
+    fn runs_a_file(&self, id: &str) -> bool {
+        is_file_device(id)
+    }
+
+    /// The FM synth, which plays a previewed note on a track with no instrument.
+    fn preview_instrument(&self) -> Option<Box<dyn Device>> {
+        create("fm-synth")
     }
 }
 
-impl std::fmt::Debug for DeviceAsset {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DeviceAsset").field("device", &self.device).finish_non_exhaustive()
-    }
+/// The registry as the engine's device factory: one value, shared.
+pub fn factory() -> Devices {
+    static FACTORY: OnceLock<Devices> = OnceLock::new();
+    Arc::clone(FACTORY.get_or_init(|| Arc::new(Registry)))
 }
 
 /// The ids whose devices run a file stored in `Device::state` (docs/spec/nam-amp-and-cab.md).
@@ -294,15 +305,15 @@ pub fn load_file(id: &str, path: &Path, rate: u32) -> Result<DeviceAsset, String
     if extension.as_deref() != Some(file.extension) {
         return Err(format!("a {id} runs a .{} file", file.extension));
     }
-    Ok(DeviceAsset { device: &entry.info.id, data: (file.read)(path, rate)? })
+    Ok(DeviceAsset::new(&entry.info.id, (file.read)(path, rate)?))
 }
 
 /// A new device with this id, its defaults, and `asset` already loaded — `None` for an unknown
 /// id. An asset another device read is ignored. Allocation: off the audio thread.
 pub fn create_with(id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>> {
     let loaded = asset
-        .filter(|asset| asset.device == id)
-        .and_then(|asset| file_kind(id).and_then(|file| (file.make)(&*asset.data)));
+        .filter(|asset| asset.device() == id)
+        .and_then(|asset| file_kind(id).and_then(|file| (file.make)(asset.data())));
     loaded.or_else(|| create(id))
 }
 

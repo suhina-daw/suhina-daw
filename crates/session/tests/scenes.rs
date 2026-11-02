@@ -182,7 +182,7 @@ fn malformed_scene_parameters_are_refused_and_change_nothing() {
 /// A session with an offline renderer attached as its player.
 fn playing() -> (Session, Renderer) {
     let project = project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     (session, renderer)

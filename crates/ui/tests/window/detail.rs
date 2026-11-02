@@ -158,7 +158,9 @@ fn the_detail_area_shows_the_selected_tracks_devices_in_a_row_or_stacked() {
 #[test]
 fn the_piano_roll_playhead_follows_a_launched_clip_not_the_transport() {
     let project = demo_project();
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();

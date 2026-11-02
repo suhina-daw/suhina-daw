@@ -192,8 +192,13 @@ fn after_host(ara: &Option<AraHost>, buffer: &mut [f32], from: usize, to: usize)
 /// the file, so its identity carries the state's hash, the `.sd` devices' trick, and a model swap
 /// rebuilds one device alone; a Sampler's carries its sample (#600). A chain and the groups in it
 /// give the same device the same identity.
-pub(crate) fn device_identity(id: &str, stored: &suhina_model::Device, audio: &crate::AudioPool) -> String {
-    if suhina_device_registry::is_file_device(id) {
+pub(crate) fn device_identity(
+    id: &str,
+    stored: &suhina_model::Device,
+    audio: &crate::AudioPool,
+    devices: &dyn suhina_device_sdk::DeviceFactory,
+) -> String {
+    if devices.runs_a_file(id) {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         use std::hash::{Hash, Hasher};
         let hashed = match std::str::from_utf8(stored.state.as_deref().unwrap_or(&[])) {
@@ -246,7 +251,7 @@ impl Chain {
         post: (f32, f32),
         sample_rate: u32,
         plugins: &mut Plugins,
-        assets: &crate::DeviceAssets,
+        (assets, devices): (&crate::DeviceAssets, &dyn suhina_device_sdk::DeviceFactory),
     ) -> Option<Self> {
         // The main channel's chain is built for [`TrackId::MAIN`] (#687).
         let channel = project.channel_of_track(track)?;
@@ -263,6 +268,7 @@ impl Chain {
             sample_rate,
             audio,
             assets,
+            devices,
             plugins: &mut *plugins,
             keys: &keys,
             channel: channel.id,

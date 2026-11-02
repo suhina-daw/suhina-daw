@@ -137,7 +137,7 @@ fn malformed_parameters_change_nothing() {
 #[test]
 fn a_follow_action_set_while_playing_takes_the_column_to_the_next_clip() {
     let project = project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "clip.setFollowAction", json!({ "track": "Drums", "scene": 1, "enabled": true })).unwrap();

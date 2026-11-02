@@ -114,7 +114,7 @@ fn capture_instrument_and_mix_around_pause() {
     );
     let mut renderer = Renderer::build(
         &project,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
         rate,
         RenderOptions::STOPPED,
     )

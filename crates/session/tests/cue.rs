@@ -71,7 +71,7 @@ impl AudioSystem for Interface {
     ) -> Result<Opened, String> {
         self.opened.lock().unwrap().push(choice.clone());
         drop(previous);
-        let mut renderer = Renderer::stopped(project, audio, SR).unwrap();
+        let mut renderer = Renderer::stopped(project, audio, SR, suhina_session::devices()).unwrap();
         let player = Player::with_output(renderer.controller(), None, Arc::new(Live(choice.clone())));
         self.renderers.lock().unwrap().push(renderer);
         Ok(Opened { player, notice: None, plugins_kept: true })
