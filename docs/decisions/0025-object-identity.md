@@ -256,6 +256,14 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
   carries ids explicitly. Decided as far as it goes: a file without ids keeps opening; ADR 0026's
   version decides whether a newer file may leave them out.
 
+Decided since: **devices take their ids from the same counter** (#763 › 1, `.suhina` version 6).
+A `DeviceId` names a device on a channel, inside a device group too, and stays with it when it
+moves along the chain, between branches or to another track; a copy (duplicate, paste, a copied
+track) is a new device and gets a new id, and should a copy keep one, `assign_ids` gives the later
+device in document order a new id. A file before version 6 gives its devices ids in document order
+after the other objects'. Commands name a device by it as `"device": {"id": 7}`, and report it as
+`device_id`, since a device's `id` already says what it is (a built-in's or a plug-in's).
+
 Decided since: **an imported `.als` gets fresh ids.** Its own id space is separate and its object-id
 counter is not ours to reinterpret; the importer gives every lane, clip and scene a new id in
 document order and keeps nothing of the set's ids.

@@ -125,6 +125,22 @@ impl Device {
         Self::new(name, DeviceKind::Group(Box::new(group)))
     }
 
+    /// Makes this device, and every device inside it, a new one: a copy of a device has no id
+    /// until the project gives it one ([`crate::Project::assign_ids`], #763 › 1).
+    pub fn forget_ids(&mut self) {
+        self.id = crate::DeviceId::NONE;
+        if let Some(group) = self.as_group_mut() {
+            group.branches.iter_mut().flat_map(|b| &mut b.devices).for_each(Device::forget_ids);
+        }
+    }
+
+    /// This device as a copy: the same, with [`Device::forget_ids`].
+    pub fn copied(&self) -> Self {
+        let mut copy = self.clone();
+        copy.forget_ids();
+        copy
+    }
+
     /// The group this device is, if it is one.
     pub fn as_group(&self) -> Option<&DeviceGroup> {
         match &self.kind {

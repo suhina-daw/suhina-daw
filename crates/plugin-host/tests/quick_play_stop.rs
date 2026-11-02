@@ -88,6 +88,7 @@ fn project(tracks: u32) -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                id: Default::default(),
                 name: "Synth".into(),
                 kind: DeviceKind::Clap { id: "x".into() },
                 enabled: true,

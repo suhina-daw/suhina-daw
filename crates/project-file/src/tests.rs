@@ -937,9 +937,21 @@ fn without_ids(project: &Project) -> String {
             _ => {}
         }
     }
+    // A device's own id, not its parameters' or its kind's.
+    fn strip_devices(devices: &mut Value) {
+        for device in devices.as_array_mut().into_iter().flatten() {
+            device.as_object_mut().map(|d| d.remove("id"));
+            for branch in device["kind"]["branches"].as_array_mut().into_iter().flatten() {
+                strip_devices(&mut branch["devices"]);
+            }
+        }
+    }
     let mut file: Value = serde_json::from_str(&to_json(project)).unwrap();
     strip(&mut file["project"]["arrangement"]);
     strip(&mut file["project"]["launcher"]);
+    for channel in file["project"]["channels"].as_array_mut().into_iter().flatten() {
+        strip_devices(&mut channel["devices"]);
+    }
     file["project"].as_object_mut().unwrap().remove("next_id");
     file.to_string()
 }
@@ -1098,7 +1110,8 @@ fn with_a_group() -> Project {
 
 #[test]
 fn a_device_group_survives_a_round_trip() {
-    let project = with_a_group();
+    let mut project = with_a_group();
+    project.assign_ids().unwrap();
     assert_eq!(from_json(&to_json(&project)), Ok(project));
 }
 
@@ -1118,6 +1131,23 @@ fn every_feature() -> Project {
     sample_edits.push(2);
     sample_edits.extend_from_slice(&1i64.to_le_bytes());
     project.channels[0].devices[0].set_sample_edit_data(sample_edits).unwrap();
+    renumbered(project)
+}
+
+/// `project` with its devices' ids given again in document order, right after the other objects'
+/// ids, as a reader gives them to a file written before devices had ids (version 6).
+fn renumbered(mut project: Project) -> Project {
+    fn clear(devices: &mut [Device]) {
+        for device in devices {
+            device.id = DeviceId::NONE;
+            if let Some(group) = device.as_group_mut() {
+                group.branches.iter_mut().for_each(|b| clear(&mut b.devices));
+            }
+        }
+    }
+    project.channels.iter_mut().for_each(|c| clear(&mut c.devices));
+    project.next_id = project.max_object_id() + 1;
+    project.assign_ids().unwrap();
     project
 }
 
@@ -1155,7 +1185,8 @@ fn a_file_of_every_version_reads() {
         if version < 5 {
             expected.channels[0].devices[0].clear_sample_edits();
         }
-        assert_eq!(from_json(&text), Ok(expected), "version {version}");
+        // Devices get their ids in document order when a file before version 6 is read.
+        assert_eq!(from_json(&text).map(renumbered), Ok(renumbered(expected)), "version {version}");
     }
     assert!(!version_file(VERSION + 1).exists(), "a file for a version this Suhina does not write");
 }

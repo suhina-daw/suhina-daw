@@ -76,6 +76,7 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                id: Default::default(),
                 name: "Test vst3".into(),
                 kind: DeviceKind::Clap { id: "vst3".into() },
                 enabled: true,

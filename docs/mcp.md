@@ -367,7 +367,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   such as `"2/1/0"` is the device at index 2 (a group), its branch 1, device 0 there. Every
   `device.*` command takes a path for `device`, and `device.add`, `device.addSd`,
   `device.addPlugin` and `device.paste` a path for `position` (`"2/1/3"`: branch 1 of the group
-  at 2, before its device 3). `track.devices` gives each device its `path`, and a group its
+  at 2, before its device 3). A device may also be named by its id, `{"id": 7}`, which stays the
+  same while it moves (ADR 0025); `track.devices` lists it as `device_id`, and a command that adds
+  devices returns `device_id` (or `device_ids`). `track.devices` gives each device its `path`, and a group its
   `params` (`mix`, `gain`, `macro.1` … `macro.8`, set with `device.setParam`), `branches` (name,
   volume, pan, mute, solo and their `devices`) and `macros`. `device.group {track, device, count?,
   name?}` puts consecutive devices into a new group of one branch without changing the sound,

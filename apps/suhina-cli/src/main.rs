@@ -412,6 +412,7 @@ fn put_fm_synth_on_note_tracks(project: &mut Project, patch: &suhina_device_fm_s
         .filter_map(|(i, p)| synth.param(i).map(|v| DeviceParam::new(p.id, v)))
         .collect();
     let device = Device {
+        id: Default::default(),
         name: suhina_device_fm_synth::INFO.name.into(),
         kind: DeviceKind::Builtin(suhina_device_fm_synth::INFO.id.into()),
         enabled: true,

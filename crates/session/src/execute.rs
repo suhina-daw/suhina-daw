@@ -140,13 +140,16 @@ impl Session {
     /// Runs an edit on the project, gives what it added an id and keeps the tracks' colours, and
     /// fails when what is left does not validate. The caller puts `before` back on an error.
     fn apply(&mut self, prepared: &Prepared, params: &Value, before: &Project) -> Result<Value, CommandError> {
-        let value = (prepared.spec.run)(self, params)?;
+        let mut value = (prepared.spec.run)(self, params)?;
         if prepared.spec.id.starts_with("device.") {
             crate::devices::follow_instruments(self, before);
             crate::clip_ara::keep_hosts_first(&mut self.project);
         }
-        // A lane, clip or scene the command added without an id gets one now.
+        // A lane, clip, scene or device the command added without an id gets one now.
         self.project.assign_ids()?;
+        if prepared.spec.id.starts_with("device.") {
+            crate::devices::name_new_devices(&self.project, params, before, &mut value);
+        }
         self.keep_track_colours(before);
         if matches!(prepared.spec.id, "clip.create" | "clip.addFiles") {
             self.colour_new_clips(before);

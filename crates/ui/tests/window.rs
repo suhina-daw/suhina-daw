@@ -254,6 +254,7 @@ pub(super) fn project_with_a_device() -> suhina_engine::model::Project {
     use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions};
     let mut project = demo_project();
     project.channels[0].devices.push(Device {
+        id: Default::default(),
         name: "Utility".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,

@@ -965,6 +965,7 @@ fn place_stems(
         for setting in suhina_media::stems::mastering_devices(&info) {
             let Some(device) = suhina_device_registry::info(setting.id) else { continue };
             c.devices.push(suhina_model::Device {
+                id: suhina_model::DeviceId::NONE,
                 name: device.name.to_string(),
                 kind: suhina_model::DeviceKind::Builtin(setting.id.to_string()),
                 enabled: setting.enabled,

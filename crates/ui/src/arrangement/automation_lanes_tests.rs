@@ -130,6 +130,7 @@ fn a_built_in_devices_parameters_can_be_shown_with_its_lanes() {
     let mut lane = AutomationLane::new("gain");
     lane.insert(AutomationPoint::new(4.0, -6.0));
     channel.devices.push(suhina_engine::model::Device {
+        id: Default::default(),
         name: "Utility".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,
@@ -173,6 +174,7 @@ fn sd_parameters_are_listed_and_use_their_control_scale() {
     let mut lane = AutomationLane::new("frequency");
     lane.insert(AutomationPoint::new(4.0, 1_000.0));
     channel.devices.push(suhina_engine::model::Device {
+        id: Default::default(),
         name: "Test Filter".into(),
         kind: DeviceKind::Sd,
         enabled: true,
@@ -294,6 +296,7 @@ fn built_in_and_sd_parameters_carry_their_group() {
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     let state = graph.to_sd().ok().map(String::into_bytes);
     channel.devices.push(suhina_engine::model::Device {
+        id: Default::default(),
         state: state.map(Into::into),
         ..suhina_engine::model::Device::new("Test Gain", DeviceKind::Sd)
     });

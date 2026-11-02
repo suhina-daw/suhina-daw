@@ -62,7 +62,7 @@ fn devices_are_added_set_switched_and_removed_with_undo() {
     for _ in 0..7 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
-    assert_eq!(session.project(), &project());
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
 }
 
 #[test]
@@ -1200,6 +1200,53 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
     let (_, warnings) = suhina_media::decode_project_audio(&restored, &moved);
     assert!(!warnings.is_empty(), "missing resource must be reported");
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &before);
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..before });
     let _ = std::fs::remove_dir_all(root);
+}
+
+/// A device has an id from the project's counter: an adding command returns it, a command names
+/// the device by it wherever the device has gone, and a copy gets a new one (#763 › 1).
+#[test]
+fn a_device_is_named_by_its_id_wherever_it_moves() {
+    let mut session = Session::new(project());
+    let utility = run(&mut session, "device.add", json!({ "track": "Keys", "id": "utility" })).unwrap();
+    let overdrive = run(&mut session, "device.add", json!({ "track": "Keys", "id": "overdrive" })).unwrap();
+    let (u, o) = (utility["device_id"].as_u64().unwrap(), overdrive["device_id"].as_u64().unwrap());
+    assert_ne!(u, o);
+    // The overdrive moved before the utility: its id still names it, its old index does not.
+    run(&mut session, "device.move", json!({ "track": "Keys", "device": 1, "to": 0 })).unwrap();
+    run(&mut session, "device.setEnabled", json!({ "track": "Keys", "device": { "id": u }, "enabled": false }))
+        .unwrap();
+    let list = run(&mut session, "track.devices", json!({ "track": "Keys" })).unwrap();
+    assert_eq!(list[1]["device_id"], json!(u));
+    assert_eq!(list[1]["enabled"], json!(false));
+    assert_eq!(list[0]["enabled"], json!(true));
+    // A copy is a new device.
+    let copy = run(&mut session, "device.duplicate", json!({ "track": "Keys", "device": { "id": o } })).unwrap();
+    let ids: Vec<u64> = run(&mut session, "track.devices", json!({ "track": "Keys" }))
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["device_id"].as_u64().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 3);
+    assert!(ids[0] == o && ids[1] != o && ids[1] != u, "{ids:?} {copy}");
+    // An id the track does not have is refused, and undo brings ids back as they were.
+    let missing =
+        run(&mut session, "device.setEnabled", json!({ "track": "Keys", "device": { "id": 9999 }, "enabled": true }));
+    assert!(missing.unwrap_err().contains("device_id 9999"));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let list = run(&mut session, "track.devices", json!({ "track": "Keys" })).unwrap();
+    assert_eq!((list[0]["device_id"].as_u64(), list[1]["device_id"].as_u64()), (Some(o), Some(u)));
+    // A duplicated track's devices are new devices too.
+    let ids_of = |session: &mut Session, track: Value| -> Vec<u64> {
+        let list = run(session, "track.devices", json!({ "track": track })).unwrap();
+        list.as_array().unwrap().iter().map(|d| d["device_id"].as_u64().unwrap()).collect()
+    };
+    let duplicated = run(&mut session, "track.duplicate", json!({ "tracks": ["Keys"] })).unwrap();
+    let new_track = duplicated["tracks"][0].clone();
+    let (old_ids, new_ids) = (ids_of(&mut session, json!("Keys")), ids_of(&mut session, new_track));
+    assert_eq!(new_ids.len(), old_ids.len());
+    assert!(new_ids.iter().all(|id| !old_ids.contains(id)), "{old_ids:?} {new_ids:?}");
 }

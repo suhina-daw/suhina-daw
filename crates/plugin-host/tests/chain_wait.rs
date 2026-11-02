@@ -41,6 +41,7 @@ fn start(spec: &str, sample_rate: u32) -> (Plugin, Hosted) {
 
 fn plugin_device() -> Device {
     Device {
+        id: Default::default(),
         name: "Test".into(),
         kind: DeviceKind::Clap { id: "x".into() },
         enabled: true,

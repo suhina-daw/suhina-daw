@@ -75,7 +75,7 @@ fn devices_are_grouped_and_ungrouped_with_undo() {
     run(&mut session, "device.ungroup", json!({ "track": 1, "device": 1 })).unwrap();
     assert_eq!(names(devices(&session)), ["Utility", "Overdrive", "Compressor", "Limiter"]);
     undo_all(&mut session, 5);
-    assert_eq!(session.project(), &before);
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..before.clone() });
 }
 
 #[test]
@@ -126,7 +126,7 @@ fn branches_are_added_set_duplicated_and_removed() {
     let last = run(&mut session, "branch.remove", json!({ "track": 1, "device": 0, "branch": 0 }));
     assert!(last.unwrap_err().contains("at least one branch"));
     undo_all(&mut session, 10);
-    assert_eq!(session.project(), &before);
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..before.clone() });
 }
 
 #[test]
@@ -192,7 +192,9 @@ fn a_device_is_duplicated_with_everything_in_it() {
     run(&mut session, "device.group", json!({ "track": 1, "device": 0 })).unwrap();
     run(&mut session, "device.duplicate", json!({ "track": 1, "device": 0 })).unwrap();
     assert_eq!(devices(&session).len(), 2);
-    assert_eq!(devices(&session)[0], devices(&session)[1]);
+    // The copy is the same device under a new id.
+    assert_eq!(devices(&session)[0].copied(), devices(&session)[1].copied());
+    assert_ne!(devices(&session)[0].id, devices(&session)[1].id);
     run(&mut session, "device.duplicate", json!({ "track": 1, "device": "1/0/0" })).unwrap();
     assert_eq!(names(&devices(&session)[1].as_group().unwrap().branches[0].devices), ["Overdrive", "Overdrive"]);
 }

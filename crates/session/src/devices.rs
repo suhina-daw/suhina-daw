@@ -462,6 +462,37 @@ pub(crate) fn track_devices(session: &mut Session, params: &Value) -> Result<Val
     Ok(Value::Array(devices.iter().enumerate().map(|(index, d)| listed(&[index], d, &reports)).collect()))
 }
 
+/// Gives a command's result the ids of the devices it added (#763 › 1): `device_id` beside a
+/// `device` path, `device_ids` beside a `devices` list, for each that names a device `before` did
+/// not have. The track is the result's `track` (where a device went), else the command's.
+pub(crate) fn name_new_devices(
+    project: &suhina_model::Project,
+    params: &Value,
+    before: &suhina_model::Project,
+    value: &mut Value,
+) {
+    let Some(result) = value.as_object_mut() else { return };
+    let track = match result.get("track") {
+        Some(track) => crate::commands::track_or_main_id(project, &json!({ "track": track })),
+        None => track_or_main_id(project, params),
+    };
+    let Some(channel) = track.ok().and_then(|track| project.channel_of_track(track)) else { return };
+    let old: std::collections::HashSet<_> = before.all_devices().map(|d| d.id).collect();
+    let new_id = |path: &Value| {
+        let device = crate::device_groups::parse_path(path).and_then(|path| device_at(&channel.devices, &path))?;
+        (!old.contains(&device.id)).then_some(device.id.0)
+    };
+    if let Some(id) = result.get("device").and_then(new_id) {
+        result.insert("device_id".into(), json!(id));
+    }
+    if let Some(paths) = result.get("devices").and_then(Value::as_array) {
+        let ids: Option<Vec<u32>> = paths.iter().map(new_id).collect();
+        if let Some(ids) = ids {
+            result.insert("device_ids".into(), json!(ids));
+        }
+    }
+}
+
 fn device_json(path: &[usize], device: &Device) -> Value {
     let (kind, id) = match &device.kind {
         DeviceKind::Builtin(id) => ("builtin", Some(id.clone())),
@@ -517,6 +548,8 @@ fn device_json(path: &[usize], device: &Device) -> Value {
     let mut value = json!({
         "index": path.last().copied().unwrap_or(0),
         "path": path_value(path),
+        // The device's own id (#763 › 1); `id` is what it is (a built-in's or a plug-in's).
+        "device_id": device.id.0,
         "name": device.name,
         "kind": kind,
         "id": id,
@@ -849,7 +882,7 @@ pub(crate) fn duplicate_many(session: &mut Session, params: &Value) -> Result<Va
                 .as_deref()
                 .and_then(|h| device_at(h, p))
                 .or_else(|| device_at(&own, p))
-                .cloned()
+                .map(Device::copied)
                 .ok_or_else(|| CommandError::from("a device is missing"))
         })
         .collect::<Result<_, _>>()?;
@@ -900,7 +933,7 @@ pub(crate) fn move_to_track(session: &mut Session, params: &Value) -> Result<Val
     let heard_devices = heard.channel(source).map(|c| c.devices.clone());
     let devices = &session.project.channel(source).ok_or("the track's channel is missing")?.devices;
     let path = device_path(devices, params, "device")?;
-    let device = heard_devices
+    let mut device = heard_devices
         .as_deref()
         .and_then(|h| device_at(h, &path))
         .or_else(|| device_at(devices, &path))
@@ -937,7 +970,9 @@ pub(crate) fn move_to_track(session: &mut Session, params: &Value) -> Result<Val
         return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
     }
     let position = if instrument || midi_effect { midi_prefix(chain) } else { chain.len() };
-    if !copy {
+    if copy {
+        device.forget_ids();
+    } else {
         let devices = &mut session
             .project
             .channels
@@ -971,7 +1006,8 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
         let (parent, position) = crate::device_groups::position_path(devices, params, "position")?
             .unwrap_or_else(|| (Vec::new(), devices.len()));
         let list = crate::device_groups::container_mut(devices, &parent).ok_or("the position is missing")?;
-        for (offset, device) in copied.into_iter().enumerate() {
+        for (offset, mut device) in copied.into_iter().enumerate() {
+            device.forget_ids();
             list.insert(position + offset, device);
         }
         let pasted: Vec<Value> = (position..position + count)

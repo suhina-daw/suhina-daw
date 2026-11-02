@@ -37,7 +37,7 @@ pub const PROJECT_EXTENSION: &str = "suhina";
 pub fn is_project_file(path: &std::path::Path) -> bool {
     path.extension().is_some_and(|e| e.eq_ignore_ascii_case(PROJECT_EXTENSION))
 }
-pub use ids::{ClipId, ClipPlace, IdsExhausted, LaneId, SceneId};
+pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, SceneId};
 
 mod launch;
 mod mapping;
@@ -297,6 +297,9 @@ pub enum DeviceKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Device {
+    /// Which device this is; [`DeviceId::NONE`] until the project gives it one
+    /// ([`Project::assign_ids`]). A copy of a device is a new device and gets a new id.
+    pub id: DeviceId,
     pub name: String,
     pub kind: DeviceKind,
     pub enabled: bool,
@@ -1000,6 +1003,7 @@ pub enum ValidationError {
     DuplicateLane(LaneId),
     /// Two scenes have this id.
     DuplicateScene(SceneId),
+    DuplicateDevice(DeviceId),
     /// Objects of two kinds (a clip, a lane, a scene) have this id; the kinds share one counter,
     /// so a value names at most one object.
     SharedId(u32),
@@ -1074,6 +1078,7 @@ impl fmt::Display for ValidationError {
             Self::DuplicateClip(id) => write!(f, "clip id {id} is used twice"),
             Self::DuplicateLane(id) => write!(f, "arrangement lane id {id} is used twice"),
             Self::DuplicateScene(id) => write!(f, "scene id {id} is used twice"),
+            Self::DuplicateDevice(id) => write!(f, "device id {id} is used twice"),
             Self::SharedId(id) => write!(f, "object id {id} is used by a clip, a lane or a scene at once"),
             Self::IdAhead(id) => write!(f, "object id {id} is not below the project's next id"),
             Self::GroupCycle(id) => write!(f, "track {} is inside itself through its groups", id.0),
@@ -1158,11 +1163,17 @@ impl Project {
         let lane_ids = unique(lane_ids, ValidationError::DuplicateLane, &mut errors);
         let scene_ids = self.launcher.scenes.iter().map(|s| s.id).filter(|id| id.is_some());
         let scene_ids = unique(scene_ids, ValidationError::DuplicateScene, &mut errors);
-        // The three kinds share one counter, so a value names at most one object of any of them
+        let device_ids = self.all_devices().map(|d| d.id).filter(|id| id.is_some());
+        let device_ids = unique(device_ids, ValidationError::DuplicateDevice, &mut errors);
+        // The four kinds share one counter, so a value names at most one object of any of them
         // (ADR 0025 › 2): a lane and a clip with the same value are refused as well.
         let mut kinds: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
-        let values =
-            clip_ids.iter().map(|c| c.0).chain(lane_ids.iter().map(|l| l.0)).chain(scene_ids.iter().map(|s| s.0));
+        let values = clip_ids
+            .iter()
+            .map(|c| c.0)
+            .chain(lane_ids.iter().map(|l| l.0))
+            .chain(scene_ids.iter().map(|s| s.0))
+            .chain(device_ids.iter().map(|d| d.0));
         for value in values {
             *kinds.entry(value).or_default() += 1;
         }

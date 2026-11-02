@@ -63,6 +63,7 @@ fn env() -> Arc<PluginEnv> {
 
 fn plugin_device(id: &str) -> Device {
     Device {
+        id: Default::default(),
         name: format!("Test {id}"),
         kind: DeviceKind::Clap { id: id.into() },
         enabled: true,

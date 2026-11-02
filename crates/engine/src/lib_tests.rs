@@ -788,6 +788,7 @@ fn the_metronome_follows_a_tempo_edit() {
 
 fn with_utility(project: &mut Project) {
     project.channels[0].devices.push(Device {
+        id: Default::default(),
         name: "Utility".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,
@@ -853,6 +854,7 @@ fn a_device_parameter_on_the_main_channel_is_heard_from_the_next_block() {
     project.channels.push(main);
     if let Some(main) = project.channels.last_mut() {
         main.devices.push(Device {
+            id: Default::default(),
             name: "Utility".into(),
             kind: DeviceKind::Builtin("utility".into()),
             enabled: true,

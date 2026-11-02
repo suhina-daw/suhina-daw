@@ -121,7 +121,7 @@ impl ParamType {
             Self::Clips => "a list of clips",
             Self::Range => "a range, {start, end}",
             Self::Clip => "a clip id or name",
-            Self::DevicePath => "a device index or path",
+            Self::DevicePath => "a device index or path, or {\"id\": its device_id}",
             Self::NameOrNumber => "a name or a number",
             Self::Path(_) => "a path",
         }
@@ -135,7 +135,9 @@ impl ParamType {
             Self::Number => value.is_number(),
             Self::Integer => value.is_i64() || value.is_u64() || value.as_f64().is_some_and(|n| n.fract() == 0.0),
             Self::Bool => value.is_boolean(),
-            Self::Track | Self::Clip | Self::DevicePath => id_or_name(value),
+            Self::Track | Self::Clip => id_or_name(value),
+            // A device by its place, or by its id: `{"id": 7}` (#763 › 1).
+            Self::DevicePath => id_or_name(value) || value.get("id").is_some_and(Value::is_u64),
             Self::NameOrNumber => value.is_number() || value.is_string(),
             Self::Decibels => value.is_number() || value.is_string(),
             Self::AutomationValue => value.is_number() || value.is_string() || value.is_boolean(),
@@ -1246,7 +1248,10 @@ pub(crate) fn track_at(p: &Project, params: &Value, key: &str) -> Result<TrackId
             match matches.as_slice() {
                 [id] => Ok(*id),
                 [] => Err(format!("no track named {name:?}; project.tracks lists them").into()),
-                _ => Err(format!("several tracks are named {name:?}; use the track id").into()),
+                ids => {
+                    let ids: Vec<String> = ids.iter().map(|id| id.0.to_string()).collect();
+                    Err(format!("several tracks are named {name:?} (ids {}); use the track id", ids.join(", ")).into())
+                }
             }
         }
         _ => Err(format!("{key} must be a track id or name").into()),

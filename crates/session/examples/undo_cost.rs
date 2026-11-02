@@ -34,6 +34,7 @@ fn main() {
             .with(|project| {
                 if let Some(channel) = project.channels.iter_mut().find(|c| c.id.0 == id) {
                     channel.devices.push(Device {
+                        id: suhina_model::DeviceId::NONE,
                         name: format!("Plug-in {id}"),
                         kind: DeviceKind::Clap { id: format!("org.example.plugin{id}") },
                         enabled: true,

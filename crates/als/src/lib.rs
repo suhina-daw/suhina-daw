@@ -545,6 +545,7 @@ impl Reader {
         if let Some((id, name, params)) = devices::builtin(node, &mut |w| self.warn(format!("track {track_name}: {w}")))
         {
             return Some(Device {
+                id: suhina_model::DeviceId::NONE,
                 name: user_name.unwrap_or(name).to_string(),
                 kind: DeviceKind::Builtin(id.into()),
                 enabled,
@@ -582,6 +583,7 @@ impl Reader {
             }
             if let Some(import) = import {
                 let mut device = Device {
+                    id: suhina_model::DeviceId::NONE,
                     name: user_name
                         .unwrap_or(if node.has_tag_name("MultiSampler") { "Sampler" } else { "Simpler" })
                         .to_string(),
@@ -605,6 +607,7 @@ impl Reader {
         if !node.has_tag_name("PluginDevice") {
             self.warn(format!("track {track_name}: Live device {tag} is imported as a placeholder"));
             return Some(Device {
+                id: suhina_model::DeviceId::NONE,
                 name: user_name.unwrap_or(tag).to_string(),
                 kind: DeviceKind::Foreign { format: "als".into(), id: tag.into() },
                 enabled,
@@ -680,6 +683,7 @@ impl Reader {
             }
         };
         Some(Device {
+            id: suhina_model::DeviceId::NONE,
             name: user_name.or(plugin_name).unwrap_or("Plug-in").to_string(),
             kind,
             enabled,

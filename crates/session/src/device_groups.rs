@@ -43,6 +43,19 @@ const PATH_HELP: &str =
 
 /// The device path in `params[key]`, checked against `devices`.
 pub(crate) fn device_path(devices: &[Device], params: &Value, key: &str) -> Result<Vec<usize>, CommandError> {
+    // A device named by its id, `{"id": 7}` (#763 › 1): found where it is now on the track.
+    if let Some(Value::Object(named)) = Args::new(params).value(key) {
+        let id = named
+            .get("id")
+            .and_then(Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| format!("{key} must be {PATH_HELP}, or {{\"id\": a device_id}}"))?;
+        return suhina_model::walk_devices(devices)
+            .into_iter()
+            .find(|(_, d)| d.id.0 == id && d.id.is_some())
+            .map(|(path, _)| path)
+            .ok_or_else(|| format!("the track has no device with device_id {id}; track.devices lists them").into());
+    }
     let path = Args::new(params).value(key).and_then(parse_path).ok_or_else(|| format!("{key} must be {PATH_HELP}"))?;
     if path.len() % 2 == 0 || device_at(devices, &path).is_none() {
         let shown = path.iter().map(ToString::to_string).collect::<Vec<_>>().join("/");

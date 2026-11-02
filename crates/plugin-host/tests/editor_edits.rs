@@ -54,6 +54,7 @@ fn bank(gain: f32) -> Vec<u8> {
 /// One note track with the test plug-in, given a bank.
 fn project() -> Project {
     let plugin = Device {
+        id: Default::default(),
         name: "Test vst3".into(),
         // The catalog lists the built-in test plug-ins as CLAP (their file is not a `.vst3`).
         kind: DeviceKind::Clap { id: "vst3".into() },

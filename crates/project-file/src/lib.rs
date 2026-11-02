@@ -22,10 +22,10 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
     Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, Channel, ChannelId,
-    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceKind,
-    DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels, LaneData,
-    LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange,
-    MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
+    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceId,
+    DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels,
+    LaneData, LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn,
+    LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
     MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene,
     SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId,
     Transport, WarpMarker, automation, valid_bpm,
@@ -39,7 +39,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 5;
+pub const VERSION: u64 = 6;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -463,6 +463,9 @@ fn device_value(d: &Device) -> Value {
         "params": d.params.iter().map(|p| json!({ "id": p.id, "value": number(p.value) })).collect::<Vec<_>>(),
     });
     if let Some(map) = out.as_object_mut() {
+        if d.id.is_some() {
+            map.insert("id".into(), json!(d.id.0));
+        }
         // Only devices with automation say so, so files without any keep their shape.
         if !d.automation.is_empty() {
             map.insert("automation".into(), lanes_value(&d.automation));
@@ -1239,6 +1242,8 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
     }
     let automation = read_lanes(d, at)?;
     Ok(Device {
+        // From version 6 (#763 › 1); earlier files' devices get theirs when the project is opened.
+        id: DeviceId(read_id(d, at)?),
         name: text(d, "name", at)?,
         kind,
         enabled: flag(d, "enabled", true, at)?,
