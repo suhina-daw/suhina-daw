@@ -362,69 +362,6 @@ impl AraHost for vst3::Vst3Plugin {
     }
 }
 
-#[cfg(feature = "vst2")]
-impl HostedPlugin for crate::vst2::host::Vst2Plugin {
-    fn latency(&self) -> u32 {
-        crate::vst2::host::Vst2Plugin::latency(self)
-    }
-    fn latency_changed(&mut self) -> Option<u32> {
-        crate::vst2::host::Vst2Plugin::latency_changed(self)
-    }
-    fn reconfigure(&mut self, sample_rate: f64) -> Result<u32, String> {
-        crate::vst2::host::Vst2Plugin::reconfigure(self, sample_rate)
-    }
-    fn open_editor(&mut self, mode: window::Mode, title: Option<&str>) -> Result<window::Size, String> {
-        crate::vst2::host::Vst2Plugin::open_editor(self, mode, title)
-    }
-    fn set_editor_title(&self, title: &str) {
-        crate::vst2::host::Vst2Plugin::set_editor_title(self, title);
-    }
-    fn place_editor(&self, placement: window::Placement) {
-        crate::vst2::host::Vst2Plugin::place_editor(self, placement);
-    }
-    fn fit_editor(&mut self, size: window::Size) {
-        crate::vst2::host::Vst2Plugin::fit_editor(self, size);
-    }
-    fn editor_resized(&mut self) -> Option<window::Size> {
-        crate::vst2::host::Vst2Plugin::editor_resized(self)
-    }
-    fn close_editor(&mut self) {
-        crate::vst2::host::Vst2Plugin::close_editor(self);
-    }
-    fn editor_tick(&mut self) -> bool {
-        crate::vst2::host::Vst2Plugin::editor_tick(self)
-    }
-    fn params(&mut self) -> Result<Vec<ParamInfo>, String> {
-        crate::vst2::host::Vst2Plugin::params(self)
-    }
-    fn set_param(&mut self, id: u32, value: f64) -> Result<ParamInfo, String> {
-        crate::vst2::host::Vst2Plugin::set_param(self, id, value)
-    }
-    fn state(&mut self) -> Result<(Vec<u8>, Option<Vec<u8>>), String> {
-        Ok((crate::vst2::host::Vst2Plugin::state(self)?, None))
-    }
-    fn set_state(&mut self, data: &[u8], _controller: Option<&[u8]>) -> Result<(), String> {
-        crate::vst2::host::Vst2Plugin::set_state(self, data)
-    }
-    fn tick(&mut self) -> Vec<(u32, f64)> {
-        crate::vst2::host::Vst2Plugin::tick(self)
-    }
-    fn unload(mut self: Box<Self>) {
-        suhina_plugins::trace!("vst2 unload: stop audio");
-        if self.stop_audio(UNLOAD_WAIT) {
-            // The audio thread's exit suspended the plug-in; the editor closes next (an embedded
-            // one is a child of the engine's window, whose messages the engine answers only once
-            // it stops waiting), and then the plug-in goes.
-            self.close_editor();
-            self.close();
-            drop(self);
-        } else {
-            // Stuck in the plug-in: left as it is, never closed or freed under it.
-            std::mem::forget(self);
-        }
-    }
-}
-
 /// A test processor served on an audio thread of its own; `reported` is the latency the
 /// engine was last told.
 pub(crate) struct TestPlugin {
