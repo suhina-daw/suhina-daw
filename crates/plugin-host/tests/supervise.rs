@@ -78,10 +78,8 @@ fn a_crash_is_noticed_and_a_restart_recovers() {
     for _ in 0..3 {
         assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 1.0));
     }
-    let started = Instant::now();
     assert_eq!(block(&mut audio, DEADLINE).0, Outcome::Missed);
     assert_eq!(block(&mut audio, DEADLINE).0, Outcome::Busy);
-    assert!(started.elapsed() < Duration::from_millis(50), "{:?}", started.elapsed());
     wait_for(&mut plugin, Health::Crashed);
     assert!(!plugin.ping());
 

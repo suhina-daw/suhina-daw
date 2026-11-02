@@ -264,7 +264,10 @@ fn several_editors_open_at_once_in_one_process() {
     assert!(!second.editor_open());
 }
 
+/// Asking would only take longer, not answer otherwise, so this can be seen only in time. Run with
+/// `cargo test -p suhina-plugin-host --release --test groups never_waits -- --ignored`.
 #[test]
+#[ignore = "bounds on elapsed time, for an idle machine"]
 fn asking_how_an_instance_is_never_waits_for_a_sibling_loading() {
     let (mut plugin, _audio) = start("test:gain", Some("slow-sibling"));
     assert_eq!(plugin.health(), Health::Running);

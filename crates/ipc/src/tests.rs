@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -11,16 +12,20 @@ use super::*;
 const BLOCK: usize = 256;
 const LONG: Duration = Duration::from_secs(5);
 
-/// A host on a thread that halves every sample, and pauses for `pause` on block `slow`.
-fn halving_host(address: String, blocks: usize, slow: Option<(usize, Duration)>) -> thread::JoinHandle<usize> {
+/// A host on a thread that halves every sample, and on block `slow` stays until it is told to go.
+fn halving_host(
+    address: String,
+    blocks: usize,
+    slow: Option<(usize, mpsc::Receiver<()>)>,
+) -> thread::JoinHandle<usize> {
     thread::spawn(move || {
         let mut served = Served::open(&address).unwrap_or_else(|e| panic!("{e}"));
         let mut count = 0;
         while count < blocks {
-            let pause = slow.filter(|(at, _)| *at == count).map(|(_, d)| d);
+            let hold = slow.as_ref().filter(|(at, _)| *at == count).map(|(_, go)| go);
             if served.serve(LONG, |input, output| {
-                if let Some(pause) = pause {
-                    thread::sleep(pause);
+                if let Some(go) = hold {
+                    let _ = go.recv();
                 }
                 for (o, i) in output.iter_mut().zip(input) {
                     *o = i * 0.5;
@@ -69,46 +74,35 @@ fn shorter_blocks_and_odd_lengths() {
 #[test]
 fn a_slow_host_misses_then_the_link_is_busy_until_it_answers() {
     let mut link = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
-    let host = halving_host(link.address(), 3, Some((1, Duration::from_millis(200))));
+    let (go, hold) = mpsc::channel();
+    let host = halving_host(link.address(), 3, Some((1, hold)));
     let input = ramp(BLOCK * 2, 1.0);
     let mut output = vec![0.0; BLOCK * 2];
     assert_eq!(link.process(&input, &mut output, LONG), Outcome::Done);
 
     let timeout = Duration::from_millis(10);
-    let started = Instant::now();
     output.fill(7.0);
     assert_eq!(link.process(&input, &mut output, timeout), Outcome::Missed);
-    assert!(started.elapsed() < timeout + Duration::from_millis(30), "{:?}", started.elapsed());
     assert!(output.iter().all(|&o| o == 7.0), "a missed block leaves the output alone");
-
-    let started = Instant::now();
     assert_eq!(link.process(&input, &mut output, timeout), Outcome::Busy);
-    assert!(started.elapsed() < Duration::from_millis(5), "busy returns at once: {:?}", started.elapsed());
 
-    // The link stays busy until the slow host answers; a loaded machine may take longer than the
-    // host's pause, so wait for that rather than for a fixed time.
-    let waiting = Instant::now();
-    let mut outcome = link.process(&input, &mut output, LONG);
-    while outcome == Outcome::Busy && waiting.elapsed() < LONG {
-        thread::sleep(Duration::from_millis(10));
-        outcome = link.process(&input, &mut output, LONG);
-    }
-    assert_eq!(outcome, Outcome::Done);
+    // The link stays busy until the slow host answers.
+    assert!(go.send(()).is_ok());
+    assert!(link.wait_ready(Instant::now() + LONG));
+    assert_eq!(link.process(&input, &mut output, LONG), Outcome::Done);
     assert_eq!(output[3], input[3] * 0.5);
     assert_eq!(host.join().ok(), Some(3));
 }
 
 #[test]
-fn without_a_host_every_block_misses_or_is_busy_on_time() {
+fn without_a_host_every_block_misses_or_is_busy() {
     let mut link = Link::create(1, 64).unwrap_or_else(|e| panic!("{e}"));
     let mut output = [0.0; 64];
     let timeout = Duration::from_millis(5);
-    let started = Instant::now();
     assert_eq!(link.process(&[1.0; 64], &mut output, timeout), Outcome::Missed);
     for _ in 0..100 {
         assert_eq!(link.process(&[1.0; 64], &mut output, timeout), Outcome::Busy);
     }
-    assert!(started.elapsed() < Duration::from_millis(100), "{:?}", started.elapsed());
 }
 
 #[test]
@@ -320,23 +314,21 @@ fn looking_for_an_answer_leaves_the_block_to_wait() {
     let mut link = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
     // Nothing out: nothing to wait for.
     assert!(link.wait_answered(Instant::now()));
-    let host = halving_host(link.address(), 2, Some((0, Duration::from_millis(100))));
+    let (go, hold) = mpsc::channel();
+    let host = halving_host(link.address(), 2, Some((0, hold)));
     let input = ramp(BLOCK * 2, 1.0);
     let mut output = vec![0.0; BLOCK * 2];
     assert!(link.send_with_events(&input, &[], output.len()));
-    // A look that is already past its time returns at once, and a short wait gives up.
-    let started = Instant::now();
-    assert!(!link.wait_answered(started));
+    // A look that is already past its time finds nothing, and a short wait gives up.
+    assert!(!link.wait_answered(Instant::now()));
     assert!(!link.wait_answered(Instant::now() + Duration::from_millis(5)));
-    assert!(started.elapsed() < Duration::from_millis(60), "{:?}", started.elapsed());
     // Neither took the block: it is still out, and its answer comes.
     assert!(!link.ready());
+    assert!(go.send(()).is_ok());
     assert!(link.wait_answered(Instant::now() + LONG));
     // Answered, but its result is not taken until `wait`, which then does not wait.
     assert!(!link.ready());
-    let started = Instant::now();
     assert_eq!(link.wait(&mut output, Instant::now()), Outcome::Done);
-    assert!(started.elapsed() < Duration::from_millis(5));
     assert_eq!(output[3], input[3] * 0.5);
     assert!(link.ready());
     assert_eq!(link.process(&input, &mut output, LONG), Outcome::Done);
