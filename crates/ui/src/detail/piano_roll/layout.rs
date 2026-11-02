@@ -113,6 +113,18 @@ pub fn key_step(moved: &[Note], grid: TimelineGrid, earlier: bool) -> f64 {
     if earlier { grid.previous_line(first) - first } else { grid.next_line(first) - first }
 }
 
+/// What a selected note is filled with: `accent`, or `plain` where a note of `color` would look much
+/// the same in the accent, so a selected note always stands out from the others.
+pub fn selected_note_color(color: Color32, accent: Color32, plain: Color32) -> Color32 {
+    let [r, g, b, _] = color.to_array();
+    let [ar, ag, ab, _] = accent.to_array();
+    let apart = |a: u8, b: u8| (i32::from(a) - i32::from(b)).pow(2);
+    if apart(r, ar) + apart(g, ag) + apart(b, ab) < NEAR_COLOR * NEAR_COLOR { plain } else { accent }
+}
+
+/// How far apart two colours are at least, in steps of red, green and blue, to tell them apart at a glance.
+const NEAR_COLOR: i32 = 120;
+
 /// How much a drag of the grabbed note's right end by `raw` beats changes the selection's
 /// lengths: the end on the grid unless `free`, and no note shorter than [`MIN_LENGTH`].
 pub fn resize_by(raw: f64, grabbed: &Note, resized: &[Note], grid: TimelineGrid, free: bool) -> f64 {

@@ -4,4 +4,6 @@
   allowed, Legato follows the next note on any key, Shift+arrow stops at the grid and the next note,
   and the audition sounds notes from the press and at each pitch of a drag. A rectangle over no note
   selects a stretch of time for the keys to act on, a bar on the ruler shows what is selected in time,
-  and a click leaves a mark where a paste goes.
+  and a click leaves a mark where a paste goes. Shift goes on from a time selection, here and in the
+  Arrangement, a selected note has a colour of its own, and a double-click with the right button on
+  a ghost note opens its clip.

@@ -600,6 +600,7 @@ impl App {
                         address: &piano.address,
                         notes: &piano.notes,
                         selected: &selected,
+                        length: piano.length,
                     };
                     rest = crate::detail::midi_tools::show(ui, rest, &tools, piano_roll, actions);
                 }
@@ -653,6 +654,19 @@ impl App {
                 piano_roll::ViewPick::AllowStacked(on) => self.settings.view.notes_replace = !on,
             }
             self.settings_changed = true;
+        }
+        // A ghost note double-clicked with the right button: its clip takes over the editor.
+        if let Some(clip) = self.piano_roll.open_ghost.take() {
+            match clip {
+                ClipRef::Arrangement(track, id) => {
+                    self.shown = View::Arrangement;
+                    self.arrangement.select_clip(track, id);
+                }
+                ClipRef::Slot(track, scene) => {
+                    self.shown = View::Session;
+                    self.view.select_slot(track, scene);
+                }
+            }
         }
         // A grid value picked in the piano roll's grid menu or with its keys: its own, or the
         // control bar's when the piano roll follows it.

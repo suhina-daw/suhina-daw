@@ -183,7 +183,7 @@ impl PianoRollState {
     }
 
     /// What is selected in time, to show on the bar: the stretch, or the extent of the selected notes.
-    fn span_shown(&self, clip: &PianoClip) -> Option<(f64, f64)> {
+    pub(super) fn span_shown(&self, clip: &PianoClip) -> Option<(f64, f64)> {
         if let Some(span) = &self.span {
             return Some((span.start, span.end));
         }
@@ -215,7 +215,13 @@ pub(super) fn draw_time_span(painter: &egui::Painter, layout: &Layout, state: &P
 /// covers, else the time selection or the selected notes' extent. The insert mark's flag beside it.
 pub(super) fn draw_span_bar(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRollState, live: Option<Rect>) {
     let grid = note_grid(clip, layout.beat_width);
-    let shown = live.map(|rect| swept_span(grid, layout, &clip.notes, rect)).or_else(|| state.span_shown(clip));
+    let kept = state.span_shown(clip).filter(|_| matches!(state.gesture, Some(Gesture::Select { add: true, .. })));
+    let shown = live
+        .map(|rect| {
+            let (start, end) = swept_span(grid, layout, &clip.notes, rect);
+            kept.map_or((start, end), |k| (k.0.min(start), k.1.max(end)))
+        })
+        .or_else(|| state.span_shown(clip));
     let painter = ui.painter_at(layout.ruler);
     if let Some((start, end)) = shown {
         let color = part_style("piano-time-selection", &[]).border.unwrap_or_else(theme::accent);

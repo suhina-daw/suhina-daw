@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use suhina_engine::Quantization;
 use suhina_engine::model::{Clip, ClipId, LaneData, Note, Project, Scale, TrackId};
 
+use crate::detail::detail_view::ClipRef;
 use crate::detail::midi_tools::ToolSettings;
 use crate::detail::piano_roll_ghosts::{self as ghost_view, GhostSource, Ghosts};
 use crate::detail::piano_roll_grid::{FIXED_VALUES, GridMode, PianoGrid, Width};
@@ -351,6 +352,12 @@ pub fn show(
     // The right button: the Mouse-first switches first, then the Draw-first preset's delete in
     // Draw and Paint (› Keymap presets).
     let right_deletes = workflow.right_click_deletes(matches!(state.tool, Tool::Draw | Tool::Paint));
+    if response.double_clicked_by(PointerButton::Secondary)
+        && let Some(pos) = pointer
+        && note_at(&layout, &clip.notes, pos).is_none()
+    {
+        state.open_ghost = ghost_view::ghost_at(&clip.ghosts, pos, |g| layout.note_rect(&g.note()));
+    }
     if response.clicked_by(PointerButton::Secondary)
         && !state.right_stepped
         && !state.right_playing
@@ -454,8 +461,12 @@ pub fn show(
                 }
             }
             (None, Tool::Select) => {
-                state.clear_span();
-                Gesture::Select { from, add: inputs.shift || inputs.command }
+                let add = inputs.shift || inputs.command;
+                // Adding goes on from what is selected in time.
+                if !add {
+                    state.clear_span();
+                }
+                Gesture::Select { from, add }
             }
         });
     }

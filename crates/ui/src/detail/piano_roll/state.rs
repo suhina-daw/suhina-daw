@@ -188,6 +188,9 @@ pub struct PianoRollState {
     /// A grid value picked in the toolbar's grid menu or with its keys this frame, for the window
     /// to keep.
     pub grid_picked: Option<PianoGrid>,
+    /// The clip of a ghost note double-clicked with the right button this frame, for the window to
+    /// open (› Ghost notes).
+    pub open_ghost: Option<ClipRef>,
     /// The toolbar's Hide editor button was clicked this frame: the window hides the editor.
     pub hide_requested: bool,
     /// The key rows were scrolled by hand (the wheel, a pan, zooming the key height) since the
@@ -274,6 +277,7 @@ impl Default for PianoRollState {
             right_playing: false,
             right_stepped: false,
             grid_picked: None,
+            open_ghost: None,
             hide_requested: false,
             scrolled_by_hand: false,
             centred_for: 0.0,

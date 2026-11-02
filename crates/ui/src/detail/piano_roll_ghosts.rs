@@ -73,6 +73,8 @@ pub struct GhostNote {
     pub color: Color32,
     /// Its track's name, as an index into [`Ghosts::sources`].
     pub source: usize,
+    /// The clip it comes from.
+    pub clip: ClipRef,
 }
 
 impl GhostNote {
@@ -117,7 +119,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         return ghosts;
     };
     // The clips shown, each with the time it is laid out in.
-    let mut shown: Vec<(TrackId, &Clip, Placement)> = Vec::new();
+    let mut shown: Vec<(ClipRef, &Clip, Placement)> = Vec::new();
     let mut add = |clip: ClipRef, rebase: bool| {
         if clip == edited {
             return;
@@ -127,7 +129,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
             if rebase {
                 at.start = mine.start;
             }
-            shown.push((clip.track(), other, at));
+            shown.push((clip, other, at));
         }
     };
     match (source, edited) {
@@ -163,10 +165,11 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         }
         (GhostSource::Clip(clip), _) => add(clip, true),
     }
-    for (track, clip, at) in shown {
+    for (from, clip, at) in shown {
         if ghosts.notes.len() >= MAX_GHOSTS {
             break;
         }
+        let track = from.track();
         let Some(notes) = notes_of(project, track, clip) else { continue };
         let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
         let name = project.tracks.get(position).map_or_else(String::new, |t| project.shown_track_name(t.id));
@@ -184,6 +187,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
             key,
             color,
             source,
+            clip: from,
         });
         // A track is named only when it gave a ghost note.
         if source == ghosts.sources.len() && ghosts.notes.len() > before {
@@ -236,6 +240,7 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
             key,
             color,
             source,
+            clip,
         });
         if source == ghosts.sources.len() && ghosts.notes.len() > before {
             ghosts.sources.push(name);
@@ -431,6 +436,11 @@ fn choices(project: &Project, edited: ClipRef) -> Vec<GhostChoice> {
 
 /// Paints the ghost notes on `painter` (the grid's), each at the rectangle `rect_of` gives it:
 /// a fill in its track's colour at [`GHOST_ALPHA`], no name, no edge and no velocity stem.
+/// The clip of the ghost note at `pos`, the one drawn last when several are there.
+pub(crate) fn ghost_at(ghosts: &Ghosts, pos: egui::Pos2, rect_of: impl Fn(&GhostNote) -> Rect) -> Option<ClipRef> {
+    ghosts.notes.iter().rev().find(|g| rect_of(g).contains(pos)).map(|g| g.clip)
+}
+
 pub(crate) fn paint(painter: &Painter, ghosts: &Ghosts, visible: Rect, rect_of: impl Fn(&GhostNote) -> Rect) {
     for ghost in &ghosts.notes {
         let rect = rect_of(ghost);

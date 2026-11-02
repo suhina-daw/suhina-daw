@@ -68,6 +68,8 @@ pub struct Tools<'a> {
     pub address: &'a Value,
     pub notes: &'a [Note],
     pub selected: &'a BTreeSet<usize>,
+    /// The clip's length in beats.
+    pub length: f64,
 }
 
 impl Tools<'_> {
@@ -79,6 +81,23 @@ impl Tools<'_> {
             params["notes"] = json!(self.selected.iter().collect::<Vec<_>>());
         }
         params
+    }
+
+    /// Where Legato's last notes end: at the end of the stretch selected in time (`span_end`), else
+    /// where the next note after them starts, on any key, else at the end of the clip.
+    pub(crate) fn legato_until(&self, span_end: Option<f64>) -> f64 {
+        if let Some(end) = span_end {
+            return end;
+        }
+        let acts_on = |i: usize| self.selected.is_empty() || self.selected.contains(&i);
+        let last = self
+            .notes
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| acts_on(*i))
+            .map(|(_, n)| n.time)
+            .fold(f64::NEG_INFINITY, f64::max);
+        self.notes.iter().map(|n| n.time).filter(|time| *time > last).fold(self.length, f64::min)
     }
 
     /// What the head says the tools act on.
@@ -420,9 +439,7 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
     }
     if button(ui, "Legato", &small) {
         let mut params = tools.params();
-        if let Some(end) = state.span_end() {
-            params["until"] = json!(end);
-        }
+        params["until"] = json!(tools.legato_until(state.span_end()));
         state.replacing(&mut params);
         actions.push(Action::new("note.legato", params));
     }

@@ -709,3 +709,61 @@ fn a_refused_copy_gives_the_selection_back() {
     assert_eq!(state.selected, BTreeSet::from([0]));
     assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 2.0)));
 }
+
+/// Legato's last notes end at a time selection's end, at the next note after them, or at the clip's.
+#[test]
+fn legato_ends_the_last_notes_where_the_clip_goes_on() {
+    let notes = [note(0.0, 0.5, 60), note(1.0, 0.5, 62), note(2.0, 0.5, 64)];
+    let address = json!({});
+    let until = |selected: &BTreeSet<usize>, span| {
+        crate::detail::midi_tools::Tools { address: &address, notes: &notes, selected, length: 8.0 }.legato_until(span)
+    };
+    let none = BTreeSet::new();
+    assert_eq!(until(&none, None), 8.0, "every note: to the clip's end");
+    assert_eq!(until(&BTreeSet::from([0, 1]), None), 2.0, "the next note that is not among them");
+    assert_eq!(until(&none, Some(4.0)), 4.0, "a time selection's end comes first");
+}
+
+/// A rectangle with Shift keeps what was selected in time, and the stretch runs over both.
+#[test]
+fn a_rectangle_that_adds_goes_on_from_the_time_selection() {
+    let clip = clip(vec![note(0.0, 0.5, 60), note(4.0, 0.5, 62)]);
+    let layout = folded_layout(KeyRows::default());
+    let mut state = focused_on(&clip);
+    state.select_span(0.0, 1.0);
+    let rect = Rect::from_two_pos(
+        Pos2::new(layout.x_of(2.0), layout.grid.top() + 1.0),
+        Pos2::new(layout.x_of(3.0), layout.grid.top() + 2.0),
+    );
+    let mut actions = Vec::new();
+    let gesture = Gesture::Select { from: rect.min, add: true };
+    commit(&gesture, Effect::Select(rect), &clip, &mut state, &mut actions, &layout);
+    let span = state.span.as_ref().map(|s| (s.start, s.end));
+    assert_eq!(span.map(|s| s.0), Some(0.0), "the old start stays");
+    assert!(span.is_some_and(|s| s.1 >= 3.0), "the new end counts: {span:?}");
+}
+
+/// The notes of a ghost say which clip they come from, and the last drawn is the one found.
+#[test]
+fn a_ghost_note_finds_its_clip() {
+    use crate::detail::detail_view::ClipRef;
+    use suhina_engine::model::TrackId;
+    let (a, b) = (ClipRef::Slot(TrackId(1), 0), ClipRef::Slot(TrackId(2), 3));
+    let ghost =
+        |clip, start| ghost_view::GhostNote { start, length: 1.0, key: 60, color: Color32::RED, source: 0, clip };
+    let ghosts = ghost_view::Ghosts { notes: vec![ghost(a, 0.0), ghost(b, 0.0), ghost(a, 8.0)], ..Default::default() };
+    let rect_of =
+        |g: &ghost_view::GhostNote| Rect::from_min_size(Pos2::new(g.start as f32 * 10.0, 0.0), Vec2::new(10.0, 10.0));
+    assert_eq!(ghost_view::ghost_at(&ghosts, Pos2::new(5.0, 5.0), rect_of), Some(b));
+    assert_eq!(ghost_view::ghost_at(&ghosts, Pos2::new(85.0, 5.0), rect_of), Some(a));
+    assert_eq!(ghost_view::ghost_at(&ghosts, Pos2::new(45.0, 5.0), rect_of), None);
+}
+
+/// A selected note takes the accent, unless the note's colour is close to it.
+#[test]
+fn a_selected_note_stands_out_from_its_colour() {
+    let (accent, plain) = (Color32::from_rgb(0xA6, 0xA3, 0xFF), Color32::from_rgb(0xEC, 0xE8, 0xE1));
+    assert_eq!(selected_note_color(Color32::from_rgb(0xF2, 0xD5, 0x41), accent, plain), accent);
+    assert_eq!(selected_note_color(Color32::from_rgb(0xE0, 0x30, 0x30), accent, plain), accent);
+    assert_eq!(selected_note_color(Color32::from_rgb(0x90, 0x90, 0xF0), accent, plain), plain);
+}

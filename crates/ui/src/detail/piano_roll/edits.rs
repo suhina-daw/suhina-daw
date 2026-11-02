@@ -322,6 +322,7 @@ pub(super) fn commit(
             actions.push(Action::new("note.setMuted", params));
         }
         (Gesture::Select { add, .. }, Effect::Select(rect)) => {
+            let kept = if *add { state.span_shown(clip) } else { None };
             if !*add {
                 state.selected.clear();
             }
@@ -331,12 +332,11 @@ pub(super) fn commit(
                 }
             }
             state.swept.clear();
-            // What it covered is selected in time, the empty parts too. One that added to a
-            // selection has no one stretch: the bar shows the notes' extent.
-            if !*add || state.selected.is_empty() {
-                let (start, end) = swept_span(note_grid(clip, layout.beat_width), layout, &clip.notes, rect);
-                state.select_span(start, end);
-            }
+            // What it covered is selected in time, the empty parts too, and one that adds keeps what
+            // was selected in time: the stretch runs over both.
+            let (start, end) = swept_span(note_grid(clip, layout.beat_width), layout, &clip.notes, rect);
+            let (start, end) = kept.map_or((start, end), |k| (k.0.min(start), k.1.max(end)));
+            state.select_span(start, end);
         }
         _ => {}
     }

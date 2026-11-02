@@ -237,6 +237,8 @@ pub struct ArrangementViewState {
     pub(super) time_selection: Option<TimeSelection>,
     /// Where a drag on the ruler started, in beats: it selects time over every track.
     pub(super) ruler_select: Option<f64>,
+    /// While time is being painted: what a drag with Shift goes on from, known once it has begun.
+    pub(super) painted_from: Option<Option<TimeSelection>>,
     /// A clip's edge being dragged.
     pub(super) edge_drag: Option<EdgeDrag>,
     /// An edge just let go of: the clip, where its edges are now and the frames left to wait.
@@ -399,6 +401,7 @@ impl Default for ArrangementViewState {
             marquee_scroll: Vec2::ZERO,
             time_selection: None,
             ruler_select: None,
+            painted_from: None,
             edge_drag: None,
             edge_released: None,
             settling: Vec::new(),
@@ -455,6 +458,16 @@ impl Default for ArrangementViewState {
 
 /// A track and each of its clips' id, start and end, for Select All.
 pub type LaneClips = (TrackId, Vec<(ClipId, f64, f64)>);
+
+impl TimeSelection {
+    /// This selection gone on over `tracks` from `start` to `end`: the time and the tracks of both.
+    pub(super) fn gone_on(&self, tracks: &[TrackId], start: f64, end: f64) -> Self {
+        let mut all = self.tracks.clone();
+        all.extend(tracks.iter().filter(|t| !self.tracks.contains(t)));
+        let row = self.row.filter(|_| all == self.tracks);
+        Self { tracks: all, start: self.start.min(start), end: self.end.max(end), row }
+    }
+}
 
 /// A span of beats over some tracks, the selection rectangle's.
 #[derive(Debug, Clone, PartialEq)]

@@ -402,7 +402,11 @@ pub(super) fn draw(
             note_style
         };
         let radius = style.radius.unwrap_or(0.0);
-        grid_painter.rect_filled(rect, radius, style.background.unwrap_or(clip.color).gamma_multiply(alpha));
+        let own =
+            if selected { selected_note_color(clip.color, theme::accent(), theme::text_primary()) } else { clip.color };
+        // Selected, it stays bright enough to tell at any velocity.
+        let alpha = if selected { alpha.max(0.75) } else { alpha };
+        grid_painter.rect_filled(rect, radius, style.background.unwrap_or(own).gamma_multiply(alpha));
         if let Some(border) = style.border {
             grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);
         }

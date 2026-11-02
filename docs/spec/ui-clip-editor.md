@@ -229,7 +229,7 @@ bottom:
    plays (before its start marker, or before its loop's start when that is earlier). Notes in a
    shaded part are drawn at a little under half their opacity, so a note outside the loop reads
    as not playing; they stay notes like any other (selected, moved and listed as before). Notes are drawn in the track colour, their opacity rising
-   with velocity; a selected note has a light outline; every note shows its name, cut at the block's edge when it
+   with velocity; a selected note has a light outline and is filled with the accent, or with `text.primary` where the clip's colour is close to the accent; every note shows its name, cut at the block's edge when it
    does not fit.
    **Playhead** (built): while the transport runs, a 1 px line in the accent colour over the
    ruler, the grid and the velocity lane shows where playback is in the clip's content, mapped
@@ -571,6 +571,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   selected. A rectangle that reached no note shows the stretch on every row, as a tint with an edge at
   each end, and the edit keys and the toolbar's buttons act on the notes that start in it. A press
   anywhere that selects something else, Escape or another clip ends it.
+- **Shift or Ctrl and a rectangle** keep what is selected: the notes stay selected, the new ones join them, and the stretch selected in time runs over both.
 - **Built:** a bar along the ruler's lower edge shows what is selected in time: what a rectangle covers
   while it is drawn, the stretch, or from the selected notes' earliest start to their latest end.
 - **Built:** the selection lives in the window only; it is not part of the project and is not an
@@ -866,7 +867,8 @@ clip scales) and is saved with the project; a clip has none until one is set.
 
 **Built ([#348](https://github.com/suhina-daw/suhina-daw/issues/348)).** The notes of other clips
 are drawn faintly behind the edited clip's own notes and cannot be edited, so a part can be
-written against another (a bass line against the chords).
+written against another (a bass line against the chords). A double-click on one with the right
+button opens its clip in the editor.
 
 - **The ghost menu** in the toolbar, after the workflow menu (› Layout), reads **Ghosts**, dimmed
   while nothing is shown; its accessible label and its tooltip name what is shown ("Ghost notes
@@ -953,7 +955,7 @@ written against another (a bass line against the chords).
   | **Fit to scale** | Moves each note to the nearest key of the chosen root and mode | `note.fitToScale` |
   | **Invert** | Mirrors the pitches around the middle of the selection's range | `note.invert` |
   | **Reverse** | Turns the selection round in time, inside its own span | `note.reverse` |
-  | **Legato** | Makes each note last until the next one starts, at most, and the last notes until the end of a time selection | `note.legato` |
+  | **Legato** | Makes each note last until the next one starts, at most, and the last notes until the end of a time selection, else the next note after them, else the clip's end | `note.legato` |
   | **×2**, **÷2** | Stretches or squeezes the selection in time, its starts and its lengths | `note.stretch` |
   | **Velocity: Randomise** | Changes every velocity by a random amount up to **Amount** | `note.randomizeVelocity` |
   | **Velocity: Ramp** | Draws the velocities from **From** to **To** across the notes in time | `note.rampVelocity` |
