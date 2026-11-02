@@ -212,7 +212,9 @@ jobs:
       # On Linux under a virtual X server, so the plug-in editor tests open real windows.
       - run: cargo test --workspace
         if: runner.os != 'Linux'
-      - run: xvfb-run -a cargo test --workspace
+      # -noreset: without it the X server resets as its last client leaves, and a test that opens
+      # the next window at that moment has its connection reset.
+      - run: xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" cargo test --workspace
         if: runner.os == 'Linux'
 
   # Not part of `ci`: a macOS failure is reported but does not block merging.
