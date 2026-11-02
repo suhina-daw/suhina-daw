@@ -1206,12 +1206,12 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
 /// Sets `calls` as one gesture on `device`, the last call ending it, as a preset does.
 fn one_gesture(session: &mut Session, device: Value, calls: &[(&str, f64)]) {
     for (i, (param, value)) in calls.iter().enumerate() {
-        run(
+        let set = run(
             session,
             "device.setParam",
             json!({"track":1,"device":device,"param":param,"value":value,"continuous":i + 1 < calls.len(),"gesture":"preset"}),
-        )
-        .unwrap();
+        );
+        assert!(set.is_ok(), "{set:?}");
     }
 }
 
