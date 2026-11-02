@@ -265,6 +265,10 @@ impl App {
             if self.midi_listed.is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(2)) {
                 self.list_midi_inputs();
             }
+            let names = self.projects.audio_system().and_then(|system| system.device_names());
+            if self.audio_devices.changed(names) {
+                self.list_audio_devices();
+            }
         }
         let sources = Sources {
             about: &self.about,
