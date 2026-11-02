@@ -1,7 +1,9 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Bounded sample instrument runtime for SDK-authored native instruments.
+//! The runtime every sample instrument shares: the SDK's `sample` node and the built-in Sampler
+//! (`devices/sampler`) both run this [`Sampler`], so it lives here rather than in the device
+//! (#763 › 5). Bounded: voices, slices and buffers have fixed limits.
 use std::sync::Arc;
 use suhina_device_api::{Device, DeviceError, DeviceInfo, NoteEvent, ParamInfo, ProcessContext, Role, Scale, Unit};
 use suhina_dsp::{Biquad, Coefficients};

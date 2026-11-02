@@ -748,7 +748,7 @@ fn a_nam_device_loads_its_file_with_the_command() {
     assert_eq!(file_info["file"], amp_path);
     assert_eq!(file_info["name"], "Test amp 1965");
     let asset = session.device_asset(&amp_path).unwrap();
-    assert!(matches!(asset, suhina_device_registry::DeviceAsset::Nam(_)));
+    assert_eq!(asset.device(), "nam-amp-modeler");
 
     let ir_file = ir_path.display().to_string();
     run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 1, "path": &ir_file })).unwrap();
@@ -756,7 +756,7 @@ fn a_nam_device_loads_its_file_with_the_command() {
     assert_eq!(ir["file"], ir_file);
     // The cab's shown name is its parent folder's, per the spec (its files are the cabs).
     assert_eq!(ir["name"], "IRs");
-    assert!(matches!(session.device_asset(&ir_file), Some(suhina_device_registry::DeviceAsset::Ir(_))));
+    assert_eq!(session.device_asset(&ir_file).map(|a| a.device()), Some("nam-cab-loader"));
 
     // A wrong extension is refused with a message that names what it wants.
     let error =

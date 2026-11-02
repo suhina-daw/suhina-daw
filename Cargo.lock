@@ -5383,6 +5383,7 @@ dependencies = [
 name = "suhina-device-registry"
 version = "0.0.1"
 dependencies = [
+ "hound",
  "nam-rs",
  "suhina-device-api",
  "suhina-device-auto-pan",
@@ -5633,14 +5634,11 @@ version = "0.0.1"
 dependencies = [
  "chrono",
  "hound",
- "nam-rs",
  "rtrb",
  "serde_json",
  "suhina-als",
  "suhina-device-api",
  "suhina-device-fm-synth",
- "suhina-device-nam-amp-modeler",
- "suhina-device-nam-cab-loader",
  "suhina-device-registry",
  "suhina-device-sdk",
  "suhina-engine",

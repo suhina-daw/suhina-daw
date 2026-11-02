@@ -811,7 +811,7 @@ fn sampler_source_composes_and_preserves_timestamped_polyphony() {
 #[test]
 fn sampler_graph_matches_two_independent_kernels_across_blocks() {
     use suhina_device_api::{Device, NoteEvent};
-    use suhina_device_sdk::sampler::Sampler;
+    use suhina_device_sdk::sample_instrument::Sampler;
     for mode in [0., 1.] {
         let mut graph = DeviceGraph::new("org.test.two-samples", "Two samples", DeviceRole::Instrument);
         graph.nodes =
@@ -871,7 +871,7 @@ fn sampler_graph_matches_two_independent_kernels_across_blocks() {
 #[ignore = "manual release callback timing"]
 fn sampler_graph_max_polyphony_callback_timing() {
     use suhina_device_api::{Device, NoteEvent};
-    use suhina_device_sdk::sampler::Sampler;
+    use suhina_device_sdk::sample_instrument::Sampler;
     let mut graph = DeviceGraph::new("org.test.sample-timing", "Timing", DeviceRole::Instrument);
     graph.nodes = vec![N::new("sample", K::Sampler), N::audio_output("out")];
     graph.connections = vec![C::new("sample", "out")];

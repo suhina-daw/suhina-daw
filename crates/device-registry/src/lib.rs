@@ -5,6 +5,8 @@
 //! `DeviceKind::Builtin(id)` turns into a running device here. The engine builds device chains
 //! through this crate; front ends list what can be added.
 
+use std::any::Any;
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use suhina_device_api::{Device, DeviceInfo};
@@ -20,8 +22,26 @@ pub struct Entry {
     make: fn() -> Box<dyn Device>,
     /// Where its panel's layout comes from.
     layout: LayoutSource,
-    /// It runs a file whose path its `Device::state` holds (docs/spec/nam-amp-and-cab.md).
-    pub runs_a_file: bool,
+    /// The file it runs, whose path its `Device::state` holds (docs/spec/nam-amp-and-cab.md), and
+    /// how it is read: the rest of Suhina loads a device's file through this, never by the
+    /// device's id (#763 › 5).
+    pub file: Option<FileKind>,
+}
+
+/// A file as its device read it: only that device knows what it holds.
+type AssetData = dyn Any + Send + Sync;
+
+/// What a device that runs a file reads, and how. Every function runs off the audio thread.
+pub struct FileKind {
+    /// The file's extension, lower case and without the dot. A path with another extension is
+    /// refused before it is read, so a project cannot point the device at some other file.
+    pub extension: &'static str,
+    /// Reads and checks the file at `path` for an engine running at `rate` Hz.
+    read: fn(&Path, u32) -> Result<Arc<AssetData>, String>,
+    /// What a panel calls the loaded file at `path`.
+    name: fn(&Path, &AssetData) -> Option<String>,
+    /// A new device at its defaults, running the file.
+    make: fn(&AssetData) -> Option<Box<dyn Device>>,
 }
 
 /// Where a device's panel layout comes from (ADR 0021 › Amendment: device panels).
@@ -40,97 +60,97 @@ pub const ENTRIES: [Entry; 16] = [
         info: &suhina_device_fm_synth::INFO,
         make: || Box::new(suhina_device_fm_synth::FmSynth::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/fm-synth/panel.json")),
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_sampler::INFO,
         make: || Box::new(suhina_device_sampler::Sampler::new()),
         layout: LayoutSource::Rust(suhina_device_sampler::layout),
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_utility::INFO,
         make: || Box::new(suhina_device_utility::Utility::new()),
         layout: LayoutSource::Generated,
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_auto_pan::INFO,
         make: || Box::new(suhina_device_auto_pan::AutoPan::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/auto-pan/panel.json")),
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_dj_eq::INFO,
         make: || Box::new(suhina_device_dj_eq::DjEq::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/dj-eq/panel.json")),
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_eq::INFO,
         make: || Box::new(suhina_device_eq::Eq::new()),
         layout: LayoutSource::Generated,
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_vinyl_distortion::INFO,
         make: || Box::new(suhina_device_vinyl_distortion::VinylDistortion::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/vinyl-distortion/panel.json")),
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_overdrive::INFO,
         make: || Box::new(suhina_device_overdrive::Overdrive::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/overdrive/panel.json")),
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_saturator::INFO,
         make: || Box::new(suhina_device_saturator::Saturator::new()),
         layout: LayoutSource::Generated,
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_compressor::INFO,
         make: || Box::new(suhina_device_compressor::Compressor::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/compressor/panel.json")),
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_limiter::INFO,
         make: || Box::new(suhina_device_limiter::Limiter::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/limiter/panel.json")),
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_nam_amp_modeler::INFO,
         make: || Box::new(suhina_device_nam_amp_modeler::NamAmp::new()),
         layout: LayoutSource::Generated,
-        runs_a_file: true,
+        file: Some(FileKind { extension: "nam", read: read_nam, name: nam_name, make: make_nam }),
     },
     Entry {
         info: &suhina_device_nam_cab_loader::INFO,
         make: || Box::new(suhina_device_nam_cab_loader::CabLoader::new()),
         layout: LayoutSource::Generated,
-        runs_a_file: true,
+        file: Some(FileKind { extension: "wav", read: read_ir, name: folder_name, make: make_cab }),
     },
     Entry {
         info: &suhina_device_delay::INFO,
         make: || Box::new(suhina_device_delay::Delay::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/delay/panel.json")),
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_reverb::INFO,
         make: || Box::new(suhina_device_reverb::Reverb::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/reverb/panel.json")),
-        runs_a_file: false,
+        file: None,
     },
     Entry {
         info: &suhina_device_pitch::INFO,
         make: || Box::new(suhina_device_pitch::Pitch::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/pitch/panel.json")),
-        runs_a_file: false,
+        file: None,
     },
 ];
 
@@ -201,33 +221,103 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
     entry(id).map(|entry| (entry.make)())
 }
 
-/// The file a file-backed device runs, already read and parsed or decoded (docs/spec/nam-amp-and-cab.md):
-/// a model for the Amp Modeler, an impulse response for the Cab Loader. The session keeps a
-/// map of these by the file's path; the engine hands the device the map's entry when it builds
-/// its chains.
-#[derive(Debug, Clone)]
-pub enum DeviceAsset {
-    Nam(Arc<suhina_device_nam_amp_modeler::NamModel>),
-    Ir(Arc<suhina_dsp::Ir>),
+/// The file a device runs, already read and parsed or decoded (docs/spec/nam-amp-and-cab.md): a
+/// model for the Amp Modeler, an impulse response for the Cab Loader. The session keeps a map of
+/// these by the file's path; the engine hands the device the map's entry when it builds its
+/// chains. Only the device that read it knows what it holds.
+#[derive(Clone)]
+pub struct DeviceAsset {
+    /// The id of the device that read it.
+    device: &'static str,
+    data: Arc<AssetData>,
+}
+
+impl DeviceAsset {
+    /// The id of the device that runs it.
+    pub fn device(&self) -> &'static str {
+        self.device
+    }
+
+    /// What a panel calls this file, read from `path`: a NAM model's own name (its metadata), an
+    /// IR's folder.
+    pub fn name(&self, path: &Path) -> Option<String> {
+        file_kind(self.device).and_then(|file| (file.name)(path, &*self.data))
+    }
+}
+
+impl std::fmt::Debug for DeviceAsset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceAsset").field("device", &self.device).finish_non_exhaustive()
+    }
 }
 
 /// The ids whose devices run a file stored in `Device::state` (docs/spec/nam-amp-and-cab.md).
 pub fn is_file_device(id: &str) -> bool {
-    entry(id).is_some_and(|entry| entry.runs_a_file)
+    file_kind(id).is_some()
 }
 
-/// A new device with this id, its defaults, and `asset` already loaded — `None` for an id that
-/// takes no file, or for an unknown id. Allocation: off the audio thread.
-pub fn create_with(id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>> {
-    match (id, asset) {
-        ("nam-amp-modeler", Some(DeviceAsset::Nam(model))) => {
-            Some(Box::new(suhina_device_nam_amp_modeler::NamAmp::with_model(Arc::clone(model))))
-        }
-        ("nam-cab-loader", Some(DeviceAsset::Ir(ir))) => {
-            Some(Box::new(suhina_device_nam_cab_loader::CabLoader::with_ir((**ir).clone())))
-        }
-        _ => create(id),
+fn file_kind(id: &str) -> Option<&'static FileKind> {
+    entry(id).and_then(|entry| entry.file.as_ref())
+}
+
+/// The extension of the file the device `id` runs, or `None` for a device that runs no file.
+pub fn file_extension(id: &str) -> Option<&'static str> {
+    file_kind(id).map(|file| file.extension)
+}
+
+/// Reads the file at `path` for the device `id`, for an engine running at `rate` Hz. Fails for a
+/// device that runs no file, for a path without the device's extension, and for a file the
+/// device cannot run, saying why. Reads and allocates: call it off the audio thread.
+pub fn load_file(id: &str, path: &Path, rate: u32) -> Result<DeviceAsset, String> {
+    let Some((entry, file)) = entry(id).and_then(|entry| Some((entry, entry.file.as_ref()?))) else {
+        return Err(format!("{id:?} does not run a file"));
+    };
+    let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase());
+    if extension.as_deref() != Some(file.extension) {
+        return Err(format!("a {id} runs a .{} file", file.extension));
     }
+    Ok(DeviceAsset { device: entry.info.id, data: (file.read)(path, rate)? })
+}
+
+/// A new device with this id, its defaults, and `asset` already loaded — `None` for an unknown
+/// id. An asset another device read is ignored. Allocation: off the audio thread.
+pub fn create_with(id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>> {
+    let loaded = asset
+        .filter(|asset| asset.device == id)
+        .and_then(|asset| file_kind(id).and_then(|file| (file.make)(&*asset.data)));
+    loaded.or_else(|| create(id))
+}
+
+fn read_nam(path: &Path, _rate: u32) -> Result<Arc<AssetData>, String> {
+    let model = suhina_device_nam_amp_modeler::model::read(path)?;
+    // The runtime's verdict, so the panel can say why a file is silent.
+    if let Err(e) = nam_rs::Model::from_nam(&model) {
+        return Err(format!("the model does not run: {e}"));
+    }
+    Ok(Arc::new(Arc::new(model)))
+}
+
+fn nam_name(_path: &Path, data: &AssetData) -> Option<String> {
+    data.downcast_ref::<Arc<suhina_device_nam_amp_modeler::NamModel>>()
+        .and_then(|model| suhina_device_nam_amp_modeler::model::display_name(model))
+}
+
+fn make_nam(data: &AssetData) -> Option<Box<dyn Device>> {
+    let model = data.downcast_ref::<Arc<suhina_device_nam_amp_modeler::NamModel>>()?;
+    Some(Box::new(suhina_device_nam_amp_modeler::NamAmp::with_model(Arc::clone(model))))
+}
+
+fn read_ir(path: &Path, rate: u32) -> Result<Arc<AssetData>, String> {
+    Ok(Arc::new(suhina_device_nam_cab_loader::ir::read(path, rate)?))
+}
+
+fn folder_name(path: &Path, _data: &AssetData) -> Option<String> {
+    path.parent().and_then(Path::file_name).map(|folder| folder.to_string_lossy().into_owned())
+}
+
+fn make_cab(data: &AssetData) -> Option<Box<dyn Device>> {
+    let ir = data.downcast_ref::<suhina_dsp::Ir>()?;
+    Some(Box::new(suhina_device_nam_cab_loader::CabLoader::with_ir(ir.clone())))
 }
 
 /// Largest preset file read.

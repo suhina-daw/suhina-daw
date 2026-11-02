@@ -372,15 +372,7 @@ impl Session {
     /// for a NAM Amp Modeler, the IR's parent folder's name for a NAM Cab Loader. `None` while
     /// the file is not in the assets.
     pub fn device_asset_name(&self, path: &str) -> Option<String> {
-        match self.device_files.assets.get(path)? {
-            suhina_device_registry::DeviceAsset::Nam(model) => {
-                suhina_device_nam_amp_modeler::model::display_name(model)
-            }
-            suhina_device_registry::DeviceAsset::Ir(_) => std::path::Path::new(path)
-                .parent()
-                .and_then(|folder| folder.file_name())
-                .map(|folder| folder.to_string_lossy().into_owned()),
-        }
+        self.device_files.assets.get(path)?.name(std::path::Path::new(path))
     }
 
     /// Why a device's file is not in the assets, by the path: what a read gave, for a device
@@ -1149,42 +1141,20 @@ impl Session {
         }
     }
 
-    /// What a file-backed device of `kind` runs for the file at `path`: a parsed model for the
-    /// Amp Modeler or a decoded IR for the Cab Loader. The reads run here, at command or
-    /// project-load time, never on the audio thread.
+    /// What a file-backed device of `kind` runs for the file at `path`, read by the device
+    /// through the registry (a model for the Amp Modeler, an IR for the Cab Loader). The reads run
+    /// here, at command or project-load time, never on the audio thread. The registry refuses a
+    /// path without the device's extension, so a project's stored path cannot point a device at
+    /// some other file (a UNC path, for one).
     pub(crate) fn load_device_file(
         &self,
         kind: &str,
         path: &str,
     ) -> Result<suhina_device_registry::DeviceAsset, String> {
-        // The extension check `device.setNamFile` makes: a project's stored path gets the same
-        // treatment, so a hand-made or foreign project file cannot point a device at some
-        // other file (a UNC path, for one).
-        let want_extension = match kind {
-            "nam-amp-modeler" => "nam",
-            "nam-cab-loader" => "wav",
-            other => return Err(format!("{other:?} does not run a file")),
-        };
-        if !path.to_lowercase().ends_with(&format!(".{want_extension}")) {
-            return Err(format!("a {kind} runs a .{want_extension} file"));
-        }
         // An IR joins the project at the engine's rate; the session's rate is the player's, or
         // 48 kHz until the first output opens.
         let rate = self.sync.player.as_ref().map_or(48_000, Player::sample_rate);
-        match kind {
-            "nam-amp-modeler" => {
-                let model = suhina_device_nam_amp_modeler::model::read(std::path::Path::new(path))?;
-                // The runtime's verdict, so the panel can say why a file is silent.
-                if let Err(e) = nam_rs::Model::from_nam(&model) {
-                    return Err(format!("the model does not run: {e}"));
-                }
-                Ok(suhina_device_registry::DeviceAsset::Nam(std::sync::Arc::new(model)))
-            }
-            "nam-cab-loader" => Ok(suhina_device_registry::DeviceAsset::Ir(std::sync::Arc::new(
-                suhina_device_nam_cab_loader::ir::read(std::path::Path::new(path), rate)?,
-            ))),
-            _ => Err(format!("{kind:?} does not run a file")),
-        }
+        suhina_device_registry::load_file(kind, std::path::Path::new(path), rate)
     }
 
     /// Lets a playing engine hear the project as it is now, with any audio added to the pool.

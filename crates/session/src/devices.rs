@@ -1030,26 +1030,14 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
             None => return Err("the device is missing".into()),
         }
     };
-    let want_extension = match kind.as_str() {
-        "nam-amp-modeler" => "nam",
-        "nam-cab-loader" => "wav",
-        _ => return Err("the device does not run a file".into()),
-    };
+    let want_extension = suhina_device_registry::file_extension(&kind).ok_or("the device does not run a file")?;
     if !path.to_lowercase().ends_with(&format!(".{want_extension}")) {
         return Err(format!("a {kind} runs a .{want_extension} file").into());
     }
     let absolute = crate::files::absolute(std::path::Path::new(path));
     let absolute_text = absolute.display().to_string();
     let asset = session.load_device_file(&kind, &absolute_text).map_err(CommandError)?;
-    let name = match &asset {
-        suhina_device_registry::DeviceAsset::Nam(model) => {
-            suhina_device_nam_amp_modeler::model::display_name(model).unwrap_or_default()
-        }
-        suhina_device_registry::DeviceAsset::Ir(_) => absolute
-            .parent()
-            .and_then(|folder| folder.file_name())
-            .map_or_else(String::new, |folder| folder.to_string_lossy().into_owned()),
-    };
+    let name = asset.name(&absolute).unwrap_or_default();
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
@@ -1141,20 +1129,20 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
         && param == "mode"
         && value == 0.
         && device.params.iter().any(|p| p.id == "playback" && p.value == 3.)
-        && let Some(index) = suhina_device_sdk::sampler::INFO.param_index("playback")
+        && let Some(index) = suhina_device_sdk::sample_instrument::INFO.param_index("playback")
     {
         edits.push((index, "playback".into(), 0.));
     }
     if matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler")
         && let Some(value) = source_tempo.or((param == "warp_beats").then_some(0.))
-        && let Some(index) = suhina_device_sdk::sampler::INFO.param_index("source_bpm")
+        && let Some(index) = suhina_device_sdk::sample_instrument::INFO.param_index("source_bpm")
     {
         edits.push((index, "source_bpm".into(), value));
     }
     if param == "warp_beats"
         && matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler")
         && device.params.iter().any(|p| p.id == "warp_tempo")
-        && let Some(index) = suhina_device_sdk::sampler::INFO.param_index("warp_tempo")
+        && let Some(index) = suhina_device_sdk::sample_instrument::INFO.param_index("warp_tempo")
     {
         edits.push((index, "warp_tempo".into(), 0.));
     }
