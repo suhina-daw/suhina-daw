@@ -2248,14 +2248,14 @@ fn a_crossfade_between_parts_of_two_takes_shows_and_its_handle_sets_its_length()
     // The parts' fades at the cut have no handles of their own: a picked part shows only the one
     // at its outer edge, and the crossfade stays.
     let shows = |h: &Harness<'static, App>, label: &str| h.query_by_label(label).is_some();
-    harness.get_by_label("Clip Loop on Loop at bar 1").click();
+    harness.get_by_label("Clip Loop Take 1 on Loop at bar 1").click();
     harness.run();
-    assert!(shows(&harness, "Fade-in of Loop on Loop"), "the first part's outer edge");
-    assert!(!shows(&harness, "Fade-out of Loop on Loop"), "the first part's edge at the cut");
-    harness.get_by_label("Clip Loop on Loop at bar 2").click();
+    assert!(shows(&harness, "Fade-in of Loop Take 1 on Loop"), "the first part's outer edge");
+    assert!(!shows(&harness, "Fade-out of Loop Take 1 on Loop"), "the first part's edge at the cut");
+    harness.get_by_label("Clip Loop Take 2 on Loop at bar 2").click();
     harness.run();
-    assert!(shows(&harness, "Fade-out of Loop on Loop"), "the second part's outer edge");
-    assert!(!shows(&harness, "Fade-in of Loop on Loop"), "the second part's edge at the cut");
+    assert!(shows(&harness, "Fade-out of Loop Take 2 on Loop"), "the second part's outer edge");
+    assert!(!shows(&harness, "Fade-in of Loop Take 2 on Loop"), "the second part's edge at the cut");
     assert!(shows(&harness, "Crossfade end on Loop"), "the crossfade stays");
 }
 
