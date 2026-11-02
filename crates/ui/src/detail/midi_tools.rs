@@ -308,6 +308,7 @@ fn quantise_block(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, ac
         params["grid"] = json!(state.quantize.grid);
         params["amount"] = json!(state.quantize.amount);
         params["ends"] = json!(state.quantize.ends);
+        state.replacing(&mut params);
         actions.push(Action::new("note.quantize", params));
     }
     ui.add_space(PAD);
@@ -418,7 +419,9 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
         actions.push(Action::new("note.reverse", tools.params()));
     }
     if button(ui, "Legato", &small) {
-        actions.push(Action::new("note.legato", tools.params()));
+        let mut params = tools.params();
+        state.replacing(&mut params);
+        actions.push(Action::new("note.legato", params));
     }
     ui.horizontal(|ui| {
         let small = small.clone();

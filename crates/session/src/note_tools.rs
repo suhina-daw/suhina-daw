@@ -17,7 +17,8 @@ use serde_json::{Value, json};
 use suhina_model::{Note, Scale, ScaleMode};
 
 use crate::notes::{
-    MAX_BEAT, MAX_NOTES_PER_COMMAND, edit_notes, indices, midi_velocity, notes_of, optional_number, velocity_of,
+    MAX_BEAT, MAX_NOTES_PER_COMMAND, after_removal, edit_notes, indices, midi_velocity, notes_of, optional_number,
+    replace_under, replaces, velocity_of, with_replaced,
 };
 use crate::{CommandError, Session};
 
@@ -34,6 +35,8 @@ const MIN_FACTOR: f64 = 0.01;
 const MAX_FACTOR: f64 = 100.0;
 /// The shortest length `note.legato` leaves a note: a hundredth of a beat.
 const MIN_LENGTH: f64 = 0.01;
+/// Starts this close are one start.
+const EPSILON: f64 = 1e-9;
 
 /// Suhina's own random number generator for the note tools: splitmix64, written out here so the
 /// same seed gives the same draws on every machine and every run, which is what lets the CLI and
@@ -335,41 +338,39 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
     })
 }
 
-/// `note.legato`: makes each note last until the next note of its own key starts, never shorter
-/// than a hundredth of a beat; the last note of a key keeps its length.
+/// `note.legato`: makes each named note last until the next named note starts, on any key, never
+/// shorter than a hundredth of a beat. Notes that start together end together, and the last ones
+/// keep their length.
 pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     if nothing_to_do(session, params)? {
         return Ok(json!({ "notes": [], "changed": 0 }));
     }
     edit_notes(&mut session.project, params, |notes| {
         let named = chosen(params, notes.len())?;
-        // Key, then time, then index: the same note always takes the same place in the order.
+        // Time, then index: the same note always takes the same place in the order.
         let mut order = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
-            order.push((note.key, note.time, index));
+            order.push((note.time, index));
         }
-        order.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)));
+        order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         let mut changed = 0;
-        for pair in order.windows(2) {
-            // The last note of a key is followed by another key (or nothing): it keeps its length.
-            if pair[0].0 != pair[1].0 {
-                continue;
-            }
-            let (index, next) = (pair[0].2, pair[1].1);
-            let note = notes.get(index).ok_or("a note is missing")?;
-            let length = (next - note.time).max(MIN_LENGTH);
+        for &(time, index) in &order {
+            // The first start after this one; none for the last notes, which keep their length.
+            let next = order.partition_point(|n| n.0 <= time + EPSILON);
+            let Some(&(next, _)) = order.get(next) else { continue };
+            let length = (next - time).max(MIN_LENGTH);
             if !length.is_finite() || length > MAX_BEAT {
                 return Err(format!("note {index} would be {length} beats long, after {MAX_BEAT}").into());
             }
+            let note = notes.get_mut(index).ok_or("a note is missing")?;
             if length != note.duration {
-                if let Some(slot) = notes.get_mut(index) {
-                    slot.duration = length;
-                }
+                note.duration = length;
                 changed += 1;
             }
         }
-        Ok(json!({ "notes": named, "changed": changed }))
+        let replaced = if replaces(params) && changed > 0 { replace_under(notes, &named) } else { Vec::new() };
+        Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced), "changed": changed }), &replaced))
     })
 }
 

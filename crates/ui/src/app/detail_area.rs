@@ -645,6 +645,15 @@ impl App {
             picked.apply(&mut self.keymap);
             self.keymap_changed = true;
         }
+        // A choice in the corner's menu: kept in the settings.
+        if let Some(picked) = self.piano_roll.view_picked.take() {
+            match picked {
+                piano_roll::ViewPick::KeyStyle(style) => self.settings.piano_key_style = style,
+                piano_roll::ViewPick::KeyNames(names) => self.settings.piano_key_names = names,
+                piano_roll::ViewPick::AllowStacked(on) => self.settings.view.notes_replace = !on,
+            }
+            self.settings_changed = true;
+        }
         // A grid value picked in the piano roll's grid menu or with its keys: its own, or the
         // control bar's when the piano roll follows it.
         if let Some(picked) = self.piano_roll.grid_picked.take() {
@@ -771,6 +780,27 @@ impl App {
             View::Arrangement => self.arrangement.selected_clip().map(|(t, i)| detail_view::ClipRef::Arrangement(t, i)),
         };
         clip.is_none() || self.detail_showing == detail_view::Showing::Devices
+    }
+
+    /// Whether the keyboard is the piano roll's: it was pressed last and shows one clip's notes.
+    /// Then an edit key acts on those notes or on nothing, and never on the clip or the view
+    /// behind; only a press in another view takes the keyboard from it.
+    pub(super) fn piano_has_keyboard(&self) -> bool {
+        self.piano_roll.focused
+            && self.detail_open
+            && self.detail_showing == detail_view::Showing::Clip
+            && match self.shown {
+                View::Session => self
+                    .view
+                    .selected_slot
+                    .is_some_and(|(t, s)| self.piano_clip(Some(detail_view::ClipRef::Slot(t, s))).is_some()),
+                View::Arrangement => {
+                    self.arrangement.selected_clips().len() == 1
+                        && self.arrangement.selected_clip().is_some_and(|(t, i)| {
+                            self.piano_clip(Some(detail_view::ClipRef::Arrangement(t, i))).is_some()
+                        })
+                }
+            }
     }
 
     /// What a key does in the piano roll, when it shows a clip and has the keyboard.

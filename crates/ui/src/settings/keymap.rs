@@ -169,7 +169,11 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 82] = [
     ("pianoRoll.octaveUp", "Move the selected notes an octave up", PIANO_ROLL),
     ("pianoRoll.octaveDown", "Move the selected notes an octave down", PIANO_ROLL),
     ("pianoRoll.shorter", "Make the selected notes one grid step shorter", PIANO_ROLL),
-    ("pianoRoll.longer", "Make the selected notes one grid step longer", PIANO_ROLL),
+    (
+        "pianoRoll.longer",
+        "Make the selected notes longer, to the next grid line or the next note of the key",
+        PIANO_ROLL,
+    ),
     ("pianoRoll.draw", "Switch the piano roll between the Select and Draw tools", PIANO_ROLL),
     ("pianoRoll.tool1", "Choose the Select tool", PIANO_ROLL),
     ("pianoRoll.tool2", "Choose the Draw tool", PIANO_ROLL),

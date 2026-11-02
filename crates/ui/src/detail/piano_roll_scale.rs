@@ -156,11 +156,11 @@ pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool) -> egui::Colo
 }
 
 /// The 2 px mark at the right of the key column on a key in the scale (the root's brighter).
-pub(crate) fn key_mark(painter: &egui::Painter, scale: Option<Scale>, key: u8, row: Rect) {
-    let Some(scale) = scale.filter(|s| s.contains(key)) else { return };
-    let color = if key % 12 == scale.root() { theme::text_value() } else { theme::text_secondary() };
-    let mark =
-        Rect::from_min_max(Pos2::new(row.right() - 3.0, row.top() + 1.0), Pos2::new(row.right() - 1.0, row.bottom()));
+pub(crate) fn key_mark(painter: &egui::Painter, scale: Option<Scale>, key: u8, row: Rect, color: egui::Color32) {
+    if !scale.is_some_and(|s| s.contains(key)) {
+        return;
+    }
+    let mark = Rect::from_min_max(Pos2::new(row.right() - 2.0, row.top()), row.max);
     painter.rect_filled(mark, 0.0, color);
 }
 

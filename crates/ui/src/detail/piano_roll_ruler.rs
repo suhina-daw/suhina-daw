@@ -19,8 +19,8 @@ use crate::kit::widgets::Action;
 
 /// Height of the loop row at the top of the ruler, of the bar in it, and how far from a handle or
 /// a marker a press still grabs it, in points.
-pub(crate) const LOOP_ROW: f32 = 8.0;
-const LOOP_BAR: f32 = 4.0;
+pub(crate) const LOOP_ROW: f32 = 14.0;
+const LOOP_BAR: f32 = 6.0;
 /// Width of a loop handle, in points.
 const HANDLE: f32 = 2.0;
 const GRAB: f32 = 4.0;
@@ -284,16 +284,24 @@ pub fn interact(
         let cursor = match state.ruler.drag {
             Some(Drag::Part { part: Part::Loop, .. }) => Some(CursorIcon::Grabbing),
             Some(Drag::Part { .. }) => Some(CursorIcon::ResizeHorizontal),
-            Some(Drag::Zoom) => Some(CursorIcon::ResizeVertical),
+            Some(Drag::Zoom) => None,
             None => match part_at(&shape, &axis(state), ruler, pos) {
                 Some(Part::Loop) => Some(CursorIcon::Grab),
                 Some(_) => Some(CursorIcon::ResizeHorizontal),
-                None => None,
+                // A drag here zooms.
+                None => {
+                    state.magnifier = true;
+                    None
+                }
             },
         };
         if let Some(cursor) = cursor {
             ui.ctx().set_cursor_icon(cursor);
         }
+    }
+
+    if matches!(state.ruler.drag, Some(Drag::Zoom)) {
+        state.magnifier = true;
     }
 
     if response.drag_started_by(PointerButton::Primary)
@@ -446,7 +454,7 @@ mod tests {
     const AXIS: Axis = Axis { origin: 100.0, beat_width: 20.0 };
 
     fn ruler() -> Rect {
-        Rect::from_min_size(Pos2::new(100.0, 0.0), Vec2::new(400.0, 24.0))
+        Rect::from_min_size(Pos2::new(100.0, 0.0), Vec2::new(400.0, 36.0))
     }
 
     #[test]

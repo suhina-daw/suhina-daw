@@ -170,6 +170,19 @@ struct NotesPlay {
     released: bool,
 }
 
+/// A fallback instrument still sounding after its preview ended, fading out so it does not stop
+/// with a click.
+struct Tail {
+    notes: Box<PreviewNotes>,
+    /// Frames of the fade left, of `total`.
+    left: usize,
+    total: usize,
+    gain: f32,
+}
+
+/// How long a fallback instrument fades out for, in seconds.
+const TAIL_SECONDS: f64 = 0.015;
+
 /// The renderer's end.
 pub(crate) struct Preview {
     commands: Option<Consumer<PreviewCommand>>,
@@ -179,6 +192,8 @@ pub(crate) struct Preview {
     waiting: Option<PreviewCommand>,
     sample: Option<SamplePlay>,
     notes: Option<NotesPlay>,
+    /// The last fallback instrument, fading out.
+    tail: Option<Tail>,
     /// The fallback instrument's events in the current block, and its output.
     events: Vec<(usize, NoteEvent)>,
     buffer: Vec<f32>,
@@ -187,6 +202,9 @@ pub(crate) struct Preview {
     glide: f32,
     pub(crate) monitor: Arc<PreviewMonitor>,
 }
+
+/// The most a command, or a preview's end, sends back at once: a sample, notes and a tail.
+const RETIRED_AT_ONCE: usize = 3;
 
 /// About how long a change of level takes.
 const GLIDE_SECONDS: f64 = 0.01;
@@ -204,6 +222,7 @@ impl Preview {
             waiting: None,
             sample: None,
             notes: None,
+            tail: None,
             events: Vec::with_capacity(MAX_EVENTS),
             buffer: vec![0.0; MAX_BLOCK * 2],
             sample_rate,
@@ -226,10 +245,10 @@ impl Preview {
     }
 
     /// Applies the commands that have arrived. A command waits while the retired queue has no
-    /// room for the two things it may replace.
+    /// room for the things it may replace.
     pub(crate) fn receive(&mut self, chains: &mut [Chain]) {
         loop {
-            let room = self.retired.as_ref().is_some_and(|r| r.slots() >= 2);
+            let room = self.retired.as_ref().is_some_and(|r| r.slots() >= RETIRED_AT_ONCE);
             if !room {
                 return;
             }
@@ -334,7 +353,7 @@ impl Preview {
     }
 
     /// Stops whatever plays, releasing its held notes at `frame` of the block, and sends it
-    /// back. Only called when the retired queue has room for two.
+    /// back. Only called when the retired queue has room for [`RETIRED_AT_ONCE`].
     fn stop(&mut self, chains: &mut [Chain], frame: usize) {
         if let Some(sample) = self.sample.take()
             && let Some(retired) = self.retired.as_mut()
@@ -349,11 +368,24 @@ impl Preview {
                     }
                 }
             }
-            if let Some(device) = play.notes.fallback.as_mut() {
-                device.event(NoteEvent::AllNotesOff);
-            }
-            if let Some(retired) = self.retired.as_mut() {
-                let _full = retired.push(Retired::Notes(play.notes));
+            let sounding = play.chain.is_none() && play.frame > 0 && play.notes.fallback.is_some();
+            if sounding {
+                // It goes on a moment longer, fading, so stopping it makes no click; a tail still
+                // fading goes back now.
+                if let Some(old) = self.tail.take()
+                    && let Some(retired) = self.retired.as_mut()
+                {
+                    let _full = retired.push(Retired::Notes(old.notes));
+                }
+                let total = (TAIL_SECONDS * f64::from(self.sample_rate)).max(1.0) as usize;
+                self.tail = Some(Tail { notes: play.notes, left: total, total, gain: play.gain });
+            } else {
+                if let Some(device) = play.notes.fallback.as_mut() {
+                    device.event(NoteEvent::AllNotesOff);
+                }
+                if let Some(retired) = self.retired.as_mut() {
+                    let _full = retired.push(Retired::Notes(play.notes));
+                }
             }
         }
         self.monitor.playing.store(false, Ordering::Relaxed);
@@ -436,6 +468,7 @@ impl Preview {
 
     /// Adds the preview to a block of `frames` frames after the track chains have run.
     pub(crate) fn finish(&mut self, out: &mut [f32], frames: usize, chains: &mut [Chain]) {
+        self.finish_tail(out, frames);
         let mut ended = false;
         if let Some(play) = self.notes.as_mut() {
             if play.chain.is_none()
@@ -495,11 +528,39 @@ impl Preview {
             ended = ended || play.position >= frames_in_file;
         }
         if ended {
-            if self.retired.as_ref().is_some_and(|r| r.slots() >= 2) {
+            if self.retired.as_ref().is_some_and(|r| r.slots() >= RETIRED_AT_ONCE) {
                 self.stop(chains, frames.saturating_sub(1));
             }
         } else {
             self.monitor.playing.store(self.playing(), Ordering::Relaxed);
+        }
+    }
+}
+
+impl Preview {
+    /// Adds what is left of the last fallback instrument's fade, and sends it back at the end.
+    fn finish_tail(&mut self, out: &mut [f32], frames: usize) {
+        if let Some(tail) = self.tail.as_mut()
+            && let Some(device) = tail.notes.fallback.as_mut()
+            && let Some(buffer) = self.buffer.get_mut(..frames.min(MAX_BLOCK) * 2)
+        {
+            buffer.fill(0.0);
+            device.process(&ProcessContext::default(), buffer);
+            for ([l, r], [pl, pr]) in out.as_chunks_mut::<2>().0.iter_mut().zip(buffer.as_chunks::<2>().0) {
+                if tail.left == 0 {
+                    break;
+                }
+                let gain = tail.gain * tail.left as f32 / tail.total.max(1) as f32;
+                *l += pl * gain;
+                *r += pr * gain;
+                tail.left -= 1;
+            }
+        }
+        if self.tail.as_ref().is_some_and(|t| t.left == 0)
+            && let Some(retired) = self.retired.as_mut().filter(|r| r.slots() > 0)
+            && let Some(tail) = self.tail.take()
+        {
+            let _full = retired.push(Retired::Notes(tail.notes));
         }
     }
 }

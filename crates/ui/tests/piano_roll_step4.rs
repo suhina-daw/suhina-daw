@@ -159,7 +159,7 @@ fn the_toolbar_size_setting_scales_the_toolbar_and_not_the_grid() {
     let normal = Settings { toolbar_size: ToolbarSize::Normal, ..Settings::default() };
     let mut h = piano_app(&mut renderer, normal);
     let small_button = h.get_by_label("Draw (2)").rect().height();
-    let small_notes = note_rect(&h, &notes(&h)[0]).height();
+    let small_rows = h.state().piano_roll().key_height;
     let small_grid = h.get_by_label_contains("Piano roll,").rect().top();
 
     let larger = Settings { toolbar_size: ToolbarSize::Larger, ..Settings::default() };
@@ -168,11 +168,11 @@ fn the_toolbar_size_setting_scales_the_toolbar_and_not_the_grid() {
     h.run();
 
     let big_button = h.get_by_label("Draw (2)").rect().height();
-    let big_notes = note_rect(&h, &notes(&h)[0]).height();
+    let big_rows = h.state().piano_roll().key_height;
     let big_grid = h.get_by_label_contains("Piano roll,").rect().top();
     assert!(big_button > small_button + 3.0, "the icon box grows: {small_button} to {big_button}");
     assert!(big_grid > small_grid + 5.0, "the band grows: {small_grid} to {big_grid}");
-    assert_eq!(big_notes, small_notes, "the note rows do not change with the toolbar");
+    assert_eq!(big_rows, small_rows, "the note rows do not change with the toolbar");
 }
 
 #[test]

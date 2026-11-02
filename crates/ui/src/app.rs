@@ -2431,6 +2431,14 @@ impl App {
                 );
             }
             Ok(result) => {
+                // Notes a note command replaced are gone: the selection stays on the same notes.
+                if action.id.starts_with("note.")
+                    && let Some(replaced) = result["replaced"].as_array().filter(|r| !r.is_empty())
+                {
+                    let replaced: Vec<usize> =
+                        replaced.iter().filter_map(|i| i.as_u64().and_then(|i| usize::try_from(i).ok())).collect();
+                    self.piano_roll.notes_replaced(&replaced);
+                }
                 // What is copied pastes into every open tab (#919).
                 if Projects::copies(action.id) {
                     self.projects.share_clipboards(None);
@@ -2619,6 +2627,8 @@ impl App {
             d.insert_temp(egui::Id::new(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)
         });
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
+        self.piano_roll.key_style = self.settings.piano_key_style;
+        self.piano_roll.key_names = self.settings.piano_key_names;
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;

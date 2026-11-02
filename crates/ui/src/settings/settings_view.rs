@@ -696,6 +696,15 @@ impl Cx<'_> {
         }
     }
 
+    /// A switch that shows the yes/no setting `field` gives the other way round: on when it is no.
+    pub fn off_on(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut bool) {
+        let value = field(self.settings);
+        if let Some(on) = switch(self.ui, self.painter, row, self.name, !*value) {
+            *value = !on;
+            self.outcome.changed = true;
+        }
+    }
+
     /// A dropdown on the right of `row` for the setting `field` gives.
     pub fn dropdown<T: Clone + PartialEq>(
         &mut self,

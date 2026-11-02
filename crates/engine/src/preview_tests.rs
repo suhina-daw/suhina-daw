@@ -255,3 +255,33 @@ fn hostile_preview_values_are_made_safe() {
     controller.preview_notes(notes, 1.0).unwrap();
     assert!(blocks(&mut renderer, 4, 1024).iter().all(|s| s.is_finite()));
 }
+
+/// Going from one held key to the next through the fallback makes no click: the last note fades
+/// out instead of stopping dead, with or without the two commands arriving together.
+#[test]
+fn changing_the_held_key_through_the_fallback_does_not_click() {
+    let mut renderer = stopped(&empty_project());
+    let mut controller = renderer.controller();
+    let hold = |controller: &mut crate::Controller, key: u8| {
+        let fallback = controller.preview_instrument();
+        let notes = preview_notes([(0.0, 0.0, key, 0.8)], 120.0, SR, None, fallback);
+        controller.preview_note_on(notes, 1.0).unwrap();
+    };
+    hold(&mut controller, 64);
+    let before = blocks(&mut renderer, 20, 1024);
+    let loudest = peak(&before);
+    assert!(loudest > 0.01, "the fallback plays it");
+    let jump = |samples: &[f32]| {
+        samples.iter().step_by(2).zip(samples.iter().step_by(2).skip(1)).map(|(a, b)| (b - a).abs()).fold(0.0, f32::max)
+    };
+    controller.preview_note_off(Some(64)).unwrap();
+    hold(&mut controller, 67);
+    let mut across = before[before.len() - 2..].to_vec();
+    across.extend(blocks(&mut renderer, 4, 1024));
+    assert!(jump(&across) < loudest * 0.5, "a jump of {} at a level of {loudest}", jump(&across));
+    // A note let go with nothing after it fades as well.
+    controller.preview_note_off(Some(67)).unwrap();
+    let mut across = across[across.len() - 2..].to_vec();
+    across.extend(blocks(&mut renderer, 4, 1024));
+    assert!(jump(&across) < loudest * 0.5, "a jump of {} at a level of {loudest}", jump(&across));
+}

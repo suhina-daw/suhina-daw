@@ -175,15 +175,21 @@ impl App {
                     actions.push(quantize);
                 }
             }
-            // Delete in the piano roll deletes its selected notes, not the clip.
-            "selection.delete" if let Some(delete) = self.piano_roll.delete_selected() => actions.push(delete),
-            // Copy, cut, paste and duplicate in the piano roll act on its notes, when it has some
-            // to act on; its own keys act only there.
+            // While the piano roll has the keyboard, the edit keys act on its notes, or on nothing
+            // when it has none to act on: never on the clip or the view behind it.
+            "selection.delete" if self.piano_has_keyboard() => actions.extend(self.piano_roll.delete_selected()),
             "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate"
-                if let Some(edit) = self.piano_key(action) =>
+                if self.piano_has_keyboard() =>
             {
-                actions.push(edit)
+                actions.extend(self.piano_key(action))
             }
+            "selection.mute"
+            | "selection.rename"
+            | "selection.split"
+            | "selection.consolidate"
+            | "selection.takeUp"
+            | "selection.takeDown"
+                if self.piano_has_keyboard() => {}
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
             // A range painted on an automation lane: copy, cut, paste (from its start), duplicate
             // (right after it) and delete act on it (#916).
