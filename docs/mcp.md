@@ -3,7 +3,7 @@ description: The MCP server for agents: tools, file roots, errors and how to run
 read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/automation/src/server.rs
   - crates/automation/src/workspace.rs
@@ -318,7 +318,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   (`key:Q`) or a MIDI note (`note:1:36`) to a slot, a scene or a track's stop button;
   `launcher.removeMapping` and `launcher.mappings` remove and list them. Agents launch with
   `clip.launch` and friends as before; the mappings are for the window and controllers
-  ([spec](spec/clip-launching.md#launching-from-keys-and-notes)).
+  ([spec](spec/clip-launching.md#launching-from-keys-and-notes)). These three commands are
+  replaced by `mapping.*` when controller mappings are built
+  ([spec](spec/midi-mapping.md#launch-keys)).
 - **CPU load.** `launcher.state` reports `cpu`: the audio engine's share of wall time spent
   rendering, in percent, measured over windows of 0.2 s and smoothed so it settles within about
   a second (`0.0` before anything is measured, `null` without an audio output). The control bar shows the same number.

@@ -3,7 +3,7 @@ description: The layout of Suhina's own project file (.suhina), field by field, 
 read_when: .suhina layout, markers in the file, project file fields, clip id, lane id, scene id, next_id, file without ids, writing a project file by hand or from an agent, format version, version history, newer file refused, base64 state, muted note, note flags, clip scale, default_scale, scale root and mode
 type: spec
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/project-file/src/lib.rs
   - crates/model/src/ids.rs
@@ -106,7 +106,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | clip | `id`; `content`; `start`, `length`, `offset` (beats); `loop` `[start, end]` or `null`; `enabled`; `fade_in`, `fade_out` (beats); `fade_in_shape`, `fade_out_shape` (`linear`, `equal_power`, `fast`, `slow` or `s_curve`; default `linear`) and `fade_in_curve`, `fade_out_curve` (−1 to 1, default 0), see [arrangement-editing](arrangement-editing.md#fades); `follow` (written only when it differs from the default, missing means off) `{ enabled, time, linked, a, b, chance_a, chance_b }`: time in beats (more than 0, at most 100000), actions `nothing`, `stop`, `again`, `previous`, `next`, `first`, `last`, `any`, `other` or `jump N` (N a scene, from 1), chances 0–100, see [clip-launching](clip-launching.md#follow-actions); `launch` `{mode, legato, quantization}`, written only when it differs from the defaults (`trigger`, `false`, `global`), each key optional, see [clip-launching](clip-launching.md#launch-settings); `ara` (`true`, written only when set): the clip plays through its channel's clip host (#990) |
 | scene | `id`; `name`; `tempo_bpm` or `null`; `time_signature` `[numerator, denominator]` (left out when the scene has none; both whole numbers from 1) |
 | launcher column | `track`; `slots` `[{ clip, has_stop }]`, one per scene |
-| launch mapping | in the launcher's `mappings`, left out when empty: `source` (`key:<name>` or `note:<channel 1-16>:<note 0-127>`), `target` (`slot`, `scene` or `stop`), `track` (slot, stop) and `scene` (slot, scene; from 1). A source appears once. The track need not exist: a mapping whose track is gone is kept. See [clip-launching](clip-launching.md#launching-from-keys-and-notes) |
+| launch mapping | in the launcher's `mappings`, left out when empty: `source` (`key:<name>` or `note:<channel 1-16>:<note 0-127>`), `target` (`slot`, `scene` or `stop`), `track` (slot, stop) and `scene` (slot, scene; from 1). A source appears once. The track need not exist: a mapping whose track is gone is kept. See [clip-launching](clip-launching.md#launching-from-keys-and-notes). Planned: the version that adds `controller_mappings` reads these into it and writes them only there ([MIDI mapping › Launch keys](midi-mapping.md#launch-keys)) |
 
 ## Audio paths
 
