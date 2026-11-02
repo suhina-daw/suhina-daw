@@ -1833,8 +1833,8 @@ fn the_arrangement_toolbar_tools_act_on_clips_and_its_keys_choose_them() {
     assert_eq!(clips(&harness), before - 1);
 }
 
-/// The line under a take lane makes the track's take lanes taller; a double-click puts them back
-/// (#989).
+/// The line under a take lane makes that lane taller, the others staying as they are; a
+/// double-click puts it back (#1078).
 #[test]
 fn a_take_lanes_edge_drags_its_height() {
     let mut project = demo_project();
@@ -1872,9 +1872,125 @@ fn a_take_lanes_edge_drags_its_height() {
     harness.drop_at(edge + egui::vec2(0.0, 30.0));
     harness.run();
     assert!(height(&harness) > before + 20.0, "{before} -> {}", height(&harness));
-    // Every take lane of the track alike.
     let second = harness.get_by_label("Comp from Drums Take 2").rect().height();
-    assert!((second - height(&harness)).abs() < 1.0);
+    assert!((second - before).abs() < 1.0, "the other lane stays: {before} -> {second}");
+}
+
+/// A window on the Drums track's first clip as two take lanes of `length` beats, in the
+/// Arrangement.
+#[allow(clippy::unwrap_used)] // a test helper outside #[test] functions
+fn window_with_drums_takes(length: f64) -> Harness<'static, App> {
+    let mut project = demo_project();
+    let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
+    let clip = project
+        .arrangement
+        .lanes
+        .iter()
+        .find(|l| l.track == Some(drums))
+        .and_then(|l| l.clips.first())
+        .cloned()
+        .unwrap();
+    for n in 1..=2 {
+        project.arrangement.takes.push(suhina_engine::model::TakeLane {
+            track: drums,
+            name: format!("Take {n}"),
+            clips: vec![suhina_engine::model::Clip { id: suhina_engine::model::ClipId::NONE, length, ..clip.clone() }],
+            color: None,
+        });
+    }
+    project.assign_ids().unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness
+}
+
+fn take_pieces(harness: &Harness<'static, App>) -> Vec<Vec<(f64, f64)>> {
+    let takes = harness.state().session().map(|s| s.project().arrangement.takes.clone()).unwrap_or_default();
+    takes.iter().map(|t| t.clips.iter().map(|c| (c.start, c.length)).collect()).collect()
+}
+
+fn drag_between(harness: &mut Harness<'static, App>, from: egui::Pos2, to: egui::Pos2) {
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+}
+
+/// With Ctrl a drag paints an area across take lanes; Delete takes what is in it, in one undo
+/// step, and a click lets go of it (#1078).
+#[test]
+fn ctrl_paints_an_area_across_take_lanes_and_delete_takes_it() {
+    let mut harness = window_with_drums_takes(32.0);
+    let before = take_pieces(&harness);
+    let from = harness.get_by_label("Comp from Drums Take 1").rect().left_center() + egui::vec2(60.0, 0.0);
+    let to = harness.get_by_label("Comp from Drums Take 2").rect().left_center() + egui::vec2(150.0, 0.0);
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    drag_between(&mut harness, from, to);
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    assert_eq!(take_pieces(&harness), before, "painting changes nothing");
+    harness.key_press(Key::Delete);
+    harness.run();
+    let after = take_pieces(&harness);
+    assert!(after.iter().all(|pieces| pieces.len() == 2), "each take is cut in two: {after:?}");
+    assert_eq!(after[0], after[1], "the same span goes from both");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(take_pieces(&harness), before, "one undo step");
+    // Painted again, then a click without Ctrl lets go: Delete leaves the takes alone.
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    drag_between(&mut harness, from, to);
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.hover_at(from);
+    harness.drag_at(from);
+    harness.drop_at(from);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(take_pieces(&harness), before);
+}
+
+/// A piece of a take moves as a clip does: a drag from its name bar moves it on the grid and leaves
+/// the other lanes, while a drag from its body comps and Ctrl there only paints (#1078).
+#[test]
+fn a_take_piece_moves_from_its_name_bar_on_the_grid() {
+    let mut harness = window_with_drums_takes(8.0);
+    let before = take_pieces(&harness);
+    let from = harness.get_by_label("Comp from Drums Take 1").rect().left_top() + egui::vec2(20.0, 5.0);
+    drag_between(&mut harness, from, from + egui::vec2(77.0, 0.0));
+    let moved = take_pieces(&harness);
+    assert!(moved[0][0].0 > before[0][0].0, "{moved:?}");
+    assert_eq!(moved[1], before[1], "the other lane stays");
+    let by = moved[0][0].0 - before[0][0].0;
+    assert!((by * 16.0 - (by * 16.0).round()).abs() < 1e-6, "on the grid: {by}");
+    // With Ctrl the same drag only paints.
+    let now = take_pieces(&harness);
+    let from = harness.get_by_label("Comp from Drums Take 2").rect().left_top() + egui::vec2(20.0, 5.0);
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    drag_between(&mut harness, from, from + egui::vec2(77.0, 0.0));
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    assert_eq!(take_pieces(&harness), now, "Ctrl paints and moves nothing");
+}
+
+/// A piece's lower right corner drags its edge out, and the part of the recording comes back
+/// (#1078).
+#[test]
+fn a_take_pieces_corner_drags_its_edge() {
+    let mut harness = window_with_drums_takes(2.0);
+    let before = take_pieces(&harness);
+    let corner = harness.get_by_label("End of Drums Take 1 piece 1").rect().center();
+    drag_between(&mut harness, corner, corner + egui::vec2(60.0, 0.0));
+    let after = take_pieces(&harness);
+    assert!(after[0][0].1 > before[0][0].1, "{after:?}");
+    assert_eq!(after[0][0].0, before[0][0].0, "its start stays");
+    assert_eq!(after[1], before[1], "the other lane stays");
 }
 
 /// With Ctrl held a take lane takes ordinary clicks: a drag comps nothing (#989).
@@ -2070,4 +2186,29 @@ fn a_header_volume_and_pan_take_a_typed_number() {
     harness.key_press(Key::Enter);
     harness.run();
     assert!((channel(&harness).pan + 0.5).abs() < 0.01, "pan typed: {}", channel(&harness).pan);
+}
+
+/// Parts of two takes that meet show a crossfade with a handle, and its drag sets the fades of
+/// both parts (#1078).
+#[test]
+fn a_crossfade_between_parts_of_two_takes_shows_and_its_handle_sets_its_length() {
+    let mut harness = window_with_drums_takes(8.0);
+    assert!(harness.query_by_label("Crossfade on Drums").is_none(), "nothing has been comped");
+    let track = |h: &Harness<'static, App>| {
+        let project = h.state().session().map(|s| s.project().clone()).unwrap();
+        project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap().0
+    };
+    let id = track(&harness);
+    // Different passes of the content, so the parts are of two takes.
+    let moved = json!({ "track": id, "takes": [2], "pieces": [1], "by": 8.0 });
+    harness.state_mut().run(&Action::new("take.movePieces", moved));
+    harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 1 })));
+    harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 2 })));
+    harness.run();
+    let at = harness.get_by_label("Crossfade on Drums").rect().center();
+    drag_between(&mut harness, at, at + egui::vec2(20.0, 0.0));
+    let lane = harness.state().session().map(|s| s.project().clone()).unwrap();
+    let clips = &lane.arrangement.lanes.iter().find(|l| l.track.map(|t| t.0) == Some(id)).unwrap().clips;
+    let fade = clips.iter().find_map(|c| (c.fade_out > 0.5).then_some(c.fade_out));
+    assert!(fade.is_some(), "the drag made it longer: {clips:?}");
 }

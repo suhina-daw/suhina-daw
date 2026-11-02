@@ -441,8 +441,7 @@ pub(super) fn track_header(
         .then(|| Rect::from_min_size(Pos2::new(cue.right() + 2.0, row.top()), Vec2::new(solo_width, header_row)));
     let monitor_width = if rect.height() < SHOWS_MIXER { 24.0 } else { 32.0 };
     // A track with take lanes has a button beside it that hides and shows them (#953).
-    let has_takes = timeline.takes.iter().any(|t| t.track == lane.track)
-        || timeline.live_takes.iter().any(|t| t.track == lane.track && t.finished);
+    let has_takes = timeline.takes.iter().any(|t| t.track == lane.track);
     // Only where it ends inside its row, before the take lanes' button when that ends the row
     // (#876); a narrower or lower header leaves the monitoring to the MIDI input menu.
     let monitor_end = if has_takes && !narrow { row.right() - solo_width - 4.0 } else { row.right() };

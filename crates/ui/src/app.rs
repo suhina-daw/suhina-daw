@@ -2629,6 +2629,10 @@ impl App {
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;
+        let take_crossfade = f64::from(self.settings.view.take_crossfade_ms());
+        if let Ok(session) = self.projects.session_mut(None) {
+            session.set_take_crossfade_ms(take_crossfade);
+        }
         self.arrangement.set_size_settings(self.settings.view.track_sizes);
         if let Some((_, _, timeline)) = &self.timeline {
             self.arrangement.apply_size_defaults(timeline);

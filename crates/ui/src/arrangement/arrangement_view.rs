@@ -70,9 +70,7 @@ const LANE_ZOOM_PER_POINT: f32 = 0.004;
 /// Heights at which a header shows its next group (components › Track header levels).
 const SHOWS_MIXER: f32 = 40.0;
 /// A take lane's height under its track (`docs/spec/recording.md` › Take lanes).
-const TAKE_ROW: f32 = 36.0;
 /// The least and the most a take lane's height may be dragged to (#989).
-const TAKE_ROW_RANGE: (f32, f32) = (20.0, 240.0);
 const SHOWS_ROUTING: f32 = 70.0;
 /// A track that plays notes shows its MIDI input under its routing from this height.
 const SHOWS_MIDI_INPUT: f32 = 90.0;
@@ -736,7 +734,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let to = ruler_beat(raw, grid, free);
         let tracks: Vec<TrackId> = timeline.lanes.iter().map(|l| l.track).collect();
         let (start, end) = (from.min(to), from.max(to));
-        state.time_selection = (end - start > 1e-6).then_some(TimeSelection { tracks, start, end, row: None });
+        state.set_time_selection((end - start > 1e-6).then_some(TimeSelection { tracks, start, end, row: None }));
         if ui.input(|i| !i.pointer.primary_down()) {
             state.ruler_select = None;
             play_from_selection(state, timeline, actions);
@@ -1126,6 +1124,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 state.devices_clicked = true;
             }
             state.time_selection = None;
+            state.clear_take_selection();
             // The click also moves the play start marker there, on the clip grid (Alt: free);
             // while playing, playback goes on where it is and the next start begins there (#657).
             if let Some(pointer) = body.interact_pointer_pos() {
@@ -1573,6 +1572,14 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let Some(row) = row_of_clips(take.track) else { continue };
         let Some(lane) = timeline.lanes.iter().find(|l| l.track == take.track) else { continue };
         paint_live_take(&painter.with_clip_rect(row.clip), row.time, lane, take, &x_of, state.beat_width, timeline);
+    }
+
+    // The crossfades between parts of two takes, over the clips (#1078).
+    for cut in &timeline.comp_cuts {
+        let Some(row) = row_of_clips(cut.track) else { continue };
+        let Some(lane) = timeline.lanes.iter().find(|l| l.track == cut.track) else { continue };
+        let inside = painter.with_clip_rect(row.clip);
+        comp_crossfade(ui, &inside, row.time, cut, &lane.name, state, &x_of, actions);
     }
 
     // The loop region, while looping is on: a line at its start and its end down every lane, the

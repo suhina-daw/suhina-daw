@@ -199,7 +199,12 @@ CHAPTERS = [
      "folded away from a button or a menu; a click copies a take's clip and a drag a part of it onto the track "
      "(take.comp), the parts named and coloured after their takes; Alt+Up/Down swap a part's take, the cut "
      "between two parts dragged (take.moveCut), Recolor lane and Recolor selected take, splits reaching the "
-     "takes, Delete take, take pieces picked with Ctrl and deleted; a take lane soloed in place of its track, "
+     "takes, Delete take, take pieces picked with Ctrl and deleted; an area painted across take lanes with "
+     "Ctrl and deleted or cut (take.deleteRange, take.cutRange), pieces moved along the timeline "
+     "(take.movePieces), a piece's edges dragged to bring the recording back (take.trimPiece), crossfades "
+     "shown and set at their cuts (take.setCrossfade) with their default in Settings, a moved part taking "
+     "its takes along, each lane "
+     "sized and zoomed like a track, lanes appearing when the recording stops; a take lane soloed in place of its track, "
      "put whole on the track, unused takes deleted; short crossfades where parts of two takes meet; clips "
      "not stacked over takes; saved with the project. Missing take lanes made by hand, renaming and "
      "reordering them."),
