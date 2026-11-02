@@ -305,8 +305,8 @@
         "description": "Include or skip the folder in subsequent scans. Turning a folder off removes its plug-ins from the catalog after the next scan."
       },
       {
-        "name": "Both",
-        "description": "Look for CLAP and VST3 files in an added folder."
+        "name": "All",
+        "description": "Look for every format Suhina hosts in an added folder: CLAP and VST3 files, and VST2 `.vst` bundles on macOS. A VST2 `.dll` or `.so` is found only in a folder marked VST2."
       },
       {
         "name": "VST3",
@@ -318,7 +318,7 @@
       },
       {
         "name": "VST2",
-        "description": "Shown as unavailable: VST2 hosting is not implemented yet."
+        "description": "Look for VST2 files in that folder: `.vst` bundles on macOS, `.dll` files on Windows and `.so` files on Linux."
       }
     ],
     "whenToChange": "Add a custom installation folder when a plug-in is missing. Use Manage plug-ins to inspect a loading failure or temporarily disable a problematic plug-in.",

@@ -12,8 +12,9 @@
 // array member of `VstEvents` became a zero-length array, which lays out the same; the
 // function-pointer field types became named `type`s held as `Option`, so a null pointer cannot
 // be called by accident; `intptr_t` became `isize` and C's fixed-width types their Rust ones.
-// Every definition, value and comment is VeSTige's own; the original notice follows, kept
-// verbatim.
+// Every definition and value is VeSTige's own, and so are the `//` and `/* */` comments on them;
+// the `///` doc comments are this port's, describing what the definitions are for, and state no
+// fact of the interface the header lacks. The original notice follows, kept verbatim.
 //
 // vestige.h - simple header to allow VeSTige compilation and eventually work
 //
@@ -319,7 +320,7 @@ pub type DispatcherFn = unsafe extern "C" fn(
     opt: f32,
 ) -> isize;
 
-/// The signature of `AEffect::process` and `AEffect::processReplacing`: interleaved channels
+/// The signature of `AEffect::process` and `AEffect::processReplacing`: one pointer per channel
 /// behind pointers, in and out, and how many frames.
 pub type ProcessFn =
     unsafe extern "C" fn(effect: *mut AEffect, inputs: *mut *mut f32, outputs: *mut *mut f32, sampleFrames: i32);

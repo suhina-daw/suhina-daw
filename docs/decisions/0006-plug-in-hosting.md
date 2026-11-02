@@ -116,11 +116,14 @@ workspace forbids.
    formats, every other port gets silent buffers with the channels it declared, and both formats
    have a test plug-in built into the host (`test:clap`, `test:vst3`) so the whole path is tested
    without a plug-in installed.
-8. **VST2: through VST3.** A project that names a VST2 plug-in is opened with the installed
-   VST3 that replaces it (by declaration, by the SDK's id convention, then by name and newer
-   version), and the saved VST2 state is handed to it. Without one the device stays in the
-   project as a *missing plug-in* with its state intact. Hosting VST2 itself is a separate
-   decision (below).
+8. **VST2: through a VST3 copy where one is installed, else the plug-in itself.** A project
+   that names a VST2 plug-in is opened with the installed VST3 that declares it replaces it or
+   whose class id is derived from its id, and the saved VST2 state is handed to it. Without such
+   a VST3, the scanned VST2 plug-in with the project's id runs through the VST2 host with its
+   saved state ([ADR 0022](0022-vst2-interface-description.md)). Without that either, a VST3
+   found by name or as a newer version may stand in, or the device stays in the project as a
+   *missing plug-in* with its state intact, and the user can relink it by hand to a VST3 or
+   CLAP version. *Amended 2026-11-01.*
 9. **Scanning** runs in short-lived worker processes with a timeout per file, a cache keyed by
    path, modification time and size, and the failures kept with their reasons and tried again
    later; it reads metadata without loading a plug-in where it can. It looks in the system's
@@ -138,7 +141,8 @@ workspace forbids.
     load like any other. Windows-only plug-ins reach Linux through yabridge (GPL-3.0), which
     wraps each one as a Linux CLAP or VST3 file; Suhina loads those like native plug-ins, with
     nothing of its own to build. It costs a second process hop (our host, then yabridge's Wine
-    process). Windows plug-ins that exist only as VST2 do not work this way (8).
+    process). Windows plug-ins that exist only as VST2 come the same way, as the Linux VST2
+    files the VST2 host loads (8).
 13. **Plug-ins inside device groups** still run out of process; a group is not a process
     boundary. A plug-in's key counts the same plug-ins before it through the channel's whole tree
     of devices, so moving it into or out of a group keeps its process and state.
@@ -153,8 +157,9 @@ workspace forbids.
 
 - **Hosting VST2 directly.** Where the interface description comes from is decided in
   [ADR 0022](0022-vst2-interface-description.md): the VeSTige header as Ardour distributes it,
-  pinned. Nothing is built yet: the header is to be ported to Rust with its notice, checked by our
-  own mock plug-in and probe, and written up in `docs/spec/plugin-vst2.md`. The work is
+  pinned. Built behind the host's `vst2` feature, on by default: the port with its notice, the
+  mock plug-in and probe, the host, the scan, the editors and a project's last-resort choice of
+  it, written up in `docs/spec/plugin-vst2.md`. The work is
   [#1066](https://github.com/suhina-daw/suhina-daw/issues/1066). The process, scanning, editor and
   format decisions above are unchanged; shipping VST2-enabled builds is allowed by ADR 0022's
   2026-10-31 amendment.
