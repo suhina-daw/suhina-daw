@@ -65,14 +65,13 @@ pub const HARMONICS: usize = 64;
 pub const PANEL: usize = DRAWN + 6 * HARMONICS;
 pub const SELECTED_OP: usize = PANEL;
 pub const PAGE: usize = PANEL + 1;
-pub const EXPANDED_PAGE: usize = PANEL + 2;
-pub const RANDOM_AMOUNT: usize = PANEL + 3;
-pub const RANDOM_SEED: usize = PANEL + 4;
+pub const RANDOM_AMOUNT: usize = PANEL + 2;
+pub const RANDOM_SEED: usize = PANEL + 3;
 /// Three per randomizer section: its percentage, whether it takes part, whether it is locked.
-pub const RANDOM_SECTIONS: usize = PANEL + 5;
+pub const RANDOM_SECTIONS: usize = PANEL + 4;
 pub const SECTIONS: [&str; 10] =
     ["Envelopes", "Levels", "Waves", "Filter", "LFO", "Pitch envelope", "Modulation", "Stereo", "Ratios", "Algorithm"];
-const PANEL_COUNT: usize = 5 + 2 * SECTIONS.len();
+const PANEL_COUNT: usize = 4 + 2 * SECTIONS.len();
 pub const COUNT: usize = PANEL + PANEL_COUNT;
 
 /// What a new FM Synth starts with beside the defaults: envelopes in time, and one operator, with the
@@ -773,19 +772,12 @@ macro_rules! section_params {
     };
 }
 
-const PANEL_HEAD: [ParamInfo; 5] = [
+const PANEL_HEAD: [ParamInfo; 4] = [
     ParamInfo::integer("panel.op", "Selected Operator", (1, 6), 1, Unit::None).in_group("Panel"),
     ParamInfo::choice(
         "panel.page",
         "Page",
         &["Env", "Wave", "Filter", "LFO", "Pitch", "Algo", "Mod", "Voice", "Random"],
-        0,
-    )
-    .in_group("Panel"),
-    ParamInfo::choice(
-        "panel.expandedPage",
-        "Expanded Page",
-        &["Operator", "Filter", "LFO", "Pitch", "Matrix", "Algorithm", "Random"],
         0,
     )
     .in_group("Panel"),
@@ -901,7 +893,7 @@ const fn build() -> [ParamInfo; COUNT] {
         i += 1;
     }
     i = 0;
-    while i < 5 {
+    while i < PANEL_HEAD.len() {
         out[at] = PANEL_HEAD[i];
         at += 1;
         i += 1;

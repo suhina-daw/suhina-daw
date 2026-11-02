@@ -55,7 +55,7 @@ FILTER = ["filterOn", "filterType", "filterSlope", "filterCircuit", "filterFreq"
 LFO = ["lfoOn", "lfo2Wave", "lfo2Range", "lfo2Rate", "lfo2Sync", "lfo2Retrigger", "lfo2ByKey", "lfo2ByVel", "lfo2Amount"] + [
     f"lfo2ToOp{n}" for n in OPS] + ["lfo2ToFilter", "lfo2DestB", "lfo2AmountB"]
 PITCH = ["pitchEnvOn", "pitchEnvAmount"] + [f"pitchEnvToOp{n}" for n in OPS] + ["pitchEnvToLfo", "pitchEnvDestB", "pitchEnvAmountB"]
-PANEL_PARAMS = ["panel.op", "panel.page", "panel.expandedPage", "random.amount", "random.seed"] + [
+PANEL_PARAMS = ["panel.op", "panel.page", "random.amount", "random.seed"] + [
     f"random.{s}.{f}" for s, _ in SECTIONS for f in ("amount", "on")]
 # Where an operator row's columns fall, as (x, width).
 ROW_COMPACT = {"select": (2.0, 20.0), "mode": (24.0, 34.0), "freq": (60.0, 44.0), "coarse": (106.0, 32.0),
@@ -1369,7 +1369,7 @@ def check_reach(panel):
     for canvas in (panel["ui"], panel["expanded"]):
         for control in canvas["controls"]:
             bound |= {b["parameter"] for b in (control.get("x"), control.get("y")) if b}
-    missing = [pid for pid in every_parameter() if pid not in bound and pid != "panel.expandedPage"]
+    missing = [pid for pid in every_parameter() if pid not in bound]
     assert not missing, missing[:12]
 
 
