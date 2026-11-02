@@ -1179,9 +1179,7 @@ pub(crate) fn randomize(session: &mut Session, params: &Value) -> Result<Value, 
     let seed = match params.get("seed") {
         None => None,
         Some(v) => Some(
-            v.as_u64()
-                .and_then(|s| u32::try_from(s).ok())
-                .ok_or("seed must be a whole number from 0 to 4294967295")?,
+            v.as_u64().and_then(|s| u32::try_from(s).ok()).ok_or("seed must be a whole number from 0 to 4294967295")?,
         ),
     };
     let amount = match params.get("amount") {

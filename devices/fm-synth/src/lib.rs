@@ -165,6 +165,8 @@ pub struct FmSynth {
     clock: Clock,
     /// Seconds since the last reset.
     elapsed: f64,
+    /// Output peaks of the last block processed, in decibels, for the panel's meter.
+    peaks: [f32; 2],
     position: usize,
     gain: f32,
     target_gain: f32,
@@ -208,6 +210,7 @@ impl FmSynth {
             retrigger: true,
             clock: Clock::default(),
             elapsed: 0.0,
+            peaks: [-100.0; 2],
             position: N,
             gain: 1.0,
             target_gain: 1.0,
@@ -611,6 +614,15 @@ fn seven_bit(value: f32) -> i32 {
 }
 
 impl Device for FmSynth {
+    fn readouts(&self) -> Option<[f32; suhina_device_api::MAX_READOUTS]> {
+        let mut out = [0.0; suhina_device_api::MAX_READOUTS];
+        if let [left, right, ..] = &mut out {
+            *left = self.peaks[0];
+            *right = self.peaks[1];
+        }
+        Some(out)
+    }
+
     fn info(&self) -> &'static DeviceInfo {
         &INFO
     }
@@ -663,6 +675,7 @@ impl Device for FmSynth {
 
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
         self.clock = Clock { tempo: context.tempo_or_default(), beat: context.beat, playing: context.playing };
+        let mut peak = [0.0f32; 2];
         for frame in buffer.as_chunks_mut::<2>().0 {
             if self.position >= N {
                 self.render_block();
@@ -670,7 +683,10 @@ impl Device for FmSynth {
             }
             *frame = self.block.get(self.position).copied().unwrap_or([0.0; 2]);
             self.position += 1;
+            peak[0] = peak[0].max(frame[0].abs());
+            peak[1] = peak[1].max(frame[1].abs());
         }
+        self.peaks = peak.map(|p| if p > 1e-5 { 20.0 * p.log10() } else { -100.0 });
     }
 
     fn event(&mut self, event: NoteEvent) {

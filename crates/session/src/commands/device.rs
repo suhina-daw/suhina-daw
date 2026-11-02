@@ -317,7 +317,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Number,
                 "whole number that picks the result, 0 or more; without it the device's stored seed is used and moves on",
             ),
-            optional("amount", ParamType::Number, "0..1 over the sections' percentages; without it the device's Amount"),
+            optional(
+                "amount",
+                ParamType::Number,
+                "0..1 over the sections' percentages; without it the device's Amount",
+            ),
         ],
         kind: CommandKind::Edit,
         run: devices::randomize,

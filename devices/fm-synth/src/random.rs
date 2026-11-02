@@ -82,7 +82,9 @@ fn section(index: usize) -> Option<usize> {
                 opx::WAVE | opx::FEEDBACK | opx::PHASE => Some(WAVES),
                 opx::LEVEL_BY_KEY => Some(LEVELS),
                 opx::FREQ_BY_VEL => Some(MODULATION),
-                f if (opx::ENV..opx::ENV + ENV_FIELDS).contains(&f) => section_of_env(f - opx::ENV).then_some(ENVELOPES),
+                f if (opx::ENV..opx::ENV + ENV_FIELDS).contains(&f) => {
+                    section_of_env(f - opx::ENV).then_some(ENVELOPES)
+                }
                 _ => None,
             }
         }
@@ -182,11 +184,7 @@ pub fn randomize(values: &[f64], seed: Option<u32>, amount: Option<f64>) -> Vec<
     {
         *slot = f64::from((seed_now + 1) % 100_000);
     }
-    out.iter()
-        .enumerate()
-        .filter(|(i, v)| values.get(*i).copied() != Some(**v))
-        .map(|(i, v)| (i, *v))
-        .collect()
+    out.iter().enumerate().filter(|(i, v)| values.get(*i).copied() != Some(**v)).map(|(i, v)| (i, *v)).collect()
 }
 
 /// At least one operator heard directly sounds, and the filter stays open enough.

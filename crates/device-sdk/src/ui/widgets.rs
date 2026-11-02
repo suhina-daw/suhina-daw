@@ -298,7 +298,7 @@ impl Widget {
         if let Self::Graphic { drawing } = self {
             return drawing.clone();
         }
-        if let (Self::Button { label, .. }, UiGesture::Preset(_)) = (self, control.gesture) {
+        if let (Self::Button { label, .. }, UiGesture::Preset(_) | UiGesture::Randomize) = (self, control.gesture) {
             // A quick preset's button has no parameter of its own: a plain face and its name.
             return vec![rect(0., 0., w.into(), height, [46, 45, 42, 255]), text(w / 2., 0., label, TEXT, true)];
         }

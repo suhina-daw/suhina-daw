@@ -15,6 +15,21 @@ pub const MAX_ASSET_BYTES: usize = 512 * 1024;
 pub const MAX_ASSETS_BYTES: usize = 1024 * 1024;
 pub const MAX_IMAGE_PIXELS: u64 = 1_000_000;
 pub const MAX_DRAW_COMMANDS: usize = 1024;
+
+/// What a canvas may hold. A `.sd` file comes from anywhere and keeps to [`Limits::SD`]; a built-in
+/// device's layout ships with Suhina and may be larger, with one control per operator's partial.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Limits {
+    pub controls: usize,
+    pub hidden: usize,
+    pub draws: usize,
+    pub expressions: usize,
+}
+
+impl Limits {
+    pub const SD: Self = Self { controls: 128, hidden: 128, draws: MAX_DRAW_COMMANDS, expressions: 32_768 };
+    pub const BUILT_IN: Self = Self { controls: 2_048, hidden: 2_048, draws: 32_768, expressions: 2_000_000 };
+}
 type Color = [u8; 4];
 fn white() -> Color {
     [255; 4]
@@ -442,6 +457,8 @@ pub enum UiGesture {
     Tab(u16),
     /// Apply the canvas's quick preset at this index: every value it holds, as one undo step.
     Preset(u16),
+    /// Run the device's randomizer (`device.randomize`).
+    Randomize,
 }
 
 /// A quick preset a canvas button applies: parameter values by id. Parameters it leaves out keep
@@ -522,14 +539,18 @@ pub struct CustomControl {
 
 impl DeviceUi {
     pub(crate) fn validate(&self, parameters: &[Parameter]) -> Result<(), DeviceSdkError> {
+        self.validate_within(parameters, &Limits::SD)
+    }
+
+    pub(crate) fn validate_within(&self, parameters: &[Parameter], limits: &Limits) -> Result<(), DeviceSdkError> {
         let fail = |s: &str| DeviceSdkError(format!("device UI: {s}"));
         if self.viewport_size.is_some_and(|size| size.iter().any(|v| !v.is_finite() || !(24.0..=8192.0).contains(v))) {
             return Err(fail("viewport dimensions exceed limits"));
         }
         if self.size.iter().any(|v| !v.is_finite() || !(24.0..=8192.0).contains(v))
-            || self.controls.len() > 128
+            || self.controls.len() > limits.controls
             || self.assets.len() > 32
-            || self.hidden_parameters.len() > 128
+            || self.hidden_parameters.len() > limits.hidden
         {
             return Err(fail("canvas dimensions or item count exceed limits"));
         }
@@ -579,11 +600,11 @@ impl DeviceUi {
         let count = self.controls.iter().try_fold(self.layers.len(), |total, c| {
             total.checked_add(c.drawings().len()).ok_or_else(|| fail("drawing count overflow"))
         })?;
-        if count > MAX_DRAW_COMMANDS {
-            return Err(fail("more than 1024 drawing commands"));
+        if count > limits.draws {
+            return Err(fail("too many drawing commands"));
         }
         let mut controls = HashSet::new();
-        let mut expression_budget = 32768usize;
+        let mut expression_budget = limits.expressions;
         for c in &self.controls {
             if c.widget.is_some() && !c.drawing.is_empty() {
                 return Err(fail("widget and drawing are mutually exclusive"));
@@ -629,6 +650,7 @@ impl DeviceUi {
                                 | UiGesture::Set(_)
                                 | UiGesture::Tab(_)
                                 | UiGesture::Preset(_)
+                                | UiGesture::Randomize
                         )
                     }
                     Widget::Disclosure { .. } => c.gesture == UiGesture::Toggle,
@@ -721,7 +743,11 @@ impl DeviceUi {
             if let Some(condition) = &c.visible_when {
                 condition.validate(&readouts, 0, &mut expression_budget)?;
             }
-            if let UiGesture::Preset(index) = c.gesture {
+            if c.gesture == UiGesture::Randomize {
+                if !matches!(c.widget, Some(Widget::Button { .. })) || c.x.is_some() || c.y.is_some() {
+                    return Err(fail("a randomize gesture is a button without bindings"));
+                }
+            } else if let UiGesture::Preset(index) = c.gesture {
                 if !matches!(c.widget, Some(Widget::Button { .. })) || c.x.is_some() || c.y.is_some() {
                     return Err(fail("a preset gesture is a button without bindings"));
                 }
