@@ -2200,12 +2200,10 @@ fn a_crossfade_between_parts_of_two_takes_shows_and_its_handle_sets_its_length()
     };
     let id = track(&harness);
     // Different passes of the content, so the parts are of two takes.
-    let session = harness.state_mut().projects_mut().session_mut(None).unwrap();
-    session
-        .execute("take.movePieces", &serde_json::json!({ "track": id, "takes": [2], "pieces": [1], "by": 8.0 }))
-        .unwrap();
-    session.execute("take.comp", &serde_json::json!({ "track": id, "take": 1 })).unwrap();
-    session.execute("take.comp", &serde_json::json!({ "track": id, "take": 2 })).unwrap();
+    let moved = json!({ "track": id, "takes": [2], "pieces": [1], "by": 8.0 });
+    harness.state_mut().run(&Action::new("take.movePieces", moved));
+    harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 1 })));
+    harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 2 })));
     harness.run();
     let at = harness.get_by_label("Crossfade on Drums").rect().center();
     drag_between(&mut harness, at, at + egui::vec2(20.0, 0.0));
