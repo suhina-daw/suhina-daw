@@ -153,12 +153,34 @@ fn clips_do_not_stack_where_the_track_has_takes() {
     let spans: Vec<(f64, f64)> = lane(&s).iter().map(|c| (c.start, c.length)).collect();
     assert_eq!(spans, [(0.0, 2.0), (2.0, 4.0)], "the moved part cut the one under it");
     let moved = lane(&s).into_iter().position(|c| c.id.0 == second).unwrap();
-    run(&mut s, "clip.move", json!({ "track": 1, "index": moved, "start": 20.0, "stack": true })).unwrap();
-    // Past the takes (they end at beat 8) two clips may share time.
-    let index = lane(&s).iter().position(|c| c.start == 0.0).unwrap();
-    run(&mut s, "clip.move", json!({ "track": 1, "index": index, "start": 21.0, "stack": true })).unwrap();
-    let after: Vec<(f64, f64)> = lane(&s).iter().filter(|c| c.start >= 20.0).map(|c| (c.start, c.length)).collect();
-    assert!(after.contains(&(20.0, 4.0)) && after.contains(&(21.0, 2.0)), "{after:?}");
+    assert_eq!(lane(&s)[moved].start, 2.0);
+}
+
+/// Past the takes, clips that are no parts of them may share time (#989).
+#[test]
+fn clips_stack_past_the_takes() {
+    let mut project = ProjectBuilder::new()
+        .audio_track(1, "Vox")
+        .audio(1, "Recording", 24.0, AudioRegion::new("take.wav"))
+        .audio(2, "Loop", 8.0, AudioRegion::new("loop.wav"))
+        .build();
+    project.arrangement.takes = vec![TakeLane {
+        track: TrackId(1),
+        name: "Take 1".into(),
+        clips: vec![Clip::new(ContentId(1), 0.0, 8.0)],
+        color: None,
+    }];
+    project.arrangement.lanes = vec![ArrangementLane {
+        id: LaneId(1),
+        name: String::new(),
+        track: Some(TrackId(1)),
+        clips: vec![Clip::new(ContentId(2), 20.0, 4.0), Clip::new(ContentId(2), 30.0, 2.0)],
+    }];
+    project.assign_ids().unwrap();
+    let mut s = Session::new(project);
+    run(&mut s, "clip.move", json!({ "track": 1, "index": 1, "start": 21.0, "stack": true })).unwrap();
+    let spans: Vec<(f64, f64)> = lane(&s).iter().map(|c| (c.start, c.length)).collect();
+    assert_eq!(spans, [(20.0, 4.0), (21.0, 2.0)]);
 }
 
 /// A take keeps the number its lane shows after another is deleted: with Take 1 gone, `take: 3`
@@ -449,7 +471,9 @@ fn comped_parts_fade_and_their_crossfade_is_set() {
     let parts = lane(&s);
     assert_eq!((parts[0].fade_out, parts[1].fade_in), (1.0, 1.0));
     run(&mut s, "take.setCrossfade", json!({ "clip": left, "length": 100.0 })).unwrap();
-    assert_eq!(lane(&s)[0].fade_out, 4.0, "no longer than the shorter part");
+    let parts = lane(&s);
+    assert!((parts[0].fade_out - (4.0 - parts[0].fade_in)).abs() < 1e-9, "no longer than fits in the part");
+    assert_eq!(parts[0].fade_out, parts[1].fade_in, "the same on both sides of the cut");
     run(&mut s, "take.setCrossfade", json!({ "clip": left })).unwrap();
     assert!((lane(&s)[0].fade_out - beats).abs() < 1e-9);
     let last = lane(&s)[1].id.0;

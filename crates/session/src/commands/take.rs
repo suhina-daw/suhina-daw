@@ -458,7 +458,7 @@ fn move_cut(session: &mut Session, params: &Value) -> Result<Value, CommandError
 }
 
 /// `take.setCrossfade {clip, length?}`: the crossfade at the cut after part `clip` made `length`
-/// beats long, as the two parts' fades there, up to the shorter part's length; without a length,
+/// beats long, as the two parts' fades there, as long as fits beside their other fades; without a length,
 /// as long as Settings says.
 fn set_crossfade(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let id = params.get("clip").and_then(Value::as_u64).ok_or("clip must be a clip id")?;
@@ -485,8 +485,10 @@ fn set_crossfade(session: &mut Session, params: &Value) -> Result<Value, Command
         })
         .ok_or("the clip has no part of another take right after it")?;
     let clips = &mut p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?.clips;
-    let shortest = clips.get(left).map_or(0.0, |c| c.length).min(clips.get(right).map_or(0.0, |c| c.length));
-    let length = length.min(shortest);
+    // Each part keeps its fade at its other edge.
+    let room_left = clips.get(left).map_or(0.0, |c| c.length - c.fade_in);
+    let room_right = clips.get(right).map_or(0.0, |c| c.length - c.fade_out);
+    let length = length.min(room_left).min(room_right).max(0.0);
     let equal = suhina_model::FadeCurve { shape: suhina_model::FadeShape::EqualPower, curve: 0.0 };
     if let Some(clip) = clips.get_mut(left) {
         clip.fade_out = length;
