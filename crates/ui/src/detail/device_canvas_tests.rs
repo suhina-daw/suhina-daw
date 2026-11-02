@@ -1870,7 +1870,7 @@ fn bars() -> (Arc<DeviceUi>, Vec<GraphParameter>) {
             id: format!("bar_{id}"),
             bounds: [i as f32 * 25.0, 0.0, 25.0, 100.0],
             x: Some(UiBinding::new("wave")),
-            y: Some(UiBinding::new(id)),
+            y: Some(UiBinding::new(*id)),
             ..template.clone()
         })
         .collect();

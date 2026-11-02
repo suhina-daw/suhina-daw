@@ -27,8 +27,8 @@ pub const COMPACT_HEIGHT: f32 = 168.0;
 pub const HEADER_HEIGHT: f32 = 20.0;
 /// Widest strip of controls in a device's header row.
 pub const HEADER_WIDTH: f32 = 480.0;
-/// Largest layout text read.
-pub const MAX_LAYOUT_BYTES: usize = crate::MAX_FILE_BYTES;
+/// Largest layout text read. A layout ships with Suhina, so it may be larger than a `.sd` file.
+pub const MAX_LAYOUT_BYTES: usize = 8 * 1024 * 1024;
 
 /// What the device panel draws for a built-in: its parameters and, when it has a layout, the
 /// layout's canvases.
