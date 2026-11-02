@@ -723,6 +723,7 @@ macro_rules! op_harmonics {
     };
 }
 
+#[allow(clippy::large_const_arrays)] // read once, to build `PARAMS`
 const DRAWN_PARAMS: [[ParamInfo; HARMONICS]; 6] = [
     op_harmonics!(1, "Op 1 Partials"),
     op_harmonics!(2, "Op 2 Partials"),

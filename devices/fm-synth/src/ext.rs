@@ -262,7 +262,7 @@ impl Ext {
                 if let Some(row) = self.matrix.get_mut(at / 4)
                     && let Some(slot) = row.get_mut((at % 4) / 2)
                 {
-                    if at % 2 == 0 {
+                    if at.is_multiple_of(2) {
                         slot.0 = value as usize;
                     } else {
                         slot.1 = v;

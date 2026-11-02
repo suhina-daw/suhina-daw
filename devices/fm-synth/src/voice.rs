@@ -391,6 +391,7 @@ impl Note {
     }
 
     /// Adds one block of the note to `out`.
+    #[allow(clippy::too_many_arguments)]
     pub fn compute(
         &mut self,
         out: &mut [i32; N],

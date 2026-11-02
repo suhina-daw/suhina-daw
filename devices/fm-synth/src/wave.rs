@@ -107,7 +107,7 @@ fn level(shape: Shape, limit: usize) -> [f32; TABLE] {
         }
         Shape::Triangle(count) => {
             let partial = |h: usize| {
-                if h % 2 == 0 {
+                if h.is_multiple_of(2) {
                     0.0
                 } else if h % 4 == 1 {
                     1.0 / (h * h) as f64
@@ -213,7 +213,7 @@ pub fn played(drawn: &[f32; HARMONICS], s: &DrawnSettings) -> [f32; HARMONICS] {
         let number = i + 1;
         let keep = match s.odd_even {
             1 => number % 2 == 1,
-            2 => number % 2 == 0,
+            2 => number.is_multiple_of(2),
             _ => true,
         };
         if !keep {
