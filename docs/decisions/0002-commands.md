@@ -106,7 +106,13 @@ UI, CLI, control channel and MCP server all dispatch commands by id. We take the
    whose graph does not fit is not an error: the project keeps the value, and
    `Session::catch_up_player`, which the window calls every frame, sends it again until the engine
    has it.
-10. **A command's rules are on its spec.** What follows from a command beside its work is in its
+10. **Lists count from 0.** A position in a list a command reports or takes counts from 0:
+    scenes, tempo changes, markers, automation points, notes, devices and clips by index
+    ([#763](https://github.com/suhina-daw/suhina-daw/issues/763) › 1). Scenes and tempo changes
+    counted from 1 before 2026-11-03. A number that names a place in the music or is part of a
+    name keeps how it reads: bars from 1, a follow action's `jump N`, a scene's "Scene 3". The
+    window shows scenes from 1 and converts at the command.
+11. **A command's rules are on its spec.** What follows from a command beside its work is in its
     `CommandSpec`'s `policy` ([#764](https://github.com/suhina-daw/suhina-daw/issues/764) › 1),
     not in lists of ids in other crates: whether the player hears an edit (`heard`), whether a
     backup comes first (`critical`), and whether an agent may run it (`agents`; for example,

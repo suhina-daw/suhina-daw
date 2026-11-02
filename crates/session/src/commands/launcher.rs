@@ -53,7 +53,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             param("target", ParamType::Text, "slot, scene or stop"),
             optional("track", ParamType::Track, "track id or name, for slot and stop"),
-            optional("scene", ParamType::Integer, "scene number, from 1, for slot and scene"),
+            optional("scene", ParamType::Integer, "scene number, from 0, for slot and scene"),
         ],
         kind: CommandKind::Edit,
         run: mapping::add_mapping,
@@ -66,7 +66,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("source", ParamType::Text, "key:<name> or note:<channel>:<note>"),
             optional("target", ParamType::Text, "slot, scene or stop, instead of source"),
             optional("track", ParamType::Track, "track id or name, for slot and stop"),
-            optional("scene", ParamType::Integer, "scene number, from 1, for slot and scene"),
+            optional("scene", ParamType::Integer, "scene number, from 0, for slot and scene"),
         ],
         kind: CommandKind::Edit,
         run: mapping::remove_mapping,
@@ -114,11 +114,11 @@ fn launcher_state(session: &mut Session, _: &Value) -> Result<Value, CommandErro
             json!({
                 "track": column.track.0,
                 "track_name": track_name(p, column.track),
-                "playing": status.playing.map(|slot| json!({ "scene": slot + 1, "clip": clip_name(slot) })),
+                "playing": status.playing.map(|slot| json!({ "scene": slot, "clip": clip_name(slot) })),
                 "queued": match status.queued {
                     None => Value::Null,
                     Some(Queued::Stop) => json!("stop"),
-                    Some(Queued::Launch(slot)) => json!({ "scene": slot + 1, "clip": clip_name(slot) }),
+                    Some(Queued::Launch(slot)) => json!({ "scene": slot, "clip": clip_name(slot) }),
                 },
                 "plays_arrangement": !status.overrides_arrangement,
             })

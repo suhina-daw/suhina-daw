@@ -224,7 +224,7 @@ fn a_slot_clip_is_named_by_id_as_well() {
     let mut session = Session::new(project());
     let slot = session.project().launcher.columns[0].slots[0].clip.as_ref().unwrap().id;
     let set = run(&mut session, "clip.setLength", json!({ "clip": slot.0, "length": 2 })).unwrap();
-    assert_eq!(set, json!({ "clip": slot.0, "scene": 1, "length": 2.0 }));
+    assert_eq!(set, json!({ "clip": slot.0, "scene": 0, "length": 2.0 }));
     run(&mut session, "clip.delete", json!({ "clip": slot.0 })).unwrap();
     assert!(session.project().launcher.columns[0].slots[0].clip.is_none());
 }
@@ -261,7 +261,7 @@ fn a_clip_named_wrongly_is_an_error_that_changes_nothing() {
         ("clip.move", json!({ "clip": slot.0, "start": 0 }), "in a clip slot"),
         ("clip.setEnabled", json!({ "clips": [{ "clip": slot.0 }], "enabled": false }), "in a clip slot"),
         ("clip.setEnabled", json!({ "clips": [{ "clip": first.0, "index": 0 }], "enabled": false }), "not both"),
-        ("note.list", json!({ "clip": first.0, "scene": 1 }), "not both"),
+        ("note.list", json!({ "clip": first.0, "scene": 0 }), "not both"),
     ] {
         let err = run(&mut session, command, params.clone()).unwrap_err();
         assert!(err.contains(says), "{command} {params}: {err} should say {says:?}");

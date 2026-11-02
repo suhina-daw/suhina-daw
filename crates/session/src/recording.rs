@@ -362,7 +362,7 @@ impl Session {
         take.asked = Some(Instant::now());
         take.play = true;
         self.send_ends();
-        Some(json!({ "scene": scene + 1, "queued": "end recording", "end_beat": end }))
+        Some(json!({ "scene": scene, "queued": "end recording", "end_beat": end }))
     }
 
     /// Takes in what the recording thread has, finishes the takes that are done (one undo step
@@ -1018,7 +1018,7 @@ pub(crate) fn record_clip(session: &mut Session, params: &Value) -> Result<Value
     session.begin_takes(&[track], Target::Slot { scene }, start, running)?;
     Ok(json!({
         "track": track.0,
-        "scene": scene + 1,
+        "scene": scene,
         "start_beat": start,
         "count_in_bars": if running { 0 } else { session.live.recording.count_in_bars },
     }))
@@ -1150,7 +1150,7 @@ pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, Co
             json!({
                 "track": t.track.0,
                 "track_name": track_name(p, t.track),
-                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene + 1 }), Target::Arrangement => json!("arrangement"), Target::Sampler { device } => json!({"device": device}) },
+                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene }), Target::Arrangement => json!("arrangement"), Target::Sampler { device } => json!({"device": device}) },
                 "kind": if t.file.is_some() { "audio" } else { "midi" },
                 "start_beat": t.start,
                 "end_beat": t.end,

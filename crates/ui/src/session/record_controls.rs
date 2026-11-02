@@ -237,7 +237,7 @@ pub fn slot_record(
     let response = widgets::button_area(ui, button, Id::new(("slot-record", track, number)), label);
     if response.clicked() {
         let id = if recording { "clip.launch" } else { "clip.record" };
-        actions.push(Action::new(id, json!({ "track": track, "scene": number })));
+        actions.push(Action::new(id, json!({ "track": track, "scene": number.saturating_sub(1) })));
     }
     let pulse = if recording { motion::pulse(ui.ctx()) } else { 1.0 };
     if recording {

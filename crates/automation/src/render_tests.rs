@@ -101,7 +101,7 @@ fn the_cue_renders_beside_the_main_mix() {
 fn a_launch_script_renders_launches_at_their_times() {
     let path = temp_wav("script");
     let steps = [
-        step(0.1, "clip.launch", json!({ "track": "Drums", "scene": 1 })),
+        step(0.1, "clip.launch", json!({ "track": "Drums", "scene": 0 })),
         step(0.3, "track.stop", json!({ "track": "Drums" })),
         step(0.31, "launcher.state", json!({})),
         step(9.0, "transport.stop", json!({})),
@@ -158,7 +158,7 @@ fn launch_scripts_take_only_transport_and_read_commands() {
         assert!(run(&[], seconds).is_err(), "{seconds}");
     }
     // A failing command is reported in its step, not as a failed render.
-    let steps = [step(0.0, "clip.launch", json!({ "track": "Drums", "scene": 5 }))];
+    let steps = [step(0.0, "clip.launch", json!({ "track": "Drums", "scene": 4 }))];
     let (_, results) = render_launch_script(&project(), &AudioPool::new(), &path, SR, &steps, 0.1, None, None).unwrap();
     assert_eq!(results[0]["ok"], false);
     let _ = std::fs::remove_file(&path);
@@ -212,7 +212,7 @@ fn a_launch_scripts_steps_read_only_below_the_read_root() {
     let outside = dir.join("elsewhere").join("mix.wav").display().to_string();
     assert!(run(&[step(0.0, "preview.play", json!({ "path": outside }))], 1.0).is_err());
     let steps =
-        [step(0.0, "clip.launch", json!({ "track": "Drums", "scene": 1 })), step(0.5, "launcher.state", json!({}))];
+        [step(0.0, "clip.launch", json!({ "track": "Drums", "scene": 0 })), step(0.5, "launcher.state", json!({}))];
     let (_, results) = run(&steps, 1.0).unwrap();
     assert!(results.iter().all(|r| r["ok"] == json!(true)), "{results:?}");
     let _ = std::fs::remove_file(&path);

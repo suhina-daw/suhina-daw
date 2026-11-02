@@ -553,7 +553,7 @@ pub fn scene_menu(ui: &mut Ui, menu: &SceneMenu<'_>, actions: &mut Vec<Action>) 
         );
         if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
             if text.trim() != current {
-                actions.extend(scene_field_action(key, scene, &text));
+                actions.extend(scene_field_action(key, scene - 1, &text));
             }
             ui.data_mut(|d| d.remove::<String>(id));
             ui.close();
@@ -563,15 +563,15 @@ pub fn scene_menu(ui: &mut Ui, menu: &SceneMenu<'_>, actions: &mut Vec<Action>) 
     }
     ui.separator();
     if ui.button("Insert scene below").clicked() {
-        actions.push(Action::new("scene.insert", json!({ "scene": scene + 1 })));
+        actions.push(Action::new("scene.insert", json!({ "scene": scene })));
         ui.close();
     }
     if ui.button("Duplicate scene").clicked() {
-        actions.push(Action::new("scene.duplicate", json!({ "scene": scene })));
+        actions.push(Action::new("scene.duplicate", json!({ "scene": scene - 1 })));
         ui.close();
     }
     if ui.add_enabled(!menu.only, egui::Button::new("Delete scene")).clicked() {
-        actions.push(Action::new("scene.delete", json!({ "scene": scene })));
+        actions.push(Action::new("scene.delete", json!({ "scene": scene - 1 })));
         ui.close();
     }
 }
@@ -579,6 +579,7 @@ pub fn scene_menu(ui: &mut Ui, menu: &SceneMenu<'_>, actions: &mut Vec<Action>) 
 /// The command a scene menu field sends when its text is applied: a rename, a tempo or a time
 /// signature, cleared by empty text. Text that is not a number or a time signature is sent as
 /// it is, so the command says what is wrong with it.
+/// `scene` counts from 0, as the commands do.
 pub fn scene_field_action(field: &str, scene: usize, text: &str) -> Option<Action> {
     let text = text.trim();
     match field {
