@@ -121,7 +121,6 @@ suhina-session = { opt-level = 0 }
 suhina-style = { opt-level = 0 }
 suhina-theme-package = { opt-level = 0 }
 suhina-ui = { opt-level = 0 }
-suhina-update = { opt-level = 0 }
 
 [profile.release]
 lto = "thin"
