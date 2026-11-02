@@ -1891,7 +1891,7 @@ fn take_menu(
             let current = piece.and_then(|p| take.clips.get(p)).map(|c| c.color);
             if let (Some(colour), Some(piece)) = (crate::interaction::colour_picker::swatch_row(ui, current), piece) {
                 let hex = crate::interaction::colour_picker::hex(colour);
-                let params = json!({ "track": track.0, "take": take.number, "color": hex, "piece": piece + 1 });
+                let params = json!({ "track": track.0, "take": take.number, "color": hex, "piece": piece });
                 actions.push(Action::new("take.setColor", params));
                 ui.close();
             }

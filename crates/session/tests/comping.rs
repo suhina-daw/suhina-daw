@@ -78,7 +78,7 @@ fn recolouring_a_take_colours_its_parts_and_a_split_cuts_the_takes() {
     assert_eq!(s.project().arrangement.takes[0].color, None, "other takes keep theirs");
     // One piece of a split take, and its part on the track, alone (Recolor).
     run(&mut s, "clip.split", json!({ "track": 1, "index": 0, "at": 4.0 })).unwrap();
-    run(&mut s, "take.setColor", json!({ "track": 1, "take": 2, "color": "#00ff00", "piece": 2 })).unwrap();
+    run(&mut s, "take.setColor", json!({ "track": 1, "take": 2, "color": "#00ff00", "piece": 1 })).unwrap();
     let take = &s.project().arrangement.takes[1];
     assert_eq!((take.clips[0].color, take.clips[1].color), (None, Some(Rgb(0, 0xff, 0))));
     let colours: Vec<Option<Rgb>> = lane(&s).iter().map(|c| c.color).collect();
@@ -128,15 +128,15 @@ fn deleting_pieces_of_a_take_removes_them_and_an_emptied_take() {
     let mut s = session();
     run(&mut s, "take.comp", json!({ "track": 1, "take": 1, "start": 0.0, "end": 8.0 })).unwrap();
     run(&mut s, "clip.split", json!({ "track": 1, "index": 0, "at": 4.0 })).unwrap();
-    let done = run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 2, "pieces": [2] })).unwrap();
+    let done = run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 2, "pieces": [1] })).unwrap();
     assert_eq!(done["take_deleted"], json!(false));
     let take = &s.project().arrangement.takes[1];
     assert_eq!(take.clips.iter().map(|c| (c.start, c.length)).collect::<Vec<_>>(), [(0.0, 4.0)]);
-    let done = run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 2, "pieces": [1] })).unwrap();
+    let done = run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 2, "pieces": [0] })).unwrap();
     assert_eq!(done["take_deleted"], json!(true));
     let names: Vec<&str> = s.project().arrangement.takes.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, ["Take 1", "Take 3"]);
-    assert!(run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 1, "pieces": [3] })).is_err());
+    assert!(run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 1, "pieces": [2] })).is_err());
     run(&mut s, "edit.undo", json!({})).unwrap();
     assert_eq!(s.project().arrangement.takes.len(), 3);
 }

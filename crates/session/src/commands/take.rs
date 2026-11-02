@@ -35,7 +35,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "piece",
                 ParamType::Integer,
-                "only this piece of the take, from 1 in time order (a split take has several), and its parts on the track",
+                "only this piece of the take, from 0 in time order (a split take has several), and its parts on the track",
             ),
         ],
         kind: CommandKind::EDIT,
@@ -94,7 +94,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[
             TRACK,
             param("take", ParamType::Integer, "the take's number on the track, from 1"),
-            param("pieces", ParamType::Integers, "the pieces, numbered from 1 in time order"),
+            param("pieces", ParamType::Integers, "the pieces, numbered from 0 in time order"),
         ],
         kind: CommandKind::EDIT,
         run: delete_pieces,
@@ -218,7 +218,7 @@ fn comp_part(
 }
 
 /// `take.setColor {track, take, color, piece?}`: the take lane's colour and its parts' on the
-/// track (Recolor lane, #989), its pieces' own colours given up; with `piece` (from 1, a split
+/// track (Recolor lane, #989), its pieces' own colours given up; with `piece` (from 0, a split
 /// take has several), that piece's colour and its parts' alone (Recolor). `null` gives them the
 /// lane's or the palette's colour again.
 fn set_take_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -229,8 +229,8 @@ fn set_take_color(session: &mut Session, params: &Value) -> Result<Value, Comman
     let piece = match Args::new(params).value("piece") {
         None => None,
         Some(v) => {
-            let n = v.as_u64().filter(|n| *n >= 1).ok_or("piece must be a number from 1")?;
-            let n = usize::try_from(n - 1).map_err(|_| "piece is out of range")?;
+            let n = v.as_u64().ok_or("piece must be a number from 0")?;
+            let n = usize::try_from(n).map_err(|_| "piece is out of range")?;
             let pieces = p.arrangement.takes.get(index).map_or(0, |t| t.clips.len());
             if n >= pieces {
                 return Err(format!("the take has {pieces} pieces").into());
@@ -417,9 +417,8 @@ fn delete_pieces(session: &mut Session, params: &Value) -> Result<Value, Command
         let piece = entry
             .as_u64()
             .and_then(|n| usize::try_from(n).ok())
-            .and_then(|n| n.checked_sub(1))
             .filter(|&n| n < count)
-            .ok_or("each piece is a number from 1 up to the take's pieces")?;
+            .ok_or("each piece is a number from 0, below the take's pieces")?;
         doomed.push(piece);
     }
     doomed.sort_unstable();

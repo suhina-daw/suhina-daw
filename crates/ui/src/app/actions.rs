@@ -286,7 +286,7 @@ impl App {
                 takes.dedup();
                 for (track, take) in takes {
                     let pieces: Vec<usize> =
-                        picked.iter().filter(|(t, n, _)| *t == track && *n == take).map(|(_, _, p)| p + 1).collect();
+                        picked.iter().filter(|(t, n, _)| *t == track && *n == take).map(|(_, _, p)| *p).collect();
                     actions.push(Action::new(
                         "take.deletePieces",
                         json!({ "track": track.0, "take": take, "pieces": pieces }),

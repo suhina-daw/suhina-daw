@@ -242,7 +242,7 @@ were ended, without the wait the thread gives a device for frames still on their
 | `transport.setCountIn` | `bars`: 0, 1, 2 or 4 |
 | `take.comp` | `track`, `take` (from 1), `start?`, `end?`: copies the take, or its part from `start` to `end` beats, onto the track over what is there; one undo step |
 | `take.delete` | `track`, `take`: deletes the take lane; one undo step |
-| `take.setColor` | `track`, `take`, `color` (`"#rrggbb"` or null), `piece?` (from 1): the take's colour and its parts', or one piece's and its parts'; one undo step |
+| `take.setColor` | `track`, `take`, `color` (`"#rrggbb"` or null), `piece?` (from 0, in time order): the take's colour and its parts', or one piece's and its parts'; one undo step |
 | `take.solo` | `track`, `take` (from 1, or 0 for none): the take heard in place of the track's clips; not an undo step |
 | `take.promote` | `track`, `take`: every piece of the take put on the track over what is there; one undo step |
 | `take.deleteUnused` | `track`: deletes the take lanes the comp uses nothing of; one undo step |
