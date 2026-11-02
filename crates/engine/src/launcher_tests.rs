@@ -641,10 +641,10 @@ fn a_bar_before_where_a_scene_set_the_bars_starts_before_the_playhead() {
     let p = project(Vec::new(), vec![Vec::new()]);
     let map = Arc::new(p.transport.tempo_map(f64::from(SR)));
     let mut launcher = super::Launcher::new(&p, &AudioPool::new(), SR, &[], map);
-    launcher.follows_map = false;
-    launcher.bar_beats = 4.0;
-    launcher.bar_origin = 8.0;
-    launcher.bars_before = 2.0;
+    launcher.bars.follows_map = false;
+    launcher.bars.bar_beats = 4.0;
+    launcher.bars.bar_origin = 8.0;
+    launcher.bars.bars_before = 2.0;
     launcher.beat = 5.0;
     let (bar, start, _) = launcher.bar();
     assert_eq!((bar, start), (1, 4.0));

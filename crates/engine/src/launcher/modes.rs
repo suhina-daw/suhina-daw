@@ -43,7 +43,7 @@ impl Launcher {
             .get(column)
             .and_then(|c| c.slots.get(slot))
             .and_then(|s| s.launch.quantization)
-            .unwrap_or(self.quantization)
+            .unwrap_or(self.bars.quantization)
     }
 
     /// A press of the launch button of `slot`, which holds a clip that can play.
@@ -95,7 +95,7 @@ impl Launcher {
     /// Called when `slot` in `column` was launched at `at_beat`: while the button of a clip in
     /// repeat mode is held, its next launch is queued one grid step later.
     pub(super) fn launched(&mut self, column: usize, slot: usize, at_beat: f64) {
-        let step = self.slot_quantization(column, slot).step(self.bar_beats);
+        let step = self.slot_quantization(column, slot).step(self.bars.bar_beats);
         let Some(c) = self.columns.get_mut(column) else { return };
         if c.held.is_some_and(|held| held != slot) {
             // Another clip took the column over; its release no longer does anything.

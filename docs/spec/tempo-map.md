@@ -69,7 +69,10 @@ or frames at the sample rate. Nothing converts with the start tempo alone.
   this is `TempoClock` (`crates/engine/src/tempo.rs`): the audio clips, their fades, the
   stretched clips and the launcher's clock ask it, and it takes that fast path when the map is
   constant and goes through the map otherwise. Sending a constant tempo through the map instead
-  moves a launched clip by a frame, so the fast path stays.
+  moves a launched clip by a frame, so the fast path stays. The launcher's bars are a
+  `LaunchClock` (`crates/engine/src/launcher/clock.rs`): the time signature playing, where its
+  bars are counted from after a scene changed it, and the launch quantisation, from which it
+  finds the beat a launch happens at.
 - Malformed changes are ignored, not refused: a beat that is not finite, not after beat 0 or past
   beat 120 000, a tempo outside 1 to 999 bpm, more than 10 000 changes. Of two changes on one beat
   the later in the list wins, except a ramp followed by a step: the ramp arrives at its tempo,
