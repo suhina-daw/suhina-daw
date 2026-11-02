@@ -454,14 +454,13 @@ another header (ADR 0022 decision 2).
 - Crashes while probing *(observed)*: three causes were found, two of them the probe's own. Writing
   the host's strings at the whole assumed size overran one installed plug-in's buffer in its entry, and
   `effEditIdle` without an editor open took another down; the probe now does neither, and
-  both plug-ins' state came back through the host. One installed instrument still crashes with an access violation inside its entry, right after asking
-  `audioMasterVersion` and `audioMasterGetProductString`, in `--scan` as in the probe and with or
-  without a sandbox. It stays in its disposable process and a scan lists it as failed. While another
-  host runs the same file it loads and plays here too, and it crashes again once that host has
-  closed, so that host's process gives it something ours does not. It crashed the same with a
-  512 MB stack for the thread that ran it, with an external application manifest beside the
-  host's executable, and with a window open and OLE initialised. The cause is unknown, and the host
-  never reads a plug-in's code.
+  both plug-ins' state came back through the host. One installed instrument crashed with an access violation inside its
+  entry, right after asking `audioMasterVersion` and `audioMasterGetProductString`: the host's
+  answer to `audioMasterGetProductString` wrote the whole assumed 128 bytes, past the shorter
+  buffer the plug-in gave (the same overrun the probe's own string writing had, fixed there in
+  #1072). With the host's vendor and product strings cut to their text and terminator (`host.rs`),
+  it loads, opens its editor and plays through the host *(observed, Windows
+  x86-64)*.
 - The state through the host *(observed, Windows x86-64)*: `an_installed_plugins_state_comes_back_through_the_host`
   saved and restored the state of ten installed plug-ins, each staying alive. The bytes read back were
   the same for most of them; they differed for three, whose
@@ -479,19 +478,13 @@ another header (ADR 0022 decision 2).
   looks like, if a plug-in has one, is still unobserved.
 - `effEditOpen`'s answer: unobserved. The probe opens no window; the host's trace shows the answer.
 - Channel counts *(observed)*: Another installed instrument declares 0 inputs and 130 outputs to this host, where other
-  hosts on the same machine see 16. A plug-in over 256 is refused; the link carries a plug-in's
-  first channels. It loads and takes its chunk, then crashes in its first `processReplacing`, in the
-  probe as in the host, right after asking `audioMasterGetTime`; the cause is unknown. Outside any
-  sandbox it crashes the same. It crashed the same without `effStartProcess`, without events,
-  without the chunk's round trip, with `audioMasterGetTime` answered 0, with `ptr1` set by the host,
-  with 64-byte aligned buffers, after 20 s of idle calls, with its editor open (`effEditOpen`
-  answered 1), with a 512 MB stack for the thread that ran it, with an external application
-  manifest beside the host's executable, and with the host's name answered as another's; the calls
-  its entry makes to the host are the same ones it makes in the hosts it runs in. The probe
-  hands it a non-empty input array for its zero inputs and asks `effGetVstVersion` after `effOpen`,
-  as other hosts do, so neither is the difference. Another host plays the same file on the same
-  machine, and the 130 says the plug-in shapes itself from something it learns about its host;
-  what, is not found in what a host hands it, and the host never reads a plug-in's code.
+  hosts on the same machine see 16; a plug-in over 256 is refused, so the link carries a plug-in's
+  first channels. It loads, takes its chunk, opens its editor and plays through the host *(observed,
+  Windows x86-64)*. An earlier host crashed in the plug-in's first `processReplacing` right after
+  `audioMasterGetTime`; the host of this version loads and plays it. Which of the review's fixes
+  settles it — the serving state over the whole block, the block parameter checked and clamped, or
+  the chunk and editor answers no longer failing the restore — is not yet pinned to one; the probe
+  re-run against it would say.
 - Effect alignment *(observed)*: two installed plug-ins' entries gave an `AEffect` on a 4-byte
   boundary (Windows x86-64), so every read of one is an unaligned read.
 - Flags that change in `effOpen` *(observed)*: One installed plug-in's went from `0x1031` to `0x1231` as it
