@@ -407,3 +407,14 @@ fn which_keys_are_named() {
     assert!(named(61, OnlyC, true, 12.0), "folded rows are all named");
     assert!(!named(60, All, true, 7.0), "low rows have no room");
 }
+
+#[test]
+fn notes_selected_together_sound_at_once_each_key_once() {
+    let clip = clip(vec![note(0.0, 1.0, 60), note(1.0, 1.0, 64), note(2.0, 1.0, 60)]);
+    let mut state = PianoRollState { audition: true, ..PianoRollState::default() };
+    state.audition_together(&clip, &[0, 1, 2]);
+    assert_eq!(state.audition_pending, [60, 64]);
+    let mut quiet = PianoRollState::default();
+    quiet.audition_together(&clip, &[0, 1, 2]);
+    assert!(quiet.audition_pending.is_empty(), "the audition is off");
+}

@@ -57,7 +57,7 @@ pub(super) fn key_column(
         if let Some(action) = state.key_release(clip) {
             actions.push(action);
         }
-        state.end_key_selection(clip);
+        state.end_key_selection();
     }
     state.hover_key = hovered;
 }

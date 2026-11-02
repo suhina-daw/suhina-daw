@@ -554,19 +554,15 @@ impl PianoRollState {
         }
     }
 
-    /// Ends a drag in the key column: what it selected stays selected, to add to, and the notes it
-    /// added sound in time order.
-    pub(super) fn end_key_selection(&mut self, clip: &PianoClip) {
+    /// Ends a drag in the key column: what it selected stays selected, to add to. The keys already
+    /// sounded as the drag reached them.
+    pub(super) fn end_key_selection(&mut self) {
         self.key_live = None;
-        let added: Vec<usize> = self.selected.difference(&self.key_base).copied().collect();
-        self.audition_in_time_order(clip, &added);
     }
 
-    /// The notes at `indices` sound one after the other, in time order, each key once.
-    pub(super) fn audition_in_time_order(&mut self, clip: &PianoClip, indices: &[usize]) {
-        let mut picked: Vec<&Note> = indices.iter().filter_map(|i| clip.notes.get(*i)).collect();
-        picked.sort_by(|a, b| a.time.total_cmp(&b.time).then(a.key.cmp(&b.key)));
-        self.audition_one_by_one(picked.iter().map(|n| n.key));
+    /// The notes at `indices` sound at once, each key once.
+    pub(super) fn audition_together(&mut self, clip: &PianoClip, indices: &[usize]) {
+        self.audition_keys(indices.iter().filter_map(|i| clip.notes.get(*i)).map(|n| n.key));
     }
 
     /// Whether notes this command places replace what is under them (Allow stacked notes off).

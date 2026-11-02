@@ -518,8 +518,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   draw it, not when the button is let go, and for as long as the button is held. A drag sounds the
   notes at each new pitch they reach, and moving them in time only sounds nothing new. A note added
   to the selection (a click, Shift+click) sounds at once, so notes sound in the order they were
-  picked; notes selected together (a rectangle, a range of keys) sound one after the other in time
-  order, 0.12 s apart. A key sounds once per step, however many of its notes were selected. Notes
+  picked. Notes a rectangle selects sound together when it is let go, with no delay between them,
+  and a drag on the keys sounds each key as it reaches it. A key sounds once, however many of its
+  notes were selected. Notes
   moved by the arrow keys and those a stroke drew sound where they are. Each sounding is one
   `preview.noteOn` with its keys (at most 16, each once) at the velocity a new note takes, and a
   `preview.noteOff` 0.3 s after the last reason to sound. The window counts the time; nothing on the

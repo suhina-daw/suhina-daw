@@ -313,7 +313,7 @@ pub(super) fn commit(
                     added.push(i);
                 }
             }
-            state.audition_in_time_order(clip, &added);
+            state.audition_together(clip, &added);
         }
         _ => {}
     }

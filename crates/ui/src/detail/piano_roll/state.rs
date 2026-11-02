@@ -212,9 +212,6 @@ pub struct PianoRollState {
     pub(super) audition_sounding: Vec<u8>,
     /// A press in the grid holds what it sounds until it is let go.
     pub(super) audition_press: bool,
-    /// Keys still to sound one by one, and when the next one does.
-    pub(super) audition_queue: std::collections::VecDeque<u8>,
-    pub(super) audition_next: f64,
     /// Which other clips show as ghost notes, picked in the toolbar's ghost menu; kept until
     /// Suhina closes (› Ghost notes).
     pub ghost_source: GhostSource,
@@ -275,8 +272,6 @@ impl Default for PianoRollState {
             audition_off: None,
             audition_sounding: Vec::new(),
             audition_press: false,
-            audition_queue: std::collections::VecDeque::new(),
-            audition_next: 0.0,
             ghost_source: GhostSource::default(),
             fold: Fold::default(),
         }
@@ -483,7 +478,6 @@ impl PianoRollState {
         self.stroke.clear();
         self.erasing.clear();
         self.audition_pending.clear();
-        self.audition_queue.clear();
         self.key_live = None;
     }
 
