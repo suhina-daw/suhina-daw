@@ -4,6 +4,16 @@
 use super::*;
 
 #[test]
+fn picked_clips_follow_their_move_to_another_track() {
+    let mut state = ArrangementViewState::default();
+    let (a, b, c) = (ClipId(1), ClipId(2), ClipId(3));
+    state.select_clips(vec![(TrackId(1), a), (TrackId(1), b)]);
+    state.clips_moved(&[(TrackId(2), a), (TrackId(2), b), (TrackId(2), c)]);
+    assert_eq!(state.selected_clips(), [(TrackId(2), a), (TrackId(2), b)]);
+    assert_eq!(state.selected_clip(), Some((TrackId(2), a)));
+}
+
+#[test]
 fn shift_click_takes_the_rectangle_from_the_anchor_across_tracks() {
     // Two tracks alike, each with a clip at bar 1 and one at bar 5 (#694).
     let spot = |track: u32, clip: u32, row: usize, start: f64| ClipSpot {

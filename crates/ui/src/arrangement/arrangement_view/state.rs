@@ -185,9 +185,17 @@ pub struct ArrangementViewState {
     /// A drag on the handle of a crossfade between parts of two takes: the part before the cut
     /// and the crossfade's length in beats so far (#1078).
     pub(super) comp_fade_drag: Option<(ClipId, f64)>,
+    /// The bend of the crossfade after this part being dragged, and how far from its handle's
+    /// middle the pointer went down (#1078).
+    pub(super) comp_curve_drag: Option<(ClipId, f64, f32)>,
     /// Take pieces picked with Ctrl and a click (track, take number, piece from 0), which Delete
     /// deletes (#989).
     pub take_selected: Vec<(TrackId, usize, usize)>,
+    /// Take lanes picked by a click on their headers, all of one track (track, take number), which
+    /// Delete deletes. A press anywhere else lets go of them.
+    pub take_lanes_picked: Vec<(TrackId, usize)>,
+    /// Where the take lanes' headers were drawn last frame.
+    pub(super) take_headers: Vec<Rect>,
     /// The take lane heard in place of its track (track, take number), as the session says
     /// (`take.solo`): its S lit and the track's lane greyed.
     pub take_solo: Option<(TrackId, usize)>,
@@ -387,7 +395,10 @@ impl Default for ArrangementViewState {
             take_move: None,
             take_edge: None,
             comp_fade_drag: None,
+            comp_curve_drag: None,
             take_selected: Vec::new(),
+            take_lanes_picked: Vec::new(),
+            take_headers: Vec::new(),
             take_solo: None,
             stack_audio: false,
             stack_midi: false,
@@ -484,6 +495,8 @@ pub struct TakeArea {
 /// Pieces of takes being dragged along the timeline.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct TakeMove {
+    /// The number of the take the drag began on, whose lane the pointer's lane is counted from.
+    pub(super) take: usize,
     pub(super) track: TrackId,
     /// Each piece's take number and its place in the take, from 0.
     pub(super) pieces: Vec<(usize, usize)>,
@@ -574,6 +587,17 @@ impl ArrangementViewState {
         if self.selected.contains(&key) {
             self.anchor = Some(key);
         }
+    }
+
+    /// `moved` clips, each by the track it is on now and its id: those picked stay picked there.
+    pub fn clips_moved(&mut self, moved: &[(TrackId, ClipId)]) {
+        let follow = |key: &mut (TrackId, ClipId)| {
+            if let Some(now) = moved.iter().find(|m| m.1 == key.1) {
+                *key = *now;
+            }
+        };
+        self.selected.iter_mut().for_each(follow);
+        self.anchor.iter_mut().for_each(follow);
     }
 
     pub fn select_clips(&mut self, keys: Vec<(TrackId, ClipId)>) {

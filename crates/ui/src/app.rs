@@ -2524,6 +2524,21 @@ impl App {
                         self.arrangement.select_clips(copies);
                     }
                 }
+                // Moved clips stay picked, on whichever track they landed: a clip is picked by its
+                // track and its id.
+                if action.id == "clip.move"
+                    || (action.id == "clip.moveMany" && action.params["copy"].as_bool() != Some(true))
+                {
+                    let key = |c: &serde_json::Value| {
+                        let track = u32::try_from(c["track"].as_u64()?).ok()?;
+                        Some((TrackId(track), ClipId(u32::try_from(c["clip"].as_u64()?).ok()?)))
+                    };
+                    let moved: Vec<(TrackId, ClipId)> = match result["clips"].as_array() {
+                        Some(made) => made.iter().filter_map(key).collect(),
+                        None => key(&result).into_iter().collect(),
+                    };
+                    self.arrangement.clips_moved(&moved);
+                }
                 let changes_project = suhina_session::commands()
                     .iter()
                     .find(|c| c.id == action.id)

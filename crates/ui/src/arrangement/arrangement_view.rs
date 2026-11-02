@@ -1018,6 +1018,12 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     });
     // A drop drawn last frame on its new track has been moved by now.
     state.landing = None;
+    // A press anywhere but on a take lane's header lets go of the lanes picked there.
+    let (take_press, press_at) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.latest_pos()));
+    if take_press && !press_at.is_some_and(|p| state.take_headers.iter().any(|h| h.contains(p))) {
+        state.take_lanes_picked.clear();
+    }
+    state.take_headers.clear();
     let mut ghost = None;
     let mut rows_seen: Vec<(TrackId, Rect)> = Vec::new();
     let mut clip_rects: Vec<((TrackId, ClipId), Rect)> = Vec::new();

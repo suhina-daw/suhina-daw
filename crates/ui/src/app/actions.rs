@@ -277,6 +277,13 @@ impl App {
             "selection.cut" | "selection.duplicate" if self.shown == View::Session => {
                 self.status = Status::Hint("In the Launcher view, a slot's clip can be copied and pasted".into());
             }
+            // Take lanes picked by their headers: Delete deletes them, in one undo step.
+            "selection.delete" if self.shown == View::Arrangement && !self.arrangement.take_lanes_picked.is_empty() => {
+                let picked = std::mem::take(&mut self.arrangement.take_lanes_picked);
+                let Some((track, _)) = picked.first() else { return };
+                let takes: Vec<usize> = picked.iter().map(|(_, n)| *n).collect();
+                actions.push(Action::new("take.delete", json!({ "track": track.0, "takes": takes })));
+            }
             // An area painted across take lanes with Ctrl and a drag: Delete and Cut take what is
             // in it, in one undo step (#1078).
             "selection.delete" | "selection.cut"
@@ -289,8 +296,8 @@ impl App {
                     json!({ "track": area.track.0, "takes": area.takes, "start": area.start, "end": area.end });
                 actions.push(Action::new(id, params));
             }
-            // Take pieces picked with Ctrl and a click: Delete deletes them, the last take first so
-            // the numbers of the others hold when an emptied take goes (#989).
+            // Take pieces picked with Ctrl and a click: Delete deletes them, one undo step per take
+            // (#989).
             "selection.delete" if self.shown == View::Arrangement && !self.arrangement.take_selected.is_empty() => {
                 let mut picked = std::mem::take(&mut self.arrangement.take_selected);
                 picked.sort_unstable_by_key(|(t, n, p)| (t.0, std::cmp::Reverse(*n), *p));

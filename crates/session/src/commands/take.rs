@@ -73,10 +73,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "take.setCrossfade",
-        label: "Set how long the crossfade is at the cut between a comped part and the part of another take right after it; without a length, the length in Settings",
+        label: "Set how long the crossfade is and how it bends at the cut between a comped part and the part of another take right after it; with neither, the length in Settings",
         params: &[
             param("clip", ParamType::Integer, "the clip id of the part before the cut"),
             optional("length", ParamType::Number, "the whole crossfade, in beats"),
+            optional("curve", ParamType::Number, "the bend of both its fades, -1 to 1, 0 for equal power"),
         ],
         kind: CommandKind::Edit,
         run: set_crossfade,
@@ -97,6 +98,15 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         kind: CommandKind::Edit,
         run: promote_take,
         policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "take.add",
+        label: "Add an empty take lane under a track, numbered after its other takes, for pieces to be moved onto",
+        params: &[TRACK],
+        kind: CommandKind::Edit,
+        run: add_take,
+        // Takes do not play: a new lane changes only what is shown.
+        policy: Policy::UNHEARD,
     },
     CommandSpec {
         id: "take.deleteUnused",
@@ -120,7 +130,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "take.deleteRange",
-        label: "Delete what some take lanes of a track hold between start and end (an area painted across them); a take left with nothing goes; the track's clips stay",
+        label: "Delete what some take lanes of a track hold between start and end (an area painted across them); a take left with nothing stays as an empty lane; the track's clips stay",
         params: &[TRACK, TAKE_LIST, AREA_START, AREA_END],
         kind: CommandKind::Edit,
         run: delete_range,
@@ -136,7 +146,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "take.movePieces",
-        label: "Move pieces of a track's takes along the timeline, each on its own take lane, over what they cover there; the parts already on the track stay as they are",
+        label: "Move pieces of a track's takes along the timeline and to other take lanes of the track, over what they cover there; the parts already on the track stay as they are",
         params: &[
             TRACK,
             param("takes", ParamType::Integers, "the take of each piece, its number on the track, from 1"),
@@ -146,6 +156,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the pieces, from 1 in time order within their takes, one per entry of takes",
             ),
             param("by", ParamType::Number, "how far, in beats (the pieces stop at the start of the timeline)"),
+            optional("lanesBy", ParamType::Integer, "how many lanes down (negative: up) they go; by default none"),
         ],
         kind: CommandKind::Edit,
         run: move_pieces,
@@ -167,8 +178,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "take.delete",
-        label: "Delete a recorded take lane of a track; the track's clips stay",
-        params: &[TRACK, param("take", ParamType::Integer, "the take's number on the track, from 1")],
+        label: "Delete take lanes of a track, in one undo step; the track's clips stay",
+        params: &[
+            TRACK,
+            optional("take", ParamType::Integer, "the take's number on the track, from 1"),
+            optional("takes", ParamType::Integers, "instead of take: several takes' numbers"),
+        ],
         kind: CommandKind::Edit,
         run: delete_take,
         // Takes do not play: deleting one changes only what is shown.
@@ -457,18 +472,24 @@ fn move_cut(session: &mut Session, params: &Value) -> Result<Value, CommandError
     Ok(json!({ "track": track.0, "cut": done }))
 }
 
-/// `take.setCrossfade {clip, length?}`: the crossfade at the cut after part `clip` made `length`
-/// beats long, as the two parts' fades there, as long as fits beside their other fades; without a length,
-/// as long as Settings says.
+/// `take.setCrossfade {clip, length?, curve?}`: the crossfade at the cut after part `clip` made
+/// `length` beats long and bent by `curve`, as the two parts' fades there, as long as fits beside
+/// their other fades. What is left out stays as it is; with neither, it is as long as Settings says.
 fn set_crossfade(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let id = params.get("clip").and_then(Value::as_u64).ok_or("clip must be a clip id")?;
+    let curve = match params.get("curve") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(v.as_f64().filter(|c| (-1.0..=1.0).contains(c)).ok_or("curve must be a number from -1 to 1")?),
+    };
     let length = match params.get("length") {
-        None | Some(Value::Null) => session.take_crossfade_beats(),
+        None | Some(Value::Null) if curve.is_some() => None,
+        None | Some(Value::Null) => Some(session.take_crossfade_beats()),
         Some(v) => {
-            v.as_f64().filter(|l| l.is_finite() && *l > 0.0).ok_or("length must be a number of beats above 0")?
+            Some(v.as_f64().filter(|l| l.is_finite() && *l > 0.0).ok_or("length must be a number of beats above 0")?)
         }
     };
     let p = &mut session.project;
+    let bpm = p.transport.tempo_bpm;
     let (lane, left, right) = p
         .arrangement
         .lanes
@@ -485,22 +506,23 @@ fn set_crossfade(session: &mut Session, params: &Value) -> Result<Value, Command
         })
         .ok_or("the clip has no part of another take right after it")?;
     let clips = &mut p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?.clips;
+    let (first, second) = clips.get(left).zip(clips.get(right)).ok_or("the lane is missing")?;
+    let length = length.unwrap_or_else(|| suhina_model::Project::comp_crossfade_beats(first, second, bpm));
     // Each part keeps its fade at its other edge.
-    let room_left = clips.get(left).map_or(0.0, |c| c.length - c.fade_in);
-    let room_right = clips.get(right).map_or(0.0, |c| c.length - c.fade_out);
-    let length = length.min(room_left).min(room_right).max(0.0);
-    let equal = suhina_model::FadeCurve { shape: suhina_model::FadeShape::EqualPower, curve: 0.0 };
+    let length = length.min(first.length - first.fade_in).min(second.length - second.fade_out).max(0.0);
+    let mut shape = suhina_model::Project::comp_crossfade_curve(first);
+    shape.curve = curve.unwrap_or(shape.curve);
     if let Some(clip) = clips.get_mut(left) {
         clip.fade_out = length;
-        clip.fade_out_curve = equal;
+        clip.fade_out_curve = shape;
         clip.fit_fades();
     }
     if let Some(clip) = clips.get_mut(right) {
         clip.fade_in = length;
-        clip.fade_in_curve = equal;
+        clip.fade_in_curve = shape;
         clip.fit_fades();
     }
-    Ok(json!({ "clip": id, "length": length }))
+    Ok(json!({ "clip": id, "length": length, "curve": shape.curve }))
 }
 
 /// `take.solo {track, take}`: the take lane heard in place of its track's clips, or none with 0.
@@ -531,6 +553,25 @@ fn promote_take(session: &mut Session, params: &Value) -> Result<Value, CommandE
     Ok(json!({ "track": track.0, "clips": clips }))
 }
 
+/// `take.add {track}`: an empty take lane, numbered after the track's other takes as a recorded
+/// one is.
+fn add_take(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = &mut session.project;
+    let track = track_id(p, params)?;
+    if !p.track(track).is_some_and(|t| t.content.notes || t.content.audio) {
+        return Err("the track holds no clips, so it has no takes".into());
+    }
+    let on_track = p.arrangement.takes.iter().filter(|t| t.track == track);
+    let number = on_track.filter_map(suhina_model::TakeLane::name_number).max().unwrap_or(0).saturating_add(1);
+    p.arrangement.takes.push(suhina_model::TakeLane {
+        track,
+        name: format!("Take {number}"),
+        clips: Vec::new(),
+        color: None,
+    });
+    Ok(json!({ "track": track.0, "take": number }))
+}
+
 /// `take.deleteUnused {track}`: the take lanes the comp uses nothing of go.
 fn delete_unused_takes(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &mut session.project;
@@ -545,8 +586,8 @@ fn delete_unused_takes(session: &mut Session, params: &Value) -> Result<Value, C
     Ok(json!({ "track": track.0, "deleted": unused.len() }))
 }
 
-/// `take.deletePieces {track, take, pieces}`: the pieces go from the take, and the take goes too
-/// when none is left (#989).
+/// `take.deletePieces {track, take, pieces}`: the pieces go from the take; with none left its lane
+/// stays, for others to be moved onto (#989).
 fn delete_pieces(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &mut session.project;
     let track = track_id(p, params)?;
@@ -569,26 +610,30 @@ fn delete_pieces(session: &mut Session, params: &Value) -> Result<Value, Command
     for &piece in doomed.iter().rev() {
         take.clips.remove(piece);
     }
-    let emptied = take.clips.is_empty();
-    if emptied {
-        p.arrangement.takes.remove(index);
-        session.take_solo = None;
-    }
-    Ok(json!({ "track": track.0, "pieces": doomed.len(), "take_deleted": emptied }))
+    Ok(json!({ "track": track.0, "pieces": doomed.len() }))
 }
 
-/// `take.delete`.
+/// `take.delete {track, take}` or `{track, takes}`.
 fn delete_take(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &mut session.project;
     let track = track_id(p, params)?;
-    let index = take_index(p, track, params)?;
-    let take = p.arrangement.takes.remove(index);
+    if params.get("takes").is_none_or(Value::is_null) {
+        let index = take_index(p, track, params)?;
+        let take = p.arrangement.takes.remove(index);
+        session.take_solo = None;
+        return Ok(json!({ "track": track.0, "deleted": take.name }));
+    }
+    let indices = listed_takes(p, track, params)?;
+    // The last first, so the indices of the others hold.
+    let mut names: Vec<String> = indices.iter().rev().map(|&i| p.arrangement.takes.remove(i).name).collect();
+    names.reverse();
     session.take_solo = None;
-    Ok(json!({ "track": track.0, "deleted": take.name }))
+    Ok(json!({ "track": track.0, "deleted": names }))
 }
 
 /// `take.deleteRange {track, takes, start, end}`: what the takes hold in the area goes, pieces
-/// crossing its edges keeping their parts outside it, and a take left with nothing goes too.
+/// crossing its edges keeping their parts outside it, and a take left with nothing stays as an
+/// empty lane.
 fn delete_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &session.project;
     let track = track_id(p, params)?;
@@ -622,25 +667,17 @@ fn delete_area(
     if !inside {
         return Err("the takes have nothing in the area".into());
     }
-    let mut emptied = 0usize;
-    // The last first, so the indices of the others hold when an emptied take goes.
-    for &index in takes.iter().rev() {
+    for &index in takes {
         let Some(take) = p.arrangement.takes.get_mut(index) else { continue };
         make_room(&mut take.clips, start, end);
-        if take.clips.is_empty() {
-            p.arrangement.takes.remove(index);
-            emptied += 1;
-        }
     }
-    if emptied > 0 {
-        session.take_solo = None;
-    }
-    Ok(json!({ "track": track.0, "takes": takes.len(), "takes_deleted": emptied }))
+    Ok(json!({ "track": track.0, "takes": takes.len() }))
 }
 
-/// `take.movePieces {track, takes, pieces, by}`: the pieces moved by `by` beats, each on its own
-/// take lane, over what they cover there. Their content goes along, so each plays the same; the
-/// parts comped from them earlier stay where they are, and no longer count as their parts.
+/// `take.movePieces {track, takes, pieces, by, lanesBy?}`: the pieces moved by `by` beats and
+/// `lanesBy` of the track's take lanes, over what they cover there. Their content goes along, so
+/// each plays the same; the parts comped from them earlier stay where they are, and no longer count
+/// as their parts unless they still line up.
 fn move_pieces(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &mut session.project;
     let track = track_id(p, params)?;
@@ -668,23 +705,34 @@ fn move_pieces(session: &mut Session, params: &Value) -> Result<Value, CommandEr
     let starts = || moved.iter().filter_map(|&(i, n)| p.arrangement.takes.get(i)?.clips.get(n)).map(|c| c.start);
     // They stop together at the timeline's ends, so they keep their places to each other.
     let by = by.max(-starts().fold(f64::INFINITY, f64::min)).min(MAX_START_BEAT - starts().fold(0.0, f64::max));
-    let mut indices: Vec<usize> = moved.iter().map(|(index, _)| *index).collect();
-    indices.dedup();
-    for index in indices {
+    let lanes_by = match params.get("lanesBy") {
+        None | Some(Value::Null) => 0,
+        Some(v) => v.as_i64().ok_or("lanesBy must be a whole number of lanes")?,
+    };
+    let lanes: Vec<usize> = (0..p.arrangement.takes.len())
+        .filter(|&i| p.arrangement.takes.get(i).is_some_and(|t| t.track == track))
+        .collect();
+    let mut targets = Vec::with_capacity(moved.len());
+    for (index, _) in &moved {
+        let at = lanes.iter().position(|i| i == index).and_then(|at| i64::try_from(at).ok()).unwrap_or(0);
+        let to = usize::try_from(at.saturating_add(lanes_by)).ok().and_then(|to| lanes.get(to).copied());
+        targets.push(to.ok_or("there is no take lane that far")?);
+    }
+    let mut going = Vec::with_capacity(moved.len());
+    // The last piece first, so the numbers of the others hold.
+    for (&(index, piece), &to) in moved.iter().zip(&targets).rev() {
         let Some(take) = p.arrangement.takes.get_mut(index) else { continue };
-        let mut going = Vec::new();
-        // The last piece first, so the numbers of the others hold.
-        for &(_, piece) in moved.iter().rev().filter(|(i, _)| *i == index) {
-            going.push(take.clips.remove(piece));
-        }
-        for clip in &mut going {
-            clip.start += by;
-            make_room(&mut take.clips, clip.start, clip.start + clip.length);
-        }
-        take.clips.append(&mut going);
+        let mut clip = take.clips.remove(piece);
+        clip.start += by;
+        going.push((to, clip));
+    }
+    for (to, clip) in going {
+        let Some(take) = p.arrangement.takes.get_mut(to) else { continue };
+        make_room(&mut take.clips, clip.start, clip.start + clip.length);
+        take.clips.push(clip);
         take.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     }
-    Ok(json!({ "track": track.0, "pieces": moved.len(), "by": by }))
+    Ok(json!({ "track": track.0, "pieces": moved.len(), "by": by, "lanes_by": lanes_by }))
 }
 
 /// `take.trimPiece {track, take, piece, start?, end?}`: the piece's edges moved, the recording

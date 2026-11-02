@@ -121,24 +121,50 @@ fn a_take_is_promoted_soloed_and_the_unused_ones_deleted() {
     assert_eq!(source(&s, &lane(&s)[0]), Some(0), "the part keeps its take");
 }
 
-/// Pieces picked with Ctrl and deleted go from their take, and a take with none left goes too
-/// (#989).
+/// Pieces picked with Ctrl and deleted go from their take, and a take with none left stays as an
+/// empty lane (#989).
 #[test]
-fn deleting_pieces_of_a_take_removes_them_and_an_emptied_take() {
+fn deleting_pieces_of_a_take_removes_them_and_leaves_its_lane() {
     let mut s = session();
     run(&mut s, "take.comp", json!({ "track": 1, "take": 1, "start": 0.0, "end": 8.0 })).unwrap();
     run(&mut s, "clip.split", json!({ "track": 1, "index": 0, "at": 4.0 })).unwrap();
-    let done = run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 2, "pieces": [2] })).unwrap();
-    assert_eq!(done["take_deleted"], json!(false));
+    run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 2, "pieces": [2] })).unwrap();
     let take = &s.project().arrangement.takes[1];
     assert_eq!(take.clips.iter().map(|c| (c.start, c.length)).collect::<Vec<_>>(), [(0.0, 4.0)]);
-    let done = run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 2, "pieces": [1] })).unwrap();
-    assert_eq!(done["take_deleted"], json!(true));
-    let names: Vec<&str> = s.project().arrangement.takes.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["Take 1", "Take 3"]);
+    run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 2, "pieces": [1] })).unwrap();
+    assert_eq!(s.project().arrangement.takes.len(), 3, "the emptied lane stays");
+    assert!(take_clips(&s, 1).is_empty());
     assert!(run(&mut s, "take.deletePieces", json!({ "track": 1, "take": 1, "pieces": [3] })).is_err());
     run(&mut s, "edit.undo", json!({})).unwrap();
-    assert_eq!(s.project().arrangement.takes.len(), 3);
+    assert_eq!(take_clips(&s, 1).len(), 1);
+}
+
+/// A take lane is added by hand and numbered after the others, and pieces can be moved onto it; a
+/// recording goes on from its number, and lanes are deleted several at a time in one step.
+#[test]
+fn a_take_lane_is_added_by_hand_and_takes_pieces_from_another_lane() {
+    let mut s = session();
+    let done = run(&mut s, "take.add", json!({ "track": 1 })).unwrap();
+    assert_eq!(done["take"], json!(4));
+    assert_eq!(s.project().arrangement.takes[3].name, "Take 4");
+    assert!(take_clips(&s, 3).is_empty());
+    run(&mut s, "take.movePieces", json!({ "track": 1, "takes": [1], "pieces": [1], "by": 0.0, "lanesBy": 3 }))
+        .unwrap();
+    assert!(take_clips(&s, 0).is_empty(), "the lane it left stays");
+    assert_eq!(take_clips(&s, 3), [(0.0, 8.0, 0.0)]);
+    // Up, and past the first lane there is nothing.
+    let bad = json!({ "track": 1, "takes": [4], "pieces": [1], "by": 0.0, "lanesBy": -4 });
+    assert!(run(&mut s, "take.movePieces", bad).is_err());
+    run(&mut s, "take.movePieces", json!({ "track": 1, "takes": [4], "pieces": [1], "by": 2.0, "lanesBy": -1 }))
+        .unwrap();
+    assert_eq!(take_clips(&s, 2), [(0.0, 2.0, 16.0), (2.0, 8.0, 0.0)], "over what it covers there");
+    let done = run(&mut s, "take.delete", json!({ "track": 1, "takes": [1, 4] })).unwrap();
+    assert_eq!(done["deleted"], json!(["Take 1", "Take 4"]));
+    let names: Vec<&str> = s.project().arrangement.takes.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, ["Take 2", "Take 3"]);
+    run(&mut s, "edit.undo", json!({})).unwrap();
+    assert_eq!(s.project().arrangement.takes.len(), 4, "one undo step");
+    assert!(run(&mut s, "take.add", json!({ "track": 99 })).is_err());
 }
 
 /// Where the track has takes, a clip moved with stacking on still replaces what it covers, so
@@ -235,16 +261,15 @@ fn an_area_deletes_across_takes_and_an_edge_brings_it_back() {
 }
 
 #[test]
-fn an_area_that_empties_a_take_deletes_it_and_the_numbers_of_the_others_hold() {
+fn an_area_that_empties_a_take_leaves_its_lane() {
     let mut s = session();
     run(&mut s, "take.deleteRange", json!({ "track": 1, "takes": [1], "start": 0.0, "end": 8.0 })).unwrap();
     let names: Vec<&str> = s.project().arrangement.takes.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["Take 2", "Take 3"]);
-    assert_eq!(s.project().take_number(0), Some(2));
-    // Take 2 is still take 2 to the commands, not the first one left.
+    assert_eq!(names, ["Take 1", "Take 2", "Take 3"]);
+    assert!(take_clips(&s, 0).is_empty());
     run(&mut s, "take.deleteRange", json!({ "track": 1, "takes": [2], "start": 0.0, "end": 4.0 })).unwrap();
-    assert_eq!(take_clips(&s, 0), [(4.0, 4.0, 12.0)]);
-    assert_eq!(take_clips(&s, 1), [(0.0, 8.0, 16.0)]);
+    assert_eq!(take_clips(&s, 1), [(4.0, 4.0, 12.0)]);
+    assert_eq!(take_clips(&s, 2), [(0.0, 8.0, 16.0)]);
 }
 
 #[test]
@@ -353,7 +378,7 @@ fn a_moved_part_over_other_takes_gets_new_lanes() {
     assert_eq!(take_clips(&s, 5), [(2.0, 4.0, 16.0)]);
 }
 
-/// Moved to another track, the takes go too; lanes left with nothing go.
+/// Moved to another track, the takes go too; lanes left with nothing stay.
 #[test]
 fn a_part_moved_to_another_track_takes_its_takes_there() {
     let mut project = ProjectBuilder::new()
@@ -374,10 +399,11 @@ fn a_part_moved_to_another_track_takes_its_takes_there() {
     run(&mut s, "take.comp", json!({ "track": 1, "take": 1 })).unwrap();
     run(&mut s, "clip.move", json!({ "track": 1, "index": 0, "start": 8.0, "toTrack": 2 })).unwrap();
     let takes = &s.project().arrangement.takes;
-    assert_eq!(takes.len(), 2);
-    assert!(takes.iter().all(|t| t.track == TrackId(2)));
-    assert_eq!(take_clips(&s, 0), [(8.0, 8.0, 0.0)]);
-    assert_eq!(take_clips(&s, 1), [(8.0, 8.0, 8.0)]);
+    assert_eq!(takes.len(), 4);
+    assert_eq!(takes.iter().filter(|t| t.track == TrackId(2)).count(), 2);
+    assert!(take_clips(&s, 0).is_empty() && take_clips(&s, 1).is_empty());
+    assert_eq!(take_clips(&s, 2), [(8.0, 8.0, 0.0)]);
+    assert_eq!(take_clips(&s, 3), [(8.0, 8.0, 8.0)]);
 }
 
 /// A clip that is no part of a take moves alone.
@@ -479,4 +505,31 @@ fn comped_parts_fade_and_their_crossfade_is_set() {
     let last = lane(&s)[1].id.0;
     assert!(run(&mut s, "take.setCrossfade", json!({ "clip": last })).is_err(), "no part after it");
     assert!(run(&mut s, "take.setCrossfade", json!({ "clip": left, "length": -1.0 })).is_err());
+}
+
+/// A crossfade's bend is set on both parts, and its bend and length change apart (#1078).
+#[test]
+fn a_crossfades_curve_bends_both_parts_and_leaves_its_length() {
+    let mut s = session();
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 1, "start": 0.0, "end": 4.0 })).unwrap();
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 2, "start": 4.0, "end": 8.0 })).unwrap();
+    let left = lane(&s)[0].id.0;
+    run(&mut s, "take.setCrossfade", json!({ "clip": left, "length": 1.0 })).unwrap();
+    run(&mut s, "take.setCrossfade", json!({ "clip": left, "curve": 0.5 })).unwrap();
+    let parts = lane(&s);
+    assert_eq!((parts[0].fade_out, parts[1].fade_in), (1.0, 1.0), "the bend leaves the length");
+    assert_eq!((parts[0].fade_out_curve.curve, parts[1].fade_in_curve.curve), (0.5, 0.5));
+    run(&mut s, "take.setCrossfade", json!({ "clip": left, "length": 2.0 })).unwrap();
+    let parts = lane(&s);
+    assert_eq!(parts[0].fade_out, 2.0);
+    assert_eq!((parts[0].fade_out_curve.curve, parts[1].fade_in_curve.curve), (0.5, 0.5), "the length leaves the bend");
+    run(&mut s, "edit.undo", json!({})).unwrap();
+    assert_eq!(lane(&s)[0].fade_out, 1.0, "one undo step each");
+    run(&mut s, "take.setCrossfade", json!({ "clip": left })).unwrap();
+    assert_eq!(lane(&s)[0].fade_out_curve.curve, 0.5, "the length in Settings leaves the bend");
+    run(&mut s, "take.setCrossfade", json!({ "clip": left, "curve": 0.0 })).unwrap();
+    assert_eq!(lane(&s)[1].fade_in_curve.curve, 0.0);
+    for bad in [json!(2.0), json!(-1.5), json!("up")] {
+        assert!(run(&mut s, "take.setCrossfade", json!({ "clip": left, "curve": bad })).is_err());
+    }
 }

@@ -119,15 +119,15 @@ greyed. They are where the best parts of each pass are picked and put together o
   With **Ctrl** held the take lane takes ordinary clicks: a click adds a piece to the pieces picked
   or takes it out (each outlined; **Recolor** colours the one clicked), and a drag comps nothing. A
   click without Ctrl lets go of them all. **Delete** deletes the picked pieces
-  (`take.deletePieces {track, take, pieces}`, one undo step per take), and a take left with no piece
-  goes; the track's clips stay.
+  (`take.deletePieces {track, take, pieces}`, one undo step per take); a take left with no piece
+  stays as an empty lane, ready for others to be moved onto, and the track's clips stay.
 - **Ctrl and a drag** anywhere on a take lane only paints an **area** across the track's take lanes:
   the lanes from the one the drag began on to the one under the pointer, between two beats (on the
   grid; Alt for no grid). Pieces wholly inside it are picked too. **Delete** deletes what is in the
   area (`take.deleteRange {track, takes, start, end}`) and **Ctrl+X** cuts it for pasting
   (`take.cutRange`), one undo step either way: a piece crossing an edge keeps its parts outside, and
-  a take left with nothing goes. A click on a take lane, a clip or the time selection lets go of the
-  area.
+  a take left with nothing stays as an empty lane. A click on a take lane, a clip or the time
+  selection lets go of the area.
 - **Moving a piece:** a piece of a take moves as a clip does (Settings › Arrangement › *Clip drag
   handle*, [arrangement editing](arrangement-editing.md)): a drag from its name bar, or from its lower
   half, moves it along the timeline on the grid (Alt for no grid), with the pieces picked when it is
@@ -148,6 +148,18 @@ greyed. They are where the best parts of each pass are picked and put together o
   and its parts on the track with it (`take.setColor`); **Recolor** colours only the piece of the
   take the right-click was over (a split take has several) and its parts (`take.setColor` with
   `piece`); **Delete take** removes the lane, and the track's clips stay.
+- **Dragging a piece to another lane** of the track moves it there, over what it covers on that
+  lane, and pieces picked with it go as many lanes up or down (`take.movePieces` with `lanesBy`). The
+  lane it left stays.
+- **Add take** in the right-click menu of a take lane, and of an empty spot on the track's lane, adds
+  an empty lane numbered after the track's other takes (`take.add`), for pieces to be moved onto.
+  The menu of a take lane holds the Arrangement's grid too, as the track's lane's does.
+- A click on a take lane's **header** picks the lane; with **Ctrl** it adds the lane or takes it out,
+  with **Shift** it picks the lanes from the last one picked up to it, on one track at a time.
+  **Delete** deletes the picked lanes in one undo step (`take.delete {track, takes}`). A press
+  anywhere else lets go of them. Lanes go only this way, by their **✕**, **Delete take** or **Delete
+  unused takes**, never because they are empty.
+- A take lane's header is set in from its track's, so it reads as belonging to the track above.
 - **Hide take lanes** / **Show take lanes** in the right-click menu of the track's lane folds
   them away and back; **Delete unused takes** there deletes the take lanes the comp uses nothing
   of (`take.deleteUnused`).
@@ -175,20 +187,24 @@ content of its own), so nothing extra is stored and a trimmed part keeps its tak
 - Splitting a clip on the track (`clip.split`) splits every take lane of the track at the same
   beat, so the takes stay cut where the comp is.
 - Where two parts from different takes meet, they crossfade: half of the length on each side of the
-  cut, with equal-power fades (the engine works this out from the project when it builds its graph,
+  cut, with equal-power fades, bent as the first part's equal-power fade at the cut is (the engine works this out from the project when it builds its graph,
   so trims, swaps, splits and undo keep it right; ARA clips are left out). The length is the longer
   of the two parts' fades at the cut, and 10 ms when neither has one. An audio part comped from a take
   gets fades as long as Settings › Arrangement › *Take crossfade* says (10, 20 or 40 ms, or a custom
   length), so its outer edges never click either. The setting is for parts comped from then on.
 - A cut between audio parts shows its crossfade as one thing over the cut, in place of the parts' own fades there:
-  a lit span with its two equal-power curves, half of it on each side of the cut and at least wide
+  a lit span with its two curves, half of it on each side of the cut and at least wide
   enough to see. The parts' waveforms go on at full level up to the cut, and their fade handles at
   the cut are gone; their outer edges keep theirs. With the pointer near, a square handle shows at
   each top end of the span. **Dragging either** sets the crossfade's length, up to the shorter
   part's: that end follows the pointer and the other mirrors it, and the length shows in
   milliseconds meanwhile. It is stored as both parts' fades at the cut
-  (`take.setCrossfade {clip, length?}`, one undo step). A **double-click** on a handle puts it back
-  to the length in Settings.
+  (`take.setCrossfade {clip, length?, curve?}`, one undo step). A **double-click** on a handle puts it
+  back to the length in Settings.
+- On a span wide enough, a round handle sits where the two curves cross. **Dragging it up or down**
+  bends both curves alike: up keeps the sound louder through the cut, down makes it dip. The length
+  stays, and the length handles leave the bend. A **double-click** takes the bend away. It is stored
+  as the curve of both parts' fades at the cut.
 - **A part takes its takes along.** A clip on the track that is a part of a take takes what all the
   track's takes hold under it to where it lands, cut to its span, in the same undo step: moved
   (`clip.move`, `clip.moveMany`) the pieces leave where they were; copied (a Ctrl drag, Ctrl+C and
@@ -197,7 +213,7 @@ content of its own), so nothing extra is stored and a trimmed part keeps its tak
   audio at the same place, so nothing extra is stored to recognise it. The rest goes on the same lanes
   when those are free where it lands; if any of them holds something else there, nothing is replaced
   and it gets as many new lanes as it fills. On another track it goes on that track's first lanes when
-  those are free, or on new lanes; a lane left with nothing goes. A clip that is no part of a take
+  those are free, or on new lanes; a lane left with nothing stays. A clip that is no part of a take
   moves alone, and a part pasted from another project does not know its takes. A copied part keeps
   playing its take's content until it is edited (copy on write).
 - A take lane's header is drawn in a dark shade of the take's colour with a strip of the colour

@@ -7,7 +7,7 @@
 //! MIDI pass has a content of its own. No id is stored; a clip that is trimmed keeps its take, as
 //! its offset moves with its start.
 
-use crate::{Clip, Project, TakeLane, TrackId};
+use crate::{Clip, FadeCurve, FadeShape, Project, TakeLane, TrackId};
 
 /// How far apart, in beats, two clips' alignments with their content may be and still be one.
 const ALIGNED: f64 = 1e-6;
@@ -29,6 +29,16 @@ impl Project {
     pub fn comp_crossfade_beats(left: &Clip, right: &Clip, bpm: f64) -> f64 {
         let own = left.fade_out.max(right.fade_in);
         if own > 0.0 { own } else { Self::COMP_CROSSFADE_MS * bpm / 60_000.0 }
+    }
+
+    /// How both fades of the crossfade after part `left` rise: equal power, bent as the part's
+    /// equal-power fade at the cut is, which is where `take.setCrossfade` keeps the bend.
+    pub fn comp_crossfade_curve(left: &Clip) -> FadeCurve {
+        let own = left.fade_out_curve;
+        FadeCurve {
+            shape: FadeShape::EqualPower,
+            curve: if own.shape == FadeShape::EqualPower { own.curve } else { 0.0 },
+        }
     }
 
     /// The number take `index` of `arrangement.takes` goes by on its track, as its lane shows and

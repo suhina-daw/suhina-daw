@@ -1347,9 +1347,7 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     lane.clips.push(clip);
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     let new_index = lane.clips.iter().position(|c| c.id == clip_id).unwrap_or_default();
-    if crate::take_carry::carry(p, &spans, false) {
-        session.take_solo = None;
-    }
+    crate::take_carry::carry(p, &spans, false);
     if let Some((from, end, lanes)) = carried {
         crate::automation_range::clear_under(session, track, from, end, &lanes)?;
         crate::automation_range::lay_under(session, to, start, &lanes, to == track)?;

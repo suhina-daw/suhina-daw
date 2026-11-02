@@ -247,6 +247,8 @@ pub struct CompCut {
     pub beat: f64,
     /// The crossfade's whole length, in beats.
     pub length: f64,
+    /// How both its fades are bent, -1 to 1.
+    pub curve: f64,
     /// The longest it can be beside the parts' other fades, in beats.
     pub room: f64,
     /// Beats a minute, to say its length in milliseconds.
@@ -679,6 +681,7 @@ fn comp_cuts(project: &Project) -> Vec<CompCut> {
                     right: right.id,
                     beat,
                     length: Project::comp_crossfade_beats(left, right, bpm),
+                    curve: Project::comp_crossfade_curve(left).curve,
                     room: (left.length - left.fade_in).min(right.length - right.fade_out),
                     bpm,
                 });

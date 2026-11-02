@@ -44,9 +44,9 @@ pub(crate) fn span_of_part(p: &Project, from: TrackId, to: TrackId, clip: &Clip,
     Some(Span { from, to, start: clip.start, end: clip.start + clip.length, by, content: clip.content })
 }
 
-/// Takes along what the takes hold under `spans`. Answers whether a take lane left with nothing
-/// went, as the indices of the takes then change.
-pub(crate) fn carry(p: &mut Project, spans: &[Span], copy: bool) -> bool {
+/// Takes along what the takes hold under `spans`. A lane left with nothing stays, for others to be
+/// moved onto.
+pub(crate) fn carry(p: &mut Project, spans: &[Span], copy: bool) {
     let mut groups: Vec<(TrackId, TrackId)> = spans.iter().map(|s| (s.from, s.to)).collect();
     groups.sort_by_key(|(from, to)| (from.0, to.0));
     groups.dedup();
@@ -77,15 +77,6 @@ pub(crate) fn carry(p: &mut Project, spans: &[Span], copy: bool) -> bool {
     for ((from, to), pieces) in cut {
         place(p, from, to, pieces);
     }
-    let mut emptied = false;
-    if !copy {
-        // Only those a part took everything from: a take has clips until then.
-        let tracks: Vec<TrackId> = spans.iter().map(|s| s.from).collect();
-        let before = p.arrangement.takes.len();
-        p.arrangement.takes.retain(|t| !t.clips.is_empty() || !tracks.contains(&t.track));
-        emptied = p.arrangement.takes.len() != before;
-    }
-    emptied
 }
 
 /// What `take` holds under `spans`, cut to them and moved as far as each goes.

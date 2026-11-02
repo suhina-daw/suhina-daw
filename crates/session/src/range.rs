@@ -562,9 +562,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
         placed.push((track, clip));
     }
-    if crate::take_carry::carry(p, &take_spans, copy) {
-        session.take_solo = None;
-    }
+    crate::take_carry::carry(p, &take_spans, copy);
     if !copy {
         for (track, start, end, lanes) in &carried {
             crate::automation_range::clear_under(session, *track, *start, *end, lanes)?;
