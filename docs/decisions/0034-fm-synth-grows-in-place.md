@@ -45,7 +45,7 @@ rejected: two FM instruments would share most of their work and leave users choo
    tokens and its fonts from the theme. Its canvases, control positions, pages and display contents
    are fixed: with this many controls a changed layout would stop being usable, and
    [ADR 0021](0021-device-graph-files.md) keeps panels at a fixed size anyway. The panel holds no
-   fixed colours, and a test checks that.
+   fixed colours; the script that writes it fails on one.
 
 ## Consequences
 
