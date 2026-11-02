@@ -1,8 +1,8 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What the FM synth has beyond the DX7 voice (ADR 0034): the settings, kept beside [`Patch`]
-//! (crate::Patch), and a note's state and modulation for one block. Everything is neutral by
+//! What the FM synth has beyond the DX7 voice (ADR 0034): the settings, kept beside the voice
+//! ([`Patch`](crate::Patch)), and a note's state and modulation for one block. Everything is neutral by
 //! default, and then the ported path runs untouched.
 
 use suhina_dsp::{Circuit, Multimode, MultimodeSettings, Response};
