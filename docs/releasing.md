@@ -252,6 +252,16 @@ push to `main` that changes them, only to save the cache, and pull requests' tes
 and save none. Their own caches, 0.6 to 0.8 GB per system on every build, had filled the 10 GB and
 evicted the others.
 
+**What the tests compile.** `cargo test` builds all of the workspace's crates in every run, with
+the `test` profile, and about 90% of that time is LLVM at `opt-level = 1`; linking is 1 to 3% on
+each system, so a faster linker has nothing to win. The crates that process no sound are built at
+`opt-level = 0` in that profile (`[profile.test.package]` in `Cargo.toml`). Measured on one machine,
+that takes the compile from 241 to 115 seconds on Linux, 625 to 282 on Windows and 422 to 222 on
+macOS, and the tests' run from 102 to 133, 140 to 200 and 158 to 204, nearly all of it in the window
+tests (`crates/ui/tests/main.rs`). The crates that process sound stay at 1: with them at 0,
+`suhina-engine`'s tests take 93 seconds instead of 7. A new crate starts at 1, and joins the list if
+it processes no sound and takes long to compile.
+
 The queue is a setting, not code: Settings › Rules (or Branches) › the rule for `main` › **Require
 merge queue**, with the merge method used today, a group size of about 5 and *Only merge
 non-failing pull requests*. With a queue, *Require branches to be up to date before merging* is not
