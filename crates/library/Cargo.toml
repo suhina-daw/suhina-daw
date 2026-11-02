@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+suhina-fs.workspace = true
 suhina-media.workspace = true
 serde_json.workspace = true
 notify-debouncer-full.workspace = true

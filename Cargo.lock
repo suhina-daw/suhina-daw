@@ -5505,6 +5505,7 @@ version = "0.0.1"
 dependencies = [
  "notify-debouncer-full",
  "serde_json",
+ "suhina-fs",
  "suhina-media",
 ]
 
@@ -5662,6 +5663,7 @@ dependencies = [
  "hound",
  "rayon",
  "realfft",
+ "suhina-fs",
  "suhina-media",
 ]
 
