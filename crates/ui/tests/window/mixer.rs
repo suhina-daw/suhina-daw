@@ -568,13 +568,16 @@ fn a_launcher_fader_dragged_on_a_selection_keeps_the_tracks_apart() {
 fn a_double_click_on_a_selected_fader_sets_every_track_to_its_default() {
     // Frames close enough together for a double-click.
     let mut harness = window_with_step(demo_app(), 1.0 / 60.0);
-    harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": [0], "db": -6.0 })));
-    harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": [1], "db": -12.0 })));
+    harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": ["Drums"], "db": -6.0 })));
+    harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": ["Bass"], "db": -12.0 })));
     harness.run();
     harness.get_by_label("Track Drums").click();
     harness.run();
     harness.get_by_label("Track Bass").click_modifiers(Modifiers::COMMAND);
     harness.run();
+    assert!((levels(&harness, "Drums").0 + 6.0).abs() < 0.01 && (levels(&harness, "Bass").0 + 12.0).abs() < 0.01);
+    // A second later, as a person would: clicks close together count as more than two.
+    harness.run_steps(60);
     let at = harness.get_by_label("Bass volume").rect().center();
     for _ in 0..2 {
         harness.hover_at(at);
