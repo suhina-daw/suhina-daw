@@ -472,9 +472,8 @@ test VST3 through the engine's commands, a real plug-in by hand); Wayland comes 
 ## Plug-ins inside device groups
 
 A plug-in inside a group still runs out of
-process; a group is not a process boundary. Its key counts "how many of the same plug-in
-come before it" depth-first through the channel's whole tree of devices, so moving it into or
-out of a group keeps its process and state while the order of identical plug-ins stays.
+process; a group is not a process boundary. Its key is made from its device id (#763 › 1), so
+moving it into or out of a group keeps its process and state.
 Inside a branch it runs its round trip and is waited for within the block's deadline, one
 after another with the branch's other devices; it does not take part in the joint blocks or
 the staged runs of 4, which a later change can extend to a group's branches. A missed block
@@ -499,9 +498,10 @@ all-notes-off, which many plug-ins ignore. Offline (`Renderer::set_offline`, eve
 `render_*` function, the CLI's and MCP's WAV renders) each block waits up to 10 s for a
 host still busy with the block before, and up to 10 s for its own answer, through the same
 round trips as playback, so no block of a render is lost to a slow plug-in.
-Each plug-in device has a key made from its channel, its plug-in and how many of the same
-plug-in come before it on that channel, so it keeps its running plug-in when devices are
-added, removed or moved around it; its processor reaches the audio thread as a message
+Each plug-in device has a key made from its channel, its plug-in and its device id (#763 › 1),
+so it keeps its running plug-in when devices are added, removed or moved around it, identical
+plug-ins included (before, a key counted how many of the same plug-in came first, so removing
+the first of two handed the second the first one's process and state); its processor reaches the audio thread as a message
 (`Controller::send_plugin`), waits there for a graph that has its slot, and is handed from
 graph to graph; a restarted plug-in's processor replaces the crashed one, which goes back to
 be dropped off the audio thread.

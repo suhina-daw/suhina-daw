@@ -96,7 +96,9 @@ fn folder(name: &str) -> PathBuf {
 
 #[test]
 fn a_save_writes_the_state_the_running_plug_in_gives() {
-    let imported = project();
+    let mut imported = project();
+    // With the ids the session gives its devices, so they compare as the same devices.
+    imported.assign_ids().unwrap();
     let mut renderer = Renderer::stopped(&imported, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(imported.clone());
     session.attach_player(Player::new(renderer.controller(), None));
@@ -137,4 +139,47 @@ fn a_save_writes_the_state_the_running_plug_in_gives() {
     assert!(!session.can_undo());
     assert!(!session.has_unsaved_changes());
     assert_eq!(session.project().channels[0].devices, imported.channels[0].devices);
+}
+
+/// Two copies of the same plug-in, each with its own state; the first is removed. The second
+/// keeps its own running plug-in, found by its device id (#763 › 1), so a save writes its own
+/// state. Before, it took the first's key ("the first of this plug-in") and its running plug-in.
+#[test]
+fn removing_the_first_of_two_identical_plug_ins_keeps_the_seconds_own() {
+    let mut p = project();
+    let first = p.channels[0].devices[0].clone();
+    let second = Device { state: Some(bank(0.75).into()), ..first.clone() };
+    p.channels[0].devices = vec![first, second];
+    p.assign_ids().unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut session = Session::new(p);
+    session.attach_player(Player::new(renderer.controller(), None));
+    session.rack_mut().set_env(env());
+    let mut output = vec![0.0f32; 256 * 2];
+    let running = |session: &mut Session, device: usize| {
+        let status = session.execute("device.plugin", &json!({ "track": 1, "device": device })).unwrap();
+        status["status"] == "running"
+    };
+    let mut wait = |session: &mut Session, devices: &[usize]| {
+        let deadline = Instant::now() + PATIENT;
+        loop {
+            session.sync_plugins();
+            renderer.process(&mut output);
+            if devices.iter().all(|&d| running(session, d)) {
+                return;
+            }
+            assert!(Instant::now() < deadline, "starting {devices:?}");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+    wait(&mut session, &[0, 1]);
+    session.execute("device.remove", &json!({ "track": 1, "device": 0 })).unwrap();
+    wait(&mut session, &[0]);
+
+    let path = folder("identical-plugins").join("song.suhina");
+    session.execute("project.save", &json!({ "path": path.display().to_string() })).unwrap();
+    let (file, _) = Session::open(&path).unwrap();
+    let devices = &file.project().channels[0].devices;
+    assert_eq!(devices.len(), 1);
+    assert_eq!(devices[0].state.as_deref(), Some(&0.75f32.to_le_bytes()[..]), "the second's own state");
 }

@@ -415,7 +415,9 @@ fn a_session_starts_its_projects_plug_ins_and_reports_the_missing_ones() {
     missing.name = "Gone".into();
     missing.state = Some(vec![1, 2, 3].into());
     // A note long enough to still sound however long the plug-in takes to start.
-    let p = project(256.0, false, vec![plugin_device("gain"), missing]);
+    let mut p = project(256.0, false, vec![plugin_device("gain"), missing]);
+    // With the ids the session gives its devices, so they compare as the same devices.
+    p.assign_ids().unwrap();
     let (mut session, mut renderer) = session(p.clone(), true);
     session.execute("transport.play", &json!({})).unwrap();
     let notices = session.sync_plugins();

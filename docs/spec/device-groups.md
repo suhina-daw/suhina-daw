@@ -193,11 +193,10 @@ Nothing about a device changes when it moves into a group.
   on as its own plug-in answers, exactly as different tracks' chains do (#151). The first version
   may run branches one after another inside the chain and only later run them side by side; the
   sound is the same, only the deadline is used better.
-- **A plug-in's key** today is its channel, its plug-in and how many of the same plug-in come
-  before it on the channel (`plugin_devices`), which keeps a running plug-in when devices are
-  added or moved around it. With groups, "before it" counts depth-first through the whole tree of
-  the channel's devices, so moving a plug-in into or out of a group keeps its process and state,
-  as long as the order of identical plug-ins does not change.
+- **A plug-in's key** is its channel, its plug-in and its device id (`plugin_devices`, #763 › 1),
+  which keeps a running plug-in when devices are added, removed or moved around it, into or out
+  of a group, identical plug-ins included. A device moved to another track gets a new key, and a
+  new process from its saved state.
 - **State** is saved per device as today: a plug-in inside a group keeps its `state` in its own
   `Device`, read on save and every 30 s (ADR 0006 › 5).
 
