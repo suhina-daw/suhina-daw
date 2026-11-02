@@ -1498,7 +1498,7 @@
     ]
   },
   "ClipEditor/Piano roll/notes_replace": {
-    "sourceFingerprint": "4c6da9443fab38899775232e3db1e315e19e22fa18929c40a4429a619a43d1df",
+    "sourceFingerprint": "a3417fdaae52f35fdeb8136bccac93872c6ab8d9ff25782d5d1955ecece7146d",
     "summary": "Choose whether notes of one pitch may overlap in the piano roll.",
     "description": "In the piano roll, the grid where MIDI notes are edited, a note can be drawn, moved, resized, pasted, duplicated, quantised or made legato over other notes of the same pitch. With this off, the note replaces them: a note it covers whole is removed, one that starts before it ends where it starts, and one that runs on past it starts where it ends. Shift+Right also stops at the next note of the pitch. With it on, notes may overlap, and nothing else changes. The same choice is in the View menu in the piano roll's top left corner.",
     "options": [

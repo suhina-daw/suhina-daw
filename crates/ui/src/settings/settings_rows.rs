@@ -696,7 +696,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::ClipEditor,
         "Piano roll",
         "Allow stacked notes",
-        "Notes of one pitch may overlap; off, a note placed over others replaces them",
+        "Notes of one pitch may overlap, instead of a new note replacing those under it",
         &["notes_replace"],
         |cx, r| cx.off_on(r, |s| &mut s.view.notes_replace),
     ),

@@ -324,7 +324,8 @@ fn the_grid_keys_leave_a_new_grid_for_the_window_and_snap_off_snaps_nothing() {
 #[test]
 fn paste_goes_after_the_selection_else_at_the_playhead_inside_the_clip() {
     let clip = clip(vec![note(1.0, 0.5, 60), note(2.0, 1.0, 64)]);
-    let mut state = focused_on(&clip);
+    // Stacked notes allowed, so the params are only where the notes go.
+    let mut state = PianoRollState { notes_replace: false, ..focused_on(&clip) };
     state.selected = BTreeSet::from([0]);
     let paste = state.key_action("selection.paste", &clip, 0.0, Some(2)).map(|a| a.params);
     assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.5 })));
@@ -406,4 +407,13 @@ fn which_keys_are_named() {
     assert!(named(61, All, false, 12.0));
     assert!(named(61, OnlyC, true, 12.0), "folded rows are all named");
     assert!(!named(60, All, true, 7.0), "low rows have no room");
+}
+
+#[test]
+fn with_stacked_notes_off_what_a_key_places_replaces_what_is_under_it() {
+    let clip = clip(vec![note(1.0, 0.5, 60), note(2.0, 1.0, 64)]);
+    let mut state = focused_on(&clip);
+    state.selected = BTreeSet::from([0]);
+    let paste = state.key_action("selection.paste", &clip, 0.0, Some(2)).map(|a| a.params);
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.5, "replace": true })));
 }
