@@ -58,6 +58,7 @@ fn devices_are_added_set_switched_and_removed_with_undo() {
     let stored = &session.project().channels[0].devices[0].params;
     assert!(stored.contains(&DeviceParam::new("algorithm", 5.0)));
     assert!(stored.contains(&DeviceParam::new("op1.envMode", 1.0)), "a new FM Synth starts with envelopes in time");
+    assert!(stored.contains(&DeviceParam::new("op2.on", 0.0)), "and with one operator");
 
     run(&mut session, "device.remove", json!({ "track": 1, "device": 1 })).unwrap();
     assert_eq!(session.project().channels[0].devices.len(), 2);

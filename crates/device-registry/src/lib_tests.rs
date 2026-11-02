@@ -17,7 +17,19 @@ fn the_fm_synths_panel_shows_every_algorithm_and_draws_its_partials() {
         let bars = canvas.controls.iter().filter(|c| matches!(c.gesture, UiGesture::Draw(_))).count();
         assert_eq!(bars, 6 * (16 + 32 + 64));
     }
-    assert!(compact.controls.iter().any(|c| matches!(c.gesture, UiGesture::Expand(6))));
+    assert!(compact.controls.iter().any(|c| matches!(c.gesture, UiGesture::Expand(8))), "Random's way to its settings");
+    // The larger view is a strip above the row, which stays in view, and is no higher than it needs.
+    assert!(expanded.strip);
+    assert!(compact.size[0] < 1000.0 && expanded.size[1] < 240.0);
+    // A control that changes a value says what it is for, not how a mouse moves it.
+    for canvas in [compact, expanded] {
+        for control in canvas.controls.iter().filter(|c| !matches!(c.gesture, UiGesture::Draw(_))) {
+            assert!(!control.tooltip.contains("drag"), "{}: {}", control.id, control.tooltip);
+            if control.y.is_some() && matches!(control.gesture, UiGesture::Drag) {
+                assert!(control.tooltip.len() > control.name.len(), "{} says nothing", control.id);
+            }
+        }
+    }
     // An operator's square in the picture selects it, in every algorithm and on both canvases.
     for canvas in [compact, expanded] {
         let squares = canvas.controls.iter().filter(|c| c.id.starts_with("pick_op")).count();

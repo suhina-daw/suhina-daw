@@ -75,15 +75,26 @@ pub const SECTIONS: [&str; 10] =
 const PANEL_COUNT: usize = 5 + 2 * SECTIONS.len();
 pub const COUNT: usize = PANEL + PANEL_COUNT;
 
-/// What a new FM Synth starts with beside the defaults: envelopes in time. The defaults stay the
-/// DX7 model, which an old project without these values and a voice file rely on.
-pub const NEW_DEVICE: [(&str, f64); 6] = [
+/// What a new FM Synth starts with beside the defaults: envelopes in time, and one operator, with the
+/// others heard as soon as they are added. The defaults stay the DX7 model, which an old project
+/// without these values and a voice file rely on.
+pub const NEW_DEVICE: [(&str, f64); 16] = [
     ("op1.envMode", 1.0),
     ("op2.envMode", 1.0),
     ("op3.envMode", 1.0),
     ("op4.envMode", 1.0),
     ("op5.envMode", 1.0),
     ("op6.envMode", 1.0),
+    ("op2.on", 0.0),
+    ("op3.on", 0.0),
+    ("op4.on", 0.0),
+    ("op5.on", 0.0),
+    ("op6.on", 0.0),
+    ("op2.level", 50.0),
+    ("op3.level", 50.0),
+    ("op4.level", 50.0),
+    ("op5.level", 50.0),
+    ("op6.level", 50.0),
 ];
 
 /// Fields of a time envelope, in parameter order.
@@ -545,7 +556,7 @@ const LFO_PARAMS: [ParamInfo; LFO_FIELDS] = [
         0,
     )
     .in_group("LFO"),
-    ParamInfo::choice("lfo2Range", "LFO 2 Range", &["Low", "High", "Sync"], 0).in_group("LFO"),
+    ParamInfo::choice("lfo2Range", "LFO 2 Range", &["Hz", "Audio", "Sync"], 0).in_group("LFO"),
     ParamInfo::continuous("lfo2Rate", "LFO 2 Rate", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear).in_group("LFO"),
     ParamInfo::choice("lfo2Sync", "LFO 2 Sync", REPEATS, 4).in_group("LFO"),
     ParamInfo::toggle("lfo2Retrigger", "LFO 2 Retrigger", true).in_group("LFO"),
@@ -764,8 +775,13 @@ macro_rules! section_params {
 
 const PANEL_HEAD: [ParamInfo; 5] = [
     ParamInfo::integer("panel.op", "Selected Operator", (1, 6), 1, Unit::None).in_group("Panel"),
-    ParamInfo::choice("panel.page", "Page", &["Env", "Wave", "Filter", "LFO", "Pitch", "Mod", "Voice"], 0)
-        .in_group("Panel"),
+    ParamInfo::choice(
+        "panel.page",
+        "Page",
+        &["Env", "Wave", "Filter", "LFO", "Pitch", "Algo", "Mod", "Voice", "Random"],
+        0,
+    )
+    .in_group("Panel"),
     ParamInfo::choice(
         "panel.expandedPage",
         "Expanded Page",

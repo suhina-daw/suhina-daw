@@ -89,17 +89,25 @@ The 32 of the DX7 format, then 11 for four operators. A voice file reaches only 
 
 Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json`.
 
-- **Device row (168 px high):** the operators as a table with its columns named once (number, envelope
-  picture, ratio or Hz with what coarse and fine come to, coarse, fine, level, on), the algorithm with its
-  picture and feedback, a display with the pages Env, Wave, Filter, LFO, Pitch, Mod and Voice with eight
-  dials that follow the page, then Time, Tone, Spread and Volume, Random with its amount and **More…**,
-  and meters. The display has a line of what the page chooses above its picture, so a menu never covers
-  it, and **More…** there opens the page's part of the expanded panel. The Mod page is the first route
-  of every source, edited in place, in the room of the display and the dials.
-- **Expanded panel (1180 by 640):** operators, the algorithm and Random on the left, the page in the
-  middle, sections on the right (Output, Stereo, Voices, Pitch, Quality). Pages: Operator, Filter, LFO,
-  Pitch, Matrix, Algorithm and Random. Each page goes in the order the sound does and names its groups;
-  a menu has its name over it, and a table (Matrix, Random) names its columns once.
+- **Device row (962 by 168):** the operators as a table with its columns named once (number, ratio or Hz
+  with what coarse and fine come to, coarse, fine, level, on), one display with the pages Env, Wave,
+  Filter, LFO, Pitch, Algo, Mod and Voice and the eight dials that follow it, then Time, Tone, Spread and
+  Volume, Random with its amount and **More…**, and meters. The display has a line of what the page
+  chooses above its picture, so a menu never covers it. The Mod page is the first route of every source,
+  edited in place, in the room of the display and the dials.
+- **Adding operators.** A new device starts with operator 1. An operator not in the sound shows only its
+  number and its light, the first such row has **+ Add operator**, and in the algorithm's picture it is
+  faint. An old project and a voice file keep their operators on.
+- **Ratio or Hz.** In Hz the row's tuning stands out on a tint, coarse reads as its range of 1, 10, 100
+  or 1000 Hz, fine as what it multiplies that by, and the frequency beside them comes to their product.
+- **Larger view (1400 by 230, a strip above the device row, scaled to its width):** the header's Expand
+  button and **More…** open it. The row stays in view and chooses the page, so the strip has no tabs of
+  its own: it shows the page's picture large and only what the row has no room for. Env has the envelope's
+  end, loop and slopes and the keyboard scaling; Wave the partials and how they repeat; Filter and LFO their
+  envelopes, the shaper and the classic LFO; Pitch where it goes and the classic pitch envelope; Algo every
+  algorithm as a card; Mod the whole matrix and the classic controllers; Voice the output, stereo, voices,
+  pitch and quality; Random, reached from its **More…**, its sections.
+- **Tooltips** say what a control is for, not how a mouse moves it.
 - It opens on Env with operator 1 selected. Selected operator and page are hidden parameters.
 - **What it shows.** Pictures use the scales hearing does: an operator's levels in decibels, the filter's
   response in decibels over a logarithmic frequency axis, partials as what makes the timbre. Phase, which
@@ -110,22 +118,20 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
   right has a lower rate. A line marks where the key goes up.
 - **The filter's picture** is its response, for each type and through Morph, with a line at the cutoff
   and frequency and resonance on one dot. On a low-pass or a high-pass the dot lies on the curve. The
-  filter's envelope is in the expanded panel.
+  filter's envelope is in the larger view.
 - **The LFO's picture** is its wave, quietly, and in colour as much of it as reaches the sound after its
   amount and its envelope. More cycles fit as its rate rises (two seconds' worth on the low range), and
-  while it is on they run, at its rate up to three cycles a second. Its rate reads in hertz on the free
-  ranges and is a note length on the synced one.
-- **Selecting.** A click on an operator's number, its envelope picture or its square in the algorithm
-  picture selects it. The row is lighter while selected and the picture rings it; a row dims while its
-  operator is off.
+  while it is on they run, at its rate up to three cycles a second. **Rate in** chooses Hz, Audio (hertz
+  up to audio rate) or Sync (a note length). The classic LFO's rate reads in hertz too.
+- **Selecting.** A click on an operator's number or its square in the algorithm picture selects it. The
+  row is lighter while selected and the picture rings it.
 - Algorithm pictures are computed from the engine's table. An operator heard directly is filled, one
-  that modulates is outlined, and its envelope in the row takes the same colour. A card on the Algorithm
-  page takes the click anywhere on it.
+  that modulates is outlined. A card on the Algo page takes the click anywhere on it.
 
 **A theme changes styles only:** palette, `--device-display`, `--device-series-*`,
 `--device-highlight`, `--device-spectrum` and fonts. Layout is fixed.
 
-The header's Close closes the expanded panel, and Undo is the app's own (Ctrl+Z).
+The header's Close closes the larger view, and Undo is the app's own (Ctrl+Z).
 
 ## Import
 
@@ -143,4 +149,4 @@ envelope model an operator uses moves, and the device's Time and level 4 stay. T
 result audible and playable: at least one carrier keeps its level, ratios stay whole unless asked, the
 filter does not close entirely, and while the envelopes take part every carrier starts within about 2
 seconds and ends soon after its key goes up. Random on the panel runs at once; its amount is beside it, and
-**More…** opens its page in the expanded panel.
+**More…** shows its sections in the larger view.
