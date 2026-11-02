@@ -200,8 +200,10 @@ fn painting_makes_meshes_and_lines() {
 }
 
 /// A ten-minute stereo file at 44.1 kHz, drawn 2000 columns wide at every zoom from the whole
-/// file to single samples, stays inside a frame (16.7 ms at 60 frames a second).
+/// file to single samples, stays inside a frame (16.7 ms at 60 frames a second). Run with
+/// `cargo test -p suhina-ui --release --lib a_ten_minute_file -- --ignored --nocapture`.
 #[test]
+#[ignore = "a bound on elapsed time, for an idle machine"]
 fn a_ten_minute_file_draws_within_a_frame_budget() {
     let rate = 44_100u32;
     let frames = rate as usize * 600;

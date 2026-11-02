@@ -69,9 +69,9 @@ fn a_backup_keeps_the_last_completed_state_while_a_worker_has_the_control_half()
 fn polling_a_busy_host_returns_without_waiting_and_finishes_at_the_deadline() {
     let mut rack = Rack::default();
     rack.instances.insert(1, Instance::new(PluginStatus::Running, None, 0));
-    let started = Instant::now();
+    // With the deadline an hour away, a poll that waited for the host would not come back.
+    rack.edit_check = Some((Instant::now() + Duration::from_secs(3600), 2));
     assert!(!rack.poll_edits());
-    assert!(started.elapsed() < Duration::from_millis(100));
     rack.edit_check = Some((Instant::now(), 2));
     assert!(rack.poll_edits());
     assert!(rack.edit_check.is_none());
@@ -86,9 +86,16 @@ fn checking_a_busy_host_has_one_shared_deadline() {
     for key in 1..=8 {
         rack.instances.insert(key, Instance::new(PluginStatus::Running, None, 0));
     }
-    let started = Instant::now();
+    let check = Some((Instant::now() + Duration::from_secs(3600), 2));
+    rack.edit_check = check;
+    for _ in 0..8 {
+        assert!(!rack.poll_edits());
+        assert_eq!(rack.edit_check, check, "a busy host starts no second wait or round");
+    }
+    rack.edit_check = None;
+    // Past that one deadline it ends, with every host still busy.
     rack.check_edits();
-    assert!(started.elapsed() < SAVE_WAIT + Duration::from_millis(800));
+    assert!(rack.edit_check.is_none());
 }
 
 #[test]
