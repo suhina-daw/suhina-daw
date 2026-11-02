@@ -2189,6 +2189,7 @@ fn a_header_volume_and_pan_take_a_typed_number() {
 }
 
 /// Two takes of one audio content on the Loop track, with nothing on the track yet.
+#[allow(clippy::unwrap_used)]
 fn window_with_audio_takes() -> Harness<'static, App> {
     let (mut project, waveforms) = super::project_with_audio();
     let lane = project.arrangement.lanes.iter_mut().find(|l| l.name == "Loop").unwrap();
