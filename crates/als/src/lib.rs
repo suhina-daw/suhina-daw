@@ -20,7 +20,7 @@ use roxmltree::Node;
 use suhina_model::{
     Arrangement, ArrangementLane, AudioRegion, Branch, Channel, ChannelId, ChannelRole, Clip, ClipContent, ClipId,
     ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceKind, DeviceParam, Extension, Extensions,
-    LaneData, LaneId, Launcher, LauncherColumn, LoopRange, MACROS, MAX_BRANCHES, MAX_CHANGE_BEAT,
+    LaneData, LaneId, Launcher, LauncherColumn, LoopRange, MACROS, MAX_BRANCHES, MAX_CHANGE_BEAT, MAX_DENOMINATOR,
     MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_GROUP_DEPTH, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Marker, Note,
     Project, Scene, SceneId, Send, Slot, StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId,
     Transport, ValidationError, WarpMarker, valid_bpm,
@@ -1043,7 +1043,7 @@ const MAX_ENVELOPE_EVENTS: usize = 100_000;
 fn time_signature(code: u32) -> Option<TimeSignature> {
     let numerator = u8::try_from(code % 99 + 1).ok()?;
     let denominator = u8::try_from(2u32.checked_pow(code / 99)?).ok()?;
-    (denominator <= 64).then_some(TimeSignature { numerator, denominator })
+    (denominator <= MAX_DENOMINATOR).then_some(TimeSignature { numerator, denominator })
 }
 
 fn empty_channel(id: ChannelId, name: &str, role: ChannelRole) -> Channel {

@@ -3,7 +3,7 @@ description: Tempo and time-signature changes over the song (the tempo map): ste
 read_when: tempo map, tempo change, tempo ramp, time-signature change, meter, bars, beats to samples, beat to frame, tempo.addPoint, timeSignature.add, bar ruler
 type: spec
 status: current
-last_verified: 2026-10-18
+last_verified: 2026-11-02
 covers:
   - crates/model/src/tempo.rs
   - crates/engine/src/tempo.rs
@@ -70,7 +70,7 @@ or frames at the sample rate. Nothing converts with the start tempo alone.
   beat 120 000, a tempo outside 1 to 999 bpm, more than 10 000 changes. Of two changes on one beat
   the later in the list wins, except a ramp followed by a step: the ramp arrives at its tempo,
   then the tempo jumps (a Live Set's glide that ends in a jump reads this way). The same for signature changes at bar 0, with an invalid signature
-  (a numerator outside 1 to 99, a denominator that is not 1, 2, 4, 8, 16, 32 or 64) or more than
+  (a numerator outside 1 to 99, a denominator that is not 1, 2, 4, 8 or 16) or more than
   10 000. (The project file refuses these, so they come only from an importer or a hand-edited
   model.)
 
@@ -94,8 +94,10 @@ beat a bar starts on, and the signature there.
 - **The launcher clock** (launched clips, launch quantisation) and **the metronome** run on the
   same beat as the arrangement while the transport follows the map: the beat is read from the map
   each frame, so it does not drift from the arrangement through a ramp. Launched clips advance by
-  the beats the map moves each frame. A scene's tempo or time signature takes the launcher off
-  the map ([Scenes and the tempo map](#scenes-and-the-tempo-map)).
+  the beats the map moves each frame. Launched clips are not on the arrangement's timeline: their
+  stretchers are prepared for the start tempo, and while the tempo is elsewhere they are
+  re-pitched, as with a scene tempo. A scene's tempo or time signature takes the launcher off the
+  map ([Scenes and the tempo map](#scenes-and-the-tempo-map)).
 - **Launch quantisation to bars** waits for the next bar line of the meter, so a launch in a 7/8
   bar waits 3.5 beats from the bar's start, not 4. Quantisation to a note value counts from the
   bar's start.
@@ -109,9 +111,6 @@ beat a bar starts on, and the signature there.
   playback wraps at the loop end's beat, and both ends are turned into frames through the map on
   every pass, so a loop with a tempo change inside it keeps its length in beats, and its length
   in time is what the map gives for those beats.
-
-Launched clips are not on the arrangement's timeline: their stretchers are prepared for the
-start tempo, and while the tempo is elsewhere they are re-pitched, as with a scene tempo.
 
 ## Scenes and the tempo map
 
@@ -155,7 +154,7 @@ All are edits with one undo step. Tempo points are numbered from 1 in beat order
 | `tempo.addPoint` | `beat` (> 0), `bpm` (20–999), `ramp?` (default false) | adds a change; one of the same kind (step or ramp) already on that beat is replaced |
 | `tempo.movePoint` | `point`, `beat?`, `bpm?`, `ramp?` | changes a point; moved onto a beat with a point of the same kind, it replaces that one |
 | `tempo.deletePoint` | `point` | removes a point |
-| `timeSignature.add` | `bar` (≥ 2), `numerator` (1–99), `denominator` (1, 2, 4, 8, 16, 32, 64) | adds a change at the start of the bar; one already there is replaced |
+| `timeSignature.add` | `bar` (≥ 2), `numerator` (1–99), `denominator` (1, 2, 4, 8, 16) | adds a change at the start of the bar; one already there is replaced |
 | `timeSignature.move` | `bar`, `to?`, `numerator?`, `denominator?` | moves a change to bar `to` or changes its signature |
 | `timeSignature.delete` | `bar` | removes the change at that bar |
 | `transport.followTempoMap` | | puts the launcher clock back on the map after a scene took it off (not an edit) |
@@ -164,6 +163,18 @@ Each edit returns the list it changed. A beat past 120 000, a point or bar that 
 signature outside the ranges, a missing or mistyped param is an error and changes nothing.
 
 `launcher.state` reports the tempo at the playhead and its bar and beat through the meter.
+
+## Ranges
+
+The commands set a narrower range than a project file may hold, so a file written by an import or
+by hand opens; a command never writes a value the file reader refuses.
+
+| Value | The commands set | A project file holds |
+|---|---|---|
+| Tempo | 20 to 999 bpm (`transport.setTempo`, `tempo.addPoint`, `scene.setTempo`) | 1 to 999 bpm, for the start tempo and every change |
+| Time signature change | numerator 1 to 99, denominator 1, 2, 4, 8 or 16 (`timeSignature.add`) | the same |
+| Start time signature | as a change | numerator 1 to 255, denominator 1, 2, 4, 8 or 16 ([project file](suhina-format.md)) |
+| A scene's time signature | numerator 1 to 99, denominator 1, 2, 4, 8 or 16 (`scene.setTimeSignature`) | numerator from 1, denominator 1, 2, 4, 8 or 16 ([project file](suhina-format.md)) |
 
 ## The Arrangement
 

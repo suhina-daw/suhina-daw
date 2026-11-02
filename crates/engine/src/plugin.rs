@@ -182,7 +182,7 @@ pub trait PluginProcessor: Send {
 
     /// Where the song is as the next block starts ([`SongPosition`]). The engine calls it before
     /// every block; a hosted plug-in is told with the block, so its tempo-synced parts and an
-    /// ARA renderer (ADR 0028) follow the song. Never allocates.
+    /// ARA renderer (ADR 0033) follow the song. Never allocates.
     fn transport(&mut self, song: &SongPosition) {
         let _ = song;
     }

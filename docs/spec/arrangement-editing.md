@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -54,7 +54,7 @@ notes are left out. Each pair has the track, the shared span (`start`, `end`, in
 (`partial`, or `contained` when one clip lies within the other) and both clips with their `id`
 (what `clip.move` and the other clip commands take, ADR 0025), `track`, `index` and name; at most 10 000 pairs, `truncated` saying when
 there were more. ARA's first version refuses such overlaps for the clips it edits
-([ADR 0028](../decisions/0028-ara-hosting.md)); ordinary stacking is unaffected.
+([ADR 0033](../decisions/0033-ara-hosting.md)); ordinary stacking is unaffected.
 
 ## Tools
 
@@ -149,7 +149,7 @@ or down, a selection on one track goes to the track under the pointer, and a sel
 tracks moves each clip by as many tracks from its own (`tracksBy`), refused where a clip would
 land on a track that cannot hold it. A clip an ARA plug-in (Melodyne) edits, going to another
 track, asks first: **Keep edits** takes its edits along and puts the plug-in on that track when it
-has none, **Copy as new** starts it there without them (`araEdits`, ADR 0028). Dropped on the empty space under the tracks, outlined there
+has none, **Copy as new** starts it there without them (`araEdits`, ADR 0033). Dropped on the empty space under the tracks, outlined there
 as **New track** while carried, the clips (moved or copied) go to a new track of their kind made
 after the last (`toNewTrack`), in the same undo step.
 

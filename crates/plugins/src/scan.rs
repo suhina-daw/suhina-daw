@@ -117,7 +117,7 @@ pub struct PluginInfo {
     /// `IPluginCompatibility`), which may name VST2 plug-ins by their derived class id
     /// ([`crate::matching::vst2_class_id`]).
     pub replaces: Vec<String>,
-    /// The plug-in can edit clips over ARA ([ADR 0028](../../../docs/decisions/0028-ara-hosting.md)):
+    /// The plug-in can edit clips over ARA ([ADR 0033](../../../docs/decisions/0033-ara-hosting.md)):
     /// its VST3 module declares an [`ARA_FACTORY_CLASS`] paired with it ([`pair_ara`]).
     pub ara: bool,
 }

@@ -3,7 +3,7 @@ description: How to write a pull request's "How to check it" section, steps a ne
 read_when: how to check it, test steps, QA steps, how to test, pull request description, manual testing, reviewer steps, check a change
 type: howto
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-01
 covers:
   - .github/pull_request_template.md
   - .claude/skills/how-to-check/SKILL.md
@@ -11,7 +11,7 @@ covers:
 
 # How to check it
 
-[AGENTS.md › Before you finish a task](../AGENTS.md#4-before-you-finish-a-task) has the rule;
+[workflow.md › How to check it](workflow.md#how-to-check-it) has the rule;
 this is how to write the section, for a person or any agent. The reader has downloaded the test
 build from the pull request's *Test build* comment, has never used Suhina or any other music
 program, and should be done in a few minutes.
@@ -27,8 +27,7 @@ tests, CI and documentation: then the section is one line, "Nothing a user can n
 The same pull requests update the parity measurement in the same change: the coverage they move in
 `scripts/parity/score.py` (and `scripts/parity/devices.json` for a built-in effect or instrument);
 the report's numbers are regenerated on `main` after the merge. One that moves no coverage writes `Parity: no
-change` and the reason in its description, next to this section. [AGENTS.md › Before you finish a
-task](../AGENTS.md#4-before-you-finish-a-task) has the rule, and the *Parity notice* check warns when
+change` and the reason in its description, next to this section. [workflow.md › Parity](workflow.md#parity) has the rule, and the *Parity notice* check warns when
 a change to `crates/`, `devices/` or `apps/` does neither.
 
 ## 2. Collect the facts first, never invent them

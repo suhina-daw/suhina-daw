@@ -1,14 +1,14 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! An SDK example, not the built-in Auto Pan (`devices/auto-pan`): a sine LFO on a pan node,
-//! built as a self-contained .sd file.
+//! An SDK example: a sine LFO on a pan node, built as a self-contained .sd file. The built-in
+//! effect that pans with an LFO is `devices/auto-pan`, native code rather than an `.sd` graph.
 use suhina_device_sdk::{
     DeviceGraph, DeviceRole, NodeKind as K, Parameter, ParameterControl, Waveform, author::GraphBuilder,
 };
 
 pub fn build() -> Result<DeviceGraph, Box<dyn std::error::Error>> {
-    let mut g = GraphBuilder::new("org.example.auto-pan", "auto-pan", DeviceRole::Effect);
+    let mut g = GraphBuilder::new("org.example.lfo-pan", "lfo-pan", DeviceRole::Effect);
     let input = g.node("in", K::AudioInput)?;
     let output = g.node("out", K::AudioOutput)?;
 
@@ -24,7 +24,7 @@ pub fn build() -> Result<DeviceGraph, Box<dyn std::error::Error>> {
 
 #[cfg(not(test))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    save(build()?, "auto-pan")
+    save(build()?, "lfo-pan")
 }
 
 fn style_parameter(parameter: &mut suhina_device_sdk::Parameter) {

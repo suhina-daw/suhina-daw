@@ -1303,7 +1303,7 @@ pub(super) fn paint_clip(
         }
     }
     // Notes an ARA plug-in found in an audio clip go over its waveform, which dims a little under
-    // them so both read (ADR 0028, #720): dimmed to 40 % it read as an empty clip on a light body.
+    // them so both read (ADR 0033, #720): dimmed to 40 % it read as an empty clip on a light body.
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
     let appearance = painter
         .ctx()
