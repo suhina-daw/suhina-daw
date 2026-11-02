@@ -86,7 +86,7 @@ fn draw_and_expand_gestures_need_their_bindings() {
 
 #[test]
 fn handles_bind_an_axis_or_two_and_presets_name_declared_values() {
-    let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.)];
+    let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.), Parameter::new("res", "Res", (0., 1.), 0.)];
     let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
     ui.controls.push(CustomControl {
         id: "cut_handle".into(),
@@ -106,8 +106,10 @@ fn handles_bind_an_axis_or_two_and_presets_name_declared_values() {
         visible_when: Some(UiValue::parameter(EXPANDED_ID, false)),
     });
     ui.validate(&params).unwrap();
-    ui.controls[0].y = Some(UiBinding::new("cut"));
+    ui.controls[0].y = Some(UiBinding::new("res"));
     ui.validate(&params).unwrap();
+    ui.controls[0].y = Some(UiBinding::new("cut"));
+    assert!(ui.validate(&params).is_err(), "a point moves two parameters");
     ui.controls[0].x = None;
     ui.controls[0].y = None;
     assert!(ui.validate(&params).is_err(), "a handle needs an axis");
