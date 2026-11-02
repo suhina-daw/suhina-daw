@@ -452,6 +452,7 @@ fn comped_parts_fade_and_their_crossfade_is_set() {
     assert_eq!(lane(&s)[0].fade_out, 4.0, "no longer than the shorter part");
     run(&mut s, "take.setCrossfade", json!({ "clip": left })).unwrap();
     assert!((lane(&s)[0].fade_out - beats).abs() < 1e-9);
-    assert!(run(&mut s, "take.setCrossfade", json!({ "clip": lane(&s)[1].id.0 })).is_err(), "no part after it");
+    let last = lane(&s)[1].id.0;
+    assert!(run(&mut s, "take.setCrossfade", json!({ "clip": last })).is_err(), "no part after it");
     assert!(run(&mut s, "take.setCrossfade", json!({ "clip": left, "length": -1.0 })).is_err());
 }
