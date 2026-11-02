@@ -108,7 +108,7 @@ impl SlotFactory<'_> {
             samples.load_sample_edits(edits.clone());
         }
         device.prepare(f64::from(self.sample_rate)).ok()?;
-        let info = device.info();
+        let info = device.info().clone();
         let mut values: Vec<f64> = info.params.iter().map(|p| p.default).collect();
         for p in &stored.params {
             if let Some(slot) = info.param_index(&p.id).and_then(|i| values.get_mut(i)) {

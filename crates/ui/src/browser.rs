@@ -546,7 +546,8 @@ impl BrowserState {
             Role::MidiEffect => ItemKind::MidiEffect,
         };
         for info in suhina_device_registry::DEVICES.iter().filter(|info| info.role == role) {
-            let item = BrowserItem { key: format!("device:{}", info.id), name: info.name.into(), kind, plugin: false };
+            let item =
+                BrowserItem { key: format!("device:{}", info.id), name: info.name.to_string(), kind, plugin: false };
             rows.push(Row { item, depth: 1, opens: false, open: false, context: None, columns: None, node: None });
         }
     }

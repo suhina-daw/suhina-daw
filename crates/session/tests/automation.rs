@@ -238,7 +238,7 @@ fn a_point_added_on_a_whole_number_lane_keeps_the_envelope() {
     let mut session = Session::new(project());
     run(&mut session, "device.add", json!({ "track": 1, "id": "sampler" })).unwrap();
     let poly = suhina_device_registry::info("sampler")
-        .and_then(|info| info.params.iter().find(|p| p.id == "poly").copied())
+        .and_then(|info| info.params.iter().find(|p| p.id == "poly").cloned())
         .unwrap();
     assert!(matches!(poly.kind, suhina_device_api::ParamKind::Integer));
     let taper = WholeNumbers(poly);

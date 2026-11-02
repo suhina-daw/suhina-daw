@@ -20,7 +20,7 @@
 //! their value at the play start marker. The grid is the arrangement's, not the block's, so the
 //! sound does not depend on the block size. Nothing here allocates after the graph is built.
 
-use suhina_device_api::{Device, ParamInfo, ParamKind};
+use suhina_device_api::{Device, ParamKind, ParamShape, ShapeKind};
 use suhina_model::automation::{self as model, Curve, MAX_POINTS, MUTE, PAN, Taper, VOLUME, VolumeTaper};
 use suhina_model::{AutomationLane, Channel, Project, TrackId};
 
@@ -49,7 +49,7 @@ pub(crate) enum Position {
     /// The volume fader, for a linear gain.
     Volume,
     /// A built-in device parameter, as its knob turns.
-    Param(ParamInfo),
+    Param(ParamShape),
     /// A data-only device parameter on a logarithmic control: equal steps multiply the value.
     Log { min: f64, max: f64 },
 }
@@ -71,7 +71,7 @@ impl Position {
     /// with its fraction cut off toward zero (`ParamInfo::played`), anything else as it is.
     fn played(&self, value: f64) -> f64 {
         match self {
-            Self::Param(info) if matches!(info.kind, ParamKind::Integer) => info.played(value),
+            Self::Param(info) if matches!(info.kind, ShapeKind::Integer) => info.played(value),
             _ => value,
         }
     }
@@ -91,7 +91,7 @@ impl Taper for Position {
             Self::Value => position,
             Self::Volume => VolumeTaper.value(position),
             // A whole-number parameter moves along the line; `played` cuts the fraction off.
-            Self::Param(info) if matches!(info.kind, ParamKind::Integer) => {
+            Self::Param(info) if matches!(info.kind, ShapeKind::Integer) => {
                 info.min + position.clamp(0.0, 1.0) * (info.max - info.min)
             }
             Self::Param(info) => info.from_normalized(position),
@@ -319,7 +319,7 @@ impl DeviceLanes {
             let stepped =
                 info.params.get(param).is_some_and(|p| matches!(p.kind, ParamKind::Toggle | ParamKind::Choice(_)));
             let Some(info) = info.params.get(param) else { continue };
-            if let Some(envelope) = Envelope::new(lane, frames_per_beat, stepped, Position::Param(*info)) {
+            if let Some(envelope) = Envelope::new(lane, frames_per_beat, stepped, Position::Param(info.shape())) {
                 self.lanes.push(DeviceLane { slot, param, envelope, last: f64::NAN });
             }
         }

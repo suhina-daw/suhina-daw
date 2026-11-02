@@ -71,7 +71,7 @@ const SYNCED_RATE_NAMES: [&str; 15] = {
 const DEFAULT_SYNCED_RATE: usize = 7;
 const SHAPE_NAMES: [&str; 6] = ["Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Random"];
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("amount", "Amount", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear),
     ParamInfo::toggle("sync", "Sync", false),
     ParamInfo::continuous("rate", "Rate", (0.01, 40.0), 1.0, Unit::Hertz, Scale::Logarithmic),
@@ -86,7 +86,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::toggle("invert", "Invert", false),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "auto-pan", name: "Auto Pan", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("auto-pan", "Auto Pan", Role::Effect, &PARAMS);
 
 /// How much shaping at 1.0 steepens the waveform before it is clipped.
 const MAX_SHAPING_GAIN: f64 = 8.0;
@@ -152,7 +152,7 @@ impl AutoPan {
 }
 
 impl Device for AutoPan {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

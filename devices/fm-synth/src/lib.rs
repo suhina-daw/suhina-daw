@@ -42,7 +42,7 @@ pub use crate::patch::Patch;
 use crate::tables::{N, Tables};
 use crate::voice::{Controllers, ModRoute, Note};
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "fm-synth", name: "FM Synth", role: Role::Instrument, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("fm-synth", "FM Synth", Role::Instrument, &PARAMS);
 
 /// Notes that can sound at once.
 pub const VOICES: usize = 16;
@@ -356,7 +356,7 @@ fn seven_bit(value: f32) -> i32 {
 }
 
 impl Device for FmSynth {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

@@ -74,12 +74,12 @@ fn parameter_of(params: &'static [ParamInfo], id: &str) -> &'static ParamInfo {
 
 /// The parameter with id `id`, from the amp's info.
 fn amp_parameter(id: &str) -> &'static ParamInfo {
-    parameter_of(AMP_INFO.params, id)
+    parameter_of(&AMP_INFO.params, id)
 }
 
 /// The parameter with id `id`, from the cab's info.
 fn cab_parameter(id: &str) -> &'static ParamInfo {
-    parameter_of(CAB_INFO.params, id)
+    parameter_of(&CAB_INFO.params, id)
 }
 
 /// The label's prefix a panel's controls take: the device's shown name, "NAM " off if it leads.
@@ -138,7 +138,7 @@ fn knob(
 ) -> egui::Response {
     let publisher = format!("{}: {}", prefix, parameter.name.to_lowercase());
     let response =
-        ui.interact(cell, egui::Id::new(("nam-knob", track.0, device_index, parameter.id)), Sense::click_and_drag());
+        ui.interact(cell, egui::Id::new(("nam-knob", track.0, device_index, &*parameter.id)), Sense::click_and_drag());
     if response.clicked() {
         response.request_focus();
     }
@@ -166,7 +166,7 @@ fn knob(
         ui.painter(),
         Rect::from_min_max(cell.left_top(), egui::pos2(cell.right(), cell.top() + 12.0)),
         Align2::CENTER_CENTER,
-        parameter.name,
+        &parameter.name,
         theme::ui_font(theme::TEXT_TINY),
         theme::text_secondary(),
     );
@@ -205,7 +205,7 @@ fn mid_freq_line(
         painter,
         Rect::from_min_max(under.left_top(), egui::pos2(under.right(), under.top() + 12.0)),
         Align2::CENTER_CENTER,
-        parameter.name,
+        &parameter.name,
         theme::ui_font(theme::TEXT_TINY),
         theme::text_secondary(),
     );
@@ -220,7 +220,7 @@ fn mid_freq_line(
             egui::pos2(line.left() - 8.0, under.top() + 10.0),
             egui::pos2(line.right() + 8.0, under.bottom()),
         ),
-        egui::Id::new(("nam-pill", track.0, device_index, parameter.id)),
+        egui::Id::new(("nam-pill", track.0, device_index, &*parameter.id)),
         Sense::click_and_drag(),
     );
     if response.clicked() {
@@ -291,7 +291,7 @@ fn vslider(
         ui.painter(),
         Rect::from_min_max(column.left_top(), egui::pos2(column.right(), column.top() + 12.0)),
         Align2::CENTER_CENTER,
-        parameter.name,
+        &parameter.name,
         theme::ui_font(theme::TEXT_TINY),
         theme::text_secondary(),
     );
@@ -314,7 +314,7 @@ fn vslider(
             egui::pos2(lane.center().x - 12.0, lane.top()),
             egui::pos2(lane.center().x + 12.0, lane.bottom()),
         ),
-        egui::Id::new(("nam-vslider", track.0, device_index, parameter.id)),
+        egui::Id::new(("nam-vslider", track.0, device_index, &*parameter.id)),
         Sense::click_and_drag(),
     );
     if response.dragged() {
@@ -347,7 +347,7 @@ fn toggle(
     on: bool,
     actions: &mut Vec<Action>,
 ) -> egui::Response {
-    let id = egui::Id::new(("nam-toggle", track.0, device_index, parameter.id));
+    let id = egui::Id::new(("nam-toggle", track.0, device_index, &*parameter.id));
     let response = ui.interact(rect, id, Sense::click());
     let (fill, text) = widgets::toggle_colors(ui, &response, on);
     ui.painter().fill_background(rect, 3.0, fill);
@@ -355,7 +355,7 @@ fn toggle(
         ui.painter(),
         rect,
         Align2::CENTER_CENTER,
-        parameter.name,
+        &parameter.name,
         theme::ui_font(theme::TEXT_SMALL),
         text,
     );

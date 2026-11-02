@@ -135,7 +135,7 @@ fn gain_factor(decibels: f64) -> f64 {
     if decibels <= -60. { 0. } else { 10f64.powf(decibels / 20.) }
 }
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "sampler", name: "Sampler", role: Role::Instrument, params: PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("sampler", "Sampler", Role::Instrument, PARAMS);
 
 #[derive(Clone, Copy, Default)]
 struct Grain {
@@ -345,7 +345,7 @@ impl Device for Sampler {
     fn samples_ref(&self) -> Option<&dyn SampleSource> {
         Some(self)
     }
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
     fn prepare(&mut self, rate: f64) -> Result<(), DeviceError> {
@@ -389,12 +389,12 @@ impl Device for Sampler {
                     }
                 }
             }
-            if matches!(p.id, "reverse" | "mode") && next != *v {
+            if matches!(p.id.as_ref(), "reverse" | "mode") && next != *v {
                 for voice in &mut self.warp {
                     voice.restart();
                 }
             }
-            if matches!(p.id, "playback" | "mode") && next != *v {
+            if matches!(p.id.as_ref(), "playback" | "mode") && next != *v {
                 self.voices.fill(Voice::default());
                 for voice in &mut self.warp {
                     voice.restart();

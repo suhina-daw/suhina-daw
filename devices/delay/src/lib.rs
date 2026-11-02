@@ -211,52 +211,87 @@ impl Lfo {
 }
 
 /// The parameters, in [`param`] order.
-const PARAMS: [ParamInfo; param::COUNT] = [
-    ParamInfo::toggle("link", "Link", true).in_group("Time"),
-    ParamInfo::toggle("syncLeft", "Sync Left", true).in_group("Time"),
-    ParamInfo::toggle("syncRight", "Sync Right", true).in_group("Time"),
-    ParamInfo::choice("sixteenthsLeft", "Sixteenths Left", &SIXTEENTH_NAMES, 2).in_group("Time"),
-    ParamInfo::choice("sixteenthsRight", "Sixteenths Right", &SIXTEENTH_NAMES, 3).in_group("Time"),
-    ParamInfo::continuous("timeLeft", "Time Left", (0.001, 5.0), 0.375, Unit::Seconds, Scale::Logarithmic)
-        .in_group("Time"),
-    ParamInfo::continuous("timeRight", "Time Right", (0.001, 5.0), 0.375, Unit::Seconds, Scale::Logarithmic)
-        .in_group("Time"),
-    ParamInfo::continuous("offsetLeft", "Offset Left", (-0.333, 0.333), 0.0, Unit::Percent, Scale::Linear)
-        .in_group("Time"),
-    ParamInfo::continuous("offsetRight", "Offset Right", (-0.333, 0.333), 0.0, Unit::Percent, Scale::Linear)
-        .in_group("Time"),
-    ParamInfo::continuous("feedback", "Feedback", (0.0, 0.95), 0.5, Unit::Percent, Scale::Linear).in_group("Feedback"),
-    ParamInfo::toggle("freeze", "Freeze", false).in_group("Feedback"),
-    ParamInfo::toggle("pingPong", "Ping Pong", false).in_group("Feedback"),
-    ParamInfo::choice("transition", "Transition", &TRANSITIONS, 0).in_group("Feedback"),
-    ParamInfo::toggle("filter", "Filter", true).in_group("Filter"),
-    ParamInfo::continuous(
+static PARAMS: [ParamInfo; param::COUNT] = [
+    ParamInfo::in_group("Time").toggle("link", "Link", true),
+    ParamInfo::in_group("Time").toggle("syncLeft", "Sync Left", true),
+    ParamInfo::in_group("Time").toggle("syncRight", "Sync Right", true),
+    ParamInfo::in_group("Time").choice("sixteenthsLeft", "Sixteenths Left", &SIXTEENTH_NAMES, 2),
+    ParamInfo::in_group("Time").choice("sixteenthsRight", "Sixteenths Right", &SIXTEENTH_NAMES, 3),
+    ParamInfo::in_group("Time").continuous(
+        "timeLeft",
+        "Time Left",
+        (0.001, 5.0),
+        0.375,
+        Unit::Seconds,
+        Scale::Logarithmic,
+    ),
+    ParamInfo::in_group("Time").continuous(
+        "timeRight",
+        "Time Right",
+        (0.001, 5.0),
+        0.375,
+        Unit::Seconds,
+        Scale::Logarithmic,
+    ),
+    ParamInfo::in_group("Time").continuous(
+        "offsetLeft",
+        "Offset Left",
+        (-0.333, 0.333),
+        0.0,
+        Unit::Percent,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Time").continuous(
+        "offsetRight",
+        "Offset Right",
+        (-0.333, 0.333),
+        0.0,
+        Unit::Percent,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Feedback").continuous("feedback", "Feedback", (0.0, 0.95), 0.5, Unit::Percent, Scale::Linear),
+    ParamInfo::in_group("Feedback").toggle("freeze", "Freeze", false),
+    ParamInfo::in_group("Feedback").toggle("pingPong", "Ping Pong", false),
+    ParamInfo::in_group("Feedback").choice("transition", "Transition", &TRANSITIONS, 0),
+    ParamInfo::in_group("Filter").toggle("filter", "Filter", true),
+    ParamInfo::in_group("Filter").continuous(
         "filterFrequency",
         "Filter Frequency",
         FILTER_RANGE,
         1_000.0,
         Unit::Hertz,
         Scale::Logarithmic,
-    )
-    .in_group("Filter"),
-    ParamInfo::continuous("filterWidth", "Filter Width", (0.5, 9.0), 8.0, Unit::Octaves, Scale::Linear)
-        .in_group("Filter"),
-    ParamInfo::choice("lfoMode", "LFO Mode", &LFO_MODES, 0).in_group("LFO"),
-    ParamInfo::continuous("lfoRate", "LFO Rate", (0.01, 40.0), 0.5, Unit::Hertz, Scale::Logarithmic).in_group("LFO"),
-    ParamInfo::continuous("lfoTime", "LFO Time", (0.1, 200.0), 1.0, Unit::Seconds, Scale::Logarithmic).in_group("LFO"),
-    ParamInfo::choice("lfoSynced", "LFO Synced Rate", &SYNCED_RATE_NAMES, 4).in_group("LFO"),
-    ParamInfo::integer("lfoSixteenths", "LFO Sixteenths", (1, 64), 16, Unit::None).in_group("LFO"),
-    ParamInfo::choice("lfoShape", "LFO Shape", &LFO_SHAPES, 1).in_group("LFO"),
-    ParamInfo::continuous("lfoMorph", "LFO Morph", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("LFO"),
-    ParamInfo::continuous("lfoToTime", "LFO to Time", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("LFO"),
-    ParamInfo::continuous("lfoToFilter", "LFO to Filter", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
-        .in_group("LFO"),
-    ParamInfo::continuous("mix", "Dry/Wet", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear).in_group("Output"),
-    ParamInfo::toggle("equalLoudness", "Equal-Loudness Mix", false).in_group("Output"),
+    ),
+    ParamInfo::in_group("Filter").continuous(
+        "filterWidth",
+        "Filter Width",
+        (0.5, 9.0),
+        8.0,
+        Unit::Octaves,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("LFO").choice("lfoMode", "LFO Mode", &LFO_MODES, 0),
+    ParamInfo::in_group("LFO").continuous("lfoRate", "LFO Rate", (0.01, 40.0), 0.5, Unit::Hertz, Scale::Logarithmic),
+    ParamInfo::in_group("LFO").continuous("lfoTime", "LFO Time", (0.1, 200.0), 1.0, Unit::Seconds, Scale::Logarithmic),
+    ParamInfo::in_group("LFO").choice("lfoSynced", "LFO Synced Rate", &SYNCED_RATE_NAMES, 4),
+    ParamInfo::in_group("LFO").integer("lfoSixteenths", "LFO Sixteenths", (1, 64), 16, Unit::None),
+    ParamInfo::in_group("LFO").choice("lfoShape", "LFO Shape", &LFO_SHAPES, 1),
+    ParamInfo::in_group("LFO").continuous("lfoMorph", "LFO Morph", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear),
+    ParamInfo::in_group("LFO").continuous("lfoToTime", "LFO to Time", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear),
+    ParamInfo::in_group("LFO").continuous(
+        "lfoToFilter",
+        "LFO to Filter",
+        (0.0, 1.0),
+        0.0,
+        Unit::Percent,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Output").continuous("mix", "Dry/Wet", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear),
+    ParamInfo::in_group("Output").toggle("equalLoudness", "Equal-Loudness Mix", false),
 ];
 
 /// What the delay is and the parameters it has.
-pub const INFO: DeviceInfo = DeviceInfo { id: "delay", name: "Delay", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("delay", "Delay", Role::Effect, &PARAMS);
 
 /// Where a side's line is read, and how the read position follows the delay time.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -613,7 +648,7 @@ impl Delay {
 
 impl Device for Delay {
     /// The delay's [`INFO`].
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

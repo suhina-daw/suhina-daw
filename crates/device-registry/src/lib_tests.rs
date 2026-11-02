@@ -34,9 +34,9 @@ fn every_layout_loads_and_names_only_its_devices_parameters() {
     // A layout that names a parameter id its device lacks fails here, rather than falling
     // back to the generated list unnoticed.
     for info in DEVICES {
-        if let Some(layout) = layout(info.id) {
+        if let Some(layout) = layout(&info.id) {
             let panel = layout.and_then(|l| l.panel(info)).unwrap_or_else(|e| panic!("{}: {e}", info.id));
-            assert_eq!(panel_ids(&panel), info.params.iter().map(|p| p.id).collect::<Vec<_>>());
+            assert_eq!(panel_ids(&panel), info.params.iter().map(|p| p.id.clone()).collect::<Vec<_>>());
         }
     }
     for (id, _) in layout_files() {
@@ -94,9 +94,9 @@ fn the_reverbs_expanded_panel_has_every_parameter_and_the_compact_one_fits() {
 #[test]
 fn every_device_has_a_panel_with_its_parameters() {
     for info in DEVICES {
-        let panel = panel(info.id).unwrap_or_else(|| panic!("{} has no panel", info.id));
-        assert_eq!(panel_ids(panel), info.params.iter().map(|p| p.id).collect::<Vec<_>>(), "{}", info.id);
-        for (parameter, native) in panel.parameters.iter().zip(info.params) {
+        let panel = panel(&info.id).unwrap_or_else(|| panic!("{} has no panel", info.id));
+        assert_eq!(panel_ids(panel), info.params.iter().map(|p| &*p.id).collect::<Vec<_>>(), "{}", info.id);
+        for (parameter, native) in panel.parameters.iter().zip(info.params.iter()) {
             assert_eq!((parameter.min, parameter.max, parameter.default), (native.min, native.max, native.default));
         }
     }
@@ -141,9 +141,9 @@ fn panel_ids(panel: &Panel) -> Vec<&str> {
 #[test]
 fn every_listed_device_can_be_made_and_ids_are_unique() {
     for (i, info) in DEVICES.iter().enumerate() {
-        let device = create(info.id).unwrap_or_else(|| panic!("{} cannot be made", info.id));
+        let device = create(&info.id).unwrap_or_else(|| panic!("{} cannot be made", info.id));
         assert_eq!(device.info(), *info);
-        assert_eq!(super::info(info.id), Some(*info));
+        assert_eq!(super::info(&info.id), Some(*info));
         assert!(DEVICES.iter().skip(i + 1).all(|other| other.id != info.id), "{} twice", info.id);
     }
     assert!(create("no-such-device").is_none());
@@ -152,11 +152,11 @@ fn every_listed_device_can_be_made_and_ids_are_unique() {
 
 #[test]
 fn only_the_nam_devices_run_a_file_and_every_row_is_found_by_its_id() {
-    let files: Vec<&str> = ENTRIES.iter().filter(|e| e.file.is_some()).map(|e| e.info.id).collect();
+    let files: Vec<&str> = ENTRIES.iter().filter(|e| e.file.is_some()).map(|e| &*e.info.id).collect();
     assert_eq!(files, ["nam-amp-modeler", "nam-cab-loader"]);
     for (entry, info) in ENTRIES.iter().zip(DEVICES) {
         assert_eq!(entry.info, info);
-        assert_eq!(is_file_device(info.id), entry.file.is_some());
+        assert_eq!(is_file_device(&info.id), entry.file.is_some());
     }
     assert!(!is_file_device("no-such-device"));
     assert_eq!(file_extension("nam-amp-modeler"), Some("nam"));

@@ -1771,13 +1771,13 @@ mod span_tests {
     const PLAYING: ProcessContext = ProcessContext { tempo: 120.0, beat: 8.0, playing: true };
     const NOTE: NoteEvent = NoteEvent::On { key: 60, velocity: 0.8 };
 
-    static RECORDER: DeviceInfo = DeviceInfo { id: "test.recorder", name: "Recorder", role: Role::Effect, params: &[] };
+    static RECORDER: DeviceInfo = DeviceInfo::new("test.recorder", "Recorder", Role::Effect, &[]);
 
     /// Notes the song position and length of every span it is given.
     struct Recorder(Arc<Mutex<Vec<(f64, usize)>>>);
 
     impl Device for Recorder {
-        fn info(&self) -> &'static DeviceInfo {
+        fn info(&self) -> &DeviceInfo {
             &RECORDER
         }
         fn prepare(&mut self, _sample_rate: f64) -> Result<(), DeviceError> {
@@ -1821,7 +1821,7 @@ mod span_tests {
     /// over a block of clicks, its frames split at `splits` by notes it ignores.
     fn synced_delay(splits: &[usize]) -> Vec<f32> {
         let Some(mut device) = suhina_device_registry::create("delay") else { panic!("no delay") };
-        let info = device.info();
+        let info = device.info().clone();
         let index = |id: &str| info.params.iter().position(|p| p.id == id).unwrap_or_else(|| panic!("{id}"));
         // Synced mode, 1/16 per cycle, the shortest time so the repeats are heard in one block.
         device.set_param(index("lfoMode"), 2.0);

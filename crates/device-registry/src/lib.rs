@@ -188,7 +188,7 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
 /// The ids of the devices whose layout is a `panel.json`, with its text.
 pub fn layout_files() -> impl Iterator<Item = (&'static str, &'static str)> {
     ENTRIES.iter().filter_map(|entry| match entry.layout {
-        LayoutSource::Json(text) => Some((entry.info.id, text)),
+        LayoutSource::Json(text) => Some((&*entry.info.id, text)),
         LayoutSource::Generated | LayoutSource::Rust(_) => None,
     })
 }
@@ -205,7 +205,7 @@ pub fn panel(id: &str) -> Option<&'static Panel> {
             DEVICES
                 .iter()
                 .map(|info| {
-                    layout(info.id)
+                    layout(&info.id)
                         .and_then(Result::ok)
                         .and_then(|layout| layout.panel(info).ok())
                         .unwrap_or_else(|| builtin::generated(info))
@@ -276,7 +276,7 @@ pub fn load_file(id: &str, path: &Path, rate: u32) -> Result<DeviceAsset, String
     if extension.as_deref() != Some(file.extension) {
         return Err(format!("a {id} runs a .{} file", file.extension));
     }
-    Ok(DeviceAsset { device: entry.info.id, data: (file.read)(path, rate)? })
+    Ok(DeviceAsset { device: &entry.info.id, data: (file.read)(path, rate)? })
 }
 
 /// A new device with this id, its defaults, and `asset` already loaded — `None` for an unknown
@@ -354,8 +354,8 @@ pub fn preset(data: &[u8], voice: usize) -> Result<Preset, String> {
     synth.load_patch(patch);
     let info = &suhina_device_fm_synth::INFO;
     let params =
-        info.params.iter().enumerate().filter_map(|(i, p)| synth.param(i).map(|value| (p.id, value))).collect();
-    Ok(Preset { device: info.id, name: patch.name().trim().to_string(), params })
+        info.params.iter().enumerate().filter_map(|(i, p)| synth.param(i).map(|value| (&*p.id, value))).collect();
+    Ok(Preset { device: &info.id, name: patch.name().trim().to_string(), params })
 }
 
 fn read_voices(data: &[u8]) -> Result<suhina_device_fm_synth::patch::Voices, String> {

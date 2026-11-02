@@ -153,16 +153,16 @@ pub fn parameters(info: &DeviceInfo) -> Vec<Parameter> {
 /// One native parameter as the generated list shows it: its stock control, its unit, and two
 /// decimals (one in Hz and %, none on a stepped control).
 fn parameter(p: &ParamInfo) -> Parameter {
-    let mut parameter = Parameter::new(p.id, p.name, (p.min, p.max), p.default);
+    let mut parameter = Parameter::new(&*p.id, &*p.name, (p.min, p.max), p.default);
     // The native device smooths its own parameters.
     parameter.smoothing_ms = 0.;
-    parameter.control = match p.kind {
+    parameter.control = match &p.kind {
         ParamKind::Continuous(Scale::Logarithmic) if p.min > 0.0 => ParameterControl::LogSlider,
         ParamKind::Continuous(_) => ParameterControl::Slider,
         ParamKind::Integer => ParameterControl::Integer,
         ParamKind::Toggle => ParameterControl::Toggle,
         ParamKind::Choice(options) => {
-            parameter.ui.options = options.iter().map(|s| (*s).into()).collect();
+            parameter.ui.options = options.iter().map(Into::into).collect();
             ParameterControl::Choice
         }
     };
@@ -197,12 +197,13 @@ pub fn unit(unit: Unit) -> &'static str {
 mod tests {
     use super::*;
     use crate::ui::{CustomControl, UiBinding, UiGesture};
+    use std::borrow::Cow;
     use suhina_device_api::Role;
 
-    const PARAMS: [ParamInfo; 3] = [
+    static PARAMS: [ParamInfo; 3] = [
         ParamInfo {
-            id: "gain",
-            name: "Gain",
+            id: Cow::Borrowed("gain"),
+            name: Cow::Borrowed("Gain"),
             group: "",
             kind: ParamKind::Continuous(Scale::Linear),
             min: -24.0,
@@ -211,8 +212,8 @@ mod tests {
             unit: Unit::Decibels,
         },
         ParamInfo {
-            id: "freq",
-            name: "Frequency",
+            id: Cow::Borrowed("freq"),
+            name: Cow::Borrowed("Frequency"),
             group: "",
             kind: ParamKind::Continuous(Scale::Logarithmic),
             min: 20.0,
@@ -221,17 +222,17 @@ mod tests {
             unit: Unit::Hertz,
         },
         ParamInfo {
-            id: "mode",
-            name: "Mode",
+            id: Cow::Borrowed("mode"),
+            name: Cow::Borrowed("Mode"),
             group: "",
-            kind: ParamKind::Choice(&["Soft", "Hard"]),
+            kind: ParamKind::Choice(suhina_device_api::Labels::Static(&["Soft", "Hard"])),
             min: 0.0,
             max: 1.0,
             default: 0.0,
             unit: Unit::None,
         },
     ];
-    const INFO: DeviceInfo = DeviceInfo { id: "test", name: "Test", role: Role::Effect, params: &PARAMS };
+    static INFO: DeviceInfo = DeviceInfo::new("test", "Test", Role::Effect, &PARAMS);
 
     fn knob(id: &str, parameter: &str) -> CustomControl {
         CustomControl {

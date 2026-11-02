@@ -395,12 +395,12 @@ fn info_json(info: &DeviceInfo) -> Value {
                 "default": p.default,
                 "unit": unit_name(p.unit),
             });
-            let kind = match p.kind {
+            let kind = match &p.kind {
                 ParamKind::Continuous(_) => "number",
                 ParamKind::Toggle => "toggle",
                 ParamKind::Integer => "integer",
                 ParamKind::Choice(options) => {
-                    v["options"] = json!(options);
+                    v["options"] = json!(options.iter().collect::<Vec<_>>());
                     "choice"
                 }
             };
@@ -628,7 +628,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
         .as_ref()
         .map_or_else(Vec::new, |p| p.params.iter().map(|(id, value)| DeviceParam::new(*id, *value)).collect());
     let device =
-        Device { params: params_of_preset, ..Device::new(info.name, DeviceKind::Builtin(info.id.to_string())) };
+        Device { params: params_of_preset, ..Device::new(&*info.name, DeviceKind::Builtin(info.id.to_string())) };
     if let Some(value) = crate::device_groups::insert_into_group(session, params, device.clone())? {
         return Ok(json!({ "device": value, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name) }));
     }

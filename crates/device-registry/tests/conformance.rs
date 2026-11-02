@@ -26,7 +26,7 @@ fn with_test_sample(mut device: Box<dyn Device>) -> Box<dyn Device> {
 fn every_listed_device_is_made_by_its_id() {
     for (i, info) in DEVICES.iter().enumerate() {
         assert!(DEVICES.iter().take(i).all(|other| other.id != info.id), "{} is listed twice", info.id);
-        let device = create(info.id).unwrap_or_else(|| panic!("{} is listed but not made", info.id));
+        let device = create(&info.id).unwrap_or_else(|| panic!("{} is listed but not made", info.id));
         assert_eq!(device.info(), *info);
     }
     assert!(create("no-such-device").is_none());
@@ -38,7 +38,7 @@ fn every_listed_device_passes_the_conformance_checks() {
         let runs: Vec<_> = DEVICES
             .iter()
             .map(|info| {
-                scope.spawn(move || (info.id, conformance::check(&|| with_test_sample(create(info.id).unwrap()))))
+                scope.spawn(move || (&*info.id, conformance::check(&|| with_test_sample(create(&info.id).unwrap()))))
             })
             .collect();
         runs.into_iter().map(|run| run.join().unwrap()).filter(|(_, failures)| !failures.is_empty()).collect()
