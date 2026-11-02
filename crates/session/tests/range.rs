@@ -9,25 +9,18 @@
 use serde_json::json;
 use suhina_model::*;
 use suhina_session::{Session, blank_project};
+use suhina_test_support::ProjectBuilder;
 
 use crate::support::run;
 
 /// The blank project with a 4-beat notes clip at beat 0 on tracks 1 and 2.
 fn project() -> Project {
-    let mut p = blank_project();
-    for id in [1, 2] {
-        p.contents.push(ClipContent {
-            id: ContentId(id),
-            name: format!("Riff {id}"),
-            length: 4.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 4.0, 60, 0.8)]) }],
-            extensions: Extensions::default(),
-            scale: None,
-        });
-        let lane = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(id))).unwrap();
-        lane.clips = vec![Clip::new(ContentId(id), 0.0, 4.0)];
-    }
-    p
+    ProjectBuilder::from(blank_project())
+        .notes(1, "Riff 1", 4.0, vec![Note::new(0.0, 4.0, 60, 0.8)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .notes(2, "Riff 2", 4.0, vec![Note::new(0.0, 4.0, 60, 0.8)])
+        .clip(2, Clip::new(ContentId(2), 0.0, 4.0))
+        .build_without_ids()
 }
 
 /// Each clip of `track` as (start, length).
