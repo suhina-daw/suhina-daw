@@ -913,9 +913,13 @@ fn a_rectangle_over_no_note_selects_in_time_and_a_click_leaves_a_mark() {
     let grid = h.get_by_label_contains("Piano roll,").rect();
     let first = notes(&h)[0];
     let row = note_rect(&h, &first);
-    // Rows clear of every note: the top of the grid, if the clip's notes sit below it.
-    let top = grid.top() + 2.0;
-    assert!(notes(&h).iter().all(|n| note_rect(&h, n).top() > top + 4.0), "the fixture's notes are lower");
+    // A height clear of every note, and of the row the rectangle reaches.
+    let rects: Vec<egui::Rect> = notes(&h).iter().map(|n| note_rect(&h, n)).collect();
+    let top = (0..)
+        .map(|i| grid.top() + 2.0 + i as f32 * 2.0)
+        .take_while(|y| *y < grid.bottom() - 4.0)
+        .find(|y| rects.iter().all(|r| r.bottom() < *y - 1.0 || r.top() > *y + 3.0))
+        .expect("the fixture leaves a row free");
     drag_keys(&mut h, egui::pos2(row.left() + 1.0, top), egui::pos2(row.right() + 1.0, top + 2.0), Modifiers::NONE);
     assert!(h.state().piano_roll().selected.is_empty());
     assert!(h.query_by_label_contains("Selected in time").is_some());
