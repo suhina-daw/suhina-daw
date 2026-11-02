@@ -1098,8 +1098,18 @@ fn with_a_group() -> Project {
     ];
     let mut group = DeviceGroup::with_branches(branches);
     group.macros[0].name = "Crush".into();
-    group.macros[0].mappings.push(MacroMapping { device: vec![1, 0], param: "threshold".into(), min: 0.8, max: 0.2 });
-    group.macros[1].mappings.push(MacroMapping { device: vec![1, 1], param: "macro.1".into(), min: 0.0, max: 1.0 });
+    group.macros[0].mappings.push(MacroMapping {
+        device: MappedDevice::Nth(0),
+        param: "threshold".into(),
+        min: 0.8,
+        max: 0.2,
+    });
+    group.macros[1].mappings.push(MacroMapping {
+        device: MappedDevice::Nth(1),
+        param: "macro.1".into(),
+        min: 0.0,
+        max: 1.0,
+    });
     let mut device = Device::group("Parallel crush", group);
     device.params = vec![DeviceParam::new("mix", 0.75), DeviceParam::new("macro.1", 0.4)];
     device.extensions = ext;
@@ -1112,7 +1122,30 @@ fn with_a_group() -> Project {
 fn a_device_group_survives_a_round_trip() {
     let mut project = with_a_group();
     project.assign_ids().unwrap();
+    // From version 7 a mapping names its device by id.
+    let group = project.channels[0].devices[1].as_group().unwrap();
+    let compressor = group.branches[1].devices[0].id;
+    assert_eq!(group.macros[0].mappings[0].device, MappedDevice::Id(compressor));
+    let written: serde_json::Value = serde_json::from_str(&to_json(&project)).unwrap();
+    let macros = &written["project"]["channels"][0]["devices"][1]["kind"]["macros"];
+    assert_eq!(macros[0]["mappings"][0]["device"], compressor.0);
     assert_eq!(from_json(&to_json(&project)), Ok(project));
+}
+
+#[test]
+fn a_mapping_to_a_place_or_an_id_with_no_device_is_an_error() {
+    let with = |device: &str| {
+        from_json(&format!(
+            r#"{{ "format": "suhina", "version": 7, "project": {{ "channels": [ {{ "id": 1, "devices": [ {{ "id": 1, "kind": {{ "type": "group",
+              "branches": [ {{ "devices": [ {{ "id": 2, "kind": {{ "type": "builtin", "id": "utility" }} }} ] }} ],
+              "macros": [ {{ "mappings": [ {{ "device": {device}, "param": "gain" }} ] }}, {{}}, {{}}, {{}}, {{}}, {{}}, {{}}, {{}} ] }} }} ] }} ] }} }}"#
+        ))
+    };
+    assert!(with("2").is_ok());
+    assert!(with("[0, 0]").is_ok(), "a path, as before version 7");
+    assert!(with("[0, 1]").is_err());
+    assert!(with("0").is_err());
+    assert!(with("9").is_err(), "no device inside the group has id 9");
 }
 
 /// Every feature at once: [`everything`] with [`with_a_group`]'s device group on its first
@@ -1137,15 +1170,8 @@ fn every_feature() -> Project {
 /// `project` with its devices' ids given again in document order, right after the other objects'
 /// ids, as a reader gives them to a file written before devices had ids (version 6).
 fn renumbered(mut project: Project) -> Project {
-    fn clear(devices: &mut [Device]) {
-        for device in devices {
-            device.id = DeviceId::NONE;
-            if let Some(group) = device.as_group_mut() {
-                group.branches.iter_mut().for_each(|b| clear(&mut b.devices));
-            }
-        }
-    }
-    project.channels.iter_mut().for_each(|c| clear(&mut c.devices));
+    // `forget_ids` keeps each macro mapping on its device while the ids are gone.
+    project.channels.iter_mut().flat_map(|c| &mut c.devices).for_each(Device::forget_ids);
     project.next_id = project.max_object_id() + 1;
     project.assign_ids().unwrap();
     project
@@ -1230,7 +1256,10 @@ fn a_group_reads_from_the_spec_example_with_defaults_filled_in() {
     assert_eq!(group.branches.len(), 2);
     assert_eq!((group.branches[0].volume, group.branches[0].pan, group.branches[0].mute), (1.0, 0.0, false));
     assert_eq!(group.branches[1].volume, 0.5);
-    assert_eq!(group.macros[0].mappings[0].device, vec![1, 0]);
+    // An older file's path ([1, 0]: branch 1's first device) reads as the compressor's id.
+    let compressor = group.branches[1].devices[0].id;
+    assert!(compressor.is_some());
+    assert_eq!(group.macros[0].mappings[0].device, MappedDevice::Id(compressor));
     assert_eq!(group.macros[1].mappings, vec![]);
 }
 

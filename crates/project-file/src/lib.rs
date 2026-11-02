@@ -26,9 +26,9 @@ use suhina_model::{
     DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels,
     LaneData, LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn,
     LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
-    MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene,
-    SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId,
-    Transport, WarpMarker, automation, valid_bpm,
+    MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale,
+    ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange,
+    Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
 };
 
 /// The file extension, without the dot.
@@ -39,7 +39,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 6;
+pub const VERSION: u64 = 7;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -505,7 +505,15 @@ fn group_value(g: &DeviceGroup) -> Value {
             let mappings: Vec<Value> = m
                 .mappings
                 .iter()
-                .map(|x| json!({ "device": x.device, "param": x.param, "min": number(x.min), "max": number(x.max) }))
+                .map(|x| {
+                    // From version 7 the device's id (#763 › 1); a project always has them when
+                    // it is written, so a place is only a fallback.
+                    let device = match x.device {
+                        MappedDevice::Id(id) => id.0,
+                        MappedDevice::Nth(n) => g.inner_devices().get(n as usize).map_or(0, |(_, d)| d.id.0),
+                    };
+                    json!({ "device": device, "param": x.param, "min": number(x.min), "max": number(x.max) })
+                })
                 .collect();
             json!({ "name": m.name, "mappings": mappings })
         })
@@ -1277,7 +1285,7 @@ fn read_group(k: &Obj, at: &str) -> Result<DeviceGroup, ProjectFileError> {
             extensions: extensions(b, &at)?,
         });
     }
-    let mut macros = Vec::new();
+    let mut group = DeviceGroup { branches, macros: Vec::new() };
     for (i, v) in list(k, "macros", at)?.iter().enumerate() {
         let at = format!("{at}.macros[{i}]");
         let m = object(v, &at)?;
@@ -1285,21 +1293,37 @@ fn read_group(k: &Obj, at: &str) -> Result<DeviceGroup, ProjectFileError> {
         for (j, v) in list(m, "mappings", &at)?.iter().enumerate() {
             let at = format!("{at}.mappings[{j}]");
             let x = object(v, &at)?;
-            let mut device = Vec::new();
-            for step in list(x, "device", &at)? {
-                let step = step.as_u64().and_then(|n| u32::try_from(n).ok());
-                device.push(step.ok_or_else(|| format!("{at}.device: expected a list of whole numbers"))?);
-            }
             mappings.push(MacroMapping {
-                device,
+                device: read_mapped_device(&group, x, &at)?,
                 param: required_text(x, "param", &at)?,
                 min: float_or(x, "min", 0.0, &at)?,
                 max: float_or(x, "max", 1.0, &at)?,
             });
         }
-        macros.push(Macro { name: text(m, "name", &at)?, mappings });
+        group.macros.push(Macro { name: text(m, "name", &at)?, mappings });
     }
-    Ok(DeviceGroup { branches, macros })
+    Ok(group)
+}
+
+/// A macro mapping's device: its id from version 7 (#763 › 1), or before that its path relative
+/// to the group (`[branch, index, …]`), read as its place among the group's devices until the
+/// project gives them ids.
+fn read_mapped_device(group: &DeviceGroup, x: &Obj, at: &str) -> Result<MappedDevice, ProjectFileError> {
+    match x.get("device") {
+        Some(Value::Number(n)) => {
+            let id = n.as_u64().and_then(|n| u32::try_from(n).ok()).filter(|&n| n != 0);
+            id.map(|id| MappedDevice::Id(DeviceId(id)))
+                .ok_or_else(|| format!("{at}.device: expected a device id, a whole number from 1").into())
+        }
+        _ => {
+            let mut path = Vec::new();
+            for step in list(x, "device", at)? {
+                let step = step.as_u64().and_then(|n| u32::try_from(n).ok());
+                path.push(step.ok_or_else(|| format!("{at}.device: expected a list of whole numbers"))?);
+            }
+            group.nth_at(&path).ok_or_else(|| format!("{at}.device: no device in the group at {path:?}").into())
+        }
+    }
 }
 
 fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError> {

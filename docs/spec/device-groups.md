@@ -261,9 +261,11 @@ pub struct Macro {
 }
 
 pub struct MacroMapping {
-    /// The target device, as a path relative to the group: branch, index, then branch, index
-    /// again for each nested group ([2, 0] is branch 2's first device).
-    pub device: Vec<u32>,
+    /// The target device, by its id (#763 › 1): inside the group at any depth. It follows the
+    /// device when it moves inside the group; a mapping whose device is removed or leaves the
+    /// group goes. A copied group's mappings name the copy's devices.
+    pub device: MappedDevice, // Id(DeviceId), or Nth(n) while a copy's devices have no ids
+
     /// The parameter's stable id: a built-in parameter id (ADR 0004), a plug-in parameter id as
     /// text, or `macro.N` of a nested group.
     pub param: String,
@@ -300,16 +302,17 @@ with:
 
 ```json
 {
+  "id": 11,
   "name": "Parallel crush",
   "kind": {
     "type": "group",
     "branches": [
       { "name": "Dry", "volume": 1.0, "pan": 0.0, "mute": false, "solo": false, "devices": [] },
       { "name": "Crushed", "volume": 0.5, "pan": 0.0, "mute": false, "solo": false,
-        "devices": [ { "name": "Compressor", "kind": { "type": "builtin", "id": "compressor" }, "params": [] } ] }
+        "devices": [ { "id": 12, "name": "Compressor", "kind": { "type": "builtin", "id": "compressor" }, "params": [] } ] }
     ],
     "macros": [
-      { "name": "Crush", "mappings": [ { "device": [1, 0], "param": "threshold", "min": 0.8, "max": 0.2 } ] }
+      { "name": "Crush", "mappings": [ { "device": 12, "param": "threshold", "min": 0.8, "max": 0.2 } ] }
     ]
   },
   "enabled": true,
@@ -379,7 +382,7 @@ is branch 1 of the group at 2, before its device 3. `track.devices` lists a grou
 | `branch.setMute` | edit | `track`; `device`; `branch`; `mute` (bool) | Mutes a branch; its devices keep running. |
 | `branch.setSolo` | edit | `track`; `device`; `branch`; `solo` (bool) | Solos a branch within its group. |
 | `macro.rename` | edit | `track`; `device` (group); `macro` (integer 1 … 8); `name` (text) | Renames a macro. |
-| `macro.map` | edit | `track`; `device` (group); `macro`; `target` (path relative to the group); `param` (text); `min`, `max` (numbers 0 … 1, default 0 and 1) | Maps a parameter to a macro. Refused when the parameter is mapped already, or the device is not inside the group. |
+| `macro.map` | edit | `track`; `device` (group); `macro`; `target` (a device inside the group: its path relative to the group or `{"id": N}`); `param` (text); `min`, `max` (numbers 0 … 1, default 0 and 1) | Maps a parameter to a macro. Refused when the parameter is mapped already, or the device is not inside the group. |
 | `macro.unmap` | edit | `track`; `device` (group); `macro`; `target`; `param` | Removes one mapping; the parameter keeps its current value. |
 | `macro.list` | read | `track`; `device` (group) | Each macro's name, value and mappings, with the targets' names and current values. |
 | `device.savePreset` | read | `track`; `device` (path); `name` (text); `tags` (list of text, optional); `path` (text, optional: default the user's presets folder) | Writes the device (a group, or later a single device, ADR 0014) as a preset file. Plug-ins' state is read from them first, as `project.save` does. It changes nothing in the project, so it is a `read` command like `project.save` and not an undo step. |

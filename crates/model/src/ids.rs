@@ -24,16 +24,25 @@ fn fill_device_ids(
     devices: &mut [Device],
     counter: &mut Counter,
     seen: &mut std::collections::HashSet<DeviceId>,
+    renumbered: &mut Vec<(DeviceId, DeviceId)>,
 ) -> Result<(), IdsExhausted> {
     for device in devices {
-        if !device.id.is_some() || !seen.insert(device.id) {
+        let old = device.id;
+        if !old.is_some() || !seen.insert(old) {
             device.id = DeviceId(counter.take()?);
             seen.insert(device.id);
+            if old.is_some() {
+                renumbered.push((old, device.id));
+            }
         }
         if let Some(group) = device.as_group_mut() {
+            // The ids given inside the group, so its macro mappings follow them.
+            let mut inner = Vec::new();
             for branch in &mut group.branches {
-                fill_device_ids(&mut branch.devices, counter, seen)?;
+                fill_device_ids(&mut branch.devices, counter, seen, &mut inner)?;
             }
+            group.resolve_mappings(&inner);
+            renumbered.extend(inner);
         }
     }
     Ok(())
@@ -181,7 +190,7 @@ impl Project {
         // the first one, in document order, keeps it.
         let mut seen = std::collections::HashSet::new();
         for channel in &mut self.channels {
-            fill_device_ids(&mut channel.devices, counter, &mut seen)?;
+            fill_device_ids(&mut channel.devices, counter, &mut seen, &mut Vec::new())?;
         }
         Ok(())
     }

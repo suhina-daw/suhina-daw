@@ -147,6 +147,8 @@ impl Session {
         }
         // A lane, clip, scene or device the command added without an id gets one now.
         self.project.assign_ids()?;
+        // A macro mapping whose device was removed or left its group goes with it.
+        self.project.drop_lost_mappings();
         if prepared.spec.id.starts_with("device.") {
             crate::devices::name_new_devices(&self.project, params, before, &mut value);
         }

@@ -27,7 +27,8 @@ pub use tempo::{
 pub use audio_data::{AudioData, AudioPool};
 pub use groups::{
     Branch, DeviceGroup, MACROS, MAX_BRANCHES, MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_MACRO_MAPPINGS, Macro,
-    MacroMapping, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups, walk_devices,
+    MacroMapping, MappedDevice, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups,
+    walk_devices,
 };
 
 /// The extension of a Suhina project file, without the dot.
