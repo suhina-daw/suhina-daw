@@ -337,7 +337,7 @@ fn an_answer_to_a_chunk_is_no_refusal() {
 fn a_plug_in_without_the_editor_flag_opens_no_editor() {
     let (_link, mut plugin) = loaded(FIRST + 13);
     plugin.flags &= !super::effect_flags::HAS_EDITOR;
-    let refused = plugin.open_editor(crate::window::Mode::Floating);
+    let refused = plugin.open_editor(crate::window::Mode::Floating, None);
     assert_eq!(refused.err().as_deref(), Some("the plug-in has no editor"));
     finished(plugin);
 }

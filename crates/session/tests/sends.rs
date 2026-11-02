@@ -110,7 +110,7 @@ fn bad_send_parameters_change_nothing() {
     let cases = [
         ("track.setSend", json!({ "track": "Bass", "return": "Lead", "level": 0 })),
         ("track.setSend", json!({ "track": "Bass", "return": "nope", "level": 0 })),
-        ("track.setSend", json!({ "track": "Bass", "return": "A Return", "level": 7 })),
+        ("track.setSend", json!({ "track": "Bass", "return": "A Return", "level": 0.5 })),
         ("track.setSend", json!({ "track": "Bass", "return": "A Return", "level": "loud" })),
         ("track.setSend", json!({ "track": "Bass", "return": "A Return" })),
         ("track.setSend", json!({ "track": 99, "return": "A Return", "level": 0 })),
@@ -197,4 +197,50 @@ fn a_send_dragged_is_one_undo_step() {
     assert!(sends(&session, 1).iter().any(|s| (20.0 * s.level.log10() + 6.0).abs() < 0.01));
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project(), &before, "the drag is undone at once");
+}
+
+#[test]
+fn several_tracks_take_their_own_values_in_one_undo_step() {
+    let mut session = Session::new(project());
+    let send = |session: &Session, channel: u32| sends(session, channel).first().map(|s| s.level);
+    for (values, continued) in [([-6.0, -12.0], false), ([-3.0, -200.0], true)] {
+        run(
+            &mut session,
+            "track.setMixerValues",
+            json!({ "tracks": ["Bass", "Lead"], "control": "send", "return": "A Return", "values": values, "continue": continued }),
+        )
+        .unwrap();
+    }
+    assert!((send(&session, 1).unwrap() - 10f64.powf(-3.0 / 20.0)).abs() < 1e-9);
+    assert_eq!(send(&session, 2), Some(0.0), "below -150 is silence");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(send(&session, 1), None, "the drag's two calls were one step");
+    assert_eq!(send(&session, 2), None);
+
+    let channel = |session: &Session, id: u32| session.project().channel(ChannelId(id)).cloned().unwrap();
+    run(
+        &mut session,
+        "track.setMixerValues",
+        json!({ "tracks": ["Bass", "Lead"], "control": "volume", "values": [-6.0, 0.0] }),
+    )
+    .unwrap();
+    assert!((channel(&session, 1).volume - 10f64.powf(-6.0 / 20.0)).abs() < 1e-9);
+    assert_eq!(channel(&session, 2).volume, 1.0);
+    run(
+        &mut session,
+        "track.setMixerValues",
+        json!({ "tracks": ["Bass", "Lead"], "control": "pan", "values": [-0.5, 0.25] }),
+    )
+    .unwrap();
+    assert_eq!((channel(&session, 1).pan, channel(&session, 2).pan), (-0.5, 0.25));
+
+    for bad in [
+        json!({ "tracks": ["Bass", "Lead"], "control": "pan", "values": [0.0] }),
+        json!({ "tracks": ["Bass"], "control": "width", "values": [0.0] }),
+        json!({ "tracks": ["Bass"], "control": "send", "values": [0.0] }),
+        json!({ "tracks": ["Bass"], "control": "volume", "values": [12.0] }),
+        json!({ "tracks": ["Bass"], "control": "send", "return": "A Return", "values": [0.5] }),
+    ] {
+        assert!(run(&mut session, "track.setMixerValues", bad.clone()).is_err(), "{bad}");
+    }
 }

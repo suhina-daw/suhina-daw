@@ -20,9 +20,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GW_CHILD,
     GetWindow, HWND_TOP, IDC_ARROW, IsWindow, LoadCursorW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx,
     PM_REMOVE, PeekMessageW, PostThreadMessageW, QS_ALLINPUT, RegisterClassW, SW_HIDE, SW_SHOW, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos, ShowWindow, TranslateMessage, WM_APP, WM_CLOSE,
-    WM_SETFOCUS, WM_SIZE, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME, WS_VISIBLE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage,
+    WM_APP, WM_CLOSE, WM_SETFOCUS, WM_SIZE, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
+    WS_EX_TOOLWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME, WS_VISIBLE,
 };
 
 use super::{Placement, Size, WindowId};
@@ -461,6 +461,17 @@ pub(crate) fn resize(id: WindowId, size: Size) {
             SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
         )
     };
+}
+
+/// Sets what window `id`'s title bar says.
+pub(crate) fn set_title(id: WindowId, title: &str) {
+    if with_state(id, |_| ()).is_none() {
+        return;
+    }
+    let title = wide(title);
+    // SAFETY: an open window (it is in the list) and a string that outlives the call, ended by
+    // the 0 `wide` adds; the system copies it.
+    unsafe { SetWindowTextW(id.0 as HWND, title.as_ptr()) };
 }
 
 /// Whether the user asked window `id` to close since the last call.

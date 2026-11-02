@@ -888,7 +888,11 @@ impl Vst2Plugin {
     /// per-platform handle is not in the pinned header; the editor tests against the mock and
     /// the ignored test against installed editors are what settle the conventions). The size
     /// comes from `effEditGetRect`'s rect first (*assumed*: four 16-bit values).
-    pub(crate) fn open_editor(&mut self, mode: crate::window::Mode) -> Result<crate::window::Size, String> {
+    pub(crate) fn open_editor(
+        &mut self,
+        mode: crate::window::Mode,
+        title: Option<&str>,
+    ) -> Result<crate::window::Size, String> {
         if let Some(size) = self.editor.as_ref().map(|editor| editor.size) {
             return Ok(size);
         }
@@ -897,7 +901,7 @@ impl Vst2Plugin {
         }
         let before = self.edit_rect()?;
         let size = before.size();
-        let window = crate::window::Window::open_as(mode, &self.name, size, false)
+        let window = crate::window::Window::open_as(mode, title.unwrap_or(&self.name), size, false)
             .map_err(|e| format!("the editor did not open: {e}"))?;
         self.shared.has_editor.store(true, Ordering::Release);
         // SAFETY: the window's native handle, which stays open while the editor does.
@@ -949,6 +953,13 @@ impl Vst2Plugin {
             Ok(answer) if answer != 0 => Ok(rect),
             Err(why) => Err(format!("the editor's rect is refused: {why}")),
             _ => Ok(rect),
+        }
+    }
+
+    /// Sets what the title bar of the editor's window says.
+    pub(crate) fn set_editor_title(&self, title: &str) {
+        if let Some(editor) = &self.editor {
+            crate::window::set_title(editor.window.id(), title);
         }
     }
 

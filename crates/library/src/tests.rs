@@ -230,3 +230,41 @@ fn network_paths_are_polled() {
     }
     assert!(!on_network_drive(&std::env::temp_dir()));
 }
+
+#[test]
+fn a_prepared_search_answers_as_a_search_does_and_a_cancelled_one_finds_nothing() {
+    let samples = temp("prepared");
+    pack(&samples);
+    let mut library = Library::default();
+    library.add_folder(&samples).unwrap();
+    let query = Query { text: "kick".into(), ..Query::default() };
+    let search = library.prepare_search(&query);
+    assert!(search.files() > 0);
+    let looking = std::sync::atomic::AtomicBool::new(false);
+    assert_eq!(search.run(&looking), library.search(&query));
+    looking.store(true, std::sync::atomic::Ordering::Relaxed);
+    assert!(search.run(&looking).is_empty());
+    // Fewer results than matches keep the best ones, in order.
+    let two = Query { text: "kick".into(), limit: 2, ..Query::default() };
+    assert_eq!(library.search(&two), library.search(&query)[..2]);
+}
+
+#[test]
+fn the_same_name_in_several_folders_keeps_the_folders_order_under_a_limit() {
+    let folders: Vec<_> = (0..16).map(|n| temp(&format!("same-name-{n}"))).collect();
+    let mut library = Library::default();
+    for folder in &folders {
+        std::fs::create_dir_all(folder).unwrap();
+        std::fs::write(folder.join("kick.wav"), b"x").unwrap();
+        library.add_folder(folder).unwrap();
+    }
+    let all = library.search(&Query { text: "kick".into(), ..Query::default() });
+    assert_eq!(all.len(), folders.len());
+    for limit in 1..folders.len() {
+        let some = library.search(&Query { text: "kick".into(), limit, ..Query::default() });
+        assert_eq!(some, all[..limit], "limit {limit}");
+    }
+    for folder in &folders {
+        let _ = std::fs::remove_dir_all(folder);
+    }
+}

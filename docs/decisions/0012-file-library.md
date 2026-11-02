@@ -39,8 +39,10 @@ or full of odd names.
    [the plug-in browsing spec](../spec/plugin-browsing.md)).
 2. **The index lists names, not contents.** Per file: its path below the folder, kind, size
    and modification time; per sub-folder: its modification time. Searching runs over this list
-   in memory on the calling thread (a linear scan over at most 200 000 entries per folder takes
-   milliseconds).
+   in memory, on the calling thread up to 4096 files and on a thread of its own above that (a
+   linear scan over at most 200 000 entries per folder takes milliseconds, which is still too
+   long for every key on the window's thread).
+   *Amended 2026-11-02, see Amendment: a large library's search.*
 3. **Kept on disk**, in `library/index-<n>.tsv` beside `browser.json` (one file per folder,
    named by a hash of its path): a version line, the folder's path, then one tab-separated line
    per entry. A file that does not parse, is of an older version (an index written under the project's old
@@ -88,6 +90,14 @@ or full of odd names.
   it: its pin, its places among the recent items and its tags move to its new path, and the
   folders that held it and hold it now are read again at once, without waiting for the watch.
   A file moved outside Suhina loses them, as they are kept by path.
+
+## Amendment: a large library's search (2026-11-02, #1111)
+
+A search walked the whole list on the window's thread at every key, which stalled typing in a large
+library. Above 4096 files it now runs on a thread of its own: the earlier results stay until it
+answers, and the next key cancels it. Up to that the search stays on the calling thread, so a small
+library answers in the same frame. What the browser does is in
+[the browser spec](../spec/browser.md).
 
 ## Alternatives considered
 
