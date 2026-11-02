@@ -100,7 +100,9 @@ const COLOUR_BAND: f32 = 6.0;
 const DEFAULT_BEAT_WIDTH: f32 = 8.0;
 /// From a whole song on screen to single samples of a short sound: at 4 000 points a beat, a beat
 /// at 120 BPM is a quarter of a second, about three samples a point at 48 kHz.
-const BEAT_WIDTH_RANGE: (f32, f32) = (1.0, 4000.0);
+/// How wide a beat may be ([`crate::kit::time_axis::ARRANGEMENT_BEAT_WIDTHS`]), as a pair.
+const BEAT_WIDTH_RANGE: (f32, f32) =
+    (*crate::kit::time_axis::ARRANGEMENT_BEAT_WIDTHS.start(), *crate::kit::time_axis::ARRANGEMENT_BEAT_WIDTHS.end());
 /// How close grid lines may be drawn, in points: a finer grid coarsens until its lines are at
 /// least this far apart (`docs/spec/arrangement-editing.md` › The grid).
 const MIN_GRID_SPACING: f32 = 8.0;
@@ -527,7 +529,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     state.scroll.y = state.scroll.y.clamp(0.0, (content_height - lanes_area.height()).max(0.0));
 
     let (scroll_x, beat_width) = (state.scroll.x, state.beat_width);
-    let x_of = move |beat: f64| time.left() - scroll_x + beat as f32 * beat_width;
+    let axis = crate::kit::time_axis::TimeViewport::scrolled(time.left(), scroll_x, beat_width);
+    let x_of = move |beat: f64| axis.x_of(beat);
     let first_beat = f64::from(state.scroll.x / state.beat_width);
     // The grid at this zoom: what is drawn is what snaps.
     let grid = arrangement_grid(state.grid, state.beat_width, bar_beats);

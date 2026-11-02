@@ -21,11 +21,16 @@ pub(super) struct Layout {
 
 impl Layout {
     pub(super) fn x_of(&self, beat: f64) -> f32 {
-        self.grid.left() - self.scroll.x + beat as f32 * self.beat_width
+        self.axis().x_of(beat)
     }
 
     pub(super) fn beat_at(&self, x: f32) -> f64 {
-        f64::from((x - self.grid.left() + self.scroll.x) / self.beat_width)
+        self.axis().beat_at(x)
+    }
+
+    /// The time axis of the grid, after its scroll.
+    pub(super) fn axis(&self) -> crate::kit::time_axis::TimeViewport {
+        crate::kit::time_axis::TimeViewport::scrolled(self.grid.left(), self.scroll.x, self.beat_width)
     }
 
     /// The top of `key`'s row; far above the grid for a key the fold hides, so nothing on it is

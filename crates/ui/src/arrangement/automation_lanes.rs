@@ -1064,12 +1064,16 @@ pub struct Geometry {
 impl Geometry {
     /// Where `beat` is on screen, after the timeline's scroll.
     fn x_of(&self, beat: f64) -> f32 {
-        self.time.min - self.scroll_x + beat as f32 * self.beat_width
+        self.axis().x_of(beat)
     }
 
     /// The beat at `x` on screen: the inverse of [`Geometry::x_of`].
     fn beat_of(&self, x: f32) -> f64 {
-        f64::from((x - self.time.min + self.scroll_x) / self.beat_width)
+        self.axis().beat_at(x)
+    }
+
+    fn axis(&self) -> crate::kit::time_axis::TimeViewport {
+        crate::kit::time_axis::TimeViewport::scrolled(self.time.min, self.scroll_x, self.beat_width)
     }
 
     /// `beat` on the nearest grid line, or free (to a thousandth) with `free` or a grid that does
