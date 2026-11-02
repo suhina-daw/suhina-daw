@@ -73,11 +73,12 @@ pub(super) fn after_replaced(set: &BTreeSet<usize>, replaced: &[usize]) -> BTree
 
 impl PianoRollState {
     /// Brings the selection and what hangs on it up to date with the clip's `notes`, before anything
-    /// uses them. Notes back as they were before a copy mean it was undone: the selection before it
-    /// comes back.
+    /// uses them. An undo that left the notes as they were before a copy took the copy back: the
+    /// selection before it comes back.
     pub(super) fn settle_selection(&mut self, notes: &[Note]) {
         let count = notes.len();
-        if self.span_undo.last().is_some_and(|step| step.copies == self.selected && step.notes == notes_hash(notes))
+        if std::mem::take(&mut self.undone)
+            && self.span_undo.last().is_some_and(|step| step.copies == self.selected && step.notes == notes_hash(notes))
             && let Some(step) = self.span_undo.pop()
         {
             self.span = step.span;
@@ -102,6 +103,11 @@ impl PianoRollState {
                 .collect(),
             None => BTreeSet::new(),
         };
+    }
+
+    /// An undo ran: the window says so, as a copy can leave the notes just as they were.
+    pub fn undo_ran(&mut self) {
+        self.undone = true;
     }
 
     /// The notes the edit keys act on: the selected ones, or with none selected those that start in

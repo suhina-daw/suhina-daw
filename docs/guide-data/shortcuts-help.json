@@ -562,7 +562,7 @@
     ]
   },
   "pianoRoll.quantize": {
-    "description": "Moves the selected notes toward a rhythmic grid using the piano roll's last quantise grid, amount and note-end settings. With no selected notes it processes every note in the shown clip.",
+    "description": "Moves the selected notes toward a rhythmic grid using the piano roll's last quantise grid, amount and note-end settings. With no selected notes it processes the notes that start in a time selection, or else every note in the shown clip.",
     "context": "The detail area must show a MIDI clip in the piano roll. Unlike the other piano-roll keys, a click to focus that editor is not required.",
     "whenToUse": "Tighten a recorded phrase using the quantise settings you last chose.",
     "sourceFingerprint": "b26d2727601a1ba1015c161b2ab1ca0d27994bc142c4e86db0bbd22642dc10fb",

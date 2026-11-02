@@ -224,7 +224,9 @@ pub(super) fn commit(
                 // copies are appended, so they are the next indices, and they are selected.
                 state.replacing(&mut params);
                 actions.push(Action::new("note.duplicate", params));
-                state.selected = (clip.notes.len()..clip.notes.len() + notes.len()).collect();
+                state.select_copies((clip.notes.len()..clip.notes.len() + notes.len()).collect(), &clip.notes);
+                // They went where the drag put them, not a stretch on.
+                state.span = None;
             } else {
                 // With stacked notes off, moved notes replace what they land on; the window moves
                 // the selection as the indices close up.

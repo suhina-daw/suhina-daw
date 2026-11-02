@@ -466,9 +466,11 @@ fn a_duplicate_carries_the_time_selection_on_and_an_undo_brings_it_back() {
 
     // Undone, one at a time, to where it began.
     state.selecting_new = false;
+    state.undo_ran();
     state.settle_selection(&two.notes);
     assert_eq!(state.selected, BTreeSet::from([1]));
     assert_eq!(state.span.as_ref().map(|s| s.start), Some(2.0));
+    state.undo_ran();
     state.settle_selection(&one.notes);
     assert!(state.selected.is_empty());
     assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 2.0)));
@@ -570,6 +572,10 @@ fn undoing_a_copy_that_replaced_a_note_brings_the_selection_back() {
     }
     state.settle_selection(&after);
     assert_eq!(state.selected, BTreeSet::from([1]), "the copy stays selected");
+    // Notes that came out the same are no undo: only an undo brings the selection back.
+    state.settle_selection(&clip.notes);
+    assert_eq!(state.selected, BTreeSet::from([1]), "no undo ran");
+    state.undo_ran();
     state.settle_selection(&clip.notes);
     assert!(state.selected.is_empty());
     assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 2.0)));
@@ -631,4 +637,16 @@ fn a_fine_step_longer_stops_at_the_next_note_of_the_key() {
     state.selected = BTreeSet::from([0]);
     let longer = state.key_action("pianoRoll.longerFine", &clip, 0.0, None).map(|a| a.params);
     assert_eq!(longer.and_then(|p| p["lengths"][0].as_f64()), Some(1.25));
+}
+
+#[test]
+fn a_key_resize_replaces_what_is_under_it_unless_notes_stack() {
+    let clip = clip(vec![note(0.0, 1.0, 60)]);
+    let mut state = focused_on(&clip);
+    state.selected = BTreeSet::from([0]);
+    let longer = state.key_action("pianoRoll.longer", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(longer.map(|p| p["replace"].clone()), Some(json!(true)));
+    state.notes_replace = false;
+    let longer = state.key_action("pianoRoll.longer", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(longer.map(|p| p["replace"].clone()), Some(Value::Null));
 }

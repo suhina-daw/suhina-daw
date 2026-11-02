@@ -475,6 +475,7 @@ fn ctrl_d_duplicates_the_selection_right_after_it() {
     assert_eq!(selected(&h), [before.len(), before.len() + 1]);
     undo(&mut h);
     assert_eq!(notes(&h), before);
+    assert_eq!(selected(&h), [0, 1], "the selection before the copy is back");
 }
 
 #[test]

@@ -201,6 +201,15 @@ fn a_resize_of_nothing_replaces_nothing() {
     assert_eq!(spans(&session), [(0.0, 2.0, 60), (1.0, 0.5, 60)]);
 }
 
+/// Of the notes a resize names, only those it changes replace what is under them.
+#[test]
+fn a_resize_replaces_only_under_the_notes_it_changes() {
+    let mut session = session_of(&[(0.0, 2.0, 60), (1.0, 0.5, 60), (4.0, 1.0, 62)]);
+    let mixed = json!({ "track": 1, "index": 0, "notes": [0, 2], "lengths": [2.0, 2.0], "replace": true });
+    assert_eq!(run(&mut session, "note.resize", mixed).unwrap()["replaced"], json!([]));
+    assert_eq!(spans(&session), [(0.0, 2.0, 60), (1.0, 0.5, 60), (4.0, 2.0, 62)]);
+}
+
 /// `notes` as (time, length, key), for a rule about where they are.
 fn spans(session: &Session) -> Vec<(f64, f64, u8)> {
     notes(session, 1).iter().map(|n| (n.time, n.duration, n.key)).collect()

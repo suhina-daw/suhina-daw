@@ -2431,6 +2431,9 @@ impl App {
                 );
             }
             Ok(result) => {
+                if action.id == "edit.undo" {
+                    self.piano_roll.undo_ran();
+                }
                 // Notes a note command replaced are gone: the selection stays on the same notes.
                 if action.id.starts_with("note.")
                     && let Some(replaced) = result["replaced"].as_array().filter(|r| !r.is_empty())

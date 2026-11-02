@@ -129,6 +129,8 @@ pub struct PianoRollState {
     pub(super) span: Option<TimeSpan>,
     pub(super) span_notes: BTreeSet<usize>,
     pub(super) span_undo: Vec<SpanStep>,
+    /// An undo ran since the selection was last settled.
+    pub(super) undone: bool,
     /// Where a click on an empty spot left the insert mark: where a paste goes, in beats.
     pub(super) insert_at: Option<f64>,
     /// The last press was in the piano roll, so Delete deletes notes there.
@@ -243,6 +245,7 @@ impl Default for PianoRollState {
             span: None,
             span_notes: BTreeSet::new(),
             span_undo: Vec::new(),
+            undone: false,
             insert_at: None,
             focused: false,
             selecting_new: false,
@@ -474,6 +477,7 @@ impl PianoRollState {
                 }
                 params["notes"] = json!(named);
                 params["lengths"] = json!(lengths);
+                self.replacing(&mut params);
                 return Some(Action::new("note.resize", params));
             }
             "pianoRoll.earlier" => ("note.move", moves(-grid.step, 0).0, 0),

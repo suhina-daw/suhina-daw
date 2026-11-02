@@ -520,15 +520,18 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
             changes.push((index, time, new));
         }
         // A resize that changes nothing replaces nothing, as a move of nothing does.
-        let mut changed = false;
+        let mut changed = Vec::new();
         for (index, time, new) in changes {
             if let Some(note) = notes.get_mut(index) {
-                changed |= (note.time - time).abs() >= EPSILON || (note.duration - new).abs() >= EPSILON;
+                if (note.time - time).abs() >= EPSILON || (note.duration - new).abs() >= EPSILON {
+                    changed.push(index);
+                }
                 note.time = time;
                 note.duration = new;
             }
         }
-        let replaced = if replaces(params) && changed { replace_under(notes, &resized) } else { Vec::new() };
+        let replaced =
+            if replaces(params) && !changed.is_empty() { replace_under(notes, &changed) } else { Vec::new() };
         Ok(with_replaced(params, json!({ "notes": after_removal(&resized, &replaced) }), &replaced))
     })
 }
