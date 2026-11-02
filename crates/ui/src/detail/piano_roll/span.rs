@@ -73,13 +73,16 @@ pub(super) fn after_replaced(set: &BTreeSet<usize>, replaced: &[usize]) -> BTree
 
 impl PianoRollState {
     /// Brings the selection and what hangs on it up to date with the clip's `notes`, before anything
-    /// uses them. An undo that left the notes as they were before a copy took the copy back: the
-    /// selection before it comes back.
+    /// uses them. An undo that left the notes as they were before a copy took the copy back, and a
+    /// copy past the end of the notes never came (the command refused it): the selection before it
+    /// comes back.
     pub(super) fn settle_selection(&mut self, notes: &[Note]) {
         let count = notes.len();
-        if std::mem::take(&mut self.undone)
-            && self.span_undo.last().is_some_and(|step| step.copies == self.selected && step.notes == notes_hash(notes))
-            && let Some(step) = self.span_undo.pop()
+        let undone = std::mem::take(&mut self.undone);
+        if self.span_undo.last().is_some_and(|step| {
+            step.copies == self.selected
+                && (step.copies.iter().any(|i| *i >= count) || (undone && step.notes == notes_hash(notes)))
+        }) && let Some(step) = self.span_undo.pop()
         {
             self.span = step.span;
             self.selected = step.selected;
@@ -114,6 +117,11 @@ impl PianoRollState {
     /// the time selection.
     pub fn acting(&self) -> &BTreeSet<usize> {
         if self.selected.is_empty() { &self.span_notes } else { &self.selected }
+    }
+
+    /// Where the stretch selected in time ends, in beats.
+    pub fn span_end(&self) -> Option<f64> {
+        self.span.as_ref().map(|span| round_beat(span.end))
     }
 
     /// Forgets everything selected in time.

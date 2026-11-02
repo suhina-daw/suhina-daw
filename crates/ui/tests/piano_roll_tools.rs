@@ -977,6 +977,11 @@ fn a_drag_in_the_strip_names_no_row() {
     let mut h = piano_app(&mut renderer, Settings::default());
     let at = h.get_by_label("Row height strip").rect().center();
     let to = at + egui::vec2(30.0, 0.0);
+    // Over the grid the strip names the row: what the drag then leaves out.
+    h.input_mut().events.push(egui::Event::PointerMoved(at + egui::vec2(160.0, 0.0)));
+    h.step();
+    h.step();
+    assert!(h.query_by_label_contains("Row under the pointer").is_some());
     h.input_mut().events.push(egui::Event::PointerMoved(at));
     h.step();
     h.input_mut().events.push(egui::Event::PointerButton {

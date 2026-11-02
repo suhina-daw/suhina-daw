@@ -354,11 +354,13 @@ pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, Com
             order.push((note.time, index));
         }
         order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let until = optional_number(params, "until")?;
         let mut changed = 0;
         for &(time, index) in &order {
             // The first start after this one; none for the last notes, which keep their length.
             let next = order.partition_point(|n| n.0 <= time + EPSILON);
-            let Some(&(next, _)) = order.get(next) else { continue };
+            let next = order.get(next).map(|n| n.0).or(until.filter(|end| *end > time + EPSILON));
+            let Some(next) = next else { continue };
             let length = (next - time).max(MIN_LENGTH);
             if !length.is_finite() || length > MAX_BEAT {
                 return Err(format!("note {index} would be {length} beats long, after {MAX_BEAT}").into());

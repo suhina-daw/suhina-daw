@@ -420,6 +420,9 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
     }
     if button(ui, "Legato", &small) {
         let mut params = tools.params();
+        if let Some(end) = state.span_end() {
+            params["until"] = json!(end);
+        }
         state.replacing(&mut params);
         actions.push(Action::new("note.legato", params));
     }

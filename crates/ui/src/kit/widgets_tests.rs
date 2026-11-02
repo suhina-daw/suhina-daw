@@ -223,3 +223,23 @@ fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
     ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
     assert_eq!(run(false, true), egui::CursorIcon::ResizeVertical);
 }
+
+/// The icon is the frame's own: the frame a value drag lets go, no view has to bring the pointer back.
+#[test]
+fn the_frame_a_value_drag_lets_go_the_icon_shows_the_pointer() {
+    let ctx = egui::Context::default();
+    let held = |released| ValueDrag { raw: true, back: None, released };
+    let icon = |drag: Option<ValueDrag>| {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            if let Some(drag) = drag {
+                ui.ctx().data_mut(|d| d.insert_temp(value_drag_id(), drag));
+            }
+            release_value_drag(ui.ctx());
+            hide_pointer_during_value_drag(ui.ctx());
+        });
+        output.textures_delta.clear();
+        output.platform_output.cursor_icon
+    };
+    assert_eq!(icon(Some(held(true))), egui::CursorIcon::Default);
+    assert_eq!(icon(None), egui::CursorIcon::Default);
+}

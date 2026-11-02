@@ -9,7 +9,8 @@ use super::*;
 const REPLACE: Param = optional(
     "replace",
     ParamType::Bool,
-    "true: no two notes of a key overlap afterwards. A note the placed ones cover whole is removed, one they \
+    "true: when the command changes a note, the notes it places overlap no other note of their key afterwards. \
+     A note the placed ones cover whole is removed, one they \
      cover in part is cut back, and the result lists the removed notes as replaced (default false: notes may overlap)",
 );
 
@@ -273,8 +274,20 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.legato",
-        label: "Make each note of a MIDI clip last until the next one starts, on any key; notes that start together end together, and the last ones keep their length",
-        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE],
+        label: "Make each note of a MIDI clip last until the next one starts, on any key; notes that start together end together, and the last ones keep their length or last until a given beat",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            NOTE_SELECTION,
+            optional(
+                "until",
+                ParamType::Number,
+                "the beat the last notes last until; left out, they keep their length",
+            ),
+            REPLACE,
+        ],
         kind: CommandKind::Edit,
         run: note_tools::legato,
         policy: Policy::DEFAULT,

@@ -335,6 +335,9 @@ impl PianoRollState {
     /// last settings; `None` when no clip is shown.
     pub fn quantize_selected(&self) -> Option<Action> {
         let mut params = self.shown.clone()?;
+        if self.acting().is_empty() && self.span.is_some() {
+            return None;
+        }
         if !self.acting().is_empty() {
             params["notes"] = json!(self.acting().iter().collect::<Vec<_>>());
         }

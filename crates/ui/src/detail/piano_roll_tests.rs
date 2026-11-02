@@ -674,3 +674,38 @@ fn an_arrow_key_brings_notes_off_the_grid_onto_it() {
     let (moved, _) = beats(vec![note(4.0 + off, 0.25, 60), note(6.0, 0.25, 62)], "pianoRoll.earlier");
     assert!((moved + off).abs() < 1e-6, "the first note goes back to the line: {moved}");
 }
+
+/// A time selection that holds no note start gives Quantise nothing, not the whole clip.
+#[test]
+fn quantise_leaves_the_clip_alone_when_a_time_selection_holds_no_note() {
+    let clip = clip(vec![note(0.1, 0.5, 60)]);
+    assert!(focused_on(&clip).quantize_selected().is_some(), "with no selection at all: the whole clip");
+    assert_eq!(span_state(&clip, 8.0, 9.0).quantize_selected(), None);
+    let found = span_state(&clip, 0.0, 1.0).quantize_selected().map(|a| a.params["notes"].clone());
+    assert_eq!(found, Some(json!([0])));
+}
+
+/// Legato's last notes go as far as the stretch selected in time.
+#[test]
+fn a_time_selection_says_where_legato_ends() {
+    let clip = clip(vec![note(0.0, 0.5, 60)]);
+    assert_eq!(focused_on(&clip).span_end(), None);
+    assert_eq!(span_state(&clip, 0.0, 4.0).span_end(), Some(4.0));
+}
+
+/// A copy the command refused never came: the selection and the stretch before it are back.
+#[test]
+fn a_refused_copy_gives_the_selection_back() {
+    let clip = clip(vec![note(0.0, 0.5, 60)]);
+    let mut state = span_state(&clip, 0.0, 2.0);
+    state.selected = BTreeSet::from([0]);
+    if let Some(span) = &mut state.span {
+        span.with = state.selected.clone();
+    }
+    state.key_action("selection.duplicate", &clip, 0.0, None);
+    assert_eq!(state.selected, BTreeSet::from([1]));
+    state.selecting_new = false;
+    state.settle_selection(&clip.notes);
+    assert_eq!(state.selected, BTreeSet::from([0]));
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 2.0)));
+}

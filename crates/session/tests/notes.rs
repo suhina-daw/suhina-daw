@@ -765,3 +765,24 @@ fn malformed_splits_are_refused_and_change_nothing() {
     assert_eq!(session.project(), &before);
     assert!(!session.can_undo());
 }
+
+/// The last notes reach the beat a time selection ends at, and stay as they are without one.
+#[test]
+fn legato_takes_the_last_notes_to_until() {
+    let notes = [(0.0, 0.5, 60), (1.0, 0.5, 64), (2.0, 0.5, 67), (2.0, 0.5, 62)];
+    let mut session = session_of(&notes);
+    run(&mut session, "note.legato", json!({ "track": 1, "index": 0, "until": 4.0 })).unwrap();
+    assert_eq!(spans(&session), [(0.0, 1.0, 60), (1.0, 1.0, 64), (2.0, 2.0, 67), (2.0, 2.0, 62)]);
+
+    let mut session = session_of(&notes);
+    run(&mut session, "note.legato", json!({ "track": 1, "index": 0 })).unwrap();
+    assert_eq!(spans(&session), [(0.0, 1.0, 60), (1.0, 1.0, 64), (2.0, 0.5, 67), (2.0, 0.5, 62)]);
+
+    let mut session = session_of(&notes);
+    run(&mut session, "note.legato", json!({ "track": 1, "index": 0, "until": 2.0 })).unwrap();
+    assert_eq!(
+        spans(&session),
+        [(0.0, 1.0, 60), (1.0, 1.0, 64), (2.0, 0.5, 67), (2.0, 0.5, 62)],
+        "not before they start"
+    );
+}

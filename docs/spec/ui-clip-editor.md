@@ -324,8 +324,8 @@ pull up.
   land on bar lines, in 5/4 or 3/8 and with triplets too. Snapping uses the same lines, so what
   snaps is what is drawn. A move by dragging goes by whole steps, so a note off the grid stays as
   far off it. A move by the arrow keys takes the first selected note to the next or the previous
-  line, and the others with it, so notes off the grid come onto it; Alt and an arrow key go a fine
-  step off the grid.
+  line. The other selected notes move by the same amount, so they keep their offsets from it. Alt
+  and an arrow key go a fine step off the grid.
 - **Built ([#346](https://github.com/suhina-daw/suhina-daw/issues/346)): the grid menu.** The
   button at the right end of the toolbar, after the word **Grid**, shows the value (`1/16`,
   `1/8T`, `2 bars`, `Adaptive`, `Adaptive T`, with ` off` after it while snapping is off; its
@@ -739,7 +739,8 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **Built ([#345](https://github.com/suhina-daw/suhina-daw/issues/345), in the clip column
   [#443](https://github.com/suhina-daw/suhina-daw/issues/443), moved to the MIDI tools column
   [#460](https://github.com/suhina-daw/suhina-daw/issues/460)):** Ctrl+U quantises the
-  selected notes, or every note of the clip when none is selected, with the last settings, at
+  selected notes, or with none selected the notes that start in a time selection (nothing when it
+  holds none), or with no time selection every note of the clip, with the last settings, at
   once. The quantise controls are the **Quantise** block at the top of the MIDI tools column
   (› Other note tools), on the left of the note grid: **Grid** (1/32 to 8 bars,
   triplets too; 1/16 at first), **Amount** (0 to 100 %, 100 at first) and **Move ends too** (off
@@ -952,7 +953,7 @@ written against another (a bass line against the chords).
   | **Fit to scale** | Moves each note to the nearest key of the chosen root and mode | `note.fitToScale` |
   | **Invert** | Mirrors the pitches around the middle of the selection's range | `note.invert` |
   | **Reverse** | Turns the selection round in time, inside its own span | `note.reverse` |
-  | **Legato** | Makes each note last until the next one starts, at most | `note.legato` |
+  | **Legato** | Makes each note last until the next one starts, at most, and the last notes until the end of a time selection | `note.legato` |
   | **×2**, **÷2** | Stretches or squeezes the selection in time, its starts and its lengths | `note.stretch` |
   | **Velocity: Randomise** | Changes every velocity by a random amount up to **Amount** | `note.randomizeVelocity` |
   | **Velocity: Ramp** | Draws the velocities from **From** to **To** across the notes in time | `note.rampVelocity` |
@@ -1113,7 +1114,7 @@ nothing when it fails.
 | `note.list` | `clip` (or `track` with `index` or `scene`) | The clip's notes: index, time, length, key, velocity (1 to 127) |
 | `note.add` | clip, `notes`: a list of `{time, length, key, velocity?}`, `replace?` | Adds notes (velocity 100 when left out); returns their indices |
 | `note.delete` | clip, `notes`: a list of indices | Deletes them |
-| `note.move` | clip, `notes`, `beats?`, `semitones?`, `replace?` | Moves them in time and in pitch. With `replace: true` here and on the commands marked so, no two notes of a key overlap afterwards: a note covered whole is removed, one covered in part is cut back, and the result lists the removed notes as `replaced` |
+| `note.move` | clip, `notes`, `beats?`, `semitones?`, `replace?` | Moves them in time and in pitch. With `replace: true` here and on the commands marked so, when the command changes a note, the notes it places overlap no other note of their key afterwards: a note covered whole is removed, one covered in part is cut back, and the result lists the removed notes as `replaced` |
 | `note.resize` | clip, `notes`, `length?`, `by?`, `startBy?` or `lengths?`, `replace?` | Sets their length, changes it by `by` beats, moves each start by `startBy` beats and keeps each end (the left edge), or sets one length per entry of `notes`; one of the four |
 | `note.setVelocity` | clip, `notes`, `velocity?`, `by?` or `velocities?` | Sets their velocity, changes it by `by` (each kept within 1 to 127), or gives each note its own: `velocities` is one value, 1 to 127, per entry of `notes`, in the same order (a repeated index takes its last); one of the three |
 | `note.quantize` | clip, `notes?`, `grid`, `amount?`, `ends?`, `replace?` | Moves the starts (with `ends: true` the ends too) of the notes, or of every note when `notes` is left out, towards the nearest line of `grid` (as `launcher.setQuantization` takes it, such as `"1/16"` or `"1/8T"`; not `none`) by `amount` percent, 0 to 100 (default 100); returns the indices and how many moved |
@@ -1122,7 +1123,7 @@ nothing when it fails.
 | `note.fitToScale` | clip, `notes?`, `root?`, `scale?` | Moves each note to the nearest key of `scale` (`major`, `minor`, `harmonicMinor`, `melodicMinor`, `dorian`, `phrygian`, `lydian`, `mixolydian`, `locrian`, `majorPentatonic`, `minorPentatonic`, `blues`; default `major`) over `root` (a key name such as `"C"`, `"F#"`, or 0 to 11; default `"C"`); with neither `root` nor `scale`, the clip's own scale when it has one; a tie goes to the lower key; returns the indices and how many moved |
 | `note.invert` | clip, `notes?` | Mirrors the keys around the middle of the range the notes cover (the lowest key plus the highest, halved, rounded down); returns the indices |
 | `note.reverse` | clip, `notes?` | Turns the notes round in time inside their own span (the earliest start to the latest end): each note's start becomes `span end − its end`, its length unchanged; returns the indices |
-| `note.legato` | clip, `notes?`, `replace?` | Makes each note last until the next of the notes it acts on starts, on any key, or leaves it when nothing follows; notes that start together end together; never shorter than a hundredth of a beat; returns the indices and how many changed |
+| `note.legato` | clip, `notes?`, `until?`, `replace?` | Makes each note last until the next of the notes it acts on starts, on any key; when nothing follows, until the beat `until` if that is after its start, or else it stays as it is; notes that start together end together; never shorter than a hundredth of a beat; returns the indices and how many changed |
 | `note.stretch` | clip, `notes?`, `factor` | Stretches the notes in time about the earliest of their starts (`0.01` to `100`): starts and lengths are multiplied, the first start unchanged. `2` is the **×2** button, `0.5` the **÷2** one; returns the indices |
 | `note.randomizeVelocity` | clip, `notes?`, `amount?`, `seed?` | Moves each velocity by up to `amount` MIDI steps (0 to 127, default 16), each kept within 1 to 127; `seed` makes the same call repeatable; returns the indices |
 | `note.rampVelocity` | clip, `notes?`, `from`, `to` | Sets the velocities from `from` to `to` (1 to 127) across the notes in time order, evenly spaced; one note takes `to`; returns the indices |
