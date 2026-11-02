@@ -12,8 +12,8 @@ use crate::commands::{channel_param, remove_track, track_at};
 use crate::files::MAX_TRACKS;
 use crate::{CommandError, Session};
 
-/// The loudest a send can be, in dB (as a track's volume).
-const MAX_SEND_DB: f64 = 6.0;
+/// The loudest a send can be, in dB: all of the track's signal, never more of it.
+const MAX_SEND_DB: f64 = 0.0;
 
 /// The return track in `params[key]` and its channel; an error for any other track.
 fn return_at(p: &Project, params: &Value, key: &str) -> Result<(TrackId, ChannelId), CommandError> {
@@ -79,7 +79,7 @@ pub(crate) fn set_send(session: &mut Session, params: &Value) -> Result<Value, C
         None => return Err("level must be a number in dB or \"-inf\"".into()),
     };
     if db > MAX_SEND_DB {
-        return Err(format!("level must be at most +{MAX_SEND_DB} dB, got {db}").into());
+        return Err(format!("level must be at most {MAX_SEND_DB} dB, got {db}").into());
     }
     let gain = if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) };
     let (ret, _) = return_at(&session.project, params, "return")?;

@@ -38,6 +38,16 @@ pub struct DeviceUi {
     pub layers: Vec<Draw>,
     pub controls: Vec<CustomControl>,
     pub hidden_parameters: Vec<String>,
+    /// An expanded canvas only: open as a strip over the device row, scaled to the strip's width,
+    /// rather than over the whole main area at its own size.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub strip: bool,
+    /// Whether a button that is on fills with the accent (`true`) or the control's active colour.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub accent_on: bool,
+    /// Quick presets its `preset` buttons apply.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub presets: Vec<UiPreset>,
     /// The panel's own style sheet (version 6): presentation only, applied above the
     /// application theme and below the user's overrides, and only inside this panel. `#id`
     /// selects a control by its id. Parts it leaves out keep the application's theme.
@@ -80,6 +90,9 @@ impl Default for DeviceUi {
             layers: Vec::new(),
             controls: Vec::new(),
             hidden_parameters: Vec::new(),
+            strip: false,
+            accent_on: false,
+            presets: Vec::new(),
             style: None,
         }
     }
@@ -181,6 +194,20 @@ pub enum UiExpression {
         a: UiValue,
         b: UiValue,
     },
+    /// The device's live value at `index` (`Device::readouts`), 0 while it hands none.
+    Readout {
+        index: u8,
+    },
+    /// The smaller of the two.
+    Min {
+        a: UiValue,
+        b: UiValue,
+    },
+    /// The larger of the two.
+    Max {
+        a: UiValue,
+        b: UiValue,
+    },
     Exp {
         value: UiValue,
     },
@@ -240,6 +267,11 @@ impl UiValue {
                 UiExpression::Equal { a, b } => {
                     f64::from((a.eval(parameter, depth + 1) - b.eval(parameter, depth + 1)).abs() < 0.0001)
                 }
+                UiExpression::Readout { index } => {
+                    READOUT_IDS.get(usize::from(*index)).map_or(0.0, |id| parameter(id, false, false))
+                }
+                UiExpression::Min { a, b } => a.eval(parameter, depth + 1).min(b.eval(parameter, depth + 1)),
+                UiExpression::Max { a, b } => a.eval(parameter, depth + 1).max(b.eval(parameter, depth + 1)),
                 UiExpression::Exp { value } => value.eval(parameter, depth + 1).exp(),
                 UiExpression::Log { value } => value.eval(parameter, depth + 1).ln(),
                 UiExpression::Sin { value } => value.eval(parameter, depth + 1).sin(),
@@ -347,6 +379,22 @@ pub enum Draw {
         #[serde(default)]
         decimals: usize,
     },
+    /// A number computed from an expression (a ratio from a slope, a live value), written as
+    /// `prefix`, the number with `decimals`, then `suffix`.
+    Value {
+        #[serde(default)]
+        align: TextAlign,
+        position: [UiValue; 2],
+        value: UiValue,
+        #[serde(default)]
+        prefix: String,
+        #[serde(default)]
+        suffix: String,
+        color: Color,
+        size: f32,
+        #[serde(default)]
+        decimals: usize,
+    },
     Image {
         asset: String,
         rect: [UiValue; 4],
@@ -392,7 +440,50 @@ pub enum UiGesture {
     Set(u16),
     /// Select a tab; selecting the active tab returns to value zero.
     Tab(u16),
+    /// Apply the canvas's quick preset at this index: every value it holds, as one undo step.
+    Preset(u16),
 }
+
+/// A quick preset a canvas button applies: parameter values by id. Parameters it leaves out keep
+/// their values.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UiPreset {
+    pub name: String,
+    pub values: std::collections::BTreeMap<String, f64>,
+}
+
+/// The ids a canvas's parameter lookup gets for the device's live values: `#r0` is readout 0.
+/// A host hands them in beside the parameters; they are never parameters of a device.
+pub const READOUT_IDS: [&str; 35] = [
+    "#r0", "#r1", "#r2", "#r3", "#r4", "#r5", "#r6", "#r7", "#r8", "#r9", "#r10", "#r11", "#r12", "#r13", "#r14",
+    "#r15", "#r16", "#r17", "#r18", "#r19", "#r20", "#r21", "#r22", "#r23", "#r24", "#r25", "#r26", "#r27", "#r28",
+    "#r29", "#r30", "#r31", "#r32", "#r33", "#r34",
+];
+
+/// Colours a theme sets by name: a drawing in one of these RGB values (its alpha kept) takes the
+/// CSS custom property's colour, or the default when the theme sets none. Displays (a spectrum's
+/// dark ground), a device's series of bands, a highlight (a gain line) and a spectrum follow the
+/// theme so.
+pub const THEME_TOKENS: [([u8; 3], &str, [u8; 3]); 6] = [
+    ([3, 0, 1], "--device-display", [10, 17, 23]),
+    ([3, 0, 2], "--device-series-1", [242, 166, 90]),
+    ([3, 0, 3], "--device-series-2", [95, 211, 192]),
+    ([3, 0, 4], "--device-series-3", [159, 180, 255]),
+    ([3, 0, 5], "--device-highlight", [255, 207, 122]),
+    ([3, 0, 6], "--device-spectrum", [63, 196, 228]),
+];
+
+/// The theme's palette by token, for drawings of controls without a widget (which the SDK does not
+/// resolve): text, panel, control, border and accent, each `[3, 1, k]` with the drawing's alpha.
+pub const THEME_PALETTE_TOKENS: [([u8; 3], &str); 5] =
+    [([3, 1, 1], "text"), ([3, 1, 2], "panel"), ([3, 1, 3], "control"), ([3, 1, 4], "border"), ([3, 1, 5], "accent")];
+
+/// The id a canvas reads to know whether its device's expanded panel is open (1) or not (0).
+pub const EXPANDED_ID: &str = "#expanded";
+
+/// Most quick presets on one canvas.
+pub const MAX_UI_PRESETS: usize = 32;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UiBinding {
@@ -445,6 +536,9 @@ impl DeviceUi {
         if self.style.as_ref().is_some_and(|style| style.len() > MAX_STYLE_BYTES || style.contains('\0')) {
             return Err(fail("panel style exceeds 64 KiB or contains NUL"));
         }
+        // Drawings may also read the device's live values (a text's value, a parameter lookup).
+        let readouts =
+            parameters.iter().map(|p| p.id.as_str()).chain(READOUT_IDS).chain([EXPANDED_ID]).collect::<HashSet<_>>();
         let ids = parameters.iter().map(|p| p.id.as_str()).collect::<HashSet<_>>();
         let mut asset_ids = HashSet::new();
         let mut pixels = 0u64;
@@ -465,6 +559,23 @@ impl DeviceUi {
         if self.hidden_parameters.iter().any(|id| !ids.contains(id.as_str())) {
             return Err(fail("hidden row refers to unknown parameter"));
         }
+        if self.presets.len() > MAX_UI_PRESETS {
+            return Err(fail("more than 32 quick presets"));
+        }
+        for preset in &self.presets {
+            if preset.name.is_empty() || preset.name.len() > 64 || preset.values.len() > 256 {
+                return Err(fail("a quick preset needs a name of 1..64 bytes and at most 256 values"));
+            }
+            for (id, value) in &preset.values {
+                let p = parameters
+                    .iter()
+                    .find(|p| &p.id == id)
+                    .ok_or_else(|| fail(&format!("quick preset {:?} sets unknown parameter {id:?}", preset.name)))?;
+                if !value.is_finite() || !(p.min..=p.max).contains(value) {
+                    return Err(fail(&format!("quick preset {:?} sets {id} outside its range", preset.name)));
+                }
+            }
+        }
         let count = self.controls.iter().try_fold(self.layers.len(), |total, c| {
             total.checked_add(c.drawings().len()).ok_or_else(|| fail("drawing count overflow"))
         })?;
@@ -482,6 +593,7 @@ impl DeviceUi {
                     Widget::Label { .. }
                     | Widget::Panel { .. }
                     | Widget::Separator
+                    | Widget::Graphic { .. }
                     | Widget::SampleWaveform
                     | Widget::SampleRecording => c.x.is_none() && c.y.is_none(),
                     Widget::Envelope { attack, decay, level, release } => {
@@ -512,10 +624,21 @@ impl DeviceUi {
                     Widget::Button { .. } => {
                         matches!(
                             c.gesture,
-                            UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_)
+                            UiGesture::Toggle
+                                | UiGesture::Momentary
+                                | UiGesture::Set(_)
+                                | UiGesture::Tab(_)
+                                | UiGesture::Preset(_)
                         )
                     }
                     Widget::Disclosure { .. } => c.gesture == UiGesture::Toggle,
+                    Widget::Handle { span, .. } => {
+                        c.gesture == UiGesture::Position
+                            && c.x.is_some() != c.y.is_some()
+                            && span.as_ref().is_none_or(|span| {
+                                span.iter().all(|v| v.validate(&readouts, 0, &mut expression_budget).is_ok())
+                            })
+                    }
                     Widget::Number { .. } | Widget::Knob { .. } | Widget::Dial { .. } | Widget::Stepper { .. } => {
                         c.gesture == UiGesture::Drag && c.x.is_none() && c.y.is_some()
                     }
@@ -596,9 +719,16 @@ impl DeviceUi {
                 return Err(fail(&format!("invalid custom control id/name/bounds: {:.64}", c.id)));
             }
             if let Some(condition) = &c.visible_when {
-                condition.validate(&ids, 0, &mut expression_budget)?;
+                condition.validate(&readouts, 0, &mut expression_budget)?;
             }
-            if c.x.is_none()
+            if let UiGesture::Preset(index) = c.gesture {
+                if !matches!(c.widget, Some(Widget::Button { .. })) || c.x.is_some() || c.y.is_some() {
+                    return Err(fail("a preset gesture is a button without bindings"));
+                }
+                if usize::from(index) >= self.presets.len() {
+                    return Err(fail("a preset gesture names a preset the canvas does not have"));
+                }
+            } else if c.x.is_none()
                 && c.y.is_none()
                 && !matches!(
                     c.widget,
@@ -606,6 +736,7 @@ impl DeviceUi {
                         Widget::Label { .. }
                             | Widget::Panel { .. }
                             | Widget::Separator
+                            | Widget::Graphic { .. }
                             | Widget::SampleWaveform
                             | Widget::SampleRecording
                             | Widget::Envelope { .. }
@@ -625,8 +756,9 @@ impl DeviceUi {
                 return Err(fail("button gestures require only X binding"));
             }
             for binding in [c.x.as_ref(), c.y.as_ref()].into_iter().flatten() {
-                if !binding.drag_scale.is_finite() || !(0.01..=100.).contains(&binding.drag_scale) {
-                    return Err(fail("drag scale must be finite and within 0.01..100"));
+                // A negative scale drags the other way (a ratio knob over a slope).
+                if !binding.drag_scale.is_finite() || !(0.01..=100.).contains(&binding.drag_scale.abs()) {
+                    return Err(fail("drag scale must be finite and within 0.01..100 either way"));
                 }
                 let p = parameters
                     .iter()
@@ -650,7 +782,7 @@ impl DeviceUi {
             }
         }
         for draw in self.layers.iter().cloned().chain(self.controls.iter().flat_map(|c| c.drawings().into_owned())) {
-            draw.validate(&ids, &asset_ids, &mut expression_budget)?;
+            draw.validate(&readouts, &asset_ids, &mut expression_budget)?;
         }
         Ok(())
     }
@@ -677,9 +809,16 @@ impl UiValue {
                 UiExpression::Add { a, b }
                 | UiExpression::Multiply { a, b }
                 | UiExpression::Equal { a, b }
+                | UiExpression::Min { a, b }
+                | UiExpression::Max { a, b }
                 | UiExpression::Wave { shape: a, cycles: b } => {
                     a.validate(ids, depth + 1, budget)?;
                     b.validate(ids, depth + 1, budget)?;
+                }
+                UiExpression::Readout { index } => {
+                    if usize::from(*index) >= READOUT_IDS.len() {
+                        return Err(fail());
+                    }
                 }
                 UiExpression::Sin { value }
                 | UiExpression::Cos { value }
@@ -729,6 +868,16 @@ impl Draw {
                 }
                 position.iter().collect()
             }
+            Self::Value { position, value, prefix, suffix, size, decimals, .. } => {
+                if prefix.len() + suffix.len() > 256
+                    || !size.is_finite()
+                    || !(8.0..=48.0).contains(size)
+                    || *decimals > 8
+                {
+                    return Err(fail("invalid value text"));
+                }
+                position.iter().chain([value]).collect()
+            }
             Self::Image { asset, rect, uv, tile_size, .. } => {
                 if !assets.contains(asset.as_str())
                     || uv.iter().any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
@@ -749,105 +898,5 @@ impl Draw {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn waveform_expressions_round_trip_and_validate_parameter_references() {
-        let value = UiValue::Expression(Box::new(UiExpression::Wave {
-            shape: UiValue::parameter("shape", false),
-            cycles: 0.25.into(),
-        }));
-        let saved = serde_json::to_string(&value).unwrap();
-        assert_eq!(serde_json::from_str::<UiValue>(&saved).unwrap(), value);
-        assert_eq!(value.evaluate(&|_, _, _| 1.), 1.);
-        assert!(value.validate(&HashSet::from(["shape"]), 0, &mut 32768).is_ok());
-        assert!(value.validate(&HashSet::new(), 0, &mut 32768).is_err());
-    }
-
-    #[test]
-    fn waveform_preview_round_trips_and_rejects_missing_shape() {
-        let mut shape = Parameter::new("shape", "Shape", (0., 5.), 0.);
-        shape.ui.options = ["Sine", "Triangle", "Saw up", "Saw down", "Square", "Random"].map(String::from).to_vec();
-        let params = [Parameter::new("rate", "Rate", (0.01, 20.), 1.), shape];
-        let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
-        ui.controls.push(CustomControl {
-            id: "preview".into(),
-            name: "Preview".into(),
-            tooltip: String::new(),
-            bounds: [0., 0., 200., 60.],
-            widget: Some(Widget::WaveformPreview { shape: "shape".into() }),
-            gesture: UiGesture::Position,
-            x: Some(UiBinding::new("rate")),
-            y: None,
-            drawing: vec![],
-            visible_when: None,
-        });
-        ui.validate(&params).unwrap();
-        assert_eq!(serde_json::from_str::<DeviceUi>(&serde_json::to_string(&ui).unwrap()).unwrap(), ui);
-        assert!(!ui.controls[0].drawings().is_empty());
-        ui.controls[0].widget = Some(Widget::WaveformPreview { shape: "missing".into() });
-        assert!(ui.validate(&params).is_err());
-    }
-
-    #[test]
-    fn envelope_widgets_round_trip_and_reject_invalid_stage_references() {
-        let params = [
-            Parameter::new("a", "Attack", (0., 10.), 0.),
-            Parameter::new("d", "Decay", (0., 10.), 0.),
-            Parameter::new("s", "Sustain", (0., 1.), 1.),
-            Parameter::new("r", "Release", (0., 10.), 0.),
-        ];
-        let widget =
-            Widget::Envelope { attack: "a".into(), decay: "d".into(), level: "s".into(), release: Some("r".into()) };
-        let mut ui = DeviceUi {
-            controls: vec![CustomControl {
-                widget: Some(widget),
-                visible_when: None,
-                id: "env".into(),
-                name: "Envelope".into(),
-                tooltip: String::new(),
-                bounds: [0., 0., 284., 40.],
-                gesture: UiGesture::Position,
-                x: None,
-                y: None,
-                drawing: vec![],
-            }],
-            ..DeviceUi::default()
-        };
-        ui.validate(&params).unwrap();
-        assert_eq!(serde_json::from_str::<DeviceUi>(&serde_json::to_string(&ui).unwrap()).unwrap(), ui);
-        for attack in ["missing", "d"] {
-            if let Some(Widget::Envelope { attack: a, .. }) = &mut ui.controls[0].widget {
-                *a = attack.into();
-            }
-            assert!(ui.validate(&params).is_err());
-        }
-    }
-
-    #[test]
-    fn drag_scale_defaults_to_one_and_rejects_invalid_values() {
-        let old: UiBinding = serde_json::from_str(r#"{"parameter":"amount"}"#).unwrap();
-        assert_eq!(old.drag_scale, 1.);
-        let mut ui = DeviceUi {
-            controls: vec![CustomControl {
-                widget: None,
-                visible_when: None,
-                id: "amount".into(),
-                name: "Amount".into(),
-                tooltip: String::new(),
-                bounds: [0., 0., 40., 20.],
-                gesture: UiGesture::Drag,
-                x: Some(old),
-                y: None,
-                drawing: vec![],
-            }],
-            ..DeviceUi::default()
-        };
-        let parameters = [Parameter::new("amount", "Amount", (0., 1.), 0.)];
-        for scale in [1., 2., 0., -1., f32::NAN, f32::INFINITY, 101.] {
-            ui.controls[0].x.as_mut().unwrap().drag_scale = scale;
-            assert_eq!(ui.validate(&parameters).is_ok(), scale == 1. || scale == 2.);
-        }
-    }
-}
+#[path = "ui_tests.rs"]
+mod tests;

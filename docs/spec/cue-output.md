@@ -3,7 +3,7 @@ description: How the cue output works: a second output pair on the same audio de
 read_when: cue, cue output, headphones, pre-listen, solo in place, preview output, cue volume, cue pair, outputs 3/4, track.setCue, output.setCuePair, output.setCueVolume, headphones button, cue button, render --cue, multi-channel device
 type: spec
 status: current
-last_verified: 2026-10-20
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/cue.rs
   - crates/engine/src/cue_tests.rs

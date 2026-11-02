@@ -4,7 +4,7 @@ read_when: object id, ClipId, clip identity, positional addressing, clip.move, d
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-18
+last_verified: 2026-11-02
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/ids.rs

@@ -4,7 +4,7 @@ read_when: tabs, several projects, open projects, switch project, Ctrl+Tab, proj
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-24
+last_verified: 2026-11-02
 covers:
   - crates/session/src/projects.rs
   - crates/automation/src/server.rs

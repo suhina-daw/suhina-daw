@@ -160,3 +160,22 @@ fn only_the_nam_devices_run_a_file_and_every_row_is_found_by_its_id() {
     }
     assert!(!is_file_device("no-such-device"));
 }
+
+#[test]
+fn every_layout_loads_so_none_is_reported() {
+    assert_eq!(layout_errors(), Vec::<(&str, String)>::new());
+}
+
+#[test]
+fn the_multiband_panel_switches_bands_and_opens_an_expanded_spectrum() {
+    let panel = panel("multiband").unwrap();
+    let compact = panel.ui.as_ref().unwrap();
+    // One tab per band sets the shown band; each band's knobs show only for it.
+    let tabs = compact.controls.iter().filter(|c| c.x.as_ref().is_some_and(|b| b.parameter == "band")).count();
+    assert_eq!(tabs, 3);
+    for band in ["low", "mid", "high"] {
+        let knob = compact.controls.iter().find(|c| c.id == format!("{band}Attack")).unwrap();
+        assert!(knob.visible_when.is_some(), "{band}: its knobs show for its tab only");
+    }
+    assert!(panel.expanded.as_ref().is_some_and(|e| e.size[0] > compact.size[0]));
+}

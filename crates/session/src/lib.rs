@@ -93,7 +93,7 @@ pub use commands::{
 };
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::{MAX_FILES, file_tempo};
-pub use library::{Category, Found, file_info, library_commands, search_items};
+pub use library::{Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items};
 pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
 pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
@@ -919,6 +919,19 @@ impl Session {
     /// state is neither a change nor an undo step.
     pub fn project_as_heard(&mut self) -> Project {
         self.heard().0
+    }
+
+    /// [`Session::project_as_heard`] for a copy of `tracks`: only their plug-ins and those in the
+    /// groups among them are asked, so the wait is for what is copied.
+    pub(crate) fn project_as_heard_on(&mut self, tracks: &[suhina_model::TrackId]) -> Project {
+        let tracks = crate::track_copy::with_their_tracks(&self.project, tracks);
+        let keys: Vec<u64> = suhina_engine::plugin_devices(&self.project)
+            .iter()
+            .filter(|d| d.track.is_some_and(|t| tracks.contains(&t)))
+            .map(|d| d.key)
+            .collect();
+        let states = self.plugins.current_states_of(&keys);
+        self.with_states(&states)
     }
 
     /// [`Session::project_as_heard`], with the plug-in states it holds by device key.

@@ -88,7 +88,7 @@ The rules are [`docs/spec/ui-settings.md`](../../../docs/spec/ui-settings.md) â€
 choice). The places to touch:
 
 1. **The value:** a field of `Settings` in `crates/ui/src/settings.rs`, with its default, saved
-   in `settings.json` under its key (a key never changes once released).
+   in `settings.txt` under its key (a key never changes once released).
 2. **The row:** one entry in `ROWS` in `crates/ui/src/settings/settings_rows.rs`, under its page
    and section, with its name, description, keys and control (`cx.on_off(r, |s| &mut s.field)` or
    `cx.choose(...)`). The tests in `settings_rows_tests.rs` check the machine-checkable rules.

@@ -3,7 +3,7 @@ description: What is known of Native Instruments preset files (.nksf, .nksfx) an
 read_when: NKS, nksf, nksfx, Native Instruments presets, preset previews, .previews folder, NISI, NICA, PLID, PCHK, MessagePack, Komplete Kontrol presets, plug-in state chunk
 type: spec
 status: planned
-last_verified: 2026-10-19
+last_verified: 2026-11-02
 ---
 
 # NKS preset files

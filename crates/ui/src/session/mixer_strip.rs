@@ -446,7 +446,8 @@ pub fn show(
         state.open_devices = Some(column.track);
     }
     // A click on the strip selects its track, a return's too; a slot selected on that track stays.
-    if strip.clicked() {
+    // With Ctrl or Shift the column does it, as on its header.
+    if strip.clicked() && !ui.input(|i| i.modifiers.command || i.modifiers.shift) {
         state.selected = Some(column.track);
         state.selected_tracks = vec![column.track];
         state.devices_clicked = true;
@@ -928,6 +929,11 @@ fn volume_drag(
             committed = Some(v);
             actions.push(set_volume(track.0, v, continued));
         }
+        Drag::Set(v) => {
+            state.drag = None;
+            committed = Some(v);
+            actions.push(commands::set_volume(&[track.0], v, None));
+        }
         Drag::None => {
             if continued {
                 state.drag = None;
@@ -1054,7 +1060,7 @@ pub fn main_fader(
             actions.push(send(v, continued));
             db = v;
         }
-        Drag::Done(v) => {
+        Drag::Done(v) | Drag::Set(v) => {
             state.drag = None;
             actions.push(send(v, continued));
             db = v;
@@ -1323,6 +1329,12 @@ fn pan_row(
             committed = Some(v);
             actions.push(set_pan(v));
         }
+        Drag::Set(v) => {
+            state.drag = None;
+            committed = Some(v);
+            actions
+                .push(Action::new("track.setPan", json!({ "tracks": [track.0], "pan": (v * 100.0).round() / 100.0 })));
+        }
         Drag::None => {}
     }
     // Shown after this frame's drag, so the knob never trails the pointer.
@@ -1427,11 +1439,20 @@ fn send_knobs(
             Some((t, c, v)) if t == track && c == control => Some(v),
             _ => None,
         };
-        let level = if send.level_db.is_finite() { send.level_db } else { VOLUME_RANGE.0 };
+        let level = if send.level_db.is_finite() { send.level_db } else { widgets::SEND_RANGE.0 };
         let mut committed = None;
         // Heard while it is dragged, every frame of it in one undo step, as the fader is (#705).
         let continued = preview.is_some();
-        match widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, VOLUME_RANGE, VOLUME_RANGE.0) {
+        match widgets::drag_value(
+            ui,
+            &response,
+            &mut preview,
+            level,
+            0.25,
+            1.0,
+            widgets::SEND_RANGE,
+            widgets::SEND_RANGE.0,
+        ) {
             Drag::Moving(v) => {
                 state.drag = Some((track, control, v));
                 actions.push(commands::set_send(track, send.target, v, continued));
@@ -1440,6 +1461,11 @@ fn send_knobs(
                 state.drag = None;
                 committed = Some(v);
                 actions.push(commands::set_send(track, send.target, v, continued));
+            }
+            Drag::Set(v) => {
+                state.drag = None;
+                committed = Some(v);
+                actions.push(commands::set_send_outright(track, send.target, v));
             }
             Drag::None => {}
         }
@@ -1462,7 +1488,8 @@ fn send_knobs(
             }
             _ => committed.unwrap_or(level),
         };
-        let position = ((shown - VOLUME_RANGE.0) / (VOLUME_RANGE.1 - VOLUME_RANGE.0)) as f32;
+        let (low, high) = widgets::SEND_RANGE;
+        let position = ((shown - low) / (high - low)) as f32;
         // `.send` styles every send, `#mixer-send-N` one of them; `--suhina-appearance: knob`
         // draws it as a knob.
         let _style = crate::kit::style_class::enter_named_response("send", &name, &response);

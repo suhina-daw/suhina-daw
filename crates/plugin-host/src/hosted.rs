@@ -34,9 +34,12 @@ pub(crate) trait HostedPlugin {
         Err("this test processor cannot reconfigure".into())
     }
 
-    fn open_editor(&mut self, _mode: window::Mode) -> Result<window::Size, String> {
+    fn open_editor(&mut self, _mode: window::Mode, _title: Option<&str>) -> Result<window::Size, String> {
         Err("the plug-in has no editor".into())
     }
+
+    /// Sets what the title bar of the editor's window says.
+    fn set_editor_title(&self, _title: &str) {}
 
     /// Puts an embedded editor where the engine says.
     fn place_editor(&self, _placement: window::Placement) {}
@@ -150,8 +153,11 @@ impl HostedPlugin for clap::ClapPlugin {
     fn reconfigure(&mut self, sample_rate: f64) -> Result<u32, String> {
         clap::ClapPlugin::reconfigure(self, sample_rate)
     }
-    fn open_editor(&mut self, mode: window::Mode) -> Result<window::Size, String> {
-        clap::ClapPlugin::open_editor(self, mode)
+    fn open_editor(&mut self, mode: window::Mode, title: Option<&str>) -> Result<window::Size, String> {
+        clap::ClapPlugin::open_editor(self, mode, title)
+    }
+    fn set_editor_title(&self, title: &str) {
+        clap::ClapPlugin::set_editor_title(self, title);
     }
     fn place_editor(&self, placement: window::Placement) {
         clap::ClapPlugin::place_editor(self, placement);
@@ -206,8 +212,11 @@ impl HostedPlugin for vst3::Vst3Plugin {
     fn reconfigure(&mut self, sample_rate: f64) -> Result<u32, String> {
         vst3::Vst3Plugin::reconfigure(self, sample_rate)
     }
-    fn open_editor(&mut self, mode: window::Mode) -> Result<window::Size, String> {
-        vst3::Vst3Plugin::open_editor(self, mode)
+    fn open_editor(&mut self, mode: window::Mode, title: Option<&str>) -> Result<window::Size, String> {
+        vst3::Vst3Plugin::open_editor(self, mode, title)
+    }
+    fn set_editor_title(&self, title: &str) {
+        vst3::Vst3Plugin::set_editor_title(self, title);
     }
     fn place_editor(&self, placement: window::Placement) {
         vst3::Vst3Plugin::place_editor(self, placement);

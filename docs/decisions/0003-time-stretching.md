@@ -4,7 +4,7 @@ read_when: warp, time-stretch, stretch mode, Signalsmith, keylock, timestretch, 
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-23
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/stretch.rs
   - crates/stretch/src/lib.rs

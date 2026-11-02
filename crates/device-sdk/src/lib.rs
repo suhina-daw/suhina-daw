@@ -804,6 +804,12 @@ pub(crate) fn validate_parameters(parameters: &[Parameter]) -> Result<(), Device
                 "parameter ids and names must be unique, non-empty, and at most 128 bytes".into(),
             ));
         }
+        if parameter.id.starts_with('#') {
+            return Err(DeviceSdkError(format!(
+                "parameter {:?}: an id starting with # is kept for the host's values",
+                parameter.id
+            )));
+        }
         if !parameter.min.is_finite()
             || !parameter.max.is_finite()
             || !parameter.default.is_finite()

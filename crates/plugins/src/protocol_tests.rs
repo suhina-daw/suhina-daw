@@ -78,7 +78,7 @@ fn gain() -> ParamInfo {
 
 #[test]
 fn every_message_round_trips() {
-    assert_eq!(VERSION, 14);
+    assert_eq!(VERSION, 15);
     let messages = [
         Message::Hello { version: VERSION },
         Message::Reconfigure { instance: 7, sample_rate: 48_000.0 },
@@ -132,13 +132,15 @@ fn every_message_round_trips() {
         Message::Param { instance: 5, param: gain() },
         Message::ParamChanged { instance: 5, id: 7, value: 0.125 },
         Message::ParamChanged { instance: u32::MAX, id: u32::MAX, value: f64::MAX },
-        Message::OpenEditor { instance: 6, owner: None, embedded: false },
-        Message::OpenEditor { instance: 6, owner: Some(0x0012_0F3A), embedded: true },
+        Message::OpenEditor { instance: 6, owner: None, embedded: false, title: None },
+        Message::OpenEditor { instance: 6, owner: Some(0x0012_0F3A), embedded: true, title: None },
+        Message::OpenEditor { instance: 6, owner: Some(1), embedded: false, title: Some("2 Serum 2".into()) },
         Message::EditorOpened { instance: 6, width: 800, height: 600 },
         Message::PlaceEditor {
             instance: 6,
             placement: Placement { x: -40, y: 620, clip_x: 0, clip_y: 600, clip_width: 1280, clip_height: 0 },
         },
+        Message::EditorTitle { instance: 6, title: "2 Serum 2".into() },
         Message::AraSelect { instance: 6, region: Some("clip-7".into()) },
         Message::AraExport { instance: 6, modification: "content-3".into(), source: "C:\\a\\take.wav".into() },
         Message::AraExported { instance: 6, archive_id: "com.example.edits".into(), data: vec![1, 2, 0xff] },

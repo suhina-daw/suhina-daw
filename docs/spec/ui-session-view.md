@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-10-29
+last_verified: 2026-11-02
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -370,8 +370,8 @@ vertical channel strip under its slots, and the strip shows more the taller the 
   is selected with its chain shown, so the editor opened next is the moved or copied device's.
 - **A double-click on the strip** itself (its background or its name, not a fader, knob,
   button or device row) does the same for the whole track: it selects the track and shows its
-  devices in the detail area, opening the detail area if it was hidden. A single click there does
-  nothing, as before.
+  devices in the detail area, opening the detail area if it was hidden. A single click there
+  selects the track alone.
 - The main column shows the main output's meter where a track's meter stands.
 - **The colour band** down the strip's left edge, at every mixer height, is the track colour;
   its name row is filled with it too. A click on the band opens the colour palette (Track
@@ -416,7 +416,8 @@ planned.
 the left of a row or at the top of the stacked column, with the rest of the detail beside or
 under it. Launching a clip on a track selects it; clicking a track's header selects the track
 instead and hides the section (Ctrl-click adds a header to the selection or takes it out,
-Shift-click takes the columns from the header selected last to this one: the same selection as
+Shift-click takes the columns from the header selected last to this one, and both work on the
+channel strip's background too: the same selection as
 the Arrangement view's headers, which Delete, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D and Ctrl+G act on;
 the detail area shows the header clicked; #208); the Arrangement view shows only its own selection. Top to bottom:
 

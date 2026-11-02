@@ -155,6 +155,11 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    // A built-in device whose layout does not load shows its parameter list instead; say why.
+    for (device, error) in suhina_device_registry::layout_errors() {
+        eprintln!("warning: the {device} panel layout does not load, so it shows its parameter list: {error}");
+        suhina_plugins::trace::line(format_args!("panel layout of {device} rejected: {error}"));
+    }
     // A crash leaves a file in <data>/crashes/, which a start from the desktop otherwise loses.
     if let Some(folder) = data_dir() {
         crash_log::install(folder.join("crashes"));

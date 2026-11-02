@@ -117,7 +117,7 @@ mod imp;
 pub(crate) use imp::any_open;
 #[cfg(windows)]
 pub(crate) use imp::{Waker, wait};
-pub(crate) use imp::{Window, client_size, place, pump, resize, take_close_request};
+pub(crate) use imp::{Window, client_size, place, pump, resize, set_title, take_close_request};
 
 /// Where an editor opens: a window of its own (owned by the engine's, when it named one with
 /// [`set_owner`]), or embedded inside the engine's window `parent`.

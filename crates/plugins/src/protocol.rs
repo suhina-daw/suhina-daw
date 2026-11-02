@@ -6,10 +6,10 @@
 //!
 //! Every message has an `op`. Engine to host: `hello`, `load`, `reconfigure`, `unload`, `ping`, `get_state`,
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
-//! `fit_editor`, `ara_select`, `ara_update`, `ara_export`, `ara_import`, `quit`. Host to engine: `hello`, `loaded`, `reconfigured`, `unloaded`, `pong`, `state`, `params`, `param`,
+//! `fit_editor`, `editor_title`, `ara_select`, `ara_update`, `ara_export`, `ara_import`, `quit`. Host to engine: `hello`, `loaded`, `reconfigured`, `unloaded`, `pong`, `state`, `params`, `param`,
 //! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `ara_exported`, `ara_imported`, `memory`,
 //! `transport_key`, `ara_playback`, `ara_notes`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
-//! `ara_select` and `quit` (so the engine never waits on them).
+//! `editor_title`, `ara_select` and `quit` (so the engine never waits on them).
 //! `editor_closed` also comes unasked, when the user closes an editor's window; `editor_resized`
 //! only comes unasked, when a plug-in gives its editor a new size, `latency_changed` only
 //! comes unasked, when a running plug-in reports another latency, `memory` only comes unasked,
@@ -25,7 +25,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 14;
+pub const VERSION: u64 = 15;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -439,6 +439,8 @@ pub enum Message {
         instance: u32,
         owner: Option<u64>,
         embedded: bool,
+        /// What the title bar of its own window says from the start; the plug-in's name without.
+        title: Option<String>,
     },
     EditorOpened {
         instance: u32,
@@ -450,6 +452,12 @@ pub enum Message {
     PlaceEditor {
         instance: u32,
         placement: Placement,
+    },
+    /// What the title bar of an editor in a window of its own says: its track's name and the
+    /// plug-in's. Not answered; sent again when the track is renamed or moved.
+    EditorTitle {
+        instance: u32,
+        title: String,
     },
     /// Ask an embedded editor to take the size of the room the engine has for it, in pixels,
     /// when its plug-in lets its editor be resized (it may keep within its own limits). Not
@@ -588,6 +596,7 @@ impl Message {
             | Self::OpenEditor { instance, .. }
             | Self::EditorOpened { instance, .. }
             | Self::PlaceEditor { instance, .. }
+            | Self::EditorTitle { instance, .. }
             | Self::AraSelect { instance, .. }
             | Self::FitEditor { instance, .. }
             | Self::AraUpdate { instance, .. }
@@ -659,14 +668,17 @@ impl Message {
             Self::ParamChanged { instance, id, value } => {
                 json!({ "op": "param_changed", "instance": instance, "id": id, "value": value })
             }
-            Self::OpenEditor { instance, owner, embedded } => {
-                json!({ "op": "open_editor", "instance": instance, "owner": owner, "embedded": embedded })
+            Self::OpenEditor { instance, owner, embedded, title } => {
+                json!({ "op": "open_editor", "instance": instance, "owner": owner, "embedded": embedded, "title": title })
             }
             Self::EditorOpened { instance, width, height } => {
                 json!({ "op": "editor_opened", "instance": instance, "width": width, "height": height })
             }
             Self::PlaceEditor { instance, placement } => {
                 json!({ "op": "place_editor", "instance": instance, "placement": placement.to_json() })
+            }
+            Self::EditorTitle { instance, title } => {
+                json!({ "op": "editor_title", "instance": instance, "title": title })
             }
             Self::FitEditor { instance, width, height } => {
                 json!({ "op": "fit_editor", "instance": instance, "width": width, "height": height })
@@ -817,12 +829,19 @@ impl Message {
                     Some(v) => Some(v.as_u64()?),
                 },
                 embedded: value.get("embedded")?.as_bool()?,
+                title: match value.get("title") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(v.as_str()?.to_string()),
+                },
             },
             "editor_opened" => {
                 Self::EditorOpened { instance: instance()?, width: small("width")?, height: small("height")? }
             }
             "place_editor" => {
                 Self::PlaceEditor { instance: instance()?, placement: Placement::from_json(value.get("placement")?)? }
+            }
+            "editor_title" => {
+                Self::EditorTitle { instance: instance()?, title: value.get("title")?.as_str()?.to_string() }
             }
             "fit_editor" => Self::FitEditor { instance: instance()?, width: small("width")?, height: small("height")? },
             "ara_update" => {

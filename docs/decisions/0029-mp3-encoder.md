@@ -4,7 +4,7 @@ read_when: MP3, mp3 export, LAME, libmp3lame, encoder crate, why C, vendored enc
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-23
+last_verified: 2026-11-02
 covers:
   - third_party/lame
   - crates/mp3

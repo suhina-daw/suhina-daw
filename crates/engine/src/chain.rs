@@ -229,6 +229,11 @@ pub(crate) fn device_identity(id: &str, stored: &suhina_model::Device, audio: &c
 }
 
 impl Chain {
+    /// The first device in the chain that has live values for its panel, with its position.
+    pub(crate) fn readouts(&self, visit: &mut dyn FnMut(u64, [f32; suhina_device_api::MAX_READOUTS])) {
+        crate::group::visit_readouts(&self.slots, &self.positions, crate::meters::READOUT_PATH, visit);
+    }
+
     pub(crate) fn sample_positions(&self) -> Option<(usize, [Option<f32>; 32])> {
         self.slots.iter().zip(&self.positions).find_map(|(slot, &position)| match slot {
             Slot::Device(device) => {

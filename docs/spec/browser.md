@@ -3,7 +3,7 @@ description: How the browser behaves: places, categories, search, the tree, prev
 read_when: browser, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
-last_verified: 2026-10-30
+last_verified: 2026-11-02
 covers:
   - crates/library/**
   - crates/media/src/midi.rs
@@ -76,6 +76,10 @@ View › Show browser show and hide it; hidden, it takes no space. Ctrl+F shows 
 puts the cursor in the search field, and it always searches everything: it chooses All (and no
 place) and selects what the field says, so typing replaces it. To search one kind, choose it in
 the sidebar and click the field: a kind chosen keeps the search and narrows it to that kind.
+
+**A search of a large library:** one that looks through more than 4096 files runs on a thread of
+its own, so typing does not wait for the scan, and the previous results stay until it answers; the
+next key ends a search that has gone stale.
 
 **Keyboard focus:** only the search field (and the fields for a folder's path or a tag's name,
 while they show) takes the keyboard. Clicking a row, a filter or a

@@ -528,7 +528,7 @@ pub(super) fn parameter_layout(
 ) -> Vec<Rect> {
     let (slots, row) = crate::kit::style_class::theme_param_grid();
     let cell = width / slots as f32;
-    let shown = || parameters.iter().filter(|p| !hidden.contains(&p.id));
+    let shown = || parameters.iter().filter(|p| !hidden.contains(&p.id) && !p.is_readout());
     let placed_size = |p: &GraphParameter| p.ui.size.unwrap_or([width, parameter_height(p)]);
     // A placed cell pushes down the columns it reaches into, wherever it is in the list.
     let placed: Vec<Rect> = shown()
@@ -597,7 +597,7 @@ pub(super) fn list_cells(graph: &GraphBox, width: f32, max_height: f32) -> Vec<R
     let Some(canvas) = &graph.canvas else {
         return parameter_layout(&graph.parameters, width, max_height, &[]);
     };
-    let shown = || graph.parameters.iter().filter(|p| !canvas.hidden_parameters.contains(&p.id));
+    let shown = || graph.parameters.iter().filter(|p| !canvas.hidden_parameters.contains(&p.id) && !p.is_readout());
     let mut skipped = canvas.hidden_parameters.clone();
     skipped.extend(shown().filter(|p| p.ui.position.is_some()).map(|p| p.id.clone()));
     let mut flow = parameter_layout(&graph.parameters, width, max_height, &skipped).into_iter();

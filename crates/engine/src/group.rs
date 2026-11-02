@@ -100,6 +100,8 @@ impl Smoothed {
 /// One branch of a running group.
 pub(crate) struct BranchRun {
     pub(crate) slots: Vec<Slot>,
+    /// Each slot's device in the stored branch: one that cannot run has no slot.
+    positions: Vec<usize>,
     /// Each slot's parameter values, as the chain keeps them, so a graph swap can set the new
     /// values on running devices.
     values: Vec<Vec<f64>>,
@@ -158,6 +160,7 @@ impl SlotFactory<'_> {
         for (b, branch) in group.branches.iter().enumerate().take(suhina_model::MAX_BRANCHES) {
             let mut run = BranchRun {
                 slots: Vec::new(),
+                positions: Vec::new(),
                 values: Vec::new(),
                 ids: Vec::new(),
                 sample_slices: Vec::new(),
@@ -176,6 +179,7 @@ impl SlotFactory<'_> {
                 if let Some(built) = self.device(device, depth + 1, &inner, (&mut run.lanes, slot)) {
                     run.latency = run.latency.saturating_add(built.latency);
                     run.slots.push(built.slot);
+                    run.positions.push(i);
                     run.ids.push(built.id);
                     run.values.push(built.values);
                     run.sample_slices.push(built.slices);
@@ -228,6 +232,33 @@ pub(crate) fn compensation(latencies: impl Iterator<Item = u32>, cap: u32) -> (u
     let latencies: Vec<u32> = latencies.map(|l| l.min(cap)).collect();
     let most = latencies.iter().copied().max().unwrap_or(0);
     (most, latencies.iter().map(|&l| most - l).collect())
+}
+
+/// Hands `visit` the live values of each device among `slots` and inside their groups, with the
+/// device's path (`crate::meters::readout_step`) from `parent`. Never allocates.
+pub(crate) fn visit_readouts(
+    slots: &[Slot],
+    positions: &[usize],
+    parent: u64,
+    visit: &mut dyn FnMut(u64, [f32; suhina_device_api::MAX_READOUTS]),
+) {
+    for (slot, &position) in slots.iter().zip(positions) {
+        let path = crate::meters::readout_step(parent, position);
+        match slot {
+            Slot::Device(device) => {
+                if let Some(values) = device.readouts() {
+                    visit(path, values);
+                }
+            }
+            Slot::Group(group) => {
+                for (index, branch) in group.branches.iter().enumerate() {
+                    let branch_path = crate::meters::readout_step(path, index);
+                    visit_readouts(&branch.slots, &branch.positions, branch_path, visit);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// A branch's gains while `any_solo` says whether a branch of its group is soloed: 0 while it
@@ -342,6 +373,7 @@ impl GroupSlot {
                 }
             }
             std::mem::swap(&mut running.lanes, &mut new.lanes);
+            std::mem::swap(&mut running.positions, &mut new.positions);
             for (values, new_values) in running.values.iter_mut().zip(&new.values) {
                 for (value, &new) in values.iter_mut().zip(new_values) {
                     *value = new;

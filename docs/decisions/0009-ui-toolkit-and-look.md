@@ -4,7 +4,7 @@ read_when: UI toolkit, egui, look and feel, trade dress, design rights, screensh
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-22
+last_verified: 2026-11-02
 covers:
   - apps/suhina/Cargo.toml
   - crates/ui/Cargo.toml

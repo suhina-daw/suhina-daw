@@ -3,7 +3,7 @@ description: How to review pull requests for requirements, correctness, performa
 read_when: code review, reviewing a pull request, review feedback, contributor changes, security review, performance review, approval readiness, Codex review
 type: howto
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-11-02
 covers:
   - AGENTS.md
   - CONTRIBUTING.md

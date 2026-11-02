@@ -7,10 +7,11 @@
 //! on [`Projects`] like the `plugin.*` commands, and never change a project.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use serde_json::{Value, json};
 use suhina_device_api::Role;
-use suhina_library::{FileKind, Group, Item, Library, Query};
+use suhina_library::{FileKind, FileSearch, Group, Item, Library, Query};
 
 use crate::commands::{Args, CommandKind, CommandSpec, Param, ParamType, optional, param};
 use crate::devices::role_name;
@@ -451,6 +452,65 @@ pub fn search_items(
     tags: &[String],
     limit: usize,
 ) -> Result<Vec<Found>, CommandError> {
+    Ok(prepare_search(projects, text, category, place, tags, limit)?.run(&AtomicBool::new(false)))
+}
+
+/// A search with everything that needs the library looked up, and its files still to look
+/// through, which [`PreparedSearch::run`] does on any thread.
+pub struct PreparedSearch {
+    /// A place that lists its items itself (pinned, recent): the answer, in its order.
+    listed: Option<Vec<Found>>,
+    ranked: Vec<(u8, Found)>,
+    files: Option<FileSearch>,
+    words: Vec<String>,
+    limit: usize,
+}
+
+impl PreparedSearch {
+    /// How many files it looks through.
+    pub fn files(&self) -> usize {
+        self.files.as_ref().map_or(0, FileSearch::files)
+    }
+
+    /// What was found, best first; nothing from the files once `cancel` is set.
+    pub fn run(self, cancel: &AtomicBool) -> Vec<Found> {
+        if let Some(listed) = self.listed {
+            return listed;
+        }
+        let mut ranked = self.ranked;
+        for file in self.files.iter().flat_map(|files| files.run(cancel)) {
+            let rank = suhina_library::rank(&self.words, file.name(), &file.rel).unwrap_or(3);
+            ranked.push((
+                rank,
+                Found {
+                    name: file.name().to_string(),
+                    kind: file_kind_name(file.kind),
+                    detail: None,
+                    plugin: false,
+                    folder: Some(file.folder.clone()),
+                    item: Item::File(file.path),
+                },
+            ));
+        }
+        ranked.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then(a.1.name.len().cmp(&b.1.name.len()))
+                .then(suhina_library::natural_cmp(&a.1.name, &b.1.name))
+        });
+        ranked.truncate(self.limit);
+        ranked.into_iter().map(|(_, f)| f).collect()
+    }
+}
+
+/// [`search_items`] up to where it looks through the files.
+pub fn prepare_search(
+    projects: &mut Projects,
+    text: &str,
+    category: Category,
+    place: Option<&str>,
+    tags: &[String],
+    limit: usize,
+) -> Result<PreparedSearch, CommandError> {
     let limit = if limit == 0 { suhina_library::MAX_RESULTS } else { limit.min(suhina_library::MAX_RESULTS) };
     let words = suhina_library::words(text);
     let tagged =
@@ -474,7 +534,7 @@ pub fn search_items(
                 break;
             }
         }
-        return Ok(out);
+        return Ok(PreparedSearch { listed: Some(out), ranked: Vec::new(), files: None, words, limit });
     }
     let within = place.map(PathBuf::from);
     let mut ranked: Vec<(u8, Found)> = Vec::new();
@@ -518,30 +578,13 @@ pub fn search_items(
         }
     }
     let kinds = category.file_kinds();
-    if !kinds.is_empty() {
+    let files = (!kinds.is_empty()).then(|| {
         let query = Query { text: text.to_string(), kinds: kinds.to_vec(), within, tags: tags.to_vec(), limit };
         let library = projects.file_library_mut();
         library.poll();
-        for file in library.search(&query) {
-            let rank = suhina_library::rank(&words, file.name(), &file.rel).unwrap_or(3);
-            ranked.push((
-                rank,
-                Found {
-                    name: file.name().to_string(),
-                    kind: file_kind_name(file.kind),
-                    detail: None,
-                    plugin: false,
-                    folder: Some(file.folder.clone()),
-                    item: Item::File(file.path),
-                },
-            ));
-        }
-    }
-    ranked.sort_by(|a, b| {
-        a.0.cmp(&b.0).then(a.1.name.len().cmp(&b.1.name.len())).then(suhina_library::natural_cmp(&a.1.name, &b.1.name))
+        library.prepare_search(&query)
     });
-    ranked.truncate(limit);
-    Ok(ranked.into_iter().map(|(_, f)| f).collect())
+    Ok(PreparedSearch { listed: None, ranked, files, words, limit })
 }
 
 fn search(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
