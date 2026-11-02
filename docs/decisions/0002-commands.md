@@ -112,7 +112,13 @@ UI, CLI, control channel and MCP server all dispatch commands by id. We take the
     counted from 1 before 2026-11-03. A number that names a place in the music or is part of a
     name keeps how it reads: bars from 1, a follow action's `jump N`, a scene's "Scene 3". The
     window shows scenes from 1 and converts at the command.
-11. **A command's rules are on its spec.** What follows from a command beside its work is in its
+11. **What a command runs on and what it does are two things.** A spec's `kind` is a `Target`
+    (one project, the open projects, the plug-ins, a running plug-in, the library, audio and MIDI)
+    and an `Effect` (read, edit with an undo step, history, transport, or a change outside a
+    project's undo history), where they were one list that mixed the two
+    ([#764](https://github.com/suhina-daw/suhina-daw/issues/764) › 12). `command.list` gives
+    `target` and `effect` in place of `kind`.
+12. **A command's rules are on its spec.** What follows from a command beside its work is in its
     `CommandSpec`'s `policy` ([#764](https://github.com/suhina-daw/suhina-daw/issues/764) › 1),
     not in lists of ids in other crates: whether the player hears an edit (`heard`), whether a
     backup comes first (`critical`), and whether an agent may run it (`agents`; for example,

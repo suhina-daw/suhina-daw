@@ -542,7 +542,7 @@ fn plug_in_commands_need_a_plug_in_and_a_playing_project() {
     let kinds: Vec<(&str, &str)> = suhina_session::commands()
         .iter()
         .filter(|c| c.id.starts_with("device.") && c.id.contains("Editor") || c.id == "device.restart")
-        .map(|c| (c.id, c.kind.name()))
+        .map(|c| (c.id, c.kind.target.name()))
         .collect();
     assert_eq!(
         kinds,

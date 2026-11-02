@@ -8,7 +8,7 @@
 use serde_json::json;
 use suhina_engine::{AudioPool, Renderer};
 use suhina_model::Project;
-use suhina_session::{CommandKind, MAX_OPEN_PROJECTS, Player, ProjectId, Projects, Session, commands};
+use suhina_session::{MAX_OPEN_PROJECTS, Player, ProjectId, Projects, Session, commands};
 
 use crate::support::run;
 
@@ -139,7 +139,10 @@ fn commands_list_shows_project_and_session_commands_once() {
         assert!(ids.contains(&id), "{id} is listed");
     }
     assert!(commands().iter().all(|c| ids.contains(&c.id)));
-    assert!(commands().iter().all(|c| c.kind != CommandKind::Projects), "session commands never manage projects");
+    assert!(
+        commands().iter().all(|c| c.kind.target != suhina_session::Target::Projects),
+        "session commands never manage projects"
+    );
     let mut unique = ids.clone();
     unique.sort_unstable();
     unique.dedup();
@@ -170,7 +173,7 @@ fn the_commands_document_lists_every_command_once_with_its_parameters() {
         assert_eq!(rows, 1, "{id} has {rows} rows");
     }
     assert_eq!(doc.lines().filter(|l| l.starts_with("| `")).count(), ids.len());
-    assert!(doc.contains("| `track.setPan` | edit |"));
+    assert!(doc.contains("| `track.setPan` | project edit |"));
     assert!(doc.contains("`track` (track):"));
     assert!(doc.contains(", optional):"));
     // Every row has the four columns: a `|` in a description would add one.

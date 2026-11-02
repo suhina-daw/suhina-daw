@@ -136,7 +136,7 @@ fn transport_commands_need_a_player() {
     // nor do the count-in and what records (docs/spec/recording.md), nor the take lane heard in
     // place of its track, which is told to each player as it builds (#989).
     let without = ["launcher.setQuantization", "track.setArm", "transport.setCountIn", "record.state", "take.solo"];
-    for spec in commands().iter().filter(|c| c.kind == CommandKind::Transport && !without.contains(&c.id)) {
+    for spec in commands().iter().filter(|c| c.kind == CommandKind::TRANSPORT && !without.contains(&c.id)) {
         let params = json!({ "track": "Drums", "scene": 0, "value": "1 bar", "on": true, "beats": 4.0, "key": 60 });
         let mut params = params
             .as_object()

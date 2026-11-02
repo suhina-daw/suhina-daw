@@ -166,7 +166,7 @@ pub fn render_launch_script(
         }
         let kind = commands().iter().find(|c| c.id == step.id).map(|c| c.kind);
         match kind {
-            Some(CommandKind::Transport | CommandKind::Read) => {}
+            Some(CommandKind::TRANSPORT | CommandKind::READ) => {}
             Some(_) => return Err(format!("{}: a launch script may only run transport and read commands", step.id)),
             None => return Err(format!("unknown command {}; command_list shows them", step.id)),
         }

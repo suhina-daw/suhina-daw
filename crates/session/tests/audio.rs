@@ -12,9 +12,7 @@ use serde_json::{Value, json};
 use suhina_engine::{AudioPool, LaunchCommand, Renderer};
 use suhina_model::Project;
 use suhina_session::audio::{DeviceInfo, HostInfo, Opened};
-use suhina_session::{
-    AudioSystem, CommandKind, LiveOutput, OutputChoice, OutputInfo, Player, Projects, Session, audio_commands,
-};
+use suhina_session::{AudioSystem, LiveOutput, OutputChoice, OutputInfo, Player, Projects, Session, audio_commands};
 
 use crate::support::run;
 use suhina_test_support::{WavFormat, write_wav};
@@ -158,7 +156,7 @@ fn audio_commands_are_listed_with_their_kind() {
             "audio.info",
         ]
     );
-    assert!(audio_commands().iter().all(|c| c.kind == CommandKind::Audio));
+    assert!(audio_commands().iter().all(|c| c.kind.target == suhina_session::Target::Audio));
     let listed = suhina_session::all_commands();
     assert!(listed.as_array().unwrap().iter().any(|c| c["id"] == "audio.setOutput"));
 }

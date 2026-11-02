@@ -19,7 +19,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use suhina_engine::model::{LaneData, Project};
 use suhina_session::{
-    Agents, AudioSystem, CommandKind, MidiSystem, Player, ProjectId, Projects, Session, all_commands, project_commands,
+    Agents, AudioSystem, MidiSystem, Player, ProjectId, Projects, Session, all_commands, project_commands,
 };
 
 use crate::attach::AppHost;
@@ -377,7 +377,7 @@ impl SuhinaMcp {
     }
 
     #[tool(
-        description = "List command ids with a description, kind (read, edit, history, transport, projects, plugins, plugin, library, audio) and parameter schema. Run them with command_run."
+        description = "List command ids with a description, what each runs on (target: project, projects, plugins, plugin, library, audio), what it does (effect: read, edit, history, transport, change) and parameter schema. Run them with command_run."
     )]
     async fn command_list(&self, Parameters(p): Parameters<ListParams>) -> Result<CallToolResult, McpError> {
         let filter = p.filter.unwrap_or_default();

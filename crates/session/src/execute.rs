@@ -36,14 +36,7 @@ impl Session {
         let params = prepared.resolved.as_ref().unwrap_or(params);
         let spec = prepared.spec;
         match spec.kind {
-            CommandKind::Read
-            | CommandKind::Transport
-            | CommandKind::Projects
-            | CommandKind::Plugins
-            | CommandKind::Library
-            | CommandKind::Audio
-            | CommandKind::Plugin => (spec.run)(self, params),
-            CommandKind::History => {
+            CommandKind::HISTORY => {
                 let scenes = self.project.launcher.clone();
                 let value = (spec.run)(self, params)?;
                 let shift = suhina_engine::SceneShift::between(&scenes, &self.project.launcher);
@@ -52,7 +45,7 @@ impl Session {
                 self.send_armed();
                 Ok(value)
             }
-            CommandKind::Edit => {
+            CommandKind::EDIT => {
                 let before = self.project.clone();
                 // A live value that replaces the last one runs on the project as the step found
                 // it (the top of the undo stack, which the open step pushed); `before` stays the
@@ -70,6 +63,8 @@ impl Session {
                     }
                 }
             }
+            // Reads, transport, and what runs outside a project's undo history.
+            _ => (spec.run)(self, params),
         }
     }
 
@@ -88,8 +83,8 @@ impl Session {
         let mut prepared = Prepared { spec, resolved, gesture, joins: false, replaces: false };
         match spec.kind {
             // Undo and redo end the gesture first, then undo or redo it as one step.
-            CommandKind::History => self.history.gesture = None,
-            CommandKind::Edit => {
+            CommandKind::HISTORY => self.history.gesture = None,
+            CommandKind::EDIT => {
                 self.sync.param_edits.clear();
                 self.sync.mixer_edits.clear();
                 self.sync.unheard = false;

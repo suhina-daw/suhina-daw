@@ -121,7 +121,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.list",
         label: "List the open projects in tab order with id, name, source and whether each is active",
         params: &[],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Read),
         run: list,
         policy: Policy::DEFAULT,
     },
@@ -129,7 +129,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.switch",
         label: "Make an open project the active one; the previous one stops playing",
         params: &[PROJECT],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: switch,
         policy: Policy::DEFAULT,
     },
@@ -137,7 +137,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.next",
         label: "Make the next open project active, wrapping around after the last",
         params: &[],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: next,
         policy: Policy::DEFAULT,
     },
@@ -145,7 +145,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.previous",
         label: "Make the previous open project active, wrapping around before the first",
         params: &[],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: previous,
         policy: Policy::DEFAULT,
     },
@@ -153,7 +153,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.close",
         label: "Close an open project and its undo history; a neighbour becomes active if it was",
         params: &[PROJECT],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: close,
         policy: Policy {
             critical: true,
@@ -893,7 +893,7 @@ pub fn commands_markdown() -> String {
          `suhina-cli commands --markdown`; do not edit by hand. A workflow regenerates it on `main`\n\
          after every merge, so pull requests leave it alone. The CLI, the MCP server and the UI run\n\
          these same commands ([ADR 0002](decisions/0002-commands.md), [`mcp.md`](mcp.md)).\n\n\
-         | Command | Kind | What it does | Parameters |\n\
+         | Command | Runs on, does | What it does | Parameters |\n\
          |---|---|---|---|\n",
     );
     let rows =

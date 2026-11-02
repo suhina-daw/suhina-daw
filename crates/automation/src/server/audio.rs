@@ -78,7 +78,7 @@ pub(super) fn play_active(projects: &mut Projects, id: &str, output: bool) -> Op
     if !output {
         return None;
     }
-    if !project_commands().iter().any(|c| c.id == id && c.kind == CommandKind::Projects) {
+    if !project_commands().iter().any(|c| c.id == id && c.kind.target == suhina_session::Target::Projects) {
         return None;
     }
     let active = projects.active()?;

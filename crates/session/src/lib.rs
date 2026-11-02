@@ -88,7 +88,7 @@ pub use audio::{AudioSystem, InputChoice, LiveOutput, OutputChoice, OutputInfo, 
 pub use automation_range::{SHAPES as AUTOMATION_SHAPES, shape_points as automation_shape};
 pub use blank::{blank_project, blank_project_with};
 pub use commands::{
-    After, Agents, CommandKind, CommandSpec, Param, ParamType, PathKind, Policy, Recent, Run, commands,
+    After, Agents, CommandKind, CommandSpec, Effect, Param, ParamType, PathKind, Policy, Recent, Run, Target, commands,
     parse_quantization,
 };
 pub use export::{ExportData, ExportGather, export_from};

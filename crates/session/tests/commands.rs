@@ -249,7 +249,7 @@ fn bad_parameters_never_change_the_project() {
         json!({ "track": "Bass", "bpm": 1e308, "db": f64::MAX, "pan": -2, "mute": 1, "index": -1, "start": f64::MAX }),
         json!({ "track": [1], "index": u64::MAX }),
     ];
-    for spec in commands().iter().filter(|c| c.kind == CommandKind::Edit) {
+    for spec in commands().iter().filter(|c| c.kind == CommandKind::EDIT) {
         for params in &hostile {
             // Keep only this command's own keys, so the values themselves are what gets tested.
             let params = match params.as_object() {

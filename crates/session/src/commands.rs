@@ -40,33 +40,63 @@ mod transport;
 
 pub(crate) use args::Args;
 
+/// What a command runs on (#764 › 12): one project's session, or something of Suhina's that
+/// every open project shares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandKind {
-    /// Reads the project; never changes it.
+pub enum Target {
+    /// One open project: its session, its undo history, its player.
+    Project,
+    /// The open projects, like tabs: opening, switching, closing. Runs on [`crate::Projects`].
+    Projects,
+    /// The plug-ins installed and where scans look (ADR 0006). Runs on [`crate::Projects`].
+    Plugins,
+    /// One of the project's running plug-ins: its editor, a restart.
+    Plugin,
+    /// The browser's library and the sample map (ADR 0012, ADR 0013). Runs on [`crate::Projects`].
+    Library,
+    /// The audio output and the MIDI inputs (ADR 0017). Runs on [`crate::Projects`].
+    Audio,
+}
+
+/// What a command does to what it runs on (#764 › 12).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Effect {
+    /// Reads; changes nothing.
     Read,
     /// Changes the project and records one undo step.
     Edit,
     /// Moves through the undo history.
     History,
-    /// Controls playback in the attached audio engine (transport, clip launching); never
-    /// changes the project or its undo history.
+    /// Controls playback in the attached audio engine (transport, clip launching); never changes
+    /// the project or its undo history.
     Transport,
-    /// Opens, switches or closes whole projects (the open projects, like tabs); never changes a
-    /// project or its undo history. Runs on [`crate::Projects`], not on one session.
-    Projects,
-    /// Scans for plug-ins or changes where scans look (ADR 0006); belongs to Suhina, not to
-    /// one project. Runs on [`crate::Projects`].
-    Plugins,
-    /// Acts on one of the project's running plug-ins (opens or closes its editor, restarts
-    /// it); never changes the project or its undo history.
-    Plugin,
-    /// The browser's library: folders, search, pins, recent items, tags (ADR 0012); belongs
-    /// to Suhina, not to one project. Runs on [`crate::Projects`].
-    Library,
-    /// Lists or chooses the audio output (host, device, sample rate, buffer size) or the MIDI
-    /// inputs, or reports on them; belongs to Suhina, not to one project. Runs on
-    /// [`crate::Projects`].
-    Audio,
+    /// Changes something outside a project's undo history: the open projects, the library, the
+    /// plug-in folders, the audio device, a running plug-in.
+    Change,
+}
+
+/// What a command runs on and what it does to it: two axes, where they were one list of kinds
+/// (#764 › 12).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandKind {
+    pub target: Target,
+    pub effect: Effect,
+}
+
+impl CommandKind {
+    /// Reads the project; never changes it.
+    pub const READ: Self = Self::on(Target::Project, Effect::Read);
+    /// Changes the project and records one undo step.
+    pub const EDIT: Self = Self::on(Target::Project, Effect::Edit);
+    /// Moves through the project's undo history.
+    pub const HISTORY: Self = Self::on(Target::Project, Effect::History);
+    /// Controls the project's playback.
+    pub const TRANSPORT: Self = Self::on(Target::Project, Effect::Transport);
+
+    /// A command on `target` with `effect`.
+    pub const fn on(target: Target, effect: Effect) -> Self {
+        Self { target, effect }
+    }
 }
 
 impl ParamType {
@@ -160,13 +190,10 @@ impl ParamType {
     }
 }
 
-impl CommandKind {
+impl Target {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Read => "read",
-            Self::Edit => "edit",
-            Self::History => "history",
-            Self::Transport => "transport",
+            Self::Project => "project",
             Self::Projects => "projects",
             Self::Plugins => "plugins",
             Self::Plugin => "plugin",
@@ -176,7 +203,19 @@ impl CommandKind {
     }
 }
 
-/// How a command runs: on one session, or (for [`CommandKind::Projects`]) on the open projects.
+impl Effect {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Edit => "edit",
+            Self::History => "history",
+            Self::Transport => "transport",
+            Self::Change => "change",
+        }
+    }
+}
+
+/// How a command runs: on one session, or (for a [`Target`] other than a project) on the open projects.
 pub type Run<T> = fn(&mut T, &Value) -> Result<Value, CommandError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -563,12 +602,21 @@ impl<T> CommandSpec<T> {
             })
             .collect();
         let params = if params.is_empty() { "none".to_string() } else { params.join("; ") };
-        format!("| `{}` | {} | {} | {params} |", self.id, self.kind.name(), cell(self.label))
+        format!(
+            "| `{}` | {} {} | {} | {params} |",
+            self.id,
+            self.kind.target.name(),
+            self.kind.effect.name(),
+            cell(self.label)
+        )
     }
 
     /// The command as `command.list` and the MCP server's `command_list` show it.
     pub fn describe(&self) -> Value {
-        json!({ "id": self.id, "label": self.label, "kind": self.kind.name(), "params": self.input_schema() })
+        json!({
+            "id": self.id, "label": self.label, "target": self.kind.target.name(),
+            "effect": self.kind.effect.name(), "params": self.input_schema(),
+        })
     }
 }
 
@@ -636,7 +684,10 @@ fn list(_: &mut Session, _: &Value) -> Result<Value, CommandError> {
         commands()
             .iter()
             .map(|c| {
-                json!({ "id": c.id, "label": c.label, "params": c.input_schema()["properties"], "kind": c.kind.name() })
+                json!({
+                    "id": c.id, "label": c.label, "params": c.input_schema()["properties"],
+                    "target": c.kind.target.name(), "effect": c.kind.effect.name(),
+                })
             })
             .collect(),
     ))

@@ -2534,7 +2534,7 @@ impl App {
                 let changes_project = suhina_session::commands()
                     .iter()
                     .find(|c| c.id == action.id)
-                    .is_some_and(|c| matches!(c.kind, CommandKind::Edit | CommandKind::History));
+                    .is_some_and(|c| matches!(c.kind, CommandKind::EDIT | CommandKind::HISTORY));
                 // Arming changes no project, but the track headers show it.
                 if changes_project || action.id == "track.setArm" {
                     self.revision += 1;
