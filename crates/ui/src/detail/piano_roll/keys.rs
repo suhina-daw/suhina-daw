@@ -383,7 +383,11 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
     let font = theme::mono_font(theme::TEXT_TINY);
     let first = layout.key_at(layout.grid.bottom() - 0.5).unwrap_or(0);
     let last = layout.key_at(layout.grid.top() + 0.5).unwrap_or(127);
-    let pointer = state.hover_key();
+    // A drag here names the row it holds, the pointer being hidden.
+    let pointer = match state.strip_drag {
+        Some(drag) => layout.key_at(layout.grid.top() - layout.scroll.y + drag.row * layout.key_height),
+        None => state.hover_key(),
+    };
     for key in (first..=last).filter(|k| k.is_multiple_of(12) && layout.rows.shows(*k) && pointer != Some(*k)) {
         let centre = Pos2::new(strip.center().x, layout.y_of(key) + layout.key_height / 2.0);
         painter.text(centre, Align2::CENTER_CENTER, key_name(key), font.clone(), text);
@@ -401,32 +405,42 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
     }
 }
 
+/// A drag in the scale strip in progress: where the press was, how far the drag has gone since, the
+/// row height then and the row at the press.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct StripDrag {
+    from: Pos2,
+    moved: Vec2,
+    height: f32,
+    pub(super) row: f32,
+}
+
 /// A drag in the scale strip: sideways it makes the rows taller (right) or lower (left), and up or
-/// down it scrolls them, the row where the drag began staying under the pointer. The ruler does the
-/// same the other way round.
+/// down it scrolls them, the row where the drag began staying where the pointer would be. The pointer
+/// hides as on a value control, and comes back where it was pressed. The ruler does the same the
+/// other way round.
 pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRollState) {
     if strip.width() < 1.0 || strip.height() < 1.0 {
         return;
     }
     let response = ui.interact(strip, Id::new("piano-roll-scale-strip"), Sense::drag());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Row height strip"));
-    if response.hovered() || response.dragged() {
+    if response.hovered() && !response.dragged() {
         state.magnifier = true;
     }
     if response.drag_started() {
         let from = ui.input(|i| i.pointer.press_origin()).unwrap_or(strip.center());
         let row = (from.y - grid.top() + state.scroll.y) / state.key_height;
-        state.strip_drag = Some((from.x, state.key_height, row));
+        state.strip_drag = Some(StripDrag { from, moved: Vec2::ZERO, height: state.key_height, row });
     }
-    match (state.strip_drag, response.interact_pointer_pos()) {
-        (Some((from, height, row)), Some(now)) if response.dragged() => {
-            let wanted = height * ((now.x - from) * STRIP_ZOOM_PER_POINT).exp();
-            state.key_height = wanted.clamp(KEY_HEIGHT_RANGE.0, KEY_HEIGHT_RANGE.1);
-            state.scroll.y = row * state.key_height - (now.y - grid.top());
-            state.scrolled_by_hand = true;
-        }
-        _ if !response.dragged() => state.strip_drag = None,
-        _ => {}
+    if !response.dragged() {
+        state.strip_drag = None;
+    } else if let Some(drag) = &mut state.strip_drag {
+        drag.moved += widgets::value_drag_delta(ui, &response);
+        let wanted = drag.height * (drag.moved.x * STRIP_ZOOM_PER_POINT).exp();
+        state.key_height = wanted.clamp(KEY_HEIGHT_RANGE.0, KEY_HEIGHT_RANGE.1);
+        state.scroll.y = drag.row * state.key_height - (drag.from.y + drag.moved.y - grid.top());
+        state.scrolled_by_hand = true;
     }
 }
 
@@ -595,8 +609,11 @@ impl PianoRollState {
     /// the same notes as the indices close up.
     pub fn notes_replaced(&mut self, replaced: &[usize]) {
         let moved = |index: usize| index - replaced.partition_point(|r| *r < index);
-        self.selected =
-            self.selected.iter().filter(|i| replaced.binary_search(i).is_err()).map(|i| moved(*i)).collect();
+        let remap = |set: &BTreeSet<usize>| -> BTreeSet<usize> {
+            set.iter().filter(|i| replaced.binary_search(i).is_err()).map(|i| moved(*i)).collect()
+        };
+        self.selected = remap(&self.selected);
+        self.span_notes_replaced(remap);
         self.click_added = self.click_added.map(moved);
     }
 }

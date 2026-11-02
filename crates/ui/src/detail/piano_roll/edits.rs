@@ -48,7 +48,12 @@ pub(super) fn single_click(
         (None, Tool::Draw | Tool::Paint) => click_adds(gesture, state, actions, pos, inputs),
         (None, Tool::Select) if workflow.empty_click_draws => click_adds(gesture, state, actions, pos, inputs),
         (None, Tool::Slice) => {}
-        (None, Tool::Select) => state.selected.clear(),
+        // A click on an empty spot leaves the mark a paste goes to.
+        (None, Tool::Select) => {
+            state.selected.clear();
+            state.clear_span();
+            state.insert_at = Some(gesture.grid.place(gesture.layout.beat_at(pos.x), inputs.alt, true));
+        }
     }
 }
 
@@ -209,6 +214,9 @@ pub(super) fn commit(
         (Gesture::Move { copy, .. }, Effect::Move(beats, keys)) if !notes.is_empty() && (beats != 0.0 || keys != 0) => {
             let moved: Vec<Note> = notes.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
             state.audition_moved(&moved, keys);
+            if !*copy {
+                state.span_moved(beats);
+            }
             params["beats"] = json!(round_beat(beats));
             params["semitones"] = json!(keys);
             if *copy {
@@ -321,6 +329,11 @@ pub(super) fn commit(
                 }
             }
             state.swept.clear();
+            // It reached no note: what it covered is selected in time.
+            if state.selected.is_empty() {
+                let (start, end) = swept_span(note_grid(clip, layout.beat_width), layout, rect);
+                state.select_span(start, end);
+            }
         }
         _ => {}
     }

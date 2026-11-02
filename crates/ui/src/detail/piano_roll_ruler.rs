@@ -12,10 +12,10 @@ use crate::kit::surface::Backgrounds as _;
 use egui::{Color32, CursorIcon, Id, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
 
-use crate::detail::piano_roll::{PianoClip, PianoRollState, note_grid};
+use crate::detail::piano_roll::{BEAT_WIDTH_RANGE, PianoClip, PianoRollState, note_grid};
 use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme;
-use crate::kit::widgets::Action;
+use crate::kit::widgets::{self, Action};
 
 /// Height of the loop row at the top of the ruler, of the bar in it, and how far from a handle or
 /// a marker a press still grabs it, in points.
@@ -30,8 +30,6 @@ const MIN_LENGTH: f64 = 0.01;
 const BEAT_LIMIT: f64 = 120_000.0;
 /// How much a point of vertical drag on the ruler zooms time: down zooms in.
 const ZOOM_PER_POINT: f32 = 0.01;
-/// The range of points per beat, as the wheel zooms it.
-const BEAT_WIDTH_RANGE: (f32, f32) = (4.0, 400.0);
 const EPSILON: f64 = 1e-9;
 
 /// A clip's start marker, length and loop, as the ruler shows and changes them.
@@ -105,8 +103,9 @@ impl Part {
 enum Drag {
     /// A handle, the bar or a marker: the content beat the press was at, and where it is now.
     Part { part: Part, from: f64, now: f64 },
-    /// Zooming (up and down) and scrolling (sideways) time.
-    Zoom,
+    /// Zooming (up and down) and scrolling (sideways) time, with the pointer hidden: `x` is where it
+    /// would be by now.
+    Zoom { x: f32 },
 }
 
 /// What the ruler keeps between frames.
@@ -284,7 +283,7 @@ pub fn interact(
         let cursor = match state.ruler.drag {
             Some(Drag::Part { part: Part::Loop, .. }) => Some(CursorIcon::Grabbing),
             Some(Drag::Part { .. }) => Some(CursorIcon::ResizeHorizontal),
-            Some(Drag::Zoom) => None,
+            Some(Drag::Zoom { .. }) => None,
             None => match part_at(&shape, &axis(state), ruler, pos) {
                 Some(Part::Loop) => Some(CursorIcon::Grab),
                 Some(_) => Some(CursorIcon::ResizeHorizontal),
@@ -300,17 +299,13 @@ pub fn interact(
         }
     }
 
-    if matches!(state.ruler.drag, Some(Drag::Zoom)) {
-        state.magnifier = true;
-    }
-
     if response.drag_started_by(PointerButton::Primary)
         && let Some(origin) = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos())
     {
         let at = axis(state).beat_at(origin.x);
         state.ruler.drag = Some(match part_at(&shape, &axis(state), ruler, origin) {
             Some(part) => Drag::Part { part, from: at, now: at },
-            None => Drag::Zoom,
+            None => Drag::Zoom { x: origin.x },
         });
     }
     let pointer = ui.input(|i| i.pointer.latest_pos()).or(response.interact_pointer_pos());
@@ -321,14 +316,17 @@ pub fn interact(
             Some(Drag::Part { part, from, .. }) => {
                 state.ruler.drag = Some(Drag::Part { part, from, now: axis(state).beat_at(pos.x) });
             }
-            Some(Drag::Zoom) => {
-                let delta = ui.input(|i| i.pointer.delta());
-                // The beat that was under the pointer stays under it: sideways it follows the
-                // pointer (a scroll), and up and down the time around it grows or shrinks.
-                let beat = axis(state).beat_at(pos.x - delta.x);
+            Some(Drag::Zoom { x }) => {
+                // The pointer hides as on a value control, and comes back where it was pressed.
+                let delta = widgets::value_drag_delta(ui, &response);
+                // The beat that was under the pointer stays where it would be: sideways it follows
+                // the drag (a scroll), and up and down the time around it grows or shrinks.
+                let beat = axis(state).beat_at(x);
+                let x = x + delta.x;
                 state.beat_width =
                     (state.beat_width * (delta.y * ZOOM_PER_POINT).exp()).clamp(BEAT_WIDTH_RANGE.0, BEAT_WIDTH_RANGE.1);
-                state.scroll.x = (beat as f32 * state.beat_width - (pos.x - left)).max(0.0);
+                state.scroll.x = (beat as f32 * state.beat_width - (x - left)).max(0.0);
+                state.ruler.drag = Some(Drag::Zoom { x });
             }
             None => {}
         }

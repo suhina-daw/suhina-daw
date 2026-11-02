@@ -491,7 +491,7 @@ impl App {
         if let (detail_view::Detail::Clip(info, _), Some(piano), Some(session)) = (&mut shown, &piano, self.session()) {
             info.selection = detail_view::SelectionInfo::of(
                 &piano.notes,
-                &self.piano_roll.selected,
+                self.piano_roll.acting(),
                 detail_view::bar_beats(session.project()),
             );
         }
@@ -595,7 +595,7 @@ impl App {
                 // detail area stacked there is no room beside the notes, so it is not drawn there
                 // (the quantise settings and Ctrl+U still work: › Other note tools).
                 if piano_roll.tools_open && !stacked {
-                    let selected = piano_roll.selected.clone();
+                    let selected = piano_roll.acting().clone();
                     let tools = crate::detail::midi_tools::Tools {
                         address: &piano.address,
                         notes: &piano.notes,

@@ -173,7 +173,8 @@ pub(super) fn round_beat(beat: f64) -> f64 {
 /// than five key rows of `key_height` are left, and left out when that leaves it under 12 px
 /// (› Layout in `docs/spec/ui-clip-editor.md`).
 pub(super) fn velocity_lane_height(room: f32, key_height: f32, wanted: Option<f32>) -> f32 {
-    let most = room - LEAST_KEY_ROWS * key_height;
+    // At most the default row's height: tall rows are a zoom, and the lane stays through it.
+    let most = room - LEAST_KEY_ROWS * key_height.min(DEFAULT_KEY_HEIGHT);
     let lane = wanted.unwrap_or(VELOCITY_LANE.min(room * 0.3)).min(most);
     if lane.is_finite() && lane >= LEAST_LANE { lane } else { 0.0 }
 }

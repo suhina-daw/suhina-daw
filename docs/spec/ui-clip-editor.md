@@ -387,7 +387,8 @@ pull up.
   once the button is up and the wheel has stopped.
   The toolbar's highlight moves to the new tool at once and the pointer takes the new tool's
   cursor. Letting the right button go opens no menu, adds no note and changes no selection.
-- **Built:** key rows are 6 to 32 px tall (default 12 px); time is 4 to 400 px per beat.
+- **Built:** key rows are 6 to 160 px tall (default 12 px); time is 4 to 1600 px per beat. The velocity
+  lane stays through a zoom: it gives way only to rows of the default height or lower.
 - **Built ([#353](https://github.com/suhina-daw/suhina-daw/issues/353)):** dragging up and down
   on the ruler (away from its handles and markers) zooms time around the pointer, down zooming in
   and up zooming out, and dragging sideways scrolls time with the pointer; the beat under the
@@ -413,7 +414,9 @@ pull up.
   Suhina closes and the same for every clip: not a command, not saved, not an undo step.
 - **Built:** a drag in the scale strip left of the keys changes the row height sideways (to the right,
   taller) and scrolls the rows up and down, the row where it began staying under the pointer: the
-  ruler's drag the other way round (› Key column and scale strip).
+  ruler's drag the other way round (› Key column and scale strip). During both drags the pointer is
+  hidden, as on a value control, and comes back where it was pressed; the strip names the row the
+  drag holds.
 
 ## Drawing notes
 
@@ -557,15 +560,23 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 ## Selecting
 
 - **Built:** a click on a note selects it alone; **Shift**+click (or Ctrl+click) adds it to the
-  selection or takes it out. A click on an empty spot of the grid clears the selection. Dragging
-  from an empty spot draws a rectangle; when it is let go, the notes it touches are selected
-  (with Shift, added to the selection).
+  selection or takes it out. A click on an empty spot of the grid clears the selection and leaves an
+  **insert mark** there, on the grid line before the pointer (Alt: where it is): a line down the rows
+  with a flag on the ruler, where a paste goes. Dragging from an empty spot draws a rectangle; when
+  it is let go, the notes it touches are selected (with Shift, added to the selection).
+- **Built:** a rectangle let go having reached no note selects **in time**: the stretch from the grid
+  line before its left edge to the one after its right edge, on every row, shown as a tint with an
+  edge at each end. With nothing selected, the edit keys and the toolbar's buttons act on the notes
+  that start in it. A press anywhere that selects something else, Escape or another clip ends it.
+- **Built:** a bar along the ruler's lower edge shows what is selected in time: what a rectangle covers
+  while it is drawn, the time selection, or from the selected notes' earliest start to their latest
+  end.
 - **Built:** the selection lives in the window only; it is not part of the project and is not an
   undo step. It is cleared when another clip is shown.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344)):** while the piano roll has
   the keyboard (after a click in it), **Ctrl+A** selects every note of the clip and **Escape** clears
   the selection. Elsewhere Escape keeps its other uses.
-- **Later:** a click on the ruler selects a time range, and every note starting in it; a lasso.
+- **Later:** a click on the ruler selects a time range; a lasso.
   A press or a drag on the key column, which selects the notes of a key or a range of keys, is
   built (› Playing the keys).
 
@@ -678,13 +689,18 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   system clipboard holds text, so copying or cutting notes or a clip in Suhina also puts a short
   line ("Suhina: notes copied") on the system clipboard.
 - The toolbar's Cut, Copy, Paste and Duplicate icon buttons (› Layout) run these same commands on
-  the selected notes, greyed out when there are none; Ctrl+X and Ctrl+C keep working whichever
+  the selected notes or a time selection's, greyed out when there are none; Ctrl+X and Ctrl+C keep working whichever
   preset is chosen.
 - Copied notes keep their spacing, their keys, lengths and velocities. Paste puts the first of them
-  right after the end of the selected notes; with none selected, at the playhead when it is inside
-  the clip (a looping clip maps it into its loop); else right after where they were copied from.
-  Duplicate puts the copy right after the selection's end (the selection spans from its earliest
-  start to its latest end). Pasted and duplicated notes are selected; the notes they land on stay.
+  right after the end of the selected notes; with none selected, at the insert mark, or else at the
+  playhead when it is inside the clip (a looping clip maps it into its loop); else right after where
+  they were copied from. Duplicate puts the copy right after the selection's end (the selection spans
+  from its earliest start to its latest end). Pasted and duplicated notes are selected; the notes they
+  land on stay, or go when notes do not stack.
+- With a time selection, Duplicate and Paste put the notes that start in it one stretch on, as far in
+  as they were, and the time selection goes on to that stretch with the copies selected, so the keys
+  run again carry on after them. With no note in the stretch, Duplicate does nothing. **Ctrl+Z** on
+  such a copy, or on a copy of selected notes, brings back what was selected before it.
 - The note clipboard belongs to the open project's session, apart from the clip clipboard; notes
   copied in one MIDI clip paste into any other. It is not saved with the project.
 

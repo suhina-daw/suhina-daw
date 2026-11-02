@@ -903,3 +903,37 @@ fn an_edit_key_with_no_notes_selected_stays_in_the_piano_roll() {
     assert!(h.query_by_label_contains("Piano roll,").is_some(), "the clip is still there");
     assert!(h.state().piano_roll().focused, "and the keyboard is still the piano roll's");
 }
+
+/// A rectangle over no note selects in time: nothing is selected and the bar says what is; a rectangle
+/// over a note selects the note, and the bar its extent. A click leaves the insert mark.
+#[test]
+fn a_rectangle_over_no_note_selects_in_time_and_a_click_leaves_a_mark() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let grid = h.get_by_label_contains("Piano roll,").rect();
+    let first = notes(&h)[0];
+    let row = note_rect(&h, &first);
+    // Rows clear of every note: the top of the grid, if the clip's notes sit below it.
+    let top = grid.top() + 2.0;
+    assert!(notes(&h).iter().all(|n| note_rect(&h, n).top() > top + 4.0), "the fixture's notes are lower");
+    drag_keys(&mut h, egui::pos2(row.left() + 1.0, top), egui::pos2(row.right() + 1.0, top + 2.0), Modifiers::NONE);
+    assert!(h.state().piano_roll().selected.is_empty());
+    assert!(h.query_by_label_contains("Selected in time").is_some());
+
+    let spot = egui::pos2(row.right() + 40.0, top);
+    drag_keys(&mut h, spot, spot, Modifiers::NONE);
+    assert!(h.query_by_label_contains("Selected in time").is_none());
+    assert!(h.query_by_label_contains("Insert mark at beat").is_some());
+}
+
+/// Rows and time zoom far closer than the default, and the velocity lane stays.
+#[test]
+fn the_rows_zoom_in_a_long_way() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let strip = h.get_by_label("Row height strip").rect();
+    let at = strip.center();
+    drag_keys(&mut h, at, at + egui::vec2(300.0, 0.0), Modifiers::NONE);
+    let height = h.state().piano_roll().key_height;
+    assert!(height > 100.0, "{height}");
+}

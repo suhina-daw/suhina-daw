@@ -36,6 +36,7 @@ mod drawing;
 mod edits;
 mod keys;
 mod layout;
+mod span;
 mod state;
 mod toolbar;
 pub(crate) use toolbar::{grid_entries, grid_key_labels, menu_arrow};
@@ -48,6 +49,7 @@ use self::edits::*;
 pub use self::keys::ViewPick;
 use self::keys::*;
 pub use self::layout::*;
+use self::span::*;
 pub use self::state::*;
 pub use self::toolbar::IconButton;
 pub(crate) use self::toolbar::*;
@@ -74,8 +76,8 @@ const TOOL_ICON: f32 = 14.0;
 const TOOL_GAP: f32 = 3.0;
 /// Key row heights and points per beat: the default and the zoom ranges.
 const DEFAULT_KEY_HEIGHT: f32 = 12.0;
-const KEY_HEIGHT_RANGE: (f32, f32) = (6.0, 32.0);
-const BEAT_WIDTH_RANGE: (f32, f32) = (4.0, 400.0);
+const KEY_HEIGHT_RANGE: (f32, f32) = (6.0, 160.0);
+pub(crate) const BEAT_WIDTH_RANGE: (f32, f32) = (4.0, 1600.0);
 /// How much one point of Alt and the wheel scales key rows.
 const KEY_ZOOM_PER_POINT: f32 = 0.004;
 /// Grid lines closer than this, in points, are thinned out.
@@ -196,13 +198,14 @@ pub fn show(
         state.gesture = None;
         state.playing_key = None;
         state.key_live = None;
+        state.clear_span();
         // The scroll reach a zoom gave the last clip is not this one's.
         state.zoom_reach = 0.0;
     }
     // Keys run before the piano roll is drawn, and their commands after it: notes a paste or a
     // duplicate selected this frame exist from the next frame on.
     if !std::mem::take(&mut state.selecting_new) {
-        state.selected.retain(|i| *i < clip.notes.len());
+        state.settle_selection(&clip.notes);
     }
     // The toolbar along the top; the editor under it. The toolbar's height follows Settings ›
     // Clip editor › Piano roll › Toolbar size, and never takes more than the room the editor has.
@@ -450,7 +453,10 @@ pub fn show(
                     Part::Body => Gesture::Move { from, grabbed, copy: inputs.command },
                 }
             }
-            (None, Tool::Select) => Gesture::Select { from, add: inputs.shift || inputs.command },
+            (None, Tool::Select) => {
+                state.clear_span();
+                Gesture::Select { from, add: inputs.shift || inputs.command }
+            }
         });
     }
 
@@ -555,6 +561,10 @@ pub fn show(
     if ui.input(|i| i.pointer.button_released(PointerButton::Secondary)) && std::mem::take(&mut state.right_playing) {
         actions.push(Action::new("transport.stop", json!({})));
     }
+    let selecting = match &preview {
+        Some(Effect::Select(rect)) if dragging => Some(*rect),
+        _ => None,
+    };
     let velocity_label = match (&state.gesture, &preview) {
         (Some(Gesture::NoteVelocity { grabbed, .. }), Some(Effect::Velocity(by))) => Some((*grabbed, *by)),
         _ => None,
@@ -585,6 +595,7 @@ pub fn show(
     }
     let axis = ruler_view::Axis { origin: grid_rect.left() - state.scroll.x, beat_width: state.beat_width };
     ruler_view::draw(ui, ruler, &axis, &shape);
+    draw_span_bar(ui, &layout, clip, state, selecting);
     // The eraser under the pointer: the windowing layer has no eraser cursor, so the pointer is
     // hidden and the Erase button's shape is drawn where it is.
     if let Some(pos) = eraser {

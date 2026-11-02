@@ -122,6 +122,13 @@ pub struct PianoRollState {
     pub key_height: f32,
     /// Indices of the selected notes.
     pub selected: BTreeSet<usize>,
+    /// What is selected in time, the notes that start in it, and what the copies in a row left
+    /// behind, for an undo to come back to (› Selecting).
+    pub(super) span: Option<TimeSpan>,
+    pub(super) span_notes: BTreeSet<usize>,
+    pub(super) span_undo: Vec<SpanStep>,
+    /// Where a click on an empty spot left the insert mark: where a paste goes, in beats.
+    pub(super) insert_at: Option<f64>,
     /// The last press was in the piano roll, so Delete deletes notes there.
     pub focused: bool,
     /// A key this frame selected notes its command is still to add (paste, duplicate): they
@@ -153,9 +160,8 @@ pub struct PianoRollState {
     /// drag began.
     pub(super) key_live: Option<(u8, u8)>,
     pub(super) key_base: BTreeSet<usize>,
-    /// A drag in the scale strip: how far right it began, the row height then and the row at the
-    /// press.
-    pub(super) strip_drag: Option<(f32, f32, f32)>,
+    /// A drag in the scale strip.
+    pub(super) strip_drag: Option<StripDrag>,
     /// The pointer is where a drag zooms (the strip, the ruler) this frame.
     pub(crate) magnifier: bool,
     /// The length (0: one grid step) and velocity a new note takes: those of the note last
@@ -232,6 +238,10 @@ impl Default for PianoRollState {
             zoom_reach: 0.0,
             key_height: DEFAULT_KEY_HEIGHT,
             selected: BTreeSet::new(),
+            span: None,
+            span_notes: BTreeSet::new(),
+            span_undo: Vec::new(),
+            insert_at: None,
             focused: false,
             selecting_new: false,
             gesture: None,
@@ -293,10 +303,10 @@ impl PianoRollState {
         copied: Option<usize>,
     ) -> Option<Action> {
         let action = match button {
-            IconButton::Cut if !self.selected.is_empty() => "selection.cut",
-            IconButton::Copy if !self.selected.is_empty() => "selection.copy",
+            IconButton::Cut if !self.acting().is_empty() => "selection.cut",
+            IconButton::Copy if !self.acting().is_empty() => "selection.copy",
             IconButton::Paste if copied.is_some_and(|n| n > 0) => "selection.paste",
-            IconButton::Duplicate if !self.selected.is_empty() => "selection.duplicate",
+            IconButton::Duplicate if !self.acting().is_empty() => "selection.duplicate",
             _ => return None,
         };
         // What the keys run: the same command with the same params.
@@ -306,12 +316,13 @@ impl PianoRollState {
     /// `note.delete` for the selected notes, when the piano roll has the keyboard and notes are
     /// selected; the selection is then cleared.
     pub fn delete_selected(&mut self) -> Option<Action> {
-        if !self.focused || self.selected.is_empty() {
+        if !self.focused || self.acting().is_empty() {
             return None;
         }
         let mut params = self.shown.clone()?;
-        params["notes"] = json!(self.selected.iter().collect::<Vec<_>>());
+        params["notes"] = json!(self.acting().iter().collect::<Vec<_>>());
         self.selected.clear();
+        self.span_notes.clear();
         Some(Action::new("note.delete", params))
     }
 
@@ -319,8 +330,8 @@ impl PianoRollState {
     /// last settings; `None` when no clip is shown.
     pub fn quantize_selected(&self) -> Option<Action> {
         let mut params = self.shown.clone()?;
-        if !self.selected.is_empty() {
-            params["notes"] = json!(self.selected.iter().collect::<Vec<_>>());
+        if !self.acting().is_empty() {
+            params["notes"] = json!(self.acting().iter().collect::<Vec<_>>());
         }
         params["grid"] = json!(self.quantize.grid);
         params["amount"] = json!(self.quantize.amount);
@@ -343,21 +354,29 @@ impl PianoRollState {
         if !self.focused || self.shown.as_ref() != Some(&clip.address) {
             return None;
         }
-        self.selected.retain(|i| *i < clip.notes.len());
-        let chosen: Vec<Note> = self.selected.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
+        if !self.selecting_new {
+            self.settle_selection(&clip.notes);
+        }
+        let acting = self.acting().clone();
+        let chosen: Vec<Note> = acting.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
         let count = clip.notes.len();
         let mut params = clip.address.clone();
         if action == "selection.paste" {
-            // After the selection, or at the playhead when it is inside the clip; else where the
-            // command puts it (right after the copied notes).
+            // In the stretch after a time selection, as far in as the first note was; after the
+            // selection; at the insert mark; at the playhead when it is inside the clip; else where
+            // the command puts it (right after the copied notes).
             let copied = copied?;
+            let first = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
             let end = chosen.iter().map(|n| n.time + n.duration).fold(f64::NEG_INFINITY, f64::max);
-            let time = if end.is_finite() { Some(end) } else { clip.placement.content_beat(playhead) };
+            let time = match &self.span {
+                Some(span) => Some(span.end + if first.is_finite() { first - span.start } else { 0.0 }),
+                None if end.is_finite() => Some(end),
+                None => self.insert_at.or_else(|| clip.placement.content_beat(playhead)),
+            };
             if let Some(time) = time {
                 params["time"] = json!(round_beat(time));
             }
-            self.selected = (count..count.saturating_add(copied)).collect();
-            self.selecting_new = true;
+            self.select_copies((count..count.saturating_add(copied)).collect());
             self.replacing(&mut params);
             return Some(Action::new("note.paste", params));
         }
@@ -368,6 +387,7 @@ impl PianoRollState {
             }
             "pianoRoll.deselect" => {
                 self.selected.clear();
+                self.clear_span();
                 return None;
             }
             "pianoRoll.draw" => {
@@ -406,7 +426,7 @@ impl PianoRollState {
             _ if chosen.is_empty() => return None,
             _ => {}
         }
-        params["notes"] = json!(self.selected.iter().collect::<Vec<_>>());
+        params["notes"] = json!(acting.iter().collect::<Vec<_>>());
         let grid = note_grid(clip, self.beat_width);
         let moves = |beats: f64, keys: i32| {
             let (beats, moved) = move_delta(beats, keys, &chosen, grid, false);
@@ -417,11 +437,16 @@ impl PianoRollState {
             "selection.copy" => return Some(Action::new("note.copy", params)),
             "selection.cut" => {
                 self.selected.clear();
+                self.span_notes.clear();
                 return Some(Action::new("note.cut", params));
             }
             "selection.duplicate" => {
-                self.selected = (count..count.saturating_add(chosen.len())).collect();
-                self.selecting_new = true;
+                // A time selection's copies go by its length, so its spacing to the next one stays;
+                // the selected notes' go right after them, the command's own place.
+                if let Some(span) = &self.span {
+                    params["beats"] = json!(round_beat(span.end - span.start));
+                }
+                self.select_copies((count..count.saturating_add(chosen.len())).collect());
                 self.replacing(&mut params);
                 return Some(Action::new("note.duplicate", params));
             }
@@ -429,7 +454,7 @@ impl PianoRollState {
                 // To the next or the previous grid line, per note: one command, one undo step.
                 let mut named = Vec::new();
                 let mut lengths = Vec::new();
-                for &index in &self.selected {
+                for &index in &acting {
                     let Some(note) = clip.notes.get(index) else { continue };
                     let end = key_step_end(note, &clip.notes, grid, action == "pianoRoll.longer", self.notes_replace);
                     if (end - note.time - note.duration).abs() > EPSILON {
@@ -456,6 +481,7 @@ impl PianoRollState {
             return None;
         }
         self.audition_moved(&chosen, keys);
+        self.span_moved(beats);
         params["beats"] = json!(round_beat(beats));
         params["semitones"] = json!(keys);
         self.replacing(&mut params);
@@ -475,6 +501,7 @@ impl PianoRollState {
     pub fn hide(&mut self) {
         self.shown = None;
         self.selected.clear();
+        self.clear_span();
         self.gesture = None;
         self.focused = false;
         self.quantize_open = false;

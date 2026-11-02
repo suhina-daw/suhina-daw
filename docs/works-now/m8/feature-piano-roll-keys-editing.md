@@ -2,4 +2,6 @@
   keys you choose, select ranges by dragging (Shift adds another), and a strip beside them names the
   row under the pointer and zooms the rows. Notes replace what they land on unless stacked notes are
   allowed, Legato follows the next note on any key, Shift+arrow stops at the grid and the next note,
-  and the audition sounds notes from the press and at each pitch of a drag.
+  and the audition sounds notes from the press and at each pitch of a drag. A rectangle over no note
+  selects a stretch of time for the keys to act on, a bar on the ruler shows what is selected in time,
+  and a click leaves a mark where a paste goes.

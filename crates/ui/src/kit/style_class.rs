@@ -76,6 +76,8 @@ pub const CLASSES: &[&str] = &[
     "piano-scale-mark",
     "piano-scale-strip",
     "piano-range",
+    "piano-time-selection",
+    "piano-insert-mark",
     "piano-note",
     "velocity",
     "piano-tool",

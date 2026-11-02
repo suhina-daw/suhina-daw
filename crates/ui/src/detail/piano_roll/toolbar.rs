@@ -298,7 +298,7 @@ pub(super) fn toolbar(
         painter.vline(x.get(), row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
     }
     x.set(x.get() + 5.0);
-    let selected = !state.selected.is_empty();
+    let selected = !state.acting().is_empty();
     for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {
         let area = place();
         let active = matches!(button, IconButton::Paste) || selected;

@@ -323,6 +323,7 @@ pub(super) fn draw(
     }
     let outside =
         |note: &Note| note.time + note.duration <= played_start + EPSILON || note.time >= played_end - EPSILON;
+    draw_time_span(&grid_painter, layout, state);
     // Ghost notes of other clips, under the clip's own (› Ghost notes).
     ghost_view::paint(&grid_painter, &clip.ghosts, layout.grid, |g| layout.note_rect(&g.note()));
 
