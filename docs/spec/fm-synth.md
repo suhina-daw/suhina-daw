@@ -14,9 +14,6 @@ Suhina's `fm-synth` (`devices/fm-synth`). Why it grew in place:
 [ADR 0034](../decisions/0034-fm-synth-grows-in-place.md). The DX7 file format:
 [dx7-voice-format.md](dx7-voice-format.md).
 
-Status: this document describes the target of [#1139](https://github.com/suhina-daw/suhina-daw/issues/1139);
-the pull request that closes it builds all of it.
-
 ## Signal path
 
 Each note runs its operators through the algorithm, then its own filter and shaper, then its pan.
@@ -87,6 +84,13 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
 
 **A theme changes styles only:** palette, `--device-display`, `--device-series-*`,
 `--device-highlight`, `--device-spectrum` and fonts. Layout is fixed.
+
+The header's Close closes the expanded panel, and Undo is the app's own (Ctrl+Z).
+
+## Import
+
+Importing the instrument from a Live Set waits for sets authored to observe it
+([device-import.md](device-import.md)); until then it stays a placeholder.
 
 ## Randomizer
 

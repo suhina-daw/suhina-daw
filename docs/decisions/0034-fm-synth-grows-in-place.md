@@ -3,7 +3,7 @@ description: Why the FM synth grows in place from its DX7-style engine into a fu
 read_when: FM synth, fm-synth, full FM instrument, DX7 compatibility, two envelope models, time envelopes, FM waveforms, FM filter, FM panel, theme limits on a built-in panel, ported engine changes
 type: decision
 status: accepted
-built: no
+built: yes
 last_verified: 2026-11-02
 covers:
   - devices/fm-synth/**
@@ -51,7 +51,8 @@ rejected: two FM instruments would share most of their work and leave users choo
 
 - The parameter count grows by several hundred, most of them harmonics. Until parameters can be
   marked as not automatable (#669) they appear in automation choices.
-- The canvas limit of 128 controls is too small for per-operator controls, so a control binds through
-  the selected operator: one row of controls serves all six.
+- The canvas limit of 128 controls is too small for per-operator controls and partials. A `.sd` file
+  keeps that limit, as it comes from anywhere; a built-in's layout ships with Suhina and has a larger
+  one, and controls for other operators are hidden with `visible_when`.
 - Spread doubles the work of a voice while it is on; 32 voices with spread is the case to measure.
 - Sample-accurate modulation runs a separate kernel path, so the ported path stays untouched.

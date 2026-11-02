@@ -180,6 +180,10 @@ Omitted or null `viewport_size` preserves automatic sizing: row width is at leas
 width plus 12, row height fills the detail area; stacked width fills the column (normally 272),
 and height fits node rows, canvas and stock controls. Setting `size` does not scale artwork.
 
+A built-in device's layout ships with Suhina and may hold 2048 controls and 32768 drawing commands;
+a `.sd` file keeps the limits below. A button with the gesture `"randomize"` and no binding runs
+`device.randomize` on its device.
+
 Canvas size is 24..8192 logical pixels per axis. Up to 128 custom controls and 1024 total drawing
 commands are accepted. Each control has a unique id, accessible name, tooltip, bounds, drawings,
 a gesture and optional X/Y parameter bindings. Bounds stay inside the canvas. Drawing positions

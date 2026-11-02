@@ -266,8 +266,8 @@ CHAPTERS = [
      "One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key "
      "window that blocks, folds or limits notes; its step buttons are planned. SDK MIDI-effect "
      "graphs run before the instrument too. The other 7 documented MIDI effects are missing."),
-    (31, "Live Instrument Reference", 120, 0.12, "started",
-     "FM synth and single-source sample/granular instrument against 13 instruments; "
+    (31, "Live Instrument Reference", 120, 0.18, "started",
+     "FM synth with waveforms, time envelopes, filter, LFOs, matrix and spread (its import is planned) and single-source sample/granular instrument against 13 instruments; "
      "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades, editable automatic slice boundaries with persistent corrections, source-tempo grid/snap and stereo waveform navigation, and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; Simpler and a one-sample Sampler from a Live Set import as the sampler with their sample, region, tuning, envelope, filter and slicing; no multisample zones, "
      "drum sampler, wavetable, subtractive or physical modelling yet."),
     (32, "Max for Live", 6, 0.05, "planned",
