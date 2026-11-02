@@ -3,7 +3,7 @@
 
 //! [`History`]: a session's undo and redo, and what tells a change from an unsaved one.
 
-use suhina_model::{Project, TrackId};
+use suhina_model::Project;
 
 /// The steps a session can go back and forward through, and how they were made.
 #[derive(Default)]
@@ -13,9 +13,8 @@ pub(crate) struct History {
     pub(crate) saved_at: u64,
     pub(crate) undo: Vec<Project>,
     pub(crate) redo: Vec<Project>,
-    /// The command and track of the undo step on top that a call with `continue` may join: one
-    /// drag of a value is one step. Any other edit, undo or redo ends it.
-    pub(crate) open_step: Option<(&'static str, TrackId)>,
-    /// Parameter whose live drag has already recorded its single undo snapshot.
-    pub(crate) param_gesture: Option<String>,
+    /// The open gesture (#1146): the id a drag's caller picked, whose calls make the undo step
+    /// on top. `history.endGesture`, any other edit, a call with another gesture, undo and redo
+    /// end it.
+    pub(crate) gesture: Option<String>,
 }

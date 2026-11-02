@@ -255,20 +255,12 @@ const TRACK: Param = param("track", ParamType::Track, "track id or name, from pr
 /// The track of a command on a channel's devices or lanes, which may be the main channel (#687).
 const DEVICE_TRACK: Param =
     param("track", ParamType::Track, "track id or name, from project.tracks, or \"main\" for the main channel");
-/// Lets the calls of one drag make one undo step.
-const CONTINUE: Param = optional(
-    "continue",
-    ParamType::Bool,
-    "true adds the change to the undo step of the previous call of this command on this track, \
-     when no other edit came between (one drag, one step)",
-);
-/// With `continue`, starts each call from the project as it was before the step it continues, so
-/// a slider's live value replaces the one before instead of adding to it.
-const REPLACE: Param = optional(
-    "replace",
-    ParamType::Bool,
-    "with continue: the change starts from where the step it continues began, so each call replaces \
-     the last (a slider's live value) instead of adding to it",
+/// Lets the calls of one drag make one undo step (#1146): the session keeps the open gesture.
+pub(crate) const GESTURE: Param = optional(
+    "gesture",
+    ParamType::Text,
+    "an id of 1 to 128 bytes the caller picks for one drag: calls with the gesture that is open make \
+     one undo step; history.endGesture, any other edit, undo, redo or another gesture ends it",
 );
 const TRACKS: Param = param("tracks", ParamType::Tracks, "the tracks to act on (ids or names), at least one");
 const RANGE_START: Param =
@@ -387,12 +379,25 @@ pub struct Policy {
     pub after: After,
     /// A preview: with no project open it runs in the previews' own session, not on a project.
     pub previews: bool,
+    /// A call that joins an open gesture starts from the project as it was before the gesture,
+    /// so each call replaces the last (a shape dragged over a lane) instead of adding to it. A
+    /// command that sets values needs none: setting a value again replaces it anyway, and a
+    /// gesture may set several (#1146).
+    pub gesture_replaces: bool,
 }
 
 impl Policy {
     /// Heard, not critical, open to agents, nothing after it.
-    pub const DEFAULT: Self =
-        Self { heard: true, critical: false, agents: Agents::Allowed, after: After::Nothing, previews: false };
+    pub const DEFAULT: Self = Self {
+        heard: true,
+        critical: false,
+        agents: Agents::Allowed,
+        after: After::Nothing,
+        previews: false,
+        gesture_replaces: false,
+    };
+    /// A gesture's calls each start from where the gesture began.
+    pub const REPLACING: Self = Self { gesture_replaces: true, ..Self::DEFAULT };
     /// An edit only seen: a name, a colour, a marker.
     pub const UNHEARD: Self = Self { heard: false, ..Self::DEFAULT };
     /// Backed up before it runs.

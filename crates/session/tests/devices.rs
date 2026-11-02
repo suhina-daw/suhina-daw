@@ -73,7 +73,7 @@ fn continuous_parameter_updates_share_one_undo_step() {
         run(
             &mut session,
             "device.setParam",
-            json!({ "track": 1, "device": 0, "param": "gain", "value": value, "continuous": true }),
+            json!({ "track": 1, "device": 0, "param": "gain", "value": value, "gesture": "knob" }),
         )
         .unwrap();
     }
@@ -94,7 +94,7 @@ fn saving_during_a_parameter_gesture_keeps_later_updates_dirty() {
         run(
             &mut session,
             "device.setParam",
-            json!({ "track": 1, "device": 0, "param": "gain", "value": value, "continuous": true }),
+            json!({ "track": 1, "device": 0, "param": "gain", "value": value, "gesture": "knob" }),
         )
         .unwrap();
         assert!(session.has_unsaved_changes());
@@ -623,21 +623,14 @@ fn xy_gesture_groups_axes_and_ends_on_unchanged_value() {
     let mut session = Session::new(project());
     run(&mut session, "device.add", json!({"track":1,"id":"utility"})).unwrap();
     let before = session.project().clone();
-    for (param, value, continuous) in [("gain", 2.0, true), ("balance", 0.5, true), ("balance", 0.5, false)] {
-        run(
-            &mut session,
-            "device.setParam",
-            json!({"track":1,"device":0,"param":param,"value":value,"continuous":continuous,"gesture":"xy"}),
-        )
-        .unwrap();
+    for (param, value) in [("gain", 2.0), ("balance", 0.5), ("balance", 0.5)] {
+        run(&mut session, "device.setParam", json!({"track":1,"device":0,"param":param,"value":value,"gesture":"xy"}))
+            .unwrap();
     }
+    run(&mut session, "history.endGesture", json!({"gesture":"xy"})).unwrap();
     let after = session.project().clone();
-    run(
-        &mut session,
-        "device.setParam",
-        json!({"track":1,"device":0,"param":"gain","value":3.0,"continuous":false,"gesture":"xy"}),
-    )
-    .unwrap();
+    run(&mut session, "device.setParam", json!({"track":1,"device":0,"param":"gain","value":3.0,"gesture":"xy"}))
+        .unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project(), &after);
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -682,9 +675,15 @@ fn sdk_linked_delay_values_update_both_directions_and_undo_together() {
     assert_eq!(value(&session, "time_left"), 427.);
     edit(&mut session, "link", 1.);
     assert_eq!(value(&session, "time_right"), 427.);
-    for (v, continuous) in [(500., true), (520., true), (550., false)] {
-        run(&mut session,"device.setParam",json!({"track":1,"device":0,"param":"time_right","value":v,"continuous":continuous,"gesture":"linked-time"})).unwrap();
+    for v in [500., 520., 550.] {
+        run(
+            &mut session,
+            "device.setParam",
+            json!({"track":1,"device":0,"param":"time_right","value":v,"gesture":"linked-time"}),
+        )
+        .unwrap();
     }
+    run(&mut session, "history.endGesture", json!({"gesture":"linked-time"})).unwrap();
     assert_eq!(value(&session, "time_left"), 550.);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(value(&session, "time_left"), 427.);
@@ -1258,14 +1257,16 @@ fn a_device_is_named_by_its_id_wherever_it_moves() {
 
 /// Sets `calls` as one gesture on `device`, the last call ending it, as a preset does.
 fn one_gesture(session: &mut Session, device: Value, calls: &[(&str, f64)]) {
-    for (i, (param, value)) in calls.iter().enumerate() {
+    for (param, value) in calls {
         let set = run(
             session,
             "device.setParam",
-            json!({"track":1,"device":device,"param":param,"value":value,"continuous":i + 1 < calls.len(),"gesture":"preset"}),
+            json!({"track":1,"device":device,"param":param,"value":value,"gesture":"preset"}),
         );
         assert!(set.is_ok(), "{set:?}");
     }
+    let ended = run(session, "history.endGesture", json!({"gesture":"preset"}));
+    assert!(ended.is_ok(), "{ended:?}");
 }
 
 #[test]

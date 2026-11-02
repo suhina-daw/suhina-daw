@@ -56,8 +56,9 @@ fn what_follows_a_command_reads_parameters_it_takes() {
         }
         // Only playing and stopping a preview run with no project open.
         assert_eq!(spec.policy.previews, ["preview.play", "preview.stop"].contains(&spec.id), "{}", spec.id);
-        if takes(spec, "gesture") {
-            assert!(takes(spec, "continuous"), "{} takes gesture without continuous", spec.id);
+        // One way to make a drag one undo step (#1146).
+        for old in ["continue", "continuous"] {
+            assert!(!takes(spec, old), "{} takes {old}: a drag's calls name a gesture", spec.id);
         }
     }
     copies.sort_unstable();
@@ -135,11 +136,17 @@ fn a_new_edit_clears_redo_and_no_op_edits_record_nothing() {
     assert_eq!(session.project().transport.tempo_bpm, 120.0);
 }
 
-/// Pans `track` as a drag does: the first value without `continue`, the rest with it.
-fn drag_pan(session: &mut Session, track: Value, values: &[f64]) {
-    for (i, pan) in values.iter().enumerate() {
-        let params = json!({ "tracks": [track], "pan": pan, "continue": i > 0 });
-        let result = run(session, "track.setPan", params);
+/// Pans `track` as a drag does: every call with the drag's `gesture`, then the drag ends it.
+fn drag_pan(session: &mut Session, track: Value, values: &[f64], gesture: &str) {
+    pan_in(session, track, values, gesture);
+    let ended = run(session, "history.endGesture", json!({ "gesture": gesture }));
+    assert!(ended.is_ok(), "{ended:?}");
+}
+
+/// Pans `track` through `values` in `gesture`, leaving it open.
+fn pan_in(session: &mut Session, track: Value, values: &[f64], gesture: &str) {
+    for pan in values {
+        let result = run(session, "track.setPan", json!({ "tracks": [track], "pan": pan, "gesture": gesture }));
         assert!(result.is_ok(), "{result:?}");
     }
 }
@@ -147,7 +154,7 @@ fn drag_pan(session: &mut Session, track: Value, values: &[f64]) {
 #[test]
 fn the_calls_of_one_drag_make_one_undo_step() {
     let mut session = Session::new(project());
-    drag_pan(&mut session, json!(1), &[0.1, 0.2, 0.3, -0.4]);
+    drag_pan(&mut session, json!(1), &[0.1, 0.2, 0.3, -0.4], "drag");
     assert_eq!(session.project().channels[0].pan, -0.4);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project(), &project());
@@ -156,46 +163,56 @@ fn the_calls_of_one_drag_make_one_undo_step() {
     run(&mut session, "edit.redo", json!({})).unwrap();
     assert_eq!(session.project().channels[0].pan, -0.4);
 
-    // A track named rather than numbered is the same track.
+    // A gesture may span tracks and commands: a selection's faders, a pad setting two values.
     let mut session = Session::new(project());
-    run(&mut session, "track.setVolume", json!({ "tracks": [1], "db": -1 })).unwrap();
-    run(&mut session, "track.setVolume", json!({ "tracks": ["Bass"], "db": -2, "continue": true })).unwrap();
-    run(&mut session, "track.setVolume", json!({ "tracks": ["bass"], "db": "-inf", "continue": true })).unwrap();
-    assert_eq!(session.project().channels[0].volume, 0.0);
+    for (track, db) in [(json!(1), -1.0), (json!("Bass"), -2.0), (json!(2), -3.0)] {
+        run(&mut session, "track.setVolume", json!({ "tracks": [track], "db": db, "gesture": "g" })).unwrap();
+    }
+    run(&mut session, "track.setPan", json!({ "tracks": [2], "pan": 0.5, "gesture": "g" })).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project(), &project());
 }
 
 #[test]
 fn a_second_drag_or_anything_between_starts_a_new_step() {
+    // Two drags, each ended: two steps, even with the same id.
     let mut session = Session::new(project());
-    drag_pan(&mut session, json!(1), &[0.1, 0.2]);
-    drag_pan(&mut session, json!(1), &[0.5, 0.6]);
+    drag_pan(&mut session, json!(1), &[0.1, 0.2], "drag");
+    drag_pan(&mut session, json!(1), &[0.5, 0.6], "drag");
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().channels[0].pan, 0.2);
+    assert_eq!(run(&mut session, "history.endGesture", json!({ "gesture": "drag" })).unwrap()["ended"], false);
 
-    // Another track, another command, or another edit between: `continue` starts a new step.
+    // Another edit between, or another gesture, ends the open one: two gestures interleaved are
+    // a step each time they take turns.
     let mut session = Session::new(project());
-    drag_pan(&mut session, json!(1), &[0.1]);
-    run(&mut session, "track.setPan", json!({ "tracks": [2], "pan": 0.7, "continue": true })).unwrap();
-    run(&mut session, "track.setVolume", json!({ "tracks": [2], "db": -3, "continue": true })).unwrap();
-    run(&mut session, "track.setMute", json!({ "tracks": [1], "mute": true })).unwrap();
-    run(&mut session, "track.setPan", json!({ "tracks": [1], "pan": 0.9, "continue": true })).unwrap();
-    for pan in [0.1, 0.1, 0.1, 0.1, 0.0] {
+    pan_in(&mut session, json!(1), &[0.1], "a");
+    run(&mut session, "track.setMute", json!({ "tracks": [2], "mute": true })).unwrap();
+    pan_in(&mut session, json!(1), &[0.2], "a");
+    pan_in(&mut session, json!(1), &[0.3], "b");
+    pan_in(&mut session, json!(1), &[0.4], "a");
+    for pan in [0.3, 0.2, 0.1, 0.1, 0.0] {
         run(&mut session, "edit.undo", json!({})).unwrap();
         assert_eq!(session.project().channels[0].pan, pan);
     }
     assert_eq!(session.project(), &project());
 
-    // Undo ends the step too: the next call starts its own.
+    // Undo during an open gesture ends it first and undoes it as one step; the next call with
+    // its id starts its own.
     let mut session = Session::new(project());
     run(&mut session, "transport.setTempo", json!({ "bpm": 100 })).unwrap();
-    drag_pan(&mut session, json!(1), &[0.1, 0.2]);
+    pan_in(&mut session, json!(1), &[0.1, 0.2], "drag");
     run(&mut session, "edit.undo", json!({})).unwrap();
-    run(&mut session, "track.setPan", json!({ "tracks": [1], "pan": 0.3, "continue": true })).unwrap();
+    assert_eq!(session.project().channels[0].pan, 0.0);
+    pan_in(&mut session, json!(1), &[0.3], "drag");
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().channels[0].pan, 0.0);
     assert_eq!(session.project().transport.tempo_bpm, 100.0);
+
+    // A gesture of 0 or more than 128 bytes is refused.
+    for bad in [json!(""), json!("x".repeat(129)), json!(7)] {
+        assert!(run(&mut session, "track.setPan", json!({ "tracks": [1], "pan": 0.5, "gesture": bad })).is_err());
+    }
 }
 
 #[test]
@@ -203,8 +220,8 @@ fn a_drag_that_starts_without_a_change_does_not_join_the_last_one() {
     // The first frame of a drag often sends the value as it is: no step is made, but the
     // drag before it is still over.
     let mut session = Session::new(project());
-    drag_pan(&mut session, json!(1), &[0.1, 0.2]);
-    drag_pan(&mut session, json!(1), &[0.2, 0.5]);
+    drag_pan(&mut session, json!(1), &[0.1, 0.2], "one");
+    drag_pan(&mut session, json!(1), &[0.2, 0.5], "two");
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().channels[0].pan, 0.2);
 }

@@ -582,6 +582,9 @@ pub struct App {
     waker_set: bool,
     /// The selection a fader or a send is moving, as it was when the drag began.
     selection_drag: Option<actions::SelectionDrag>,
+    /// The gesture the window's last drag frame named (#1146): the window ends it once no mouse
+    /// button is down, so a drag is one undo step that closes on mouse up.
+    open_gesture: Option<String>,
     switch_hover: Option<(View, f64)>,
     /// Agents (ADR 0028): connections waiting for the person's answer, the answers for the app,
     /// the agents let in, and those the person disconnected, for the app.
@@ -730,6 +733,7 @@ impl App {
             browser_part: 1.0,
             waker_set: false,
             selection_drag: None,
+            open_gesture: None,
             switch_hover: None,
             agent_asks: Vec::new(),
             agent_answers: Vec::new(),
@@ -2343,6 +2347,9 @@ impl App {
 
     /// Runs one command and shows its outcome in the status bar.
     pub fn run(&mut self, action: &Action) {
+        if let Some(gesture) = action.params.get("gesture").and_then(serde_json::Value::as_str) {
+            self.open_gesture = Some(gesture.to_owned());
+        }
         // A fader or a send dragged on one of several selected tracks moves them together.
         if let Some(wider) = self.drag_to_selection(action) {
             return self.run(&wider);
@@ -3446,6 +3453,7 @@ impl App {
         }
         // A selection this frame's commands or clicks made arms its track.
         self.follow_selection_with_arm();
+        self.end_gesture_on_release(ui.ctx());
         self.frame_trace.mark("commands");
         self.frame_trace.note(|| format!("{ran} commands"));
         self.guard_quit(ui.ctx());

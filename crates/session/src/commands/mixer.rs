@@ -11,12 +11,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Set the main output's volume, which every track, group and return plays through",
         params: &[
             param("db", ParamType::Decibels, "level in dB, at most +6; \"-inf\" or below -150 is silence"),
-            optional(
-                "continue",
-                ParamType::Bool,
-                "true adds the change to the undo step of the previous call of this command, when no other \
-                 edit came between (one drag, one step)",
-            ),
+            GESTURE,
         ],
         kind: CommandKind::Edit,
         run: set_main_volume,

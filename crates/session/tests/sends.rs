@@ -190,11 +190,11 @@ fn a_send_set_by_command_is_heard_through_the_return() {
 fn a_send_dragged_is_one_undo_step() {
     let mut session = Session::new(project_built());
     let before = session.project().clone();
-    for (level, continued) in [(-30.0, false), (-20.0, true), (-10.0, true), (-6.0, true)] {
+    for level in [-30.0, -20.0, -10.0, -6.0] {
         run(
             &mut session,
             "track.setSend",
-            json!({ "track": "Bass", "return": "A Return", "level": level, "continue": continued }),
+            json!({ "track": "Bass", "return": "A Return", "level": level, "gesture": "send" }),
         )
         .unwrap();
     }
@@ -207,11 +207,11 @@ fn a_send_dragged_is_one_undo_step() {
 fn several_tracks_take_their_own_values_in_one_undo_step() {
     let mut session = Session::new(project());
     let send = |session: &Session, channel: u32| sends(session, channel).first().map(|s| s.level);
-    for (values, continued) in [([-6.0, -12.0], false), ([-3.0, -200.0], true)] {
+    for values in [[-6.0, -12.0], [-3.0, -200.0]] {
         run(
             &mut session,
             "track.setMixerValues",
-            json!({ "tracks": ["Bass", "Lead"], "control": "send", "return": "A Return", "values": values, "continue": continued }),
+            json!({ "tracks": ["Bass", "Lead"], "control": "send", "return": "A Return", "values": values, "gesture": "sends" }),
         )
         .unwrap();
     }
@@ -259,8 +259,9 @@ fn a_send_turned_up_from_silence_takes_one_graph_then_messages() {
             .unwrap();
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
-    let level = |db: f64, more: bool| json!({ "track": "Bass", "return": "A Return", "level": db, "continue": more });
-    run(&mut session, "track.setSend", level(-30.0, false)).unwrap();
+    // No gesture: a move that needed a new graph would fail here, not catch up later.
+    let level = |db: f64| json!({ "track": "Bass", "return": "A Return", "level": db });
+    run(&mut session, "track.setSend", level(-30.0)).unwrap();
     // Every later graph waits: the engine's queue of new graphs fills.
     let mut full = false;
     for i in 0..64 {
@@ -270,9 +271,8 @@ fn a_send_turned_up_from_silence_takes_one_graph_then_messages() {
         }
     }
     assert!(full, "the queue of new graphs is full");
-    // Not continued, so a move that needed a new graph would fail here.
     for db in [-24.0, -18.0, -12.0] {
-        run(&mut session, "track.setSend", level(db, false)).unwrap();
+        run(&mut session, "track.setSend", level(db)).unwrap();
     }
     let mut out = vec![0.0f32; 960];
     renderer.process(&mut out);

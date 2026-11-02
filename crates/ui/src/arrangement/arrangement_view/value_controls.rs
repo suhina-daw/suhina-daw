@@ -47,17 +47,16 @@ pub(super) fn send_knob(
     let level = if send.level_db.is_finite() { send.level_db } else { widgets::SEND_RANGE.0 };
     let mut committed = None;
     // Heard while it is dragged, in one undo step (#705).
-    let continued = preview.is_some();
     match widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, widgets::SEND_RANGE, widgets::SEND_RANGE.0)
     {
         Drag::Moving(v) => {
             state.send_drag = Some((track, send.target, v));
-            actions.push(commands::set_send(track, send.target, v, continued));
+            actions.push(commands::set_send(track, send.target, v));
         }
         Drag::Done(v) => {
             state.send_drag = None;
             committed = Some(v);
-            actions.push(commands::set_send(track, send.target, v, continued));
+            actions.push(commands::set_send(track, send.target, v));
         }
         Drag::Set(v) => {
             state.send_drag = None;
@@ -170,16 +169,15 @@ pub(super) fn value_control(
         let response = widgets::value_area(ui, rect.intersect(clip), id.with(label.as_str()), &label, text);
         control_response = Some(response.clone());
         hover = widgets::hover(ui, &response);
-        // One track hears every frame of a drag: each sets the value, and all but the first
-        // continue its undo step, so the drag is one step. A selection of several moves together
-        // when the drag ends, by the same amount (`value_action`).
-        let continued = preview.is_some();
+        // One track hears every frame of a drag: each sets the value, all in one gesture, so the
+        // drag is one step. A selection of several moves together when the drag ends, by the
+        // same amount (`value_action`).
         let one = tracks.len() == 1;
         let set = |v: f64| match control {
-            Control::Volume => commands::set_volume(&[track.0], v, Some(continued)),
+            Control::Volume => commands::set_volume(&[track.0], v, true),
             Control::Pan => Action::new(
                 "track.setPan",
-                json!({ "tracks": [track.0], "pan": (v * 100.0).round() / 100.0, "continue": continued }),
+                json!({ "tracks": [track.0], "pan": (v * 100.0).round() / 100.0, "gesture": commands::gesture(format_args!("pan:{}", track.0)) }),
             ),
         };
         match widgets::drag_value_axis(
@@ -276,7 +274,7 @@ pub(super) fn pan_knob(painter: &egui::Painter, rect: Rect, pan: f64, response: 
 fn value_set(control: Control, tracks: &[TrackId], to: f64) -> Action {
     let ids: Vec<u32> = tracks.iter().map(|t| t.0).collect();
     match control {
-        Control::Volume => commands::set_volume(&ids, to, None),
+        Control::Volume => commands::set_volume(&ids, to, false),
         Control::Pan => Action::new("track.setPan", json!({ "tracks": ids, "pan": (to * 100.0).round() / 100.0 })),
     }
 }
@@ -302,7 +300,7 @@ pub(super) fn value_action(control: Control, tracks: &[TrackId], from: f64, to: 
             let db = if to <= VOLUME_RANGE.0 { -200.0 } else { (delta * 10.0).round() / 10.0 };
             Action::new("track.adjustVolume", json!({ "tracks": ids, "db": db }))
         }
-        Control::Volume => commands::set_volume(&ids, to, None),
+        Control::Volume => commands::set_volume(&ids, to, false),
         Control::Pan if !one && delta.is_finite() => {
             Action::new("track.adjustPan", json!({ "tracks": ids, "pan": (delta * 100.0).round() / 100.0 }))
         }

@@ -240,7 +240,7 @@ pub(super) fn group_panel(
     if let Some(value) = mix_value {
         actions.push(Action::new(
             "device.setParam",
-            json!({ "track": track.0, "device": at, "param": "mix", "value": value, "continuous": mix.dragging }),
+            json!({ "track": track.0, "device": at, "param": "mix", "value": value, "gesture": commands::gesture(format_args!("param:{}:{at}:mix", track.0)) }),
         ));
     }
     let silent = group.gain_db <= suhina_engine::SILENT_DB;
@@ -261,7 +261,7 @@ pub(super) fn group_panel(
     if let Some(value) = gain_value {
         actions.push(Action::new(
             "device.setParam",
-            json!({ "track": track.0, "device": at, "param": "gain", "value": value, "continuous": gain.dragging }),
+            json!({ "track": track.0, "device": at, "param": "gain", "value": value, "gesture": commands::gesture(format_args!("param:{}:{at}:gain", track.0)) }),
         ));
     }
     let left = rect.left() + PAD;
@@ -314,12 +314,13 @@ pub(super) fn group_panel(
         let dragged = value_row(ui, painter, volume, volume_id.with("drag"), "", &db_text(shown_db), 0.1);
         let stored = if branch.volume_db.is_finite() { branch.volume_db } else { -70.0 };
         let (_, set) = branch_value(ui, volume_id, stored, &dragged, -70.0, 6.0);
-        if let Some((db, more)) = set {
+        if let Some((db, _)) = set {
             actions.push(Action::new(
                 "branch.setVolume",
                 json!({
                     "track": track.0, "device": at, "branch": index,
-                    "db": commands::exact_db_param(db, -70.0), "continue": more,
+                    "db": commands::exact_db_param(db, -70.0),
+                    "gesture": commands::gesture(format_args!("branch-volume:{}:{at}:{index}", track.0)),
                 }),
             ));
         }
@@ -327,10 +328,13 @@ pub(super) fn group_panel(
         let shown_pan = ui.data(|d| d.get_temp::<f64>(pan_id)).unwrap_or(branch.pan);
         let dragged = value_row(ui, painter, pan, pan_id.with("drag"), "", &pan_text(shown_pan), 0.01);
         let (_, set) = branch_value(ui, pan_id, branch.pan, &dragged, -1.0, 1.0);
-        if let Some((value, more)) = set {
+        if let Some((value, _)) = set {
             actions.push(Action::new(
                 "branch.setPan",
-                json!({ "track": track.0, "device": at, "branch": index, "pan": value, "continue": more }),
+                json!({
+                    "track": track.0, "device": at, "branch": index, "pan": value,
+                    "gesture": commands::gesture(format_args!("branch-pan:{}:{at}:{index}", track.0)),
+                }),
             ));
         }
 

@@ -801,9 +801,9 @@ fn scaling_around_the_bottom_and_back_restores_the_line() {
         run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
             .unwrap();
     }
-    let scale = |factor: f64, again: bool| {
+    let scale = |factor: f64, _again: bool| {
         json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": factor, "around": "middle",
-                "continue": again, "replace": again })
+                "gesture": "drag" })
     };
     run(&mut session, "automation.scaleRange", scale(2.0, false)).unwrap();
     let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
@@ -910,7 +910,7 @@ fn continued_scaling_is_one_undo_step() {
             .unwrap();
     }
     let before = pan_points(&session);
-    let scale = |continued: bool| json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": 1.2, "continue": continued });
+    let scale = |_continued: bool| json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": 1.2, "gesture": "drag" });
     run(&mut session, "automation.scaleRange", scale(false)).unwrap();
     run(&mut session, "automation.scaleRange", scale(true)).unwrap();
     run(&mut session, "automation.scaleRange", scale(true)).unwrap();
@@ -919,8 +919,8 @@ fn continued_scaling_is_one_undo_step() {
     assert_eq!(pan_points(&session), before);
 }
 
-/// A slider's live values replace one another (`continue` with `replace`): each runs on the line
-/// as the step found it, a value that changes nothing (Smooth on a sine) leaves the line and the
+/// A slider's live values replace one another (one `gesture` of a command that replaces): each
+/// runs on the line as the gesture found it, a value that changes nothing (Smooth on a sine) leaves the line and the
 /// history as they were, and one undo takes the whole drag back (#916).
 #[test]
 fn replacing_live_values_starts_from_the_line_as_it_was() {
@@ -934,9 +934,9 @@ fn replacing_live_values_starts_from_the_line_as_it_was() {
     )
     .unwrap();
     let sine = lane(&session);
-    let smooth = |amount: f64, continued: bool| {
+    let smooth = |amount: f64, _continued: bool| {
         json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "amount": amount,
-                "continue": continued, "replace": continued })
+                "gesture": "drag" })
     };
     // A sine's segments are bent already: Smooth leaves it, however often it is asked.
     for (i, amount) in [0.2, 0.5, 0.9].into_iter().enumerate() {
@@ -953,9 +953,9 @@ fn replacing_live_values_starts_from_the_line_as_it_was() {
     let mut session = Session::new(project());
     run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0 })).unwrap();
     let line = lane(&session);
-    let shape = |depth: f64, continued: bool| {
+    let shape = |depth: f64, _continued: bool| {
         json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "shape": "square", "depth": depth,
-                "center": 0.5, "continue": continued, "replace": continued })
+                "center": 0.5, "gesture": "drag" })
     };
     run(&mut session, "automation.insertShape", shape(1.0, false)).unwrap();
     run(&mut session, "automation.insertShape", shape(0.5, true)).unwrap();

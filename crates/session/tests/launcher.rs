@@ -345,9 +345,9 @@ fn a_drag_that_outruns_the_engine_is_kept_and_heard_once_it_catches_up() {
     }
     assert!(full.is_some_and(|e| e.contains("could not follow")));
     // A continued edit (a drag) is not an error then: the project has it, the engine catches up.
-    run(&mut session, "track.setPan", json!({ "tracks": ["Drums"], "pan": 0.0, "continue": true })).unwrap();
+    run(&mut session, "track.setPan", json!({ "tracks": ["Drums"], "pan": 0.0, "gesture": "drag" })).unwrap();
     assert!(session.project().channels[0].pan.abs() < 1e-9);
-    run(&mut session, "track.setVolume", json!({ "tracks": ["Drums"], "db": -12, "continue": true })).unwrap();
+    run(&mut session, "track.setVolume", json!({ "tracks": ["Drums"], "db": -12, "gesture": "drag" })).unwrap();
     assert!((session.project().channels[0].volume - 0.2512).abs() < 1e-3);
     beat_peaks(&mut renderer, 1);
     session.catch_up_player();
@@ -929,9 +929,9 @@ fn a_branch_fader_is_a_message_to_the_playing_group() {
         }
     }
     assert!(full.is_some());
-    let fader = |db: f64, more: bool| json!({ "track": "Drums", "device": 0, "branch": 1, "db": db, "continue": more });
-    run(&mut session, "branch.setVolume", fader(-12.0, false)).unwrap();
-    run(&mut session, "branch.setVolume", fader(-200.0, true)).unwrap();
+    let fader = |db: f64| json!({ "track": "Drums", "device": 0, "branch": 1, "db": db, "gesture": "fader" });
+    run(&mut session, "branch.setVolume", fader(-12.0)).unwrap();
+    run(&mut session, "branch.setVolume", fader(-200.0)).unwrap();
     run(&mut session, "branch.setMute", json!({ "track": "Drums", "device": 0, "branch": 0, "mute": false })).unwrap();
     // Heard without the graphs: branch B silent leaves half the sound.
     let half = beat_peaks(&mut renderer, 2)[1];

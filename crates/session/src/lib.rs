@@ -1198,7 +1198,7 @@ impl Session {
     }
 
     fn push_undo(&mut self, before: Project) {
-        self.history.open_step = None;
+        self.history.gesture = None;
         if self.history.undo.len() >= MAX_UNDO {
             self.history.undo.remove(0);
         }

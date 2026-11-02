@@ -88,16 +88,22 @@ UI, CLI, control channel and MCP server all dispatch commands by id. We take the
    or a plug-in's parameter id.
 9. **One drag, one undo step.** A value dragged in the window is heard while it moves, so the
    window runs the command on every frame of the drag
-   ([#313](https://github.com/suhina-daw/suhina-daw/issues/313)). `track.setVolume`,
-   `track.setPan` and `transport.setTempo` take `continue`: with `true`, the change joins the undo
-   step the previous call of the same command on the same target made, as long as nothing else
-   happened in between; any other edit, a call without it (even one that changes nothing), undo
-   and redo end that step. The window sends the first frame without `continue` and the rest, and
-   the release, with it; a double-click reset is a step of its own. `device.setParam` does the
-   same with `continuous: true`, a final call without it ending the gesture; every effective
+   ([#313](https://github.com/suhina-daw/suhina-daw/issues/313)). Every command a control can drag
+   takes one optional **`gesture`**: an id of 1 to 128 bytes the caller picks
+   ([#1146](https://github.com/suhina-daw/suhina-daw/issues/1146)). The session keeps the open
+   gesture: calls with it make one undo step, which opens with the gesture's first change. It
+   ends with `history.endGesture {gesture}`, on any other edit, on a call with another gesture,
+   and on undo or redo (which end it first, then undo or redo it as one step). A gesture may span
+   tracks and commands (a selection's faders, a pad setting two values). A command whose calls
+   build on the last (`automation.insertShape`, `simplify`, `smooth`, `scaleRange`: its policy's
+   `gesture_replaces`) starts each call from the project as it was before the gesture, so a
+   slider's live value replaces the one before; one that sets a value needs no such thing. The
+   window sends every frame of a drag with a gesture named after its control and ends it once no
+   mouse button is down, so a drag closes on mouse up; a double-click reset is a step of its own.
+   (This replaces `continue`, `replace` and `continuous`, which had a rule each.) Every effective
    update marks the project changed, after a save mid-gesture too. A drag can send graphs faster
-   than the engine takes them ([ADR 0005](0005-edits-while-playing.md)), so a continued call whose
-   graph does not fit is not an error: the project keeps the value, and
+   than the engine takes them ([ADR 0005](0005-edits-while-playing.md)), so a call with a gesture
+   whose graph does not fit is not an error: the project keeps the value, and
    `Session::catch_up_player`, which the window calls every frame, sends it again until the engine
    has it.
 10. **A command's rules are on its spec.** What follows from a command beside its work is in its

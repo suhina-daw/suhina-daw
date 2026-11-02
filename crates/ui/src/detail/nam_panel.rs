@@ -94,19 +94,13 @@ fn value_of(device: &DeviceBox, parameter: &ParamInfo) -> f64 {
 }
 
 /// `device.setParam` for a panel change.
-fn set_param(
-    actions: &mut Vec<Action>,
-    track: TrackId,
-    device: &DeviceAt,
-    parameter: &ParamInfo,
-    value: f64,
-    continuous: bool,
-) {
+fn set_param(actions: &mut Vec<Action>, track: TrackId, device: &DeviceAt, parameter: &ParamInfo, value: f64) {
     actions.push(Action::new(
         "device.setParam",
         serde_json::json!({
             "track": track.0, "device": device.value(), "param": parameter.id,
-            "value": parameter.clamp(value), "continuous": continuous,
+            "value": parameter.clamp(value),
+            "gesture": crate::interaction::commands::gesture(format_args!("param:{}:{}:{}", track.0, device.value(), parameter.id)),
         }),
     ));
 }
@@ -178,8 +172,8 @@ fn knob(
         theme::mono_font(theme::TEXT_TINY),
         theme::text_value(),
     );
-    if let Some((next, continuous)) = change {
-        set_param(actions, track, device_index, parameter, next, continuous);
+    if let Some((next, _)) = change {
+        set_param(actions, track, device_index, parameter, next);
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &publisher));
     response
@@ -265,8 +259,8 @@ fn mid_freq_line(
         theme::mono_font(theme::TEXT_TINY),
         theme::text_value(),
     );
-    if let Some((next, continuous)) = change {
-        set_param(actions, track, device_index, parameter, next, continuous);
+    if let Some((next, _)) = change {
+        set_param(actions, track, device_index, parameter, next);
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &publisher));
     response
@@ -321,7 +315,7 @@ fn vslider(
         let relative = (1.0
             - (response.interact_pointer_pos().map_or(lane.top(), |p| p.y) - lane.top()) / lane.height())
         .clamp(0.0, 1.0);
-        set_param(actions, track, device_index, parameter, parameter.from_normalized(f64::from(relative)), true);
+        set_param(actions, track, device_index, parameter, parameter.from_normalized(f64::from(relative)));
     }
     widgets::text_in(
         ui.painter(),
@@ -360,7 +354,7 @@ fn toggle(
         text,
     );
     if response.clicked() {
-        set_param(actions, track, device_index, parameter, f64::from(!on), false);
+        set_param(actions, track, device_index, parameter, f64::from(!on));
     }
     response.widget_info(|| {
         egui::WidgetInfo::labeled(

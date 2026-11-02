@@ -80,8 +80,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   next audio block (0.15 s later when stretched arrangement clips must be prepared first), with
   launched clips playing on
   ([ADR 0005](decisions/0005-edits-while-playing.md)). To sweep a track's volume or pan by
-  ear as one undo step, send `track.setVolume` or `track.setPan` repeatedly with
-  `continue: true` after the first ([ADR 0002](decisions/0002-commands.md)). Only the active project plays: switching
+  ear as one undo step, send `track.setVolume` or `track.setPan` repeatedly with the same
+  `gesture` (an id you pick), then `history.endGesture` with it
+  ([ADR 0002](decisions/0002-commands.md) › 9). Only the active project plays: switching
   closes the previous project's output and starts the new one (its result has `audio_output`),
   so transport commands aimed at another project fail.
 - **Plug-ins between commands.** The server takes in the plug-ins that started every 50 ms, as
@@ -534,7 +535,7 @@ claude mcp add suhina-app -- /path/to/suhina-cli mcp --attach
 Sampler manual boundaries are edited with `device.setSampleSlices` (`track`,
 `device`, `points`: normalized source positions strictly between 0 and 1). The
 command validates, sorts and deduplicates the list and supports undo/redo; an
-empty list clears the map. Optional `continue` groups consecutive drag edits.
+empty list clears the map. Calls with the same `gesture` make one undo step.
 
 `track.devices` includes `sample_slices` when a Sampler has an explicit manual map.
 

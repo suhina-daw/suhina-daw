@@ -376,8 +376,8 @@ is branch 1 of the group at 2, before its device 3. `track.devices` lists a grou
 | `branch.remove` | edit | `track`; `device`; `branch` (integer) | Removes a branch with its devices and their mappings. The last branch cannot be removed. |
 | `branch.duplicate` | edit | `track`; `device`; `branch` | Copies a branch next to itself. |
 | `branch.rename` | edit | `track`; `device`; `branch`; `name` (text) | Renames a branch. |
-| `branch.setVolume` | edit | `track`; `device`; `branch`; `db` (number); `continue` (bool, optional) | As `track.setVolume`, in decibels; `continue` adds a drag's frame to its undo step. |
-| `branch.setPan` | edit | `track`; `device`; `branch`; `pan` (number, −1 … 1); `continue` (bool, optional) | As `track.setPan`. |
+| `branch.setVolume` | edit | `track`; `device`; `branch`; `db` (number); `gesture` (optional) | As `track.setVolume`, in decibels; a drag's frames name one `gesture`, one undo step. |
+| `branch.setPan` | edit | `track`; `device`; `branch`; `pan` (number, −1 … 1); `gesture` (optional) | As `track.setPan`. |
 | `branch.setMute` | edit | `track`; `device`; `branch`; `mute` (bool) | Mutes a branch; its devices keep running. |
 | `branch.setSolo` | edit | `track`; `device`; `branch`; `solo` (bool) | Solos a branch within its group. |
 | `macro.rename` | edit | `track`; `device` (group); `macro` (integer 1 … 8); `name` (text) | Renames a macro. |

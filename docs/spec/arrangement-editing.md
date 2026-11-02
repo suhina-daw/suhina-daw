@@ -861,7 +861,7 @@ and the commands land when it is let go; a number typed or a double-click sets t
 value), one click on a track-on or a solo button turns them all
 off or on, and the whole list is one undo step. With one track selected, or with a click outside
 the selection, they act on that track alone, and it is heard while it is dragged: each frame sets
-the value with `continue`, so the drag is one undo step.
+the value in one `gesture`, so the drag is one undo step.
 
 **Ctrl (Cmd on macOS) and the wheel over a field** change its value instead of scrolling the view: one tick of a
 wheel is one step (1 dB, or 0.02 of pan), Shift as well makes it ten times finer, and the view

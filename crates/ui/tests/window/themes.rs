@@ -172,7 +172,7 @@ fn a_horizontal_session_fader_drags_on_its_drawn_axis_and_keeps_the_native_comma
     assert!(!changes.is_empty());
     assert_eq!(changes.last().unwrap().params["tracks"], json!([1]));
     assert_eq!(changes.last().unwrap().params["db"], json!(-6.0));
-    assert_eq!(changes.last().unwrap().params["continue"], json!(true));
+    assert!(changes.last().unwrap().params["gesture"].is_string());
     skin::configure(&skin::Skin::default());
 }
 

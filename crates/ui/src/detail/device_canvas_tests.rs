@@ -446,7 +446,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
                 .any(|a| a.params["param"] == param && (a.params["value"].as_f64().unwrap() - target).abs() < 1e-5),
             "{param}: {actions:?}"
         );
-        assert!(actions.iter().any(|a| a.params["continuous"] == false));
+        assert!(actions.iter().all(|a| a.params["gesture"].is_string()), "a drag is one gesture: {actions:?}");
         let reset = pointer_gesture_with_clicks(&canvas, &parameters, start, None, 2);
         let default = parameters.iter().find(|p| p.id == param).unwrap().default;
         assert!(
@@ -824,7 +824,7 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
             .iter()
             .any(|a| a.params["param"] == "offset_left" && (a.params["value"].as_f64().unwrap() - 1.998).abs() < 1e-6)
     );
-    assert!(offset.iter().any(|a| a.params["param"] == "offset_left" && a.params["continuous"] == false));
+    assert!(offset.iter().any(|a| a.params["param"] == "offset_left" && a.params["gesture"].is_string()));
     let actions = click(&canvas, &parameters, Pos2::new(100., 151.));
     assert!(actions.iter().any(|a| a.params["param"] == "mode" && a.params["value"] == 1.0));
     let mut time_parameters = parameters.clone();
@@ -881,7 +881,7 @@ fn delay_menus_open_choose_and_cancel_without_spurious_edits() {
     assert_eq!(harness.state().1.len(), 1);
     assert_eq!(harness.state().1[0].params["param"], "mod_shape");
     assert_eq!(harness.state().1[0].params["value"], 6.0);
-    assert_eq!(harness.state().1[0].params["continuous"], false);
+    assert!(harness.state().1[0].params["gesture"].is_string());
     harness.get_by_label("Motion rate mode").click();
     harness.run();
     assert_eq!(harness.state().1.len(), 1);
@@ -964,7 +964,7 @@ fn delay_menus_open_choose_and_cancel_without_spurious_edits() {
         harness.state_mut().1.push(action);
     }
     assert_eq!(feedback(&harness.state().0), before, "double click restores the default");
-    assert!(harness.state().1.iter().any(|a| a.params["param"] == "feedback" && a.params["continuous"] == false));
+    assert!(harness.state().1.iter().any(|a| a.params["param"] == "feedback" && a.params["gesture"].is_string()));
 }
 /// Saves a picture of `harness` to `target/` for the design review when
 /// `SUHINA_UI_SNAPSHOTS` is set; drawing it needs a GPU adapter, which test machines may lack.
@@ -1156,8 +1156,8 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         "zoomed samples fill the viewport instead of leaving empty bins"
     );
     assert_eq!(edits.len(), 3, "navigation must not emit project edits; line drag commits once on release");
-    assert_eq!(edits[0].params["continue"], false);
-    assert!(edits.iter().all(|a| a.params["continue"] == false));
+    // Committed once on release, each its own step: no gesture.
+    assert!(edits.iter().all(|a| a.params.get("gesture").is_none()));
     let zoomed = view.dragged(blank, Vec2::new(1e6, -1e6), field, 48000);
     assert_eq!(zoomed, SampleView::default());
     let zoomed = view.dragged(blank, Vec2::new(-1e6, 1e6), field, 48000);
@@ -1671,8 +1671,9 @@ fn idle_log_control_does_not_emit_edits_and_xy_click_is_one_gesture() {
         modifiers: Default::default(),
     }]);
     assert_eq!(actions.len(), 2);
-    assert_eq!(actions[0].params["continuous"], true);
-    assert_eq!(actions[1].params["continuous"], false);
+    // Both axes in one gesture, so the click is one undo step.
+    assert!(actions[0].params["gesture"].is_string());
+    assert_eq!(actions[0].params["gesture"], actions[1].params["gesture"]);
     assert_eq!(actions[0].params["gesture"], "xy");
     assert!((actions[0].params["value"].as_f64().unwrap() - 3556.5588).abs() < 0.1);
     assert_eq!(actions[1].params["value"], 0.75);

@@ -1524,13 +1524,18 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let mut preview = state.main_drag;
         match widgets::drag_value(ui, &response, &mut preview, db, 0.25, 1.0, VOLUME_RANGE, 0.0) {
             Drag::Moving(v) => {
-                let first = state.main_drag.is_none();
                 state.main_drag = Some(v);
-                actions.push(Action::new("mixer.setMainVolume", json!({ "db": v, "continue": !first })));
+                let gesture = crate::interaction::commands::gesture("main-volume");
+                actions.push(Action::new("mixer.setMainVolume", json!({ "db": v, "gesture": gesture })));
             }
-            Drag::Done(v) | Drag::Set(v) => {
+            Drag::Done(v) => {
                 state.main_drag = None;
-                actions.push(Action::new("mixer.setMainVolume", json!({ "db": v, "continue": true })));
+                let gesture = crate::interaction::commands::gesture("main-volume");
+                actions.push(Action::new("mixer.setMainVolume", json!({ "db": v, "gesture": gesture })));
+            }
+            Drag::Set(v) => {
+                state.main_drag = None;
+                actions.push(Action::new("mixer.setMainVolume", json!({ "db": v })));
             }
             Drag::None => {}
         }

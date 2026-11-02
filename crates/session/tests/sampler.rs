@@ -359,8 +359,9 @@ fn dynamic_manual_slices_round_trip_validate_and_group_undo() {
     assert_eq!(*s.project(), before);
     s.execute("edit.redo", &json!({})).unwrap();
     assert_eq!(*s.project(), changed);
-    s.execute("device.setSampleSlices", &json!({"track":1,"device":0,"points":[0.8,0.2,0.2]})).unwrap();
-    s.execute("device.setSampleSlices", &json!({"track":1,"device":0,"points":[0.9,0.2],"continue":true})).unwrap();
+    s.execute("device.setSampleSlices", &json!({"track":1,"device":0,"points":[0.8,0.2,0.2],"gesture":"slices"}))
+        .unwrap();
+    s.execute("device.setSampleSlices", &json!({"track":1,"device":0,"points":[0.9,0.2],"gesture":"slices"})).unwrap();
     assert_eq!(s.project().channels[0].devices[0].sample_slices().unwrap(), [0.2, 0.9]);
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(*s.project(), changed);
