@@ -150,7 +150,9 @@ fn the_layout_input_keeps_kinds_apart() {
     }
 }
 
+/// Run with `cargo test -p suhina-soundmap --release --lib found_quickly -- --ignored`.
 #[test]
+#[ignore = "a bound on elapsed time, for an idle machine"]
 fn the_kinds_of_150_000_items_are_found_quickly() {
     let n = 150_000;
     let mut state = 11u32;

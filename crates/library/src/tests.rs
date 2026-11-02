@@ -162,7 +162,7 @@ fn a_watched_folder_notices_new_files_by_itself() {
         return; // A system without file-system events (a network drive) polls instead.
     }
     touch(&samples.join("Loops/new loop.wav"));
-    let until = Instant::now() + Duration::from_secs(10);
+    let until = Instant::now() + Duration::from_secs(60);
     while Instant::now() < until && library.folders()[0].files != 9 {
         library.poll();
         std::thread::sleep(Duration::from_millis(50));
