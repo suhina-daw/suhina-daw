@@ -248,3 +248,23 @@ fn a_prepared_search_answers_as_a_search_does_and_a_cancelled_one_finds_nothing(
     let two = Query { text: "kick".into(), limit: 2, ..Query::default() };
     assert_eq!(library.search(&two), library.search(&query)[..2]);
 }
+
+#[test]
+fn the_same_name_in_several_folders_keeps_the_folders_order_under_a_limit() {
+    let folders: Vec<_> = (0..16).map(|n| temp(&format!("same-name-{n}"))).collect();
+    let mut library = Library::default();
+    for folder in &folders {
+        std::fs::create_dir_all(folder).unwrap();
+        std::fs::write(folder.join("kick.wav"), b"x").unwrap();
+        library.add_folder(folder).unwrap();
+    }
+    let all = library.search(&Query { text: "kick".into(), ..Query::default() });
+    assert_eq!(all.len(), folders.len());
+    for limit in 1..folders.len() {
+        let some = library.search(&Query { text: "kick".into(), limit, ..Query::default() });
+        assert_eq!(some, all[..limit], "limit {limit}");
+    }
+    for folder in &folders {
+        let _ = std::fs::remove_dir_all(folder);
+    }
+}

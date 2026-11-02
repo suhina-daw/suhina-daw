@@ -828,22 +828,36 @@ fn a_device_dragged_onto_a_return_in_the_arrangement_joins_its_chain() {
     harness.run();
     harness.get_by_label(&row("Effects")).click();
     harness.run();
-    let devices = |app: &App| {
+    let devices = |app: &App, name: &str| {
         app.session().map_or(0, |s| {
             let p = s.project();
-            let channel =
-                p.tracks.iter().find(|t| t.name == "A Reverb").and_then(|t| t.channel).unwrap_or(ChannelId(0));
+            let channel = p.tracks.iter().find(|t| t.name == name).and_then(|t| t.channel).unwrap_or(ChannelId(0));
             p.channel(channel).map_or(0, |c| c.devices.len())
         })
     };
-    let before = devices(harness.state());
-    let header = harness.get_by_label("Turn A Reverb off").rect();
-    // On the header, then on the lane beside it, on the side away from the window's edge.
-    let lane = if header.center().x < SIZE.0 / 2.0 { header.right() + 300.0 } else { header.left() - 300.0 };
-    for (added, at) in [(1, header.center()), (2, Pos2::new(lane, header.center().y))] {
-        let from = harness.get_by_label(&row("Overdrive")).rect().center();
-        drag(&mut harness, from, at);
-        assert!(until(&mut harness, |app| devices(app) == before + added), "{added} added at {at:?}");
+    // Two tracks in a group, so there is a group's row as well.
+    let tracks: Vec<u32> =
+        harness.state().session().map_or(Vec::new(), |s| s.project().tracks.iter().take(2).map(|t| t.id.0).collect());
+    harness.state_mut().run(&suhina_ui::kit::widgets::Action::new("track.group", json!({ "tracks": tracks })));
+    harness.run();
+    let group = harness.state().session().and_then(|s| {
+        let p = s.project();
+        let submix = |t: &&suhina_engine::model::Track| {
+            t.channel.and_then(|c| p.channel(c)).is_some_and(|c| c.role == suhina_engine::model::ChannelRole::Submix)
+        };
+        p.tracks.iter().find(submix).map(|t| t.name.clone())
+    });
+    let group = group.unwrap();
+    for name in ["A Reverb", group.as_str()] {
+        let before = devices(harness.state(), name);
+        let header = harness.get_by_label(&format!("Turn {name} off")).rect();
+        // On the header, then on the lane beside it, on the side away from the window's edge.
+        let lane = if header.center().x < SIZE.0 / 2.0 { header.right() + 300.0 } else { header.left() - 300.0 };
+        for (added, at) in [(1, header.center()), (2, Pos2::new(lane, header.center().y))] {
+            let from = harness.get_by_label(&row("Overdrive")).rect().center();
+            drag(&mut harness, from, at);
+            assert!(until(&mut harness, |app| devices(app, name) == before + added), "{name}: {added} at {at:?}");
+        }
     }
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);

@@ -511,15 +511,25 @@ fn ctrl_and_shift_on_a_channel_strip_select_as_on_a_header() {
         harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
         harness.run();
     };
-    let selected = |harness: &Harness<'static, App>| harness.state().selected_tracks().to_vec();
+    let selected = |harness: &Harness<'static, App>| {
+        let project = harness.state().session().map(Session::project);
+        let mut names: Vec<String> = harness
+            .state()
+            .selected_tracks()
+            .iter()
+            .filter_map(|id| project?.tracks.iter().find(|t| t.id == *id).map(|t| t.name.clone()))
+            .collect();
+        names.sort();
+        names
+    };
     click_strip(&mut harness, "Bass", Modifiers::COMMAND);
-    assert_eq!(selected(&harness).len(), 2, "Ctrl adds");
+    assert_eq!(selected(&harness), ["Bass", "Drums"], "Ctrl adds");
     click_strip(&mut harness, "Bass", Modifiers::COMMAND);
-    assert_eq!(selected(&harness).len(), 1, "and takes out");
+    assert_eq!(selected(&harness), ["Drums"], "and takes out");
     click_strip(&mut harness, "Keys", Modifiers::SHIFT);
-    assert!(selected(&harness).len() > 2, "Shift takes the run of columns: {:?}", selected(&harness));
+    assert_eq!(selected(&harness), ["Bass", "Drums", "Keys"], "Shift takes the run of columns");
     click_strip(&mut harness, "Bass", Modifiers::NONE);
-    assert_eq!(selected(&harness).len(), 1, "a plain click selects it alone");
+    assert_eq!(selected(&harness), ["Bass"], "a plain click selects it alone");
 }
 
 #[test]
@@ -543,13 +553,39 @@ fn a_launcher_fader_dragged_on_a_selection_keeps_the_tracks_apart() {
     harness.run();
     let apart = |h: &Harness<'static, App>| levels(h, "Bass").0 - levels(h, "Drums").0;
     let before = apart(&harness);
+    let bass_before = levels(&harness, "Bass").0;
     assert!(before.abs() > 1.0, "{before}");
     let to = drag_up(&mut harness, "Bass volume", 10.0);
+    assert!(levels(&harness, "Bass").0 > bass_before + 0.11, "Bass moved up from {bass_before}");
     assert!((apart(&harness) - before).abs() < 0.11, "while dragged: {before} to {}", apart(&harness));
     harness.drop_at(to);
     harness.step();
     harness.step();
     assert!((apart(&harness) - before).abs() < 0.11, "after: {before} to {}", apart(&harness));
+}
+
+#[test]
+fn a_double_click_on_a_selected_fader_sets_every_track_to_its_default() {
+    // Frames close enough together for a double-click.
+    let mut harness = window_with_step(demo_app(), 1.0 / 60.0);
+    harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": [0], "db": -6.0 })));
+    harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": [1], "db": -12.0 })));
+    harness.run();
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    let at = harness.get_by_label("Bass volume").rect().center();
+    for _ in 0..2 {
+        harness.hover_at(at);
+        harness.drag_at(at);
+        harness.drop_at(at);
+        harness.step();
+    }
+    harness.run_steps(2);
+    for track in ["Drums", "Bass"] {
+        assert!(levels(&harness, track).0.abs() < 0.01, "{track}: {}", levels(&harness, track).0);
+    }
 }
 
 #[test]

@@ -59,6 +59,11 @@ pub(super) fn send_knob(
             committed = Some(v);
             actions.push(commands::set_send(track, send.target, v, continued));
         }
+        Drag::Set(v) => {
+            state.send_drag = None;
+            committed = Some(v);
+            actions.push(commands::set_send_outright(track, send.target, v));
+        }
         Drag::None => {}
     }
     response.context_menu(|ui| {
@@ -199,6 +204,11 @@ pub(super) fn value_control(
                 committed = Some(v);
                 actions.push(if one { set(v) } else { value_action(control, &tracks, value, v) });
             }
+            Drag::Set(v) => {
+                state.value_drag = None;
+                committed = Some(v);
+                actions.push(if one { set(v) } else { value_set(control, &tracks, v) });
+            }
             Drag::None => {}
         }
     }
@@ -262,6 +272,15 @@ pub(super) fn pan_knob(painter: &egui::Painter, rect: Rect, pan: f64, response: 
 /// What a track whose value is `value` shows while `drag` moves its selection: the dragged track
 /// shows what the drag reached and the others keep their distance from it, as [`value_action`]
 /// will leave them. A drag to silence, or from it, is set on them all outright.
+/// A number typed or a double-click on one field of a selection: every track takes the value.
+fn value_set(control: Control, tracks: &[TrackId], to: f64) -> Action {
+    let ids: Vec<u32> = tracks.iter().map(|t| t.0).collect();
+    match control {
+        Control::Volume => commands::set_volume(&ids, to, None),
+        Control::Pan => Action::new("track.setPan", json!({ "tracks": ids, "pan": (to * 100.0).round() / 100.0 })),
+    }
+}
+
 pub(super) fn moved_by_drag(value: f64, drag: &ValueDrag, range: (f64, f64)) -> f64 {
     let delta = drag.now - drag.start;
     let silenced = drag.control == Control::Volume && drag.now <= range.0;

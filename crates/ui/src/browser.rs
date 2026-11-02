@@ -498,7 +498,12 @@ impl BrowserState {
             )
             .map_err(String::from)?;
             if search.files() > self.search_inline_files {
-                return self.start_search(search);
+                let started = self.start_search(search);
+                if started.is_err() {
+                    // The next frame tries again.
+                    self.rows_key = None;
+                }
+                return started;
             }
             flat_rows(search.run(&AtomicBool::new(false)))
         } else {

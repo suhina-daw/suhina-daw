@@ -1047,7 +1047,8 @@ impl App {
     /// keys), as `track.setMixerValues` on all of them: each keeps its distance from the one
     /// moved, counted from where the selection stood when the drag began, so going to the end of
     /// the range and back leaves it as it was. A send at silence counts as the bottom of the
-    /// range, so sends not used yet come up together. `None` when it is not part of a selection.
+    /// range, so sends not used yet come up together. A send without `continue` was typed or
+    /// reset: every track takes that value. `None` when it is not part of a selection.
     pub(super) fn drag_to_selection(&mut self, action: &Action) -> Option<Action> {
         let id = |v: &serde_json::Value| v.as_u64().and_then(|n| u32::try_from(n).ok()).map(TrackId);
         let (control, moved, target, value) = match action.id {
@@ -1070,6 +1071,7 @@ impl App {
         }
         let (floor, top) = if control == "send" { SEND_RANGE } else { VOLUME_RANGE };
         let continued = action.params["continue"].as_bool() == Some(true);
+        let outright = action.params.get("continue").is_none();
         let same = |d: &&SelectionDrag| d.control == control && d.moved == moved && d.target == target;
         let start = match self.selection_drag.as_ref().filter(same).filter(|_| continued) {
             Some(drag) => drag.start.clone(),
@@ -1092,7 +1094,8 @@ impl App {
             .iter()
             .map(|(_, was)| match control {
                 "pan" => ((was + to - from).clamp(-1.0, 1.0) * 100.0).round() / 100.0,
-                _ if to <= floor || was + to - from <= floor => SILENCE_DB,
+                _ if to <= floor || (!outright && was + to - from <= floor) => SILENCE_DB,
+                _ if outright => (to.min(top) * 10.0).round() / 10.0,
                 _ => ((was + to - from).min(top) * 10.0).round() / 10.0,
             })
             .collect();

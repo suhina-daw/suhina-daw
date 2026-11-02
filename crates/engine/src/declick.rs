@@ -71,6 +71,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_start_after_a_stop_takes_the_shorter_ramp_again() {
+        let mut guard = StartGuard::new(48_000);
+        let (start, stop) = (guard.frames, guard.stop_frames);
+        assert!(stop > start);
+        guard.begin_stop(0);
+        assert_eq!((guard.left, guard.length), (stop, stop));
+        guard.begin(0);
+        assert_eq!((guard.left, guard.length), (start, start));
+    }
+
+    #[test]
     fn a_start_continues_from_an_audible_tail_on_both_outputs() {
         let mut guard = StartGuard::new(48_000);
         guard.process(&mut [0.25, -0.25], &mut [0.5, -0.5]);

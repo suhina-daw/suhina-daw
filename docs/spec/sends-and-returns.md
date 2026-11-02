@@ -82,7 +82,8 @@ columns have no send knobs.
 A send knob dragged on one of several selected tracks, in either view, moves the same send of them
 all by the same amount while it is dragged (`track.setMixerValues`, one undo step), each keeping
 its distance from the others; a send at silence counts as −70 dB, so sends not used yet come up
-together, and a drag down to silence silences them all. A fader or a pan knob in the Launcher
+together, and a drag down to silence silences them all. A number typed or a double-click sets them
+all to that value. A fader or a pan knob in the Launcher
 view's strip moves its selection the same way.
 
 ## Not decided yet

@@ -214,4 +214,24 @@ fn a_duplicated_track_starts_its_plug_in_with_the_state_it_has_now() {
     session.execute("track.copy", &json!({ "tracks": [1] })).unwrap();
     session.execute("track.paste", &json!({ "after": 1 })).unwrap();
     assert_eq!(copied_gain(&session), Some(DEFAULT_GAIN));
+
+    // Editors open on Windows, and on Linux with an X server.
+    let editors =
+        cfg!(windows) || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty()));
+    if !editors {
+        eprintln!("no display for editors; the edit part is skipped");
+        return;
+    }
+    // A change made in the plug-in's editor goes with both kinds of copy.
+    session.execute("device.openEditor", &device).unwrap();
+    until(&mut session, &mut renderer, "the edit reaching the plug-in", |s| {
+        gain(&s.project_as_heard()) == Some(EDITOR_GAIN)
+    });
+    session.execute("device.closeEditor", &device).unwrap();
+    session.execute("track.duplicate", &json!({ "tracks": [1] })).unwrap();
+    assert_eq!(copied_gain(&session), Some(EDITOR_GAIN));
+    session.execute("edit.undo", &json!({})).unwrap();
+    session.execute("track.copy", &json!({ "tracks": [1] })).unwrap();
+    session.execute("track.paste", &json!({ "after": 1 })).unwrap();
+    assert_eq!(copied_gain(&session), Some(EDITOR_GAIN));
 }

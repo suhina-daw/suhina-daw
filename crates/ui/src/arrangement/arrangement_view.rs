@@ -1525,7 +1525,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 state.main_drag = Some(v);
                 actions.push(Action::new("mixer.setMainVolume", json!({ "db": v, "continue": !first })));
             }
-            Drag::Done(v) => {
+            Drag::Done(v) | Drag::Set(v) => {
                 state.main_drag = None;
                 actions.push(Action::new("mixer.setMainVolume", json!({ "db": v, "continue": true })));
             }

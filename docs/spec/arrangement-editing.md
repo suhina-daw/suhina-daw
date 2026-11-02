@@ -857,7 +857,8 @@ input lines follow below.
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging
 one field moves every selected track's by the same amount (the others follow it as it is dragged,
-and the commands land when it is let go), one click on a track-on or a solo button turns them all
+and the commands land when it is let go; a number typed or a double-click sets them all to that
+value), one click on a track-on or a solo button turns them all
 off or on, and the whole list is one undo step. With one track selected, or with a click outside
 the selection, they act on that track alone, and it is heard while it is dragged: each frame sets
 the value with `continue`, so the drag is one undo step.
@@ -1031,8 +1032,9 @@ than forcing an already audible effect tail to zero. It does not move note times
 of latency, and spans render-block boundaries. Offline command rendering uses the same path.
 
 Stopping a running transport, whether returning to the marker or keeping the current position,
-uses the same latency-aligned transition over 5 ms, unless all instrument slots provide their own
-smooth stop and no arrangement audio clip is playing. Hosted instruments with a transport gate fade
+uses the same latency-aligned transition over 5 ms, unless no arrangement audio clip is playing and
+either no plug-in is loaded or the project has instrument slots that all provide their own smooth
+stop. A project with plug-in effects and no plug-in instrument takes it. Hosted instruments with a transport gate fade
 their own output over 5 ms instead; an arrangement audio clip has no fade of its own, so it always
 takes the transition, with or without plug-ins in the project.
 Note-off messages still arrive immediately; the transition smooths an abrupt release without

@@ -178,7 +178,7 @@ impl FileSearch {
             query.tags.is_empty()
                 || self.tagged.get(key).is_some_and(|names| names.iter().any(|n| query.tags.contains(n)))
         };
-        let mut hits: Vec<(u8, IndexedFile)> = Vec::new();
+        let mut hits: Vec<(u8, usize, IndexedFile)> = Vec::new();
         for (folder, index) in &self.folders {
             for (seen, (rel, entry)) in index.files.iter().enumerate() {
                 if seen % 1024 == 0 && cancel.load(AtomicOrdering::Relaxed) {
@@ -198,6 +198,7 @@ impl FileSearch {
                 }
                 hits.push((
                     rank,
+                    hits.len(),
                     IndexedFile {
                         folder: folder.clone(),
                         path,
@@ -209,8 +210,12 @@ impl FileSearch {
                 ));
             }
         }
-        let order = |a: &(u8, IndexedFile), b: &(u8, IndexedFile)| {
-            a.0.cmp(&b.0).then(a.1.name().len().cmp(&b.1.name().len())).then(natural_cmp(a.1.name(), b.1.name()))
+        // Last by where it was found, so the same name in two folders keeps the folders' order.
+        let order = |a: &(u8, usize, IndexedFile), b: &(u8, usize, IndexedFile)| {
+            a.0.cmp(&b.0)
+                .then(a.2.name().len().cmp(&b.2.name().len()))
+                .then(natural_cmp(a.2.name(), b.2.name()))
+                .then(a.1.cmp(&b.1))
         };
         // Only what is shown needs its order: a short word matches most of a large library.
         if limit > 0 && hits.len() > limit {
@@ -218,7 +223,7 @@ impl FileSearch {
             hits.truncate(limit);
         }
         hits.sort_by(order);
-        hits.into_iter().map(|(_, f)| f).collect()
+        hits.into_iter().map(|(_, _, f)| f).collect()
     }
 }
 

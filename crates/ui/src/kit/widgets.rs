@@ -634,8 +634,10 @@ pub enum Drag {
     None,
     /// Being dragged: the value to show.
     Moving(f64),
-    /// Released, reset by a double-click or moved by the wheel: the value to commit.
+    /// Released, or moved by the wheel or an arrow key: the value to commit.
     Done(f64),
+    /// Typed or reset by a double-click: the value itself, which a selection takes as it is.
+    Set(f64),
 }
 
 /// Whether the wheel over a value field changes its value this frame: with Ctrl/Cmd held. Without it
@@ -850,7 +852,7 @@ pub fn drag_value_axis(
         && number.is_finite()
     {
         *preview = None;
-        return Drag::Done(typed_value(number, range));
+        return Drag::Set(typed_value(number, range));
     }
     if steps != 0 {
         let from = if value.is_finite() { value } else { range.0 };
@@ -873,7 +875,7 @@ pub fn drag_value_axis(
     }
     if response.double_clicked() {
         *preview = None;
-        return Drag::Done(default);
+        return Drag::Set(default);
     }
     if response.drag_started_by(egui::PointerButton::Primary) {
         *preview = Some(if value.is_finite() { value } else { range.0 });

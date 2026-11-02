@@ -627,6 +627,13 @@ impl Rack {
         self.known_states()
     }
 
+    /// [`Rack::current_states`], asking only the plug-ins `keys`; the others give what they last
+    /// gave, so a busy host elsewhere in the project does not hold the window up.
+    pub(crate) fn current_states_of(&mut self, keys: &[u64]) -> HashMap<u64, SavedState> {
+        self.read_states_until(Instant::now() + SAVE_WAIT, Some(keys));
+        self.known_states()
+    }
+
     /// The plug-ins' states as last read (every [`SAVE_EVERY`] and at each save), without asking
     /// them now: for a backup, which must not hold the window up while a busy plug-in answers.
     pub(crate) fn known_states(&self) -> HashMap<u64, SavedState> {
@@ -644,22 +651,27 @@ impl Rack {
     /// answers: at most [`SAVE_WAIT`] in all, with the time it takes a plug-in lent out for
     /// something else (a read just after it started) to come back first.
     fn read_states(&mut self) {
-        self.read_states_until(Instant::now() + SAVE_WAIT);
+        self.read_states_until(Instant::now() + SAVE_WAIT, None);
     }
 
     /// Concurrent reads share a deadline, including control halves already lent out.
-    fn read_states_until(&mut self, deadline: Instant) {
+    fn read_states_until(&mut self, deadline: Instant, only: Option<&[u64]>) {
         let mut notices = Vec::new();
         let lent = |rack: &Self, keys: Option<&[u64]>| {
             rack.instances.iter().any(|(key, i)| {
                 i.control.is_none() && keys.map_or(i.status == PluginStatus::Running, |keys| keys.contains(key))
             })
         };
-        while lent(self, None) && Instant::now() < deadline {
+        while lent(self, only) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(2));
             self.take_returned(&mut notices);
         }
-        let running: Vec<u64> = self.instances.iter().filter(|(_, i)| i.control.is_some()).map(|(k, _)| *k).collect();
+        let running: Vec<u64> = self
+            .instances
+            .iter()
+            .filter(|(k, i)| i.control.is_some() && only.is_none_or(|only| only.contains(k)))
+            .map(|(k, _)| *k)
+            .collect();
         let asked: Vec<u64> = running.into_iter().filter(|key| self.lend(*key, read_state).is_ok()).collect();
         while lent(self, Some(&asked)) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(2));

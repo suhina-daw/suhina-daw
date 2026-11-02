@@ -55,7 +55,7 @@ Messages go over a local socket or pipe, one JSON object per message with an `op
   `reconfigure` (below). An `error` carries the instance of the request it answers.
 - **Editors:** `open_editor` names the window that owns the editor (`owner`: a Win32 `HWND` or an
   X11 window id), whether it is `embedded` in it, and the `title` of an editor in a window of its
-  own (without one, the plug-in's name); `editor_title` changes that title and is not answered;
+  own (without one, the plug-in's name, or a CLAP plug-in's id); `editor_title` changes that title and is not answered;
   `place_editor` puts an embedded editor in the window's pixels and is not answered; `fit_editor`
   asks an embedded editor to take the room it has.
 - **ARA** ([ADR 0033](../decisions/0033-ara-hosting.md)): `load` may carry a document,

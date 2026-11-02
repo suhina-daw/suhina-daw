@@ -929,6 +929,11 @@ fn volume_drag(
             committed = Some(v);
             actions.push(set_volume(track.0, v, continued));
         }
+        Drag::Set(v) => {
+            state.drag = None;
+            committed = Some(v);
+            actions.push(commands::set_volume(&[track.0], v, None));
+        }
         Drag::None => {
             if continued {
                 state.drag = None;
@@ -1055,7 +1060,7 @@ pub fn main_fader(
             actions.push(send(v, continued));
             db = v;
         }
-        Drag::Done(v) => {
+        Drag::Done(v) | Drag::Set(v) => {
             state.drag = None;
             actions.push(send(v, continued));
             db = v;
@@ -1324,6 +1329,12 @@ fn pan_row(
             committed = Some(v);
             actions.push(set_pan(v));
         }
+        Drag::Set(v) => {
+            state.drag = None;
+            committed = Some(v);
+            actions
+                .push(Action::new("track.setPan", json!({ "tracks": [track.0], "pan": (v * 100.0).round() / 100.0 })));
+        }
         Drag::None => {}
     }
     // Shown after this frame's drag, so the knob never trails the pointer.
@@ -1450,6 +1461,11 @@ fn send_knobs(
                 state.drag = None;
                 committed = Some(v);
                 actions.push(commands::set_send(track, send.target, v, continued));
+            }
+            Drag::Set(v) => {
+                state.drag = None;
+                committed = Some(v);
+                actions.push(commands::set_send_outright(track, send.target, v));
             }
             Drag::None => {}
         }

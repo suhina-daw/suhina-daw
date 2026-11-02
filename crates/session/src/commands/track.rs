@@ -740,7 +740,7 @@ fn set_color(session: &mut Session, params: &Value) -> Result<Value, CommandErro
 fn copy_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let tracks = track_list(&session.project, params)?;
     // A running plug-in's copy holds its state as it is now, not as it was last saved.
-    let copied = crate::track_copy::copy(&session.project_as_heard(), &tracks)?;
+    let copied = crate::track_copy::copy(&session.project_as_heard_on(&tracks), &tracks)?;
     let names = copied.first_names();
     let count = copied.len();
     session.clipboards.whole_tracks = copied;
@@ -749,7 +749,7 @@ fn copy_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandEr
 
 fn cut_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let tracks = track_list(&session.project, params)?;
-    let copied = crate::track_copy::copy(&session.project_as_heard(), &tracks)?;
+    let copied = crate::track_copy::copy(&session.project_as_heard_on(&tracks), &tracks)?;
     let names = copied.first_names();
     let count = copied.len();
     // The tracks in groups first, so deleting a group leaves none of them behind.
@@ -779,7 +779,7 @@ fn duplicate_tracks(session: &mut Session, params: &Value) -> Result<Value, Comm
     let tracks = track_list(&session.project, params)?;
     let suffix = suffix(params)?;
     // A running plug-in's copy starts with its state as it is now, not as it was last saved.
-    let heard = session.project_as_heard();
+    let heard = session.project_as_heard_on(&tracks);
     let added = crate::track_copy::duplicate(&mut session.project, &heard, &tracks, suffix)?;
     Ok(json!({ "tracks": added.iter().map(|t| t.0).collect::<Vec<_>>() }))
 }

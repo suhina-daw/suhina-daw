@@ -36,8 +36,10 @@ fn a_large_search_answers_from_its_own_thread_and_the_next_key_replaces_it() {
     // A search overtaken by the next key never shows.
     state.search = "hat".into();
     state.refresh_rows(&mut projects).unwrap();
+    let overtaken = state.search_job.as_ref().map(|job| Arc::clone(&job.cancel)).unwrap();
     state.search = "kick two".into();
     state.refresh_rows(&mut projects).unwrap();
+    assert!(overtaken.load(Ordering::Relaxed), "the next key ends it");
     state.take_search_answer(true);
     assert_eq!(names(&state), ["kick two.wav"]);
     let _ = std::fs::remove_dir_all(&folder);
