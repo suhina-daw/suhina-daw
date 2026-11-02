@@ -433,7 +433,9 @@ impl PianoRollState {
         }
         params["notes"] = json!(acting.iter().collect::<Vec<_>>());
         let grid = note_grid(clip, self.beat_width);
-        let free = matches!(action, "pianoRoll.earlierFine" | "pianoRoll.laterFine");
+        // Each of these says how far it goes, on the grid or off it.
+        let free =
+            matches!(action, "pianoRoll.earlier" | "pianoRoll.later" | "pianoRoll.earlierFine" | "pianoRoll.laterFine");
         let moves = |beats: f64, keys: i32| {
             let (beats, moved) = move_delta(beats, keys, &chosen, grid, free);
             // A pitch move that does not fit leaves the pitch alone, so no note changes its name.
@@ -480,8 +482,8 @@ impl PianoRollState {
                 self.replacing(&mut params);
                 return Some(Action::new("note.resize", params));
             }
-            "pianoRoll.earlier" => ("note.move", moves(-grid.step, 0).0, 0),
-            "pianoRoll.later" => ("note.move", moves(grid.step, 0).0, 0),
+            "pianoRoll.earlier" => ("note.move", moves(key_step(&chosen, grid, true), 0).0, 0),
+            "pianoRoll.later" => ("note.move", moves(key_step(&chosen, grid, false), 0).0, 0),
             "pianoRoll.earlierFine" => ("note.move", moves(-FINE_STEP, 0).0, 0),
             "pianoRoll.laterFine" => ("note.move", moves(FINE_STEP, 0).0, 0),
             "pianoRoll.up" => ("note.move", 0.0, moves(0.0, 1).1),

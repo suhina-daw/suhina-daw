@@ -102,6 +102,17 @@ pub fn move_delta(raw: f64, raw_keys: i32, moved: &[Note], grid: TimelineGrid, f
     (if beats.is_finite() { beats } else { 0.0 }, keys)
 }
 
+/// How far an arrow key moves `moved`: the first of them to the next grid line, or with `earlier`
+/// the one before, and the rest with it, so notes off the grid come onto it and then go a line at a
+/// time. A step when the grid does not snap.
+pub fn key_step(moved: &[Note], grid: TimelineGrid, earlier: bool) -> f64 {
+    let first = moved.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
+    if !grid.snaps || !first.is_finite() {
+        return if earlier { -grid.step } else { grid.step };
+    }
+    if earlier { grid.previous_line(first) - first } else { grid.next_line(first) - first }
+}
+
 /// How much a drag of the grabbed note's right end by `raw` beats changes the selection's
 /// lengths: the end on the grid unless `free`, and no note shorter than [`MIN_LENGTH`].
 pub fn resize_by(raw: f64, grabbed: &Note, resized: &[Note], grid: TimelineGrid, free: bool) -> f64 {

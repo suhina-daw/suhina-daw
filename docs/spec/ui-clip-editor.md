@@ -322,8 +322,10 @@ pull up.
   line, and when they would be closer than 6 points the grid coarsens (a straight value doubles
   up to the beat, a triplet goes to the beat, then the bar, then bars double), so lines always
   land on bar lines, in 5/4 or 3/8 and with triplets too. Snapping uses the same lines, so what
-  snaps is what is drawn. A move by dragging or by the arrow keys goes by whole steps, so a note
-  off the grid stays as far off it.
+  snaps is what is drawn. A move by dragging goes by whole steps, so a note off the grid stays as
+  far off it. A move by the arrow keys takes the first selected note to the next or the previous
+  line, and the others with it, so notes off the grid come onto it; Alt and an arrow key go a fine
+  step off the grid.
 - **Built ([#346](https://github.com/suhina-daw/suhina-daw/issues/346)): the grid menu.** The
   button at the right end of the toolbar, after the word **Grid**, shows the value (`1/16`,
   `1/8T`, `2 bars`, `Adaptive`, `Adaptive T`, with ` off` after it while snapping is off; its

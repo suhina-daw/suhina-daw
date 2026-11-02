@@ -122,7 +122,7 @@ status bar.
 | In the piano roll, after a click in it: copy, cut, paste, duplicate the selected notes (the same `selection.*` keys; with no note selected, or nothing copied for a paste, they act on the clip) | Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D (Ctrl+B with Draw-first) |
 | In the piano roll: choose the Select, Draw, Paint, Erase, Slice, Mute tool (`pianoRoll.tool1` … `.tool6`, [spec](spec/ui-clip-editor.md) › Drawing notes, › Muting) | 1, 2, 3, 4, 5, 6 |
 | In the piano roll: select every note, clear the selection (`pianoRoll.selectAll`, `.deselect`) | Ctrl+A; Escape |
-| In the piano roll: move the selected notes one grid step earlier, later (`pianoRoll.earlier`, `.later`) | Left; Right |
+| In the piano roll: move the selected notes to the previous, the next grid line, the first of them on the line and the others keeping their distance to it (`pianoRoll.earlier`, `.later`) | Left; Right |
 | In the piano roll: move the selected notes a fine step (a 1/128 note) earlier, later, off the grid (`pianoRoll.earlierFine`, `.laterFine`) | Alt+Left; Alt+Right |
 | In the piano roll: move the selected notes a semitone, an octave up or down (`pianoRoll.up`, `.down`, `.octaveUp`, `.octaveDown`) | Up, Down; Shift+Up, Shift+Down |
 | In the piano roll: take the selected notes' ends to the previous, the next grid line, or to the next note of the key (`pianoRoll.shorter`, `.longer`; never shorter than a step) | Shift+Left; Shift+Right |

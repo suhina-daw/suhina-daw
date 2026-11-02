@@ -650,3 +650,27 @@ fn a_key_resize_replaces_what_is_under_it_unless_notes_stack() {
     let longer = state.key_action("pianoRoll.longer", &clip, 0.0, None).map(|a| a.params);
     assert_eq!(longer.map(|p| p["replace"].clone()), Some(Value::Null));
 }
+
+/// An arrow key takes the first note to the next line, the rest keeping their distance to it, and
+/// from there a line at a time.
+#[test]
+fn an_arrow_key_brings_notes_off_the_grid_onto_it() {
+    let beats = |notes: Vec<Note>, action: &str| {
+        let clip = clip(notes);
+        let mut state = focused_on(&clip);
+        state.selected = (0..clip.notes.len()).collect();
+        let step = note_grid(&clip, state.beat_width).step;
+        let moved = state.key_action(action, &clip, 0.0, None).map(|a| a.params["beats"].as_f64());
+        (moved.flatten().unwrap_or(0.0), step)
+    };
+    let (moved, step) = beats(vec![note(4.0, 0.25, 60)], "pianoRoll.later");
+    assert_eq!(moved, step, "on a line: a whole step");
+    let (moved, step) = beats(vec![note(4.0, 0.25, 60)], "pianoRoll.earlier");
+    assert_eq!(moved, -step);
+
+    let off = step / 4.0;
+    let (moved, _) = beats(vec![note(4.0 - off, 0.25, 60), note(6.0, 0.25, 62)], "pianoRoll.later");
+    assert!((moved - off).abs() < 1e-6, "the first note reaches the line: {moved}");
+    let (moved, _) = beats(vec![note(4.0 + off, 0.25, 60), note(6.0, 0.25, 62)], "pianoRoll.earlier");
+    assert!((moved + off).abs() < 1e-6, "the first note goes back to the line: {moved}");
+}

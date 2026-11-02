@@ -166,8 +166,8 @@ of one square of the grid, which follows the zoom and the grid setting.
 | B | `pianoRoll.draw` | Piano roll | Switches between the Select and Draw tools. |
 | Ctrl+A | `pianoRoll.selectAll` | Piano roll | Selects every note in the clip. |
 | Escape | `pianoRoll.deselect` | Piano roll | Clears the note selection. |
-| Left | `pianoRoll.earlier` | Piano roll | Moves the selected notes one grid step earlier. |
-| Right | `pianoRoll.later` | Piano roll | Moves the selected notes one grid step later. |
+| Left | `pianoRoll.earlier` | Piano roll | Moves the selected notes to the previous grid line: the first of them lands on it, and the others keep their distance to it. |
+| Right | `pianoRoll.later` | Piano roll | Moves the selected notes to the next grid line: the first of them lands on it, and the others keep their distance to it. |
 | Up | `pianoRoll.up` | Piano roll | Moves the selected notes one semitone higher. |
 | Down | `pianoRoll.down` | Piano roll | Moves the selected notes one semitone lower. |
 | Alt+Left | `pianoRoll.earlierFine` | Piano roll | Moves the selected notes a fine step (a 1/128 note) earlier, off the grid. |
