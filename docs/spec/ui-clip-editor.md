@@ -772,8 +772,12 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   off with it. With several MIDI clips picked (#1054) the piano roll edits one of them, the one
   with the focus (the last picked); the others' notes are drawn faint where they play, as ghost
   notes are, and the view runs on over them. The column lists the picked clips, the one being
-  edited marked **Editing**; a click on another gives it the focus. Not yet: a strip of the
-  clips over the piano roll and a click on a faint note to switch.
+  edited marked **Editing**; a click on another gives it the focus. A strip over the ruler shows
+  each picked clip as a bar in its track's colour where it lies in time, with its name, and the
+  edited one brightest; a click on a bar, or on a clip's faint note with the Select tool, gives it
+  the focus, as a double-click of the right button on a faint note does. The **Focus** switch at
+  the strip's left keeps the focus on the clip picked first. Keys and selections act on the
+  focused clip.
 - **Built ([#699](https://github.com/suhina-daw/suhina-daw/issues/699)):** the column edits the
   clip, each change one undo step:
   - **Loop** is a switch (`clip.setLoop`). An audio clip that loops has **Loop start** and **Loop

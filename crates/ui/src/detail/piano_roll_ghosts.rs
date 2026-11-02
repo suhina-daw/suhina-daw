@@ -92,6 +92,19 @@ impl GhostNote {
     }
 }
 
+/// A clip of several picked, as the strip over the piano roll shows it, in the edited clip's content
+/// beats.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PickedBar {
+    pub clip: ClipRef,
+    pub start: f64,
+    pub length: f64,
+    pub name: String,
+    pub color: Color32,
+    /// Whether it is the clip being edited.
+    pub edited: bool,
+}
+
 /// A clip the menu's Clip list offers: where it is, and its name with its track and place.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GhostChoice {
@@ -106,6 +119,15 @@ pub struct Ghosts {
     /// The names of the tracks the ghost notes come from.
     pub sources: Vec<String>,
     pub choices: Vec<GhostChoice>,
+    /// With several MIDI clips picked, each of them.
+    pub picked: Vec<PickedBar>,
+}
+
+impl Ghosts {
+    /// Whether `clip` is one of the clips picked together with the edited one.
+    pub fn is_picked(&self, clip: ClipRef) -> bool {
+        self.picked.iter().any(|bar| bar.clip == clip)
+    }
 }
 
 /// The ghost notes `source` gives the edited clip `edited`, and the clips the menu offers.
@@ -211,6 +233,29 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
         .map(|p| p.start + p.length)
         .fold(first.end, f64::max);
     let window = Window { end, ..first };
+    for clip in picked.iter().copied() {
+        let Some(other) = clip_at(project, clip) else { continue };
+        let track = clip.track();
+        if notes_of(project, track, other).is_none() {
+            continue;
+        }
+        let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
+        let rgb = project
+            .tracks
+            .get(position)
+            .map(|track| track_colour(track, position))
+            .unwrap_or_else(|| crate::interaction::grid::to_rgb(theme::midi_clip_default()));
+        let at = placement(clip, other);
+        let content = project.content(other.content).map_or("", |c| c.name.as_str());
+        ghosts.picked.push(PickedBar {
+            clip,
+            start: at.start - first.start + first.content,
+            length: at.length,
+            name: format!("{} - {}", project.shown_track_name(track), content),
+            color: Color32::from_rgb(rgb.0, rgb.1, rgb.2),
+            edited: clip == edited,
+        });
+    }
     for clip in picked.iter().copied().filter(|c| *c != edited) {
         if ghosts.notes.len() >= MAX_GHOSTS {
             break;

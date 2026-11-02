@@ -158,6 +158,12 @@ impl App {
         let mut styled_ui = if let Some((_, detail)) = geometry { styled_ui.clipped_to(detail) } else { styled_ui };
         let ui = &mut *styled_ui;
         let stacked = self.settings.device_layout == DeviceLayout::Stack;
+        // The piano roll's Focus switch keeps the focus on the clip picked first.
+        if self.piano_roll.focus_first
+            && let Some(first) = self.arrangement.selected_clips().first().copied()
+        {
+            self.arrangement.focus_clip(first);
+        }
         // What it shows: the selected clip, or the selected track's devices.
         let (track, clip) = match self.shown {
             View::Session => (self.view.selected, self.view.selected_slot.map(|(t, s)| ClipRef::Slot(t, s))),

@@ -191,6 +191,8 @@ pub struct PianoRollState {
     /// The clip of a ghost note double-clicked with the right button this frame, for the window to
     /// open (› Ghost notes).
     pub open_ghost: Option<ClipRef>,
+    /// The strip's Focus switch: the focus stays on the clip picked first (› Several clips picked).
+    pub focus_first: bool,
     /// The toolbar's Hide editor button was clicked this frame: the window hides the editor.
     pub hide_requested: bool,
     /// The key rows were scrolled by hand (the wheel, a pan, zooming the key height) since the
@@ -278,6 +280,7 @@ impl Default for PianoRollState {
             right_stepped: false,
             grid_picked: None,
             open_ghost: None,
+            focus_first: false,
             hide_requested: false,
             scrolled_by_hand: false,
             centred_for: 0.0,

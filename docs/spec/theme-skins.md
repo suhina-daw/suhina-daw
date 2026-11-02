@@ -791,7 +791,7 @@ These native parts take the sheet (the theme package README lists every selector
   `:selected` and `:playing`), `.piano-key-c`, `.piano-key-hover`, `.piano-key-black-hover`,
   `.piano-key-line` and `.piano-scale-mark` (their backgrounds); `.piano-scale-strip` (background,
   `border-color`, `color`) and `.piano-range` (background, `border-color`: the range a drag on the
-  keys is selecting), `.piano-time-selection` (background over the rows, `border-color` for its edges
+  keys is selecting), `.piano-clip-strip` (the background of the strip that shows several picked clips), `.piano-time-selection` (background over the rows, `border-color` for its edges
   and the bar on the ruler) and `.piano-insert-mark` (background). What the sheet sets wins over the key style chosen in the piano roll; `.piano-note` with
   `--clip-colour`, `:selected` and `:muted` (background, border, radius, `color` for its name),
   `.velocity` (`color` of the stems), `.ruler`; the tool buttons `.piano-tool` with

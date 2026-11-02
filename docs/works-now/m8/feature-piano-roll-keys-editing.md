@@ -6,4 +6,5 @@
   selects a stretch of time for the keys to act on, a bar on the ruler shows what is selected in time,
   and a click leaves a mark where a paste goes. Shift goes on from a time selection, here and in the
   Arrangement, a selected note has a colour of its own, and a double-click with the right button on
-  a ghost note opens its clip.
+  a ghost note opens its clip. With several MIDI clips picked, a strip over the ruler shows them all,
+  and a click on a bar or a faint note gives that clip the focus.

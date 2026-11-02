@@ -33,6 +33,7 @@ mod gestures;
 use gestures::Part;
 
 mod clip;
+mod clip_strip;
 mod drawing;
 mod edits;
 mod keys;
@@ -219,6 +220,11 @@ pub fn show(
     let toolbar_rect = Rect::from_min_max(area.min, Pos2::new(area.right(), area.top() + band));
     let whole = area;
     let area = Rect::from_min_max(Pos2::new(area.left(), toolbar_rect.bottom()), area.max);
+    // Several clips picked: their strip, over the ruler (› Several clips picked).
+    let clip_row = (clip.ghosts.picked.len() > 1).then(|| {
+        Rect::from_min_max(area.min, Pos2::new(area.right(), area.top() + clip_strip::CLIP_STRIP.min(area.height())))
+    });
+    let area = clip_row.map_or(area, |row| Rect::from_min_max(Pos2::new(area.left(), row.bottom()), area.max));
     let lane_height = velocity_lane_height(area.height() - RULER, state.key_height, state.lane_wanted);
     let strip = Rect::from_min_max(
         Pos2::new(area.left(), area.top() + RULER),
@@ -285,6 +291,9 @@ pub fn show(
         key_height: state.key_height,
         rows,
     };
+    if let Some(row) = clip_row {
+        clip_strip::show(ui, row, &layout, clip, state, actions);
+    }
     let grid = note_grid(clip, state.beat_width);
     let gesture = Gestures { layout: &layout, clip, grid };
 
@@ -352,11 +361,18 @@ pub fn show(
     // The right button: the Mouse-first switches first, then the Draw-first preset's delete in
     // Draw and Paint (› Keymap presets).
     let right_deletes = workflow.right_click_deletes(matches!(state.tool, Tool::Draw | Tool::Paint));
-    if response.double_clicked_by(PointerButton::Secondary)
-        && let Some(pos) = pointer
-        && note_at(&layout, &clip.notes, pos).is_none()
-    {
-        state.open_ghost = ghost_view::ghost_at(&clip.ghosts, pos, |g| layout.note_rect(&g.note()));
+    // A ghost note: the clip it comes from. One of the clips picked takes the focus, with a click on
+    // its faint note too; any other opens with a double-click of the right button.
+    if let Some(pos) = pointer.filter(|pos| note_at(&layout, &clip.notes, *pos).is_none()) {
+        let ghost = || ghost_view::ghost_at(&clip.ghosts, pos, |g| layout.note_rect(&g.note()));
+        let clicked = response.clicked() && state.tool == Tool::Select && !workflow.empty_click_draws;
+        if (clicked || response.double_clicked_by(PointerButton::Secondary))
+            && let Some(from) = ghost().filter(|from| clip.ghosts.is_picked(*from))
+        {
+            actions.extend(clip_strip::focus_action(from));
+        } else if response.double_clicked_by(PointerButton::Secondary) {
+            state.open_ghost = ghost();
+        }
     }
     if response.clicked_by(PointerButton::Secondary)
         && !state.right_stepped
