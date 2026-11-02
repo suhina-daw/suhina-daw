@@ -108,8 +108,6 @@ mod tests {
         assert!(matches!(crossfaded(&p, lane, &lane.clips[2], 120.0), Cow::Borrowed(_)));
     }
 
-    /// Rendered: around the cut both takes sound, each through its fade; away from it each plays
-    /// alone.
     #[test]
     fn the_parts_fades_at_a_cut_set_the_crossfades_length() {
         let mut p = project();
@@ -136,6 +134,8 @@ mod tests {
         assert_eq!(crossfaded(&p, &lane, &lane.clips[1], 120.0).fade_in_curve, plain);
     }
 
+    /// Rendered: around the cut both takes sound, each through its fade; away from it each plays
+    /// alone.
     #[test]
     fn the_crossfade_is_heard_at_the_cut() {
         use crate::{AudioData, AudioPool, RenderInputs, render_offline_from};

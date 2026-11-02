@@ -69,8 +69,6 @@ const MAX_LANE: f32 = 400.0;
 const LANE_ZOOM_PER_POINT: f32 = 0.004;
 /// Heights at which a header shows its next group (components › Track header levels).
 const SHOWS_MIXER: f32 = 40.0;
-/// A take lane's height under its track (`docs/spec/recording.md` › Take lanes).
-/// The least and the most a take lane's height may be dragged to (#989).
 const SHOWS_ROUTING: f32 = 70.0;
 /// A track that plays notes shows its MIDI input under its routing from this height.
 const SHOWS_MIDI_INPUT: f32 = 90.0;

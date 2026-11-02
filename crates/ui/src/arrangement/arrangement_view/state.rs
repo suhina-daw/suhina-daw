@@ -821,7 +821,8 @@ impl ArrangementViewState {
                 for take in timeline.takes.iter().filter(|t| t.track == lane.track) {
                     let row = self.take_row(lane.track, take.number);
                     if y < top + row {
-                        self.take_heights.insert((lane.track, take.number), (row * factor).clamp(MIN_LANE, MAX_LANE));
+                        let kept = self.kept_take_row(lane.track, take.number);
+                        self.take_heights.insert((lane.track, take.number), (kept * factor).clamp(MIN_LANE, MAX_LANE));
                         return;
                     }
                     top += row + 1.0;
@@ -891,7 +892,12 @@ impl ArrangementViewState {
     /// How tall take lane `number` of `track` is: the height its edge was dragged to, or as tall
     /// as a track that has not been resized, so the lanes' zoom takes it along (#1078).
     pub(super) fn take_row(&self, track: TrackId, number: usize) -> f32 {
-        self.take_heights.get(&(track, number)).copied().unwrap_or_else(|| self.zoomed_height()).round()
+        self.kept_take_row(track, number).round()
+    }
+
+    /// A take lane's height as kept, a fraction of a point too, for the next zoom step.
+    fn kept_take_row(&self, track: TrackId, number: usize) -> f32 {
+        self.take_heights.get(&(track, number)).copied().unwrap_or_else(|| self.zoomed_height())
     }
 
     /// What is drawn under `track`'s own row: its take lanes, then its automation lanes.

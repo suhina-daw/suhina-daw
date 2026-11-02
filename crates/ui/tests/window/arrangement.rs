@@ -1979,6 +1979,35 @@ fn a_take_piece_moves_from_its_name_bar_on_the_grid() {
     assert_eq!(take_pieces(&harness), now, "Ctrl paints and moves nothing");
 }
 
+/// With Ctrl selecting time a clip moves from anywhere, but a piece of a take moves only from its name
+/// bar, so a drag below it still comps.
+#[test]
+fn with_ctrl_selecting_time_a_drag_below_a_pieces_name_bar_still_comps() {
+    let mut harness = window_with_drums_takes(8.0);
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.time_select_ctrl = true;
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    let on_track = |h: &Harness<'static, App>| {
+        let project = h.state().session().map(|s| s.project().clone()).unwrap();
+        let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
+        let lane = project.arrangement.lanes.iter().find(|l| l.track == Some(drums)).unwrap();
+        lane.clips.iter().map(|c| (c.id, c.start, c.length)).collect::<Vec<_>>()
+    };
+    let (pieces, parts) = (take_pieces(&harness), on_track(&harness));
+    let rect = harness.get_by_label("Comp from Drums Take 1").rect();
+    let from = rect.left_top() + egui::vec2(20.0, rect.height() * 0.75);
+    drag_between(&mut harness, from, from + egui::vec2(77.0, 0.0));
+    assert_eq!(take_pieces(&harness), pieces, "the piece stays");
+    assert_ne!(on_track(&harness), parts, "the part dragged over goes onto the track");
+    // Its name bar still moves it.
+    let from = harness.get_by_label("Comp from Drums Take 2").rect().left_top() + egui::vec2(20.0, 5.0);
+    drag_between(&mut harness, from, from + egui::vec2(77.0, 0.0));
+    let moved = take_pieces(&harness);
+    assert!(moved[1][0].0 > pieces[1][0].0, "{moved:?}");
+}
+
 /// A piece's lower right corner drags its edge out, and the part of the recording comes back
 /// (#1078).
 #[test]

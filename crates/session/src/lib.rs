@@ -227,8 +227,6 @@ impl Session {
         }
     }
 
-    /// The take lane heard in place of its track's clips (`take.solo`), by its track and its
-    /// number on the track, from 1.
     /// Sets how long the fades of parts comped from now on are, in milliseconds.
     pub fn set_take_crossfade_ms(&mut self, ms: f64) {
         if ms.is_finite() && ms > 0.0 {
@@ -241,6 +239,8 @@ impl Session {
         self.take_crossfade_ms * self.project.transport.tempo_bpm / 60_000.0
     }
 
+    /// The take lane heard in place of its track's clips (`take.solo`), by its track and its
+    /// number on the track, from 1.
     pub fn take_solo(&self) -> Option<(suhina_model::TrackId, usize)> {
         let (track, index) = self.take_solo?;
         self.project.arrangement.takes.get(index).filter(|t| t.track == track)?;

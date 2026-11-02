@@ -131,7 +131,9 @@ greyed. They are where the best parts of each pass are picked and put together o
 - **Moving a piece:** a piece of a take moves as a clip does (Settings › Arrangement › *Clip drag
   handle*, [arrangement editing](arrangement-editing.md)): a drag from its name bar, or from its lower
   half, moves it along the timeline on the grid (Alt for no grid), with the pieces picked when it is
-  one of them, each on its own lane (`take.movePieces {track, takes, pieces, by}`, one undo step). A
+  one of them, each on its own lane (`take.movePieces {track, takes, pieces, by}`, one undo step).
+  With Settings › Arrangement › *Select time with* on Ctrl only the name bar moves it, so a drag below
+  it still comps. A
   moved piece covers what it lands on in its lane and plays what it played. Parts comped from it
   earlier stay where they are on the track and no longer count as its parts; a part comped after the
   move does.

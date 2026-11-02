@@ -1591,11 +1591,12 @@ pub(super) fn take_lanes(
     let raw_beat = |x: f32| f64::from((x - at.time.min + scroll_x) / beat_width);
     let ctrl = ui.input(|i| i.modifiers.command);
     // Which part of a piece moves it, as for a clip (`docs/spec/arrangement-editing.md`): the name
-    // bar, or the lower half; the whole piece when Ctrl selects time or it is too low for either.
+    // bar, or the lower half; only the name bar when Ctrl selects time, so a drag can still comp;
+    // the whole piece when it is too low for either.
     let (name_bar_moves, select_ctrl) = (state.name_bar_moves, state.time_select_ctrl);
     let moves_at = |rect: Rect, y: f32| {
         if select_ctrl {
-            return true;
+            return clip_name_bar(rect).is_none_or(|bar| y < bar.bottom());
         }
         match clip_name_bar(rect).filter(|_| name_bar_moves) {
             Some(bar) => y < bar.bottom(),

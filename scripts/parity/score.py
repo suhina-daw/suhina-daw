@@ -203,11 +203,11 @@ CHAPTERS = [
      "Ctrl and deleted or cut (take.deleteRange, take.cutRange), pieces moved along the timeline "
      "(take.movePieces), a piece's edges dragged to bring the recording back (take.trimPiece), crossfades "
      "shown and set at their cuts (take.setCrossfade) with their default in Settings, a moved part taking "
-     "its takes along, each lane "
+     "its takes along, lanes added by hand (take.add), pieces dragged between lanes, lanes picked and deleted "
+     "from their headers and kept when emptied, each lane "
      "sized and zoomed like a track, lanes appearing when the recording stops; a take lane soloed in place of its track, "
      "put whole on the track, unused takes deleted; short crossfades where parts of two takes meet; clips "
-     "not stacked over takes; saved with the project. Missing take lanes made by hand, renaming and "
-     "reordering them."),
+     "not stacked over takes; saved with the project. Missing renaming and reordering take lanes."),
     (22, "Stem Separation", 8, 0.00, "planned",
      "Roadmap item (Demucs candidate, weights unaudited). The pipeline around a model (chunking, "
      "resampling) exists in crates/separation with a test backend; no model and nothing a user "

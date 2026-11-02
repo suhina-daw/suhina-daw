@@ -150,7 +150,7 @@ fn place(p: &mut Project, from: TrackId, to: TrackId, pieces: Carried) {
             None => {
                 let color = p.arrangement.takes.get(index).and_then(|t| t.color);
                 let on_track = p.arrangement.takes.iter().filter(|t| t.track == to);
-                let number = on_track.filter_map(TakeLane::name_number).max().unwrap_or(0) + 1;
+                let number = on_track.filter_map(TakeLane::name_number).max().unwrap_or(0).saturating_add(1);
                 let name = format!("Take {number}");
                 p.arrangement.takes.push(TakeLane { track: to, name, clips, color });
             }

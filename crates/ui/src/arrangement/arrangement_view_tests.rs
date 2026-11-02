@@ -488,6 +488,29 @@ fn take_lanes_size_and_zoom_like_tracks() {
     assert_eq!(state.takes_height(track, &timeline), 200.0 + 1.0 + state.take_row(track, 3) + 1.0);
 }
 
+/// Small wheel steps add up on a take lane, as they do on a track: its height keeps the fraction.
+#[test]
+fn small_wheel_steps_add_up_on_the_take_lane_under_the_pointer() {
+    let mut project = crate::demo::demo_project();
+    let lane = project.arrangement.lanes.iter().find(|l| l.track.is_some() && !l.clips.is_empty()).unwrap();
+    let (track, clip) = (lane.track.unwrap(), lane.clips[0].clone());
+    let clips = vec![suhina_engine::model::Clip { id: ClipId::NONE, ..clip }];
+    project.arrangement.takes =
+        vec![suhina_engine::model::TakeLane { track, name: "Take 1".into(), clips, color: None }];
+    let timeline = Timeline::build(&project, None);
+    let tracks: Vec<&Lane> = timeline.lanes.iter().filter(|l| l.kind != ColumnKind::Return).collect();
+    let mut state = ArrangementViewState::default();
+    state.zoom_one = true;
+    state.take_heights.insert((track, 1), 64.0);
+    let above: f32 = tracks.iter().take_while(|l| l.track != track).map(|l| state.height(l) + 1.0).sum();
+    let at = tracks.iter().find(|l| l.track == track).map_or(0.0, |l| state.height(l) + 1.0);
+    let offset = above + at + 2.0;
+    for _ in 0..100 {
+        state.zoom_wheel(&tracks, &timeline, 1.004, offset);
+    }
+    assert!(state.take_row(track, 1) >= 90.0, "{}", state.take_row(track, 1));
+}
+
 #[test]
 fn alt_and_the_wheel_can_change_only_the_lane_under_the_pointer() {
     let timeline = Timeline::build(&crate::demo::demo_project(), None);
