@@ -310,10 +310,20 @@ fn a_busy_plug_in_loses_no_block_offline_and_passes_the_sound_in_real_time() {
     // render waits for the answer to every block, and ten of them take the host through all five.
     renderer.set_offline(true);
     play(&mut renderer, 10);
-    // Settled, it answers again: offline, so that a busy machine cannot make it late.
-    let late_before = counts.read().1;
-    play(&mut renderer, 20);
-    assert_eq!(counts.read(), (33, late_before), "it answers every block once settled");
+    // Settled, it answers again in real time. A block on time is enough, however many a busy
+    // machine makes late before it; offline could not show this, as nothing is late there.
+    renderer.set_offline(false);
+    let (given_before, late_before) = counts.read();
+    assert_eq!(given_before, 13);
+    let deadline = Instant::now() + PATIENT;
+    loop {
+        play(&mut renderer, 1);
+        let (given, late) = counts.read();
+        if given - given_before > late - late_before {
+            break;
+        }
+        assert!(Instant::now() < deadline, "it never answered again in real time ({} late)", late - late_before);
+    }
 }
 
 #[test]

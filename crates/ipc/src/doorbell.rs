@@ -314,23 +314,36 @@ mod tests {
         late
     }
 
-    /// A ring ends a wait, most likely a sleeping one by then.
+    /// A ring wakes a sleeping wait. Its deadline is an hour away, so only the ring can end it
+    /// within the minute it is given here: a wait that sleeps on reads the changed word at its
+    /// deadline and says yes all the same, so the answer alone would not show a ring that failed.
     #[test]
     fn a_ring_wakes_the_wait() {
         let name = format!("suhina-ipc-doorbell-ring-{}", std::process::id());
         let bell = Doorbell::create(&name, "test").unwrap_or_else(|e| panic!("{e}"));
         let other = Doorbell::open(&name, "test").unwrap_or_else(|e| panic!("{e}"));
         let word = std::sync::Arc::new(AtomicU32::new(0));
-        let ringer = {
+        let (sleeping, going_to_sleep) = std::sync::mpsc::channel();
+        let (answer, answered) = std::sync::mpsc::channel();
+        let waiter = {
             let word = word.clone();
             std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(20));
-                word.store(1, Ordering::Release);
-                other.ring(&word);
+                let looks = AtomicU32::new(0);
+                let done = |value: u32| {
+                    // The look after the spins is the last one before the wait sleeps.
+                    if looks.fetch_add(1, Ordering::Relaxed) == SPINS {
+                        let _ = sleeping.send(());
+                    }
+                    value == 1
+                };
+                let _ = answer.send(bell.wait(&word, done, Instant::now() + Duration::from_secs(3600)));
             })
         };
-        assert!(bell.wait(&word, |v| v == 1, Instant::now() + Duration::from_secs(60)));
-        assert!(ringer.join().is_ok());
+        assert!(going_to_sleep.recv().is_ok());
+        word.store(1, Ordering::Release);
+        other.ring(&word);
+        assert_eq!(answered.recv_timeout(Duration::from_secs(60)), Ok(true), "the ring woke nothing");
+        assert!(waiter.join().is_ok());
     }
 
     /// The high-resolution timer exists on every Windows the project supports (10 1803 and

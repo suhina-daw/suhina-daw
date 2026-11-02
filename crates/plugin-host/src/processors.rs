@@ -354,12 +354,11 @@ mod tests {
 
     #[test]
     fn a_burst_plug_in_sounds_and_takes_its_time_only_over_events() {
-        let burst = create("test:burst:5000").unwrap();
         let mut output = [0.0f32; 4];
-        let started = std::time::Instant::now();
-        burst.process_events(&[1.0, 0.0, 0.0, 0.0], &[], &mut output);
-        assert!(started.elapsed() < Duration::from_millis(5));
+        // With no events a burst takes no time: one an hour long would not come back otherwise.
+        Burst(Duration::from_secs(3600)).process_events(&[1.0, 0.0, 0.0, 0.0], &[], &mut output);
         assert_eq!(output, [1.25, 0.25, 0.25, 0.25]);
+        let burst = create("test:burst:5000").unwrap();
         let started = std::time::Instant::now();
         burst.process_events(&[0.0; 4], &[suhina_ipc::Event::note_on(0, 0, 60, 1.0)], &mut output);
         assert!(started.elapsed() >= Duration::from_millis(5));

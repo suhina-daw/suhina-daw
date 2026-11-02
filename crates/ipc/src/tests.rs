@@ -84,7 +84,8 @@ fn a_slow_host_misses_then_the_link_is_busy_until_it_answers() {
     output.fill(7.0);
     assert_eq!(link.process(&input, &mut output, timeout), Outcome::Missed);
     assert!(output.iter().all(|&o| o == 7.0), "a missed block leaves the output alone");
-    assert_eq!(link.process(&input, &mut output, timeout), Outcome::Busy);
+    // Busy comes at once: with an hour to wait, a wait here would not come back.
+    assert_eq!(link.process(&input, &mut output, Duration::from_secs(3600)), Outcome::Busy);
 
     // The link stays busy until the slow host answers.
     assert!(go.send(()).is_ok());
