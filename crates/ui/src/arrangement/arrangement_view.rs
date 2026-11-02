@@ -152,11 +152,7 @@ const CLIP_NAME_BAR: f32 = 22.0;
 /// The waveform zoom slider's track width, in the header column's corner.
 const WAVEFORM_ZOOM_WIDTH: f32 = 72.0;
 /// The grid's lines this frame, as (x, on a bar), for the clips' bodies.
-const CLIP_GRID: &str = "arrangement-clip-grid";
 /// The waveform zoom this frame, for `paint_clip`.
-const WAVEFORM_ZOOM: &str = "arrangement-waveform-zoom";
-const WAVEFORM_APPEARANCE: &str = "arrangement-waveform-appearance";
-const AUDIO_COLOUR_STRENGTH: &str = "arrangement-audio-colour-strength";
 /// The waveform zoom's range.
 pub const WAVEFORM_ZOOM_RANGE: (f32, f32) = (1.0, 16.0);
 
@@ -658,12 +654,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     if !state.grid_in_clips {
         grid_xs.clear();
     }
-    ui.ctx().data_mut(|d| {
-        d.insert_temp(Id::new(CLIP_GRID), std::sync::Arc::new(grid_xs));
-        d.insert_temp(Id::new(WAVEFORM_ZOOM), state.waveform_zoom);
-        d.insert_temp(Id::new(WAVEFORM_APPEARANCE), state.waveform_appearance);
-        d.insert_temp(Id::new(AUDIO_COLOUR_STRENGTH), state.audio_colour_strength);
-    });
+    state.clip_grid = std::sync::Arc::new(grid_xs);
     // Tempo and time-signature changes: a line in the accent colour and what changes, after
     // room for the bar number.
     for mark in timeline.marks.iter().filter(|m| m.beat >= first_beat - 64.0 && m.beat <= last_beat) {
@@ -1580,7 +1571,16 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     for take in timeline.live_takes.iter().filter(|t| !t.finished) {
         let Some(row) = row_of_clips(take.track) else { continue };
         let Some(lane) = timeline.lanes.iter().find(|l| l.track == take.track) else { continue };
-        paint_live_take(&painter.with_clip_rect(row.clip), row.time, lane, take, &x_of, state.beat_width, timeline);
+        paint_live_take(
+            &painter.with_clip_rect(row.clip),
+            row.time,
+            lane,
+            take,
+            &x_of,
+            state.beat_width,
+            timeline,
+            &state.clip_look(),
+        );
     }
 
     // The loop region, while looping is on: a line at its start and its end down every lane, the
@@ -1628,6 +1628,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             state.beat_width,
             timeline,
             true,
+            &state.clip_look(),
         );
     }
 

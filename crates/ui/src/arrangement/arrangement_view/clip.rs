@@ -553,6 +553,7 @@ pub(super) fn clip_box<'a>(
             state.beat_width,
             timeline,
             true,
+            &state.clip_look(),
         );
         return None;
     }
@@ -969,6 +970,7 @@ pub(super) fn clip_box<'a>(
             state.beat_width,
             timeline,
             lit,
+            &state.clip_look(),
         );
     };
     let result = match state.clip_drag {
@@ -1028,6 +1030,7 @@ pub(super) fn clip_box<'a>(
                         state.beat_width * factor as f32,
                         timeline,
                         lit,
+                        &state.clip_look(),
                     );
                 }
                 None => paint_clip(
@@ -1041,6 +1044,7 @@ pub(super) fn clip_box<'a>(
                     state.beat_width,
                     timeline,
                     lit,
+                    &state.clip_look(),
                 ),
             }
             None
@@ -1209,6 +1213,7 @@ pub(super) fn paint_clip(
     beat_width: f32,
     timeline: &Timeline,
     selected: bool,
+    look: &super::state::ClipLook,
 ) {
     let _work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement clip");
     let _style_class = crate::kit::style_class::enter_named("clip", &format!("clip-{}", clip.id.0));
@@ -1242,11 +1247,7 @@ pub(super) fn paint_clip(
     };
     // Keep the clip colour legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
-    let strength = if clip.audio {
-        painter.ctx().data(|d| d.get_temp::<u8>(Id::new(AUDIO_COLOUR_STRENGTH))).unwrap_or(82)
-    } else {
-        82
-    };
+    let strength = if clip.audio { look.audio_colour_strength } else { 82 };
     let strength = if selected { strength.saturating_add(12).min(100) } else { strength };
     let body =
         crate::kit::style_class::background(colour_surface(theme::panel_background(), rgb(clip.color), strength, off));
@@ -1293,8 +1294,8 @@ pub(super) fn paint_clip(
     // A looping clip's passes are marked by the notches and lines at their starts (below), not by
     // shades: the body is one colour all along.
     // The grid shows through the body, faintly, the bars a little stronger.
-    let lines = painter.ctx().data(|d| d.get_temp::<std::sync::Arc<Vec<(f32, bool)>>>(Id::new(CLIP_GRID)));
-    if let Some(lines) = lines.filter(|l| !l.is_empty()) {
+    let lines = &look.grid;
+    if !lines.is_empty() {
         let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
         let span = egui::Rangef::new(below, rect.bottom());
         let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.035), motion::mix(body, ink, 0.07));
@@ -1305,10 +1306,7 @@ pub(super) fn paint_clip(
     // Notes an ARA plug-in found in an audio clip go over its waveform, which dims a little under
     // them so both read (ADR 0033, #720): dimmed to 40 % it read as an empty clip on a light body.
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
-    let appearance = painter
-        .ctx()
-        .data(|d| d.get_temp::<crate::settings::view_settings::WaveformAppearance>(Id::new(WAVEFORM_APPEARANCE)))
-        .unwrap_or_default();
+    let appearance = look.waveform_appearance;
     // Theme: the sheet's `.clip-waveform` and `.clip-notes` colours, else Dark.
     let themed = |class: &str| {
         let _part = crate::kit::style_class::enter(class);
@@ -1360,7 +1358,7 @@ pub(super) fn paint_clip(
         // gain and its fades, drawn as `docs/spec/waveforms.md` says, inside the clip.
         let gain = if shown.gain_db.is_finite() { 10f32.powf(shown.gain_db as f32 / 20.0) } else { 0.0 };
         // The waveform zoom: drawn larger, heard the same.
-        let zoom = painter.ctx().data(|d| d.get_temp::<f32>(Id::new(WAVEFORM_ZOOM))).unwrap_or(1.0);
+        let zoom = look.waveform_zoom;
         let gain = gain * zoom;
         let from = rect.left().max(view_rect(painter).left()).floor();
         let to = rect.right().min(view_rect(painter).right()).ceil();
@@ -1702,14 +1700,38 @@ pub(super) fn take_lanes(
         for clip in &take.clips {
             let lit = Lane { mute: false, color: clip.color, ..lane.clone() };
             let rect = clip_rect(row, clip.start, clip.length, x_of);
-            paint_clip(painter, rect, &lit, clip, Shown::of(clip), clip.start, x_of, beat_width, timeline, false);
+            paint_clip(
+                painter,
+                rect,
+                &lit,
+                clip,
+                Shown::of(clip),
+                clip.start,
+                x_of,
+                beat_width,
+                timeline,
+                false,
+                &state.clip_look(),
+            );
             painter.rect_filled(rect.intersect(row), 0.0, theme::window_background().gamma_multiply(0.6));
             for &(start, end) in &take.used {
                 let span = Rect::from_x_y_ranges(egui::Rangef::new(x_of(start), x_of(end)), row.y_range());
                 let span = span.intersect(rect).intersect(painter.clip_rect());
                 if span.width() > 0.5 {
                     let used = painter.with_clip_rect(span);
-                    paint_clip(&used, rect, &lit, clip, Shown::of(clip), clip.start, x_of, beat_width, timeline, false);
+                    paint_clip(
+                        &used,
+                        rect,
+                        &lit,
+                        clip,
+                        Shown::of(clip),
+                        clip.start,
+                        x_of,
+                        beat_width,
+                        timeline,
+                        false,
+                        &state.clip_look(),
+                    );
                 }
             }
         }
@@ -1841,8 +1863,8 @@ pub(super) fn take_lanes(
             theme::ui_font(theme::TEXT_SMALL),
             ink_on(shade),
         );
-        let look = Lane { mute: false, color: colour, ..lane.clone() };
-        paint_live_take(painter, row, &look, pass, x_of, beat_width, timeline);
+        let shaded = Lane { mute: false, color: colour, ..lane.clone() };
+        paint_live_take(painter, row, &shaded, pass, x_of, beat_width, timeline, &state.clip_look());
     }
 }
 
@@ -1884,6 +1906,7 @@ fn take_menu(
 
 /// Draws a take recording into the arrangement on its track's row (#909): from where its pass
 /// began to the playhead, its notes or its waveform as they come in, edged in the record colour.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn paint_live_take(
     painter: &egui::Painter,
     row: Rect,
@@ -1892,6 +1915,7 @@ pub(super) fn paint_live_take(
     x_of: &dyn Fn(f64) -> f32,
     beat_width: f32,
     timeline: &Timeline,
+    look: &super::state::ClipLook,
 ) {
     let length = (take.end - take.start).max(0.0);
     let rect = clip_rect(row, take.start, length, x_of);
@@ -1925,7 +1949,7 @@ pub(super) fn paint_live_take(
         take: None,
         ara: false,
     };
-    paint_clip(painter, rect, lane, &clip, Shown::of(&clip), take.start, x_of, beat_width, timeline, false);
+    paint_clip(painter, rect, lane, &clip, Shown::of(&clip), take.start, x_of, beat_width, timeline, false, look);
     // An audio take's waveform so far: a line per peak, about the middle of the clip.
     if take.audio && !take.peaks.is_empty() && take.peaks_end > take.start {
         let body = Rect::from_min_max(Pos2::new(rect.left(), rect.top() + 14.0), rect.max);

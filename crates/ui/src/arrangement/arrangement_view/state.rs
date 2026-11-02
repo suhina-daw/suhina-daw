@@ -335,6 +335,8 @@ pub struct ArrangementViewState {
     pub waveform_zoom: f32,
     pub waveform_appearance: crate::settings::view_settings::WaveformAppearance,
     pub audio_colour_strength: u8,
+    /// This frame's grid lines, as clips draw them through their bodies: (x, is a bar line).
+    pub(crate) clip_grid: std::sync::Arc<Vec<(f32, bool)>>,
     pub header_colour_strength: u8,
     /// Where the last click in a lane or a clip's body put the play start, on which track: a
     /// thin line there in that lane while the play start is still there.
@@ -441,6 +443,7 @@ impl Default for ArrangementViewState {
             waveform_zoom: 1.0,
             waveform_appearance: crate::settings::view_settings::WaveformAppearance::default(),
             audio_colour_strength: 82,
+            clip_grid: std::sync::Arc::default(),
             header_colour_strength: 82,
             insert: None,
             open_devices: None,
@@ -883,5 +886,28 @@ impl ArrangementViewState {
     /// brace and marker rows under it, and the whole lane.
     pub fn focus_height(&self, track: TrackId) -> f32 {
         RULER + 1.0 + loop_row_height() + 1.0 + MARKER_ROW + 1.0 + self.lane_height(track) + 1.0
+    }
+}
+
+/// How this frame draws clips: the grid lines through their bodies, the waveform zoom and look,
+/// how strongly an audio clip takes its colour. Handed to the clip painter as a value, where it
+/// read them from egui's memory (#764 › 12).
+#[derive(Clone)]
+pub(crate) struct ClipLook {
+    pub(crate) grid: std::sync::Arc<Vec<(f32, bool)>>,
+    pub(crate) waveform_zoom: f32,
+    pub(crate) waveform_appearance: crate::settings::view_settings::WaveformAppearance,
+    pub(crate) audio_colour_strength: u8,
+}
+
+impl ArrangementViewState {
+    /// How clips draw this frame.
+    pub(crate) fn clip_look(&self) -> ClipLook {
+        ClipLook {
+            grid: std::sync::Arc::clone(&self.clip_grid),
+            waveform_zoom: self.waveform_zoom,
+            waveform_appearance: self.waveform_appearance,
+            audio_colour_strength: self.audio_colour_strength,
+        }
     }
 }
