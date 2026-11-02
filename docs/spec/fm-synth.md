@@ -37,7 +37,10 @@ scaling and velocity sensitivity, as before, and new:
 
 Each operator selects **Rates and levels** (the DX7 model and the default) or **Time**: initial,
 attack, peak, decay, sustain and release, in seconds and decibels, time by velocity and by key, and a
-loop mode: off, loop, beat, sync or trigger. The filter, pitch and LFO envelopes use the same model
+loop mode: off, loop (from the sustain, after the loop time), beat (at the repeat length from the note),
+sync (the first repeat at the song's nearest sixteenth, then by the repeat length, as beat while the song
+stops) or trigger (ignoring the key going up). A repeat starts from the level the envelope has, and a
+release from wherever it is. Time does not move beat and sync repeats. The filter, pitch and LFO envelopes use the same model
 and add slopes and an end level. **Time** on the device scales every time envelope.
 
 ## Filter and shaper

@@ -101,6 +101,11 @@ enum Stage {
     Done,
 }
 
+/// A sixteenth note, in beats.
+const SIXTEENTH: f64 = 0.25;
+/// Shortest Sync repeat, in beats, so a zero cannot stall it.
+const SHORTEST_REPEAT: f64 = 1e-3;
+
 /// Decibels at or below which an operator's envelope is silence.
 pub const SILENCE_DB: f32 = -69.9;
 
@@ -136,8 +141,8 @@ pub struct TimeEnv {
     speed: f32,
     /// Seconds since a loop last started, unscaled for Beat.
     timer: f32,
-    /// The song's repeat counted last, for Sync.
-    grid: i64,
+    /// The song position in beats of the next repeat, for Sync.
+    next_beat: f64,
     amp: bool,
 }
 
@@ -153,7 +158,7 @@ impl TimeEnv {
             position: 0.0,
             speed: by_velocity * by_key,
             timer: 0.0,
-            grid: grid(s, clock),
+            next_beat: first_repeat(s, clock),
             amp,
         };
     }
@@ -193,9 +198,8 @@ impl TimeEnv {
                 }
                 LoopMode::Beat => self.repeat_by_beat(s, seconds, clock),
                 LoopMode::Sync if clock.playing => {
-                    let now = grid(s, clock);
-                    if now != self.grid {
-                        self.grid = now;
+                    if clock.beat >= self.next_beat {
+                        self.next_beat += f64::from(s.repeat_beats).max(SHORTEST_REPEAT);
                         self.restart();
                     }
                 }
@@ -227,7 +231,10 @@ impl TimeEnv {
                     if s.mode == LoopMode::Trigger {
                         self.enter(Stage::Release);
                     } else {
-                        self.timer = 0.0;
+                        // Loop counts from the sustain; Beat and Sync from the note.
+                        if s.mode == LoopMode::Loop {
+                            self.timer = 0.0;
+                        }
                         self.enter(Stage::Sustain);
                     }
                 }
@@ -257,9 +264,10 @@ impl TimeEnv {
     }
 }
 
-/// Which repeat of the song's grid `clock` is in.
-fn grid(s: &EnvSettings, clock: &Clock) -> i64 {
-    (clock.beat / f64::from(s.repeat_beats).max(1e-3)).floor() as i64
+/// Where a Sync loop first repeats: one repeat on, at the nearest sixteenth of the song.
+fn first_repeat(s: &EnvSettings, clock: &Clock) -> f64 {
+    let at = clock.beat + f64::from(s.repeat_beats).max(SHORTEST_REPEAT);
+    (at / SIXTEENTH).round() * SIXTEENTH
 }
 
 #[cfg(test)]
@@ -348,6 +356,23 @@ mod tests {
         };
         assert_eq!(count(1.0), count(0.5));
         assert!((3..=5).contains(&count(1.0)));
+    }
+
+    #[test]
+    fn sync_first_repeats_at_the_nearest_sixteenth_and_then_by_the_repeat() {
+        let mut s = settings();
+        s.mode = LoopMode::Sync;
+        s.repeat_beats = 1.0;
+        let at = |beat: f64| Clock { tempo: 120.0, beat, playing: true };
+        let mut env = TimeEnv::default();
+        env.start(&s, 0.5, 60.0, false, &at(0.1));
+        assert_eq!(env.next_beat, 1.0);
+        for beat in [0.2, 0.5, 0.9] {
+            env.next(&s, BLOCK, 1.0, true, &at(beat));
+        }
+        assert_eq!(env.next_beat, 1.0);
+        env.next(&s, BLOCK, 1.0, true, &at(1.01));
+        assert_eq!(env.next_beat, 2.0);
     }
 
     #[test]

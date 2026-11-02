@@ -170,6 +170,13 @@ def percent(pid):
     return mul(par(pid), 100.0)
 
 
+def point(cid, name, bounds, pid, axis, log, visible):
+    """A handle that shows where its value is, dragged along `axis`."""
+    control = handle(cid, name, bounds, pid, axis, log=log, visible=visible)
+    control["widget"]["color"] = tint(HIGHLIGHT, 170)
+    return control
+
+
 def env_curve(prefix, w, h, top, bottom, color):
     """A time envelope's shape: fixed stages with its levels; `top` and `bottom` are its range."""
     span = top - bottom
@@ -413,8 +420,12 @@ def expanded_operator(x, y, w):
         controls.append(graphic(f"x_rates_{n}", f"Operator {n} envelope", [x, y + 24.0, w, 130.0], dx_curve(n, w, 130.0, ACCENT), rates))
         controls.append(choose(f"x_mode_time_{n}", p("envMode"), "Time", 1, [x, y, 70.0, 20.0], shown))
         controls.append(choose(f"x_mode_rates_{n}", p("envMode"), "Rates and levels", 0, [x + 74.0, y, 110.0, 20.0], shown))
-        # Handles over the curve: attack, decay and release sideways, sustain up and down.
-        controls.append(handle(f"x_sustain_{n}", "Sustain", [x, y + 24.0, w, 130.0], f"{e}sustain", "y", visible=time))
+        # Handles over the curve: attack, decay and release sideways, each in its own stretch,
+        # sustain up and down; each shows where its value is.
+        controls.append(point(f"x_attack_{n}", "Attack", [x, y + 24.0, w * 0.2, 130.0], f"{e}attack", "x", True, time))
+        controls.append(point(f"x_decay_{n}", "Decay", [x + w * 0.2, y + 24.0, w * 0.25, 130.0], f"{e}decay", "x", True, time))
+        controls.append(point(f"x_release_{n}", "Release", [x + w * 0.75, y + 24.0, w * 0.25, 130.0], f"{e}release", "x", True, time))
+        controls.append(point(f"x_sustain_{n}", "Sustain", [x + w * 0.45, y + 24.0, w * 0.3, 130.0], f"{e}sustain", "y", False, time))
         controls += env_form(e, x, y + 160.0, time, tag, " dB", False)
         controls += form([(p(f"rate{i}"), f"Rate {i}", par(p(f"rate{i}")), "", 0, False) for i in range(1, 5)]
                          + [(p(f"level{i}"), f"Level {i}", par(p(f"level{i}")), "", 0, False) for i in range(1, 5)]
