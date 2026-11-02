@@ -2245,14 +2245,18 @@ fn a_crossfade_between_parts_of_two_takes_shows_and_its_handle_sets_its_length()
     let (shorter, into) = fades(&harness);
     assert!(shorter < out, "{shorter} is shorter than {out}");
     assert_eq!(shorter, into);
-    // The parts' fades at the cut have no handles of their own: with both parts picked, each shows
-    // only the handle of its outer edge.
-    harness.state_mut().run(&Action::new("selection.selectAll", json!({})));
+    // The parts' fades at the cut have no handles of their own: a picked part shows only the one
+    // at its outer edge, and the crossfade stays.
+    let shows = |h: &Harness<'static, App>, label: &str| h.query_by_label(label).is_some();
+    harness.get_by_label("Clip Loop on Loop at bar 1").click();
     harness.run();
-    let hits = |h: &Harness<'static, App>, which: &str| h.query_all_by_label_contains(which).count();
-    assert_eq!(hits(&harness, "Crossfade end on Loop"), 1, "the crossfade stays");
-    assert_eq!(hits(&harness, "Fade-out of"), 1, "only the last part's fade-out");
-    assert_eq!(hits(&harness, "Fade-in of"), 1, "only the first part's fade-in");
+    assert!(shows(&harness, "Fade-in of Loop on Loop"), "the first part's outer edge");
+    assert!(!shows(&harness, "Fade-out of Loop on Loop"), "the first part's edge at the cut");
+    harness.get_by_label("Clip Loop on Loop at bar 2").click();
+    harness.run();
+    assert!(shows(&harness, "Fade-out of Loop on Loop"), "the second part's outer edge");
+    assert!(!shows(&harness, "Fade-in of Loop on Loop"), "the second part's edge at the cut");
+    assert!(shows(&harness, "Crossfade end on Loop"), "the crossfade stays");
 }
 
 /// Notes do not crossfade: parts of two MIDI takes that meet show nothing over their cut.
