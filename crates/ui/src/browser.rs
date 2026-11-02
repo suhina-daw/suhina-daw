@@ -14,6 +14,7 @@ pub mod sample_map_panel;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 
 use suhina_device_api::Role;
@@ -244,6 +245,37 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
     info
 }
 
+/// The rows of a search's or a place's items.
+fn flat_rows(found: Vec<Found>) -> Vec<Row> {
+    found
+        .into_iter()
+        .map(|f| {
+            let context = f.folder.as_ref().and_then(|folder| {
+                let path = match &f.item {
+                    Item::File(p) => p.parent().map(Path::to_path_buf),
+                    _ => None,
+                }?;
+                let below = path.strip_prefix(folder.parent().unwrap_or(folder)).ok()?;
+                Some(below.display().to_string())
+            });
+            let context = context.or_else(|| f.detail.clone());
+            let item = BrowserItem { key: f.item.key(), name: f.name.clone(), kind: item_kind(&f), plugin: f.plugin };
+            Row { item, depth: 0, opens: false, open: false, context, columns: None, node: None }
+        })
+        .collect()
+}
+
+/// A search looking through more files than this runs on a thread of its own, so typing never
+/// waits for it; a smaller one takes less than a frame and answers at once.
+const SEARCH_ON_THE_WINDOW_THREAD: usize = 4096;
+
+/// A search running on its thread: its answer comes through `answer`, and `cancel` ends it when
+/// the search field has changed since.
+struct SearchJob {
+    cancel: Arc<AtomicBool>,
+    answer: Receiver<Vec<Found>>,
+}
+
 /// The browser panel's state. One for the window: it is the same whichever project shows.
 pub struct BrowserState {
     pub mode: ResultsMode,
@@ -300,6 +332,10 @@ pub struct BrowserState {
     pub scroll: f32,
     rows: Vec<Row>,
     rows_key: Option<String>,
+    /// The search whose rows are still to come; the rows before it stay until they do.
+    search_job: Option<SearchJob>,
+    /// How many files a search looks through on the window's thread.
+    search_inline_files: usize,
     listings: HashMap<PathBuf, Arc<Vec<Listing>>>,
     voices: HashMap<PathBuf, Arc<Vec<(usize, String)>>>,
     info: HashMap<PathBuf, FileInfo>,
@@ -343,6 +379,8 @@ impl Default for BrowserState {
             scroll: 0.0,
             rows: Vec::new(),
             rows_key: None,
+            search_job: None,
+            search_inline_files: SEARCH_ON_THE_WINDOW_THREAD,
             listings: HashMap::new(),
             voices: HashMap::new(),
             info: HashMap::new(),
@@ -438,13 +476,78 @@ impl BrowserState {
             self.plugin_sort
         );
         if self.rows_key.as_deref() == Some(key.as_str()) {
+            self.take_search_answer(false);
             return Ok(());
         }
         self.rows_key = Some(key);
+        if let Some(stale) = self.search_job.take() {
+            stale.cancel.store(true, Ordering::Relaxed);
+        }
         let flat = !self.search.trim().is_empty()
             || !self.tag_filter.is_empty()
             || matches!(self.place, Some(Place::Pinned | Place::Recent(_)));
-        self.rows = if flat { self.flat_rows(projects)? } else { self.tree_rows(projects) };
+        let rows = if flat {
+            let place = self.place.as_ref().map(Place::param);
+            let search = suhina_session::prepare_search(
+                projects,
+                &self.search,
+                self.category,
+                place.as_deref(),
+                &self.tag_filter,
+                0,
+            )
+            .map_err(String::from)?;
+            if search.files() > self.search_inline_files {
+                let started = self.start_search(search);
+                if started.is_err() {
+                    // The next frame tries again.
+                    self.rows_key = None;
+                }
+                return started;
+            }
+            flat_rows(search.run(&AtomicBool::new(false)))
+        } else {
+            self.tree_rows(projects)
+        };
+        self.set_rows(rows);
+        Ok(())
+    }
+
+    /// Whether a search is still looking, so the window looks again for its answer.
+    pub fn searching(&self) -> bool {
+        self.search_job.is_some()
+    }
+
+    /// Looks through a large library on a thread of its own; the rows come when it answers.
+    fn start_search(&mut self, search: suhina_session::PreparedSearch) -> Result<(), String> {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (send, answer) = std::sync::mpsc::channel();
+        let looking = Arc::clone(&cancel);
+        std::thread::Builder::new()
+            .name("browser search".into())
+            .spawn(move || {
+                let found = search.run(&looking);
+                if !looking.load(Ordering::Relaxed) {
+                    let _ = send.send(found);
+                }
+            })
+            .map_err(|e| format!("could not start the search: {e}"))?;
+        self.search_job = Some(SearchJob { cancel, answer });
+        Ok(())
+    }
+
+    /// Shows what the running search found once it has answered; with `wait`, waits for that.
+    fn take_search_answer(&mut self, wait: bool) {
+        let Some(job) = &self.search_job else { return };
+        let found = if wait { job.answer.recv().ok() } else { job.answer.try_recv().ok() };
+        if let Some(found) = found {
+            self.search_job = None;
+            self.set_rows(flat_rows(found));
+        }
+    }
+
+    fn set_rows(&mut self, rows: Vec<Row>) {
+        self.rows = rows;
         // What is no longer listed is no longer selected.
         let listed: HashSet<&str> = self.rows.iter().map(|r| r.item.key.as_str()).collect();
         let before = self.selected.len();
@@ -452,31 +555,6 @@ impl BrowserState {
         if before != self.selected.len() {
             self.selection_changed = true;
         }
-        Ok(())
-    }
-
-    fn flat_rows(&mut self, projects: &mut Projects) -> Result<Vec<Row>, String> {
-        let place = self.place.as_ref().map(Place::param);
-        let found =
-            suhina_session::search_items(projects, &self.search, self.category, place.as_deref(), &self.tag_filter, 0)
-                .map_err(String::from)?;
-        Ok(found
-            .into_iter()
-            .map(|f| {
-                let context = f.folder.as_ref().and_then(|folder| {
-                    let path = match &f.item {
-                        Item::File(p) => p.parent().map(Path::to_path_buf),
-                        _ => None,
-                    }?;
-                    let below = path.strip_prefix(folder.parent().unwrap_or(folder)).ok()?;
-                    Some(below.display().to_string())
-                });
-                let context = context.or_else(|| f.detail.clone());
-                let item =
-                    BrowserItem { key: f.item.key(), name: f.name.clone(), kind: item_kind(&f), plugin: f.plugin };
-                Row { item, depth: 0, opens: false, open: false, context, columns: None, node: None }
-            })
-            .collect())
     }
 
     fn tree_rows(&mut self, projects: &mut Projects) -> Vec<Row> {
@@ -910,125 +988,5 @@ pub fn duration_text(seconds: f64) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_preview_not_heard_yet_keeps_its_stop_control_until_it_ends() {
-        let mut state = BrowserState::default();
-        // Waiting to be read: the row's control already stops it, a second click does not restart it.
-        state.want_preview(PathBuf::from("kick.wav"), 0.0);
-        assert!(state.preview_active_for(&PathBuf::from("kick.wav").display().to_string()));
-        state.pending_preview = None;
-        state.preview_started("kick.wav".into());
-        // The audio thread has not started it in the first frames: it has not ended.
-        state.observe_preview(false, 0);
-        assert!(state.preview_active_for("kick.wav"), "not dropped before the voice starts");
-        state.observe_preview(true, 1);
-        assert!(state.preview_active_for("kick.wav"));
-        state.observe_preview(false, 1);
-        assert!(!state.preview_active_for("kick.wav"), "ended at the sample's end");
-        assert_eq!(state.previewing, None);
-        // A short one that starts and ends between two looks: the count shows it played.
-        state.preview_started("hat.wav".into());
-        state.observe_preview(false, 2);
-        assert!(!state.preview_active_for("hat.wav"), "a preview over before it was seen playing");
-        // Stopping forgets it at once.
-        state.preview_started("snare.wav".into());
-        state.cancel_preview();
-        assert!(!state.preview_active_for("snare.wav"));
-    }
-
-    #[test]
-    fn durations_read_as_minutes_and_seconds() {
-        assert_eq!(duration_text(4.2), "0:04.2");
-        assert_eq!(duration_text(0.06), "0:00.1");
-        assert_eq!(duration_text(201.7), "3:21");
-        assert_eq!(duration_text(f64::NAN), "");
-    }
-
-    /// A sample previewed without being selected (the sample map previews what the pointer is
-    /// over) keeps its decoded audio until it plays.
-    #[test]
-    fn an_unselected_sample_waiting_to_preview_keeps_its_audio() {
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
-        let dir = std::env::temp_dir().join(format!("suhina-browser-preview-{}-{nanos}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("hat.wav");
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: 8000,
-            bits_per_sample: 16,
-            sample_format: hound::SampleFormat::Int,
-        };
-        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-        for i in 0..800 {
-            writer.write_sample(((i % 50) * 400) as i16).unwrap();
-        }
-        writer.finalize().unwrap();
-
-        let mut state = BrowserState::default();
-        assert!(state.selected().is_empty());
-        let _ = state.info(&path, true);
-        state.want_preview(path.clone(), 0.0);
-        let mut ready = None;
-        for _ in 0..400 {
-            state.poll();
-            ready = state.take_ready_preview();
-            if ready.is_some() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        let (got, from, data) = ready.expect("the preview's audio arrives");
-        assert_eq!((got, from, data.frames()), (path, 0.0, 800));
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    /// A loop's audio arrives for its preview, and its tempo is detected and taken in too (it is
-    /// sent after the audio, so the preview does not wait for it).
-    #[test]
-    fn a_previewed_loop_gets_its_tempo_too() {
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
-        let dir = std::env::temp_dir().join(format!("suhina-browser-tempo-{}-{nanos}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("loop.wav");
-        let rate = 44_100u32;
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: rate,
-            bits_per_sample: 16,
-            sample_format: hound::SampleFormat::Int,
-        };
-        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-        // Four bars of clicks at 120 BPM: 8 seconds, a beat every half second.
-        for i in 0..(rate * 8) {
-            let since_beat = i % (rate / 2);
-            let s = if since_beat < 400 { ((since_beat as f32 * 0.3).sin() * 20_000.0) as i16 } else { 0 };
-            writer.write_sample(s).unwrap();
-        }
-        writer.finalize().unwrap();
-
-        let mut state = BrowserState::default();
-        let started = std::time::Instant::now();
-        let _ = state.info(&path, true);
-        state.want_preview(path.clone(), 0.0);
-        let mut ready_after = None;
-        for _ in 0..2000 {
-            state.poll();
-            if ready_after.is_none() && state.take_ready_preview().is_some() {
-                ready_after = Some(started.elapsed());
-            }
-            if ready_after.is_some() && state.info.get(&path).and_then(|i| i.tempo).is_some() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(2));
-        }
-        assert!(ready_after.is_some(), "the preview's audio arrives");
-        let detected = state.info.get(&path).and_then(|i| i.tempo).expect("the tempo follows");
-        assert!((detected.bpm - 120.0).abs() < 1.0, "{}", detected.bpm);
-        assert_eq!(detected.source, TempoSource::Detected);
-        println!("audio ready after {:?}, tempo after {:?}", ready_after.unwrap_or_default(), started.elapsed());
-        let _ = std::fs::remove_dir_all(dir);
-    }
-}
+#[path = "browser_tests.rs"]
+mod tests;

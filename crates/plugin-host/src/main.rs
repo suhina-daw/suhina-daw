@@ -345,11 +345,20 @@ impl Loaded {
         }
     }
 
-    fn open_editor(&mut self, mode: window::Mode) -> Result<window::Size, String> {
+    fn open_editor(&mut self, mode: window::Mode, title: Option<&str>) -> Result<window::Size, String> {
         match self {
-            Self::Clap(plugin) => plugin.open_editor(mode),
-            Self::Vst3(plugin) => plugin.open_editor(mode),
+            Self::Clap(plugin) => plugin.open_editor(mode, title),
+            Self::Vst3(plugin) => plugin.open_editor(mode, title),
             Self::Test { .. } => Err("the plug-in has no editor".into()),
+        }
+    }
+
+    /// Sets what the title bar of the editor's window says.
+    fn set_editor_title(&self, title: &str) {
+        match self {
+            Self::Clap(plugin) => plugin.set_editor_title(title),
+            Self::Vst3(plugin) => plugin.set_editor_title(title),
+            Self::Test { .. } => {}
         }
     }
 
@@ -888,7 +897,7 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
             }
             Message::Unloaded { instance }
         }
-        Message::OpenEditor { instance, owner, embedded } => {
+        Message::OpenEditor { instance, owner, embedded, title } => {
             let mode = match (embedded, owner) {
                 (true, Some(parent)) => window::Mode::Embedded { parent },
                 (true, None) => return Some(failed(instance, "no window to embed the editor in".into())),
@@ -897,7 +906,7 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
                     window::Mode::Floating
                 }
             };
-            match instances.get_mut(&instance).map(|loaded| loaded.open_editor(mode)) {
+            match instances.get_mut(&instance).map(|loaded| loaded.open_editor(mode, title.as_deref())) {
                 Some(Ok(size)) => Message::EditorOpened { instance, width: size.width, height: size.height },
                 Some(Err(message)) => failed(instance, message),
                 None => missing(instance),
@@ -906,6 +915,12 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
         Message::PlaceEditor { instance, placement } => {
             if let Some(loaded) = instances.get(&instance) {
                 loaded.place_editor(placement);
+            }
+            return None;
+        }
+        Message::EditorTitle { instance, title } => {
+            if let Some(loaded) = instances.get(&instance) {
+                loaded.set_editor_title(&title);
             }
             return None;
         }
