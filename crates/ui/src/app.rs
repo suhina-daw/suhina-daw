@@ -328,7 +328,7 @@ pub struct App {
     /// replaced or the app quits.
     unsaved_prompt: Option<Leaving>,
     /// Clips a plug-in edits about to go to another track, waiting for Keep edits or Copy as
-    /// new (ADR 0028 step 6): the move, and the plug-in's name.
+    /// new (ADR 0033 step 6): the move, and the plug-in's name.
     ara_prompt: Option<(Action, String)>,
     /// Samples dropped on a browser folder, waiting for Move or Copy (#943), and the dialog's
     /// Remember my choice box.
@@ -425,8 +425,6 @@ pub struct App {
     /// The detail area is showing, and its height (in a row) or width (stacked).
     detail_open: bool,
     detail_height: f32,
-    /// How tall the device chain's panels were last frame, when the detail area showed only the
-    /// chain: the area is kept no taller.
     /// Where each frame's time goes, written to the trace log when tracing is on.
     frame_trace: crate::kit::frame_trace::FrameTrace,
     /// What auto-arm (Settings › MIDI) last saw and armed.
@@ -582,6 +580,8 @@ pub struct App {
     browser_part: f32,
     /// The hosts' reader threads wake this window ([`suhina_plugins::set_waker`]).
     waker_set: bool,
+    /// The selection a fader or a send is moving, as it was when the drag began.
+    selection_drag: Option<actions::SelectionDrag>,
     switch_hover: Option<(View, f64)>,
     /// Agents (ADR 0028): connections waiting for the person's answer, the answers for the app,
     /// the agents let in, and those the person disconnected, for the app.
@@ -729,6 +729,7 @@ impl App {
             applied_grid: None,
             browser_part: 1.0,
             waker_set: false,
+            selection_drag: None,
             switch_hover: None,
             agent_asks: Vec::new(),
             agent_answers: Vec::new(),
@@ -1108,7 +1109,7 @@ impl App {
         }
     }
 
-    /// Whether `track` has a plug-in that edits its clips (ARA, ADR 0028): the play-from-clip
+    /// Whether `track` has a plug-in that edits its clips (ARA, ADR 0033): the play-from-clip
     /// rules give way there, always.
     fn ara_track(&self, track: TrackId) -> bool {
         self.session().is_some_and(|s| s.ara_device(track).is_some())
@@ -2130,7 +2131,7 @@ impl App {
     }
 
     /// The name of the plug-in that edits clips which `action` moves or copies to another track
-    /// (ADR 0028 step 6), so Keep edits or Copy as new is asked first; `None` otherwise, and for
+    /// (ADR 0033 step 6), so Keep edits or Copy as new is asked first; `None` otherwise, and for
     /// a move that already says (`ara_edits`).
     fn ara_clips_leaving(&self, action: &Action) -> Option<String> {
         if !matches!(action.id, "clip.move" | "clip.moveMany") || !action.params["araEdits"].is_null() {
@@ -2342,6 +2343,10 @@ impl App {
 
     /// Runs one command and shows its outcome in the status bar.
     pub fn run(&mut self, action: &Action) {
+        // A fader or a send dragged on one of several selected tracks moves them together.
+        if let Some(wider) = self.drag_to_selection(action) {
+            return self.run(&wider);
+        }
         // One device's on/off or one track's mute among several selected acts on all of them.
         if let Some(wider) = self.to_selection(action) {
             return self.run(&wider);
@@ -2615,6 +2620,7 @@ impl App {
         }
         let window = ui.max_rect();
         let mut actions = Vec::new();
+        crate::detail::device_canvas::finish_sample_audition(ui.ctx(), self.projects.active(), &mut actions);
         let revision = self.revision;
         ui.ctx().data_mut(|d| {
             d.insert_temp(egui::Id::new(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)
@@ -3292,8 +3298,12 @@ impl App {
                     (None, _) => self.start_panel(ui),
                 });
             }
-            // A device's expanded panel, over the views (and the large sample map).
-            if let Some((track, device)) = self.expanded_panel.take() {
+            // A device's expanded panel, over the views (and the large sample map); not while a
+            // dialog is open, which it would cover.
+            if let Some((track, device)) = self.expanded_panel.take()
+                && !self.settings_open
+                && !self.dialog_holds_actions()
+            {
                 detail_view::show_expanded(ui, inner, track, &device, &mut actions);
             }
             drop_overlay(ui, view_area);

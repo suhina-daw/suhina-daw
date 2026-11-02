@@ -623,7 +623,7 @@ pub(crate) struct Vst3Plugin {
     /// The plug-in's name, for its editor's window.
     name: String,
     editor: Option<crate::vst3_editor::Editor>,
-    /// The ARA document it is bound to, when it was loaded with one (ADR 0028); let go of
+    /// The ARA document it is bound to, when it was loaded with one (ADR 0033); let go of
     /// before the component is terminated.
     ara: Option<Box<crate::ara::Document>>,
     /// Its component answers ARA's entry point, so it can be bound to a document.
@@ -974,7 +974,7 @@ impl Vst3Plugin {
         if !ok(unsafe { self.component.getState(raw.as_ptr()) }) {
             return Err("the plug-in did not give its state".into());
         }
-        // Bound to an ARA document, its edits there are part of its state (ADR 0028).
+        // Bound to an ARA document, its edits there are part of its state (ADR 0033).
         Ok(crate::ara::wrap_state(stream.bytes(), self.ara.as_deref().and_then(crate::ara::Document::store)))
     }
 
@@ -1024,12 +1024,16 @@ impl Vst3Plugin {
     }
 
     /// Opens the plug-in's editor as `mode` says (or returns the size of the one open).
-    pub(crate) fn open_editor(&mut self, mode: crate::window::Mode) -> Result<crate::window::Size, String> {
+    pub(crate) fn open_editor(
+        &mut self,
+        mode: crate::window::Mode,
+        title: Option<&str>,
+    ) -> Result<crate::window::Size, String> {
         if let Some(editor) = &self.editor {
             return Ok(editor.size());
         }
         let controller = self.controller.as_ref().ok_or("the plug-in has no editor")?;
-        let editor = crate::vst3_editor::Editor::open(controller, mode, &self.name)?;
+        let editor = crate::vst3_editor::Editor::open(controller, mode, title.unwrap_or(&self.name))?;
         let size = editor.size();
         self.editor = Some(editor);
         Ok(size)
@@ -1111,7 +1115,7 @@ impl Vst3Plugin {
         self.ara.as_ref().map(|ara| ara.take_notes()).unwrap_or_default()
     }
 
-    /// The edits of one modification and its source, stored on their own (ADR 0028 step 6).
+    /// The edits of one modification and its source, stored on their own (ADR 0033 step 6).
     pub(crate) fn ara_export(&self, modification: &str, source: &str) -> Result<(String, Vec<u8>), String> {
         self.ara.as_ref().ok_or("the plug-in is not bound to an ARA document")?.export(modification, source)
     }
@@ -1165,6 +1169,12 @@ impl Vst3Plugin {
     }
 
     /// Puts an embedded editor where the engine says.
+    pub(crate) fn set_editor_title(&self, title: &str) {
+        if let Some(editor) = &self.editor {
+            editor.set_title(title);
+        }
+    }
+
     pub(crate) fn place_editor(&self, placement: crate::window::Placement) {
         if let Some(editor) = &self.editor {
             editor.place(placement);

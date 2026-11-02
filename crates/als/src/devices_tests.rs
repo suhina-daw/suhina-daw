@@ -493,3 +493,188 @@ fn other_devices_are_not_mapped() {
     let doc = roxmltree::Document::parse("<Compressor2/>").unwrap_or_else(|e| panic!("{e}"));
     assert!(builtin(doc.root_element(), &mut |_| {}).is_none());
 }
+
+/// A Simpler or Sampler element as Live stores it, with the values these tests change. A part
+/// is `MultiSamplePart` elements' insides; `globals` the device's other elements.
+fn sampler_xml(tag: &str, parts: &[String], globals: &str) -> String {
+    let parts: String = parts.iter().map(|p| format!("<MultiSamplePart>{p}</MultiSamplePart>")).collect();
+    format!(
+        "<{tag}><Player><MultiSampleMap><SampleParts>{parts}</SampleParts></MultiSampleMap></Player>{globals}</{tag}>"
+    )
+}
+
+/// A zone of `frames` frames at 48 kHz, playing `start` … `end` from root `root`.
+fn zone(start: u32, end: u32, root: u32, extra: &str) -> String {
+    format!(
+        r#"<KeyRange><Min Value="0"/><Max Value="127"/></KeyRange><VelocityRange><Min Value="1"/><Max Value="127"/></VelocityRange>
+        <RootKey Value="{root}"/><Detune Value="0"/><Panorama Value="0"/><Volume Value="1.58489585"/>
+        <SampleStart Value="{start}"/><SampleEnd Value="{end}"/>
+        <SampleRef><FileRef><RelativePath Value="Samples/Imported/0 Lead Vocals.wav"/><Path Value="E:/Set/Samples/Imported/0 Lead Vocals.wav"/></FileRef>
+        <DefaultDuration Value="11452800"/><DefaultSampleRate Value="48000"/></SampleRef>{extra}"#
+    )
+}
+
+fn sampler_from(xml: &str) -> (Option<SamplerImport>, Vec<String>) {
+    let doc = roxmltree::Document::parse(xml).unwrap_or_else(|e| panic!("{e}"));
+    let mut warnings = Vec::new();
+    let import = sampler(doc.root_element(), &mut |w| warnings.push(w));
+    (import, warnings)
+}
+
+#[test]
+fn a_one_zone_sampler_plays_its_region_from_its_root() {
+    // As the UK Garage set's vocal Sampler: a 0.2 s region of a long file, root 73, the zone at
+    // +4 dB and the device at -12 dB, no velocity, five voices' index.
+    let globals = [
+        r#"<VolumeAndPan>"#,
+        &manual_xml("Volume", "-12"),
+        &manual_xml("VolumeVelScale", "0"),
+        &manual_xml("Panorama", "0"),
+        r#"<Envelope>"#,
+        &manual_xml("AttackTime", "0.1000000015"),
+        &manual_xml("DecayTime", "599.999878"),
+        &manual_xml("SustainLevel", "1"),
+        &manual_xml("ReleaseTime", "50.0000038"),
+        r#"</Envelope></VolumeAndPan>"#,
+        r#"<Filter>"#,
+        &manual_xml("IsOn", "true"),
+        r#"<Slot><Value><SimplerFilter>"#,
+        &manual_xml("Type", "0"),
+        &manual_xml("Freq", "22000"),
+        &manual_xml("Res", "0.09090908617"),
+        r#"</SimplerFilter></Value></Slot></Filter>"#,
+        r#"<Globals><NumVoices Value="5"/><RetriggerMode Value="true"/><PlaybackMode Value="0"/></Globals>"#,
+    ]
+    .concat();
+    let xml = sampler_xml("MultiSampler", &[zone(6398104, 6407909, 73, "")], &globals);
+    let (import, warnings) = sampler_from(&xml);
+    let import = import.unwrap_or_else(|| panic!("not mapped"));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let p = &import.params;
+    assert!((param(p, "start") - 6398104. / 11452800.).abs() < 1e-12);
+    assert!((param(p, "end") - 6407910. / 11452800.).abs() < 1e-12);
+    assert_eq!(param(p, "root"), 73.);
+    assert!((param(p, "gain") - (-12. + 20. * 1.58489585f64.log10())).abs() < 1e-9, "{}", param(p, "gain"));
+    assert_eq!(param(p, "velocity"), 0.);
+    assert_eq!(param(p, "playback"), 0., "Classic without a loop holds while the key is down");
+    assert_eq!(param(p, "filter"), 0., "a low-pass open above hearing is no filter");
+    assert_eq!(param(p, "poly"), 6.);
+    assert!((param(p, "attack") - 0.0001).abs() < 1e-9 && (param(p, "release") - 0.05).abs() < 1e-6);
+    assert_eq!(
+        import.file,
+        Some(("Samples/Imported/0 Lead Vocals.wav".into(), Some("E:/Set/Samples/Imported/0 Lead Vocals.wav".into())))
+    );
+}
+
+#[test]
+fn a_slicing_simpler_takes_its_method_sensitivity_and_voices() {
+    let extra = r#"<SlicingThreshold Value="100"/><SlicingBeatGrid Value="4"/><SlicingRegions Value="8"/><SlicingStyle Value="0"/>"#;
+    let globals = [
+        r#"<VolumeAndPan><OneShotEnvelope>"#,
+        &manual_xml("SustainMode", "0"),
+        r#"</OneShotEnvelope></VolumeAndPan>"#,
+        r#"<Globals><PlaybackMode Value="2"/></Globals><SimplerSlicing><PlaybackMode Value="0"/></SimplerSlicing>"#,
+    ]
+    .concat();
+    let (import, _) = sampler_from(&sampler_xml("OriginalSimpler", &[zone(0, 11452799, 60, extra)], &globals));
+    let p = import.unwrap_or_else(|| panic!("not mapped")).params;
+    assert_eq!(
+        ["mode", "slice_by", "sensitivity", "slice_overlap", "slice_release"].map(|id| param(&p, id)),
+        [2., 0., 1., 0., 0.]
+    );
+    assert_eq!((param(&p, "start"), param(&p, "end")), (0., 1.));
+}
+
+#[test]
+fn manual_slices_become_fractions_of_the_file() {
+    let extra = r#"<SlicingStyle Value="3"/><ManualSlicePoints><SlicePoint TimeInSeconds="23.86" Rank="0"/><SlicePoint TimeInSeconds="nan" Rank="0"/><SlicePoint TimeInSeconds="999" Rank="0"/></ManualSlicePoints>"#;
+    let globals = r#"<Globals><PlaybackMode Value="2"/></Globals>"#;
+    let (import, _) = sampler_from(&sampler_xml("OriginalSimpler", &[zone(0, 11452799, 60, extra)], globals));
+    let slices = import.unwrap_or_else(|| panic!("not mapped")).slices;
+    assert_eq!(slices.len(), 1, "a broken and an outside point are left out: {slices:?}");
+    assert!((slices[0] - 23.86 * 48000. / 11452800.).abs() < 1e-12);
+}
+
+#[test]
+fn a_sampler_with_several_samples_stays_a_placeholder() {
+    let xml = sampler_xml("MultiSampler", &[zone(0, 100, 60, ""), zone(0, 100, 72, "")], "");
+    let (import, warnings) = sampler_from(&xml);
+    assert!(import.is_none());
+    assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn a_sampler_without_values_is_still_a_sampler() {
+    // Nothing stored but the element: the device keeps its defaults where nothing was read.
+    let (import, warnings) = sampler_from("<OriginalSimpler/>");
+    let import = import.unwrap_or_else(|| panic!("not mapped"));
+    assert!(import.file.is_none() && import.slices.is_empty() && warnings.is_empty());
+    assert_eq!(param(&import.params, "playback"), 0.);
+}
+
+/// Live's Multiband Dynamics (`MultibandDynamics`) with values like an OTT-style setting: every
+/// physical value as it is, the ratios as slopes, the times in seconds, and notes for what is not
+/// imported (a merged band, the side-chain); a band's solo comes with it.
+#[test]
+fn multiband_dynamics_takes_every_stored_value() {
+    let mut xml = vec![
+        manual_xml("SplitLowMid", "88.28"),
+        manual_xml("SplitMidHigh", "2500"),
+        manual_xml("EnvelopeIsPeak", "true"),
+        manual_xml("SoftKnee", "false"),
+        manual_xml("GlobalAmount", "0.48"),
+        manual_xml("GlobalTime", "3.16"),
+        manual_xml("OutputGain", "1.5"),
+    ];
+    for band in ["Low", "Mid", "High"] {
+        xml.extend([
+            manual_xml(&format!("Active{band}"), "true"),
+            manual_xml(&format!("InputGain{band}"), "5.2"),
+            manual_xml(&format!("AboveThreshold{band}"), "-30.25"),
+            manual_xml(&format!("AboveRatio{band}"), "-0.75"),
+            manual_xml(&format!("BelowThreshold{band}"), "-41.75"),
+            manual_xml(&format!("BelowRatio{band}"), "0.5"),
+            manual_xml(&format!("Attack{band}"), "22.4"),
+            manual_xml(&format!("Release{band}"), "282"),
+            manual_xml(&format!("Gain{band}"), "-3"),
+        ]);
+    }
+    xml.push("<SoloMid Value=\"true\" /><SplitLowMidOn Value=\"false\" />".to_owned());
+    xml.push("<SideChain><OnOff><Manual Value=\"true\" /></OnOff></SideChain>".to_owned());
+    let (id, params, warnings) = mapped("MultibandDynamics", &xml.concat());
+    assert_eq!(id, "multiband");
+    assert_eq!(params.len(), 7 + 3 * 9 + 1);
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+    let near = |id: &str, expected: f64| {
+        let got = param(&params, id);
+        assert!((got - expected).abs() < 1e-6, "{id}: {got} against {expected}");
+    };
+    near("lowCrossover", 88.28);
+    near("highCrossover", 2500.0);
+    near("peak", 1.0);
+    near("softKnee", 0.0);
+    near("amount", 0.48);
+    near("time", 3.16);
+    near("output", 1.5);
+    near("midSolo", 1.0);
+    for band in ["low", "mid", "high"] {
+        near(&format!("{band}On"), 1.0);
+        near(&format!("{band}Input"), 5.2);
+        near(&format!("{band}AboveThreshold"), -30.25);
+        near(&format!("{band}AboveSlope"), 0.25);
+        near(&format!("{band}BelowThreshold"), -41.75);
+        near(&format!("{band}BelowSlope"), 0.5);
+        near(&format!("{band}Attack"), 0.0224);
+        near(&format!("{band}Release"), 0.282);
+        near(&format!("{band}Gain"), -3.0);
+    }
+}
+
+/// Ratios outside their stored ranges are held at the ends, so the slopes stay in ours.
+#[test]
+fn multiband_dynamics_holds_ratios_in_range() {
+    let xml = [manual_xml("AboveRatioMid", "-4"), manual_xml("BelowRatioMid", "9")].concat();
+    let (_, params, _) = mapped("MultibandDynamics", &xml);
+    assert_eq!(param(&params, "midAboveSlope"), 0.0);
+    assert_eq!(param(&params, "midBelowSlope"), 0.0);
+}

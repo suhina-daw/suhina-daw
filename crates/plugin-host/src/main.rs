@@ -14,11 +14,33 @@
 //!
 //! What it can load: CLAP plug-ins ([`clap`]), the CLAP test plug-ins built in for tests
 //! ([`test_clap`], [`test_clap_delay`], [`test_clap_ports`]), and simple test processors
-//! ([`processors`]) that crash or hang on purpose.
+//! ([`processors`]) that crash or hang on purpose. With the `vst2` feature (ADR 0022) it
+//! gains the VST2 interface layer (`vst2`, under the feature, so no link here): the ported VeSTige definitions, the mock
+//! plug-in `test:vst2` and the `--vst2-probe` tool.
 //!
 //! A plug-in may report another latency while it runs. Between messages the main thread asks
 //! each instance whether it did (restarting its processing first where the format asks for
 //! that) and tells the engine unasked (`latency_changed`).
+//!
+//! In detail: The `suhina-plugin-host` executable: answers control messages and serves plug-ins'
+//! main-thread callbacks on its main thread, and runs several instances, each with its own link and
+//! audio thread; a block may name other instances of the process to run after the link's own, which
+//! that audio thread runs in turn before it answers (`audio`, each instance's processing behind a
+//! lock of its own). Loads CLAP plug-ins (`clap:<file>[#<id>]`, through `clack-host`) and VST3
+//! plug-ins (`vst3:<bundle>[#<class id>]`, through the `vst3` bindings), every audio port a CLAP
+//! plug-in declares with its channels (the link's stereo on the main ports), stereo in and out for
+//! VST3 (no input for an instrument), notes and controllers, parameters, editors in a window of
+//! their own or embedded as a child in the engine's window where the engine says (Windows, X11 on
+//! Linux), with state and latency, and test plug-ins (`test:clap`, `test:clap-ports`,
+//! `test:clap-delay`, `test:vst3`, `test:gain`, `test:crash-after:<n>`, `test:hang-after:<n>`,
+//! `test:slow-load:<ms>`, `test:delay-after:<n>:<frames>`, `test:busy:<µs>`). A plug-in that
+//! reports another latency while it runs is restarted as its format asks and the engine is told
+//! unasked (`latency_changed`). `--scan <file>` and `--scan-worker` describe plug-in files for the
+//! scanner. ARA (ADR 0033): a VST3 instance loaded with a document is bound to a document
+//! controller the host builds from it (`ara`, over bindings generated from the vendored ARA
+//! headers, `ara_sys`), reads the sources' shared memory and keeps the plug-in's edits in its
+//! state. The second crate allowed `unsafe`: opening plug-in files and the VST3 COM calls, each
+//! block documented.
 
 mod ara;
 #[allow(
@@ -43,6 +65,8 @@ mod test_clap;
 mod test_clap_delay;
 mod test_clap_ports;
 mod test_vst3;
+#[cfg(feature = "vst2")]
+mod vst2;
 mod vst3;
 mod vst3_editor;
 mod vst3_events;
@@ -157,7 +181,15 @@ fn main() {
         (Some("--control"), Some(address)) => address,
         (Some("--scan"), Some(file)) => scan(file),
         (Some("--scan-worker"), None) => scan_worker(),
+        #[cfg(feature = "vst2")]
+        (Some("--vst2-probe"), Some(name)) => vst2_probe(name),
         _ => {
+            #[cfg(feature = "vst2")]
+            eprintln!(
+                "usage: suhina-plugin-host --control <address> | --scan <file> | --scan-worker | \
+                 --vst2-probe <plug-in>"
+            );
+            #[cfg(not(feature = "vst2"))]
             eprintln!("usage: suhina-plugin-host --control <address> | --scan <file> | --scan-worker");
             std::process::exit(2);
         }
@@ -165,6 +197,24 @@ fn main() {
     if let Err(e) = run(address) {
         eprintln!("suhina-plugin-host: {e}");
         std::process::exit(1);
+    }
+}
+
+/// `--vst2-probe <plug-in>`: prints the report of the probe over the VST2 plug-in the name
+/// gives (a VST2 file, or `test:vst2` for the built-in mock) and exits. A tool of the `vst2`
+/// feature (ADR 0022): what the probe learns settles the interface's *assumed* facts, and
+/// this process is disposable, as a scanner's is.
+#[cfg(feature = "vst2")]
+fn vst2_probe(name: &str) -> ! {
+    match vst2::probe::run_tool(name) {
+        Ok(report) => {
+            println!("{report}");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("suhina-plugin-host: {e}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -295,11 +345,20 @@ impl Loaded {
         }
     }
 
-    fn open_editor(&mut self, mode: window::Mode) -> Result<window::Size, String> {
+    fn open_editor(&mut self, mode: window::Mode, title: Option<&str>) -> Result<window::Size, String> {
         match self {
-            Self::Clap(plugin) => plugin.open_editor(mode),
-            Self::Vst3(plugin) => plugin.open_editor(mode),
+            Self::Clap(plugin) => plugin.open_editor(mode, title),
+            Self::Vst3(plugin) => plugin.open_editor(mode, title),
             Self::Test { .. } => Err("the plug-in has no editor".into()),
+        }
+    }
+
+    /// Sets what the title bar of the editor's window says.
+    fn set_editor_title(&self, title: &str) {
+        match self {
+            Self::Clap(plugin) => plugin.set_editor_title(title),
+            Self::Vst3(plugin) => plugin.set_editor_title(title),
+            Self::Test { .. } => {}
         }
     }
 
@@ -320,7 +379,7 @@ impl Loaded {
         }
     }
 
-    /// The edits of one modification and its source, stored on their own (ADR 0028 step 6).
+    /// The edits of one modification and its source, stored on their own (ADR 0033 step 6).
     fn ara_export(&self, modification: &str, source: &str) -> Result<(String, Vec<u8>), String> {
         match self {
             Self::Vst3(plugin) => plugin.ara_export(modification, source),
@@ -838,7 +897,7 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
             }
             Message::Unloaded { instance }
         }
-        Message::OpenEditor { instance, owner, embedded } => {
+        Message::OpenEditor { instance, owner, embedded, title } => {
             let mode = match (embedded, owner) {
                 (true, Some(parent)) => window::Mode::Embedded { parent },
                 (true, None) => return Some(failed(instance, "no window to embed the editor in".into())),
@@ -847,7 +906,7 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
                     window::Mode::Floating
                 }
             };
-            match instances.get_mut(&instance).map(|loaded| loaded.open_editor(mode)) {
+            match instances.get_mut(&instance).map(|loaded| loaded.open_editor(mode, title.as_deref())) {
                 Some(Ok(size)) => Message::EditorOpened { instance, width: size.width, height: size.height },
                 Some(Err(message)) => failed(instance, message),
                 None => missing(instance),
@@ -856,6 +915,12 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
         Message::PlaceEditor { instance, placement } => {
             if let Some(loaded) = instances.get(&instance) {
                 loaded.place_editor(placement);
+            }
+            return None;
+        }
+        Message::EditorTitle { instance, title } => {
+            if let Some(loaded) = instances.get(&instance) {
+                loaded.set_editor_title(&title);
             }
             return None;
         }

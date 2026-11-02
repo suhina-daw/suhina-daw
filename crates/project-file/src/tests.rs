@@ -475,6 +475,9 @@ fn hostile_values_are_errors_not_crashes() {
         r#"{ "transport": { "tempo_bpm": 0 } }"#,
         r#"{ "transport": { "time_signature": [0, 4] } }"#,
         r#"{ "transport": { "time_signature": [300, 4] } }"#,
+        r#"{ "transport": { "time_signature": [4, 32] } }"#,
+        r#"{ "transport": { "time_signature": [4, 6] } }"#,
+        r#"{ "launcher": { "scenes": [ { "name": "A", "time_signature": [4, 64] } ], "columns": [] } }"#,
         r#"{ "launcher": { "scenes": [ { "name": "A", "time_signature": [4, 0] } ], "columns": [] } }"#,
         r#"{ "launcher": { "scenes": [ { "name": "A", "time_signature": "4/4" } ], "columns": [] } }"#,
         r#"{ "transport": { "tempo_changes": 3 } }"#,
@@ -487,6 +490,7 @@ fn hostile_values_are_errors_not_crashes() {
         r#"{ "transport": { "time_signature_changes": [ { "bar": 0, "time_signature": [3, 4] } ] } }"#,
         r#"{ "transport": { "time_signature_changes": [ { "bar": -2, "time_signature": [3, 4] } ] } }"#,
         r#"{ "transport": { "time_signature_changes": [ { "bar": 2, "time_signature": [3, 5] } ] } }"#,
+        r#"{ "transport": { "time_signature_changes": [ { "bar": 2, "time_signature": [3, 32] } ] } }"#,
         r#"{ "transport": { "time_signature_changes": [ { "bar": 2, "time_signature": [3] } ] } }"#,
         r#"{ "transport": { "time_signature_changes": [ { "bar": 2 } ] } }"#,
         r#"{ "channels": [ { "id": 1, "role": "boss" } ] }"#,
@@ -1110,6 +1114,12 @@ fn every_feature() -> Project {
     let (track, clip) = (lane.track.unwrap(), lane.clips[0].clone());
     project.arrangement.takes =
         vec![TakeLane { track, name: "Take 1".into(), clips: vec![Clip { id: ClipId::NONE, ..clip }], color: None }];
+    let mut sample_edits = b"SSE1".to_vec();
+    sample_edits.extend_from_slice(&1u32.to_le_bytes());
+    sample_edits.extend_from_slice(&0.3f64.to_le_bytes());
+    sample_edits.push(2);
+    sample_edits.extend_from_slice(&1i64.to_le_bytes());
+    project.channels[0].devices[0].set_sample_edit_data(sample_edits).unwrap();
     project
 }
 
@@ -1143,6 +1153,9 @@ fn a_file_of_every_version_reads() {
                     point.curve = Curve::STRAIGHT;
                 }
             }
+        }
+        if version < 5 {
+            expected.channels[0].devices[0].clear_sample_edits();
         }
         assert_eq!(from_json(&text), Ok(expected), "version {version}");
     }

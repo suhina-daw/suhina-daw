@@ -17,5 +17,5 @@ pub(crate) struct History {
     /// drag of a value is one step. Any other edit, undo or redo ends it.
     pub(crate) open_step: Option<(&'static str, TrackId)>,
     /// Parameter whose live drag has already recorded its single undo snapshot.
-    pub(crate) param_gesture: Option<(TrackId, usize, String)>,
+    pub(crate) param_gesture: Option<String>,
 }

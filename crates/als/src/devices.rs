@@ -9,7 +9,7 @@
 use roxmltree::Node;
 use suhina_model::DeviceParam;
 
-use crate::{boolean, number, path};
+use crate::{boolean, number, path, value};
 
 /// Gain at or below this (in dB) is the Suhina utility's silence.
 const SILENCE_DB: f64 = -70.0;
@@ -27,6 +27,7 @@ pub(crate) fn builtin(
         "Saturator" => Some(("saturator", "Saturator", saturator(node, warn))),
         "Eq8" => Some(("eq", "EQ", eq(node, warn))),
         "FilterEQ3" => Some(("dj-eq", "DJ EQ", eq3(node, warn))),
+        "MultibandDynamics" => Some(("multiband", "Multiband", multiband(node, warn))),
         "MidiPitcher" => Some(("pitch", "Pitch", pitch(node, warn))),
         _ => None,
     }
@@ -313,6 +314,47 @@ fn eq3(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
     p.0
 }
 
+/// Live's Multiband Dynamics (`MultibandDynamics`) as Suhina's `multiband`
+/// (`docs/spec/multiband.md` › Import). Every value is stored in a physical unit; the ratios
+/// are stored on their own scales and become our slopes.
+fn multiband(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
+    let mut p = Params::default();
+    p.set("lowCrossover", manual(node, "SplitLowMid"));
+    p.set("highCrossover", manual(node, "SplitMidHigh"));
+    p.set("peak", manual_flag(node, "EnvelopeIsPeak").map(toggle));
+    p.set("softKnee", manual_flag(node, "SoftKnee").map(toggle));
+    p.set("amount", manual(node, "GlobalAmount").map(|a| a.clamp(0.0, 1.0)));
+    p.set("time", manual(node, "GlobalTime"));
+    p.set("output", manual(node, "OutputGain"));
+    for (ours, theirs) in [("low", "Low"), ("mid", "Mid"), ("high", "High")] {
+        p.set(&format!("{ours}On"), manual_flag(node, &format!("Active{theirs}")).map(toggle));
+        p.set(&format!("{ours}Input"), manual(node, &format!("InputGain{theirs}")));
+        p.set(&format!("{ours}AboveThreshold"), manual(node, &format!("AboveThreshold{theirs}")));
+        p.set(&format!("{ours}BelowThreshold"), manual(node, &format!("BelowThreshold{theirs}")));
+        // Stored -1 … 1 (shown 1 : 1/(1+v)) and -3 … 1 (shown 1 : 1/(1-v)); ours is the slope.
+        let above = manual(node, &format!("AboveRatio{theirs}")).map(|v| 1.0 + v.clamp(-1.0, 1.0));
+        let below = manual(node, &format!("BelowRatio{theirs}")).map(|v| 1.0 - v.clamp(-3.0, 1.0));
+        p.set(&format!("{ours}AboveSlope"), above);
+        p.set(&format!("{ours}BelowSlope"), below);
+        // Times are stored in milliseconds; ours are seconds.
+        p.set(&format!("{ours}Attack"), manual(node, &format!("Attack{theirs}")).map(|ms| ms / 1000.0));
+        p.set(&format!("{ours}Release"), manual(node, &format!("Release{theirs}")).map(|ms| ms / 1000.0));
+        p.set(&format!("{ours}Gain"), manual(node, &format!("Gain{theirs}")));
+        p.set(&format!("{ours}Solo"), plain_flag(node, &format!("Solo{theirs}")).map(toggle));
+    }
+    for (stored, band) in [("SplitLowMidOn", "low"), ("SplitMidHighOn", "high")] {
+        if plain_flag(node, stored) == Some(false) {
+            warn(format!(
+                "Multiband Dynamics: the {band} band is merged into the mid band there; it plays as its own band"
+            ));
+        }
+    }
+    if boolean(node, &["SideChain", "OnOff", "Manual"]) == Some(true) {
+        warn("Multiband Dynamics: the side-chain is not imported; the device listens to its own input".to_owned());
+    }
+    p.0
+}
+
 /// Live's Pitch (`MidiPitcher`) as Suhina's `pitch`. Every value is stored in the unit ours
 /// takes (semitones, scale degrees, MIDI keys); the step widths have no counterpart yet.
 fn pitch(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
@@ -342,3 +384,237 @@ fn pitch(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
 #[cfg(test)]
 #[path = "devices_tests.rs"]
 mod tests;
+
+/// What a Simpler or a one-zone Sampler becomes: the Suhina sampler's values, its sample file
+/// (as stored, relative when Live stored it so, and absolute) and, for Manual slicing, its
+/// boundaries as fractions of the file.
+pub(crate) struct SamplerImport {
+    pub(crate) params: Vec<DeviceParam>,
+    pub(crate) file: Option<(String, Option<String>)>,
+    pub(crate) slices: Vec<f64>,
+}
+
+/// The voices Live offers, by the index `Globals/NumVoices` stores (observed: index 5 showed 6).
+const VOICES: [f64; 14] = [1., 2., 3., 4., 5., 6., 8., 10., 12., 14., 16., 20., 24., 32.];
+
+/// An automatable value: `<names…>/Manual@Value`.
+fn auto(node: Node, names: &[&str]) -> Option<f64> {
+    let mut full = names.to_vec();
+    full.push("Manual");
+    number(node, &full)
+}
+
+fn auto_on(node: Node, names: &[&str]) -> bool {
+    let mut full = names.to_vec();
+    full.push("Manual");
+    boolean(node, &full).unwrap_or(false)
+}
+
+/// A time stored in milliseconds under `base`, in seconds up to Suhina's 10.
+fn seconds(node: Node, base: &[&str], name: &str) -> Option<f64> {
+    let mut full = base.to_vec();
+    full.push(name);
+    auto(node, &full).map(|ms| (ms / 1000.).clamp(0., 10.))
+}
+
+/// A level of 0 … 1 under `base`.
+fn level(node: Node, base: &[&str], name: &str) -> Option<f64> {
+    let mut full = base.to_vec();
+    full.push(name);
+    auto(node, &full).map(|l| l.clamp(0., 1.))
+}
+
+/// Maps Live's Simpler (`OriginalSimpler`) or a Sampler (`MultiSampler`) with one sample onto
+/// the Suhina sampler (`docs/spec/als-format.md` › Simpler and Sampler). `None` for a Sampler
+/// with several samples, which Suhina's sampler cannot hold yet (#739).
+pub(crate) fn sampler(node: Node, warn: &mut dyn FnMut(String)) -> Option<SamplerImport> {
+    let parts: Vec<Node> = path(node, &["Player", "MultiSampleMap", "SampleParts"])
+        .map(|p| p.children().filter(|n| n.has_tag_name("MultiSamplePart")).collect())
+        .unwrap_or_default();
+    if parts.len() > 1 {
+        warn(format!("a Sampler with {} samples is imported as a placeholder (one sample only so far)", parts.len()));
+        return None;
+    }
+    let mut p = Params::default();
+    let mut file = None;
+    let mut slices = Vec::new();
+    let part = parts.first().copied();
+    let part_number = |names: &[&str]| part.and_then(|part| number(part, names));
+    let loop_on = auto_on(node, &["Player", "LoopModulators", "LoopOn"]);
+    if let Some(part) = part {
+        let file_ref = path(part, &["SampleRef", "FileRef"]);
+        let relative = file_ref.and_then(|f| value(f, &["RelativePath"])).filter(|p| !p.is_empty());
+        let absolute = file_ref.and_then(|f| value(f, &["Path"])).filter(|p| !p.is_empty());
+        file = relative.or(absolute).map(|f| (f.to_string(), absolute.map(str::to_string)));
+        let duration = number(part, &["SampleRef", "DefaultDuration"]).filter(|d| *d >= 2.);
+        let rate = number(part, &["SampleRef", "DefaultSampleRate"]).filter(|r| *r > 0.);
+        if let Some(duration) = duration {
+            // The zone's region in frames, and Simpler's start and length within it.
+            let first = number(part, &["SampleStart"]).unwrap_or(0.).clamp(0., duration);
+            let last = (number(part, &["SampleEnd"]).unwrap_or(duration - 1.) + 1.).clamp(first, duration);
+            let span = last - first;
+            let modulators = ["Player", "LoopModulators"];
+            let start_at = auto(node, &[&modulators[..], &["SampleStart"]].concat()).unwrap_or(0.).clamp(0., 1.);
+            let length = auto(node, &[&modulators[..], &["SampleLength"]].concat()).unwrap_or(1.).clamp(0., 1.);
+            let start = first + span * start_at;
+            let end = (start + span * length).min(last);
+            p.set("start", Some(start / duration));
+            p.set("end", Some(end / duration));
+            if loop_on {
+                let loop_length = auto(node, &[&modulators[..], &["LoopLength"]].concat()).unwrap_or(1.).clamp(0., 1.);
+                p.set("loop_start", Some((end - (end - start) * loop_length) / duration));
+                p.set("loop_end", Some(end / duration));
+            }
+            if let Some(rate) = rate
+                && number(part, &["SlicingStyle"]) == Some(3.)
+            {
+                slices = path(part, &["ManualSlicePoints"])
+                    .map(|m| {
+                        m.children()
+                            .filter(|n| n.has_tag_name("SlicePoint"))
+                            .filter_map(|s| s.attribute("TimeInSeconds").and_then(|t| t.trim().parse::<f64>().ok()))
+                            .map(|t| t * rate / duration)
+                            .filter(|f| f.is_finite() && *f > 0. && *f < 1.)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+            }
+        }
+        p.set("root", part_number(&["RootKey"]).map(|k| k.clamp(0., 127.)));
+        p.set("key_low", part_number(&["KeyRange", "Min"]).map(|k| k.clamp(0., 127.)));
+        p.set("key_high", part_number(&["KeyRange", "Max"]).map(|k| k.clamp(0., 127.)));
+        p.set("velocity_low", part_number(&["VelocityRange", "Min"]).map(|v| (v / 127.).clamp(0., 1.)));
+        p.set("velocity_high", part_number(&["VelocityRange", "Max"]).map(|v| (v / 127.).clamp(0., 1.)));
+        if boolean(part, &["SampleWarpProperties", "IsWarped"]) == Some(true) {
+            p.set("warp", Some(1.));
+            match value(part, &["SampleWarpProperties", "WarpMode"]) {
+                // Observed on clips: WarpMode 4 is Complex, Suhina's Smooth (index 4).
+                Some("4") => p.set("warp_mode", Some(4.)),
+                other => warn(format!("sampler warp mode {other:?} is not mapped yet; using the default")),
+            }
+            // The sample's own tempo, from its first and last warp markers; without them the
+            // tempo the file itself says is used when it loads.
+            let markers: Vec<(f64, f64)> = path(part, &["SampleWarpProperties", "WarpMarkers"])
+                .map(|m| {
+                    m.children()
+                        .filter(|n| n.has_tag_name("WarpMarker"))
+                        .filter_map(|n| {
+                            let read = |name: &str| n.attribute(name).and_then(|t| t.trim().parse::<f64>().ok());
+                            Some((read("SecTime")?, read("BeatTime")?))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if let (Some(first), Some(last)) = (markers.first(), markers.last()) {
+                let bpm = 60. * (last.1 - first.1) / (last.0 - first.0);
+                p.set("source_bpm", Some(bpm).filter(|b| b.is_finite() && *b > 0.).map(|b| b.clamp(1., 999.)));
+            }
+        }
+    }
+
+    // Classic (0), One-Shot (1) or Slicing (2); a Sampler stores 0. Trigger (0) or Gate (1).
+    let mode = number(node, &["Globals", "PlaybackMode"]).unwrap_or(0.);
+    let gate = auto(node, &["VolumeAndPan", "OneShotEnvelope", "SustainMode"]).unwrap_or(0.) > 0.;
+    match mode as i64 {
+        1 => {
+            p.set("playback", Some(if gate { 0. } else { 1. }));
+            let fades = ["VolumeAndPan", "OneShotEnvelope"];
+            p.set("fade_in", auto(node, &[&fades[..], &["FadeInTime"]].concat()).map(|ms| ms.clamp(0., 1000.)));
+            p.set("fade_out", auto(node, &[&fades[..], &["FadeOutTime"]].concat()).map(|ms| ms.clamp(0., 1000.)));
+        }
+        2 => {
+            let part_value = |name: &str| part.and_then(|part| number(part, &[name]));
+            p.set("mode", Some(2.));
+            p.set("slice_by", part_value("SlicingStyle").filter(|s| (0. ..=3.).contains(s)));
+            p.set("sensitivity", part_value("SlicingThreshold").map(|t| (t / 100.).clamp(0., 1.)));
+            p.set("slice_regions", part_value("SlicingRegions").map(|r| r.clamp(1., 128.)));
+            p.set(
+                "slice_overlap",
+                number(node, &["SimplerSlicing", "PlaybackMode"]).filter(|m| (0. ..=2.).contains(m)),
+            );
+            p.set("slice_release", Some(toggle(gate)));
+            if part_value("SlicingStyle") == Some(1.) {
+                warn("sampler beat slicing division is not mapped yet; using the default".into());
+            }
+        }
+        _ => p.set("playback", Some(if loop_on { 2. } else { 0. })),
+    }
+
+    p.set("reverse", Some(toggle(auto_on(node, &["Player", "Reverse"]))));
+    p.set("pitch", auto(node, &["Pitch", "TransposeKey"]).map(|st| st.clamp(-48., 48.)));
+    let fine = auto(node, &["Pitch", "TransposeFine"]).unwrap_or(0.) + part_number(&["Detune"]).unwrap_or(0.);
+    p.set("cents", Some(fine.clamp(-100., 100.)));
+    // A zone at zero is silent whatever the device's gain; one with no volume is at unity.
+    let part_gain = part_number(&["Volume"]).unwrap_or(1.);
+    let volume = auto(node, &["VolumeAndPan", "Volume"]).unwrap_or(0.) + 20. * part_gain.max(1e-9).log10();
+    p.set("gain", Some(if part_gain > 0. { volume.clamp(-60., 12.) } else { -60. }));
+    let pan = auto(node, &["VolumeAndPan", "Panorama"]).unwrap_or(0.) + part_number(&["Panorama"]).unwrap_or(0.);
+    p.set("pan", Some(pan.clamp(-1., 1.)));
+    p.set("velocity", auto(node, &["VolumeAndPan", "VolumeVelScale"]).map(|v| v.clamp(0., 1.)));
+
+    // The amplitude envelope: times in ms, the sustain a level of 0 … 1.
+    let envelope = ["VolumeAndPan", "Envelope"];
+    p.set("attack", seconds(node, &envelope, "AttackTime"));
+    p.set("decay", seconds(node, &envelope, "DecayTime"));
+    p.set("sustain", level(node, &envelope, "SustainLevel"));
+    p.set("release", seconds(node, &envelope, "ReleaseTime"));
+
+    // The filter: Low-pass, High-pass, Band-pass, Notch, Morph (0 … 4) → Suhina's 1 … 4.
+    let filter = ["Filter", "Slot", "Value", "SimplerFilter"];
+    let field = |name: &str| auto(node, &[&filter[..], &[name]].concat());
+    let cutoff = field("Freq").unwrap_or(20000.);
+    let filter_env = ["Filter", "Slot", "Value", "SimplerFilter", "Envelope"];
+    let env_amount = if auto_on(node, &[&filter_env[..], &["IsOn"]].concat()) {
+        auto(node, &[&filter_env[..], &["Amount"]].concat())
+    } else {
+        None
+    };
+    let kind = field("Type").unwrap_or(0.) as i64;
+    let open_low_pass = kind == 0 && cutoff >= 20000. && env_amount.unwrap_or(0.) == 0.;
+    if !auto_on(node, &["Filter", "IsOn"]) || open_low_pass {
+        // Off, or a low-pass open above hearing: the same sound with no filter.
+        p.set("filter", Some(0.));
+    } else {
+        let mapped = match kind {
+            0..=3 => kind as f64 + 1.,
+            _ => {
+                warn("sampler filter Morph is not mapped yet; using a low-pass".into());
+                1.
+            }
+        };
+        p.set("filter", Some(mapped));
+        p.set("cutoff", Some(cutoff.clamp(20., 20000.)));
+        p.set("filter_slope", Some(toggle(auto_on(node, &[&filter[..], &["Slope"]].concat()))));
+        // Resonance 0 … 1.25 onto a Q from 0.707 (none) to about 10 at 1.
+        p.set("resonance", field("Res").map(|r| (0.707 * 14.14f64.powf(r.clamp(0., 1.25))).clamp(0.1, 10.)));
+        if let Some(amount) = env_amount {
+            p.set("filter_env", Some((amount / 12.).clamp(-8., 8.)));
+            p.set("filter_attack", seconds(node, &filter_env, "AttackTime"));
+            p.set("filter_decay", seconds(node, &filter_env, "DecayTime"));
+            p.set("filter_sustain", level(node, &filter_env, "SustainLevel"));
+            p.set("filter_release", seconds(node, &filter_env, "ReleaseTime"));
+        }
+    }
+
+    // The pitch envelope: an amount in semitones, and its attack and decay.
+    let pitch_env = ["Pitch", "Envelope", "Slot", "Value", "SimplerPitchEnvelope"];
+    if auto_on(node, &["Pitch", "Envelope", "IsOn"]) {
+        p.set("pitch_env", auto(node, &[&pitch_env[..], &["Amount"]].concat()).map(|st| st.clamp(-48., 48.)));
+        p.set("pitch_attack", seconds(node, &pitch_env, "AttackTime"));
+        p.set("pitch_decay", seconds(node, &pitch_env, "DecayTime"));
+    }
+    if auto_on(node, &["Lfo", "IsOn"]) {
+        warn("sampler LFO is not mapped yet; it is left off".into());
+    }
+
+    // Voices, retrigger and glide.
+    if let Some(voices) = number(node, &["Globals", "NumVoices"]).and_then(|i| VOICES.get(i as usize).copied()) {
+        p.set("poly", Some(voices));
+        p.set("voice_mode", Some(toggle(voices == 1.)));
+    }
+    p.set("retrigger", boolean(node, &["Globals", "RetriggerMode"]).map(toggle));
+    if auto(node, &["Globals", "PortamentoMode"]).unwrap_or(0.) > 0. {
+        p.set("glide", auto(node, &["Globals", "PortamentoTime"]).map(|ms| (ms / 1000.).clamp(0., 2.)));
+    }
+    Some(SamplerImport { params: p.0, file, slices })
+}

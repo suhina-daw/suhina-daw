@@ -4,6 +4,7 @@
 //! What the window does with the actions its views hand it: commands run on the active project, and the window's own actions.
 
 use super::*;
+use crate::kit::widgets::{SEND_RANGE, VOLUME_RANGE};
 
 impl App {
     /// Runs a window action (`settings::keymap::actions`) on the next frame, as its key would:
@@ -1054,6 +1055,71 @@ impl App {
         }
     }
 
+    /// A fader, pan or send moved on one of several selected tracks (a drag, the wheel, the arrow
+    /// keys), as `track.setMixerValues` on all of them: each keeps its distance from the one
+    /// moved, counted from where the selection stood when the drag began, so going to the end of
+    /// the range and back leaves it as it was. A send at silence counts as the bottom of the
+    /// range, so sends not used yet come up together. A send without `continue` was typed or
+    /// reset: every track takes that value. `None` when it is not part of a selection.
+    pub(super) fn drag_to_selection(&mut self, action: &Action) -> Option<Action> {
+        let id = |v: &serde_json::Value| v.as_u64().and_then(|n| u32::try_from(n).ok()).map(TrackId);
+        let (control, moved, target, value) = match action.id {
+            "track.setVolume" | "track.setPan" if action.params.get("continue").is_some() => {
+                let [one] = action.params["tracks"].as_array()?.as_slice() else { return None };
+                match action.id {
+                    "track.setVolume" => ("volume", id(one)?, None, &action.params["db"]),
+                    _ => ("pan", id(one)?, None, &action.params["pan"]),
+                }
+            }
+            "track.setSend" => {
+                ("send", id(&action.params["track"])?, id(&action.params["return"]), &action.params["level"])
+            }
+            _ => return None,
+        };
+        let selected = self.arrangement.selected_tracks.clone();
+        if selected.len() < 2 || !selected.contains(&moved) {
+            self.selection_drag = None;
+            return None;
+        }
+        let (floor, top) = if control == "send" { SEND_RANGE } else { VOLUME_RANGE };
+        let continued = action.params["continue"].as_bool() == Some(true);
+        let outright = action.params.get("continue").is_none();
+        let same = |d: &&SelectionDrag| d.control == control && d.moved == moved && d.target == target;
+        let start = match self.selection_drag.as_ref().filter(same).filter(|_| continued) {
+            Some(drag) => drag.start.clone(),
+            None => {
+                let project = self.session()?.project();
+                let is_return = |t: TrackId| {
+                    project.channel_of_track(t).is_some_and(|c| c.role == suhina_engine::model::ChannelRole::Effect)
+                };
+                selected
+                    .iter()
+                    .filter(|t| **t != TrackId::MAIN && Some(**t) != target)
+                    .filter(|t| control != "send" || **t == moved || !is_return(**t))
+                    .filter_map(|t| Some((*t, mixer_value(project, *t, control, target, floor)?)))
+                    .collect()
+            }
+        };
+        let from = start.iter().find(|(t, _)| *t == moved)?.1;
+        let to = value.as_f64().unwrap_or(floor);
+        let values: Vec<f64> = start
+            .iter()
+            .map(|(_, was)| match control {
+                "pan" => ((was + to - from).clamp(-1.0, 1.0) * 100.0).round() / 100.0,
+                _ if to <= floor || (!outright && was + to - from <= floor) => SILENCE_DB,
+                _ if outright => (to.min(top) * 10.0).round() / 10.0,
+                _ => ((was + to - from).min(top) * 10.0).round() / 10.0,
+            })
+            .collect();
+        let tracks: Vec<u32> = start.iter().map(|(t, _)| t.0).collect();
+        let mut params = json!({ "tracks": tracks, "control": control, "values": values, "continue": continued });
+        if let Some(target) = target {
+            params["return"] = json!(target.0);
+        }
+        self.selection_drag = Some(SelectionDrag { control, moved, target, start });
+        Some(Action::new("track.setMixerValues", params))
+    }
+
     /// `action` widened to the selection it is part of (#948): `device.setEnabled` on one of
     /// several devices picked on its track becomes `device.setEnabledMany` on all of them, and
     /// `track.setMute`, `track.setVolume` or `track.setPan` on one of several selected tracks
@@ -1075,8 +1141,8 @@ impl App {
                     json!({ "track": track.0, "devices": devices, "enabled": enabled }),
                 ))
             }
-            // A value set on one of several selected tracks, by a click, a drag, a typed number or
-            // the arrow keys, is set on all of them (#707, #948).
+            // A value set on one of several selected tracks, by a click or a typed number, is set
+            // on all of them (#707, #948); a drag or the arrow keys go through `drag_to_selection`.
             "track.setMute" | "track.setVolume" | "track.setPan" => {
                 let [one] = action.params["tracks"].as_array()?.as_slice() else { return None };
                 let track = TrackId(id(one)?);
@@ -1113,6 +1179,41 @@ impl App {
             View::Session => self.view.selected,
             View::Arrangement => self.arrangement.selected_tracks.first().copied(),
         }
+    }
+}
+
+/// A selection moving together with one of its faders, pans or sends.
+pub(super) struct SelectionDrag {
+    control: &'static str,
+    /// The track whose control is moved.
+    moved: TrackId,
+    /// The return, for a send.
+    target: Option<TrackId>,
+    /// Every track it moves and where it stood when the drag began.
+    start: Vec<(TrackId, f64)>,
+}
+
+/// A level below what `track.setMixerValues` counts as sound.
+const SILENCE_DB: f64 = -200.0;
+
+/// Where `track`'s `control` stands now: dB from `floor` up, or a pan.
+fn mixer_value(
+    project: &suhina_engine::model::Project,
+    track: TrackId,
+    control: &str,
+    target: Option<TrackId>,
+    floor: f64,
+) -> Option<f64> {
+    let channel = project.channel_of_track(track)?;
+    let db = |gain: f64| if gain > 0.0 { (20.0 * gain.log10()).max(floor) } else { floor };
+    match (control, target) {
+        ("volume", _) => Some(db(channel.volume)),
+        ("pan", _) => Some(channel.pan),
+        (_, Some(target)) => {
+            let target = project.channel_of_track(target)?.id;
+            Some(channel.sends.iter().find(|s| s.target == target).map_or(floor, |s| db(s.level)))
+        }
+        _ => None,
     }
 }
 

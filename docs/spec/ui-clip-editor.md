@@ -3,7 +3,7 @@ description: Functional spec of the MIDI clip editor (piano roll): layout, toolb
 read_when: piano roll, clip editor, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools column, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
 type: spec
 status: draft
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/ui/src/detail/piano_roll.rs
   - crates/ui/src/detail/piano_roll_grid.rs
@@ -44,16 +44,20 @@ lane, the grid and zoom, and the `note.*` commands.
   left of the detail area and the piano roll in the rest of it, in place of the track's devices.
   Selecting a track, or an audio clip, shows what it showed before (devices; an audio clip's
   properties). With the detail area stacked on the right, the piano roll sits under the properties.
-- **Later ([#343](https://github.com/suhina-daw/suhina-daw/issues/343)):** a clip selected in a Launcher slot opens it too, once slot selection lands (open pull
-  request #302); the piano roll then edits that slot's clip with the same commands (`scene`
-  instead of `index`). A double-click on a clip opens the detail area if it is closed.
+- **Built:** a clip selected in a Launcher slot opens it too (the Clip / Devices switch below).
+- **Later ([#343](https://github.com/suhina-daw/suhina-daw/issues/343)):** the piano roll edits
+  that slot's clip with the same commands (`scene` instead of `index`). A double-click on a clip
+  opens the detail area if it is closed.
 - **Built ([#505](https://github.com/suhina-daw/suhina-daw/issues/505)):** a **Clip / Devices**
   switch, so a MIDI clip's track devices stay one click away. While the detail area shows a clip
   that has an editor (a MIDI clip, in the Arrangement view or in a slot), the clip column's title
   row ends in a two-part switch, **Clip** and **Devices** ([components](../design/components.md)
   › Clip properties). **Devices** puts the track's device chain where the piano roll was: the clip
   column stays on the left (on top when stacked) with the switch in it, and the chain fills the
-  rest, as it does beside an audio clip; dropping an instrument, effect or plug-in there adds it to
+  rest. The MIDI clip retains its resizable detail area in both tabs. A device row alone has
+  two states: open at 200 logical pixels or closed. Dragging the splitter down past half that(
+  )height closes it, dragging it up opens it whole; no height in between cuts its panels.
+  Dropping an instrument, effect or plug-in there adds it to
   that track as it always does. **Clip** brings the piano roll back. **Ctrl+Shift+D** (the keymap
   action `view.devices`) and **View › Show devices** / **Show clip** do the same; they open the
   detail area first when it is hidden. An audio clip has no switch: its track's devices already
@@ -61,7 +65,7 @@ lane, the grid and zoom, and the `note.*` commands.
   edits clips (below).
 - **Built ([#594](https://github.com/suhina-daw/suhina-daw/issues/594)):** an **audio clip on a
   track whose plug-in edits clips** (ARA, such as a pitch editor; [ADR
-  0028](../decisions/0028-ara-hosting.md)) has that plug-in's editor where a MIDI clip has its piano
+  0028](../decisions/0033-ara-hosting.md)) has that plug-in's editor where a MIDI clip has its piano
   roll: the clip column on the left, the editor in the rest, embedded in the window whatever
   Settings › Plug-ins says for other editors (Windows, X11 on Linux; macOS opens it in a window of
   its own), asked to take the room there as the piano roll does (`fit_editor`; a plug-in that
@@ -73,8 +77,7 @@ lane, the grid and zoom, and the `note.*` commands.
   clip, and selecting another clip on the track shows that one. The editor opens on its own the
   first time a clip is shown; closed, the area offers **Open editor**, and it stays closed for that
   clip until the clip is selected again. The clip column has the **Clip / Devices** switch, which
-  works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The plug-in belongs to the clip (ADR 0028 › Amendment: the ARA plug-in belongs to the clip,
-  #990): the clip's right-click menu has **Edit with** and the plug-in's name for a clip that does
+  works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The plug-in belongs to the clip ([ARA hosting](ara-hosting.md) › The plug-in belongs to the clip): the clip's right-click menu has **Edit with** and the plug-in's name for a clip that does
   not play through it yet, **Open in** for one that does, and **Stop editing with** to take it off
   (`clip.setAra`); **Alt+M** (`view.araEditor`) is Edit with or Open in for the selected clip: it
   selects **Clip**, opens the detail area and the editor. They work on any audio clip in the
@@ -1003,48 +1006,24 @@ modes, ticked as chosen, and under a divider every **workflow setting** with its
 
 ## Keymap presets
 
-- **Built ([#443](https://github.com/suhina-daw/suhina-daw/issues/443), Mouse-first
-  [#460](https://github.com/suhina-daw/suhina-daw/issues/460)):** Settings › Keys has
-  a **Preset** menu with three choices, which set the keys of a few actions and the mouse's
-  behaviour at once:
+**Built ([#443](https://github.com/suhina-daw/suhina-daw/issues/443), Mouse-first
+[#460](https://github.com/suhina-daw/suhina-daw/issues/460)).** A preset is a workflow mode
+(› Workflow modes, which gives each preset's settings); this section is about the keys and the
+file.
 
-  | Preset | What it sets | Where it differs |
-  |---|---|---|
-  | **Select-first** (default) | the keys Suhina has today | duplicate is **Ctrl+D**; a right-click on a note does nothing |
-  | **Draw-first** | the same, with the keys of someone who draws notes first | duplicate is **Ctrl+B**; in the Draw and Paint tools a right-click on a note deletes it |
-  | **Mouse-first** | the clicks of someone who works with the mouse: every switch below on, and the left button draws in the **Select** tool | duplicate is **Ctrl+D**; the four switches are on |
-
-- **Mouse-first gives the mouse the four jobs a pen and modifier keys would do**, each a switch of
-  its own under Settings › Keys › Mouse and key behaviour, so any of them can be turned off and the rest
-  kept:
-  - **Left click draws** (on by default with Mouse-first): in the **Select** tool, a press on an
-    empty spot of the grid draws a note there and dragging sets its length, as the Draw tool does,
-    and a press on a note moves it, as Select does. Off, the left button selects as Select-first
-    does.
-  - **Right click deletes a note** (on): a right-click on a note deletes it; dragging with the
-    right button held deletes every note the pointer passes over, one `note.delete`, one undo
-    step, in every tool.
-  - **Shift+right click splits** (on): a right-click with Shift held slices the notes under a
-    short drag the way the Slice tool does, one `note.split`, one undo step.
-  - **Alt+right plays from the point** (on): while the right button is held with **Alt** (Option
-    on macOS), the clip plays from the spot under the pointer, and it stops when the button is let
-    go. It is the transport preview of › Playing the keys, for the whole clip: nothing is added to
-    the project and it is not an undo step. Held with the wheel, the right button still chooses the
-    tool (› Zoom and scroll).
-- A switch turned on or off by hand is a workflow setting changed by hand, so the mode becomes
-  **Custom** (› Workflow modes); choosing **Mouse-first** again turns them all back on. The switches are kept with the keymap in
-  `keymap.json`, under `"mouseLeftDraws"`, `"mouseRightDeletes"`, `"mouseShiftRightSplits"` and
-  `"mouseAltRightPlays"`, each `true` or `false`; a file without them takes Select-first's (all
-  off), and a value that is not a boolean is ignored with a warning, as an unknown key is.
-
-- Choosing a preset sets the defaults of the keys it names; every other key keeps what it has, and
-  single keys can still be changed afterwards, as today (› Settings in
+- Choosing a preset sets the defaults of the keys it names (the duplicate key); every other key
+  keeps what it has, and single keys can still be changed afterwards (› Settings in
   [`docs/shortcuts.md`](../shortcuts.md)). Choosing a preset twice sets them again, so a key that
   was changed by hand comes back to the preset's.
-- The choice is saved with the keymap in `keymap.json` under `"preset"`, and read back when the
-  file is read. A file without it is **Select-first**; **Custom** is read and written too. A `"preset"` naming something else is
-  ignored: the keymap is Select-first and the window says so in the status bar, so a hand-edited
-  file never leaves Suhina with no keys.
+- The choice is saved in `keymap.json` under `"preset"`, and read back when the file is read. A
+  file without it is **Select-first**; **Custom** is read and written too. A `"preset"` naming
+  something else is ignored: the keymap is Select-first and the window says so in the status bar,
+  so a hand-edited file never leaves Suhina with no keys.
+- Files from before the workflow settings kept four switches, `"mouseLeftDraws"`,
+  `"mouseRightDeletes"`, `"mouseShiftRightSplits"` and `"mouseAltRightPlays"` (`true` or `false`).
+  They are still written and read, as *Click on empty grid*, *Right click on a note* (every tool),
+  *Shift+right drag* and *Alt+right button*; a file without them takes Select-first's, and a
+  value that is not a boolean is ignored with a warning.
 - The preset names describe the habit they suit; they are not the name of anything else.
 
 ## Commands
@@ -1126,7 +1105,7 @@ that does not exist; each is one undo step and changes nothing when it fails.
   maintainer decides ([#443](https://github.com/suhina-daw/suhina-daw/issues/443)).
 - **The toolbar size default: Large (125 %), as built.** Normal (100 %) was considered, and the
   maintainer decides ([#460](https://github.com/suhina-daw/suhina-daw/issues/460)); changing it is
-  one constant and the default in Settings, and an existing `settings.json` keeps the value it
+  one constant and the default in Settings, and an existing `settings.txt` keeps the value it
   stored.
 - **Mute is the sixth tool**, after Slice, with the number key **6**. Another order (Mute before
   Slice) changes the labels of `pianoRoll.tool5` and `pianoRoll.tool6` and the icons; the

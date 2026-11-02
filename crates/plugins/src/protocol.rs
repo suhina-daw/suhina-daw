@@ -6,10 +6,10 @@
 //!
 //! Every message has an `op`. Engine to host: `hello`, `load`, `reconfigure`, `unload`, `ping`, `get_state`,
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
-//! `fit_editor`, `ara_select`, `ara_update`, `ara_export`, `ara_import`, `quit`. Host to engine: `hello`, `loaded`, `reconfigured`, `unloaded`, `pong`, `state`, `params`, `param`,
+//! `fit_editor`, `editor_title`, `ara_select`, `ara_update`, `ara_export`, `ara_import`, `quit`. Host to engine: `hello`, `loaded`, `reconfigured`, `unloaded`, `pong`, `state`, `params`, `param`,
 //! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `ara_exported`, `ara_imported`, `memory`,
 //! `transport_key`, `ara_playback`, `ara_notes`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
-//! `ara_select` and `quit` (so the engine never waits on them).
+//! `editor_title`, `ara_select` and `quit` (so the engine never waits on them).
 //! `editor_closed` also comes unasked, when the user closes an editor's window; `editor_resized`
 //! only comes unasked, when a plug-in gives its editor a new size, `latency_changed` only
 //! comes unasked, when a running plug-in reports another latency, `memory` only comes unasked,
@@ -25,7 +25,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 14;
+pub const VERSION: u64 = 15;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -158,18 +158,18 @@ impl AraNote {
     }
 }
 
-/// The ARA document a plug-in instance is bound to as it loads ([ADR 0028]): the audio sources
+/// The ARA document a plug-in instance is bound to as it loads ([ADR 0033]): the audio sources
 /// it may read and the playback regions it renders and edits, on one region sequence (the
 /// track) at one tempo. Ids are persistent: built from the project's stable ids, never from
 /// positions.
 ///
-/// [ADR 0028]: https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0028-ara-hosting.md
+/// [ADR 0033]: https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0033-ara-hosting.md
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AraDocument {
     pub name: String,
     /// The document this track belongs to: the instances of one plug-in in one host process
     /// with the same key share one document, each track a region sequence of it, so the
-    /// plug-in sees every track (ADR 0028 decision 2). Empty: a document of its own.
+    /// plug-in sees every track (ADR 0033 decision 2). Empty: a document of its own.
     pub document: String,
     /// The region sequence's name: the track's.
     pub sequence: String,
@@ -366,7 +366,7 @@ pub enum Message {
         plugin: String,
         link: String,
         sample_rate: f64,
-        /// For an ARA plug-in (ADR 0028): the document to bind it to before it is activated.
+        /// For an ARA plug-in (ADR 0033): the document to bind it to before it is activated.
         ara: Option<AraDocument>,
     },
     /// `edits_clips`: the plug-in supports ARA (a VST3 component that answers
@@ -439,6 +439,8 @@ pub enum Message {
         instance: u32,
         owner: Option<u64>,
         embedded: bool,
+        /// What the title bar of its own window says from the start; the plug-in's name without.
+        title: Option<String>,
     },
     EditorOpened {
         instance: u32,
@@ -451,6 +453,12 @@ pub enum Message {
         instance: u32,
         placement: Placement,
     },
+    /// What the title bar of an editor in a window of its own says: its track's name and the
+    /// plug-in's. Not answered; sent again when the track is renamed or moved.
+    EditorTitle {
+        instance: u32,
+        title: String,
+    },
     /// Ask an embedded editor to take the size of the room the engine has for it, in pixels,
     /// when its plug-in lets its editor be resized (it may keep within its own limits). Not
     /// answered; the new size comes back as `EditorResized`.
@@ -459,14 +467,14 @@ pub enum Message {
         width: u32,
         height: u32,
     },
-    /// Tell a plug-in bound to an ARA document (ADR 0028) which playback region the host has
+    /// Tell a plug-in bound to an ARA document (ADR 0033) which playback region the host has
     /// selected, by its persistent id (`clip-<id>`), so its editor shows it; `None` selects
     /// nothing. Not answered; a plug-in without a document ignores it.
     AraSelect {
         instance: u32,
         region: Option<String>,
     },
-    /// Bring the ARA document of a plug-in loaded with one (ADR 0028) in line with `document`,
+    /// Bring the ARA document of a plug-in loaded with one (ADR 0033) in line with `document`,
     /// its track's clips as they are now: moved or trimmed clips are updated in place, new
     /// ones added, gone ones taken out, matched by their persistent ids. Answered with
     /// `AraUpdated`, or an error after which the document is as it was or partly changed (the
@@ -478,7 +486,7 @@ pub enum Message {
     AraUpdated {
         instance: u32,
     },
-    /// The edits of one audio modification of a plug-in loaded with an ARA document (ADR 0028),
+    /// The edits of one audio modification of a plug-in loaded with an ARA document (ADR 0033),
     /// by its persistent id (`content-<id>`), with its audio source's (`source`, the pool key):
     /// stored on their own (a partial archive), to give another track's plug-in. Answered with
     /// `AraExported`, or an error when the plug-in cannot store them.
@@ -588,6 +596,7 @@ impl Message {
             | Self::OpenEditor { instance, .. }
             | Self::EditorOpened { instance, .. }
             | Self::PlaceEditor { instance, .. }
+            | Self::EditorTitle { instance, .. }
             | Self::AraSelect { instance, .. }
             | Self::FitEditor { instance, .. }
             | Self::AraUpdate { instance, .. }
@@ -659,14 +668,17 @@ impl Message {
             Self::ParamChanged { instance, id, value } => {
                 json!({ "op": "param_changed", "instance": instance, "id": id, "value": value })
             }
-            Self::OpenEditor { instance, owner, embedded } => {
-                json!({ "op": "open_editor", "instance": instance, "owner": owner, "embedded": embedded })
+            Self::OpenEditor { instance, owner, embedded, title } => {
+                json!({ "op": "open_editor", "instance": instance, "owner": owner, "embedded": embedded, "title": title })
             }
             Self::EditorOpened { instance, width, height } => {
                 json!({ "op": "editor_opened", "instance": instance, "width": width, "height": height })
             }
             Self::PlaceEditor { instance, placement } => {
                 json!({ "op": "place_editor", "instance": instance, "placement": placement.to_json() })
+            }
+            Self::EditorTitle { instance, title } => {
+                json!({ "op": "editor_title", "instance": instance, "title": title })
             }
             Self::FitEditor { instance, width, height } => {
                 json!({ "op": "fit_editor", "instance": instance, "width": width, "height": height })
@@ -817,12 +829,19 @@ impl Message {
                     Some(v) => Some(v.as_u64()?),
                 },
                 embedded: value.get("embedded")?.as_bool()?,
+                title: match value.get("title") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(v.as_str()?.to_string()),
+                },
             },
             "editor_opened" => {
                 Self::EditorOpened { instance: instance()?, width: small("width")?, height: small("height")? }
             }
             "place_editor" => {
                 Self::PlaceEditor { instance: instance()?, placement: Placement::from_json(value.get("placement")?)? }
+            }
+            "editor_title" => {
+                Self::EditorTitle { instance: instance()?, title: value.get("title")?.as_str()?.to_string() }
             }
             "fit_editor" => Self::FitEditor { instance: instance()?, width: small("width")?, height: small("height")? },
             "ara_update" => {

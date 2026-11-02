@@ -62,6 +62,10 @@ struct Loaded {
 }
 
 fn visible_sample_peaks(source: &suhina_engine::AudioData, range: (usize, usize)) -> Vec<f32> {
+    sample_channel_peaks(source, range, None)
+}
+
+fn sample_channel_peaks(source: &suhina_engine::AudioData, range: (usize, usize), channel: Option<usize>) -> Vec<f32> {
     let range = (range.0.min(source.frames()), range.1.min(source.frames()));
     let mut peaks = vec![0f32; 1024];
     let channels = usize::from(source.channels.max(1));
@@ -75,7 +79,9 @@ fn visible_sample_peaks(source: &suhina_engine::AudioData, range: (usize, usize)
     {
         let bin = i.saturating_mul(1024) / span;
         if let Some(peak) = peaks.get_mut(bin) {
-            for &sample in frame {
+            for (_, &sample) in
+                frame.iter().enumerate().filter(|(index, _)| channel.is_none_or(|channel| channel == *index))
+            {
                 if sample.is_finite() {
                     *peak = peak.max(sample.abs().min(1.));
                 }
@@ -90,7 +96,13 @@ fn visible_sample_peaks(source: &suhina_engine::AudioData, range: (usize, usize)
                 .get(range.0.saturating_add(i.saturating_mul(span) / bins).saturating_mul(channels)..)
                 .and_then(|samples| samples.get(..channels))
             {
-                *peak = frame.iter().copied().filter(|v| v.is_finite()).fold(0f32, |p, v| p.max(v.abs().min(1.)));
+                *peak = frame
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| channel.is_none_or(|channel| channel == *index))
+                    .map(|(_, value)| *value)
+                    .filter(|v| v.is_finite())
+                    .fold(0f32, |p, v| p.max(v.abs().min(1.)));
             }
         }
     }
@@ -105,6 +117,33 @@ pub(crate) fn sample_source_id(track: TrackId, device: usize) -> egui::Id {
     egui::Id::new(("sampler-source", track.0, device))
 }
 
+pub(crate) fn finish_sample_audition(
+    ctx: &egui::Context,
+    project: Option<suhina_session::ProjectId>,
+    actions: &mut Vec<Action>,
+) {
+    let id = egui::Id::new("sample-audition");
+    let changed_project = ctx.data_mut(|data| {
+        let old = data.get_temp::<Option<suhina_session::ProjectId>>(id.with("project")).flatten();
+        data.insert_temp(id.with("project"), project);
+        old != project
+    });
+    if changed_project {
+        // Switching project closes the old player; never release a note on the new one.
+        ctx.data_mut(|data| data.remove::<(TrackId, u8, f64)>(id));
+        return;
+    }
+    if let Some((track, key, until)) = ctx.data(|d| d.get_temp::<(TrackId, u8, f64)>(id)) {
+        let now = ctx.input(|i| i.time);
+        if now >= until {
+            actions.push(Action::new("preview.noteOff", json!({"track":track.0,"key":key})));
+            ctx.data_mut(|d| d.remove::<(TrackId, u8, f64)>(id));
+        } else {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64((until - now).min(0.25)));
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct SampleView {
     start: f64,
@@ -116,6 +155,23 @@ impl Default for SampleView {
     }
 }
 impl SampleView {
+    fn zoomed(self, anchor: f32, factor: f32, field: Rect, frames: usize) -> Self {
+        if !factor.is_finite() || factor <= 0. || field.width() <= 0. {
+            return self;
+        }
+        let fraction = f64::from((anchor - field.left()) / field.width()).clamp(0., 1.);
+        let span = (self.span / f64::from(factor)).clamp(1. / frames.max(1) as f64, 1.);
+        let start = (self.point(anchor, field) - fraction * span).clamp(0., 1. - span);
+        Self { start, span }
+    }
+
+    fn panned(self, pixels: f32, field: Rect) -> Self {
+        if !pixels.is_finite() || field.width() <= 0. {
+            return self;
+        }
+        Self { start: (self.start - f64::from(pixels / field.width()) * self.span).clamp(0., 1. - self.span), ..self }
+    }
+
     fn x(self, point: f64, field: Rect) -> f32 {
         field.left() + ((point - self.start) / self.span) as f32 * field.width()
     }
@@ -124,7 +180,8 @@ impl SampleView {
     }
     fn dragged(self, anchor: Pos2, delta: Vec2, field: Rect, frames: usize) -> Self {
         let fraction = f64::from((anchor.x - field.left()) / field.width());
-        let span = (self.span * (f64::from(delta.y) / 120.).exp()).clamp(1. / frames.max(1) as f64, 1.);
+        // Down zooms in, up out.
+        let span = (self.span * (f64::from(-delta.y) / 120.).exp()).clamp(1. / frames.max(1) as f64, 1.);
         let start = (self.point(anchor.x, field) - fraction * span - f64::from(delta.x / field.width()) * self.span)
             .clamp(0., 1. - span);
         Self { start, span }
@@ -143,6 +200,7 @@ struct SamplePeaks {
     source: Arc<suhina_engine::AudioData>,
     range: (usize, usize),
     peaks: Arc<Vec<f32>>,
+    right: Option<Arc<Vec<f32>>>,
 }
 fn nearest_slice(points: &[f64], view: SampleView, field: Rect, pointer: Pos2, start: f64, end: f64) -> Option<usize> {
     let index = points.partition_point(|p| *p < view.point(pointer.x, field));
@@ -156,26 +214,63 @@ fn nearest_slice(points: &[f64], view: SampleView, field: Rect, pointer: Pos2, s
             (view.x(points[a], field) - pointer.x).abs().total_cmp(&(view.x(points[b], field) - pointer.x).abs())
         })
 }
-fn slice_edit(actions: &mut Vec<Action>, track: TrackId, device: usize, points: Vec<f64>, continued: bool) {
+fn slice_edit(
+    actions: &mut Vec<Action>,
+    track: TrackId,
+    device: &serde_json::Value,
+    points: Vec<f64>,
+    continued: bool,
+) {
     actions.push(Action::new(
         "device.setSampleSlices",
         json!({"track":track.0,"device":device,"points":points,"continue":continued}),
     ));
 }
 
-const SAMPLE_MARKER: Color32 = Color32::from_rgb(230, 120, 35);
+fn sample_marker_color() -> Color32 {
+    color(styled_palette(widget_palette()).accent)
+}
 
 fn sample_marker(painter: &egui::Painter, x: f32, top: f32, bottom: f32) {
     let line = [Pos2::new(x, top), Pos2::new(x, bottom)];
-    painter.line_segment(line, Stroke::new(2., SAMPLE_MARKER));
+    painter.line_segment(line, Stroke::new(2., sample_marker_color()));
 }
 
+/// The colour of slice lines: the waveform's accent turned to the opposite hue, fully saturated
+/// and bright, so the lines stand apart from the waveform in any theme.
+fn slice_line(accent: Color32) -> Color32 {
+    let hsva = egui::ecolor::Hsva::from(accent);
+    let hue = if hsva.s < 0.15 { 0.5 } else { (hsva.h + 0.5).fract() };
+    Color32::from(egui::ecolor::Hsva::new(hue, 0.85, 1.0, 1.0))
+}
+
+/// A time in a source as minutes, seconds and, when it has them, milliseconds: `0:00`,
+/// `0:00.480`, `1:02.500`.
+fn clock(seconds: f64) -> String {
+    let millis = (seconds.max(0.) * 1000.).round().min(f64::from(u32::MAX)) as u32;
+    let (minutes, rest, fraction) = (millis / 60_000, millis / 1000 % 60, millis % 1000);
+    if fraction == 0 { format!("{minutes}:{rest:02}") } else { format!("{minutes}:{rest:02}.{fraction:03}") }
+}
+
+/// Plays a slice's note for a moment, as a click on the slice does.
+fn audition(ui: &egui::Ui, actions: &mut Vec<Action>, track: TrackId, key: u8) {
+    let id = egui::Id::new("sample-audition");
+    if let Some((track, key, _)) = ui.ctx().data(|d| d.get_temp::<(TrackId, u8, f64)>(id)) {
+        actions.push(Action::new("preview.noteOff", json!({"track":track.0,"key":key})));
+    }
+    actions.push(Action::new("preview.noteOn", json!({"track":track.0,"key":key,"velocity":100})));
+    let until = ui.input(|i| i.time) + 0.25;
+    ui.ctx().data_mut(|d| d.insert_temp(id, (track, key, until)));
+}
+
+#[allow(clippy::too_many_arguments)]
 fn sample_waveform(
     ui: &mut egui::Ui,
     bounds: Rect,
     parameters: &[GraphParameter],
     track: TrackId,
     device: usize,
+    address: serde_json::Value,
     actions: &mut Vec<Action>,
     inline_recording: bool,
 ) {
@@ -190,20 +285,29 @@ fn sample_waveform(
     let source = ui.ctx().data(|data| data.get_temp::<Arc<suhina_engine::AudioData>>(sample_source_id(track, device)));
     let painter = ui.painter_at(visible);
     painter.fill_background(bounds, 0., crate::kit::theme::control_background());
-    let colors = crate::kit::theme::palette();
-    let compact = bounds.height() < 100.;
+    let mut colors = crate::kit::theme::palette();
+    let scoped = styled_palette(widget_palette());
+    colors.accent = color(scoped.accent);
+    colors.text_primary = color(scoped.text);
+    colors.border = color(scoped.border);
+    painter.fill_background(bounds, 0., color(scoped.control));
+    let compact = bounds.height() < 100. && inline_recording;
     let field = if compact {
         Rect::from_min_max(
             bounds.min + Vec2::new(8., 8.),
             bounds.max - Vec2::new(8., if inline_recording { 26. } else { 8. }),
         )
     } else {
-        bounds.shrink2(Vec2::new(8., 28.))
+        // The waveform fills the control; its times sit on the grid lines along its bottom.
+        Rect::from_min_max(bounds.min + Vec2::new(6., 4.), bounds.max - Vec2::new(6., 4.))
     };
     let value = |id: &str| parameters.iter().find(|p| p.id == id).map_or(0., |p| p.value) as f32;
     let edit_loop = value("mode") == 0. && value("playback") == 2.;
     let active_start = f64::from(value(if edit_loop { "loop_start" } else { "start" }));
     let active_end = f64::from(value(if edit_loop { "loop_end" } else { "end" }));
+    // Where a boundary can be moved to, kept off the edges: the values here are rounded to f32.
+    let boundary_low = active_start + 1e-6;
+    let boundary_high = (active_end - 1e-6).max(boundary_low);
     let source_id = sample_source_id(track, device);
     let view_id = source_id.with("view");
     let old = ui.ctx().data(|d| d.get_temp::<(Option<Arc<suhina_engine::AudioData>>, SampleView)>(view_id));
@@ -214,28 +318,273 @@ fn sample_waveform(
             _ => false,
         })
         .map_or(SampleView::default(), |(_, v)| v);
-    let slicing = value("mode") == 0. && value("playback") == 3.;
+    let slicing = value("mode") == 2. || value("mode") == 0. && value("playback") == 3.;
     let manual = slicing && value("slice_by") == 3.;
     let mut manual_points =
         ui.ctx().data(|d| d.get_temp::<Arc<[f64]>>(source_id.with("manual-points"))).unwrap_or_else(|| {
             let mut points: Vec<_> = parameters
                 .iter()
-                .filter(|p| p.id.starts_with("slice_") && p.id != "slice_by" && p.value > 0. && p.value < 1.)
+                .filter(|p| {
+                    p.id.strip_prefix("slice_").is_some_and(|suffix| suffix.parse::<u8>().is_ok())
+                        && p.value > 0.
+                        && p.value < 1.
+                })
                 .map(|p| p.value)
                 .collect();
             points.sort_unstable_by(f64::total_cmp);
             points.dedup();
             Arc::from(points)
         });
+    let correction_mode = value("mode") == 2.;
+    let edits = ui
+        .ctx()
+        .data(|d| d.get_temp::<Arc<suhina_device_api::sample_edits::SampleEdits>>(source_id.with("slice-edits")));
+    let params: Vec<_> = suhina_device_sdk::sampler::PARAMS
+        .iter()
+        .map(|p| parameters.iter().find(|v| v.id == p.id).map_or(p.default, |v| v.value))
+        .collect();
+    let mut automatic_points = Vec::new();
+    if slicing && let Some(source) = &source {
+        let cache_id = source_id.with("slices");
+        let cached = ui.ctx().data(|d| {
+            d.get_temp::<(Arc<suhina_engine::AudioData>, suhina_device_sdk::sampler::SliceAnalysis)>(cache_id)
+        });
+        let analysis = if let Some((_, analysis)) = cached.filter(|(old, _)| Arc::ptr_eq(old, source)) {
+            analysis
+        } else {
+            let analysis = suhina_device_sdk::sampler::SliceAnalysis::new(
+                &source.samples,
+                usize::from(source.channels),
+                f64::from(source.sample_rate),
+            );
+            ui.ctx().data_mut(|d| d.insert_temp(cache_id, (source.clone(), analysis.clone())));
+            analysis
+        };
+        let tempo = ui.ctx().data(|d| d.get_temp::<f64>(egui::Id::new("sampler-tempo"))).unwrap_or(120.);
+        automatic_points = analysis
+            .points(&params, source.frames(), f64::from(source.sample_rate), tempo)
+            .into_iter()
+            .filter(|point| *point > active_start && *point < active_end)
+            .collect();
+        if let Some(edits) = edits.as_ref().filter(|_| correction_mode) {
+            manual_points = Arc::from(
+                analysis
+                    .edited_points(&params, source.frames(), f64::from(source.sample_rate), tempo, edits)
+                    .collect::<Vec<_>>(),
+            );
+        } else if !manual {
+            manual_points = Arc::from(
+                analysis
+                    .points(&params, source.frames(), f64::from(source.sample_rate), tempo)
+                    .into_iter()
+                    .filter(|point| *point > active_start && *point < active_end)
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+    let edit_boundary = |actions: &mut Vec<Action>, operation: &str, previous: Option<f64>, point: Option<f64>| {
+        let mut params_json = json!({"track":track.0,"device":address,"operation":operation});
+        if let Some(point) = point {
+            params_json["point"] = json!(point);
+        }
+        if let Some(previous) = previous {
+            params_json["previous"] = json!(previous);
+            if !manual
+                && automatic_points.contains(&previous)
+                && let Some(source) = &source
+            {
+                params_json["identity"] = json!(suhina_device_sdk::sampler::SliceAnalysis::identity(
+                    &params,
+                    source.frames(),
+                    f64::from(source.sample_rate),
+                    previous
+                ));
+            }
+        }
+        actions.push(Action::new("device.editSampleSlice", params_json));
+    };
+    let axis = source.as_ref().and_then(|source| {
+        suhina_device_sdk::sample_axis::SampleAxis::new(
+            source.frames(),
+            f64::from(source.sample_rate),
+            f64::from(value("source_bpm")),
+            f64::from(value("first_beat")),
+        )
+    });
+    let division =
+        [0., 1., 0.5, 0.25, 0.125, 1. / 3., 1. / 6.].get(value("grid_division") as usize).copied().unwrap_or(0.);
+    let snap_enabled = value("grid_snap") > 0. && !ui.input(|i| i.modifiers.alt);
+    let snap = |point: f64| {
+        if snap_enabled { axis.and_then(|axis| axis.snap(point, division)).unwrap_or(point) } else { point }
+    };
     let response = ui.interact(field, source_id.with("wave-navigation"), egui::Sense::click_and_drag());
-    let hovered = ui.input(|i| i.pointer.hover_pos()).filter(|p| field.contains(*p));
-    let nearest = if manual {
+    let selected_id = source_id.with("selected-slice");
+    let mut selected = ui.ctx().data(|d| d.get_temp::<f64>(selected_id)).unwrap_or(active_start);
+    if slicing
+        && response.clicked()
+        && let Some(pointer) = response.interact_pointer_pos()
+    {
+        let point = view.point(pointer.x, field);
+        selected =
+            manual_points.iter().copied().take_while(|boundary| *boundary <= point).last().unwrap_or(active_start);
+        ui.ctx().data_mut(|d| d.insert_temp(selected_id, selected));
+    }
+    let selection_start = manual_points
+        .iter()
+        .copied()
+        .rfind(|point| *point > active_start && *point <= selected)
+        .unwrap_or(active_start);
+    let selection_end =
+        manual_points.iter().copied().find(|point| *point > selection_start).unwrap_or(active_end).min(active_end);
+    let selected_index =
+        manual_points.iter().filter(|point| **point > active_start && **point <= selection_start).count();
+    let selected_key =
+        (value("root") as usize).checked_add(selected_index).filter(|key| *key <= 127).map(|key| key as u8);
+    // A click on a slice picks it and plays it.
+    if slicing
+        && response.clicked()
+        && let Some(key) = selected_key
+    {
+        audition(ui, actions, track, key);
+    }
+    let hovered = ui.input(|i| i.pointer.hover_pos()).filter(|p| field.intersect(visible).contains(*p));
+    if let Some(pointer) = hovered {
+        let (zoom, wheel, shift) = ui.input(|i| (i.zoom_delta(), i.smooth_scroll_delta(), i.modifiers.shift));
+        if let Some(source) = &source {
+            if zoom != 1. {
+                view = view.zoomed(pointer.x, zoom, field, source.frames());
+            } else {
+                let horizontal = if shift && wheel.x == 0. { wheel.y } else { wheel.x };
+                view = view.panned(horizontal, field);
+            }
+        }
+    }
+    let pan_id = source_id.with("middle-pan");
+    let (middle_pressed, middle_down, delta) = ui.input(|i| {
+        (
+            i.pointer.button_pressed(egui::PointerButton::Middle),
+            i.pointer.button_down(egui::PointerButton::Middle),
+            i.pointer.delta(),
+        )
+    });
+    let mut panning = ui.ctx().data(|d| d.get_temp::<bool>(pan_id)).unwrap_or(false);
+    if middle_pressed {
+        panning = hovered.is_some();
+    }
+    if !middle_down {
+        panning = false;
+    }
+    if panning {
+        view = view.panned(delta.x, field);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(pan_id, panning));
+    response.context_menu(|ui| {
+        if slicing {
+            if let Some(key) = selected_key {
+                ui.label(format!(
+                    "Slice {} · {} (MIDI {key})",
+                    selected_index + 1,
+                    crate::detail::piano_roll::key_name(key)
+                ));
+            }
+            if ui.button("Zoom to selected slice").clicked() {
+                if let Some(source) = &source {
+                    let span = (selection_end - selection_start).clamp(1. / source.frames().max(1) as f64, 1.);
+                    view = SampleView { start: selection_start.clamp(0., 1. - span), span };
+                }
+                ui.close();
+            }
+            if correction_mode && selection_start > active_start {
+                let numeric_id = source_id.with("slice-number");
+                let mut position = ui
+                    .ctx()
+                    .data(|d| d.get_temp::<(f64, f64)>(numeric_id))
+                    .filter(|(old, _)| *old == selection_start)
+                    .map_or(selection_start, |(_, value)| value);
+                ui.horizontal(|ui| {
+                    ui.label("Boundary (source fraction)");
+                    ui.add(egui::DragValue::new(&mut position).speed(0.0001).range(boundary_low..=boundary_high));
+                });
+                ui.ctx().data_mut(|d| d.insert_temp(numeric_id, (selection_start, position)));
+                if ui.button("Apply boundary").clicked() {
+                    edit_boundary(actions, "move", Some(selection_start), Some(position));
+                    ui.close();
+                }
+                if ui.button("Delete boundary").clicked() {
+                    edit_boundary(actions, "delete", Some(selection_start), None);
+                    ui.close();
+                }
+            }
+        }
+        if correction_mode && ui.button("Regenerate slices").clicked() {
+            edit_boundary(actions, "regenerate", None, None);
+            ui.close();
+        }
+        ui.menu_button("Grid", |ui| {
+            for (index, label) in
+                ["Off", "1/4", "1/8", "1/16", "1/32", "1/8 triplet", "1/16 triplet"].iter().enumerate()
+            {
+                if ui.selectable_label(value("grid_division") as usize == index, *label).clicked() {
+                    actions.push(Action::new(
+                        "device.setParam",
+                        json!({"track":track.0,"device":address,"param":"grid_division","value":index}),
+                    ));
+                    ui.close();
+                }
+            }
+        });
+        ui.menu_button("Source time signature", |ui| {
+            let meter_id = source_id.with("meter-edit");
+            let mut meter = ui
+                .ctx()
+                .data(|d| d.get_temp::<(f64, usize)>(meter_id))
+                .unwrap_or((f64::from(value("source_numerator")).max(1.), value("source_denominator") as usize));
+            ui.add(egui::DragValue::new(&mut meter.0).range(1. ..=16.).speed(1.));
+            for (index, label) in ["2", "4", "8", "16"].iter().enumerate() {
+                ui.radio_value(&mut meter.1, index, *label);
+            }
+            ui.ctx().data_mut(|d| d.insert_temp(meter_id, meter));
+            if ui.button("Apply time signature").clicked() {
+                // One undo step: the first stays open, the second closes it.
+                for (param, value, open) in
+                    [("source_numerator", meter.0.round(), true), ("source_denominator", meter.1 as f64, false)]
+                {
+                    actions.push(Action::new(
+                        "device.setParam",
+                        json!({"track":track.0,"device":address,"param":param,"value":value,"continuous":open,"gesture":"source_meter"}),
+                    ));
+                }
+                ui.close();
+            }
+        });
+        let mut snapping = value("grid_snap") > 0.;
+        if ui.checkbox(&mut snapping, "Snap to grid (Alt bypasses)").changed() {
+            actions.push(Action::new(
+                "device.setParam",
+                json!({"track":track.0,"device":address,"param":"grid_snap","value":u8::from(snapping)}),
+            ));
+        }
+        if ui.button("Show whole sample").clicked() {
+            view = SampleView::default();
+            ui.close();
+        }
+        if ui.button("Zoom to source region").clicked() {
+            if let Some(source) = &source {
+                let minimum = 1. / source.frames().max(1) as f64;
+                let span = (active_end - active_start).clamp(minimum, 1.);
+                view = SampleView { start: active_start.clamp(0., 1. - span), span };
+            }
+            ui.close();
+        }
+    });
+    let nearest = if correction_mode || manual {
         hovered.and_then(|p| nearest_slice(&manual_points, view, field, p, active_start, active_end))
     } else {
         None
     };
     let drag_id = source_id.with("wave-drag");
-    if response.is_pointer_button_down_on() {
+    if response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
         ui.ctx().data_mut(|d| {
             if d.get_temp::<SampleDrag>(drag_id).is_none() {
                 let anchor = response.interact_pointer_pos().unwrap_or(field.center());
@@ -248,7 +597,7 @@ fn sample_waveform(
     }
     let mut drag = ui.ctx().data(|d| d.get_temp::<SampleDrag>(drag_id));
     let click_id = source_id.with("manual-click");
-    let double_click = if manual
+    let double_click = if (correction_mode || manual)
         && response.clicked()
         && let Some(pointer) = response.interact_pointer_pos()
     {
@@ -271,21 +620,30 @@ fn sample_waveform(
     if response.dragged() {
         ui.ctx().data_mut(|d| d.remove::<(f64, Pos2)>(click_id));
     }
-    if double_click && manual && source.is_some() {
+    if double_click && slicing && source.is_some() {
         if let Some(pointer) = response.interact_pointer_pos() {
             let mut points = manual_points.to_vec();
             if let Some(index) = nearest {
-                points.remove(index);
-                slice_edit(actions, track, device, points, false);
+                if correction_mode {
+                    edit_boundary(actions, "delete", points.get(index).copied(), None);
+                } else {
+                    points.remove(index);
+                    slice_edit(actions, track, &address, points, false);
+                }
             } else {
-                let point = view.point(pointer.x, field);
+                let point = snap(view.point(pointer.x, field));
                 if point > active_start && point < active_end && point > 0. && point < 1. {
-                    points.push(point);
-                    slice_edit(actions, track, device, points, false);
+                    if correction_mode {
+                        edit_boundary(actions, "add", None, Some(point));
+                    } else {
+                        points.push(point);
+                        slice_edit(actions, track, &address, points, false);
+                    }
                 }
             }
         }
-    } else if (response.dragged() || response.drag_stopped())
+    } else if (response.dragged_by(egui::PointerButton::Primary)
+        || response.drag_stopped_by(egui::PointerButton::Primary))
         && let Some(state) = &mut drag
     {
         let delta = response.interact_pointer_pos().map_or(state.delta, |p| p - state.anchor);
@@ -293,29 +651,37 @@ fn sample_waveform(
         if let Some(index) = state.selected {
             let mut points = state.points.to_vec();
             if let Some(point) = points.get_mut(index) {
-                *point = (state.points[index] + f64::from(delta.x / field.width()) * state.view.span)
+                *point = snap(state.points[index] + f64::from(delta.x / field.width()) * state.view.span)
+                    .max(boundary_low)
+                    .min(boundary_high)
                     .clamp(f64::EPSILON, 1. - f64::EPSILON);
+                let destination = *point;
                 points.sort_unstable_by(f64::total_cmp);
                 points.dedup();
                 // Preparing the audio graph on each pointer move stalls the UI.
                 if response.drag_stopped() && points.as_slice() != state.points.as_ref() {
-                    slice_edit(actions, track, device, points.clone(), false);
+                    if correction_mode {
+                        edit_boundary(actions, "move", state.points.get(index).copied(), Some(destination));
+                    } else {
+                        slice_edit(actions, track, &address, points.clone(), false);
+                    }
                 }
                 manual_points = Arc::from(points);
             }
         } else if let Some(source) = &source {
+            // Away from a boundary, dragging zooms the view, up and down, and moves it sideways.
             view = state.view.dragged(state.anchor, delta, field, source.frames());
         }
     }
-    let cursor = if nearest.is_some() || drag.as_ref().is_some_and(|d| d.selected.is_some()) {
+    let cursor = if panning {
+        egui::CursorIcon::Grabbing
+    } else if nearest.is_some() || drag.as_ref().is_some_and(|d| d.selected.is_some()) {
         egui::CursorIcon::ResizeHorizontal
-    } else if response.dragged() && response.drag_delta().y > 0. {
-        egui::CursorIcon::ZoomOut
     } else {
-        egui::CursorIcon::ZoomIn
+        egui::CursorIcon::Default
     };
     response.on_hover_cursor(cursor).on_hover_text(
-        "Drag up/down to zoom, left/right to pan. Manual: double-click to add/remove a slice; drag a line to move it.",
+        "Drag down to zoom in, up to zoom out, sideways to move. Ctrl+wheel: zoom at pointer. Shift+wheel or middle drag: pan. Click a slice to play it. Right-click: fit or edit. Slice: double-click to add/remove a boundary; drag a line to move it. Alt bypasses snap.",
     );
     let pointer_down = ui.input(|i| i.pointer.primary_down());
     ui.ctx().data_mut(|d| {
@@ -329,6 +695,105 @@ fn sample_waveform(
         }
     });
     let wave_painter = ui.painter_at(field.intersect(visible));
+    let active_rect = Rect::from_min_max(
+        Pos2::new(view.x(active_start, field), field.top()),
+        Pos2::new(view.x(active_end, field), field.bottom()),
+    )
+    .intersect(field);
+    if active_rect.is_positive() {
+        wave_painter.rect_filled(active_rect, 0., colors.accent.gamma_multiply(0.06));
+    }
+    if slicing && selection_end > selection_start {
+        let selected_rect = Rect::from_min_max(
+            Pos2::new(view.x(selection_start, field), field.top()),
+            Pos2::new(view.x(selection_end, field), field.bottom()),
+        )
+        .intersect(field);
+        if selected_rect.is_positive() {
+            wave_painter.rect_filled(selected_rect, 0., colors.accent.gamma_multiply(0.28));
+            wave_painter.line_segment(
+                [selected_rect.left_bottom(), selected_rect.right_bottom()],
+                Stroke::new(3., colors.accent),
+            );
+        }
+    }
+    let label_y = field.bottom() - 7.;
+    if let Some(axis) = axis.filter(|_| division > 0.) {
+        // Bound work by the available screen width, even for long sources at high BPM.
+        let mut step = division;
+        let visible_beats = axis.beat(view.start + view.span) - axis.beat(view.start);
+        while visible_beats / step > f64::from(field.width().max(1.) / 12.) {
+            step *= 2.;
+        }
+        let first = (axis.beat(view.start) / step).ceil();
+        let mut last_label = field.left() - 140.;
+        for index in 0..1024 {
+            let beat = (first + f64::from(index)) * step;
+            let point = axis.point(beat);
+            if point > view.start + view.span {
+                break;
+            }
+            let x = view.x(point, field);
+            wave_painter.line_segment(
+                [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
+                Stroke::new(1., colors.text_primary.gamma_multiply(0.09)),
+            );
+            if !compact && x >= last_label + 70. && x <= field.right() - 40. {
+                last_label = x;
+                let numerator = f64::from(value("source_numerator")).round().clamp(1., 16.);
+                let denominator = [2., 4., 8., 16.].get(value("source_denominator") as usize).copied().unwrap_or(4.);
+                let source_beat = beat * denominator / 4.;
+                let bar = (source_beat / numerator).floor() as i64 + 1;
+                let within = source_beat.rem_euclid(numerator) + 1.;
+                painter.text(
+                    Pos2::new(x + 2., label_y),
+                    egui::Align2::LEFT_CENTER,
+                    // Bar, beat and, between beats, the sixteenth: 5, 5.3, 5.3.2.
+                    match (within.floor(), ((within.fract() * 4.).round() as i64 + 1).min(4)) {
+                        (1., 1) => format!("{bar}"),
+                        (beat, 1) => format!("{bar}.{beat}"),
+                        (beat, sixteenth) => format!("{bar}.{beat}.{sixteenth}"),
+                    },
+                    crate::kit::theme::ui_font(10.),
+                    colors.text_primary,
+                );
+            }
+        }
+    } else if let Some(source) = &source {
+        let duration = source.frames() as f64 / f64::from(source.sample_rate.max(1));
+        let visible_seconds = duration * view.span;
+        let target_step = visible_seconds / f64::from((field.width() / 64.).max(1.));
+        let magnitude = 10f64.powf(target_step.max(f64::MIN_POSITIVE).log10().floor());
+        let step = [1., 2., 5., 10.]
+            .into_iter()
+            .map(|factor| factor * magnitude)
+            .find(|step| *step >= target_step)
+            .unwrap_or(visible_seconds);
+        let first = (duration * view.start / step).ceil();
+        let mut last_label = field.left() - 100.;
+        for index in 0..1024 {
+            let seconds = (first + f64::from(index)) * step;
+            if !seconds.is_finite() || duration <= 0. || seconds > duration * (view.start + view.span) {
+                break;
+            }
+            let point = seconds / duration;
+            let x = view.x(point, field);
+            wave_painter.line_segment(
+                [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
+                Stroke::new(1., colors.text_primary.gamma_multiply(0.09)),
+            );
+            if !compact && x >= last_label + 90. && x <= field.right() - 50. {
+                last_label = x;
+                painter.text(
+                    Pos2::new(view.x(point, field) + 2., label_y),
+                    egui::Align2::LEFT_CENTER,
+                    clock(seconds),
+                    crate::kit::theme::ui_font(10.),
+                    colors.text_primary,
+                );
+            }
+        }
+    }
     let loop_area = Rect::from_min_max(
         Pos2::new(view.x(active_start, field), field.top()),
         Pos2::new(view.x(active_end, field), field.bottom()),
@@ -342,65 +807,88 @@ fn sample_waveform(
         let range = ((view.start * frames as f64) as usize, ((view.start + view.span) * frames as f64).ceil() as usize);
         let cache_id = source_id.with("visible-peaks");
         let cached = ui.ctx().data(|d| d.get_temp::<SamplePeaks>(cache_id));
-        let peaks = if let Some(cached) = cached.filter(|c| Arc::ptr_eq(&c.source, source) && c.range == range) {
-            cached.peaks
+        let cached = if let Some(cached) = cached.filter(|c| Arc::ptr_eq(&c.source, source) && c.range == range) {
+            cached
         } else {
-            let peaks = visible_sample_peaks(source, range);
-            let peaks = Arc::new(peaks);
-            ui.ctx().data_mut(|d| {
-                d.insert_temp(cache_id, SamplePeaks { source: source.clone(), range, peaks: peaks.clone() })
+            let peaks = Arc::new(if source.channels > 1 {
+                sample_channel_peaks(source, range, Some(0))
+            } else {
+                visible_sample_peaks(source, range)
             });
-            peaks
+            let right = (source.channels > 1).then(|| Arc::new(sample_channel_peaks(source, range, Some(1))));
+            let cached = SamplePeaks { source: source.clone(), range, peaks, right };
+            ui.ctx().data_mut(|d| d.insert_temp(cache_id, cached.clone()));
+            cached
         };
-        for (i, peak) in peaks.iter().enumerate() {
-            let x = field.left() + i as f32 / 1024. * field.width();
-            let point = view.point(x, field);
-            let color = if point < active_start || point > active_end { Color32::GRAY } else { colors.accent };
-            let h = peak * field.height() * 0.48;
-            wave_painter.line_segment(
-                [Pos2::new(x, field.center().y - h), Pos2::new(x, field.center().y + h)],
-                Stroke::new(1., color),
-            );
+        let lanes = if cached.right.is_some() { 2. } else { 1. };
+        for (lane, peaks) in std::iter::once(&cached.peaks).chain(cached.right.iter()).enumerate() {
+            let height = field.height() / lanes;
+            let center = field.top() + (lane as f32 + 0.5) * height;
+            for (i, peak) in peaks.iter().enumerate() {
+                let x = field.left() + i as f32 / 1024. * field.width();
+                let point = view.point(x, field);
+                let color = if point < f64::from(value("start")) || point > f64::from(value("end")) {
+                    colors.text_primary.gamma_multiply(0.18)
+                } else {
+                    colors.accent
+                };
+                let h = peak * height * 0.44;
+                wave_painter.line_segment([Pos2::new(x, center - h), Pos2::new(x, center + h)], Stroke::new(1., color));
+            }
         }
         if slicing {
-            let points: Arc<[f64]> = if manual {
-                manual_points
-            } else {
-                let cache_id = source_id.with("slices");
-                let cached = ui.ctx().data(|d| {
-                    d.get_temp::<(Arc<suhina_engine::AudioData>, suhina_device_sdk::sampler::SliceAnalysis)>(cache_id)
-                });
-                let analysis = if let Some((_, a)) = cached.filter(|(old, _)| Arc::ptr_eq(old, source)) {
-                    a
+            // Each slice from Start to End: every other one on a lighter band, so neighbours stand
+            // apart, and the ones past the last key (127) dimmed, with no line: no note plays them.
+            let inside = manual_points.iter().copied().filter(|p| *p > active_start && *p < active_end);
+            let edges: Vec<f64> =
+                std::iter::once(active_start).chain(inside).chain(std::iter::once(active_end)).collect();
+            let playable = 128usize.saturating_sub(value("root").max(0.) as usize);
+            let line = slice_line(colors.accent);
+            for (index, pair) in edges.windows(2).enumerate() {
+                let [from, to] = [pair[0], pair[1]];
+                if to < view.start || from > view.start + view.span {
+                    continue;
+                }
+                let band = Rect::from_min_max(
+                    Pos2::new(view.x(from, field), field.top()),
+                    Pos2::new(view.x(to, field), field.bottom()),
+                )
+                .intersect(field);
+                if index >= playable {
+                    wave_painter.rect_filled(band, 0., crate::kit::theme::panel_background().gamma_multiply(0.6));
+                    continue;
+                }
+                if index % 2 == 1 {
+                    wave_painter.rect_filled(band, 0., colors.text_primary.gamma_multiply(0.05));
+                }
+                if index == 0 {
+                    continue;
+                }
+                let x = view.x(from, field);
+                let pinned = manual || edits.as_ref().is_some_and(|edits| edits.pins().contains(&from));
+                // A bright line in a colour of its own over a dark edge, so it shows over the
+                // waveform and over silence, with a tab at its top; one placed by hand is thicker,
+                // with a round tab.
+                let width = if pinned { 2.5 } else { 1.5 };
+                wave_painter.line_segment(
+                    [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
+                    Stroke::new(width + 2., Color32::from_black_alpha(150)),
+                );
+                wave_painter
+                    .line_segment([Pos2::new(x, field.top()), Pos2::new(x, field.bottom())], Stroke::new(width, line));
+                if pinned {
+                    wave_painter.circle_filled(Pos2::new(x, field.top() + 4.), 4., line);
                 } else {
-                    let a = suhina_device_sdk::sampler::SliceAnalysis::new(
-                        &source.samples,
-                        usize::from(source.channels),
-                        f64::from(source.sample_rate),
-                    );
-                    ui.ctx().data_mut(|d| d.insert_temp(cache_id, (source.clone(), a.clone())));
-                    a
-                };
-                let params: Vec<_> = suhina_device_sdk::sampler::PARAMS
-                    .iter()
-                    .map(|p| parameters.iter().find(|v| v.id == p.id).map_or(p.default, |v| v.value))
-                    .collect();
-                Arc::from(analysis.points(
-                    &params,
-                    source.frames(),
-                    f64::from(source.sample_rate),
-                    ui.ctx().data(|d| d.get_temp::<f64>(egui::Id::new("sampler-tempo"))).unwrap_or(120.),
-                ))
-            };
-            let first = points.partition_point(|p| *p <= active_start.max(view.start));
-            for &point in points
-                .get(first..)
-                .unwrap_or_default()
-                .iter()
-                .take_while(|p| **p < active_end.min(view.start + view.span))
-            {
-                let x = view.x(point, field);
-                sample_marker(&wave_painter, x, field.top(), field.bottom());
+                    wave_painter.add(egui::Shape::convex_polygon(
+                        vec![
+                            Pos2::new(x - 4., field.top()),
+                            Pos2::new(x + 4., field.top()),
+                            Pos2::new(x, field.top() + 6.),
+                        ],
+                        line,
+                        Stroke::NONE,
+                    ));
+                }
             }
         }
     } else {
@@ -418,14 +906,17 @@ fn sample_waveform(
         .unwrap_or([None; 32]);
     for position in positions.into_iter().flatten() {
         let x = view.x(f64::from(position.clamp(0., 1.)), field);
-        sample_marker(&wave_painter, x, field.top(), field.bottom());
+        wave_painter.line_segment(
+            [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
+            Stroke::new(1., colors.text_primary),
+        );
     }
     for (id, caption, offset) in [
         (if edit_loop { "loop_start" } else { "start" }, "S", 0.),
         (if edit_loop { "loop_end" } else { "end" }, "E", 0.),
         ("position", "G", 40.),
     ] {
-        if id == "position" && value("mode") == 0. {
+        if id == "position" && value("mode") != 1. {
             continue;
         }
         let (origin, span) =
@@ -434,16 +925,20 @@ fn sample_waveform(
         if x < field.left() || x > field.right() {
             continue;
         }
-        let y = bounds.top() + if compact { 8. + offset * 0.7 } else { 26. + offset };
-        let marker = Rect::from_center_size(Pos2::new(x, y), Vec2::new(14., if compact { 12. } else { 18. }));
+        let y = if compact {
+            bounds.top() + 8. + offset * 0.7
+        } else {
+            field.top() + 6. + offset.min(field.height() * 0.5)
+        };
+        let marker = Rect::from_center_size(Pos2::new(x, y), Vec2::new(12., if compact { 12. } else { 13. }));
         sample_marker(&painter, x, y, field.bottom());
-        painter.rect_filled(marker, 0., SAMPLE_MARKER);
+        painter.rect_filled(marker, 0., sample_marker_color());
         painter.text(
             marker.center(),
             egui::Align2::CENTER_CENTER,
             caption,
             crate::kit::theme::ui_font(10.),
-            crate::kit::theme::text_inverse(),
+            color(accent_text(sample_marker_color())),
         );
         let response = ui
             .interact(marker, ui.id().with(("sample-marker", track.0, device, id)), egui::Sense::click_and_drag())
@@ -453,13 +948,13 @@ fn sample_waveform(
             if let Some(p) = parameters.iter().find(|p| p.id == id) {
                 actions.push(Action::new(
                     "device.setParam",
-                    json!({"track":track.0,"device":device,"param":id,"value":p.default,"continuous":false}),
+                    json!({"track":track.0,"device":address,"param":id,"value":p.default,"continuous":false}),
                 ));
             }
         } else if (response.dragged() || response.drag_stopped())
             && let Some(pos) = response.interact_pointer_pos()
         {
-            actions.push(Action::new("device.setParam", json!({"track": track.0, "device": device, "param": id, "value": ((view.point(pos.x,field) - f64::from(origin)) / f64::from(span)).clamp(0., 1.), "continuous": !response.drag_stopped()})));
+            actions.push(Action::new("device.setParam", json!({"track": track.0, "device": address, "param": id, "value": ((snap(view.point(pos.x,field)) - f64::from(origin)) / f64::from(span)).clamp(0., 1.), "continuous": !response.drag_stopped()})));
         }
     }
     if inline_recording {
@@ -572,7 +1067,10 @@ fn envelope(
     let values = [a.value, d.value, normalized(l, false), r.map_or(0., |p| p.value)];
     let max_time = (a.max + d.max + r.map_or(0., |p| p.max)).max(0.01);
     let plot = EnvelopePlot::new(bounds, values, max_time, adsr);
-    let palette = crate::kit::theme::palette();
+    let mut palette = crate::kit::theme::palette();
+    let scoped = styled_palette(widget_palette());
+    palette.accent = color(scoped.accent);
+    palette.border = color(scoped.border);
     let painter = ui.painter_at(bounds.intersect(ui.clip_rect()));
     painter.line_segment(
         [plot.points[0], Pos2::new(plot.field.right(), plot.points[0].y)],
@@ -791,8 +1289,145 @@ fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
     ctx.data_mut(|d| d.insert_temp(key, cache));
     loaded
 }
+/// A `handle` widget: its line where its parameter is, grabbed within a few pixels of it and
+/// dragged along its axis; a double click resets it. Every drag is one undo gesture.
+#[allow(clippy::too_many_arguments)]
+fn handle(
+    ui: &mut egui::Ui,
+    painter: &egui::Painter,
+    (canvas, bounds, stretch): (Rect, Rect, Vec2),
+    control: &suhina_device_sdk::ui::CustomControl,
+    (line_color, span): ([u8; 4], Option<&[suhina_device_sdk::ui::UiValue; 2]>),
+    parameters: &[GraphParameter],
+    (track, at): (TrackId, &crate::detail::detail_view::DeviceAt),
+    actions: &mut Vec<Action>,
+) {
+    /// How far from its line a handle is grabbed, in points.
+    const GRAB: f32 = 7.0;
+    let (binding, vertical) = match (&control.x, &control.y) {
+        (Some(b), None) => (b, true),
+        (None, Some(b)) => (b, false),
+        _ => return,
+    };
+    let Some(p) = parameters.iter().find(|p| p.id == binding.parameter) else { return };
+    let lookup = |id: &str, norm: bool, log: bool| {
+        parameters.iter().find(|p| p.id == id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
+    };
+    let (from, to) = span.map_or_else(
+        || if vertical { (bounds.top(), bounds.bottom()) } else { (bounds.left(), bounds.right()) },
+        |[a, b]| {
+            let (origin, scale) = if vertical { (canvas.top(), stretch.y) } else { (canvas.left(), stretch.x) };
+            (origin + a.evaluate(&lookup) * scale, origin + b.evaluate(&lookup) * scale)
+        },
+    );
+    let n = normalized(p, binding.logarithmic) as f32;
+    let (line, grab) = if vertical {
+        let x = bounds.left() + n * bounds.width();
+        let line = [Pos2::new(x, from), Pos2::new(x, to)];
+        (line, Rect::from_min_max(Pos2::new(x - GRAB, from), Pos2::new(x + GRAB, to)))
+    } else {
+        let y = bounds.bottom() - n * bounds.height();
+        let line = [Pos2::new(from, y), Pos2::new(to, y)];
+        (line, Rect::from_min_max(Pos2::new(from, y - GRAB), Pos2::new(to, y + GRAB)))
+    };
+    if !grab.is_positive() {
+        return;
+    }
+    let id = ui.id().with(("sd-handle", track.0, at.value().to_string(), &control.id));
+    let response = ui
+        .interact(grab, id, egui::Sense::click_and_drag())
+        .on_hover_cursor(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical })
+        .on_hover_text(&control.tooltip);
+    if response.clicked() || response.drag_started() {
+        response.request_focus();
+    }
+    let hot = response.hovered() || response.dragged() || response.has_focus();
+    let stroke = Stroke::new(if hot { 3.0 } else { 2.0 }, color(line_color));
+    painter.line_segment(line, stroke);
+    let grip = Rect::from_center_size(
+        if vertical { Pos2::new(line[0].x, line[0].y + 6.0) } else { Pos2::new(line[1].x - 6.0, line[0].y) },
+        Vec2::splat(if hot { 9.0 } else { 7.0 }),
+    );
+    painter.rect_filled(grip, 1.0, color(line_color));
+    let at_travel = |t: f64| {
+        let t = t.clamp(0.0, 1.0);
+        if binding.logarithmic && p.min > 0.0 {
+            (p.min.ln() + t * (p.max.ln() - p.min.ln())).exp()
+        } else {
+            p.min + t * (p.max - p.min)
+        }
+    };
+    // The arrow keys along its travel move a focused handle 1 % of it, 0.1 % with Shift.
+    let (up, down) = if vertical {
+        (egui::Key::ArrowRight, egui::Key::ArrowLeft)
+    } else {
+        (egui::Key::ArrowUp, egui::Key::ArrowDown)
+    };
+    let keys = if response.has_focus() {
+        // The arrows stay with the handle instead of moving the focus on.
+        ui.memory_mut(|m| {
+            let arrows = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, ..Default::default() };
+            m.set_focus_lock_filter(response.id, arrows);
+        });
+        ui.input(|i| {
+            f64::from(i32::from(i.key_pressed(up)) - i32::from(i.key_pressed(down)))
+                * if i.modifiers.shift { 0.001 } else { 0.01 }
+        })
+    } else {
+        0.0
+    };
+    let value = if response.double_clicked() {
+        Some(p.default)
+    } else if keys != 0.0 {
+        Some(at_travel(normalized(p, binding.logarithmic) + keys))
+    } else if response.dragged() || response.drag_stopped() {
+        response.interact_pointer_pos().map(|pos| {
+            at_travel(f64::from(if vertical {
+                (pos.x - bounds.left()) / bounds.width()
+            } else {
+                (bounds.bottom() - pos.y) / bounds.height()
+            }))
+        })
+    } else {
+        None
+    };
+    if let Some(value) = value {
+        actions.push(Action::new(
+            "device.setParam",
+            json!({
+                "track": track.0, "device": at.value(), "param": p.id, "value": value,
+                "continuous": response.dragged() && !response.drag_stopped(), "gesture": control.id
+            }),
+        ));
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &control.name));
+}
+
+/// A drawing's colour: one of the SDK's theme tokens takes the theme's custom property (or its
+/// default), keeping the drawing's alpha.
 fn color(c: [u8; 4]) -> Color32 {
-    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+    let [r, g, b, a] = c;
+    // The theme's own colours by token ([3, 1, k]): text, panel, control, border, accent.
+    if [r, g] == [3, 1] {
+        let palette = crate::kit::theme::palette();
+        let base = match b {
+            1 => palette.text_primary,
+            2 => palette.panel_background,
+            3 => palette.control_background,
+            4 => palette.border,
+            _ => palette.accent,
+        };
+        return Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), a);
+    }
+    if let Some((_, property, default)) = suhina_device_sdk::ui::THEME_TOKENS.iter().find(|(rgb, ..)| *rgb == [r, g, b])
+    {
+        let base = crate::kit::style_class::property(property)
+            .as_deref()
+            .and_then(crate::kit::theme::parse_hex)
+            .map_or(*default, |c| [c.r(), c.g(), c.b()]);
+        return Color32::from_rgba_unmultiplied(base[0], base[1], base[2], a);
+    }
+    Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 fn normalized(p: &GraphParameter, log: bool) -> f64 {
     if log && p.min > 0.0 {
@@ -803,10 +1438,6 @@ fn normalized(p: &GraphParameter, log: bool) -> f64 {
         0.0
     }
 }
-fn paint(painter: &egui::Painter, drawings: &[Draw], origin: Pos2, parameters: &[GraphParameter], loaded: &Loaded) {
-    paint_scaled(painter, drawings, origin, parameters, loaded, Vec2::splat(1.0));
-}
-
 fn paint_scaled(
     painter: &egui::Painter,
     drawings: &[Draw],
@@ -923,6 +1554,15 @@ fn paint_scaled(
                 let offset = if *align == TextAlign::Center { Vec2::new(galley.size().x / 2., 0.) } else { Vec2::ZERO };
                 crate::kit::widgets::paint_text(painter, position - offset, galley, ink);
             }
+            Draw::Value { position, value: number, prefix, suffix, color: c, size, decimals, align } => {
+                let label = format!("{prefix}{}{suffix}", fixed(f64::from(value(number)), *decimals));
+                let ink = crate::kit::style_class::foreground(color(*c));
+                let font = crate::kit::theme::ui_font((*size * weight).clamp(1.0, 256.0));
+                let galley = painter.layout_no_wrap(label, font, ink);
+                let position = point(position);
+                let offset = if *align == TextAlign::Center { Vec2::new(galley.size().x / 2., 0.) } else { Vec2::ZERO };
+                crate::kit::widgets::paint_text(painter, position - offset, galley, ink);
+            }
             Draw::Gradient { rect, colors } => {
                 let r = rectangle(rect);
                 let mut mesh = egui::Mesh::default();
@@ -974,6 +1614,17 @@ fn paint_scaled(
         }
     }
 }
+fn control_selected(control: &CustomControl, parameters: &[GraphParameter]) -> bool {
+    control.x.iter().chain(control.y.iter()).any(|binding| {
+        parameters.iter().find(|parameter| parameter.id == binding.parameter).is_some_and(|parameter| {
+            match control.gesture {
+                UiGesture::Set(target) | UiGesture::Tab(target) => parameter.value == f64::from(target),
+                _ => normalized(parameter, binding.logarithmic) >= 0.5,
+            }
+        })
+    })
+}
+
 fn control_class(control: &suhina_device_sdk::ui::CustomControl) -> &'static str {
     match &control.widget {
         Some(Widget::Knob { .. } | Widget::Dial { .. }) => "knob",
@@ -1002,6 +1653,7 @@ fn paint_control(
     parameters: &[GraphParameter],
     loaded: &Loaded,
     response: Option<&egui::Response>,
+    accent_on: bool,
 ) {
     let class = control_class(control);
     let _scope = response
@@ -1038,11 +1690,17 @@ fn paint_control(
             })
         })
         .flatten();
-    let on =
-        control.x.iter().chain(control.y.iter()).any(|b| {
-            parameters.iter().find(|p| p.id == b.parameter).is_some_and(|p| normalized(p, b.logarithmic) >= 0.5)
-        });
+    let on = control_selected(control, parameters);
     let state = response.map_or(crate::kit::skin::State::Normal, |r| crate::kit::skin::State::response(r, !knob && on));
+    if control.x.as_ref().is_some_and(|b| b.parameter == "mode")
+        && matches!(control.gesture, UiGesture::Set(_))
+        && let Some(Widget::Button { label, .. }) = &control.widget
+        && matches!(label.as_str(), "Sample" | "Slice" | "Grain")
+        && bounds.height() >= 40.
+    {
+        paint_sample_mode(painter, bounds, label, on, state, palette);
+        return;
+    }
     let ink = crate::kit::style_class::foreground(crate::kit::theme::text_value());
     let mut body = None;
     let mut knob_effects = false;
@@ -1074,7 +1732,11 @@ fn paint_control(
             && let Draw::Rect { radius, .. } = draw
         {
             let replaced = *body.get_or_insert_with(|| {
-                let fill = crate::kit::style_class::background(if on {
+                // A canvas may fill an on button with the accent, so it reads at a glance and the
+                // SDK's dark label for an on button stays legible on it.
+                let fill = crate::kit::style_class::background(if on && accent_on {
+                    crate::kit::theme::accent()
+                } else if on {
                     crate::kit::theme::control_active()
                 } else {
                     crate::kit::theme::control_background()
@@ -1103,6 +1765,118 @@ fn paint_control(
             knob_effects = true;
         }
     }
+    if on
+        && matches!(control.widget, Some(Widget::Button { .. }))
+        && matches!(control.gesture, UiGesture::Set(_) | UiGesture::Tab(_))
+    {
+        // The sampler's page tabs: the open one outlined, as its mode buttons are.
+        if control.x.as_ref().is_some_and(|binding| binding.parameter == "panel_view") {
+            painter.rect_stroke(
+                bounds.shrink(1.),
+                3.,
+                Stroke::new(1.5, color(palette.accent)),
+                egui::StrokeKind::Inside,
+            );
+            return;
+        }
+        let mark = Rect::from_min_max(
+            bounds.left_top() + Vec2::new(2., 4.),
+            Pos2::new(bounds.left() + 5., bounds.bottom() - 4.),
+        );
+        painter.rect_filled(mark, 1., color(palette.accent));
+    }
+}
+
+/// The sampler's mode buttons: a drawn glyph over the caption, both in the accent on a lighter
+/// face for the chosen mode, in the dimmer text colour for the others.
+fn paint_sample_mode(
+    painter: &egui::Painter,
+    bounds: Rect,
+    label: &str,
+    selected: bool,
+    state: crate::kit::skin::State,
+    palette: WidgetPalette,
+) {
+    let radius = crate::kit::style_class::radius(2.);
+    let base = color(palette.control);
+    let fill = crate::kit::style_class::background(if selected { base.gamma_multiply(1.35) } else { base });
+    if !crate::kit::skin::button(painter, bounds, state, fill, radius) {
+        painter.rect_filled(bounds.shrink(0.5), radius, fill);
+    }
+    crate::kit::native_css::background_rounded(painter, bounds, radius);
+    let ink = crate::kit::style_class::foreground(if selected {
+        color(palette.accent)
+    } else {
+        color(palette.text).gamma_multiply(0.62)
+    });
+    let center = Pos2::new(bounds.center().x, bounds.top() + bounds.height() * 0.36);
+    let stroke = Stroke::new(1.8, ink);
+    match label {
+        // Three cuts across a strip: the source in pieces.
+        "Slice" => {
+            painter.rect_stroke(
+                Rect::from_center_size(center, Vec2::new(5., 16.)),
+                1.,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+            for side in [-1., 1.] {
+                painter.rect_stroke(
+                    Rect::from_center_size(center + Vec2::new(side * 9., 0.), Vec2::new(5., 6.)),
+                    1.,
+                    stroke,
+                    egui::StrokeKind::Middle,
+                );
+            }
+        }
+        // Scattered grains.
+        "Grain" => {
+            for (x, y) in [(-8., -4.), (-1., -7.), (7., -3.), (-4., 3.), (4., 5.), (10., 6.), (-10., 6.)] {
+                painter.circle_filled(center + Vec2::new(x, y), 1.9, ink);
+            }
+        }
+        // A cycle of a wave between two bars: the whole sample.
+        _ => {
+            for side in [-1., 1.] {
+                painter.line_segment([center + Vec2::new(side * 11., -8.), center + Vec2::new(side * 11., 8.)], stroke);
+            }
+            let points = (0..=24)
+                .map(|i| {
+                    let t = i as f32 / 24.;
+                    center + Vec2::new(t * 16. - 8., -(t * std::f32::consts::TAU).sin() * 6.)
+                })
+                .collect();
+            painter.add(egui::Shape::line(points, stroke));
+        }
+    }
+    painter.text(
+        Pos2::new(bounds.center().x, bounds.top() + bounds.height() * 0.76),
+        egui::Align2::CENTER_CENTER,
+        label,
+        crate::kit::theme::ui_font(12.),
+        ink,
+    );
+}
+
+/// The native sampler gives up waveform height before its fixed-size controls scroll.
+pub(super) fn fitted_size(canvas: &DeviceUi, available_height: f32) -> Vec2 {
+    let sampler =
+        canvas.size == [900., 220.] && canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
+    Vec2::new(canvas.size[0], if sampler { available_height.clamp(168., 220.) } else { canvas.size[1] })
+}
+
+fn fitted_control_bounds(control: &CustomControl, height_reduction: f32) -> [f32; 4] {
+    let [x, mut y, w, mut h] = control.bounds;
+    if matches!(control.widget, Some(Widget::SampleWaveform)) {
+        h -= height_reduction;
+    } else if y >= 138. {
+        y -= height_reduction;
+    } else if control.x.as_ref().is_some_and(|b| b.parameter == "mode") && height_reduction > 0. {
+        // Three mode buttons must fit beside the shorter waveform, above source controls.
+        y = 24. + (y - 24.) / 24. * 20.;
+        h = 18.;
+    }
+    [x, y, w, h]
 }
 
 pub(crate) fn show(
@@ -1131,9 +1905,20 @@ pub(crate) fn show(
     } else {
         color(canvas.background)
     };
-    painter.fill_background(rect, 0.0, background);
-    paint(&painter, &canvas.layers, rect.min, parameters, &loaded);
+    // A clear background (a header strip's) leaves what is under the canvas showing.
+    if canvas.background[3] > 0 {
+        painter.fill_background(rect, 0.0, crate::kit::style_class::background(background));
+        crate::kit::native_css::background_rounded(&painter, rect, 0.);
+    }
+    // A strip is scaled to the rect it is shown in on each axis, smaller too, as it has no scroll
+    // bar. Any other canvas shown larger is stretched the same way; one shown shorter is fitted by
+    // its controls (`fitted_size`), not squeezed.
+    let stretch = Vec2::new(rect.width() / canvas.size[0].max(1.0), rect.height() / canvas.size[1].max(1.0));
+    let stretch = if canvas.strip { stretch } else { stretch.max(Vec2::splat(1.0)) };
+    let stretch = if (stretch - Vec2::splat(1.0)).length() < 0.001 { Vec2::splat(1.0) } else { stretch };
+    paint_scaled(&painter, &canvas.layers, rect.min, parameters, &loaded, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
+    let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;
     for (control, drawings) in canvas.controls.iter().zip(&loaded.controls) {
         if sample_panel
             && control
@@ -1155,8 +1940,8 @@ pub(crate) fn show(
         }) {
             continue;
         }
-        let [x, y, w, h] = control.bounds;
-        let bounds = Rect::from_min_size(rect.min + Vec2::new(x, y), Vec2::new(w, h));
+        let [x, y, w, h] = fitted_control_bounds(control, reduction);
+        let bounds = Rect::from_min_size(rect.min + Vec2::new(x, y) * stretch, Vec2::new(w, h) * stretch);
         let name = crate::kit::control_layout::semantic_name("device", &control.id);
         if crate::kit::control_layout::placement(&name).hidden {
             continue;
@@ -1184,12 +1969,62 @@ pub(crate) fn show(
                 parameters,
                 track,
                 device,
+                at.value(),
                 actions,
                 !canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleRecording))),
             );
             continue;
         }
-        if matches!(control.widget, Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator)) {
+        if let Some(Widget::Handle { color: line_color, span }) = &control.widget {
+            handle(
+                ui,
+                &painter,
+                (rect, bounds, stretch),
+                control,
+                (*line_color, span.as_ref()),
+                parameters,
+                (track, at),
+                actions,
+            );
+            continue;
+        }
+        if let UiGesture::Preset(index) = control.gesture {
+            let response = ui
+                .interact(bounds, ui.id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
+                .on_hover_text(&control.tooltip);
+            paint_control(
+                &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
+                &painter,
+                control,
+                drawings,
+                bounds,
+                parameters,
+                &loaded,
+                Some(&response),
+                canvas.accent_on,
+            );
+            if response.clicked()
+                && let Some(preset) = canvas.presets.get(usize::from(index))
+            {
+                // Every value but the last is continuous, so the preset is one undo step.
+                let count = preset.values.len();
+                for (i, (id, value)) in preset.values.iter().enumerate() {
+                    actions.push(Action::new(
+                        "device.setParam",
+                        json!({
+                            "track": track.0, "device": at.value(), "param": id, "value": value,
+                            "continuous": i + 1 < count, "gesture": control.id
+                        }),
+                    ));
+                }
+            }
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &control.name));
+            continue;
+        }
+        if matches!(
+            control.widget,
+            Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator | Widget::Graphic { .. })
+        ) {
             paint_control(
                 &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
                 &painter,
@@ -1199,6 +2034,7 @@ pub(crate) fn show(
                 parameters,
                 &loaded,
                 None,
+                canvas.accent_on,
             );
             continue;
         }
@@ -1219,6 +2055,47 @@ pub(crate) fn show(
         } else {
             control.tooltip.clone()
         };
+        // A bordered rate field (in Hz, or a number with a unit after it, as the sampler's LFO
+        // rate and time) can be typed in as well as dragged. Other bordered numbers (an authored
+        // panel's `number`, without a unit) keep the panel's own drag.
+        if let Some(Widget::Number { bordered: true, decimals, format, prefix, suffix, .. }) = &control.widget
+            && (*format == suhina_device_sdk::ui::TextFormat::Frequency
+                || (*format == suhina_device_sdk::ui::TextFormat::Number && !suffix.is_empty()))
+            && let Some(binding) = control.y.as_ref().or(control.x.as_ref())
+            && let Some(p) = parameters.iter().find(|p| p.id == binding.parameter)
+        {
+            let _role = crate::kit::style_class::enter("value");
+            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let ui = &mut *styled_ui;
+            let mut value = p.value;
+            let suffix = if *format == suhina_device_sdk::ui::TextFormat::Frequency { " Hz" } else { suffix.as_str() };
+            let fine = ui.input(|i| if i.modifiers.shift { 0.1 } else { 1.0 });
+            let response = ui
+                .push_id(("sd-number", track.0, &at.0, &control.id), |ui| {
+                    ui.put(
+                        bounds,
+                        egui::DragValue::new(&mut value)
+                            .range(p.min..=p.max)
+                            .speed(0.01 * fine)
+                            .fixed_decimals(*decimals)
+                            .prefix(prefix)
+                            .suffix(suffix),
+                    )
+                })
+                .inner
+                .on_hover_text("Drag to adjust, click to type; Shift for precision");
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &control.name));
+            if value.is_finite() && (response.changed() || response.drag_stopped()) {
+                actions.push(Action::new(
+                    "device.setParam",
+                    json!({
+                        "track":track.0,"device":at.value(),"param":p.id,"value":value,
+                        "continuous":response.dragged(),"gesture":control.id
+                    }),
+                ));
+            }
+            continue;
+        }
         let response = ui
             .interact(
                 bounds,
@@ -1241,6 +2118,7 @@ pub(crate) fn show(
             parameters,
             &loaded,
             Some(&response),
+            canvas.accent_on,
         );
         if response.is_pointer_button_down_on() || response.clicked() || response.drag_started() {
             response.request_focus();
@@ -1275,7 +2153,7 @@ pub(crate) fn show(
                 let mut popup = egui::Popup::menu(&response);
                 if response.double_clicked() {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Bool(false)));
-                    control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":device,"param":p.id,"value":p.default,"continuous":false,"gesture":control.id})));
+                    control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":at.value(),"param":p.id,"value":p.default,"continuous":false,"gesture":control.id})));
                 } else if key_open {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
@@ -1429,7 +2307,7 @@ pub(crate) fn show(
                 control.gesture,
                 UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_) | UiGesture::Menu
             ) {
-                next += (if axis == 0 { dx } else { dy }) as f64 * 0.01 * fine;
+                next += (if axis == 0 { dx } else { dy }) as f64 * 0.01 * fine * f64::from(binding.drag_scale.signum());
             }
             let mut value = if binding.logarithmic {
                 (p.min.ln() + next.clamp(0.0, 1.0) * (p.max.ln() - p.min.ln())).exp()
@@ -1444,7 +2322,8 @@ pub(crate) fn show(
             } else {
                 0
             };
-            let key_delta = (if axis == 0 { dx } else { dy }) + step_click;
+            // A negative scale steps the other way too; a stepper's own buttons keep their direction.
+            let key_delta = (if axis == 0 { dx } else { dy }) * binding.drag_scale.signum() as i32 + step_click;
             if key_delta != 0
                 && !matches!(
                     control.gesture,

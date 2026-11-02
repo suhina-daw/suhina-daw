@@ -2,8 +2,9 @@
 description: How played input reaches the engine (MIDI controllers first, audio inputs later), what arming a track is, and what a key press costs in latency today and how that is made smaller
 read_when: MIDI input, MIDI controller, keyboard, arm, armed track, track.setArm, midi.inputs, live notes, sustain pedal, input latency, monitoring, recording, low latency, midir
 type: decision
-status: current
-last_verified: 2026-10-29
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/live.rs
@@ -18,7 +19,6 @@ covers:
 
 # 0017: Inputs, arming and live latency
 
-- **Status:** accepted (MIDI input; the shallower queue while armed, #265; a MIDI input per track, #278; audio input and monitoring, #267; notes placed by the driver's timestamps, #269; MIDI and audio recording with a count-in, #266 and #268; controllers, pitch bend and aftertouch reaching the instrument, #812)
 - **Date:** 2026-10-14
 
 ## Context

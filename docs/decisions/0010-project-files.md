@@ -2,8 +2,9 @@
 description: Suhina's own project file (.suhina): versioned JSON of the model, written by its own crate; saving, templates and new projects
 read_when: project file, save, open, backup, autosave, recovery, .suhina, .locr, file extension, native format, project.save, templates, new project, blank project, unsaved changes, recent projects
 type: decision
-status: current
-last_verified: 2026-10-30
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - crates/project-file
   - crates/session/src/lib.rs
@@ -14,7 +15,6 @@ covers:
 
 # 0010: Suhina's own project files (.suhina)
 
-- **Status:** accepted
 - **Date:** 2026-10-12; extension changed 2026-10-13 (decision 10); backups 2026-10-15 (decision 11);
   the old extension no longer read 2026-10-17 (decision 12); format versions 2026-10-24 (decision 3)
 
@@ -51,7 +51,8 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
    and an absolute path for when that does not resolve. Saving somewhere else rewrites both from
    where the file is found now; a region with no path yet — an empty audio clip — is left as it
    is, so nothing invents one. A self-contained package (a zip with the audio) is a separate
-   format for sharing, not decided here.
+   format for sharing, not decided here. Which of those paths opening a project reads is
+   [ADR 0011](0011-preview-and-added-audio.md) › 11.
 7. **Saving is a command**, `project.save { path?, copy? }` (AGENTS.md rule 6). Without a path it
    writes the project file the project came from. It writes the running plug-ins' state as it is now:
    each host process is asked on a thread of its own and the save waits at most a second for
@@ -148,6 +149,17 @@ dropped that data on its next save, without a word. Decided ([#763](https://gith
 
 ## Consequences
 
+### Sampler source corrections (2026-10-27, issue #1026)
+
+Project version 5 stores sampler source corrections in the versioned
+`suhina/sample_edits` extension, described in [the sampler spec](../spec/sampler.md#source-correction-storage).
+Only user-authored pins and suppressed candidate identities persist; transient
+analysis is derived from the source. Both lists have a 4096-entry limit. The old
+source reference and manual map remain readable. Loading a replacement source
+clears its source-specific corrections in the same undoable command. Preparation
+decodes immutable correction resources before graph adoption, so audio processing
+does not parse files or allocate their storage.
+
 - Edits can be kept; templates and new projects work.
 - `.suhina` files can be read and written by agents and scripts without Suhina.
 - Readers accept `.suhina` and `"format": "suhina"` only (`suhina_project_file::is_project_file`,
@@ -167,5 +179,6 @@ project too. A project that has returns always shows them, whatever the setting.
 
 ## Not decided yet
 
-- A packaged format that carries its audio, and "collect and save".
-- A system file dialog for Open and Save as.
+- A packaged format that carries its audio ([ADR 0026](0026-project-folder-and-package.md),
+  proposed). Collect and save is built ([missing files](../spec/missing-files.md) › Collect and
+  save), and Open and Save as use the system's file dialog (9).

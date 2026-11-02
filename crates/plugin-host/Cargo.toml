@@ -9,6 +9,13 @@ rust-version.workspace = true
 name = "suhina-plugin-host"
 path = "src/main.rs"
 
+# The VST2 interface layer (ADR 0022): off by default, because nothing ships VST2 hosting until
+# the legal advice ADR 0022 › 5 asks for is resolved. With it on, the host gains the ported
+# VeSTige definitions, the mock plug-in, the probe and `--vst2-probe` (CI turns it on to check
+# that code).
+[features]
+vst2 = []
+
 [dependencies]
 suhina-ipc.workspace = true
 suhina-plugins.workspace = true

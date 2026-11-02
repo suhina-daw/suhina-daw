@@ -8,6 +8,30 @@
 //! and counters, so [`Renderer::handle`] and the per-frame work never allocate. Other threads
 //! send [`LaunchCommand`]s through a [`Controller`] (a lock-free queue) and read the state back
 //! from a [`LauncherMonitor`] (atomics).
+//!
+//! # Time bases
+//!
+//! - **The launcher's beat** (`Launcher::beat`) is the clock launches are quantised on: beats
+//!   are quarter notes, counted from the song's start. It moves on once per frame by the frame's
+//!   step: read from the arrangement's tempo map at the next arrangement frame while the clock
+//!   follows a changing map (`Launcher::on_map`), so it never drifts from the arrangement, or
+//!   `tempo_bpm / 60 / sample_rate` otherwise (a scene's tempo takes it off the map).
+//! - **The arrangement's frames** (`Renderer::time`) are sample frames from the song's start.
+//!   The launcher reads them only to look up the map, and to note the frame from which a track
+//!   plays launched clips instead of its arrangement (`Column::overrides_since`).
+//! - **A clip's elapsed beats and frames** (`Playing::elapsed_beats`, `elapsed_frames`) count
+//!   from its launch: the beats by the same step as the launcher's beat, the frames by one. The
+//!   beats place the clip's notes and its position in its content (`ClipPlan::clip_beat`, with
+//!   its loop) and end it at its end marker; audio that follows the tempo is read at the elapsed
+//!   beats times the frames per beat the graph was built at, audio that does not at the elapsed
+//!   frames.
+//!
+//! **Which one decides when a launch is heard:** the launcher's beat. A launch, a stop or a
+//! scene's tempo or time signature waits as a pending action at the beat of the next boundary of
+//! its quantisation (`Launcher::launch_beat_on`: whole bars from where the time signature last
+//! changed, or note values within the bar), and it applies in the first frame whose launcher beat
+//! has reached it (`Renderer::apply_due`). Its clip's elapsed beats and frames start from zero
+//! there.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
@@ -1506,6 +1530,23 @@ impl Renderer {
         self.active_audio_count = 0;
     }
 
+    /// Whether an arrangement audio clip plays now; one a launched clip replaces does not.
+    fn arrangement_audio_sounding(&self) -> bool {
+        let launcher = &self.graph.launcher;
+        let time = self.time();
+        let direct = self
+            .active_audio
+            .iter()
+            .take(self.active_audio_count)
+            .any(|index| self.graph.audio_events.get(*index).is_some_and(|a| !launcher.overrides(a.column)));
+        direct
+            || self
+                .graph
+                .stretch_events
+                .iter()
+                .any(|e| e.start <= time && time < e.end && !launcher.overrides(e.column))
+    }
+
     /// Stops the transport; the playhead goes back to the marker, or, with `here`, the marker
     /// moves to the playhead. Stopping while stopped moves the marker to beat 0.
     fn stop_transport(&mut self, here: bool) {
@@ -1519,8 +1560,11 @@ impl Renderer {
             has_instrument = true;
             needs_guard |= !slot.processor.as_ref().is_some_and(|p| p.smooth_transport_stop());
         }
-        if self.running && !self.plugin_info.is_empty() && (!has_instrument || needs_guard) {
-            self.start_guard.begin(self.graph.latency);
+        // An arrangement audio clip has no stop fade of its own: without the ramp it ends on
+        // whatever sample it had reached, a click, with a smooth hosted instrument beside it too.
+        let hosted_step = !self.plugin_info.is_empty() && (!has_instrument || needs_guard);
+        if self.running && (hosted_step || self.arrangement_audio_sounding()) {
+            self.start_guard.begin_stop(self.graph.latency);
         }
         self.start_beat = if !self.running {
             0.0

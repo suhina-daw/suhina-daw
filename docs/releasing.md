@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
 type: howto
 status: current
-last_verified: 2026-10-31
+last_verified: 2026-11-01
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -282,7 +282,7 @@ only `main`'s automation for the build lookup, never running the pull request's 
 | a push by anyone else | the label comes off, so the new commits wait to be read (the rule for `main` dismisses the older approval) |
 | the label comes off | auto-merge off, out of the queue, and the app's approvals dismissed; a call that fails fails the run. When the label was added again meanwhile, the run fails and asks for the label to be taken off and added again, so the pull request waits rather than merging |
 
-The merge method is the queue's (squash). Agents never add the label (`AGENTS.md` › Tasks).
+The merge method is the queue's (squash). Agents never add the label (`docs/workflow.md` › Tasks).
 
 It acts with a short-lived token of the GitHub App that also pushes the generated docs
 (`docs-generated.yml`), not with `GITHUB_TOKEN`: GitHub starts no workflows for a merge made through
@@ -312,17 +312,22 @@ one build of `main` with all of them merged on, in that order.
 ## Release notes
 
 [`scripts/release_notes.py`](../scripts/release_notes.py) writes the notes from git alone (no
-network, no AI service). A change is one commit on `main`'s first-parent line, so one squash-merged
-pull request, listed by its title with a link to the pull request. Changes that touch only
-documentation, CI, scripts and tests are counted, not listed. Pull request titles are the release
-notes, so they say what changed for a user: "Clip fades: shapes and an adjustable curve".
+network, no AI service). A change is one commit on `main`'s first-parent line, so one merged pull
+request, listed by its title with a link to the pull request: a squash merge's subject, or for a
+merge commit ("Merge pull request #N from …") the first line of its message, which is the pull
+request's title. Changes that touch only documentation, CI, scripts and tests are counted, not
+listed. Pull request titles are the release notes, so they say what changed for a user: "Clip
+fades: shapes and an adjustable curve".
 
 - **Nightly:** the changes since the previous nightly, on its release page and in the Discord post.
 - **Draft of a tagged release:** first *New and changed*, the bullets of ROADMAP.md › What works now
   that are new or reworded since the previous release, by milestone, then *All changes*. A
   release candidate counts from the tag before it, a release from the previous release, the first
   from the beginning. Edit the draft before publishing: the ROADMAP bullets describe what works,
-  not what changed, and a reworded bullet may be a fix of its text.
+  not what changed, and a reworded bullet may be a fix of its text. A pull request writes a new
+  bullet as a file under `docs/works-now/`, which `docs-generated.yml` folds into ROADMAP.md on
+  `main` right after the merge ([`works-now/README.md`](works-now/README.md)), so the draft sees it
+  like any other.
 
 Its tests run in CI: `python3 -m unittest discover -s scripts -p 'test_*.py'`.
 

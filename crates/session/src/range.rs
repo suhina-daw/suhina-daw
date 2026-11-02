@@ -357,7 +357,7 @@ pub(crate) fn paste_to_sources(session: &mut Session, start: f64, stack: bool) -
     Ok(json!({ "clips": placed }))
 }
 
-/// What edits a clip about to move (ADR 0028 step 6): the key and device of the plug-in on its
+/// What edits a clip about to move (ADR 0033 step 6): the key and device of the plug-in on its
 /// track, its content and its audio (the pool key); `None` for a clip no plug-in edits.
 type Edited = Option<(u64, usize, suhina_model::ContentId, String)>;
 
@@ -376,7 +376,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         Some(v) => Some(v.as_i64().ok_or("tracksBy must be a whole number of tracks")?),
     };
     let new_track = params.get("toNewTrack").and_then(Value::as_bool).unwrap_or(false);
-    // A clip a plug-in edits (ADR 0028), going to another track: its edits go along, the
+    // A clip a plug-in edits (ADR 0033), going to another track: its edits go along, the
     // plug-in added there when it has none (`keep`), or it starts there without them (`new`).
     let keep_edits = match params.get("araEdits") {
         None | Some(Value::Null) => false,
@@ -547,7 +547,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         let goes = to.unwrap_or(moved_by(*track)?);
         crate::automation_range::lay_under(session, goes, (start + beats).max(0.0), lanes, goes == *track)?;
     }
-    // The edits of clips that left their plug-in's track go along (ADR 0028 step 6).
+    // The edits of clips that left their plug-in's track go along (ADR 0033 step 6).
     let mut carried = 0;
     for ((track, clip), (from_track, origin)) in placed.iter().zip(&came) {
         let Some((key, device, content, source)) = origin else { continue };
@@ -578,7 +578,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
 
 /// Puts on `to`'s channel, first, the plug-in that edits clips on `from` (device `device`)
 /// when `to` has no such plug-in yet: a clip moved there with its edits kept is edited there by
-/// the same plug-in (ADR 0028 step 6). It starts without the other's state; the edits come by
+/// the same plug-in (ADR 0033 step 6). It starts without the other's state; the edits come by
 /// the carry.
 fn add_editor_like(session: &mut Session, from: TrackId, device: usize, to: TrackId) -> Result<(), CommandError> {
     let p = &mut session.project;

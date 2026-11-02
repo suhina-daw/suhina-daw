@@ -623,7 +623,7 @@ pub(super) fn clip_box<'a>(
             let mut committed = None;
             match widgets::drag_value(ui, &response, &mut preview, view.gain_db, 0.1, 1.0, CLIP_GAIN_RANGE, 0.0) {
                 Drag::Moving(v) => state.gain_drag = Some((key, v)),
-                Drag::Done(v) => {
+                Drag::Done(v) | Drag::Set(v) => {
                     state.gain_drag = None;
                     committed = Some(v);
                     let db = commands::db_param(v, CLIP_GAIN_RANGE.0);
@@ -1303,7 +1303,7 @@ pub(super) fn paint_clip(
         }
     }
     // Notes an ARA plug-in found in an audio clip go over its waveform, which dims a little under
-    // them so both read (ADR 0028, #720): dimmed to 40 % it read as an empty clip on a light body.
+    // them so both read (ADR 0033, #720): dimmed to 40 % it read as an empty clip on a light body.
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
     let appearance = painter
         .ctx()

@@ -633,7 +633,7 @@ fn plugin_button(
     }
 }
 
-/// The Clip part of an audio clip on a track whose plug-in edits clips (ARA, ADR 0028): the
+/// The Clip part of an audio clip on a track whose plug-in edits clips (ARA, ADR 0033): the
 /// plug-in's editor in `area`, where a MIDI clip has its piano roll. Embedded, it lands there
 /// (`places`); in a window of its own, or closed, the area says so with a button to open or
 /// close it. `device` is the plug-in's index in `chain`.
@@ -915,10 +915,18 @@ fn device_panel(
         }
     }
     let kind_width = widgets::text_width(ui, &device.kind, theme::ui_font(theme::TEXT_TINY));
-    let name = Rect::from_min_max(
-        Pos2::new(name_left, header.top()),
-        Pos2::new((kind_right - PAD - kind_width).max(name_left), header.bottom()),
-    );
+    // A built-in's header controls sit left of its maker, and the name gives way to them.
+    let strip = device.graph.as_ref().and_then(|graph| graph.header.as_ref().map(|strip| (graph, strip)));
+    let mut name_right = kind_right - PAD - kind_width;
+    if let Some((graph, strip)) = strip {
+        let size = Vec2::new(strip.size[0], strip.size[1]);
+        let left = (name_right - size.x).max(name_left + 120.0);
+        let place = Rect::from_min_size(Pos2::new(left, header.center().y - size.y / 2.0), size);
+        crate::detail::device_canvas::show(ui, place, strip, &graph.parameters, track, &device.at, actions);
+        name_right = place.left() - PAD;
+    }
+    let name =
+        Rect::from_min_max(Pos2::new(name_left, header.top()), Pos2::new(name_right.max(name_left), header.bottom()));
     widgets::text_in(painter, name, Align2::LEFT_CENTER, &device.name, theme::ui_font(theme::TEXT), name_color);
     widgets::text_in(
         painter,

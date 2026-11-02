@@ -3,7 +3,7 @@ description: Planned key inputs - a device whose detector reads another channel'
 read_when: sidechain, key input, key source, tap point, pre FX, post FX, post fader, routing, aux input, aux output, multi-out, multiple outputs, bus, audio port, region version, protocol version, VST2 bus, device input
 type: spec
 status: planned
-last_verified: 2026-10-15
+last_verified: 2026-11-02
 covers:
   - crates/model/src/lib.rs
   - crates/engine/src/chain.rs
@@ -308,7 +308,7 @@ fn process(&mut self, context: &ProcessContext, inputs: Inputs<'_>, buffer: &mut
 - A port the engine has no source for is handed **silence**, never left unset, so a device needs one code path.
 - `DeviceInfo` gains the ports it declares (`key_ports: &'static [&'static str]`, empty for almost every device),
   so the model, the command and the panel agree on what a device can read.
-- Every built-in device is updated mechanically (eight today); `devices/compressor` is the first that uses it,
+- Every built-in device is updated mechanically; `devices/compressor` is the first that uses it,
   and `limiter`, `overdrive` and the planned `bus-compressor` (issue #385) follow.
 - `crates/device-api/src/conformance.rs` gains the checks that a device with a declared key port reads it (a
   loud key must change its output) and that a device without one is bit-identical to today.
@@ -350,12 +350,12 @@ knows about an instance (latency, instrument or effect, parameters, editor):
 - **Shared memory** (`crates/ipc/src/region.rs`): one region already carries an interleaved buffer of up to
   `MAX_CHANNELS = 64` channels and a 256-byte header, and `Link::create(4, …)` is legal today. So a second stereo
   pair needs **no new region**: the header's unused bytes (16–64) take a small per-pair table (direction, pair
-  index, live, bus index), `CHANNELS` stays the total, and the **region version becomes 3**. Both sides refuse a
+  index, live, bus index), `CHANNELS` stays the total, and the **region version rises by one**. Both sides refuse a
   region made by another version (`Region::open`), so an old host and a new engine fail loudly at start instead
   of playing silence. One region per pair is refused: it costs another doorbell and another round trip per block,
   which the deadline budget (ADR 0006 › 4) cannot pay.
 - **The control protocol** (`crates/plugins/src/protocol.rs`): `Loaded` gains the port list, `Launch.channels`
-  becomes the total the region carries, and the **protocol version becomes 8**. A host that does not know the
+  becomes the total the region carries, and the **protocol version rises by one**. A host that does not know the
   version is refused as it is today (the engine compares the hello answer).
 - **The engine's side** (`crates/engine/src/plugin.rs`): `PluginProcessor::process`/`send`/`wait` take the extra
   pairs as pre-resolved views (`&[&[f32]]` in, `&mut [&mut [f32]]` out), never allocating on the audio thread;
@@ -493,7 +493,7 @@ first slice; the boundary work follows and is independent of it.
    `Device.inputs`; the validation rules above with a malformed-input test for each; the file version written only
    when a key is present, round-trip tests; `Project::validate` cycle and missing-point errors. ADR 0001 gets an
    amendment. *Nothing audible yet.*
-2. **device-api: `Inputs`.** `process` takes `Inputs`, `DeviceInfo.key_ports`, the eight devices updated, the
+2. **device-api: `Inputs`.** `process` takes `Inputs`, `DeviceInfo.key_ports`, every built-in device updated, the
    conformance checks for a declared and an undeclared key. ADR 0004 › *Not decided yet* loses the side-chain
    line and gets a decision. *Still nothing audible: no source exists yet.*
 3. **Engine: the read path.** Pass-through chains for key sources, the key buffers, the three tap points at a
@@ -508,8 +508,8 @@ first slice; the boundary work follows and is independent of it.
    parameters; session command tests; `docs/mcp.md` and the components spec for the panel row.
 6. **The interface:** the Sidechain row in the device panel (source dropdown, tap chooser), UI tests that pick a
    source and that a missing source shows *missing*.
-7. **The boundary: one auxiliary input.** Region version 3 with the pair table in its header, `Link::create(4, …)`,
-   protocol 8 with the port list on `Loaded`, `PluginProcessor` views, `PluginSlotInfo` and `PluginReport`, the
+7. **The boundary: one auxiliary input.** The next region version, with the pair table in its header, `Link::create(4, …)`,
+   the next protocol version with the port list on `Loaded`, `PluginProcessor` views, `PluginSlotInfo` and `PluginReport`, the
    VST3 and CLAP hosts feeding the first auxiliary input, `test:vst3`/`test:clap` gaining one, an `ipc` test that
    refuses an old region. ADR 0006 › 3 and 7 amended (region and protocol versions, "silent buffers for any other
    bus" replaced), `docs/architecture.md` updated.

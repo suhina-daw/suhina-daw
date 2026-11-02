@@ -63,7 +63,7 @@ impl App {
         self.show_editor();
     }
 
-    /// The shown clip when its editor is a plug-in that edits clips (ARA, ADR 0028): an
+    /// The shown clip when its editor is a plug-in that edits clips (ARA, ADR 0033): an
     /// arrangement audio clip whose track runs such a plug-in. Its track, id and the plug-in's
     /// index in the track's chain.
     pub(super) fn ara_clip(&mut self) -> Option<(TrackId, ClipId, usize)> {
@@ -368,8 +368,8 @@ impl App {
         if geometry.is_none() {
             let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
             let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
-            let response =
-                ui.interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
+            let sense = Sense::click_and_drag();
+            let response = ui.interact(splitter, Id::new("detail-splitter"), sense).on_hover_cursor(cursor);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
             // A double-click closes the detail area, as a double-click on a split view's divider does
             // on macOS; a double-click on the closed splitter opens it at its default size.
@@ -417,6 +417,19 @@ impl App {
             let beat = session.player().map_or(0.0, |p| p.monitor().beat());
             shown.follow_automation(session.project(), beat);
         }
+        // What the host hands devices' canvases: whether the panel is open, and live values (a
+        // band's level and gain change) while a player runs.
+        if let detail_view::Detail::Devices(chain) | detail_view::Detail::Clip(_, chain) = &mut shown {
+            let monitor = self.session().and_then(|s| s.player()).map(suhina_session::Player::meter_monitor);
+            let open = detail_view::expanded(ui.ctx()).filter(|(track, _)| *track == chain.track).map(|(_, at)| at);
+            let track = chain.track;
+            let live = detail_view::give_host_values(&mut chain.devices, open.as_ref(), &mut |at| {
+                monitor.and_then(|monitor| monitor.readouts(track, &at.0))
+            });
+            if live {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+            }
+        }
         self.expanded_panel = detail_view::expanded_device(ui.ctx(), &shown);
         if let Some(session) = self.session() {
             for channel in session.project().channels.iter().filter(|channel| {
@@ -444,6 +457,15 @@ impl App {
                             return;
                         }
                         d.insert_temp(id.with("manual-revision"), version);
+                        if let Some(edits) =
+                            device.sample_edit_data().and_then(suhina_device_api::sample_edits::SampleEdits::decode)
+                        {
+                            d.insert_temp(id.with("slice-edits"), std::sync::Arc::new(edits));
+                        } else {
+                            d.remove::<std::sync::Arc<suhina_device_api::sample_edits::SampleEdits>>(
+                                id.with("slice-edits"),
+                            );
+                        }
                         if let Some(points) = device.sample_slices() {
                             d.insert_temp(id.with("manual-points"), std::sync::Arc::<[f64]>::from(points));
                         } else {

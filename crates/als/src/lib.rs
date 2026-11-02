@@ -19,11 +19,12 @@ use std::path::Path;
 
 use roxmltree::Node;
 use suhina_model::{
-    Arrangement, ArrangementLane, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipContent, ClipId, ContentId,
-    ContentKinds, ContentLane, Device, DeviceKind, Extension, Extensions, LaneData, LaneId, Launcher, LauncherColumn,
-    LoopRange, MAX_CHANGE_BEAT, MAX_GROUP_DEPTH, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Marker, Note, Project,
-    Scene, SceneId, Send, Slot, StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId, Transport,
-    ValidationError, WarpMarker, valid_bpm,
+    Arrangement, ArrangementLane, AudioRegion, Branch, Channel, ChannelId, ChannelRole, Clip, ClipContent, ClipId,
+    ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceKind, DeviceParam, Extension, Extensions,
+    LaneData, LaneId, Launcher, LauncherColumn, LoopRange, MACROS, MAX_BRANCHES, MAX_CHANGE_BEAT, MAX_DENOMINATOR,
+    MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_GROUP_DEPTH, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Marker, Note,
+    Project, Scene, SceneId, Send, Slot, StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId,
+    Transport, ValidationError, WarpMarker, valid_bpm,
 };
 
 /// Upper bound for the decompressed XML, so a malicious file cannot exhaust memory.
@@ -429,13 +430,113 @@ impl Reader {
     }
 
     /// Reads a track's device chain. Plug-ins keep their state verbatim; Live's own devices
-    /// become placeholders.
+    /// become placeholders unless Suhina has their counterpart, and racks become device groups.
     fn devices(&mut self, track: Node, track_name: &str) -> Vec<Device> {
         let Some(devices) = path(track, &["DeviceChain", "DeviceChain", "Devices"]) else { return Vec::new() };
-        devices.children().filter(Node::is_element).filter_map(|node| self.device(node, track_name)).collect()
+        let mut room = MAX_DEVICES;
+        self.chain(devices, track_name, 0, &mut room)
     }
 
-    fn device(&mut self, node: Node, track_name: &str) -> Option<Device> {
+    /// The devices of one chain, `depth` groups down, while the channel has `room` for more
+    /// (MAX_DEVICES at every depth together).
+    fn chain(&mut self, devices: Node, track_name: &str, depth: usize, room: &mut usize) -> Vec<Device> {
+        let mut chain = Vec::new();
+        for node in devices.children().filter(Node::is_element) {
+            if *room == 0 {
+                self.warn(format!(
+                    "track {track_name}: more than {MAX_DEVICES} devices; {} and the ones after it are left out",
+                    node.tag_name().name()
+                ));
+                break;
+            }
+            *room -= 1;
+            if let Some(device) = self.device(node, track_name, depth, room) {
+                chain.push(device);
+            } else {
+                // Nothing came of it (a plug-in without a description): it takes no room.
+                *room += 1;
+            }
+        }
+        chain
+    }
+
+    /// Live's Audio Effect Rack or Instrument Rack as a device group: each chain a branch, its
+    /// devices read like a track's (docs/spec/als-format.md › Audio Effect Rack and Instrument
+    /// Rack). `None` when the rack is nested too deep or has no chain to read.
+    fn rack(&mut self, node: Node, track_name: &str, depth: usize, room: &mut usize) -> Option<DeviceGroup> {
+        let instrument = node.has_tag_name("InstrumentGroupDevice");
+        if depth + 1 > MAX_DEVICE_GROUP_DEPTH {
+            self.warn(format!(
+                "track {track_name}: a rack nested deeper than {MAX_DEVICE_GROUP_DEPTH} is imported as a placeholder"
+            ));
+            return None;
+        }
+        let (branch_tag, inner) = if instrument {
+            ("InstrumentBranch", "MidiToAudioDeviceChain")
+        } else {
+            ("AudioEffectBranch", "AudioToAudioDeviceChain")
+        };
+        let nodes: Vec<Node> = path(node, &["Branches"])
+            .map(|b| b.children().filter(|n| n.has_tag_name(branch_tag)).collect())
+            .unwrap_or_default();
+        if nodes.len() > MAX_BRANCHES {
+            self.warn(format!("track {track_name}: a rack with {} chains keeps its first {MAX_BRANCHES}", nodes.len()));
+        }
+        let mut branches = Vec::new();
+        let mut zoned = false;
+        for (index, chain) in nodes.iter().take(MAX_BRANCHES).enumerate() {
+            let name = value(*chain, &["Name", "UserName"])
+                .filter(|n| !n.is_empty())
+                .or_else(|| value(*chain, &["Name", "EffectiveName"]).filter(|n| !n.is_empty()))
+                .map_or_else(|| format!("Chain {}", index + 1), str::to_string);
+            let mut branch = Branch::new(name);
+            let mixer = path(*chain, &["MixerDevice"]);
+            if let Some(volume) = mixer.and_then(|m| number(m, &["Volume", "Manual"])).filter(|v| *v >= 0.0) {
+                branch.volume = volume;
+            }
+            if let Some(pan) = mixer.and_then(|m| number(m, &["Panorama", "Manual"])) {
+                branch.pan = pan.clamp(-1.0, 1.0);
+            }
+            branch.mute = mixer.and_then(|m| boolean(m, &["Speaker", "Manual"])) == Some(false);
+            branch.solo = boolean(*chain, &["IsSoloed"]).unwrap_or(false);
+            let full = |names: &[&str], low: f64| {
+                let lowest = number(*chain, &[names, &["Min"]].concat()).unwrap_or(low);
+                let highest = number(*chain, &[names, &["Max"]].concat()).unwrap_or(127.0);
+                lowest <= low && highest >= 127.0
+            };
+            zoned |= !full(&["ZoneSettings", "KeyRange"], 0.0) || !full(&["ZoneSettings", "VelocityRange"], 1.0);
+            if let Some(devices) = path(*chain, &["DeviceChain", inner, "Devices"]) {
+                branch.devices = self.chain(devices, track_name, depth + 1, room);
+            }
+            branches.push(branch);
+        }
+        if zoned {
+            self.warn(format!(
+                "track {track_name}: a rack's chains have key or velocity zones; every chain plays every note for now"
+            ));
+        }
+        if branches.is_empty() {
+            branches.push(Branch::new("Chain 1"));
+        }
+        let mut group = DeviceGroup::with_branches(branches);
+        // Macros: Live has 16, Suhina's groups 8. Names that are not the default are kept.
+        for (index, slot) in group.macros.iter_mut().enumerate() {
+            if let Some(name) = value(node, &[&format!("MacroDisplayNames.{index}")]).filter(|n| !n.is_empty()) {
+                slot.name = name.to_string();
+            }
+        }
+        let moved_past = (MACROS..16).any(|i| {
+            number(node, &[&format!("MacroControls.{i}"), "Manual"]).is_some_and(|v| v != 0.0)
+                || value(node, &[&format!("MacroDisplayNames.{i}")])
+                    .is_some_and(|n| !n.is_empty() && n != format!("Macro {}", i + 1))
+        });
+        if moved_past {
+            self.warn(format!("track {track_name}: a rack's macros past the eighth are left out"));
+        }
+        Some(group)
+    }
+
+    fn device(&mut self, node: Node, track_name: &str, depth: usize, room: &mut usize) -> Option<Device> {
         let tag = node.tag_name().name();
         let enabled = boolean(node, &["On", "Manual"]).unwrap_or(true);
         let user_name = value(node, &["UserName"]).filter(|n| !n.is_empty());
@@ -453,6 +554,53 @@ impl Reader {
                 clip_host: false,
                 extensions,
             });
+        }
+        if (node.has_tag_name("AudioEffectGroupDevice") || node.has_tag_name("InstrumentGroupDevice"))
+            && let Some(group) = self.rack(node, track_name, depth, room)
+        {
+            let default =
+                if node.has_tag_name("InstrumentGroupDevice") { "Instrument Rack" } else { "Audio Effect Rack" };
+            let mut device = Device::group(user_name.unwrap_or(default), group);
+            device.enabled = enabled;
+            // A macro's position, 0 … 127 in Live, is 0 … 1 in Suhina.
+            for index in 0..MACROS {
+                if let Some(position) = number(node, &[&format!("MacroControls.{index}"), "Manual"]) {
+                    device
+                        .params
+                        .push(DeviceParam::new(format!("macro.{}", index + 1), (position / 127.0).clamp(0.0, 1.0)));
+                }
+            }
+            return Some(device);
+        }
+        // Live's Simpler and a Sampler with one sample play in Suhina's sampler, with their
+        // sample file (docs/spec/als-format.md › Simpler and Sampler).
+        if node.has_tag_name("OriginalSimpler") || node.has_tag_name("MultiSampler") {
+            let mut notes = Vec::new();
+            let import = devices::sampler(node, &mut |w| notes.push(w));
+            for note in notes {
+                self.warn(format!("track {track_name}: {note}"));
+            }
+            if let Some(import) = import {
+                let mut device = Device {
+                    name: user_name
+                        .unwrap_or(if node.has_tag_name("MultiSampler") { "Sampler" } else { "Simpler" })
+                        .to_string(),
+                    kind: DeviceKind::Builtin("sampler".into()),
+                    enabled,
+                    state: None,
+                    params: import.params,
+                    automation: Vec::new(),
+                    clip_host: false,
+                    extensions,
+                };
+                if let Some((file, absolute)) = &import.file {
+                    device.set_sample_reference(file, absolute.as_deref().unwrap_or(file));
+                }
+                if !import.slices.is_empty() && device.set_sample_slices(&import.slices).is_err() {
+                    self.warn(format!("track {track_name}: sampler slices not read; left automatic"));
+                }
+                return Some(device);
+            }
         }
         if !node.has_tag_name("PluginDevice") {
             self.warn(format!("track {track_name}: Live device {tag} is imported as a placeholder"));
@@ -895,7 +1043,7 @@ const MAX_ENVELOPE_EVENTS: usize = 100_000;
 fn time_signature(code: u32) -> Option<TimeSignature> {
     let numerator = u8::try_from(code % 99 + 1).ok()?;
     let denominator = u8::try_from(2u32.checked_pow(code / 99)?).ok()?;
-    (denominator <= 64).then_some(TimeSignature { numerator, denominator })
+    (denominator <= MAX_DENOMINATOR).then_some(TimeSignature { numerator, denominator })
 }
 
 fn empty_channel(id: ChannelId, name: &str, role: ChannelRole) -> Channel {

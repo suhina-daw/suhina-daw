@@ -3,7 +3,7 @@ description: How recording works: MIDI and audio takes into a clip slot or the a
 read_when: recording, record, take, record button, clip.record, transport.record, count-in, transport.setCountIn, record.state, MIDI recording, audio recording, Recorded folder, latency compensation of a take, overdub, loopback
 type: spec
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/record_tests.rs
@@ -49,12 +49,6 @@ names no other program's behaviour.
   what was recorded is visible; an audio take always has sound, even if silent.
 
 ## Where it goes
-
-Sampler's waveform Record/Stop controls use `device.recordSample`. The track must
-be armed with an audio input selected and the project saved. This records directly
-into the instrument source through the same recording writer, without making a
-clip. Start and stop use the current arrangement beat rather than launch
-quantization. Loading the finished take is one undo step; undo keeps the WAV file.
 
 ### Into a clip slot
 
@@ -192,6 +186,14 @@ track is a clip like any other: editing it leaves the take as it was.
 
 While recording into the arrangement, launching a slot plays it as usual; it is the slot record
 button that records into slots.
+
+### Into a Sampler
+
+The Record and Stop controls on a Sampler's waveform run `device.recordSample`: the track must be
+armed with an audio input chosen, and the project saved. The take goes through the same writer
+into the instrument's source, with no clip. It starts and stops at the current arrangement beat,
+not on the launch quantisation. Loading the finished take is one undo step, and undo keeps the
+WAV file.
 
 ## The count-in
 

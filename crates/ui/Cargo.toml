@@ -29,7 +29,7 @@ egui = "0.36"  # MIT OR Apache-2.0
 # Draws the logo from its SVG paths; already in the tree through winit on Linux.
 tiny-skia = { version = "0.12", default-features = false, features = ["std"] }  # BSD-3-Clause
 image = { version = "0.25.10", default-features = false, features = ["png"] } # MIT OR Apache-2.0; bounded user background decoding
-resvg = { version = "0.48", default-features = false, features = ["text"] } # MPL-2.0; static SVG skins with the bundled fonts, no system fonts or external resources
+resvg = { version = "0.49", default-features = false, features = ["text"] } # MPL-2.0; static SVG skins with the bundled fonts, no system fonts or external resources
 
 
 [dev-dependencies]

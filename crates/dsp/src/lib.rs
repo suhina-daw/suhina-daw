@@ -3,14 +3,26 @@
 
 //! Signal-processing building blocks for Suhina's built-in effects and instruments (ADR 0004): gain
 //! conversions, the pan law, parameter smoothing, attack/release followers, filters, crossovers,
-//! LFO waveforms and tempo sync, waveshapers, oversampling, delay lines and allpasses.
+//! LFO waveforms and tempo sync, waveshapers, oversampling, delay lines and allpasses, and a
+//! band spectrum for panels.
 //!
 //! Nothing here depends on the engine, the model or a device: every block is plain state plus a
 //! per-sample or per-block `process`, so it can be tested on its own and reused by any device.
 //! Constructors and coefficient calculations may run anywhere; every `process`, `next` and
 //! `reset` method is real-time safe (no allocation, locking or I/O) and never panics, whatever
 //! numbers it is given.
+//!
+//! In detail: Signal-processing blocks for devices: dB conversions, parameter smoothing,
+//! attack/release followers, biquad filters, a DC blocker, Linkwitz-Riley crossovers (24 and 48
+//! dB/octave), LFO waveforms (with a smoothly wandering random one) and their tempo sync (rate
+//! modes, an LFO clock locked to the song), waveshapers, a 2× oversampler (linear phase) and a
+//! low-latency one (IIR half-band), first-order filters and shelves, a state-variable filter with
+//! every second-order response, delay lines with linear and cubic interpolation and a Schroeder
+//! allpass, a trim delay that moves smoothly while running, a windowed-sinc polyphase resampler and
+//! IR convolution (uniform-partitioned, `fft-convolver`) with its `Ir`. Real-time safe, panic-free
+//! on any input.
 
+pub mod analyser;
 pub mod biquad;
 pub mod convolver;
 pub mod crossover;
@@ -31,6 +43,7 @@ pub mod svf;
 pub mod sync;
 pub mod trim_delay;
 
+pub use analyser::Analyser;
 pub use biquad::{Biquad, Coefficients};
 pub use convolver::{Convolver, Ir, MAX_FRAMES as IR_MAX_FRAMES, PARTITION};
 pub use crossover::{LinkwitzRiley, Slope};

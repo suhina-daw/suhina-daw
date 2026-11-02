@@ -2,8 +2,9 @@
 description: Presets for built-in and SDK-authored devices - where stock presets live, their licence (CC0), contribution rules and the shared format
 read_when: preset, stock preset, factory preset, preset contribution, CC0, presets folder, preset format, preset licence, DX7 bank, .sd preset
 type: decision
-status: current
-last_verified: 2026-10-16
+status: accepted
+built: partly
+last_verified: 2026-11-02
 covers:
   - presets/**
   - .github/PULL_REQUEST_TEMPLATE/preset.md
@@ -13,8 +14,6 @@ covers:
 
 # 0014: Presets for devices
 
-- **Status:** accepted (location, licence, contribution rules and shared format); loading and
-  saving presets are not implemented
 - **Date:** 2026-10-16
 
 ## Context
@@ -87,6 +86,16 @@ and descriptions, and the files themselves.
    gives the same values; applying an `.sd` preset to a matching existing device gives its migrated
    parameter values. A render of a short phrase through each preset is added when the device has
    golden renders.
+
+## Amendment: established style names (2026-10-29)
+
+A name that several products use for a style of sound, and that no one holds as a mark for audio
+software, is a style name rather than an imitation of a product, as "Opto" or "Vari-mu" name a kind
+of compressor. Such a name may be a preset's or a quick preset's name. "OTT" (heavy upward and
+downward compression on three bands) is one: other multiband compressors offer an "OTT" quick
+setting, the name was checked in TMView on 2026-10-28 and is held by no one for audio software,
+and it is not Suhina's branding. The preset's values are still Suhina's own, and a style name is
+never a product's or a device's name.
 
 ## Consequences
 

@@ -139,6 +139,8 @@ pub struct GraphBox {
     pub canvas: Option<std::sync::Arc<suhina_device_sdk::ui::DeviceUi>>,
     /// The device's larger panel, opened from its header over the main area, if it has one.
     pub expanded: Option<std::sync::Arc<suhina_device_sdk::ui::DeviceUi>>,
+    /// Controls a built-in's layout puts in its header row, right of its name.
+    pub header: Option<std::sync::Arc<suhina_device_sdk::ui::DeviceUi>>,
     /// The visible nodes form one chain, so the list marks each step with an arrow.
     pub linear: bool,
     /// The names of an `.sd` graph's visible nodes, in signal order; empty for the others.
@@ -173,6 +175,36 @@ pub struct GraphParameter {
 }
 
 impl GraphParameter {
+    /// A device's live value handed to its canvas (`#r0`…), which no list shows.
+    pub(crate) fn is_readout(&self) -> bool {
+        self.id.starts_with('#')
+    }
+
+    /// The live value `index` of a device for its canvas, as the SDK's `readout` expression
+    /// looks it up.
+    pub(crate) fn readout(index: usize, value: f32) -> Option<Self> {
+        let id = suhina_device_sdk::ui::READOUT_IDS.get(index)?;
+        Some(Self::host_value(id, value))
+    }
+
+    /// A value the host hands a canvas under `id` (`#r0`, `#expanded`): read like a parameter,
+    /// never shown in a list or changed by a control.
+    pub(crate) fn host_value(id: &str, value: f32) -> Self {
+        let value = if value.is_finite() { f64::from(value) } else { 0.0 };
+        Self {
+            text: String::new(),
+            default: 0.0,
+            ui: suhina_device_sdk::ParameterUi::default(),
+            control: ParameterControl::default(),
+            unit: String::new(),
+            id: id.into(),
+            name: id.into(),
+            min: value.min(0.0),
+            max: value.max(0.0).max(f64::MIN_POSITIVE),
+            value,
+        }
+    }
+
     /// `parameter` as a panel shows it, at `value`.
     pub(crate) fn new(parameter: &suhina_device_sdk::Parameter, value: f64) -> Self {
         Self {
@@ -721,6 +753,7 @@ pub(super) fn device_box(
             (DeviceKind::Builtin(id), _) => suhina_device_registry::panel(id).map(|panel| GraphBox {
                 canvas: panel.ui.clone(),
                 expanded: panel.expanded.clone(),
+                header: panel.header.clone(),
                 linear: false,
                 nodes: vec![],
                 parameters: graph_parameters(&panel.parameters, d),
@@ -730,6 +763,7 @@ pub(super) fn device_box(
                 GraphBox {
                     canvas: cached.canvas.clone(),
                     expanded: cached.expanded.clone(),
+                    header: None,
                     linear: graph.connections.len() == graph.nodes.len().saturating_sub(1)
                         && graph
                             .nodes
@@ -787,7 +821,7 @@ pub(super) fn plugin_graph(d: &suhina_engine::model::Device, list: &[suhina_plug
             }
         })
         .collect();
-    GraphBox { canvas: None, expanded: None, linear: false, nodes: vec![], parameters }
+    GraphBox { canvas: None, expanded: None, header: None, linear: false, nodes: vec![], parameters }
 }
 
 /// A device group's settings and its branches with their devices.

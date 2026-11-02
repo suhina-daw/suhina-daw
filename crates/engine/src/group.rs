@@ -100,6 +100,8 @@ impl Smoothed {
 /// One branch of a running group.
 pub(crate) struct BranchRun {
     pub(crate) slots: Vec<Slot>,
+    /// Each slot's device in the stored branch: one that cannot run has no slot.
+    positions: Vec<usize>,
     /// Each slot's parameter values, as the chain keeps them, so a graph swap can set the new
     /// values on running devices.
     values: Vec<Vec<f64>>,
@@ -107,6 +109,7 @@ pub(crate) struct BranchRun {
     /// Each slot's manual sample slices, as the chain keeps them, so a graph swap can hand the
     /// new ones to a running Sampler.
     sample_slices: Vec<Option<std::sync::Arc<[f64]>>>,
+    sample_edits: Vec<Option<std::sync::Arc<suhina_device_api::sample_edits::SampleEdits>>>,
     /// The lanes of its devices' automated parameters, by slot in the branch.
     lanes: DeviceLanes,
     buffer: Vec<f32>,
@@ -127,7 +130,7 @@ pub(crate) struct GroupSlot {
     gain: Smoothed,
     /// Its parameter values, in [`GROUP_PARAMS`] order.
     values: Vec<f64>,
-    /// Whether its branches start with an instrument: it plays the notes and has no dry signal.
+    /// Whether a branch holds an instrument: it plays the notes and has no dry signal.
     pub(crate) instrument: bool,
     /// The dry signal of the current span, delayed by the group's latency.
     dry: Vec<f32>,
@@ -158,6 +161,7 @@ pub(crate) struct Built {
     pub(crate) values: Vec<f64>,
     pub(crate) latency: u32,
     pub(crate) slices: Option<std::sync::Arc<[f64]>>,
+    pub(crate) edits: Option<std::sync::Arc<suhina_device_api::sample_edits::SampleEdits>>,
 }
 
 impl Builder<'_> {
@@ -210,6 +214,7 @@ impl Builder<'_> {
             values: Vec::new(),
             latency,
             slices: None,
+            edits: None,
         })
     }
 
@@ -222,6 +227,8 @@ impl Builder<'_> {
         }
         let slices: Option<std::sync::Arc<[f64]>> = stored.sample_slices().map(std::sync::Arc::from);
         device.load_sample_slices(slices.clone());
+        let edits = crate::assets::sample_edits(stored);
+        device.load_sample_edits(edits.clone());
         device.prepare(f64::from(self.sample_rate)).ok()?;
         let info = device.info();
         let mut values: Vec<f64> = info.params.iter().map(|p| p.default).collect();
@@ -239,7 +246,14 @@ impl Builder<'_> {
         let latency = device.latency();
         // A built-in MIDI effect runs on the events, as in a chain (#678).
         let kind = if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) };
-        Some(Built { slot: kind, id: crate::chain::device_identity(id, stored, self.audio), values, latency, slices })
+        Some(Built {
+            slot: kind,
+            id: crate::chain::device_identity(id, stored, self.audio),
+            values,
+            latency,
+            slices,
+            edits,
+        })
     }
 
     fn sd(&self, stored: &suhina_model::Device, lanes: &mut DeviceLanes, slot: usize) -> Option<Built> {
@@ -288,6 +302,7 @@ impl Builder<'_> {
             values,
             latency: 0,
             slices: None,
+            edits: None,
         })
     }
 
@@ -310,9 +325,11 @@ impl Builder<'_> {
         for (b, branch) in group.branches.iter().enumerate().take(suhina_model::MAX_BRANCHES) {
             let mut run = BranchRun {
                 slots: Vec::new(),
+                positions: Vec::new(),
                 values: Vec::new(),
                 ids: Vec::new(),
                 sample_slices: Vec::new(),
+                sample_edits: Vec::new(),
                 lanes: DeviceLanes::none(),
                 buffer: vec![0.0; MAX_BLOCK * 2],
                 left: Smoothed::new(0.0, self.sample_rate),
@@ -327,9 +344,11 @@ impl Builder<'_> {
                 if let Some(built) = self.device(device, depth + 1, &inner, (&mut run.lanes, slot)) {
                     run.latency = run.latency.saturating_add(built.latency);
                     run.slots.push(built.slot);
+                    run.positions.push(i);
                     run.ids.push(built.id);
                     run.values.push(built.values);
                     run.sample_slices.push(built.slices);
+                    run.sample_edits.push(built.edits);
                 }
             }
             let (left, right) = heard_gains(branch, any_solo);
@@ -340,7 +359,8 @@ impl Builder<'_> {
         let values = group_param_values(&stored.params);
         let mix = values.get(MIX).copied().unwrap_or(1.0);
         let gain = values.get(GAIN).copied().unwrap_or(0.0);
-        let instrument = branches.iter().any(|b| b.slots.first().is_some_and(is_instrument));
+        // A MIDI effect may lead the instrument in its branch.
+        let instrument = branches.iter().any(|b| b.slots.iter().any(is_instrument));
         let cap = self.sample_rate.saturating_mul(crate::MAX_LATENCY_SECONDS);
         let (latency, delays) = compensation(branches.iter().map(|b| b.latency), cap);
         for (branch, delay) in branches.iter_mut().zip(delays) {
@@ -365,6 +385,7 @@ impl Builder<'_> {
             values,
             latency,
             slices: None,
+            edits: None,
         })
     }
 }
@@ -376,6 +397,33 @@ pub(crate) fn compensation(latencies: impl Iterator<Item = u32>, cap: u32) -> (u
     let latencies: Vec<u32> = latencies.map(|l| l.min(cap)).collect();
     let most = latencies.iter().copied().max().unwrap_or(0);
     (most, latencies.iter().map(|&l| most - l).collect())
+}
+
+/// Hands `visit` the live values of each device among `slots` and inside their groups, with the
+/// device's path (`crate::meters::readout_step`) from `parent`. Never allocates.
+pub(crate) fn visit_readouts(
+    slots: &[Slot],
+    positions: &[usize],
+    parent: u64,
+    visit: &mut dyn FnMut(u64, [f32; suhina_device_api::MAX_READOUTS]),
+) {
+    for (slot, &position) in slots.iter().zip(positions) {
+        let path = crate::meters::readout_step(parent, position);
+        match slot {
+            Slot::Device(device) => {
+                if let Some(values) = device.readouts() {
+                    visit(path, values);
+                }
+            }
+            Slot::Group(group) => {
+                for (index, branch) in group.branches.iter().enumerate() {
+                    let branch_path = crate::meters::readout_step(path, index);
+                    visit_readouts(&branch.slots, &branch.positions, branch_path, visit);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// A branch's gains while `any_solo` says whether a branch of its group is soloed: 0 while it
@@ -474,6 +522,9 @@ impl GroupSlot {
                         if let Some(points) = new.sample_slices.get_mut(position) {
                             device.swap_sample_slices(points);
                         }
+                        if let Some(edits) = new.sample_edits.get_mut(position) {
+                            device.swap_sample_edits(edits);
+                        }
                         // A parameter that follows a lane keeps its running value until the lane
                         // sets it in the next block.
                         for (index, &value) in
@@ -495,6 +546,7 @@ impl GroupSlot {
                 }
             }
             std::mem::swap(&mut running.lanes, &mut new.lanes);
+            std::mem::swap(&mut running.positions, &mut new.positions);
             for (values, new_values) in running.values.iter_mut().zip(&new.values) {
                 for (value, &new) in values.iter_mut().zip(new_values) {
                     *value = new;

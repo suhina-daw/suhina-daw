@@ -3,12 +3,12 @@ description: Author data-only effects, MIDI effects and instruments in Rust or w
 read_when: make an effect, MIDI effect or instrument, SDK tutorial, .sd example, node discovery
 type: howto
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-11-01
 covers:
   - crates/device-sdk/src/author.rs
   - crates/device-sdk/src/ui/widgets.rs
   - crates/device-sdk/examples/stereo_utility.rs
-  - crates/device-sdk/examples/auto_pan.rs
+  - crates/device-sdk/examples/lfo_pan.rs
   - crates/device-sdk/examples/filter.rs
   - crates/device-sdk/examples/distortion.rs
   - crates/device-sdk/examples/delay.rs
@@ -71,7 +71,7 @@ It consumes the builder and returns an ordinary `DeviceGraph`; set panel, editor
 metadata on that graph and validate again when saving or compiling. Builder handles cannot be
 used to edit the finished graph. Existing low-level authoring remains supported.
 
-The filter, auto-pan and Delay examples use this API. Their ids, parameter contracts, panel data
+The filter, LFO pan and Delay examples use this API. Their ids, parameter contracts, panel data
 and sound are regression-tested against pre-migration `.sd` fixtures. The Delay graph is more
 explicit about its node references; the main reduction in repetition is in its panel construction.
 No new file format, runtime or executable extension is introduced.
@@ -130,7 +130,7 @@ Generate six independent examples:
 
 ```sh
 cargo run -p suhina-device-sdk --example stereo_utility -- target/sdk-examples/stereo-utility.sd
-cargo run -p suhina-device-sdk --example auto_pan -- target/sdk-examples/auto-pan.sd
+cargo run -p suhina-device-sdk --example lfo_pan -- target/sdk-examples/lfo-pan.sd
 cargo run -p suhina-device-sdk --example filter -- target/sdk-examples/filter.sd
 cargo run -p suhina-device-sdk --example distortion -- target/sdk-examples/distortion.sd
 cargo run -p suhina-device-sdk --example delay -- target/sdk-examples/delay.sd
@@ -140,7 +140,7 @@ cargo run -p suhina-device-sdk --example validate -- target/sdk-examples/delay.s
 
 Each example includes its own graph-building and control-layout helpers; no shared example module is required.
 
-Read the individual files under `crates/device-sdk/examples/` for complete graphs: stereo width, auto-pan,
+Read the individual files under `crates/device-sdk/examples/` for complete graphs: stereo width, LFO pan,
 low-pass filter, distortion with wet/dry, filtered/modulated delay and a stereo-linked compressor.
 The compressor is a hard-knee example, the distortion is not oversampled and oscillators are
 not band-limited; these examples demonstrate composition rather than production mastering.
