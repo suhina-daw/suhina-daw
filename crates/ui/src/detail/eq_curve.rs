@@ -337,18 +337,20 @@ fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f
     // attack, down with the release — the DSP crate's follower, the compressor's own block,
     // driven once a frame at the frame's own step. Without it each window's transform redraws
     // the area from nothing every 30 ms and percussive material reads as a flicker.
-    let shown_id = egui::Id::new(("eq-spectrum-shown", track.0, device, watch_generation));
+    let shown_id = egui::Id::new(("eq-spectrum-shown", track.0, device));
     let now = ui.input(|i| i.time);
-    // The glide's held levels belong to one monitor: a session switch reuses the same
-    // track and device keys, and the next session's first frames would glide from the
-    // previous session's levels. The monitor's Weak is stored with the levels, and the
-    // levels are kept only while theWeak points at the monitor whose bands produced them.
+    // The glide's held levels belong to one monitor at one watch generation: a session
+    // switch reuses the same track and device keys, and a graph swap gives the same keys a
+    // new owner and a reset ring, so the kept levels are read only while the stored weak
+    // handle still points at the panel's monitor and the watch's generation is the one those
+    // levels came from. The entry stays one per key (the band data is its shapeless
+    // neighbours'), dropped instead of accumulated.
     let owner: std::sync::Weak<suhina_engine::MeterMonitor> = Arc::downgrade(&monitor);
-    let stored = ui
-        .ctx()
-        .data(|d| d.get_temp::<(std::sync::Weak<suhina_engine::MeterMonitor>, [f32; ANALYSER_BANDS], f64)>(shown_id));
+    let stored = ui.ctx().data(|d| {
+        d.get_temp::<(std::sync::Weak<suhina_engine::MeterMonitor>, u32, [f32; ANALYSER_BANDS], f64)>(shown_id)
+    });
     let (mut shown, last) = match stored {
-        Some((kept, shown, last)) if kept.ptr_eq(&owner) => (shown, last),
+        Some((kept, generation, shown, last)) if kept.ptr_eq(&owner) && generation == watch_generation => (shown, last),
         _ => (bands, now),
     };
     let frame = 1.0 / (now - last).clamp(1.0e-3, 1.0);
@@ -356,7 +358,7 @@ fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f
     for (shown, target) in shown.iter_mut().zip(bands.iter()) {
         *shown = follower.rise(f64::from(*shown), f64::from(*target)).clamp(-90.0, 30.0) as f32;
     }
-    ui.ctx().data_mut(|d| d.insert_temp(shown_id, (owner, shown, now)));
+    ui.ctx().data_mut(|d| d.insert_temp(shown_id, (owner, watch_generation, shown, now)));
     Some(shown)
 }
 
