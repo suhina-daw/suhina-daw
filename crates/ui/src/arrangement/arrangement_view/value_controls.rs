@@ -47,23 +47,14 @@ pub(super) fn send_knob(
     let level = if send.level_db.is_finite() { send.level_db } else { widgets::SEND_RANGE.0 };
     let mut committed = None;
     // Heard while it is dragged, in one undo step (#705).
-    match widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, widgets::SEND_RANGE, widgets::SEND_RANGE.0)
-    {
-        Drag::Moving(v) => {
-            state.send_drag = Some((track, send.target, v));
-            actions.push(commands::set_send(track, send.target, v));
-        }
-        Drag::Done(v) => {
-            state.send_drag = None;
-            committed = Some(v);
-            actions.push(commands::set_send(track, send.target, v));
-        }
-        Drag::Set(v) => {
-            state.send_drag = None;
-            committed = Some(v);
-            actions.push(commands::set_send_outright(track, send.target, v));
-        }
-        Drag::None => {}
+    let drag =
+        widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, widgets::SEND_RANGE, widgets::SEND_RANGE.0);
+    if !matches!(drag, Drag::None) {
+        let frame =
+            commands::ChannelControlDrag { track, control: commands::ChannelControl::Send(send.target) }.frame(drag);
+        state.send_drag = frame.moving.map(|v| (track, send.target, v));
+        committed = frame.committed;
+        actions.extend(frame.action);
     }
     response.context_menu(|ui| {
         for (pre, label) in [(true, "Before the fader (pre)"), (false, "After the fader (post)")] {
@@ -173,13 +164,11 @@ pub(super) fn value_control(
         // drag is one step. A selection of several moves together when the drag ends, by the
         // same amount (`value_action`).
         let one = tracks.len() == 1;
-        let set = |v: f64| match control {
-            Control::Volume => commands::set_volume(&[track.0], v, true),
-            Control::Pan => Action::new(
-                "track.setPan",
-                json!({ "tracks": [track.0], "pan": (v * 100.0).round() / 100.0, "gesture": commands::gesture(format_args!("pan:{}", track.0)) }),
-            ),
+        let channel = match control {
+            Control::Volume => commands::ChannelControl::Volume,
+            Control::Pan => commands::ChannelControl::Pan,
         };
+        let set = |v: f64| commands::ChannelControlDrag { track, control: channel }.action(v, true);
         match widgets::drag_value_axis(
             ui,
             &response,

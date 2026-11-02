@@ -1316,34 +1316,14 @@ fn pan_row(
         _ => None,
     };
     // Every frame of a drag sets the value, so it is heard while dragging, all in one gesture,
-    // so the drag is one step.
-    let set_pan = |v: f64| {
-        Action::new(
-            "track.setPan",
-            json!({
-                "tracks": [track.0], "pan": (v * 100.0).round() / 100.0,
-                "gesture": commands::gesture(format_args!("pan:{}", track.0)),
-            }),
-        )
-    };
+    // so the drag is one step (`ChannelControlDrag`, as the Arrangement's headers do).
     let mut committed = None;
-    match widgets::drag_value(ui, &pan_response, &mut preview, column.pan, 0.01, 0.02, (-1.0, 1.0), 0.0) {
-        Drag::Moving(v) => {
-            state.drag = Some((track, Control::Pan, v));
-            actions.push(set_pan(v));
-        }
-        Drag::Done(v) => {
-            state.drag = None;
-            committed = Some(v);
-            actions.push(set_pan(v));
-        }
-        Drag::Set(v) => {
-            state.drag = None;
-            committed = Some(v);
-            actions
-                .push(Action::new("track.setPan", json!({ "tracks": [track.0], "pan": (v * 100.0).round() / 100.0 })));
-        }
-        Drag::None => {}
+    let drag = widgets::drag_value(ui, &pan_response, &mut preview, column.pan, 0.01, 0.02, (-1.0, 1.0), 0.0);
+    if !matches!(drag, Drag::None) {
+        let frame = commands::ChannelControlDrag { track, control: commands::ChannelControl::Pan }.frame(drag);
+        state.drag = frame.moving.map(|v| (track, Control::Pan, v));
+        committed = frame.committed;
+        actions.extend(frame.action);
     }
     // Shown after this frame's drag, so the knob never trails the pointer.
     let pan = match state.drag {
@@ -1450,7 +1430,7 @@ fn send_knobs(
         let level = if send.level_db.is_finite() { send.level_db } else { widgets::SEND_RANGE.0 };
         let mut committed = None;
         // Heard while it is dragged, every frame of it in one undo step, as the fader is (#705).
-        match widgets::drag_value(
+        let drag = widgets::drag_value(
             ui,
             &response,
             &mut preview,
@@ -1459,22 +1439,13 @@ fn send_knobs(
             1.0,
             widgets::SEND_RANGE,
             widgets::SEND_RANGE.0,
-        ) {
-            Drag::Moving(v) => {
-                state.drag = Some((track, control, v));
-                actions.push(commands::set_send(track, send.target, v));
-            }
-            Drag::Done(v) => {
-                state.drag = None;
-                committed = Some(v);
-                actions.push(commands::set_send(track, send.target, v));
-            }
-            Drag::Set(v) => {
-                state.drag = None;
-                committed = Some(v);
-                actions.push(commands::set_send_outright(track, send.target, v));
-            }
-            Drag::None => {}
+        );
+        if !matches!(drag, Drag::None) {
+            let frame = commands::ChannelControlDrag { track, control: commands::ChannelControl::Send(send.target) }
+                .frame(drag);
+            state.drag = frame.moving.map(|v| (track, control, v));
+            committed = frame.committed;
+            actions.extend(frame.action);
         }
         response.context_menu(|ui| {
             for (pre, label) in [(true, "Before the fader (pre)"), (false, "After the fader (post)")] {
