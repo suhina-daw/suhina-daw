@@ -26,8 +26,8 @@ When the category is **Plug-ins** (and no place, search or tag narrows it), a sw
 results chooses **Instruments** (the default) or **Effects**, and the results are one list of
 those plug-ins, no headings: Suhina's own built-in instruments and effects are not in it (they
 are under the **Instruments** and **Effects** categories). The list has two columns, **Name**
-and **Format** (`vst3`, `clap`, and `vst2` once VST2 plug-ins are hosted). The vendor, version,
-file and the rest are the plug-in manager's ([plug-in manager](plugin-manager.md)).
+and **Format** (`vst3`, `clap`, and `vst2` where the host's `vst2` feature is on). The vendor,
+version, file and the rest are the plug-in manager's ([plug-in manager](plugin-manager.md)).
 
 Each column heading is a button: clicking it sorts by that column, clicking again reverses; the
 name sorts in natural order, the format by its text, the name breaking ties. The choice of

@@ -3,7 +3,7 @@ description: Where the VST2 interface description comes from — the VeSTige hea
 read_when: VST2, VST 2, AEffect, ABI, opcode, dispatcher, audioMaster, clean-room, reverse engineering, VeSTige, vestige.h, Ardour, LMMS, vst2sdk, FST, yabridge, plug-in interface description, VST trademark, provenance
 type: decision
 status: accepted
-built: no
+built: partly
 last_verified: 2026-10-31
 ---
 
@@ -116,6 +116,14 @@ and tests; Ardour, LMMS and yabridge have distributed hosts on the same header f
 advice, and it makes no claim that a court has approved the header. The naming rules of decision 5
 stay. Decision 6 now says what a claim or request does: it starts a reconsideration recorded as an
 amendment, it does not stop distribution by itself; legal advice against shipping does.
+
+## Amendment: reading another host's behaviour (2026-11-02)
+
+Ardour's host code may be read as yabridge's may, for how a host behaves where a plug-in fails: which
+calls it makes and in what order, and what it hands a plug-in. It is no source of interface facts:
+nothing is copied from it, no value or op-code comes from it, and what it suggests counts only once
+our own probe has shown it against a plug-in, marked *observed* as decision 4 asks. Decided by the
+maintainer for the crashes in `docs/spec/plugin-vst2.md` › *Open questions*.
 
 ## Alternatives considered
 

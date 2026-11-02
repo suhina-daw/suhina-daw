@@ -44,14 +44,22 @@ pub struct Folder {
     pub standard: bool,
 }
 
-/// The format a standard folder holds, from its name (`…/VST3`, `…/CLAP`, `~/.clap`).
+/// The format a standard folder holds, from its name (`…/VST3`, `…/CLAP`, `~/.clap`, the VST2
+/// conventions `standard_folders` names).
 fn standard_format(path: &Path) -> FolderFormat {
     let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     match name.trim_start_matches('.') {
         "vst3" => FolderFormat::Vst3,
         "clap" => FolderFormat::Clap,
+        "vst" | "vst2" | "vstplugins" | "shared" => FolderFormat::Vst2,
         _ => FolderFormat::Any,
     }
+}
+
+/// The format of the standard folder at `path`. A folder `CLAP_PATH` names is the user's choice
+/// of place, so its name says nothing: it is taken for every format, and its `.clap` files found.
+fn folder_format(path: &Path, clap_path: &[PathBuf]) -> FolderFormat {
+    if clap_path.iter().any(|folder| folder == path) { FolderFormat::Any } else { standard_format(path) }
 }
 
 /// Which host process a plug-in's instances run in (ADR 0006, decision 2).
@@ -319,8 +327,9 @@ impl Library {
         self.load();
         let mut list: Vec<Folder> = Vec::new();
         let standard = if self.standard { standard_folders() } else { Vec::new() };
+        let clap_path = crate::scan::clap_path_folders();
         for path in standard {
-            let format = standard_format(&path);
+            let format = folder_format(&path, &clap_path);
             list.push(Folder { enabled: !self.off.contains(&path), path, format, standard: true });
         }
         for (path, format) in &self.custom {
