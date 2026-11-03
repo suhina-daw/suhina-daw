@@ -1000,10 +1000,12 @@ fn results_view(
         // gesture's two clicks are within egui's double-click window (0.3 s, 6 pt) and its
         // first one toggled already, so the double would open and close it again (#293); and
         // not on a heading or a folder, whose single clicks toggle above, so a double-click
-        // leaves it open.
+        // leaves it open. A device that opens on its presets is added, as any device is.
         let on_chevron = row.opens
             && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| p.x < chevron_zone(area.left(), row.depth));
-        if row.opens && !on_chevron && !opens_on_click(row) {
+        if on_chevron && row.item.kind != ItemKind::Preset {
+            // Its first click toggled it, and adding it as well would be a second action.
+        } else if row.opens && !on_chevron && row.item.kind == ItemKind::Preset {
             state.toggle(row.node());
         } else if row.item.kind == ItemKind::Project {
             out.open_project = row.item.path();

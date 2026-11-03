@@ -351,9 +351,11 @@ Amendment: device panels for built-in devices).
 
 A **preset** is its device with the preset's values: a DX7 voice is the FM synth playing that
 voice (a bank adds its first voice; a voice row inside the bank adds that voice). A
-`.preset.suhina` file is the device it names, and *Stock presets* in All and Presets lists the ones
-that ship with Suhina (search finds them by name and tag). Several devices dropped together are
-added in the order they were selected.
+`.preset.suhina` file is the device it names. The ones that ship with Suhina are listed under their
+device twice: a built-in device with presets opens on them with its chevron, and *Stock presets* in
+All and Presets holds a heading per device (search finds them by name and tag). The device's own
+row, dragged or double-clicked, adds it at its defaults, and a preset's row adds it with that
+preset. Several devices dropped together are added in the order they were selected.
 
 ### Copying samples out
 
