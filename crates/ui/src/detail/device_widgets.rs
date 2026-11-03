@@ -1,9 +1,9 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What a device panel's [`device_canvas`] draws from device state beside its parameters:
-//! the device's own on/off switch in its body, the file rows and the fault note. The
-//! device-SDK names them for layouts (`Widget::DeviceSwitch`, `Widget::DeviceFiles`,
+//! What a device panel's [`super::device_canvas`] draws from device state beside its
+//! parameters: the device's own on/off switch in its body, the file rows and the fault note.
+//! The device-SDK names them for layouts (`Widget::DeviceSwitch`, `Widget::DeviceFiles`,
 //! `Widget::DeviceNote`), a built-in's layout places them, and every change they make is
 //! still a `device.*` command ([docs/spec/nam-amp-and-cab.md] › The panels).
 
@@ -48,7 +48,8 @@ pub struct Lists {
 
 /// What a canvas's device widgets read beside its parameters: the device's own state and,
 /// for a file-backing device, the folders' lists. What drew the panel hands it each frame;
-/// [`PanelState::none`] is what a canvas without body device controls reads.
+/// a canvas whose device places no device widgets hands the default state instead (no file,
+/// nothing listed).
 #[derive(Clone)]
 pub struct PanelState<'a> {
     /// The device's shown name, for the controls' accessible names ([`PanelState::label`]).
@@ -193,7 +194,11 @@ pub(crate) fn switch(
 ) {
     let label = state.label();
     let id = egui::Id::new(("device-switch", track.0, &at.0));
-    let response = ui.interact(rect, id, Sense::click());
+    let response = ui.interact(rect, id, Sense::click()).on_hover_text(if state.enabled {
+        format!("Click to switch the device off; the {} keeps its settings", label)
+    } else {
+        format!("Click to enable the {} again", label)
+    });
     let (fill, text) = widgets::toggle_colors(ui, &response, state.enabled);
     ui.painter().fill_background(rect, 3.0, fill);
     let word = if state.enabled { "On" } else { "Off" };
@@ -210,9 +215,9 @@ pub(crate) fn switch(
 }
 
 /// A `DeviceFiles` control: the row its `part` places, at `rect`'s bounds. The dropdowns'
-/// pills show the current pack and the file's own name ([Folders] › Packs), the steppers
-/// step through them wrapping. Choices and steps run `device.setNamFile`, one undo step,
-/// only when the file they ask for differs from the device's current.
+/// pills show the current pack and the file's own name (nam spec › Folders › Packs), the
+/// steppers step through them wrapping. Choices and steps run `device.setNamFile`, one undo
+/// step, only when the file they ask for differs from the device's current.
 #[allow(clippy::too_many_arguments)] // the row's bounds, part, words, state and dispatch
 pub(crate) fn files(
     ui: &mut Ui,
