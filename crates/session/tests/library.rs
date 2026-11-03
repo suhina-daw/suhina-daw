@@ -107,7 +107,7 @@ fn search_finds_stock_presets_by_name_and_tag() {
     let settings = temp("stock");
     let mut p = projects(&settings);
     let presets = run(&mut p, "library.search", json!({ "category": "presets" })).unwrap();
-    assert!(names(&presets).contains(&"Warm FM Bass"), "{presets}");
+    assert!(names(&presets).iter().any(|name| name == "Warm FM Bass"), "{presets}");
     let by_tag = run(&mut p, "library.search", json!({ "category": "presets", "text": "trance" })).unwrap();
     assert_eq!(names(&by_tag), ["Wide Trance Pad"]);
     assert_eq!(by_tag["items"][0]["item"], "stock:fm-synth/wide-trance-pad");
@@ -115,7 +115,7 @@ fn search_finds_stock_presets_by_name_and_tag() {
     assert_eq!((info["kind"].as_str(), info["device"].as_str()), (Some("preset"), Some("fm-synth")));
     assert!(run(&mut p, "library.info", json!({ "item": "stock:fm-synth/nothing" })).is_err());
     let instruments = run(&mut p, "library.search", json!({ "category": "instruments" })).unwrap();
-    assert!(!names(&instruments).contains(&"Warm FM Bass"));
+    assert!(!names(&instruments).iter().any(|name| name == "Warm FM Bass"));
     let _ = std::fs::remove_dir_all(&settings);
 }
 
