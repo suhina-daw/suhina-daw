@@ -475,6 +475,8 @@ pub struct App {
     about: About,
     /// When Settings › Audio last listed the MIDI ports, so a controller plugged in shows up.
     midi_listed: Option<std::time::Instant>,
+    /// Follows the audio devices while Settings › Audio shows, so headphones connected later show up.
+    audio_devices: suhina_session::audio::DeviceWatch,
     /// The themes to pick from; the settings say which is in use.
     themes: Themes,
     /// The project dialog (File › New or open) while it shows, and what it lists.
@@ -680,6 +682,7 @@ impl App {
             plugin_dialog_hidden: false,
             about: About::default(),
             midi_listed: None,
+            audio_devices: suhina_session::audio::DeviceWatch::default(),
             themes: Themes::default(),
             project_dialog: None,
             project_lists: Lists::default(),
