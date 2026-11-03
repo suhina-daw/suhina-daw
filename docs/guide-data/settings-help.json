@@ -365,7 +365,7 @@
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings.rs",
       "crates/ui/src/app.rs",
-      "crates/ui/src/detail/nam_panel.rs",
+      "crates/ui/src/detail/device_widgets.rs",
       "docs/spec/nam-amp-and-cab.md"
     ]
   },
@@ -379,7 +379,7 @@
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings.rs",
       "crates/ui/src/app.rs",
-      "crates/ui/src/detail/nam_panel.rs",
+      "crates/ui/src/detail/device_widgets.rs",
       "docs/spec/nam-amp-and-cab.md"
     ]
   },

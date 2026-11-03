@@ -219,9 +219,9 @@ enum AfterLeaving {
 fn scan_sets(
     folder: &std::path::Path,
     extension: &str,
-    previous: &[crate::detail::nam_panel::Set],
+    previous: &[crate::detail::device_widgets::Set],
     pack_writes: &mut HashMap<String, Option<std::time::SystemTime>>,
-) -> Vec<crate::detail::nam_panel::Set> {
+) -> Vec<crate::detail::device_widgets::Set> {
     const CAP: usize = 2000;
     let files_of = |dir: &std::path::Path| -> Vec<(String, String)> {
         let mut entries =
@@ -265,9 +265,9 @@ fn scan_sets(
     }
     let loose = files_of(folder);
     if !loose.is_empty() {
-        packs.push((crate::detail::nam_panel::LOOSE_PACK.to_owned(), loose));
+        packs.push((crate::detail::device_widgets::LOOSE_PACK.to_owned(), loose));
     }
-    packs.into_iter().map(|(name, files)| crate::detail::nam_panel::Set { name, files }).collect()
+    packs.into_iter().map(|(name, files)| crate::detail::device_widgets::Set { name, files }).collect()
 }
 
 /// A device's file path (its state as UTF-8), when it is a file-running one
@@ -293,8 +293,8 @@ const METERS_SETTLE_SECONDS: f64 = 0.3;
 /// path with its writes.
 #[derive(Default)]
 struct NamCache {
-    models: Vec<crate::detail::nam_panel::Set>,
-    irs: Vec<crate::detail::nam_panel::Set>,
+    models: Vec<crate::detail::device_widgets::Set>,
+    irs: Vec<crate::detail::device_widgets::Set>,
     models_writes: Option<std::time::SystemTime>,
     irs_writes: Option<std::time::SystemTime>,
     /// A pack's write time by its folder's path, so a new capture in one pack re-reads only
@@ -1307,7 +1307,7 @@ impl App {
     /// The NAM panels' lists ([docs/spec/nam-amp-and-cab.md] › Folders): the models' and IR
     /// folders' files, read again when a folder's writes change, and the session's shown names
     /// and failure notes for the devices' current files.
-    pub fn nam_lists(&mut self) -> crate::detail::nam_panel::Lists {
+    pub fn nam_lists(&mut self) -> crate::detail::device_widgets::Lists {
         let (models_folder, irs_folder) = (self.nam_models_folder(), self.ir_folder());
         let mut cache = std::mem::take(&mut self.nam_cache);
         let mut folders = [
@@ -1323,7 +1323,7 @@ impl App {
                 **sets = scan_sets(folder, extension, &previous, &mut cache.pack_writes);
             }
         }
-        let lists = crate::detail::nam_panel::Lists {
+        let lists = crate::detail::device_widgets::Lists {
             models: cache.models.clone(),
             irs: cache.irs.clone(),
             names: self.nam_names(),

@@ -89,6 +89,7 @@ fn theme_device_geometry_moves_paint_and_input_and_hidden_controls_do_not_dispat
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(240.0, 120.0)),
             &canvas,
+            &crate::detail::device_widgets::PanelState::none(),
             &parameters,
             TrackId(1),
             &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -162,6 +163,7 @@ fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 60.0)),
             &canvas,
+            &crate::detail::device_widgets::PanelState::none(),
             &parameters,
             TrackId(1),
             &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -278,6 +280,163 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
 }
 
 #[test]
+fn the_device_widgets_show_state_and_dispatch_their_commands() {
+    use egui_kittest::kittest::Queryable;
+    let lists = crate::detail::device_widgets::Lists {
+        models: vec![crate::detail::device_widgets::Set {
+            name: "Test amp".into(),
+            files: vec![("p/Test amp/a.nam".into(), "A model".into()), ("p/Test amp/b.nam".into(), "B model".into())],
+        }],
+        irs: vec![],
+        names: std::collections::HashMap::from([("bad.nam".into(), "Bad amp".into())]),
+        notes: std::collections::HashMap::from([("bad.nam".into(), "not a NAM model".into())]),
+    };
+    fn state_of<'a>(
+        lists: &'a crate::detail::device_widgets::Lists,
+        enabled: bool,
+        file: &'a str,
+    ) -> crate::detail::device_widgets::PanelState<'a> {
+        crate::detail::device_widgets::PanelState { name: "NAM Amp Modeler".into(), enabled, file, lists: Some(lists) }
+    }
+    let control = |id: &str, bounds: [f32; 4], widget| CustomControl {
+        id: id.into(),
+        name: id.to_owned(),
+        tooltip: String::new(),
+        bounds,
+        widget: Some(widget),
+        gesture: UiGesture::Drag,
+        x: None,
+        y: None,
+        drawing: vec![],
+        visible_when: None,
+    };
+    let canvas = Arc::new(DeviceUi {
+        size: [428., 168.],
+        accent_on: true,
+        controls: vec![
+            control("switch", [0., 24., 48., 22.], Widget::DeviceSwitch),
+            control("pack", [0., 0., 384., 22.], Widget::DeviceFiles { part: FileRowPart::Pack, what: "model".into() }),
+            control(
+                "file",
+                [0., 146., 384., 22.],
+                Widget::DeviceFiles { part: FileRowPart::File, what: "model".into() },
+            ),
+            control("note", [0., 136., 422., 10.], Widget::DeviceNote),
+        ],
+        ..Default::default()
+    });
+    // The drawn canvas, with its state its widgets read: the device's shown name, whether it
+    // runs, the file it is set and, behind them, the folders' lists.
+    let draw = |ui: &mut egui::Ui, state: &mut (Vec<Action>, bool, String, &crate::detail::device_widgets::Lists)| {
+        crate::kit::theme::install(ui.ctx());
+        let panel_state = state_of(state.3, state.1, &state.2);
+        show(
+            ui,
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(428., 168.)),
+            &canvas,
+            &panel_state,
+            &[],
+            TrackId(1),
+            &crate::detail::detail_view::DeviceAt(vec![0]),
+            &mut state.0,
+        );
+    };
+    let harness = |actions: Vec<Action>, enabled: bool, file: String| {
+        egui_kittest::Harness::builder()
+            .with_size(Vec2::new(428., 168.))
+            .build_ui_state(draw, (actions, enabled, file, &lists))
+    };
+    // The switch names itself by the device's state: a bigger copy of the header's square.
+    let mut running = harness(Vec::new(), true, String::new());
+    running.run_steps(4);
+    assert!(running.query_by_label("Amp Modeler: device on").is_some());
+    running.state_mut().1 = false;
+    running.run();
+    assert!(running.query_by_label("Amp Modeler: device off").is_some());
+    running.state_mut().1 = true;
+    running.run();
+    assert!(running.query_by_label("Amp Modeler: device on").is_some());
+    // A click on it asks for `device.setEnabled` for the whole device. The canvas helper
+    // runs without state, which is the default: on, so the click asks for off.
+    let actions = click(&canvas, &[], Pos2::new(24., 35.));
+    assert!(
+        actions.iter().any(|action| action.id == "device.setEnabled"
+            && action.params.get("enabled") == Some(&serde_json::json!(false))),
+        "the switch's click asked for the device, got {actions:?}"
+    );
+
+    // Without a device file the file dropdown shows its choose text and the note nothing;
+    // a fault the modeler read names itself on the note row, and a file that moved does too.
+    let note_tensors = |file: &str| {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(428., 168.)),
+                &canvas,
+                &state_of(&lists, true, file),
+                &[],
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
+        output.textures_delta.clear();
+        output
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert!(note_tensors("").iter().all(|text| text != "not"), "no file, no note");
+    assert!(
+        note_tensors("bad.nam").iter().any(|text| text.contains("not a NAM model")),
+        "the fault the modeler read is the note"
+    );
+    assert!(
+        note_tensors("missing.nam").iter().any(|text| text.contains("Model missing: missing.nam")),
+        "a file the folders do not know reads as lost, and the note says so"
+    );
+
+    // The pack row's choice loads the pack's first file — here from a file not in any pack;
+    // then the file dropdown, now inside the pack, lists its files and one runs a step to it.
+    let mut chooser = harness(Vec::new(), true, "bad.nam".into());
+    chooser.run_steps(2);
+    chooser.get_by_label("Amp Modeler: pack").click();
+    chooser.run();
+    assert!(
+        chooser.query_by_label_contains("Amp Modeler: pack: Test amp").is_some(),
+        "the folder's packs are under the pack dropdown"
+    );
+    chooser.get_by_label_contains("Amp Modeler: pack: Test amp").click();
+    chooser.run();
+    // The panel's choice applies through the command; what the app would keep, the test
+    // keeps here, and the file dropdown now lists the pack's files.
+    chooser.state_mut().2 = "p/Test amp/a.nam".into();
+    chooser.run();
+    chooser.get_by_label("Amp Modeler: model file").click();
+    chooser.run();
+    assert!(
+        chooser.query_by_label_contains("Amp Modeler: model file: B model").is_some(),
+        "the pack's files are under the file dropdown"
+    );
+    chooser.get_by_label_contains("Amp Modeler: model file: B model").click();
+    chooser.run();
+    let actions = &chooser.state().0;
+    let paths: Vec<&str> = actions
+        .iter()
+        .filter(|action| action.id == "device.setNamFile")
+        .filter_map(|a| a.params.get("path").and_then(|p| p.as_str()))
+        .collect();
+    assert_eq!(paths, ["p/Test amp/a.nam", "p/Test amp/b.nam"], "a pack's first file, then a step to a neighbour");
+    assert_eq!(actions.len(), 2, "one undo step per choice, not more: {actions:?}");
+}
+
+#[test]
 fn sample_stop_is_only_visible_while_recording() {
     use egui_kittest::kittest::Queryable;
     for recording in [false, true] {
@@ -313,6 +472,7 @@ fn historical_sampler_waveforms_keep_recording_controls() {
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
+            &crate::detail::device_widgets::PanelState::none(),
             &[],
             TrackId(1),
             &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -357,6 +517,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &empty_canvas,
+            &crate::detail::device_widgets::PanelState::none(),
             &empty_parameters,
             TrackId(1),
             &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -668,6 +829,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
                 ui,
                 Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(900., 168.)),
                 &preview_canvas,
+                &crate::detail::device_widgets::PanelState::none(),
                 &preview_parameters,
                 TrackId(1),
                 &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -724,6 +886,7 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
             &preview_canvas,
+            &crate::detail::device_widgets::PanelState::none(),
             &preview_parameters,
             TrackId(1),
             &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -778,6 +941,7 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
             &narrow_canvas,
+            &crate::detail::device_widgets::PanelState::none(),
             &narrow_parameters,
             TrackId(1),
             &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -804,6 +968,7 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
             &time_canvas,
+            &crate::detail::device_widgets::PanelState::none(),
             &time_parameters,
             TrackId(1),
             &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -857,6 +1022,7 @@ fn delay_menus_open_choose_and_cancel_without_spurious_edits() {
                 ui,
                 Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
                 &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
                 &state.0,
                 TrackId(1),
                 &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -998,6 +1164,7 @@ fn sampler_slice_controls_replace_loop_fields() {
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
+            &crate::detail::device_widgets::PanelState::none(),
             &parameters,
             TrackId(1),
             &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -1063,6 +1230,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
                     ui,
                     Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
                     &canvas,
+                    &crate::detail::device_widgets::PanelState::none(),
                     &parameters,
                     TrackId(1),
                     &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -1171,6 +1339,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
+            &crate::detail::device_widgets::PanelState::none(),
             &parameters,
             TrackId(1),
             &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -1196,6 +1365,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
+            &crate::detail::device_widgets::PanelState::none(),
             &parameters,
             TrackId(1),
             &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -1455,6 +1625,7 @@ fn pointer_gesture_at(
                     ui,
                     Rect::from_min_size(Pos2::ZERO, Vec2::new(canvas.size[0], canvas.size[1])),
                     canvas,
+                    &crate::detail::device_widgets::PanelState::none(),
                     parameters,
                     TrackId(1),
                     at,
@@ -1519,6 +1690,7 @@ fn slow_drag_on_an_integer_control_adds_up_across_frames() {
                     ui,
                     Rect::from_min_size(Pos2::ZERO, Vec2::new(60., 60.)),
                     &canvas,
+                    &crate::detail::device_widgets::PanelState::none(),
                     &parameters,
                     TrackId(1),
                     &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -1594,6 +1766,7 @@ fn two_axis_integer_drag_keeps_a_position_per_axis() {
                     ui,
                     Rect::from_min_size(Pos2::ZERO, Vec2::new(60., 60.)),
                     &canvas,
+                    &crate::detail::device_widgets::PanelState::none(),
                     &parameters,
                     TrackId(1),
                     &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -1646,6 +1819,7 @@ fn idle_log_control_does_not_emit_edits_and_xy_click_is_one_gesture() {
                 ui,
                 Rect::from_min_size(Pos2::ZERO, Vec2::splat(160.0)),
                 &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
                 &params,
                 TrackId(1),
                 &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -1737,6 +1911,7 @@ fn default_canvas_background_follows_the_theme_and_authored_background_stays_fix
                 ui,
                 Rect::from_min_size(Pos2::new(x, 8.0), Vec2::splat(40.0)),
                 canvas,
+                &crate::detail::device_widgets::PanelState::none(),
                 &[],
                 TrackId(1),
                 &crate::detail::detail_view::DeviceAt(vec![0]),
@@ -1808,7 +1983,16 @@ fn frames(
             ..Default::default()
         };
         let mut output = ctx.run_ui(input, |ui| {
-            show(ui, Rect::from_min_size(Pos2::ZERO, size), canvas, parameters, TrackId(1), &at, &mut actions)
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, size),
+                canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                parameters,
+                TrackId(1),
+                &at,
+                &mut actions,
+            )
         });
         output.textures_delta.clear();
     }

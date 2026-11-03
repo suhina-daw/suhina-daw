@@ -60,6 +60,8 @@ pub const LAYOUT_FILES: &[(&str, &str)] = &[
     ("delay", include_str!("../../../devices/delay/panel.json")),
     ("pitch", include_str!("../../../devices/pitch/panel.json")),
     ("fm-synth", include_str!("../../../devices/fm-synth/panel.json")),
+    ("nam-amp-modeler", include_str!("../../../devices/nam-amp-modeler/panel.json")),
+    ("nam-cab-loader", include_str!("../../../devices/nam-cab-loader/panel.json")),
 ];
 
 /// The panel of the device with this id: its parameters from its `DeviceInfo`, laid out by its

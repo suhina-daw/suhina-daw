@@ -1515,7 +1515,11 @@ fn paint_scaled(
                         }
                         TextFormat::Tempo if p.value <= 0. => format!("{text}Auto"),
                         TextFormat::Tempo => format!("{text}{} BPM", fixed(p.value, 2)),
-                        TextFormat::Seconds if p.value < 1. => format!("{text}{} ms", fixed(p.value * 1000., 0)),
+                        // `decimals` rounds the milliseconds a seconds-format dial asks for (0 keeps
+                        // the whole milliseconds later dials show).
+                        TextFormat::Seconds if p.value < 1. => {
+                            format!("{text}{} ms", fixed(p.value * 1000., (*decimals).min(3)))
+                        }
                         TextFormat::Seconds => format!("{text}{} s", fixed(p.value, 2)),
                         TextFormat::Percent => format!("{text}{}%", fixed(p.value * 100., 0)),
                         TextFormat::Decibels => format!("{text}{} dB", fixed(p.value, 1)),
@@ -1879,10 +1883,12 @@ fn fitted_control_bounds(control: &CustomControl, height_reduction: f32) -> [f32
     [x, y, w, h]
 }
 
+#[allow(clippy::too_many_arguments)] // the canvas, its draw state and what dispatches for it
 pub(crate) fn show(
     ui: &mut egui::Ui,
     rect: Rect,
     canvas: &Arc<DeviceUi>,
+    state: &crate::detail::device_widgets::PanelState<'_>,
     parameters: &[GraphParameter],
     track: TrackId,
     at: &crate::detail::detail_view::DeviceAt,
@@ -1957,6 +1963,21 @@ pub(crate) fn show(
         }
         if matches!(control.widget, Some(Widget::SampleRecording)) {
             sample_recording(ui, bounds, track, device, actions);
+            continue;
+        }
+        if matches!(control.widget, Some(Widget::DeviceSwitch)) {
+            let _role = crate::kit::style_class::enter("button");
+            crate::detail::device_widgets::switch(ui, bounds, state, track, at, actions);
+            continue;
+        }
+        if let Some(Widget::DeviceFiles { part, what }) = &control.widget {
+            let _role = crate::kit::style_class::enter("dropdown");
+            crate::detail::device_widgets::files(ui, bounds, *part, what, state, track, at, actions);
+            continue;
+        }
+        if matches!(control.widget, Some(Widget::DeviceNote)) {
+            let _role = crate::kit::style_class::enter("label");
+            crate::detail::device_widgets::note(&painter, bounds, state);
             continue;
         }
         if matches!(control.widget, Some(Widget::SampleWaveform)) {

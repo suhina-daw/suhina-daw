@@ -13,6 +13,7 @@ covers:
   - crates/device-sdk/src/ui/widgets.rs
   - crates/device-sdk/src/ui.rs
   - crates/ui/src/detail/device_canvas.rs
+  - crates/ui/src/detail/device_widgets.rs
   - crates/ui/src/detail/detail_view.rs
   - crates/device-sdk/examples/custom_panel.rs
   - crates/device-sdk/examples/orbit_filter.rs
@@ -342,6 +343,23 @@ input selector and Record/Stop actions (`device.recordSample`) beside other cont
 It registers a sample drop target for both browser and system file drops; the drop
 runs `device.loadSample`. It renders an empty-source prompt when no audio is loaded.
 This does not add a sample DSP node to serialized `.sd` graphs.
+
+`DeviceSwitch` places a device's own on/off as a control in its body: the header's
+square, bigger, lit while the device runs. The host draws it from the device's state
+and a click runs `device.setEnabled`; it has no parameter of its own. `DeviceFiles`
+places one piece of a file-backing device's pack row or its file row, by `part` —
+`pack`/`previous_pack`/`next_pack` or `file`/`previous_file`/`next_file` — and `what`
+names the device's file family ("model", "cab") the host checks as it draws. The
+dropdown lists the folder's packs (the current one shown), or the current pack's
+files by their shown names; its steppers step through, wrapping. Choosing a pack
+loads its first file; every choice and step runs `device.setNamFile`, one undo
+step, only when the file it asks for differs from the device's current. A `what`
+the host has no words for draws nothing, so a layout places the rows only where its
+device takes files. `DeviceNote` places the one-line note under the controls when
+the device's file does not run: the fault the load gave, or that the file moved;
+nothing while the file runs, and nothing with no file — the rows' empty texts say
+that. The labels derive from the device's shown name ("Amp Modeler: pack"),
+as the compact panels' tests find them.
 
 A control may specify a typed `widget` instead of a custom `drawing`. Widgets are
 independent UI nodes; interactive nodes bind to a declared parameter (or two parameters

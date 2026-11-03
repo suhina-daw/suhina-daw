@@ -5718,8 +5718,6 @@ dependencies = [
  "resvg",
  "serde_json",
  "suhina-device-api",
- "suhina-device-nam-amp-modeler",
- "suhina-device-nam-cab-loader",
  "suhina-device-registry",
  "suhina-device-sdk",
  "suhina-engine",

@@ -433,6 +433,13 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     for (label, rect) in knobs {
         assert!(rect.width() >= 60.0 && rect.height() >= 90.0, "{label} {rect:?} is too small to read");
     }
+    // The rows they sit on: Mid Freq shares the buttons' row, and each panel's knobs one row.
+    let top = |label: &str| harness.get_by_label(label).rect().top();
+    assert_eq!(top("Amp Modeler: mid freq"), top("Amp Modeler: eq"), "Mid Freq is not on the buttons' row");
+    let row = top("Cab Loader: bass");
+    for label in ["Cab Loader: mid", "Cab Loader: treble", "Cab Loader: mid freq", "Cab Loader: delay"] {
+        assert_eq!(top(label), row, "{label} is not on the cab's knob row");
+    }
     for label in [
         "Cab Loader: pack",
         "Cab Loader: previous pack",

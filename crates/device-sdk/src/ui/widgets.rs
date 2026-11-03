@@ -209,6 +209,41 @@ pub enum Widget {
         #[serde(default)]
         span: Option<[crate::ui::UiValue; 2]>,
     },
+    /// The device's on/off as a control in its own body: the header's square, bigger,
+    /// running `device.setEnabled`. The host reads the state and draws it; it has no
+    /// parameter of its own.
+    DeviceSwitch,
+    /// A file-backing device's pack row or file row: one piece per control, so its bounds,
+    /// accessible name and popup bounds belong to one dropdown or stepper. `part` places it;
+    /// `what` names the device's file ("model", "cab") whose folders' lists the host feeds.
+    DeviceFiles {
+        part: FileRowPart,
+        what: String,
+    },
+    /// The one-line note a file-backing device's panel shows under the controls when its
+    /// file does not run (the fault, or that the file moved); nothing when it does.
+    DeviceNote,
+}
+
+/// What a [`Widget::DeviceFiles`] control places: the pack row's or file row's dropdown on
+/// its own control, or one of the row's steppers, so its bounds and accessible name belong
+/// to one button or dropdown. The dropdown and its steppers talk to the same current pack
+/// and file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileRowPart {
+    /// The pack row's dropdown: the device file's pack, the folder's packs under it.
+    Pack,
+    /// The pack row's previous pack stepper.
+    PreviousPack,
+    /// The pack row's next pack stepper.
+    NextPack,
+    /// The file row's dropdown: the file's own name, the current pack's files under it.
+    File,
+    /// The file row's previous file stepper.
+    PreviousFile,
+    /// The file row's next file stepper.
+    NextFile,
 }
 impl CustomControl {
     /// Legacy custom drawings and typed widgets share the host's interaction path.
@@ -419,6 +454,8 @@ impl Widget {
                 ];
             }
             Self::SampleWaveform | Self::SampleRecording | Self::Envelope { .. } => {}
+            // Host-rendered: the host draws them from its own state.
+            Self::DeviceSwitch | Self::DeviceFiles { .. } | Self::DeviceNote { .. } => {}
             Self::Knob { label } => {
                 let label_height = if label.is_empty() { 0. } else { 12. };
                 knob(&mut ui, id, label, [0., label_height, w, height - label_height], binding.logarithmic);
