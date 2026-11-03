@@ -1530,6 +1530,23 @@ impl Renderer {
         self.active_audio_count = 0;
     }
 
+    /// Whether an arrangement audio clip plays now; one a launched clip replaces does not.
+    fn arrangement_audio_sounding(&self) -> bool {
+        let launcher = &self.graph.launcher;
+        let time = self.time();
+        let direct = self
+            .active_audio
+            .iter()
+            .take(self.active_audio_count)
+            .any(|index| self.graph.audio_events.get(*index).is_some_and(|a| !launcher.overrides(a.column)));
+        direct
+            || self
+                .graph
+                .stretch_events
+                .iter()
+                .any(|e| e.start <= time && time < e.end && !launcher.overrides(e.column))
+    }
+
     /// Stops the transport; the playhead goes back to the marker, or, with `here`, the marker
     /// moves to the playhead. Stopping while stopped moves the marker to beat 0.
     fn stop_transport(&mut self, here: bool) {
@@ -1543,8 +1560,11 @@ impl Renderer {
             has_instrument = true;
             needs_guard |= !slot.processor.as_ref().is_some_and(|p| p.smooth_transport_stop());
         }
-        if self.running && !self.plugin_info.is_empty() && (!has_instrument || needs_guard) {
-            self.start_guard.begin(self.graph.latency);
+        // An arrangement audio clip has no stop fade of its own: without the ramp it ends on
+        // whatever sample it had reached, a click, with a smooth hosted instrument beside it too.
+        let hosted_step = !self.plugin_info.is_empty() && (!has_instrument || needs_guard);
+        if self.running && (hosted_step || self.arrangement_audio_sounding()) {
+            self.start_guard.begin_stop(self.graph.latency);
         }
         self.start_beat = if !self.running {
             0.0

@@ -3,7 +3,7 @@ description: The built-in three-band Multiband dynamics - crossovers, level foll
 read_when: multiband, multiband dynamics, multiband compressor, upward compression, downward expansion, above threshold, below threshold, level follower, crossover, importing the multiband dynamics device, MultibandDynamics elements
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-02
 covers:
   - devices/multiband/**
   - scripts/multiband_panel.py

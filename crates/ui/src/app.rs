@@ -475,6 +475,8 @@ pub struct App {
     about: About,
     /// When Settings › Audio last listed the MIDI ports, so a controller plugged in shows up.
     midi_listed: Option<std::time::Instant>,
+    /// Follows the audio devices while Settings › Audio shows, so headphones connected later show up.
+    audio_devices: suhina_session::audio::DeviceWatch,
     /// The themes to pick from; the settings say which is in use.
     themes: Themes,
     /// The project dialog (File › New or open) while it shows, and what it lists.
@@ -580,6 +582,8 @@ pub struct App {
     browser_part: f32,
     /// The hosts' reader threads wake this window ([`suhina_plugins::set_waker`]).
     waker_set: bool,
+    /// The selection a fader or a send is moving, as it was when the drag began.
+    selection_drag: Option<actions::SelectionDrag>,
     switch_hover: Option<(View, f64)>,
     /// Agents (ADR 0028): connections waiting for the person's answer, the answers for the app,
     /// the agents let in, and those the person disconnected, for the app.
@@ -678,6 +682,7 @@ impl App {
             plugin_dialog_hidden: false,
             about: About::default(),
             midi_listed: None,
+            audio_devices: suhina_session::audio::DeviceWatch::default(),
             themes: Themes::default(),
             project_dialog: None,
             project_lists: Lists::default(),
@@ -727,6 +732,7 @@ impl App {
             applied_grid: None,
             browser_part: 1.0,
             waker_set: false,
+            selection_drag: None,
             switch_hover: None,
             agent_asks: Vec::new(),
             agent_answers: Vec::new(),
@@ -2340,6 +2346,10 @@ impl App {
 
     /// Runs one command and shows its outcome in the status bar.
     pub fn run(&mut self, action: &Action) {
+        // A fader or a send dragged on one of several selected tracks moves them together.
+        if let Some(wider) = self.drag_to_selection(action) {
+            return self.run(&wider);
+        }
         // One device's on/off or one track's mute among several selected acts on all of them.
         if let Some(wider) = self.to_selection(action) {
             return self.run(&wider);

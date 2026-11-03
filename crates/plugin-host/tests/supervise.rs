@@ -7,6 +7,8 @@
 
 mod common;
 
+use common::{close_editor_window, user_closes_windows};
+
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -399,37 +401,6 @@ fn an_offline_run_plays_notes_at_their_frames() {
     assert_eq!(total, 0.75);
 }
 
-/// Asks the editor's window to close, as the user does with its close button.
-#[cfg(windows)]
-fn close_editor_window(process_id: u32) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
-    let window = editor_window(process_id);
-    assert!(!window.is_null(), "no editor window for host {process_id}");
-    // SAFETY: a window found just now; WM_CLOSE carries no pointers.
-    assert_ne!(unsafe { PostMessageW(window, WM_CLOSE, 0, 0) }, 0);
-}
-
-#[cfg(windows)]
-fn editor_window(process_id: u32) -> windows_sys::Win32::Foundation::HWND {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetWindowThreadProcessId};
-    let class: Vec<u16> = "SuhinaPluginEditor".encode_utf16().chain([0]).collect();
-    let mut window = std::ptr::null_mut();
-    loop {
-        // SAFETY: the class name outlives the call; null parent enumerates top-level windows,
-        // and window is null or the previous result. No pointers are retained by Windows.
-        window = unsafe { FindWindowExW(std::ptr::null_mut(), window, class.as_ptr(), std::ptr::null()) };
-        if window.is_null() {
-            return window;
-        }
-        let mut owner = 0;
-        // SAFETY: Windows validates the handle; owner is a writable u32 for the result.
-        let thread = unsafe { GetWindowThreadProcessId(window, &raw mut owner) };
-        if thread != 0 && owner == process_id {
-            return window;
-        }
-    }
-}
-
 #[cfg(windows)]
 #[test]
 fn editor_window_lookup_is_scoped_to_its_host_process() {
@@ -439,14 +410,14 @@ fn editor_window_lookup_is_scoped_to_its_host_process() {
     first.open_editor().unwrap();
     second.open_editor().unwrap();
     for host in [&first, &second] {
-        let window = editor_window(host.process_id());
+        let window = common::editor_window(host.process_id());
         assert!(!window.is_null());
         let mut owner = 0;
         // SAFETY: the window belongs to a live host; owner is a writable u32.
         unsafe { GetWindowThreadProcessId(window, &raw mut owner) };
         assert_eq!(owner, host.process_id(), "must not select another host's editor");
     }
-    assert!(editor_window(0).is_null(), "a missing host must not select some other editor");
+    assert!(common::editor_window(0).is_null(), "a missing host must not select some other editor");
     close_editor_window(first.process_id());
     let deadline = Instant::now() + PATIENT;
     while first.editor_open() {
@@ -455,42 +426,6 @@ fn editor_window_lookup_is_scoped_to_its_host_process() {
     }
     assert!(second.editor_open(), "closing the first host must leave the other editor open");
     second.close_editor().unwrap();
-}
-
-/// Asks the editor's window to close, as the user does with its close button: the window
-/// manager's WM_DELETE_WINDOW message, sent to the newest window whose class is the editor's
-/// (the root's children come bottom to top).
-#[cfg(target_os = "linux")]
-fn close_editor_window(_process_id: u32) {
-    use x11rb::connection::Connection;
-    use x11rb::protocol::xproto::{AtomEnum, ClientMessageEvent, ConnectionExt, EventMask};
-    let (connection, screen) = x11rb::connect(None).unwrap();
-    let root = connection.setup().roots[screen].root;
-    let atom = |name: &[u8]| connection.intern_atom(false, name).unwrap().reply().unwrap().atom;
-    let (protocols, delete) = (atom(b"WM_PROTOCOLS"), atom(b"WM_DELETE_WINDOW"));
-    let children = connection.query_tree(root).unwrap().reply().unwrap().children;
-    let window = children
-        .into_iter()
-        .rfind(|w| {
-            let class = connection.get_property(false, *w, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 64);
-            class.ok().and_then(|c| c.reply().ok()).is_some_and(|c| c.value.starts_with(b"suhina-plugin-editor"))
-        })
-        .unwrap_or_else(|| panic!("no editor window"));
-    let message = ClientMessageEvent::new(32, window, protocols, [delete, 0, 0, 0, 0]);
-    connection.send_event(false, window, EventMask::NO_EVENT, message).unwrap();
-    // A round trip before the connection closes: closed straight after the request, the
-    // server could drop the message unsent, and the test waited for a close that never
-    // came (#237). Xlib's XCloseDisplay does the same (XSync).
-    connection.get_input_focus().unwrap().reply().unwrap();
-}
-
-#[cfg(not(any(windows, target_os = "linux")))]
-fn close_editor_window(_process_id: u32) {}
-
-/// Whether the test can close the host's window from here, as the user would: another
-/// process's window cannot be reached on macOS.
-fn user_closes_windows() -> bool {
-    cfg!(windows) || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty()))
 }
 
 /// Whether editors can open here: on Windows, and on Linux with an X server.

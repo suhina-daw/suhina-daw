@@ -4,7 +4,7 @@ read_when: readouts, live values, device meter, gain reduction display, spectrum
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-29
+last_verified: 2026-11-02
 covers:
   - crates/device-api/src/lib.rs
   - crates/engine/src/meters.rs

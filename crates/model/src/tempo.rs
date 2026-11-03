@@ -22,6 +22,8 @@ pub const MAX_BPM: f64 = 999.0;
 /// malformed file cannot make every conversion search an unbounded list.
 pub const MAX_TEMPO_CHANGES: usize = 10_000;
 pub const MAX_TIME_SIGNATURE_CHANGES: usize = 10_000;
+/// The largest denominator a time signature may have: a sixteenth note.
+pub const MAX_DENOMINATOR: u8 = 16;
 /// The latest beat a tempo change can be at: over 16 hours at 120 bpm.
 pub const MAX_CHANGE_BEAT: f64 = 120_000.0;
 
@@ -59,9 +61,14 @@ impl TimeSignature {
     }
 
     /// Whether this is a signature a project keeps: a numerator from 1 to 99 and a denominator of
-    /// 1, 2, 4, 8, 16, 32 or 64.
+    /// 1, 2, 4, 8 or 16 (`MAX_DENOMINATOR`).
     pub fn is_valid(self) -> bool {
-        (1..=99).contains(&self.numerator) && self.denominator.is_power_of_two() && self.denominator <= 64
+        (1..=99).contains(&self.numerator) && self.has_valid_denominator()
+    }
+
+    /// Whether the denominator is a note value a project keeps: 1, 2, 4, 8 or 16.
+    pub fn has_valid_denominator(self) -> bool {
+        self.denominator.is_power_of_two() && self.denominator <= MAX_DENOMINATOR
     }
 }
 

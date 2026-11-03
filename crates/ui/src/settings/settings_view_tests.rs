@@ -151,3 +151,22 @@ fn the_output_now_says_which_chosen_device_it_waits_for() {
     let asio = suhina_session::OutputChoice { host: Some("ASIO".into()), ..Default::default() };
     assert!(now_playing(&waiting, &asio).ends_with("until ASIO is back"));
 }
+
+#[test]
+fn the_device_row_says_where_bluetooth_headphones_are_and_why_a_list_is_empty() {
+    use suhina_session::audio::HostInfo;
+    let host = |name: &str| HostInfo { name: name.into(), ..Default::default() };
+    let plain = "The output device on that driver";
+    let windows = [host("ASIO"), host("WASAPI")];
+    assert!(super::device_note(Some(&windows[0]), &windows).contains("under WASAPI"));
+    assert_eq!(super::device_note(Some(&windows[1]), &windows), plain);
+    let linux = [host("PulseAudio"), host("ALSA")];
+    assert!(super::device_note(Some(&linux[1]), &linux).contains("under PulseAudio"));
+    assert_eq!(super::device_note(Some(&linux[0]), &linux), plain);
+    // Only a driver that is there is pointed to.
+    let alsa = [host("ALSA")];
+    assert_eq!(super::device_note(Some(&alsa[0]), &alsa), plain);
+    assert_eq!(super::device_note(None, &alsa), plain);
+    let failed = HostInfo { error: Some("no answer".into()), ..host("WASAPI") };
+    assert_eq!(super::device_note(Some(&failed), &[]), "WASAPI cannot list its devices: no answer");
+}

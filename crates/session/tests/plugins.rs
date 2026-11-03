@@ -73,11 +73,13 @@ fn bad_folders_and_parameters_are_errors() {
     assert!(run(&mut p, "plugin.scan", json!({ "all": "yes" })).is_err());
     assert!(run(&mut p, "plugin.list", json!({ "extra": 1 })).is_err());
     let folder = dir.join("plugins");
-    let vst2 = run(&mut p, "plugin.addFolder", json!({ "folder": folder, "format": "vst2" })).unwrap_err();
-    assert!(vst2.contains("VST2"), "{vst2}");
+    // An unknown format is an error, and so is a folder operation on one that is not there.
     assert!(run(&mut p, "plugin.addFolder", json!({ "folder": folder, "format": "dll" })).is_err());
     assert!(run(&mut p, "plugin.setFolderEnabled", json!({ "folder": folder, "enabled": false })).is_err());
     assert!(run(&mut p, "plugin.setFolderEnabled", json!({ "folder": folder })).is_err());
+    // The vst2 format is a folder like the others now (ADR 0022).
+    let vst2 = run(&mut p, "plugin.addFolder", json!({ "folder": folder, "format": "vst2" })).unwrap();
+    assert_eq!(vst2["added"], true);
     assert!(run(&mut p, "plugin.setEnabled", json!({ "plugin": "nothing", "enabled": false })).is_err());
     assert!(run(&mut p, "plugin.scanFile", json!({ "file": "" })).is_err());
 }

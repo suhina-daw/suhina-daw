@@ -177,6 +177,24 @@ fn the_earlier_folders_file_is_read() {
     assert_eq!(parse_folders("junk"), (Vec::new(), Vec::new()));
     assert_eq!(standard_format(Path::new("C:/Program Files/Common Files/VST3")), FolderFormat::Vst3);
     assert_eq!(standard_format(Path::new("/home/me/.clap")), FolderFormat::Clap);
+    // A VST2 plug-in is a plain library, which only its folder marks as one.
+    assert_eq!(standard_format(Path::new("/Library/Audio/Plug-Ins/VST")), FolderFormat::Vst2);
+    assert_eq!(standard_format(Path::new("/home/me/.vst")), FolderFormat::Vst2);
+    assert_eq!(standard_format(Path::new("C:/Program Files/Common Files/VST2")), FolderFormat::Vst2);
+    assert_eq!(standard_format(Path::new("C:/Program Files/VSTPlugins")), FolderFormat::Vst2);
+}
+
+/// A `CLAP_PATH` folder named as a VST2 folder is named so; its CLAP plug-ins are still found.
+#[test]
+fn a_clap_path_folder_keeps_its_clap_files_whatever_its_name() {
+    let folder = scratch("clap-path").join("shared");
+    std::fs::create_dir_all(&folder).unwrap();
+    let plugin = folder.join("Thing.clap");
+    std::fs::write(&plugin, b"").unwrap();
+    let format = folder_format(&folder, std::slice::from_ref(&folder));
+    assert_eq!(format, FolderFormat::Any);
+    assert_eq!(crate::scan::find_files_of(&[(folder.clone(), format)]), [plugin]);
+    assert_eq!(folder_format(&folder, &[]), FolderFormat::Vst2, "the same name elsewhere is a VST2 folder");
 }
 
 #[test]

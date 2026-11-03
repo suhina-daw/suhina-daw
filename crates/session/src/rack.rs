@@ -334,6 +334,11 @@ struct Instance {
     /// fit it (an ARA editor in the clip's place), and what the host was last asked.
     fit_wanted: Option<(u32, u32)>,
     fit_sent: Option<(u32, u32)>,
+    /// The title the editor's own window opens with, the last one known.
+    editor_title: Option<String>,
+    /// What the title bar of the editor's own window should say, and what the host was last told.
+    title_wanted: Option<String>,
+    title_sent: Option<String>,
     /// The editor is being closed to open again the other way (the embedding setting changed).
     reopen_editor: bool,
     /// An embedded editor cannot open on this system (macOS: a view of the host's process
@@ -415,6 +420,9 @@ impl Instance {
             editor_wanted: None,
             fit_wanted: None,
             fit_sent: None,
+            editor_title: None,
+            title_wanted: None,
+            title_sent: None,
             reopen_editor: false,
             force_floating: false,
             counts: None,
@@ -461,8 +469,20 @@ impl Instance {
         sent
     }
 
+    /// Tells the editor's window its title now, as [`Instance::send_placement`].
+    fn send_title(&mut self, title: &str) -> bool {
+        let Some(placer) = self.placer() else { return false };
+        let sent = placer.title(title);
+        if !sent {
+            self.placer = None;
+        }
+        sent
+    }
+
     /// The editor is closed (or gone with its process).
     fn editor_gone(&mut self) {
+        self.title_wanted = None;
+        self.title_sent = None;
         self.editor_open = false;
         self.editor_size = None;
         self.placement_wanted = None;
@@ -607,6 +627,13 @@ impl Rack {
         self.known_states()
     }
 
+    /// [`Rack::current_states`], asking only the plug-ins `keys`; the others give what they last
+    /// gave, so a busy host elsewhere in the project does not hold the window up.
+    pub(crate) fn current_states_of(&mut self, keys: &[u64]) -> HashMap<u64, SavedState> {
+        self.read_states_until(Instant::now() + SAVE_WAIT, Some(keys));
+        self.known_states()
+    }
+
     /// The plug-ins' states as last read (every [`SAVE_EVERY`] and at each save), without asking
     /// them now: for a backup, which must not hold the window up while a busy plug-in answers.
     pub(crate) fn known_states(&self) -> HashMap<u64, SavedState> {
@@ -624,22 +651,27 @@ impl Rack {
     /// answers: at most [`SAVE_WAIT`] in all, with the time it takes a plug-in lent out for
     /// something else (a read just after it started) to come back first.
     fn read_states(&mut self) {
-        self.read_states_until(Instant::now() + SAVE_WAIT);
+        self.read_states_until(Instant::now() + SAVE_WAIT, None);
     }
 
     /// Concurrent reads share a deadline, including control halves already lent out.
-    fn read_states_until(&mut self, deadline: Instant) {
+    fn read_states_until(&mut self, deadline: Instant, only: Option<&[u64]>) {
         let mut notices = Vec::new();
         let lent = |rack: &Self, keys: Option<&[u64]>| {
             rack.instances.iter().any(|(key, i)| {
                 i.control.is_none() && keys.map_or(i.status == PluginStatus::Running, |keys| keys.contains(key))
             })
         };
-        while lent(self, None) && Instant::now() < deadline {
+        while lent(self, only) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(2));
             self.take_returned(&mut notices);
         }
-        let running: Vec<u64> = self.instances.iter().filter(|(_, i)| i.control.is_some()).map(|(k, _)| *k).collect();
+        let running: Vec<u64> = self
+            .instances
+            .iter()
+            .filter(|(k, i)| i.control.is_some() && only.is_none_or(|only| only.contains(k)))
+            .map(|(k, _)| *k)
+            .collect();
         let asked: Vec<u64> = running.into_iter().filter(|key| self.lend(*key, read_state).is_ok()).collect();
         while lent(self, Some(&asked)) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(2));
@@ -999,6 +1031,14 @@ impl Rack {
             }
         }
         for instance in self.instances.values_mut() {
+            if let Some(wanted) = instance.title_wanted.take() {
+                if instance.title_sent.as_ref() != Some(&wanted) && instance.send_title(&wanted) {
+                    instance.title_sent = Some(wanted.clone());
+                }
+                instance.title_wanted = Some(wanted);
+            }
+        }
+        for instance in self.instances.values_mut() {
             if let Some(fit) = instance.fit_wanted
                 && instance.fit_sent != Some(fit)
                 && instance.send_fit(fit)
@@ -1103,6 +1143,17 @@ impl Rack {
             self.sample_rate = sample_rate;
         }
         let devices = plugin_devices(project);
+        for device in &devices {
+            let Some(instance) = self.instances.get_mut(&device.key) else { continue };
+            if instance.editor_open && !instance.editor_embedded {
+                let title = editor_title_of(project, device);
+                instance.editor_title = Some(title.clone());
+                instance.title_wanted = Some(title);
+            } else {
+                instance.title_wanted = None;
+                instance.title_sent = None;
+            }
+        }
         let mut changed = false;
         // Devices that are gone.
         let gone: Vec<u64> = self.instances.keys().copied().filter(|k| !devices.iter().any(|d| d.key == *k)).collect();
@@ -1749,6 +1800,13 @@ impl Rack {
     /// at once: the host making a window that the app's window owns waits for the app's window
     /// thread, which must not be waiting for the host meanwhile. Embedded (the setting), it
     /// opens hidden inside that window until [`Rack::place_editors`] puts it somewhere.
+    /// What the editor of the plug-in device `key` is called when it opens.
+    pub(crate) fn name_editor(&mut self, key: u64, title: String) {
+        if let Some(instance) = self.instances.get_mut(&key) {
+            instance.editor_title = Some(title);
+        }
+    }
+
     pub fn open_editor(&mut self, key: u64) -> Result<Option<(u32, u32)>, CommandError> {
         if self.lent_out(key, true) {
             return Ok(None);
@@ -1762,11 +1820,12 @@ impl Rack {
                     let wanted = if i.ara_sources.is_empty() { self.embed } else { !i.ara_float };
                     wanted && !i.force_floating
                 });
+                let title = self.instances.get(&key).and_then(|i| i.editor_title.clone());
                 self.lend(key, move |control| {
-                    let opened = if embed {
-                        control.open_editor_embedded(owner)
-                    } else {
-                        control.open_editor_owned(Some(owner))
+                    let opened = match &title {
+                        _ if embed => control.open_editor_embedded(owner),
+                        Some(title) => control.open_editor_titled(Some(owner), title),
+                        None => control.open_editor_owned(Some(owner)),
                     };
                     Done::Opened(opened.map_err(|e| e.to_string()))
                 })?;
@@ -1964,6 +2023,33 @@ fn start(launch: Launch, state: Option<SavedState>) -> Result<(Plugin, PluginAud
         }
     }
     Ok((plugin, audio, refused))
+}
+
+/// The title of `device`'s editor window, from the project as it is now.
+pub(crate) fn editor_title_of(project: &Project, device: &suhina_engine::PluginDevice) -> String {
+    let track = match device.track {
+        Some(suhina_model::TrackId::MAIN) => "Main".to_string(),
+        Some(track) => project.shown_track_name(track),
+        None => String::new(),
+    };
+    let name = project
+        .channel(device.channel)
+        .and_then(|c| suhina_model::device_at(&c.devices, &device.path))
+        .map_or("", |d| d.name.as_str());
+    editor_title(&track, name)
+}
+
+/// What an editor's window says: the track as the views show it, and the plug-in's name unless
+/// the track's already says it, so "2 Serum 2" for Serum 2 on the track "# Serum 2" and
+/// "2 Bass – Serum 2" on "# Bass", which tells two plug-ins of one track apart.
+fn editor_title(track: &str, plugin: &str) -> String {
+    if track.is_empty() {
+        plugin.to_string()
+    } else if track.contains(plugin) {
+        track.to_string()
+    } else {
+        format!("{track} – {plugin}")
+    }
 }
 
 #[cfg(test)]

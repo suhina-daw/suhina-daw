@@ -75,8 +75,8 @@ documentation and UI). The scope decision it leads to is
 | Same, over the scope the roadmap aims at (also without accessibility) | **about 32 %** |
 | Weighting each chapter by its numbered sections instead of its pages | **17 %** (the two weightings agree) |
 | Numbered manual sections | **344**, of which **111 (32 %)** sit in chapters Suhina has not started at all |
-| Built-in devices | **12** (10 effects, 1 MIDI effect, 1 instrument) against Live's 63 (42 audio effects, 8 MIDI effects, 13 instruments) |
-| Commands | **274**, every one reachable from the UI, the CLI and MCP |
+| Built-in devices | **13** (11 effects, 1 MIDI effect, 1 instrument) against Live's 63 (42 audio effects, 8 MIDI effects, 13 instruments) |
+| Commands | **275**, every one reachable from the UI, the CLI and MCP |
 | Still absent as whole features | MPE, Grooves, Tuning, Comping, Racks, Clip Envelopes, Push, Link, video, accessibility |
 <!-- parity:end -->
 
@@ -150,12 +150,12 @@ documented behaviour that exists today.
 | 21 | Comping | 6 | 85 % | partial | Take lanes made by recording into the arrangement (a lane per loop pass or jump back, the latest copied to the track and playing), drawn under the track with the parts in use lit and the rest dimmed, folded away from a button or a menu; a click copies a take's clip and a drag a part of it onto the track (take.comp), the parts named and coloured after their takes; Alt+Up/Down swap a part's take, the cut between two parts dragged (take.moveCut), Recolor lane and Recolor selected take, splits reaching the takes, Delete take, take pieces picked with Ctrl and deleted; a take lane soloed in place of its track, put whole on the track, unused takes deleted; short crossfades where parts of two takes meet; clips not stacked over takes; saved with the project. Missing take lanes made by hand, renaming and reordering them. |
 | 22 | Stem Separation | 8 | 0 % | planned | Roadmap item (Demucs candidate, weights unaudited). The pipeline around a model (chunking, resampling) exists in crates/separation with a test backend; no model and nothing a user can run yet. |
 | 23 | Working with Instruments and Effects (Device View) | 34 | 40 % | partial | Device chains per track and bus, parameters through device.* commands and the detail area, the devices one click from a MIDI clip's editor (a Clip / Devices switch, Ctrl+Shift+D) and a double-click on a track header or channel strip that shows its devices, DX7 voices, stock-preset ADR, latency compensation, plug-in state in the panel. Every built-in device, .sd device and running plug-in has editable controls in its panel (a layout, or a generated parameter list), and a device may open a larger expanded panel over the main area. SDK-authored .sd effects and instruments load onto tracks, embed in projects, expose parameters, graphs and custom panels, and support explicit revision updates. Missing A/B, hot-swap, preset browser depth, defaults, device delay review. |
-| 24 | Using Plug-Ins | 12 | 76 % | partial | CLAP and VST3 hosted out of process, sandboxed, VST3 bundles on Windows, macOS and Linux, editors (Windows/X11), scans that try failures again and settle files built for another processor, a plug-in manager (plug-ins switched off, several picked with Ctrl, Cmd or Shift and turned off or on from the right-click menu, folders per format and switched off), latency compensation (followed when a plug-in changes its latency while it plays), saved state (a change in an editor counts as unsaved), VST2 read and matched to VST3, parameters set and automated from the engine and shown as a generated list in the device panel, in step both ways with a plug-in's own editor (VST3 through the host's handler, CLAP through its blocks' output parameter events: an edit there becomes the panel's value with the next block, and the editor follows the panel and automation), the song's tempo, transport, position, bar, time signature and loop given to every plug-in, ARA plug-ins per audio clip (Edit with, the clip's gain and fades after it, its track's other clips past it; edits saved, clip changes followed live, the editor in the clip's place, one document a plug-in and project so its editor shows every track; warped and looped clips not yet). Missing AU, VST2 hosting, configure mode, VST preset banks, sidechain parameters. |
+| 24 | Using Plug-Ins | 12 | 82 % | partial | CLAP and VST3 hosted out of process, sandboxed, VST3 bundles on Windows, macOS and Linux, editors (Windows/X11), scans that try failures again and settle files built for another processor, a plug-in manager (plug-ins switched off, several picked with Ctrl, Cmd or Shift and turned off or on from the right-click menu, folders per format and switched off), latency compensation (followed when a plug-in changes its latency while it plays), saved state (a change in an editor counts as unsaved), VST2 read and matched to VST3, and VST2 hosted directly: scanned in the system's VST folders and any folder added for the format, a project's VST2 plug-in that has no VST3 or CLAP copy installed runs through the host with its saved bank as the state, while a copy that exists still plays it (ADR 0006 decision 8), parameters set and automated from the engine and shown as a generated list in the device panel, in step both ways with a plug-in's own editor (VST3 through the host's handler, CLAP through its blocks' output parameter events: an edit there becomes the panel's value with the next block, and the editor follows the panel and automation), the song's tempo, transport, position, bar, time signature and loop given to every plug-in, ARA plug-ins per audio clip (Edit with, the clip's gain and fades after it, its track's other clips past it; edits saved, clip changes followed live, the editor in the clip's place, one document a plug-in and project so its editor shows every track; warped and looped clips not yet), VST2 editors — a window of its own or embedded where the platform allows (Windows, X11), the plug-in's own size ask followed by the editor and reported back. Missing AU, configure mode, VST preset banks, sidechain parameters. |
 | 25 | Instrument, Drum and Effect Racks | 20 | 25 % | partial | Device groups: Ctrl+G groups picked devices, parallel branches with volume, pan, mute and solo in the group's panel, a mix against the dry signal and an output gain, instruments layered on the same notes, plug-ins inside, latency compensated, groups nested four deep, moved and duplicated by command, devices inside groups picked and Ctrl+A picking a whole chain; a Live Set's Audio Effect and Instrument Racks import as groups with their chains and devices, keeping the first eight macros' names and positions. No macro mappings, key/velocity/chain zones, drum pads or group presets. |
 | 26 | Automation and Editing Envelopes | 22 | 58 % | partial | Envelopes for track volume, pan and mute, built-in, .sd and plug-in device parameters: breakpoints with curved segments and jumps, saved, played in playback and renders (64-frame steps, ramped mixer gains), a manual change turning a lane off until re-enabled. Lanes under each track in the Arrangement: a parameter chooser with a search, the automated parameters first, devices and parameter groups folded under headings, points added, moved on the grid, selected and moved or deleted together, curves bent by dragging, re-enabled from the lane, a click near the line adding a point on it, a faint line at the value of a lane without points; a time range painted on a lane copied, pasted onto any lane, duplicated right after itself and deleted, and shapes inserted into it (sine, triangle, saws, square, ramps, curves, swell) with a depth and cycles a bar, live while dragged, into a point's segment from its menu or as the shape new points take; a curve handle half-way along each segment; a click adds a point on the line (anywhere, as a setting); a range's points scaled live, their corners and jumps rounded into curves or thinned to fewer bent segments, the arrows moving selected points; the automation under a clip moving, copying and duplicating with it, a box from a track picking its lanes' points. Missing recording, drawing with a pencil, plug-in lanes in the view, send, master and tempo automation, locking. |
 | 27 | Clip Envelopes | 13 | 0 % | absent | No clip envelopes. |
 | 28 | Working with Video | 6 | 0 % | absent | No video import or window. |
-| 29 | Live Audio Effect Reference | 139 | 21 % | partial | Suhina has 11 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, overdrive, saturator, compressor, limiter, delay, reverb) against 42 documented audio effects; the EQ, delay and reverb take every parameter of their counterparts, the saturator all but Hi-Quality, several others are close in kind but far narrower in parameters and modes. |
+| 29 | Live Audio Effect Reference | 139 | 23 % | partial | Suhina has 12 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, overdrive, saturator, compressor, multiband, limiter, delay, reverb) against 42 documented audio effects; the EQ, delay and reverb take every parameter of their counterparts, the saturator all but Hi-Quality, the multiband all but the side-chain and the band merge buttons, several others are close in kind but far narrower in parameters and modes. |
 | 30 | Live MIDI Effect Reference | 13 | 10 % | started | One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key window that blocks, folds or limits notes; its step buttons are planned. SDK MIDI-effect graphs run before the instrument too. The other 7 documented MIDI effects are missing. |
 | 31 | Live Instrument Reference | 120 | 12 % | started | FM synth and single-source sample/granular instrument against 13 instruments; graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades, editable automatic slice boundaries with persistent corrections, source-tempo grid/snap and stereo waveform navigation, and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; Simpler and a one-sample Sampler from a Live Set import as the sampler with their sample, region, tuning, envelope, filter and slicing; no multisample zones, drum sampler, wavetable, subtractive or physical modelling yet. |
 | 32 | Max for Live | 6 | 5 % | planned | ADR 0021 defines data-only .sd graphs with a Rust SDK, DSP runtime and custom UI nodes; typed sample resources, polyphonic voice/grain subgraphs, slicing, stretch and versioned components are executable through the Rust host API; visual graph editing is planned. Imported Max devices remain placeholders; no Max runtime. |
@@ -179,7 +179,7 @@ documented behaviour that exists today.
 |---|---|---|
 | Views and editing (ch 6-10, 16) | 140 | 47 % |
 | Browser, files, project (ch 4, 5) | 103 | 48 % |
-| Devices (ch 23-25, 29-31) | 338 | 21 % |
+| Devices (ch 23-25, 29-31) | 338 | 23 % |
 | Mixing, routing, I/O (ch 17, 18, 38) | 47 | 48 % |
 | Automation, envelopes (ch 26, 27) | 35 | 36 % |
 | Generative/transform (ch 11-15) | 67 | 7 % |
@@ -197,10 +197,10 @@ last table in this section.
 <!-- parity:begin device-counts -->
 | | Live 12 | Suhina equivalent exists | Suhina plans one (ROADMAP) | No counterpart named |
 |---|---|---|---|---|
-| Audio effects | 42 | 13 | 6 | 23 |
+| Audio effects | 42 | 13 | 5 | 23 |
 | MIDI effects | 8 | 1 | 0 | 7 |
 | Instruments | 13 | 2 | 8 | 3 |
-| **All** | **63** | **16** | **14** | **33** |
+| **All** | **63** | **16** | **13** | **33** |
 <!-- parity:end -->
 
 <!-- parity:begin device-none -->
@@ -241,7 +241,7 @@ does not name (Meld, Electric, Impulse, External Instrument).
 | Hybrid Reverb | 29.23 | convolution and algorithmic reverb | planned | ROADMAP: algorithmic and convolution reverb |
 | Limiter | 29.24 | brickwall limiter | equivalent | Suhina limiter (1.5 ms lookahead) |
 | Looper | 29.25 | live looping | none |  |
-| Multiband Dynamics | 29.26 | multiband dynamics | planned | ROADMAP: multiband dynamics |
+| Multiband Dynamics | 29.26 | multiband dynamics | close | Suhina multiband: three bands, above and below stages, Amount and Time, imported; no side-chain yet (docs/spec/multiband.md) |
 | Overdrive | 29.27 | overdrive pedal | equivalent | Suhina overdrive |
 | Pedal | 29.28 | distortion pedal | none |  |
 | Phaser-Flanger | 29.29 | phaser and flanger | none |  |
@@ -314,6 +314,7 @@ placeholders. None of them run today.
 | overdrive | effect | pedal-style: band, drive, tone, dynamics, dry/wet (7 parameters) |
 | saturator | effect | eight curves, Color filters and their inverse, post clip, waveshaper, dry/wet; oversampled (18 parameters) |
 | compressor | effect | stereo-linked, soft knee, side-chain high-pass, dry/wet (9 parameters) |
+| multiband | effect | three bands, above and below stages, solo, Amount, Time; live levels, gain change and spectrum on its panel (39 parameters) |
 | limiter | effect | brickwall, 1.5 ms lookahead (3 parameters) |
 | delay | effect | stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze (27 parameters) |
 | reverb | effect | algorithmic: input band, early reflections, feedback delay network with damping, chorus, freeze (32 parameters) |
@@ -353,7 +354,7 @@ or does something Live does not:
 <!-- parity:begin gap-table -->
 | Gap | Manual pages | Today | What closing it means |
 |---|---|---|---|
-| Devices: effects and instruments | 338 (ch 23-25, 29-31) | 21 % | 35 more audio effects and 12 more instruments, or a decision to cover the common ones only |
+| Devices: effects and instruments | 338 (ch 23-25, 29-31) | 23 % | 35 more audio effects and 12 more instruments, or a decision to cover the common ones only |
 | Browser and file management depth | 103 (ch 4, 5) | 48 % | collections, tag editor, project folders, collect files, unused files, packs, cloud |
 | Views and clip editing | 140 (ch 6-10, 16) | 47 % | MIDI note editor, clip view panels, time selections |
 | MIDI tools, MPE, grooves, tuning | 67 (ch 11-15) | 7 % | transformation and generative tools, MPE editing, groove pool, tuning systems |
