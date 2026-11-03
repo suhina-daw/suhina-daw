@@ -41,6 +41,7 @@ suhina-device-overdrive = { path = "devices/overdrive" }
 suhina-device-saturator = { path = "devices/saturator" }
 suhina-device-fm-synth = { path = "devices/fm-synth" }
 suhina-device-compressor = { path = "devices/compressor" }
+suhina-device-multiband = { path = "devices/multiband" }
 suhina-device-limiter = { path = "devices/limiter" }
 suhina-device-nam-amp-modeler = { path = "devices/nam-amp-modeler" }
 suhina-device-nam-cab-loader = { path = "devices/nam-cab-loader" }

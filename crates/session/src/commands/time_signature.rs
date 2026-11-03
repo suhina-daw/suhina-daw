@@ -12,7 +12,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[
             param("bar", ParamType::Integer, "bar number, from 2 (bar 1 has the start signature)"),
             param("numerator", ParamType::Integer, "beats in a bar, 1 to 99"),
-            param("denominator", ParamType::Integer, "the note value of a beat: 1, 2, 4, 8, 16, 32 or 64"),
+            param("denominator", ParamType::Integer, "the note value of a beat: 1, 2, 4, 8 or 16"),
         ],
         kind: CommandKind::Edit,
         run: crate::tempo::add_signature,
@@ -25,7 +25,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param("bar", ParamType::Integer, "the bar the change is at, from 2"),
             optional("to", ParamType::Integer, "the bar to move it to, from 2"),
             optional("numerator", ParamType::Integer, "beats in a bar, 1 to 99"),
-            optional("denominator", ParamType::Integer, "1, 2, 4, 8, 16, 32 or 64"),
+            optional("denominator", ParamType::Integer, "1, 2, 4, 8 or 16"),
         ],
         kind: CommandKind::Edit,
         run: crate::tempo::move_signature,

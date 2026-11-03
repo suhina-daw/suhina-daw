@@ -1941,6 +1941,7 @@ fn plugin_folders(
         "vst3" => "VST3",
         "clap" => "CLAP",
         "vst2" => "VST2",
+        "any" if cfg!(target_os = "macos") => "CLAP, VST3 and VST2",
         _ => "CLAP and VST3",
     };
 
@@ -1992,7 +1993,7 @@ fn plugin_folders(
             }
         }
     }
-    // A folder to add, and the format it holds: VST2 shows, for when it is hosted. Add with
+    // A folder to add, and the format it holds. Add with
     // nothing typed asks for the system's folder picker instead.
     *y += 4.0;
     let r = line(y, 20.0);
@@ -2013,7 +2014,7 @@ fn plugin_folders(
     widgets::input_line(ui, &edit);
     let width = formats.width() / 4.0;
     for (index, (format, title)) in [
-        (FolderFormat::Any, "Both"),
+        (FolderFormat::Any, "All"),
         (FolderFormat::Vst3, "VST3"),
         (FolderFormat::Clap, "CLAP"),
         (FolderFormat::Vst2, "VST2"),
@@ -2025,25 +2026,19 @@ fn plugin_folders(
             Pos2::new(formats.left() + index as f32 * width, formats.top()),
             Vec2::new(width - 1.0, formats.height()),
         );
-        let label = if format.hosted() {
-            format!("Folder format: {}", format_name(format.name()))
-        } else {
-            "Folder format: VST2 (not hosted yet)".to_string()
-        };
-        let response = widgets::button_area(ui, cell, Id::new(("folder-format", index)), label);
+        let response = widgets::button_area(
+            ui,
+            cell,
+            Id::new(("folder-format", index)),
+            format!("Folder format: {}", format_name(format.name())),
+        );
         let chosen = plugins.new_format == format;
-        if response.clicked() && format.hosted() {
+        if response.clicked() {
             plugins.new_format = format;
         }
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         painter.fill_background(cell, 0.0, if chosen { theme::control_selected() } else { idle });
-        let color = if chosen {
-            theme::text_inverse()
-        } else if format.hosted() {
-            theme::text_secondary()
-        } else {
-            theme::text_hint()
-        };
+        let color = if chosen { theme::text_inverse() } else { theme::text_secondary() };
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
     let response = widgets::button_area(ui, add, Id::new("add-folder"), "Add plug-in folder");

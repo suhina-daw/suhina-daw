@@ -70,9 +70,9 @@ STATUSES = ("current", "draft", "planned", "superseded")
 # A decision (an ADR) has its own: whether it is in force, and in `built` how far it is built.
 DECISION_STATUSES = ("proposed", "accepted", "superseded", "rejected")
 BUILT = ("no", "partly", "yes")
-# What the structure checks (docs/README.md) report as: a warning while the tree is cleaned up
-# (#759, phase 1), an error once it is.
-STRUCTURE_LEVEL = "warning"
+# What the structure checks (docs/README.md) report as: warnings while the tree was cleaned up
+# (#759), errors since it is clean.
+STRUCTURE_LEVEL = "error"
 STALE_AFTER_DAYS = 90
 # `stamp` reads history from this day on: before it, pull requests set last_verified by hand.
 STAMP_FROM = "2026-10-17"
@@ -99,7 +99,7 @@ HUB_DOCS = 3
 READ_WHEN_WORDS = 40
 # Documents outside docs/ that the index lists by hand; they carry no front matter.
 ROOT_DOCS = (
-    ("AGENTS.md", "Rules for agents and contributors, the crate map, what to run before finishing"),
+    ("AGENTS.md", "Rules for agents and contributors, what to run before finishing, where to read more"),
     ("CONTRIBUTING.md", "Clean-room rules, licences, AI-assisted contributions"),
     ("ROADMAP.md", "Milestones, what works now, what comes next"),
     ("README.md", "What Suhina is, how to try and build it"),
@@ -149,7 +149,9 @@ def parse(path: Path) -> Doc:
 
 def documents() -> list[Doc]:
     generated = {path for path, _ in GENERATED}
-    paths = sorted(p for p in DOCS.rglob("*.md") if p not in generated)
+    # docs/works-now/ holds ROADMAP bullets waiting to be folded in (scripts/works_now.py), not documents.
+    works_now = DOCS / "works-now"
+    paths = sorted(p for p in DOCS.rglob("*.md") if p not in generated and works_now not in p.parents)
     return [parse(p) for p in paths]
 
 
@@ -341,6 +343,66 @@ def prose_lines(text: str):
             continue
         if not fenced:
             yield number, line
+
+
+# A repository path in backticks in a skill: starts at a top-level folder, no placeholders.
+SKILL_PATH = re.compile(r"^(?:crates|devices|apps|docs|scripts|assets|third_party|\.github|\.claude)/[A-Za-z0-9_.\-/]*$")
+# A symbol in backticks in a skill: `suhina_crate::module::Name`, optionally called with `()`.
+SKILL_SYMBOL = re.compile(r"^(suhina_[a-z0-9_]+)((?:::[A-Za-z_][A-Za-z0-9_]*)+)(?:\(\))?$")
+INLINE_CODE = re.compile(r"`([^`\n]+)`")
+
+
+def crate_dirs() -> dict[str, str]:
+    """Each workspace crate's name in Rust code (`suhina_device_auto_pan`) and its folder."""
+    text = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    return {
+        m.group(1).replace("-", "_"): m.group(2)
+        for m in re.finditer(r'^(suhina[a-z0-9-]*)\s*=\s*\{\s*path\s*=\s*"([^"]+)"', text, re.M)
+    }
+
+
+def defines(sources: list[str], name: str, module: bool) -> bool:
+    """Whether a Rust item (or, with `module`, a module) called `name` is defined or re-exported
+    in one of `sources`."""
+    if module and any(Path(f).stem == name or Path(f).parent.name == name for f in sources):
+        return True
+    kinds = r"mod" if module else r"fn|struct|enum|trait|type|const|static|mod|union|macro_rules!"
+    item = re.compile(rf"\b(?:{kinds})\s+{re.escape(name)}\b|\bpub(?:\([a-z]+\))?\s+use\b[^;]*\b{re.escape(name)}\b")
+    return any(item.search((ROOT / f).read_text(encoding="utf-8", errors="replace")) for f in sources)
+
+
+def check_skill(rel: str, text: str, files: list[str], crates: dict[str, str]) -> list[Finding]:
+    """The paths and `suhina_*::` symbols a skill names in backticks exist, so a checklist that
+    goes stale fails CI (#768 › 3)."""
+    tracked = set(files)
+    folders = {parent.as_posix() for f in files for parent in Path(f).parents}
+    out = []
+    for number, line in prose_lines(text):
+        for span in INLINE_CODE.findall(line):
+            span = span.strip()
+            if SKILL_PATH.match(span):
+                if span.rstrip("/") not in tracked and span.rstrip("/") not in folders:
+                    out.append(Finding(rel, number, "SKILL_PATH", f"{span}: no such file or folder in the repository"))
+            elif m := SKILL_SYMBOL.match(span):
+                folder = crates.get(m.group(1))
+                if folder is None:
+                    out.append(Finding(rel, number, "SKILL_SYMBOL", f"{span}: no crate {m.group(1)} in the workspace"))
+                    continue
+                sources = [f for f in files if f.startswith(folder.rstrip("/") + "/") and f.endswith(".rs")]
+                *modules, name = m.group(2).strip(":").split("::")
+                missing = [mod for mod in modules if not defines(sources, mod, module=not mod[:1].isupper())]
+                if missing or not defines(sources, name, module=False):
+                    out.append(Finding(rel, number, "SKILL_SYMBOL", f"{span}: not found in {folder}"))
+    return out
+
+
+def check_skills(files: list[str]) -> list[Finding]:
+    crates = crate_dirs()
+    out = []
+    for rel in files:
+        if re.fullmatch(r"\.claude/skills/[^/]+/SKILL\.md", rel) and (ROOT / rel).exists():
+            out += check_skill(rel, (ROOT / rel).read_text(encoding="utf-8"), files, crates)
+    return out
 
 
 def check_adr_numbers(files: list[str]) -> list[Finding]:
@@ -540,6 +602,9 @@ def check() -> int:
                 annotate("error", d, "BROKEN_COVERS", f"covers {pattern!r}, which matches no file in the repository")
                 errors += 1
     errors += check_links(files)
+    for f in check_skills(files):
+        print(f"::error file={f.rel},line={f.line}::{f.code}: {f.message}")
+        errors += 1
     findings = check_structure(docs, files)
     for f in findings:
         where = f"file={f.rel}" + (f",line={f.line}" if f.line else "")

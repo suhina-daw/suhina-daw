@@ -975,3 +975,44 @@ fn a_list_with_a_canvas_or_placed_cells_keeps_its_positions() {
     assert!(!list_spreads(&graph));
     assert!(list_spreads(&chain.devices[0].graph.clone().unwrap()));
 }
+
+#[test]
+fn host_values_reach_devices_inside_groups_with_or_without_live_values() {
+    use super::{Detail, DeviceAt, DeviceBox, build, give_host_values};
+    use suhina_engine::model::{Branch, Channel, ChannelId, Device, DeviceGroup, DeviceKind, Project, Track, TrackId};
+    let multiband = || Device::new("Multiband", DeviceKind::Builtin("multiband".into()));
+    let mut project = Project::default();
+    project.tracks.push(Track { channel: Some(ChannelId(1)), ..Track::new(TrackId(1), "T") });
+    let mut channel = Channel::new(ChannelId(1), "T");
+    let branch = Branch { devices: vec![multiband()], ..Branch::new("B") };
+    channel.devices = vec![multiband(), Device::group("G", DeviceGroup::with_branches(vec![branch]))];
+    project.channels.push(channel);
+    let Detail::Devices(mut chain) = build(&project, Some(TrackId(1)), None) else {
+        panic!("the track's devices");
+    };
+    let top = DeviceAt::at(0);
+    let inner = DeviceAt(vec![1, 0, 0]);
+    let value = |devices: &[DeviceBox], at: &DeviceAt, id: &str| {
+        let device = if *at == top {
+            &devices[0]
+        } else {
+            &devices[1].group.as_ref().expect("the group").branches[0].devices[0]
+        };
+        let graph = device.graph.as_ref().expect("its panel");
+        graph.parameters.iter().rfind(|p| p.id == id).map(|p| p.value)
+    };
+
+    // No player: the panel still knows it is open, and nothing is live.
+    assert!(!give_host_values(&mut chain.devices, Some(&inner), &mut |_| None));
+    assert_eq!(value(&chain.devices, &inner, suhina_device_sdk::ui::EXPANDED_ID), Some(1.0));
+    assert_eq!(value(&chain.devices, &top, suhina_device_sdk::ui::EXPANDED_ID), Some(0.0));
+    assert_eq!(value(&chain.devices, &inner, "#r0"), None);
+
+    // A player whose monitor holds the device inside the group's values.
+    let live = give_host_values(&mut chain.devices, None, &mut |at| {
+        (*at == inner).then_some([-3.0; suhina_device_api::MAX_READOUTS])
+    });
+    assert!(live);
+    assert_eq!(value(&chain.devices, &inner, "#r0"), Some(-3.0));
+    assert_eq!(value(&chain.devices, &top, "#r0"), None);
+}

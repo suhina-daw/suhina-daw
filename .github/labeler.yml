@@ -3,7 +3,7 @@
 # pull request whose files changed (a rebase, a stack moved) does not keep the areas of its past.
 # Labels not listed here (test-build, ready to merge, ...) are left alone.
 
-# The kind of change, from the branch name (AGENTS.md › Tasks › Branch names).
+# The kind of change, from the branch name (docs/workflow.md › Branch names).
 enhancement:
   - head-branch: ['^feature/']
 bug:

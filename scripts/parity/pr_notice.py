@@ -5,9 +5,9 @@
 
 A pull request that adds, changes or removes something a user can do updates the coverage in
 `scripts/parity/score.py` (and `devices.json` for built-in effects and instruments) in the same
-change, or says `Parity: no change` with the reason in its description (AGENTS.md › Before you
-finish a task). This script is the CI side of that rule, and only a notice for now: it prints a
-GitHub Actions warning and always exits 0.
+change, or says `Parity: no change` with the reason in its description (docs/workflow.md ›
+Parity). This script is the CI side of that rule, and only a notice for now: it prints a GitHub
+Actions warning and always exits 0.
 
     python scripts/parity/pr_notice.py --base HEAD^1 --body-file body.txt
     git diff --name-only BASE HEAD | python scripts/parity/pr_notice.py --files - --body-file body.txt
@@ -44,7 +44,7 @@ def notice(files: list[str], body: str) -> str | None:
         "scripts/parity/devices.json. If it adds, changes or removes something a user can do, "
         "update the coverage there (the report's numbers are regenerated on main after the "
         "merge); otherwise write `Parity: no change` and the reason in the description "
-        "(AGENTS.md › Before you finish a task)."
+        "(docs/workflow.md › Parity)."
     )
 
 

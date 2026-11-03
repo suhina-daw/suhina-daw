@@ -1427,7 +1427,7 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     if !instrument {
         check_effect_position(first_effect, channel.devices.len(), position)?;
     }
-    // A plug-in that edits clips (ARA, ADR 0028) plays the clips from their files, so a device
+    // A plug-in that edits clips (ARA, ADR 0033) plays the clips from their files, so a device
     // before it would not be heard: it goes first, wherever it was asked for.
     let moved_first = plugin.ara && params.get("position").is_some() && position != 0;
     let position = if plugin.ara { 0 } else { position };
@@ -1484,6 +1484,10 @@ pub(crate) fn plugin_status(session: &mut Session, params: &Value) -> Result<Val
 
 pub(crate) fn open_editor(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let key = plugin_key(session, params)?;
+    if let Some(device) = suhina_engine::plugin_devices(&session.project).iter().find(|d| d.key == key) {
+        let title = crate::rack::editor_title_of(&session.project, device);
+        session.plugins.name_editor(key, title);
+    }
     // Over the app's window the editor opens in the background; `device.plugin` says when.
     Ok(match session.plugins.open_editor(key)? {
         Some((width, height)) => json!({ "editor_open": true, "width": width, "height": height }),

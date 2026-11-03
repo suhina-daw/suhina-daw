@@ -3,7 +3,7 @@ description: Every executable SDK node, ports, defaults, formulas, state and rea
 read_when: SDK node reference, node ports, DSP primitives, graph authoring, AI device development
 type: spec
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-11-02
 covers:
   - crates/device-sdk/src/sample_resource.rs
   - crates/device-sdk/src/nodes/audio.rs
@@ -213,12 +213,6 @@ tempo*division/160; tempo*division/360; tempo/(15*division).
 The synchronized divisor describes 1/division of a whole note; the 16th mode counts
 sixteenth notes per cycle. Inputs are clamped before conversion. It has no state to reset,
 allocations, latency or signal-dependent processing.
-
-Native Sampler wrappers from revisions 1-11 may retain their original parameter
-prefix without the appended LFO destinations, shape, source fades, warp controls,
-LFO timing selectors and Source BPM; the oldest may also omit
-`panel_view`. New depths and fades default to zero; shape defaults to Sine. All declared audio parameter contracts
-still match exactly; other omissions or changed native parameters remain errors.
 
 ## Composable sample source
 

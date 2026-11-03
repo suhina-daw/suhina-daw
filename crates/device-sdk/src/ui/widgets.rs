@@ -195,6 +195,20 @@ pub enum Widget {
         min_hz: f32,
         max_hz: f32,
     },
+    /// A drawing that takes no input (a display, a curve): its own drawings, no binding.
+    Graphic {
+        drawing: Vec<Draw>,
+    },
+    /// A line across the control that moves with its one binding and is dragged directly: an X
+    /// binding gives a vertical line moved sideways, a Y binding a horizontal one moved up and
+    /// down. The value maps to the control's bounds as `position` does. `span` limits the line
+    /// (and where it is grabbed) across the other axis, in canvas units; the whole bounds
+    /// without it.
+    Handle {
+        color: [u8; 4],
+        #[serde(default)]
+        span: Option<[crate::ui::UiValue; 2]>,
+    },
 }
 impl CustomControl {
     /// Legacy custom drawings and typed widgets share the host's interaction path.
@@ -233,7 +247,10 @@ fn resolve_widget_draw(draw: &mut Draw, palette: &WidgetPalette) {
         };
     };
     match draw {
-        Draw::Rect { color, .. } | Draw::Circle { color, .. } | Draw::Text { color, .. } => resolve(color),
+        Draw::Rect { color, .. }
+        | Draw::Circle { color, .. }
+        | Draw::Text { color, .. }
+        | Draw::Value { color, .. } => resolve(color),
         Draw::Line { color, .. } | Draw::Arc { color, .. } => resolve(color),
         Draw::Path { color, fill, .. } => {
             resolve(color);
@@ -277,6 +294,13 @@ impl Widget {
                 color: RIM,
                 width: 1.,
             }];
+        }
+        if let Self::Graphic { drawing } = self {
+            return drawing.clone();
+        }
+        if let (Self::Button { label, .. }, UiGesture::Preset(_)) = (self, control.gesture) {
+            // A quick preset's button has no parameter of its own: a plain face and its name.
+            return vec![rect(0., 0., w.into(), height, [46, 45, 42, 255]), text(w / 2., 0., label, TEXT, true)];
         }
         let Some(binding) = control.x.as_ref().or(control.y.as_ref()) else {
             return vec![];
@@ -323,7 +347,9 @@ impl Widget {
                     }
                 }
             }
-            Self::Label { .. } | Self::Panel { .. } | Self::Separator => return vec![],
+            Self::Label { .. } | Self::Panel { .. } | Self::Separator | Self::Handle { .. } | Self::Graphic { .. } => {
+                return vec![];
+            }
             Self::Stepper { decimals } => {
                 let mut value = readout(id, 3., (height - 10.) / 2., *decimals, ACCENT, false);
                 if let Draw::Text { size, .. } = &mut value {

@@ -641,7 +641,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
 ];
 
 /// `arrangement.audioOverlaps`: [`Project::audio_overlaps`], each clip named as `clip.move`
-/// addresses it (ADR 0028).
+/// addresses it (ADR 0033).
 fn audio_overlaps(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = session.project();
     let only = match params.get("track") {

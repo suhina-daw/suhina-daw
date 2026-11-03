@@ -4,6 +4,19 @@
 //! Suhina audio engine. Offline rendering and real-time playback share this code path:
 //! [`Renderer::new`] does all allocation up front, and [`Renderer::process`] never allocates,
 //! so the same `process` call can later run on the audio thread.
+//!
+//! In detail: Turning a project into audio: note voices, audio clips, real-time time-stretching
+//! (ADR 0003), the clip launcher (spec (`docs/spec/clip-launching.md`)), device chains on tracks,
+//! with an instrument playing its track's notes (ADR 0004), every beat placed through the project's
+//! tempo map in frames (`engine::tempo`; spec (`docs/spec/tempo-map.md`)), plug-in slots in those
+//! chains that run a hosted plug-in's audio half (`PluginProcessor`) once per block with its notes,
+//! until the block's deadline (ADR 0006), latency compensation across tracks, group and master
+//! gain, sends into return tracks' chains, the browser's preview voice after the main mix (ADR
+//! 0011), live notes from MIDI controllers played by the armed tracks' instruments, over a queue of
+//! their own (`live`, ADR 0017), and the audio input device's frames heard through the tracks whose
+//! audio input and monitoring take them (`input`), and the cue bus beside the main output: cued
+//! tracks after their own fader, and the preview (cue spec (`docs/spec/cue-output.md`)). Never
+//! touches files and never loads a plug-in.
 
 mod ahead;
 pub use assets::DeviceAssets;
@@ -99,7 +112,7 @@ pub use live::{
     LIVE_QUEUE, LiveEvent, LiveFilter, LivePorts, LiveSender, LiveSource, MAX_ARMED, MAX_SOURCES, StampClock, live_now,
     port_id,
 };
-pub use meters::{Level, MAX_METERED_TRACKS, MeterMonitor, PEAK_FALL_DB_PER_SECOND, RMS_SECONDS};
+pub use meters::{Level, MAX_METERED_TRACKS, MAX_READOUT_DEVICES, MeterMonitor, PEAK_FALL_DB_PER_SECOND, RMS_SECONDS};
 pub use metronome::ClickSound;
 use plugin::{DEADLINE_SHARE, Delay};
 pub use plugin::{

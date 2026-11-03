@@ -1289,8 +1289,145 @@ fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
     ctx.data_mut(|d| d.insert_temp(key, cache));
     loaded
 }
+/// A `handle` widget: its line where its parameter is, grabbed within a few pixels of it and
+/// dragged along its axis; a double click resets it. Every drag is one undo gesture.
+#[allow(clippy::too_many_arguments)]
+fn handle(
+    ui: &mut egui::Ui,
+    painter: &egui::Painter,
+    (canvas, bounds, stretch): (Rect, Rect, Vec2),
+    control: &suhina_device_sdk::ui::CustomControl,
+    (line_color, span): ([u8; 4], Option<&[suhina_device_sdk::ui::UiValue; 2]>),
+    parameters: &[GraphParameter],
+    (track, at): (TrackId, &crate::detail::detail_view::DeviceAt),
+    actions: &mut Vec<Action>,
+) {
+    /// How far from its line a handle is grabbed, in points.
+    const GRAB: f32 = 7.0;
+    let (binding, vertical) = match (&control.x, &control.y) {
+        (Some(b), None) => (b, true),
+        (None, Some(b)) => (b, false),
+        _ => return,
+    };
+    let Some(p) = parameters.iter().find(|p| p.id == binding.parameter) else { return };
+    let lookup = |id: &str, norm: bool, log: bool| {
+        parameters.iter().find(|p| p.id == id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
+    };
+    let (from, to) = span.map_or_else(
+        || if vertical { (bounds.top(), bounds.bottom()) } else { (bounds.left(), bounds.right()) },
+        |[a, b]| {
+            let (origin, scale) = if vertical { (canvas.top(), stretch.y) } else { (canvas.left(), stretch.x) };
+            (origin + a.evaluate(&lookup) * scale, origin + b.evaluate(&lookup) * scale)
+        },
+    );
+    let n = normalized(p, binding.logarithmic) as f32;
+    let (line, grab) = if vertical {
+        let x = bounds.left() + n * bounds.width();
+        let line = [Pos2::new(x, from), Pos2::new(x, to)];
+        (line, Rect::from_min_max(Pos2::new(x - GRAB, from), Pos2::new(x + GRAB, to)))
+    } else {
+        let y = bounds.bottom() - n * bounds.height();
+        let line = [Pos2::new(from, y), Pos2::new(to, y)];
+        (line, Rect::from_min_max(Pos2::new(from, y - GRAB), Pos2::new(to, y + GRAB)))
+    };
+    if !grab.is_positive() {
+        return;
+    }
+    let id = ui.id().with(("sd-handle", track.0, at.value().to_string(), &control.id));
+    let response = ui
+        .interact(grab, id, egui::Sense::click_and_drag())
+        .on_hover_cursor(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical })
+        .on_hover_text(&control.tooltip);
+    if response.clicked() || response.drag_started() {
+        response.request_focus();
+    }
+    let hot = response.hovered() || response.dragged() || response.has_focus();
+    let stroke = Stroke::new(if hot { 3.0 } else { 2.0 }, color(line_color));
+    painter.line_segment(line, stroke);
+    let grip = Rect::from_center_size(
+        if vertical { Pos2::new(line[0].x, line[0].y + 6.0) } else { Pos2::new(line[1].x - 6.0, line[0].y) },
+        Vec2::splat(if hot { 9.0 } else { 7.0 }),
+    );
+    painter.rect_filled(grip, 1.0, color(line_color));
+    let at_travel = |t: f64| {
+        let t = t.clamp(0.0, 1.0);
+        if binding.logarithmic && p.min > 0.0 {
+            (p.min.ln() + t * (p.max.ln() - p.min.ln())).exp()
+        } else {
+            p.min + t * (p.max - p.min)
+        }
+    };
+    // The arrow keys along its travel move a focused handle 1 % of it, 0.1 % with Shift.
+    let (up, down) = if vertical {
+        (egui::Key::ArrowRight, egui::Key::ArrowLeft)
+    } else {
+        (egui::Key::ArrowUp, egui::Key::ArrowDown)
+    };
+    let keys = if response.has_focus() {
+        // The arrows stay with the handle instead of moving the focus on.
+        ui.memory_mut(|m| {
+            let arrows = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, ..Default::default() };
+            m.set_focus_lock_filter(response.id, arrows);
+        });
+        ui.input(|i| {
+            f64::from(i32::from(i.key_pressed(up)) - i32::from(i.key_pressed(down)))
+                * if i.modifiers.shift { 0.001 } else { 0.01 }
+        })
+    } else {
+        0.0
+    };
+    let value = if response.double_clicked() {
+        Some(p.default)
+    } else if keys != 0.0 {
+        Some(at_travel(normalized(p, binding.logarithmic) + keys))
+    } else if response.dragged() || response.drag_stopped() {
+        response.interact_pointer_pos().map(|pos| {
+            at_travel(f64::from(if vertical {
+                (pos.x - bounds.left()) / bounds.width()
+            } else {
+                (bounds.bottom() - pos.y) / bounds.height()
+            }))
+        })
+    } else {
+        None
+    };
+    if let Some(value) = value {
+        actions.push(Action::new(
+            "device.setParam",
+            json!({
+                "track": track.0, "device": at.value(), "param": p.id, "value": value,
+                "continuous": response.dragged() && !response.drag_stopped(), "gesture": control.id
+            }),
+        ));
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &control.name));
+}
+
+/// A drawing's colour: one of the SDK's theme tokens takes the theme's custom property (or its
+/// default), keeping the drawing's alpha.
 fn color(c: [u8; 4]) -> Color32 {
-    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+    let [r, g, b, a] = c;
+    // The theme's own colours by token ([3, 1, k]): text, panel, control, border, accent.
+    if [r, g] == [3, 1] {
+        let palette = crate::kit::theme::palette();
+        let base = match b {
+            1 => palette.text_primary,
+            2 => palette.panel_background,
+            3 => palette.control_background,
+            4 => palette.border,
+            _ => palette.accent,
+        };
+        return Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), a);
+    }
+    if let Some((_, property, default)) = suhina_device_sdk::ui::THEME_TOKENS.iter().find(|(rgb, ..)| *rgb == [r, g, b])
+    {
+        let base = crate::kit::style_class::property(property)
+            .as_deref()
+            .and_then(crate::kit::theme::parse_hex)
+            .map_or(*default, |c| [c.r(), c.g(), c.b()]);
+        return Color32::from_rgba_unmultiplied(base[0], base[1], base[2], a);
+    }
+    Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 fn normalized(p: &GraphParameter, log: bool) -> f64 {
     if log && p.min > 0.0 {
@@ -1301,10 +1438,6 @@ fn normalized(p: &GraphParameter, log: bool) -> f64 {
         0.0
     }
 }
-fn paint(painter: &egui::Painter, drawings: &[Draw], origin: Pos2, parameters: &[GraphParameter], loaded: &Loaded) {
-    paint_scaled(painter, drawings, origin, parameters, loaded, Vec2::splat(1.0));
-}
-
 fn paint_scaled(
     painter: &egui::Painter,
     drawings: &[Draw],
@@ -1421,6 +1554,15 @@ fn paint_scaled(
                 let offset = if *align == TextAlign::Center { Vec2::new(galley.size().x / 2., 0.) } else { Vec2::ZERO };
                 crate::kit::widgets::paint_text(painter, position - offset, galley, ink);
             }
+            Draw::Value { position, value: number, prefix, suffix, color: c, size, decimals, align } => {
+                let label = format!("{prefix}{}{suffix}", fixed(f64::from(value(number)), *decimals));
+                let ink = crate::kit::style_class::foreground(color(*c));
+                let font = crate::kit::theme::ui_font((*size * weight).clamp(1.0, 256.0));
+                let galley = painter.layout_no_wrap(label, font, ink);
+                let position = point(position);
+                let offset = if *align == TextAlign::Center { Vec2::new(galley.size().x / 2., 0.) } else { Vec2::ZERO };
+                crate::kit::widgets::paint_text(painter, position - offset, galley, ink);
+            }
             Draw::Gradient { rect, colors } => {
                 let r = rectangle(rect);
                 let mut mesh = egui::Mesh::default();
@@ -1511,6 +1653,7 @@ fn paint_control(
     parameters: &[GraphParameter],
     loaded: &Loaded,
     response: Option<&egui::Response>,
+    accent_on: bool,
 ) {
     let class = control_class(control);
     let _scope = response
@@ -1589,7 +1732,11 @@ fn paint_control(
             && let Draw::Rect { radius, .. } = draw
         {
             let replaced = *body.get_or_insert_with(|| {
-                let fill = crate::kit::style_class::background(if on {
+                // A canvas may fill an on button with the accent, so it reads at a glance and the
+                // SDK's dark label for an on button stays legible on it.
+                let fill = crate::kit::style_class::background(if on && accent_on {
+                    crate::kit::theme::accent()
+                } else if on {
                     crate::kit::theme::control_active()
                 } else {
                     crate::kit::theme::control_background()
@@ -1763,7 +1910,13 @@ pub(crate) fn show(
         painter.fill_background(rect, 0.0, crate::kit::style_class::background(background));
         crate::kit::native_css::background_rounded(&painter, rect, 0.);
     }
-    paint(&painter, &canvas.layers, rect.min, parameters, &loaded);
+    // A strip is scaled to the rect it is shown in on each axis, smaller too, as it has no scroll
+    // bar. Any other canvas shown larger is stretched the same way; one shown shorter is fitted by
+    // its controls (`fitted_size`), not squeezed.
+    let stretch = Vec2::new(rect.width() / canvas.size[0].max(1.0), rect.height() / canvas.size[1].max(1.0));
+    let stretch = if canvas.strip { stretch } else { stretch.max(Vec2::splat(1.0)) };
+    let stretch = if (stretch - Vec2::splat(1.0)).length() < 0.001 { Vec2::splat(1.0) } else { stretch };
+    paint_scaled(&painter, &canvas.layers, rect.min, parameters, &loaded, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;
     for (control, drawings) in canvas.controls.iter().zip(&loaded.controls) {
@@ -1788,7 +1941,7 @@ pub(crate) fn show(
             continue;
         }
         let [x, y, w, h] = fitted_control_bounds(control, reduction);
-        let bounds = Rect::from_min_size(rect.min + Vec2::new(x, y), Vec2::new(w, h));
+        let bounds = Rect::from_min_size(rect.min + Vec2::new(x, y) * stretch, Vec2::new(w, h) * stretch);
         let name = crate::kit::control_layout::semantic_name("device", &control.id);
         if crate::kit::control_layout::placement(&name).hidden {
             continue;
@@ -1822,7 +1975,56 @@ pub(crate) fn show(
             );
             continue;
         }
-        if matches!(control.widget, Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator)) {
+        if let Some(Widget::Handle { color: line_color, span }) = &control.widget {
+            handle(
+                ui,
+                &painter,
+                (rect, bounds, stretch),
+                control,
+                (*line_color, span.as_ref()),
+                parameters,
+                (track, at),
+                actions,
+            );
+            continue;
+        }
+        if let UiGesture::Preset(index) = control.gesture {
+            let response = ui
+                .interact(bounds, ui.id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
+                .on_hover_text(&control.tooltip);
+            paint_control(
+                &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
+                &painter,
+                control,
+                drawings,
+                bounds,
+                parameters,
+                &loaded,
+                Some(&response),
+                canvas.accent_on,
+            );
+            if response.clicked()
+                && let Some(preset) = canvas.presets.get(usize::from(index))
+            {
+                // Every value but the last is continuous, so the preset is one undo step.
+                let count = preset.values.len();
+                for (i, (id, value)) in preset.values.iter().enumerate() {
+                    actions.push(Action::new(
+                        "device.setParam",
+                        json!({
+                            "track": track.0, "device": at.value(), "param": id, "value": value,
+                            "continuous": i + 1 < count, "gesture": control.id
+                        }),
+                    ));
+                }
+            }
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &control.name));
+            continue;
+        }
+        if matches!(
+            control.widget,
+            Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator | Widget::Graphic { .. })
+        ) {
             paint_control(
                 &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
                 &painter,
@@ -1832,6 +2034,7 @@ pub(crate) fn show(
                 parameters,
                 &loaded,
                 None,
+                canvas.accent_on,
             );
             continue;
         }
@@ -1915,6 +2118,7 @@ pub(crate) fn show(
             parameters,
             &loaded,
             Some(&response),
+            canvas.accent_on,
         );
         if response.is_pointer_button_down_on() || response.clicked() || response.drag_started() {
             response.request_focus();
@@ -2103,7 +2307,7 @@ pub(crate) fn show(
                 control.gesture,
                 UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_) | UiGesture::Menu
             ) {
-                next += (if axis == 0 { dx } else { dy }) as f64 * 0.01 * fine;
+                next += (if axis == 0 { dx } else { dy }) as f64 * 0.01 * fine * f64::from(binding.drag_scale.signum());
             }
             let mut value = if binding.logarithmic {
                 (p.min.ln() + next.clamp(0.0, 1.0) * (p.max.ln() - p.min.ln())).exp()
@@ -2118,7 +2322,8 @@ pub(crate) fn show(
             } else {
                 0
             };
-            let key_delta = (if axis == 0 { dx } else { dy }) + step_click;
+            // A negative scale steps the other way too; a stepper's own buttons keep their direction.
+            let key_delta = (if axis == 0 { dx } else { dy }) * binding.drag_scale.signum() as i32 + step_click;
             if key_delta != 0
                 && !matches!(
                     control.gesture,

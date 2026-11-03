@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -54,7 +54,7 @@ notes are left out. Each pair has the track, the shared span (`start`, `end`, in
 (`partial`, or `contained` when one clip lies within the other) and both clips with their `id`
 (what `clip.move` and the other clip commands take, ADR 0025), `track`, `index` and name; at most 10 000 pairs, `truncated` saying when
 there were more. ARA's first version refuses such overlaps for the clips it edits
-([ADR 0028](../decisions/0028-ara-hosting.md)); ordinary stacking is unaffected.
+([ADR 0033](../decisions/0033-ara-hosting.md)); ordinary stacking is unaffected.
 
 ## Tools
 
@@ -149,7 +149,7 @@ or down, a selection on one track goes to the track under the pointer, and a sel
 tracks moves each clip by as many tracks from its own (`tracksBy`), refused where a clip would
 land on a track that cannot hold it. A clip an ARA plug-in (Melodyne) edits, going to another
 track, asks first: **Keep edits** takes its edits along and puts the plug-in on that track when it
-has none, **Copy as new** starts it there without them (`araEdits`, ADR 0028). Dropped on the empty space under the tracks, outlined there
+has none, **Copy as new** starts it there without them (`araEdits`, ADR 0033). Dropped on the empty space under the tracks, outlined there
 as **New track** while carried, the clips (moved or copied) go to a new track of their kind made
 after the last (`toNewTrack`), in the same undo step.
 
@@ -807,7 +807,7 @@ own band last. Bands narrow with depth: 6, 4, 3, then 2 px at every deeper level
 bands. Descendants keep each ancestor's band aligned with its header, so a group reads as one
 block without deep nesting crowding the controls. Every header keeps the fold triangle's room.
 A group's menu
-has **Assign track color to all tracks and clips**, which gives every track inside it, at any depth,
+has **Recolor group**, which gives every track inside it, at any depth,
 the colour the group shows, and turns the clips of the group and of those tracks back to their
 track's colour (`track.colorGroup` with `clips`, one undo step). A looping clip's top notches are at most 2.5 px wide on each side of the boundary and
 shrink with the lane height. Its 1 px boundary line uses half the leading edge's contrast; the top notch cuts through to the canvas colour for a clearer silhouette. A group that holds tracks has
@@ -857,7 +857,8 @@ input lines follow below.
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging
 one field moves every selected track's by the same amount (the others follow it as it is dragged,
-and the commands land when it is let go), one click on a track-on or a solo button turns them all
+and the commands land when it is let go; a number typed or a double-click sets them all to that
+value), one click on a track-on or a solo button turns them all
 off or on, and the whole list is one undo step. With one track selected, or with a click outside
 the selection, they act on that track alone, and it is heard while it is dragged: each frame sets
 the value with `continue`, so the drag is one undo step.
@@ -1031,8 +1032,11 @@ than forcing an already audible effect tail to zero. It does not move note times
 of latency, and spans render-block boundaries. Offline command rendering uses the same path.
 
 Stopping a running transport, whether returning to the marker or keeping the current position,
-uses the same latency-aligned transition unless all instrument slots provide their own smooth
-stop. Hosted instruments with a transport gate fade their own output over 5 ms instead.
+uses the same latency-aligned transition over 5 ms, unless no arrangement audio clip is playing and
+either no plug-in is loaded or the project has instrument slots that all provide their own smooth
+stop. A project with plug-in effects and no plug-in instrument takes it. Hosted instruments with a transport gate fade
+their own output over 5 ms instead; an arrangement audio clip has no fade of its own, so it always
+takes the transition, with or without plug-ins in the project.
 Note-off messages still arrive immediately; the transition smooths an abrupt release without
 cutting off effect tails.
 Stopping an already stopped transport does not begin a new transition.

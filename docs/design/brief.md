@@ -3,7 +3,7 @@ description: Suhina's visual language: principles, what stays familiar and what 
 read_when: UI design, colours, tokens, typography, theme, accent, track colours, browser design, squint test, reference mockups
 type: spec
 status: draft
-last_verified: 2026-10-28
+last_verified: 2026-11-02
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/settings/themes.rs
@@ -227,17 +227,6 @@ Before a view ships, put it next to the same view in Live:
 
 If (2) fails, change colours, control shapes, typography and wording, not the layout.
 
-## Sources
-
-- Robert Henke on one window and no pop-ups, via
-  [linux-audio-user 2003](https://ccrma.stanford.edu/mirrors/lalists/lau/2003/01/0328.html).
-- [How we redesigned the Linear UI](https://linear.app/now/how-we-redesigned-the-linear-ui):
-  LCH-based theme from base, accent and contrast; limited accent use.
-- [Ardour: meter contrast](https://tracker.ardour.org/view.php?id=6529),
-  [linux-audio-dev on dark themes](https://lists.linuxaudio.org/archives/linux-audio-dev/2022-June/038377.html),
-  [MOD forum on knob readability](https://forum.mod.audio/t/plugin-artwork/7353/98).
-- [Mycroft, QMUL: visual load and listening](https://qmro.qmul.ac.uk/xmlui/handle/123456789/44047?show=full).
-
 ## Local Studio appearance experiment
 
 Studio Light and Studio Dark are opt-in themes using warm surfaces and gold accents.
@@ -279,3 +268,14 @@ share the same model, with live CSS/JSON file synchronization. See
 [Theme skins](../spec/theme-skins.md) for supported declarations and failure handling.
 The broader modern CSS target and candidate engines are recorded separately in
 [ADR 0030](../decisions/0030-native-theme-css.md); this initial subset is not full CSS.
+
+## Sources
+
+- Robert Henke on one window and no pop-ups, via
+  [linux-audio-user 2003](https://ccrma.stanford.edu/mirrors/lalists/lau/2003/01/0328.html).
+- [How we redesigned the Linear UI](https://linear.app/now/how-we-redesigned-the-linear-ui):
+  LCH-based theme from base, accent and contrast; limited accent use.
+- [Ardour: meter contrast](https://tracker.ardour.org/view.php?id=6529),
+  [linux-audio-dev on dark themes](https://lists.linuxaudio.org/archives/linux-audio-dev/2022-June/038377.html),
+  [MOD forum on knob readability](https://forum.mod.audio/t/plugin-artwork/7353/98).
+- [Mycroft, QMUL: visual load and listening](https://qmro.qmul.ac.uk/xmlui/handle/123456789/44047?show=full).

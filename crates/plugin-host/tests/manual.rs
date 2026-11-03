@@ -4,7 +4,8 @@
 //! Tools for looking into one installed plug-in by hand, run with `--ignored`: they take the
 //! plug-in from `SUHINA_PLUGIN` (`vst3:<bundle>` or `clap:<file>`, as the host takes it) and,
 //! if set, the host from `SUHINA_HOST` (a program that runs `suhina-plugin-host` with the
-//! arguments it is given).
+//! arguments it is given). With the `vst2` feature, `SUHINA_TEST_VST2` probes an installed
+//! VST2 plug-in the same way (ADR 0022).
 //!
 //! ```sh
 //! SUHINA_PLUGIN="vst3:<path to a .vst3 bundle>" \
@@ -77,4 +78,94 @@ fn an_installed_plugins_editor_opens() {
         assert_eq!(health, suhina_plugins::Health::Running, "the host did not stay alive");
     }
     plugin.close_editor().unwrap();
+}
+
+/// Loads the plug-in through the host, plays blocks, and hands it back the state it saved: the
+/// round trip a project's settings stand on, with an installed plug-in. Prints whether the state
+/// read after it is the same bytes, which a plug-in need not promise.
+#[test]
+#[ignore = "needs SUHINA_PLUGIN; looks into one installed plug-in by hand"]
+fn an_installed_plugins_state_goes_through_the_host_and_it_keeps_running() {
+    let Some(launch) = launch() else {
+        eprintln!("SUHINA_PLUGIN not set; nothing to look into");
+        return;
+    };
+    let timeout = launch.timeout;
+    let (mut plugin, mut audio) = Plugin::start(launch).unwrap_or_else(|e| panic!("start: {e}"));
+    let params = plugin.params().unwrap_or_else(|e| panic!("params: {e}"));
+    eprintln!("loaded: {} parameters, latency {} frames", params.len(), plugin.latency());
+    let input = vec![0.0f32; 512 * 2];
+    let mut output = vec![0.0f32; 512 * 2];
+    let mut play = |audio: &mut suhina_plugins::PluginAudio| {
+        for _ in 0..8 {
+            let outcome = audio.process_with_events(&input, &[], &mut output, timeout);
+            assert_eq!(outcome, suhina_ipc::Outcome::Done, "the block came back");
+        }
+    };
+    play(&mut audio);
+    let saved = plugin.save_state().unwrap_or_else(|e| panic!("save: {e}"));
+    eprintln!("saved {} bytes", saved.data.len());
+    let bytes = saved.data.clone();
+    plugin.load_state(saved).unwrap_or_else(|e| panic!("load: {e}"));
+    play(&mut audio);
+    let again = plugin.save_state().unwrap_or_else(|e| panic!("save again: {e}"));
+    eprintln!("restored; read back {} bytes, the same: {}", again.data.len(), again.data == bytes);
+    assert_eq!(plugin.health(), suhina_plugins::Health::Running, "the host stayed alive");
+}
+
+/// `--vst2-probe test:vst2`: the whole probe tool over the built-in mock, from the argument
+/// to the printed report, as it runs by hand. A test of the tool, not of the mock: the
+/// mock's own half of the conversation is checked in the crate's unit tests.
+#[cfg(feature = "vst2")]
+#[test]
+fn the_vst2_probe_tool_reports_on_the_mock() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_suhina-plugin-host"))
+        .arg("--vst2-probe")
+        .arg("test:vst2")
+        .output()
+        .expect("the host process runs");
+    assert!(out.status.success(), "the probe on the mock exits well: {}", String::from_utf8_lossy(&out.stderr));
+    let report = String::from_utf8_lossy(&out.stdout);
+    assert!(report.contains("plug-in: the built-in mock"), "{report}");
+    assert!(report.contains("effGetChunk (assumed 23)"), "{report}");
+    assert!(report.contains("audioMasterAutomate"), "{report}");
+}
+
+/// Runs the VST2 probe over an installed plug-in and prints its report: the observation that
+/// settles the interface's *assumed* facts — the entry point that answered, the op-codes the
+/// plug-in answers, what it asked of the host, what its chunks hold (ADR 0022 decision 4).
+/// Run it with `--nocapture`; the report is the result.
+///
+/// ```sh
+/// SUHINA_TEST_VST2="/path/to/a/vst2 plug.vst" \
+///   cargo test -p suhina-plugin-host --features vst2 --test manual -- --ignored --nocapture
+/// ```
+///
+/// The plug-in runs in a disposable process, as the scanner's plug-ins do: a plug-in that
+/// crashes the probe fails this test with the process's exit, which is itself an observation.
+#[cfg(feature = "vst2")]
+#[test]
+#[ignore = "needs SUHINA_TEST_VST2; settles the spec's assumed facts against an installed plug-in"]
+fn an_installed_vst2_plug_in_answers_the_probe() {
+    // `SUHINA_TEST_VST2` names the file, or a `SUHINA_PLUGIN` naming a VST2 file does (set
+    // the same way the CLAP and VST3 manual tests take their plug-in).
+    let fallback = std::env::var_os("SUHINA_PLUGIN").and_then(|spec| {
+        let spec = spec.to_string_lossy().into_owned();
+        let path = spec.strip_prefix("vst2:").map(str::to_string).unwrap_or(spec);
+        let lowered = path.to_ascii_lowercase();
+        [".vst", ".dll", ".so"].iter().any(|suffix| lowered.ends_with(suffix)).then_some(path)
+    });
+    let Some(path) =
+        std::env::var_os("SUHINA_TEST_VST2").map(std::path::PathBuf::from).or_else(|| fallback.map(PathBuf::from))
+    else {
+        eprintln!("SUHINA_TEST_VST2 not set; nothing to probe");
+        return;
+    };
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_suhina-plugin-host"))
+        .arg("--vst2-probe")
+        .arg(&path)
+        .output()
+        .unwrap_or_else(|e| panic!("could not run the probe: {e}"));
+    println!("{}", String::from_utf8_lossy(&out.stdout));
+    assert!(out.status.success(), "the probe did not finish: {}", String::from_utf8_lossy(&out.stderr));
 }

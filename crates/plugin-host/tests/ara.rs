@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A plug-in the scan marked as one that edits clips (ADR 0028) is loaded with an ARA document
+//! A plug-in the scan marked as one that edits clips (ADR 0033) is loaded with an ARA document
 //! of its track's audio clips: the document crosses to the host process, which binds it, or
 //! refuses the load with why when the plug-in cannot be bound. Without audio clips it loads as
 //! any other plug-in.

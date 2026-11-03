@@ -599,7 +599,7 @@ impl App {
         // Four points of drag a step of the place grabbed; the arrow keys and the wheel 1 BPM.
         let per_point = held.unwrap_or(1.0) / 4.0;
         match widgets::drag_value(ui, &response, &mut self.tempo_drag, bpm_now, per_point, 1.0, (20.0, 999.0), 120.0) {
-            Drag::Done(bpm) => {
+            Drag::Done(bpm) | Drag::Set(bpm) => {
                 // The drag's last value joins the step its moves made.
                 let bpm = snap_tempo(self.tempo_grab, bpm);
                 self.tempo_grab = None;

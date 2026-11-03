@@ -425,7 +425,7 @@ fn sdk_device(name: &str) -> Device {
 
 #[test]
 fn sdk_effects_run_in_the_engine_independently_of_host_blocks() {
-    for name in ["stereo-utility", "auto-pan", "filter", "distortion", "delay", "compressor"] {
+    for name in ["stereo-utility", "lfo-pan", "filter", "distortion", "delay", "compressor"] {
         let p = project(vec![note(0.01, 0.2, 69)], 0.5, vec![device("fm-synth", &[]), sdk_device(name)]);
         let reference = render_offline(&p, SR, 512).unwrap();
         let odd = render_offline(&p, SR, 31).unwrap();
@@ -437,7 +437,7 @@ fn sdk_effects_run_in_the_engine_independently_of_host_blocks() {
 
 #[test]
 fn sdk_delay_tail_and_oscillator_phase_carry_through_graph_swaps() {
-    for name in ["auto-pan", "delay"] {
+    for name in ["lfo-pan", "delay"] {
         let p = project(vec![note(0.0, 0.4, 69)], 2.0, vec![device("fm-synth", &[]), sdk_device(name)]);
         let mut edited = p.clone();
         edited.tracks[0].name = "Renamed".into();

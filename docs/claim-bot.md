@@ -3,7 +3,7 @@ description: How the claim bot moves an issue's card on the project board, holds
 read_when: claim, /claim, /claim @user, claim for someone else, on behalf, /unclaim, /hold, /ready, claim bot, project board, PROJECT_TOKEN, status automation, good first issue, lapsed claim, duplicate pull request, feature not agreed, project sync, board out of date, cards missing from the board, Touches, overlapping work, overlap, blocked by, blocked, dependency, Depends on, stacked pull requests, merge order, trusted contributor, TRUSTED_CONTRIBUTORS, maintainer, who may claim, claim limit, too many claims
 type: howto
 status: current
-last_verified: 2026-10-31
+last_verified: 2026-11-01
 covers:
   - .github/workflows/trusted-requests.yml
   - scripts/test_trusted_requests.py
@@ -195,7 +195,7 @@ line, and adds to its answer the other open work on those paths:
 - **other claims**: open issues with someone assigned (the 50 most recently updated) whose newest
   `/claim`, not followed by an `/unclaim`, has a `Touches:` line that overlaps.
 
-It lists at most ten, each with the paths that overlap, and points at `AGENTS.md` › Tasks for what to
+It lists at most ten, each with the paths that overlap, and points at [`workflow.md`](workflow.md) › Tasks for what to
 do about them. It never refuses a claim for an overlap: two pieces of work on the same crate are
 often fine, and only the people doing them can tell. A claim without the line is answered with a
 sentence saying what the line does. A lookup that fails leaves its part out of the answer.

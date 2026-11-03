@@ -3,7 +3,7 @@ description: Suhina's sample and granular instrument, sample loading and SDK pan
 read_when: sampler, granular instrument, sample recording, sample drop
 type: spec
 status: draft
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - devices/sampler/**
   - crates/device-sdk/src/sampler.rs
@@ -216,6 +216,19 @@ array, without allocation or locking on the audio thread. The waveform draws a
 line per active voice, including release tails, up to Poly's limit or one in
 Mono. Grain reports each voice's scan position. Inactive voices have no line.
 
+
+**The waveform** (the SDK's `SampleWaveform` widget, [custom panels](sdk-custom-ui.md) › Reusable functional widgets). `SampleWaveform` supports anchored vertical zoom and horizontal pan on empty space.
+Source/loop handles, slice lines and voice heads share its view transform. Peaks
+are overlaid with solid two-pixel orange marker lines, without outlines;
+source/loop handles use the same colour. The Slice by selector reserves room
+for its full caption and arrow alongside the region and fade fields.
+Peaks are rebuilt for the visible range, and areas outside S/E are gray. Manual lines
+have horizontal resize cursors; double-click adds/removes a line. Line drags
+preview locally without preparing an audio graph per frame; releasing commits
+`device.setSampleSlices` once, as one undo step. Playback uses the committed map
+until release, then new notes use the edited map. View navigation
+never changes project data. The host resets the view when source audio changes.
+
 ## LFO destinations and waveform handles
 
 One bipolar LFO drives independent depths: pitch (semitones), filter cutoff
@@ -411,9 +424,10 @@ Triplet and Dotted select a note divisor from 1 to 64; 16th selects a count of
 sixteenth notes. Tempo changes apply on the next audio block without resetting
 phase. Hz remains the default for older projects.
 
-A single audio file dropped onto an empty MIDI track (header, slot, arrangement lane or empty device area)
-adds Sampler and loads its source without creating an audio clip. Tracks with devices
-are left intact. A pending file drop is cancelled when another project is active.
+A single sample dropped on the devices of a MIDI track that has none adds a Sampler that plays
+it; dropped on the track's lane, header or slot it is a clip ([browser](browser.md) › Files:
+samples and MIDI files). A sample still being dropped when another project becomes active is
+cancelled.
 
 Sample loading accepts 1000..384000 Hz and 1..32 channels before decoding.
 Decoded PCM is limited to 1 GiB per file (all streams together for Stems).

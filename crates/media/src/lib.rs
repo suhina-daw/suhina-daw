@@ -3,6 +3,15 @@
 
 //! Audio files for a project: finds the files its audio clips refer to and decodes them into
 //! memory with symphonia (MPL-2.0), so the engine can play them without touching the disk.
+//!
+//! In detail: Finding a project's audio files and decoding them (symphonia) on all cores into an
+//! `AudioPool`; what a file in the browser is (`info`: kind by extension, length, tempo and key
+//! from metadata and the name), standard MIDI files (`midi`: notes per MIDI track, every count
+//! capped) tempo detection for loops (`tempo`) (browser spec (`docs/spec/browser.md`)), and Stems
+//! files (`stems`: the master and each stem as audio, with their names, colours and mastering
+//! settings; spec (`docs/spec/stems-format.md`)). Writing the files an export renders (`write`: one
+//! entry point for WAV with dithering, FLAC, Ogg Vorbis and MP3; export spec
+//! (`docs/spec/export.md`) › Formats).
 
 pub mod info;
 pub mod midi;

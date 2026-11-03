@@ -169,5 +169,7 @@ fn malformed_signature_changes_are_ignored() {
     assert_eq!(meter.changes().count(), 1);
     assert_eq!(meter.position(1e300).bar, u32::MAX);
     assert!(ts(7, 8).is_valid() && !ts(100, 4).is_valid() && !ts(4, 128).is_valid());
+    // Denominators stop at a sixteenth note.
+    assert!(ts(3, 16).is_valid() && !ts(3, 32).is_valid() && !ts(3, 64).is_valid());
     assert_eq!(ts(0, 4).bar_beats(), 4.0);
 }
