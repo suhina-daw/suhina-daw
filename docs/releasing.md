@@ -256,11 +256,11 @@ evicted the others.
 the `test` profile, and about 90% of that time is LLVM at `opt-level = 1`; linking is 1 to 3% on
 each system, so a faster linker has nothing to win. The crates that process no sound are built at
 `opt-level = 0` in that profile (`[profile.test.package]` in `Cargo.toml`). Measured on one machine,
-that takes the compile from 241 to 115 seconds on Linux, 625 to 282 on Windows and 422 to 222 on
-macOS, and the tests' run from 102 to 133, 140 to 200 and 158 to 204, nearly all of it in the window
-tests (`crates/ui/tests/main.rs`). The crates that process sound stay at 1: with them at 0,
-`suhina-engine`'s tests take 93 seconds instead of 7. A new crate starts at 1, and joins the list if
-it processes no sound and takes long to compile.
+that takes the compile from 236 to 114 seconds on Linux, 600 to 300 on Windows and 380 to 183 on
+macOS, and the tests' run from 108 to 147, 138 to 203 and 148 to 192, about three quarters of it in
+the window tests (`crates/ui/tests/main.rs`). The crates that process sound stay at 1: with them
+at 0, `suhina-engine`'s tests take 93 seconds instead of 7. A new crate starts at 1, and joins the
+list if it processes no sound and takes long to compile.
 
 The queue is a setting, not code: Settings › Rules (or Branches) › the rule for `main` › **Require
 merge queue**, with the merge method used today, a group size of about 5 and *Only merge
