@@ -44,17 +44,24 @@ fn the_note_names_what_the_file_faulted_with() {
 #[test]
 fn a_file_shows_its_own_name_and_a_pack_holds_it() {
     let lists = Lists {
-        models: vec![Set { name: "Test amp".into(), files: vec![("p/Test amp/test.nam".into(), "Test amp".into())] }],
+        models: vec![
+            Set { name: "Test amp".into(), files: vec![("p/Test amp/test.nam".into(), "Test amp".into())] },
+            // The loose files' pack beside the subfolder packs (nam spec › Folders › Packs).
+            Set { name: LOOSE_PACK.into(), files: vec![("p/NAM models/loose.nam".into(), "loose capture".into())] },
+        ],
         irs: vec![],
         names: HashMap::from([("p/Test amp/test.nam".into(), "Fender Super Reverb".into())]),
         notes: HashMap::new(),
     };
-    // The pack a file sits in, by its parent folder; a file outside the folder's packs is none of them.
+    // The pack that lists the file, by membership; a file somewhere else that shares a pack's
+    // folder name lists nowhere, and a file no pack lists is none of the loose pack's either.
     assert_eq!(pack_of_current("p/Test amp/test.nam", &lists.models).map(|p| p.name.as_str()), Some("Test amp"));
-    assert_eq!(pack_of_current("elsewhere/x.nam", &lists.models), None);
-    // The shown name from the session's names, else the path's own.
+    assert_eq!(pack_of_current("p/NAM models/loose.nam", &lists.models).map(|p| p.name.as_str()), Some(LOOSE_PACK));
+    assert_eq!(pack_of_current("elsewhere/Test amp/false.nam", &lists.models), None);
+    assert_eq!(pack_of_current("p/Another/wave.wav", &lists.irs), None);
+    // The shown name from the session's names, else the path's own without its extension.
     assert_eq!(file_shown("p/Test amp/test.nam", &lists), "Fender Super Reverb");
-    assert_eq!(file_shown("p/Other/loose.nam", &lists), "loose.nam");
+    assert_eq!(file_shown("p/NAM models/loose.nam", &lists), "loose");
     assert_eq!(file_shown("", &lists), "");
 }
 

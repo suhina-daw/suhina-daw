@@ -410,10 +410,10 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
             assert!(!ra.shrink(1.0).intersects(rb.shrink(1.0)), "{a} {ra:?} is drawn over {b} {rb:?}");
         }
     }
-    // A knob is a control one can see and turn: its cell is a knob's band wide and high, not
-    // the squeezed ring the first panels drew (a tester's screenshot). The amp's Mid Freq is
-    // a line of its own shape, and the buttons and the Volume slider their own — they get no
-    // floor.
+    // A knob is a control one can see and turn: its cell is a dial's movements wide — the ring
+    // 42, its label and its value bands clear of it — and high, not the squeezed ring the
+    // first panels drew (a tester's screenshot). The amp's Mid Freq is a line of its own
+    // shape, and the buttons and the Volume slider their own — they get no floor.
     let knobs: Vec<(&str, egui::Rect)> = [
         "Amp Modeler: gain",
         "Amp Modeler: bass",
@@ -431,7 +431,9 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     .map(|label| (label, harness.get_by_label(label).rect()))
     .collect();
     for (label, rect) in knobs {
-        assert!(rect.width() >= 60.0 && rect.height() >= 90.0, "{label} {rect:?} is too small to read");
+        // 84 high: the label (24), the ring (42) and the value band (16) one under another;
+        // the note's fault line stays out of the cells under the row.
+        assert!(rect.width() >= 60.0 && rect.height() >= 80.0, "{label} {rect:?} is too small to read");
     }
     // The rows they sit on: Mid Freq shares the buttons' row, and each panel's knobs one row.
     let top = |label: &str| harness.get_by_label(label).rect().top();

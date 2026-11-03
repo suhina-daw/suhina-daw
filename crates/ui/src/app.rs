@@ -1339,9 +1339,10 @@ impl App {
         let mut names = HashMap::new();
         if let Some(session) = self.session() {
             let project = session.project();
-            for track in project.tracks.iter() {
-                let channel = track.channel.and_then(|ch| project.channel(ch));
-                for device in channel.iter().flat_map(|c| c.devices.iter()) {
+            // Every channel's devices, the tracks' and the main's (a NAM effect on Main has a
+            // shown name and a fault note as a track's does).
+            for channel in project.channels.iter() {
+                for device in channel.devices.iter() {
                     if let Some(path) = device_file_path(device) {
                         names.insert(path.clone(), session.device_asset_name(&path).unwrap_or_default());
                     }
@@ -1356,9 +1357,8 @@ impl App {
         let mut notes = HashMap::new();
         if let Some(session) = self.session() {
             let project = session.project();
-            for track in project.tracks.iter() {
-                let channel = track.channel.and_then(|ch| project.channel(ch));
-                for device in channel.iter().flat_map(|c| c.devices.iter()) {
+            for channel in project.channels.iter() {
+                for device in channel.devices.iter() {
                     if let Some(path) =
                         device_file_path(device).filter(|path| session.device_asset_note(path).is_some())
                         && let Some(note) = session.device_asset_note(&path)

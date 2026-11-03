@@ -109,12 +109,15 @@ fn packs_of<'a>(lists: &'a Lists, what: &str) -> &'a [Set] {
     }
 }
 
-/// The pack the device's current file is in, by its parent folder: a pack's name, the loose
-/// files' pack, or nothing when the file is not one of the folder's packs (a changed folder,
-/// a missing file).
+/// The pack that lists the device's current file: a pack's name (the subfolder's, or the
+/// loose files' "(entered directly)"), or nothing when no pack lists it (a changed folder,
+/// a missing file). Membership, not the parent's name: the folders' loose files form the
+/// loose pack, and a file somewhere else that shares a pack's folder name lists nowhere.
 fn pack_of_current<'a>(current: &str, sets: &'a [Set]) -> Option<&'a Set> {
-    let parent = std::path::Path::new(current).parent()?.file_name()?.to_string_lossy().into_owned();
-    sets.iter().find(|pack| pack.name == parent)
+    if current.is_empty() {
+        return None;
+    }
+    sets.iter().find(|pack| pack.files.iter().any(|(path, _)| path == current))
 }
 
 /// The salt a device widget scopes its state and popups by: the device on the track, the
@@ -150,8 +153,8 @@ fn file_shown(current: &str, lists: &Lists) -> String {
     match lists.names.get(current) {
         Some(shown) if !shown.is_empty() => shown.clone(),
         _ => std::path::Path::new(current)
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
             .unwrap_or_default(),
     }
 }
@@ -296,7 +299,7 @@ fn dropdown(
     let current_name = if current.is_empty() {
         empty.to_owned()
     } else if shown.is_empty() {
-        std::path::Path::new(current).file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()
+        std::path::Path::new(current).file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default()
     } else {
         shown.to_owned()
     };
