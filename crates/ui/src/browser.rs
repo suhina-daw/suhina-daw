@@ -496,6 +496,9 @@ impl BrowserState {
                     self.device_rows("group:effects", "Effects", Role::Effect, &mut rows);
                     self.device_rows("group:midi-effects", "MIDI Effects", Role::MidiEffect, &mut rows);
                 }
+                if matches!(category, Category::All | Category::Presets) {
+                    self.stock_rows(&mut rows);
+                }
                 // The Plug-ins category lists the instruments or the effects as one list; the
                 // other categories keep the plug-ins in the tree under their vendors.
                 if category == Category::Plugins {
@@ -547,6 +550,33 @@ impl BrowserState {
         };
         for info in suhina_device_registry::DEVICES.iter().filter(|info| info.role == role) {
             let item = BrowserItem { key: format!("device:{}", info.id), name: info.name.into(), kind, plugin: false };
+            rows.push(Row { item, depth: 1, opens: false, open: false, context: None, columns: None, node: None });
+        }
+    }
+
+    /// Adds the heading for the presets that ship with Suhina and, when it is open, a row per preset.
+    fn stock_rows(&self, rows: &mut Vec<Row>) {
+        const NODE: &str = "group:stock-presets";
+        let open = self.open.contains(NODE);
+        rows.push(Row {
+            item: heading(NODE, "Stock presets"),
+            depth: 0,
+            opens: true,
+            open,
+            context: None,
+            columns: None,
+            node: None,
+        });
+        if !open {
+            return;
+        }
+        for stock in suhina_device_registry::stock_presets() {
+            let item = BrowserItem {
+                key: format!("stock:{}", stock.key),
+                name: stock.preset.name.clone(),
+                kind: ItemKind::Preset,
+                plugin: false,
+            };
             rows.push(Row { item, depth: 1, opens: false, open: false, context: None, columns: None, node: None });
         }
     }

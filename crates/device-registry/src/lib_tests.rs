@@ -79,6 +79,79 @@ fn a_dx7_voice_is_a_preset_for_the_fm_synth() {
 }
 
 #[test]
+fn every_stock_preset_reads_and_gives_every_parameter_of_its_device() {
+    assert_eq!(stock_presets().len(), STOCK_FILES.len(), "a file does not read");
+    for (key, text) in STOCK_FILES {
+        let file: serde_json::Value = serde_json::from_str(text).unwrap();
+        let stock = stock_preset(key).unwrap();
+        let device = info(stock.preset.device).unwrap();
+        assert_eq!(key.split('/').next(), Some(device.id), "{key} lies in its device's folder");
+        assert!(text.len() <= MAX_PRESET_BYTES, "{key}");
+        let values = file["params"].as_object().unwrap();
+        assert_eq!(values.len(), device.params.len(), "{key}: every parameter, and no other");
+        for (param, (id, value)) in device.params.iter().zip(&stock.preset.params) {
+            assert_eq!(param.id, *id);
+            assert_eq!(values[*id].as_f64(), Some(*value), "{key}: {id}");
+        }
+        assert!(!stock.tags.is_empty(), "{key}");
+    }
+}
+
+#[test]
+fn every_preset_file_in_the_folder_is_built_in() {
+    let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../presets");
+    let mut files = 0;
+    for device in std::fs::read_dir(folder).unwrap().flatten().filter(|e| e.path().is_dir()) {
+        let device_id = device.file_name().to_string_lossy().into_owned();
+        for file in std::fs::read_dir(device.path()).unwrap().flatten() {
+            let name = file.file_name().to_string_lossy().into_owned();
+            assert!(name.ends_with(&format!(".{device_id}.preset.suhina")), "{name}");
+            let stem = name.split('.').next().unwrap().to_string();
+            assert!(
+                stock_presets().iter().any(|s| s.preset.name == stem),
+                "{name} is not in STOCK_FILES, or has another name inside"
+            );
+            files += 1;
+        }
+    }
+    assert_eq!(files, STOCK_FILES.len());
+}
+
+#[test]
+fn a_device_preset_file_is_read_and_a_bad_one_refused() {
+    let file = |rest: &str| {
+        format!(
+            r#"{{ "format": "suhina-preset", "version": 1, "device": "fm-synth", "role": "instrument", "name": "Mine", {rest} }}"#
+        )
+    };
+    let good = file(r#""params": { "volume": -3.0, "gone": 1.0 }"#);
+    let read = preset(good.as_bytes(), 1).unwrap();
+    assert_eq!((read.device, read.name.as_str()), ("fm-synth", "Mine"));
+    let value = |id: &str| read.params.iter().find(|(p, _)| *p == id).unwrap().1;
+    assert_eq!(value("volume"), -3.0);
+    assert_eq!(value("voices"), 16.0, "what it leaves out takes its default");
+    assert!(read.params.iter().all(|(id, _)| *id != "gone"), "what the device lacks is left out");
+    assert_eq!(preset_voices(good.as_bytes()).unwrap(), vec![(1, "Mine".to_string())]);
+    assert!(preset(good.as_bytes(), 2).is_err());
+    for bad in [
+        file(r#""params": { "volume": 99.0 }"#),
+        file(r#""params": { "volume": "loud" }"#),
+        file(r#""nothing": 1"#),
+        good.replace("suhina-preset", "other"),
+        good.replace(r#""version": 1"#, r#""version": 2"#),
+        good.replace(r#""fm-synth""#, r#""nothing""#),
+        good.replace(r#""instrument""#, r#""effect""#),
+        good.replace(r#""Mine""#, r#""  ""#),
+        "{ not json".to_string(),
+    ] {
+        assert!(preset(bad.as_bytes(), 1).is_err(), "{bad}");
+    }
+    let mut large = good.into_bytes();
+    large.resize(MAX_PRESET_BYTES + 1, b' ');
+    assert!(preset(&large, 1).is_err());
+}
+
+#[test]
 fn every_layout_loads_and_names_only_its_devices_parameters() {
     // A layout that names a parameter id its device lacks fails here, rather than falling
     // back to the generated list unnoticed.

@@ -559,6 +559,39 @@ fn a_preset_adds_the_fm_synth_with_its_voice() {
 }
 
 #[test]
+fn a_stock_preset_and_a_preset_file_add_their_device_with_their_values() {
+    let dir = temp_dir("stock-preset");
+    let mut session = Session::new(blank_project());
+    let out = run(&mut session, "device.add", json!({ "track": 1, "stock": "fm-synth/warm-fm-bass" })).unwrap();
+    assert_eq!((out["id"].as_str(), out["preset"].as_str()), (Some("fm-synth"), Some("Warm FM Bass")));
+    let device = &session.project().channel(ChannelId(1)).unwrap().devices[0];
+    assert!(device.params.contains(&suhina_model::DeviceParam::new("op2.level", 86.0)));
+
+    let added = run(&mut session, "track.add", json!({ "stock": "fm-synth/struck-piano" })).unwrap();
+    assert_eq!((added["kind"].as_str(), added["name"].as_str()), (Some("midi"), Some("Struck Piano")));
+
+    let file = dir.join("Mine.fm-synth.preset.suhina");
+    std::fs::write(
+        &file,
+        r#"{ "format": "suhina-preset", "version": 1, "device": "fm-synth", "role": "instrument", "name": "Mine", "params": { "volume": -3.0 } }"#,
+    )
+    .unwrap();
+    let added = run(&mut session, "track.add", json!({ "preset": text(&file) })).unwrap();
+    assert_eq!(added["name"], "Mine");
+
+    for bad in [
+        json!({ "track": 1, "stock": "fm-synth/nothing" }),
+        json!({ "track": 1, "stock": 3 }),
+        json!({ "track": 1, "stock": "fm-synth/warm-fm-bass", "preset": text(&file) }),
+        json!({ "track": 1, "stock": "fm-synth/warm-fm-bass", "id": "overdrive" }),
+    ] {
+        assert!(run(&mut session, "device.add", bad.clone()).is_err(), "{bad}");
+    }
+    assert!(run(&mut session, "track.add", json!({ "stock": "fm-synth/nothing" })).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn previews_need_a_player_and_show_in_the_launcher_state() {
     let dir = temp_dir("preview");
     let sample = wav(&dir, "listen.wav", 1.0, 0.5);

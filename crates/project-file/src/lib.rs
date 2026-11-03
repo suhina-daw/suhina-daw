@@ -67,9 +67,16 @@ impl From<&str> for ProjectFileError {
     }
 }
 
-/// Whether `path` names a project file by its extension, `.suhina` in either case.
+/// Whether `path` names a project file by its extension, `.suhina` in either case. A device preset
+/// ends the same way and is not one.
 pub fn is_project_file(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION))
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION)) && !is_preset_file(path)
+}
+
+/// Whether `path` names a device preset by its ending, `.preset.suhina` in either case, as in
+/// `Warm FM Bass.fm-synth.preset.suhina` ([ADR 0014](docs/decisions/0014-stock-presets.md)).
+pub fn is_preset_file(path: &Path) -> bool {
+    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(".preset.suhina"))
 }
 
 /// Reads a project file.

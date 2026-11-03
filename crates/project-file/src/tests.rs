@@ -443,6 +443,12 @@ fn project_files_are_known_by_their_extension() {
     for name in ["a.locr", "a.LOCR", "a.als", "a.json", "a", "suhina", "a.suhina.saving"] {
         assert!(!is_project_file(Path::new(name)), "{name}");
     }
+    for name in ["Bass.fm-synth.preset.suhina", "Bass.PRESET.SUHINA", "dir/b c.preset.suhina"] {
+        assert!(is_preset_file(Path::new(name)) && !is_project_file(Path::new(name)), "{name}");
+    }
+    for name in ["Bass.fm-synth.suhina", "preset.suhina", "song.reverb.suhina"] {
+        assert!(!is_preset_file(Path::new(name)) && is_project_file(Path::new(name)), "{name}");
+    }
 }
 
 #[test]

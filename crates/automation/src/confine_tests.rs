@@ -46,6 +46,8 @@ fn paths_agents_give_must_be_inside_the_read_root() {
     }
     let kept = json!({ "item": "device:overdrive" });
     assert_eq!(confine(&workspace, "library.pin", kept.clone(), None).unwrap(), kept);
+    let stock = json!({ "item": "stock:fm-synth/warm-fm-bass" });
+    assert_eq!(confine(&workspace, "library.pin", stock.clone(), None).unwrap(), stock);
     let place = json!({ "place": "recent:samples" });
     assert_eq!(confine(&workspace, "library.search", place.clone(), None).unwrap(), place);
     assert_eq!(confine(&workspace, "soundmap.layout", place.clone(), None).unwrap(), place);

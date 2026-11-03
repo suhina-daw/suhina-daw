@@ -579,6 +579,16 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
             Some(read_preset(std::path::Path::new(path), voice)?)
         }
     };
+    let preset = match (preset, params.get("stock")) {
+        (preset, None | Some(Value::Null)) => preset,
+        (Some(_), Some(_)) => return Err("name a preset file or a stock preset, not both".into()),
+        (None, Some(v)) => {
+            let key = v.as_str().ok_or("stock must be a stock preset's key")?;
+            let stock = suhina_device_registry::stock_preset(key)
+                .ok_or_else(|| format!("no stock preset {key:?}; library.search lists them"))?;
+            Some(stock.preset.clone())
+        }
+    };
     let id = match (params.get("id").and_then(Value::as_str), &preset) {
         (Some(id), Some(p)) if id != p.device => {
             return Err(format!("the preset is for {:?}, not {id:?}", p.device).into());
@@ -763,7 +773,10 @@ pub(crate) fn update_sd(session: &mut Session, params: &Value) -> Result<Value, 
 }
 
 /// Reads voice `voice` of the preset file at `path`.
-fn read_preset(path: &std::path::Path, voice: usize) -> Result<suhina_device_registry::Preset, CommandError> {
+pub(crate) fn read_preset(
+    path: &std::path::Path,
+    voice: usize,
+) -> Result<suhina_device_registry::Preset, CommandError> {
     let size = std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?.len();
     if size > suhina_device_registry::MAX_PRESET_BYTES as u64 {
         return Err(format!("{}: a preset file is at most 64 KiB", path.display()).into());

@@ -40,7 +40,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "preset",
                 ParamType::Path(PathKind::File),
-                "a preset file to load: DX7 voice data (.syx) for the FM synth",
+                "a preset file to load: a device preset (.preset.suhina), or DX7 voice data (.syx) for the FM synth",
+            ),
+            optional(
+                "stock",
+                ParamType::Text,
+                "a preset that ships with Suhina, by its key: what follows stock: in library.search",
             ),
             optional("voice", ParamType::Integer, "which voice of a preset bank, from 1 (default 1)"),
         ],
