@@ -90,11 +90,11 @@ pub const NEW_DEVICE: [(&str, f64); 16] = [
     ("op4.on", 0.0),
     ("op5.on", 0.0),
     ("op6.on", 0.0),
-    ("op2.level", 50.0),
-    ("op3.level", 50.0),
-    ("op4.level", 50.0),
-    ("op5.level", 50.0),
-    ("op6.level", 50.0),
+    ("op2.level", 75.0),
+    ("op3.level", 75.0),
+    ("op4.level", 75.0),
+    ("op5.level", 75.0),
+    ("op6.level", 75.0),
 ];
 
 /// Fields of a time envelope, in parameter order.
