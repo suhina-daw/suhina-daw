@@ -209,6 +209,10 @@ refused or suspended, never by losing its edits.
   select from a channel strip's background too (`track.setMixerValues`). Sends stop at 0 dB.
 - A plug-in editor in a window of its own is titled after its track and follows a rename or a move.
 
+- Bluetooth headphones are in Settings › Audio › Output's Device list: a device that cannot say what
+  it offers yet stays listed, an output connected while the page shows appears within a few seconds,
+  and on Linux a running PulseAudio or PipeWire server is a driver of its own to choose them on.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
