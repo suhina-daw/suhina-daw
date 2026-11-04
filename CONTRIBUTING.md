@@ -173,6 +173,14 @@ force a rewrite of everything built on it, so it is not something we clean up la
   diffing them.
 - Public documentation: user manuals, the officially published Live Object Model documentation,
   published specs (DAWproject, MIDI, CLAP, VST3), papers and textbooks.
+- Recordings of hardware made and published by someone else under a licence that allows
+  redistribution and is compatible with GPL-3.0-or-later (amp models, impulse responses of
+  speaker cabinets), kept with their author, licence and a note that they are not affiliated with
+  the hardware's makers. They may keep names that say which hardware they were recorded from: a
+  maker of hardware is not another DAW (AGENTS.md rule 9), and naming the source is not
+  endorsement. The next list's ban covers content copied from proprietary products, such as an
+  impulse response from a commercial plug-in's or DAW's library, not a third party's own
+  recording of a device.
 - Open-source code under a licence compatible with GPL-3.0-or-later, ported with its notices
   kept. Code without a licence may not be copied, ported or translated; only its published
   description (a paper, a README) may be learnt from.
