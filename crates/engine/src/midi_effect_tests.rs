@@ -145,7 +145,8 @@ fn launched_clips_go_through_pitch_with_their_scale() {
 fn a_held_note_ends_at_its_key_when_pitch_moves_under_it() {
     let lane = AutomationLane {
         param: "pitch".into(),
-        points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(2.0, 0.0), AutomationPoint::new(2.0, 12.0)],
+        points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(2.0, 0.0), AutomationPoint::new(2.0, 12.0)]
+            .into(),
         enabled: true,
     };
     let mut pitch = device("pitch", &[]);

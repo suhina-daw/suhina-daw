@@ -29,7 +29,8 @@ fn session() -> Session {
         AutomationPoint::new(5.0, 1.0),
         AutomationPoint::new(7.0, -1.0),
         AutomationPoint::new(12.0, 0.0),
-    ];
+    ]
+    .into();
     project.channels.iter_mut().find(|c| c.id == channel).unwrap().automation.push(lane);
     Session::new(project)
 }
@@ -39,7 +40,7 @@ fn pan(session: &Session, track: usize, beat: f64) -> f64 {
     let p = session.project();
     let channel = p.tracks[track - 1].channel.unwrap();
     let lanes = &p.channels.iter().find(|c| c.id == channel).unwrap().automation;
-    let points = lanes.iter().find(|l| l.param == "pan").map_or(&[][..], |l| &l.points[..]);
+    let points = lanes.iter().find(|l| l.param == "pan").map_or(&[][..], |l| &*l.points);
     (value_at(points, beat, false, &Plain).unwrap_or(0.0) * 1e6).round() / 1e6
 }
 

@@ -61,7 +61,6 @@ fn alone(project: &Project, track: TrackId) -> Project {
     Project {
         // The clips keep their ids, so the counter stays past them.
         next_id: project.next_id,
-        session_ids: project.session_ids,
         // The range is rendered straight through: the arrangement's loop region does not wrap it.
         transport: Transport { loop_enabled: false, ..project.transport.clone() },
         tracks: vec![Track {
@@ -101,7 +100,7 @@ fn alone(project: &Project, track: TrackId) -> Project {
             .collect(),
         arrangement: Arrangement {
             lanes: project.arrangement.lanes.iter().filter(|l| l.track == Some(track)).cloned().collect(),
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Default::default(),
@@ -191,7 +190,7 @@ mod tests {
                         ..suhina_model::Clip::new(ContentId(1), 0.5, 1.0)
                     }],
                 }],
-                markers: Vec::new(),
+                markers: Default::default(),
                 takes: Vec::new(),
             },
             ..Default::default()

@@ -1141,9 +1141,9 @@ fn markers(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
     let markers = &session.project().arrangement.markers;
     Ok(Value::Array(
         markers
-            .iter()
+            .entries()
             .enumerate()
-            .map(|(index, m)| json!({ "index": index, "id": m.id.0, "beat": m.beat, "name": m.name }))
+            .map(|(index, (id, m))| json!({ "index": index, "id": id.0, "beat": m.beat, "name": m.name }))
             .collect(),
     ))
 }

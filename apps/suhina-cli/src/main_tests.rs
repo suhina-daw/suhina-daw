@@ -33,7 +33,7 @@ fn a_project_files_device_params_reach_the_render() {
                     track: Some(TrackId(1)),
                     clips: vec![Clip::new(ContentId(1), 0.0, 2.0)],
                 }],
-                markers: Vec::new(),
+                markers: Default::default(),
                 takes: Vec::new(),
             },
             ..Project::default()

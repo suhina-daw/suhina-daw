@@ -61,7 +61,7 @@ fn project_built() -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![clip(1, 0.0), clip(2, 4.0), clip(3, 8.0), clip(4, 12.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {

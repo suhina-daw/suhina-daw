@@ -746,7 +746,7 @@ fn launched_unwarped_audio_loops_over_the_whole_file() {
         duration_seconds: Some(0.75),
         warped: false,
         stretch: StretchMode::default(),
-        warp_markers: Vec::new(),
+        warp_markers: Default::default(),
         gain: 1.0,
         transpose: 0.0,
         stream: None,

@@ -12,7 +12,7 @@ use suhina_engine::{MAX_START_BEAT, param_id};
 use suhina_model::automation::{
     CONTROL_MAX, CONTROL_MIN, Curve, MAX_POINTS, MAX_VOLUME, MUTE, Taper, VOLUME, VolumeTaper, mixer_range,
 };
-use suhina_model::{AutomationLane, AutomationPoint, DeviceKind, TrackId};
+use suhina_model::{AutomationLane, AutomationPoint, DeviceKind, Entry, IdList, PointId, TrackId};
 
 use crate::commands::{Args, device_channel, to_db, track_or_main_id};
 use crate::devices::{device_index, is_plugin, plugin_param_id, plugin_value, sd_graph};
@@ -310,14 +310,17 @@ fn value(params: &Value, name: &str) -> Result<f64, CommandError> {
     }
 }
 
+/// A lane's points, each with its id (#763 › 1).
+pub(crate) type Points = IdList<PointId, AutomationPoint>;
+
 /// The point `item` names on a lane of `points`: its index (from 0, in beat order), or
 /// `{"id": n}` with its id, found where it is now (#763 › 1).
-pub(crate) fn point_at(item: &Value, points: &[AutomationPoint]) -> Result<usize, CommandError> {
+pub(crate) fn point_at(item: &Value, points: &Points) -> Result<usize, CommandError> {
     let count = points.len();
     if let Some(id) = item.get("id") {
-        let id = id.as_u64().and_then(|n| u32::try_from(n).ok()).map(suhina_model::PointId);
         return id
-            .and_then(|id| points.iter().position(|p| p.id == id))
+            .as_u64()
+            .and_then(|n| points.position(PointId(n)))
             .ok_or_else(|| format!("the lane has no point with id {}", item["id"]).into());
     }
     let index = item
@@ -330,7 +333,7 @@ pub(crate) fn point_at(item: &Value, points: &[AutomationPoint]) -> Result<usize
     Ok(index)
 }
 
-fn point_index(params: &Value, points: &[AutomationPoint]) -> Result<usize, CommandError> {
+fn point_index(params: &Value, points: &Points) -> Result<usize, CommandError> {
     point_at(params.get("point").ok_or("point must name a point, as in automation.list")?, points)
 }
 
@@ -355,7 +358,7 @@ pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, 
         return Err(format!("a lane holds at most {MAX_POINTS} points").into());
     }
     let point = match given {
-        Some(value) => AutomationPoint { id: Default::default(), beat, value, curve: curve.unwrap_or_default() },
+        Some(value) => AutomationPoint { beat, value, curve: curve.unwrap_or_default() },
         None => {
             let mut point = on_envelope(lane, beat, &target)?;
             point.curve = curve.unwrap_or(point.curve);
@@ -371,9 +374,8 @@ pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, 
         crate::automation_range::shape_new_segment(session, &target, index, shape)?;
     }
     // The new point's id, for the commands that name it next (#763 › 1).
-    session.project.assign_ids()?;
     let lane = target.lanes(session)?.iter().find(|l| target.matches(l));
-    let (points, id) = lane.map_or((0, None), |l| (l.points.len(), l.points.get(index).map(|p| p.id.0)));
+    let (points, id) = lane.map_or((0, None), |l| (l.points.len(), l.points.id(index).map(|p| p.0)));
     Ok(json!({ "param": target.param, "point": index, "id": id, "points": points, "enabled": enabled }))
 }
 
@@ -394,18 +396,13 @@ fn on_envelope(lane: &mut AutomationLane, beat: f64, target: &Target) -> Result<
         if fraction > 0.0 && fraction < 1.0 {
             return Err("the segment's curve overshoots its points, so a point cannot be added on it without changing it; give a value".into());
         }
-        return Ok(AutomationPoint { id: Default::default(), beat, value, curve: a.curve });
+        return Ok(AutomationPoint { beat, value, curve: a.curve });
     };
     let (from, to) = (target.kind.position(a.value), target.kind.position(b.value));
     if let Some(first) = lane.points.get_mut(i) {
         first.curve = cut.before;
     }
-    Ok(AutomationPoint {
-        id: Default::default(),
-        beat,
-        value: target.kind.value(from + (to - from) * cut.share),
-        curve: cut.after,
-    })
+    Ok(AutomationPoint { beat, value: target.kind.value(from + (to - from) * cut.share), curve: cut.after })
 }
 
 pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -421,11 +418,14 @@ pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value,
     }
     let lane = target.lane(session)?;
     let index = point_index(params, &lane.points)?;
-    let mut point = lane.points.remove(index);
+    // Taken out and put back with its id: a moved point stays the same point.
+    let mut taken = lane.points.take(index);
+    let point = &mut taken.value;
     point.beat = new_beat.unwrap_or(point.beat);
     point.value = new_value.unwrap_or(point.value);
     point.curve = new_curve.unwrap_or(point.curve);
-    let index = lane.insert_near(point, index);
+    let point = *point;
+    let index = lane.put_near(taken, index);
     Ok(
         json!({ "param": target.param, "point": index, "beat": point.beat, "value": target.show(point.value), "curve": point.curve.to_array() }),
     )
@@ -445,7 +445,7 @@ pub(crate) fn delete_point(session: &mut Session, params: &Value) -> Result<Valu
 }
 
 /// The point indices `params["points"]` names, by index or id: each once, each on the lane.
-fn point_list(params: &Value, points: &[AutomationPoint]) -> Result<Vec<usize>, CommandError> {
+fn point_list(params: &Value, points: &Points) -> Result<Vec<usize>, CommandError> {
     let list = Args::new(params).value("points").and_then(Value::as_array).ok_or("points must be a list of points")?;
     if list.is_empty() {
         return Err("points must name at least one point".into());
@@ -522,21 +522,34 @@ pub(crate) fn move_points(session: &mut Session, params: &Value) -> Result<Value
         }
         return Ok(json!({ "param": target.param, "points": indices }));
     }
-    let mut sorted = indices.clone();
+    // The moved points are taken out with their ids, given their new values and put back, so
+    // each stays the same point (#763 › 1).
+    let mut sorted: Vec<(usize, usize)> = indices.iter().copied().enumerate().map(|(order, i)| (i, order)).collect();
     sorted.sort_unstable();
-    for index in sorted.into_iter().rev() {
-        points.remove(index);
+    let mut taken: Vec<Option<Entry<PointId, AutomationPoint>>> = (0..indices.len()).map(|_| None).collect();
+    for (index, order) in sorted.into_iter().rev() {
+        let mut entry = points.take(index);
+        if let Some(point) = moved.get(order) {
+            entry.value = *point;
+        }
+        if let Some(slot) = taken.get_mut(order) {
+            *slot = Some(entry);
+        }
     }
-    let mut tagged: Vec<(AutomationPoint, Option<usize>)> = points.into_iter().map(|p| (p, None)).collect();
-    let mut in_lane: Vec<(usize, AutomationPoint)> = moved.into_iter().enumerate().collect();
+    let mut tagged: Vec<(Entry<PointId, AutomationPoint>, Option<usize>)> =
+        points.take_range(0..points.len()).into_iter().map(|p| (p, None)).collect();
+    let mut in_lane: Vec<(usize, Entry<PointId, AutomationPoint>)> =
+        taken.into_iter().enumerate().filter_map(|(order, e)| e.map(|e| (order, e))).collect();
     in_lane.sort_by_key(|(order, _)| indices.get(*order).copied().unwrap_or(usize::MAX));
-    for (order, point) in in_lane {
+    for (order, entry) in in_lane {
+        let point = entry.value;
         let at = if beats > 0.0 {
-            tagged.partition_point(|(p, tag)| p.beat < point.beat || (p.beat == point.beat && tag.is_some()))
+            tagged
+                .partition_point(|(p, tag)| p.value.beat < point.beat || (p.value.beat == point.beat && tag.is_some()))
         } else {
-            tagged.partition_point(|(p, _)| p.beat <= point.beat)
+            tagged.partition_point(|(p, _)| p.value.beat <= point.beat)
         };
-        tagged.insert(at, (point, Some(order)));
+        tagged.insert(at, (entry, Some(order)));
     }
     let mut now = vec![0; indices.len()];
     for (index, (_, tag)) in tagged.iter().enumerate() {
@@ -544,7 +557,7 @@ pub(crate) fn move_points(session: &mut Session, params: &Value) -> Result<Value
             *slot = index;
         }
     }
-    target.lane(session)?.points = tagged.into_iter().map(|(p, _)| p).collect();
+    target.lane(session)?.points = IdList::from_entries(tagged.into_iter().map(|(p, _)| p).collect());
     Ok(json!({ "param": target.param, "points": now }))
 }
 
@@ -611,7 +624,7 @@ pub(crate) fn list(session: &mut Session, params: &Value) -> Result<Value, Comma
                 json!({
                     "param": lane.param,
                     "enabled": lane.enabled,
-                    "points": lane.points.iter().map(|p| json!({ "id": p.id.0, "beat": p.beat, "value": show(p.value), "curve": p.curve.to_array() })).collect::<Vec<_>>(),
+                    "points": lane.points.entries().map(|(id, p)| json!({ "id": id.0, "beat": p.beat, "value": show(p.value), "curve": p.curve.to_array() })).collect::<Vec<_>>(),
                 })
             })
             .collect()

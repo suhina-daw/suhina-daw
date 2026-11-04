@@ -53,7 +53,7 @@ pub(crate) fn project(notes: Vec<Note>, length: f64, devices: Vec<Device>) -> Pr
                 track: Some(TrackId(1)),
                 clips: vec![clip(0.0, false)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {
@@ -221,7 +221,7 @@ fn an_sd_gain_graph_runs_in_the_offline_device_chain() {
     effect.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     effect.automation = vec![AutomationLane {
         param: "gain".into(),
-        points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(0.5, 0.0)],
+        points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(0.5, 0.0)].into(),
         enabled: true,
     }];
     let notes = vec![note(0.0, 1.0, 69)];
@@ -265,7 +265,7 @@ fn an_sd_midi_effect_transposes_notes_before_the_instrument() {
     transpose.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     transpose.automation = vec![AutomationLane {
         param: "semitones".into(),
-        points: vec![AutomationPoint::new(0.0, 12.0), AutomationPoint::new(0.5, 0.0)],
+        points: vec![AutomationPoint::new(0.0, 12.0), AutomationPoint::new(0.5, 0.0)].into(),
         enabled: true,
     }];
     let notes = vec![note(0.0, 0.75, 48), note(0.8, 0.2, 48)];

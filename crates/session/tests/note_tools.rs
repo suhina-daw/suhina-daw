@@ -53,7 +53,7 @@ fn project_built(notes: Vec<Note>) -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![clip(1), clip(2), clip(3)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()

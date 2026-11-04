@@ -52,7 +52,7 @@ pub(crate) fn grouped(group_devices: Vec<Device>, outside: bool) -> Project {
                     clips: vec![clip.clone()],
                 })
                 .collect(),
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()

@@ -15,6 +15,7 @@ pub mod automation;
 mod build;
 mod comping;
 mod groups;
+mod id_list;
 mod ids;
 pub mod names;
 mod tempo;
@@ -38,9 +39,8 @@ pub const PROJECT_EXTENSION: &str = "suhina";
 pub fn is_project_file(path: &std::path::Path) -> bool {
     path.extension().is_some_and(|e| e.eq_ignore_ascii_case(PROJECT_EXTENSION))
 }
-pub use ids::{
-    ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, PointId, SceneId, SessionCounter, TempoPointId,
-};
+pub use id_list::{Entry, IdList, ListId};
+pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, PointId, SceneId, TempoPointId};
 
 mod launch;
 mod mapping;
@@ -96,9 +96,6 @@ pub struct Project {
     /// ([ADR 0025](../../docs/decisions/0025-object-identity.md)). Allocate with
     /// [`Project::new_clip_id`] and its neighbours; 0 means nothing was handed out yet.
     pub next_id: u32,
-    /// The next id a marker, an automation point or a tempo change gets. Unlike `next_id` it is
-    /// not written to the file, and neither are their ids (#763 › 1).
-    pub session_ids: SessionCounter,
 }
 
 /// The song's tempo and time signature: `tempo_bpm` and `time_signature` hold from the start,
@@ -114,7 +111,8 @@ pub struct Transport {
     /// Whether playback repeats the loop region.
     pub loop_enabled: bool,
     /// Tempo changes after beat 0, in order of beat.
-    pub tempo_changes: Vec<TempoPoint>,
+    /// In beat order, each with its id (#763 › 1).
+    pub tempo_changes: IdList<TempoPointId, TempoPoint>,
     /// Time-signature changes after bar 0, in order of bar.
     pub time_signature_changes: Vec<TimeSignatureChange>,
 }
@@ -126,7 +124,7 @@ impl Default for Transport {
             time_signature: TimeSignature { numerator: 4, denominator: 4 },
             loop_range: None,
             loop_enabled: false,
-            tempo_changes: Vec::new(),
+            tempo_changes: IdList::new(),
             time_signature_changes: Vec::new(),
         }
     }
@@ -428,20 +426,17 @@ pub struct AutomationLane {
     /// The parameter, by the id `Device::params` uses, or a mixer parameter of a channel
     /// (`volume`, `pan`, `mute`).
     pub param: String,
-    pub points: Vec<AutomationPoint>,
+    /// In beat order, each with its id (#763 › 1).
+    pub points: IdList<PointId, AutomationPoint>,
     /// Whether the lane plays. A manual change to the parameter turns it off, so the value set
     /// by hand holds until the lane is turned on again.
     pub enabled: bool,
 }
 
-/// A value at an arrangement beat, in the parameter's own unit or range.
-///
-/// Two points are equal when they sit at the same beat with the same value and curve: the id is
-/// not compared, so an edit that draws a line again as it was (Smooth on a sine) changes nothing.
-#[derive(Debug, Clone, Copy)]
+/// A value at an arrangement beat, in the parameter's own unit or range. Which point it is, its
+/// id, is held by its lane ([`AutomationLane::points`]), not by the value.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AutomationPoint {
-    /// Which point this is; [`PointId::NONE`] until the project gives it one (#763 › 1).
-    pub id: PointId,
     pub beat: f64,
     pub value: f64,
     /// The shape of the segment from this point to the next: two control points of a cubic
@@ -886,7 +881,8 @@ impl FollowKind {
 pub struct Arrangement {
     pub lanes: Vec<ArrangementLane>,
     /// Named positions on the timeline, sorted by beat ([`Arrangement::sort_markers`]).
-    pub markers: Vec<Marker>,
+    /// In beat order, each with its id (#763 › 1).
+    pub markers: IdList<MarkerId, Marker>,
     /// Recorded passes kept under their tracks (take lanes), oldest first: what a recording
     /// into the arrangement played, pass by pass, so parts of each can be put together on the
     /// track (comping, ADR 0001 › Amendment: take lanes). They do not play.
@@ -918,13 +914,19 @@ impl Arrangement {
         self.markers.insert(at, marker);
         at
     }
+
+    /// Puts back a marker taken out of the markers ([`IdList::take`]), keeping its id, after any
+    /// at its beat, and returns its index.
+    pub fn put_marker(&mut self, marker: Entry<MarkerId, Marker>) -> usize {
+        let at = self.markers.partition_point(|m| m.beat <= marker.value.beat);
+        self.markers.put(at, marker);
+        at
+    }
 }
 
 /// A named position on the arrangement's timeline (a locator): playback can jump to it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Marker {
-    /// Which marker this is; [`MarkerId::NONE`] until the project gives it one (#763 › 1).
-    pub id: MarkerId,
     /// Beats from the start, at least 0.
     pub beat: f64,
     pub name: String,
@@ -932,7 +934,7 @@ pub struct Marker {
 
 impl Marker {
     pub fn new(beat: f64, name: impl Into<String>) -> Self {
-        Self { id: MarkerId::NONE, beat, name: name.into() }
+        Self { beat, name: name.into() }
     }
 
     /// Whether the beat is a finite number, not negative.
@@ -1017,8 +1019,6 @@ pub enum ValidationError {
     /// Two scenes have this id.
     DuplicateScene(SceneId),
     DuplicateDevice(DeviceId),
-    /// Two markers, two automation points or two tempo changes have this id (#763 › 1).
-    DuplicateObject(u32),
     /// Objects of two kinds (a clip, a lane, a scene) have this id; the kinds share one counter,
     /// so a value names at most one object.
     SharedId(u32),
@@ -1094,7 +1094,6 @@ impl fmt::Display for ValidationError {
             Self::DuplicateLane(id) => write!(f, "arrangement lane id {id} is used twice"),
             Self::DuplicateScene(id) => write!(f, "scene id {id} is used twice"),
             Self::DuplicateDevice(id) => write!(f, "device id {id} is used twice"),
-            Self::DuplicateObject(id) => write!(f, "marker, automation point or tempo change id {id} is used twice"),
             Self::SharedId(id) => write!(f, "object id {id} is used by a clip, a lane or a scene at once"),
             Self::IdAhead(id) => write!(f, "object id {id} is not below the project's next id"),
             Self::GroupCycle(id) => write!(f, "track {} is inside itself through its groups", id.0),
@@ -1181,14 +1180,6 @@ impl Project {
         let scene_ids = unique(scene_ids, ValidationError::DuplicateScene, &mut errors);
         let device_ids = self.all_devices().map(|d| d.id).filter(|id| id.is_some());
         let device_ids = unique(device_ids, ValidationError::DuplicateDevice, &mut errors);
-        // Markers, points and tempo changes have their own counter, which the file does not hold
-        // (#763 › 1), so only a value used twice within one kind is refused.
-        let marker_ids = self.arrangement.markers.iter().map(|m| m.id).filter(|id| id.is_some());
-        unique(marker_ids, |id: MarkerId| ValidationError::DuplicateObject(id.0), &mut errors);
-        let point_ids = self.all_automation_points().map(|p| p.id).filter(|id| id.is_some());
-        unique(point_ids, |id: PointId| ValidationError::DuplicateObject(id.0), &mut errors);
-        let tempo_ids = self.transport.tempo_changes.iter().map(|t| t.id).filter(|id| id.is_some());
-        unique(tempo_ids, |id: TempoPointId| ValidationError::DuplicateObject(id.0), &mut errors);
         // The kinds the file holds share one counter, so a value names at most one object of any
         // of them (ADR 0025 › 2): a lane and a clip with the same value are refused as well.
         let mut kinds: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();

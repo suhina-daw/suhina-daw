@@ -147,7 +147,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
                     extensions: Extensions::default(),
                 }],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()

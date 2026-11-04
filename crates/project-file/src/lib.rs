@@ -26,9 +26,9 @@ use suhina_model::{
     DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels,
     LaneData, LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn,
     LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
-    MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, PointId, Project, Rgb,
-    Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TempoPointId, TimeSignature,
-    TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
+    MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale,
+    ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange,
+    Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
 };
 
 /// The file extension, without the dot.
@@ -832,8 +832,7 @@ fn tempo_changes(t: &Obj) -> Result<Vec<TempoPoint>, ProjectFileError> {
             if !valid_bpm(bpm) {
                 return Err(format!("{at}.bpm: {bpm} is not a tempo").into());
             }
-            // Its id lives only while the project is open (#763 › 1): `assign_ids` gives it.
-            Ok(TempoPoint { id: TempoPointId::NONE, beat, bpm, ramp: flag(c, "ramp", false, &at)? })
+            Ok(TempoPoint { beat, bpm, ramp: flag(c, "ramp", false, &at)? })
         })
         .collect()
 }
@@ -895,7 +894,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                 time_signature: signature,
                 loop_range,
                 loop_enabled,
-                tempo_changes: tempo_changes(t)?,
+                tempo_changes: tempo_changes(t)?.into(),
                 time_signature_changes: time_signature_changes(t)?,
             }
         }
@@ -963,7 +962,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                     color: read_color(take.get("color"), &at)?,
                 });
             }
-            let mut arrangement = Arrangement { lanes, markers, takes };
+            let mut arrangement = Arrangement { lanes, markers: markers.into(), takes };
             arrangement.sort_markers();
             arrangement
         }
@@ -1023,12 +1022,11 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
         extensions: extensions(p, "project")?,
         default_scale: read_scale(p, "default_scale", "project")?,
         next_id: optional_whole(p, "next_id", "project")?.unwrap_or(0),
-        session_ids: suhina_model::SessionCounter::default(),
     };
     // A file written before ids, or an object added by hand without one: the objects without an
     // id get the next ones in document order, so the same file always reads with the same ids.
     // A stale `next_id` moves past the ids in use. Markers, automation points and tempo changes
-    // always get theirs here: the file does not hold them (#763 › 1).
+    // got new ids as their lists were built: the file holds none (#763 › 1).
     project.assign_ids().map_err(|e| ProjectFileError(format!("project: {e}")))?;
     Ok(project)
 }
@@ -1198,14 +1196,14 @@ fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileErr
             let p = object(p, &at)?;
             let curve = read_curve(p, &at)?;
             let (beat, value) = (float(p, "beat", &at)?, float(p, "value", &at)?);
-            // Its id lives only while the project is open (#763 › 1): `assign_ids` gives it.
-            points.push(AutomationPoint { id: PointId::NONE, beat, value, curve });
+            points.push(AutomationPoint { beat, value, curve });
         }
         // In beat order, as the model keeps them; points at the same beat keep their order.
         points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        // Each point gets a new id: the file holds none (#763 › 1).
         automation.push(AutomationLane {
             param: required_text(lane, "param", &at)?,
-            points,
+            points: points.into(),
             enabled: flag(lane, "enabled", true, &at)?,
         });
     }

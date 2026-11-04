@@ -47,12 +47,13 @@ fn everything() -> Project {
         AutomationLane {
             param: "volume".into(),
             points: vec![
-                AutomationPoint { id: Default::default(), beat: 0.0, value: 0.0, curve: Curve::bend(0.5) },
+                AutomationPoint { beat: 0.0, value: 0.0, curve: Curve::bend(0.5) },
                 AutomationPoint::new(8.0, 1.25),
-            ],
+            ]
+            .into(),
             enabled: true,
         },
-        AutomationLane { param: "mute".into(), points: vec![AutomationPoint::new(2.0, 1.0)], enabled: false },
+        AutomationLane { param: "mute".into(), points: vec![AutomationPoint::new(2.0, 1.0)].into(), enabled: false },
     ];
     keys.devices = vec![
         Device {
@@ -60,9 +61,10 @@ fn everything() -> Project {
             automation: vec![AutomationLane {
                 param: "volume".into(),
                 points: vec![
-                    AutomationPoint { id: Default::default(), beat: 1.0, value: -12.0, curve: Curve::bend(-0.75) },
+                    AutomationPoint { beat: 1.0, value: -12.0, curve: Curve::bend(-0.75) },
                     AutomationPoint::new(3.5, 0.0),
-                ],
+                ]
+                .into(),
                 enabled: false,
             }],
             ..Device::new("FM", DeviceKind::Builtin("fm-synth".into()))
@@ -78,7 +80,7 @@ fn everything() -> Project {
             params: vec![DeviceParam::new("gain", 0.5)],
             automation: vec![AutomationLane {
                 param: "gain".into(),
-                points: vec![AutomationPoint::new(0.0, 0.5), AutomationPoint::new(4.0, 1.0)],
+                points: vec![AutomationPoint::new(0.0, 0.5), AutomationPoint::new(4.0, 1.0)].into(),
                 enabled: true,
             }],
             ..Device::new("Community Gain", DeviceKind::Sd)
@@ -100,22 +102,17 @@ fn everything() -> Project {
                 param: "3".into(),
                 points: vec![
                     // Two control points outside the mirrored family: from version 4.
-                    AutomationPoint {
-                        id: Default::default(),
-                        beat: 0.0,
-                        value: 0.0,
-                        curve: Curve { x1: 0.1, y1: 0.7, x2: 0.825, y2: 0.525 },
-                    },
+                    AutomationPoint { beat: 0.0, value: 0.0, curve: Curve { x1: 0.1, y1: 0.7, x2: 0.825, y2: 0.525 } },
                     AutomationPoint::new(4.0, 1.0),
                     // A split's half, outside the unit square (version 4 too); the last point's
                     // curve plays nothing but is kept.
                     AutomationPoint {
-                        id: Default::default(),
                         beat: 4.0,
                         value: 0.5,
                         curve: Curve { x1: 1.195_800_350_656_066_6, y1: 0.0, x2: 0.5, y2: -0.293_128_413_857_272_2 },
                     },
-                ],
+                ]
+                .into(),
                 enabled: true,
             }],
             ..Device::new("Clap", DeviceKind::Clap { id: "com.example.clap".into() })
@@ -139,9 +136,10 @@ fn everything() -> Project {
             loop_range: Some(LoopRange { start: 4.0, end: 12.5 }),
             loop_enabled: true,
             tempo_changes: vec![
-                TempoPoint { id: Default::default(), beat: 14.0, bpm: 90.0, ramp: false },
-                TempoPoint { id: Default::default(), beat: 30.5, bpm: 140.25, ramp: true },
-            ],
+                TempoPoint { beat: 14.0, bpm: 90.0, ramp: false },
+                TempoPoint { beat: 30.5, bpm: 140.25, ramp: true },
+            ]
+            .into(),
             time_signature_changes: vec![TimeSignatureChange {
                 bar: 4,
                 time_signature: TimeSignature { numerator: 3, denominator: 4 },
@@ -234,7 +232,7 @@ fn everything() -> Project {
                     clips: vec![Clip { enabled: false, loop_range: None, ..clip(2, 4.0) }],
                 },
             ],
-            markers: vec![Marker::new(0.0, "Intro"), Marker::new(16.0, "Verse"), Marker::new(16.0, "")],
+            markers: vec![Marker::new(0.0, "Intro"), Marker::new(16.0, "Verse"), Marker::new(16.0, "")].into(),
             takes: Vec::new(),
         },
         launcher: Launcher {
@@ -273,7 +271,6 @@ fn everything() -> Project {
         extensions: ext("LiveSet"),
         default_scale: None,
         next_id: 0,
-        session_ids: suhina_model::SessionCounter::default(),
     };
     // Every lane, clip and scene gets an id, as a project in the app has.
     project.assign_ids().unwrap();
@@ -288,8 +285,8 @@ fn every_part_of_a_project_survives_a_round_trip() {
 }
 
 /// Markers, automation points and tempo changes have ids only while the project is open
-/// (#763 › 1): the file holds none, a reader gives them in document order, and saving a project
-/// again after reading it leaves `next_id` where it was.
+/// (#763 › 1): the file holds none, a reader gives new ones, and saving a project again after
+/// reading it leaves `next_id` where it was.
 #[test]
 fn markers_points_and_tempo_changes_are_written_without_ids() {
     let project = everything();
@@ -314,15 +311,16 @@ fn markers_points_and_tempo_changes_are_written_without_ids() {
 
     let read = from_json(&text).unwrap();
     assert_eq!(read.next_id, project.next_id);
-    let ids: Vec<_> = read.arrangement.markers.iter().map(|m| m.id.0).collect();
-    assert_eq!(ids, [1, 2, 3]);
     assert_eq!(to_json(&read), text, "a project read and written again is the same file");
+    // Each read gives new ids: they live only while the project is open.
+    let again = from_json(&text).unwrap();
+    assert!(read.arrangement.markers.ids().iter().all(|id| !again.arrangement.markers.ids().contains(id)));
 
     // An id a file has anyway (one written by hand) is not taken: the reader gives its own.
     let mut file = file;
     file["project"]["arrangement"]["markers"][0]["id"] = json!(500);
     let read = from_json(&file.to_string()).unwrap();
-    assert_eq!(read.arrangement.markers[0].id.0, 1);
+    assert_ne!(read.arrangement.markers.id(0), Some(suhina_model::MarkerId(500)));
 }
 
 /// A channel's cue is written only when on, so a project without one reads and writes as it
@@ -669,7 +667,8 @@ fn automation_points_are_read_in_beat_order() {
 /// plays. A channel without lanes writes none.
 #[test]
 fn automation_defaults_are_left_out_and_read_back() {
-    let lane = AutomationLane { param: "pan".into(), points: vec![AutomationPoint::new(0.0, 0.5)], enabled: true };
+    let lane =
+        AutomationLane { param: "pan".into(), points: vec![AutomationPoint::new(0.0, 0.5)].into(), enabled: true };
     let mut project =
         from_json(r#"{ "format": "suhina", "version": 1, "project": { "channels": [ { "id": 1 } ] } }"#).unwrap();
     assert!(project.channels[0].automation.is_empty());

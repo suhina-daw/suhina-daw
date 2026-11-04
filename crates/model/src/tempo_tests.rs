@@ -8,7 +8,7 @@ fn ts(numerator: u8, denominator: u8) -> TimeSignature {
 }
 
 fn point(beat: f64, bpm: f64, ramp: bool) -> TempoPoint {
-    TempoPoint { id: Default::default(), beat, bpm, ramp }
+    TempoPoint { beat, bpm, ramp }
 }
 
 #[test]

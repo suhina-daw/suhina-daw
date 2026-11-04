@@ -35,7 +35,7 @@ fn tempo_points_are_added_in_order_moved_and_deleted() {
     // Moved before the other, it is numbered 0, and keeps its id.
     run(&mut session, "tempo.movePoint", json!({ "point": 1, "beat": 4, "ramp": true })).unwrap();
     assert_eq!(beats(&session), [(4.0, 150.0, true), (8.0, 90.0, true)]);
-    assert_eq!(json!(session.project().transport.tempo_changes[0].id.0), id);
+    assert_eq!(json!(session.project().transport.tempo_changes.id(0).unwrap().0), id);
     run(&mut session, "tempo.movePoint", json!({ "point": 1, "bpm": 60 })).unwrap();
     assert_eq!(beats(&session), [(4.0, 150.0, true), (8.0, 60.0, true)]);
     run(&mut session, "tempo.deletePoint", json!({ "point": { "id": id } })).unwrap();
@@ -108,7 +108,7 @@ fn time_signature_changes_are_added_moved_and_deleted() {
 #[test]
 fn malformed_params_are_errors_that_change_nothing() {
     let mut start = Project::default();
-    start.transport.tempo_changes = vec![TempoPoint { id: Default::default(), beat: 8.0, bpm: 100.0, ramp: false }];
+    start.transport.tempo_changes = vec![TempoPoint { beat: 8.0, bpm: 100.0, ramp: false }].into();
     start.transport.time_signature_changes =
         vec![TimeSignatureChange { bar: 4, time_signature: TimeSignature { numerator: 3, denominator: 4 } }];
     let bad = [

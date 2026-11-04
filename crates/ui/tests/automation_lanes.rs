@@ -70,7 +70,7 @@ fn volume(harness: &Harness<'static, App>) -> (Vec<AutomationPoint>, bool) {
     let project = session.project();
     let channel = project.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel);
     let lane = project.channels.iter().find(|c| Some(c.id) == channel).and_then(|c| c.lane("volume"));
-    lane.map_or((Vec::new(), true), |l| (l.points.clone(), l.enabled))
+    lane.map_or((Vec::new(), true), |l| (l.points.to_vec(), l.enabled))
 }
 
 /// The points of the Drums track's pan lane.
@@ -79,7 +79,7 @@ fn pan(harness: &Harness<'static, App>) -> (Vec<AutomationPoint>, bool) {
     let project = session.project();
     let channel = project.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel);
     let lane = project.channels.iter().find(|c| Some(c.id) == channel).and_then(|c| c.lane("pan"));
-    lane.map_or((Vec::new(), true), |l| (l.points.clone(), l.enabled))
+    lane.map_or((Vec::new(), true), |l| (l.points.to_vec(), l.enabled))
 }
 
 /// A press and release of the left button at `pos`.
@@ -327,7 +327,7 @@ fn with_a_split_half() -> (Harness<'static, App>, Curve, Pos2) {
     let drums = project.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel);
     let channel = project.channels.iter_mut().find(|c| Some(c.id) == drums).expect("the Drums channel");
     let mut pan = AutomationLane::new("pan");
-    pan.insert(AutomationPoint { id: Default::default(), beat: 0.0, value: -1.0, curve: outside });
+    pan.insert(AutomationPoint { beat: 0.0, value: -1.0, curve: outside });
     pan.insert(AutomationPoint::new(16.0, 1.0));
     channel.automation.push(pan);
     let mut harness = arrangement(project);
@@ -929,12 +929,7 @@ fn render_the_lanes() {
     if let Some(channel) = project.channels.iter_mut().find(|c| Some(c.id) == channel) {
         let mut volume = suhina_engine::model::AutomationLane::new("volume");
         for (beat, value, curve) in [(0.0, 0.3, 0.0), (16.0, 1.0, 0.6), (48.0, 0.5, -0.5), (64.0, 0.9, 0.0)] {
-            volume.insert(AutomationPoint {
-                id: Default::default(),
-                beat,
-                value,
-                curve: suhina_engine::model::automation::Curve::bend(curve),
-            });
+            volume.insert(AutomationPoint { beat, value, curve: suhina_engine::model::automation::Curve::bend(curve) });
         }
         let mut pan = suhina_engine::model::AutomationLane::new("pan");
         pan.insert(AutomationPoint::new(8.0, -0.6));

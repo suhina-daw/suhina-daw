@@ -77,7 +77,7 @@ fn project(fades: Option<(FadeShape, f64)>) -> Project {
                     clips: (0..CLIPS).map(clip).collect(),
                 })
                 .collect(),
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()

@@ -53,7 +53,7 @@ fn project_with(lanes: Vec<ContentLane>, clips: Vec<Clip>, tracks: u32) -> Proje
         }],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane { id: Default::default(), name: "l".into(), track: Some(TrackId(1)), clips }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -1475,15 +1475,18 @@ fn the_main_fader_moves_while_playing_and_leaves_the_click_alone() {
 fn a_track_with_a_volume_lane_pans_without_a_new_graph() {
     let mut project = project_with(Vec::new(), Vec::new(), 1);
     with_utility(&mut project);
-    project.channels[0].automation =
-        vec![AutomationLane { param: "volume".into(), points: vec![AutomationPoint::new(0.0, 0.8)], enabled: true }];
+    project.channels[0].automation = vec![AutomationLane {
+        param: "volume".into(),
+        points: vec![AutomationPoint::new(0.0, 0.8)].into(),
+        enabled: true,
+    }];
     let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
     let mut controller = renderer.controller();
     assert!(controller.set_device_param(TrackId(1), MIXER_PAN, 0, -1.0).is_ok());
     // A pan lane keeps the knob off the message path.
     project.channels[0].automation.push(AutomationLane {
         param: "pan".into(),
-        points: vec![AutomationPoint::new(0.0, 0.0)],
+        points: vec![AutomationPoint::new(0.0, 0.0)].into(),
         enabled: true,
     });
     let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();

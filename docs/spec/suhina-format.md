@@ -55,8 +55,8 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
   them, is the version after 3 ([ADR 0026](../decisions/0026-project-folder-and-package.md) › 10).
 - Markers, automation points and tempo changes have ids only while the project is open, and the
   file holds none: nothing refers to one of them across a save
-  ([ADR 0025](../decisions/0025-object-identity.md) › Decided since). A reader gives them in
-  document order and ignores an `id` a file has on one.
+  ([ADR 0025](../decisions/0025-object-identity.md) › Decided since). A reader gives them new
+  ones and ignores an `id` a file has on one.
 - `extensions` (on the project, a track, channel, device, content or clip) is a list of
   `{ "format", "key", "data" }`: what an importer kept from its format; it is left out when empty.
 - The project must hold together as an imported one must: ids unique, every reference resolves,

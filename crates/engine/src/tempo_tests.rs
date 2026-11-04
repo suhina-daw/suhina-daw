@@ -16,11 +16,11 @@ use crate::{AudioData, AudioPool, LaunchCommand, Quantization, Renderer, render_
 const SR: u32 = 48_000;
 
 fn step(beat: f64, bpm: f64) -> TempoPoint {
-    TempoPoint { id: Default::default(), beat, bpm, ramp: false }
+    TempoPoint { beat, bpm, ramp: false }
 }
 
 fn ramp(beat: f64, bpm: f64) -> TempoPoint {
-    TempoPoint { id: Default::default(), beat, bpm, ramp: true }
+    TempoPoint { beat, bpm, ramp: true }
 }
 
 fn clip(start: f64, length: f64) -> Clip {
@@ -53,7 +53,7 @@ fn project(lane: LaneData, length: f64) -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![clip(0.0, length)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {
@@ -112,7 +112,7 @@ fn assert_near(found: &[usize], want: &[usize], tolerance: usize) {
 fn notes_stay_on_the_grid_across_a_step() {
     // 120 bpm (24 000 frames a beat) to beat 4, then 60 bpm (48 000): beat 5 at 144 000.
     let mut p = project(beat_notes(8), 8.0);
-    p.transport.tempo_changes = vec![step(4.0, 60.0)];
+    p.transport.tempo_changes = vec![step(4.0, 60.0)].into();
     let out = render_offline(&p, SR, 256, suhina_device_registry::factory()).unwrap();
     assert_near(&onsets(&out), &[0, 24_000, 48_000, 72_000, 96_000, 144_000, 192_000, 240_000], 2);
 }
@@ -122,7 +122,7 @@ fn notes_stay_on_the_grid_through_a_ramp() {
     // From 90 bpm at beat 0 up to 180 at beat 8, then down to 100 at beat 12.
     let mut p = project(beat_notes(16), 16.0);
     p.transport.tempo_bpm = 90.0;
-    p.transport.tempo_changes = vec![ramp(8.0, 180.0), ramp(12.0, 100.0)];
+    p.transport.tempo_changes = vec![ramp(8.0, 180.0), ramp(12.0, 100.0)].into();
     let out = render_offline(&p, SR, 256, suhina_device_registry::factory()).unwrap();
     assert_near(&onsets(&out), &expected(&p.transport, 16), 2);
     // The ramp is not a step: beat 4 comes between where 90 and 180 bpm would put it.
@@ -137,7 +137,7 @@ fn changes_after_everything_change_nothing() {
     let plain = project(beat_notes(8), 8.0);
     let mut later = plain.clone();
     // A step (a ramp into beat 500 would glide from beat 0 on).
-    later.transport.tempo_changes = vec![step(500.0, 200.0)];
+    later.transport.tempo_changes = vec![step(500.0, 200.0)].into();
     later.transport.time_signature_changes =
         vec![TimeSignatureChange { bar: 200, time_signature: TimeSignature { numerator: 7, denominator: 8 } }];
     assert_eq!(
@@ -173,7 +173,7 @@ fn click_track() -> (AudioRegion, AudioPool) {
 fn a_repitched_warped_clip_stays_on_the_grid() {
     let (region, pool) = click_track();
     let mut p = project(LaneData::Audio(region), 16.0);
-    p.transport.tempo_changes = vec![step(4.0, 80.0), ramp(12.0, 150.0)];
+    p.transport.tempo_changes = vec![step(4.0, 80.0), ramp(12.0, 150.0)].into();
     let out =
         render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 256, None)
             .unwrap();
@@ -185,7 +185,7 @@ fn a_stretched_warped_clip_stays_on_the_grid() {
     let (region, pool) = click_track();
     let region = AudioRegion { stretch: StretchMode::Rhythmic, ..region };
     let mut p = project(LaneData::Audio(region), 16.0);
-    p.transport.tempo_changes = vec![step(4.0, 80.0), ramp(12.0, 150.0)];
+    p.transport.tempo_changes = vec![step(4.0, 80.0), ramp(12.0, 150.0)].into();
     let out =
         render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 256, None)
             .unwrap();
@@ -200,7 +200,7 @@ fn an_unwarped_clip_plays_at_its_own_speed_from_its_beat() {
     let region = AudioRegion { warped: false, ..region };
     let mut p = project(LaneData::Audio(region), 16.0);
     p.arrangement.lanes[0].clips[0].start = 4.0;
-    p.transport.tempo_changes = vec![step(2.0, 60.0)];
+    p.transport.tempo_changes = vec![step(2.0, 60.0)].into();
     let out =
         render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 256, None)
             .unwrap();
@@ -217,7 +217,7 @@ fn launched_clips_follow_the_map() {
     // it (the launch overrides the track), so every onset is the launcher's.
     let mut p = project(beat_notes(4), 4.0);
     p.transport.tempo_bpm = 100.0;
-    p.transport.tempo_changes = vec![ramp(6.0, 160.0), step(9.0, 70.0)];
+    p.transport.tempo_changes = vec![ramp(6.0, 160.0), step(9.0, 70.0)].into();
     let launch = [(0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 })];
     let map = p.transport.tempo_map(f64::from(SR));
     let seconds = map.time_at(12.0) / f64::from(SR) + 0.1;
@@ -228,7 +228,7 @@ fn launched_clips_follow_the_map() {
 #[test]
 fn the_launcher_clock_keeps_to_the_arrangement_through_a_ramp() {
     let mut p = project(beat_notes(1), 1.0);
-    p.transport.tempo_changes = vec![ramp(64.0, 240.0)];
+    p.transport.tempo_changes = vec![ramp(64.0, 240.0)].into();
     let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let monitor = renderer.monitor();
     renderer.handle(LaunchCommand::Play);
@@ -300,7 +300,7 @@ fn an_edit_to_the_map_while_playing_keeps_the_beat() {
         renderer.process(block);
     }
     let mut edited = p.clone();
-    edited.transport.tempo_changes = vec![step(1.0, 60.0)];
+    edited.transport.tempo_changes = vec![step(1.0, 60.0)].into();
     controller.update(&edited).unwrap();
     let mut rest = vec![0.0f32; 300 * 480 * 2];
     for block in rest.chunks_mut(480 * 2) {
@@ -315,7 +315,7 @@ fn a_loop_with_a_tempo_change_inside_keeps_its_beats() {
     // 120 bpm to beat 4, then 60; the loop region is beats 0 to 6. Each pass is 4 beats of half a
     // second and 2 beats of a second (4 s); the wrap lands on the loop end's frame through the map.
     let mut p = project(beat_notes(8), 8.0);
-    p.transport.tempo_changes = vec![step(4.0, 60.0)];
+    p.transport.tempo_changes = vec![step(4.0, 60.0)].into();
     p.transport.loop_range = Some(LoopRange { start: 0.0, end: 6.0 });
     p.transport.loop_enabled = true;
     let out = render_launches(
@@ -337,7 +337,7 @@ fn a_loop_with_a_tempo_change_inside_keeps_its_beats() {
 /// tempo map at 120 bpm that changes far later (so the clock reads its beat from the map).
 fn scene_over_map() -> Project {
     let mut p = project(beat_notes(1), 1.0);
-    p.transport.tempo_changes = vec![step(64.0, 240.0)];
+    p.transport.tempo_changes = vec![step(64.0, 240.0)].into();
     if let Some(scene) = p.launcher.scenes.first_mut() {
         scene.tempo_bpm = Some(60.0);
     }
@@ -399,7 +399,7 @@ fn the_map_takes_over_again_on_follow_on_a_start_and_on_an_edit() {
     play(&mut renderer, 300);
     assert!(!on_map(&monitor));
     let mut edited = p.clone();
-    edited.transport.tempo_changes = vec![step(64.0, 200.0)];
+    edited.transport.tempo_changes = vec![step(64.0, 200.0)].into();
     controller.update(&edited).unwrap();
     play(&mut renderer, 2);
     assert!(on_map(&monitor));

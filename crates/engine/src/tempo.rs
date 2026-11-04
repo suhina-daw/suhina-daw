@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn a_changing_clock_goes_through_the_map() {
-        let changes = [TempoPoint { id: Default::default(), beat: 4.0, bpm: 60.0, ramp: false }];
+        let changes = [TempoPoint { beat: 4.0, bpm: 60.0, ramp: false }];
         let map = Arc::new(TempoMap::new(120.0, &changes, SR));
         let clock = TempoClock::of(&map);
         assert!(clock.map().is_some());
@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn a_change_moves_later_beats() {
         // 120 bpm (24 000 frames a beat) to beat 4, then 60 bpm (48 000).
-        let map = TempoMap::new(120.0, &[TempoPoint { id: Default::default(), beat: 4.0, bpm: 60.0, ramp: false }], SR);
+        let map = TempoMap::new(120.0, &[TempoPoint { beat: 4.0, bpm: 60.0, ramp: false }], SR);
         assert_eq!(frame_of(&map, 4.0), 96_000);
         assert_eq!(frame_of(&map, 5.0), 144_000);
         assert_eq!(beats_since(&map, 96_000, 4.0, 120_000), 0.5);

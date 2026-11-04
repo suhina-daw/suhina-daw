@@ -377,7 +377,7 @@ impl Params {
                     group: None,
                     scale,
                     enabled: lane.as_ref().is_none_or(|l| l.enabled),
-                    points: lane.map(|l| l.points).unwrap_or_default(),
+                    points: lane.map(|l| l.points.into_values()).unwrap_or_default(),
                     current,
                 }
             })
@@ -396,7 +396,7 @@ impl Params {
                                 group: (!spec.group.is_empty()).then(|| spec.group.to_string()),
                                 scale: Scale::Device(spec.clone()),
                                 enabled: lane.as_ref().is_none_or(|l| l.enabled),
-                                points: lane.map(|l| l.points).unwrap_or_default(),
+                                points: lane.map(|l| l.points.into_values()).unwrap_or_default(),
                                 current: set(&spec.id).unwrap_or(spec.default),
                             });
                         }
@@ -419,7 +419,7 @@ impl Params {
                                 group: (!spec.ui.group.is_empty()).then(|| spec.ui.group.clone()),
                                 scale: Scale::Sd(Box::new(spec.clone())),
                                 enabled: lane.as_ref().is_none_or(|l| l.enabled),
-                                points: lane.map(|l| l.points).unwrap_or_default(),
+                                points: lane.map(|l| l.points.into_values()).unwrap_or_default(),
                                 current: set(&spec.id).unwrap_or(spec.default),
                             });
                         }

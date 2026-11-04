@@ -46,7 +46,7 @@ fn project() -> Project {
                 clips: vec![clip(1, 0.0), clip(1, 8.0), clip(2, 16.0)],
                 ..ArrangementLane::default()
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {

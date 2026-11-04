@@ -1007,7 +1007,7 @@ fn markers_are_added_moved_renamed_and_deleted_in_beat_order() {
         [(16.0, "Hook".to_string()), (16.0, "Marker 3".to_string()), (32.0, "Marker 2".to_string())]
     );
     let listed = run(&mut session, "project.markers", json!({})).unwrap();
-    let id = session.project().arrangement.markers[2].id.0;
+    let id = session.project().arrangement.markers.id(2).unwrap().0;
     assert_eq!(listed[2], json!({ "index": 2, "id": id, "beat": 32.0, "name": "Marker 2" }));
     // A marker named by its id is found where it is now.
     run(&mut session, "marker.rename", json!({ "index": { "id": id }, "name": "Outro" })).unwrap();

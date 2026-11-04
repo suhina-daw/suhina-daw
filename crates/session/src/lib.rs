@@ -1239,13 +1239,11 @@ impl Session {
         true
     }
 
-    /// Keeps the id counters of the project an undo or redo stepped away from: an id handed out
+    /// Keeps the id counter of the project an undo or redo stepped away from: an id handed out
     /// before the step stays used, so an object added after an undo never gets the id of the one
-    /// the undo took away (ADR 0025). The counter the file does not hold too (#763 › 1): a
-    /// command from a read before the undo must not find a new point under an old point's id.
+    /// the undo took away (ADR 0025).
     fn keep_counter(&mut self, left: &Project) {
         self.project.next_id = self.project.next_id.max(left.next_id);
-        self.project.session_ids.0 = self.project.session_ids.0.max(left.session_ids.0);
     }
 }
 

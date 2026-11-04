@@ -93,7 +93,7 @@ fn project() -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, 1.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()

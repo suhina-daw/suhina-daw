@@ -45,7 +45,7 @@ fn project(clip: bool) -> Project {
         duration_seconds: Some(1.0),
         warped: false,
         stretch: StretchMode::default(),
-        warp_markers: Vec::new(),
+        warp_markers: Default::default(),
         gain: 1.0,
         transpose: 0.0,
         stream: None,
@@ -85,7 +85,7 @@ fn project(clip: bool) -> Project {
                 clips: if clip { vec![clip_at] } else { Vec::new() },
                 ..ArrangementLane::default()
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()

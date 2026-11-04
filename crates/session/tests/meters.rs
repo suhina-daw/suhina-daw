@@ -49,7 +49,7 @@ fn project_built(volume: f64) -> Project {
                     clips: vec![clip.clone()],
                 })
                 .collect(),
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()

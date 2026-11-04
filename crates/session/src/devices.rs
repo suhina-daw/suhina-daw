@@ -1339,7 +1339,7 @@ pub(crate) fn set_automation(session: &mut Session, params: &Value) -> Result<Va
             }
             None => plugin_value(session, track, &[index], id, value)?,
         };
-        points.push(AutomationPoint { id: Default::default(), beat, value, curve: Default::default() });
+        points.push(AutomationPoint { beat, value, curve: Default::default() });
     }
     // In beat order; points given at one beat keep their order (a jump).
     points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
@@ -1349,7 +1349,7 @@ pub(crate) fn set_automation(session: &mut Session, params: &Value) -> Result<Va
     let name = if plugin { id.to_string() } else { param.to_string() };
     device.automation.retain(|lane| if plugin { param_id(&lane.param) != Some(id) } else { lane.param != name });
     if !points.is_empty() {
-        device.automation.push(AutomationLane { param: name.clone(), points, enabled: true });
+        device.automation.push(AutomationLane { param: name.clone(), points: points.into(), enabled: true });
     }
     let param = if plugin { json!(id) } else { json!(name) };
     Ok(json!({ "device": index, "param": param, "points": count }))

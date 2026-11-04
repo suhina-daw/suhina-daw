@@ -49,12 +49,7 @@ fn gain(id: &str, points: &[(f64, f64)]) -> Device {
             param: "0".into(),
             points: points
                 .iter()
-                .map(|&(beat, value)| AutomationPoint {
-                    id: Default::default(),
-                    beat,
-                    value,
-                    curve: Default::default(),
-                })
+                .map(|&(beat, value)| AutomationPoint { beat, value, curve: Default::default() })
                 .collect(),
             enabled: true,
         }],
@@ -87,7 +82,7 @@ fn project(length: f64, devices: Vec<Device>) -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, length)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()

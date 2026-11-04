@@ -46,7 +46,7 @@ pub(crate) fn project(region: AudioRegion, length: f64, fade_in: f64, fade_out: 
                 track: Some(TrackId(1)),
                 clips: vec![clip.clone()],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {

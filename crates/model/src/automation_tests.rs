@@ -53,15 +53,19 @@ fn points_go_in_beat_order_after_those_at_the_same_beat() {
     for (beat, value) in [(0.0, 0.1), (4.0, 0.2), (4.0, 0.3), (8.0, 0.4)] {
         jump.insert(AutomationPoint::new(beat, value));
     }
-    let mut moved = jump.clone();
-    let point = moved.points.remove(0);
-    assert_eq!(moved.insert_near(AutomationPoint { beat: 4.0, ..point }, 0), 0);
-    let mut moved = jump.clone();
-    let point = moved.points.remove(3);
-    assert_eq!(moved.insert_near(AutomationPoint { beat: 4.0, ..point }, 3), 3);
-    let mut moved = jump.clone();
-    let point = moved.points.remove(1);
-    assert_eq!(moved.insert_near(AutomationPoint { value: 0.9, ..point }, 1), 1);
+    let put = |lane: &AutomationLane, from: usize, change: fn(&mut AutomationPoint)| {
+        let mut moved = lane.clone();
+        let id = moved.points.id(from);
+        let mut point = moved.points.take(from);
+        change(&mut point.value);
+        let at = moved.put_near(point, from);
+        assert_eq!(moved.points.id(at), id, "a point put back keeps its id");
+        (moved, at)
+    };
+    assert_eq!(put(&jump, 0, |p| p.beat = 4.0).1, 0);
+    assert_eq!(put(&jump, 3, |p| p.beat = 4.0).1, 3);
+    let (moved, at) = put(&jump, 1, |p| p.value = 0.9);
+    assert_eq!(at, 1);
     assert_eq!(moved.points[2].value, 0.3);
 }
 
@@ -342,13 +346,10 @@ fn a_split_segment_plays_as_the_whole_did() {
     for c in curves {
         for t in [0.01, 0.125, 0.25, 0.375, 0.5, 0.75, 0.99] {
             let cut = c.split(t).unwrap();
-            let whole = [
-                AutomationPoint { id: Default::default(), beat: 0.0, value: 0.0, curve: c },
-                AutomationPoint::new(8.0, 1.0),
-            ];
+            let whole = [AutomationPoint { beat: 0.0, value: 0.0, curve: c }, AutomationPoint::new(8.0, 1.0)];
             let halves = [
-                AutomationPoint { id: Default::default(), beat: 0.0, value: 0.0, curve: cut.before },
-                AutomationPoint { id: Default::default(), beat: 8.0 * t, value: cut.share, curve: cut.after },
+                AutomationPoint { beat: 0.0, value: 0.0, curve: cut.before },
+                AutomationPoint { beat: 8.0 * t, value: cut.share, curve: cut.after },
                 AutomationPoint::new(8.0, 1.0),
             ];
             // The second half split again at its middle.
@@ -357,7 +358,6 @@ fn a_split_segment_plays_as_the_whole_did() {
                 halves[0],
                 AutomationPoint { curve: again.before, ..halves[1] },
                 AutomationPoint {
-                    id: Default::default(),
                     beat: 4.0 * t + 4.0,
                     value: cut.share + (1.0 - cut.share) * again.share,
                     curve: again.after,

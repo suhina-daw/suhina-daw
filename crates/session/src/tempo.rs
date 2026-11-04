@@ -6,7 +6,9 @@
 //! 1 in beat order; bars from 1, as shown.
 
 use serde_json::{Value, json};
-use suhina_model::{MAX_CHANGE_BEAT, TempoPoint, TimeSignature, TimeSignatureChange, Transport};
+use suhina_model::{
+    Entry, IdList, MAX_CHANGE_BEAT, TempoPoint, TempoPointId, TimeSignature, TimeSignatureChange, Transport,
+};
 
 use crate::commands::Args;
 use crate::{CommandError, Session};
@@ -18,9 +20,9 @@ const BPM: std::ops::RangeInclusive<f64> = 20.0..=999.0;
 fn tempo_list(t: &Transport) -> Value {
     let points: Vec<Value> = t
         .tempo_changes
-        .iter()
+        .entries()
         .enumerate()
-        .map(|(i, p)| json!({ "point": i, "id": p.id.0, "beat": p.beat, "bpm": p.bpm, "ramp": p.ramp }))
+        .map(|(i, (id, p))| json!({ "point": i, "id": id.0, "beat": p.beat, "bpm": p.bpm, "ramp": p.ramp }))
         .collect();
     json!({ "start_bpm": t.tempo_bpm, "points": points })
 }
@@ -59,31 +61,33 @@ fn bpm_param(params: &Value) -> Result<f64, CommandError> {
 
 /// Puts `point` among the changes in beat order. A beat holds at most a ramp and a step, the
 /// ramp first: the tempo glides to the ramp's tempo and then jumps to the step's. A point of the
-/// same kind already on its beat is replaced.
-fn insert_point(changes: &mut Vec<TempoPoint>, point: TempoPoint) -> Result<(), CommandError> {
-    changes.retain(|p| p.beat != point.beat || p.ramp != point.ramp);
+/// same kind already on its beat is replaced. `point` keeps its id: a new change has a new one, a
+/// moved one the one it had. Answers the id.
+fn insert_point(
+    changes: &mut IdList<TempoPointId, TempoPoint>,
+    point: Entry<TempoPointId, TempoPoint>,
+) -> Result<TempoPointId, CommandError> {
+    let (id, value) = (point.id(), point.value);
+    changes.retain(|p| p.beat != value.beat || p.ramp != value.ramp);
     if changes.len() >= suhina_model::MAX_TEMPO_CHANGES {
         return Err("the project has as many tempo changes as it can hold".into());
     }
-    let at = changes.partition_point(|p| p.beat < point.beat || (p.beat == point.beat && p.ramp && !point.ramp));
-    changes.insert(at, point);
-    Ok(())
+    let at = changes.partition_point(|p| p.beat < value.beat || (p.beat == value.beat && p.ramp && !value.ramp));
+    changes.put(at, point);
+    Ok(changes.id(at).unwrap_or(id))
 }
 
 pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let point = TempoPoint {
-        id: Default::default(),
         beat: beat_param(params)?,
         bpm: bpm_param(params)?,
         ramp: Args::new(params).opt_bool("ramp")?.unwrap_or(false),
     };
     let transport = &mut session.project.transport;
-    insert_point(&mut transport.tempo_changes, point)?;
     // The new change's id, for the commands that name it next.
-    session.project.assign_ids()?;
-    let id = session.project.transport.tempo_changes.iter().find(|p| p.beat == point.beat && p.ramp == point.ramp);
+    let id = insert_point(&mut transport.tempo_changes, Entry::new(point))?;
     let mut out = tempo_list(&session.project.transport);
-    out["id"] = json!(id.map(|p| p.id.0));
+    out["id"] = json!(id.0);
     Ok(out)
 }
 
@@ -93,9 +97,9 @@ fn point_index(t: &Transport, params: &Value) -> Result<usize, CommandError> {
     let count = t.tempo_changes.len();
     let item = Args::new(params).value("point").ok_or("point must name a tempo change, as in tempo.points")?;
     if let Some(id) = item.get("id") {
-        let id = id.as_u64().and_then(|n| u32::try_from(n).ok()).map(suhina_model::TempoPointId);
         return id
-            .and_then(|id| t.tempo_changes.iter().position(|p| p.id == id))
+            .as_u64()
+            .and_then(|n| t.tempo_changes.position(TempoPointId(n)))
             .ok_or_else(|| format!("no tempo change has id {}", item["id"]).into());
     }
     let number = item.as_u64().ok_or("point must be a whole number from 0, or {\"id\": n}")?;
@@ -114,14 +118,14 @@ pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value,
         return Err("give at least one of beat, bpm and ramp".into());
     }
     let changes = &mut session.project.transport.tempo_changes;
-    let Some(old) = changes.get(index).copied() else { return Err("the tempo point is missing".into()) };
-    changes.remove(index);
-    let point = TempoPoint {
-        id: old.id,
-        beat: beat.unwrap_or(old.beat),
-        bpm: bpm.unwrap_or(old.bpm),
-        ramp: ramp.unwrap_or(old.ramp),
-    };
+    if index >= changes.len() {
+        return Err("the tempo point is missing".into());
+    }
+    // Taken out and put back with its id: a moved change stays the same change.
+    let mut point = changes.take(index);
+    let old = point.value;
+    point.value =
+        TempoPoint { beat: beat.unwrap_or(old.beat), bpm: bpm.unwrap_or(old.bpm), ramp: ramp.unwrap_or(old.ramp) };
     insert_point(changes, point)?;
     Ok(tempo_list(&session.project.transport))
 }

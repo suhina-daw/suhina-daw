@@ -386,7 +386,7 @@ fn an_automated_parameter_shows_its_lane_without_a_player() {
     use suhina_engine::model::{AutomationLane, AutomationPoint};
     let mut project = project_with_a_device();
     let mut lane = AutomationLane::new("gain");
-    lane.points = vec![AutomationPoint::new(0.0, -12.0)];
+    lane.points = vec![AutomationPoint::new(0.0, -12.0)].into();
     project.channels[0].devices[0].automation.push(lane);
     let mut app = App::new();
     app.set_session(Session::new(project), &[]);

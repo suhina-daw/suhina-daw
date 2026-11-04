@@ -44,7 +44,7 @@ fn project_built(notes: Vec<Note>) -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![clip(1), clip(2)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {

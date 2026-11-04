@@ -113,7 +113,7 @@ mod tests {
                     track: Some(TrackId(1)),
                     clips,
                 }],
-                markers: Vec::new(),
+                markers: Default::default(),
                 takes: Vec::new(),
             },
             ..Project::default()

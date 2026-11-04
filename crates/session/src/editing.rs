@@ -334,7 +334,7 @@ fn render_audio(
         duration_seconds: Some(seconds),
         warped: false,
         stretch: StretchMode::default(),
-        warp_markers: Vec::new(),
+        warp_markers: Default::default(),
         gain: 1.0,
         transpose: 0.0,
         stream: None,

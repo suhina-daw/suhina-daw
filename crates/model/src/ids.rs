@@ -12,13 +12,8 @@
 //! column, then the channels' devices, a group before the devices in it), which is also how a
 //! file written before ids existed gets them.
 //!
-//! Markers, automation points and tempo changes have ids too, but only while the project is open
-//! (#763 › 1): nothing refers to one of them across a save, so the file does not hold their ids.
-//! They come from a second counter, [`Project::session_ids`], which the file does not hold either;
-//! [`Project::assign_ids`] gives them after the saved kinds, in document order (markers, then the
-//! channels' points, then the tempo changes), so a file always reads with the same ones. A value
-//! is still never handed out twice while the project is open, undo included. Their values may
-//! repeat a clip's or a device's: a command always says which kind it names.
+//! Markers, automation points and tempo changes have ids too, held by the lists they are in and
+//! not written to the file ([`crate::IdList`], #763 › 1).
 //!
 //! Tracks and channels have ids of their own ([`TrackId`], [`ChannelId`]);
 //! [`Project::track`] and [`Project::channel`] find one by it.
@@ -54,20 +49,6 @@ fn fill_device_ids(
         }
     }
     Ok(())
-}
-
-/// The automation lanes of `devices` and the devices in their groups, depth first: a group's own
-/// lanes before those of the devices in it.
-fn collect_device_lanes<'a>(devices: &'a mut [Device], lanes: &mut Vec<&'a mut crate::AutomationLane>) {
-    for device in devices {
-        let Device { automation, kind, .. } = device;
-        lanes.extend(automation.iter_mut());
-        if let crate::DeviceKind::Group(group) = kind {
-            for branch in &mut group.branches {
-                collect_device_lanes(&mut branch.devices, lanes);
-            }
-        }
-    }
 }
 
 /// Identifies a [`Clip`], on the arrangement or in a launcher slot. Stays the same
@@ -108,35 +89,35 @@ macro_rules! object_id {
     )*};
 }
 
-/// Identifies an arrangement [`Marker`](crate::Marker) (#763 › 1). Stays the same when the
-/// marker moves or is renamed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
-pub struct MarkerId(pub u32);
+object_id!(ClipId, LaneId, SceneId, DeviceId);
 
-/// Identifies an [`AutomationPoint`](crate::AutomationPoint) on a lane (#763 › 1). Stays the same
-/// when the point is dragged; a point a range tool draws anew gets a new one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
-pub struct PointId(pub u32);
+/// Identifies an arrangement [`Marker`](crate::Marker) in the arrangement's markers (#763 › 1).
+/// Stays the same when the marker moves or is renamed. Given by [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MarkerId(pub u64);
 
-/// Identifies a [`TempoPoint`](crate::TempoPoint), a change in the tempo map (#763 › 1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
-pub struct TempoPointId(pub u32);
+/// Identifies an [`AutomationPoint`](crate::AutomationPoint) on its lane (#763 › 1). Stays the
+/// same when the point is dragged; a point a range tool draws anew is a new one. Given by
+/// [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PointId(pub u64);
 
-object_id!(ClipId, LaneId, SceneId, DeviceId, MarkerId, PointId, TempoPointId);
+/// Identifies a [`TempoPoint`](crate::TempoPoint), a change in the tempo map (#763 › 1). Given by
+/// [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TempoPointId(pub u64);
 
-/// The next id a marker, an automation point or a tempo change gets: ids that live only while the
-/// project is open and are not written to the file (#763 › 1). 0 means nothing was handed out yet.
-///
-/// Not part of what the project holds: two projects are equal whatever their counters say, as
-/// two projects that write the same file are.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SessionCounter(pub u32);
-
-impl PartialEq for SessionCounter {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
+macro_rules! list_ids {
+    ($($id:ident),*) => {$(
+        impl fmt::Display for $id {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+    )*};
 }
+
+list_ids!(MarkerId, PointId, TempoPointId);
 
 /// The counter has reached the largest id there is: the project can name no more objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,8 +176,7 @@ impl Project {
         self.next_object_id().map(SceneId).ok_or(IdsExhausted)
     }
 
-    /// The largest id in use of the kinds the file holds (lanes, clips, scenes, devices), 0 when
-    /// there is none.
+    /// The largest object id in use, 0 when there is none.
     pub fn max_object_id(&self) -> u32 {
         let lanes = self.arrangement.lanes.iter().map(|l| l.id.0);
         let clips = self.all_clips().map(|c| c.id.0);
@@ -205,21 +185,10 @@ impl Project {
         lanes.chain(clips).chain(scenes).chain(devices).max().unwrap_or(0)
     }
 
-    /// The largest id in use of the kinds that have one only while the project is open (markers,
-    /// automation points, tempo changes), 0 when there is none.
-    pub fn max_session_id(&self) -> u32 {
-        let markers = self.arrangement.markers.iter().map(|m| m.id.0);
-        let points = self.all_automation_points().map(|p| p.id.0);
-        let tempo = self.transport.tempo_changes.iter().map(|t| t.id.0);
-        markers.chain(points).chain(tempo).max().unwrap_or(0)
-    }
-
-    /// Moves each counter past the ids in use, then gives every object that has no id
-    /// ([`ClipId::NONE`]) the next ones, in document order: lanes, clips, scenes and devices from
-    /// [`Project::next_id`], then markers, automation points and tempo changes from
-    /// [`Project::session_ids`]. Objects that have an id keep it, so calling it again changes
-    /// nothing. Fails, leaving the objects it did not reach without an id, when a counter runs
-    /// out.
+    /// Moves the counter past every id in use, then gives every lane, clip, scene and device that
+    /// has no id ([`ClipId::NONE`]) the next ones, in document order. Objects that have an id keep
+    /// it, so calling it again changes nothing. Fails, leaving the objects it did not reach without
+    /// an id, when the counter runs out.
     pub fn assign_ids(&mut self) -> Result<(), IdsExhausted> {
         let used = self.max_object_id();
         if used == u32::MAX {
@@ -229,14 +198,6 @@ impl Project {
         let mut counter = Counter(if used == 0 { self.next_id } else { self.next_id.max(used + 1) });
         let result = self.fill_ids(&mut counter);
         self.next_id = counter.0;
-        result?;
-        let used = self.max_session_id();
-        if used == u32::MAX {
-            return Err(IdsExhausted);
-        }
-        let mut counter = Counter(if used == 0 { self.session_ids.0 } else { self.session_ids.0.max(used + 1) });
-        let result = self.fill_session_ids(&mut counter);
-        self.session_ids.0 = counter.0;
         result
     }
 
@@ -265,33 +226,6 @@ impl Project {
         Ok(())
     }
 
-    fn fill_session_ids(&mut self, counter: &mut Counter) -> Result<(), IdsExhausted> {
-        // As for devices: one that has no id, or one an earlier one has (a copied lane's points),
-        // gets the next.
-        let mut seen = std::collections::HashSet::new();
-        for marker in &mut self.arrangement.markers {
-            if !marker.id.is_some() || !seen.insert(marker.id) {
-                marker.id = MarkerId(counter.take()?);
-                seen.insert(marker.id);
-            }
-        }
-        let mut seen = std::collections::HashSet::new();
-        for point in self.all_automation_points_mut() {
-            if !point.id.is_some() || !seen.insert(point.id) {
-                point.id = PointId(counter.take()?);
-                seen.insert(point.id);
-            }
-        }
-        let mut seen = std::collections::HashSet::new();
-        for point in &mut self.transport.tempo_changes {
-            if !point.id.is_some() || !seen.insert(point.id) {
-                point.id = TempoPointId(counter.take()?);
-                seen.insert(point.id);
-            }
-        }
-        Ok(())
-    }
-
     /// Every automation point, the channels' lanes first (each channel's mixer lanes, then its
     /// devices' lanes depth first), in lane order.
     pub fn all_automation_points(&self) -> impl Iterator<Item = &crate::AutomationPoint> {
@@ -299,24 +233,6 @@ impl Project {
             let devices = crate::walk_devices(&c.devices).into_iter().flat_map(|(_, d)| &d.automation);
             c.automation.iter().chain(devices).flat_map(|lane| &lane.points)
         })
-    }
-
-    /// Every automation point, to change, in the order of [`Project::all_automation_points`].
-    fn all_automation_points_mut(&mut self) -> impl Iterator<Item = &mut crate::AutomationPoint> {
-        let mut lanes: Vec<&mut crate::AutomationLane> = Vec::new();
-        for channel in &mut self.channels {
-            lanes.extend(channel.automation.iter_mut());
-            collect_device_lanes(&mut channel.devices, &mut lanes);
-        }
-        lanes.into_iter().flat_map(|lane| lane.points.iter_mut())
-    }
-
-    /// The lane and place of the automation point `id`: where it is now.
-    pub fn automation_point(&self, id: PointId) -> Option<&crate::AutomationPoint> {
-        if !id.is_some() {
-            return None;
-        }
-        self.all_automation_points().find(|p| p.id == id)
     }
 
     /// Every device on every channel, depth-first: a group before the devices in it.

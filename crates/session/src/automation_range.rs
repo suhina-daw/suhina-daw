@@ -8,12 +8,12 @@
 
 use serde_json::{Value, json};
 use suhina_engine::MAX_START_BEAT;
-use suhina_model::AutomationPoint;
 use suhina_model::automation::{Curve, MAX_POINTS, Taper, value_at};
+use suhina_model::{AutomationPoint, Entry, IdList, PointId};
 
 use suhina_model::TrackId;
 
-use crate::automation::{Target, target};
+use crate::automation::{Points, Target, target};
 use crate::commands::Args;
 use crate::{CommandError, Session};
 
@@ -72,46 +72,53 @@ fn slice(points: &[AutomationPoint], start: f64, end: f64, stepped: bool, taper:
         let index = points.partition_point(|p| p.beat <= beat);
         index.checked_sub(1).and_then(|i| points.get(i)).map_or(Curve::STRAIGHT, |p| p.curve)
     };
-    let mut out = vec![AutomationPoint { id: Default::default(), beat: start, value: first, curve: curve_at(start) }];
+    let mut out = vec![AutomationPoint { beat: start, value: first, curve: curve_at(start) }];
     out.extend(points.iter().filter(|p| p.beat > start && p.beat < end).copied());
-    out.push(AutomationPoint { id: Default::default(), beat: end, value: last, curve: Curve::STRAIGHT });
+    out.push(AutomationPoint { beat: end, value: last, curve: Curve::STRAIGHT });
     out
 }
 
+/// The indices of `points` from `start` to `end`, both included.
+fn span(points: &[AutomationPoint], start: f64, end: f64) -> std::ops::Range<usize> {
+    points.partition_point(|p| p.beat < start)..points.partition_point(|p| p.beat <= end)
+}
+
 /// `points` with what was from `start` to `end` replaced by `inner` (beats in that range), the
-/// values at the edges kept so the envelope outside does not change.
+/// values at the edges kept so the envelope outside does not change. The points outside keep
+/// their ids; those of `inner` and the edges are new.
 fn replace(
-    points: &[AutomationPoint],
+    points: &Points,
     start: f64,
     end: f64,
     inner: Vec<AutomationPoint>,
     stepped: bool,
     taper: &impl Taper,
-) -> Vec<AutomationPoint> {
+) -> Points {
     let edges = value_at(points, start, stepped, taper).zip(value_at(points, end, stepped, taper));
     let after_curve = {
         let index = points.partition_point(|p| p.beat <= end);
         index.checked_sub(1).and_then(|i| points.get(i)).map_or(Curve::STRAIGHT, |p| p.curve)
     };
-    let mut out: Vec<AutomationPoint> = points.iter().filter(|p| p.beat < start).copied().collect();
+    let mut out: Vec<AutomationPoint> = Vec::with_capacity(inner.len() + 2);
     if let Some((before, _)) = edges
         && inner.first().is_none_or(|p| p.beat > start || (p.value - before).abs() > SAME)
     {
-        out.push(AutomationPoint { id: Default::default(), beat: start, value: before, curve: Curve::STRAIGHT });
+        out.push(AutomationPoint { beat: start, value: before, curve: Curve::STRAIGHT });
     }
     let last_inner = inner.last().copied();
     out.extend(inner);
     if let Some((_, after)) = edges
         && last_inner.is_none_or(|p| p.beat < end || (p.value - after).abs() > SAME)
     {
-        out.push(AutomationPoint { id: Default::default(), beat: end, value: after, curve: after_curve });
+        out.push(AutomationPoint { beat: end, value: after, curve: after_curve });
     }
-    out.extend(points.iter().filter(|p| p.beat > end).copied());
-    out
+    let mut merged = points.clone();
+    merged.splice(span(points, start, end), out.into_iter().map(Entry::new).collect());
+    merged
 }
 
 /// Puts `points` on the lane `target` names, making the lane when it has none.
-fn put(session: &mut Session, target: &Target, points: Vec<AutomationPoint>) -> Result<usize, CommandError> {
+fn put(session: &mut Session, target: &Target, points: Points) -> Result<usize, CommandError> {
     if points.len() > MAX_POINTS {
         return Err(format!("a lane holds at most {MAX_POINTS} points").into());
     }
@@ -129,7 +136,7 @@ fn put(session: &mut Session, target: &Target, points: Vec<AutomationPoint>) -> 
 }
 
 /// The points of the lane `target` names (none when it has no lane).
-fn points_of(session: &mut Session, target: &Target) -> Result<Vec<AutomationPoint>, CommandError> {
+fn points_of(session: &mut Session, target: &Target) -> Result<Points, CommandError> {
     Ok(target.lanes(session)?.iter().find(|l| target.matches(l)).map(|l| l.points.clone()).unwrap_or_default())
 }
 
@@ -184,7 +191,6 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
         .points
         .iter()
         .map(|&(offset, position, curve)| AutomationPoint {
-            id: Default::default(),
             beat: start + offset,
             value: target.value_at_position(session, position),
             curve,
@@ -192,10 +198,14 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
         .collect();
     let points = points_of(session, &target)?;
     let merged = if clip.picked {
-        // Picked points go in among the lane's, replacing those from the first to the last.
-        let mut merged: Vec<AutomationPoint> =
-            points.into_iter().filter(|p| p.beat < start || p.beat > end).chain(inner).collect();
-        merged.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        // Picked points go in among the lane's, replacing those from the first to the last, each
+        // after the lane's points at its beat; the lane's points outside keep their ids.
+        let mut merged = points;
+        merged.retain(|p| p.beat < start || p.beat > end);
+        for point in inner {
+            let at = merged.partition_point(|p| p.beat <= point.beat);
+            merged.insert(at, point);
+        }
         merged
     } else {
         replace(&points, start, end, inner, target.stepped(), &Lane { target: &target, session })
@@ -345,13 +355,11 @@ pub(crate) fn simplify(session: &mut Session, params: &Value) -> Result<Value, C
     let lane = Lane { target: &target, session };
     let old: Vec<(f64, f64, Curve)> = inside.iter().map(|p| (p.beat, lane.position(p.value), p.curve)).collect();
     let Some(fitted) = crate::automation_fit::simplify(&old, tolerance) else { return Ok(unchanged) };
-    let kept: Vec<AutomationPoint> = fitted
-        .iter()
-        .map(|f| AutomationPoint { id: Default::default(), beat: f.beat, value: lane.value(f.place), curve: f.curve })
-        .collect();
-    let mut merged: Vec<AutomationPoint> = points.iter().filter(|p| p.beat < start).copied().collect();
-    merged.extend(kept);
-    merged.extend(points.iter().filter(|p| p.beat > end).copied());
+    let kept: Vec<AutomationPoint> =
+        fitted.iter().map(|f| AutomationPoint { beat: f.beat, value: lane.value(f.place), curve: f.curve }).collect();
+    // The points outside keep their ids; the fitted ones are new.
+    let mut merged = points.clone();
+    merged.splice(span(&points, start, end), kept.into_iter().map(Entry::new).collect());
     let removed = points.len().saturating_sub(merged.len());
     let count = put(session, &target, merged)?;
     Ok(json!({ "param": target.param, "points": count, "removed": removed }))
@@ -381,7 +389,11 @@ pub(crate) fn smooth(session: &mut Session, params: &Value) -> Result<Value, Com
     let target = target(session, params)?;
     let (start, end) = range(params)?;
     let amount = share(params, "amount")?.ok_or("amount must be a number from 0 to 1")?;
-    let points = points_of(session, &target)?;
+    let mut list = points_of(session, &target)?;
+    // The values to look at, and the points with their ids to put back: a point that stays (a
+    // corner only bent) keeps its id, a point a rounding draws is new.
+    let points = list.to_vec();
+    let mut taken = list.take_range(0..list.len()).into_iter();
     if amount <= 0.0 || target.stepped() || points.len() < 2 {
         return Ok(json!({ "param": target.param, "points": points.len(), "rounded": 0 }));
     }
@@ -391,7 +403,7 @@ pub(crate) fn smooth(session: &mut Session, params: &Value) -> Result<Value, Com
     let bend = ROUND_CURVE * amount;
     let span = end - start;
     let inside = |beat: f64| beat > start + SAME && beat < end - SAME;
-    let mut out: Vec<AutomationPoint> = Vec::with_capacity(points.len() * 2);
+    let mut out: Vec<Entry<PointId, AutomationPoint>> = Vec::with_capacity(points.len() * 2);
     let mut rounded = 0;
     let mut i = 0;
     while let Some(&p) = points.get(i) {
@@ -403,19 +415,12 @@ pub(crate) fn smooth(session: &mut Session, params: &Value) -> Result<Value, Com
             if d > SAME {
                 let (Some(from), Some(to)) = (at(p.beat - d), at(p.beat + d)) else { break };
                 let middle = lane.value((lane.position(from) + lane.position(to)) / 2.0);
-                out.push(AutomationPoint {
-                    id: Default::default(),
-                    beat: p.beat - d,
-                    value: from,
-                    curve: Curve::bend(-bend),
-                });
-                out.push(AutomationPoint {
-                    id: Default::default(),
-                    beat: p.beat,
-                    value: middle,
-                    curve: Curve::bend(bend),
-                });
-                out.push(AutomationPoint { id: Default::default(), beat: p.beat + d, value: to, curve: q.curve });
+                // The jump's two points become three new ones.
+                taken.next();
+                taken.next();
+                out.push(Entry::new(AutomationPoint { beat: p.beat - d, value: from, curve: Curve::bend(-bend) }));
+                out.push(Entry::new(AutomationPoint { beat: p.beat, value: middle, curve: Curve::bend(bend) }));
+                out.push(Entry::new(AutomationPoint { beat: p.beat + d, value: to, curve: q.curve }));
                 rounded += 1;
                 i += 2;
                 continue;
@@ -434,28 +439,22 @@ pub(crate) fn smooth(session: &mut Session, params: &Value) -> Result<Value, Com
             if let (Some(into), Some(out_of)) = (at(p.beat - d), at(p.beat + d))
                 && d > SAME
             {
-                out.push(AutomationPoint {
-                    id: Default::default(),
-                    beat: p.beat - d,
-                    value: into,
-                    curve: Curve::bend(bend),
-                });
-                out.push(AutomationPoint { curve: Curve::bend(-bend), ..p });
-                out.push(AutomationPoint {
-                    id: Default::default(),
-                    beat: p.beat + d,
-                    value: out_of,
-                    curve: Curve::STRAIGHT,
-                });
+                out.push(Entry::new(AutomationPoint { beat: p.beat - d, value: into, curve: Curve::bend(bend) }));
+                // The corner itself stays, bent.
+                if let Some(mut corner) = taken.next() {
+                    corner.value.curve = Curve::bend(-bend);
+                    out.push(corner);
+                }
+                out.push(Entry::new(AutomationPoint { beat: p.beat + d, value: out_of, curve: Curve::STRAIGHT }));
                 rounded += 1;
                 i += 1;
                 continue;
             }
         }
-        out.push(p);
+        out.extend(taken.next());
         i += 1;
     }
-    let count = put(session, &target, out)?;
+    let count = put(session, &target, IdList::from_entries(out))?;
     Ok(json!({ "param": target.param, "points": count, "rounded": rounded }))
 }
 
@@ -644,7 +643,7 @@ fn fill(
                 }
                 continue;
             }
-            inner.push(AutomationPoint { id: Default::default(), beat, value, curve: Curve::bend(curve) });
+            inner.push(AutomationPoint { beat, value, curve: Curve::bend(curve) });
         }
     }
     let points = points_of(session, target)?;
@@ -720,15 +719,18 @@ mod tests {
     use suhina_model::automation::Plain;
 
     fn p(beat: f64, value: f64) -> AutomationPoint {
-        AutomationPoint { id: Default::default(), beat, value, curve: Curve::STRAIGHT }
+        AutomationPoint { beat, value, curve: Curve::STRAIGHT }
     }
 
     #[test]
     fn a_replaced_range_keeps_the_envelope_outside_it() {
-        let points = vec![p(0.0, 0.0), p(8.0, 1.0)];
+        let points: Points = vec![p(0.0, 0.0), p(8.0, 1.0)].into();
         let out = replace(&points, 2.0, 4.0, vec![p(3.0, 0.5)], false, &Plain);
         let beats: Vec<(f64, f64)> = out.iter().map(|p| (p.beat, p.value)).collect();
         assert_eq!(beats, [(0.0, 0.0), (2.0, 0.25), (3.0, 0.5), (4.0, 0.5), (8.0, 1.0)]);
+        // The points outside the range keep their ids; the ones drawn in it are new.
+        assert_eq!((out.id(0), out.id(4)), (points.id(0), points.id(1)));
+        assert!(out.ids()[1..4].iter().all(|id| !points.ids().contains(id)));
         for beat in [1.0, 5.0, 7.0] {
             assert!(
                 (value_at(&out, beat, false, &Plain).unwrap() - value_at(&points, beat, false, &Plain).unwrap()).abs()

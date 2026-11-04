@@ -182,11 +182,8 @@ fn mixer_points_are_added_moved_and_deleted_with_undo() {
     let volume = &lanes(&session)[0];
     assert_eq!(volume.param, "volume");
     assert_eq!(
-        volume.points,
-        [
-            AutomationPoint { id: Default::default(), beat: 0.0, value: 0.0, curve: Curve::bend(0.5) },
-            AutomationPoint::new(4.0, 1.0)
-        ]
+        *volume.points,
+        [AutomationPoint { beat: 0.0, value: 0.0, curve: Curve::bend(0.5) }, AutomationPoint::new(4.0, 1.0)]
     );
 
     // Moving the first point past the second puts it second.
@@ -1040,4 +1037,48 @@ fn a_point_is_not_added_where_a_half_would_lose_its_rise() {
     let refused = run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 4 }));
     assert!(refused.is_err());
     assert_eq!(lanes(&session)[0], before);
+}
+
+/// A point's id is held by its lane (#763 › 1): moving points keeps theirs, points pasted into
+/// the same lane are new ones, and the points outside a pasted range keep theirs.
+#[test]
+fn moved_points_keep_their_ids_and_pasted_ones_are_new() {
+    let mut session = Session::new(project());
+    let mut ids = Vec::new();
+    for (beat, value) in [(0.0, -1.0), (4.0, 1.0), (16.0, 0.0)] {
+        let added = run(
+            &mut session,
+            "automation.addPoint",
+            json!({ "track": 1, "param": "pan", "beat": beat, "value": value }),
+        )
+        .unwrap();
+        ids.push(added["id"].as_u64().unwrap());
+    }
+    let pan_ids = |session: &Session| -> Vec<u64> {
+        let lane = lanes(session).iter().find(|l| l.param == "pan").unwrap();
+        lane.points.ids().iter().map(|id| id.0).collect()
+    };
+    // One point moved past another, and two moved together: each keeps its id.
+    run(
+        &mut session,
+        "automation.movePoint",
+        json!({ "track": 1, "param": "pan", "point": { "id": ids[0] }, "beat": 6 }),
+    )
+    .unwrap();
+    assert_eq!(pan_ids(&session), [ids[1], ids[0], ids[2]]);
+    run(&mut session, "automation.movePoints", json!({ "track": 1, "param": "pan", "points": [0, 1], "beats": 1 }))
+        .unwrap();
+    assert_eq!(pan_ids(&session), [ids[1], ids[0], ids[2]]);
+    // The first two copied and pasted into the same lane: the copies are new points, and the one
+    // outside the pasted range keeps its id.
+    run(&mut session, "automation.copy", json!({ "track": 1, "param": "pan", "points": [0, 1] })).unwrap();
+    run(&mut session, "automation.paste", json!({ "track": 1, "param": "pan", "start": 10 })).unwrap();
+    let now = pan_ids(&session);
+    assert_eq!(now.len(), 5);
+    assert_eq!(&now[..2], &[ids[1], ids[0]]);
+    assert_eq!(now.last(), Some(&ids[2]));
+    let mut unique = now.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(unique.len(), now.len(), "an id is never on a lane twice: {now:?}");
 }

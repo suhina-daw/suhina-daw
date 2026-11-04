@@ -28,7 +28,7 @@ fn project() -> Project {
             extensions: Extensions::default(),
             scale: None,
         }],
-        arrangement: Arrangement { lanes: vec![lane(1), lane(2)], markers: Vec::new(), takes: Vec::new() },
+        arrangement: Arrangement { lanes: vec![lane(1), lane(2)], markers: Default::default(), takes: Vec::new() },
         launcher: Launcher {
             scenes: vec![Scene::default(), Scene::default()],
             columns: vec![LauncherColumn {
@@ -217,30 +217,4 @@ fn devices_get_ids_in_document_order_and_a_copy_a_new_one() {
     // `copied` forgets the ids inside a group too.
     let copied = project.channels[0].devices[1].copied();
     assert!(crate::walk_devices(std::slice::from_ref(&copied)).iter().all(|(_, d)| !d.id.is_some()));
-}
-
-/// Markers, automation points and tempo changes take their ids from the counter the file does
-/// not hold (#763 › 1), so giving them ids leaves `next_id`, which the file writes, as it was.
-#[test]
-fn markers_points_and_tempo_changes_count_apart_from_the_saved_ids() {
-    let mut p = project();
-    p.arrangement.markers = vec![crate::Marker::new(0.0, "A"), crate::Marker::new(8.0, "B")];
-    p.transport.tempo_changes =
-        vec![crate::TempoPoint { id: crate::TempoPointId::NONE, beat: 4.0, bpm: 90.0, ramp: false }];
-    p.assign_ids().unwrap();
-    assert_eq!(p.next_id, 10, "as without them");
-    let markers: Vec<_> = p.arrangement.markers.iter().map(|m| m.id).collect();
-    assert_eq!(markers, [crate::MarkerId(1), crate::MarkerId(2)]);
-    assert_eq!(p.transport.tempo_changes[0].id, crate::TempoPointId(3));
-    assert_eq!(p.session_ids.0, 4);
-    // A value a clip has too is no clash: a command always says which kind it names.
-    assert_eq!(p.all_clips().next().map(|c| c.id), Some(ClipId(2)));
-    assert_eq!(p.validate(), Ok(()));
-
-    // A marker deleted and another added: the new one does not get the deleted one's id.
-    p.arrangement.markers.pop();
-    p.arrangement.markers.push(crate::Marker::new(12.0, "C"));
-    p.assign_ids().unwrap();
-    assert_eq!(p.arrangement.markers[1].id, crate::MarkerId(4));
-    assert_eq!(p.next_id, 10);
 }

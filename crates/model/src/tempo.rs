@@ -32,18 +32,15 @@ pub const MAX_CHANGE_BEAT: f64 = 120_000.0;
 /// the tempo steps to `bpm` at `beat`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TempoPoint {
-    /// Which change this is; [`crate::TempoPointId::NONE`] until the project gives it one
-    /// (#763 › 1).
-    pub id: crate::TempoPointId,
     pub beat: f64,
     pub bpm: f64,
     pub ramp: bool,
 }
 
 impl TempoPoint {
-    /// A change to `bpm` at `beat`, gliding there with `ramp`, with no id yet.
+    /// A change to `bpm` at `beat`, gliding there with `ramp`.
     pub fn new(beat: f64, bpm: f64, ramp: bool) -> Self {
-        Self { id: crate::TempoPointId::NONE, beat, bpm, ramp }
+        Self { beat, bpm, ramp }
     }
 }
 

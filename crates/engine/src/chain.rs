@@ -1579,7 +1579,7 @@ mod live_volume_tests {
             let mut channel = Channel::new(ChannelId(1), "C1");
             channel.automation.push(AutomationLane {
                 param: suhina_model::automation::PAN.into(),
-                points: vec![AutomationPoint::new(0.0, 0.0)],
+                points: vec![AutomationPoint::new(0.0, 0.0)].into(),
                 enabled: true,
             });
             chain.mix = MixLanes::new(&channel, 24_000.0, true, 48_000.0);

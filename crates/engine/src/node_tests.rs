@@ -72,7 +72,7 @@ fn tree(group_devices: Vec<Device>, premaster_devices: Vec<Device>, master_devic
                     clips: vec![clip.clone()],
                 })
                 .collect(),
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -341,7 +341,7 @@ fn the_main_channels_volume_lane_plays() {
     if let Some(main) = project.channels.iter_mut().find(|c| c.role == ChannelRole::Master) {
         main.automation.push(AutomationLane {
             param: "volume".into(),
-            points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(1.0, 0.0)],
+            points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(1.0, 0.0)].into(),
             enabled: true,
         });
     }

@@ -8,6 +8,7 @@ last_verified: 2026-11-02
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/ids.rs
+  - crates/model/src/id_list.rs
   - crates/session/src/commands.rs
   - crates/session/src/lib.rs
   - crates/project-file/src/lib.rs
@@ -272,20 +273,34 @@ A copy is a new object: `assign_ids` gives the later of two with one id a new on
 equal without their ids, so a range tool that draws a line again as it was changes nothing. Notes
 stay named by their index in a clip, out of scope for this (#763 › 1).
 
-Their ids are **not written to the file**, and they come from a second counter,
-`Project::session_ids`, that is not written either. The rule: **an id is saved when something
-refers to its object across a save** — another part of the file (a clip's `content`, a macro
-mapping's `device`), a plug-in's saved state (an ARA archive names its regions `clip-<id>` and
-modifications `content-<id>`), or a later version of the project being merged. Nothing refers to a
-marker, a point or a tempo change that way: a version merge matches tempo changes by beat
+Their ids are **not written to the file**. The rule: **an id is saved when something refers to its
+object across a save** — another part of the file (a clip's `content`, a macro mapping's
+`device`), a plug-in's saved state (an ARA archive names its regions `clip-<id>` and modifications
+`content-<id>`), or a later version of the project being merged. Nothing refers to a marker, a
+point or a tempo change that way: a version merge matches tempo changes by beat
 ([ADR 0024](0024-musical-time-and-tempo.md) › 5), and automation merges by lane or time range, since
 a point is a sample of a curve rather than an object with an identity in the music. What the ids
-are for — a command from an earlier read not hitting the wrong object — lasts as long as the project
-is open. A reader gives them in document order, after the saved kinds' (markers, then the channels'
-points, then the tempo changes), so a file always reads with the same ones; undo and redo keep the
-counter past every id handed out, as they do `next_id`. Their values may repeat a clip's or a
-device's, since a command always says which kind it names. Saving them later, if a merge comes to
-need it, is a format version like any other.
+are for — a command from an earlier read not hitting the wrong object — lasts as long as the
+project is open. Saving them later, if a merge comes to need it, is a format version like any other.
+
+**The id is held by the list, not by the value** (`suhina_model::IdList`). A marker, a point or a
+tempo change is its beat, value and so on; which one it is belongs to the list it is in (the
+arrangement's markers, a lane's points, the tempo map's changes). A value can be copied freely —
+paste, duplicate and the range tools copy them all the time — and copying it copies no id. The
+only ways into a list give a new id (adding a value), or keep the id of an entry taken out of that
+list (a move: `take`, then `put`), and an entry cannot be copied; an entry whose id the list
+already has gets a new one. So **an id is never in a list twice, by construction**: there is no
+pass after an edit that looks for duplicates, and no counter in the project. Ids come from one
+counter for the whole program that only goes up, so undo and redo, which put back an older
+project, can never make an id handed out before be handed out again. A command names one within
+the list it names, so a list copied whole (a duplicated track's lanes) keeping its ids is no clash.
+Two lists are equal when their values are, so a range tool that draws a line again as it was
+changes nothing.
+
+Considered and rejected: the id as a field of the value, given by a pass after every edit that
+gives one to each object without one and a new one to the later of two that share one. Copies keep
+the field, so uniqueness then rests on that pass running after every change, and it walks every
+object of the project each time, which notes (up to 100 000 a clip, #1182) would make too slow.
 
 Decided since: **an imported `.als` gets fresh ids.** Its own id space is separate and its object-id
 counter is not ours to reinterpret; the importer gives every lane, clip and scene a new id in
