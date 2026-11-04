@@ -154,10 +154,10 @@ path too, so two devices never share either.
   where the type has one: the drag starts from the band's values and writes them as one undo
   step. Dragging a band that is off turns it on. A click or a drag start selects the band; a
   double-click resets the band's frequency, gain and Q. The selected band's dot is filled.
-- **Strips.** The selected band's Frequency, Gain and Q: a caption, a vertical track with a
-  thumb and the value under it, dragged like every value in a panel (Shift for precision,
-  double-click resets, the arrow keys step while it has focus). Frequency and Q move
-  logarithmically, as their scales do.
+- **Strips.** The selected band's Frequency, Gain and Q: a dial (the kit's `widgets::dial`
+  wheel, as the device panels' value dials) with the caption above it and the value under it,
+  dragged like every value in a panel (Shift for precision, double-click resets, the arrow
+  keys step while it has focus). Frequency and Q move logarithmically, as their scales do.
 - **Type menus and numbered selectors.** A menu per band lists the eight types, drawn as a
   glyph of the type's shape. A band's numbered button switches a band on and selects it when
   it is off or unselected, and switches the selected band off when it is on; an off band's
@@ -197,7 +197,7 @@ playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no 
   index would name a top-level device's row — so it draws only the response curve (issue #1050
   keys watches by the device's path, which lifts this).
 - **The bands.** The UI reads the ring, applies a Hann window and a 2048-point FFT (rustfft,
-  already in the tree), and folds the spectrum into 64 bands spaced logarithmically over
+  already in the tree), and folds the spectrum into 128 bands spaced logarithmically over
   10 Hz – 22 kHz, taking each band's loudest bin. The level is the sine's amplitude against
   full scale in dB; bands below the FFT's first bin (about 23 Hz at 48 kHz) show that bin. The
   line is drawn on the display's own vertical scale — full scale at the top edge, −60 dB at
@@ -206,8 +206,8 @@ playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no 
   line at all before the scale had its own range). The spectrum is drawn as a filled grey area,
   the theme's grey at less than half strength, from its boundary down to the display's bottom,
   behind the curve and the grid's labels. Each frame's fresh reading is the last 2048 samples
-  (about 43 ms); each band's shown level rises to it over about 50 ms and falls after it over
-  about 350 ms — the DSP crate's attack/release follower, the compressor's own block, driven
+  (about 43 ms); each band's shown level rises to it over about 20 ms and falls after it over
+  about 1.2 s — the DSP crate's attack/release follower, the compressor's own block, driven
   once a frame — so the area flows with the music instead of flickering window to window. No
   peak hold. While the engine appends to the ring the panel asks for the next frame (the
   meters' repaints alone would hold steady with a steady level and freeze the area); when the

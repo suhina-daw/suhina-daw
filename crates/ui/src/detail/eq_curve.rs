@@ -38,7 +38,7 @@ const NUMBER_ROW: f32 = 132.0;
 const ROW_HEIGHT: f32 = 26.0;
 const BAND_WIDTH: f32 = DISPLAY[2] / BANDS as f32;
 /// The strips' column: `[x, y of the first group, width, a group's height]`; a group is its
-/// caption, its track and its value.
+/// caption, its dial and its value.
 const STRIPS: [f32; 4] = [2.0, 4.0, 52.0, 54.0];
 /// The Edit switch's rectangle in the globals' column, under the four global controls
 /// (`devices/eq/src/panel.rs`).
@@ -55,9 +55,9 @@ const DRAWN_RATE: f64 = DEFAULT_SAMPLE_RATE;
 /// The types whose gain shapes the response; the cuts and the notch have no gain.
 const GAIN_TYPES: [usize; 3] = [2, 3, 5];
 /// How many bands the analyser folds the spectrum into over the display's frequency range.
-/// 128 keeps a sine tone's spike narrow: at 440 Hz a band spans 13 Hz, so the transforms
-/// closest to the tone carry its peak alone and the columns beside it read the skirts —
-/// Live's sharpness.
+/// 128 keeps a sine's peak narrow: each band spans about 6.2 % of its centre frequency,
+/// about 27 Hz at 440 Hz, so the transforms closest to the tone carry its peak alone and
+/// the columns beside it read the skirts.
 const ANALYSER_BANDS: usize = 128;
 /// The analyser's own vertical scale across the display's height: this level in dB at the top
 /// edge, this at the bottom. The line is not read against the gain grid — normal material
