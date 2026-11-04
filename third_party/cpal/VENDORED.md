@@ -14,7 +14,12 @@ drivers; the later index-only duplicate guard reintroduced this incompatibility.
 Silent hardware probe with the installed driver: one callback in three seconds
 before the fix, 63 after it. See docs/spec/asio-host.md in the parent repository.
 
-No driver-name checks or changes to the buffer addresses. Other backends are unchanged.
+No driver-name checks or changes to the buffer addresses. Other backends are unchanged, but for
+the WASAPI description below.
+
+The WASAPI device's `description()` returns an error when the endpoint's property store cannot be
+opened, as when a Bluetooth device goes away between listing and reading its name, instead of
+panicking on it.
 
 The ASIO Stream also exposes `control_panel()` on its retained driver so the
 application's stream owner can open the active instance's settings without loading
