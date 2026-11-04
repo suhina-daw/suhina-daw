@@ -48,7 +48,7 @@ PRESETS = {
         **op(1, 1, 96, 0.004, 0.1, 0.0, 0.04), **op(2, 0, 90, 0.004, 0.1, 0.0, 0.04), **op(3, 2, 86, 0.004, 0.1, 0.0, 0.04),
         **op(4, 3, 78, 0.004, 0.1, 0.0, 0.04), **op(5, 4, 74, 0.004, 0.1, 0.0, 0.04), **op(6, 8, 72, 0.001, 0.025, -70.0, 0.01),
     }),
-    "struck-piano": ("Struck Piano", ["piano", "keys", "acoustic"], {
+    "struck-fm-keys": ("Struck FM Keys", ["keys", "fm", "bright"], {
         "algorithm": 32.0, "feedback": 0.0, "volume": -13.0, "voices": 32.0, "spread": 0.1, "panByKey": 0.3,
         "filterOn": 1.0, "filterType": 0.0, "filterSlope": 1.0, "filterCircuit": 0.0, "filterFreq": 1800.0, "filterRes": 0.0, "filterEnv": 0.45, "filterByVel": 0.5, "filterByKey": 0.6,
         **filter_env(0.001, 1.4, 0.15, 0.2),

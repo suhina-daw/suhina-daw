@@ -567,8 +567,8 @@ fn a_stock_preset_and_a_preset_file_add_their_device_with_their_values() {
     let device = &session.project().channel(ChannelId(1)).unwrap().devices[0];
     assert!(device.params.contains(&suhina_model::DeviceParam::new("op2.level", 86.0)));
 
-    let added = run(&mut session, "track.add", json!({ "stock": "fm-synth/struck-piano" })).unwrap();
-    assert_eq!((added["kind"].as_str(), added["name"].as_str()), (Some("midi"), Some("Struck Piano")));
+    let added = run(&mut session, "track.add", json!({ "stock": "fm-synth/struck-fm-keys" })).unwrap();
+    assert_eq!((added["kind"].as_str(), added["name"].as_str()), (Some("midi"), Some("Struck FM Keys")));
 
     let file = dir.join("Mine.fm-synth.preset.suhina");
     std::fs::write(

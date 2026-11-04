@@ -3,12 +3,12 @@
 "version": 1,
 "device": "fm-synth",
 "role": "instrument",
-"name": "Struck Piano",
+"name": "Struck FM Keys",
 "author": "suhina",
 "tags": [
-"piano",
 "keys",
-"acoustic"
+"fm",
+"bright"
 ],
 "params": {
 "op1.rate1": 99.0,

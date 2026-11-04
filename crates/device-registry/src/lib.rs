@@ -190,7 +190,7 @@ pub struct StockPreset {
 const STOCK_FILES: &[(&str, &str)] = &[
     ("fm-synth/warm-fm-bass", include_str!("../../../presets/fm-synth/Warm FM Bass.fm-synth.preset.suhina")),
     ("fm-synth/drawbar-organ", include_str!("../../../presets/fm-synth/Drawbar Organ.fm-synth.preset.suhina")),
-    ("fm-synth/struck-piano", include_str!("../../../presets/fm-synth/Struck Piano.fm-synth.preset.suhina")),
+    ("fm-synth/struck-fm-keys", include_str!("../../../presets/fm-synth/Struck FM Keys.fm-synth.preset.suhina")),
     ("fm-synth/wide-trance-pad", include_str!("../../../presets/fm-synth/Wide Trance Pad.fm-synth.preset.suhina")),
     ("fm-synth/slow-warm-pad", include_str!("../../../presets/fm-synth/Slow Warm Pad.fm-synth.preset.suhina")),
 ];
