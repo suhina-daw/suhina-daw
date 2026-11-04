@@ -9,7 +9,7 @@ pub use author::ControlGroup;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, io::Cursor, path::Path};
-pub use widgets::Widget;
+pub use widgets::{FileRowPart, Widget};
 
 pub const MAX_ASSET_BYTES: usize = 512 * 1024;
 pub const MAX_ASSETS_BYTES: usize = 1024 * 1024;
@@ -596,6 +596,14 @@ impl DeviceUi {
                     | Widget::Graphic { .. }
                     | Widget::SampleWaveform
                     | Widget::SampleRecording => c.x.is_none() && c.y.is_none(),
+                    // The device's body controls that read nothing but host state: the switch
+                    // and the file rows and their steppers. The file rows' `what` names the
+                    // panel's words ("model", "cab") the host checks as it draws.
+                    Widget::DeviceSwitch => c.x.is_none() && c.y.is_none(),
+                    Widget::DeviceFiles { what, .. } => {
+                        c.x.is_none() && c.y.is_none() && !what.is_empty() && what.len() <= 32
+                    }
+                    Widget::DeviceNote => c.x.is_none() && c.y.is_none(),
                     // Only the built-in EQ's parameter set reads as an EqCurve's bands:
                     // requiring all 24 keeps a graph file from claiming the host-drawn
                     // panel for parameters that are not the EQ's.
@@ -774,6 +782,10 @@ impl DeviceUi {
                             | Widget::SampleWaveform
                             | Widget::SampleRecording
                             | Widget::Envelope { .. }
+                            // The host's device-state controls read no parameter.
+                            | Widget::DeviceSwitch
+                            | Widget::DeviceFiles { .. }
+                            | Widget::DeviceNote
                             | Widget::EqCurve
                     )
                 )

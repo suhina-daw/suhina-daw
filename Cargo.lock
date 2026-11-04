@@ -5751,8 +5751,6 @@ dependencies = [
  "serde_json",
  "suhina-device-api",
  "suhina-device-eq",
- "suhina-device-nam-amp-modeler",
- "suhina-device-nam-cab-loader",
  "suhina-device-registry",
  "suhina-device-sdk",
  "suhina-dsp",
