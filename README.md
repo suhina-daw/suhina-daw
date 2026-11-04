@@ -112,7 +112,8 @@ With `--launcher` the set starts stopped and Suhina reads one command per line:
 ## Building
 
 Linux builds talk to the sound card through ALSA, so its development files and `pkg-config`
-must be installed before building:
+must be installed before building (a running PulseAudio or PipeWire server is reached over its own
+protocol, which needs nothing more):
 
 | Distribution family | Packages |
 |---|---|

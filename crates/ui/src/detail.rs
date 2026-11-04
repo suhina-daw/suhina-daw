@@ -7,6 +7,7 @@
 pub mod detail_view;
 pub(crate) mod device_canvas;
 pub(crate) mod device_widgets;
+pub(crate) mod eq_curve;
 pub mod follow_view;
 pub mod midi_tools;
 pub mod piano_roll;

@@ -604,6 +604,40 @@ impl DeviceUi {
                         c.x.is_none() && c.y.is_none() && !what.is_empty() && what.len() <= 32
                     }
                     Widget::DeviceNote => c.x.is_none() && c.y.is_none(),
+                    // Only the built-in EQ's parameter set reads as an EqCurve's bands:
+                    // requiring all 24 keeps a graph file from claiming the host-drawn
+                    // panel for parameters that are not the EQ's.
+                    Widget::EqCurve => {
+                        const EQ_BANDS: [&str; 24] = [
+                            "a1Frequency",
+                            "a1Gain",
+                            "a1Q",
+                            "a2Frequency",
+                            "a2Gain",
+                            "a2Q",
+                            "a3Frequency",
+                            "a3Gain",
+                            "a3Q",
+                            "a4Frequency",
+                            "a4Gain",
+                            "a4Q",
+                            "a5Frequency",
+                            "a5Gain",
+                            "a5Q",
+                            "a6Frequency",
+                            "a6Gain",
+                            "a6Q",
+                            "a7Frequency",
+                            "a7Gain",
+                            "a7Q",
+                            "a8Frequency",
+                            "a8Gain",
+                            "a8Q",
+                        ];
+                        EQ_BANDS.iter().all(|&id| parameters.iter().any(|p| p.id == id))
+                            && c.x.is_none()
+                            && c.y.is_none()
+                    }
                     Widget::Envelope { attack, decay, level, release } => {
                         let ids: Vec<_> =
                             [Some(attack), Some(decay), Some(level), release.as_ref()].into_iter().flatten().collect();
@@ -752,6 +786,7 @@ impl DeviceUi {
                             | Widget::DeviceSwitch
                             | Widget::DeviceFiles { .. }
                             | Widget::DeviceNote
+                            | Widget::EqCurve
                     )
                 )
             {

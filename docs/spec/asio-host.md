@@ -3,7 +3,7 @@ description: ASIO host initialization and native panels, plus audio output start
 read_when: ASIO, audio driver initialization, native control panel, output startup and shutdown, ASIOInit, sysRef
 type: spec
 status: current
-last_verified: 2026-10-30
+last_verified: 2026-11-03
 covers:
   - third_party/asio-sys/
   - third_party/cpal/
@@ -68,6 +68,11 @@ iterator. Enumerating during playback would therefore hide installed devices and
 needlessly call drivers from the settings window. Newly installed drivers become
 available after restarting Suhina. Opening the chosen descriptor still reports
 an error if its hardware is unavailable.
+
+The other hosts are listed anew each time, and the host says which of its devices play: a device
+that cannot say its formats yet, as a Bluetooth endpoint often cannot, stays listed and reports its
+error when opened. While Settings › Audio shows, a background look reads their devices' names every
+two seconds and the list is made again when they change. It never touches ASIO.
 
 ## Switching from the settings form
 

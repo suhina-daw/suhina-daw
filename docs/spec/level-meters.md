@@ -33,6 +33,9 @@ without changing the scale, ballistics or clip reset behaviour.
 - **The main output** is what the engine hands the audio device: every track through the main
   channel, the metronome and the browser's preview.
 
+The meter monitor also carries the device-spectrum rings the EQ panel's analyser reads
+([docs/spec/eq.md](eq.md) › The panel › The analyser).
+
 Levels are linear, 1.0 being full scale (0 dBFS). A centred track at unity volume playing a
 full-scale audio clip reads 0 dB; the built-in sine voice of a note at full velocity reads
 −12 dB.

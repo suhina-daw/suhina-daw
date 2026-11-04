@@ -223,6 +223,12 @@ pub enum Widget {
     /// The one-line note a file-backing device's panel shows under the controls when its
     /// file does not run (the fault, or that the file moved); nothing when it does.
     DeviceNote,
+    /// Host-drawn response display of the eight-band EQ: the grid, the curve of each band
+    /// group in use and a draggable dot per band, with the selected band's Frequency, Gain
+    /// and Q strips, the bands' type menus and numbered selectors, and the Edit switch beside
+    /// them. The host finds the band parameters by their ids (`a1Frequency` … `b8Q`); which
+    /// band is selected is panel state, never a parameter (docs/spec/eq.md › The panel).
+    EqCurve,
 }
 
 /// What a [`Widget::DeviceFiles`] control places: the pack row's or file row's dropdown on
@@ -453,9 +459,9 @@ impl Widget {
                     value,
                 ];
             }
-            Self::SampleWaveform | Self::SampleRecording | Self::Envelope { .. } => {}
+            Self::SampleWaveform | Self::SampleRecording | Self::Envelope { .. } | Self::EqCurve => {}
             // Host-rendered: the host draws them from its own state.
-            Self::DeviceSwitch | Self::DeviceFiles { .. } | Self::DeviceNote { .. } => {}
+            Self::DeviceSwitch | Self::DeviceFiles { .. } | Self::DeviceNote => {}
             Self::Knob { label } => {
                 let label_height = if label.is_empty() { 0. } else { 12. };
                 knob(&mut ui, id, label, [0., label_height, w, height - label_height], binding.logarithmic);
