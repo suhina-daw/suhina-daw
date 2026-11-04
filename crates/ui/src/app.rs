@@ -219,9 +219,9 @@ enum AfterLeaving {
 fn scan_sets(
     folder: &std::path::Path,
     extension: &str,
-    previous: &[crate::detail::nam_panel::Set],
+    previous: &[crate::detail::device_widgets::Set],
     pack_writes: &mut HashMap<String, Option<std::time::SystemTime>>,
-) -> Vec<crate::detail::nam_panel::Set> {
+) -> Vec<crate::detail::device_widgets::Set> {
     const CAP: usize = 2000;
     let files_of = |dir: &std::path::Path| -> Vec<(String, String)> {
         let mut entries =
@@ -265,9 +265,9 @@ fn scan_sets(
     }
     let loose = files_of(folder);
     if !loose.is_empty() {
-        packs.push((crate::detail::nam_panel::LOOSE_PACK.to_owned(), loose));
+        packs.push((crate::detail::device_widgets::LOOSE_PACK.to_owned(), loose));
     }
-    packs.into_iter().map(|(name, files)| crate::detail::nam_panel::Set { name, files }).collect()
+    packs.into_iter().map(|(name, files)| crate::detail::device_widgets::Set { name, files }).collect()
 }
 
 /// A device's file path (its state as UTF-8), when it is a file-running one
@@ -293,8 +293,8 @@ const METERS_SETTLE_SECONDS: f64 = 0.3;
 /// path with its writes.
 #[derive(Default)]
 struct NamCache {
-    models: Vec<crate::detail::nam_panel::Set>,
-    irs: Vec<crate::detail::nam_panel::Set>,
+    models: Vec<crate::detail::device_widgets::Set>,
+    irs: Vec<crate::detail::device_widgets::Set>,
     models_writes: Option<std::time::SystemTime>,
     irs_writes: Option<std::time::SystemTime>,
     /// A pack's write time by its folder's path, so a new capture in one pack re-reads only
@@ -475,6 +475,8 @@ pub struct App {
     about: About,
     /// When Settings › Audio last listed the MIDI ports, so a controller plugged in shows up.
     midi_listed: Option<std::time::Instant>,
+    /// Follows the audio devices while Settings › Audio shows, so headphones connected later show up.
+    audio_devices: suhina_session::audio::DeviceWatch,
     /// The themes to pick from; the settings say which is in use.
     themes: Themes,
     /// The project dialog (File › New or open) while it shows, and what it lists.
@@ -680,6 +682,7 @@ impl App {
             plugin_dialog_hidden: false,
             about: About::default(),
             midi_listed: None,
+            audio_devices: suhina_session::audio::DeviceWatch::default(),
             themes: Themes::default(),
             project_dialog: None,
             project_lists: Lists::default(),
@@ -1307,7 +1310,7 @@ impl App {
     /// The NAM panels' lists ([docs/spec/nam-amp-and-cab.md] › Folders): the models' and IR
     /// folders' files, read again when a folder's writes change, and the session's shown names
     /// and failure notes for the devices' current files.
-    pub fn nam_lists(&mut self) -> crate::detail::nam_panel::Lists {
+    pub fn nam_lists(&mut self) -> crate::detail::device_widgets::Lists {
         let (models_folder, irs_folder) = (self.nam_models_folder(), self.ir_folder());
         let mut cache = std::mem::take(&mut self.nam_cache);
         let mut folders = [
@@ -1323,7 +1326,7 @@ impl App {
                 **sets = scan_sets(folder, extension, &previous, &mut cache.pack_writes);
             }
         }
-        let lists = crate::detail::nam_panel::Lists {
+        let lists = crate::detail::device_widgets::Lists {
             models: cache.models.clone(),
             irs: cache.irs.clone(),
             names: self.nam_names(),
@@ -1339,9 +1342,10 @@ impl App {
         let mut names = HashMap::new();
         if let Some(session) = self.session() {
             let project = session.project();
-            for track in project.tracks.iter() {
-                let channel = track.channel.and_then(|ch| project.channel(ch));
-                for device in channel.iter().flat_map(|c| c.devices.iter()) {
+            // Every channel's devices, the tracks' and the main's (a NAM effect on Main has a
+            // shown name and a fault note as a track's does).
+            for channel in project.channels.iter() {
+                for device in channel.devices.iter() {
                     if let Some(path) = device_file_path(device) {
                         names.insert(path.clone(), session.device_asset_name(&path).unwrap_or_default());
                     }
@@ -1356,9 +1360,8 @@ impl App {
         let mut notes = HashMap::new();
         if let Some(session) = self.session() {
             let project = session.project();
-            for track in project.tracks.iter() {
-                let channel = track.channel.and_then(|ch| project.channel(ch));
-                for device in channel.iter().flat_map(|c| c.devices.iter()) {
+            for channel in project.channels.iter() {
+                for device in channel.devices.iter() {
                     if let Some(path) =
                         device_file_path(device).filter(|path| session.device_asset_note(path).is_some())
                         && let Some(note) = session.device_asset_note(&path)
@@ -2438,6 +2441,17 @@ impl App {
                 );
             }
             Ok(result) => {
+                if action.id == "edit.undo" {
+                    self.piano_roll.undo_ran();
+                }
+                // Notes a note command replaced are gone: the selection stays on the same notes.
+                if action.id.starts_with("note.")
+                    && let Some(replaced) = result["replaced"].as_array().filter(|r| !r.is_empty())
+                {
+                    let replaced: Vec<usize> =
+                        replaced.iter().filter_map(|i| i.as_u64().and_then(|i| usize::try_from(i).ok())).collect();
+                    self.piano_roll.notes_replaced(&replaced);
+                }
                 // What is copied pastes into every open tab (#919).
                 if Projects::copies(action.id) {
                     self.projects.share_clipboards(None);
@@ -2626,6 +2640,8 @@ impl App {
             d.insert_temp(egui::Id::new(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)
         });
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
+        self.piano_roll.key_style = self.settings.piano_key_style;
+        self.piano_roll.key_names = self.settings.piano_key_names;
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;
@@ -2954,6 +2970,21 @@ impl App {
             }
             self.last_clip = shown_clip;
             self.expanded_panel = None;
+            // The EQ panel's analyser reads the meter monitor's spectrum rings; the monitor's
+            // arc goes to the panels through the frame's temp data, published here, before
+            // any panel renders (docs/spec/eq.md › The panel › The analyser). A session
+            // without a player drops the last one's: a monitor belongs to one engine, and a
+            // panel of the next session must not read the previous session's spectrum as its
+            // own.
+            let monitor = self.session().and_then(|s| s.player()).map(|p| p.meter_monitor_arc());
+            ui.ctx().data_mut(|d| match monitor {
+                Some(monitor) => {
+                    d.insert_temp(egui::Id::new("eq-spectrum"), monitor);
+                }
+                None => {
+                    d.remove::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::new("eq-spectrum"));
+                }
+            });
             let inner = if grid.is_some()
                 && self.detail_open
                 && css_workspace.as_ref().is_none_or(|layout| layout.detail.is_some())

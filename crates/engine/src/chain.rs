@@ -39,6 +39,7 @@ use crate::plugin::{
 };
 use crate::sends::SendOut;
 use crate::sine::{self, SineTones};
+use crate::spectrum;
 
 /// The most frames one block of a chain holds; the renderer splits longer blocks.
 pub(crate) const MAX_BLOCK: usize = 1024;
@@ -165,6 +166,11 @@ pub(crate) struct Chain {
     arranged: u128,
     /// The scale last sent to the devices ([`Chain::set_scale`]); `None` before the first.
     scale: Option<Option<MusicalScale>>,
+    /// The meter monitor's spectrum rings, given when the graph is installed on the renderer
+    /// that owns the monitor: the chain captures its watched devices' output into them on
+    /// every path that runs its devices (`advance`, the event overflow's flush and
+    /// `complete`'s rest). `None` while there is no monitor — a source render, a test.
+    pub(crate) spectrum: Option<std::sync::Arc<spectrum::Spectrum>>,
     /// When its first slot is the channel's clip host, the ARA plug-in its clips play through
     /// (ADR 0033 › 2, #990): what scales the host's
     /// output frame by frame and the other clips' sound, added after it.
@@ -356,6 +362,7 @@ impl Chain {
             next_off: NOT_HELD,
             arranged: 0,
             scale: None,
+            spectrum: None,
             built_volume: None,
             built_pan: None,
             pan: (LiveVolume::default(), LiveVolume::default()),
@@ -407,6 +414,7 @@ impl Chain {
             next_off: NOT_HELD,
             arranged: 0,
             scale: None,
+            spectrum: None,
             built_volume: None,
             built_pan: None,
             pan: (LiveVolume::default(), LiveVolume::default()),
@@ -550,6 +558,11 @@ impl Chain {
             return true;
         }
         let to = frames.min(MAX_BLOCK);
+        let capture = self.spectrum.as_deref().map(|spectrum| Capture {
+            watched: spectrum.watched(self.track),
+            spectrum,
+            running: self.context.playing,
+        });
         let Self {
             slots,
             buffer,
@@ -567,6 +580,7 @@ impl Chain {
             sent_at,
             behind,
             caught_up,
+            positions,
             ara,
             ..
         } = self;
@@ -576,6 +590,16 @@ impl Chain {
             match slot {
                 Slot::Device(device) => {
                     run_device(device, *stage, buffer, from, to, pending, device_lanes, context, *sample_rate);
+                    // The analyser hears the device's output, so its line shows what the
+                    // device made of the sound (docs/spec/eq.md › The panel › The analyser).
+                    // The watch is keyed by the device's position in the project, not its
+                    // slot here: `build` omits a disabled device, and its slot then shifts.
+                    // `get`, not an index: a slot whose position is missing (a slot `build`
+                    // does not track) skips its capture, and the device itself still runs —
+                    // the audio callback never panics (AGENTS.md rule 2).
+                    if let (Some(capture), Some(&position)) = (&capture, positions.get(*stage)) {
+                        capture.append(position, buffer, from, to);
+                    }
                     *stage += 1;
                 }
                 Slot::Group(group) => {
@@ -914,6 +938,11 @@ impl Chain {
     /// event over at its frame.
     fn run(&mut self, frame: usize) {
         let to = frame.min(MAX_BLOCK);
+        let capture = self.spectrum.as_deref().map(|spectrum| Capture {
+            watched: spectrum.watched(self.track),
+            spectrum,
+            running: self.context.playing,
+        });
         let Self {
             slots,
             buffer,
@@ -926,6 +955,7 @@ impl Chain {
             sample_rate,
             device_lanes,
             joined,
+            positions,
             ara,
             ..
         } = self;
@@ -936,6 +966,13 @@ impl Chain {
             match slot {
                 Slot::Device(device) => {
                     run_device(device, index, buffer, from, to, pending, device_lanes, context, *sample_rate);
+                    // The watch is keyed by the device's position in the project: `build`
+                    // omits a disabled device, and a slot index would shift the row. `get`,
+                    // not an index: a slot without a position skips its capture, and the
+                    // device itself still runs (AGENTS.md rule 2).
+                    if let (Some(capture), Some(&position)) = (&capture, positions.get(index)) {
+                        capture.append(position, buffer, from, to);
+                    }
                     index += 1;
                 }
                 Slot::Group(group) => {
@@ -1198,6 +1235,41 @@ impl Chain {
 /// answered, before it looks at all of them again (see [`run_as_answered`]): an answer from
 /// that plug-in wakes it at once, one from another is seen at most this late.
 pub(crate) const ANSWER_SLICE: Duration = Duration::from_micros(50);
+
+/// The spectrum rings' watched-output capture for one block
+/// (docs/spec/eq.md › The panel › The analyser): the rings themselves and the chain's rows
+/// among them, with each row's watch as the block began. Built once a block starts and
+/// shared by every path that runs the chain's devices — [`Chain::advance`], the event
+/// overflow's flush and `complete`'s rest, whose devices run through [`Chain::run`] — so a
+/// watched device's every span is appended once, on a bus or a return too.
+struct Capture<'a> {
+    watched: [Option<spectrum::Watched>; spectrum::ROWS],
+    spectrum: &'a spectrum::Spectrum,
+    /// The transport's state for the block. While it is stopped, the chain buffer was
+    /// cleared this block: no input but a live monitor's reaches it, so appends of nothing
+    /// replace the ring's samples and the analyser's held spectrum decays towards silence
+    /// (docs/spec/eq.md › The analyser: the line holds what was last read). A live monitor's
+    /// input keeps the buffer from silence, so its appends still go.
+    running: bool,
+}
+
+impl Capture<'_> {
+    /// Appends the device at top-level `position`'s output span `from..to` of `buffer` to its
+    /// row's ring, after `run_device` ran it. Never allocates.
+    fn append(&self, position: usize, buffer: &[f32], from: usize, to: usize) {
+        let row = position % spectrum::ROWS;
+        let Some(watch) =
+            self.watched.get(row).and_then(|watch| watch.as_ref()).filter(|watch| watch.device == position)
+        else {
+            return;
+        };
+        let output = buffer.get(from * 2..to * 2).unwrap_or(&[]);
+        if !self.running && output.iter().all(|sample| sample.abs() <= 1.0e-6) {
+            return;
+        }
+        self.spectrum.append(row, watch.generation, output, to - from);
+    }
+}
 
 /// Takes each chain's block as soon as its plug-in answers and runs that chain on to its next
 /// plug-in, until no chain has a block out (#151): a chain does not wait for the plug-ins of the
@@ -1938,5 +2010,42 @@ mod jump_tests {
         chain.note_on(0, 0, 60, 1.0, 1_000_000);
         assert!(chain.pending.iter().all(|&(frame, _)| frame == 0), "{:?}", chain.pending);
         assert!(matches!(chain.pending.last(), Some((_, NoteEvent::On { key: 60, .. }))));
+    }
+}
+
+#[cfg(test)]
+mod capture_position_tests {
+    use super::*;
+
+    /// A passthrough chain with one sine slot and no position entry for it: with the capture
+    /// indexing `positions` this panicked inside the audio callback; the `.get` skips the
+    /// capture instead and the device itself still runs.
+    fn chain_with_untracked_slot() -> Chain {
+        let mut chain = Chain::passthrough(TrackId(0), 0, 48_000);
+        chain.slots.push(Slot::Device(Box::new(SineTones::new(48_000))));
+        chain.spectrum = Some(std::sync::Arc::new(spectrum::Spectrum::new()));
+        chain.instrument = true;
+        chain.note_on(0, 0, 60, 1.0, 1_000_000);
+        chain
+    }
+
+    fn assert_sine_ran(chain: &Chain, pass: &str) {
+        let peak = chain.buffer.iter().fold(0.0f32, |max, &sample| max.max(sample.abs()));
+        assert!(peak > 0.01, "{pass}: the device did not run (peak {peak})");
+    }
+
+    #[test]
+    fn a_slot_without_a_position_skips_its_capture_and_still_runs_in_advance() {
+        let mut chain = chain_with_untracked_slot();
+        chain.begin(1024, None);
+        chain.advance(1024, &ProcessContext::default());
+        assert_sine_ran(&chain, "advance");
+    }
+
+    #[test]
+    fn a_slot_without_a_position_skips_its_capture_and_still_runs_in_run() {
+        let mut chain = chain_with_untracked_slot();
+        chain.run(1024);
+        assert_sine_ran(&chain, "run");
     }
 }

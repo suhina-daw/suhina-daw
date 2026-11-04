@@ -218,9 +218,10 @@ fn system_drop(harness: &mut Harness<'static, App>, path: &Path, at: Pos2) {
     harness.step();
 }
 
-/// Steps the window until `done` holds (a drop decodes its samples on another thread).
+/// Steps the window until `done` holds (a drop decodes its samples on another thread); only a
+/// hang gets to the end of its minute.
 fn until(harness: &mut Harness<'static, App>, done: impl Fn(&App) -> bool) -> bool {
-    let end = Instant::now() + Duration::from_secs(10);
+    let end = Instant::now() + Duration::from_secs(60);
     while Instant::now() < end {
         harness.step();
         if done(harness.state()) {

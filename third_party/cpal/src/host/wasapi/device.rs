@@ -415,9 +415,7 @@ impl Device {
         })?;
         unsafe {
             // Open the device's property store.
-            let property_store = device
-                .OpenPropertyStore(STGM_READ)
-                .expect("could not open property store");
+            let property_store = device.OpenPropertyStore(STGM_READ).map_err(Error::from)?;
 
             // Query all available properties
             let friendly_name = get_property_string(

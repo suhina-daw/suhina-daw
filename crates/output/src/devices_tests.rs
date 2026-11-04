@@ -158,3 +158,100 @@ fn listing_the_hosts_never_fails() {
     }
     assert!(hosts.iter().filter(|h| h.default).count() <= 1);
 }
+
+/// A device as the list sees it.
+#[derive(Clone)]
+struct Stand {
+    name: Option<&'static str>,
+    plays: bool,
+    offers: Vec<Offer>,
+    own: Option<Offer>,
+}
+
+impl Listed for Stand {
+    fn name(&self) -> Option<String> {
+        self.name.map(String::from)
+    }
+
+    fn plays(&self) -> bool {
+        self.plays
+    }
+
+    fn offers(&self) -> Vec<Offer> {
+        self.offers.clone()
+    }
+
+    fn own(&self) -> Option<Offer> {
+        self.own
+    }
+}
+
+fn offer(rate: u32, channels: u16) -> Offer {
+    Offer { rates: (rate, rate), channels, buffer: None }
+}
+
+/// A Bluetooth endpoint can be there before it can say what it offers: it stays in the list, and
+/// opening it is what says what is wrong.
+#[test]
+fn a_device_that_cannot_say_what_it_offers_is_still_listed() {
+    let asleep = Stand { name: Some("Headphones"), plays: true, offers: Vec::new(), own: None };
+    let listed = listed_outputs([asleep], "WASAPI", None);
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].name, "Headphones");
+    assert!(listed[0].sample_rates.is_empty());
+    assert_eq!(listed[0].default_sample_rate, None);
+    assert_eq!(listed[0].channels, 0);
+}
+
+/// Bluetooth headphones often take one rate, and an odd buffer: neither takes them off the list.
+#[test]
+fn a_device_with_one_rate_is_listed_with_that_rate() {
+    let own = Offer { rates: (44_100, 44_100), channels: 2, buffer: Some((441, 441)) };
+    let headphones = Stand { name: Some("Headphones"), plays: true, offers: vec![own], own: Some(own) };
+    for host in ["WASAPI", "CoreAudio", "ALSA", "PulseAudio"] {
+        let listed = listed_outputs([headphones.clone()], host, Some("Headphones"));
+        assert_eq!(listed.len(), 1, "{host}");
+        assert_eq!(listed[0].sample_rates, vec![44_100], "{host}");
+        assert_eq!(listed[0].default_sample_rate, Some(44_100), "{host}");
+        assert_eq!(listed[0].channels, 2, "{host}");
+        assert!(listed[0].default, "{host}");
+    }
+}
+
+#[test]
+fn only_what_plays_and_has_a_name_is_left_in_the_list() {
+    let microphone = Stand { name: Some("Microphone"), plays: false, offers: Vec::new(), own: None };
+    let unplugged = Stand { name: None, plays: true, offers: vec![offer(48_000, 2)], own: None };
+    let speakers = Stand { name: Some("Speakers"), plays: true, offers: vec![offer(48_000, 2)], own: None };
+    let listed = listed_outputs([microphone, unplugged, speakers], "WASAPI", None);
+    let names: Vec<&str> = listed.iter().map(|device| device.name.as_str()).collect();
+    assert_eq!(names, ["Speakers"]);
+    assert!(!listed[0].default);
+}
+
+/// A sound server offers every channel count at every rate: the list says what the device is, so
+/// a pair of headphones offers no outputs 3/4 for the cue.
+#[test]
+fn a_sound_server_lists_the_devices_own_channels_and_common_rates() {
+    let any_format = |channels: u16| Offer { rates: (1, 384_000), channels, buffer: Some((1, 500_000)) };
+    let offers: Vec<Offer> = (1..32).map(any_format).collect();
+    let own = Offer { rates: (48_000, 48_000), channels: 2, buffer: Some((1, 500_000)) };
+    let sink = Stand { name: Some("Headphones"), plays: true, offers, own: Some(own) };
+    let listed = listed_outputs([sink], "PulseAudio", None);
+    assert_eq!(listed[0].channels, 2);
+    assert!(listed[0].sample_rates.contains(&44_100) && listed[0].sample_rates.contains(&48_000));
+    assert_eq!(listed[0].buffer_sizes, BUFFER_SIZES.to_vec(), "nothing outside what the engine renders in");
+    // Elsewhere the most it offers counts: an interface's own format need not be its widest.
+    assert_eq!(listed_channels("WASAPI", Some(2), 8), 8);
+    assert_eq!(listed_channels("WASAPI", Some(8), 2), 8);
+    assert_eq!(listed_channels("PulseAudio", None, 31), 31, "a server that gives no default config");
+}
+
+#[test]
+fn only_a_sound_server_is_asked_for_the_engines_block_unasked() {
+    assert_eq!(wanted_buffer("PulseAudio", None, 1024), Some(1024));
+    assert_eq!(wanted_buffer("PulseAudio", Some(256), 1024), Some(256));
+    assert_eq!(wanted_buffer("WASAPI", None, 1024), None);
+    assert_eq!(wanted_buffer("ALSA", None, 1024), None);
+    assert_eq!(wanted_buffer("ALSA", Some(256), 1024), Some(256));
+}

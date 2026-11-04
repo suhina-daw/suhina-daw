@@ -11,7 +11,7 @@ use std::ops::RangeInclusive;
 /// How wide a beat may be in the Arrangement, in points.
 pub const ARRANGEMENT_BEAT_WIDTHS: RangeInclusive<f32> = 1.0..=4000.0;
 /// How wide a beat may be in the piano roll and its ruler, in points.
-pub const PIANO_ROLL_BEAT_WIDTHS: RangeInclusive<f32> = 4.0..=400.0;
+pub const PIANO_ROLL_BEAT_WIDTHS: RangeInclusive<f32> = 4.0..=1600.0;
 
 /// A beat width kept within `range`.
 pub fn clamp_beat_width(width: f32, range: &RangeInclusive<f32>) -> f32 {

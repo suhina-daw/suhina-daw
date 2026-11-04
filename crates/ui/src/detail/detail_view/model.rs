@@ -468,7 +468,7 @@ pub struct Chain {
     pub host: Option<DeviceBox>,
     /// The NAM panels' folders' files and a file's names and notes
     /// ([docs/spec/nam-amp-and-cab.md] › Folders).
-    pub nam: crate::detail::nam_panel::Lists,
+    pub nam: crate::detail::device_widgets::Lists,
 }
 
 /// What the detail area shows: a selected clip comes with its track's chain, since that chain
@@ -564,7 +564,7 @@ impl Detail {
 
 /// The detail for a selected clip (it wins, with its own track's chain) or track.
 pub fn build(project: &Project, track: Option<TrackId>, clip: Option<ClipRef>) -> Detail {
-    build_with(project, track, clip, &mut |_, _| None, crate::detail::nam_panel::Lists::default())
+    build_with(project, track, clip, &mut |_, _| None, crate::detail::device_widgets::Lists::default())
 }
 
 /// [`build`], with each plug-in device's state from `plugins` (track, device path).
@@ -573,7 +573,7 @@ pub fn build_with(
     track: Option<TrackId>,
     clip: Option<ClipRef>,
     plugins: &mut dyn FnMut(TrackId, &[usize]) -> Option<PluginReport>,
-    nam: crate::detail::nam_panel::Lists,
+    nam: crate::detail::device_widgets::Lists,
 ) -> Detail {
     let bar = bar_beats(project);
     let track_name = |id: TrackId| project.shown_track_name(id);
@@ -648,7 +648,7 @@ pub(super) fn chain(
     project: &Project,
     id: TrackId,
     plugins: &mut dyn FnMut(TrackId, &[usize]) -> Option<PluginReport>,
-    nam: crate::detail::nam_panel::Lists,
+    nam: crate::detail::device_widgets::Lists,
 ) -> Chain {
     // Main has no track: its name and devices are the main channel's (#687).
     let track_name = if id == TrackId::MAIN { "Main".to_string() } else { project.shown_track_name(id) };

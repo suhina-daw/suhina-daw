@@ -69,7 +69,7 @@ pub const ENTRIES: [Entry; 17] = [
     Entry {
         info: &suhina_device_eq::INFO,
         make: || Box::new(suhina_device_eq::Eq::new()),
-        layout: LayoutSource::Generated,
+        layout: LayoutSource::Rust(suhina_device_eq::panel::layout),
         runs_a_file: false,
     },
     Entry {
@@ -111,13 +111,13 @@ pub const ENTRIES: [Entry; 17] = [
     Entry {
         info: &suhina_device_nam_amp_modeler::INFO,
         make: || Box::new(suhina_device_nam_amp_modeler::NamAmp::new()),
-        layout: LayoutSource::Generated,
+        layout: LayoutSource::Json(include_str!("../../../devices/nam-amp-modeler/panel.json")),
         runs_a_file: true,
     },
     Entry {
         info: &suhina_device_nam_cab_loader::INFO,
         make: || Box::new(suhina_device_nam_cab_loader::CabLoader::new()),
-        layout: LayoutSource::Generated,
+        layout: LayoutSource::Json(include_str!("../../../devices/nam-cab-loader/panel.json")),
         runs_a_file: true,
     },
     Entry {

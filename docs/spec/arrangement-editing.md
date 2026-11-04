@@ -277,7 +277,7 @@ whole span, its empty part silent.
 
 ## Time selection
 
-A time selection is a span of beats over some tracks; the keys then act on what plays inside it,
+A drag with Shift, in a lane or on the ruler, goes on from the time selection there is: it holds the time and the tracks of both. A time selection is a span of beats over some tracks; the keys then act on what plays inside it,
 not on whole clips. It is made by:
 
 - a drag from an empty spot of a lane (the rectangle's tracks and beats);

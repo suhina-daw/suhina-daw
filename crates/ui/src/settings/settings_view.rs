@@ -696,6 +696,15 @@ impl Cx<'_> {
         }
     }
 
+    /// A switch that shows the yes/no setting `field` gives the other way round: on when it is no.
+    pub fn off_on(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut bool) {
+        let value = field(self.settings);
+        if let Some(on) = switch(self.ui, self.painter, row, self.name, !*value) {
+            *value = !on;
+            self.outcome.changed = true;
+        }
+    }
+
     /// A dropdown on the right of `row` for the setting `field` gives.
     pub fn dropdown<T: Clone + PartialEq>(
         &mut self,
@@ -2315,7 +2324,7 @@ fn output_rows(
     } else {
         match (&choice.device, device) {
             (Some(name), None) => format!("{name} is not there; the default output plays"),
-            _ => "The output device on that driver".to_string(),
+            _ => device_note(host, &about.audio_hosts),
         }
     };
     label(painter, r, "Device", &note);
@@ -2445,6 +2454,24 @@ fn output_rows(
     }
 
     picked.map(OutputPick::Setting)
+}
+
+/// What the Device row says about the driver chosen: why it lists nothing, and where a driver's
+/// list leaves out the outputs people look for first.
+fn device_note(host: Option<&suhina_session::audio::HostInfo>, hosts: &[suhina_session::audio::HostInfo]) -> String {
+    let beside = |name: &str| hosts.iter().any(|h| h.name == name);
+    match host {
+        Some(host) if host.error.is_some() => {
+            format!("{} cannot list its devices: {}", host.name, host.error.as_deref().unwrap_or_default())
+        }
+        Some(host) if host.name == "ASIO" && beside("WASAPI") => {
+            "Interfaces with an ASIO driver; Bluetooth headphones are under WASAPI".to_string()
+        }
+        Some(host) if host.name == "ALSA" && beside("PulseAudio") => {
+            "The sound cards; Bluetooth headphones are under PulseAudio".to_string()
+        }
+        _ => "The output device on that driver".to_string(),
+    }
 }
 
 /// The rows of Audio › Cue; returns a new choice.

@@ -3,7 +3,7 @@ description: What the level meters measure (tracks, groups, returns, the main ou
 read_when: level meter, meters, peak, RMS, clip indicator, clipping, peak hold, mixer.levels, mixer.resetClip, MeterMonitor, track header meter, mixer strip meter, dBFS
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-03
 covers:
   - crates/engine/src/meters.rs
   - crates/engine/src/meters_tests.rs
@@ -32,6 +32,9 @@ without changing the scale, ballistics or clip reset behaviour.
 - **A track that is not heard** (turned off, or not soloed while others are) reads silence.
 - **The main output** is what the engine hands the audio device: every track through the main
   channel, the metronome and the browser's preview.
+
+The meter monitor also carries the device-spectrum rings the EQ panel's analyser reads
+([docs/spec/eq.md](eq.md) › The panel › The analyser).
 
 Levels are linear, 1.0 being full scale (0 dBFS). A centred track at unity volume playing a
 full-scale audio clip reads 0 dB; the built-in sine voice of a note at full velocity reads
