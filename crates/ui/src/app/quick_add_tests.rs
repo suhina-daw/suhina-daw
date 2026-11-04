@@ -23,7 +23,8 @@ fn the_header_names_the_bar_and_the_beat_within_it() {
     assert_eq!(place_label(0.0, 4.0), "Bar 1");
     assert_eq!(place_label(64.0, 4.0), "Bar 17");
     assert_eq!(place_label(66.0, 4.0), "Bar 17.3");
-    assert_eq!(place_label(6.5, 3.0), "Bar 3.1", "half a beat into the bar is still its first beat");
+    assert_eq!(place_label(6.5, 3.0), "Bar 3", "half a beat into the bar is still its start");
+    assert_eq!(place_label(7.5, 3.0), "Bar 3.2");
     assert_eq!(place_label(8.0, 0.0), "Bar 3", "a bar of no length counts as four beats");
 }
 
