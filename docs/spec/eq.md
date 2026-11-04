@@ -3,7 +3,7 @@ description: The built-in eight-band parametric EQ - its parameters, the band ty
 read_when: eq, equaliser, equalizer, parametric eq, eight-band eq, bell, shelf, notch, low cut, high cut, adaptive q, mid/side eq, state-variable filter, SVF, importing Live's EQ Eight, Eq8 elements, eq panel, response display, curve display, band dots, analyser, spectrum
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-03
 covers:
   - devices/eq/**
   - crates/dsp/src/svf.rs
