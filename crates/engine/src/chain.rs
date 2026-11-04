@@ -729,8 +729,11 @@ impl Chain {
                     // device made of the sound (docs/spec/eq.md › The panel › The analyser).
                     // The watch is keyed by the device's position in the project, not its
                     // slot here: `build` omits a disabled device, and its slot then shifts.
-                    if let Some(capture) = &capture {
-                        capture.append(positions[*stage], buffer, from, to);
+                    // `get`, not an index: a slot whose position is missing (a slot `build`
+                    // does not track) skips its capture, and the device itself still runs —
+                    // the audio callback never panics (AGENTS.md rule 2).
+                    if let (Some(capture), Some(&position)) = (&capture, positions.get(*stage)) {
+                        capture.append(position, buffer, from, to);
                     }
                     *stage += 1;
                 }
@@ -1099,9 +1102,11 @@ impl Chain {
                 Slot::Device(device) => {
                     run_device(device, index, buffer, from, to, pending, device_lanes, context, *sample_rate);
                     // The watch is keyed by the device's position in the project: `build`
-                    // omits a disabled device, and a slot index would shift the row.
-                    if let Some(capture) = &capture {
-                        capture.append(positions[index], buffer, from, to);
+                    // omits a disabled device, and a slot index would shift the row. `get`,
+                    // not an index: a slot without a position skips its capture, and the
+                    // device itself still runs (AGENTS.md rule 2).
+                    if let (Some(capture), Some(&position)) = (&capture, positions.get(index)) {
+                        capture.append(position, buffer, from, to);
                     }
                     index += 1;
                 }
@@ -2140,5 +2145,42 @@ mod jump_tests {
         chain.note_on(0, 0, 60, 1.0, 1_000_000);
         assert!(chain.pending.iter().all(|&(frame, _)| frame == 0), "{:?}", chain.pending);
         assert!(matches!(chain.pending.last(), Some((_, NoteEvent::On { key: 60, .. }))));
+    }
+}
+
+#[cfg(test)]
+mod capture_position_tests {
+    use super::*;
+
+    /// A passthrough chain with one sine slot and no position entry for it: with the capture
+    /// indexing `positions` this panicked inside the audio callback; the `.get` skips the
+    /// capture instead and the device itself still runs.
+    fn chain_with_untracked_slot() -> Chain {
+        let mut chain = Chain::passthrough(TrackId(0), 0, 48_000);
+        chain.slots.push(Slot::Device(Box::new(SineTones::new(48_000))));
+        chain.spectrum = Some(std::sync::Arc::new(spectrum::Spectrum::new()));
+        chain.instrument = true;
+        chain.note_on(0, 0, 60, 1.0, 1_000_000);
+        chain
+    }
+
+    fn assert_sine_ran(chain: &Chain, pass: &str) {
+        let peak = chain.buffer.iter().fold(0.0f32, |max, &sample| max.max(sample.abs()));
+        assert!(peak > 0.01, "{pass}: the device did not run (peak {peak})");
+    }
+
+    #[test]
+    fn a_slot_without_a_position_skips_its_capture_and_still_runs_in_advance() {
+        let mut chain = chain_with_untracked_slot();
+        chain.begin(1024, None);
+        chain.advance(1024, &ProcessContext::default());
+        assert_sine_ran(&chain, "advance");
+    }
+
+    #[test]
+    fn a_slot_without_a_position_skips_its_capture_and_still_runs_in_run() {
+        let mut chain = chain_with_untracked_slot();
+        chain.run(1024);
+        assert_sine_ran(&chain, "run");
     }
 }
