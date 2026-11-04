@@ -2021,6 +2021,7 @@ fn lane(
                     .font(theme::mono_font(theme::TEXT_SMALL))
                     .desired_width(60.0),
             );
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Point value"));
             // It opens with the whole value selected, so typing replaces it.
             if !response.has_focus() && !response.lost_focus() {
                 response.request_focus();

@@ -57,9 +57,11 @@ fn insert_multiple_menu(response: &egui::Response, kind: &str, actions: &mut Vec
         let mut count: u32 = ui.data(|d| d.get_temp(id)).unwrap_or(INSERT_MULTIPLE);
         ui.label("Insert multiple");
         ui.horizontal(|ui| {
-            ui.add(egui::DragValue::new(&mut count).range(1..=64).speed(0.2));
+            let value = ui.add(egui::DragValue::new(&mut count).range(1..=64).speed(0.2));
             let what = if kind == "midi" { "MIDI tracks" } else { "audio tracks" };
-            ui.label(what);
+            // The words after the number name it for screen readers.
+            let name = ui.label(what);
+            value.labelled_by(name.id);
         });
         ui.data_mut(|d| d.insert_temp(id, count));
         if ui.button("Insert").clicked() {

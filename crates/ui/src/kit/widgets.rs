@@ -514,6 +514,9 @@ pub fn text_input_at(ui: &mut Ui, rect: Rect, edit: egui::TextEdit<'_>) -> Respo
 }
 
 /// Closed choice fields show their surrounding surface; their menus retain normal styling.
+/// The chosen value stays on one line, as it did when egui laid the field out in a row of its
+/// own (before 0.37): a field given its width wraps "1 bar" otherwise. A field's own
+/// `wrap_mode` still wins.
 pub fn combo_box<R>(
     ui: &mut Ui,
     combo: egui::ComboBox,
@@ -525,6 +528,7 @@ pub fn combo_box<R>(
     let menu_style = ui.style().clone();
     ui.scope(|ui| {
         transparent_control(ui);
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
         let response = combo.show_ui(ui, |ui| {
             ui.set_style(menu_style);
             contents(ui)

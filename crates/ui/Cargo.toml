@@ -25,7 +25,7 @@ suhina-style.workspace = true
 serde_json.workspace = true
 base64.workspace = true
 memory-stats.workspace = true
-egui = "0.37"  # MIT OR Apache-2.0
+egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }  # MIT OR Apache-2.0; 0.37 moved the fonts egui bundled in 0.36 (default and emoji ones) behind this feature, the theme keeps them behind ours
 # Draws the logo from its SVG paths; already in the tree through winit on Linux.
 tiny-skia = { version = "0.12", default-features = false, features = ["std"] }  # BSD-3-Clause
 image = { version = "0.25.10", default-features = false, features = ["png"] } # MIT OR Apache-2.0; bounded user background decoding

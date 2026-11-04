@@ -70,7 +70,7 @@ pub fn paint(ui: &Ui, painter: &Painter, rect: Rect, font: FontId, opacity: f32)
         ),
     }
     let response = ui.interact(rect, Id::unique(("suhina-logo", rect.min.x as i32, rect.min.y as i32)), Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, "Suhina"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, "Suhina"));
 }
 
 fn render(svg: &str, width: u32, height: u32, name: Color32) -> Option<ColorImage> {

@@ -103,7 +103,14 @@ impl Splash {
             ctx.request_repaint();
         }
         let area = ctx.content_rect();
-        egui::Area::new(Id::unique("splash")).order(egui::Order::Tooltip).fixed_pos(area.min).show(ctx, |ui| {
+        let id = Id::unique("splash");
+        // A new area spends its first frame on an invisible sizing pass: give it its size, so the
+        // splash is on screen (and read by screen readers) from its first frame.
+        if egui::AreaState::load(ctx, id).is_none() {
+            let state = egui::AreaState { pivot_pos: Some(area.min), size: Some(area.size()), ..Default::default() };
+            ctx.memory_mut(|m| m.areas_mut().set_state(egui::LayerId::new(egui::Order::Tooltip, id), state));
+        }
+        egui::Area::new(id).order(egui::Order::Tooltip).fixed_pos(area.min).show(ctx, |ui| {
             ui.set_min_size(area.size());
             self.draw(ui, area, opacity);
         });
