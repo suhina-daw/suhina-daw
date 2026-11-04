@@ -91,7 +91,7 @@ what is inside it).
 | Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights, Copy names |
 | Launcher and mixer | Launching | Select launched clip |
 | Launcher and mixer | Mixer | Mixer control style |
-| Clip editor | Piano roll | Full-height piano roll covers, Piano roll grid source, Piano roll toolbar size, Moved notes replace notes |
+| Clip editor | Piano roll | Full-height piano roll covers, Piano roll grid source, Piano roll toolbar size, Allow stacked notes, Piano key style, Piano key names |
 | Browser | Browser | Browser side, Recent item kinds layout, Dropping on a folder |
 | Browser | Previews | Preview selected file, Preview volume |
 | Browser | Sample map | Sample map layout, Preview on map hover, Map sample length limit, Map labels |

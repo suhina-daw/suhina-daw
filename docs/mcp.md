@@ -253,7 +253,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   amount, `note.fitToScale {notes?, root?, scale?}` moves each note to the nearest key of a scale
   (a key name such as `"C"` or `"F#"`, and `major`, `minor`, `dorian`, `blues` and the rest),
   `note.invert {notes?}` mirrors the pitches, `note.reverse {notes?}` turns them round in time,
-  `note.legato {notes?}` makes each note last until the next of its key, `note.stretch {notes?,
+  `note.legato {notes?}` makes each note last until the next one starts, on any key, `note.stretch {notes?,
   factor}` stretches them in time (`2` is the **×2** button, `0.5` **÷2**),
   `note.randomizeVelocity {notes?, amount?, seed?}` and `note.rampVelocity {notes?, from, to}`
   change velocities. `notes` left out means every note of the clip. The two random tools take a

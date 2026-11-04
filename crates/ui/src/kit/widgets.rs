@@ -105,7 +105,9 @@ pub fn release_value_drag(ctx: &egui::Context) {
         return;
     };
     if drag.released {
-        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
+        // The next icon shows the pointer: nothing else may, as the window applies a command after
+        // the frame's icon, which would show it over a view that keeps it hidden for a shape of its
+        // own (a magnifier).
         ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
     } else if !ctx.input(|i| i.pointer.any_down() && i.focused) {
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
