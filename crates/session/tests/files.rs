@@ -406,6 +406,45 @@ fn files_a_track_cannot_hold_go_on_a_new_track_after_it() {
 }
 
 #[test]
+fn after_puts_the_new_tracks_after_a_track() {
+    let dir = temp_dir("after");
+    let a = wav(&dir, "pad.wav", 0.5, 0.5);
+    let m = midi(&dir, "riff.mid", &[("", &[(0, 96, 60)])]);
+    let mut session = Session::new(blank_project());
+    let out =
+        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m)], "after": "1 MIDI", "start": 4.0 }))
+            .unwrap();
+    assert_eq!(out["tracks"].as_array().map(Vec::len), Some(2));
+    assert_eq!(names(session.project())[..4], ["1 MIDI", "pad", "riff", "4 MIDI"]);
+
+    // One each with separate, in the order given, still after the track.
+    let b = wav(&dir, "stab.wav", 0.5, 0.5);
+    let mut session = Session::new(blank_project());
+    run(
+        &mut session,
+        "clip.addFiles",
+        json!({ "paths": [text(&a), text(&b)], "after": "1 MIDI", "start": 0.0, "separate": true }),
+    )
+    .unwrap();
+    assert_eq!(names(session.project())[..4], ["1 MIDI", "pad", "stab", "4 MIDI"]);
+
+    // With a track to place them on, after has nothing to say.
+    let mut session = Session::new(blank_project());
+    let err = run(
+        &mut session,
+        "clip.addFiles",
+        json!({ "paths": [text(&a)], "track": "3 Audio", "after": "1 MIDI", "start": 0.0 }),
+    )
+    .unwrap_err();
+    assert!(err.contains("not both"), "{err}");
+    // A track that is not there.
+    let err =
+        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a)], "after": "Nope", "start": 0.0 })).unwrap_err();
+    assert!(!err.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_type_1_midi_file_gives_a_clip_per_track_with_notes() {
     let dir = temp_dir("midi");
     let m =
