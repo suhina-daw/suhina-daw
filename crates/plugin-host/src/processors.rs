@@ -184,9 +184,9 @@ impl Processor for Busy {
 /// The blocks the `test:ring` plug-in of this process has had, and the signal that it had another.
 static RUNG: Mutex<u32> = Mutex::new(0);
 static RINGING: Condvar = Condvar::new();
-/// How many times a `test:await-ring` plug-in has gone into its wait, bumped while it holds `RUNG`,
-/// so a test that sees it rise knows the ring cannot pass the block before the plug-in is waiting.
-static WAITS: AtomicU32 = AtomicU32::new(0);
+/// Where a `test:await-ring` plug-in says it is going into its wait, sent while it holds `RUNG`, so
+/// a test that has heard it knows the ring cannot pass the block before the plug-in is waiting.
+static WAIT_SIGNAL: Mutex<Option<std::sync::mpsc::Sender<bool>>> = Mutex::new(None);
 
 /// A `test:ring` plug-in.
 struct Ring;
@@ -215,7 +215,9 @@ impl Processor for AwaitRing {
         let block = self.0.fetch_add(1, Ordering::Relaxed);
         let mut rung = RUNG.lock().unwrap_or_else(PoisonError::into_inner);
         while *rung <= block {
-            WAITS.fetch_add(1, Ordering::SeqCst);
+            if let Some(signal) = &*WAIT_SIGNAL.lock().unwrap_or_else(PoisonError::into_inner) {
+                let _ = signal.send(true);
+            }
             rung = RINGING.wait(rung).unwrap_or_else(PoisonError::into_inner);
         }
         output.copy_from_slice(input);
@@ -435,20 +437,18 @@ mod tests {
         awaiting.process(&[3.0, 4.0], &mut output);
         assert_eq!(output, [3.0, 4.0]);
         // Its next block waits for the ring's next one, on a thread of its own as in a host.
-        let waits = WAITS.load(Ordering::SeqCst);
+        let (signal, heard) = std::sync::mpsc::channel();
+        *WAIT_SIGNAL.lock().unwrap() = Some(signal.clone());
         let waiting = std::thread::spawn(move || {
             let mut output = [0.0f32; 2];
             awaiting.process(&[5.0, 6.0], &mut output);
+            let _ = signal.send(false);
             output
         });
-        // The plug-in is in its wait once it has said so; one that never waits fails here.
-        let deadline = std::time::Instant::now() + Duration::from_secs(10);
-        while WAITS.load(Ordering::SeqCst) == waits {
-            assert!(std::time::Instant::now() < deadline, "the plug-in never waited for the ring");
-            assert!(!waiting.is_finished(), "the plug-in answered without waiting for the ring");
-            std::thread::yield_now();
-        }
+        // It says it is waiting (true) before it answers (false); one that never waits answers first.
+        assert!(heard.recv().unwrap(), "the plug-in answered without waiting for the ring");
         ring.process(&[1.0, 2.0], &mut [0.0f32; 2]);
         assert_eq!(waiting.join().unwrap(), [5.0, 6.0]);
+        *WAIT_SIGNAL.lock().unwrap() = None;
     }
 }
