@@ -411,6 +411,12 @@ pub fn export(theme: &Theme) -> String {
                 css.push_str(" height: 100%;");
                 continue;
             }
+            // The host-drawn EQ curve keeps its own size everywhere: its display and its
+            // strips are in the control's own points, so a theme's `width` or `height` for
+            // it would stretch the placed rectangle past them.
+            if name == "eq-curve" && (key == "width" || key == "height") {
+                continue;
+            }
             css.push_str(&format!(" {key}: {};", value.map_or("auto".into(), |v| format!("{v}px"))));
         }
         css.push_str(&format!(

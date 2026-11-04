@@ -2957,6 +2957,21 @@ impl App {
             }
             self.last_clip = shown_clip;
             self.expanded_panel = None;
+            // The EQ panel's analyser reads the meter monitor's spectrum rings; the monitor's
+            // arc goes to the panels through the frame's temp data, published here, before
+            // any panel renders (docs/spec/eq.md › The panel › The analyser). A session
+            // without a player drops the last one's: a monitor belongs to one engine, and a
+            // panel of the next session must not read the previous session's spectrum as its
+            // own.
+            let monitor = self.session().and_then(|s| s.player()).map(|p| p.meter_monitor_arc());
+            ui.ctx().data_mut(|d| match monitor {
+                Some(monitor) => {
+                    d.insert_temp(egui::Id::new("eq-spectrum"), monitor);
+                }
+                None => {
+                    d.remove::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::new("eq-spectrum"));
+                }
+            });
             let inner = if grid.is_some()
                 && self.detail_open
                 && css_workspace.as_ref().is_none_or(|layout| layout.detail.is_some())
