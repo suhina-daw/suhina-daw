@@ -1657,7 +1657,11 @@ fn paint_scaled(
                         }
                         TextFormat::Tempo if p.value <= 0. => format!("{text}Auto"),
                         TextFormat::Tempo => format!("{text}{} BPM", fixed(p.value, 2)),
-                        TextFormat::Seconds if p.value < 1. => format!("{text}{} ms", fixed(p.value * 1000., 0)),
+                        // `decimals` rounds the milliseconds a seconds-format dial asks for (0 keeps
+                        // the whole milliseconds later dials show).
+                        TextFormat::Seconds if p.value < 1. => {
+                            format!("{text}{} ms", fixed(p.value * 1000., (*decimals).min(3)))
+                        }
                         TextFormat::Seconds => format!("{text}{} s", fixed(p.value, 2)),
                         TextFormat::Percent => format!("{text}{}%", fixed(p.value * 100., 0)),
                         TextFormat::Decibels => format!("{text}{} dB", fixed(p.value, 1)),
@@ -2070,10 +2074,12 @@ fn draw_stroke(ui: &egui::Ui, id: egui::Id) -> Option<(Pos2, Pos2)> {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // the canvas, its draw state and what dispatches for it
 pub(crate) fn show(
     ui: &mut egui::Ui,
     rect: Rect,
     canvas: &Arc<DeviceUi>,
+    state: &crate::detail::device_widgets::PanelState<'_>,
     parameters: &[GraphParameter],
     track: TrackId,
     at: &crate::detail::detail_view::DeviceAt,
@@ -2153,6 +2159,21 @@ pub(crate) fn show(
             sample_recording(ui, bounds, track, device, actions);
             continue;
         }
+        if matches!(control.widget, Some(Widget::DeviceSwitch)) {
+            let _role = crate::kit::style_class::enter("button");
+            crate::detail::device_widgets::switch(ui, bounds, state, track, at, actions);
+            continue;
+        }
+        if let Some(Widget::DeviceFiles { part, what }) = &control.widget {
+            let _role = crate::kit::style_class::enter("dropdown");
+            crate::detail::device_widgets::files(ui, bounds, *part, what, state, track, at, actions);
+            continue;
+        }
+        if matches!(control.widget, Some(Widget::DeviceNote)) {
+            let _role = crate::kit::style_class::enter("label");
+            crate::detail::device_widgets::note(&painter, bounds, state);
+            continue;
+        }
         if matches!(control.widget, Some(Widget::SampleWaveform)) {
             let _role = crate::kit::style_class::enter("waveform");
             let mut styled_ui = crate::kit::style_class::ui(ui);
@@ -2167,6 +2188,15 @@ pub(crate) fn show(
                 actions,
                 !canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleRecording))),
             );
+            continue;
+        }
+        // The EqCurve is host-drawn: the SDK's validator only lets the built-in EQ's own
+        // parameter set claim the shape, so this canvas can only be its panel.
+        if matches!(control.widget, Some(Widget::EqCurve)) {
+            let _role = crate::kit::style_class::enter("eq-curve");
+            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let ui = &mut *styled_ui;
+            super::eq_curve::show(ui, bounds, parameters, track, at, actions);
             continue;
         }
         if let Some(Widget::Handle { color: line_color, span, offset, dot, relative, hollow }) = &control.widget {
@@ -2503,7 +2533,9 @@ pub(crate) fn show(
             if control.gesture == UiGesture::Menu {
                 let key_open =
                     focused && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space));
-                let mut popup = egui::Popup::menu(&response);
+                // The menu sits a little clear of its control: glued to its bottom edge it
+                // reads as clipping into it (the EQ's Mode, seen in use).
+                let mut popup = egui::Popup::menu(&response).gap(2.0);
                 if response.double_clicked() {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Bool(false)));
                     control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":at.value(),"param":p.id,"value":p.default,"continuous":false,"gesture":control.id})));
@@ -2612,7 +2644,41 @@ pub(crate) fn show(
             let old = normalized(p, binding.logarithmic);
             let mut next = old;
             match control.gesture {
-                UiGesture::Position if response.dragged() || response.clicked() => {
+                // A position drag starts where it was pressed, then moves as far as the pointer
+                // while the pointer hides and holds still, as a slider's handle does; on release
+                // the pointer comes back on the handle (docs/design/components.md › Knob).
+                UiGesture::Position if response.dragged() => {
+                    let held_id = response.id.with(("position-held", axis));
+                    let back_id = response.id.with("position-back");
+                    let held = ui.data(|data| data.get_temp::<f64>(held_id)).filter(|_| !response.drag_started());
+                    let from = held.unwrap_or_else(|| {
+                        let press = ui.input(|i| i.pointer.press_origin()).unwrap_or(bounds.center());
+                        if axis == 0 {
+                            (press.x - bounds.left()) as f64 / w as f64
+                        } else {
+                            (bounds.bottom() - press.y) as f64 / h as f64
+                        }
+                    });
+                    let delta = crate::kit::widgets::value_drag_delta(ui, &response);
+                    let moved = if axis == 0 { delta.x as f64 / w as f64 } else { -delta.y as f64 / h as f64 } * fine;
+                    next = (from + moved).clamp(0.0, 1.0);
+                    ui.data_mut(|data| data.insert_temp(held_id, next));
+                    // The point the pointer comes back to: this axis's place, the other axis's as
+                    // the drag left it (or where the press was).
+                    let mut back = ui
+                        .data(|data| data.get_temp::<Pos2>(back_id))
+                        .filter(|_| !response.drag_started())
+                        .or_else(|| ui.input(|i| i.pointer.press_origin()))
+                        .unwrap_or(bounds.center());
+                    if axis == 0 {
+                        back.x = bounds.left() + w * next as f32;
+                    } else {
+                        back.y = bounds.bottom() - h * next as f32;
+                    }
+                    ui.data_mut(|data| data.insert_temp(back_id, back));
+                    crate::kit::widgets::value_drag_returns_to(ui.ctx(), back);
+                }
+                UiGesture::Position if response.clicked() => {
                     if let Some(pos) = response.interact_pointer_pos() {
                         next = if axis == 0 {
                             (pos.x - bounds.left()) as f64 / w as f64

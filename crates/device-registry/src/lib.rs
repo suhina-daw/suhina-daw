@@ -44,6 +44,9 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
     if id == "sampler" {
         return Some(Ok(suhina_device_sampler::layout()));
     }
+    if id == "eq" {
+        return Some(Ok(suhina_device_eq::panel::layout()));
+    }
     LAYOUT_FILES.iter().find(|(file_id, _)| *file_id == id).map(|(_, text)| Layout::from_json(text))
 }
 
@@ -60,6 +63,8 @@ pub const LAYOUT_FILES: &[(&str, &str)] = &[
     ("delay", include_str!("../../../devices/delay/panel.json")),
     ("pitch", include_str!("../../../devices/pitch/panel.json")),
     ("fm-synth", include_str!("../../../devices/fm-synth/panel.json")),
+    ("nam-amp-modeler", include_str!("../../../devices/nam-amp-modeler/panel.json")),
+    ("nam-cab-loader", include_str!("../../../devices/nam-cab-loader/panel.json")),
 ];
 
 /// What a device just added to a project starts with beside its parameters' defaults.

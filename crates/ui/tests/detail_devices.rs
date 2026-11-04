@@ -410,6 +410,38 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
             assert!(!ra.shrink(1.0).intersects(rb.shrink(1.0)), "{a} {ra:?} is drawn over {b} {rb:?}");
         }
     }
+    // A knob is a control one can see and turn: its cell is a dial's movements wide — the ring
+    // 42, its label and its value bands clear of it — and high, not the squeezed ring the
+    // first panels drew (a tester's screenshot). The amp's Mid Freq is a line of its own
+    // shape, and the buttons and the Volume slider their own — they get no floor.
+    let knobs: Vec<(&str, egui::Rect)> = [
+        "Amp Modeler: gain",
+        "Amp Modeler: bass",
+        "Amp Modeler: mid",
+        "Amp Modeler: treble",
+        "Amp Modeler: delay",
+        "Amp Modeler: volume",
+        "Cab Loader: bass",
+        "Cab Loader: mid",
+        "Cab Loader: treble",
+        "Cab Loader: mid freq",
+        "Cab Loader: delay",
+    ]
+    .into_iter()
+    .map(|label| (label, harness.get_by_label(label).rect()))
+    .collect();
+    for (label, rect) in knobs {
+        // 84 high: the label (24), the ring (42) and the value band (16) one under another;
+        // the note's fault line stays out of the cells under the row.
+        assert!(rect.width() >= 60.0 && rect.height() >= 80.0, "{label} {rect:?} is too small to read");
+    }
+    // The rows they sit on: Mid Freq shares the buttons' row, and each panel's knobs one row.
+    let top = |label: &str| harness.get_by_label(label).rect().top();
+    assert_eq!(top("Amp Modeler: mid freq"), top("Amp Modeler: eq"), "Mid Freq is not on the buttons' row");
+    let row = top("Cab Loader: bass");
+    for label in ["Cab Loader: mid", "Cab Loader: treble", "Cab Loader: mid freq", "Cab Loader: delay"] {
+        assert_eq!(top(label), row, "{label} is not on the cab's knob row");
+    }
     for label in [
         "Cab Loader: pack",
         "Cab Loader: previous pack",
@@ -452,6 +484,37 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     harness.key_combination_modifiers(Modifiers::COMMAND, &[Key::Z]);
     harness.run();
     assert_eq!(channel_device_state(&harness, 0), "");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Renders the two NAM panels to `target/ui-snapshots/nam-panels.png`, for looking at:
+/// `cargo test -p suhina-ui --test main -- --ignored a_nam_panels_render_for_the_hand_check`.
+#[test]
+#[ignore = "needs a GPU adapter; run with --ignored"]
+fn a_nam_panels_render_for_the_hand_check() {
+    let dir = std::env::temp_dir().join(format!("suhina-ui-nam-snap-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("NAM models"), dir.join("IRs"));
+    std::fs::create_dir_all(&models).unwrap();
+    std::fs::create_dir_all(&irs).unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(nam_project()), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    let mut harness = Harness::builder()
+        .with_size(SIZE)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .wgpu()
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Launcher view").click();
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
+    std::fs::create_dir_all(&out).unwrap_or_else(|e| panic!("{e}"));
+    image.save(out.join("nam-panels.png")).unwrap_or_else(|e| panic!("{e}"));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

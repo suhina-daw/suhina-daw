@@ -3,7 +3,7 @@ description: Self-contained device canvases, image assets, drawing expressions a
 read_when: custom SDK control, device background, icon, photo, texture, XY pad, drawing API, image asset
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-04
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs
@@ -13,6 +13,7 @@ covers:
   - crates/device-sdk/src/ui/widgets.rs
   - crates/device-sdk/src/ui.rs
   - crates/ui/src/detail/device_canvas.rs
+  - crates/ui/src/detail/device_widgets.rs
   - crates/ui/src/detail/detail_view.rs
   - crates/device-sdk/examples/custom_panel.rs
   - crates/device-sdk/examples/orbit_filter.rs
@@ -216,7 +217,10 @@ cover, with UV crop, RGBA tint and optional tile size. Repetition uses texture w
 unbounded loop of drawing operations. Vector icons are paths/lines/circles, raster icons can
 use PNG transparency. Photos and patterns are original assets supplied by the author.
 
-Gestures: drag (relative X/Y), position (absolute pointer position, Y upward), toggle, momentary.
+Gestures: drag (relative X/Y), position (Y upward: a click sets the value at the pointer; a drag
+starts at the press and moves the value as far as the pointer moves, Shift for precision, with
+the pointer hidden and held still as a slider's handle does, and back on the value's place on
+release), toggle, momentary.
 Bindings map normalized coordinates to parameter units with optional logarithmic mapping.
 Keyboard arrows edit axes, Shift provides fine adjustment, double click resets defaults;
 Space/Enter activate buttons. A gesture `{"set": 3}` sets the X parameter to the literal integer 3; its value must be inside the declared range. The control name and values are exposed to accessibility.
@@ -358,6 +362,23 @@ input selector and Record/Stop actions (`device.recordSample`) beside other cont
 It registers a sample drop target for both browser and system file drops; the drop
 runs `device.loadSample`. It renders an empty-source prompt when no audio is loaded.
 This does not add a sample DSP node to serialized `.sd` graphs.
+
+`DeviceSwitch` places a device's own on/off as a control in its body: the header's
+square, bigger, lit while the device runs. The host draws it from the device's state
+and a click runs `device.setEnabled`; it has no parameter of its own. `DeviceFiles`
+places one piece of a file-backing device's pack row or its file row, by `part` —
+`pack`/`previous_pack`/`next_pack` or `file`/`previous_file`/`next_file` — and `what`
+names the device's file family ("model", "cab") the host checks as it draws. The
+dropdown lists the folder's packs (the current one shown), or the current pack's
+files by their shown names; its steppers step through, wrapping. Choosing a pack
+loads its first file; every choice and step runs `device.setNamFile`, one undo
+step, only when the file it asks for differs from the device's current. A `what`
+the host has no words for draws nothing, so a layout places the rows only where its
+device takes files. `DeviceNote` places the one-line note under the controls when
+the device's file does not run: the fault the load gave, or that the file moved;
+nothing while the file runs, and nothing with no file — the rows' empty texts say
+that. The labels derive from the device's shown name ("Amp Modeler: pack"),
+as the compact panels' tests find them.
 
 A control may specify a typed `widget` instead of a custom `drawing`. Widgets are
 independent UI nodes; interactive nodes bind to a declared parameter (or two parameters
