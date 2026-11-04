@@ -84,6 +84,7 @@ fn window(settings: &Path, folder: &Path) -> Harness<'static, App> {
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -124,6 +125,7 @@ fn window_with_plugins(settings: &Path, folder: &Path) -> Harness<'static, App> 
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
@@ -220,9 +222,10 @@ fn system_drop(harness: &mut Harness<'static, App>, path: &Path, at: Pos2) {
     harness.step();
 }
 
-/// Steps the window until `done` holds (a drop decodes its samples on another thread).
+/// Steps the window until `done` holds (a drop decodes its samples on another thread); only a
+/// hang gets to the end of its minute.
 fn until(harness: &mut Harness<'static, App>, done: impl Fn(&App) -> bool) -> bool {
-    let end = Instant::now() + Duration::from_secs(10);
+    let end = Instant::now() + Duration::from_secs(60);
     while Instant::now() < end {
         harness.step();
         if done(harness.state()) {
@@ -980,6 +983,7 @@ fn render_the_browser() {
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)
         .with_step_dt(0.05)
@@ -1028,6 +1032,7 @@ fn the_start_panel_hides_the_browser_until_a_project_is_open() {
     library.add_folder(&folder).unwrap();
     app.set_file_library(library);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)

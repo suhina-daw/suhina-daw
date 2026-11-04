@@ -107,6 +107,31 @@ fn finds_plugin_files_in_folders() {
     assert!(standard_folders().iter().all(|f| f.is_dir()));
 }
 
+/// A VST2 folder's files are found for its format: a `.vst` bundle on macOS, a `.dll` on Windows,
+/// a `.so` on Linux, and nothing else of the folder's. A folder for every format takes the
+/// bundle, which is nothing else, and no plain library, which can be anything.
+#[cfg(feature = "vst2")]
+#[test]
+fn a_vst2_folder_s_files_are_found() {
+    let dir = folder("find-vst2");
+    let (shape, other) = if cfg!(target_os = "macos") {
+        ("Gain.vst", "Gain.vst3")
+    } else if cfg!(windows) {
+        ("Gain.dll", "Gain.vst3")
+    } else {
+        ("Gain.so", "Gain.vst3")
+    };
+    write(&dir.join(shape), "x");
+    write(&dir.join(other), "x");
+    write(&dir.join("readme.txt"), "x");
+    let found = find_files_of(&[(dir.clone(), FolderFormat::Vst2)]);
+    assert_eq!(found, vec![dir.join(shape)], "only the format's files");
+    let any = find_files(std::slice::from_ref(&dir));
+    assert_eq!(any.contains(&dir.join(shape)), cfg!(target_os = "macos"), "Any takes no plain library");
+    // The vst folders of this system are standard, whether or not anything is in them.
+    let _ = standard_folders();
+}
+
 /// Seconds since 1970, now.
 fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
@@ -186,7 +211,17 @@ fn a_folder_gives_only_its_formats_files() {
     write(&dir.join("clap/a.clap"), "x");
     write(&dir.join("clap/b.vst3"), "x");
     write(&dir.join("vst3/c.vst3"), "x");
-    write(&dir.join("vst2/d.dll"), "x");
+    // The VST2 shape of this system, which its folder now gives up, and a library file of
+    // another system's, which is nothing here.
+    let (vst2_file, foreign) = if cfg!(target_os = "macos") {
+        ("e.vst", "d.dll")
+    } else if cfg!(windows) {
+        ("e.dll", "d.so")
+    } else {
+        ("e.so", "d.dll")
+    };
+    write(&dir.join("vst2").join(vst2_file), "x");
+    write(&dir.join("vst2").join(foreign), "x");
     let name = |found: Vec<PathBuf>| -> Vec<String> {
         found.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect()
     };
@@ -195,8 +230,13 @@ fn a_folder_gives_only_its_formats_files() {
         (dir.join("vst3"), FolderFormat::Vst3),
         (dir.join("vst2"), FolderFormat::Vst2),
     ];
-    assert_eq!(name(find_files_of(&folders)), ["a.clap", "c.vst3"]);
+    // The found list sorts by its paths, and the folders' names decide that: clap/, then
+    // vst2/, then vst3/.
+    assert_eq!(name(find_files_of(&folders)), ["a.clap", vst2_file, "c.vst3"]);
     assert_eq!(name(find_files_of(&[(dir.join("clap"), FolderFormat::Any)])), ["a.clap", "b.vst3"]);
+    // For every format: the `.vst` bundle, and no library of any system.
+    let any: Vec<String> = if cfg!(target_os = "macos") { vec![vst2_file.to_string()] } else { Vec::new() };
+    assert_eq!(name(find_files_of(&[(dir.join("vst2"), FolderFormat::Any)])), any);
 }
 
 #[test]
@@ -320,8 +360,10 @@ fn worker_processes_read_many_files_and_survive_crashes_and_hangs() {
     use suhina_plugins::scan_pool::scan_files;
     let files: Vec<String> =
         ["test:clap", "test:crash", "test:vst3", "test:hang", "test:clap", "test:vst3"].map(String::from).to_vec();
-    let started = Instant::now();
-    let results = scan_files(&host(), &files, 2, &|_| Duration::from_secs(3));
+    // Only the file meant to hang has a short timeout: a slow process start is not mistaken for
+    // a hang, and a hang that cost another file its own timeout would show as that file failing.
+    let timeout = |file: &str| if file == "test:hang" { Duration::from_secs(3) } else { PATIENT };
+    let results = scan_files(&host(), &files, 2, &timeout);
     assert_eq!(results.len(), files.len());
     let names: Vec<String> = results
         .iter()
@@ -345,7 +387,17 @@ fn worker_processes_read_many_files_and_survive_crashes_and_hangs() {
     assert_eq!(vst3[0].replaces[0], suhina_plugins::matching::vst2_class_id(0x4761_696E, "Gain"));
     // Its module declares no ARA factory class, so the scan does not mark it as ARA.
     assert!(!vst3[0].ara);
-    // One hang costs its timeout once, not per file. The room is for slow process starts: on
-    // a loaded Windows machine each start can take seconds while the antivirus checks it.
-    assert!(started.elapsed() < Duration::from_secs(60), "{:?}", started.elapsed());
+}
+
+/// One hang costs its timeout once, not per file. One worker reads the four files in turn, so a
+/// timeout per file would take four of them; the room over one is for the process starts. Run with
+/// `cargo test -p suhina-plugin-host --release --test scan one_hang -- --ignored`.
+#[test]
+#[ignore = "bounds on elapsed time, for an idle machine"]
+fn one_hang_costs_a_scan_its_timeout_once() {
+    const TIMEOUT: Duration = Duration::from_secs(3);
+    let files: Vec<String> = ["test:hang", "test:clap", "test:vst3", "test:clap"].map(String::from).to_vec();
+    let started = Instant::now();
+    suhina_plugins::scan_pool::scan_files(&host(), &files, 1, &|_| TIMEOUT);
+    assert!(started.elapsed() < TIMEOUT * 2, "{:?}", started.elapsed());
 }

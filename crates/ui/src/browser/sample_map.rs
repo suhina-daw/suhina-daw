@@ -1306,17 +1306,27 @@ mod many {
     #[test]
     fn resizing_a_map_of_200_000_points_does_not_draw_the_density_every_frame() {
         let points = points(200_000);
-        let (slowest, built) = resize(&points, 30, 0);
+        let (_, built) = resize(&points, 30, 0);
         assert_eq!(built, 0, "while the size keeps changing, the last raster is drawn scaled");
         let (_, built) = resize(&points, 30, 15);
         assert_eq!(built, 1, "once the size has settled, it is worked out once for it");
+    }
+
+    /// Run with `cargo test -p suhina-ui --release --lib takes_less_than_a_frame -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a bound on elapsed time, for an idle machine"]
+    fn resizing_a_map_of_200_000_points_takes_less_than_a_frame() {
+        let points = points(200_000);
+        let (slowest, _) = resize(&points, 30, 0);
         eprintln!("200 000 points: slowest resize frame {slowest:?}");
         // 30 frames a second in an optimised build; unoptimised test builds get more room.
         let budget = std::time::Duration::from_micros(if cfg!(debug_assertions) { 100_000 } else { 33_300 });
         assert!(slowest < budget, "slowest resize frame {slowest:?}");
     }
 
+    /// Run with `cargo test -p suhina-ui --release --lib draws_at_60_frames -- --ignored --nocapture`.
     #[test]
+    #[ignore = "a bound on elapsed time, for an idle machine"]
     fn a_map_of_200_000_points_draws_at_60_frames_a_second() {
         let points = points(200_000);
         let still = slowest_frame(&points, 10, false);

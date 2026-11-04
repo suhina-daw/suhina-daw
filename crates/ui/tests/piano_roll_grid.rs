@@ -34,6 +34,7 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -315,6 +316,7 @@ fn render_the_grid_menu() {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut h = Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)

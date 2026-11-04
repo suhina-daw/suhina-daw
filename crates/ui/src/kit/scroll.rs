@@ -119,6 +119,7 @@ mod tests {
     fn content_that_fits_has_no_bar_and_an_offset_past_the_end_is_brought_back() {
         let mut short = Harness::builder()
             .allow_missing_glyphs()
+            .allow_missing_glyphs()
             .with_size(Vec2::new(300.0, 300.0))
             .build_ui_state(|ui, offset: &mut f32| vertical_bar(ui, AREA, "short", 100.0, offset), 50.0);
         short.run();

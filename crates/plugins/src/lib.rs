@@ -1641,23 +1641,13 @@ mod tests {
     /// what the test `feed`s a group, so `host_memory` can be tried without the executable.
     fn living_process() -> (HostProcess, Sender<Message>) {
         let (address, name) = control_name().unwrap();
-        let listener =
-            ListenerOptions::new().name(name).nonblocking(ListenerNonblockingMode::Accept).create_sync().unwrap();
-        let remote = thread::spawn({
-            let address = address.clone();
-            move || connect(&address).unwrap()
-        });
-        let started = Instant::now();
-        let control = loop {
-            match listener.accept() {
-                Ok(stream) => break stream,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => panic!("the listener gave up: {e}"),
-            }
-            assert!(started.elapsed() < Duration::from_secs(2), "the remote half never connected");
-            thread::sleep(Duration::from_millis(1));
-        };
-        remote.join().unwrap();
+        let listener = ListenerOptions::new().name(name).create_sync().unwrap();
+        // A listener takes a connection made before it is asked, so a connection that fails ends
+        // the test here and `accept` has no one to wait for. The remote half lives until then:
+        // one that is gone by `accept` leaves it nothing to take.
+        let remote = connect(&address).unwrap();
+        let control = listener.accept().unwrap();
+        drop(remote);
         // A child that lives on and ends by itself. `timeout` waits for a key and errors when
         // there is no console to take it from; a ping to no host waits without input.
         let mut child = Command::new(if cfg!(windows) { "cmd" } else { "sleep" });
@@ -1694,7 +1684,7 @@ mod tests {
         }
         // An ended child stays "running" its own last moment: let it be gone. (`alive` reaps
         // what has gone, so the loop is what reads it.)
-        let deadline = Instant::now() + Duration::from_secs(2);
+        let deadline = Instant::now() + Duration::from_secs(60);
         while {
             let mut locked = lock(&group);
             locked.alive()

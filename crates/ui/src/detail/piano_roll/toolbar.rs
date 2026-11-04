@@ -272,7 +272,7 @@ pub(super) fn toolbar(
             own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, row.height().max(8.0))),
         )
     };
-    let x = std::cell::Cell::new(row.left() + KEYS - 4.0);
+    let x = std::cell::Cell::new(row.left() + TOOLBAR_INSET);
     let place = || {
         let area = Rect::from_min_size(Pos2::new(x.get(), row.top() + (row.height() - size.y) / 2.0), size);
         x.set(area.right() + gap);
@@ -298,7 +298,7 @@ pub(super) fn toolbar(
         painter.vline(x.get(), row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
     }
     x.set(x.get() + 5.0);
-    let selected = !state.selected.is_empty();
+    let selected = !state.acting().is_empty();
     for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {
         let area = place();
         let active = matches!(button, IconButton::Paste) || selected;

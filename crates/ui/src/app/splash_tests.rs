@@ -46,6 +46,7 @@ const STEP: f64 = 1.0 / 60.0;
 fn harness(size: Vec2, animations: bool) -> Harness<'static, State> {
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(size)
         .with_step_dt(STEP as f32)
         .with_max_steps(240)

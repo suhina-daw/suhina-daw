@@ -25,13 +25,14 @@ const SIZE: (f32, f32) = (1280.0, 800.0);
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
 const CLIP_START: f64 = 64.0;
 /// The piano roll's least height (› Least height and closing).
-const LEAST: f32 = 120.0;
+const LEAST: f32 = 132.0;
 
 fn window() -> Harness<'static, App> {
     let mut app = App::new();
     app.set_browser_open(false);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
@@ -510,6 +511,7 @@ fn a_device_row_alone_is_open_at_full_height_or_closed() {
     app.set_browser_open(false);
     app.set_session(Session::new(project), &[]);
     let mut h = Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)

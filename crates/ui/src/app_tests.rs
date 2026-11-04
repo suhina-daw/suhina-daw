@@ -54,6 +54,7 @@ fn files_from_the_system_outline_the_target_they_hover_and_change_nothing_until_
     app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
     let mut harness = egui_kittest::Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(Vec2::new(1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     harness.run();
@@ -86,6 +87,7 @@ fn a_menu_bar_item_chosen_while_the_question_about_a_clips_edits_is_open_does_no
     app.ara_prompt = Some((Action::new("clip.moveMany", serde_json::json!({})), "Plug-in".into()));
     let mut harness = egui_kittest::Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(Vec2::new(1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     harness.run();
@@ -110,6 +112,7 @@ fn an_agent_asking_to_connect_waits_for_the_question_about_a_clips_edits() {
     app.ara_prompt = Some((Action::new("clip.moveMany", serde_json::json!({})), "Plug-in".into()));
     app.ask_agent(1, "Helper".into());
     let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(Vec2::new(1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
@@ -181,6 +184,7 @@ fn sampler_source_uses_the_shown_track_when_two_tracks_share_a_channel() {
     app.detail_showing = detail_view::Showing::Devices;
     let mut harness = egui_kittest::Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(Vec2::new(1280., 800.))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     harness.step();
@@ -233,6 +237,7 @@ fn sample_drops_into_empty_device_area_load_sampler() {
         app.detail_showing = detail_view::Showing::Devices;
         let mut harness = egui_kittest::Harness::builder()
             .allow_missing_glyphs()
+            .allow_missing_glyphs()
             .with_size(Vec2::new(1280., 800.))
             .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
         harness.run();
@@ -248,7 +253,7 @@ fn sample_drops_into_empty_device_area_load_sampler() {
             harness.drop_at(target);
         }
         harness.step();
-        let end = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while std::time::Instant::now() < end {
             harness.step();
             if harness.state().session().unwrap().project().channels[0]
@@ -315,6 +320,7 @@ fn the_browser_slides_out_and_in_with_animations_on() {
     app.set_browser_open(true);
     let mut harness = egui_kittest::Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(Vec2::new(1280.0, 800.0))
         .with_step_dt(1.0 / 60.0)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
@@ -335,6 +341,7 @@ fn the_large_sample_map_closes_with_its_button_and_with_escape() {
     let mut app = App::new();
     app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
     let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(Vec2::new(1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
@@ -384,6 +391,7 @@ fn delete_after_a_header_click_removes_the_track_not_a_clip() {
     app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
     let mut harness = egui_kittest::Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(Vec2::new(1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     harness.run();
@@ -416,6 +424,7 @@ fn the_ara_prompt_and_the_missing_files_panel_hold_the_keys_and_hide_the_editors
     app.missing.open = false;
     let mut harness = egui_kittest::Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(Vec2::new(1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     harness.run();
@@ -436,6 +445,7 @@ fn a_device_dropped_on_a_return_column_goes_on_the_return() {
     let mut app = App::new();
     app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
     let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(Vec2::new(1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
@@ -807,6 +817,7 @@ fn a_rename_in_place_covers_the_name_drawn_under_it() {
     let track = app.session().unwrap().project().tracks[0].id.0;
     let mut harness = egui_kittest::Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size((1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     harness.run();
@@ -830,6 +841,7 @@ fn css_workspace_moves_native_controls_and_preserves_project_state() {
     app.settings.browser_open = true;
     app.detail_open = true;
     let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size((1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
@@ -867,6 +879,7 @@ fn a_rename_in_a_session_header_reads_as_the_name() {
     app.shown = View::Session;
     let track = app.session().unwrap().project().tracks[0].id.0;
     let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size((1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);

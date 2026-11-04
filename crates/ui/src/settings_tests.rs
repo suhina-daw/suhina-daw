@@ -133,6 +133,8 @@ fn a_settings_file_from_before_the_regrouping_loads_with_the_same_values() {
 #[test]
 fn settings_survive_a_round_trip() {
     let settings = Settings {
+        piano_key_style: PianoKeyStyle::Night,
+        piano_key_names: PianoKeyNames::All,
         animations: false,
         setting_descriptions: crate::settings::Descriptions::Icon,
         track_headers: Some(Side::Left),

@@ -136,14 +136,7 @@ fn chain_row(
             }
             // An editor embedded in the panel is placed for devices on the track itself.
             let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
-            // A NAM panel asks for the mock's wider box (nam spec › The panels); the rest keep
-            // the plain device width.
-            let authored_base =
-                if device.file_device.is_some() { crate::detail::nam_panel::NAM_WIDTH } else { DEVICE_WIDTH };
-            // A NAM panel draws its own controls: the stock graph every built-in has (#600) does
-            // not size it, or its controls are crowded over each other.
-            let graph = device.graph.as_ref().filter(|_| device.file_device.is_none());
-            let authored_width = graph.map_or(authored_base, |graph| {
+            let authored_width = device.graph.as_ref().map_or(DEVICE_WIDTH, |graph| {
                 // The stock controls in columns of a compact panel's width, right of the canvas
                 // when there is one; wider where an `.sd` file places its controls further out.
                 let list = list_right(device, graph);
@@ -283,8 +276,6 @@ fn panel_height(device: &DeviceBox, editor: Option<Vec2>) -> f32 {
         if device.plugin.is_some() { 2.0 + BUTTON_HEIGHT / PARAM_ROW } else { device.params.len().max(1) as f32 };
     match editor {
         Some(editor) => EDITOR_TOP + editor.y + PAD,
-        // A NAM panel's own height (nam spec › The panels); the rest take their rows.
-        None if device.file_device.is_some() => crate::detail::nam_panel::NAM_HEIGHT,
         // A plug-in's rows, then its generated list, within the compact panel's height.
         None if device.plugin.is_some() => {
             let rows = ROW + PAD * 2.0 + rows * PARAM_ROW;
@@ -778,9 +769,7 @@ fn hint(painter: &egui::Painter, area: Rect, text: &str) {
     painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), theme::text_hint());
 }
 
-/// One device: a header with its on switch and name, then its parameters, one per row. A NAM
-/// Amp Modeler or NAM Cab Loader draws its own panel instead
-/// ([docs/spec/nam-amp-and-cab.md] › The panels).
+/// One device: a header with its on switch and name, then its parameters, one per row.
 #[allow(clippy::too_many_arguments)]
 fn device_panel(
     ui: &mut Ui,
@@ -790,7 +779,7 @@ fn device_panel(
     device: &DeviceBox,
     selected: bool,
     actions: &mut Vec<Action>,
-    nam: &crate::detail::nam_panel::Lists,
+    nam: &crate::detail::device_widgets::Lists,
 ) -> bool {
     // The panel answers a right-click with its menu (the device's remove); its label is the
     // screen-reader and test name the chain drew for it before. A click selects the device, so
@@ -916,6 +905,14 @@ fn device_panel(
         }
     }
     let kind_width = widgets::text_width(ui, &device.kind, theme::ui_font(theme::TEXT_TINY));
+    // What a canvas's device widgets read: the device's own state (its name, whether it
+    // runs, the file it is set) and, for a file-backing device, the folders' lists.
+    let state = crate::detail::device_widgets::PanelState {
+        name: device.name.clone(),
+        enabled: device.enabled,
+        file: device.file.as_deref().unwrap_or(""),
+        lists: Some(nam),
+    };
     // A built-in's header controls sit left of its maker, and the name gives way to them.
     let strip = device.graph.as_ref().and_then(|graph| graph.header.as_ref().map(|strip| (graph, strip)));
     let mut name_right = kind_right - PAD - kind_width;
@@ -923,7 +920,7 @@ fn device_panel(
         let size = Vec2::new(strip.size[0], strip.size[1]);
         let left = (name_right - size.x).max(name_left + 120.0);
         let place = Rect::from_min_size(Pos2::new(left, header.center().y - size.y / 2.0), size);
-        crate::detail::device_canvas::show(ui, place, strip, &graph.parameters, track, &device.at, actions);
+        crate::detail::device_canvas::show(ui, place, strip, &state, &graph.parameters, track, &device.at, actions);
         name_right = place.left() - PAD;
     }
     let name =
@@ -942,19 +939,6 @@ fn device_panel(
         Pos2::new(rect.left() + PAD, header.bottom() + PAD),
         Pos2::new(rect.right() - PAD, rect.bottom() - PAD),
     );
-    match device.file_device {
-        Some("nam-amp-modeler") => {
-            crate::detail::nam_panel::show_amp(ui, body, track, device, nam, actions);
-            outline(painter);
-            return clicked;
-        }
-        Some("nam-cab-loader") => {
-            crate::detail::nam_panel::show_cab(ui, body, track, device, nam, actions);
-            outline(painter);
-            return clicked;
-        }
-        _ => {}
-    }
     if let Some(plugin) = &device.plugin {
         let color = match plugin.state {
             PluginState::Crashed => theme::recording(),
@@ -975,7 +959,7 @@ fn device_panel(
         {
             let list = Rect::from_min_max(Pos2::new(body.left(), rect.top() + EDITOR_TOP), body.max);
             if list.height() >= PARAM_ROW {
-                graph_controls(ui, list, graph, list_height(device, graph), track, &device.at, actions);
+                graph_controls(ui, list, graph, &state, list_height(device, graph), track, &device.at, actions);
             }
         }
         outline(painter);
@@ -999,7 +983,7 @@ fn device_panel(
         return clicked;
     }
     if let Some(graph) = &device.graph {
-        graph_controls(ui, body, graph, list_height(device, graph), track, &device.at, actions);
+        graph_controls(ui, body, graph, &state, list_height(device, graph), track, &device.at, actions);
         outline(painter);
         return clicked;
     }

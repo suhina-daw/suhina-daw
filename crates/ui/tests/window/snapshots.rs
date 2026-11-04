@@ -79,6 +79,7 @@ fn render_the_piano_roll() {
 fn render_the_session_window() {
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)
         .wgpu()
@@ -146,6 +147,7 @@ fn render_the_session_window() {
 
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)
         .wgpu()
@@ -203,6 +205,7 @@ fn render_every_built_in_theme() {
     for (id, _) in theme::built_in_themes() {
         let mut harness = Harness::builder()
             .allow_missing_glyphs()
+            .allow_missing_glyphs()
             .with_size(SIZE)
             .wgpu()
             .build_ui_state(|ui, app: &mut App| app.ui(ui), demo_app());
@@ -235,6 +238,7 @@ fn render_the_clip_waveform() {
         let mut app = audio_app();
         app.set_browser_open(false);
         let mut harness = Harness::builder()
+            .allow_missing_glyphs()
             .allow_missing_glyphs()
             .with_size(SIZE)
             .wgpu()
@@ -270,6 +274,7 @@ fn render_the_start_panel() {
         vec!["C:/Music/Suhina/Templates/Beat starter.suhina".into()],
     );
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)

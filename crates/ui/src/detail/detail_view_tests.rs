@@ -410,6 +410,7 @@ fn render_the_authored_control_gallery() {
     let detail = build(&project, Some(TrackId(1)), None);
     let mut harness = egui_kittest::Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size((1180.0, 180.0))
         .with_pixels_per_point(1.0)
         .wgpu()
@@ -435,6 +436,7 @@ fn render_sdk_example_with_stock_controls() {
     });
     let detail = build(&project, Some(TrackId(1)), None);
     let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size((660.0, 340.0))
         .with_pixels_per_point(1.0)
@@ -466,6 +468,7 @@ fn render_sdk_example_in_a_narrow_panel() {
         panic!("expected device chain");
     }
     let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size((660.0, 340.0))
         .with_pixels_per_point(1.0)
@@ -535,7 +538,7 @@ fn a_running_plug_in_shows_the_parameters_it_lists_as_a_generated_list() {
             Some(TrackId(1)),
             None,
             &mut |_, _| Some(listing(status.clone())),
-            crate::detail::nam_panel::Lists::default(),
+            crate::detail::device_widgets::Lists::default(),
         ) else {
             panic!()
         };
@@ -574,7 +577,7 @@ fn automation_replaces_a_plug_ins_listed_text_with_the_value_it_plays() {
         Some(TrackId(1)),
         None,
         &mut |_, _| Some(listing(PluginStatus::Running)),
-        crate::detail::nam_panel::Lists::default(),
+        crate::detail::device_widgets::Lists::default(),
     );
     detail.follow_automation(&project, 4.0);
     let Detail::Devices(chain) = detail else { panic!() };
@@ -630,7 +633,7 @@ fn a_plug_ins_generated_list_sets_its_parameters_by_id() {
         Some(TrackId(1)),
         None,
         &mut |_, _| Some(listing(PluginStatus::Running)),
-        crate::detail::nam_panel::Lists::default(),
+        crate::detail::device_widgets::Lists::default(),
     ) else {
         panic!()
     };
@@ -674,7 +677,7 @@ fn a_plug_in_shows_where_it_stands_and_what_its_button_does() {
             Some(TrackId(1)),
             None,
             &mut |_, _| status.clone().map(|s| report(s, open)),
-            crate::detail::nam_panel::Lists::default(),
+            crate::detail::device_widgets::Lists::default(),
         ) else {
             panic!()
         };
@@ -709,7 +712,7 @@ fn a_clips_ara_editor_lands_in_the_clip_view_or_offers_to_open() {
             Some(TrackId(1)),
             None,
             &mut |_, _| Some(report.clone()),
-            crate::detail::nam_panel::Lists::default(),
+            crate::detail::device_widgets::Lists::default(),
         ) else {
             panic!()
         };
@@ -763,7 +766,7 @@ fn an_embedded_editor_takes_its_room_and_says_where_it_lands() {
         Some(TrackId(1)),
         None,
         &mut |_, _| Some(embedded.clone()),
-        crate::detail::nam_panel::Lists::default(),
+        crate::detail::device_widgets::Lists::default(),
     ) else {
         panic!()
     };
@@ -809,6 +812,7 @@ fn an_embedded_editor_takes_its_room_and_says_where_it_lands() {
     };
     let mut short = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(egui::vec2(600.0, EDITOR_TOP + 50.0 + margin * 2.0))
         .build_ui_state(
             |ui, places: &mut Vec<EditorPlace>| {
@@ -820,6 +824,7 @@ fn an_embedded_editor_takes_its_room_and_says_where_it_lands() {
     short.run();
     assert_eq!((short.state()[0].placement.clip_width, short.state()[0].placement.clip_height), (300, 50));
     let mut none = Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(egui::vec2(600.0, EDITOR_TOP - 1.0 + margin * 2.0))
         .build_ui_state(
@@ -843,7 +848,7 @@ fn the_editor_button_asks_for_the_device_command() {
         Some(TrackId(1)),
         None,
         &mut |_, _| Some(report(PluginStatus::Running, false)),
-        crate::detail::nam_panel::Lists::default(),
+        crate::detail::device_widgets::Lists::default(),
     ) else {
         panic!()
     };
@@ -915,7 +920,7 @@ fn an_embedded_editor_hides_the_list_so_the_list_takes_no_room() {
         Some(TrackId(1)),
         None,
         &mut |_, _| Some(PluginReport { editor_embedded: Some((300, 200)), ..report(PluginStatus::Running, true) }),
-        crate::detail::nam_panel::Lists::default(),
+        crate::detail::device_widgets::Lists::default(),
     ) else {
         panic!()
     };

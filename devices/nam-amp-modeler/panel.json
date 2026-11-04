@@ -1,0 +1,85 @@
+{
+  "ui": {
+    "size": [428, 168],
+    "viewport_size": [428, 168],
+    "accent_on": true,
+    "hidden_parameters": [
+      "inputGain", "eqBass", "eqMid", "eqTreble", "eqMidFreq", "eqOn", "delay", "hq", "outputVolume"
+    ],
+    "controls": [
+      { "id": "pack", "name": "Amp Modeler: pack", "bounds": [0, 0, 384, 22],
+        "widget": { "kind": "device_files", "part": "pack", "what": "model" } },
+      { "id": "previous-pack", "name": "Amp Modeler: previous pack", "bounds": [386, 0, 16, 22],
+        "widget": { "kind": "device_files", "part": "previous_pack", "what": "model" } },
+      { "id": "next-pack", "name": "Amp Modeler: next pack", "bounds": [408, 0, 16, 22],
+        "widget": { "kind": "device_files", "part": "next_pack", "what": "model" } },
+
+      { "id": "switch", "name": "Amp Modeler: device", "bounds": [0, 24, 48, 22],
+        "tooltip": "Click to switch the device off or on", "widget": { "kind": "device_switch" } },
+      { "id": "eq", "name": "Amp Modeler: eq", "bounds": [52, 24, 40, 22],
+        "tooltip": "Click to switch the EQ on or off", "x": { "parameter": "eqOn" },
+        "gesture": "toggle", "widget": { "kind": "button", "label": "EQ" } },
+      { "id": "hq", "name": "Amp Modeler: hq", "bounds": [96, 24, 40, 22],
+        "tooltip": "Click to switch the HQ on or off", "x": { "parameter": "hq" },
+        "gesture": "toggle", "widget": { "kind": "button", "label": "HQ" } },
+      { "id": "mid-freq-name", "name": "Amp Modeler: mid freq", "bounds": [142, 24, 44, 22],
+        "widget": { "kind": "graphic", "drawing": [
+          { "kind": "text", "position": [0, 6], "text": "Mid Freq", "color": [3, 1, 1, 255], "size": 9 }
+        ] } },
+      { "id": "mid-freq", "name": "Amp Modeler: mid freq", "bounds": [193, 24, 182, 22],
+        "tooltip": "Drag or click along the line; Shift for precision; double click resets",
+        "x": { "parameter": "eqMidFreq", "logarithmic": true }, "gesture": "position",
+        "drawing": [
+          { "kind": "rect", "rect": [0, 10, 182, 2], "color": [3, 1, 3, 255], "radius": 1 },
+          { "kind": "path",
+            "points": [
+              [ {"op": "add", "a": 0, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 182}}, 6 ],
+              [ {"op": "add", "a": 5, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 182}}, 11 ],
+              [ {"op": "add", "a": 0, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 182}}, 16 ],
+              [ {"op": "add", "a": -5, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 182}}, 11 ]
+            ],
+            "color": [3, 1, 1, 255], "width": 0.8, "closed": true, "fill": [3, 1, 1, 255] }
+        ] },
+      { "id": "mid-freq-value", "name": "Amp Modeler: mid freq", "bounds": [380, 24, 46, 22],
+        "widget": { "kind": "graphic", "drawing": [
+          { "kind": "text", "position": [0, 6], "text": "", "parameter": "eqMidFreq",
+            "decimals": 0, "align": "left", "format": "frequency", "color": [3, 1, 1, 255], "size": 9 }
+        ] } },
+
+      { "id": "gain", "name": "Amp Modeler: gain", "bounds": [2, 50, 65.7, 84],
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "y": { "parameter": "inputGain" },
+        "widget": { "kind": "dial", "label": "Gain", "decimals": 1, "format": "decibels" } },
+      { "id": "bass", "name": "Amp Modeler: bass", "bounds": [73.7, 50, 65.7, 84],
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "y": { "parameter": "eqBass" },
+        "widget": { "kind": "dial", "label": "Bass", "decimals": 1, "format": "decibels" } },
+      { "id": "mid", "name": "Amp Modeler: mid", "bounds": [145.3, 50, 65.7, 84],
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "y": { "parameter": "eqMid" },
+        "widget": { "kind": "dial", "label": "Mid", "decimals": 1, "format": "decibels" } },
+      { "id": "treble", "name": "Amp Modeler: treble", "bounds": [217, 50, 65.7, 84],
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "y": { "parameter": "eqTreble" },
+        "widget": { "kind": "dial", "label": "Treble", "decimals": 1, "format": "decibels" } },
+      { "id": "delay", "name": "Amp Modeler: delay", "bounds": [288.7, 50, 65.7, 84],
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "y": { "parameter": "delay" },
+        "widget": { "kind": "dial", "label": "Delay", "decimals": 2, "format": "seconds" } },
+      { "id": "volume", "name": "Amp Modeler: volume", "bounds": [360.3, 50, 65.7, 84],
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "y": { "parameter": "outputVolume" },
+        "widget": { "kind": "dial", "label": "Volume", "decimals": 1, "format": "decibels" } },
+
+      { "id": "note", "name": "Amp Modeler: note", "bounds": [0, 136, 422, 10],
+        "widget": { "kind": "device_note" } },
+
+      { "id": "file", "name": "Amp Modeler: model file", "bounds": [0, 146, 384, 22],
+        "widget": { "kind": "device_files", "part": "file", "what": "model" } },
+      { "id": "previous-file", "name": "Amp Modeler: previous file", "bounds": [386, 146, 16, 22],
+        "widget": { "kind": "device_files", "part": "previous_file", "what": "model" } },
+      { "id": "next-file", "name": "Amp Modeler: next file", "bounds": [408, 146, 16, 22],
+        "widget": { "kind": "device_files", "part": "next_file", "what": "model" } }
+    ]
+  }
+}

@@ -444,7 +444,7 @@ impl Output {
     /// sizes the engine cannot render in is asked for none and keeps its own, with a notice.
     pub fn choose(choice: &OutputChoice) -> Result<Self, String> {
         let mut notices = Vec::new();
-        let default_host = cpal::default_host().id();
+        let default_host = devices::default_host_id();
         let host_id = match &choice.host {
             Some(name) => match cpal::available_hosts().into_iter().find(|h| devices::same_name(h.name(), name)) {
                 Some(id) => id,
@@ -458,9 +458,8 @@ impl Output {
         let host = cpal::host_from_id(host_id).map_err(|e| format!("audio host {}: {e}", host_id.name()))?;
         let host_name = host_id.name().to_string();
         let chosen = choice.device.as_ref().and_then(|name| {
-            let found = devices::output_devices(&host)
-                .ok()
-                .and_then(|list| list.into_iter().find(|d| devices::same_name(&d.to_string(), name)));
+            let found =
+                devices::output_devices(&host).ok().and_then(|list| list.into_iter().find(|d| devices::named(d, name)));
             if found.is_none() {
                 notices.push(format!("the audio device {name} is not there; the default output plays"));
             }
@@ -470,7 +469,7 @@ impl Output {
             Some(device) => device,
             None => devices::default_output(&host).ok_or("no audio output device found")?,
         };
-        let device_name = device.to_string();
+        let device_name = devices::name_of(&device).ok_or("the audio output was just disconnected")?;
         let default = device.default_output_config().map_err(|e| format!("audio output {device_name}: {e}"))?;
 
         #[cfg(windows)]
@@ -503,6 +502,20 @@ impl Output {
         }
 
         let mut supported = default;
+        // A sound server converts what it is given, and its own format may be one `build` has no
+        // arm for, so it is given the one the engine renders.
+        let server = devices::server_converts(&host_name);
+        if server && supported.sample_format() != cpal::SampleFormat::F32 {
+            let (channels, rate) = (supported.channels(), supported.sample_rate());
+            let float = device.supported_output_configs().ok().and_then(|mut configs| {
+                configs
+                    .find(|c| c.channels() == channels && c.sample_format() == cpal::SampleFormat::F32)
+                    .and_then(|c| c.try_with_sample_rate(rate))
+            });
+            if let Some(config) = float {
+                supported = config;
+            }
+        }
         if let Some(rate) = choice.sample_rate.filter(|r| *r != supported.sample_rate()) {
             let channels = supported.channels();
             let format = supported.sample_format();
@@ -526,10 +539,15 @@ impl Output {
         if let Some(pair) = choice.cue_pair.filter(|p| cue_channel(Some(*p), supported.channels()).is_none()) {
             let rate = supported.sample_rate();
             let format = supported.sample_format();
+            // A sound server offers every channel count, whatever the device has.
+            let own = supported.channels();
             let fitting: Vec<cpal::SupportedStreamConfigRange> = device
                 .supported_output_configs()
                 .map(|configs| {
-                    configs.filter(|c| (c.min_sample_rate()..=c.max_sample_rate()).contains(&rate)).collect()
+                    configs
+                        .filter(|c| (c.min_sample_rate()..=c.max_sample_rate()).contains(&rate))
+                        .filter(|c| !server || c.channels() == own)
+                        .collect()
                 })
                 .unwrap_or_default();
             let offered: Vec<u16> = fitting.iter().map(cpal::SupportedStreamConfigRange::channels).collect();
@@ -548,7 +566,8 @@ impl Output {
             }
         }
         let range = devices::buffer_range(supported.buffer_size());
-        let fitted = choice.buffer_frames.map(|wanted| devices::fit_for_host(&host_name, wanted, range));
+        let wanted = devices::wanted_buffer(&host_name, choice.buffer_frames, ENGINE_BLOCK as u32);
+        let fitted = wanted.map(|wanted| devices::fit_for_host(&host_name, wanted, range));
         if let (Some(wanted), Some((block, asked))) = (choice.buffer_frames, fitted)
             && let Some(notice) = devices::buffer_notice(&host_name, &device_name, wanted, block, asked, range)
         {
@@ -1092,14 +1111,14 @@ fn chosen_device_present(choice: &OutputChoice) -> bool {
             Some(id) => id,
             None => return false,
         },
-        None => cpal::default_host().id(),
+        None => devices::default_host_id(),
     };
     let Some(device) = &choice.device else { return true };
     if id.name() == "ASIO" && ASIO_OPEN.load(Ordering::Acquire) {
         return false;
     }
     let Ok(host) = cpal::host_from_id(id) else { return false };
-    host.output_devices().is_ok_and(|mut list| list.any(|d| devices::same_name(&d.to_string(), device)))
+    host.output_devices().is_ok_and(|mut list| list.any(|d| devices::named(&d, device)))
 }
 
 /// The background look for the chosen device: one at a time, its answer kept for the next ask.
@@ -1109,11 +1128,30 @@ struct Watch {
     answer: Option<(OutputChoice, bool)>,
 }
 
+/// How long after a look for the devices' names the next one starts.
+const NAMES_LOOK_EVERY: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The background look for the devices' names: one at a time, each [`NAMES_LOOK_EVERY`] at most.
+#[derive(Default)]
+struct NamesWatch {
+    looking: bool,
+    started: Option<std::time::Instant>,
+    answer: Option<Vec<String>>,
+}
+
+impl NamesWatch {
+    /// Whether the next look is due at `now`.
+    fn due(&self, now: std::time::Instant) -> bool {
+        !self.looking && self.started.is_none_or(|started| now.duration_since(started) >= NAMES_LOOK_EVERY)
+    }
+}
+
 /// The system's audio devices for the session ([`AudioSystem`]): the hosts cpal offers here
 /// and opening a project on the device chosen.
 #[derive(Default)]
 pub struct DeviceOutput {
     watch: Arc<std::sync::Mutex<Watch>>,
+    names: Arc<std::sync::Mutex<NamesWatch>>,
 }
 
 impl DeviceOutput {
@@ -1153,6 +1191,27 @@ impl AudioSystem for DeviceOutput {
                 }
             };
             watch.looking = std::thread::Builder::new().name("suhina-device-watch".into()).spawn(look).is_ok();
+        }
+        answer
+    }
+
+    /// Gives the answer of the last look, once, and starts the next one when it is due, on a thread
+    /// of its own, so the caller never waits for the system's device list.
+    fn device_names(&self) -> Option<Vec<String>> {
+        let Ok(mut watch) = self.names.lock() else { return None };
+        let answer = watch.answer.take();
+        let now = std::time::Instant::now();
+        if watch.due(now) {
+            let shared = Arc::clone(&self.names);
+            let look = move || {
+                let names = devices::device_names();
+                if let Ok(mut watch) = shared.lock() {
+                    watch.answer = Some(names);
+                    watch.looking = false;
+                }
+            };
+            watch.started = Some(now);
+            watch.looking = std::thread::Builder::new().name("suhina-device-names".into()).spawn(look).is_ok();
         }
         answer
     }

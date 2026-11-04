@@ -37,6 +37,7 @@ fn a_playing_tracks_meter_moves_and_its_clip_light_turns_off_on_a_click() {
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size((1280.0, 800.0))
         .with_step_dt(1.0 / 60.0)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);

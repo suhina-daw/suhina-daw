@@ -12,6 +12,8 @@ corpus = []
 
 [dependencies]
 suhina-model.workspace = true
+# The VST2 bank format, shared with the plug-in hosts (ADR 0006 decision 8).
+suhina-plugins.workspace = true
 suhina-device-dj-eq.workspace = true
 flate2.workspace = true
 roxmltree.workspace = true

@@ -7,6 +7,8 @@ use super::*;
 
 /// The furthest the piano roll reaches, in beats: the engine's furthest start.
 pub(super) const BEAT_LIMIT: f32 = 120_000.0;
+/// How far Alt and an arrow key moves or resizes notes, in beats: a 1/128 note, finer than any grid.
+const FINE_STEP: f64 = 0.03125;
 
 /// The grid step in beats for the control bar's value; 0 for none.
 pub fn grid_step(quantization: Quantization, bar_beats: f64) -> f64 {
@@ -103,9 +105,9 @@ pub(super) enum Gesture {
     /// Shift and Draw: notes back to back along the row the drag started in
     /// ([`Gestures::draw_run`]).
     DrawRun,
-    /// The selection follows the keys the drag passes over in the key column; `add` keeps the
-    /// rest of the selection, as it was when the click began.
-    KeySelect { add: bool },
+    /// The selection follows the keys from `anchor` to the pointer in the key column; `silent` (Ctrl
+    /// held when it began) plays nothing.
+    KeySelect { anchor: u8, silent: bool },
 }
 
 /// What the piano roll keeps between frames.
@@ -122,6 +124,15 @@ pub struct PianoRollState {
     pub key_height: f32,
     /// Indices of the selected notes.
     pub selected: BTreeSet<usize>,
+    /// What is selected in time, the notes that start in it, and what the copies in a row left
+    /// behind, for an undo to come back to (› Selecting).
+    pub(super) span: Option<TimeSpan>,
+    pub(super) span_notes: BTreeSet<usize>,
+    pub(super) span_undo: Vec<SpanStep>,
+    /// An undo ran since the selection was last settled.
+    pub(super) undone: bool,
+    /// Where a click on an empty spot left the insert mark: where a paste goes, in beats.
+    pub(super) insert_at: Option<f64>,
     /// The last press was in the piano roll, so Delete deletes notes there.
     pub focused: bool,
     /// A key this frame selected notes its command is still to add (paste, duplicate): they
@@ -141,9 +152,22 @@ pub struct PianoRollState {
     pub tools_open: bool,
     /// The toolbar's tool.
     pub tool: Tool,
-    /// Notes moved onto others of the same key and start replace them (Settings; the window sets
-    /// it each frame).
+    /// Notes placed over others of their key replace them: Allow stacked notes off (Settings; the
+    /// window sets it each frame).
     pub notes_replace: bool,
+    /// How the keys look and which of them are named (Settings; the window sets them each frame).
+    pub key_style: crate::settings::PianoKeyStyle,
+    pub key_names: crate::settings::PianoKeyNames,
+    /// A choice made in the corner's menu this frame, for the window to keep.
+    pub view_picked: Option<ViewPick>,
+    /// The range of keys a drag in the key column is choosing, and what the selection was when the
+    /// drag began.
+    pub(super) key_live: Option<(u8, u8)>,
+    pub(super) key_base: BTreeSet<usize>,
+    /// A drag in the scale strip.
+    pub(super) strip_drag: Option<StripDrag>,
+    /// The pointer is where a drag zooms (the strip, the ruler) this frame.
+    pub(crate) magnifier: bool,
     /// The length (0: one grid step) and velocity a new note takes: those of the note last
     /// drawn or clicked.
     pub(super) last_length: f64,
@@ -164,6 +188,11 @@ pub struct PianoRollState {
     /// A grid value picked in the toolbar's grid menu or with its keys this frame, for the window
     /// to keep.
     pub grid_picked: Option<PianoGrid>,
+    /// The clip of a ghost note double-clicked with the right button this frame, for the window to
+    /// open (› Ghost notes).
+    pub open_ghost: Option<ClipRef>,
+    /// The strip's Focus switch: the focus stays on the clip picked first (› Several clips picked).
+    pub focus_first: bool,
     /// The toolbar's Hide editor button was clicked this frame: the window hides the editor.
     pub hide_requested: bool,
     /// The key rows were scrolled by hand (the wheel, a pan, zooming the key height) since the
@@ -197,6 +226,10 @@ pub struct PianoRollState {
     pub(super) audition_pending: Vec<u8>,
     pub(super) audition_off: Option<(u64, f64)>,
     pub(super) audition_sounding: Vec<u8>,
+    /// The notes the selecting rectangle is on, so only those it has just reached sound.
+    pub(super) swept: BTreeSet<usize>,
+    /// A press in the grid holds what it sounds until it is let go.
+    pub(super) audition_press: bool,
     /// Which other clips show as ghost notes, picked in the toolbar's ghost menu; kept until
     /// Suhina closes (› Ghost notes).
     pub ghost_source: GhostSource,
@@ -214,6 +247,11 @@ impl Default for PianoRollState {
             zoom_reach: 0.0,
             key_height: DEFAULT_KEY_HEIGHT,
             selected: BTreeSet::new(),
+            span: None,
+            span_notes: BTreeSet::new(),
+            span_undo: Vec::new(),
+            undone: false,
+            insert_at: None,
             focused: false,
             selecting_new: false,
             gesture: None,
@@ -225,6 +263,13 @@ impl Default for PianoRollState {
             tools_open: true,
             tool: Tool::Select,
             notes_replace: true,
+            key_style: crate::settings::PianoKeyStyle::default(),
+            key_names: crate::settings::PianoKeyNames::default(),
+            view_picked: None,
+            key_live: None,
+            key_base: BTreeSet::new(),
+            strip_drag: None,
+            magnifier: false,
             last_length: 0.0,
             last_velocity: NEW_VELOCITY,
             stroke: Vec::new(),
@@ -234,6 +279,8 @@ impl Default for PianoRollState {
             right_playing: false,
             right_stepped: false,
             grid_picked: None,
+            open_ghost: None,
+            focus_first: false,
             hide_requested: false,
             scrolled_by_hand: false,
             centred_for: 0.0,
@@ -249,6 +296,8 @@ impl Default for PianoRollState {
             audition_pending: Vec::new(),
             audition_off: None,
             audition_sounding: Vec::new(),
+            swept: BTreeSet::new(),
+            audition_press: false,
             ghost_source: GhostSource::default(),
             fold: Fold::default(),
         }
@@ -266,10 +315,10 @@ impl PianoRollState {
         copied: Option<usize>,
     ) -> Option<Action> {
         let action = match button {
-            IconButton::Cut if !self.selected.is_empty() => "selection.cut",
-            IconButton::Copy if !self.selected.is_empty() => "selection.copy",
+            IconButton::Cut if !self.acting().is_empty() => "selection.cut",
+            IconButton::Copy if !self.acting().is_empty() => "selection.copy",
             IconButton::Paste if copied.is_some_and(|n| n > 0) => "selection.paste",
-            IconButton::Duplicate if !self.selected.is_empty() => "selection.duplicate",
+            IconButton::Duplicate if !self.acting().is_empty() => "selection.duplicate",
             _ => return None,
         };
         // What the keys run: the same command with the same params.
@@ -279,12 +328,13 @@ impl PianoRollState {
     /// `note.delete` for the selected notes, when the piano roll has the keyboard and notes are
     /// selected; the selection is then cleared.
     pub fn delete_selected(&mut self) -> Option<Action> {
-        if !self.focused || self.selected.is_empty() {
+        if !self.focused || self.acting().is_empty() {
             return None;
         }
         let mut params = self.shown.clone()?;
-        params["notes"] = json!(self.selected.iter().collect::<Vec<_>>());
+        params["notes"] = json!(self.acting().iter().collect::<Vec<_>>());
         self.selected.clear();
+        self.span_notes.clear();
         Some(Action::new("note.delete", params))
     }
 
@@ -292,19 +342,23 @@ impl PianoRollState {
     /// last settings; `None` when no clip is shown.
     pub fn quantize_selected(&self) -> Option<Action> {
         let mut params = self.shown.clone()?;
-        if !self.selected.is_empty() {
-            params["notes"] = json!(self.selected.iter().collect::<Vec<_>>());
+        if self.acting().is_empty() && self.span.is_some() {
+            return None;
+        }
+        if !self.acting().is_empty() {
+            params["notes"] = json!(self.acting().iter().collect::<Vec<_>>());
         }
         params["grid"] = json!(self.quantize.grid);
         params["amount"] = json!(self.quantize.amount);
         params["ends"] = json!(self.quantize.ends);
+        self.replacing(&mut params);
         Some(Action::new("note.quantize", params))
     }
 
     /// What a key does to the piano roll showing `clip`, when it has the keyboard: the selection
     /// actions change the selection here, the others become a `note.*` command. `playhead` is the
     /// arrangement's playhead in beats, `copied` how many notes `note.paste` would add. `None`
-    /// when the key does nothing here, so copy, cut, paste and duplicate act on the clip instead.
+    /// when the key does nothing here; the window keeps such a key from any other view.
     pub fn key_action(
         &mut self,
         action: &str,
@@ -315,21 +369,30 @@ impl PianoRollState {
         if !self.focused || self.shown.as_ref() != Some(&clip.address) {
             return None;
         }
-        self.selected.retain(|i| *i < clip.notes.len());
-        let chosen: Vec<Note> = self.selected.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
+        if !self.selecting_new {
+            self.settle_selection(&clip.notes);
+        }
+        let acting = self.acting().clone();
+        let chosen: Vec<Note> = acting.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
         let count = clip.notes.len();
         let mut params = clip.address.clone();
         if action == "selection.paste" {
-            // After the selection, or at the playhead when it is inside the clip; else where the
-            // command puts it (right after the copied notes).
+            // In the stretch after a time selection, as far in as the first note was; after the
+            // selection; at the insert mark; at the playhead when it is inside the clip; else where
+            // the command puts it (right after the copied notes).
             let copied = copied?;
+            let first = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
             let end = chosen.iter().map(|n| n.time + n.duration).fold(f64::NEG_INFINITY, f64::max);
-            let time = if end.is_finite() { Some(end) } else { clip.placement.content_beat(playhead) };
+            let time = match &self.span {
+                Some(span) => Some(span.end + if first.is_finite() { first - span.start } else { 0.0 }),
+                None if end.is_finite() => Some(end),
+                None => self.insert_at.or_else(|| clip.placement.content_beat(playhead)),
+            };
             if let Some(time) = time {
                 params["time"] = json!(round_beat(time));
             }
-            self.selected = (count..count.saturating_add(copied)).collect();
-            self.selecting_new = true;
+            self.select_copies((count..count.saturating_add(copied)).collect(), &clip.notes);
+            self.replacing(&mut params);
             return Some(Action::new("note.paste", params));
         }
         match action {
@@ -339,6 +402,7 @@ impl PianoRollState {
             }
             "pianoRoll.deselect" => {
                 self.selected.clear();
+                self.clear_span();
                 return None;
             }
             "pianoRoll.draw" => {
@@ -377,10 +441,13 @@ impl PianoRollState {
             _ if chosen.is_empty() => return None,
             _ => {}
         }
-        params["notes"] = json!(self.selected.iter().collect::<Vec<_>>());
+        params["notes"] = json!(acting.iter().collect::<Vec<_>>());
         let grid = note_grid(clip, self.beat_width);
+        // Each of these says how far it goes, on the grid or off it.
+        let free =
+            matches!(action, "pianoRoll.earlier" | "pianoRoll.later" | "pianoRoll.earlierFine" | "pianoRoll.laterFine");
         let moves = |beats: f64, keys: i32| {
-            let (beats, moved) = move_delta(beats, keys, &chosen, grid, false);
+            let (beats, moved) = move_delta(beats, keys, &chosen, grid, free);
             // A pitch move that does not fit leaves the pitch alone, so no note changes its name.
             (beats, if moved == keys { keys } else { 0 })
         };
@@ -388,29 +455,47 @@ impl PianoRollState {
             "selection.copy" => return Some(Action::new("note.copy", params)),
             "selection.cut" => {
                 self.selected.clear();
+                self.span_notes.clear();
                 return Some(Action::new("note.cut", params));
             }
             "selection.duplicate" => {
-                self.selected = (count..count.saturating_add(chosen.len())).collect();
-                self.selecting_new = true;
+                // A time selection's copies go by its length, so its spacing to the next one stays;
+                // the selected notes' go right after them, the command's own place.
+                if let Some(span) = &self.span {
+                    params["beats"] = json!(round_beat(span.end - span.start));
+                }
+                self.select_copies((count..count.saturating_add(chosen.len())).collect(), &clip.notes);
+                self.replacing(&mut params);
                 return Some(Action::new("note.duplicate", params));
             }
-            "pianoRoll.shorter" | "pianoRoll.longer" => {
-                // By a step; the keys never make a note shorter than one step.
-                let shortest = chosen.iter().map(|n| n.duration).fold(f64::INFINITY, f64::min);
-                let by = if action == "pianoRoll.longer" {
-                    grid.step
-                } else {
-                    (-grid.step).max((grid.step - shortest).min(0.0))
-                };
-                if by == 0.0 || !by.is_finite() {
+            "pianoRoll.shorter" | "pianoRoll.longer" | "pianoRoll.shorterFine" | "pianoRoll.longerFine" => {
+                // To the next or the previous grid line, or a fine step on, per note: one command,
+                // one undo step.
+                let longer = matches!(action, "pianoRoll.longer" | "pianoRoll.longerFine");
+                let fine = matches!(action, "pianoRoll.shorterFine" | "pianoRoll.longerFine");
+                let grid = if fine { TimelineGrid { step: FINE_STEP, snaps: false, ..grid } } else { grid };
+                let mut named = Vec::new();
+                let mut lengths = Vec::new();
+                for &index in &acting {
+                    let Some(note) = clip.notes.get(index) else { continue };
+                    let end = key_step_end(note, &clip.notes, grid, longer, self.notes_replace);
+                    if (end - note.time - note.duration).abs() > EPSILON {
+                        named.push(index);
+                        lengths.push(round_beat(end - note.time));
+                    }
+                }
+                if named.is_empty() {
                     return None;
                 }
-                params["by"] = json!(round_beat(by));
+                params["notes"] = json!(named);
+                params["lengths"] = json!(lengths);
+                self.replacing(&mut params);
                 return Some(Action::new("note.resize", params));
             }
-            "pianoRoll.earlier" => ("note.move", moves(-grid.step, 0).0, 0),
-            "pianoRoll.later" => ("note.move", moves(grid.step, 0).0, 0),
+            "pianoRoll.earlier" => ("note.move", moves(key_step(&chosen, grid, true), 0).0, 0),
+            "pianoRoll.later" => ("note.move", moves(key_step(&chosen, grid, false), 0).0, 0),
+            "pianoRoll.earlierFine" => ("note.move", moves(-FINE_STEP, 0).0, 0),
+            "pianoRoll.laterFine" => ("note.move", moves(FINE_STEP, 0).0, 0),
             "pianoRoll.up" => ("note.move", 0.0, moves(0.0, 1).1),
             "pianoRoll.down" => ("note.move", 0.0, moves(0.0, -1).1),
             "pianoRoll.octaveUp" => ("note.move", 0.0, moves(0.0, 12).1),
@@ -420,9 +505,15 @@ impl PianoRollState {
         if beats == 0.0 && keys == 0 {
             return None;
         }
+        // Past the furthest start the command would refuse it, and nothing may have moved.
+        if chosen.iter().any(|n| n.time + beats > f64::from(BEAT_LIMIT)) {
+            return None;
+        }
         self.audition_moved(&chosen, keys);
+        self.span_moved(beats);
         params["beats"] = json!(round_beat(beats));
         params["semitones"] = json!(keys);
+        self.replacing(&mut params);
         Some(Action::new(id, params))
     }
 
@@ -439,6 +530,7 @@ impl PianoRollState {
     pub fn hide(&mut self) {
         self.shown = None;
         self.selected.clear();
+        self.clear_span();
         self.gesture = None;
         self.focused = false;
         self.quantize_open = false;
@@ -446,6 +538,7 @@ impl PianoRollState {
         self.stroke.clear();
         self.erasing.clear();
         self.audition_pending.clear();
+        self.key_live = None;
     }
 
     /// Keeps `note`'s length and velocity for the next note drawn, and for the key column's
@@ -524,6 +617,29 @@ impl PianoRollState {
         };
         let velocity = f32::from(self.last_velocity) / 127.0;
         Some(Note { time, duration: length, key, velocity, release_velocity: 0.5, channel: 0, muted: false })
+    }
+}
+
+/// Where a grid key leaves the end of `note`. Longer: the next grid line, or the start of the next
+/// note of its key when that comes first and `stops` says it may not be run over; a note already
+/// touching it stays. Shorter: the previous grid line, never less than one step from its start. Off
+/// the grid, a whole step either way.
+pub(super) fn key_step_end(note: &Note, notes: &[Note], grid: TimelineGrid, longer: bool, stops: bool) -> f64 {
+    let end = note.time + note.duration;
+    if longer {
+        let line = if grid.snaps { grid.next_line(end) } else { end + grid.step };
+        if !stops {
+            return line;
+        }
+        let next = notes
+            .iter()
+            .filter(|n| n.key == note.key && n.time > note.time + EPSILON)
+            .map(|n| n.time)
+            .fold(f64::INFINITY, f64::min);
+        if next <= end + EPSILON { end } else { line.min(next) }
+    } else {
+        let line = if grid.snaps { grid.previous_line(end) } else { end - grid.step };
+        line.max(note.time + grid.step).min(end)
     }
 }
 

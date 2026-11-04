@@ -82,6 +82,7 @@ mod sends;
 #[cfg(test)]
 mod sends_tests;
 mod sine;
+pub mod spectrum;
 mod stretch;
 mod swap;
 mod tempo;
@@ -608,6 +609,12 @@ impl Renderer {
         graph.launcher.monitor.running.store(!options.stopped, std::sync::atomic::Ordering::Relaxed);
         let mut meters = meters::MeterWriter::new(sample_rate);
         meters.assign(graph.levels.tracks());
+        // Every chain captures its watched devices' output into the meter monitor's spectrum
+        // rings, on every path that runs its devices (docs/spec/eq.md › The panel › The
+        // analyser).
+        for chain in &mut graph.chains {
+            chain.spectrum = Some(std::sync::Arc::clone(&meters.monitor.spectrum));
+        }
         graph
             .launcher
             .monitor

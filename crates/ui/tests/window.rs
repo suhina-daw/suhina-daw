@@ -90,6 +90,7 @@ pub(super) fn window_with_step(mut app: App, step: f32) -> Harness<'static, App>
     app.set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1 bar"));
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(step)
         .with_max_steps((1.0 / step).ceil() as u64)

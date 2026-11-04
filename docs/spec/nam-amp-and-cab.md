@@ -3,7 +3,7 @@ description: The NAM Amp Modeler and NAM Cab Loader devices: what a .nam model f
 read_when: NAM, Neural Amp Modeler, nam, amp modeler, cab loader, neural amp, .nam file, impulse response, IR, cab, model file, device.setNamFile, nam models folder, IR folder
 type: spec
 status: draft
-last_verified: 2026-10-24
+last_verified: 2026-11-02
 covers:
   - devices/nam-amp-modeler/**
   - devices/nam-cab-loader/**
@@ -263,10 +263,16 @@ are read and validated at command time) — never on the audio thread.
 
 ## The panels
 
-`crates/ui/src/detail` draws Suhina's first built-in device panels — the existing header (the
-square on/off switch, the name, "Suhina") is unchanged, the body is the devices' own drawing,
-laid out as the issue's sketch. Everything interactive is `device.*` commands; labels are as a
-user reads them, and the tests find the panels by them.
+Both panels are `devices/<name>/panel.json` layouts ([ADR 0021] › Amendment: device panels):
+the device-SDK's UI system draws them from the layouts and the device's parameters — the host's
+`DeviceSwitch`, `DeviceFiles` and `DeviceNote` widgets for the body's state, its `Dial` dials
+and `Button` toggles for the parameters, drawn controls for the Mid Freq line and the cab's
+volume lane ([sdk-custom-ui.md](sdk-custom-ui.md) › Reusable functional widgets). The existing
+header (the square on/off switch, the name, "Suhina") is unchanged. Everything interactive is
+`device.*` commands; labels are as a user reads them, and the tests find the panels by them.
+Each canvas is 428 × 168: the panel the chain row draws is 440 points wide (the canvas plus its
+padding) and 200 tall, and everything fits a detail area of its default height, no control over
+another.
 
 Both panels, top to bottom:
 
@@ -280,30 +286,31 @@ Both panels, top to bottom:
    - Choosing a pack loads its first file (`device.setNamFile`, one undo step). Labels:
      "Amp Modeler: pack", "Amp Modeler: previous pack" (next pack); the Cab Loader likewise
      ("Cab Loader: pack").
-2. **The controls area** — knobs with a label over each and the value under it, drawn with the
-   theme's tokens; a drag up or down turns, a double-click returns to the default, arrow keys
-   step when a knob has focus.
+2. **The controls area** — knob dials with a label over each and the value under it, in the
+   canvases' themes; a drag up or down turns, a double-click returns to the default, arrow keys
+   step when a knob has focus. Values read as the SDK's formats write them: dB with one
+   decimal, whole Hz (kHz from 1000), milliseconds two decimals.
    - **The On button** at the Amp Modeler's controls area's top left ("Amp Modeler: device
      on" / "… off"): a bigger copy of the header's square, the same `device.setEnabled`, lit
      while the device runs; both always show the same state.
-   - Amp Modeler: the **EQ** and **HQ** buttons beside the On button, on its row; under them
-     one row of knobs, left to right: **Gain**; **Bass / Mid / Treble** with the **Mid
-     Freq**'s line under them — a line with a diamond handle at the value's place, a drag
-     along it sets the frequency, a click jumps —; **Delay**; **Volume** last. The panel is
-     its own width (440 points) whatever the stock graph every built-in has would give it,
-     and everything fits a detail area of its default height, no control over another.
-   - Cab Loader: the **Phase** (Ø) and **HP** buttons at the top; **Bass / Mid /
-     Treble** with **Mid Freq** under them; **Delay**; a vertical **Volume** slider.
+   - Amp Modeler: the **EQ** and **HQ** buttons beside the On button, on its row, with the
+     **Mid Freq**'s line right of them — the name beside, a line whose diamond a drag sets and
+     a click jumps, the value past it; under them one row of dials, left to right: **Gain**;
+     **Bass / Mid / Treble**; **Delay**; **Volume** last.
+   - Cab Loader: the **Phase** (Ø) and **HP** buttons at the top; under them one row of
+     dials, left to right: **Delay**; **Bass / Mid / Treble**; **Mid Freq** —; a vertical
+     **Volume** lane at the right, a handle a drag moves and a click jumps, the value under.
    - Toggles are lit when on: On, EQ, HQ, Phase, HP. Labels name the device: "Amp Modeler:
      gain" … "Cab Loader: volume".
 3. **The file row** — the file's own name without its folder or extension ("FNDR BFSR VB Edge WRM2 CAB FREE", #644) in a dropdown
    with the same previous/next steppers; "Choose a model file…" when none is set. Its dropdown
    lists the current pack's files by their shown names. Labels: "Amp Modeler: model file",
    "…previous file", "…next file" (Cab Loader likewise).
-4. **A note row** when the device is not in shape, one line, plain text: "No model — choose one
-   in Amp Modeler: model file", "Model missing: <path>" (the name row falls back to the file's
-   name), or what a file faulted with, from the command's error. An A2 model without quality
-   levels notes "This model has no quality levels" when **HQ** is on.
+4. **A note row** under the controls when the device's file does not run, one line, plain
+   text: "Model missing: <path>" (the name row falls back to the file's name), or what a file
+   faulted with, from the command's error; nothing while it runs and nothing when no file is
+   set — the pack row and the file row say that in their own texts. An A2 model without
+   quality levels notes "This model has no quality levels" when **HQ** is on.
 
 ## States
 
@@ -336,3 +343,4 @@ the panel's Model missing note.
 
 [issue 489]: https://github.com/suhina-daw/suhina-daw/issues/489
 [ADR 0004]: ../decisions/0004-built-in-devices.md
+[ADR 0021]: ../decisions/0021-device-graph-files.md

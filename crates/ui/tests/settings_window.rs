@@ -75,6 +75,7 @@ fn gradient_editor_enables_saves_and_resets_without_editing_the_project() {
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size((1200.0, 1200.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
@@ -135,6 +136,7 @@ fn theme_default_edits_preserve_existing_project_colours_and_opacity_saves() {
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size((1200.0, 900.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
@@ -181,6 +183,7 @@ fn render_themes_gallery_and_editor_for_review() {
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size((1200.0, 900.0))
         .wgpu()
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
@@ -224,6 +227,7 @@ fn theme_cards_keep_the_open_projects_clip_colour() {
     let mut app = App::new();
     app.set_session(Session::new(project), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size((1200.0, 900.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
@@ -552,6 +556,7 @@ fn liquid_sliders_change_independent_saved_strengths_without_restarting() {
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size((1200.0, 850.0))
         .with_step_dt(0.25)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
@@ -638,6 +643,7 @@ fn short_window() -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size(SHORT)
         .with_step_dt(0.25)
