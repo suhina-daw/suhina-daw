@@ -42,7 +42,7 @@ pub(crate) fn project(notes: Vec<Note>, length: f64, devices: Vec<Device>) -> Pr
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -427,7 +427,7 @@ fn a_held_note_ends_when_an_edit_takes_it_away_while_playing() {
     let mut shorter = p.clone();
     for (project, notes) in [(&mut no_note, vec![]), (&mut shorter, vec![note(0.0, 1.5, 69)])] {
         project.contents[0].lanes =
-            vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(notes) }].into();
+            vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(notes.into()) }].into();
     }
     for (name, edited, silent_from) in
         [("clip deleted", &no_clip, 24_000), ("note deleted", &no_note, 24_000), ("note shortened", &shorter, 36_000)]

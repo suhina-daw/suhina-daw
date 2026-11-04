@@ -119,7 +119,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],

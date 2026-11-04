@@ -31,7 +31,8 @@ fn project_built() -> Project {
         id: ContentId(id),
         name: format!("Clip {id}"),
         length: 1.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 0.25, 60, 1.0)]) }].into(),
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 0.25, 60, 1.0)].into()) }]
+            .into(),
         extensions: Extensions::default(),
         scale: None,
     };

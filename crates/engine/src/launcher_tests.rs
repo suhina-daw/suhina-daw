@@ -45,7 +45,7 @@ pub(super) fn notes(id: u32, notes: Vec<Note>) -> ClipContent {
         id: ContentId(id),
         name: format!("c{id}"),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
         extensions: Extensions::default(),
         scale: None,
     }

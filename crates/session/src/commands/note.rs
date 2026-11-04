@@ -8,7 +8,7 @@ use super::*;
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.list",
-        label: "List a MIDI clip's notes: index, time and length in beats, key (60 is C3), velocity 1 to 127 and whether it is muted",
+        label: "List a MIDI clip's notes: index, id (which names the note while the project is open, wherever it moves), time and length in beats, key (60 is C3), velocity 1 to 127 and whether it is muted",
         params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
         kind: CommandKind::READ,
         run: notes::list,
@@ -16,7 +16,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.add",
-        label: "Add notes to a MIDI clip; they go after its other notes, and the result gives their indices",
+        label: "Add notes to a MIDI clip; they go after its other notes, and the result gives their indices and ids",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -30,7 +30,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.delete",
-        label: "Delete notes of a MIDI clip; later notes move up in the list",
+        label: "Delete notes of a MIDI clip; later notes move up in the list and keep their ids",
         params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
         kind: CommandKind::EDIT,
         run: notes::delete,
@@ -108,7 +108,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
-            optional("notes", ParamType::Integers, "note indices, from note.list; every note when left out"),
+            NOTE_SELECTION,
             param("grid", ParamType::Text, "the grid, as launcher.setQuantization takes it: 1/16, 1/8T, 1 bar, ..."),
             optional("amount", ParamType::Number, "how far towards the line, 0 to 100 percent (default 100: onto it)"),
             optional("ends", ParamType::Bool, "also move each note's end to the nearest line (default false)"),
@@ -135,7 +135,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.paste",
-        label: "Add the copied notes to a MIDI clip, keeping their spacing; the result gives their indices",
+        label: "Add the copied notes to a MIDI clip, keeping their spacing; the result gives their indices and ids",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -153,7 +153,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.duplicate",
-        label: "Add a copy of notes of a MIDI clip right after their end, or beats and semitones away; the result gives the copies' indices",
+        label: "Add a copy of notes of a MIDI clip right after their end, or beats and semitones away; the result gives the copies' indices and ids",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -169,7 +169,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.split",
-        label: "Split notes of a MIDI clip at a beat, each note that spans it into two; the result gives the new notes' indices",
+        label: "Split notes of a MIDI clip at a beat, each note that spans it into two; the result gives the new notes' indices and ids; each first half keeps its note's id",
         params: &[
             CLIP_TRACK,
             CLIP,

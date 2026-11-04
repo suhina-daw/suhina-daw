@@ -1131,15 +1131,18 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
         extensions: Default::default(),
         lanes: vec![ContentLane {
             target: None,
-            data: LaneData::Notes(vec![Note {
-                time: 0.,
-                duration: 0.5,
-                key: 60,
-                velocity: 1.,
-                release_velocity: 0.,
-                channel: 0,
-                muted: false,
-            }]),
+            data: LaneData::Notes(
+                vec![Note {
+                    time: 0.,
+                    duration: 0.5,
+                    key: 60,
+                    velocity: 1.,
+                    release_velocity: 0.,
+                    channel: 0,
+                    muted: false,
+                }]
+                .into(),
+            ),
         }]
         .into(),
     });

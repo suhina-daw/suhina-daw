@@ -10,7 +10,7 @@ use super::*;
 pub struct PianoClip {
     /// The params that name the clip in a `note.*` command: `track` and `index` or `scene`.
     pub address: Value,
-    pub notes: Vec<Note>,
+    pub notes: Notes,
     /// Where the part of the content the clip plays ends, in beats (its loop's end when it
     /// loops): the grid past it is shaded.
     pub length: f64,

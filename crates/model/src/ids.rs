@@ -12,7 +12,7 @@
 //! column, then the channels' devices, a group before the devices in it), which is also how a
 //! file written before ids existed gets them.
 //!
-//! Markers, automation points and tempo changes have ids too, held by the lists they are in and
+//! Markers, automation points, tempo changes and notes have ids too, held by the lists they are in and
 //! not written to the file ([`crate::IdList`], #763 › 1).
 //!
 //! Tracks and channels have ids of their own ([`TrackId`], [`ChannelId`]);
@@ -107,6 +107,12 @@ pub struct PointId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TempoPointId(pub u64);
 
+/// Identifies a [`Note`](crate::Note) in its content's notes (#1182). Stays the same when the note
+/// is moved, resized or changed; a copy (paste, duplicate, a split's second half) is a new note.
+/// Given by [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct NoteId(pub u64);
+
 macro_rules! list_ids {
     ($($id:ident),*) => {$(
         impl fmt::Display for $id {
@@ -117,7 +123,7 @@ macro_rules! list_ids {
     )*};
 }
 
-list_ids!(MarkerId, PointId, TempoPointId);
+list_ids!(MarkerId, PointId, TempoPointId, NoteId);
 
 /// The counter has reached the largest id there is: the project can name no more objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

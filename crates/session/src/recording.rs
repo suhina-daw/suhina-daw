@@ -548,7 +548,7 @@ impl Session {
                 if !(length > 0.0 && length.is_finite()) {
                     return Ok(());
                 }
-                (LaneData::Notes(notes_of(&take, length)), length)
+                (LaneData::Notes(notes_of(&take, length).into()), length)
             }
             Some(path) => {
                 let (frames, channels, error) = take.finished.clone().unwrap_or((0, 1, None));
@@ -843,7 +843,7 @@ impl Session {
                     _ => {
                         let played = take.notes.iter().filter_map(|n| in_pass(n, pass, take.start).map(|at| (n, at)));
                         let notes = notes_in(played, pass.length);
-                        (add_content(p, &name, pass.length, LaneData::Notes(notes))?, 0.0, pass.length)
+                        (add_content(p, &name, pass.length, LaneData::Notes(notes.into()))?, 0.0, pass.length)
                     }
                 };
                 suhina_plugins::trace!(

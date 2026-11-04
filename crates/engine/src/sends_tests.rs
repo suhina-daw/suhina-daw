@@ -39,7 +39,7 @@ fn sending(level: f64, pre_fader: bool, return_devices: Vec<Device>) -> Project 
             length: 1.0,
             lanes: vec![ContentLane {
                 target: None,
-                data: LaneData::Notes(vec![crate::chain_tests::note(0.0, 1.0, 69)]),
+                data: LaneData::Notes(vec![crate::chain_tests::note(0.0, 1.0, 69)].into()),
             }]
             .into(),
             extensions: Extensions::default(),

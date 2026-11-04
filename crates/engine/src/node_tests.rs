@@ -58,7 +58,7 @@ fn tree(group_devices: Vec<Device>, premaster_devices: Vec<Device>, master_devic
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 1.0, 69)]) }].into(),
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 1.0, 69)].into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],

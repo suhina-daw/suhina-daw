@@ -64,7 +64,7 @@ fn edited(h: &Harness<'static, App>) -> (Vec<Note>, Option<Scale>) {
     assert_eq!(clip.start, 64.0);
     let content = project.content(clip.content).unwrap();
     let notes = match &content.lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     };
     (notes, content.scale)

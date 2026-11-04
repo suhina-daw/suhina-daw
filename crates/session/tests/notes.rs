@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use suhina_model::*;
 use suhina_session::{MAX_NOTES_PER_COMMAND, Session};
 
-use crate::support::run;
+use crate::support::{run, without_ids};
 
 fn note(time: f64, key: u8) -> Note {
     Note::new(time, 1.0, key, 100.0 / 127.0)
@@ -43,7 +43,7 @@ fn project_built() -> Project {
         content: ContentKinds { notes: true, audio: true },
         ..Track::new(TrackId(id), name)
     };
-    let notes = |n: Vec<Note>| ContentLane { target: None, data: LaneData::Notes(n) };
+    let notes = |n: Vec<Note>| ContentLane { target: None, data: LaneData::Notes(n.into()) };
     let audio = AudioRegion::new("a.wav");
     Project {
         tracks: vec![track(1, "Keys"), track(2, "Drums")],
@@ -51,7 +51,10 @@ fn project_built() -> Project {
             content(1, vec![notes(vec![note(0.0, 60), note(1.0, 64), note(2.0, 67)])]),
             content(2, Vec::new()),
             content(3, vec![ContentLane { target: None, data: LaneData::Audio(audio) }]),
-            content(4, vec![ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.0, 36)]) }]),
+            content(
+                4,
+                vec![ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.0, 36)].into()) }],
+            ),
             content(5, vec![notes(vec![note(0.5, 48)])]),
         ],
         arrangement: Arrangement {
@@ -82,7 +85,7 @@ fn notes(session: &Session, content: u32) -> Vec<Note> {
         .lanes
         .iter()
         .find_map(|l| match &l.data {
-            LaneData::Notes(n) => Some(n.clone()),
+            LaneData::Notes(n) => Some(n.to_vec()),
             LaneData::Audio(_) => None,
         })
         .unwrap_or_default()
@@ -98,10 +101,10 @@ fn undoes(session: &mut Session, content: u32, before: &[Note]) {
 fn notes_are_listed_with_midi_velocities() {
     let mut session = Session::new(project());
     let listed = run(&mut session, "note.list", json!({ "track": "Keys", "index": 0 })).unwrap();
-    assert_eq!(
-        listed[1],
-        json!({ "index": 1, "time": 1.0, "length": 1.0, "key": 64, "velocity": 100, "muted": false })
-    );
+    let mut second = listed[1].clone();
+    let id = second.as_object_mut().and_then(|n| n.remove("id"));
+    assert!(id.as_ref().is_some_and(Value::is_u64), "each note has an id: {:?}", listed[1]);
+    assert_eq!(second, json!({ "index": 1, "time": 1.0, "length": 1.0, "key": 64, "velocity": 100, "muted": false }));
     assert_eq!(listed.as_array().map(Vec::len), Some(3));
     // An empty MIDI clip has none; a slot's clip is named by its scene.
     assert_eq!(run(&mut session, "note.list", json!({ "track": 1, "index": 1 })).unwrap(), json!([]));
@@ -122,7 +125,7 @@ fn adding_appends_notes_and_undoes() {
         ] }),
     )
     .unwrap();
-    assert_eq!(added, json!({ "added": [3, 4], "count": 5 }));
+    assert_eq!(without_ids(&added), json!({ "added": [3, 4], "count": 5 }));
     let now = notes(&session, 1);
     assert_eq!(&now[..3], &before[..]);
     assert_eq!((now[3].time, now[3].duration, now[3].key), (3.0, 0.5, 72));
@@ -146,7 +149,7 @@ fn deleting_removes_the_notes_and_later_ones_move_up() {
     let mut session = Session::new(project());
     let before = notes(&session, 1);
     let result = run(&mut session, "note.delete", json!({ "track": 1, "index": 0, "notes": [2, 0, 2] })).unwrap();
-    assert_eq!(result, json!({ "deleted": [0, 2], "count": 1 }));
+    assert_eq!(without_ids(&result), json!({ "deleted": [0, 2], "count": 1 }));
     assert_eq!(notes(&session, 1), [before[1]]);
     undoes(&mut session, 1, &before);
 }
@@ -178,7 +181,7 @@ fn a_moved_note_with_replace_takes_the_place_of_the_one_it_lands_on() {
     let before = notes(&session, 1);
     // Note 1 (beat 1, key 64) onto note 2 (beat 2, key 67).
     let moved = json!({ "track": 1, "index": 0, "notes": [1], "beats": 1.0, "semitones": 3, "replace": true });
-    assert_eq!(run(&mut session, "note.move", moved).unwrap(), json!({ "notes": [1], "replaced": [2] }));
+    assert_eq!(without_ids(&run(&mut session, "note.move", moved).unwrap()), json!({ "notes": [1], "replaced": [2] }));
     assert_eq!(notes(&session, 1).len(), before.len() - 1);
     undoes(&mut session, 1, &before);
     // Without replace they stack; a "move" by nothing then covers nothing.
@@ -442,8 +445,8 @@ fn a_shared_pattern_stays_shared_when_edited() {
     p.contents.push(content(
         6,
         vec![
-            ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 60)]) },
-            ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(1.0, 36)]) },
+            ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 60)].into()) },
+            ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(1.0, 36)].into()) },
         ],
     ));
     p.arrangement.lanes[0].clips.extend([clip(6, 16.0), clip(6, 20.0)]);
@@ -491,7 +494,7 @@ fn copied_notes_paste_with_their_spacing_after_the_copy_or_at_a_time() {
     assert!(!session.can_undo());
     // Without a time: right after the copied notes (they spanned beats 1 to 3).
     let pasted = run(&mut session, "note.paste", json!({ "track": 1, "index": 0 })).unwrap();
-    assert_eq!(pasted, json!({ "added": [3, 4], "count": 5 }));
+    assert_eq!(without_ids(&pasted), json!({ "added": [3, 4], "count": 5 }));
     let now = notes(&session, 1);
     assert_eq!((now[3].time, now[3].key), (3.0, 64));
     assert_eq!((now[4].time, now[4].key), (4.0, 67));
@@ -510,7 +513,7 @@ fn cutting_copies_and_deletes_in_one_undo_step() {
     let mut session = Session::new(project());
     let before = notes(&session, 1);
     let cut = run(&mut session, "note.cut", json!({ "track": 1, "index": 0, "notes": [0] })).unwrap();
-    assert_eq!(cut, json!({ "deleted": [0], "count": 2 }));
+    assert_eq!(without_ids(&cut), json!({ "deleted": [0], "count": 2 }));
     assert_eq!(notes(&session, 1), &before[1..]);
     undoes(&mut session, 1, &before);
     // The cut note stays copied after the undo.
@@ -523,7 +526,7 @@ fn duplicating_puts_the_copy_right_after_the_notes() {
     let mut session = Session::new(project());
     let before = notes(&session, 1);
     let result = run(&mut session, "note.duplicate", json!({ "track": 1, "index": 0, "notes": [0, 1] })).unwrap();
-    assert_eq!(result, json!({ "added": [3, 4], "count": 5 }));
+    assert_eq!(without_ids(&result), json!({ "added": [3, 4], "count": 5 }));
     let now = notes(&session, 1);
     assert_eq!(now.iter().skip(3).map(|n| (n.time, n.key)).collect::<Vec<_>>(), [(2.0, 60), (3.0, 64)]);
     // Duplicate leaves the clipboard alone.
@@ -600,7 +603,7 @@ fn splitting_cuts_each_note_that_spans_the_beat_in_two() {
     let kept = notes(&session, 1);
     let cut = run(&mut session, "note.split", json!({ "track": 1, "index": 0, "notes": [0, 3], "at": 1.5 })).unwrap();
     // Only the note that spans 1.5 (0.5 to 2.5) is cut: note 0 ends exactly at 1.0.
-    assert_eq!(cut, json!({ "notes": [4], "count": 1 }));
+    assert_eq!(without_ids(&cut), json!({ "notes": [4], "count": 1 }));
     let now = notes(&session, 1);
     assert_eq!(now.len(), 5);
     assert_eq!((now[3].time, now[3].duration, now[3].key), (0.5, 1.0, 48));

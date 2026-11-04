@@ -40,7 +40,7 @@ pub fn is_project_file(path: &std::path::Path) -> bool {
     path.extension().is_some_and(|e| e.eq_ignore_ascii_case(PROJECT_EXTENSION))
 }
 pub use id_list::{Entry, IdList, ListId};
-pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, PointId, SceneId, TempoPointId};
+pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, NoteId, PointId, SceneId, TempoPointId};
 
 mod launch;
 mod mapping;
@@ -486,9 +486,16 @@ pub struct ContentLane {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LaneData {
-    Notes(Vec<Note>),
+    /// The notes, each with an id while the project is open (#1182): [`Notes`].
+    Notes(Notes),
     Audio(AudioRegion),
 }
+
+/// A content's notes, each with its id (#1182). The id belongs to the list, not the [`Note`]: a
+/// copied note is a new one, a moved note keeps its id, and the file holds none
+/// ([`IdList`], ADR 0025 › Decided since). A content copied whole keeps its notes' ids, which is
+/// no clash, since a note is always named with its clip.
+pub type Notes = IdList<NoteId, Note>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Note {

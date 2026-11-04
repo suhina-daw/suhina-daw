@@ -79,7 +79,7 @@ fn project_built() -> Project {
             extensions: Extensions::default(),
         }],
         contents: vec![
-            content(1, LaneData::Notes(vec![note(0.0, 60), note(1.0, 61), note(2.0, 66)])),
+            content(1, LaneData::Notes(vec![note(0.0, 60), note(1.0, 61), note(2.0, 66)].into())),
             content(2, LaneData::Audio(audio)),
         ],
         arrangement: Arrangement {

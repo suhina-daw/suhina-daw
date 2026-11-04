@@ -270,8 +270,22 @@ open** (#763 › 1). A command that takes a marker's `index`, a lane's `point` o
 tempo change's `point` takes `{"id": n}` in its place, found where it is now; `project.markers`,
 `automation.list` and `tempo.points` list each one's `id`, and the commands that add one return it.
 A copy is a new object: `assign_ids` gives the later of two with one id a new one. Two points are
-equal without their ids, so a range tool that draws a line again as it was changes nothing. Notes
-stay named by their index in a clip, out of scope for this (#763 › 1).
+equal without their ids, so a range tool that draws a line again as it was changes nothing.
+
+Decided since: **notes too, in the same way** (#1182). A content's notes are an
+`IdList<NoteId, Note>` (`suhina_model::Notes`), and every `note.*` command that names notes takes
+`{"id": n}` for one in place of its index; `note.list` gives each note's `id` beside its index, and
+the commands that make notes (`note.add`, `note.paste`, `note.duplicate`, `note.split`) return the
+new ones as `ids`. A note changed or moved in place keeps its id; a note an edit makes is a new one
+(a split's first half keeps the note's id, its second half is new). A content copied whole (a clip
+given its own copy, a duplicated clip) keeps its notes' ids, which is no clash, since a note is
+always named with its clip. Note ids are not written to the file either, so `.suhina` stays at
+version 8: per-note expression puts its curves on the note itself and an ARA archive names clips
+and contents, not notes. A version merge ([ADR 0023](0023-collaboration-and-project-versions.md),
+[ADR 0027](0027-merge-and-versions.md)) is the one thing that would need saved note ids, and that
+waits for the merge decision; the proposal for then is ids counted per content, saved in the file.
+The piano roll keeps its selection on its notes by id, so another writer's edit between two frames
+does not move it to other notes.
 
 Their ids are **not written to the file**. The rule: **an id is saved when something refers to its
 object across a save** — another part of the file (a clip's `content`, a macro mapping's
@@ -283,9 +297,9 @@ a point is a sample of a curve rather than an object with an identity in the mus
 are for — a command from an earlier read not hitting the wrong object — lasts as long as the
 project is open. Saving them later, if a merge comes to need it, is a format version like any other.
 
-**The id is held by the list, not by the value** (`suhina_model::IdList`). A marker, a point or a
-tempo change is its beat, value and so on; which one it is belongs to the list it is in (the
-arrangement's markers, a lane's points, the tempo map's changes). A value can be copied freely —
+**The id is held by the list, not by the value** (`suhina_model::IdList`). A marker, a point, a
+tempo change or a note is its beat, value and so on; which one it is belongs to the list it is in
+(the arrangement's markers, a lane's points, the tempo map's changes, a content's notes). A value can be copied freely —
 paste, duplicate and the range tools copy them all the time — and copying it copies no id. The
 only ways into a list give a new id (adding a value), or keep the id of an entry taken out of that
 list (a move: `take`, then `put`), and an entry cannot be copied; an entry whose id the list

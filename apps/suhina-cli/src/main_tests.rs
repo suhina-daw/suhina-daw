@@ -22,7 +22,7 @@ fn a_project_files_device_params_reach_the_render() {
                 id: ContentId(1),
                 name: "c".into(),
                 length: 2.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             }],

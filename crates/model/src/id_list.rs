@@ -1,8 +1,8 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A list that holds the ids of what is in it (#763 › 1): markers, automation points and tempo
-//! changes.
+//! A list that holds the ids of what is in it (#763 › 1): markers, automation points, tempo
+//! changes and a content's notes (#1182).
 //!
 //! The id is not part of the value. A marker, a point or a tempo change is its beat, value and
 //! so on; which one it is belongs to the list it is in. So copying a value copies no id, and the
@@ -20,13 +20,14 @@
 
 use std::fmt;
 use std::ops::{Deref, Index, IndexMut, Range};
+use std::slice::SliceIndex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The next id any [`IdList`] hands out. Starts at 1, so 0 is never an id.
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
-/// The id of what an [`IdList`] holds. Implemented by [`crate::MarkerId`], [`crate::PointId`] and
-/// [`crate::TempoPointId`].
+/// The id of what an [`IdList`] holds. Implemented by [`crate::MarkerId`], [`crate::PointId`],
+/// [`crate::TempoPointId`] and [`crate::NoteId`].
 pub trait ListId: Copy + Eq + std::hash::Hash + fmt::Debug {
     /// An id never handed out before.
     fn fresh() -> Self;
@@ -42,7 +43,7 @@ macro_rules! list_id {
     )*};
 }
 
-list_id!(MarkerId, PointId, TempoPointId);
+list_id!(MarkerId, PointId, TempoPointId, NoteId);
 
 /// A value taken out of an [`IdList`] with its id, to be put back where it belongs
 /// ([`IdList::put`]): how an edit moves an object without it becoming another. It cannot be
@@ -78,15 +79,18 @@ pub struct IdList<I, T> {
 
 impl<I, T> Default for IdList<I, T> {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<I, T> IdList<I, T> {
+    /// An empty list; `const`, so an empty list can be a `static`.
+    pub const fn new() -> Self {
         Self { ids: Vec::new(), values: Vec::new() }
     }
 }
 
 impl<I: ListId, T> IdList<I, T> {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// The id of the value at `index`.
     pub fn id(&self, index: usize) -> Option<I> {
         self.ids.get(index).copied()
@@ -257,16 +261,17 @@ impl<I, T> Deref for IdList<I, T> {
     }
 }
 
-impl<I, T> Index<usize> for IdList<I, T> {
-    type Output = T;
-    fn index(&self, index: usize) -> &T {
+impl<I, T, X: SliceIndex<[T]>> Index<X> for IdList<I, T> {
+    type Output = X::Output;
+    /// The value at `index`, or the values in a range, as a slice is indexed.
+    fn index(&self, index: X) -> &X::Output {
         &self.values[index]
     }
 }
 
-impl<I, T> IndexMut<usize> for IdList<I, T> {
-    /// The value at `index`, to change; its id stays.
-    fn index_mut(&mut self, index: usize) -> &mut T {
+impl<I, T, X: SliceIndex<[T]>> IndexMut<X> for IdList<I, T> {
+    /// The value at `index` (or the values in a range), to change; the ids stay.
+    fn index_mut(&mut self, index: X) -> &mut X::Output {
         &mut self.values[index]
     }
 }

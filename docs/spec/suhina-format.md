@@ -53,8 +53,8 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
   `id` in the file is moved past them; one beyond 32 bits is refused, and so is a file whose
   counter runs out before every object has an id. Writing ids always, so a reader never derives
   them, is the version after 3 ([ADR 0026](../decisions/0026-project-folder-and-package.md) › 10).
-- Markers, automation points and tempo changes have ids only while the project is open, and the
-  file holds none: nothing refers to one of them across a save
+- Markers, automation points, tempo changes and notes have ids only while the project is open,
+  and the file holds none: nothing refers to one of them across a save
   ([ADR 0025](../decisions/0025-object-identity.md) › Decided since). A reader gives them new
   ones and ignores an `id` a file has on one.
 - `extensions` (on the project, a track, channel, device, content or clip) is a list of

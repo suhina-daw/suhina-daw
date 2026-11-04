@@ -52,15 +52,18 @@ fn project_built() -> Project {
         length: 1.0,
         lanes: vec![ContentLane {
             target: None,
-            data: LaneData::Notes(vec![Note {
-                time: 0.0,
-                duration: 0.25,
-                key,
-                velocity: 1.0,
-                release_velocity: 0.5,
-                channel: 0,
-                muted: false,
-            }]),
+            data: LaneData::Notes(
+                vec![Note {
+                    time: 0.0,
+                    duration: 0.25,
+                    key,
+                    velocity: 1.0,
+                    release_velocity: 0.5,
+                    channel: 0,
+                    muted: false,
+                }]
+                .into(),
+            ),
         }]
         .into(),
         extensions: Extensions::default(),

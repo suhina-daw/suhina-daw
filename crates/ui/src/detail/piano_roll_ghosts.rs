@@ -382,7 +382,7 @@ fn notes_of<'a>(project: &'a Project, track: TrackId, clip: &Clip) -> Option<&'a
         return None;
     }
     content.lanes.iter().filter(|l| l.target.is_none_or(|t| t == track)).find_map(|l| match &l.data {
-        LaneData::Notes(notes) => Some(notes.as_slice()),
+        LaneData::Notes(notes) => Some(&notes[..]),
         LaneData::Audio(_) => None,
     })
 }

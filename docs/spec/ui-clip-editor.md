@@ -1035,16 +1035,25 @@ stays the same when the clip or the clips around it move
 way. The older form, `track` with `index` (an arrangement clip's place on its track) or `scene`
 (the clip in the track's slot of that scene, from 0), still works and is deprecated, except that
 a slot's clip may still be named by its `scene`. The clip must be a MIDI clip: an audio clip, an
-empty slot or a clip that does not exist is an error. Notes are named by their **index** in the clip's notes, as `note.list` returns them; edits
-keep the order (`note.add` appends, `note.delete` removes and the later notes move up), so the
-indices of notes an edit did not delete stay valid. Each command is one undo step and changes
-nothing when it fails.
+empty slot or a clip that does not exist is an error. Notes are named by their **index** in the clip's notes, as `note.list` returns them, or
+by their **id**, `{"id": n}`, which names a note wherever it is now, after another writer has
+added, deleted or moved notes (#1182; [ADR 0025](../decisions/0025-object-identity.md) › Decided
+since). The two can be mixed in one list. Edits keep the order (`note.add` appends, `note.delete`
+removes and the later notes move up), so the indices of notes an edit did not delete stay valid;
+a note changed or moved keeps its id, and a note an edit makes (added, pasted, duplicated, a
+split's second half) is a new one, whose id the result gives as `ids`. Ids live while the project
+is open: the file holds none, and a project opened again has new ones. Each command is one undo
+step and changes nothing when it fails.
+
+The piano roll keeps its selection on the notes it was on: when another writer (an agent, a
+script, undo) adds or deletes notes before them, the selection moves with them, and a selected
+note another writer deletes leaves it.
 
 | Command | Params | Does |
 |---|---|---|
-| `note.list` | `clip` (or `track` with `index` or `scene`) | The clip's notes: index, time, length, key, velocity (1 to 127) |
-| `note.add` | clip, `notes`: a list of `{time, length, key, velocity?}` | Adds notes (velocity 100 when left out); returns their indices |
-| `note.delete` | clip, `notes`: a list of indices | Deletes them |
+| `note.list` | `clip` (or `track` with `index` or `scene`) | The clip's notes: index, id, time, length, key, velocity (1 to 127) |
+| `note.add` | clip, `notes`: a list of `{time, length, key, velocity?}` | Adds notes (velocity 100 when left out); returns their indices and ids |
+| `note.delete` | clip, `notes`: a list of indices or `{"id": n}` | Deletes them; returns their indices and ids |
 | `note.move` | clip, `notes`, `beats?`, `semitones?` | Moves them in time and in pitch |
 | `note.resize` | clip, `notes`, `length?`, `by?` or `startBy?` | Sets their length, changes it by `by` beats, or moves each start by `startBy` beats and keeps each end (the left edge); one of the three |
 | `note.setVelocity` | clip, `notes`, `velocity?`, `by?` or `velocities?` | Sets their velocity, changes it by `by` (each kept within 1 to 127), or gives each note its own: `velocities` is one value, 1 to 127, per entry of `notes`, in the same order (a repeated index takes its last); one of the three |
@@ -1060,9 +1069,9 @@ nothing when it fails.
 | `note.rampVelocity` | clip, `notes?`, `from`, `to` | Sets the velocities from `from` to `to` (1 to 127) across the notes in time order, evenly spaced; one note takes `to`; returns the indices |
 | `note.copy` | clip, `notes` | Copies them to the note clipboard; changes nothing and is no undo step |
 | `note.cut` | clip, `notes` | Copies them and deletes them |
-| `note.paste` | clip, `time?` | Adds the copied notes, the first at `time` (default: right after the copied notes); returns their indices |
-| `note.duplicate` | clip, `notes`, `beats?`, `semitones?` | Adds a copy right after the notes' end; with `beats` or `semitones`, that far from the notes instead (a copy made by dragging; the copies keep length, velocity and mute). Returns the copies' indices |
-| `note.split` | clip, `notes`, `at` | Splits each named note that spans the beat `at` into two at `at`; a note that starts or ends at `at` is left alone; returns the indices the splits made |
+| `note.paste` | clip, `time?` | Adds the copied notes, the first at `time` (default: right after the copied notes); returns their indices and ids |
+| `note.duplicate` | clip, `notes`, `beats?`, `semitones?` | Adds a copy right after the notes' end; with `beats` or `semitones`, that far from the notes instead (a copy made by dragging; the copies keep length, velocity and mute). Returns the copies' indices and ids |
+| `note.split` | clip, `notes`, `at` | Splits each named note that spans the beat `at` into two at `at`; a note that starts or ends at `at` is left alone; the first half keeps the note's id; returns the indices and ids of the second halves |
 | `clip.scale` | clip | The clip's scale, `{ "root": "D", "mode": "dorian" }` or `null`, and the project's `default_scale` the same way; changes nothing |
 | `clip.setScale` | clip, `root?`, `mode?`, `off?` | Sets the clip's scale: `root` (a key name such as `"C"`, `"F#"` or `"Bb"`, or 0 to 11) and `mode` (one of the names `note.fitToScale` takes as `scale`), the one left out kept from the scale the clip has (C, major when it has none); `off: true` clears it, and is an error with `root` or `mode`; one of them is needed. A content other clips play is copied for this clip first (› Scale and key). Returns the scale and whether it changed; the same scale again changes nothing and is no undo step |
 | `project.setDefaultScale` | `root?`, `mode?`, `off?` | The same for the scale new MIDI clips take; clips that exist keep theirs |

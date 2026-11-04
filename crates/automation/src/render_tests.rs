@@ -20,8 +20,11 @@ fn project() -> Project {
             id: ContentId(1),
             name: "Beat".into(),
             length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 0.25, 36, 1.0)]) }]
-                .into(),
+            lanes: vec![ContentLane {
+                target: None,
+                data: LaneData::Notes(vec![Note::new(0.0, 0.25, 36, 1.0)].into()),
+            }]
+            .into(),
             extensions: Extensions::default(),
             scale: None,
         }],

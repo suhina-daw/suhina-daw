@@ -180,10 +180,13 @@ fn everything() -> Project {
                 length: 8.0,
                 lanes: vec![ContentLane {
                     target: None,
-                    data: LaneData::Notes(vec![
-                        Note::new(0.0, 1.0, 60, 0.75),
-                        Note { release_velocity: 0.0, channel: 15, ..Note::new(1.5, 0.25, 127, 1.0) },
-                    ]),
+                    data: LaneData::Notes(
+                        vec![
+                            Note::new(0.0, 1.0, 60, 0.75),
+                            Note { release_velocity: 0.0, channel: 15, ..Note::new(1.5, 0.25, 127, 1.0) },
+                        ]
+                        .into(),
+                    ),
                 }]
                 .into(),
                 extensions: ext("MidiClip"),
@@ -323,6 +326,54 @@ fn markers_points_and_tempo_changes_are_written_without_ids() {
     assert_ne!(read.arrangement.markers.id(0), Some(suhina_model::MarkerId(500)));
 }
 
+/// Notes have ids only while the project is open too (#1182): the file holds none, so its version
+/// does not change, a read project writes the same file, and each read gives every note a new id.
+#[test]
+fn notes_are_written_without_ids_and_read_with_new_ones() {
+    let project = everything();
+    let notes_in = |p: &Project| -> Vec<suhina_model::Notes> {
+        p.contents
+            .iter()
+            .flat_map(|c| c.lanes.iter())
+            .filter_map(|l| match &l.data {
+                LaneData::Notes(notes) => Some(notes.clone()),
+                LaneData::Audio(_) => None,
+            })
+            .collect()
+    };
+    assert!(notes_in(&project).iter().any(|n| !n.is_empty()), "the fixture holds notes");
+    let text = to_json(&project);
+    let file: Value = serde_json::from_str(&text).unwrap();
+    for content in file["project"]["contents"].as_array().unwrap() {
+        for lane in content["lanes"].as_array().unwrap() {
+            let mut notes = lane["notes"].as_array().into_iter().flatten();
+            assert!(notes.all(|n| n.get("id").is_none()), "{lane}");
+        }
+    }
+
+    let read = from_json(&text).unwrap();
+    assert_eq!(to_json(&read), text, "a project read and written again is the same file");
+    let again = from_json(&text).unwrap();
+    let ids =
+        |p: &Project| -> Vec<suhina_model::NoteId> { notes_in(p).iter().flat_map(|n| n.ids().to_vec()).collect() };
+    let (first, second) = (ids(&read), ids(&again));
+    assert_eq!(first.len(), second.len());
+    assert!(first.iter().all(|id| !second.contains(id)), "each read gives new ids");
+
+    // An id a file has on a note anyway (one written by hand) is not taken.
+    let mut file = file;
+    let lane = file["project"]["contents"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .flat_map(|c| c["lanes"].as_array_mut().unwrap().iter_mut())
+        .find(|l| l.get("notes").is_some())
+        .unwrap();
+    lane["notes"][0]["id"] = json!(7);
+    let read = from_json(&file.to_string()).unwrap();
+    assert!(!ids(&read).contains(&suhina_model::NoteId(7)));
+}
+
 /// A channel's cue is written only when on, so a project without one reads and writes as it
 /// did before the cue existed.
 #[test]
@@ -420,7 +471,7 @@ fn an_empty_project_survives_a_round_trip() {
 }
 
 /// The notes of content 1, to change.
-fn notes_of(project: &mut Project) -> Option<&mut Vec<Note>> {
+fn notes_of(project: &mut Project) -> Option<&mut suhina_model::Notes> {
     match &mut project.contents.first_mut()?.lanes.first_mut()?.data {
         LaneData::Notes(notes) => Some(notes),
         LaneData::Audio(_) => None,

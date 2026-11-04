@@ -363,10 +363,19 @@ const SCALE_MODE: Param = optional(
     ParamType::Text,
     "major, minor, harmonicMinor, melodicMinor, dorian, phrygian, lydian, mixolydian, locrian, majorPentatonic, minorPentatonic or blues (default: the scale's mode now, else major)",
 );
-const NOTES: Param = param("notes", ParamType::Integers, "note indices, from note.list; at most 10000");
+/// The notes a `note.*` command names: each by its index or, wherever it has moved since, by its
+/// id (#1182).
+const NOTES: Param = param(
+    "notes",
+    ParamType::Items,
+    "the notes, each its index, from 0, or {\"id\": n} with its id, as in note.list; at most 10000",
+);
 /// The notes a MIDI tool acts on: the named ones, or every note of the clip.
-const NOTE_SELECTION: Param =
-    optional("notes", ParamType::Integers, "note indices, from note.list; every note when left out");
+const NOTE_SELECTION: Param = optional(
+    "notes",
+    ParamType::Items,
+    "the notes, each its index, from 0, or {\"id\": n} with its id, as in note.list; every note when left out",
+);
 const AUTOMATED: Param = param(
     "param",
     ParamType::Text,

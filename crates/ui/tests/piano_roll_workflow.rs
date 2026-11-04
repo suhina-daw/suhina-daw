@@ -73,7 +73,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let project = session.project();
     let clip = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap();
     match &project.content(clip.content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }

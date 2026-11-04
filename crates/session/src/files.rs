@@ -543,7 +543,7 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
             kind: TrackKind::Midi,
             name: EMPTY_CLIP_NAME.into(),
             length,
-            lane: LaneData::Notes(Vec::new()),
+            lane: LaneData::Notes(Default::default()),
             loops: true,
         },
         TrackKind::Audio => Source {
@@ -795,7 +795,13 @@ fn read_sources(
                         None => name.clone(),
                     };
                     let notes: Vec<Note> = track.notes;
-                    Source { kind: TrackKind::Midi, name: clip_name, length, lane: LaneData::Notes(notes), loops: true }
+                    Source {
+                        kind: TrackKind::Midi,
+                        name: clip_name,
+                        length,
+                        lane: LaneData::Notes(notes.into()),
+                        loops: true,
+                    }
                 })
                 .collect())
         }

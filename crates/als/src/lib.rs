@@ -798,7 +798,7 @@ impl Reader {
                     self.warn(format!("track {track}: clip {name:?} imported without a scale: {reason}"));
                     None
                 });
-                LaneData::Notes(self.notes(node, &name, track))
+                LaneData::Notes(self.notes(node, &name, track).into())
             }
             "AudioClip" => LaneData::Audio(self.audio(node, &name, track)?),
             other => {

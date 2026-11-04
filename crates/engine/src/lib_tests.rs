@@ -82,7 +82,7 @@ fn clip(start: f64, length: f64) -> Clip {
 }
 
 fn untargeted(notes: Vec<Note>) -> Vec<ContentLane> {
-    vec![ContentLane { target: None, data: LaneData::Notes(notes) }]
+    vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }]
 }
 
 /// Frames where sound starts after more than 100 silent frames.
@@ -243,8 +243,8 @@ fn loop_range_repeats_until_the_clip_ends() {
 #[test]
 fn shared_pattern_plays_every_placement_on_its_target_tracks() {
     let lanes = vec![
-        ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 0.25, 36)]) },
-        ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.5, 0.25, 38)]) },
+        ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 0.25, 36)].into()) },
+        ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.5, 0.25, 38)].into()) },
     ];
     let mut project = project_with(lanes, vec![clip(0.0, 1.0), clip(2.0, 1.0)], 2);
     project.arrangement.lanes[0].track = None;
@@ -261,8 +261,8 @@ fn shared_pattern_plays_every_placement_on_its_target_tracks() {
 #[test]
 fn solo_leaves_only_soloed_tracks_their_groups_and_returns() {
     let lanes = vec![
-        ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 0.25, 36)]) },
-        ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.5, 0.25, 38)]) },
+        ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 0.25, 36)].into()) },
+        ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.5, 0.25, 38)].into()) },
     ];
     let mut project = project_with(lanes, vec![clip(0.0, 1.0)], 2);
     project.arrangement.lanes[0].track = None;

@@ -227,14 +227,17 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   changes by as much). These are what the piano roll's ruler runs when its loop handles and
   markers are dragged ([clip editor](spec/ui-clip-editor.md) › Commands).
 
-- **Notes.** `note.list {track, index | scene}` lists a MIDI clip's notes (index, time and length
-  in beats, key with 60 as C3, velocity 1 to 127, and `muted`); `note.add {..., notes: [{time, length, key,
-  velocity?}]}` appends notes and returns their indices; `note.delete`, `note.move {beats?,
+- **Notes.** `note.list {track, index | scene}` lists a MIDI clip's notes (index, `id`, time and
+  length in beats, key with 60 as C3, velocity 1 to 127, and `muted`); `note.add {..., notes: [{time, length, key,
+  velocity?}]}` appends notes and returns their indices and `ids`; `note.delete`, `note.move {beats?,
   semitones?}`, `note.resize {length? | by? | startBy?}` (`startBy` moves each start and keeps
   each end) and `note.setVelocity {velocity? | by? | velocities?}` (`velocities`: one value per
   entry of `notes`) take
-  `notes`, a list of those indices. Edits keep the notes' order, so the indices of notes not
-  deleted stay valid; each is one undo step and fails as a whole on a bad value
+  `notes`, a list of those indices or of `{"id": n}`. An id names a note wherever it is now, so a
+  command built from an earlier `note.list` still names the notes it read after another writer
+  has added, deleted or moved notes; it lasts while the project is open. Edits keep the notes'
+  order, so the indices of notes not deleted stay valid, and a changed or moved note keeps its
+  id; each is one undo step and fails as a whole on a bad value
   ([clip editor spec](spec/ui-clip-editor.md) › Commands). An edit to a clip whose content
   other clips also play (a duplicate) first gives that clip its own copy of the content, so the
   others do not change; the result's indices are the same.
@@ -280,7 +283,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 - **Splitting notes.** `note.split {track, index | scene, notes, at}` splits each named note that
   spans the beat `at` into two at `at` (the first keeps the start, the second the end); a note
   that starts or ends exactly at `at` is left alone, so a second split at the same beat changes
-  nothing. One undo step; it returns the indices of the notes it made, and `at` is a beat from 0
+  nothing. One undo step; it returns the indices and `ids` of the notes it made (each first half
+  keeps its note's id), and `at` is a beat from 0
   to 120 000.
 - **Follow actions.** `clip.setFollowAction {track, scene, enabled?, time?, linked?, actionA?,
   actionB?, chanceA?, chanceB?}` sets what a slot clip does after its follow time (one undo

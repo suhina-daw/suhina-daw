@@ -5,12 +5,15 @@
 //! (`docs/spec/ui-clip-editor.md` › Commands).
 //!
 //! A clip is named by `track` and `index` (an arrangement clip) or `scene` (a launcher slot); its
-//! notes by their index in the content's note lane. Edits keep the notes' order, so the indices
-//! of notes an edit did not delete stay valid for the next edit.
+//! notes by their index in the content's note lane, or by `{"id": n}` with their id (#1182), which
+//! names a note wherever it is now, after other writers have added, deleted or moved notes. Edits
+//! keep the notes' order, so the indices of notes an edit did not delete stay valid for the next
+//! edit, and a note changed or moved in place keeps its id; a note an edit makes (add, paste,
+//! duplicate, a split's second half) has a new one, which the result gives.
 
 use serde_json::{Map, Value, json};
 use suhina_engine::{MAX_START_BEAT, Quantization};
-use suhina_model::{Clip, ClipContent, ContentId, ContentLane, LaneData, Note, Project, TrackId};
+use suhina_model::{Clip, ClipContent, ContentId, ContentLane, LaneData, Note, NoteId, Notes, Project, TrackId};
 
 use crate::commands::{Args, parse_quantization, track_id};
 use crate::{CommandError, Session};
@@ -108,7 +111,7 @@ fn placements(p: &Project, content: ContentId) -> usize {
 pub(crate) fn edit_notes(
     p: &mut Project,
     params: &Value,
-    edit: impl FnOnce(&mut Vec<Note>) -> Result<Value, CommandError>,
+    edit: impl FnOnce(&mut Notes) -> Result<Value, CommandError>,
 ) -> Result<Value, CommandError> {
     copy_on_write(p, params, |p| edit(notes_mut(p, params)?))
 }
@@ -158,8 +161,11 @@ pub(crate) fn check_midi(p: &Project, content: ContentId) -> Result<(), CommandE
     Ok(())
 }
 
+/// The notes of an empty MIDI clip.
+static NO_NOTES: Notes = Notes::new();
+
 /// The notes of the clip `params` names (none for an empty MIDI clip).
-pub(crate) fn notes_of<'a>(p: &'a Project, params: &Value) -> Result<&'a [Note], CommandError> {
+pub(crate) fn notes_of<'a>(p: &'a Project, params: &Value) -> Result<&'a Notes, CommandError> {
     let (_, content, track) = locate(p, params)?;
     check_midi(p, content)?;
     let content = p.content(content).ok_or("the clip's content is missing")?;
@@ -168,14 +174,14 @@ pub(crate) fn notes_of<'a>(p: &'a Project, params: &Value) -> Result<&'a [Note],
         .iter()
         .filter(|l| plays_on(l, track))
         .find_map(|l| match &l.data {
-            LaneData::Notes(notes) => Some(notes.as_slice()),
+            LaneData::Notes(notes) => Some(notes),
             LaneData::Audio(_) => None,
         })
-        .unwrap_or(&[]))
+        .unwrap_or(&NO_NOTES))
 }
 
 /// The notes of the clip `params` names, to change; an empty MIDI clip gets a note lane.
-fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Vec<Note>, CommandError> {
+fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Notes, CommandError> {
     let (_, id, track) = locate(p, params)?;
     check_midi(p, id)?;
     let content = p.contents.iter_mut().find(|c| c.id == id).ok_or("the clip's content is missing")?;
@@ -184,7 +190,7 @@ fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Vec<Note>
         if !content.lanes.is_empty() {
             return Err("the clip is a pattern with no notes for this track".into());
         }
-        content.lanes.push(ContentLane { target: None, data: LaneData::Notes(Vec::new()) });
+        content.lanes.push(ContentLane { target: None, data: LaneData::Notes(Notes::new()) });
     }
     content
         .lanes
@@ -197,28 +203,47 @@ fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Vec<Note>
         .ok_or_else(|| "the clip has no notes".into())
 }
 
-/// The note indices in `params.notes`, each once, in rising order; every one must exist.
-pub(crate) fn indices(params: &Value, count: usize) -> Result<Vec<usize>, CommandError> {
-    let list =
-        Args::new(params).value("notes").and_then(Value::as_array).ok_or("notes must be a list of note indices")?;
+/// The note `item` names in `notes`: its index (from 0, as in `note.list`), or `{"id": n}` with
+/// its id, found where it is now (#1182).
+pub(crate) fn note_at(item: &Value, notes: &Notes) -> Result<usize, CommandError> {
+    let count = notes.len();
+    if let Some(id) = item.get("id") {
+        return id
+            .as_u64()
+            .and_then(|n| notes.position(NoteId(n)))
+            .ok_or_else(|| format!("the clip has no note with id {id}; note.list gives the ids").into());
+    }
+    let index = item
+        .as_u64()
+        .ok_or("each note must be a whole number, its index from 0 as in note.list, or {\"id\": n} with its id")?;
+    usize::try_from(index)
+        .ok()
+        .filter(|i| *i < count)
+        .ok_or_else(|| format!("note {index} does not exist; the clip has {count} notes").into())
+}
+
+/// The notes `params.notes` names, by index or by id, each once, as indices in rising order;
+/// every one must exist.
+pub(crate) fn indices(params: &Value, notes: &Notes) -> Result<Vec<usize>, CommandError> {
+    let list = Args::new(params)
+        .value("notes")
+        .and_then(Value::as_array)
+        .ok_or("notes must be a list of note indices or {\"id\": n}")?;
     if list.is_empty() {
-        return Err("notes is empty; give the indices of the notes, from note.list".into());
+        return Err("notes is empty; give the indices or ids of the notes, from note.list".into());
     }
     if list.len() > MAX_NOTES_PER_COMMAND {
         return Err(format!("at most {MAX_NOTES_PER_COMMAND} notes in one command, got {}", list.len()).into());
     }
-    let mut out = Vec::with_capacity(list.len());
-    for value in list {
-        let index = value.as_u64().ok_or("each note must be a whole number, an index from note.list")?;
-        let index = usize::try_from(index)
-            .ok()
-            .filter(|i| *i < count)
-            .ok_or_else(|| format!("note {index} does not exist; the clip has {count} notes"))?;
-        out.push(index);
-    }
+    let mut out = list.iter().map(|item| note_at(item, notes)).collect::<Result<Vec<_>, _>>()?;
     out.sort_unstable();
     out.dedup();
     Ok(out)
+}
+
+/// The ids of the notes at `at`.
+pub(crate) fn ids_at(notes: &Notes, at: &[usize]) -> Vec<u64> {
+    at.iter().filter_map(|&i| notes.id(i)).map(|id| id.0).collect()
 }
 
 /// MIDI velocity 1 … 127 to the model's 0 … 1.
@@ -231,9 +256,10 @@ pub fn midi_velocity(velocity: f32) -> u8 {
     if velocity.is_finite() { (f64::from(velocity) * 127.0).round().clamp(1.0, 127.0) as u8 } else { 1 }
 }
 
-fn note_json(index: usize, note: &Note) -> Value {
+fn note_json(index: usize, id: NoteId, note: &Note) -> Value {
     json!({
         "index": index,
+        "id": id.0,
         "time": note.time,
         "length": note.duration,
         "key": note.key,
@@ -244,7 +270,7 @@ fn note_json(index: usize, note: &Note) -> Value {
 
 pub(crate) fn list(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let notes = notes_of(&session.project, params)?;
-    Ok(Value::Array(notes.iter().enumerate().map(|(i, n)| note_json(i, n)).collect()))
+    Ok(Value::Array(notes.entries().enumerate().map(|(i, (id, n))| note_json(i, id, n)).collect()))
 }
 
 /// One note `note.add` reads: `{time, length, key, velocity?}`.
@@ -303,12 +329,13 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
 
 pub(crate) fn delete(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     edit_notes(&mut session.project, params, |notes| {
-        let gone = indices(params, notes.len())?;
+        let gone = indices(params, notes)?;
+        let ids = ids_at(notes, &gone);
         // Removed from the back, so the indices still to remove stay where they are.
         for &index in gone.iter().rev() {
             notes.remove(index);
         }
-        Ok(json!({ "deleted": gone, "count": notes.len() }))
+        Ok(json!({ "deleted": gone, "ids": ids, "count": notes.len() }))
     })
 }
 
@@ -327,7 +354,7 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
         return Err(format!("beats must be within ±{MAX_BEAT}").into());
     }
     edit_notes(&mut session.project, params, |notes| {
-        let moved = indices(params, notes.len())?;
+        let moved = indices(params, notes)?;
         let mut changed = Vec::with_capacity(moved.len());
         for &index in &moved {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -367,7 +394,7 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
         }
         // The moved notes' indices after the covered ones went.
         let now: Vec<usize> = moved.iter().map(|i| i - covered.iter().filter(|c| *c < i).count()).collect();
-        Ok(json!({ "notes": now, "replaced": covered }))
+        Ok(json!({ "notes": now, "ids": ids_at(notes, &now), "replaced": covered }))
     })
 }
 
@@ -383,7 +410,7 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
         return Err(format!("startBy must be within ±{MAX_BEAT}").into());
     }
     edit_notes(&mut session.project, params, |notes| {
-        let resized = indices(params, notes.len())?;
+        let resized = indices(params, notes)?;
         let mut changes = Vec::with_capacity(resized.len());
         for &index in &resized {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -432,7 +459,7 @@ pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Valu
         _ => {}
     }
     edit_notes(&mut session.project, params, |notes| {
-        let changed = indices(params, notes.len())?;
+        let changed = indices(params, notes)?;
         if let Some(each) = &each {
             // One value per entry of `notes`, in the order given; a repeated index takes its last.
             let given = Args::new(params).value("notes").and_then(Value::as_array).map_or(0, Vec::len);
@@ -448,8 +475,8 @@ pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Valu
                 .and_then(Value::as_array)
                 .ok_or("notes must be a list of note indices")?;
             for (value, midi) in named.iter().zip(each) {
-                let note = value.as_u64().and_then(|i| usize::try_from(i).ok()).and_then(|i| notes.get_mut(i));
-                if let Some(note) = note {
+                let index = note_at(value, notes)?;
+                if let Some(note) = notes.get_mut(index) {
                     note.velocity = velocity_of(midi.round());
                 }
             }
@@ -534,7 +561,7 @@ pub(crate) fn quantize(session: &mut Session, params: &Value) -> Result<Value, C
     }
     // Through `edit_notes`, so quantising a duplicate gives it its own content (#352).
     edit_notes(&mut session.project, params, |notes| {
-        let chosen = if all { (0..notes.len()).collect() } else { indices(params, notes.len())? };
+        let chosen = if all { (0..notes.len()).collect() } else { indices(params, notes)? };
         let mut changed = Vec::with_capacity(chosen.len());
         for &index in &chosen {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -616,7 +643,8 @@ fn placed(clipboard: &NoteClipboard, time: f64) -> Result<Vec<Note>, CommandErro
         .collect()
 }
 
-/// Appends `added` to the clip `params` names and says where they went.
+/// Appends `added` to the clip `params` names and says where they went: their indices, and their
+/// ids, new ones (#1182).
 /// Through `edit_notes`, so adding to a duplicate gives it its own content (#352).
 fn append(session: &mut Session, params: &Value, added: Vec<Note>) -> Result<Value, CommandError> {
     edit_notes(&mut session.project, params, |notes| {
@@ -626,13 +654,14 @@ fn append(session: &mut Session, params: &Value, added: Vec<Note>) -> Result<Val
         }
         let first = notes.len();
         notes.extend(added);
-        Ok(json!({ "added": (first..notes.len()).collect::<Vec<_>>(), "count": notes.len() }))
+        let at: Vec<usize> = (first..notes.len()).collect();
+        Ok(json!({ "added": at, "ids": ids_at(notes, &at), "count": notes.len() }))
     })
 }
 
 pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let notes = notes_of(&session.project, params)?;
-    let chosen = indices(params, notes.len())?;
+    let chosen = indices(params, notes)?;
     let clipboard = clipboard_of(notes, &chosen)?;
     let result = json!({ "copied": clipboard.len(), "span": clipboard.span });
     session.clipboards.notes = Some(clipboard);
@@ -641,7 +670,7 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
 
 pub(crate) fn cut(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let notes = notes_of(&session.project, params)?;
-    let chosen = indices(params, notes.len())?;
+    let chosen = indices(params, notes)?;
     let clipboard = clipboard_of(notes, &chosen)?;
     let result = delete(session, params)?;
     session.clipboards.notes = Some(clipboard);
@@ -673,7 +702,7 @@ pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, 
         return Err(format!("beats must be within ±{MAX_BEAT}").into());
     }
     let notes = notes_of(&session.project, params)?;
-    let chosen = indices(params, notes.len())?;
+    let chosen = indices(params, notes)?;
     let clipboard = clipboard_of(notes, &chosen)?;
     if beats.is_none() && semitones.is_none() {
         let added = placed(&clipboard, clipboard.from + clipboard.span)?;
@@ -702,15 +731,15 @@ fn spans(note: &Note, at: f64) -> bool {
 }
 
 /// `note.split`: splits each named note that spans the beat `at` into two at `at`, the first
-/// keeping its start and the second its end. One command, one undo step; the halves are appended,
-/// so the indices of the notes the command did not split stay valid.
+/// keeping its start and id and the second its end, as a new note. One command, one undo step; the
+/// second halves are appended, so the indices of the notes the command did not split stay valid.
 pub(crate) fn split(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let at = Args::new(params).opt_f64("at")?.ok_or("give at, the beat to split the notes at")?;
     if !(0.0..=MAX_BEAT).contains(&at) {
         return Err(format!("at must be 0 to {MAX_BEAT} beats, got {at}").into());
     }
     edit_notes(&mut session.project, params, |notes| {
-        let chosen = indices(params, notes.len())?;
+        let chosen = indices(params, notes)?;
         // The first halves are made from the notes as they are; the second halves are appended
         // once every one of them is known, so an index always means the same note.
         let mut firsts: Vec<(usize, f64)> = Vec::new();
@@ -735,7 +764,7 @@ pub(crate) fn split(session: &mut Session, params: &Value) -> Result<Value, Comm
         let first_new = notes.len();
         notes.extend(seconds);
         let made: Vec<usize> = (first_new..notes.len()).collect();
-        Ok(json!({ "notes": made, "count": made.len() }))
+        Ok(json!({ "notes": made, "ids": ids_at(notes, &made), "count": made.len() }))
     })
 }
 

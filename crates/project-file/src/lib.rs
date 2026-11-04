@@ -1366,7 +1366,7 @@ fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError
                         muted: flag(n, "muted", false, &at)?,
                     });
                 }
-                LaneData::Notes(notes)
+                LaneData::Notes(notes.into())
             }
             (None, Some(audio)) => LaneData::Audio(read_audio(audio, &format!("{at}.audio"))?),
             _ => return Err(format!("{at}: a lane has either notes or audio").into()),

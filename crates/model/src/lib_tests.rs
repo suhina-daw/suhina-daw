@@ -64,7 +64,7 @@ fn per_track_clip_project_validates() {
                 id: ContentId(1),
                 name: "Bass A".into(),
                 length: 4.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 36)]) }].into(),
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 36)].into()) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             },
@@ -72,7 +72,7 @@ fn per_track_clip_project_validates() {
                 id: ContentId(2),
                 name: "Bass B".into(),
                 length: 4.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(1.0, 38)]) }].into(),
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(1.0, 38)].into()) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             },
@@ -112,8 +112,8 @@ fn shared_pattern_project_validates_and_shares_content() {
         name: "Pattern 1".into(),
         length: 4.0,
         lanes: vec![
-            ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 36), note(2.0, 36)]) },
-            ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(1.0, 38), note(3.0, 38)]) },
+            ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 36), note(2.0, 36)].into()) },
+            ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(1.0, 38), note(3.0, 38)].into()) },
         ]
         .into(),
         extensions: Extensions::default(),

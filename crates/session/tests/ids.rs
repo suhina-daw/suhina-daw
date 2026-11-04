@@ -16,7 +16,8 @@ fn content(id: u32, name: &str, key: u8) -> ClipContent {
         id: ContentId(id),
         name: name.into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, key, 1.0)]) }].into(),
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, key, 1.0)].into()) }]
+            .into(),
         extensions: Extensions::default(),
         scale: None,
     }

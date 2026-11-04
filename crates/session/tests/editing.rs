@@ -62,7 +62,7 @@ fn midi_project_built(notes: Vec<Note>, clips: Vec<Clip>) -> Project {
         id: ContentId(1),
         name: "Riff".into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
         extensions: Extensions::default(),
         scale: None,
     });
