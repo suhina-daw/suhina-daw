@@ -304,11 +304,8 @@ impl App {
         let mut right = bar.right() - PAD;
         let mut underline_at = None;
         // A clip dragged in the Arrangement view, or carried, switches the view when it hovers
-        // over the other view's name for a moment. A press held on a slot counts too: the
-        // carry may start at the switch. A press that is no longer down carries nothing, so a
-        // stale record does not switch the view.
-        let pressing_slot = ui.input(|i| i.pointer.primary_down()) && self.view.pressed_slot.is_some();
-        let carrying = self.carry.is_some() || self.arrangement.dragged_clip().is_some() || pressing_slot;
+        // over the other view's name for a moment.
+        let carrying = self.carrying_clip(ui.ctx());
         let pointer = ui.ctx().pointer_latest_pos();
         let mut hovered_switch = None;
         for (view, name) in [(View::Arrangement, "Arrangement"), (View::Session, "Launcher")] {

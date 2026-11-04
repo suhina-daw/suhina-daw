@@ -1056,6 +1056,12 @@ fn column_body(
                 ui.ctx().data_mut(|d| d.remove::<String>(Id::new(("slot-rename", column.track, number))));
             }
             for response in [&launch, &select].into_iter().flatten() {
+                // A click into a slot, its launch mark too, takes the focus off the tracks, so
+                // the edit keys (Delete, Ctrl+C) no longer act on a track selected before it,
+                // whether or not the launch selects the slot.
+                if response.clicked() || response.secondary_clicked() {
+                    state.track_focus = false;
+                }
                 // A press held on a slot with a clip, either control, can be carried by a view
                 // switch before the drag is decided, as a clip's press is in the Arrangement
                 // view. An empty slot has no clip to carry, so it never records. A press that

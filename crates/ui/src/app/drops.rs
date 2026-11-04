@@ -398,6 +398,16 @@ impl App {
         ui.ctx().request_repaint();
     }
 
+    /// Whether a clip is dragged or carried, so that hovering over the other view's name
+    /// switches the view: a carry, a clip dragged (or a press held on it) in the Arrangement
+    /// view, or a press held on a slot's clip, whose carry may start at the switch. A press that
+    /// is no longer down carries nothing, so a stale record does not switch the view. The
+    /// control bar and a themed toolbar both ask here.
+    pub(super) fn carrying_clip(&self, ctx: &egui::Context) -> bool {
+        let pressing_slot = ctx.input(|i| i.pointer.primary_down()) && self.view.pressed_slot.is_some();
+        self.carry.is_some() || self.arrangement.dragged_clip().is_some() || pressing_slot
+    }
+
     /// Switches to `hovered`, the view whose name a dragged or carried clip is over, once it has
     /// stayed there for [`SWITCH_HOVER`].
     pub(super) fn hover_switch(&mut self, ctx: &egui::Context, hovered: Option<View>) {

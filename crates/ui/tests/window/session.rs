@@ -1114,3 +1114,22 @@ fn ctrl_and_shift_clicks_select_several_headers_and_ctrl_d_copies_them_as_a_bloc
     harness.run();
     assert_eq!(names(&harness)[..2], ["Bass", "Vox"]);
 }
+
+/// With Select launched clip off, a click on a clip's launch mark still takes the focus off the
+/// tracks: Delete after it does not remove the track selected before the launch.
+#[test]
+fn a_launch_marks_click_takes_the_focus_off_a_selected_track() {
+    let mut harness = window(demo_app());
+    let ctx = harness.ctx.clone();
+    let settings = suhina_ui::settings::Settings { select_on_launch: false, ..Default::default() };
+    harness.state_mut().set_settings(&ctx, settings);
+    let tracks = |h: &Harness<'static, App>| h.state().session().map(|s| s.project().tracks.len()).unwrap_or(0);
+    let before = tracks(&harness);
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    harness.get_by_label("Launch Walk on Bass (scene 2)").click();
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(tracks(&harness), before, "Delete after the launch removed the track selected before it");
+}
