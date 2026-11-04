@@ -1070,6 +1070,11 @@ impl App {
         &self.arrangement
     }
 
+    /// The piano roll's grid, to choose as its menu does (the window's tests).
+    pub fn set_piano_grid(&mut self, grid: crate::detail::piano_roll_grid::PianoGrid) {
+        self.piano_grid = grid;
+    }
+
     /// The Arrangement's grid, to choose as its menu does (the window's tests).
     pub fn set_arrangement_grid(&mut self, grid: crate::arrangement::arrangement_view::PianoGrid) {
         self.arrangement.grid = grid;

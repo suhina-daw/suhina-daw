@@ -60,7 +60,6 @@ audio_input = Line In
 zoom = 120
 waveform_scale = db
 piano_roll_top = window
-piano_roll_grid = control_bar
 piano_roll_toolbar = larger
 backup = 1m
 backup_clean_up = off
@@ -118,7 +117,6 @@ fn a_settings_file_from_before_the_regrouping_loads_with_the_same_values() {
         zoom: 120,
         waveform_db: true,
         piano_roll_top: PianoRollTop::Window,
-        piano_grid_follows: true,
         toolbar_size: ToolbarSize::Larger,
         backup: suhina_session::backup::Interval::Minutes(1),
         backup_clean_up: false,
@@ -150,7 +148,6 @@ fn settings_survive_a_round_trip() {
         updates: crate::settings::update_settings::UpdateSettings::default(),
         piano_roll_top: PianoRollTop::Window,
         toolbar_size: ToolbarSize::Larger,
-        piano_grid_follows: true,
         mixer_controls: MixerControls::Knob,
         plugin_editors: EditorPlacement::DeviceView,
         theme: "Night blue".into(),

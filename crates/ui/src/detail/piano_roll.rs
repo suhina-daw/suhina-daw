@@ -10,7 +10,6 @@ use std::collections::BTreeSet;
 
 use egui::{Align2, Color32, CursorIcon, Id, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
-use suhina_engine::Quantization;
 use suhina_engine::model::{Clip, ClipId, LaneData, Note, Project, Scale, TrackId};
 
 use crate::detail::midi_tools::ToolSettings;

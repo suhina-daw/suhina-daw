@@ -32,9 +32,6 @@ fn sixteenths() -> TimelineGrid {
 
 #[test]
 fn the_grid_follows_the_chosen_value_and_thins_out_when_lines_crowd() {
-    assert_eq!(grid_step(Quantization::Beats(0.25), 4.0), 0.25);
-    assert_eq!(grid_step(Quantization::Bars(1), 3.0), 3.0);
-    assert_eq!(grid_step(Quantization::None, 4.0), 0.0);
     assert_eq!(sixteenths(), TimelineGrid { step: 0.25, bar_beats: 4.0, snaps: true });
     // A sixteenth at 10 points a beat is 2.5 points: doubled twice to 10.
     assert_eq!(TimelineGrid::new(0.25, 10.0, 4.0, MIN_LINE_SPACING).step, 1.0);
@@ -203,7 +200,6 @@ fn clip(notes: Vec<Note>) -> PianoClip {
         grid: 0.25,
         placement: Placement { start: 16.0, length: 8.0, offset: 0.0, loop_range: None },
         grid_menu: PianoGrid::default(),
-        grid_follows: false,
         shape: ClipShape { offset: 0.0, length: 8.0, loop_range: None, room: None },
         ghosts: Ghosts::default(),
         scale: None,
@@ -302,13 +298,10 @@ fn the_grid_keys_leave_a_new_grid_for_the_window_and_snap_off_snaps_nothing() {
     let grid = note_grid(&piano, 40.0);
     assert_eq!((grid.step, grid.snaps), (0.25, false), "the lines stay, nothing snaps");
     assert_eq!(nearest_line(grid, 1.1), 1.1);
-    // Following the control bar, a key whose grid it cannot hold does nothing.
+    // A grid with no control bar value, such as a 1/32 triplet, is as good as any other.
     piano.grid_menu = PianoGrid::from_value("1/32");
-    piano.grid_follows = true;
     state.key_action("pianoRoll.gridTriplet", &piano, 0.0, None);
-    assert_eq!(state.grid_picked, None);
-    state.key_action("pianoRoll.gridNarrow", &piano, 0.0, None);
-    assert_eq!(state.grid_picked.map(|g| g.label()).as_deref(), Some("1/32"));
+    assert_eq!(state.grid_picked.take().map(|g| g.label()).as_deref(), Some("1/32T"));
 }
 
 #[test]

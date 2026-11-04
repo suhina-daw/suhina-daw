@@ -647,14 +647,6 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::ClipEditor,
         "Piano roll",
-        "Piano roll grid source",
-        "Whether the piano roll has its own grid or follows the one in the control bar",
-        &["piano_roll_grid"],
-        |cx, r| cx.choose(r, &[("Its own", false), ("Control bar", true)], |s| &mut s.piano_grid_follows),
-    ),
-    row(
-        Page::ClipEditor,
-        "Piano roll",
         "Piano roll toolbar size",
         "How large the piano roll's toolbar buttons are",
         &["piano_roll_toolbar"],

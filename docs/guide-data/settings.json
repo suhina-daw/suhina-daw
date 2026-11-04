@@ -1567,31 +1567,6 @@
       "workInProgress": false
     },
     {
-      "id": "ClipEditor/Piano roll/piano_roll_grid",
-      "page": "ClipEditor",
-      "section": "Piano roll",
-      "name": "Piano roll grid source",
-      "note": "Give the piano roll its own timing grid or link it to the control bar.",
-      "keys": [
-        "piano_roll_grid"
-      ],
-      "sourceFingerprint": "7ebeceb6b937e4d2ea1865f82f441757207a7415c11494210d322a63b52162c7",
-      "helpStatus": "reviewed",
-      "description": "A timing grid draws beat divisions and supplies the steps that edited notes snap to. The control bar’s value is the launch quantisation, which sets when launched clips start. Linking the piano roll makes its menu and grid shortcuts change that value too, so choosing a grid there changes launch timing. The control bar cannot represent adaptive grids or a 1/32 triplet, so those choices are unavailable while linked. This chooses the grid source, not the notes’ timing: existing notes are not automatically moved.",
-      "options": [
-        {
-          "name": "Its own",
-          "description": "Keep the piano roll’s independent grid and its full menu, initially a snapping 1/16 grid. This is the default."
-        },
-        {
-          "name": "Control bar",
-          "description": "Follow and edit the control bar’s grid. Unsupported grid choices are disabled; turning snapping off sets the shared value to none."
-        }
-      ],
-      "whenToChange": "Use Its own for detailed note editing without changing Arrangement snapping or launch timing. Use Control bar when you want a shared grid.",
-      "workInProgress": false
-    },
-    {
       "id": "ClipEditor/Piano roll/piano_roll_toolbar",
       "page": "ClipEditor",
       "section": "Piano roll",
