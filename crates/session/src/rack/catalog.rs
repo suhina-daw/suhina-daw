@@ -51,6 +51,7 @@ pub fn plugin_group(plugin: &PluginInfo) -> Option<&'static str> {
 pub fn device_kind(plugin: &PluginInfo) -> DeviceKind {
     match plugin.format() {
         "vst3" => DeviceKind::Vst3 { id: plugin.id.clone() },
+        "vst2" => DeviceKind::Vst2 { id: u32::from_str_radix(&plugin.id, 16).unwrap_or(0) },
         _ => DeviceKind::Clap { id: plugin.id.clone() },
     }
 }

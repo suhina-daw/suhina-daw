@@ -24,6 +24,10 @@ const SIDEBAR_ROW: f32 = 20.0;
 /// The search field over the list of pages.
 const SEARCH_FIELD: f32 = 18.0;
 const LABEL_WIDTH: f32 = 180.0;
+/// The width a row's note has: the page's width less the name column, one line of small text
+/// (a test guard measures the notes against it; a smaller window cuts a note).
+#[cfg(test)]
+pub(crate) const NOTE_WIDTH: f32 = PAGE_WIDTH - LABEL_WIDTH;
 const SETTING_ROW: f32 = 34.0;
 /// Where every setting's control starts: names in one column and controls in the next, lined
 /// up down the page, so the eye runs straight down either.
@@ -160,6 +164,8 @@ pub enum PluginRequest {
         all: bool,
     },
     AddFolder(String, suhina_plugins::scan::FolderFormat),
+    /// The add row with nothing typed: the app shows the system's folder picker.
+    PickFolder,
     RemoveFolder(String),
     /// Switch a folder on or off for scans.
     SetFolderEnabled(String, bool),
@@ -686,6 +692,15 @@ impl Cx<'_> {
         let value = field(self.settings);
         if let Some(on) = switch(self.ui, self.painter, row, self.name, *value) {
             *value = on;
+            self.outcome.changed = true;
+        }
+    }
+
+    /// A switch that shows the yes/no setting `field` gives the other way round: on when it is no.
+    pub fn off_on(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut bool) {
+        let value = field(self.settings);
+        if let Some(on) = switch(self.ui, self.painter, row, self.name, !*value) {
+            *value = !on;
             self.outcome.changed = true;
         }
     }
@@ -1935,6 +1950,7 @@ fn plugin_folders(
         "vst3" => "VST3",
         "clap" => "CLAP",
         "vst2" => "VST2",
+        "any" if cfg!(target_os = "macos") => "CLAP, VST3 and VST2",
         _ => "CLAP and VST3",
     };
 
@@ -1986,7 +2002,8 @@ fn plugin_folders(
             }
         }
     }
-    // A folder to add, and the format it holds: VST2 shows, for when it is hosted.
+    // A folder to add, and the format it holds. Add with
+    // nothing typed asks for the system's folder picker instead.
     *y += 4.0;
     let r = line(y, 20.0);
     let add = Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top()), r.max);
@@ -2006,7 +2023,7 @@ fn plugin_folders(
     widgets::input_line(ui, &edit);
     let width = formats.width() / 4.0;
     for (index, (format, title)) in [
-        (FolderFormat::Any, "Both"),
+        (FolderFormat::Any, "All"),
         (FolderFormat::Vst3, "VST3"),
         (FolderFormat::Clap, "CLAP"),
         (FolderFormat::Vst2, "VST2"),
@@ -2018,25 +2035,19 @@ fn plugin_folders(
             Pos2::new(formats.left() + index as f32 * width, formats.top()),
             Vec2::new(width - 1.0, formats.height()),
         );
-        let label = if format.hosted() {
-            format!("Folder format: {}", format_name(format.name()))
-        } else {
-            "Folder format: VST2 (not hosted yet)".to_string()
-        };
-        let response = widgets::button_area(ui, cell, Id::new(("folder-format", index)), label);
+        let response = widgets::button_area(
+            ui,
+            cell,
+            Id::new(("folder-format", index)),
+            format!("Folder format: {}", format_name(format.name())),
+        );
         let chosen = plugins.new_format == format;
-        if response.clicked() && format.hosted() {
+        if response.clicked() {
             plugins.new_format = format;
         }
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         painter.fill_background(cell, 0.0, if chosen { theme::control_selected() } else { idle });
-        let color = if chosen {
-            theme::text_inverse()
-        } else if format.hosted() {
-            theme::text_secondary()
-        } else {
-            theme::text_hint()
-        };
+        let color = if chosen { theme::text_inverse() } else { theme::text_secondary() };
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
     let response = widgets::button_area(ui, add, Id::new("add-folder"), "Add plug-in folder");
@@ -2044,8 +2055,14 @@ fn plugin_folders(
     painter.fill_background(add, 0.0, fill);
     widgets::text_in(painter, add, Align2::CENTER_CENTER, "Add", small.clone(), theme::text_primary());
     let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    if (response.clicked() || entered) && !plugins.new_folder.trim().is_empty() {
-        request = Some(PluginRequest::AddFolder(plugins.new_folder.trim().to_string(), plugins.new_format));
+    if response.clicked() || entered {
+        // Nothing typed: the system's folder picker, so Add always does something.
+        let folder = plugins.new_folder.trim();
+        request = if folder.is_empty() {
+            Some(PluginRequest::PickFolder)
+        } else {
+            Some(PluginRequest::AddFolder(folder.to_string(), plugins.new_format))
+        };
     }
     *y += 8.0;
     request
@@ -2307,7 +2324,7 @@ fn output_rows(
     } else {
         match (&choice.device, device) {
             (Some(name), None) => format!("{name} is not there; the default output plays"),
-            _ => "The output device on that driver".to_string(),
+            _ => device_note(host, &about.audio_hosts),
         }
     };
     label(painter, r, "Device", &note);
@@ -2437,6 +2454,24 @@ fn output_rows(
     }
 
     picked.map(OutputPick::Setting)
+}
+
+/// What the Device row says about the driver chosen: why it lists nothing, and where a driver's
+/// list leaves out the outputs people look for first.
+fn device_note(host: Option<&suhina_session::audio::HostInfo>, hosts: &[suhina_session::audio::HostInfo]) -> String {
+    let beside = |name: &str| hosts.iter().any(|h| h.name == name);
+    match host {
+        Some(host) if host.error.is_some() => {
+            format!("{} cannot list its devices: {}", host.name, host.error.as_deref().unwrap_or_default())
+        }
+        Some(host) if host.name == "ASIO" && beside("WASAPI") => {
+            "Interfaces with an ASIO driver; Bluetooth headphones are under WASAPI".to_string()
+        }
+        Some(host) if host.name == "ALSA" && beside("PulseAudio") => {
+            "The sound cards; Bluetooth headphones are under PulseAudio".to_string()
+        }
+        _ => "The output device on that driver".to_string(),
+    }
 }
 
 /// The rows of Audio › Cue; returns a new choice.

@@ -61,6 +61,9 @@ PORTED = {
     "devices/fm-synth/src/voice.rs": "Apache-2.0",
     "crates/stretch/src/lib.rs": "MIT",
     "crates/stretch/src/stft.rs": "MIT",
+    # The VST2 interface definitions ported from VeSTige as Ardour distributes it, at the
+    # commit ADR 0022 pins, with its notice kept (the one named clean-room exception).
+    "crates/plugin-host/src/vst2/vestige.rs": "GPL-2.0-or-later",
 }
 
 SKIP_PREFIXES = ("third_party/",)

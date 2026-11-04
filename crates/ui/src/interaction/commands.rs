@@ -31,6 +31,12 @@ pub fn set_volume(tracks: &[u32], db: f64, continued: Option<bool>) -> Action {
     Action::new("track.setVolume", params)
 }
 
+/// The send from `track` to the return `target` set to `db` itself, typed or reset, which a
+/// selection takes as it is.
+pub fn set_send_outright(track: TrackId, target: TrackId, db: f64) -> Action {
+    Action::new("track.setSend", json!({ "track": track.0, "return": target.0, "level": db_param(db, VOLUME_RANGE.0) }))
+}
+
 /// The send from `track` to the return `target` at `db`; every frame of a drag but the first
 /// continues its undo step.
 pub fn set_send(track: TrackId, target: TrackId, db: f64, continued: bool) -> Action {

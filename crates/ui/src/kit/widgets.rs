@@ -44,6 +44,97 @@ pub(crate) fn fixed(value: f64, decimals: usize) -> String {
     }
 }
 
+/// A value drag in progress, while it holds the pointer. `raw` is set once the device has sent raw
+/// motion: from then on only raw motion moves the value, and the pointer is locked.
+#[derive(Clone, Copy)]
+struct ValueDrag {
+    raw: bool,
+    /// Where the pointer goes on release, for a control that moves under it (a fader's cap).
+    back: Option<Pos2>,
+    /// Let go of: the pointer has been moved back and shows at the next frame, so it never flashes
+    /// where it was held.
+    released: bool,
+}
+
+fn value_drag_id() -> Id {
+    Id::new("value-drag-holds-pointer")
+}
+
+/// How far a drag on a value control (knob, value field) moved this frame, called while it is
+/// dragged. The pointer hides while the drag lasts. A mouse sends raw motion, which is read and
+/// the pointer locked, so a long drag never stops at the screen's edge (X11 refuses the lock, and
+/// the pointer moves on hidden). A device with no relative motion (a pen in absolute mode, a remote
+/// session) sends none, so it keeps the pointer's own movement, which a lock would stop.
+/// [`release_value_drag`] gives the pointer back. Only a drag's first frame takes the pointer, in a
+/// window with focus; a drag whose release went to another window moves nothing when focus comes
+/// back, until the next press.
+pub fn value_drag_delta(ui: &Ui, response: &Response) -> Vec2 {
+    let ctx = ui.ctx();
+    let mut drag = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id()));
+    if drag.is_none() && response.drag_started() && ctx.input(|i| i.focused) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
+        drag = Some(ValueDrag { raw: false, back: None, released: false });
+    }
+    let Some(mut drag) = drag.filter(|d| !d.released) else {
+        return Vec2::ZERO;
+    };
+    // egui shows the pointer again whenever the icon changes, so the icon stays hidden too.
+    ctx.set_cursor_icon(egui::CursorIcon::None);
+    let (motion, per_point) = ui.input(|i| (i.pointer.motion(), i.pixels_per_point));
+    if motion.is_some() && !drag.raw {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::Locked));
+        drag.raw = true;
+    }
+    ctx.data_mut(|d| d.insert_temp(value_drag_id(), drag));
+    if drag.raw && response.drag_started() {
+        // This frame's raw motion may be from before the press.
+        Vec2::ZERO
+    } else if drag.raw {
+        // Raw motion is in the mouse's counts, not in points: scaled like the pointer on a display.
+        motion.unwrap_or(Vec2::ZERO) / per_point
+    } else {
+        response.drag_delta()
+    }
+}
+
+/// Gives the pointer back once the buttons are up after a value drag, or once the window loses
+/// focus (egui keeps the button down when the release went to another window). Called once a
+/// frame, so a control that went away mid-drag (hidden, its panel closed) cannot keep the pointer.
+pub fn release_value_drag(ctx: &egui::Context) {
+    let Some(drag) = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())) else {
+        return;
+    };
+    if drag.released {
+        // The next icon shows the pointer: nothing else may, as the window applies a command after
+        // the frame's icon, which would show it over a view that keeps it hidden for a shape of its
+        // own (a magnifier).
+        ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
+    } else if !ctx.input(|i| i.pointer.any_down() && i.focused) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
+        // Only in a window with focus: a pointer gone to another window stays there.
+        if let Some(at) = drag.back.filter(|_| ctx.input(|i| i.focused)) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(at));
+        }
+        ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { released: true, ..drag }));
+        ctx.request_repaint();
+    }
+}
+
+/// Where the pointer comes back when this value drag ends.
+pub fn value_drag_returns_to(ctx: &egui::Context, at: Pos2) {
+    if let Some(drag) = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())) {
+        ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { back: Some(at), ..drag }));
+    }
+}
+
+/// Keeps the pointer hidden while a value drag holds it, called after the views: the last icon set
+/// in a frame wins, and egui shows the pointer again for any other icon.
+pub fn hide_pointer_during_value_drag(ctx: &egui::Context) {
+    if ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_some() {
+        ctx.set_cursor_icon(egui::CursorIcon::None);
+    }
+}
+
 /// A command for the session to run, made by a view: the same ids the CLI and MCP use.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Action {
@@ -545,8 +636,10 @@ pub enum Drag {
     None,
     /// Being dragged: the value to show.
     Moving(f64),
-    /// Released, reset by a double-click or moved by the wheel: the value to commit.
+    /// Released, or moved by the wheel or an arrow key: the value to commit.
     Done(f64),
+    /// Typed or reset by a double-click: the value itself, which a selection takes as it is.
+    Set(f64),
 }
 
 /// Whether the wheel over a value field changes its value this frame: with Ctrl/Cmd held. Without it
@@ -617,7 +710,7 @@ pub fn value_active(ctx: &egui::Context) -> bool {
 /// The keys an active value control takes this frame: arrow steps (up is +1), and Enter with
 /// the number typed into it. Ctrl (Cmd) with a key leaves it to the window's shortcuts, as
 /// [`value_active`] says.
-fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<String>) {
+pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<String>) {
     let ctx = ui.ctx();
     let key = egui::Id::new(ACTIVE_VALUE);
     let typed_id = response.id.with("typed");
@@ -761,7 +854,7 @@ pub fn drag_value_axis(
         && number.is_finite()
     {
         *preview = None;
-        return Drag::Done(typed_value(number, range));
+        return Drag::Set(typed_value(number, range));
     }
     if steps != 0 {
         let from = if value.is_finite() { value } else { range.0 };
@@ -784,7 +877,7 @@ pub fn drag_value_axis(
     }
     if response.double_clicked() {
         *preview = None;
-        return Drag::Done(default);
+        return Drag::Set(default);
     }
     if response.drag_started_by(egui::PointerButton::Primary) {
         *preview = Some(if value.is_finite() { value } else { range.0 });
@@ -792,7 +885,8 @@ pub fn drag_value_axis(
     if response.dragged_by(egui::PointerButton::Primary) {
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
         let start = preview.unwrap_or(value);
-        let delta = if horizontal { response.drag_delta().x } else { -response.drag_delta().y };
+        let moved = value_drag_delta(ui, response);
+        let delta = if horizontal { moved.x } else { -moved.y };
         let next = (start + f64::from(delta) * per_point * fine).clamp(range.0, range.1);
         *preview = Some(next);
         return Drag::Moving(next);
@@ -853,6 +947,36 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
     }
 }
 
+/// A dial as an `.sd` control's dial draws it, the built-in canvases' wheels (the reverb's and
+/// the delay's): the rim arc, the ring's disc, the inner disc, the pointer line to 72 % of the
+/// radius, 270° with the gap under. The colours are the tokens the `.knob` scope gives — the
+/// same scope the canvases' dials take theirs from, so a theme's own colouring applies — and
+/// no artwork stands for the face, as a canvas has none.
+pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response: Option<&Response>) {
+    let _style = response
+        .map(|response| crate::kit::style_class::enter_response("knob", response))
+        .unwrap_or_else(|| crate::kit::style_class::enter("knob"));
+    let radius = (size * 0.5).max(1.0);
+    // The face: the rim arc (2.35 to 7.05 rad as an `.sd` dial's is, i.e. 135° past each side
+    // over the top), the ring disc inside it, the inner disc — the theme's tokens.
+    let points: Vec<Pos2> = (0..=48)
+        .map(|i| {
+            let a = (-135.0 + 270.0 * i as f32 / 48.0).to_radians();
+            center + Vec2::new(a.sin(), -a.cos()) * (radius - 2.0).max(0.0)
+        })
+        .collect();
+    painter.add(egui::Shape::line(points, Stroke::new(4.0, theme::border())));
+    painter.circle_filled(center, (radius - 4.0).max(0.0), theme::panel_background());
+    painter.circle_filled(center, (radius - 8.0).max(0.0), theme::control_background());
+    // The pointer: a quarter in, three quarters to the rim, in the accent token.
+    let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
+    let dir = Vec2::new(angle.sin(), -angle.cos());
+    painter.line_segment(
+        [center + dir * (radius * 0.25), center + dir * (radius * 0.72)],
+        Stroke::new(2.0, theme::accent()),
+    );
+}
+
 /// A volume in dB as the mixer shows it.
 pub fn format_db(db: f64) -> String {
     if db.is_finite() && db > -70.0 { format!("{db:.1}") } else { "-inf".into() }
@@ -890,6 +1014,8 @@ pub fn format_pan(pan: f64) -> String {
 }
 
 pub(crate) const VOLUME_RANGE: (f64, f64) = (-70.0, 6.0);
+/// What a send knob covers, in dB: it stops at all of the track's signal.
+pub(crate) const SEND_RANGE: (f64, f64) = (VOLUME_RANGE.0, 0.0);
 
 /// Where a volume sits on a field, 0 … 1, as the volume fader places it: 0 dB at 85 %, 40 dB
 /// per travel down to -18 dB, faster below (components › Value field;
@@ -928,104 +1054,5 @@ pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, l
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_pan_and_a_send_take_their_own_knob_artwork_and_other_knobs_do_not() {
-        let svg =
-            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>"#;
-        let mut skin = super::super::skin::Skin::default();
-        skin.assets.insert("pan.knob.body".into(), svg.into());
-        skin.assets.insert("send.knob.body".into(), svg.into());
-        super::super::skin::configure(&skin);
-        assert_eq!(knob_roles().0, "knob.body", "a device's knob");
-        {
-            let _pan = super::super::style_class::enter("pan");
-            assert_eq!(knob_roles(), ("pan.knob.body", "pan.knob.pointer"));
-        }
-        {
-            let _send = super::super::style_class::enter("send");
-            assert_eq!(knob_roles(), ("send.knob.body", "send.knob.pointer"));
-        }
-        super::super::skin::configure(&super::super::skin::Skin::default());
-        let _pan = super::super::style_class::enter("pan");
-        assert_eq!(knob_roles().0, "knob.body", "without the theme's own artwork");
-    }
-
-    #[test]
-    fn active_toggle_text_stays_visible_over_transparent_or_gradient_panels() {
-        let original = theme::palette();
-        let mut palette = original;
-        palette.window_background = Color32::TRANSPARENT;
-        palette.text_value = Color32::from_rgb(220, 230, 220);
-        let ctx = egui::Context::default();
-        theme::set_palette(&ctx, palette);
-        motion::set_enabled(&ctx, false);
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
-            let response = button_area(ui, rect, Id::new("transparent-toggle"), "Track on");
-            let (fill, text) = toggle_colors(ui, &response, true);
-            assert_eq!(text.a(), 255);
-            assert!(theme::contrast(fill, text) >= 4.5);
-        });
-        output.textures_delta.clear();
-        theme::set_palette(&ctx, original);
-    }
-
-    #[test]
-    fn shared_form_controls_keep_surfaces_transparent_and_do_not_restyle_buttons() {
-        let ctx = egui::Context::default();
-        let mut text = String::from("Project name");
-        let mut number = 12;
-        let mut fields = Vec::new();
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            let original = ui.visuals().widgets.inactive.bg_fill;
-            fields.push(text_input(ui, egui::TextEdit::singleline(&mut text)).rect);
-            fields.push(number_input(ui, None, egui::DragValue::new(&mut number)).rect);
-            fields.push(
-                combo_box(ui, egui::ComboBox::from_id_salt("shared-choice").selected_text("One"), |ui| {
-                    ui.label("Two");
-                })
-                .response
-                .rect,
-            );
-            assert_eq!(ui.visuals().widgets.inactive.bg_fill, original);
-        });
-        for rect in fields {
-            assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
-                egui::Shape::LineSegment { points, stroke } if points[0].y == rect.bottom() - 0.5 && points[0].y == points[1].y && stroke.width > 0.0)));
-            assert!(!output.shapes.iter().any(|shape| matches!(&shape.shape,
-                egui::Shape::Rect(shape) if rect.contains_rect(shape.rect) && (shape.fill.a() > 0 || shape.stroke.width > 0.0))));
-        }
-        output.textures_delta.clear();
-    }
-
-    #[test]
-    fn form_dropdown_has_an_underline_without_a_box_or_fill() {
-        let ctx = egui::Context::default();
-        let rect = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(180.0, 18.0));
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            let response = button_area(ui, rect, Id::new("form-dropdown-test"), "Choice");
-            form_dropdown(ui, ui.painter(), rect, &response, "Every 5 minutes");
-        });
-        assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::LineSegment { points, stroke } if points[0].y == rect.bottom() - 0.5
-                && points[0].y == points[1].y && stroke.width > 0.0)));
-        assert!(
-            !output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Rect(shape) if shape.rect == rect))
-        );
-        output.textures_delta.clear();
-    }
-
-    #[test]
-    fn values_read_like_the_mixer() {
-        assert_eq!(format_db(0.0), "0.0");
-        assert_eq!(format_db(-6.02), "-6.0");
-        assert_eq!(format_db(f64::NEG_INFINITY), "-inf");
-        assert_eq!(format_db(-80.0), "-inf");
-        assert_eq!(format_pan(0.0), "C");
-        assert_eq!(format_pan(-0.3), "15L");
-        assert_eq!(format_pan(1.0), "50R");
-    }
-}
+#[path = "widgets_tests.rs"]
+mod tests;

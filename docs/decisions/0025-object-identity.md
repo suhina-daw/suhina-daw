@@ -2,8 +2,9 @@
 description: Why clips, arrangement lanes and scenes gain an id, what an id is, why ids need not be globally unique, and the four steps that make every command address objects by id instead of by position
 read_when: object id, ClipId, clip identity, positional addressing, clip.move, duplicated clips, make unique, project file version, ParamType::Clip, merge, version diff
 type: decision
-status: current
-last_verified: 2026-10-18
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/ids.rs
@@ -15,38 +16,36 @@ covers:
 
 # 0025: Object identity in the model
 
-- **Status:** accepted (2026-10-17, implemented in [#568](https://github.com/suhina-daw/suhina-daw/issues/568))
-- **Date:** 2026-10-15
+- **Date:** 2026-10-15; accepted 2026-10-17, built in [#568](https://github.com/suhina-daw/suhina-daw/issues/568)
 
 ## Context
 
-Three of the model's objects have an id and the rest do not. `TrackId(pub u32)` (`crates/model/src/lib.rs:12`),
-`ChannelId(pub u32)` (`:16`) and `ContentId(pub u32)` (`:20`) name their objects; a `Clip` (`:285`),
-an `ArrangementLane` (`:453`) and a `Scene` (`:467`) are identified by **where they sit in a `Vec`**.
-`Clip`'s fields are `content`, `start`, `length`, `offset`, `loop_range`, `enabled`, `fade_in`,
-`fade_out`, `fade_in_curve`, `fade_out_curve` and `extensions` — there is no field that says which
-clip it is. `ArrangementLane` is a `name`, an optional `track` and `clips: Vec<Clip>`; a `Scene` is
-a `name` and an optional tempo. Even the model's own error type reports positions:
-`ValidationError::BadFades { lane: usize, clip: usize }` (`:512`, raised at `:596`).
+When this was written, three of the model's objects had an id and the rest did not. `TrackId`,
+`ChannelId` and `ContentId` (`u32` newtypes in `suhina_model`) named their objects; a `Clip`, an
+`ArrangementLane` and a `Scene` were identified by **where they sat in a `Vec`**. `Clip`'s fields
+were `content`, `start`, `length`, `offset`, `loop_range`, `enabled`, `fade_in`, `fade_out`,
+`fade_in_curve`, `fade_out_curve` and `extensions`: no field said which clip it was.
+`ArrangementLane` was a `name`, an optional `track` and `clips: Vec<Clip>`; a `Scene` was a `name`
+and an optional tempo. Even the model's own error type reported positions:
+`ValidationError::BadFades { lane: usize, clip: usize }`.
 
 Position is a fine identity for one program reading one file, and it stops being one as soon as two
 copies of a project exist:
 
-- **"Move the third clip" does not mean the same thing to two machines.** The command is
-  `clip.move { track, index, start, to_track?, stack? }` (`crates/session/src/commands.rs:395–411`),
-  and `index` is "clip index on the track, from `project.clips`". Two objects that changed
+- **"Move the third clip" does not mean the same thing to two machines.** The command was
+  `clip.move { track, index, start, to_track?, stack? }` (`suhina_session::commands`), and `index`
+  was "clip index on the track, from `project.clips`". Two objects that changed
   independently both answer to "the third clip".
 - **A readable diff is impossible.** Moving one clip makes **everything after it on the lane** look
   changed; splitting a clip makes **half the lane** look changed; copying a clip looks like several
   edits. A version comparison that reports noise instead of "these three clips moved" is not a
   version comparison.
 
-And the identity that is already there is per-project and allocated as `max + 1`:
-`TrackId` at `crates/session/src/commands.rs:926`, `ContentId` at `:1243`, and in
-`crates/session/src/files.rs:88` and `:470` (which at least use `checked_add`). A blank project
-starts from literal values — `ChannelId(100)`, `ChannelId(90)`, `ChannelId(91)` and
-`TrackId(10 + offset)` (`crates/session/src/blank.rs:14–15`, `:49`) — so two machines do not merely
-risk colliding, they **start collided**.
+And the identity that was already there was per-project and allocated as `max + 1`: `TrackId` and
+`ContentId` in `suhina_session::commands`, and twice in `suhina_session::files` (which at least used
+`checked_add`). A blank project started from literal values (`ChannelId(100)`, `ChannelId(90)`,
+`ChannelId(91)` and `TrackId(10 + offset)`, in `suhina_session::blank`), so two machines did not
+merely risk colliding, they **started collided**.
 
 This is worth doing with no collaboration anywhere in sight, and this is the strongest argument for
 it:
@@ -65,9 +64,8 @@ it:
 ### Two facts that decide the cost
 
 **The engine never sorts by id**, so the audio path does not notice this change. Its only sorts are
-by start time (`crates/engine/src/lib.rs:796`), chain depth (`crates/engine/src/buses.rs:72`), note
-time (`crates/engine/src/launcher.rs:618`), marker time (`crates/engine/src/audio.rs:95`) and an
-internal graph sequence (`crates/engine/src/swap.rs:259`). **The golden renders therefore do not
+by start time (`engine/src/lib.rs`), chain depth (`buses.rs`), note time (`launcher.rs`), marker
+time (`audio.rs`) and an internal graph sequence (`swap.rs`). **The golden renders therefore do not
 break on an id change** — `crates/engine/tests/golden/`, `devices/fm-synth/tests/golden/` and
 `crates/ui/tests/golden/` are untouched. That single fact is what makes this affordable rather than
 a DSP regression hunt.
@@ -80,7 +78,7 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
 ## Decision
 
 1. **Clips, arrangement lanes and scenes gain an id: `ClipId`, `LaneId`, `SceneId`.** They join
-   `TrackId`, `ChannelId` and `ContentId` as `u32` newtypes. A `Slot` (`crates/model/src/lib.rs:481`)
+   `TrackId`, `ChannelId` and `ContentId` as `u32` newtypes. A `Slot` (`suhina_model::Slot`)
    does not gain one: it is a cell of a grid, addressed as (column, scene id), not an object that
    moves between parents.
 
@@ -158,13 +156,13 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
    `scene` takes `clip` too, the `note.*` commands and `transport.play` included.
 
 5. **The parameter type is `ParamType::Clip`, and it is not new machinery.** `ParamType::Track`
-   already exists (`crates/session/src/commands.rs:106`, `const TRACK`) and its JSON Schema is
-   already `json!(["integer", "string"])` — "track id or name" (`:139`). The registry generates the
+   already exists (`ParamType::Track` in `suhina_session::commands`) and its JSON Schema is
+   already `json!(["integer", "string"])`, "track id or name". The registry generates the
    agent-facing schema from that, so a `Clip` variant is the same shape applied to clips, and the
    `id or name` convention is already the house style.
 
 6. **Addressed by id, reported by id.** The read commands stop reporting clips by position:
-   `clip_json(p, name, track, index: usize, clip)` (`crates/session/src/commands.rs:812`) reports
+   `clip_json(p, name, track, index: usize, clip)` (`suhina_session::commands`) reports
    the id instead. A read API that names objects by index would keep the ambiguity in the agent
    interface after the commands were fixed.
 
@@ -219,18 +217,15 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
   deprecation window and its tests are the mitigation, and this is the one place in the change where
   a green test suite is not evidence.
 - **The agent-facing interface is a breaking change and is treated as one.** Positional addressing
-  reaches **seven `clip.*` commands** — `clip.delete` (`:297`), `clip.setGain` (`:306`),
-  `clip.setFades` (`:317`), `clip.copy` (`:339`), `clip.cut` (`:346`), `clip.duplicate` (`:366`),
-  `clip.move` (`:399`) — and beyond clips, `track.move`'s `to` (`:269`), `device` (`:107`) and
-  `scene` (`:108`). [ADR 0002](0002-commands.md): *"Command ids are part of the public interface for
+  reaches **seven `clip.*` commands** (`clip.delete`, `clip.setGain`, `clip.setFades`,
+  `clip.copy`, `clip.cut`, `clip.duplicate`, `clip.move`) and beyond clips, `track.move`'s `to`
+  and the `device` and `scene` parameter types. [ADR 0002](0002-commands.md): *"Command ids are part of the public interface for
   agents; renaming one is a breaking change."* A parameter that keeps its name but changes its
   meaning is worse than a rename, so the deprecation window is part of the change, not a courtesy.
-- The UI's `(TrackId, usize)` disappears: `selected_clip() -> Option<(TrackId, usize)>`
-  (`crates/ui/src/arrangement/arrangement_view.rs:201`), `clip_menu(ui, track, index, …)`
-  (`crates/ui/src/interaction/menus.rs:95`), copy/cut/paste from `(track, index)`
-  (`crates/ui/src/app.rs:1674`), and `ClipBox`'s `index`/`row`/`rows`
-  (`crates/ui/src/arrangement/timeline.rs:66`, `:83–84`) with `sub_rows` (`:247`) computing the stacking layout
-  from positions.
+- The UI's `(TrackId, usize)` disappears: `selected_clip() -> Option<(TrackId, usize)>` in the
+  arrangement view, `clip_menu(ui, track, index, …)` in `interaction/menus.rs`, copy, cut and paste
+  from `(track, index)` in `app.rs`, and `ClipBox`'s `index`, `row` and `rows` in
+  `arrangement/timeline.rs`, with `sub_rows` computing the stacking layout from positions.
 - `crates/project-file` gains a v1 reader that **derives ids in document order**, and the writer
   emits them; the round-trip test and every model field's line in the spec move with it
   ([ADR 0010](0010-project-files.md) › Consequences). `docs/spec/suhina-format.md` is updated in the

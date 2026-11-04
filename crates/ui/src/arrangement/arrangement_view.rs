@@ -311,6 +311,15 @@ fn ruler_beat(raw: f64, grid: TimelineGrid, free: bool) -> f64 {
     if beat.is_finite() { beat.max(0.0) } else { 0.0 }
 }
 
+/// Where a click `raw` beats into a clip's body puts the play start marker: on the grid line at or
+/// before it, never before the clip's start, so a click on the clip never plays from past it.
+fn clip_body_beat(raw: f64, clip_start: f64, grid: TimelineGrid, free: bool) -> f64 {
+    let free = free || !grid.snaps;
+    let beat = if free { (raw * 1000.0).round() / 1000.0 } else { grid.place(raw, false, true) };
+    let beat = beat.max(clip_start);
+    if beat.is_finite() { beat.max(0.0) } else { 0.0 }
+}
+
 fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
     Color32::from_rgb(color.0, color.1, color.2)
 }
@@ -718,9 +727,17 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let to = ruler_beat(raw, grid, free);
         let tracks: Vec<TrackId> = timeline.lanes.iter().map(|l| l.track).collect();
         let (start, end) = (from.min(to), from.max(to));
-        state.time_selection = (end - start > 1e-6).then_some(TimeSelection { tracks, start, end, row: None });
+        let shift = ui.input(|i| i.modifiers.shift);
+        let selected = state.time_selection.clone();
+        let kept = state.painted_from.get_or_insert_with(|| selected.filter(|_| shift)).clone();
+        state.time_selection = match kept {
+            Some(kept) => Some(kept.gone_on(&tracks, start, end, None)),
+            None => (end - start > 1e-6).then_some(TimeSelection { tracks, start, end, row: None }),
+        };
         if ui.input(|i| !i.pointer.primary_down()) {
             state.ruler_select = None;
+            state.painted_from = None;
+            play_from_selection(state, timeline, actions);
         }
     }
     let beat_at = |x: f32, free: bool, state: &ArrangementViewState| {
@@ -1037,7 +1054,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let beat_at = |x: f32, free: bool| {
             grid_now.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free, true)
         };
+        // Shift goes on from a time selection, wherever the drag begins and whatever the tool.
+        let goes_on = ui.input(|i| i.modifiers.shift) && state.time_selection.is_some();
         if drawing
+            && !goes_on
             && body.drag_started_by(egui::PointerButton::Primary)
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
         {
@@ -1048,6 +1068,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             state.marquee = Some(origin);
             state.marquee_scroll = state.scroll;
             state.marquee_time = state.tool == ArrangementTool::Range
+                || goes_on
                 || if state.time_select_ctrl {
                     ui.input(|i| i.modifiers.command)
                 } else {
@@ -1308,14 +1329,21 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let (start, end) = (beat_of(rect.left()), beat_of(rect.right()));
             // Begun in a row of a stack and kept to its track: that row alone.
             let row = state.marquee_row.filter(|(track, _, _)| tracks == [*track]).map(|(_, row, rows)| (row, rows));
-            state.time_selection =
-                (end - start > 1e-6 && !tracks.is_empty()).then_some(TimeSelection { tracks, start, end, row });
+            let shift = ui.input(|i| i.modifiers.shift);
+            let selected = state.time_selection.clone();
+            let kept = state.painted_from.get_or_insert_with(|| selected.filter(|_| shift)).clone();
+            state.time_selection = match kept {
+                Some(kept) => Some(kept.gone_on(&tracks, start, end, row)),
+                None => (end - start > 1e-6 && !tracks.is_empty()).then_some(TimeSelection { tracks, start, end, row }),
+            };
             if done {
                 state.marquee = None;
+                state.painted_from = None;
                 if state.time_selection.is_some() {
                     state.selected.clear();
                     state.anchor = None;
                 }
+                play_from_selection(state, timeline, actions);
             }
         } else {
             // A rectangle that picks the clips it touches, whole.
@@ -1505,7 +1533,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 state.main_drag = Some(v);
                 actions.push(Action::new("mixer.setMainVolume", json!({ "db": v, "continue": !first })));
             }
-            Drag::Done(v) => {
+            Drag::Done(v) | Drag::Set(v) => {
                 state.main_drag = None;
                 actions.push(Action::new("mixer.setMainVolume", json!({ "db": v, "continue": true })));
             }
@@ -1630,6 +1658,12 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         for row in rows.iter() {
             let Some(lane) = timeline.lanes.iter().find(|l| l.track == row.track) else { continue };
             if lane.kind != ColumnKind::Track {
+                // Devices alone land on a group or a return too, on its header or its lane, as
+                // on its column in the Launcher view.
+                if probe.devices && !probe.files && !probe.clip {
+                    let whole = Rect::from_x_y_ranges(area.x_range(), row.clip.y_range());
+                    probe.offer(whole, DropTarget::Track(row.track));
+                }
                 continue;
             }
             if !probe.clip {
@@ -1704,6 +1738,17 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 }
             }
         }
+    }
+}
+
+/// A time selection just painted moves the play start marker to its start, so Play starts there
+/// (#937); while playing, playback goes on where it is and the next start begins there.
+fn play_from_selection(state: &ArrangementViewState, timeline: &Timeline, actions: &mut Vec<Action>) {
+    // The ruler reaches past the last beat a start may be on.
+    if let Some(start) = state.time_selection.as_ref().map(|s| s.start.min(suhina_engine::MAX_START_BEAT))
+        && (start - timeline.start_beat).abs() > 1e-9
+    {
+        actions.push(Action::new("transport.setStart", json!({ "beats": start })));
     }
 }
 

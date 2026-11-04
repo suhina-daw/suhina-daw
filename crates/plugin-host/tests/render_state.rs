@@ -186,3 +186,52 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
     session.check_plugin_edits();
     assert!(session.has_unsaved_changes());
 }
+
+#[test]
+fn a_duplicated_track_starts_its_plug_in_with_the_state_it_has_now() {
+    let mut opened = project();
+    assert_eq!(opened.assign_ids(), Ok(()));
+    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
+    let mut session = Session::new(opened);
+    session.attach_player(Player::new(renderer.controller(), None));
+    session.set_plugin_env(env());
+    let device = json!({ "track": 1, "device": 0 });
+    until(&mut session, &mut renderer, "starting", |s| {
+        s.execute("device.plugin", &device).unwrap()["status"] == "running"
+    });
+    let copied_gain = |s: &Session| {
+        let state = s.project().channels.last()?.devices.first()?.state.as_deref()?;
+        Some(f32::from_le_bytes(state.try_into().ok()?))
+    };
+    // The project holds no state for it yet: the copy has what the plug-in says it has.
+    assert_eq!(gain(session.project()), None);
+    session.execute("track.duplicate", &json!({ "tracks": [1] })).unwrap();
+    assert_eq!(copied_gain(&session), Some(DEFAULT_GAIN));
+    assert_eq!(gain(session.project()), None, "the original is as it was");
+    session.execute("edit.undo", &json!({})).unwrap();
+
+    // Copy and paste, the same.
+    session.execute("track.copy", &json!({ "tracks": [1] })).unwrap();
+    session.execute("track.paste", &json!({ "after": 1 })).unwrap();
+    assert_eq!(copied_gain(&session), Some(DEFAULT_GAIN));
+
+    // Editors open on Windows, and on Linux with an X server.
+    let editors =
+        cfg!(windows) || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty()));
+    if !editors {
+        eprintln!("no display for editors; the edit part is skipped");
+        return;
+    }
+    // A change made in the plug-in's editor goes with both kinds of copy.
+    session.execute("device.openEditor", &device).unwrap();
+    until(&mut session, &mut renderer, "the edit reaching the plug-in", |s| {
+        gain(&s.project_as_heard()) == Some(EDITOR_GAIN)
+    });
+    session.execute("device.closeEditor", &device).unwrap();
+    session.execute("track.duplicate", &json!({ "tracks": [1] })).unwrap();
+    assert_eq!(copied_gain(&session), Some(EDITOR_GAIN));
+    session.execute("edit.undo", &json!({})).unwrap();
+    session.execute("track.copy", &json!({ "tracks": [1] })).unwrap();
+    session.execute("track.paste", &json!({ "after": 1 })).unwrap();
+    assert_eq!(copied_gain(&session), Some(EDITOR_GAIN));
+}

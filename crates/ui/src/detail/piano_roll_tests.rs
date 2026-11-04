@@ -209,7 +209,17 @@ fn clip(notes: Vec<Note>) -> PianoClip {
 /// A layout 200 points tall at 10 points a row, scrolled to the top, with `rows`.
 fn folded_layout(rows: KeyRows) -> Layout {
     let grid = Rect::from_min_size(Pos2::new(36.0, 24.0), Vec2::new(400.0, 200.0));
-    Layout { keys: grid, ruler: grid, grid, lane: grid, scroll: Vec2::ZERO, beat_width: 40.0, key_height: 10.0, rows }
+    Layout {
+        strip: grid,
+        keys: grid,
+        ruler: grid,
+        grid,
+        lane: grid,
+        scroll: Vec2::ZERO,
+        beat_width: 40.0,
+        key_height: 10.0,
+        rows,
+    }
 }
 
 #[test]
@@ -307,7 +317,8 @@ fn the_grid_keys_leave_a_new_grid_for_the_window_and_snap_off_snaps_nothing() {
 #[test]
 fn paste_goes_after_the_selection_else_at_the_playhead_inside_the_clip() {
     let clip = clip(vec![note(1.0, 0.5, 60), note(2.0, 1.0, 64)]);
-    let mut state = focused_on(&clip);
+    // Stacked notes allowed, so the params are only where the notes go.
+    let mut state = PianoRollState { notes_replace: false, ..focused_on(&clip) };
     state.selected = BTreeSet::from([0]);
     let paste = state.key_action("selection.paste", &clip, 0.0, Some(2)).map(|a| a.params);
     assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.5 })));
@@ -342,14 +353,411 @@ fn keys_stop_at_the_limits_and_never_make_notes_shorter_than_a_step() {
     assert!(state.key_action("pianoRoll.shorter", &clip, 0.0, None).is_none());
     state.selected = BTreeSet::from([1]);
     assert_eq!(
-        params(state.key_action("pianoRoll.shorter", &clip, 0.0, None)).map(|p| p["by"].clone()),
-        Some(json!(-0.25))
+        params(state.key_action("pianoRoll.shorter", &clip, 0.0, None)).map(|p| p["lengths"].clone()),
+        Some(json!([0.75]))
     );
-    // Without a selection copy is left for the clip; Ctrl+A and Escape change only the view.
+    // Without a selection copy does nothing here; Ctrl+A and Escape change only the view.
     state.selected.clear();
     assert!(state.key_action("selection.copy", &clip, 0.0, None).is_none());
     assert!(state.key_action("pianoRoll.selectAll", &clip, 0.0, None).is_none());
     assert_eq!(state.selected, BTreeSet::from([0, 1]));
     assert!(state.key_action("pianoRoll.deselect", &clip, 0.0, None).is_none());
     assert!(state.selected.is_empty());
+}
+
+#[test]
+fn a_longer_key_goes_to_the_next_line_or_the_next_note_of_the_key() {
+    let notes = [note(0.0, 0.3, 60), note(0.4, 0.25, 60), note(1.0, 0.25, 60), note(0.2, 1.0, 62)];
+    let grid = TimelineGrid::new(0.25, 400.0, 4.0, MIN_LINE_SPACING);
+    let end = |index: usize, longer, stops| key_step_end(&notes[index], &notes, grid, longer, stops);
+    // Off the grid at 0.3: the next line would be 0.5, and the next note of its key is at 0.4.
+    assert!((end(0, true, true) - 0.4).abs() < 1e-9);
+    // Allowed to stack, the next note does not stop it.
+    assert!((end(0, true, false) - 0.5).abs() < 1e-9);
+    // Off the grid at 0.65, the next line is 0.75 and the next note far enough.
+    assert!((end(1, true, true) - 0.75).abs() < 1e-9);
+    // Touching the next note, or the last of its key: it stays, or goes on to the line.
+    let touching = [note(0.0, 0.4, 60), note(0.4, 0.25, 60)];
+    assert!((key_step_end(&touching[0], &touching, grid, true, true) - 0.4).abs() < 1e-9);
+    assert!((end(3, true, true) - 1.25).abs() < 1e-9);
+    // Shorter: the line before, and never less than a step from the start.
+    assert!((end(3, false, true) - 0.75 - 0.25).abs() < 1e-9);
+    assert!((end(1, false, true) - 0.65).abs() < 1e-9, "a step long already");
+}
+
+#[test]
+fn replaced_notes_leave_the_selection_on_the_same_notes() {
+    let mut state = PianoRollState { selected: BTreeSet::from([1, 3, 5]), ..PianoRollState::default() };
+    state.notes_replaced(&[2, 3]);
+    assert_eq!(state.selected, BTreeSet::from([1, 3]));
+}
+
+#[test]
+fn which_keys_are_named() {
+    use crate::settings::PianoKeyNames::{All, OnlyC, White};
+    assert!(named(60, OnlyC, false, 12.0) && !named(62, OnlyC, false, 12.0));
+    assert!(named(62, White, false, 12.0) && !named(61, White, false, 12.0));
+    assert!(named(61, All, false, 12.0));
+    assert!(named(61, OnlyC, true, 12.0), "folded rows are all named");
+    assert!(!named(60, All, true, 7.0), "low rows have no room");
+}
+
+#[test]
+fn with_stacked_notes_off_what_a_key_places_replaces_what_is_under_it() {
+    let clip = clip(vec![note(1.0, 0.5, 60), note(2.0, 1.0, 64)]);
+    let mut state = focused_on(&clip);
+    state.selected = BTreeSet::from([0]);
+    let paste = state.key_action("selection.paste", &clip, 0.0, Some(2)).map(|a| a.params);
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.5, "replace": true })));
+}
+
+fn span_state(clip: &PianoClip, start: f64, end: f64) -> PianoRollState {
+    let mut state = focused_on(clip);
+    state.select_span(start, end);
+    state.settle_selection(&clip.notes);
+    state
+}
+
+#[test]
+fn a_time_selection_acts_on_the_notes_that_start_in_it() {
+    let clip = clip(vec![note(0.5, 2.0, 60), note(1.0, 0.5, 62), note(2.5, 0.5, 64)]);
+    let mut state = span_state(&clip, 1.0, 3.0);
+    assert_eq!(state.acting(), &BTreeSet::from([1, 2]), "the one that started before it stays out");
+    let copy = state.key_action("selection.copy", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(copy, Some(json!({ "track": 1, "index": 0, "notes": [1, 2] })));
+    let delete = state.delete_selected().map(|a| a.params);
+    assert_eq!(delete, Some(json!({ "track": 1, "index": 0, "notes": [1, 2] })));
+}
+
+#[test]
+fn a_time_selection_with_no_notes_duplicates_nothing() {
+    let clip = clip(vec![note(0.0, 1.0, 60)]);
+    let mut state = span_state(&clip, 2.0, 3.0);
+    assert!(state.key_action("selection.duplicate", &clip, 0.0, None).is_none());
+    assert_eq!(state.span.as_ref().map(|s| s.start), Some(2.0), "and stays");
+}
+
+#[test]
+fn a_duplicate_carries_the_time_selection_on_and_an_undo_brings_it_back() {
+    let one = clip(vec![note(1.0, 0.5, 60)]);
+    let mut state = PianoRollState { notes_replace: false, ..span_state(&one, 0.0, 2.0) };
+    let copy = state.key_action("selection.duplicate", &one, 0.0, None).map(|a| a.params);
+    assert_eq!(copy, Some(json!({ "track": 1, "index": 0, "notes": [0], "beats": 2.0 })));
+    assert_eq!(state.selected, BTreeSet::from([1]));
+    let span = state.span.clone().unwrap();
+    assert_eq!((span.start, span.end), (2.0, 4.0));
+
+    // The next frame has the copy; the keys go on from it.
+    let two = clip(vec![note(1.0, 0.5, 60), note(3.0, 0.5, 60)]);
+    state.selecting_new = false;
+    state.settle_selection(&two.notes);
+    assert_eq!(state.span.as_ref().map(|s| s.end), Some(4.0), "the copies are selected with it");
+    let again = state.key_action("selection.duplicate", &two, 0.0, None).map(|a| a.params);
+    assert_eq!(again, Some(json!({ "track": 1, "index": 0, "notes": [1], "beats": 2.0 })));
+    let span = state.span.clone().unwrap();
+    assert_eq!((span.start, span.end), (4.0, 6.0));
+
+    // Undone, one at a time, to where it began.
+    state.selecting_new = false;
+    state.undo_ran();
+    state.settle_selection(&two.notes);
+    assert_eq!(state.selected, BTreeSet::from([1]));
+    assert_eq!(state.span.as_ref().map(|s| s.start), Some(2.0));
+    state.undo_ran();
+    state.settle_selection(&one.notes);
+    assert!(state.selected.is_empty());
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 2.0)));
+    assert_eq!(state.acting(), &BTreeSet::from([0]));
+}
+
+#[test]
+fn selecting_something_else_ends_the_time_selection() {
+    let clip = clip(vec![note(1.0, 0.5, 60)]);
+    let mut state = span_state(&clip, 0.0, 2.0);
+    state.selected = BTreeSet::from([0]);
+    state.settle_selection(&clip.notes);
+    assert!(state.span.is_none());
+}
+
+#[test]
+fn a_paste_goes_on_from_a_time_selection_as_far_in_as_the_notes_were() {
+    let clip = clip(vec![note(1.0, 0.5, 60)]);
+    let mut state = PianoRollState { notes_replace: false, ..span_state(&clip, 0.0, 2.0) };
+    let paste = state.key_action("selection.paste", &clip, 0.0, Some(1)).map(|a| a.params);
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 3.0 })));
+    assert_eq!(state.span.as_ref().map(|s| s.start), Some(2.0));
+}
+
+#[test]
+fn a_paste_goes_to_the_insert_mark_with_nothing_selected() {
+    let clip = clip(vec![note(1.0, 0.5, 60)]);
+    let mut state = PianoRollState { notes_replace: false, insert_at: Some(5.0), ..focused_on(&clip) };
+    let paste = state.key_action("selection.paste", &clip, 0.0, Some(1)).map(|a| a.params);
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 5.0 })));
+    state.selecting_new = false;
+    let two = clip_of_two();
+    state.settle_selection(&two.notes);
+    assert_eq!(state.insert_at, None, "the mark is gone once notes are selected");
+}
+
+fn clip_of_two() -> PianoClip {
+    clip(vec![note(1.0, 0.5, 60), note(5.0, 0.5, 60)])
+}
+
+#[test]
+fn replaced_notes_leave_the_time_selection_on_the_same_notes() {
+    let clip = clip(vec![note(1.0, 0.5, 60), note(3.0, 0.5, 60)]);
+    let mut state = span_state(&clip, 0.0, 2.0);
+    let _ = state.key_action("selection.duplicate", &clip, 0.0, None);
+    // The copy, index 2, replaced the note at index 1.
+    state.notes_replaced(&[1]);
+    assert_eq!(state.selected, BTreeSet::from([1]));
+    assert_eq!(state.span.as_ref().map(|s| s.with.clone()), Some(BTreeSet::from([1])));
+}
+
+#[test]
+fn a_rectangle_covers_whole_grid_steps() {
+    let layout = Layout {
+        strip: Rect::NOTHING,
+        keys: Rect::NOTHING,
+        ruler: Rect::NOTHING,
+        grid: Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.0)),
+        lane: Rect::NOTHING,
+        scroll: Vec2::ZERO,
+        beat_width: 100.0,
+        key_height: 12.0,
+        rows: scale_view::rows(&clip(Vec::new()), Fold::default()),
+    };
+    let grid = TimelineGrid { step: 0.5, bar_beats: 4.0, snaps: true };
+    let rect = Rect::from_min_max(Pos2::new(62.5, 10.0), Pos2::new(125.0, 20.0));
+    assert_eq!(swept_span(grid, &layout, &[], rect), (0.5, 1.5));
+    let on_lines = Rect::from_min_max(Pos2::new(50.0, 10.0), Pos2::new(150.0, 20.0));
+    assert_eq!(swept_span(grid, &layout, &[], on_lines), (0.5, 1.5));
+    let free = TimelineGrid { snaps: false, ..grid };
+    assert_eq!(swept_span(free, &layout, &[], rect), (0.625, 1.25));
+    // A note it touches is covered whole, however little of it the rectangle reached.
+    let long = note(0.25, 3.0, 60);
+    let middle = layout.note_rect(&long).center();
+    let sliver = Rect::from_min_max(Pos2::new(100.0, middle.y - 1.0), Pos2::new(110.0, middle.y + 1.0));
+    assert_eq!(swept_span(grid, &layout, &[long], sliver), (0.25, 3.25));
+    let clear = Rect::from_min_max(Pos2::new(100.0, middle.y + 40.0), Pos2::new(110.0, middle.y + 42.0));
+    assert_eq!(swept_span(grid, &layout, &[long], clear), (1.0, 1.5), "one it misses is not");
+}
+
+#[test]
+fn the_velocity_lane_stays_through_a_zoom() {
+    assert_eq!(velocity_lane_height(300.0, DEFAULT_KEY_HEIGHT, None), velocity_lane_height(300.0, 160.0, None));
+}
+
+/// A copy that replaced as many notes as it made leaves the note count as it was: the undo is told
+/// by the notes being back.
+#[test]
+fn undoing_a_copy_that_replaced_a_note_brings_the_selection_back() {
+    let clip = clip(vec![note(1.0, 0.5, 60), note(3.0, 0.5, 60)]);
+    let mut state = span_state(&clip, 0.0, 2.0);
+    let _ = state.key_action("selection.duplicate", &clip, 0.0, None);
+    state.notes_replaced(&[1]);
+    state.selecting_new = false;
+    // The copy in the replaced note's place, as many notes as before.
+    let mut after = clip.notes.clone();
+    if let Some(copy) = after.get_mut(1) {
+        copy.velocity = 0.5;
+    }
+    state.settle_selection(&after);
+    assert_eq!(state.selected, BTreeSet::from([1]), "the copy stays selected");
+    // Notes that came out the same are no undo: only an undo brings the selection back.
+    state.settle_selection(&clip.notes);
+    assert_eq!(state.selected, BTreeSet::from([1]), "no undo ran");
+    state.undo_ran();
+    state.settle_selection(&clip.notes);
+    assert!(state.selected.is_empty());
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 2.0)));
+    assert_eq!(state.acting(), &BTreeSet::from([0]));
+}
+
+#[test]
+fn a_key_never_moves_a_note_past_the_furthest_start() {
+    let limit = f64::from(BEAT_LIMIT);
+    let clip = clip(vec![note(limit, 0.5, 60)]);
+    let mut state = span_state(&clip, limit, limit + 1.0);
+    assert!(state.key_action("pianoRoll.later", &clip, 0.0, None).is_none());
+    assert_eq!(state.span.as_ref().map(|s| s.start), Some(limit), "the stretch stays with it");
+}
+
+/// A rectangle that reached notes keeps its whole stretch: a copy goes after the empty part too.
+#[test]
+fn a_rectangle_that_reached_notes_copies_by_its_whole_stretch() {
+    let clip = clip(vec![note(0.0, 0.5, 60), note(5.0, 0.5, 60)]);
+    let mut state = PianoRollState { notes_replace: false, ..focused_on(&clip) };
+    state.selected = BTreeSet::from([0]);
+    state.select_span(0.0, 2.0);
+    state.settle_selection(&clip.notes);
+    assert_eq!(state.acting(), &BTreeSet::from([0]));
+    let copy = state.key_action("selection.duplicate", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(copy, Some(json!({ "track": 1, "index": 0, "notes": [0], "beats": 2.0 })));
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((2.0, 4.0)));
+}
+
+/// A longer key from a triplet line a command rounded goes on to the next line.
+#[test]
+fn a_longer_key_goes_on_along_triplet_lines() {
+    let grid = TimelineGrid { step: 1.0 / 3.0, bar_beats: 4.0, snaps: true };
+    let first = note(0.0, 0.333333, 60);
+    assert!((key_step_end(&first, &[first], grid, true, true) - 2.0 / 3.0).abs() < 1e-9);
+}
+
+/// Alt and an arrow key goes a fine step, off the grid; with Shift it changes the length that way.
+#[test]
+fn alt_and_an_arrow_key_go_a_fine_step_off_the_grid() {
+    let clip = clip(vec![note(1.0, 1.0, 60), note(2.25, 1.0, 60)]);
+    let mut state = PianoRollState { notes_replace: false, ..focused_on(&clip) };
+    state.selected = BTreeSet::from([0]);
+    let params = |action: Option<Action>| action.map(|a| (a.id, a.params));
+    let (id, later) = params(state.key_action("pianoRoll.laterFine", &clip, 0.0, None)).unwrap();
+    assert_eq!((id, later["beats"].as_f64()), ("note.move", Some(0.03125)));
+    let (_, earlier) = params(state.key_action("pianoRoll.earlierFine", &clip, 0.0, None)).unwrap();
+    assert_eq!(earlier["beats"].as_f64(), Some(-0.03125));
+    let (id, longer) = params(state.key_action("pianoRoll.longerFine", &clip, 0.0, None)).unwrap();
+    assert_eq!((id, longer["lengths"][0].as_f64()), ("note.resize", Some(1.03125)));
+    let (_, shorter) = params(state.key_action("pianoRoll.shorterFine", &clip, 0.0, None)).unwrap();
+    assert_eq!(shorter["lengths"][0].as_f64(), Some(0.96875));
+}
+
+#[test]
+fn a_fine_step_longer_stops_at_the_next_note_of_the_key() {
+    let clip = clip(vec![note(1.0, 1.24, 60), note(2.25, 1.0, 60)]);
+    let mut state = focused_on(&clip);
+    state.selected = BTreeSet::from([0]);
+    let longer = state.key_action("pianoRoll.longerFine", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(longer.and_then(|p| p["lengths"][0].as_f64()), Some(1.25));
+}
+
+#[test]
+fn a_key_resize_replaces_what_is_under_it_unless_notes_stack() {
+    let clip = clip(vec![note(0.0, 1.0, 60)]);
+    let mut state = focused_on(&clip);
+    state.selected = BTreeSet::from([0]);
+    let longer = state.key_action("pianoRoll.longer", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(longer.map(|p| p["replace"].clone()), Some(json!(true)));
+    state.notes_replace = false;
+    let longer = state.key_action("pianoRoll.longer", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(longer.map(|p| p["replace"].clone()), Some(Value::Null));
+}
+
+/// An arrow key takes the first note to the next line, the rest keeping their distance to it, and
+/// from there a line at a time.
+#[test]
+fn an_arrow_key_brings_notes_off_the_grid_onto_it() {
+    let beats = |notes: Vec<Note>, action: &str| {
+        let clip = clip(notes);
+        let mut state = focused_on(&clip);
+        state.selected = (0..clip.notes.len()).collect();
+        let step = note_grid(&clip, state.beat_width).step;
+        let moved = state.key_action(action, &clip, 0.0, None).map(|a| a.params["beats"].as_f64());
+        (moved.flatten().unwrap_or(0.0), step)
+    };
+    let (moved, step) = beats(vec![note(4.0, 0.25, 60)], "pianoRoll.later");
+    assert_eq!(moved, step, "on a line: a whole step");
+    let (moved, step) = beats(vec![note(4.0, 0.25, 60)], "pianoRoll.earlier");
+    assert_eq!(moved, -step);
+
+    let off = step / 4.0;
+    let (moved, _) = beats(vec![note(4.0 - off, 0.25, 60), note(6.0, 0.25, 62)], "pianoRoll.later");
+    assert!((moved - off).abs() < 1e-6, "the first note reaches the line: {moved}");
+    let (moved, _) = beats(vec![note(4.0 + off, 0.25, 60), note(6.0, 0.25, 62)], "pianoRoll.earlier");
+    assert!((moved + off).abs() < 1e-6, "the first note goes back to the line: {moved}");
+}
+
+/// A time selection that holds no note start gives Quantise nothing, not the whole clip.
+#[test]
+fn quantise_leaves_the_clip_alone_when_a_time_selection_holds_no_note() {
+    let clip = clip(vec![note(0.1, 0.5, 60)]);
+    assert!(focused_on(&clip).quantize_selected().is_some(), "with no selection at all: the whole clip");
+    assert_eq!(span_state(&clip, 8.0, 9.0).quantize_selected(), None);
+    let found = span_state(&clip, 0.0, 1.0).quantize_selected().map(|a| a.params["notes"].clone());
+    assert_eq!(found, Some(json!([0])));
+}
+
+/// Legato's last notes go as far as the stretch selected in time.
+#[test]
+fn a_time_selection_says_where_legato_ends() {
+    let clip = clip(vec![note(0.0, 0.5, 60)]);
+    assert_eq!(focused_on(&clip).span_end(), None);
+    assert_eq!(span_state(&clip, 0.0, 4.0).span_end(), Some(4.0));
+}
+
+/// A copy the command refused never came: the selection and the stretch before it are back.
+#[test]
+fn a_refused_copy_gives_the_selection_back() {
+    let clip = clip(vec![note(0.0, 0.5, 60)]);
+    let mut state = span_state(&clip, 0.0, 2.0);
+    state.selected = BTreeSet::from([0]);
+    if let Some(span) = &mut state.span {
+        span.with = state.selected.clone();
+    }
+    state.key_action("selection.duplicate", &clip, 0.0, None);
+    assert_eq!(state.selected, BTreeSet::from([1]));
+    state.selecting_new = false;
+    state.settle_selection(&clip.notes);
+    assert_eq!(state.selected, BTreeSet::from([0]));
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 2.0)));
+}
+
+/// Legato's last notes end at a time selection's end, at the next note after them, or at the clip's.
+#[test]
+fn legato_ends_the_last_notes_where_the_clip_goes_on() {
+    let notes = [note(0.0, 0.5, 60), note(1.0, 0.5, 62), note(2.0, 0.5, 64)];
+    let address = json!({});
+    let until = |selected: &BTreeSet<usize>, span| {
+        crate::detail::midi_tools::Tools { address: &address, notes: &notes, selected, length: 8.0, nothing: false }
+            .legato_until(span)
+    };
+    let none = BTreeSet::new();
+    assert_eq!(until(&none, None), 8.0, "every note: to the clip's end");
+    assert_eq!(until(&BTreeSet::from([0, 1]), None), 2.0, "the next note that is not among them");
+    assert_eq!(until(&none, Some(4.0)), 4.0, "a time selection's end comes first");
+}
+
+/// A rectangle with Shift keeps what was selected in time, and the stretch runs over both.
+#[test]
+fn a_rectangle_that_adds_goes_on_from_the_time_selection() {
+    let clip = clip(vec![note(0.0, 0.5, 60), note(4.0, 0.5, 62)]);
+    let layout = folded_layout(KeyRows::default());
+    let mut state = focused_on(&clip);
+    state.select_span(0.0, 1.0);
+    let rect = Rect::from_two_pos(
+        Pos2::new(layout.x_of(2.0), layout.grid.top() + 1.0),
+        Pos2::new(layout.x_of(3.0), layout.grid.top() + 2.0),
+    );
+    let mut actions = Vec::new();
+    let gesture = Gesture::Select { from: rect.min, add: true };
+    commit(&gesture, Effect::Select(rect), &clip, &mut state, &mut actions, &layout);
+    let span = state.span.as_ref().map(|s| (s.start, s.end));
+    assert_eq!(span.map(|s| s.0), Some(0.0), "the old start stays");
+    assert!(span.is_some_and(|s| s.1 >= 3.0), "the new end counts: {span:?}");
+}
+
+/// The notes of a ghost say which clip they come from, and the last drawn is the one found.
+#[test]
+fn a_ghost_note_finds_its_clip() {
+    use crate::detail::detail_view::ClipRef;
+    use suhina_engine::model::TrackId;
+    let (a, b) = (ClipRef::Slot(TrackId(1), 0), ClipRef::Slot(TrackId(2), 3));
+    let ghost =
+        |clip, start| ghost_view::GhostNote { start, length: 1.0, key: 60, color: Color32::RED, source: 0, clip };
+    let ghosts = ghost_view::Ghosts { notes: vec![ghost(a, 0.0), ghost(b, 0.0), ghost(a, 8.0)], ..Default::default() };
+    let rect_of =
+        |g: &ghost_view::GhostNote| Rect::from_min_size(Pos2::new(g.start as f32 * 10.0, 0.0), Vec2::new(10.0, 10.0));
+    assert_eq!(ghost_view::ghost_at(&ghosts, Pos2::new(5.0, 5.0), rect_of), Some(b));
+    assert_eq!(ghost_view::ghost_at(&ghosts, Pos2::new(85.0, 5.0), rect_of), Some(a));
+    assert_eq!(ghost_view::ghost_at(&ghosts, Pos2::new(45.0, 5.0), rect_of), None);
+}
+
+/// A selected note takes the accent, unless the note's colour is close to it.
+#[test]
+fn a_selected_note_stands_out_from_its_colour() {
+    let (accent, plain) = (Color32::from_rgb(0xA6, 0xA3, 0xFF), Color32::from_rgb(0xEC, 0xE8, 0xE1));
+    assert_eq!(selected_note_color(Color32::from_rgb(0xF2, 0xD5, 0x41), accent, plain), accent);
+    assert_eq!(selected_note_color(Color32::from_rgb(0xE0, 0x30, 0x30), accent, plain), accent);
+    assert_eq!(selected_note_color(Color32::from_rgb(0x90, 0x90, 0xF0), accent, plain), plain);
 }

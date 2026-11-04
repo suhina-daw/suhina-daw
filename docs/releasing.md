@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
 type: howto
 status: current
-last_verified: 2026-10-29
+last_verified: 2026-11-01
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -233,8 +233,10 @@ branch* by hand. The test build never runs on the queue.
 `changes` job skips fmt, clippy and the tests when every changed file is documentation (`docs/`,
 any `.md`, `LICENSE`, `NOTICE`), a script under `scripts/` or a file under `.github/`: no Rust
 build or test reads them. A change to `ci.yml` itself still runs every job. The `docs` job runs on
-every change, so the script tests and the tests of the claim bot and the Depends on check still run; in the Actions tab the
-skipped jobs show as skipped and `ci` passes.
+every change, so the script tests and the tests of the claim bot and the Depends on check still run,
+and so do the Depends on check itself and the settings guide export; `cargo deny` skips with the
+build jobs, since only a Rust change can change a dependency. In the Actions tab the skipped jobs
+show as skipped and `ci` passes.
 
 **The build cache.** Only `main` saves `ci.yml`'s Rust cache; pull requests and the merge queue
 restore `main`'s. The repository's caches share GitHub's 10 GB, and when every pull request push
@@ -254,8 +256,11 @@ The queue is a setting, not code: Settings › Rules (or Branches) › the rule 
 merge queue**, with the merge method used today, a group size of about 5 and *Only merge
 non-failing pull requests*. With a queue, *Require branches to be up to date before merging* is not
 needed. Every check the rule requires must come from a workflow that runs on `merge_group`; today
-those are `ci` and `Depends on` ([`claim-bot.md`](claim-bot.md) › The Depends on check), and a check
-required from another workflow would keep the queue waiting.
+that is `ci` alone, and a check required from another workflow would keep the queue waiting. The
+checks that have workflows of their own (`cargo deny`, the Depends on check,
+[`claim-bot.md`](claim-bot.md) › The Depends on check, and the settings guide export) are called
+from `ci.yml` as its jobs, so `ci` goes red with them: a check main does not require can fail
+without stopping a merge, and the `ready to merge` label queues a pull request on `ci` alone.
 
 Without a queue, turn off *Require branches to be up to date before merging* and merge each green
 pull request without updating it; CI on `main`, which runs on every push, catches the rare
@@ -277,7 +282,7 @@ only `main`'s automation for the build lookup, never running the pull request's 
 | a push by anyone else | the label comes off, so the new commits wait to be read (the rule for `main` dismisses the older approval) |
 | the label comes off | auto-merge off, out of the queue, and the app's approvals dismissed; a call that fails fails the run. When the label was added again meanwhile, the run fails and asks for the label to be taken off and added again, so the pull request waits rather than merging |
 
-The merge method is the queue's (squash). Agents never add the label (`AGENTS.md` › Tasks).
+The merge method is the queue's (squash). Agents never add the label (`docs/workflow.md` › Tasks).
 
 It acts with a short-lived token of the GitHub App that also pushes the generated docs
 (`docs-generated.yml`), not with `GITHUB_TOKEN`: GitHub starts no workflows for a merge made through
@@ -307,17 +312,22 @@ one build of `main` with all of them merged on, in that order.
 ## Release notes
 
 [`scripts/release_notes.py`](../scripts/release_notes.py) writes the notes from git alone (no
-network, no AI service). A change is one commit on `main`'s first-parent line, so one squash-merged
-pull request, listed by its title with a link to the pull request. Changes that touch only
-documentation, CI, scripts and tests are counted, not listed. Pull request titles are the release
-notes, so they say what changed for a user: "Clip fades: shapes and an adjustable curve".
+network, no AI service). A change is one commit on `main`'s first-parent line, so one merged pull
+request, listed by its title with a link to the pull request: a squash merge's subject, or for a
+merge commit ("Merge pull request #N from …") the first line of its message, which is the pull
+request's title. Changes that touch only documentation, CI, scripts and tests are counted, not
+listed. Pull request titles are the release notes, so they say what changed for a user: "Clip
+fades: shapes and an adjustable curve".
 
 - **Nightly:** the changes since the previous nightly, on its release page and in the Discord post.
 - **Draft of a tagged release:** first *New and changed*, the bullets of ROADMAP.md › What works now
   that are new or reworded since the previous release, by milestone, then *All changes*. A
   release candidate counts from the tag before it, a release from the previous release, the first
   from the beginning. Edit the draft before publishing: the ROADMAP bullets describe what works,
-  not what changed, and a reworded bullet may be a fix of its text.
+  not what changed, and a reworded bullet may be a fix of its text. A pull request writes a new
+  bullet as a file under `docs/works-now/`, which `docs-generated.yml` folds into ROADMAP.md on
+  `main` right after the merge ([`works-now/README.md`](works-now/README.md)), so the draft sees it
+  like any other.
 
 Its tests run in CI: `python3 -m unittest discover -s scripts -p 'test_*.py'`.
 

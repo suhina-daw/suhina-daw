@@ -235,11 +235,17 @@ fn a_built_ins_generated_list_fits_the_compact_panel() {
     for device in &chain.devices {
         let graph = device.graph.as_ref().unwrap_or_else(|| panic!("{} has a panel", device.name));
         assert!(graph.canvas.is_none() && graph.nodes.is_empty(), "the generated list, no graph");
-        let height = panel_height(device, COMPACT_WIDTH, None);
+        let height = panel_height(device, None);
         assert!(height <= ROW + PAD * 2.0 + COMPACT_HEIGHT, "{}: {height}", device.name);
     }
-    // Utility's thirteen parameters scroll inside the standard height.
-    assert_eq!(panel_height(&chain.devices[0], COMPACT_WIDTH, None), ROW + PAD * 2.0 + COMPACT_HEIGHT);
+    // Utility's thirteen parameters do not fit one column: the rest continue in a second one to
+    // its right, every cell inside the standard height, so the panel widens and never scrolls.
+    let utility = &chain.devices[0];
+    let graph = utility.graph.as_ref().unwrap();
+    let cells = parameter_layout(&graph.parameters, COMPACT_WIDTH, list_height(utility, graph), &[]);
+    assert!(cells.iter().all(|c| c.bottom() <= COMPACT_HEIGHT + 0.5), "{cells:?}");
+    assert_eq!(cells.first().unwrap().left(), 0.0);
+    assert_eq!(cells.last().unwrap().left(), COMPACT_WIDTH);
     assert_eq!(STACK_WIDTH, 272.0);
 }
 
@@ -357,11 +363,34 @@ fn authored_control_positions_and_auto_flow_have_the_expected_extent() {
     let mut next = p.clone();
     next.ui.position = None;
     next.ui.size = Some([200.0, 60.0]);
-    let cells = parameter_layout(&[p, next], 320.0, &[]);
+    let cells = parameter_layout(&[p, next.clone()], 320.0, f32::INFINITY, &[]);
     assert_eq!(cells[0].min, Pos2::new(300.0, 10.0));
     assert_eq!(cells[0].max, Pos2::new(540.0, 130.0));
     assert_eq!(cells[1].min, Pos2::new(0.0, 130.0));
     assert_eq!(cells[1].max, Pos2::new(200.0, 190.0));
+    // A cell placed in the second column, listed first: the list continues under it there.
+    let mut placed = next.clone();
+    placed.ui.position = Some([320.0, 0.0]);
+    let auto = |id: &str| GraphParameter {
+        id: id.into(),
+        ui: ParameterUi { size: Some([200.0, 60.0]), ..ParameterUi::default() },
+        ..next.clone()
+    };
+    let cells = parameter_layout(&[placed, auto("a"), auto("b"), auto("c")], 320.0, 130.0, &[]);
+    assert_eq!(cells[1].min, Pos2::new(0.0, 0.0));
+    assert_eq!(cells[2].min, Pos2::new(0.0, 60.0));
+    assert_eq!(cells[3].min, Pos2::new(320.0, 60.0), "{cells:?}");
+    // A second column as tall as the limit too: the list goes on to the first with room.
+    let mut tall = next.clone();
+    tall.ui.position = Some([320.0, 0.0]);
+    tall.ui.size = Some([200.0, 130.0]);
+    let cells = parameter_layout(&[tall, auto("a"), auto("b"), auto("c")], 320.0, 130.0, &[]);
+    assert_eq!(cells[3].min, Pos2::new(640.0, 0.0), "{cells:?}");
+    // A cell wider than its column keeps the next column clear of it.
+    let mut wide = auto("w");
+    wide.ui.size = Some([400.0, 100.0]);
+    let cells = parameter_layout(&[wide, auto("a")], 320.0, 130.0, &[]);
+    assert_eq!(cells[1].min, Pos2::new(400.0, 0.0), "{cells:?}");
 }
 
 #[test]
@@ -493,7 +522,7 @@ fn a_running_plug_in_shows_the_parameters_it_lists_as_a_generated_list() {
             Some(TrackId(1)),
             None,
             &mut |_, _| Some(listing(status.clone())),
-            crate::detail::nam_panel::Lists::default(),
+            crate::detail::device_widgets::Lists::default(),
         ) else {
             panic!()
         };
@@ -532,7 +561,7 @@ fn automation_replaces_a_plug_ins_listed_text_with_the_value_it_plays() {
         Some(TrackId(1)),
         None,
         &mut |_, _| Some(listing(PluginStatus::Running)),
-        crate::detail::nam_panel::Lists::default(),
+        crate::detail::device_widgets::Lists::default(),
     );
     detail.follow_automation(&project, 4.0);
     let Detail::Devices(chain) = detail else { panic!() };
@@ -588,7 +617,7 @@ fn a_plug_ins_generated_list_sets_its_parameters_by_id() {
         Some(TrackId(1)),
         None,
         &mut |_, _| Some(listing(PluginStatus::Running)),
-        crate::detail::nam_panel::Lists::default(),
+        crate::detail::device_widgets::Lists::default(),
     ) else {
         panic!()
     };
@@ -632,7 +661,7 @@ fn a_plug_in_shows_where_it_stands_and_what_its_button_does() {
             Some(TrackId(1)),
             None,
             &mut |_, _| status.clone().map(|s| report(s, open)),
-            crate::detail::nam_panel::Lists::default(),
+            crate::detail::device_widgets::Lists::default(),
         ) else {
             panic!()
         };
@@ -667,7 +696,7 @@ fn a_clips_ara_editor_lands_in_the_clip_view_or_offers_to_open() {
             Some(TrackId(1)),
             None,
             &mut |_, _| Some(report.clone()),
-            crate::detail::nam_panel::Lists::default(),
+            crate::detail::device_widgets::Lists::default(),
         ) else {
             panic!()
         };
@@ -721,7 +750,7 @@ fn an_embedded_editor_takes_its_room_and_says_where_it_lands() {
         Some(TrackId(1)),
         None,
         &mut |_, _| Some(embedded.clone()),
-        crate::detail::nam_panel::Lists::default(),
+        crate::detail::device_widgets::Lists::default(),
     ) else {
         panic!()
     };
@@ -795,7 +824,7 @@ fn the_editor_button_asks_for_the_device_command() {
         Some(TrackId(1)),
         None,
         &mut |_, _| Some(report(PluginStatus::Running, false)),
-        crate::detail::nam_panel::Lists::default(),
+        crate::detail::device_widgets::Lists::default(),
     ) else {
         panic!()
     };
@@ -831,7 +860,7 @@ fn a_theme_lays_a_generated_list_side_by_side() {
     let (theme, _) =
         crate::kit::theme::from_sheet(".device { --suhina-param-columns: 3; --suhina-param-row: 48px; }", "");
     crate::kit::skin::configure(&theme.skin);
-    let cells = parameter_layout(&graph.parameters, 300.0, &[]);
+    let cells = parameter_layout(&graph.parameters, 300.0, f32::INFINITY, &[]);
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
     let lefts: Vec<f32> = cells.iter().take(4).map(|c| c.left()).collect();
     assert_eq!(lefts, [0.0, 100.0, 200.0, 0.0], "three to a line, then the next line");
@@ -855,4 +884,135 @@ fn stock_value_text_drops_the_minus_of_a_negative_that_rounds_to_zero() {
     parameter.ui.decimals = 2;
     assert_eq!(super::parameters::value_text(&parameter, -0.004), "0.00 dB");
     assert_eq!(super::parameters::value_text(&parameter, -0.014), "-0.01 dB");
+}
+
+#[test]
+fn an_embedded_editor_hides_the_list_so_the_list_takes_no_room() {
+    let mut project = demo_project();
+    project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
+    let Detail::Devices(mut chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    let Detail::Devices(plugin) = build_with(
+        &with_plugin(),
+        Some(TrackId(1)),
+        None,
+        &mut |_, _| Some(PluginReport { editor_embedded: Some((300, 200)), ..report(PluginStatus::Running, true) }),
+        crate::detail::device_widgets::Lists::default(),
+    ) else {
+        panic!()
+    };
+    let device = &mut chain.devices[0];
+    let graph = device.graph.clone().unwrap();
+    assert!(list_right(device, &graph) > COMPACT_WIDTH, "two columns");
+    device.plugin = plugin.devices[0].plugin.clone();
+    assert_eq!(list_right(device, &graph), 0.0);
+}
+
+#[test]
+fn a_long_list_shows_its_first_two_columns() {
+    let mut project = demo_project();
+    project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    let graph = chain.devices[0].graph.as_ref().unwrap();
+    // Utility's list fills two columns of this height, so nothing is left out.
+    assert_eq!(list_fit(&graph.parameters, COMPACT_HEIGHT), None);
+    // Three rows a column: the rest wait behind the chevron.
+    let row = parameter_height(&graph.parameters[0]);
+    let fit = list_fit(&graph.parameters, row * 3.0).unwrap();
+    assert!((1..graph.parameters.len()).contains(&fit), "{fit}");
+    let cells = parameter_layout(&graph.parameters, COMPACT_WIDTH, row * 3.0, &[]);
+    assert!(cells[..fit].iter().all(|c| c.left() < COMPACT_WIDTH * 2.0), "{cells:?}");
+    assert!(cells[fit].left() >= COMPACT_WIDTH * 2.0, "{cells:?}");
+}
+
+#[test]
+fn a_tall_list_stays_in_two_columns() {
+    let mut project = demo_project();
+    project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    let graph = chain.devices[0].graph.as_ref().unwrap();
+    let mut parameters = graph.parameters.clone();
+    for _ in 0..5 {
+        parameters.extend_from_slice(&graph.parameters);
+    }
+    let cells = parameter_layout(&parameters, COMPACT_WIDTH, tall_list_height(&parameters), &[]);
+    assert!(cells.iter().all(|c| c.left() < COMPACT_WIDTH * 2.0), "{cells:?}");
+    assert!(cells.iter().any(|c| c.left() >= COMPACT_WIDTH), "{cells:?}");
+}
+
+#[test]
+fn columns_get_room_between_them_as_many_as_there_are() {
+    let cell = |left: f32| Rect::from_min_size(Pos2::new(left, 0.0), Vec2::new(100.0, 20.0));
+    let mut cells = [cell(0.0), cell(100.0), cell(200.0), cell(200.0)];
+    let lines = spread_columns(&mut cells, 100.0);
+    let lefts: Vec<f32> = cells.iter().map(|c| c.left()).collect();
+    assert_eq!(lefts, [0.0, 100.0 + LIST_GAP, 200.0 + LIST_GAP * 2.0, 200.0 + LIST_GAP * 2.0]);
+    assert_eq!(lines, [100.0 + LIST_GAP / 2.0, 200.0 + LIST_GAP * 1.5]);
+    // Each line stands between the end of a column and the start of the next.
+    assert!(cells[0].right() < lines[0] && lines[0] < cells[1].left());
+    assert!(cells[1].right() < lines[1] && lines[1] < cells[2].left());
+}
+
+#[test]
+fn a_theme_s_cells_in_one_column_stay_together() {
+    // Three cells to a 300 point column: no room and no line between them.
+    let cell = |left: f32| Rect::from_min_size(Pos2::new(left, 0.0), Vec2::new(100.0, 48.0));
+    let mut cells = [cell(0.0), cell(100.0), cell(200.0), cell(0.0)];
+    let before = cells;
+    assert!(spread_columns(&mut cells, 300.0).is_empty());
+    assert_eq!(cells, before);
+}
+
+#[test]
+fn a_list_with_a_canvas_or_placed_cells_keeps_its_positions() {
+    let mut project = demo_project();
+    project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    let mut graph = chain.devices[0].graph.clone().unwrap();
+    assert!(list_spreads(&graph));
+    // Two columns: the panel is as wide as them and the room between them.
+    assert_eq!(list_right(&chain.devices[0], &graph), COMPACT_WIDTH * 2.0 + LIST_GAP);
+    graph.parameters[0].ui.position = Some([0.0, 0.0]);
+    assert!(!list_spreads(&graph));
+    assert!(list_spreads(&chain.devices[0].graph.clone().unwrap()));
+}
+
+#[test]
+fn host_values_reach_devices_inside_groups_with_or_without_live_values() {
+    use super::{Detail, DeviceAt, DeviceBox, build, give_host_values};
+    use suhina_engine::model::{Branch, Channel, ChannelId, Device, DeviceGroup, DeviceKind, Project, Track, TrackId};
+    let multiband = || Device::new("Multiband", DeviceKind::Builtin("multiband".into()));
+    let mut project = Project::default();
+    project.tracks.push(Track { channel: Some(ChannelId(1)), ..Track::new(TrackId(1), "T") });
+    let mut channel = Channel::new(ChannelId(1), "T");
+    let branch = Branch { devices: vec![multiband()], ..Branch::new("B") };
+    channel.devices = vec![multiband(), Device::group("G", DeviceGroup::with_branches(vec![branch]))];
+    project.channels.push(channel);
+    let Detail::Devices(mut chain) = build(&project, Some(TrackId(1)), None) else {
+        panic!("the track's devices");
+    };
+    let top = DeviceAt::at(0);
+    let inner = DeviceAt(vec![1, 0, 0]);
+    let value = |devices: &[DeviceBox], at: &DeviceAt, id: &str| {
+        let device = if *at == top {
+            &devices[0]
+        } else {
+            &devices[1].group.as_ref().expect("the group").branches[0].devices[0]
+        };
+        let graph = device.graph.as_ref().expect("its panel");
+        graph.parameters.iter().rfind(|p| p.id == id).map(|p| p.value)
+    };
+
+    // No player: the panel still knows it is open, and nothing is live.
+    assert!(!give_host_values(&mut chain.devices, Some(&inner), &mut |_| None));
+    assert_eq!(value(&chain.devices, &inner, suhina_device_sdk::ui::EXPANDED_ID), Some(1.0));
+    assert_eq!(value(&chain.devices, &top, suhina_device_sdk::ui::EXPANDED_ID), Some(0.0));
+    assert_eq!(value(&chain.devices, &inner, "#r0"), None);
+
+    // A player whose monitor holds the device inside the group's values.
+    let live = give_host_values(&mut chain.devices, None, &mut |at| {
+        (*at == inner).then_some([-3.0; suhina_device_api::MAX_READOUTS])
+    });
+    assert!(live);
+    assert_eq!(value(&chain.devices, &inner, "#r0"), Some(-3.0));
+    assert_eq!(value(&chain.devices, &top, "#r0"), None);
 }

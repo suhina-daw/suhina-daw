@@ -23,6 +23,10 @@ pub const COMPACT_WIDTH: f32 = 260.0;
 /// Height of every compact panel: the detail area's default 200 px less the device header and
 /// its padding.
 pub const COMPACT_HEIGHT: f32 = 168.0;
+/// Tallest strip of controls in a device's header row.
+pub const HEADER_HEIGHT: f32 = 20.0;
+/// Widest strip of controls in a device's header row.
+pub const HEADER_WIDTH: f32 = 480.0;
 /// Largest layout text read.
 pub const MAX_LAYOUT_BYTES: usize = crate::MAX_FILE_BYTES;
 
@@ -38,6 +42,8 @@ pub struct Panel {
     pub ui: Option<Arc<DeviceUi>>,
     /// The larger canvas opened from the device's header, if it has one.
     pub expanded: Option<Arc<DeviceUi>>,
+    /// A strip of controls the host puts in the device's header row, right of its name.
+    pub header: Option<Arc<DeviceUi>>,
 }
 
 /// A built-in device's layout: what a `devices/<name>/panel.json` holds, or what a device crate
@@ -51,6 +57,9 @@ pub struct Layout {
     /// The expanded panel, opened from the device's header.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expanded: Option<DeviceUi>,
+    /// Controls in the device's header row, right of its name: at most `HEADER_HEIGHT` high.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<DeviceUi>,
     /// How parameters are presented, by id: their control and the `.sd` parameter `ui` fields.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub parameters: BTreeMap<String, Presentation>,
@@ -106,13 +115,32 @@ impl Layout {
         for ui in [&self.ui, &self.expanded].into_iter().flatten() {
             ui.validate(&parameters).map_err(fail)?;
         }
-        Ok(Panel { parameters, ui: self.ui.clone().map(Arc::new), expanded: self.expanded.clone().map(Arc::new) })
+        if let Some(header) = &self.header {
+            if header.size[1] > HEADER_HEIGHT || header.size[0] > HEADER_WIDTH {
+                return Err(fail(DeviceSdkError(format!(
+                    "header controls larger than {HEADER_WIDTH} by {HEADER_HEIGHT} px"
+                ))));
+            }
+            if header.controls.iter().any(|c| c.bounds[1] + c.bounds[3] > header.size[1]) {
+                return Err(fail(DeviceSdkError("a header control runs below the header's strip".into())));
+            }
+            // A canvas is at least 24 px high; the header's strip is checked as one that tall.
+            let mut checked = header.clone();
+            checked.size[1] = 24.;
+            checked.validate(&parameters).map_err(fail)?;
+        }
+        Ok(Panel {
+            parameters,
+            ui: self.ui.clone().map(Arc::new),
+            expanded: self.expanded.clone().map(Arc::new),
+            header: self.header.clone().map(Arc::new),
+        })
     }
 }
 
 /// The generated panel: every parameter in the device's order, no canvas.
 pub fn generated(info: &DeviceInfo) -> Panel {
-    Panel { parameters: parameters(info), ui: None, expanded: None }
+    Panel { parameters: parameters(info), ui: None, expanded: None, header: None }
 }
 
 /// `info`'s parameters as the `.sd` format declares parameters, with the stock control for

@@ -13,4 +13,4 @@ They are not compiled. `scripts/ara_bindings.sh` turns `ARAInterface.h` into
 `crates/plugin-host/src/ara_sys/` with bindgen, once for x86 and once for ARM (the headers
 pack structs differently on each); the three COM interfaces of `ARAVST3.h` are
 written by hand in `crates/plugin-host/src/ara.rs`. See
-[ADR 0028](../../docs/decisions/0028-ara-hosting.md).
+[ADR 0033](../../docs/decisions/0033-ara-hosting.md).

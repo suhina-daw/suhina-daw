@@ -373,3 +373,15 @@ fn a_strip_without_an_input_keeps_its_room_for_anchors() {
     assert!(without.audio_monitor.is_none());
     assert_eq!(without.reserved_input.map(|r| r[2]), with.audio_monitor);
 }
+
+#[test]
+fn a_fader_cap_stands_for_the_volume_where_it_is_drawn() {
+    let fader = Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::new(20.0, 200.0));
+    let (bottom, top) = (fader.bottom() - cap_size().y / 2.0, fader.top() + cap_size().y / 2.0);
+    for db in [-40.0, -24.0, -6.0, 0.0, 6.0] {
+        let y = bottom + (top - bottom) * widgets::volume_position(db);
+        assert!((fader_db_at(y, fader) - db).abs() < 0.01, "{db}");
+    }
+    assert_eq!(fader_db_at(1000.0, fader), VOLUME_RANGE.0);
+    assert_eq!(fader_db_at(-1000.0, fader), VOLUME_RANGE.1);
+}

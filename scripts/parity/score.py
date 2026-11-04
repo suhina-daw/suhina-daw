@@ -123,7 +123,7 @@ CHAPTERS = [
      "transport.followTempoMap or the next start); the tempo field typed or dragged to a thousandth of a BPM by the place grabbed, clips following while it moves. Missing tap tempo, tempo follower/leader, "
      "auto-warp of long samples, warp-marker editing, quantise audio, drawing the tempo as an "
      "automation envelope."),
-    (10, "Editing MIDI", 41, 0.44, "started",
+    (10, "Editing MIDI", 41, 0.45, "started",
      "A first piano roll draws, selects (click, rectangle, Ctrl+A), moves, resizes and deletes notes "
      "on the grid (Alt off-grid), by mouse or by arrow keys, with Select, Draw, Paint, Erase, Slice and Mute "
      "tools (keys 1 to 6, the wheel with the right button held steps through them) and "
@@ -218,12 +218,16 @@ CHAPTERS = [
      "SDK-authored .sd effects and instruments load onto tracks, embed in projects, expose parameters, "
      "graphs and custom panels, and support explicit revision updates. Missing A/B, "
      "hot-swap, preset browser depth, defaults, device delay review."),
-    (24, "Using Plug-Ins", 12, 0.76, "partial",
+    (24, "Using Plug-Ins", 12, 0.82, "partial",
      "CLAP and VST3 hosted out of process, sandboxed, VST3 bundles on Windows, macOS and Linux, "
      "editors (Windows/X11), scans that try failures again and settle files built for another "
      "processor, a plug-in manager (plug-ins switched off, several picked with Ctrl, Cmd or Shift and turned off or on from the right-click menu, folders per format and switched off), latency "
      "compensation (followed when a plug-in changes its latency while it plays), saved state "
-     "(a change in an editor counts as unsaved), VST2 read and matched to VST3, parameters set "
+     "(a change in an editor counts as unsaved), VST2 read and matched to VST3, and "
+     "VST2 hosted directly: scanned in the system's VST folders and any folder added for the format, a "
+     "project's VST2 plug-in that has no VST3 or CLAP copy installed runs through the host with "
+     "its saved bank as the state, while a copy that exists still plays it (ADR 0006 decision 8), "
+     "parameters set "
      "and automated from the engine and shown as a generated list in the device panel, in step "
      "both ways with a plug-in's own editor (VST3 through the host's handler, CLAP through its "
      "blocks' output parameter events: an edit there becomes the panel's value with the next "
@@ -231,13 +235,15 @@ CHAPTERS = [
      "transport, position, bar, time signature and loop given to every plug-in, ARA plug-ins per audio "
      "clip (Edit with, the clip's gain and fades after it, its track's other clips past it; edits saved, clip changes followed live, the editor in the clip's place, "
      "one document a plug-in and project so its editor shows every track; warped and looped clips not "
-     "yet). Missing AU, VST2 hosting, "
+     "yet), VST2 editors — a window of its own or embedded where the platform allows (Windows, "
+     "X11), the plug-in's own size ask followed by the editor and reported back. Missing AU, "
      "configure mode, VST preset banks, sidechain parameters."),
     (25, "Instrument, Drum and Effect Racks", 20, 0.25, "partial",
      "Device groups: Ctrl+G groups picked devices, parallel branches with volume, pan, mute and "
      "solo in the group's panel, a mix against the dry signal and an output gain, instruments "
      "layered on the same notes, plug-ins inside, latency compensated, groups nested four deep, "
-     "moved and duplicated by command, devices inside groups picked and Ctrl+A picking a whole chain. No macros, key/velocity/chain zones, drum pads or group "
+     "moved and duplicated by command, devices inside groups picked and Ctrl+A picking a whole chain; "
+     "a Live Set's Audio Effect and Instrument Racks import as groups with their chains and devices, keeping the first eight macros' names and positions. No macro mappings, key/velocity/chain zones, drum pads or group "
      "presets."),
     (26, "Automation and Editing Envelopes", 22, 0.58, "partial",
      "Envelopes for track volume, pan and mute, built-in, .sd and plug-in device parameters: breakpoints "
@@ -256,10 +262,10 @@ CHAPTERS = [
      "locking."),
     (27, "Clip Envelopes", 13, 0.00, "absent", "No clip envelopes."),
     (28, "Working with Video", 6, 0.00, "absent", "No video import or window."),
-    (29, "Live Audio Effect Reference", 139, 0.21, "partial",
-     "Suhina has 10 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, "
-     "overdrive, compressor, limiter, delay, reverb) against 42 documented audio effects; the EQ, "
-     "delay and reverb take every parameter of their counterparts, several others are close in kind but far "
+    (29, "Live Audio Effect Reference", 139, 0.23, "partial",
+     "Suhina has 12 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, "
+     "overdrive, saturator, compressor, multiband, limiter, delay, reverb) against 42 documented audio effects; the EQ, "
+     "delay and reverb take every parameter of their counterparts, the saturator all but Hi-Quality, the multiband all but the side-chain and the band merge buttons, several others are close in kind but far "
      "narrower in parameters and modes."),
     (30, "Live MIDI Effect Reference", 13, 0.10, "started",
      "One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key "
@@ -267,7 +273,7 @@ CHAPTERS = [
      "graphs run before the instrument too. The other 7 documented MIDI effects are missing."),
     (31, "Live Instrument Reference", 120, 0.12, "started",
      "FM synth and single-source sample/granular instrument against 13 instruments; "
-     "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; no multisample zones, "
+     "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades, editable automatic slice boundaries with persistent corrections, source-tempo grid/snap and stereo waveform navigation, and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; Simpler and a one-sample Sampler from a Live Set import as the sampler with their sample, region, tuning, envelope, filter and slicing; no multisample zones, "
      "drum sampler, wavetable, subtractive or physical modelling yet."),
     (32, "Max for Live", 6, 0.05, "planned",
      "ADR 0021 defines data-only .sd graphs with a Rust SDK, DSP runtime and custom UI nodes; typed sample resources, polyphonic voice/grain subgraphs, slicing, stretch and versioned components are executable through the Rust host API; "

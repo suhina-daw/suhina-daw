@@ -1,6 +1,6 @@
 ---
 name: working-on-suhina
-description: How to work in the Suhina codebase - choosing between a review, new work and continuing an open pull request, where code goes, the UI and egui/kittest patterns this codebase uses (labels, theme tokens, menus with fields, modifiers over drops, repaints), the test fixtures, and the checks to run and report before finishing. Use when about to write or review code in this repository, when a build or test misbehaves, when adding a command, device or view, or when asked how to do something in Suhina.
+description: How to work in the Suhina codebase - choosing between a review, new work and continuing an open pull request, where code goes, which area skill has the checklist for the change, and the checks to run and report before finishing. Use when about to write or review code in this repository, when a build or test misbehaves, or when asked how to do something in Suhina.
 ---
 
 [`AGENTS.md`](../../../AGENTS.md) holds the rules and decides designs; read it first. This skill
@@ -13,15 +13,15 @@ tests look like. Find the documents for a task with `python scripts/docs.py find
 - **A review, or a question about the code:** read the sources and report findings. Write
   nothing to GitHub (no `/claim`, no branch, no issue) unless the user asks for it.
 - **New work:** check the issue's linked pull requests and the open ones that touch the same
-  paths, then claim and work as in [AGENTS.md › Tasks](../../../AGENTS.md#3-tasks).
+  paths, then claim and work as in [`docs/workflow.md`](../../../docs/workflow.md) › Tasks.
 - **Continuing an open pull request:** work on its branch. Do not claim again or open a second
   pull request. A pull request from a fork can only be pushed to by its author (or a maintainer
   when the author allows edits); otherwise report what to change.
 
 ## Where code goes
 
-The crate map and layers are in [AGENTS.md › Workspace map](../../../AGENTS.md#2-workspace-map)
-and [`docs/architecture.md`](../../../docs/architecture.md). The usual decisions:
+The layers and the crate table are in [`docs/architecture.md`](../../../docs/architecture.md). The
+usual decisions:
 
 - Something a user does to a project: a command in `crates/session/src/commands/<namespace>.rs` (id, params, policy,
   tests in `crates/session/tests/`). The view turns the gesture into
@@ -31,77 +31,44 @@ and [`docs/architecture.md`](../../../docs/architecture.md). The usual decisions
   effect or instrument: `devices/<name>` ([ADR 0004](../../../docs/decisions/0004-built-in-devices.md)).
 - Nothing below `crates/ui` knows egui.
 
-## UI code, the house style
+## The checklist for the change
 
-- The views live in `crates/ui/src/<view>/` (`app/`, `arrangement/`, `browser/`, `detail/`,
-  `session/`, `settings/`; `interaction/` has menus, drops and the keymap; `kit/` the theme,
-  widgets and motion), with a module file beside each folder (`app.rs`, `browser.rs`, ...).
-- **Labels are the test and accessibility API.** An interactive thing sets
-  `widget_info(|| WidgetInfo::labeled(...))` with a label as a user would say it ("Launch Walk on
-  Bass (scene 2)"). Tests find it with `get_by_label`, so keep labels stable.
-- **Theme colours are tokens** (`palette!` in `crates/ui/src/kit/theme.rs`), never a raw
-  `Color32` for a semantic colour. A new token gets a value in every theme in
-  `crates/ui/themes/`; the theme tests check that.
-- `motion::mix`/`toward`/`pulse` for hovers and fills, `widgets::button_area` for clickable
-  rects, `Status::Hint` for status-bar hints.
-- **A menu with a text field** (a rename): egui's context menu closes on a click inside it, which
-  closes the menu when the field or its button is clicked. Open it with
-  `egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)`,
-  keep the draft in egui temp data (`get_temp`/`insert_temp`) and remove it when the menu is not
-  open, so a reopen starts from the current name. Example: the clip and slot rename in
-  `crates/ui/src/interaction/menus.rs` (`clip_menu`, `slot_menu`, #563).
-- **A field the tests must find** gets a `widget_info` label like any other control. #563 also
-  gave its menu fields an explicit `.id(...)`, which its draft in temp data is keyed by and
-  which it reports the label needed there; most fields in the views have no id and are found
-  fine. Add an id when the field needs a stable identity or a test cannot find it, not by
-  default.
+Each area skill names the files, functions, test helpers and documents for its common changes:
 
-## egui and kittest: what has been seen (egui 0.36)
+| Change | Skill |
+|---|---|
+| A command, a parameter on one, the menu item or key that runs it | [`suhina-commands`](../suhina-commands/SKILL.md) |
+| A view, a menu, the Settings window, a setting, the theme, a UI test | [`suhina-ui`](../suhina-ui/SKILL.md) |
+| A parameter on a built-in device, a new built-in device | [`suhina-devices`](../suhina-devices/SKILL.md) |
+| Playback, the launcher, an engine test, golden renders | [`suhina-engine`](../suhina-engine/SKILL.md) |
+| *How to check it* steps | [`how-to-check`](../how-to-check/SKILL.md) |
+| A bug seen in the running app (lag, a stall, something late) | [`trace-debugging`](../trace-debugging/SKILL.md) |
 
-Each item names where it was seen. Check it still holds after an egui update and remove it when
-it no longer does.
+`python scripts/docs.py check` checks that every path and `suhina_*::` symbol a skill names in
+backticks still exists, so a checklist that goes stale fails CI.
 
-- `clicked()` is true on both clicks of a double-click, and `double_clicked()` on the second.
-  By the time the double-click arrives, the first click's action has run. Where both are
-  handled, make the single-click action one that the double-click replaces or that is harmless
-  to repeat (a selection), not an edit.
-- A text field in a context menu takes typed keys in kittest: open the menu with
-  `click_secondary()`, click the field, select its text with Ctrl+A
-  (`key_press_modifiers(Modifiers::COMMAND, Key::A)`), then `type_text(...)` and
-  `key_press(Key::Enter)`. See `a_slots_context_menu_renames_its_clip` and
-  `an_empty_rename_field_clears_the_clips_name` (`crates/ui/tests/window/session.rs` and `arrangement.rs`, #563).
-- `drop_at` carries no modifiers. To hold one over a drop, send
-  `harness.event(egui::Event::ModifiersChanged(mods))` before the drag and
-  `ModifiersChanged(Modifiers::NONE)` after it, as `crates/ui/tests/browser.rs` and
-  `automation_lanes.rs` do.
-- `harness.run()` runs until nothing repaints and fails when something repaints every frame
-  (the sample map's layout, a playing meter). Use `run_steps(n)` or `step()` there
-  (`browser_preview.rs`).
-- A drag: `hover_at`, `step`, `drag_at`, `step`, `hover_at(target)`, `step`, `drop_at(target)`,
-  `run`. A double-click needs its two clicks inside egui's double-click window: see
-  `double_click_at` in `crates/ui/tests/detail_devices.rs` and `window_with_step(app, 1.0 / 60.0)`
-  in `window.rs`.
-- Tests that need an audio device are `#[ignore]`d. A software `suhina_engine::Renderer`
-  attached with `session.attach_player(Player::new(renderer.controller(), None))` needs no device.
+## Tests that do not depend on timing
 
-## Test fixtures
+CI runners are slow and uneven, so a test that depends on timing fails there now and then
+(AGENTS.md rule 7). Do not write one; do this instead:
 
-- `crates/session/tests` and `crates/ui/tests` are one test binary each, `tests/main.rs`, with
-  a module per file (`autotests = false`). A new test file gets a `mod name;` line there; the
-  binary's `every_test_file_is_a_module` test fails until it does. Run one file's tests with
-  `cargo test -p suhina-ui --test main window::`; the filter is a substring match, so that also
-  runs `settings_window::` tests. Add `-- --skip settings_window::` to run `window.rs` alone.
-- `crates/ui/tests/window.rs`: the whole window, one module per part of it in `window/`
-  (`arrangement`, `session`, `mixer`, `detail`, `settings` ...). `window.rs` holds the shared
-  `demo_app()` (the demo project), `window(app)`, `window_with_step(app, step)`.
-- `crates/ui/tests/browser.rs`: `pack(&folder)` builds a library (drums, a loop, a MIDI file, a
-  project), `wav()`, `midi()`, `row(name)` for a row's label.
-- `crates/session/tests/launcher.rs`: commands against an offline renderer. `project()` has clips
-  in slots that share contents, a deactivated clip and an empty slot; `run()`, `playing()`,
-  `advance(&mut renderer, frames)`.
-- Engine tests (`crates/engine/src/launcher.rs`, `chain.rs`): `Renderer::stopped(&project, ...)`,
-  `renderer.handle(LaunchCommand::...)`, `renderer.process(&mut block)`; the monitor reads back what
-  plays and what is queued.
+- **Drive the engine by hand.** Call `renderer.process(&mut block)` a fixed number of times; never
+  run it against the clock or an audio device. For a plug-in in a host process, call
+  `renderer.set_offline(true)`: it waits for every answer, where real time drops a block that
+  misses a deadline of under a millisecond (`stopping_a_transport_sensitive_instrument_fades_its_waveform`).
+- **Wait on a signal, not on time.** To read what a background thread made of what you gave it,
+  synchronize with it: `Session::sync_recording(finish)` makes the recording thread empty its
+  rings and report, and `finish` settles ended takes at once (`crates/session/tests/recording.rs`).
+  Never `sleep` and hope. A new background thread gets such a barrier if its results are tested.
+- **Fake the clock.** Code with a deadline or settling time takes the time as an argument or
+  through an injectable clock, and the test moves it by a fixed step. The engine's plug-in
+  deadlines read `crate::clock::now()`; its own tests start `clock::Manual` and stand-in plug-ins
+  move it as they "wait" (`crates/engine/src/chain_wait_tests.rs`). It exists only under
+  `cfg(test)`, so nothing in a shipped build can set it. Do not assert an elapsed
+  time, a latency bound or "within N ms".
+- **No retries, wider tolerances or `#[ignore]`** to hide a race: find what the test waits on.
+- Check a threaded test by running it many times with the machine busy
+  (`yes > /dev/null &` per core, then a loop of `cargo test -p <crate> <name>`).
 
 ## Before finishing
 
@@ -122,5 +89,5 @@ that could not run in the environment is never reported as passed.
 
 The pull request follows the repository's template. *How to check it* follows
 [`docs/how-to-check.md`](../../../docs/how-to-check.md); the parity line and the documents to
-update are in AGENTS.md, and `python scripts/docs.py impact` lists the documents that cover the
+update are in [`docs/workflow.md`](../../../docs/workflow.md) › What a pull request carries, and `python scripts/docs.py impact` lists the documents that cover the
 code you changed.

@@ -369,6 +369,26 @@ impl Session {
     /// clip should play to play. Call it often: the window does every frame, through
     /// [`crate::Projects::poll_plugins`]. Returns what the user should hear about.
     pub fn poll_recording(&mut self) -> Vec<String> {
+        self.poll_recording_after(SETTLE)
+    }
+
+    /// Waits for the recording threads to take in what the engine has recorded so far, then polls
+    /// as [`Session::poll_recording`] does, without the settling time: the notes and frames
+    /// "on their way" are all here. For offline renders and tests, which render a fixed number of
+    /// frames and need the same result however the threads are scheduled. With `finish`, no more
+    /// audio is coming either, so a take that was ended is finished now.
+    pub fn sync_recording(&mut self, finish: bool) -> Vec<String> {
+        let settle = if finish { Duration::ZERO } else { SETTLE };
+        // The first poll tells the threads where takes end; the second reads what they made of it.
+        let mut notices = self.poll_recording_after(settle);
+        for thread in &self.live.recording.threads {
+            thread.sync(finish);
+        }
+        notices.extend(self.poll_recording_after(settle));
+        notices
+    }
+
+    fn poll_recording_after(&mut self, settle: Duration) -> Vec<String> {
         for thread in &self.live.recording.threads {
             while let Some(report) = thread.report() {
                 match report {
@@ -441,7 +461,7 @@ impl Session {
                 take.asked = Some(Instant::now());
                 continue;
             }
-            if asked.elapsed() < SETTLE {
+            if asked.elapsed() < settle {
                 continue;
             }
             if take.file.is_some() && take.finished.is_none() {

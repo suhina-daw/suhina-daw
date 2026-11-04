@@ -136,8 +136,16 @@ impl Allpass {
     /// `gain` (limited to ±0.99 so it stays stable).
     #[inline]
     pub fn process(&mut self, x: f32, delay: f64, gain: f32) -> f32 {
+        self.process_lossy(x, delay, gain, 1.0)
+    }
+
+    /// The same, losing `loss` (0..1) on every pass through the delay, so that inside a decaying
+    /// loop the echoes the allpass holds back decay for the time they spend in it.
+    #[inline]
+    pub fn process_lossy(&mut self, x: f32, delay: f64, gain: f32, loss: f32) -> f32 {
         let gain = if gain.is_finite() { gain.clamp(-0.99, 0.99) } else { 0.0 };
-        let delayed = self.line.read_hermite(delay);
+        let loss = if loss.is_finite() { loss.clamp(0.0, 1.0) } else { 0.0 };
+        let delayed = loss * self.line.read_hermite(delay);
         let v = x + gain * delayed;
         self.line.push(v);
         delayed - gain * v
@@ -255,5 +263,24 @@ mod tests {
         }
         assert!((energy - 1.0).abs() < 1e-4, "{energy}");
         assert!(allpass.process(1.0, f64::NAN, f32::NAN).is_finite());
+    }
+
+    #[test]
+    fn a_lossy_allpass_loses_its_loss_on_every_pass() {
+        // Echo n has passed the delay n times: (1 - g²) gⁿ⁻¹ lossⁿ.
+        let (gain, loss) = (0.6f32, 0.5f32);
+        let mut allpass = Allpass::for_seconds(0.01, 48_000.0);
+        let out: Vec<f32> =
+            (0..40).map(|n| allpass.process_lossy(if n == 0 { 1.0 } else { 0.0 }, 10.0, gain, loss)).collect();
+        assert_eq!(out[0], -gain);
+        for echo in 1..4 {
+            let want = (1.0 - gain * gain) * gain.powi(echo - 1) * loss.powi(echo);
+            assert!(
+                (out[10 * echo as usize] - want).abs() < 1e-6,
+                "echo {echo}: {} against {want}",
+                out[10 * echo as usize]
+            );
+        }
+        assert!(allpass.process_lossy(1.0, 10.0, gain, f32::NAN).is_finite());
     }
 }

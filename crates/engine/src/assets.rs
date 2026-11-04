@@ -10,6 +10,12 @@ use std::collections::HashMap;
 
 use suhina_device_registry::DeviceAsset;
 
+pub(crate) fn sample_edits(
+    device: &suhina_model::Device,
+) -> Option<std::sync::Arc<suhina_device_api::sample_edits::SampleEdits>> {
+    suhina_device_api::sample_edits::SampleEdits::decode(device.sample_edit_data()?).map(std::sync::Arc::new)
+}
+
 /// The parsed models and IRs a project's file-backed devices run, keyed by the file's path
 /// string (the project holds the same string in `Device::state`). The engine reads it by the
 /// path and never touches the disk.

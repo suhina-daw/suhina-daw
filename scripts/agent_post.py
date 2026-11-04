@@ -2,7 +2,7 @@
 # Copyright (C) 2026 The Suhina contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Opens an issue or comments on a pull request the way AGENTS.md › Tasks asks an agent to: as
+"""Opens an issue or comments on a pull request the way docs/workflow.md › Tasks asks an agent to: as
 `suhina-bot[bot]` when the person it runs for can start the bot workflows, otherwise as that person.
 
     agent_post.py issue request.json     # {"title", "body", "type", "labels", "parent"}

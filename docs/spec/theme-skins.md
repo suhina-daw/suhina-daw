@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-10-29
+last_verified: 2026-11-03
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -786,7 +786,13 @@ These native parts take the sheet (the theme package README lists every selector
   up across strips. After placement, an anchored part that overlaps another part (other than
   one containing the other, as the meter in the fader's column) or the toggles is not drawn.
 - **Piano roll:** `.piano-grid` (background; `border-color` for the lines), `.piano-row`,
-  `.piano-row-black` (without a scale), `.piano-key`, `.piano-key-black`, `.piano-note` with
+  `.piano-row-black` (without a scale); the keys: `.piano-key` and `.piano-key-black` (background,
+  a `background-image` gradient in place of the key style's shading, `color` for the names,
+  `:selected` and `:playing`), `.piano-key-c`, `.piano-key-hover`, `.piano-key-black-hover`,
+  `.piano-key-line` and `.piano-scale-mark` (their backgrounds); `.piano-scale-strip` (background,
+  `border-color`, `color`) and `.piano-range` (background, `border-color`: the range a drag on the
+  keys is selecting), `.piano-clip-strip` (the background of the strip that shows several picked clips), `.piano-time-selection` (background over the rows, `border-color` for its edges
+  and the bar on the ruler) and `.piano-insert-mark` (background). What the sheet sets wins over the key style chosen in the piano roll; `.piano-note` with
   `--clip-colour`, `:selected` and `:muted` (background, border, radius, `color` for its name),
   `.velocity` (`color` of the stems), `.ruler`; the tool buttons `.piano-tool` with
   `#piano-<tool>` ids, `:checked` and artwork `piano.<tool>`; `.midi-tools`, `.clip-info`,
@@ -866,7 +872,7 @@ of bars, and a slider id per parameter.
 - **Sizes:** `.send { width; height }` within the sends row; `--suhina-track-height` (20–400
   points) on `.arrangement` for tracks without a height of their own; `.piano-tool { height }`
   grows the toolbar band to the height plus 6 points.
-- **Device panels:** a themed panel's generated list follows its width; `.device .value
+- **Device panels:** a themed panel's generated list keeps one column that follows its width and scrolls; `.device .value
   { width }`; `--suhina-param-columns` (1–8) and `--suhina-param-row` (16–160 points) on
   `.device` lay parameters a device places nowhere itself in columns. A plug-in's list is
   clipped below its header and buttons.

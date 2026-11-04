@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-10-30
+last_verified: 2026-11-02
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/gradient_editor.rs
@@ -15,9 +15,12 @@ covers:
 
 # The Settings window
 
-Options › Settings (Ctrl+,) opens the Settings window over the main window. How it is drawn
-(sizes, colours, the controls) is in [components](../design/components.md) › Settings; this spec
-says what is on each page, how the pages scroll and how a setting finds its place.
+Options › Settings (Ctrl+,) opens the Settings window over the main window. The window's status
+bar stays visible under it, undimmed, so an error or a confirmation from the page is read while
+it is open; moved into its own window, Settings has a status bar of its own at the bottom. How it
+is drawn (sizes, colours, the controls) is in
+[components](../design/components.md) › Settings; this spec says what is on each page, how the
+pages scroll and how a setting finds its place.
 
 The title's Open in window button moves Settings into a separate native, resizable
 window that can be moved to another monitor. Dock returns it to the main-window
@@ -56,15 +59,6 @@ ASIO instance. Exclusive mode is shown only for WASAPI. Audio status reports the
 engine block and measured driver callback separately from total output latency;
 internal driver buffers are configured through the native panel.
 
-## Sources
-
-Suhina's own layout, shaped by public design guidance on settings screens (Apple's and Microsoft's
-settings guidelines, and articles on settings UX; the wording rule in *Adding a setting* follows [Microsoft's guidelines for app settings](https://learn.microsoft.com/windows/apps/design/app-settings/guidelines-for-app-settings) and [Toptal's settings UX article](https://www.toptal.com/designers/ux/settings-ux)) and by how three other programs arrange theirs,
-all summarised in [#868](https://github.com/suhina-daw/suhina-daw/issues/868) in our own words: group by what the
-user is doing, small groups, the most used first, no status or commands among settings, a change
-applies at once. The grouping follows what the user is doing when they look for a setting (setting
-up audio, editing clips, browsing samples), not which part of the code reads it.
-
 ## Pages and groups
 
 The list on the left shows the pages in this order. Each page has headed groups; every setting is
@@ -82,10 +76,10 @@ what is inside it).
 | MIDI | MIDI inputs | Each MIDI input port, on or off |
 | MIDI | Arming | Arm selected track |
 | Plug-ins | Actions | Scan, Rescan all, Manage plug-ins (commands, set off above the folders) |
-| Plug-ins | Folders | Folders (each on or off, with its format; add with a format, remove) |
-| Plug-ins | Editors | Plug-in editors open in (Window, Device view) |
+| Plug-ins | Folders | Folders (each on or off, with its format; add with a format, or by the system's picker with nothing typed, remove) |
+| Plug-ins | Editors | Plug-in editors open in (Window, Device view; where the embed is not possible — macOS, or no display — a note says so, and on macOS the editors still open in a window of their own) |
 | Devices | NAM | Amp models folder, Cabinet sounds folder ([nam spec](nam-amp-and-cab.md) › Folders) |
-| Devices | Device panels | Device chain layout, Detail area width |
+| Devices | Device panels | Device chain layout, Long parameter lists, Detail area width |
 | Importing | Dropping files | Tracks for dropped files, Warp mode for samples |
 | Arrangement | Clip editing | Let audio clips overlap, Let MIDI clips overlap, Double-click makes a clip, Clip menu name field, Clip drag handle, Paste replaces clip |
 | Arrangement | Time and play | Select time with, Start marker follows selection, Play from, Playhead after Stop |
@@ -97,7 +91,7 @@ what is inside it).
 | Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights, Copy names |
 | Launcher and mixer | Launching | Select launched clip |
 | Launcher and mixer | Mixer | Mixer control style |
-| Clip editor | Piano roll | Full-height piano roll covers, Piano roll toolbar size, Moved notes replace notes |
+| Clip editor | Piano roll | Full-height piano roll covers, Piano roll toolbar size, Allow stacked notes, Piano key style, Piano key names |
 | Browser | Browser | Browser side, Recent item kinds layout, Dropping on a folder |
 | Browser | Previews | Preview selected file, Preview volume |
 | Browser | Sample map | Sample map layout, Preview on map hover, Map sample length limit, Map labels |
@@ -121,7 +115,7 @@ wrap under the setting's name. A yes/no setting is a switch; a choice of up to f
 option buttons, each as wide as its text needs; more than five is a drop-down.
 
 Where a setting is shown never changes how it is saved: each keeps the key it has in
-`settings.json` (or `keymap.json` for keys and the mouse switches), so a settings file written
+`settings.txt` (or `keymap.json` for keys and the mouse switches), so a settings file written
 before a setting moved loads with the same values.
 
 Export permissions apply to attached MCP writes only. The person adds a folder through the
@@ -300,7 +294,7 @@ checks the ones a machine can check and names this section when one fails.
 5. **One control per kind of choice:** a switch (`cx.on_off`) for yes/no, option buttons
    (`cx.choose`) for up to five choices that exclude each other, a drop-down beyond that
    (`cx.choose` switches by itself). No text is cut off.
-6. **The stored key never changes** when a setting moves: it keeps its key in `settings.json`
+6. **The stored key never changes** when a setting moves: it keeps its key in `settings.txt`
    (`keymap.json` for keys and the mouse switches). A new setting gets a new key, listed in the
    entry's keys.
 7. **Application settings apart from project settings.** What belongs to one project (its tempo,
@@ -412,3 +406,12 @@ Holding the Background blur slider keeps the Settings live preview active even w
 Global liquid strength sliders are disabled while the active theme supplies liquid overrides. Their notes explain how to enable Use global liquid settings in the theme editor. Stored global values remain unchanged and become editable again when inheritance is restored.
 
 The gradient editor uses a single horizontal colour ramp with numbered draggable stops. Selecting a stop exposes only its colour, position and opacity; Add inserts and selects a midpoint in the largest gap, and Remove acts on the selected stop (at least two remain). Stops cannot cross their neighbours. Surface direction is a separate control below the stop editor. Colour-picker popups use an opaque readable surface even when Settings uses liquid transparency.
+
+## Sources
+
+Suhina's own layout, shaped by public design guidance on settings screens (Apple's and Microsoft's
+settings guidelines, and articles on settings UX; the wording rule in *Adding a setting* follows [Microsoft's guidelines for app settings](https://learn.microsoft.com/windows/apps/design/app-settings/guidelines-for-app-settings) and [Toptal's settings UX article](https://www.toptal.com/designers/ux/settings-ux)) and by how three other programs arrange theirs,
+all summarised in [#868](https://github.com/suhina-daw/suhina-daw/issues/868) in our own words: group by what the
+user is doing, small groups, the most used first, no status or commands among settings, a change
+applies at once. The grouping follows what the user is doing when they look for a setting (setting
+up audio, editing clips, browsing samples), not which part of the code reads it.

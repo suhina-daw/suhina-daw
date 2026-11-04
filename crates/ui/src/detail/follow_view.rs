@@ -245,7 +245,9 @@ fn time_field(ui: &Ui, painter: &egui::Painter, rect: Rect, id: Id, info: &Follo
     let range = (TIME_STEP, FollowAction::MAX_TIME);
     let done =
         match widgets::drag_value(ui, &response, &mut preview, f.time, TIME_PER_POINT, 1.0, range, info.bar_beats) {
-            Drag::Done(value) => Some(((value / TIME_STEP).round() * TIME_STEP).clamp(range.0, range.1)),
+            Drag::Done(value) | Drag::Set(value) => {
+                Some(((value / TIME_STEP).round() * TIME_STEP).clamp(range.0, range.1))
+            }
             Drag::None | Drag::Moving(_) => None,
         };
     ui.data_mut(|d| d.insert_temp(id, preview));
@@ -279,7 +281,7 @@ fn chance_field(
         (0.0, max),
         f64::from(default),
     ) {
-        Drag::Done(v) => Some(v.round().clamp(0.0, max) as u32),
+        Drag::Done(v) | Drag::Set(v) => Some(v.round().clamp(0.0, max) as u32),
         Drag::None | Drag::Moving(_) => None,
     };
     ui.data_mut(|d| d.insert_temp(id, preview));

@@ -696,6 +696,13 @@ fn draw_column(
         id,
         actions,
     );
+    // Ctrl and Shift on the strip's background add to the selection, as on the header.
+    if strip.clicked() {
+        let (command, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+        if command || shift {
+            select_header(state, &bands.order, column.track, command, shift);
+        }
+    }
     // The strip's background has the track's menu, as its header does.
     track_menu_on(&strip, column, bands, actions);
     // Column separator through header, grid and mixer.

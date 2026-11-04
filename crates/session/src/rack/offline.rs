@@ -12,7 +12,7 @@ pub struct OfflinePlugins {
     /// For the renderer.
     pub plugins: Plugins,
     controls: Vec<Plugin>,
-    /// The audio sources of the ARA documents plug-ins were loaded with (ADR 0028).
+    /// The audio sources of the ARA documents plug-ins were loaded with (ADR 0033).
     _ara_sources: Vec<(String, suhina_plugins::AudioSource)>,
     /// What the user should hear about: missing plug-ins, ones that could not start or did not
     /// take their state.
@@ -38,7 +38,7 @@ impl OfflinePlugins {
 }
 
 /// Starts every plug-in device of `project` that is installed, at `sample_rate`, and waits for
-/// each. A plug-in that edits clips is given its track's audio clips from `audio` (ADR 0028).
+/// each. A plug-in that edits clips is given its track's audio clips from `audio` (ADR 0033).
 pub fn start_offline(project: &Project, audio: &AudioPool, env: &PluginEnv, sample_rate: u32) -> OfflinePlugins {
     let mut offline = OfflinePlugins::none();
     let mut missing = Vec::new();

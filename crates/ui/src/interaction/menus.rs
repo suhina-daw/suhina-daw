@@ -279,7 +279,7 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     }
     // A group's tracks, at any depth, and their clips: its colour, so the group reads as one in
     // every view.
-    if menu.is_group && ui.button("Assign track color to all tracks and clips").clicked() {
+    if menu.is_group && ui.button("Recolor group").clicked() {
         // The colour the group shows: one it was never given is worked out from its place.
         let params = json!({ "track": track, "color": colour_picker::hex(menu.colour), "clips": true });
         actions.push(Action::new("track.colorGroup", params));

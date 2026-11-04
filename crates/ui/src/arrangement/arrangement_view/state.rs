@@ -237,6 +237,8 @@ pub struct ArrangementViewState {
     pub(super) time_selection: Option<TimeSelection>,
     /// Where a drag on the ruler started, in beats: it selects time over every track.
     pub(super) ruler_select: Option<f64>,
+    /// While time is being painted: what a drag with Shift goes on from, known once it has begun.
+    pub(super) painted_from: Option<Option<TimeSelection>>,
     /// A clip's edge being dragged.
     pub(super) edge_drag: Option<EdgeDrag>,
     /// An edge just let go of: the clip, where its edges are now and the frames left to wait.
@@ -323,6 +325,7 @@ pub struct ArrangementViewState {
     /// starts from the first of them, as the setting says. A click in a clip's body picks it
     /// too, but play starts where it was clicked, as the insert marker shows.
     pub picked_whole: bool,
+    pub whole_clip_clicked: bool,
     /// A clip moves by its name bar and selects time from its body (the default); off
     /// (Lower half), its lower half moves it and its upper half selects time.
     pub name_bar_moves: bool,
@@ -398,6 +401,7 @@ impl Default for ArrangementViewState {
             marquee_scroll: Vec2::ZERO,
             time_selection: None,
             ruler_select: None,
+            painted_from: None,
             edge_drag: None,
             edge_released: None,
             settling: Vec::new(),
@@ -434,6 +438,7 @@ impl Default for ArrangementViewState {
             clip_opened: false,
             devices_clicked: false,
             picked_whole: true,
+            whole_clip_clicked: false,
             name_bar_moves: true,
             grid_in_clips: true,
             waveform_zoom: 1.0,
@@ -448,6 +453,20 @@ impl Default for ArrangementViewState {
             marker_name: None,
             loop_drag: None,
         }
+    }
+}
+
+/// A track and each of its clips' id, start and end, for Select All.
+pub type LaneClips = (TrackId, Vec<(ClipId, f64, f64)>);
+
+impl TimeSelection {
+    /// This selection gone on over `tracks` from `start` to `end`, painted in `row` of a stack if in
+    /// one: the time and the tracks of both, and a row only while both are in it.
+    pub(super) fn gone_on(&self, tracks: &[TrackId], start: f64, end: f64, row: Option<(usize, usize)>) -> Self {
+        let mut all = self.tracks.clone();
+        all.extend(tracks.iter().filter(|t| !self.tracks.contains(t)));
+        let row = self.row.filter(|_| all == self.tracks && self.row == row);
+        Self { tracks: all, start: self.start.min(start), end: self.end.max(end), row }
     }
 }
 
@@ -511,8 +530,28 @@ impl ArrangementViewState {
     pub fn select_clips(&mut self, keys: Vec<(TrackId, ClipId)>) {
         self.track_focus = false;
         self.picked_whole = true;
+        // Clips picked: the time selection gives way to them, so one left was painted after them.
+        // Nothing picked (Select All in an empty project) leaves it be.
+        if !keys.is_empty() {
+            self.time_selection = None;
+        }
         self.anchor = keys.first().copied();
         self.selected = keys;
+    }
+
+    /// Select All: every clip of `lanes` (track, then each clip's id, start and end), and the time
+    /// from the first start to the last end over all the tracks.
+    pub fn select_all_clips(&mut self, lanes: &[LaneClips]) {
+        let keys: Vec<(TrackId, ClipId)> =
+            lanes.iter().flat_map(|(track, clips)| clips.iter().map(|c| (*track, c.0))).collect();
+        self.select_clips(keys);
+        let spans = || lanes.iter().flat_map(|(_, clips)| clips);
+        let start = spans().map(|c| c.1).fold(f64::INFINITY, f64::min);
+        let end = spans().map(|c| c.2).fold(f64::NEG_INFINITY, f64::max);
+        if end > start {
+            let tracks = lanes.iter().map(|(track, _)| *track).collect();
+            self.time_selection = Some(TimeSelection { tracks, start, end, row: None });
+        }
     }
 
     /// Picks the clip at `key` the way a click on it does: Shift takes the rectangle from the last
@@ -633,6 +672,17 @@ impl ArrangementViewState {
     /// Sets a lane's height, as dragging its lower edge does.
     pub fn set_lane_height(&mut self, track: TrackId, height: f32) {
         self.heights.insert(track, height.clamp(MIN_LANE, MAX_LANE));
+    }
+
+    /// Changes `track`'s height from the `drawn` one by `by` as dragging its edge does; a track among
+    /// the selected ones takes the others with it, each from its own height.
+    pub(super) fn resize_lanes(&mut self, track: TrackId, drawn: f32, by: f32) {
+        if self.selected_tracks.contains(&track) {
+            for other in self.selected_tracks.clone().into_iter().filter(|other| *other != track) {
+                self.set_lane_height(other, self.kept_height(other) + by);
+            }
+        }
+        self.set_lane_height(track, drawn + by);
     }
 
     /// Scales every track lane's height by `factor`, keeping the content `anchor` points below
