@@ -1004,3 +1004,15 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - Project-open audio references stay inside the project folder; external files require explicit relinking.
 
 - Sampler Loop playback uses Fade in and Fade out for its edges, without a separate Loop fade field or a shortened loop.
+
+- The piano roll's keys look like a keyboard in a choice of styles (Bone, Stone, Night), name the
+  keys you choose, select ranges by dragging (Shift adds another), and a strip beside them names the
+  row under the pointer and zooms the rows. Notes replace what they land on unless stacked notes are
+  allowed, Legato follows the next note on any key, Shift+arrow stops at the grid and the next note,
+  and the audition sounds notes from the press and at each pitch of a drag. A rectangle over no note
+  selects a stretch of time for the keys to act on, a bar on the ruler shows what is selected in time,
+  and a click leaves a mark where a paste goes. Shift goes on from a time selection, here and in the
+  Arrangement, a selected note has a colour of its own, and a double-click with the right button on
+  a ghost note opens its clip. With several MIDI clips picked, a strip over the ruler shows them all,
+  and a click on a bar or a faint note gives that clip the focus.
+
