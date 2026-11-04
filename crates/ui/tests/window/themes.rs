@@ -326,6 +326,7 @@ fn ctrl_and_the_wheel_over_a_fader_change_the_volume_and_the_wheel_alone_does_no
         delta: egui::vec2(0.0, 1.0),
         modifiers,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     };
     // The wheel alone scrolls the view: scrolling down the headers never moves a fader.
     harness.input_mut().events.push(tick(Modifiers::NONE));
@@ -363,6 +364,7 @@ fn horizontal_wheel_over_track_headers_does_not_scroll_the_timeline() {
         delta: egui::vec2(-120.0, 0.0),
         modifiers: Modifiers::SHIFT,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     harness.run();
     assert_eq!(harness.state().arrangement().scroll.x, before);
@@ -384,6 +386,7 @@ fn shift_wheel_over_clip_gain_scrolls_timeline_without_editing_gain() {
         delta: egui::vec2(-120.0, 0.0),
         modifiers: Modifiers::SHIFT,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     harness.run();
     assert!(harness.state().arrangement().scroll.x > scroll);

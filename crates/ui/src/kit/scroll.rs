@@ -37,7 +37,7 @@ pub fn vertical_bar(ui: &mut Ui, area: Rect, id_salt: impl Hash + std::fmt::Debu
             // Room for the content, nothing in it: the rows are the view's own.
             ui.set_min_height(content);
         });
-    let moved = output.state.offset.y.clamp(0.0, most);
+    let moved = output.state.unclamped_offset().y.clamp(0.0, most);
     if (moved - *offset).abs() > f32::EPSILON {
         *offset = moved;
         ui.ctx().request_repaint();
@@ -65,7 +65,7 @@ mod tests {
                     let rect = Rect::from_min_size(Pos2::new(AREA.left(), top), Vec2::new(AREA.width(), 20.0));
                     let shown = rect.intersect(AREA);
                     if shown.height() > 0.0 {
-                        let _ = ui.interact(shown, egui::Id::new(("row", row)), egui::Sense::click_and_drag());
+                        let _ = ui.interact(shown, egui::Id::unique(("row", row)), egui::Sense::click_and_drag());
                     }
                 }
                 vertical_bar(ui, AREA, "test-list", 2000.0, offset);

@@ -22,7 +22,7 @@ pub(crate) struct EmptyMenu<'a> {
 /// audio track, Insert MIDI track, Insert return track, then Cut, Copy and Duplicate for the
 /// selected tracks and Paste after the last regular track (#947).
 pub(crate) fn empty_space_menu(space: &egui::Response, menu: &EmptyMenu<'_>, actions: &mut Vec<Action>) {
-    space.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Empty space"));
+    space.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Empty space"));
     space.context_menu(|ui| {
         crate::interaction::menus::insert_items(ui, None, actions);
         ui.separator();
@@ -53,7 +53,7 @@ const INSERT_MULTIPLE: u32 = 4;
 /// field for how many (1 to 64) and Insert, which adds them in one undo step (#947).
 fn insert_multiple_menu(response: &egui::Response, kind: &str, actions: &mut Vec<Action>) {
     response.context_menu(|ui| {
-        let id = Id::new(("insert-multiple", kind));
+        let id = Id::unique(("insert-multiple", kind));
         let mut count: u32 = ui.data(|d| d.get_temp(id)).unwrap_or(INSERT_MULTIPLE);
         ui.label("Insert multiple");
         ui.horizontal(|ui| {
@@ -92,7 +92,7 @@ pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions:
         if rect.bottom() > area.bottom() || width <= 0.0 {
             break;
         }
-        let response = widgets::button_area(ui, rect, Id::new(("add-track", kind, area.min.x as i32)), label);
+        let response = widgets::button_area(ui, rect, Id::unique(("add-track", kind, area.min.x as i32)), label);
         // `.add-track` styles the three, `#add-midi-track`, `#add-audio-track` and
         // `#add-return-track` one of them; `button.add-track` is their artwork.
         let name = format!("add-{kind}-track");

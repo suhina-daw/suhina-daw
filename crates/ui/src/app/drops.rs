@@ -247,7 +247,7 @@ impl App {
         });
         if escape {
             self.device_carry = None;
-            ui.ctx().data_mut(|d| d.remove::<(TrackId, usize)>(Id::new(drop::DEVICE_CARRYING)));
+            ui.ctx().data_mut(|d| d.remove::<(TrackId, usize)>(Id::unique(drop::DEVICE_CARRYING)));
             return;
         }
         let target = match self.shown {
@@ -282,7 +282,7 @@ impl App {
             .and_then(|p| drop::device_slots_under(ui.ctx(), from, p).and_then(|list| list.at(p)))
             .filter(|to| *to != index && *to != index + 1);
         if !released {
-            ui.ctx().data_mut(|d| d.insert_temp(Id::new(drop::DEVICE_CARRYING), (from, index)));
+            ui.ctx().data_mut(|d| d.insert_temp(Id::unique(drop::DEVICE_CARRYING), (from, index)));
             if let Some(pointer) = pointer {
                 let text = match to {
                     Some(to) if copy => format!("Copy {device} to {}", name(to)),
@@ -294,7 +294,7 @@ impl App {
             return;
         }
         self.device_carry = None;
-        ui.ctx().data_mut(|d| d.remove::<(TrackId, usize)>(Id::new(drop::DEVICE_CARRYING)));
+        ui.ctx().data_mut(|d| d.remove::<(TrackId, usize)>(Id::unique(drop::DEVICE_CARRYING)));
         self.view.drop = None;
         self.arrangement.drop = None;
         if let Some(to) = along.filter(|_| to.is_none()) {
@@ -378,7 +378,7 @@ impl App {
         separate: bool,
     ) {
         let label = target.and_then(|t| self.plan_drop(items, t, separate)).map(|p| p.label);
-        let layer = egui::LayerId::new(egui::Order::Tooltip, Id::new("browser-drag"));
+        let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("browser-drag"));
         let painter = ui.ctx().layer_painter(layer);
         let text = label.clone().unwrap_or_else(|| match items {
             [one] => one.name.clone(),
@@ -871,14 +871,14 @@ pub(super) fn drop_overlay(ui: &Ui, area: Rect) {
             }),
         )
     });
-    let shown = motion::toward(ui.ctx(), Id::new("drop-overlay"), project || themes, motion::HOVER);
+    let shown = motion::toward(ui.ctx(), Id::unique("drop-overlay"), project || themes, motion::HOVER);
     if shown <= 0.0 {
         return;
     }
     // Above every window, Settings included, which takes the drop like the rest of the window.
     let painter = ui
         .ctx()
-        .layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("drop-overlay")))
+        .layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("drop-overlay")))
         .with_clip_rect(area);
     painter.rect_filled(area, 0.0, theme::window_background().gamma_multiply(DROP_DIM * shown));
     let text = theme::text_primary().gamma_multiply(shown);

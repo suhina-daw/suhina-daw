@@ -203,7 +203,7 @@ fn minimum_width_headers_keep_names_controls_and_meters_separate() {
         }
         let name = harness
             .ctx
-            .data(|data| data.get_temp::<suhina_ui::app::NameSpot>(egui::Id::new(("track-name-rect", 1_u64))))
+            .data(|data| data.get_temp::<suhina_ui::app::NameSpot>(egui::Id::unique(("track-name-rect", 1_u64))))
             .unwrap()
             .rect;
         assert!(name.width() >= 48.0 && header.contains_rect(name), "unusable name: {name:?}");

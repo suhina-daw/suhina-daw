@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align2, Color32, FontId, Galley, Id, Painter, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2, WidgetInfo, WidgetType,
+    Align2, Color32, FontId, Galley, Id, Painter, Pos2, Rect, Response, Role, Sense, Stroke, Ui, Vec2, WidgetInfo,
 };
 use serde_json::Value;
 
@@ -57,7 +57,7 @@ struct ValueDrag {
 }
 
 fn value_drag_id() -> Id {
-    Id::new("value-drag-holds-pointer")
+    Id::unique("value-drag-holds-pointer")
 }
 
 /// How far a drag on a value control (knob, value field) moved this frame, called while it is
@@ -185,7 +185,7 @@ pub fn paint_text(painter: &Painter, pos: Pos2, galley: Arc<Galley>, color: Colo
 pub fn button_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString) -> Response {
     let response = ui.interact(rect, id, Sense::click());
     let label = label.to_string();
-    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &label));
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &label));
     response
 }
 
@@ -683,7 +683,7 @@ const ACTIVE_VALUE: &str = "active-value";
 pub fn value_active(ctx: &egui::Context) -> bool {
     let pass = ctx.cumulative_pass_nr();
     let active = ctx
-        .data(|d| d.get_temp::<(egui::Id, u64)>(egui::Id::new(ACTIVE_VALUE)))
+        .data(|d| d.get_temp::<(egui::Id, u64)>(egui::Id::unique(ACTIVE_VALUE)))
         .is_some_and(|(_, drawn)| pass.saturating_sub(drawn) <= 2);
     active
         && ctx.input(|i| {
@@ -710,7 +710,7 @@ pub fn value_active(ctx: &egui::Context) -> bool {
 /// [`value_active`] says.
 pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<String>) {
     let ctx = ui.ctx();
-    let key = egui::Id::new(ACTIVE_VALUE);
+    let key = egui::Id::unique(ACTIVE_VALUE);
     let typed_id = response.id.with("typed");
     let pass = ctx.cumulative_pass_nr();
     if response.clicked() || response.drag_started_by(egui::PointerButton::Primary) {
@@ -903,7 +903,7 @@ pub fn value_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString, value
     let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
     let (label, value) = (label.to_string(), value.to_string());
     response.widget_info(|| {
-        let mut info = WidgetInfo::labeled(WidgetType::DragValue, true, &label);
+        let mut info = WidgetInfo::labeled(Role::SpinButton, true, &label);
         info.current_text_value = Some(value.clone());
         info
     });
@@ -1010,7 +1010,7 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
 }
 
 pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str) -> bool {
-    let response = button_area(ui, rect, Id::new(("dialog-button", label)), label);
+    let response = button_area(ui, rect, Id::unique(("dialog-button", label)), label);
     let _style = super::style_class::enter_response("button", &response);
     let fill = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
     let radius = super::style_class::radius(0.0);

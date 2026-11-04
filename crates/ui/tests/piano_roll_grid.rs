@@ -264,6 +264,7 @@ fn an_adaptive_grid_gets_coarser_as_ctrl_and_the_wheel_zoom_out() {
             delta: vec2(0.0, -60.0),
             modifiers: Modifiers::COMMAND,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.step();
         h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));

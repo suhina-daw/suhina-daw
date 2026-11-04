@@ -495,7 +495,7 @@ fn ctrl_f_searches_ctrl_b_hides_and_rows_never_take_the_keyboard() {
     harness.run();
     harness.run();
     assert!(
-        harness.ctx.memory(|m| m.has_focus(egui::Id::new("browser-search"))),
+        harness.ctx.memory(|m| m.has_focus(egui::Id::unique("browser-search"))),
         "Ctrl+F puts the cursor in the search"
     );
     // Typing goes to the field, and Down selects the first result.
@@ -511,7 +511,7 @@ fn ctrl_f_searches_ctrl_b_hides_and_rows_never_take_the_keyboard() {
     assert!(harness.state().browser.search.is_empty());
     harness.key_press(Key::Escape);
     harness.run();
-    assert!(!harness.ctx.memory(|m| m.has_focus(egui::Id::new("browser-search"))));
+    assert!(!harness.ctx.memory(|m| m.has_focus(egui::Id::unique("browser-search"))));
 
     harness.key_press_modifiers(Modifiers::COMMAND, Key::B);
     harness.run();

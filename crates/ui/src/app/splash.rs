@@ -95,7 +95,7 @@ impl Splash {
             self.after_start = Some(now);
         }
         let leaving = self.leaving(now);
-        let opacity = motion::toward(ctx, Id::new("splash-fade"), !leaving, motion::VALUE);
+        let opacity = motion::toward(ctx, Id::unique("splash-fade"), !leaving, motion::VALUE);
         if opacity <= 0.0 {
             return false;
         }
@@ -103,7 +103,7 @@ impl Splash {
             ctx.request_repaint();
         }
         let area = ctx.content_rect();
-        egui::Area::new(Id::new("splash")).order(egui::Order::Tooltip).fixed_pos(area.min).show(ctx, |ui| {
+        egui::Area::new(Id::unique("splash")).order(egui::Order::Tooltip).fixed_pos(area.min).show(ctx, |ui| {
             ui.set_min_size(area.size());
             self.draw(ui, area, opacity);
         });
@@ -113,7 +113,7 @@ impl Splash {
 
     fn draw(&self, ui: &Ui, area: Rect, opacity: f32) {
         // Clicks on the window do nothing until it is there.
-        let behind = ui.interact(area, Id::new("splash-behind"), Sense::click_and_drag());
+        let behind = ui.interact(area, Id::unique("splash-behind"), Sense::click_and_drag());
         let _swallowed = behind.clicked();
         let fade = |color: Color32| color.gamma_multiply(opacity);
         let painter = ui.painter_at(area);
@@ -156,8 +156,8 @@ impl Splash {
 
 /// Names a line of the splash for screen readers and tests.
 fn name_for_readers(ui: &Ui, rect: Rect, label: &str) {
-    let response = ui.interact(rect, Id::new(("splash-line", label)), Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, label));
+    let response = ui.interact(rect, Id::unique(("splash-line", label)), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
 }
 
 #[cfg(test)]

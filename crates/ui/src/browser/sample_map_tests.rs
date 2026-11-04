@@ -400,11 +400,11 @@ fn the_wheel_zooms_only_when_no_dialog_is_on_top() {
         |ui, (view, dialog): &mut (MapView, bool)| {
             show(ui, view, &points, None, "20 samples", &[], None, &[], &mut Vec::new());
             if *dialog {
-                egui::Area::new(egui::Id::new("dialog")).order(egui::Order::Foreground).fixed_pos(Pos2::ZERO).show(
+                egui::Area::new(egui::Id::unique("dialog")).order(egui::Order::Foreground).fixed_pos(Pos2::ZERO).show(
                     ui.ctx(),
                     |ui| {
                         ui.set_min_size(size);
-                        let _ = ui.interact(Rect::from_min_size(Pos2::ZERO, size), ui.id(), Sense::click());
+                        let _ = ui.interact(Rect::from_min_size(Pos2::ZERO, size), ui.scope_id(), Sense::click());
                     },
                 );
             }
@@ -420,6 +420,7 @@ fn the_wheel_zooms_only_when_no_dialog_is_on_top() {
             unit: egui::MouseWheelUnit::Point,
             delta: Vec2::new(0.0, 120.0),
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
             modifiers: egui::Modifiers::NONE,
         });
         harness.input_mut().events.push(egui::Event::Zoom(1.5));

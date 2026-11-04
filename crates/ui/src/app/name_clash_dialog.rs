@@ -28,7 +28,7 @@ impl CloseChoice for NameClashChoice {
 /// Warns that `taken` of the `count` samples have a name already in `folder`, over `area`.
 /// Returns the answer, or `None` while it stays open.
 pub fn show(ui: &Ui, area: Rect, taken: &[String], count: usize, folder: &str) -> Option<NameClashChoice> {
-    egui::Area::new(Id::new("name-clash-prompt"))
+    egui::Area::new(Id::unique("name-clash-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {

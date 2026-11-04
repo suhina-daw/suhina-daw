@@ -324,6 +324,7 @@ fn the_wheel_scrolls_and_ctrl_zooms() {
             delta,
             modifiers,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.run();
         h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));

@@ -676,6 +676,7 @@ fn scrolling_the_send_grid_reaches_later_returns_without_moving_the_fader() {
         delta: vec2(0.0, -1000.0),
         modifiers: Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     harness.run();
     assert!(harness.query_by_label("Drums send to G Return").is_some());
@@ -702,6 +703,7 @@ fn further_sends_continue_horizontally_and_shift_wheel_reaches_them() {
         delta: vec2(0.0, -1000.0),
         modifiers: Modifiers::SHIFT,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     harness.run();
     let d = harness.get_by_label("Drums send to D Return").rect();

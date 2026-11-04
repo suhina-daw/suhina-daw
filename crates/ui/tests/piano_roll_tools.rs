@@ -212,6 +212,7 @@ fn alt_and_the_wheel_zoom_key_rows() {
         delta: vec2(0.0, 60.0),
         modifiers: Modifiers::ALT,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     h.run();
     h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
@@ -513,6 +514,7 @@ fn the_right_button_and_the_wheel_choose_the_tools() {
             delta: vec2(0.0, delta),
             modifiers: Modifiers::NONE,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.step();
     };

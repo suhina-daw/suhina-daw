@@ -138,7 +138,7 @@ fn knob(
 ) -> egui::Response {
     let publisher = format!("{}: {}", prefix, parameter.name.to_lowercase());
     let response =
-        ui.interact(cell, egui::Id::new(("nam-knob", track.0, device_index, parameter.id)), Sense::click_and_drag());
+        ui.interact(cell, egui::Id::unique(("nam-knob", track.0, device_index, parameter.id)), Sense::click_and_drag());
     if response.clicked() {
         response.request_focus();
     }
@@ -181,7 +181,7 @@ fn knob(
     if let Some((next, continuous)) = change {
         set_param(actions, track, device_index, parameter, next, continuous);
     }
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &publisher));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &publisher));
     response
 }
 
@@ -220,7 +220,7 @@ fn mid_freq_line(
             egui::pos2(line.left() - 8.0, under.top() + 10.0),
             egui::pos2(line.right() + 8.0, under.bottom()),
         ),
-        egui::Id::new(("nam-pill", track.0, device_index, parameter.id)),
+        egui::Id::unique(("nam-pill", track.0, device_index, parameter.id)),
         Sense::click_and_drag(),
     );
     if response.clicked() {
@@ -268,7 +268,7 @@ fn mid_freq_line(
     if let Some((next, continuous)) = change {
         set_param(actions, track, device_index, parameter, next, continuous);
     }
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &publisher));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &publisher));
     response
 }
 
@@ -314,7 +314,7 @@ fn vslider(
             egui::pos2(lane.center().x - 12.0, lane.top()),
             egui::pos2(lane.center().x + 12.0, lane.bottom()),
         ),
-        egui::Id::new(("nam-vslider", track.0, device_index, parameter.id)),
+        egui::Id::unique(("nam-vslider", track.0, device_index, parameter.id)),
         Sense::click_and_drag(),
     );
     if response.dragged() {
@@ -331,7 +331,7 @@ fn vslider(
         theme::mono_font(theme::TEXT_TINY),
         theme::text_value(),
     );
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &publisher));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, &publisher));
     response
 }
 
@@ -347,7 +347,7 @@ fn toggle(
     on: bool,
     actions: &mut Vec<Action>,
 ) -> egui::Response {
-    let id = egui::Id::new(("nam-toggle", track.0, device_index, parameter.id));
+    let id = egui::Id::unique(("nam-toggle", track.0, device_index, parameter.id));
     let response = ui.interact(rect, id, Sense::click());
     let (fill, text) = widgets::toggle_colors(ui, &response, on);
     ui.painter().fill_background(rect, 3.0, fill);
@@ -363,11 +363,7 @@ fn toggle(
         set_param(actions, track, device_index, parameter, f64::from(!on), false);
     }
     response.widget_info(|| {
-        egui::WidgetInfo::labeled(
-            egui::WidgetType::Button,
-            true,
-            format!("{}: {}", prefix, parameter.name.to_lowercase()),
-        )
+        egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{}: {}", prefix, parameter.name.to_lowercase()))
     });
     response
 }
@@ -375,7 +371,7 @@ fn toggle(
 /// The amp's big on/off: lit while the device runs; a click turns the whole device off or on
 /// again, as the header's square and the 0 key do.
 fn power(ui: &Ui, rect: Rect, track: TrackId, device: &DeviceBox, prefix: &str, actions: &mut Vec<Action>) {
-    let id = egui::Id::new(("nam-power", track.0, &device.at));
+    let id = egui::Id::unique(("nam-power", track.0, &device.at));
     let response = ui.interact(rect, id, Sense::click());
     let (fill, text) = widgets::toggle_colors(ui, &response, device.enabled);
     ui.painter().fill_background(rect, 3.0, fill);
@@ -388,7 +384,7 @@ fn power(ui: &Ui, rect: Rect, track: TrackId, device: &DeviceBox, prefix: &str, 
         ));
     }
     response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{prefix}: device {}", word.to_lowercase()))
+        egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{prefix}: device {}", word.to_lowercase()))
     });
 }
 
@@ -425,9 +421,8 @@ fn file_row(
             if files.is_empty() {
                 let empty_label = ui
                     .selectable_label(false, egui::RichText::new(empty).font(theme::ui_font(theme::TEXT_TINY)).weak());
-                empty_label.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("{label}: {empty}"))
-                });
+                empty_label
+                    .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{label}: {empty}")));
             }
             for (path, name) in files {
                 let mut on = path == current;
@@ -439,14 +434,12 @@ fn file_row(
                 if item.changed() {
                     choice = Some(path.clone());
                 }
-                item.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("{label}: {name}"))
-                });
+                item.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{label}: {name}")));
             }
         },
     )
     .response;
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, label));
     (response, choice)
 }
 
@@ -473,8 +466,8 @@ fn step_through(files: &[(String, String)], current: &str, by: i64) -> Option<St
 /// A stepper button drawn in `rect`: a triangle pointing `up` or `down`.
 fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) -> egui::Response {
     let painter = ui.painter();
-    let (fill, _) = widgets::toggle_colors(ui, &ui.interact(rect, egui::Id::new(id_salt), Sense::click()), false);
-    let response = ui.interact(rect, egui::Id::new(id_salt), Sense::click());
+    let (fill, _) = widgets::toggle_colors(ui, &ui.interact(rect, egui::Id::unique(id_salt), Sense::click()), false);
+    let response = ui.interact(rect, egui::Id::unique(id_salt), Sense::click());
     painter.fill_background(rect, 2.0, if response.hovered() { theme::control_hover() } else { fill });
     let inner = rect.shrink(5.0);
     let center = inner.center();
@@ -488,7 +481,7 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
         theme::text_hint(),
         egui::Stroke::NONE,
     ));
-    response.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+    response.widget_info(move || egui::WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
     response
 }
 
@@ -555,7 +548,7 @@ fn rows_and_picks(
     let (_, pack_pick) = file_row(
         ui,
         pack_rect,
-        egui::Id::new(("nam-pack", salt)),
+        egui::Id::unique(("nam-pack", salt)),
         &packs,
         &shown_pack,
         &shown_pack,
@@ -564,8 +557,8 @@ fn rows_and_picks(
     );
     let up_rect = Rect::from_min_size(egui::pos2(left + wide - 2.0 * STEP - 10.0, top), egui::vec2(STEP, ROW_HEIGHT));
     let down_rect = Rect::from_min_size(egui::pos2(left + wide - STEP - 4.0, top), egui::vec2(STEP, ROW_HEIGHT));
-    let up = stepper(ui, up_rect, egui::Id::new(("nam-step-up", salt)), true, format!("{prefix}: previous pack"));
-    let down = stepper(ui, down_rect, egui::Id::new(("nam-step-down", salt)), false, format!("{prefix}: next pack"));
+    let up = stepper(ui, up_rect, egui::Id::unique(("nam-step-up", salt)), true, format!("{prefix}: previous pack"));
+    let down = stepper(ui, down_rect, egui::Id::unique(("nam-step-down", salt)), false, format!("{prefix}: next pack"));
     // A pack's choice asks for its first file; a pack stepper asks for the pack it steps to's.
     let pack_step = if up.clicked() {
         step_through(&packs, &shown_pack, -1)
@@ -596,7 +589,7 @@ fn rows_and_picks(
     let (_, file_pick) = file_row(
         ui,
         file_rect,
-        egui::Id::new(("nam-file", salt)),
+        egui::Id::unique(("nam-file", salt)),
         files,
         current,
         &file_shown,
@@ -604,10 +597,10 @@ fn rows_and_picks(
         &format!("{prefix}: {what} file"),
     );
     let file_up_clicked =
-        stepper(ui, file_up, egui::Id::new(("nam-file-step-up", salt)), true, format!("{prefix}: previous file"))
+        stepper(ui, file_up, egui::Id::unique(("nam-file-step-up", salt)), true, format!("{prefix}: previous file"))
             .clicked();
     let file_down_clicked =
-        stepper(ui, file_down, egui::Id::new(("nam-file-step-down", salt)), false, format!("{prefix}: next file"))
+        stepper(ui, file_down, egui::Id::unique(("nam-file-step-down", salt)), false, format!("{prefix}: next file"))
             .clicked();
     ask = ask.or_else(|| file_up_clicked.then(|| step_through(files, current, -1)).flatten());
     ask = ask.or_else(|| file_down_clicked.then(|| step_through(files, current, 1)).flatten());

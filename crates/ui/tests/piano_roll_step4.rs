@@ -514,6 +514,7 @@ fn the_right_button_and_the_wheel_still_choose_tools_and_delete_nothing() {
         delta: egui::vec2(0.0, 60.0),
         modifiers: Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     h.run();
     let steered = h.state().piano_roll().tool;

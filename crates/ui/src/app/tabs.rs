@@ -110,7 +110,7 @@ impl App {
         let picked = (picked + down % count + count - up % count) % count;
         self.tab_switcher = Some(picked);
         let mut chosen = None;
-        egui::Area::new(egui::Id::new("project-switcher"))
+        egui::Area::new(egui::Id::unique("project-switcher"))
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
@@ -133,7 +133,7 @@ impl App {
                         });
                         let row = ui.add(egui::Button::selectable(lit, text).min_size(Vec2::new(360.0, 34.0)));
                         row.widget_info(|| {
-                            egui::WidgetInfo::selected(egui::WidgetType::Button, true, lit, format!("Switch to {name}"))
+                            egui::WidgetInfo::selected(egui::Role::Button, true, lit, format!("Switch to {name}"))
                         });
                         if row.clicked() {
                             chosen = Some(place);
@@ -174,8 +174,9 @@ impl App {
             let tab = Rect::from_min_size(Pos2::new(x, bar.top()), Vec2::new(width, bar.height()));
             x = tab.right() + 1.0;
             let close = Rect::from_center_size(Pos2::new(tab.right() - PAD - 4.0, tab.center().y), Vec2::splat(12.0));
-            let response = widgets::button_area(ui, tab, Id::new(("tab", id.0)), format!("Tab {name}"));
-            let close_response = widgets::button_area(ui, close, Id::new(("close-tab", id.0)), format!("Close {name}"));
+            let response = widgets::button_area(ui, tab, Id::unique(("tab", id.0)), format!("Tab {name}"));
+            let close_response =
+                widgets::button_area(ui, close, Id::unique(("close-tab", id.0)), format!("Close {name}"));
             if close_response.clicked() || response.middle_clicked() {
                 actions.push(Action::new("project.close", json!({ "project": id.0 })));
             } else if response.clicked() && Some(id) != active {

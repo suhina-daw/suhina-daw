@@ -369,8 +369,8 @@ impl App {
             let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
             let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
             let sense = Sense::click_and_drag();
-            let response = ui.interact(splitter, Id::new("detail-splitter"), sense).on_hover_cursor(cursor);
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
+            let response = ui.interact(splitter, Id::unique("detail-splitter"), sense).on_hover_cursor(cursor);
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
             // A double-click closes the detail area, as a double-click on a split view's divider does
             // on macOS; a double-click on the closed splitter opens it at its default size.
             if response.double_clicked() {
@@ -678,9 +678,9 @@ impl App {
     pub(super) fn collapsed_splitter(&mut self, ui: &mut Ui, area: Rect) -> Rect {
         let splitter = Rect::from_min_max(Pos2::new(area.left(), (area.bottom() - SPLITTER).max(area.top())), area.max);
         let response = ui
-            .interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag())
+            .interact(splitter, Id::unique("detail-splitter"), Sense::click_and_drag())
             .on_hover_cursor(egui::CursorIcon::ResizeVertical);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
         if response.double_clicked() {
             self.show_editor();
             self.detail_height = DETAIL_HEIGHT;

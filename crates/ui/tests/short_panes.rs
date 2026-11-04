@@ -187,6 +187,7 @@ fn a_lane_at_its_least_height_still_shows_its_notes() {
             delta: vec2(0.0, -400.0),
             modifiers: Modifiers::ALT,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.run();
     }
@@ -300,6 +301,7 @@ fn the_view_keeps_a_scroll_made_by_hand_when_the_height_changes() {
         delta: vec2(0.0, 120.0),
         modifiers: Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     h.run();
     let scrolled = h.state().piano_roll().scroll.y;

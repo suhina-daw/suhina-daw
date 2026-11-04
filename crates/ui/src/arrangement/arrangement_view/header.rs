@@ -27,8 +27,12 @@ pub(super) fn routing(
     );
     let field = Rect::from_min_max(Pos2::new(label.right(), rect.top()), rect.max);
     let mut picked = None;
-    let response =
-        widgets::button_area(ui, field, Id::new(("output", lane.track.0)), format!("{} output: {current}", lane.name));
+    let response = widgets::button_area(
+        ui,
+        field,
+        Id::unique(("output", lane.track.0)),
+        format!("{} output: {current}", lane.name),
+    );
     widgets::subtle_dropdown(ui, painter, field, &response, current, background);
     egui::Popup::menu(&response).show(|ui| {
         let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
@@ -71,7 +75,7 @@ pub(super) fn midi_input(
     let response = widgets::button_area(
         ui,
         field,
-        Id::new(("midi-input", lane.track.0)),
+        Id::unique(("midi-input", lane.track.0)),
         format!("{} MIDI input: {current}", lane.name),
     );
     widgets::subtle_dropdown(ui, painter, field, &response, &current, background);
@@ -103,7 +107,7 @@ pub(super) fn audio_input(
     let response = widgets::button_area(
         ui,
         field,
-        Id::new(("audio-input", lane.track.0)),
+        Id::unique(("audio-input", lane.track.0)),
         format!("{} audio input: {current}", lane.name),
     );
     widgets::subtle_dropdown(ui, painter, field, &response, &current, background);
@@ -219,13 +223,13 @@ pub(super) fn track_header(
     } else {
         PAD
     };
-    let id = Id::new(("arrangement-header", lane.track.0));
+    let id = Id::unique(("arrangement-header", lane.track.0));
     let clip = rect.intersect(lanes_area);
 
     // The header itself: click selects (Ctrl adds, Shift takes a run), right-click opens the
     // track's menu, a drag moves the track. Its controls, added after it, take their own clicks.
     let body = ui.interact(clip, id.with("body"), Sense::click_and_drag());
-    body.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Track {}", lane.name)));
+    body.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Track {}", lane.name)));
     if body.clicked() {
         state.targeted = Some(lane.track);
         let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
@@ -628,7 +632,7 @@ pub(super) fn track_header(
             text: name_color,
             size: name_size,
         };
-        d.insert_temp(Id::new((crate::app::NAME_RECT_TRACK, u64::from(lane.track.0))), spot);
+        d.insert_temp(Id::unique((crate::app::NAME_RECT_TRACK, u64::from(lane.track.0))), spot);
     });
     if solo.intersects(clip)
         && let Some(action) =

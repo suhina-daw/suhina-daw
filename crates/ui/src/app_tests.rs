@@ -594,7 +594,7 @@ fn a_panel_the_theme_lays_over_the_view_is_drawn_above_it() {
         )),
         ..Default::default()
     });
-    let layer = egui::LayerId::new(egui::Order::Middle, Id::new(("workspace-overlay", "panel-browser")));
+    let layer = egui::LayerId::new(egui::Order::Middle, Id::unique(("workspace-overlay", "panel-browser")));
     let mut drawn = false;
     for _ in 0..4 {
         let mut output = ctx.run_ui(

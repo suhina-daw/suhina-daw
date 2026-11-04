@@ -666,6 +666,7 @@ fn wheel_to(harness: &mut Harness<'static, App>, label: &str, turns: usize) -> u
             delta: Vec2::new(0.0, delta),
             modifiers: Modifiers::NONE,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         settle(harness);
     }

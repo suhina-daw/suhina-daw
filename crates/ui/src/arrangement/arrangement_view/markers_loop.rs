@@ -38,11 +38,9 @@ pub(super) fn marker_flags(
         if tag.right() < row.left() || tag.left() > row.right() {
             continue;
         }
-        let id = Id::new(("arrangement-marker", marker.index));
+        let id = Id::unique(("arrangement-marker", marker.index));
         let response = ui.interact(tag.expand2(Vec2::new(2.0, 0.0)), id, Sense::click_and_drag());
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Marker {}", marker.name))
-        });
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Marker {}", marker.name)));
         let fill = if state.marker_drag.is_some_and(|(i, _)| i == marker.index) {
             theme::control_active()
         } else if response.hovered() {
@@ -170,8 +168,8 @@ pub(super) fn loop_brace(
     let painter = ui.painter_at(row);
     let free = ui.input(|i| i.modifiers.alt);
     let raw_at = |x: f32, state: &ArrangementViewState| f64::from((x - row.left() + state.scroll.x) / state.beat_width);
-    let response = ui.interact(row, Id::new("arrangement-loop-row"), Sense::click_and_drag());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Loop brace"));
+    let response = ui.interact(row, Id::unique("arrangement-loop-row"), Sense::click_and_drag());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Loop brace"));
 
     // Which part of the brace is under `x`.
     let brace_x = timeline.loop_brace.map(|b| (x_of(b.start), x_of(b.end)));

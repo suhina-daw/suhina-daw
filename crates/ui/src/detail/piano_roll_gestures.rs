@@ -129,8 +129,8 @@ pub(super) fn lane_edge(ui: &Ui, layout: &Layout, room: f32, state: &mut PianoRo
         Pos2::new(lane.left(), lane.top() - LANE_EDGE),
         Pos2::new(lane.right(), lane.top() + LANE_EDGE),
     );
-    let response = ui.interact(rect, Id::new("piano-roll-lane-edge"), Sense::drag());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Velocity lane top edge"));
+    let response = ui.interact(rect, Id::unique("piano-roll-lane-edge"), Sense::drag());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Velocity lane top edge"));
     if response.hovered() || response.dragged() {
         ui.ctx().set_cursor_icon(CursorIcon::ResizeVertical);
     }
@@ -161,8 +161,8 @@ pub(super) fn draw_velocity_label(ui: &Ui, layout: &Layout, clip: &PianoClip, gr
         theme::mono_font(theme::TEXT_TINY),
         theme::text_primary(),
     );
-    let response = ui.interact(label.intersect(layout.grid), Id::new("piano-roll-velocity-value"), Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &text));
+    let response = ui.interact(label.intersect(layout.grid), Id::unique("piano-roll-velocity-value"), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &text));
 }
 
 impl PianoRollState {

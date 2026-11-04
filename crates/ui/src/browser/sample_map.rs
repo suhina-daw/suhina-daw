@@ -719,7 +719,7 @@ struct Content<'a> {
 fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, events: &mut Vec<MapEvent>) {
     let Content { points, positions, grid, tags } = *content;
     view.area = rect;
-    let id = ui.id().with("sample-map");
+    let id = ui.scope_id().with("sample-map");
     let response = ui.interact(rect, id, Sense::click_and_drag());
     let painter = ui.painter_at(rect);
     painter.fill_background(rect, CornerRadius::ZERO, theme::window_background());

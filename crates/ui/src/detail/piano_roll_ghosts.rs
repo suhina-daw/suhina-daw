@@ -455,8 +455,8 @@ pub(crate) fn for_readers(ui: &Ui, ghosts: &Ghosts, visible: Rect, rect_of: impl
         labelled += 1;
         let from = ghosts.sources.get(ghost.source).map_or("", String::as_str);
         let label = format!("Ghost note {} at beat {} from {from}", key_name(ghost.key), round(ghost.start));
-        let response = ui.interact(rect, Id::new(("piano-roll-ghost", i)), Sense::hover());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+        let response = ui.interact(rect, Id::unique(("piano-roll-ghost", i)), Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
     }
 }
 
@@ -481,7 +481,7 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
             let mut entry = |ui: &mut Ui, choice: GhostSource, shown: &str, label: &str| {
                 let on = *source == choice;
                 let response = ui.selectable_label(on, egui::RichText::new(shown).font(font.clone()));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, label));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
                 if response.clicked() {
                     picked = Some(choice);
                     ui.close();
@@ -506,12 +506,12 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
                 });
             });
             clip_menu.response.widget_info(|| {
-                egui::WidgetInfo::selected(egui::WidgetType::Button, true, chosen, "Ghost notes: Clip\u{2026}")
+                egui::WidgetInfo::selected(egui::Role::Button, true, chosen, "Ghost notes: Clip\u{2026}")
             });
         });
         let label = format!("Ghost notes {}", source.name(ghosts));
         crate::detail::piano_roll::menu_arrow(ui, menu.response.rect, color);
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         shown = menu.response.rect;
         menu.response.on_hover_text(format!(
             "Ghost notes: {}. Notes of other clips drawn faintly behind this clip's notes",

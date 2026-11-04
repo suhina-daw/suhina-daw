@@ -116,7 +116,7 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
     let painter = ui.painter_at(column);
     painter.fill_background(column, 0.0, theme::panel_background());
     let f = &info.follow;
-    let id = Id::new(("follow", info.track.0, info.scene));
+    let id = Id::unique(("follow", info.track.0, info.scene));
 
     // The title, and the switch that turns the follow action on or off.
     let title = Rect::from_min_size(column.min, Vec2::new(column.width(), ROW)).shrink2(Vec2::new(PAD, 0.0));
