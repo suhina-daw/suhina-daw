@@ -1347,6 +1347,16 @@ impl HandleAxis<'_> {
     }
 }
 
+/// How a [`Widget::Handle`] looks and moves, read from its widget.
+struct HandleStyle<'a> {
+    color: [u8; 4],
+    span: Option<&'a [suhina_device_sdk::ui::UiValue; 2]>,
+    offset: Option<&'a suhina_device_sdk::ui::UiValue>,
+    dot: bool,
+    relative: bool,
+    hollow: bool,
+}
+
 /// A line or a point on a drawing, dragged directly ([`Widget::Handle`]).
 #[allow(clippy::too_many_arguments)]
 fn handle(
@@ -1354,18 +1364,12 @@ fn handle(
     painter: &egui::Painter,
     (canvas, bounds, stretch): (Rect, Rect, Vec2),
     control: &suhina_device_sdk::ui::CustomControl,
-    (line_color, span, offset, dot, relative, hollow): (
-        [u8; 4],
-        Option<&[suhina_device_sdk::ui::UiValue; 2]>,
-        Option<&suhina_device_sdk::ui::UiValue>,
-        bool,
-        bool,
-        bool,
-    ),
+    style: HandleStyle<'_>,
     parameters: &[GraphParameter],
     (track, at): (TrackId, &crate::detail::detail_view::DeviceAt),
     actions: &mut Vec<Action>,
 ) {
+    let HandleStyle { color: line_color, span, offset, dot, relative, hollow } = style;
     /// How far from its line or dot a handle is grabbed, in points.
     const GRAB: f32 = 7.0;
     let axis = |binding: Option<&'_ suhina_device_sdk::ui::UiBinding>| {
@@ -1726,7 +1730,7 @@ fn paint_scaled(
                                 read
                             })
                         });
-                        (from + (to - from) * along as f32, height as f32)
+                        (from + (to - from) * along as f32, height)
                     })
                     .collect::<Vec<_>>();
                 let stroke = Stroke::new(*width * weight, color(*c));
@@ -2171,7 +2175,14 @@ pub(crate) fn show(
                 &painter,
                 (rect, bounds, stretch),
                 control,
-                (*line_color, span.as_ref(), offset.as_ref(), *dot, *relative, *hollow),
+                HandleStyle {
+                    color: *line_color,
+                    span: span.as_ref(),
+                    offset: offset.as_ref(),
+                    dot: *dot,
+                    relative: *relative,
+                    hollow: *hollow,
+                },
                 parameters,
                 (track, at),
                 actions,
