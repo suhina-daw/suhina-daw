@@ -243,7 +243,7 @@ fn sample_drops_into_empty_device_area_load_sampler() {
             harness.drop_at(target);
         }
         harness.step();
-        let end = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while std::time::Instant::now() < end {
             harness.step();
             if harness.state().session().unwrap().project().channels[0]

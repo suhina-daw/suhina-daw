@@ -182,7 +182,7 @@
   "Audio/Status/Audio status": {
     "sourceFingerprint": "eb0a60ba1e649ad33f5e2e0229c3ca47bdb5303128d92eac8de6603b6a1659c0",
     "summary": "Inspect the audio device actually running and its timing reports.",
-    "description": "This panel reports live audio rather than saving a preference. Output identifies the device currently playing, including fallback to another output. Delay to the speakers reports the engine-to-speaker delay and underruns: occasions when audio was not supplied in time. Delay when you play a key estimates the current delay for live notes; arming a track makes the engine keep less audio queued ahead. Recording input reports the open input, its channel count and input underruns, or says none is open. List devices again refreshes the available hardware list; it does not itself choose another device. With no playing project, live reports may be empty. Active buffers reports the engine render block and measured driver callback separately. Internal driver buffers can differ, and these frame counts are not the total measured latency. The native driver panel is under Output, beside Device settings.",
+    "description": "This panel reports live audio rather than saving a preference. Output identifies the device currently playing, including fallback to another output. Delay to the speakers reports the engine-to-speaker delay and underruns: occasions when audio was not supplied in time. Delay when you play a key estimates the current delay for live notes; arming a track makes the engine keep less audio queued ahead. Recording input reports the open input, its channel count and input underruns, or says none is open. List devices again refreshes the available hardware list; it does not itself choose another device. Most changes show up without it, but a new ASIO driver does not. With no playing project, live reports may be empty. Active buffers reports the engine render block and measured driver callback separately. Internal driver buffers can differ, and these frame counts are not the total measured latency. The native driver panel is under Output, beside Device settings.",
     "options": [],
     "whenToChange": "Check this when the selected interface is unplugged, live notes feel late, or playback breaks up. Compare the reports after changing Output settings.",
     "references": [
@@ -305,8 +305,8 @@
         "description": "Include or skip the folder in subsequent scans. Turning a folder off removes its plug-ins from the catalog after the next scan."
       },
       {
-        "name": "Both",
-        "description": "Look for CLAP and VST3 files in an added folder."
+        "name": "All",
+        "description": "Look for every format Suhina hosts in an added folder: CLAP and VST3 files, and VST2 `.vst` bundles on macOS. A VST2 `.dll` or `.so` is found only in a folder marked VST2."
       },
       {
         "name": "VST3",
@@ -318,7 +318,7 @@
       },
       {
         "name": "VST2",
-        "description": "Shown as unavailable: VST2 hosting is not implemented yet."
+        "description": "Look for VST2 files in that folder: `.vst` bundles on macOS, `.dll` files on Windows and `.so` files on Linux."
       }
     ],
     "whenToChange": "Add a custom installation folder when a plug-in is missing. Use Manage plug-ins to inspect a loading failure or temporarily disable a problematic plug-in.",
@@ -365,7 +365,7 @@
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings.rs",
       "crates/ui/src/app.rs",
-      "crates/ui/src/detail/nam_panel.rs",
+      "crates/ui/src/detail/device_widgets.rs",
       "docs/spec/nam-amp-and-cab.md"
     ]
   },
@@ -379,7 +379,7 @@
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings.rs",
       "crates/ui/src/app.rs",
-      "crates/ui/src/detail/nam_panel.rs",
+      "crates/ui/src/detail/device_widgets.rs",
       "docs/spec/nam-amp-and-cab.md"
     ]
   },
@@ -1498,28 +1498,24 @@
     ]
   },
   "ClipEditor/Piano roll/notes_replace": {
-    "sourceFingerprint": "ef4d9aa388c88f74f45d83e321965b25c08659a42ee56308cdce8f29d0b39223",
-    "summary": "Replace a note only when a moved note lands on the same pitch and start.",
-    "description": "In the piano roll, the grid where MIDI notes are edited, moving a note can land it on an existing note with the same pitch and start time. With replacement on, the existing note is removed. Merely overlapping part of another note does not meet that condition. This preference applies to moves; copying by dragging uses the separate duplicate action.",
+    "sourceFingerprint": "a3417fdaae52f35fdeb8136bccac93872c6ab8d9ff25782d5d1955ecece7146d",
+    "summary": "Choose whether notes of one pitch may overlap in the piano roll.",
+    "description": "In the piano roll, the grid where MIDI notes are edited, a note can be drawn, moved, resized, pasted, duplicated, quantised or made legato over other notes of the same pitch. With this off, the note replaces them: a note it covers whole is removed, one that starts before it ends where it starts, and one that runs on past it starts where it ends. Shift+Right also stops at the next note of the pitch. With it on, notes may overlap, and nothing else changes. The same choice is in the View menu in the piano roll's top left corner.",
     "options": [
       {
-        "name": "On",
-        "description": "Replace the existing note at the same pitch and start. This is the default."
+        "name": "Off",
+        "description": "Notes of one pitch never overlap: a note placed over others replaces them. This is the default."
       },
       {
-        "name": "Off",
-        "description": "Keep both notes when a move lands them at the same pitch and start."
+        "name": "On",
+        "description": "Notes of one pitch may overlap, and both play."
       }
     ],
-    "whenToChange": "Keep this on when rearranging a melody and you want one note at each start and pitch. Turn it off to retain coincident notes.",
+    "whenToChange": "Keep this off so no stray notes hide under longer ones. Turn it on for layered notes on one pitch.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
-      "crates/ui/src/settings.rs",
       "crates/ui/src/settings/view_settings.rs",
       "crates/ui/src/app.rs",
-      "crates/ui/src/arrangement/arrangement_view.rs",
-      "docs/spec/arrangement-editing.md",
-      "crates/ui/src/detail/piano_roll.rs",
       "crates/session/src/notes.rs",
       "docs/spec/ui-clip-editor.md"
     ]
@@ -2283,7 +2279,7 @@
   "Audio/Output/audio_host,audio_device,audio_devices,audio_sample_rate,audio_buffer,audio_exclusive,audio_input": {
     "sourceFingerprint": "3faf6e1ef9f62aae5381067a023101e0cedd4bb20fb910c598313a7ae04ee4bb",
     "summary": "Choose audio hardware, its driver, timing settings and recording input.",
-    "description": "Driver selects the audio system used to reach your hardware; the listed drivers depend on the platform and build. Each driver remembers its last applied device across restarts, including an explicit Default selection. Choosing Driver restores that device and applies the pair together when it is available. Default and the same host selected by name share this memory. For a new driver or an unavailable remembered device, choose Device, including Default if wanted, before the new driver opens. Until then the current output keeps playing; closing Settings cancels the pending driver choice. Installed ASIO devices stay listed while ASIO plays; restart Suhina after installing a new ASIO driver. Default follows the system choice; a missing chosen output can fall back to the default. Sample rate is the number of audio frames per second; choose a listed rate or Device’s own. Buffer size controls the device buffer where supported, including WASAPI exclusive mode; when labelled Engine block it controls Suhina’s rendering chunks, while the operating system or driver keeps its own device buffer. Smaller chunks alone do not guarantee the same reduction in the latency shown under Now. Exclusive mode applies to supported WASAPI devices and reserves the device for Suhina; other applications are then not heard on it. Input independently selects Off, the default input or a named microphone/interface input on the chosen driver. Input is Off initially. Choosing an input supplies audio to tracks configured to use it; it does not itself arm or record a track. Device changes retain running plug-in instances. If the effective sample rate changes, Suhina stops processing while it reconfigures those instances and updates their latency; it does not reload their presets or editors. A plug-in that refuses reconfiguration prevents the new output from starting and reports an error. A plug-in still loading when the rate changes starts again at the new rate. When changing outputs, Suhina fades the old device to silence before closing it and fades in the first audio on the new device. The shutdown drain is limited to 500 ms if a device stops responding; the change still interrupts audio and cannot prevent a pop generated inside the hardware. Device settings, immediately below Device, opens Control panel… for the matching active ASIO driver. The button is hidden while a driver choice is pending, when another device is running, or with a non-ASIO host. The native panel configures the running instance, not an external defaults editor; opening it does not reload plug-ins. While the native panel is open, output changes and project closing are rejected until it is closed. A rejected output choice restores the displayed selection and does not replace the driver’s remembered device. If the device itself fails to open, the requested choice stays selected for retry; device history is updated only after a successful selection. Switching to another driver after a failed opening preserves the previous driver’s last working device. Buffer size requests a supported processing buffer; it does not describe every internal driver or hardware buffer. Exclusive mode is shown only for WASAPI. If opening a device fails, selecting an available device opens a new stopped audio engine; restarting the application is not required to retry.",
+    "description": "Driver selects the audio system used to reach your hardware; the listed drivers depend on the platform and build. Each driver remembers its last applied device across restarts, including an explicit Default selection. Choosing Driver restores that device and applies the pair together when it is available. Default and the same host selected by name share this memory. For a new driver or an unavailable remembered device, choose Device, including Default if wanted, before the new driver opens. Until then the current output keeps playing; closing Settings cancels the pending driver choice. Installed ASIO devices stay listed while ASIO plays; restart Suhina after installing a new ASIO driver. Default follows the system choice; a missing chosen output can fall back to the default. The Device list follows the system: headphones connected while this page shows appear within a few seconds. Bluetooth outputs are under the driver that reaches them: WASAPI on Windows and, on Linux with a PulseAudio or PipeWire sound server running, PulseAudio; an ASIO or ALSA list leaves them out. Sample rate is the number of audio frames per second; choose a listed rate or Device’s own. Buffer size controls the device buffer where supported, including WASAPI exclusive mode; when labelled Engine block it controls Suhina’s rendering chunks, while the operating system or driver keeps its own device buffer. Smaller chunks alone do not guarantee the same reduction in the latency shown under Now. Exclusive mode applies to supported WASAPI devices and reserves the device for Suhina; other applications are then not heard on it. Input independently selects Off, the default input or a named microphone/interface input on the chosen driver. Input is Off initially. Choosing an input supplies audio to tracks configured to use it; it does not itself arm or record a track. Device changes retain running plug-in instances. If the effective sample rate changes, Suhina stops processing while it reconfigures those instances and updates their latency; it does not reload their presets or editors. A plug-in that refuses reconfiguration prevents the new output from starting and reports an error. A plug-in still loading when the rate changes starts again at the new rate. When changing outputs, Suhina fades the old device to silence before closing it and fades in the first audio on the new device. The shutdown drain is limited to 500 ms if a device stops responding; the change still interrupts audio and cannot prevent a pop generated inside the hardware. Device settings, immediately below Device, opens Control panel… for the matching active ASIO driver. The button is hidden while a driver choice is pending, when another device is running, or with a non-ASIO host. The native panel configures the running instance, not an external defaults editor; opening it does not reload plug-ins. While the native panel is open, output changes and project closing are rejected until it is closed. A rejected output choice restores the displayed selection and does not replace the driver’s remembered device. If the device itself fails to open, the requested choice stays selected for retry; device history is updated only after a successful selection. Switching to another driver after a failed opening preserves the previous driver’s last working device. Buffer size requests a supported processing buffer; it does not describe every internal driver or hardware buffer. Exclusive mode is shown only for WASAPI. If opening a device fails, selecting an available device opens a new stopped audio engine; restarting the application is not required to retry.",
     "options": [
       {
         "name": "Driver: Default / listed driver",
@@ -2291,7 +2287,7 @@
       },
       {
         "name": "Device: Default / listed output",
-        "description": "Use the driver’s default output or a named output device. The list follows Driver. The applied selection is saved separately for each driver."
+        "description": "Use the driver’s default output or a named output device. The list follows Driver and what is connected now. The applied selection is saved separately for each driver."
       },
       {
         "name": "Sample rate: Device’s own / listed Hz value",
@@ -2359,5 +2355,59 @@
       "docs/spec/recording.md"
     ],
     "options": []
+  },
+  "ClipEditor/Piano roll/piano_key_style": {
+    "sourceFingerprint": "cfc5e326e24d1f1db40416e096ae0a2c6d9f90756452f3bc54f3e56207b6f5ab",
+    "summary": "Choose how light the piano roll's keys are drawn.",
+    "description": "The keys at the left of the piano roll, the grid where MIDI notes are edited, are drawn like a keyboard in one of three styles. A theme can set anything about the keys in its sheet, and what it sets wins: when it sets their colours, this choice has no effect and the View menu in the piano roll's top left corner shows Theme. The same choice is in that menu.",
+    "options": [
+      {
+        "name": "Bone",
+        "description": "Light keys that stand out from the dark grid. This is the default."
+      },
+      {
+        "name": "Stone",
+        "description": "Keys between light and dark."
+      },
+      {
+        "name": "Night",
+        "description": "Dark keys that sit back with the rest of the window."
+      }
+    ],
+    "whenToChange": "Pick the one that is easiest on your eyes; it changes nothing but how the keys look.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/app.rs",
+      "crates/ui/src/detail/piano_roll/keys.rs",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "ClipEditor/Piano roll/piano_key_names": {
+    "sourceFingerprint": "983b1670fa7a604d49659cbd467e45461d2ed1c3a70837a9593ea54794c8c822",
+    "summary": "Choose which keys at the left of the piano roll show their names.",
+    "description": "The keys at the left of the piano roll, the grid where MIDI notes are edited, can name only the C of each octave, every white key, or every key. Rows lower than 8 points have no room for a name and show none, and a folded view, which leaves keys out, names every row. The notes in the grid always show their names, whatever this says. The same choice is in the View menu in the piano roll's top left corner.",
+    "options": [
+      {
+        "name": "Only C",
+        "description": "Only the C of each octave is named. This is the default."
+      },
+      {
+        "name": "White keys",
+        "description": "Every white key is named."
+      },
+      {
+        "name": "All keys",
+        "description": "Every key is named, black keys too."
+      }
+    ],
+    "whenToChange": "Name more keys while you learn where notes are, or when tall rows leave room for them.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/app.rs",
+      "crates/ui/src/detail/piano_roll/keys.rs",
+      "docs/spec/ui-clip-editor.md"
+    ]
   }
 }

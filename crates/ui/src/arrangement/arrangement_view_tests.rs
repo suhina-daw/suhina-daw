@@ -639,3 +639,15 @@ fn a_drag_starts_from_the_height_drawn() {
     state.resize_lanes(TrackId(9), 14.0, 2.0);
     assert_eq!(state.lane_height(TrackId(9)), MIN_LANE.max(16.0));
 }
+
+/// A time selection gone on over more time and tracks holds both.
+#[test]
+fn a_time_selection_goes_on_over_both() {
+    let first = TimeSelection { tracks: vec![TrackId(1)], start: 4.0, end: 6.0, row: Some((0, 2)) };
+    let same = first.gone_on(&[TrackId(1)], 8.0, 10.0, Some((0, 2)));
+    assert_eq!((same.start, same.end, same.row), (4.0, 10.0, Some((0, 2))));
+    assert_eq!(first.gone_on(&[TrackId(1)], 8.0, 10.0, Some((1, 2))).row, None, "into another row of the stack");
+    let more = first.gone_on(&[TrackId(1), TrackId(2)], 0.0, 5.0, None);
+    assert_eq!((more.start, more.end, more.row), (0.0, 6.0, None));
+    assert_eq!(more.tracks, [TrackId(1), TrackId(2)]);
+}

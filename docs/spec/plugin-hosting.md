@@ -305,11 +305,13 @@ module's own description and imported projects.
 
 ## VST2 projects
 
-A project that names a VST2 plug-in is opened
-with the installed VST3 that declares it replaces it, and the saved VST2 state is handed to
-it. Without such a VST3 the device stays in the project as a *missing plug-in* with its state
-intact, and the user can relink it by hand to a VST3 or CLAP version. Hosting VST2 itself is
-a separate decision (below).
+A project that names a VST2 plug-in is opened with the installed VST3 that declares it
+replaces it or whose class id is derived from its id, and the saved VST2 state is handed to
+it. Without such a VST3, the scanned VST2 plug-in with the project's id runs through the VST2
+host with its saved state ([ADR 0022](../decisions/0022-vst2-interface-description.md),
+[the VST2 interface](plugin-vst2.md)). Without that either, a VST3 found by name or as a newer
+version may stand in, or the device stays in the project as a *missing plug-in* with its state
+intact, and the user can relink it by hand to a VST3 or CLAP version (ADR 0006 decision 8).
 
 *Finding the replacement* (`crates/plugins/src/matching.rs`, `plugin.check`). The catalog is
 searched in order of how sure the answer is: the same id; an installed VST3 that declares it
@@ -317,12 +319,13 @@ replaces the plug-in (`Compatibility` in `moduleinfo.json`, or the module's
 `Plugin Compatibility Class`, which the scanner asks through `IPluginCompatibility`); a VST3
 whose class id is derived from the VST2 id by the SDK's convention (`VST`, the 4-byte id, the
 first nine bytes of the name in lower case; the name part is not compared, as a project keeps
-the name its host showed); the same name once build words (`x64`, `64bit`, `.64`) and a
+the name its host showed); the scanned VST2 plug-in itself, by its id, when exactly one has
+it; the same name once build words (`x64`, `64bit`, `.64`) and a
 leading vendor name are set aside, or the name without its number when the installed
 plug-in's version starts with that number (`Synth 5` finds a VST3 named `Synth` whose
 version is 5.x and whose class id follows no convention); and last the nearest newer version
 of the same name (`Synth` → `Synth 2`, `EQ 2` → `EQ 3`, and with the number inside
-the name, `Suite 8 Imager` → `Suite 11 Imager`). Only the first three promise that the state carries over;
+the name, `Suite 8 Imager` → `Suite 11 Imager`). Only the first four promise that the state carries over;
 for the last two the state is handed over and the plug-in decides, and the result says
 which (`keeps_state`). Vendors declare their own older builds rather than older products:
 an `EQ 3` module declares the VST2 builds of `EQ 3`, not `EQ 2`, which is why the name
@@ -387,10 +390,12 @@ any load, and it is listed apart as `incompatible` with the processors it is bui
 The catalog (format 3) keeps when each file was last read; a catalog in format 2 is read
 as it is. A failure's reason is kept to its first line (a loader can list every path it
 tried).
-- Each added folder is for one format (VST3 or CLAP) or for every format Suhina hosts, and
+- Each added folder is for one format (VST3, CLAP or VST2) or for every format Suhina hosts, and
 any folder, standard or added, can be switched off without removing it; its plug-ins leave
-the catalog with the next scan. VST2 folders are a format already, refused until VST2
-plug-ins are hosted, so adding them later is a matter of the scan, not of the folders.
+the catalog with the next scan. A folder for every format takes `.clap` and `.vst3` files
+(and `.vst` bundles on macOS); a plain library (`.dll`, `.so`) can be anything and loading it
+runs its code, so those are taken from a VST2 folder only. A folder `CLAP_PATH` names is a folder for every
+format, whatever its name.
 - Plug-ins can be switched off (`plugin.setEnabled`, the plug-in manager). One switched off
 stays in the catalog and in `plugin.list`, but sessions get the catalog without it: it is
 not offered in the browser, not found by name, and a project that uses it finds it
@@ -645,6 +650,6 @@ the worst case being why the host's audio thread needs real-time priority.
 
 Work goes in this order: this ADR; `ipc` with a host that crashes and hangs on purpose; CLAP;
 a CLI command that runs a WAV through a plug-in; VST3; finding the replacements for a
-project's VST2 plug-ins (done), then loading them with their state; plug-ins in the
+project's VST2 plug-ins (done), then loading them with their state (done, [#1066](https://github.com/suhina-daw/suhina-daw/issues/1066)); plug-ins in the
 engine's track chain together with built-in effects and instruments (LOOP-35, done, #100); editors (Windows
 and X11 done, floating and embedded in the device panel).
