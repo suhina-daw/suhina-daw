@@ -1466,7 +1466,16 @@ fn handle(
             ui.data_mut(|d| d.insert_temp(start_id, start));
         }
         let start = ui.data(|d| d.get_temp::<(f32, f32)>(start_id));
-        let moved = response.total_drag_delta().unwrap_or_default();
+        // The release frame has no drag left to measure: it keeps the last frame's, or the value
+        // would fall back to where the drag began.
+        let moved_id = id.with("relative-moved");
+        let moved = match response.total_drag_delta() {
+            Some(moved) => {
+                ui.data_mut(|d| d.insert_temp(moved_id, moved));
+                moved
+            }
+            None => ui.data(|d| d.get_temp::<Vec2>(moved_id)).unwrap_or_default(),
+        };
         let moving = pointer.and(start);
         (moving.map(|(x, _)| x + moved.x / bounds.width()), moving.map(|(_, y)| y - moved.y / bounds.height()))
     } else {
