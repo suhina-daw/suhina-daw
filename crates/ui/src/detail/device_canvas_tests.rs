@@ -1839,7 +1839,14 @@ fn click_to_focus(position: Pos2) -> Vec<Vec<egui::Event>> {
 }
 
 fn handle_widget() -> Option<Widget> {
-    Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: None, dot: false, relative: false })
+    Some(Widget::Handle {
+        color: [255, 255, 255, 255],
+        span: None,
+        offset: None,
+        dot: false,
+        relative: false,
+        hollow: false,
+    })
 }
 
 #[test]
@@ -1853,6 +1860,7 @@ fn a_handles_offset_moves_where_it_is_grabbed() {
         offset: Some(100.0.into()),
         dot: false,
         relative: false,
+        hollow: false,
     });
     // At half its travel, a handle over 0..200 moved by 100 is at 200, and 300 is its 1.0.
     let (grab, to) = (Pos2::new(200.0, 50.0), Pos2::new(250.0, 50.0));
@@ -1872,8 +1880,14 @@ fn a_relative_handle_moves_by_the_pointers_travel_and_not_to_it() {
     let mut canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("level"));
     let control = &mut Arc::make_mut(&mut canvas).controls[0];
     control.bounds = [0.0, 0.0, 200.0, 100.0];
-    control.widget =
-        Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: None, dot: false, relative: true });
+    control.widget = Some(Widget::Handle {
+        color: [255, 255, 255, 255],
+        span: None,
+        offset: None,
+        dot: false,
+        relative: true,
+        hollow: false,
+    });
     // Grabbed at its value, half way, and moved a quarter of its bounds: a quarter of the range on.
     let (grab, to) = (Pos2::new(100.0, 50.0), Pos2::new(150.0, 50.0));
     let events = vec![
@@ -2076,4 +2090,15 @@ fn a_negative_drag_scale_steps_a_discrete_control_the_other_way() {
     };
     assert_eq!(step(1.0), Some(6.0));
     assert_eq!(step(-1.0), Some(4.0));
+}
+
+#[test]
+fn a_plot_ends_where_its_curve_leaves_the_range_and_does_not_run_along_the_edge() {
+    // Falls through the bottom (100) between x 1 and 2, stays below, comes back up between 3 and 4.
+    let points = [(0.0, 50.0), (1.0, 80.0), (2.0, 120.0), (3.0, 140.0), (4.0, 60.0)];
+    let lines = plot_inside(&points, 0.0, 100.0);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert_eq!(lines[0], vec![(0.0, 50.0), (1.0, 80.0), (1.5, 100.0)]);
+    assert_eq!(lines[1], vec![(3.5, 100.0), (4.0, 60.0)]);
+    assert!(plot_inside(&[(0.0, 200.0), (1.0, 300.0)], 0.0, 100.0).is_empty(), "nothing inside, nothing drawn");
 }

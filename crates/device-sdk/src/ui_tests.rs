@@ -99,6 +99,7 @@ fn handles_bind_an_axis_or_two_and_presets_name_declared_values() {
             offset: None,
             dot: false,
             relative: false,
+            hollow: false,
         }),
         gesture: UiGesture::Position,
         x: Some(UiBinding::new("cut")),

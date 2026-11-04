@@ -437,7 +437,7 @@ pub enum Draw {
     },
     /// A curve from one expression: `samples` points from `from` to `to` along x, each at the
     /// height `y` gives while the parameter `#x` ([`PLOT_X_ID`]) reads its share of the way, 0 to
-    /// 1, kept between `top` and `bottom`.
+    /// 1. A part beyond `top` or `bottom` is not drawn: the line ends at the edge.
     Plot {
         from: UiValue,
         to: UiValue,

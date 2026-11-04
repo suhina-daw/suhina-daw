@@ -1354,10 +1354,11 @@ fn handle(
     painter: &egui::Painter,
     (canvas, bounds, stretch): (Rect, Rect, Vec2),
     control: &suhina_device_sdk::ui::CustomControl,
-    (line_color, span, offset, dot, relative): (
+    (line_color, span, offset, dot, relative, hollow): (
         [u8; 4],
         Option<&[suhina_device_sdk::ui::UiValue; 2]>,
         Option<&suhina_device_sdk::ui::UiValue>,
+        bool,
         bool,
         bool,
     ),
@@ -1436,8 +1437,12 @@ fn handle(
             );
         }
         None => {
-            let ring = Stroke::new(1.0, crate::kit::theme::palette().panel_background);
-            painter.circle(center, if hot { 5.5 } else { 4.0 }, color(line_color), ring);
+            if hollow {
+                painter.circle_stroke(center, if hot { 4.0 } else { 3.0 }, Stroke::new(1.5, color(line_color)));
+            } else {
+                let ring = Stroke::new(1.0, crate::kit::theme::palette().panel_background);
+                painter.circle(center, if hot { 5.5 } else { 4.0 }, color(line_color), ring);
+            }
         }
     }
     // The arrow keys along its travel move a focused handle 1 % of it, 0.1 % with Shift.
@@ -1504,6 +1509,38 @@ fn handle(
         }
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &control.name));
+}
+
+/// The parts of a plot's line between `top` and `bottom`, each a line of its own: where the curve
+/// leaves the range it ends at the edge rather than running along it.
+fn plot_inside(points: &[(f32, f32)], top: f32, bottom: f32) -> Vec<Vec<(f32, f32)>> {
+    let mut lines: Vec<Vec<(f32, f32)>> = Vec::new();
+    let mut open = false;
+    for pair in points.windows(2) {
+        let ((x0, y0), (x1, y1)) = (pair[0], pair[1]);
+        let dy = y1 - y0;
+        // The share of the segment inside the range, from the y of each end.
+        let (enter, exit) = if dy == 0.0 {
+            if (top..=bottom).contains(&y0) { (0.0, 1.0) } else { (1.0, 0.0) }
+        } else {
+            let (a, b) = ((top - y0) / dy, (bottom - y0) / dy);
+            (a.min(b).max(0.0), a.max(b).min(1.0))
+        };
+        if enter > exit {
+            open = false;
+            continue;
+        }
+        let at = |t: f32| (x0 + (x1 - x0) * t, y0 + dy * t);
+        if !open || enter > 0.0 {
+            lines.push(vec![at(enter)]);
+        }
+        if let Some(line) = lines.last_mut() {
+            line.push(at(exit));
+        }
+        open = exit >= 1.0;
+    }
+    lines.retain(|line| line.len() > 1);
+    lines
 }
 
 /// A drawing's colour: one of the SDK's theme tokens takes the theme's custom property (or its
@@ -1689,10 +1726,14 @@ fn paint_scaled(
                                 read
                             })
                         });
-                        origin + Vec2::new(from + (to - from) * along as f32, height.clamp(top, bottom)) * scale
+                        (from + (to - from) * along as f32, height as f32)
                     })
-                    .collect();
-                painter.add(egui::Shape::line(points, Stroke::new(*width * weight, color(*c))));
+                    .collect::<Vec<_>>();
+                let stroke = Stroke::new(*width * weight, color(*c));
+                for line in plot_inside(&points, top, bottom) {
+                    let line = line.into_iter().map(|(x, y)| origin + Vec2::new(x, y) * scale).collect();
+                    painter.add(egui::Shape::line(line, stroke));
+                }
             }
             Draw::Gradient { rect, colors } => {
                 let r = rectangle(rect);
@@ -2124,13 +2165,13 @@ pub(crate) fn show(
             );
             continue;
         }
-        if let Some(Widget::Handle { color: line_color, span, offset, dot, relative }) = &control.widget {
+        if let Some(Widget::Handle { color: line_color, span, offset, dot, relative, hollow }) = &control.widget {
             handle(
                 ui,
                 &painter,
                 (rect, bounds, stretch),
                 control,
-                (*line_color, span.as_ref(), offset.as_ref(), *dot, *relative),
+                (*line_color, span.as_ref(), offset.as_ref(), *dot, *relative, *hollow),
                 parameters,
                 (track, at),
                 actions,

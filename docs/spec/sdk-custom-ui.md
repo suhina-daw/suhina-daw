@@ -195,7 +195,7 @@ are local to the canvas or the control. Layer order is array order; controls dra
 Drawing commands: rectangle, circle, line, path, arc, text, image, four-corner gradient and plot.
 Paths have at most 256 points; filled paths must be convex. Arc tessellation is bounded. Colours are RGBA byte quadruples.
 A plot is a curve from one expression: `samples` points (2..512) from `from` to `to` along x, each at the height `y`
-gives while the parameter `#x` reads its share of the way, 0 to 1, kept between `top` and `bottom`. One expression
+gives while the parameter `#x` reads its share of the way, 0 to 1; a part beyond `top` or `bottom` is not drawn, so the line ends at the edge rather than running along it. One expression
 read many times keeps a large response curve small in the file, and each parameter is looked up once per plot.
 `#time` reads the host's clock in seconds, and while a canvas's `animate_when` (a value expression) is above zero
 the host keeps drawing it, about 30 frames a second, so a drawing can move by itself.
@@ -235,7 +235,7 @@ of it: dragging sets the value from the pointer as `position` does, a double cli
 drag is one undo step. `span` (optional value expressions, canvas units) limits the line and where
 it is grabbed across the other axis. With both an X and a Y binding it is a point: a dot at both
 values, dragged on both axes as one undo step, with the arrow keys along each. `"dot": true` draws a
-one-axis handle as a dot in the middle of its line. `"relative": true` moves the value by how far the pointer moves (its bounds for the whole range) rather than to where it is, for a dot whose `offset` follows its own value, such as one that stays on a curve it bends. A binding's negative `drag_scale` runs a handle's
+one-axis handle as a dot in the middle of its line, and `"hollow": true` as a smaller ring, for a dot that shapes something rather than placing it. `"relative": true` moves the value by how far the pointer moves (its bounds for the whole range) rather than to where it is, for a dot whose `offset` follows its own value, such as one that stays on a curve it bends. A binding's negative `drag_scale` runs a handle's
 travel the other way along that axis (a rate: further along is slower). A `value` drawing (`{"kind": "value", "position": [x, y],
 "value": expression, "prefix", "suffix", "decimals", "color", "size", "align"}`) writes a number an
 expression computes. A `{"preset": 0}` gesture applies the canvas's quick preset 0: a button with no bindings that sets

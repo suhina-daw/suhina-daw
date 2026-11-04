@@ -336,10 +336,10 @@ def dim(cid, bounds, when):
     return graphic(cid, "Inactive", bounds, [rect(0.0, 0.0, w, h, tint(PANEL, 165))], when)
 
 
-def point(cid, name, bounds, x_pid, y_pid, visible, log_x=False, flip_x=False, offset=None, span=None, flip_y=False, relative=False):
+def point(cid, name, bounds, x_pid, y_pid, visible, log_x=False, flip_x=False, offset=None, span=None, flip_y=False, relative=False, hollow=False):
     """A dot on a picture, dragged along the axes it has parameters for: to where the pointer is, or
     `relative`, by how far it moves."""
-    return {"widget": {"kind": "handle", "color": HIGHLIGHT, "span": span, "offset": offset, "dot": True, "relative": relative}, "visible_when": visible,
+    return {"widget": {"kind": "handle", "color": HIGHLIGHT, "span": span, "offset": offset, "dot": True, "relative": relative, "hollow": hollow}, "visible_when": visible,
             "id": cid, "name": name, "tooltip": name, "bounds": bounds,
             "gesture": "position", "x": binding(x_pid, log_x, flip_x), "y": binding(y_pid, flip=flip_y), "drawing": []}
 
@@ -423,7 +423,7 @@ def env_points(prefix, tag, x, y, w, h, visible, top, bottom):
         # The handle stands at the bottom of its bounds less its share of them: the offset puts that on the curve.
         offset = add(add(on_curve, -CURVE_TRAVEL), mul(share, CURVE_TRAVEL))
         return point(f"{pid}_point{tag}", name, [x, y, w, CURVE_TRAVEL], None, pid, visible, offset=offset,
-                     span=[add(middle, -6.0), add(middle, 6.0)], flip_y=flip, relative=True)
+                     span=[add(middle, -6.0), add(middle, 6.0)], flip_y=flip, relative=True, hollow=True)
     return [
         point(f"{prefix}initial_point{tag}", "Initial level", [x, upper, w, tall], None, f"{prefix}initial", visible, span=[x - 6.0, x + 6.0]),
         point(f"{prefix}attack_point{tag}", "Attack and peak", [x + STAGE_GAP, upper, zone, tall], f"{prefix}attack", f"{prefix}peak", visible, log_x=True),

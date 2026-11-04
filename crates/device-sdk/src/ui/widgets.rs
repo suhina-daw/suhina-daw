@@ -210,6 +210,8 @@ pub enum Widget {
     /// of its line. `relative` moves the value by how far the pointer moves, a full bounds for
     /// its whole range, rather than to where the pointer is: for a handle whose `offset` follows
     /// its own value (a dot that stays on a curve it bends), which would otherwise run away.
+    /// `hollow` draws its dot smaller, as a ring, for a handle that shapes something rather than
+    /// placing it.
     Handle {
         color: [u8; 4],
         #[serde(default)]
@@ -220,6 +222,8 @@ pub enum Widget {
         dot: bool,
         #[serde(default)]
         relative: bool,
+        #[serde(default)]
+        hollow: bool,
     },
 }
 impl CustomControl {
