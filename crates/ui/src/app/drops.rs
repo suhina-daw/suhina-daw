@@ -402,10 +402,27 @@ impl App {
     /// switches the view: a carry, a clip dragged (or a press held on it) in the Arrangement
     /// view, or a press held on a slot's clip, whose carry may start at the switch. A press that
     /// is no longer down carries nothing, so a stale record does not switch the view. The
-    /// control bar and a themed toolbar both ask here.
+    /// control bar and a themed toolbar both ask here. A press or drag whose clip was deleted
+    /// while it was held carries nothing either, so it switches nothing.
     pub(super) fn carrying_clip(&self, ctx: &egui::Context) -> bool {
-        let pressing_slot = ctx.input(|i| i.pointer.primary_down()) && self.view.pressed_slot.is_some();
-        self.carry.is_some() || self.arrangement.dragged_clip().is_some() || pressing_slot
+        let pressing_slot = ctx.input(|i| i.pointer.primary_down())
+            && self.view.pressed_slot.is_some_and(|(track, scene)| self.slot_clip_name(track, scene).is_some());
+        let dragging = self.arrangement.dragged_clip().is_some_and(|(_, id)| self.arrangement_clip_exists(id));
+        self.carry.is_some() || dragging || pressing_slot
+    }
+
+    /// The name of the clip in slot `scene` of `track`'s column, when the slot holds one.
+    fn slot_clip_name(&self, track: TrackId, scene: usize) -> Option<String> {
+        let p = self.session()?.project();
+        let column = p.launcher.columns.iter().find(|c| c.track == track)?;
+        let clip = column.slots.get(scene)?.clip.as_ref()?;
+        p.content(clip.content).map(|c| c.name.clone())
+    }
+
+    /// Whether the clip `id` is still in the project: an arrangement clip can be deleted while
+    /// a press or a drag is held on it.
+    fn arrangement_clip_exists(&self, id: ClipId) -> bool {
+        self.session().is_some_and(|s| s.project().clip(id).is_some())
     }
 
     /// Switches to `hovered`, the view whose name a dragged or carried clip is over, once it has
@@ -464,12 +481,7 @@ impl App {
             from_slot = self.view.pressed_slot.take();
         }
         if let Some((track, scene)) = from_slot
-            && let Some(name) = self.session().and_then(|s| {
-                let p = s.project();
-                let column = p.launcher.columns.iter().find(|c| c.track == track)?;
-                let clip = column.slots.get(scene)?.clip.as_ref()?;
-                p.content(clip.content).map(|c| c.name.clone())
-            })
+            && let Some(name) = self.slot_clip_name(track, scene)
         {
             // A clip sought in the slot carries under its name, as a drag does. One that is
             // there no more — deleted while the press was held — makes no carry: the release
@@ -481,6 +493,13 @@ impl App {
             && self.shown == View::Session
             && let Some((track, id)) = self.arrangement.dragged_clip()
         {
+            // A clip deleted while its press or drag was held makes no carry: its release
+            // would copy a clip that is not there. The drag lets go with it.
+            if !self.arrangement_clip_exists(id) {
+                self.arrangement.cancel_clip_drag();
+                ctx.stop_dragging();
+                return;
+            }
             let name = self
                 .timeline
                 .as_ref()

@@ -2356,6 +2356,11 @@ impl App {
         if let Some(wider) = self.to_selection(action) {
             return self.run(&wider);
         }
+        // An undo or redo can change or take away the clip a carry holds: the carry was made
+        // of what was there before, so it lets go.
+        if matches!(action.id, "edit.undo" | "edit.redo") {
+            self.carry = None;
+        }
         if action.id == "ui.renameClip" {
             let mut target = action.params.clone();
             let name = target.get("name").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
@@ -2668,7 +2673,7 @@ impl App {
             self.device_focus = false;
         }
         self.frame_trace.mark("input");
-        self.follow_active();
+        self.follow_active(ui.ctx());
         self.frame_trace.mark("follow project");
         self.poll_scan(ui.ctx());
         self.frame_trace.mark("plug-in scan");

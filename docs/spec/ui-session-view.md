@@ -223,7 +223,9 @@ a slot to the arrangement, in two ways. **Suhina** decisions, our own design:
   the grid (Alt for free), stacking when the setting for its kind says so. **Suhina:** Tab does the
   same while a clip is dragged — or a press is held on it, before the pointer has moved — the view
   switches at once, and the drag goes on there as a carry (#1063). A press held on a slot's clip
-  selects the slot at once, as the click will. A slot's clip dragged to another slot in the
+  selects the slot at once, as the click will, and takes the focus off the tracks. A clip deleted
+  while its press or drag is held carries nothing, an undo or redo lets a carry go, and so does
+  switching projects, a clip's drag included. A slot's clip dragged to another slot in the
   Launcher view **moves** — the target's slot takes it and
   the source's empties; the two slots **swap** when the target has a clip, so nothing is lost
   (`clip.moveSlot`, one undo step). Ctrl (Cmd on macOS) held on the drop copies instead. A label

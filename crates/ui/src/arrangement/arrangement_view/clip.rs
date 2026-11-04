@@ -401,7 +401,8 @@ pub(super) fn clip_box<'a>(
     // widget is gone by then.
     if response.is_pointer_button_down_on() && tool == ArrangementTool::Select && ui.input(|i| i.pointer.primary_down())
     {
-        if press_selects_time {
+        // A time selection being painted stays one when its modifiers are let go mid-drag.
+        if press_selects_time || (state.marquee_time && state.marquee.is_some()) {
             // The modifiers of a time selection arrived while the button is still down: the
             // press selects time now, and its record of a grab dies here.
             if state.pressed_clip == Some(key) {

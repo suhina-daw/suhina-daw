@@ -49,17 +49,21 @@ impl App {
 
     /// Follows a change of the active project (a tab switched or closed): swaps the view state
     /// and asks the app for an audio output when the newly active project has none.
-    pub(super) fn follow_active(&mut self) {
+    pub(super) fn follow_active(&mut self, ctx: &egui::Context) {
         let active = self.projects.active();
         if active == self.shown_project {
             return;
         }
         // The carry and its hover name a slot or clip in the project being left: with another
         // project active, their release would copy in the new project's coordinates. They let
-        // go as the switch does.
+        // go as the switch does, and so does a device drag that started on the last frame and
+        // is not taken up yet, and an arrangement clip's drag, which would come back with the
+        // project's view state and be carried by a later switch to the Launcher view.
         self.carry = None;
         self.switch_hover = None;
         self.device_carry = None;
+        ctx.data_mut(|d| d.remove::<(TrackId, usize)>(egui::Id::new(crate::interaction::drop::DEVICE_CARRY)));
+        self.arrangement.cancel_clip_drag();
         self.stash_shown();
         for gone in self.stashes.keys().copied().filter(|id| self.projects.get(*id).is_none()).collect::<Vec<_>>() {
             self.stashes.remove(&gone);

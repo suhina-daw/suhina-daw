@@ -1066,9 +1066,11 @@ fn column_body(
                 // switch before the drag is decided, as a clip's press is in the Arrangement
                 // view. An empty slot has no clip to carry, so it never records. A press that
                 // is let go dies at the frame's start (`begin_clip_carry`), even when this
-                // slot has scrolled away by then.
+                // slot has scrolled away by then. A carried press is never a click, so the
+                // press itself takes the focus off the tracks, as the click would.
                 if has_clip && response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
                     state.pressed_slot = Some(key);
+                    state.track_focus = false;
                 }
                 // An empty slot is selected by a click, any slot by a right-click: Ctrl+C and
                 // Ctrl+V act on it. A slot selects its track with it, as a clip's does, so the

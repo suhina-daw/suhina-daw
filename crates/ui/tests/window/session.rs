@@ -796,6 +796,183 @@ fn a_press_the_modifiers_turn_into_a_time_selection_carries_nothing() {
     assert_eq!(starts, [0.0, 64.0, 112.0, 128.0], "the arrangement clip stays where it was");
 }
 
+/// A slot's clip deleted while its press is held: the press carries nothing, so holding it over
+/// the Arrangement view's name does not switch the view (CodeRabbit review).
+#[test]
+fn a_slot_clip_deleted_while_its_press_is_held_does_not_switch_the_view_on_hover() {
+    let mut harness = window(demo_app());
+    let from = harness.get_by_label("Select Walk on Bass (scene 2)").rect().center();
+    let switch = harness.get_by_label("Arrangement view").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Delete);
+    harness.step();
+    assert!(harness.query_by_label("Select Walk on Bass (scene 2)").is_none(), "the clip is gone from the slot");
+    wait_over(&mut harness, switch);
+    assert_eq!(harness.state().view(), View::Session, "a press with no clip switched the view");
+    harness.drop_at(switch);
+    harness.run();
+}
+
+/// An arrangement clip deleted while its press is held: the Tab under the press carries
+/// nothing, and the release over a slot copies nothing and reports no error (CodeRabbit
+/// review).
+#[test]
+fn an_arrangement_clip_deleted_while_its_press_is_held_carries_nothing() {
+    let mut harness = arrangement_app();
+    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_top() + egui::vec2(0.0, 6.0);
+    // A click selects the clip, so Delete takes it while the next press is held on it.
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.drop_at(from);
+    harness.run();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Delete);
+    harness.step();
+    assert!(harness.query_by_label("Clip Fill on Drums at bar 29").is_none(), "the clip is gone");
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4), None, "a deleted clip carried nothing");
+    assert!(
+        !matches!(harness.state().status(), Status::Error(text) if text.contains("does not exist")),
+        "{:?}",
+        harness.state().status()
+    );
+}
+
+/// An undo while a slot's clip is carried can take the clip out of its slot: the carry lets
+/// go, and the release over a lane copies nothing and reports no error (CodeRabbit review).
+#[test]
+fn an_undo_during_a_carry_lets_it_go() {
+    let mut harness = window(demo_app());
+    let bass = |h: &Harness<'static, App>| -> Vec<(f64, f64)> {
+        h.state()
+            .session()
+            .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+            .unwrap_or_default()
+    };
+    let bass_before = bass(&harness);
+    // Walk copied into Drums' fifth slot: an edit the undo takes back.
+    let walk = harness.get_by_label("Launch Walk on Bass (scene 2)").rect().center();
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.hover_at(walk);
+    harness.step();
+    harness.drag_at(walk);
+    harness.step();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4).as_deref(), Some("Walk"));
+    // The copy pressed and carried to the Arrangement view.
+    let from = harness.get_by_label("Select Walk on Drums (scene 5)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Arrangement);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.step();
+    assert_eq!(drums_slot(&harness, 4), None, "the undo took the copy back");
+    // Bars 1 to 8 of Bass are empty; Root starts at bar 9, 8 points a beat.
+    let root = harness.get_by_label("Clip Root on Bass at bar 9").rect();
+    let to = egui::pos2(root.left() - 16.0 * 8.0, root.center().y);
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(bass(&harness), bass_before, "the carry let go at the undo");
+    assert!(!matches!(harness.state().status(), Status::Error(_)), "{:?}", harness.state().status());
+}
+
+/// With Ctrl choosing time selection, a time selection painted from a clip stays one when Ctrl
+/// is let go mid-drag: the Tab after it carries no clip (CodeRabbit review).
+#[test]
+fn letting_go_of_ctrl_during_a_time_selection_grabs_no_clip() {
+    let mut harness = arrangement_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.time_select_ctrl = true;
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    let from = egui::pos2(clip.left() + 20.0, clip.top() + 4.0);
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(from + egui::vec2(40.0, 0.0));
+    harness.step();
+    assert!(harness.state().arrangement().time_selection().is_some(), "Ctrl and a drag select time");
+    // Ctrl let go with the button still held, then Tab.
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4), None, "the time selection carried no clip");
+}
+
+/// With Select launched clip off, a press held on a clip's launch mark and carried away by Tab
+/// is never a click: the press itself takes the focus off the tracks, so Delete afterwards
+/// does not remove the track selected before it (CodeRabbit review).
+#[test]
+fn a_carried_launch_mark_press_takes_the_focus_off_a_selected_track() {
+    let mut harness = window(demo_app());
+    let ctx = harness.ctx.clone();
+    // The settings as they are, the browser closed: its search field would take the keys.
+    let mut settings = harness.state().settings().clone();
+    settings.select_on_launch = false;
+    harness.state_mut().set_settings(&ctx, settings);
+    let tracks = |h: &Harness<'static, App>| h.state().session().map(|s| s.project().tracks.len()).unwrap_or(0);
+    let before = tracks(&harness);
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    let from = harness.get_by_label("Launch Walk on Bass (scene 2)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    // Tab before the drag is decided: the pointer never moves on the slot.
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Arrangement);
+    // Carried back over the Launcher view's name and let go there: nothing is dropped, and no
+    // click follows.
+    let back = harness.get_by_label("Launcher view").rect().center();
+    wait_over(&mut harness, back);
+    assert_eq!(harness.state().view(), View::Session);
+    harness.drop_at(back);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(tracks(&harness), before, "Delete after the carried press removed the track selected before it");
+}
+
 /// Needs an audio device, so it is ignored by default, like the preview test.
 #[test]
 #[ignore]
