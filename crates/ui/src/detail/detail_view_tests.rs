@@ -105,7 +105,7 @@ fn the_clip_column_edits_the_clip() {
     // A slot's clip is named by its track and its scene, from 1.
     assert_eq!(
         on_clip(ClipRef::Slot(TrackId(2), 1), json!({ "loop": true })),
-        json!({ "track": 2, "scene": 2, "loop": true })
+        json!({ "track": 2, "scene": 1, "loop": true })
     );
 }
 

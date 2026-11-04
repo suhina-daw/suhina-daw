@@ -150,7 +150,7 @@ fn a_slot_records_from_the_next_bar_and_plays_its_take_looped() {
     rig.run("track.setArm", json!({ "track": 1, "armed": true })).unwrap();
     rig.run("transport.play", json!({})).unwrap();
     rig.render_to(BLOCK * 10, 0.0);
-    let started = rig.run("clip.record", json!({ "track": 1, "scene": 1 })).unwrap();
+    let started = rig.run("clip.record", json!({ "track": 1, "scene": 0 })).unwrap();
     assert_eq!(started["start_beat"], json!(4.0), "the next bar");
     assert_eq!(rig.session.recording_slot(TrackId(1)), Some(0));
     // A note before the take's start is not kept.
@@ -164,7 +164,7 @@ fn a_slot_records_from_the_next_bar_and_plays_its_take_looped() {
     // A key still down when the take ends is cut there.
     rig.live.send(LiveEvent::NoteOn { key: 64, velocity: 1.0 });
     rig.render_to(BEAT * 7, 0.0);
-    let ended = rig.run("clip.launch", json!({ "track": 1, "scene": 1 })).unwrap();
+    let ended = rig.run("clip.launch", json!({ "track": 1, "scene": 0 })).unwrap();
     assert_eq!(ended["end_beat"], json!(8.0));
     assert_eq!(rig.session.recording_slot(TrackId(1)), None, "ending");
     // Asked to end, the take still records to its boundary: auto-arm leaves the arm alone.
@@ -184,7 +184,7 @@ fn a_slot_records_from_the_next_bar_and_plays_its_take_looped() {
     rig.session.poll_recording();
     rig.render_to(BEAT * 9 + BLOCK * 2, 0.0);
     let state = rig.run("launcher.state", json!({})).unwrap();
-    assert_eq!(state["tracks"][0]["playing"]["scene"], json!(1), "{state}");
+    assert_eq!(state["tracks"][0]["playing"]["scene"], json!(0), "{state}");
 
     // One undo removes the take.
     rig.run("edit.undo", json!({})).unwrap();
@@ -269,7 +269,7 @@ fn stopping_the_transport_ends_the_take_where_it_stopped() {
 #[test]
 fn recording_refuses_what_it_cannot_do() {
     let mut rig = rig(project());
-    let not_armed = rig.run("clip.record", json!({ "track": 1, "scene": 1 })).unwrap_err();
+    let not_armed = rig.run("clip.record", json!({ "track": 1, "scene": 0 })).unwrap_err();
     assert!(not_armed.contains("arm"), "{not_armed}");
     assert!(rig.run("transport.record", json!({ "on": true })).unwrap_err().contains("arm"));
     for bars in [3, 8, -1] {
@@ -281,13 +281,13 @@ fn recording_refuses_what_it_cannot_do() {
     let unsaved = rig.run("transport.record", json!({ "on": true })).unwrap_err();
     assert!(unsaved.contains("save the project"), "{unsaved}");
     rig.run("track.setArm", json!({ "track": 1, "armed": true, "exclusive": true })).unwrap();
-    rig.run("clip.record", json!({ "track": 1, "scene": 1 })).unwrap();
-    let twice = rig.run("clip.record", json!({ "track": 1, "scene": 2 })).unwrap_err();
+    rig.run("clip.record", json!({ "track": 1, "scene": 0 })).unwrap();
+    let twice = rig.run("clip.record", json!({ "track": 1, "scene": 1 })).unwrap_err();
     assert!(twice.contains("recording already"), "{twice}");
     // Without an engine.
     let mut alone = Session::new(project());
     alone.execute("track.setArm", &json!({ "track": 1, "armed": true })).unwrap();
-    assert!(alone.execute("clip.record", &json!({ "track": 1, "scene": 1 })).is_err());
+    assert!(alone.execute("clip.record", &json!({ "track": 1, "scene": 0 })).is_err());
     assert_eq!(alone.execute("transport.setCountIn", &json!({ "bars": 2 })).unwrap(), json!({ "count_in_bars": 2 }));
     assert_eq!(alone.count_in_bars(), 2);
 }
@@ -296,10 +296,10 @@ fn recording_refuses_what_it_cannot_do() {
 fn a_take_whose_slot_filled_meanwhile_goes_to_the_next_empty_one() {
     let mut rig = rig(project());
     rig.run("track.setArm", json!({ "track": 1, "armed": true })).unwrap();
-    rig.run("clip.record", json!({ "track": 1, "scene": 1 })).unwrap();
+    rig.run("clip.record", json!({ "track": 1, "scene": 0 })).unwrap();
     rig.render_to(BEAT, 0.0);
-    rig.run("clip.create", json!({ "track": 1, "scene": 1 })).unwrap();
-    rig.run("clip.launch", json!({ "track": 1, "scene": 1 })).unwrap();
+    rig.run("clip.create", json!({ "track": 1, "scene": 0 })).unwrap();
+    rig.run("clip.launch", json!({ "track": 1, "scene": 0 })).unwrap();
     rig.render_to(BEAT * 4 + BLOCK, 0.0);
     rig.settle();
     assert!(rig.slot_clip(0, 1).is_some(), "the take went to scene 2");

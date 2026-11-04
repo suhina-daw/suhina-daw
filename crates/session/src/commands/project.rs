@@ -175,7 +175,7 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
         .launcher
         .scenes
         .iter()
-        .zip(1..)
+        .zip(0..)
         .map(|(scene, number): (_, u32)| {
             json!({
                 "scene": number,
@@ -194,7 +194,7 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
             let slots: Vec<Value> = column
                 .slots
                 .iter()
-                .zip(1..)
+                .zip(0..)
                 .map(|(slot, number): (_, u32)| match &slot.clip {
                     Some(clip) => json!({
                         "scene": number,

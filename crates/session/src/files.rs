@@ -340,12 +340,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
     };
     let scene = match Args::new(params).value("scene") {
         None => None,
-        Some(v) => Some(
-            v.as_u64()
-                .and_then(|n| usize::try_from(n).ok())
-                .and_then(|n| n.checked_sub(1))
-                .ok_or("scene must be a whole number from 1")?,
-        ),
+        Some(v) => Some(v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("scene must be a whole number from 0")?),
     };
     match (start, scene) {
         (Some(_), Some(_)) | (None, None) => {
@@ -579,12 +574,7 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
     };
     let scene = match Args::new(params).value("scene") {
         None => None,
-        Some(v) => Some(
-            v.as_u64()
-                .and_then(|n| usize::try_from(n).ok())
-                .and_then(|n| n.checked_sub(1))
-                .ok_or("scene must be a whole number from 1")?,
-        ),
+        Some(v) => Some(v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("scene must be a whole number from 0")?),
     };
     let stack = Args::new(params).flag("stack")?;
     match (start, scene) {
@@ -598,9 +588,11 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
             let scenes = p.launcher.scenes.len();
             let column = p.launcher.columns.iter().find(|c| c.track == track).ok_or("the track has no clip slots")?;
             match column.slots.get(row) {
-                _ if row >= scenes => return Err(format!("scene must be from 1 to {scenes}").into()),
+                _ if row >= scenes => {
+                    return Err(format!("scene must be from 0 to {}", scenes.saturating_sub(1)).into());
+                }
                 Some(slot) if slot.clip.is_some() => {
-                    return Err(format!("scene {} of track {:?} already has a clip", row + 1, target.name).into());
+                    return Err(format!("scene {} of track {:?} already has a clip", row, target.name).into());
                 }
                 Some(_) => {}
                 None => return Err("the slot is missing".into()),
@@ -678,7 +670,7 @@ pub(crate) fn place_clip(
                 p.launcher.columns.iter_mut().find(|c| c.track == track).ok_or("the track has no clip slots")?;
             let slot = column.slots.get_mut(row).ok_or("the slot is missing")?;
             slot.clip = Some(clip);
-            Ok(json!({ "clip": clip_id.0, "track": track.0, "scene": row + 1, "name": source.name, "length": length }))
+            Ok(json!({ "clip": clip_id.0, "track": track.0, "scene": row, "name": source.name, "length": length }))
         }
         None => {
             clip.start = at;

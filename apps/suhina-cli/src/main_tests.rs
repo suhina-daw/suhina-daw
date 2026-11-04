@@ -100,11 +100,11 @@ fn render_args_need_one_project_and_an_output() {
     assert!(parse_render(&args(&["--demo", "-o"])).is_err());
     assert!(parse_render(&args(&["--demo", "a.als", "-o", "x.wav"])).is_err());
     assert!(parse_render(&args(&["--demo", "-o", "x.wav", "--sample-rate", "abc"])).is_err());
-    assert!(parse_render(&args(&["--demo", "-o", "x.wav", "--scene", "0"])).is_err());
+    assert!(parse_render(&args(&["--demo", "-o", "x.wav", "--scene", "-1"])).is_err());
     assert!(parse_render(&args(&["--demo", "-o", "x.wav", "--bogus"])).is_err());
     let ok = parse_render(&args(&["a.als", "-o", "x.wav", "--sample-rate", "44100", "--scene", "2"])).unwrap();
     assert_eq!(ok.sample_rate, 44_100);
-    assert_eq!(ok.scene, Some(1));
+    assert_eq!(ok.scene, Some(2));
     assert!(matches!(ok.source, Source::Als(_)));
     assert_eq!(ok.cue, None);
     let cued = parse_render(&args(&["--demo", "-o", "x.wav", "--cue", "cue.wav"])).unwrap();

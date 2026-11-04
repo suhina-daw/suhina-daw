@@ -276,7 +276,7 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     // 0.75 s at 120 BPM is a beat and a half: not a whole bar, and no tempo to find in it.
     let hit = wav(&dir, "hit.wav", 0.75, 0.5);
     let mut session = Session::new(blank_project());
-    run(&mut session, "clip.addFiles", json!({ "paths": [text(&hit)], "track": "3 Audio", "scene": 1 })).unwrap();
+    run(&mut session, "clip.addFiles", json!({ "paths": [text(&hit)], "track": "3 Audio", "scene": 0 })).unwrap();
     let clip = slot_clip(session.project(), 3, 1);
     assert_eq!((clip.length, clip.loop_range), (1.5, Some(LoopRange { start: 0.0, end: 1.5 })));
     let LaneData::Audio(region) = &session.project().content(clip.content).unwrap().lanes[0].data else {
@@ -296,14 +296,14 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     assert!(at(&out, 0.3) > 0.1 && at(&out, 1.0) > 0.1 && at(&out, 1.8) > 0.1);
 
     // clip.setLoop off makes it a one-shot: it plays once and the slot falls silent.
-    let done = run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": false })).unwrap();
-    assert_eq!(done, json!({ "clip": slot_clip(session.project(), 3, 1).id.0, "scene": 1, "loop": false }));
+    let done = run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": false })).unwrap();
+    assert_eq!(done, json!({ "clip": slot_clip(session.project(), 3, 1).id.0, "scene": 0, "loop": false }));
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, None);
     let out = render(&session);
     assert!(at(&out, 0.3) > 0.1 && at(&out, 1.0) < 1e-6 && at(&out, 1.8) < 1e-6);
 
     // On again loops the whole clip; one undo step each.
-    run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": true })).unwrap();
+    run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": true })).unwrap();
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, Some(LoopRange { start: 0.0, end: 1.5 }));
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, None);
@@ -311,9 +311,9 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     assert!(slot_clip(session.project(), 3, 1).loop_range.is_some());
 
     // An empty slot, a missing scene and a value that is not true or false are errors.
-    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 2, "loop": true })).is_err());
-    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 99, "loop": true })).is_err());
-    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": "yes" })).is_err());
+    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": true })).is_err());
+    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 98, "loop": true })).is_err());
+    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": "yes" })).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -338,7 +338,7 @@ fn files_go_down_the_slots_from_a_scene_and_add_scenes_when_needed() {
         column.slots.truncate(2);
     }
     let mut session = Session::new(project);
-    run(&mut session, "clip.addFiles", json!({ "paths": paths, "track": "4 Audio", "scene": 2 })).unwrap();
+    run(&mut session, "clip.addFiles", json!({ "paths": paths, "track": "4 Audio", "scene": 1 })).unwrap();
     let p = session.project();
     assert_eq!(p.launcher.scenes.len(), 4, "two scenes added");
     assert!(p.launcher.columns.iter().all(|c| c.slots.len() == 4));
@@ -378,7 +378,7 @@ fn mixed_files_on_empty_space_make_an_audio_and_a_midi_track() {
     let m = midi(&dir, "groove.mid", &[("", &[(0, 96, 60), (192, 96, 64)])]);
     let mut session = Session::new(blank_project());
     let out =
-        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m), text(&b)], "scene": 1 })).unwrap();
+        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m), text(&b)], "scene": 0 })).unwrap();
     assert_eq!(out["tracks"].as_array().map(Vec::len), Some(2));
     let p = session.project();
     assert_eq!(names(p)[4..6], ["5 Audio", "groove"]);
@@ -438,7 +438,7 @@ fn a_drop_is_one_undo_step() {
     let a = wav(&dir, "a.wav", 0.5, 0.5);
     let m = midi(&dir, "b.mid", &[("", &[(0, 96, 60)])]);
     let mut session = Session::new(blank_project());
-    run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m)], "scene": 3, "separate": true })).unwrap();
+    run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m)], "scene": 2, "separate": true })).unwrap();
     assert_eq!(session.project().tracks.len(), 8);
     run(&mut session, "edit.undo", json!({})).unwrap();
     // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
@@ -477,10 +477,10 @@ fn unreadable_files_are_skipped_and_reported() {
         json!({ "paths": [] , "start": 0.0 }),
         json!({ "paths": "a.wav", "start": 0.0 }),
         json!({ "paths": [text(&good)] }),
-        json!({ "paths": [text(&good)], "start": 0.0, "scene": 1 }),
+        json!({ "paths": [text(&good)], "start": 0.0, "scene": 99 }),
         json!({ "paths": [text(&good)], "start": -1.0 }),
         json!({ "paths": [text(&good)], "start": 1e12 }),
-        json!({ "paths": [text(&good)], "scene": 0 }),
+        json!({ "paths": [text(&good)], "scene": -1 }),
         json!({ "paths": [text(&good)], "scene": 1_000_000 }),
         json!({ "paths": [text(&good)], "start": 0.0, "track": "A Return" }),
         json!({ "paths": [text(&good)], "start": 0.0, "warp": "elastic" }),

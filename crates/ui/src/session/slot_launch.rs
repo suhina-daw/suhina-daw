@@ -14,7 +14,7 @@ use crate::kit::widgets::Action;
 
 /// Turns the pointer going down and up on a slot's launch button into `clip.launch` and
 /// `clip.release`. A click without the pointer (a keyboard or an accessibility tool) launches.
-/// `scene` counts from 1. `launch` is the slot clip's settings, `None` for an empty slot.
+/// `scene` counts from 0, as the commands do. `launch` is the slot clip's settings, `None` for an empty slot.
 /// `playing`: the slot's clip is playing, so a press or click on a trigger clip (one that
 /// listens for no release) stops it instead — the mark is the stop square then.
 /// Returns whether it acted (launched, or stopped).
@@ -80,7 +80,7 @@ fn quantization_label(quantization: LaunchQuantization) -> &'static str {
 }
 
 /// The right-click menu of a slot's clip: its launch mode, legato and launch quantisation.
-/// `scene` counts from 1.
+/// `scene` counts from 0, as the commands do.
 pub fn launch_menu(ui: &mut Ui, track: TrackId, scene: usize, launch: LaunchSettings, actions: &mut Vec<Action>) {
     ui.set_min_width(160.0);
     let slot = |extra: serde_json::Value| {
