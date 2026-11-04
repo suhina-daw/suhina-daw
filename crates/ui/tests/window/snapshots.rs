@@ -78,6 +78,7 @@ fn render_the_piano_roll() {
 #[ignore = "needs a GPU adapter; run with --ignored"]
 fn render_the_session_window() {
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)
         .wgpu()
@@ -144,6 +145,7 @@ fn render_the_session_window() {
     harness.run();
 
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)
         .wgpu()
@@ -158,14 +160,15 @@ fn render_the_session_window() {
     image.save(folder.join("arrangement-audio.png")).unwrap_or_else(|e| panic!("{e}"));
 
     // The detail area with a track's devices, in a row and stacked.
-    let mut harness = Harness::builder().with_size(SIZE).with_pixels_per_point(2.0).wgpu().build_ui_state(
-        |ui, app: &mut App| app.ui(ui),
-        {
-            let mut app = App::new();
-            app.set_session(Session::new(project_with_a_device()), &[]);
-            app
-        },
-    );
+    let mut harness =
+        Harness::builder().allow_missing_glyphs().with_size(SIZE).with_pixels_per_point(2.0).wgpu().build_ui_state(
+            |ui, app: &mut App| app.ui(ui),
+            {
+                let mut app = App::new();
+                app.set_session(Session::new(project_with_a_device()), &[]);
+                app
+            },
+        );
     theme::install(&harness.ctx);
     harness.run();
     harness.get_by_label("Track Drums").click();
@@ -198,8 +201,11 @@ fn render_every_built_in_theme() {
     let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
     std::fs::create_dir_all(&folder).unwrap_or_else(|e| panic!("{e}"));
     for (id, _) in theme::built_in_themes() {
-        let mut harness =
-            Harness::builder().with_size(SIZE).wgpu().build_ui_state(|ui, app: &mut App| app.ui(ui), demo_app());
+        let mut harness = Harness::builder()
+            .allow_missing_glyphs()
+            .with_size(SIZE)
+            .wgpu()
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), demo_app());
         theme::install(&harness.ctx);
         let ctx = harness.ctx.clone();
         harness.state_mut().use_theme(&ctx, id);
@@ -228,7 +234,11 @@ fn render_the_clip_waveform() {
     for db in [false, true] {
         let mut app = audio_app();
         app.set_browser_open(false);
-        let mut harness = Harness::builder().with_size(SIZE).wgpu().build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        let mut harness = Harness::builder()
+            .allow_missing_glyphs()
+            .with_size(SIZE)
+            .wgpu()
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
         theme::install(&harness.ctx);
         let ctx = harness.ctx.clone();
         let mut settings = harness.state().settings().clone();
@@ -260,6 +270,7 @@ fn render_the_start_panel() {
         vec!["C:/Music/Suhina/Templates/Beat starter.suhina".into()],
     );
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)
         .wgpu()

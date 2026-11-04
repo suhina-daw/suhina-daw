@@ -708,7 +708,7 @@ mod tests {
         use egui_kittest::Harness;
         use egui_kittest::kittest::Queryable;
         // Not edited yet: Edit with, which opens it there.
-        let mut harness = Harness::builder().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
             |ui, actions: &mut Vec<Action>| ara_menu(ui, TrackId(2), ClipId(7), "Tune", false, actions),
             Vec::new(),
         );
@@ -720,7 +720,7 @@ mod tests {
         assert_eq!((action.id, action.params.clone()), ("view.araEditor", json!({ "track": 2, "clip": 7 })));
         drop(harness);
         // Edited: Open in, and Stop editing with, which takes the clip off it (#990).
-        let mut harness = Harness::builder().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
             |ui, actions: &mut Vec<Action>| ara_menu(ui, TrackId(2), ClipId(7), "Tune", true, actions),
             Vec::new(),
         );

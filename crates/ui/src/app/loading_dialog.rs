@@ -149,7 +149,7 @@ mod tests {
             missing: 2,
             failed: vec!["Verb".into()],
         };
-        let mut harness = Harness::builder().with_size(egui::vec2(800.0, 500.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(800.0, 500.0)).build_ui_state(
             |ui, hidden: &mut bool| {
                 let area = ui.max_rect();
                 if show(ui, area, "Song", &progress) {

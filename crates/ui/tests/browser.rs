@@ -83,6 +83,7 @@ fn window(settings: &Path, folder: &Path) -> Harness<'static, App> {
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -123,6 +124,7 @@ fn window_with_plugins(settings: &Path, folder: &Path) -> Harness<'static, App> 
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -977,6 +979,7 @@ fn render_the_browser() {
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)
         .with_step_dt(0.05)
@@ -1025,6 +1028,7 @@ fn the_start_panel_hides_the_browser_until_a_project_is_open() {
     library.add_folder(&folder).unwrap();
     app.set_file_library(library);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -1384,7 +1388,7 @@ fn an_items_tag_menu_ticks_its_tags_with_painted_boxes_and_toggles_them() {
     harness.run();
     harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
     harness.run();
-    let at = harness.get_by_label("Tag ⏵").rect().center();
+    let at = harness.get_by_label("Tag").rect().center();
     harness.hover_at(at);
     harness.run();
     // Each entry is a checkbox named by the tag alone: no check mark or padding in its text,
@@ -1399,7 +1403,7 @@ fn an_items_tag_menu_ticks_its_tags_with_painted_boxes_and_toggles_them() {
     // A click on a ticked entry takes its tag off.
     harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
     harness.run();
-    let at = harness.get_by_label("Tag ⏵").rect().center();
+    let at = harness.get_by_label("Tag").rect().center();
     harness.hover_at(at);
     harness.run();
     harness.get_by_label("Red").click();

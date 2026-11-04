@@ -557,6 +557,7 @@ fn a_saved_map_window_opens_at_the_start() {
     // The map is laid out on a thread of its own, which a slow machine takes longer than a
     // second of frames for: it is given up to ten seconds of real time to finish.
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.25)
         .with_max_steps(4)

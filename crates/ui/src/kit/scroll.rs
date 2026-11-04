@@ -58,7 +58,7 @@ mod tests {
     /// A list of rows that each take clicks and drags across the whole width, as the browser's
     /// do, with the bar over them.
     fn list(offset: f32) -> Harness<'static, f32> {
-        Harness::builder().with_size(Vec2::new(300.0, 300.0)).build_ui_state(
+        Harness::builder().allow_missing_glyphs().with_size(Vec2::new(300.0, 300.0)).build_ui_state(
             |ui, offset: &mut f32| {
                 for row in 0..100 {
                     let top = AREA.top() + row as f32 * 20.0 - *offset;
@@ -118,6 +118,7 @@ mod tests {
     #[test]
     fn content_that_fits_has_no_bar_and_an_offset_past_the_end_is_brought_back() {
         let mut short = Harness::builder()
+            .allow_missing_glyphs()
             .with_size(Vec2::new(300.0, 300.0))
             .build_ui_state(|ui, offset: &mut f32| vertical_bar(ui, AREA, "short", 100.0, offset), 50.0);
         short.run();

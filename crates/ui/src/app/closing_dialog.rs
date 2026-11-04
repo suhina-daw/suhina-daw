@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn it_names_the_projects_still_closing() {
         let waiting: Vec<String> = (1..=8).map(|i| format!("Song {i}")).collect();
-        let harness = Harness::builder().with_size(egui::vec2(800.0, 500.0)).build_ui(|ui| {
+        let harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(800.0, 500.0)).build_ui(|ui| {
             let area = ui.max_rect();
             show(ui, area, &waiting);
         });

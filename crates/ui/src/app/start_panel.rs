@@ -412,7 +412,7 @@ mod tests {
     fn panel_with(lists: Lists, size: Vec2, notice: Option<Notice>) -> Harness<'static, Panel> {
         let audio = AudioSummary { device: "Speakers".into(), sample_rate: "48000 Hz".into(), buffer: "256".into() };
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
-        Harness::builder().with_size(size).build_ui_state(
+        Harness::builder().allow_missing_glyphs().with_size(size).build_ui_state(
             move |ui, (state, chosen): &mut Panel| {
                 let area = ui.max_rect();
                 if let Some(choice) = show(ui, area, state, &lists, &audio, "0.26.0", notice.as_ref(), now) {

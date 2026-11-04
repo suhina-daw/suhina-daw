@@ -47,6 +47,7 @@ fn window() -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(Session::new(project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -313,6 +314,7 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     app.set_session(Session::new(nam_project()), &[]);
     app.set_nam_default_folders(models.clone(), irs.clone());
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)

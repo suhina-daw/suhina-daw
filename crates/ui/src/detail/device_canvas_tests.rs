@@ -281,17 +281,20 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
 fn sample_stop_is_only_visible_while_recording() {
     use egui_kittest::kittest::Queryable;
     for recording in [false, true] {
-        let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(600., 220.)).build_ui(move |ui| {
-            crate::kit::theme::install(ui.ctx());
-            ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0).with("recording"), recording));
-            sample_recording(
-                ui,
-                Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(550., 180.)),
-                TrackId(1),
-                0,
-                &mut Vec::new(),
-            );
-        });
+        let mut harness = egui_kittest::Harness::builder()
+            .allow_missing_glyphs()
+            .with_size(Vec2::new(600., 220.))
+            .build_ui(move |ui| {
+                crate::kit::theme::install(ui.ctx());
+                ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0).with("recording"), recording));
+                sample_recording(
+                    ui,
+                    Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(550., 180.)),
+                    TrackId(1),
+                    0,
+                    &mut Vec::new(),
+                );
+            });
         harness.run_steps(4);
         assert!(harness.query_by_label("Input: No input").is_some());
         assert_eq!(harness.query_by_label("Stop").is_some(), recording);
@@ -307,18 +310,19 @@ fn historical_sampler_waveforms_keep_recording_controls() {
     canvas.controls.iter_mut().find(|c| matches!(c.widget, Some(Widget::SampleWaveform))).unwrap().bounds =
         [0., 22., 900., 76.];
     let canvas = Arc::new(canvas);
-    let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
-            &canvas,
-            &[],
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
+                &canvas,
+                &[],
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     harness.run_steps(4);
     assert!(harness.query_by_label("Input: No input").is_some());
     assert!(harness.query_by_label_contains("Record").is_some());
@@ -352,17 +356,18 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
     let mut parameters: Vec<_> = panel.parameters.iter().map(|p| GraphParameter::new(p, p.default)).collect();
     let empty_canvas = canvas.clone();
     let empty_parameters = parameters.clone();
-    let mut empty = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
-            &empty_canvas,
-            &empty_parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut empty =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
+                &empty_canvas,
+                &empty_parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     empty.run_steps(2);
     assert!(empty.query_by_label("Warp").is_none());
     // The middle of the control bound to `param` whose gesture sets `value`, in `canvas`.
@@ -646,34 +651,37 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             crate::kit::theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-light").unwrap().1.colors;
         let preview_canvas = canvas.clone();
         let preview_parameters = parameters.clone();
-        let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
-            crate::kit::theme::install(ui.ctx());
-            if filename.contains("light") {
-                crate::kit::theme::set_palette(ui.ctx(), light);
-            }
-            let data = Arc::new(suhina_engine::AudioData {
-                sample_rate: 48000,
-                channels: 1,
-                samples: (0..4800).map(|i| (i as f32 * 0.17).sin() * (1. - i as f32 / 4800.)).collect(),
+        let mut harness = egui_kittest::Harness::builder()
+            .allow_missing_glyphs()
+            .with_size(Vec2::new(916., 184.))
+            .build_ui(move |ui| {
+                crate::kit::theme::install(ui.ctx());
+                if filename.contains("light") {
+                    crate::kit::theme::set_palette(ui.ctx(), light);
+                }
+                let data = Arc::new(suhina_engine::AudioData {
+                    sample_rate: 48000,
+                    channels: 1,
+                    samples: (0..4800).map(|i| (i as f32 * 0.17).sin() * (1. - i as f32 / 4800.)).collect(),
+                });
+                ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0), data));
+                ui.ctx().data_mut(|d| {
+                    let mut positions = [None::<f32>; 32];
+                    positions[0] = Some(0.22);
+                    positions[1] = Some(0.67);
+                    d.insert_temp(sample_source_id(TrackId(1), 0).with("position"), positions);
+                    d.insert_temp(sample_source_id(TrackId(1), 0).with("name"), "Sampler-test.wav".to_string());
+                });
+                show(
+                    ui,
+                    Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(900., 168.)),
+                    &preview_canvas,
+                    &preview_parameters,
+                    TrackId(1),
+                    &crate::detail::detail_view::DeviceAt(vec![0]),
+                    &mut Vec::new(),
+                );
             });
-            ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0), data));
-            ui.ctx().data_mut(|d| {
-                let mut positions = [None::<f32>; 32];
-                positions[0] = Some(0.22);
-                positions[1] = Some(0.67);
-                d.insert_temp(sample_source_id(TrackId(1), 0).with("position"), positions);
-                d.insert_temp(sample_source_id(TrackId(1), 0).with("name"), "Sampler-test.wav".to_string());
-            });
-            show(
-                ui,
-                Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(900., 168.)),
-                &preview_canvas,
-                &preview_parameters,
-                TrackId(1),
-                &crate::detail::detail_view::DeviceAt(vec![0]),
-                &mut Vec::new(),
-            );
-        });
         harness.run_steps(4);
         snapshot(&mut harness, filename);
         if filename == "sampler-simple.png" {
@@ -718,18 +726,19 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     let canvas = Arc::new(graph.ui.unwrap());
     let preview_canvas = canvas.clone();
     let preview_parameters = parameters.clone();
-    let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
-            &preview_canvas,
-            &preview_parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                &preview_canvas,
+                &preview_parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     harness.run();
     for control in &canvas.controls {
         for drawing in control.drawings().iter() {
@@ -772,18 +781,19 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
         };
     }
     let narrow_canvas = canvas.clone();
-    let mut narrow = egui_kittest::Harness::builder().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
-            &narrow_canvas,
-            &narrow_parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut narrow =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                &narrow_canvas,
+                &narrow_parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     narrow.run();
     narrow.get_by_label("Feedback").click();
     narrow.run();
@@ -798,18 +808,19 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
         }
     }
     let time_canvas = canvas.clone();
-    let mut time_harness = egui_kittest::Harness::builder().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
-            &time_canvas,
-            &time_parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut time_harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                &time_canvas,
+                &time_parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     time_harness.run();
     snapshot(&mut time_harness, "delay-time-panel.png");
     let start = Pos2::new(64., 110.);
@@ -849,28 +860,29 @@ fn delay_menus_open_choose_and_cancel_without_spurious_edits() {
     let parameters: Vec<_> = graph.parameters.iter().map(|p| GraphParameter::new(p, p.default)).collect();
     let canvas = Arc::new(graph.ui.unwrap());
     let reset_canvas = canvas.clone();
-    let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(956., 210.)).build_ui_state(
-        move |ui, state: &mut (Vec<GraphParameter>, Vec<Action>)| {
-            crate::kit::theme::install(ui.ctx());
-            let mut actions = Vec::new();
-            show(
-                ui,
-                Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
-                &canvas,
-                &state.0,
-                TrackId(1),
-                &crate::detail::detail_view::DeviceAt(vec![0]),
-                &mut actions,
-            );
-            for a in &actions {
-                if let Some(p) = state.0.iter_mut().find(|p| a.params["param"] == p.id) {
-                    p.value = a.params["value"].as_f64().unwrap();
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 210.)).build_ui_state(
+            move |ui, state: &mut (Vec<GraphParameter>, Vec<Action>)| {
+                crate::kit::theme::install(ui.ctx());
+                let mut actions = Vec::new();
+                show(
+                    ui,
+                    Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                    &canvas,
+                    &state.0,
+                    TrackId(1),
+                    &crate::detail::detail_view::DeviceAt(vec![0]),
+                    &mut actions,
+                );
+                for a in &actions {
+                    if let Some(p) = state.0.iter_mut().find(|p| a.params["param"] == p.id) {
+                        p.value = a.params["value"].as_f64().unwrap();
+                    }
                 }
-            }
-            state.1.extend(actions);
-        },
-        (parameters, Vec::new()),
-    );
+                state.1.extend(actions);
+            },
+            (parameters, Vec::new()),
+        );
     harness.run();
     harness.get_by_label("Motion waveform").click();
     harness.run();
@@ -992,18 +1004,19 @@ fn sampler_slice_controls_replace_loop_fields() {
     let center = Pos2::new(x + w / 2., y + h / 2.);
     let actions = pointer_gesture(&canvas, &parameters, center, Some(center - Vec2::new(0., 20.)));
     assert!(actions.iter().any(|a| a.params["param"] == "sensitivity"));
-    let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
-            &canvas,
-            &parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
+                &canvas,
+                &parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     harness.run_steps(2);
     snapshot(&mut harness, "sampler-slices.png");
 }
@@ -1183,25 +1196,26 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         SampleView::default()
     );
     let snapshot_source = source.clone();
-    let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        ui.ctx().data_mut(|d| {
-            d.insert_temp(id, snapshot_source.clone());
-            d.insert_temp(
-                id.with("manual-points"),
-                Arc::<[f64]>::from((1..30).map(|i| i as f64 / 30.).collect::<Vec<_>>()),
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(id, snapshot_source.clone());
+                d.insert_temp(
+                    id.with("manual-points"),
+                    Arc::<[f64]>::from((1..30).map(|i| i as f64 / 30.).collect::<Vec<_>>()),
+                );
+            });
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
+                &canvas,
+                &parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
             );
         });
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
-            &canvas,
-            &parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
     harness.run_steps(2);
     snapshot(&mut harness, "sampler-manual-navigation.png");
 }

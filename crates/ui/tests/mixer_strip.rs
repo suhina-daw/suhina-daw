@@ -46,6 +46,7 @@ fn window_with(settings: Settings, browser: bool) -> Harness<'static, App> {
     app.set_browser_open(browser);
     app.set_session(Session::new(project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -401,6 +402,7 @@ fn render_the_strip() {
         app.set_browser_open(false);
         app.set_session(Session::new(project()), &[]);
         let mut harness = Harness::builder()
+            .allow_missing_glyphs()
             .with_size(SIZE)
             .with_pixels_per_point(2.0)
             .with_step_dt(0.05)

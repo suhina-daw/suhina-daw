@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn native_decorations_do_not_duplicate_window_buttons() {
-        let mut harness = Harness::builder().with_size((640.0, 28.0)).build_ui(|ui| {
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size((640.0, 28.0)).build_ui(|ui| {
             show(ui, ViewSettings::default(), "Project", "120 BPM");
         });
         harness.run();

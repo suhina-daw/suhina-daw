@@ -32,6 +32,7 @@ fn window() -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -509,6 +510,7 @@ fn a_device_row_alone_is_open_at_full_height_or_closed() {
     app.set_browser_open(false);
     app.set_session(Session::new(project), &[]);
     let mut h = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)

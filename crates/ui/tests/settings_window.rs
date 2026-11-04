@@ -73,8 +73,10 @@ fn compact_session_css_applies_to_a_png_skin_without_changing_artwork_or_project
 fn gradient_editor_enables_saves_and_resets_without_editing_the_project() {
     let mut app = App::new();
     app.set_session(Session::new(demo_project()), &[]);
-    let mut harness =
-        Harness::builder().with_size((1200.0, 1200.0)).build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size((1200.0, 1200.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
     harness.run();
     let before = harness.state().session().unwrap().project().clone();
@@ -131,7 +133,10 @@ fn gradient_editor_enables_saves_and_resets_without_editing_the_project() {
 fn theme_default_edits_preserve_existing_project_colours_and_opacity_saves() {
     let mut app = App::new();
     app.set_session(Session::new(demo_project()), &[]);
-    let mut harness = Harness::builder().with_size((1200.0, 900.0)).build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size((1200.0, 900.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
     harness.run();
     let before = harness.state().session().unwrap().project().clone();
@@ -174,8 +179,11 @@ fn theme_default_edits_preserve_existing_project_colours_and_opacity_saves() {
 fn render_themes_gallery_and_editor_for_review() {
     let mut app = App::new();
     app.set_session(Session::new(demo_project()), &[]);
-    let mut harness =
-        Harness::builder().with_size((1200.0, 900.0)).wgpu().build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size((1200.0, 900.0))
+        .wgpu()
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
     harness.run();
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
@@ -215,7 +223,10 @@ fn theme_cards_keep_the_open_projects_clip_colour() {
     project.arrangement.lanes[0].clips[0].color = Some(source);
     let mut app = App::new();
     app.set_session(Session::new(project), &[]);
-    let mut harness = Harness::builder().with_size((1200.0, 900.0)).build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size((1200.0, 900.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
     harness.run();
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
@@ -384,9 +395,10 @@ fn colour_picker_keeps_preview_clear_while_held_and_reset_restores_the_palette()
         .output()
         .shapes
         .iter()
+        // egui paints the square as a rectangle filled with a gradient texture.
         .find_map(|shape| match &shape.shape {
-            egui::Shape::Mesh(mesh) => {
-                let rect = mesh.calc_bounds();
+            egui::Shape::Rect(square) if square.brush.is_some() => {
+                let rect = square.rect;
                 (rect.width() > 250.0 && rect.width() < 300.0 && (rect.width() - rect.height()).abs() < 1.0)
                     .then_some(rect)
             }
@@ -539,6 +551,7 @@ fn liquid_sliders_change_independent_saved_strengths_without_restarting() {
     let mut app = App::new();
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size((1200.0, 850.0))
         .with_step_dt(0.25)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
@@ -551,19 +564,19 @@ fn liquid_sliders_change_independent_saved_strengths_without_restarting() {
     harness.run();
     harness.get_by_label("Search settings").type_text("liquid");
     harness.run();
-    harness.get_by_label("Panel liquid").click();
+    harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Panel liquid").click();
     harness.run();
     let panels = harness.state().settings().view.liquid.panels;
     assert!(panels > 0);
     assert_eq!(harness.state().settings().view.liquid.tracks, 0);
     assert_eq!(harness.state().settings().view.liquid.clips, 0);
-    harness.get_by_label("Track liquid").click();
+    harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Track liquid").click();
     harness.run();
     let tracks = harness.state().settings().view.liquid.tracks;
     assert!(tracks > 0);
     assert_eq!(harness.state().settings().view.liquid.panels, panels);
     assert_eq!(harness.state().settings().view.liquid.clips, 0);
-    harness.get_by_label("Clip liquid").click();
+    harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Clip liquid").click();
     harness.run();
     let changed = harness.state_mut().take_changed_settings().expect("slider persists changed settings");
     assert!(changed.view.liquid.clips > 0);
@@ -625,6 +638,7 @@ fn short_window() -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SHORT)
         .with_step_dt(0.25)
         .with_max_steps(4)

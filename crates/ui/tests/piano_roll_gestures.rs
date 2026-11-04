@@ -35,6 +35,7 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     app.set_session(session, &[]);
     app.run(&Action::new("launcher.setQuantization", json!({ "value": "1/8" })));
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)

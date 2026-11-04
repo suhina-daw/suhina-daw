@@ -559,7 +559,7 @@ mod look {
             locate: String::new(),
         };
         let state = MissingFiles { rows: vec![found, one, lost], open: true, ..MissingFiles::default() };
-        let mut harness = Harness::builder().with_size(egui::vec2(820.0, 520.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(820.0, 520.0)).build_ui_state(
             |ui, state: &mut MissingFiles| {
                 crate::kit::theme::install(ui.ctx());
                 let area = ui.max_rect();

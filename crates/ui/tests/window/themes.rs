@@ -456,7 +456,7 @@ fn ara_note_overlays_use_the_same_content_colour_as_midi_and_waveforms() {
             high: 60,
         },
     );
-    let mut h = Harness::builder().with_size(SIZE).build_ui_state(
+    let mut h = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
         |ui, state: &mut (Timeline, ArrangementViewState, Vec<Action>)| {
             arrangement_view::show(ui, &state.0, &mut state.1, &mut state.2)
         },

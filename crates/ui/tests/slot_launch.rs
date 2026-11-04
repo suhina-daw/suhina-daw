@@ -39,6 +39,7 @@ fn view(mode: LaunchMode) -> Harness<'static, View> {
     }
     let view = View { grid: TrackGrid::build(&project, None), state: SessionViewState::default(), actions: Vec::new() };
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size((1280.0, 800.0))
         .build_ui_state(|ui, v: &mut View| session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions), view);
     theme::install(&harness.ctx);

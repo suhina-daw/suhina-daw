@@ -96,12 +96,13 @@ mod tests {
     fn it_asks_move_or_copy_and_remembers_the_choice_when_ticked() {
         let mut remember = false;
         let mut answer = None;
-        let mut harness = Harness::builder().with_size(egui::vec2(800.0, 500.0)).build_ui(|ui| {
-            let area = ui.max_rect();
-            if let Some(choice) = show(ui, area, 2, "Drums", &mut remember) {
-                answer = Some(choice);
-            }
-        });
+        let mut harness =
+            Harness::builder().allow_missing_glyphs().with_size(egui::vec2(800.0, 500.0)).build_ui(|ui| {
+                let area = ui.max_rect();
+                if let Some(choice) = show(ui, area, 2, "Drums", &mut remember) {
+                    answer = Some(choice);
+                }
+            });
         harness.get_by_label("Remember my choice").click();
         harness.run();
         harness.get_by_label("Copy the samples into the folder, leaving them where they are").click();

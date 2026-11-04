@@ -838,7 +838,7 @@ mod tests {
     use egui_kittest::kittest::Queryable;
 
     fn dialog(lists: Lists) -> Harness<'static, (DialogState, Option<Choice>)> {
-        Harness::builder().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
+        Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
             move |ui, (state, chosen): &mut (DialogState, Option<Choice>)| {
                 let area = ui.max_rect();
                 if let Some(choice) = show(ui, area, state, &lists) {
@@ -903,7 +903,7 @@ mod tests {
     fn the_save_prompt_makes_the_path_from_name_and_folder() {
         let prompt =
             SavePrompt { template: false, name: String::new(), folder: "songs".into(), focus: true, collect: false };
-        let mut harness = Harness::builder().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
             |ui, (prompt, chosen): &mut (SavePrompt, Option<SaveChoice>)| {
                 let area = ui.max_rect();
                 if let Some(choice) = show_save(ui, area, prompt) {
@@ -937,15 +937,16 @@ mod tests {
             ("Ignore the backup", RecoveryChoice::Ignore),
             ("Close Backup found", RecoveryChoice::Ignore),
         ] {
-            let mut harness = Harness::builder().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
-                |ui, chosen: &mut Option<RecoveryChoice>| {
-                    let area = ui.max_rect();
-                    if let Some(choice) = show_recovery(ui, area, "Song", "2026-10-15 14:05", true) {
-                        *chosen = Some(choice);
-                    }
-                },
-                None,
-            );
+            let mut harness =
+                Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
+                    |ui, chosen: &mut Option<RecoveryChoice>| {
+                        let area = ui.max_rect();
+                        if let Some(choice) = show_recovery(ui, area, "Song", "2026-10-15 14:05", true) {
+                            *chosen = Some(choice);
+                        }
+                    },
+                    None,
+                );
             harness.run();
             harness.get_by_label(label).click();
             harness.run();

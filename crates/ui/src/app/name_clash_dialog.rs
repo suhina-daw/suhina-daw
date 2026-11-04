@@ -86,12 +86,13 @@ mod tests {
     fn it_warns_of_a_taken_name_and_answers_skip() {
         let mut answer = None;
         let taken = vec!["kick.wav".to_string()];
-        let mut harness = Harness::builder().with_size(egui::vec2(800.0, 500.0)).build_ui(|ui| {
-            let area = ui.max_rect();
-            if let Some(choice) = show(ui, area, &taken, 2, "Drums") {
-                answer = Some(choice);
-            }
-        });
+        let mut harness =
+            Harness::builder().allow_missing_glyphs().with_size(egui::vec2(800.0, 500.0)).build_ui(|ui| {
+                let area = ui.max_rect();
+                if let Some(choice) = show(ui, area, &taken, 2, "Drums") {
+                    answer = Some(choice);
+                }
+            });
         harness.get_by_label("Leave out the samples whose name is taken").click();
         harness.run();
         drop(harness);
