@@ -215,6 +215,16 @@ fn at_start_reads_each_choice_and_keeps_the_panel_for_anything_else() {
 }
 
 #[test]
+fn the_retired_piano_roll_grid_line_loads_without_a_warning() {
+    for value in ["own", "control_bar"] {
+        let (settings, warnings) = Settings::from_text(&format!("piano_roll_grid = {value}\n"));
+        assert_eq!((settings, warnings.len()), (Settings::default(), 0), "{value}");
+    }
+    let (_, warnings) = Settings::from_text("piano_roll_grid = sideways\nno_such_setting = 1\n");
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+}
+
+#[test]
 fn browser_values_out_of_range_are_limited() {
     let (settings, warnings) =
         Settings::from_text("browser_width = 5000\npreview_volume = -900\nwarp_mode = elastic\n");

@@ -877,6 +877,8 @@ impl Settings {
                 }
                 ("piano_roll_top", "track") => settings.piano_roll_top = PianoRollTop::Track,
                 ("piano_roll_top", "window") => settings.piano_roll_top = PianoRollTop::Window,
+                // Retired: the piano roll's grid is no longer linked to the control bar.
+                ("piano_roll_grid", "own" | "control_bar") => {}
                 ("backup", when) if suhina_session::backup::Interval::parse(when).is_some() => {
                     settings.backup = suhina_session::backup::Interval::parse(when).unwrap_or_default();
                 }
