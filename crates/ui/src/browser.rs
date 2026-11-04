@@ -267,7 +267,7 @@ fn flat_rows(found: Vec<Found>) -> Vec<Row> {
 
 /// A search looking through more files than this runs on a thread of its own, so typing never
 /// waits for it; a smaller one takes less than a frame and answers at once.
-const SEARCH_ON_THE_WINDOW_THREAD: usize = 4096;
+pub(crate) const SEARCH_ON_THE_WINDOW_THREAD: usize = 4096;
 
 /// A search running on its thread: its answer comes through `answer`, and `cancel` ends it when
 /// the search field has changed since.

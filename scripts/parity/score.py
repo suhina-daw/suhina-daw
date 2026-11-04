@@ -50,7 +50,7 @@ CHAPTERS = [
     (3, "Live Concepts", 27, 0.50, "partial",
      "Control bar, browser, sets, arrangement/session, tracks, audio/MIDI clips, devices, mixer "
      "concepts exist. Routing, recording, racks, clip/device view and presets are missing or thin."),
-    (4, "Working with the Browser", 60, 0.53, "partial",
+    (4, "Working with the Browser", 60, 0.54, "partial",
      "Search, categories, folders watched on disk, pins, recent, colour tags, preview through the "
      "engine, sample map by sound similarity (smooth with 200 000 items, also while its window is resized) with kinds recognised from the sound and set by hand; samples and MIDI files dragged from the system's file "
      "manager land like a browser drag; dropping one sample on an empty MIDI track adds Sampler (exact placement waits for pointer positions from the "
@@ -59,6 +59,8 @@ CHAPTERS = [
      "Samples copied out to a folder (Copy to folder…, library.copyTo) or dragged out to the file manager as copies; "
      "samples dragged onto a browser folder moved or copied there (asked, or as a setting says; library.moveTo keeps their pins, recent places and tags). "
      "The arrow keys move through the list after a click on a row, opening and closing folders. "
+     "A quick-add palette (Ctrl+P) searches devices, plug-ins and samples by name and adds the chosen one "
+     "to the selected track, or as a clip on a new track at the beat under the pointer. "
      "Missing collections/tag editor depth, packs, Splice, "
      "Cloud, Push transfer, filter groups, browser history."),
     (5, "Managing Files and Sets", 43, 0.40, "partial",

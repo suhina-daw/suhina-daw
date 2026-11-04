@@ -32,6 +32,7 @@ mod piano_roll_scale;
 mod piano_roll_step4;
 mod piano_roll_tools;
 mod piano_roll_workflow;
+mod quick_add;
 mod recording;
 mod session_menus;
 mod settings_window;

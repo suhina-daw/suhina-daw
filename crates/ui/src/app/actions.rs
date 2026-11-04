@@ -119,6 +119,8 @@ impl App {
             "view.araEditor" => self.open_ara_editor(),
             "view.plugin" => self.toggle_plugin_editor(),
             "view.mappingMode" => self.toggle_mapping_mode(),
+            "view.quickAdd" if self.quick_add_open() => {}
+            "view.quickAdd" => self.open_quick_add(),
             "track.addAudio" | "track.addMidi" => {
                 let kind = if action == "track.addAudio" { "audio" } else { "midi" };
                 let mut params = json!({ "kind": kind });

@@ -110,7 +110,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 82] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 83] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -127,6 +127,7 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 82] = [
     ("view.mappingMode", "Map keys to clip slots, scenes and stop buttons, or stop mapping", "View"),
     ("view.browser", "Show or hide the browser", "View"),
     ("browser.search", "Search in the browser", "View"),
+    ("view.quickAdd", "Search devices, plug-ins and samples and add one (quick add)", "View"),
     ("view.sampleMap", "Show or hide the sample map in the main area", "View"),
     ("view.sampleMapWindow", "Open the sample map in a window of its own, or put it back", "View"),
     ("view.zoomIn", "Make the whole window larger", "View"),
@@ -445,7 +446,7 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 83] = [
+const DEFAULTS: [(&str, &[&str]); 84] = [
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
@@ -462,6 +463,7 @@ const DEFAULTS: [(&str, &[&str]); 83] = [
     ("view.mappingMode", &["Ctrl+M"]),
     ("view.browser", &["Ctrl+B"]),
     ("browser.search", &["Ctrl+F"]),
+    ("view.quickAdd", &["Ctrl+P"]),
     ("view.sampleMap", &["Ctrl+Alt+Shift+M"]),
     ("view.sampleMapWindow", &["Ctrl+Alt+M"]),
     ("settings.open", &["Ctrl+Comma"]),

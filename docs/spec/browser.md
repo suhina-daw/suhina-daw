@@ -1,6 +1,6 @@
 ---
 description: How the browser behaves: places, categories, search, the tree, previewing, dragging samples, MIDI files, devices, presets and plug-ins into the project, pins, recent items and colour tags
-read_when: browser, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
+read_when: browser, quick add, quick-add palette, Ctrl+P, add by name, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
 last_verified: 2026-11-02
@@ -15,6 +15,7 @@ covers:
   - crates/engine/src/preview.rs
   - crates/ui/src/browser.rs
   - crates/ui/src/browser/browser_view.rs
+  - crates/ui/src/app/quick_add.rs
   - crates/ui/src/interaction/drop.rs
   - crates/ui/src/session/session_view.rs
 ---
@@ -401,6 +402,36 @@ Enter in the search field or a double-click on an item adds it to the selected t
 a device to its chain; samples and MIDI files in the Arrangement at the play start marker, in
 the Launcher from the first empty slot down. With no track selected, a new track is made as for
 the empty area.
+
+### Quick add
+
+A shortcut (`view.quickAdd`, Ctrl+P by default, rebindable as every other key) opens the
+quick-add palette in the middle of the window, placed as the project switcher (Ctrl+Tab) is:
+a search field over one list of what `library.search` finds, with a small header above it naming
+where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no track selected.
+
+- **The list:** the built-in instruments, effects and MIDI effects, the installed plug-ins, and
+  the samples and MIDI files in the browser's folders, best matches first, at most 200; each row
+  shows the name and what it is (Instrument, Effect, MIDI effect, Plug-in instrument, Plug-in
+  effect, Sample, MIDI file). About nine rows show at once, the rest scroll. Presets, projects,
+  device graphs and Stems files are added from the browser. A search through more than 4096
+  files runs on a thread of its own, as the browser's does, so typing never waits.
+- **On a track that plays no notes** (an audio track, a group, a return) no instrument or MIDI
+  effect is listed. If one is chosen anyway, the status line says why and nothing is added.
+- **Keys:** Up and Down move the lit row, wrapping round; Enter adds the lit item and closes;
+  a click on a row adds it and closes; Escape or a click outside closes without changing
+  anything. Letting go of a modifier does not close it.
+- **What a choice runs**, each one command and one undo step, so agents and the CLI do the same:
+  a device on the selected track is `device.add` (built-in) or `device.addPlugin` (plug-in), and
+  the detail area shows that track's devices; with no track selected it is `track.add` with
+  `device` (an instrument or a MIDI effect makes a MIDI track, an effect an audio track), and
+  the new track becomes the selected one, so the next add goes there too. A sample or MIDI file
+  is `clip.addFiles` with no `track`: a new track (audio for a sample, MIDI for a MIDI file)
+  right after the selected track (`after`), or after the last regular track with none selected,
+  its clip starting at the palette's place. A sample is read on another thread first, as a drop
+  is.
+- **The palette's place:** with the pointer over the Arrangement's lanes when the shortcut is
+  pressed, the beat under it, snapped to the grid; anywhere else, the play start marker.
 
 ## Colour tags
 

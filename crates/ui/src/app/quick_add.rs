@@ -1,0 +1,374 @@
+// Copyright (C) 2026 The Suhina contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! The quick-add palette (`docs/spec/browser.md` › Quick add): a shortcut opens a search field
+//! in the middle of the window, and Enter adds what was found to the selected track, or as a
+//! clip on a new track at the palette's place. Each choice is one of the commands the browser's
+//! drops run, so agents and the CLI do the same.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Receiver;
+
+use suhina_library::Item;
+use suhina_session::{Category, Found};
+
+use super::*;
+use crate::kit::floating_list;
+
+/// At most this many results are asked for and listed.
+const LIMIT: usize = 200;
+
+/// The palette's width, in points.
+const WIDTH: f32 = 420.0;
+
+/// The rows that show at once; the rest scroll.
+const VISIBLE_ROWS: usize = 9;
+
+/// The palette while it is open.
+pub(super) struct QuickAdd {
+    /// What the field says.
+    text: String,
+    /// The lit row.
+    picked: usize,
+    /// The track a device goes on, and after which a new track goes; `None` for new tracks at
+    /// the end.
+    track: Option<TrackId>,
+    /// Where a sample or MIDI file starts, in beats.
+    beat: f64,
+    /// What the field found, only what can be added here.
+    found: Vec<Found>,
+    /// The text the shown results are for.
+    searched: Option<String>,
+    /// A search of a large library still looking, on a thread of its own.
+    job: Option<(Arc<AtomicBool>, Receiver<Vec<Found>>)>,
+    /// The field still has to take the keyboard.
+    focus: bool,
+}
+
+/// Whether an item of `kind` (as `library.search` names it) is offered; `notes` is whether the
+/// target track plays notes (`None` for a new track, which takes any kind).
+pub(super) fn offered(kind: &str, notes: Option<bool>) -> bool {
+    match kind {
+        "instrument" | "midi_effect" => notes != Some(false),
+        "effect" | "sample" | "midi" => true,
+        // Presets, projects, device graphs and Stems files are added from the browser.
+        _ => false,
+    }
+}
+
+/// What a row says an item is.
+pub(super) fn kind_label(found: &Found) -> &'static str {
+    match (found.kind, found.plugin) {
+        ("instrument", true) => "Plug-in instrument",
+        (_, true) => "Plug-in effect",
+        ("instrument", false) => "Instrument",
+        ("effect", false) => "Effect",
+        ("midi_effect", false) => "MIDI effect",
+        ("sample", _) => "Sample",
+        ("midi", _) => "MIDI file",
+        _ => "Item",
+    }
+}
+
+/// The place a beat is at, as the header names it: `Bar 17`, or `Bar 17.3` between bars.
+pub(super) fn place_label(beat: f64, bar_beats: f64) -> String {
+    let bar_beats = if bar_beats > 0.0 { bar_beats } else { 4.0 };
+    let bar = (beat / bar_beats).floor();
+    let within = (beat - bar * bar_beats).floor();
+    if within < 1.0 { format!("Bar {}", bar + 1.0) } else { format!("Bar {}.{}", bar + 1.0, within + 1.0) }
+}
+
+/// Why `found` cannot go on a track that plays no notes, or `None` when it can.
+fn refused(found: &Found, notes: Option<bool>) -> Option<String> {
+    if offered(found.kind, notes) {
+        return None;
+    }
+    Some(match found.kind {
+        "instrument" => format!("{} is an instrument: it goes on a MIDI track, not on this one", found.name),
+        "midi_effect" => format!("{} is a MIDI effect: it goes on a MIDI track, not on this one", found.name),
+        _ => format!("{} cannot be added from here", found.name),
+    })
+}
+
+/// Takes this frame's presses of `key` out of the input, so nothing else sees them.
+fn take_key(ctx: &egui::Context, key: Key) -> bool {
+    ctx.input_mut(|i| {
+        let mut pressed = false;
+        i.events.retain(|event| match event {
+            egui::Event::Key { key: k, pressed: true, .. } if *k == key => {
+                pressed = true;
+                false
+            }
+            egui::Event::Key { key: k, pressed: false, .. } if *k == key => false,
+            _ => true,
+        });
+        pressed
+    })
+}
+
+impl App {
+    /// Whether the quick-add palette is open.
+    pub fn quick_add_open(&self) -> bool {
+        self.quick_add.is_some()
+    }
+
+    /// The palette's target track and place in beats, while it is open.
+    pub fn quick_add_target(&self) -> Option<(Option<TrackId>, f64)> {
+        self.quick_add.as_ref().map(|p| (p.track, p.beat))
+    }
+
+    /// Opens the palette for the selected track and the place: the beat under the pointer over
+    /// the Arrangement, the play start marker elsewhere.
+    pub(super) fn open_quick_add(&mut self) {
+        let Some(session) = self.session() else { return };
+        let project = session.project();
+        let track = self.selected_track().filter(|t| *t != TrackId::MAIN && project.track(*t).is_some());
+        let pointer = if self.shown == View::Arrangement { self.arrangement.pointer_beat } else { None };
+        let beat = pointer.unwrap_or_else(|| session.player().map_or(0.0, |p| p.monitor().start_beat())).max(0.0);
+        self.quick_add = Some(QuickAdd {
+            text: String::new(),
+            picked: 0,
+            track,
+            beat,
+            found: Vec::new(),
+            searched: None,
+            job: None,
+            focus: true,
+        });
+    }
+
+    /// Whether the palette's track plays notes; `None` without a track.
+    fn quick_add_notes(&self, track: Option<TrackId>) -> Option<bool> {
+        let track = track?;
+        let project = self.session()?.project();
+        Some(project.track(track)?.content.notes)
+    }
+
+    /// Searches again when the field changed, and picks up the answer of a search still looking.
+    fn quick_add_search(&mut self, ctx: &egui::Context) {
+        let Some(palette) = self.quick_add.as_mut() else { return };
+        if palette.searched.as_deref() != Some(palette.text.as_str()) {
+            palette.searched = Some(palette.text.clone());
+            palette.picked = 0;
+            if let Some((cancel, _)) = palette.job.take() {
+                cancel.store(true, Ordering::Relaxed);
+            }
+            let text = palette.text.clone();
+            match suhina_session::prepare_search(&mut self.projects, &text, Category::All, None, &[], LIMIT) {
+                Ok(search) if search.files() > crate::browser::SEARCH_ON_THE_WINDOW_THREAD => {
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    let (send, answer) = std::sync::mpsc::channel();
+                    let looking = Arc::clone(&cancel);
+                    let started = std::thread::Builder::new().name("quick-add search".into()).spawn(move || {
+                        let found = search.run(&looking);
+                        if !looking.load(Ordering::Relaxed) {
+                            let _ = send.send(found);
+                        }
+                    });
+                    if let Some(palette) = self.quick_add.as_mut() {
+                        match started {
+                            Ok(_) => palette.job = Some((cancel, answer)),
+                            // The next frame tries again.
+                            Err(_) => palette.searched = None,
+                        }
+                    }
+                }
+                Ok(search) => {
+                    let found = search.run(&AtomicBool::new(false));
+                    self.quick_add_results(found);
+                }
+                Err(e) => self.status = Status::Error(e.message().to_owned()),
+            }
+        }
+        let answer = self.quick_add.as_ref().and_then(|p| p.job.as_ref()).and_then(|(_, a)| a.try_recv().ok());
+        match answer {
+            Some(found) => {
+                if let Some(palette) = self.quick_add.as_mut() {
+                    palette.job = None;
+                }
+                self.quick_add_results(found);
+            }
+            None if self.quick_add.as_ref().is_some_and(|p| p.job.is_some()) => {
+                ctx.request_repaint_after(std::time::Duration::from_millis(30));
+            }
+            None => {}
+        }
+    }
+
+    /// Keeps what can be added to the palette's track.
+    fn quick_add_results(&mut self, found: Vec<Found>) {
+        let notes = self.quick_add.as_ref().and_then(|p| self.quick_add_notes(p.track));
+        if let Some(palette) = self.quick_add.as_mut() {
+            palette.found = found.into_iter().filter(|f| offered(f.kind, notes)).take(LIMIT).collect();
+            palette.picked = palette.picked.min(palette.found.len().saturating_sub(1));
+        }
+    }
+
+    /// The palette, while it is open: the header naming where things go, the field, and what it
+    /// found. Up and Down move, Enter or a click adds and closes, Escape or a click outside
+    /// closes.
+    pub(super) fn quick_add_ui(&mut self, ctx: &egui::Context) {
+        if self.quick_add.is_none() {
+            return;
+        }
+        if self.session().is_none() {
+            self.quick_add = None;
+            return;
+        }
+        if take_key(ctx, Key::Escape) {
+            self.quick_add = None;
+            return;
+        }
+        let enter = take_key(ctx, Key::Enter);
+        let (down, up) = floating_list::take_arrow_moves(ctx);
+        self.quick_add_search(ctx);
+        let header = {
+            let Some(palette) = self.quick_add.as_ref() else { return };
+            let target = match palette.track {
+                Some(track) => format!("Track: {}", self.track_name(track)),
+                None => "New track".to_string(),
+            };
+            format!("{target} · {}", place_label(palette.beat, self.bar_beats()))
+        };
+        let Some(palette) = self.quick_add.as_mut() else { return };
+        palette.picked = floating_list::step(palette.picked, palette.found.len(), down, up);
+        let rows: Vec<floating_list::Row> = palette
+            .found
+            .iter()
+            .map(|f| floating_list::Row {
+                text: format!("{}\n{}", f.name, kind_label(f)),
+                label: format!("Add {}", f.name),
+            })
+            .collect();
+        let searching = palette.job.is_some();
+        let field_id = egui::Id::new("quick-add-field");
+        if palette.focus {
+            ctx.memory_mut(|m| m.request_focus(field_id));
+            palette.focus = false;
+        }
+        let text = &mut palette.text;
+        let heading = |ui: &mut Ui| {
+            ui.label(egui::RichText::new(&header).color(theme::text_hint()).size(theme::TEXT_SMALL));
+            let field = egui::TextEdit::singleline(text)
+                .id(field_id)
+                .hint_text("Search devices, plug-ins and samples")
+                .desired_width(f32::INFINITY);
+            ui.add(field).widget_info(|| {
+                egui::WidgetInfo::text_edit(true, "", "Quick add", "Search devices, plug-ins and samples")
+            });
+            if searching {
+                ui.label(egui::RichText::new("Searching…").color(theme::text_hint()).size(theme::TEXT_SMALL));
+            }
+        };
+        let look = floating_list::Look { width: WIDTH, row_height: 34.0, visible_rows: VISIBLE_ROWS };
+        let picked = (!rows.is_empty()).then_some(palette.picked);
+        let shown = floating_list::show(ctx, egui::Id::new("quick-add"), look, heading, &rows, picked, down + up > 0);
+        // Keep the keyboard in the field while it is open.
+        ctx.memory_mut(|m| m.request_focus(field_id));
+        let clicked_outside =
+            ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !shown.rect.contains(p)));
+        let chosen = shown.clicked.or_else(|| enter.then_some(palette.picked).filter(|_| !rows.is_empty()));
+        if let Some(place) = chosen {
+            let Some(palette) = self.quick_add.take() else { return };
+            if let Some(found) = palette.found.get(place).cloned() {
+                self.quick_add_choose(&found, palette.track, palette.beat);
+            }
+        } else if clicked_outside {
+            self.quick_add = None;
+        }
+    }
+
+    /// Adds `found`: a device to `track` (or on a new track that becomes the selected one), a
+    /// sample or MIDI file as a clip on a new track after `track`, starting at `beat`.
+    fn quick_add_choose(&mut self, found: &Found, track: Option<TrackId>, beat: f64) {
+        let track = track.filter(|t| self.session().is_some_and(|s| s.project().track(*t).is_some()));
+        let notes = self.quick_add_notes(track);
+        if let Some(why) = refused(found, notes) {
+            self.status = Status::Hint(why);
+            return;
+        }
+        match &found.item {
+            Item::Device(_) | Item::Plugin(_) => {
+                let (id, mut params) = match &found.item {
+                    Item::Plugin(spec) => ("device.addPlugin", json!({ "plugin": spec })),
+                    Item::Device(id) => ("device.add", json!({ "id": id })),
+                    _ => return,
+                };
+                match track {
+                    Some(track) => {
+                        params["track"] = json!(track.0);
+                        if self.quick_add_run(id, &params).is_some() {
+                            self.show_devices_of(track);
+                            self.status = Status::Done(format!("Added {} to {}", found.name, self.track_name(track)));
+                        }
+                    }
+                    None => {
+                        // A new track with the device, of the kind it needs, as one undo step.
+                        let device = params.get("plugin").or_else(|| params.get("id")).cloned().unwrap_or_default();
+                        let added = self.quick_add_run("track.add", &json!({ "device": device }));
+                        let new = added
+                            .as_ref()
+                            .and_then(|r| r["track"].as_u64())
+                            .and_then(|t| u32::try_from(t).ok())
+                            .map(TrackId);
+                        if let Some(new) = new {
+                            self.show_devices_of(new);
+                            self.status = Status::Done(format!("Added {} on a new track", found.name));
+                        }
+                    }
+                }
+            }
+            Item::File(path) => {
+                let mut params = json!({
+                    "paths": [path.display().to_string()],
+                    "start": beat,
+                    "warp": self.settings.warp_mode.param(),
+                    "stack": self.settings.sample_stacking || self.settings.midi_stacking,
+                });
+                let holds_clips = track
+                    .and_then(|t| self.session().and_then(|s| s.project().track(t).map(|x| x.content)))
+                    .is_some_and(|c| c.audio || c.notes);
+                if let Some(track) = track.filter(|_| holds_clips) {
+                    params["after"] = json!(track.0);
+                }
+                let samples = if found.kind == "sample" { vec![path.clone()] } else { Vec::new() };
+                self.decode_then_run(samples, vec![("clip.addFiles", params)]);
+            }
+            Item::Voice(..) => self.status = Status::Hint(format!("{} cannot be added from here", found.name)),
+        }
+    }
+
+    /// Runs one of the palette's commands through the open projects, so what was added becomes
+    /// recent, as a drop from the browser does.
+    fn quick_add_run(&mut self, id: &str, params: &Value) -> Option<Value> {
+        suhina_plugins::trace!("action {id} {params}");
+        match self.projects.execute(id, params) {
+            Ok(result) => {
+                self.revision += 1;
+                self.timeline = None;
+                Some(result)
+            }
+            Err(e) => {
+                self.status = Status::Error(e.message().to_owned());
+                None
+            }
+        }
+    }
+
+    /// Waits for the samples of a drop (or a palette's sample) being read and runs its commands:
+    /// tests wait on this signal rather than on time.
+    pub fn finish_drop(&mut self) {
+        let Some(pending) = self.pending_drop.as_mut() else { return };
+        if let Ok(done) = pending.decoded.recv() {
+            let (send, decoded) = std::sync::mpsc::channel();
+            let _ = send.send(done);
+            pending.decoded = decoded;
+        }
+        self.poll_drop(&egui::Context::default());
+    }
+}
+
+#[cfg(test)]
+#[path = "quick_add_tests.rs"]
+mod tests;
