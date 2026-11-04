@@ -20,10 +20,10 @@ use crate::kit::floating_list;
 const LIMIT: usize = 200;
 
 /// The palette's width, in points.
-const WIDTH: f32 = 420.0;
+const WIDTH: f32 = 460.0;
 
-/// The rows that show at once; the rest scroll.
-const VISIBLE_ROWS: usize = 9;
+/// The rows that show at once, whatever the search finds; the rest scroll.
+const VISIBLE_ROWS: usize = 12;
 
 /// The palette while it is open.
 pub(super) struct QuickAdd {
@@ -261,7 +261,8 @@ impl App {
                 ui.label(egui::RichText::new("Searching…").color(theme::text_hint()).size(theme::TEXT_SMALL));
             }
         };
-        let look = floating_list::Look { width: WIDTH, row_height: 34.0, visible_rows: VISIBLE_ROWS };
+        let look =
+            floating_list::Look { width: WIDTH, row_height: 34.0, visible_rows: VISIBLE_ROWS, fixed_height: true };
         let picked = (!rows.is_empty()).then_some(palette.picked);
         let shown = floating_list::show(ctx, egui::Id::new("quick-add"), look, heading, &rows, picked, down + up > 0);
         // Keep the keyboard in the field while it is open.

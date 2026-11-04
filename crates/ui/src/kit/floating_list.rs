@@ -33,6 +33,9 @@ pub struct Look {
     pub row_height: f32,
     /// How many rows show at once; the rest scroll.
     pub visible_rows: usize,
+    /// Whether the list keeps the height of `visible_rows` with fewer rows, so the panel does
+    /// not change size as a search narrows; otherwise it shrinks to its rows.
+    pub fixed_height: bool,
 }
 
 /// Takes the presses of Down and Up out of this frame's input, so nothing behind the list moves
@@ -90,7 +93,7 @@ pub fn show(
                 egui::ScrollArea::vertical()
                     .id_salt(id.with("rows"))
                     .max_height(height)
-                    .auto_shrink([false, true])
+                    .auto_shrink([false, !look.fixed_height])
                     .show(ui, |ui| {
                         for (place, row) in rows.iter().enumerate() {
                             let lit = picked == Some(place);

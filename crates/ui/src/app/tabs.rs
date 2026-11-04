@@ -108,7 +108,8 @@ impl App {
                 floating_list::Row { text: format!("{name}\n{source}"), label: format!("Switch to {name}") }
             })
             .collect();
-        let look = floating_list::Look { width: 360.0, row_height: 34.0, visible_rows: rows.len() };
+        let look =
+            floating_list::Look { width: 360.0, row_height: 34.0, visible_rows: rows.len(), fixed_height: false };
         let heading = |ui: &mut Ui| {
             ui.label(egui::RichText::new("Open projects").color(theme::text_hint()).size(theme::TEXT_SMALL));
         };

@@ -413,7 +413,8 @@ where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no tr
 - **The list:** the built-in instruments, effects and MIDI effects, the installed plug-ins, and
   the samples and MIDI files in the browser's folders, best matches first, at most 200; each row
   shows the name and what it is (Instrument, Effect, MIDI effect, Plug-in instrument, Plug-in
-  effect, Sample, MIDI file). About nine rows show at once, the rest scroll. Presets, projects,
+  effect, Sample, MIDI file). The list is twelve rows tall whatever the search finds, so the
+  palette keeps its size while typing; more rows scroll. Presets, projects,
   device graphs and Stems files are added from the browser. A search through more than 4096
   files runs on a thread of its own, as the browser's does, so typing never waits.
 - **On a track that plays no notes** (an audio track, a group, a return) no instrument or MIDI
