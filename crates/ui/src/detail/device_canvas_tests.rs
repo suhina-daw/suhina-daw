@@ -2084,3 +2084,72 @@ fn a_negative_drag_scale_steps_a_discrete_control_the_other_way() {
     assert_eq!(step(1.0), Some(6.0));
     assert_eq!(step(-1.0), Some(4.0));
 }
+#[test]
+fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
+    use egui::{ViewportCommand, ViewportId};
+    let canvas = Arc::new(DeviceUi {
+        size: [60.0, 20.0],
+        controls: vec![CustomControl {
+            widget: None,
+            visible_when: None,
+            id: "line".into(),
+            name: "Line".into(),
+            tooltip: String::new(),
+            bounds: [0.0, 0.0, 40.0, 20.0],
+            gesture: UiGesture::Position,
+            x: Some(UiBinding::new("a")),
+            y: None,
+            drawing: vec![],
+        }],
+        ..Default::default()
+    });
+    let mut parameters = vec![GraphParameter { value: 0.0, ..parameter("a", false) }];
+    let ctx = egui::Context::default();
+    let start = Pos2::new(10., 10.);
+    let mut frames = vec![(start, None), (start, Some(true))];
+    frames.extend((1..=10).map(|i| (start + Vec2::new(i as f32, 0.), None)));
+    let mut commands = Vec::new();
+    for (position, pressed) in frames {
+        let mut events = vec![egui::Event::PointerMoved(position)];
+        if let Some(pressed) = pressed {
+            events.push(egui::Event::PointerButton {
+                pos: position,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            });
+        }
+        let mut actions = Vec::new();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(72., 72.))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                crate::kit::widgets::release_value_drag(ui.ctx());
+                show(
+                    ui,
+                    Rect::from_min_size(Pos2::ZERO, Vec2::new(60., 20.)),
+                    &canvas,
+                    &crate::detail::device_widgets::PanelState::none(),
+                    &parameters,
+                    TrackId(1),
+                    &crate::detail::detail_view::DeviceAt(vec![0]),
+                    &mut actions,
+                )
+            },
+        );
+        output.textures_delta.clear();
+        if let Some(viewport) = output.viewport_output.get(&ViewportId::ROOT) {
+            commands.extend(viewport.commands.iter().cloned());
+        }
+        if let Some(value) = actions.iter().filter_map(|a| a.params["value"].as_f64()).next_back() {
+            parameters[0].value = value;
+        }
+    }
+    assert!(commands.contains(&ViewportCommand::CursorVisible(false)), "the drag hides the pointer: {commands:?}");
+    // Pressed a quarter along the 40-point line: the value starts there and moves on with the drag.
+    assert!(parameters[0].value > 0.25, "the drag moves the value from the press, got {}", parameters[0].value);
+    assert!(parameters[0].value <= 0.5 + 1e-6, "no further than the pointer went, got {}", parameters[0].value);
+}

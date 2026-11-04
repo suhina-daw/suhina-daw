@@ -2280,7 +2280,41 @@ pub(crate) fn show(
             let old = normalized(p, binding.logarithmic);
             let mut next = old;
             match control.gesture {
-                UiGesture::Position if response.dragged() || response.clicked() => {
+                // A position drag starts where it was pressed, then moves as far as the pointer
+                // while the pointer hides and holds still, as a slider's handle does; on release
+                // the pointer comes back on the handle (docs/design/components.md › Knob).
+                UiGesture::Position if response.dragged() => {
+                    let held_id = response.id.with(("position-held", axis));
+                    let back_id = response.id.with("position-back");
+                    let held = ui.data(|data| data.get_temp::<f64>(held_id)).filter(|_| !response.drag_started());
+                    let from = held.unwrap_or_else(|| {
+                        let press = ui.input(|i| i.pointer.press_origin()).unwrap_or(bounds.center());
+                        if axis == 0 {
+                            (press.x - bounds.left()) as f64 / w as f64
+                        } else {
+                            (bounds.bottom() - press.y) as f64 / h as f64
+                        }
+                    });
+                    let delta = crate::kit::widgets::value_drag_delta(ui, &response);
+                    let moved = if axis == 0 { delta.x as f64 / w as f64 } else { -delta.y as f64 / h as f64 } * fine;
+                    next = (from + moved).clamp(0.0, 1.0);
+                    ui.data_mut(|data| data.insert_temp(held_id, next));
+                    // The point the pointer comes back to: this axis's place, the other axis's as
+                    // the drag left it (or where the press was).
+                    let mut back = ui
+                        .data(|data| data.get_temp::<Pos2>(back_id))
+                        .filter(|_| !response.drag_started())
+                        .or_else(|| ui.input(|i| i.pointer.press_origin()))
+                        .unwrap_or(bounds.center());
+                    if axis == 0 {
+                        back.x = bounds.left() + w * next as f32;
+                    } else {
+                        back.y = bounds.bottom() - h * next as f32;
+                    }
+                    ui.data_mut(|data| data.insert_temp(back_id, back));
+                    crate::kit::widgets::value_drag_returns_to(ui.ctx(), back);
+                }
+                UiGesture::Position if response.clicked() => {
                     if let Some(pos) = response.interact_pointer_pos() {
                         next = if axis == 0 {
                             (pos.x - bounds.left()) as f64 / w as f64

@@ -205,7 +205,10 @@ cover, with UV crop, RGBA tint and optional tile size. Repetition uses texture w
 unbounded loop of drawing operations. Vector icons are paths/lines/circles, raster icons can
 use PNG transparency. Photos and patterns are original assets supplied by the author.
 
-Gestures: drag (relative X/Y), position (absolute pointer position, Y upward), toggle, momentary.
+Gestures: drag (relative X/Y), position (Y upward: a click sets the value at the pointer; a drag
+starts at the press and moves the value as far as the pointer moves, Shift for precision, with
+the pointer hidden and held still as a slider's handle does, and back on the value's place on
+release), toggle, momentary.
 Bindings map normalized coordinates to parameter units with optional logarithmic mapping.
 Keyboard arrows edit axes, Shift provides fine adjustment, double click resets defaults;
 Space/Enter activate buttons. A gesture `{"set": 3}` sets the X parameter to the literal integer 3; its value must be inside the declared range. The control name and values are exposed to accessibility.
