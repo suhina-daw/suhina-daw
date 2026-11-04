@@ -82,6 +82,7 @@ what is inside it).
 | Devices | Device panels | Device chain layout, Long parameter lists, Detail area width |
 | Importing | Dropping files | Tracks for dropped files, Warp mode for samples |
 | Arrangement | Clip editing | Let audio clips overlap, Let MIDI clips overlap, Double-click makes a clip, Clip menu name field, Clip drag handle, Paste replaces clip |
+| Arrangement | Take lanes | Take crossfade (10 ms, 20 ms, 40 ms, Custom; 10 ms by default), Custom take crossfade (shown with Custom, 1 to 500 ms; [recording](recording.md#take-lanes)) |
 | Arrangement | Time and play | Select time with, Start marker follows selection, Play from, Playhead after Stop |
 | Arrangement | View | Grid inside clips, Waveform size, Waveform and note colour (Theme, Auto, Light, Dark, Custom), Custom waveform colour (shown with Custom), Audio clip colour strength |
 | Arrangement | Tracks | New track colour, New clip colour, Track header colour strength, Track header side (Theme, Left, Right), Return tracks, Returns in new projects (A and B, or None, #898), Alt+wheel resizes |
