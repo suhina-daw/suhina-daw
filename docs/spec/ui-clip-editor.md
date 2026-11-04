@@ -357,7 +357,7 @@ pull up.
   while drawing or dragging places them freely (no snapping). A move keeps a note's distance to the
   grid: the drag snaps the **offset** to whole grid steps, so a note that was off the grid stays
   just as far off (it keeps a played-in groove).
-- **Later:** the same grid menu in the Arrangement view, for its own grid.
+- **Built:** the same grid menu in the Arrangement view, for its own grid, in the empty-lane right-click menu and, with the toolbar on, in the toolbar.
 - **Later ([#346](https://github.com/suhina-daw/suhina-daw/issues/346)):** "magnetic" snapping to other notes' starts and ends within a few pixels.
 
 ## Zoom and scroll
