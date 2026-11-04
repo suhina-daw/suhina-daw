@@ -3,7 +3,7 @@
 
 //! Audio clips that sound together on one track: two arrangement clips whose spans overlap in
 //! time. Stacking them is ordinary (both play); an ARA plug-in's first version in Suhina does not
-//! edit such clips ([ADR 0028](../../docs/decisions/0028-ara-hosting.md)), so the session needs
+//! edit such clips ([ADR 0033](../../docs/decisions/0033-ara-hosting.md)), so the session needs
 //! to find them by their actual start and end, not by how many clips a track has.
 
 use crate::{LaneData, Project, TrackId};

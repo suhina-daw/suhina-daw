@@ -2,8 +2,9 @@
 description: Real-time time-stretching of warped audio, stretch modes and backends, with measurements
 read_when: warp, time-stretch, stretch mode, Signalsmith, keylock, timestretch, Rubber Band, audio crackles, CPU load, stretch quality
 type: decision
-status: current
-last_verified: 2026-10-23
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/stretch.rs
   - crates/stretch/src/lib.rs
@@ -16,7 +17,6 @@ covers:
 
 # 0003: Time-stretching and stretch modes
 
-- **Status:** accepted
 - **Date:** 2026-10-11
 - **Task:** LOOP-3
 - **Amended:** 2026-10-11 (LOOP-31: transients on the grid; LOOP-27: arrangement clips stretched

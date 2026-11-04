@@ -12,7 +12,7 @@ name: Claim
 #
 # A claim is refused while an issue it is *Blocked by* is open. A `Touches:` line in the claim names
 # the paths the work will change, and the answer lists the open pull requests and other claims that
-# touch the same paths, so overlapping work is found before it is written twice (AGENTS.md › Tasks).
+# touch the same paths, so overlapping work is found before it is written twice (docs/workflow.md › Tasks).
 #
 # Who may do what is named, not taken from GitHub's author association (every collaborator with
 # triage access is a `COLLABORATOR` there): maintainers are listed in the repository variable `MAINTAINERS`, and the
@@ -377,7 +377,7 @@ jobs:
                   `\n\nOther open work touches the same code:\n\n${lines.join("\n")}\n\n` +
                   `Read it before you start. When it builds something you need, build on it (stack on its ` +
                   `branch, or write \`Depends on #N\` in your pull request) rather than writing it again; ` +
-                  `when it changes the same code for another reason, say so in both (AGENTS.md › Tasks).`
+                  `when it changes the same code for another reason, say so in both (docs/workflow.md › Tasks).`
                 );
               };
               const isFree = (name) => FREE.some((free) => same(name, free));

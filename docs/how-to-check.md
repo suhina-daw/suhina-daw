@@ -3,7 +3,7 @@ description: How to write a pull request's "How to check it" section, steps a ne
 read_when: how to check it, test steps, QA steps, how to test, pull request description, manual testing, reviewer steps, check a change
 type: howto
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-01
 covers:
   - .github/pull_request_template.md
   - .claude/skills/how-to-check/SKILL.md
@@ -11,7 +11,7 @@ covers:
 
 # How to check it
 
-[AGENTS.md › Before you finish a task](../AGENTS.md#4-before-you-finish-a-task) has the rule;
+[workflow.md › How to check it](workflow.md#how-to-check-it) has the rule;
 this is how to write the section, for a person or any agent. The reader has downloaded the test
 build from the pull request's *Test build* comment, has never used Suhina or any other music
 program, and should be done in a few minutes.

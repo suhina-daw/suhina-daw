@@ -19,6 +19,8 @@ struct Prepared<'a> {
     resolved: Option<Value>,
     /// The key a `device.setParam` drag gives its gesture, so its calls make one undo step.
     gesture: Option<&'a str>,
+    /// The gesture with the track and device it acts on: what one undo step has in common.
+    gesture_key: Option<String>,
     /// A `device.setParam` call that is one frame of a drag.
     continuous: bool,
     /// The undo step a `continue` call may join: the command and its track.
@@ -90,6 +92,13 @@ impl Session {
         } else {
             None
         };
+        let gesture_key = gesture.map(|key| {
+            format!(
+                "custom:{}:{}:{key}",
+                params.get("track").unwrap_or(&Value::Null),
+                params.get("device").unwrap_or(&Value::Null)
+            )
+        });
         let continuous = id == "device.setParam" && params.get("continuous").and_then(Value::as_bool) == Some(true);
         if (spec.kind == CommandKind::Edit && !continuous && gesture.is_none()) || spec.kind == CommandKind::History {
             self.history.param_gesture = None;
@@ -97,8 +106,16 @@ impl Session {
         commands::check_params(id, spec.params, params)?;
         // A clip named by its id is found where it is now and handed to the command by position.
         let resolved = commands::resolve_clip_ids(&self.project, spec, params)?;
-        let mut prepared =
-            Prepared { spec, resolved, gesture, continuous, step: None, continued: false, replaces: false };
+        let mut prepared = Prepared {
+            spec,
+            resolved,
+            gesture,
+            gesture_key,
+            continuous,
+            step: None,
+            continued: false,
+            replaces: false,
+        };
         if spec.kind == CommandKind::Edit {
             let params = prepared.resolved.as_ref().unwrap_or(params);
             self.sync.param_edits.clear();
@@ -164,16 +181,12 @@ impl Session {
             let shift = suhina_engine::SceneShift::between(&before.launcher, &self.project.launcher);
             self.history.changes = self.history.changes.wrapping_add(1);
             let changes = std::mem::take(&mut self.sync.param_edits);
-            let gesture = changes.first().map(|change| {
-                (
-                    change.track,
-                    change.device,
-                    prepared
-                        .gesture
-                        .map_or_else(|| format!("parameter:{}", change.param), |key| format!("custom:{key}")),
-                )
+            // A call with a gesture may send no parameter edit (it turned a lane off, or the device
+            // is in a group), and is still one step with the rest of its gesture.
+            let gesture = prepared.gesture_key.clone().or_else(|| {
+                changes.first().map(|change| format!("parameter:{}:{}:{}", change.track.0, change.device, change.param))
             });
-            if !changes.is_empty() {
+            if !changes.is_empty() || prepared.gesture.is_some() {
                 if (!prepared.continuous && prepared.gesture.is_none()) || self.history.param_gesture != gesture {
                     self.push_undo(before);
                 }

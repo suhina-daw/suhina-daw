@@ -16,8 +16,9 @@ Styles:
             the release under `--tag`: the night's own `nightly-YYYYMMDD`, so the link keeps
             pointing at the build it announced after the rolling `nightly` has moved on
 
-A change is a commit on main's first-parent line; pull requests are squash-merged, so it is one
-pull request, titled "Area: what changed (#123)". Changes that touch only documentation, CI,
+A change is a commit on main's first-parent line, so it is one pull request, titled "Area: what
+changed (#123)": a squash merge carries that title, and a merge commit ("Merge pull request #123
+from owner/branch") carries it as the first line of its message body (MERGE). Changes that touch only documentation, CI,
 scripts and tests (INTERNAL) are counted, not listed: they change nothing in the programs. Standard library
 only; reads git, never the network.
 """
@@ -38,6 +39,8 @@ DISCORD_LIMIT = 2000
 # Lists longer than this end with "and N more".
 DISCORD_ITEMS = 15
 RELEASE_ITEMS = 150
+# The subject GitHub gives a merge commit; the pull request's title is the first line of its body.
+MERGE = re.compile(r"^Merge pull request #(\d+) from \S+$")
 
 
 def git(*args: str) -> str:
@@ -50,17 +53,35 @@ def is_internal(paths: list[str]) -> bool:
     return all(INTERNAL.search(path) for path in paths)
 
 
+def title_of(subject: str, body: str) -> str:
+    """The change's title: the subject of a squash merge, or for a merge commit the pull request's
+    title (the first line of the body) with its number. A merge commit without a body keeps its
+    subject."""
+    m = MERGE.match(subject)
+    if not m:
+        return subject
+    first = next((line.strip() for line in body.splitlines() if line.strip()), "")
+    if not first:
+        return subject
+    return f"{first} (#{m.group(1)})"
+
+
 def changes(base: str | None, head: str) -> list[tuple[str, list[str]]]:
     """(title, changed paths) of each change from `base` (excluded) to `head`, newest first."""
     span = f"{base}..{head}" if base else head
     out = []
     for line in git("log", "--first-parent", "--format=%H%x00%P%x00%s", span).splitlines():
         sha, parents, title = line.split("\x00", 2)
-        first = parents.split(" ")[0] if parents else ""
+        parent_list = parents.split()
+        first = parent_list[0] if parent_list else ""
         if first:
             paths = git("diff", "--name-only", first, sha).splitlines()
         else:
             paths = git("show", "--name-only", "--format=", sha).splitlines()
+        # Only a merge commit (two parents or more) takes its pull request's title from the body,
+        # read on its own so nothing in a body can break the parsing of the log.
+        if len(parent_list) > 1 and MERGE.match(title):
+            title = title_of(title, git("log", "-1", "--format=%b", sha))
         out.append((title, paths))
     return out
 

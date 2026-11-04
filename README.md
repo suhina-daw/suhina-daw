@@ -7,16 +7,16 @@
 
 An open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live.
 
-<a href="docs/features.md">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/features-by-area-dark.svg">
-    <img width="782" alt="Suhina's features by area: how many are done, partly done and planned" src="docs/features-by-area.svg">
-  </picture>
-</a>
+<!-- status:start (written by scripts/status_figure.py on main; edit that, not this) -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/status-dark.svg">
+  <img width="680" alt="Suhina by area: 111 of 368 features done, 43 in progress" src="docs/status.svg">
+</picture>
 
-> What Suhina does today, area by area, from its own feature map: [the list](docs/features.md).
+> How much of each area of Suhina works today: 111 of 368 features done and 43 in progress. A box's size is its number of features, its fill the share done; the red number is the area's open bugs. Redrawn on `main` every day.
+<!-- status:end -->
+
 > What comes next, and in what order: [`ROADMAP.md`](ROADMAP.md) and [ADR 0016](docs/decisions/0016-scope.md).
-> Rebuilt on `main` whenever the map changes.
 
 > **Status:** pre-alpha. Suhina opens Live Sets, plays and renders them (audio clips with
 > real-time time-stretching, MIDI through the built-in FM synth, sandboxed CLAP and VST3 plug-ins,
@@ -113,7 +113,8 @@ With `--launcher` the set starts stopped and Suhina reads one command per line:
 ## Building
 
 Linux builds talk to the sound card through ALSA, so its development files and `pkg-config`
-must be installed before building:
+must be installed before building (a running PulseAudio or PipeWire server is reached over its own
+protocol, which needs nothing more):
 
 | Distribution family | Packages |
 |---|---|
@@ -176,14 +177,14 @@ Everything that is planned or being worked on is on the board,
 is an [issue](https://github.com/suhina-daw/suhina-daw/issues) in this repository. To start:
 
 1. **Read the rules once:** [`CONTRIBUTING.md`](CONTRIBUTING.md) (clean-room, licences, sign-off)
-   and [`AGENTS.md`](AGENTS.md) (golden rules, crate map, what to run before you finish). They
+   and [`AGENTS.md`](AGENTS.md) (golden rules, what to run before you finish, where to read more). They
    apply to people and to AI agents alike.
 2. **Pick an issue** on the board in *Backlog* or *Ready* with no open pull request for it; the
    [`good first issue`](https://github.com/suhina-daw/suhina-daw/labels/good%20first%20issue) and
    [`help wanted`](https://github.com/suhina-daw/suhina-daw/labels/help%20wanted) labels mark good
    places to begin. Say in the issue that you take it, with a short plan.
-3. **Find the documents for it** in [`docs/INDEX.md`](docs/INDEX.md), by what you are about to do
-   or by the code you change, and read [`docs/architecture.md`](docs/architecture.md) to see where
+3. **Find the documents for it** with `python scripts/docs.py find WORDS` (by what you are about
+   to do) or `python scripts/docs.py covers PATH` (by the code you change), and read [`docs/architecture.md`](docs/architecture.md) to see where
    the code goes.
 4. **Build and test** as [Building](#building) shows; before the pull request run `cargo fmt --all`,
    `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` and
@@ -205,7 +206,7 @@ port anchors and wire routes for a future visual editor. See the [authoring guid
 | [`docs/INDEX.md`](docs/INDEX.md) | Every document, what it is for, and the code it describes |
 | [`docs/commands.md`](docs/commands.md) | Every command the CLI, MCP server and UI run, with its parameters |
 | [`ROADMAP.md`](ROADMAP.md) | Milestones, what works now, what is next |
-| [`AGENTS.md`](AGENTS.md) | Rules for contributors and agents, and the crate map |
+| [`AGENTS.md`](AGENTS.md) | Rules for contributors and agents, and where to read more |
 | [`docs/architecture.md`](docs/architecture.md) | How the parts fit: layers, data flow, threads, commands, where new code goes |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Clean-room rules, licences, sign-off (DCO), AI-assisted contributions |
 | [`IP.md`](IP.md) | Reporting a rights or clean-room problem, and how material is removed |

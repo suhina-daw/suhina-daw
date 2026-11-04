@@ -9,6 +9,13 @@ rust-version.workspace = true
 name = "suhina-plugin-host"
 path = "src/main.rs"
 
+# The VST2 interface layer (ADR 0022, amended 2026-10-31: VST2-enabled builds may be
+# distributed): on by default, so every build of the host runs VST2 plug-ins. The feature stays
+# declared, so a build can opt out with `--no-default-features`.
+[features]
+default = ["vst2"]
+vst2 = []
+
 [dependencies]
 suhina-ipc.workspace = true
 suhina-plugins.workspace = true

@@ -3,7 +3,7 @@ description: Automation envelopes - lanes of points over the arrangement for a t
 read_when: automation, envelope, curve family, Bezier, volume fader, fader law, volume taper, volume smoothing, Taper, VolumeTaper, Curve, CurveDrag, curve split, curve drag, automation lane, automation lanes view, show automation, automation.movePoints, automation.deletePoints, select points, breakpoint, automation point, curve, automation.addPoint, automation.movePoint, automation.deletePoint, automation.clear, automation.setEnabled, automation.list, device.setAutomation, automation off, re-enable automation, volume automation, pan automation, mute automation, device parameter automation, AutomationLane, AutomationPoint, MixLanes, DeviceLanes, Envelope
 type: spec
 status: current
-last_verified: 2026-10-30
+last_verified: 2026-11-02
 covers:
   - crates/model/src/automation.rs
   - crates/engine/src/automation.rs
@@ -43,7 +43,8 @@ MCP) and drawn and edited in the Arrangement view (#420, [below](#in-the-arrange
 | A data-only `.sd` device's parameter | its stable id in the `.sd` graph | in its unit and range; discrete controls step |
 | A plug-in's parameter | its id, a number (`device.pluginParams`) | in the plug-in's own range (#109) |
 
-Send levels get lanes once sends play (#396). The master channel's mixer is not automated yet.
+The main channel's volume, pan and mute have lanes too ([ADR 0004](../decisions/0004-built-in-devices.md)
+› Amendment: a chain on the main channel). Send levels have none yet.
 
 ## Lanes and points
 
@@ -375,5 +376,5 @@ order.
 ## Not done yet
 
 - Recording automation, drawing with a pencil, and plug-in parameter lanes in the view.
-- The master channel's mixer, send levels (#396), the tempo (#402).
+- Send levels. The tempo changes over the song through the [tempo map](tempo-map.md), not a lane.
 - Importing automation from other formats.

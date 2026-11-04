@@ -439,3 +439,17 @@ fn device_switch_fades_the_actual_ring_including_cue_before_acknowledging_close(
         }
     }
 }
+
+/// One look at the devices' names at a time, and the next only after a pause, however often the
+/// window asks.
+#[test]
+fn the_next_look_for_the_names_waits_its_turn() {
+    let start = std::time::Instant::now();
+    let mut watch = NamesWatch::default();
+    assert!(watch.due(start), "the first look is due at once");
+    watch.started = Some(start);
+    assert!(!watch.due(start));
+    assert!(watch.due(start + NAMES_LOOK_EVERY));
+    watch.looking = true;
+    assert!(!watch.due(start + NAMES_LOOK_EVERY), "one at a time");
+}

@@ -723,7 +723,7 @@ control with no room left is not drawn, without a notice: check narrow tracks an
 - **Sizes:** `.send { width; height }` for the mixer's sends; `.arrangement {
   --suhina-track-height: 96px }` (20–400) for tracks without a height of their own, in place
   of the default size; `.piano-tool { height }` grows the piano roll's toolbar.
-- **Device panels:** with `.device { width }` the generated list follows the panel;
+- **Device panels:** with `.device { width }` the generated list keeps one column that follows the panel and scrolls;
   `.device .value { width }` sets the value column (at most half the row);
   `.device { --suhina-param-columns: 3; --suhina-param-row: 48px; }` lays parameters side by
   side (1–8 columns, rows 16–160 points).

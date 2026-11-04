@@ -21,6 +21,11 @@ rtrb.workspace = true
 # Real-time priority for the render thread.
 suhina-realtime.workspace = true
 
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd"))'.dependencies]
+# PulseAudio and PipeWire's pipewire-pulse as a host beside ALSA, where Bluetooth headphones have a
+# device of their own. A Rust client of the server's protocol: no system library to link.
+cpal = { workspace = true, features = ["pulseaudio"] }
+
 [target.'cfg(windows)'.dependencies]
 # WASAPI in exclusive mode, which cpal does not open.
 wasapi = "0.26"  # MIT

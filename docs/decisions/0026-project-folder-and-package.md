@@ -2,8 +2,9 @@
 description: A project becomes a folder holding a document, a manifest of each asset's path and BLAKE3 hash, and only when collected its audio; the shareable package is a zip with its own extension; derived analysis stays out of the project; the .locr compatibility path is removed
 read_when: project folder, manifest, asset hash, BLAKE3, collect, packaged project, zip, sharing a project, analysis sidecar, asd, hand-set kind, .locr, old extension, git and audio, git-lfs, project package
 type: decision
-status: draft
-last_verified: 2026-10-24
+status: proposed
+built: partly
+last_verified: 2026-11-02
 covers:
   - crates/project-file/src/lib.rs
   - crates/session/src/lib.rs
@@ -12,7 +13,6 @@ covers:
 
 # 0026: The project folder, the manifest and the package
 
-- **Status:** proposed
 - **Date:** 2026-10-15
 - **Task:** the collaboration and project-version work
   ([ADR 0023](0023-collaboration-and-project-versions.md)) needs a project that can be shipped,
@@ -72,7 +72,7 @@ The observations above were taken from a file the project's own authors made, wh
 rule 1 permits; they belong in [`docs/spec/als-format.md`](../spec/als-format.md) and
 [`docs/spec/als-corpus.md`](../spec/als-corpus.md) before anything is built on them. The same spec
 already lists this open item to observe:
-[`docs/spec/als-format.md:299`](../spec/als-format.md) — "what **Collect All and Save** does".
+[`docs/spec/als-format.md`](../spec/als-format.md#open-questions-next-corpus-files) › Open questions — "what **Collect All and Save** does".
 
 ## Decision (proposed)
 
@@ -90,7 +90,7 @@ already lists this open item to observe:
    Suhina's own command for it is *collecting* (`project.collect`-style, AGENTS.md rule 6), never
    another product's name for its feature. Its behaviour is written down in a spec **from
    observation** before it is implemented, per the open item at
-   [`docs/spec/als-format.md:299`](../spec/als-format.md).
+   [`docs/spec/als-format.md`](../spec/als-format.md#open-questions-next-corpus-files) › Open questions.
 4. **The package is a zip**, as ADR 0010 decision 6 already anticipated ("a self-contained package
    (a zip with the audio) is a separate format for sharing"). `zip` is already a workspace dependency
    — themes back themselves up and export templates with it — so the package adds no new dependency.
@@ -132,7 +132,7 @@ already lists this open item to observe:
    **No `.suhina` or `.locr` file exists anywhere in the tree**, so the path has no users.
    Removing it *before* the format version bump avoids one reader having to support three format
    names. This is a decision, not a silent deletion (AGENTS.md: docs are part of the change), and it
-   is recorded again as ADR 0010 decision 11. The same change updates: the recent-files list, the CLI
+   is recorded again as ADR 0010 decision 12. The same change updates: the recent-files list, the CLI
    and app help text, the MCP tool description, the project dialog, `media::info`'s
    `FileKind::Project` test, and the tests in `crates/project-file/src/tests.rs`,
    `crates/session/tests/save.rs`, `crates/session/tests/relink.rs` and

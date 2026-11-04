@@ -3,7 +3,7 @@ description: The MCP server for agents: tools, file roots, errors and how to run
 read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
-last_verified: 2026-10-30
+last_verified: 2026-11-03
 covers:
   - crates/automation/src/server.rs
   - crates/automation/src/workspace.rs
@@ -26,7 +26,8 @@ armed track's selected audio input; `on:false` finishes and loads the take, as o
 undo step. Save the project and open an audio output before recording.
 
 Loading a sample initializes `source_bpm` from its metadata, filename or detected
-tempo, falling back to the current project/playback tempo; `device.loadSample`
+tempo, leaving it at zero when unknown (`warp_tempo` then holds the tempo of that moment, so
+Warp keeps the original speed); `device.loadSample`
 returns `source_bpm` too. Set `warp` to 1 to follow project BPM using that original
 tempo. Correct `source_bpm` explicitly when known, or set it to 0 to request fresh
 detection. The legacy `warp_beats` parameter remains readable; setting it explicitly
@@ -87,7 +88,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   the window does every frame, so a project plays with them while the agent sends nothing or only
   `project.*` commands that list, switch and close projects.
 - **Choosing the output.** `audio.devices` lists the audio hosts (WASAPI, and ASIO in a build
-  with the `asio` feature; ALSA, JACK or CoreAudio elsewhere) and each one's output devices with
+  with the `asio` feature; ALSA and, with a sound server running, PulseAudio on Linux; JACK or CoreAudio elsewhere) and each one's output devices with
   `sample_rates`, `buffer_sizes` (what the driver allows), `buffer_range` and whether WASAPI
   exclusive mode is possible, plus the output `chosen`. `audio.setOutput {host?, device?,
   sample_rate?, buffer_frames?, exclusive?}` changes the parts given (an empty text or 0 goes back
@@ -532,6 +533,16 @@ command validates, sorts and deduplicates the list and supports undo/redo; an
 empty list clears the map. Optional `continue` groups consecutive drag edits.
 
 `track.devices` includes `sample_slices` when a Sampler has an explicit manual map.
+
+For the visible Slice mode (`mode: 2`), `device.editSampleSlice` edits automatic
+and pinned boundaries without replacing the automatic analysis. It takes `track`,
+`device`, and `operation` (`add`, `move`, `delete`, `regenerate`); add/move take
+`point`, move/delete take `previous`, and automatic boundaries also take their
+integer `identity`. Positions are normalized source fractions strictly inside
+0..1, and `point` strictly between the sampler's `start` and `end`. Regenerate clears pins and suppressions for the current method. Every call
+is one undo step. `track.devices` includes `sample_edits` with its version, pins
+and method/identity suppressions. The method and source-axis controls remain
+ordinary `device.setParam` parameters, independent of project tempo.
 
 `device.updateSd` applies the same read-root confinement as `device.addSd` and
 `device.loadSample`, including symlink resolution.

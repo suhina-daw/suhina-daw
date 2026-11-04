@@ -222,13 +222,19 @@ pub(crate) fn paste(
 
 /// Copies `tracks` (a group with its tracks) as one block right after the last of them, in
 /// their order, and returns the copies: tracks 1 and 3 give 1, 2, 3, the copy of 1, the copy
-/// of 3, as a copy and a paste after track 3 do.
-pub(crate) fn duplicate(p: &mut Project, tracks: &[TrackId], suffix: Suffix) -> Result<Vec<TrackId>, CommandError> {
+/// of 3, as a copy and a paste after track 3 do. The copies are taken from `source`, `p` with the
+/// running plug-ins' states in it ([`Session::project_as_heard`](crate::Session::project_as_heard)).
+pub(crate) fn duplicate(
+    p: &mut Project,
+    source: &Project,
+    tracks: &[TrackId],
+    suffix: Suffix,
+) -> Result<Vec<TrackId>, CommandError> {
     let ids = with_their_tracks(p, tracks);
     // Only the named tracks that no other named track holds: a group's copy brings its tracks.
     let tops: Vec<TrackId> = ids.iter().copied().filter(|&t| !ids.iter().any(|&g| g != t && within(p, t, g))).collect();
     let Some(&after) = tops.last() else { return Err("no track to duplicate".into()) };
-    let clipboard = copy(p, &tops)?;
+    let clipboard = copy(source, &tops)?;
     paste(p, &clipboard, Some(after), suffix)
 }
 

@@ -25,9 +25,9 @@ then; items that have landed since stay in them as the record of the order.
 Two things follow:
 
 1. **The gap is not uniform**, so "how far along" is not one number; it is a list of areas, each
-   done, partial or missing. [`docs/features.json`](../features.json) keeps that list in Suhina's own
-   areas (shown in the README and in [`features.md`](../features.md)), and
-   [`ROADMAP.md`](../../ROADMAP.md) the detail.
+   done, partial or missing. The README's status figure shows that list in Suhina's own
+   areas, counted from a feature list the maintainers keep outside this repository (decision 5),
+   and [`ROADMAP.md`](../../ROADMAP.md) the detail.
 2. **Some of what a DAW can include is not clip-launching work.** Video, a second programming
    runtime and one vendor's hardware are part of some products, not of the workflow. Leaving them
    out has to be said, or the list of what is missing never ends.
@@ -63,7 +63,10 @@ the missing parts in. It does not schedule the work.
 5. **Suhina describes itself in its own terms.** The roadmap, the README and this ADR list areas
    and features under Suhina's names. Comparisons with other products, where the maintainers make
    them for planning, are kept out of the repository; format specs still say which format they read
-   (AGENTS.md rule 9).
+   (AGENTS.md rule 9). The README's status figure is the one thing drawn from that planning here:
+   the maintainers' feature list, kept in a private repository, is counted into done, started and
+   to-do features per Suhina area, and only those numbers reach this repository, with no other
+   product named and nothing of its documentation.
 
 ## The build order
 

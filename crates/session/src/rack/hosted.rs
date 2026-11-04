@@ -65,7 +65,7 @@ pub struct Hosted {
     /// here, not from the wait.
     sent_at: Option<std::time::Instant>,
     /// Where the song is, as the plug-in is told with the next block: its tempo-synced parts
-    /// and an ARA renderer (ADR 0028) follow it.
+    /// and an ARA renderer (ADR 0033) follow it.
     song: suhina_engine::SongPosition,
 }
 

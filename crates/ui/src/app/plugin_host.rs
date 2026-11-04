@@ -223,6 +223,7 @@ impl App {
             && matches!(
                 request,
                 PluginRequest::AddFolder(..)
+                    | PluginRequest::PickFolder
                     | PluginRequest::RemoveFolder(..)
                     | PluginRequest::SetFolderEnabled(..)
                     | PluginRequest::SetEnabled(..)
@@ -237,11 +238,20 @@ impl App {
             PluginRequest::AddFolder(folder, format) => {
                 let params = json!({ "folder": folder, "format": format.name() });
                 match self.projects.execute("plugin.addFolder", &params) {
-                    Ok(_) => self.plugins.new_folder.clear(),
+                    Ok(result) => {
+                        self.plugins.new_folder.clear();
+                        // A folder already there with this format is not added again.
+                        self.status = Status::Hint(if result["added"] == json!(false) {
+                            format!("{folder} is already in the list")
+                        } else {
+                            format!("Added {folder}; Scan looks in it for plug-ins")
+                        });
+                    }
                     Err(e) => self.status = Status::Error(e.message().to_owned()),
                 }
                 self.plugins_read = false;
             }
+            PluginRequest::PickFolder => self.ask_pick(PickField::PluginFolder),
             PluginRequest::SetFolderEnabled(folder, enabled) => {
                 let params = json!({ "folder": folder, "enabled": enabled });
                 if let Err(e) = self.projects.execute("plugin.setFolderEnabled", &params) {

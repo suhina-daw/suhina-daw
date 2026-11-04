@@ -20,7 +20,7 @@ const MEETS: f64 = 1e-6;
 /// parts of other takes, or as it is.
 pub(crate) fn crossfaded<'a>(project: &Project, lane: &ArrangementLane, clip: &'a Clip, bpm: f64) -> Cow<'a, Clip> {
     let Some(track) = lane.track else { return Cow::Borrowed(clip) };
-    // ARA clips are played by their plug-in, and their overlaps are refused (ADR 0028).
+    // ARA clips are played by their plug-in, and their overlaps are refused (ADR 0033).
     if clip.ara || bpm <= 0.0 || !project.arrangement.takes.iter().any(|t| t.track == track) {
         return Cow::Borrowed(clip);
     }

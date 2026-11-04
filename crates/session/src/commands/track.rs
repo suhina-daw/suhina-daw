@@ -332,11 +332,29 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[
             TRACK,
             RETURN,
-            param("level", ParamType::Decibels, "send level in dB, at most +6; \"-inf\" or below -150 is silence"),
+            param("level", ParamType::Decibels, "send level in dB, at most 0; \"-inf\" or below -150 is silence"),
             CONTINUE,
         ],
         kind: CommandKind::Edit,
         run: crate::sends::set_send,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setMixerValues",
+        label: "Set the volume, the pan or the send to one return of several tracks, each to its own value, as one undo step",
+        params: &[
+            TRACKS,
+            param("control", ParamType::Text, "\"volume\", \"pan\" or \"send\""),
+            param(
+                "values",
+                ParamType::Numbers,
+                "one per track: dB, at most +6 for a volume and 0 for a send (below -150 is silence), -1 to 1 for a pan",
+            ),
+            optional("return", ParamType::Track, "with control send: the return track they send to"),
+            CONTINUE,
+        ],
+        kind: CommandKind::Edit,
+        run: set_mixer_values,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -382,6 +400,41 @@ fn set_volume(session: &mut Session, params: &Value) -> Result<Value, CommandErr
             .collect();
     }
     Ok(with_override(json!({ "tracks": track_ids(&channels), "volume_db": vec![to_db(gain); channels.len()] }), off))
+}
+
+/// `track.setMixerValues`: each track's own value, for a selection that moves together while a
+/// fader or a send of it is dragged. Heard the way one track's edit is: as messages while all of
+/// them can be, otherwise with one new graph.
+fn set_mixer_values(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let tracks = track_list(&session.project, params)?;
+    let values = params.get("values").and_then(Value::as_array).ok_or("values must be a list of numbers")?;
+    if values.len() != tracks.len() {
+        return Err(format!("values must hold one number per track: {} for {}", values.len(), tracks.len()).into());
+    }
+    let control = params.get("control").and_then(Value::as_str).unwrap_or_default();
+    let mut edits = Vec::new();
+    let mut new_graph = false;
+    for (track, value) in tracks.iter().zip(values) {
+        let value = value.as_f64().filter(|v| v.is_finite()).ok_or("values must be a list of numbers")?;
+        match control {
+            "volume" => set_volume(session, &json!({ "tracks": [track.0], "db": value }))?,
+            "pan" => set_pan(session, &json!({ "tracks": [track.0], "pan": value }))?,
+            "send" => {
+                let target = params.get("return").ok_or("control send needs return, the return track")?;
+                crate::sends::set_send(session, &json!({ "track": track.0, "return": target, "level": value }))?
+            }
+            _ => return Err("control must be \"volume\", \"pan\" or \"send\"".into()),
+        };
+        let unheard = std::mem::take(&mut session.sync.unheard);
+        let moved = std::mem::take(&mut session.sync.mixer_edits);
+        new_graph |= !unheard && moved.is_empty();
+        edits.extend(moved);
+    }
+    if !new_graph {
+        session.sync.unheard = edits.is_empty();
+        session.sync.mixer_edits = edits;
+    }
+    Ok(json!({ "tracks": tracks.iter().map(|t| t.0).collect::<Vec<_>>() }))
 }
 
 fn adjust_volume(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -686,7 +739,8 @@ fn set_color(session: &mut Session, params: &Value) -> Result<Value, CommandErro
 
 fn copy_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let tracks = track_list(&session.project, params)?;
-    let copied = crate::track_copy::copy(&session.project, &tracks)?;
+    // A running plug-in's copy holds its state as it is now, not as it was last saved.
+    let copied = crate::track_copy::copy(&session.project_as_heard_on(&tracks), &tracks)?;
     let names = copied.first_names();
     let count = copied.len();
     session.clipboards.whole_tracks = copied;
@@ -695,7 +749,7 @@ fn copy_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandEr
 
 fn cut_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let tracks = track_list(&session.project, params)?;
-    let copied = crate::track_copy::copy(&session.project, &tracks)?;
+    let copied = crate::track_copy::copy(&session.project_as_heard_on(&tracks), &tracks)?;
     let names = copied.first_names();
     let count = copied.len();
     // The tracks in groups first, so deleting a group leaves none of them behind.
@@ -723,7 +777,10 @@ fn paste_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandE
 
 fn duplicate_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let tracks = track_list(&session.project, params)?;
-    let added = crate::track_copy::duplicate(&mut session.project, &tracks, suffix(params)?)?;
+    let suffix = suffix(params)?;
+    // A running plug-in's copy starts with its state as it is now, not as it was last saved.
+    let heard = session.project_as_heard_on(&tracks);
+    let added = crate::track_copy::duplicate(&mut session.project, &heard, &tracks, suffix)?;
     Ok(json!({ "tracks": added.iter().map(|t| t.0).collect::<Vec<_>>() }))
 }
 

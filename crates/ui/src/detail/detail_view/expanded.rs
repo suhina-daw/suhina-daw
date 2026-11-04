@@ -52,23 +52,82 @@ pub fn expanded_device(ctx: &egui::Context, detail: &Detail) -> Option<(TrackId,
     found.map(|device| (track, device.clone()))
 }
 
-/// Draws `device`'s expanded panel over `area` (the main area), on top of the views: a title
-/// row with its name and a close button, then its canvas, scrolled when the area is smaller.
+/// Gives every canvas among `devices`, inside their groups too, what the host hands it:
+/// `#expanded` (1 for the device at `open`) and the device's live values from `readouts`. Returns
+/// whether any device had live values.
+pub fn give_host_values(
+    devices: &mut [DeviceBox],
+    open: Option<&DeviceAt>,
+    readouts: &mut dyn FnMut(&DeviceAt) -> Option<[f32; suhina_device_api::MAX_READOUTS]>,
+) -> bool {
+    let mut live = false;
+    for device in devices {
+        if let Some(group) = device.group.as_mut() {
+            for branch in &mut group.branches {
+                live |= give_host_values(&mut branch.devices, open, readouts);
+            }
+        }
+        let Some(graph) = device.graph.as_mut() else { continue };
+        let is_open = open == Some(&device.at);
+        graph
+            .parameters
+            .push(GraphParameter::host_value(suhina_device_sdk::ui::EXPANDED_ID, if is_open { 1.0 } else { 0.0 }));
+        if let Some(values) = readouts(&device.at) {
+            graph.parameters.extend(values.iter().enumerate().filter_map(|(i, &v)| GraphParameter::readout(i, v)));
+            live = true;
+        }
+    }
+    live
+}
+
+/// Draws `device`'s expanded panel over `area` (the main area), on top of the views: a title row
+/// with its name and a close button, then its canvas, centred and scrolled when the area is
+/// smaller. A canvas marked `strip` opens instead as a strip at the bottom of `area`, over the
+/// device row, scaled to the strip's width and as tall as that makes it.
 /// Its controls change the same parameters as the compact panel, through `device.setParam`.
 /// The close button and Escape close it.
 pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox, actions: &mut Vec<Action>) {
     let Some((graph, canvas)) = device.graph.as_ref().and_then(|g| Some((g, g.expanded.as_ref()?))) else {
         return;
     };
-    egui::Area::new(Id::new("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(area.min).show(
+    let size = Vec2::new(canvas.size[0], canvas.size[1]);
+    // A strip across the bottom of the main area: the canvas scaled to its width (half to two and
+    // a half times its own size), the strip as tall as the scaled canvas; the views stay above.
+    // The strip's height: its canvas's at the strip's width unless the header was dragged; kept
+    // per device while the app runs.
+    let height_id = Id::new(("device-expanded-height", track.0, &device.at));
+    let fitted = ROW + PAD + size.y * ((area.width() - PAD * 2.0) / size.x).clamp(0.5, 2.5) + PAD * 2.0;
+    let wanted = ui.ctx().data(|d| d.get_temp::<f32>(height_id)).unwrap_or(fitted);
+    let slice = if canvas.strip {
+        let height = wanted.clamp(80.0_f32.min(area.height()), area.height().max(1.0));
+        Rect::from_min_max(Pos2::new(area.left(), area.bottom() - height), area.max)
+    } else {
+        area
+    };
+    egui::Area::new(Id::new("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(slice.min).show(
         ui.ctx(),
         |ui| {
-            // The whole main area takes the pointer, so the views under it get no clicks.
-            let (rect, _) = ui.allocate_exact_size(area.size(), Sense::click());
+            // The panel takes the pointer, so the views under it get no clicks.
+            let (rect, _) = ui.allocate_exact_size(slice.size(), Sense::click());
             let painter = ui.painter_at(rect);
             painter.fill_background(rect, 0.0, theme::panel_background());
             let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW + PAD));
             painter.fill_background(header, 0.0, theme::control_background());
+            if canvas.strip {
+                // The header is the strip's handle: dragged up it grows, down it shrinks; a double
+                // click fits it to its canvas again.
+                let grip = header.with_max_x(header.right() - 32.0);
+                let drag = ui
+                    .interact(grip, Id::new("device-expanded-resize"), Sense::click_and_drag())
+                    .on_hover_cursor(egui::CursorIcon::ResizeVertical)
+                    .on_hover_text("Drag up or down to change the height; double click fits it");
+                if drag.double_clicked() {
+                    ui.ctx().data_mut(|d| d.remove::<f32>(height_id));
+                } else if drag.dragged() {
+                    let height = (slice.height() - drag.drag_delta().y).clamp(80.0, area.height().max(80.0));
+                    ui.ctx().data_mut(|d| d.insert_temp(height_id, height));
+                }
+            }
             widgets::text_in(
                 &painter,
                 header.shrink2(Vec2::new(PAD * 2.0, 0.0)),
@@ -97,38 +156,47 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             }
             let body =
                 Rect::from_min_max(Pos2::new(rect.left() + PAD, header.bottom() + PAD), rect.max - Vec2::splat(PAD));
-            let size = Vec2::new(canvas.size[0], canvas.size[1]);
-            ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
-                egui::ScrollArea::both().auto_shrink([false, false]).id_salt("device-expanded-scroll").show(ui, |ui| {
-                    // Centred while it fits, from the top left when it scrolls.
-                    let room = ui.available_size();
-                    let offset = Vec2::new(((room.x - size.x) / 2.0).max(0.0), ((room.y - size.y) / 2.0).max(0.0));
-                    let (space, _) = ui.allocate_exact_size(size + offset, Sense::hover());
-                    let canvas_rect = Rect::from_min_size(space.min + offset, size);
-                    crate::detail::device_canvas::show(
+            if !canvas.strip {
+                ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
+                    egui::ScrollArea::both().auto_shrink([false, false]).id_salt("device-expanded-scroll").show(
                         ui,
-                        canvas_rect,
-                        canvas,
-                        &graph.parameters,
-                        track,
-                        &device.at,
-                        actions,
+                        |ui| {
+                            // Centred while it fits, from the top left when it scrolls.
+                            let room = ui.available_size();
+                            let offset =
+                                Vec2::new(((room.x - size.x) / 2.0).max(0.0), ((room.y - size.y) / 2.0).max(0.0));
+                            let (space, _) = ui.allocate_exact_size(size + offset, Sense::hover());
+                            let canvas_rect = Rect::from_min_size(space.min + offset, size);
+                            crate::detail::device_canvas::show(
+                                ui,
+                                canvas_rect,
+                                canvas,
+                                &graph.parameters,
+                                track,
+                                &device.at,
+                                actions,
+                            );
+                        },
                     );
                 });
-            });
+                return;
+            }
+            // The canvas stretched to the strip on each axis.
+            crate::detail::device_canvas::show(ui, body, canvas, &graph.parameters, track, &device.at, actions);
         },
     );
 }
 
-/// A graph's parameter list, its node list and its canvas in `body`, scrolled when they do not
-/// fit: a `.sd` device's, a built-in's (its layout or the generated list) and a plug-in's
-/// generated list. A list without a canvas is a compact panel's width wherever it is, and a
-/// narrower `body` scrolls it (ADR 0021 › Amendment: device panels, 5); stock controls under a
-/// canvas take `body`'s width. Every change is one `device.setParam`.
+/// A graph's node list, then its canvas and parameter list side by side in `body`: a `.sd`
+/// device's, a built-in's (its layout or the generated list) and a plug-in's generated list. The
+/// list fills columns a compact panel wide, `list_height` tall, right of the canvas (ADR 0021 ›
+/// Amendment: device panels, 5); a `body` smaller than that scrolls. Every change is one
+/// `device.setParam`.
 pub(super) fn graph_controls(
     ui: &mut Ui,
     body: Rect,
     graph: &GraphBox,
+    list_height: f32,
     track: TrackId,
     at: &DeviceAt,
     actions: &mut Vec<Action>,
@@ -138,29 +206,35 @@ pub(super) fn graph_controls(
         ui.set_clip_rect(ui.clip_rect().intersect(body));
         egui::ScrollArea::both().auto_shrink([false, false]).id_salt(("sd-controls", track.0, at)).show(ui, |ui| {
             let hidden = graph.canvas.as_ref().map_or(&[][..], |c| c.hidden_parameters.as_slice());
-            // The generated list keeps its own width in any column, unless the theme sizes the
-            // panel (`.device { width }`): then it follows the panel, its scroll bar aside.
+            // A list keeps a compact panel's width unless the theme sizes the panel
+            // (`.device { width }`): then it follows the panel, its scroll bar aside.
             let themed = crate::kit::style_class::computed().is_some_and(|c| c.width.is_some());
-            let width = match (&graph.canvas, themed) {
-                (Some(_), _) => body.width(),
-                (None, true) => (body.width() - 8.0).max(120.0),
-                (None, false) => COMPACT_WIDTH,
-            };
-            let cells = parameter_layout(&graph.parameters, width, hidden);
-            let custom_size = graph.canvas.as_ref().map_or(Vec2::ZERO, |c| Vec2::new(c.size[0], c.size[1]));
+            let width = if graph.canvas.is_none() && themed { (body.width() - 8.0).max(120.0) } else { COMPACT_WIDTH };
+            let mut cells = list_cells(graph, width, list_height);
+            let custom_size = graph
+                .canvas
+                .as_ref()
+                .map_or(Vec2::ZERO, |c| crate::detail::device_canvas::fitted_size(c, body.height()));
             let nodes_height = graph.nodes.len() as f32 * NODE_ROW;
-            let extent = cells.iter().fold(Vec2::new(body.width().max(custom_size.x), 0.0), |size, rect| {
+            let extent = cells.iter().fold(Vec2::new(body.width().max(custom_size.x), custom_size.y), |size, rect| {
                 Vec2::new(size.x.max(rect.right()), size.y.max(rect.bottom()))
             });
-            let (_, body) = ui.allocate_space(Vec2::new(extent.x, extent.y + nodes_height + custom_size.y));
+            let separators = if list_spreads(graph) { spread_columns(&mut cells, width) } else { Vec::new() };
+            let gaps = separators.len() as f32 * super::LIST_GAP;
+            let (_, body) = ui.allocate_space(Vec2::new(extent.x + gaps, extent.y + nodes_height));
             let painter = &ui.painter_at(body.intersect(ui.clip_rect()));
             node_rows(painter, body, graph);
             if let Some(canvas) = &graph.canvas {
                 let rect = Rect::from_min_size(body.min + Vec2::new(0.0, nodes_height), custom_size);
                 crate::detail::device_canvas::show(ui, rect, canvas, &graph.parameters, track, at, actions);
             }
-            let origin = Vec2::new(body.left(), body.top() + nodes_height + custom_size.y);
-            for (parameter, cell) in graph.parameters.iter().filter(|p| !hidden.contains(&p.id)).zip(&cells) {
+            let origin = Vec2::new(body.left(), body.top() + nodes_height);
+            for x in &separators {
+                painter.vline(origin.x + x, body.y_range(), theme::hairline(theme::border_strong()));
+            }
+            for (parameter, cell) in
+                graph.parameters.iter().filter(|p| !hidden.contains(&p.id) && !p.is_readout()).zip(&cells)
+            {
                 parameter_cell(ui, painter, cell.translate(origin), parameter, track, at, actions);
             }
         });

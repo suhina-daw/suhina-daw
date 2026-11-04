@@ -20,7 +20,7 @@ fn source_tempo(path: &std::path::Path, audio: &suhina_engine::AudioData, fallba
         .map(|tempo| tempo.bpm)
         .or_else(|| suhina_media::info::tempo_from_name(&path.to_string_lossy()))
         .filter(|bpm| bpm.is_finite() && *bpm > 0. && *bpm <= 999.)
-        .unwrap_or(fallback.clamp(1., 999.))
+        .unwrap_or(if fallback > 0. { fallback.clamp(1., 999.) } else { 0. })
 }
 
 fn initial_sampler_tempo(session: &mut Session, params: &Value, detect: bool) -> Result<Option<f64>, CommandError> {
@@ -28,7 +28,7 @@ fn initial_sampler_tempo(session: &mut Session, params: &Value, detect: bool) ->
     let index = device_index(channel.devices.len(), params)?;
     let device = channel.devices.get(index).ok_or("device is missing")?;
     if !matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler")
-        || (!detect && device.params.iter().any(|p| p.id == "source_bpm" && p.value > 0.))
+        || (!detect && device.params.iter().any(|p| p.id == "source_bpm"))
     {
         return Ok(None);
     }
@@ -42,11 +42,10 @@ fn initial_sampler_tempo(session: &mut Session, params: &Value, detect: bool) ->
         return Ok(None);
     };
     let duration = audio.frames() as f64 / f64::from(audio.sample_rate.max(1));
-    let fallback = session.player().map_or(session.project().transport.tempo_bpm, |p| p.monitor().tempo_bpm());
     let bpm = beats
         .filter(|_| duration > 0. && end > start)
         .map(|beats| (beats * 60. / (duration * (end - start))).clamp(1., 999.))
-        .unwrap_or_else(|| source_tempo(std::path::Path::new(&file), audio, fallback));
+        .unwrap_or_else(|| source_tempo(std::path::Path::new(&file), audio, 0.));
     Ok(Some(bpm))
 }
 
@@ -84,11 +83,23 @@ pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value
     }
     let file = path.display().to_string();
     let fallback = session.player().map_or(session.project().transport.tempo_bpm, |p| p.monitor().tempo_bpm());
-    let bpm = source_tempo(&path, &audio, fallback);
-    let beats = (audio.frames() as f64 / f64::from(audio.sample_rate) * bpm / 60.).clamp(0.25, 1024.);
+    let bpm = source_tempo(&path, &audio, 0.);
+    let beats = (audio.frames() as f64 / f64::from(audio.sample_rate) * if bpm > 0. { bpm } else { fallback } / 60.)
+        .clamp(0.25, 1024.);
     let device = device_channel(session, params)?.devices.get_mut(index).ok_or("device is missing")?;
     device.set_sample_file(&file);
-    for (id, value) in [("warp_beats", beats), ("source_bpm", bpm)] {
+    device.clear_sample_edits();
+    for param in &mut device.params {
+        if param.id == "first_beat"
+            || param.id.strip_prefix("slice_").is_some_and(|suffix| suffix.parse::<u8>().is_ok())
+        {
+            param.value = if param.id == "first_beat" { 0. } else { 1. };
+        }
+    }
+    // With no tempo found, Warp keeps the original speed at the tempo of this moment, whatever
+    // the source's length or trim.
+    let warp_tempo = if bpm > 0. { 0. } else { fallback.clamp(1., 999.) };
+    for (id, value) in [("warp_beats", beats), ("source_bpm", bpm), ("warp_tempo", warp_tempo)] {
         if let Some(p) = device.params.iter_mut().find(|p| p.id == id) {
             p.value = value;
         } else {
@@ -115,13 +126,99 @@ pub(crate) fn set_sample_slices(session: &mut Session, params: &Value) -> Result
     points.sort_unstable_by(f64::total_cmp);
     points.dedup();
     let channel = device_channel(session, params)?;
-    let index = device_index(channel.devices.len(), params)?;
-    let device = channel.devices.get_mut(index).ok_or("device is missing")?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at_mut(&mut channel.devices, &path).ok_or("device is missing")?;
     if !matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler") {
         return Err("slice editing needs a Sampler instrument".into());
     }
     device.set_sample_slices(&points)?;
+    if let Some(edits) = device.sample_edit_data().and_then(suhina_device_api::sample_edits::SampleEdits::decode) {
+        let edits = suhina_device_api::sample_edits::SampleEdits::new(points.clone(), edits.suppressed().to_vec())?;
+        device.set_sample_edit_data(edits.encode())?;
+    }
     Ok(json!({"points":points}))
+}
+
+pub(crate) fn edit_sample_slice(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    use suhina_device_api::sample_edits::SampleEdits;
+    let operation = params.get("operation").and_then(Value::as_str).ok_or("operation is required")?;
+    if !matches!(operation, "add" | "move" | "delete" | "regenerate") {
+        return Err("unknown slice operation".into());
+    }
+    let position = |name: &str| -> Result<f64, CommandError> {
+        params
+            .get(name)
+            .and_then(Value::as_f64)
+            .filter(|point| point.is_finite() && *point > 0. && *point < 1.)
+            .ok_or_else(|| format!("{name} must be strictly between 0 and 1").into())
+    };
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at_mut(&mut channel.devices, &path).ok_or("device is missing")?;
+    if !matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler") {
+        return Err("slice editing needs a Sampler instrument".into());
+    }
+    let value = |id: &str, default| device.params.iter().find(|p| p.id == id).map_or(default, |p| p.value);
+    let method = value("slice_by", 0.) as u8;
+    let trim = (value("start", 0.), value("end", 1.));
+    let existing = match device.sample_edit_data() {
+        Some(bytes) => SampleEdits::decode(bytes).ok_or("unsupported or malformed source corrections")?,
+        None => {
+            let pins = if method == 3 {
+                device.sample_slices().unwrap_or_else(|| {
+                    device
+                        .params
+                        .iter()
+                        .filter(|p| {
+                            p.id.strip_prefix("slice_").is_some_and(|suffix| suffix.parse::<u8>().is_ok())
+                                && p.value > 0.
+                                && p.value < 1.
+                        })
+                        .map(|p| p.value)
+                        .collect()
+                })
+            } else {
+                Vec::new()
+            };
+            SampleEdits::new(pins, Vec::new())?
+        }
+    };
+    let mut pins = existing.pins().to_vec();
+    let mut suppressed = existing.suppressed().to_vec();
+    if operation == "regenerate" {
+        pins.clear();
+        suppressed.retain(|(candidate_method, _)| *candidate_method != method);
+    } else {
+        if matches!(operation, "move" | "delete") {
+            let previous = position("previous")?;
+            if let Some(identity) = params.get("identity") {
+                let identity = identity.as_i64().ok_or("candidate identity must be an integer")?;
+                if method > 2 {
+                    return Err("manual boundaries do not have automatic identities".into());
+                }
+                suppressed.push((method, identity));
+            } else if !pins.contains(&previous) {
+                return Err("selected boundary no longer exists".into());
+            }
+            pins.retain(|point| *point != previous);
+        }
+        if matches!(operation, "add" | "move") {
+            let point = position("point")?;
+            // Outside the trim it would not play, and a move would lose the boundary it replaces.
+            if point <= trim.0 || point >= trim.1 {
+                return Err("the boundary must be between the sample's Start and End".into());
+            }
+            pins.push(point);
+        }
+    }
+    let edits = SampleEdits::new(pins, suppressed)?;
+    device.set_sample_edit_data(edits.encode())?;
+    if let Some(mode) = device.params.iter_mut().find(|p| p.id == "mode") {
+        mode.value = 2.;
+    } else {
+        device.params.push(DeviceParam::new("mode", 2.));
+    }
+    Ok(json!({"pins":edits.pins(), "suppressed":edits.suppressed()}))
 }
 
 fn sd_role(device: &Device) -> Option<suhina_device_sdk::DeviceRole> {
@@ -432,6 +529,9 @@ fn device_json(path: &[usize], device: &Device) -> Value {
     });
     if let Some(points) = device.sample_slices() {
         value["sample_slices"] = json!(points);
+    }
+    if let Some(edits) = device.sample_edit_data().and_then(suhina_device_api::sample_edits::SampleEdits::decode) {
+        value["sample_edits"] = json!({"version":1,"pins":edits.pins(),"suppressed":edits.suppressed()});
     }
     if !device.automation.is_empty() {
         value["automation"] = device
@@ -1031,11 +1131,28 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
     if edits.is_empty() {
         edits.push((param_index, param.to_string(), value));
     }
+    // Leaving legacy Playback=Slices through the visible Sample button is one edit.
+    // Loading an old project does not run this command, so its sound stays unchanged.
+    if matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler")
+        && param == "mode"
+        && value == 0.
+        && device.params.iter().any(|p| p.id == "playback" && p.value == 3.)
+        && let Some(index) = suhina_device_sdk::sampler::INFO.param_index("playback")
+    {
+        edits.push((index, "playback".into(), 0.));
+    }
     if matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler")
         && let Some(value) = source_tempo.or((param == "warp_beats").then_some(0.))
         && let Some(index) = suhina_device_sdk::sampler::INFO.param_index("source_bpm")
     {
         edits.push((index, "source_bpm".into(), value));
+    }
+    if param == "warp_beats"
+        && matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler")
+        && device.params.iter().any(|p| p.id == "warp_tempo")
+        && let Some(index) = suhina_device_sdk::sampler::INFO.param_index("warp_tempo")
+    {
+        edits.push((index, "warp_tempo".into(), 0.));
     }
     let mut messages = Vec::new();
     let mut off = false;
@@ -1310,7 +1427,7 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     if !instrument {
         check_effect_position(first_effect, channel.devices.len(), position)?;
     }
-    // A plug-in that edits clips (ARA, ADR 0028) plays the clips from their files, so a device
+    // A plug-in that edits clips (ARA, ADR 0033) plays the clips from their files, so a device
     // before it would not be heard: it goes first, wherever it was asked for.
     let moved_first = plugin.ara && params.get("position").is_some() && position != 0;
     let position = if plugin.ara { 0 } else { position };
@@ -1367,6 +1484,10 @@ pub(crate) fn plugin_status(session: &mut Session, params: &Value) -> Result<Val
 
 pub(crate) fn open_editor(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let key = plugin_key(session, params)?;
+    if let Some(device) = suhina_engine::plugin_devices(&session.project).iter().find(|d| d.key == key) {
+        let title = crate::rack::editor_title_of(&session.project, device);
+        session.plugins.name_editor(key, title);
+    }
     // Over the app's window the editor opens in the background; `device.plugin` says when.
     Ok(match session.plugins.open_editor(key)? {
         Some((width, height)) => json!({ "editor_open": true, "width": width, "height": height }),

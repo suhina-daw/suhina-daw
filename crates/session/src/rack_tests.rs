@@ -4,6 +4,14 @@
 use super::*;
 
 #[test]
+fn an_editor_s_title_is_its_track_and_the_plug_in_unless_the_track_says_it() {
+    assert_eq!(editor_title("2 Serum 2", "Serum 2"), "2 Serum 2");
+    assert_eq!(editor_title("2 Bass", "Serum 2"), "2 Bass – Serum 2");
+    assert_eq!(editor_title("Main", "Limiter"), "Main – Limiter");
+    assert_eq!(editor_title("", "Serum 2"), "Serum 2");
+}
+
+#[test]
 fn retiring_a_superseded_start_does_not_wait_for_its_unload() {
     struct ReportDrop(std::sync::mpsc::Sender<std::thread::ThreadId>);
     impl Drop for ReportDrop {

@@ -4,6 +4,13 @@
 //! Updates (`docs/spec/updates.md`): whether a newer build than the running one is out in the
 //! update channel, and downloading it, checking it and putting it in place of the running one.
 //! The work runs on a thread of its own; [`Updater::phase`] says where it is.
+//!
+//! In detail: Updates (spec (`docs/spec/updates.md`)): asks GitHub for the nightly release or the
+//! test builds (`github`) through the system's `curl` (`net`, which also finds the GitHub CLI and
+//! asks it for its token only when the user connects it), compares versions (`version`), downloads
+//! a build on a thread of its own, checks its SHA-256 against GitHub's digest, unpacks it and moves
+//! each file in place of the running one, the old ones renamed aside on Windows and deleted on the
+//! next start (`install`).
 
 pub mod github;
 pub mod install;

@@ -253,6 +253,21 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "device.editSampleSlice",
+        label: "Add, move, delete or regenerate source slice boundaries without losing manual corrections",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            param("operation", ParamType::Text, "add, move, delete or regenerate"),
+            optional("point", ParamType::Number, "new normalized source position"),
+            optional("previous", ParamType::Number, "previous normalized source position"),
+            optional("identity", ParamType::Integer, "automatic candidate identity; omit for a pinned boundary"),
+        ],
+        kind: CommandKind::Edit,
+        run: devices::edit_sample_slice,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "device.recordSample",
         label: "Record the armed track's selected audio input into its Sampler; stop commits the source as one undo step",
         params: &[DEVICE_TRACK, DEVICE, param("on", ParamType::Bool, "start or stop sample recording")],

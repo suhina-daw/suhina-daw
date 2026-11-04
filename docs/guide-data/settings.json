@@ -212,7 +212,7 @@
       "keys": [],
       "sourceFingerprint": "eb0a60ba1e649ad33f5e2e0229c3ca47bdb5303128d92eac8de6603b6a1659c0",
       "helpStatus": "reviewed",
-      "description": "This panel reports live audio rather than saving a preference. Output identifies the device currently playing, including fallback to another output. Delay to the speakers reports the engine-to-speaker delay and underruns: occasions when audio was not supplied in time. Delay when you play a key estimates the current delay for live notes; arming a track makes the engine keep less audio queued ahead. Recording input reports the open input, its channel count and input underruns, or says none is open. List devices again refreshes the available hardware list; it does not itself choose another device. With no playing project, live reports may be empty. Active buffers reports the engine render block and measured driver callback separately. Internal driver buffers can differ, and these frame counts are not the total measured latency. The native driver panel is under Output, beside Device settings.",
+      "description": "This panel reports live audio rather than saving a preference. Output identifies the device currently playing, including fallback to another output. Delay to the speakers reports the engine-to-speaker delay and underruns: occasions when audio was not supplied in time. Delay when you play a key estimates the current delay for live notes; arming a track makes the engine keep less audio queued ahead. Recording input reports the open input, its channel count and input underruns, or says none is open. List devices again refreshes the available hardware list; it does not itself choose another device. Most changes show up without it, but a new ASIO driver does not. With no playing project, live reports may be empty. Active buffers reports the engine render block and measured driver callback separately. Internal driver buffers can differ, and these frame counts are not the total measured latency. The native driver panel is under Output, beside Device settings.",
       "options": [],
       "whenToChange": "Check this when the selected interface is unplugged, live notes feel late, or playback breaks up. Compare the reports after changing Output settings.",
       "workInProgress": false
@@ -234,7 +234,7 @@
       ],
       "sourceFingerprint": "3faf6e1ef9f62aae5381067a023101e0cedd4bb20fb910c598313a7ae04ee4bb",
       "helpStatus": "reviewed",
-      "description": "Driver selects the audio system used to reach your hardware; the listed drivers depend on the platform and build. Each driver remembers its last applied device across restarts, including an explicit Default selection. Choosing Driver restores that device and applies the pair together when it is available. Default and the same host selected by name share this memory. For a new driver or an unavailable remembered device, choose Device, including Default if wanted, before the new driver opens. Until then the current output keeps playing; closing Settings cancels the pending driver choice. Installed ASIO devices stay listed while ASIO plays; restart Suhina after installing a new ASIO driver. Default follows the system choice; a missing chosen output can fall back to the default. Sample rate is the number of audio frames per second; choose a listed rate or Device’s own. Buffer size controls the device buffer where supported, including WASAPI exclusive mode; when labelled Engine block it controls Suhina’s rendering chunks, while the operating system or driver keeps its own device buffer. Smaller chunks alone do not guarantee the same reduction in the latency shown under Now. Exclusive mode applies to supported WASAPI devices and reserves the device for Suhina; other applications are then not heard on it. Input independently selects Off, the default input or a named microphone/interface input on the chosen driver. Input is Off initially. Choosing an input supplies audio to tracks configured to use it; it does not itself arm or record a track. Device changes retain running plug-in instances. If the effective sample rate changes, Suhina stops processing while it reconfigures those instances and updates their latency; it does not reload their presets or editors. A plug-in that refuses reconfiguration prevents the new output from starting and reports an error. A plug-in still loading when the rate changes starts again at the new rate. When changing outputs, Suhina fades the old device to silence before closing it and fades in the first audio on the new device. The shutdown drain is limited to 500 ms if a device stops responding; the change still interrupts audio and cannot prevent a pop generated inside the hardware. Device settings, immediately below Device, opens Control panel… for the matching active ASIO driver. The button is hidden while a driver choice is pending, when another device is running, or with a non-ASIO host. The native panel configures the running instance, not an external defaults editor; opening it does not reload plug-ins. While the native panel is open, output changes and project closing are rejected until it is closed. A rejected output choice restores the displayed selection and does not replace the driver’s remembered device. If the device itself fails to open, the requested choice stays selected for retry; device history is updated only after a successful selection. Switching to another driver after a failed opening preserves the previous driver’s last working device. Buffer size requests a supported processing buffer; it does not describe every internal driver or hardware buffer. Exclusive mode is shown only for WASAPI. If opening a device fails, selecting an available device opens a new stopped audio engine; restarting the application is not required to retry.",
+      "description": "Driver selects the audio system used to reach your hardware; the listed drivers depend on the platform and build. Each driver remembers its last applied device across restarts, including an explicit Default selection. Choosing Driver restores that device and applies the pair together when it is available. Default and the same host selected by name share this memory. For a new driver or an unavailable remembered device, choose Device, including Default if wanted, before the new driver opens. Until then the current output keeps playing; closing Settings cancels the pending driver choice. Installed ASIO devices stay listed while ASIO plays; restart Suhina after installing a new ASIO driver. Default follows the system choice; a missing chosen output can fall back to the default. The Device list follows the system: headphones connected while this page shows appear within a few seconds. Bluetooth outputs are under the driver that reaches them: WASAPI on Windows and, on Linux with a PulseAudio or PipeWire sound server running, PulseAudio; an ASIO or ALSA list leaves them out. Sample rate is the number of audio frames per second; choose a listed rate or Device’s own. Buffer size controls the device buffer where supported, including WASAPI exclusive mode; when labelled Engine block it controls Suhina’s rendering chunks, while the operating system or driver keeps its own device buffer. Smaller chunks alone do not guarantee the same reduction in the latency shown under Now. Exclusive mode applies to supported WASAPI devices and reserves the device for Suhina; other applications are then not heard on it. Input independently selects Off, the default input or a named microphone/interface input on the chosen driver. Input is Off initially. Choosing an input supplies audio to tracks configured to use it; it does not itself arm or record a track. Device changes retain running plug-in instances. If the effective sample rate changes, Suhina stops processing while it reconfigures those instances and updates their latency; it does not reload their presets or editors. A plug-in that refuses reconfiguration prevents the new output from starting and reports an error. A plug-in still loading when the rate changes starts again at the new rate. When changing outputs, Suhina fades the old device to silence before closing it and fades in the first audio on the new device. The shutdown drain is limited to 500 ms if a device stops responding; the change still interrupts audio and cannot prevent a pop generated inside the hardware. Device settings, immediately below Device, opens Control panel… for the matching active ASIO driver. The button is hidden while a driver choice is pending, when another device is running, or with a non-ASIO host. The native panel configures the running instance, not an external defaults editor; opening it does not reload plug-ins. While the native panel is open, output changes and project closing are rejected until it is closed. A rejected output choice restores the displayed selection and does not replace the driver’s remembered device. If the device itself fails to open, the requested choice stays selected for retry; device history is updated only after a successful selection. Switching to another driver after a failed opening preserves the previous driver’s last working device. Buffer size requests a supported processing buffer; it does not describe every internal driver or hardware buffer. Exclusive mode is shown only for WASAPI. If opening a device fails, selecting an available device opens a new stopped audio engine; restarting the application is not required to retry.",
       "options": [
         {
           "name": "Driver: Default / listed driver",
@@ -242,7 +242,7 @@
         },
         {
           "name": "Device: Default / listed output",
-          "description": "Use the driver’s default output or a named output device. The list follows Driver. The applied selection is saved separately for each driver."
+          "description": "Use the driver’s default output or a named output device. The list follows Driver and what is connected now. The applied selection is saved separately for each driver."
         },
         {
           "name": "Sample rate: Device’s own / listed Hz value",
@@ -383,8 +383,8 @@
           "description": "Include or skip the folder in subsequent scans. Turning a folder off removes its plug-ins from the catalog after the next scan."
         },
         {
-          "name": "Both",
-          "description": "Look for CLAP and VST3 files in an added folder."
+          "name": "All",
+          "description": "Look for every format Suhina hosts in an added folder: CLAP and VST3 files, and VST2 `.vst` bundles on macOS. A VST2 `.dll` or `.so` is found only in a folder marked VST2."
         },
         {
           "name": "VST3",
@@ -396,7 +396,7 @@
         },
         {
           "name": "VST2",
-          "description": "Shown as unavailable: VST2 hosting is not implemented yet."
+          "description": "Look for VST2 files in that folder: `.vst` bundles on macOS, `.dll` files on Windows and `.so` files on Linux."
         }
       ],
       "whenToChange": "Add a custom installation folder when a plug-in is missing. Use Manage plug-ins to inspect a loading failure or temporarily disable a problematic plug-in.",
@@ -413,7 +413,7 @@
       ],
       "sourceFingerprint": "1e6893bd9f42545107fc3d748761dc4f5e345ef1fa7cd29fccff72f9ba78afc9",
       "helpStatus": "reviewed",
-      "description": "A plug-in editor is the instrument or effect’s own graphical controls. Window gives it a separate window above Suhina; Device view embeds it in the selected track’s device panel. Embedded editors are supported on Windows and X11. The Settings panel reports when editors cannot open on the current system; selecting Device view does not add platform support.",
+      "description": "A plug-in editor is the instrument or effect’s own graphical controls. Window gives it a separate window above Suhina; Device view embeds it in the selected track’s device panel. Embedded editors are supported on Windows and X11. On macOS a view of the plug-in host’s process cannot attach to Suhina’s window, so editors open in a window of their own instead; the note under the setting says what the current system cannot do. Selecting Device view does not add platform support.",
       "options": [
         {
           "name": "Window",
@@ -482,6 +482,31 @@
         }
       ],
       "whenToChange": "Choose Row when you want to see several effects side by side along the bottom. Choose Stack when you prefer a vertical column of controls beside the tracks.",
+      "workInProgress": false
+    },
+    {
+      "id": "Devices/Device panels/device_list_scroll",
+      "page": "Devices",
+      "section": "Device panels",
+      "name": "Long parameter lists",
+      "note": "Choose how a device's long parameter list continues once it is opened.",
+      "keys": [
+        "device_list_scroll"
+      ],
+      "sourceFingerprint": "b947a93ea09d2a21cd2096c7f69879c6c7eeb71663e069600099538d7c8c1e71",
+      "helpStatus": "reviewed",
+      "description": "A device with more parameters than fit in two columns shows those two and an arrow beside its on switch in its header. The arrow opens the rest. This setting decides where they go; it changes neither the parameters nor the sound.",
+      "options": [
+        {
+          "name": "Horizontal (default)",
+          "description": "The list continues in further columns to the right, so the device's panel grows wider and the other devices move along the chain."
+        },
+        {
+          "name": "Vertical",
+          "description": "The list stays in two columns and scrolls down inside the panel, so the other devices stay where they are."
+        }
+      ],
+      "whenToChange": "Choose Vertical if opening a plug-in with many parameters pushes the rest of the chain too far away.",
       "workInProgress": false
     },
     {

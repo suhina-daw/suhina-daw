@@ -440,6 +440,36 @@ pub trait AudioSystem: Send + Sync {
     fn chosen_present(&self, choice: &OutputChoice) -> Option<bool> {
         Some(choice.found_in(&self.hosts()))
     }
+
+    /// The names of the devices there now, so a list on screen can follow what is plugged in or
+    /// connected later; `None` while that is not known yet. Asked on every frame such a list
+    /// shows, so it must answer at once, as [`AudioSystem::chosen_present`] does: the output layer
+    /// looks in the background every few seconds. This one lists the hosts.
+    fn device_names(&self) -> Option<Vec<String>> {
+        let names = self.hosts().into_iter().flat_map(|host| {
+            let inputs = host.inputs.into_iter().map(|input| input.name);
+            host.devices.into_iter().map(|device| device.name).chain(inputs).collect::<Vec<_>>()
+        });
+        Some(names.collect())
+    }
+}
+
+/// Follows the answers of [`AudioSystem::device_names`]: says when the devices are no longer the
+/// ones the last answer named. The first answer only sets what is known: the list it would be
+/// compared with was made when the list first showed.
+#[derive(Debug, Default)]
+pub struct DeviceWatch {
+    known: Option<Vec<String>>,
+}
+
+impl DeviceWatch {
+    /// Takes an answer; true when the devices have changed since the last one.
+    pub fn changed(&mut self, answer: Option<Vec<String>>) -> bool {
+        let Some(names) = answer else { return false };
+        let changed = self.known.as_ref().is_some_and(|known| *known != names);
+        self.known = Some(names);
+        changed
+    }
 }
 
 static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[

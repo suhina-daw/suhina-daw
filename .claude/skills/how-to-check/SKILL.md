@@ -5,3 +5,6 @@ description: Write the "How to check it" section of a Suhina pull request - numb
 
 Read [`docs/how-to-check.md`](../../../docs/how-to-check.md) and follow it. It is the one copy of
 the guide, written for any agent or person; this skill only points Claude Code at it.
+
+What else such a pull request carries is in
+[`docs/workflow.md`](../../../docs/workflow.md) › What a pull request carries.

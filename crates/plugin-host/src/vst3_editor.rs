@@ -200,6 +200,10 @@ impl Editor {
     }
 
     /// Puts an embedded editor where the engine says.
+    pub(crate) fn set_title(&self, title: &str) {
+        window::set_title(self.window.id(), title);
+    }
+
     pub(crate) fn place(&self, placement: window::Placement) {
         window::place(self.window.id(), placement);
     }

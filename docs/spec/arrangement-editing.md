@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-10-30
+last_verified: 2026-11-02
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -54,7 +54,7 @@ notes are left out. Each pair has the track, the shared span (`start`, `end`, in
 (`partial`, or `contained` when one clip lies within the other) and both clips with their `id`
 (what `clip.move` and the other clip commands take, ADR 0025), `track`, `index` and name; at most 10 000 pairs, `truncated` saying when
 there were more. ARA's first version refuses such overlaps for the clips it edits
-([ADR 0028](../decisions/0028-ara-hosting.md)); ordinary stacking is unaffected.
+([ADR 0033](../decisions/0033-ara-hosting.md)); ordinary stacking is unaffected.
 
 ## Tools
 
@@ -141,15 +141,15 @@ A click on a clip selects it alone; **Ctrl** (Cmd) adds a clip to the selection 
 and **Shift** takes the rectangle from the clip clicked last to this one: the lanes between them,
 as the view draws them, by the time from the earlier start to the later end, every clip that
 touches it (#694). Ctrl+A selects every clip
-in the arrangement. Pressing a clip that is part of the selection keeps the selection, so a drag can
-start there; pressing one that is not selects that clip alone. Dragging a clip of the selection
+in the arrangement and the time from the first clip's start to the last clip's end over all the tracks. Pressing a clip that is part of the selection keeps the selection, so a drag can
+start there; pressing one that is not selects that clip alone. A dragged clip keeps its exact start until it has moved half a grid step sideways, so one off the grid keeps its place going to another track; from there on it lands on the grid (Alt: free). Dragging a clip of the selection
 moves all of it by the same beats, at once (`clip.moveMany {clips, beats, toTrack?, tracksBy?,
 toNewTrack?, stack?}`, one undo step, so no moved clip replaces another on the way). Dragged up
 or down, a selection on one track goes to the track under the pointer, and a selection on several
 tracks moves each clip by as many tracks from its own (`tracksBy`), refused where a clip would
 land on a track that cannot hold it. A clip an ARA plug-in (Melodyne) edits, going to another
 track, asks first: **Keep edits** takes its edits along and puts the plug-in on that track when it
-has none, **Copy as new** starts it there without them (`araEdits`, ADR 0028). Dropped on the empty space under the tracks, outlined there
+has none, **Copy as new** starts it there without them (`araEdits`, ADR 0033). Dropped on the empty space under the tracks, outlined there
 as **New track** while carried, the clips (moved or copied) go to a new track of their kind made
 after the last (`toNewTrack`), in the same undo step.
 
@@ -571,6 +571,10 @@ are two actions (#657): a click in the tracks' area (an empty lane, a clip's bod
 marker, on the grid (Alt: free), and never moves playback while it plays; a click on the ruler is
 a seek, which while playing waits for the next launch boundary (`transport.jump`).
 
+**A painted time selection** (over the lanes or along the ruler) moves the marker to its start when
+the button goes up, so Play starts there (#937), even with a clip still picked whole. While playing, the marker moves too and playback
+goes on where it is (`transport.setStart`), so Stop returns to the selection's start.
+
 **Where other DAWs stand** (their public manuals, October 2026): every one starts playback from a
 start position the user sets; they differ on the first Stop.
 
@@ -636,17 +640,16 @@ pass the setting **Stop** (Settings › Arrangement › Time and play): **Marker
 **Playing from the selected clip.** A clip's start is often where one wants to listen from;
 moving the marker there by hand first is a step too many. **Suhina:** the play/stop key and the
 Play button pass the setting **Play from** (Settings › Arrangement › Time and play): **Selected clip** (default) or
-**Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole while stopped (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them. A click in a clip's body picks it but sets the play start where it was clicked, and play starts there, not from the clip's start, until the clip is picked whole again.
+**Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them; while playing, playback goes on and the next start begins there. A click where a drag would move the clip (by default its name bar; with the lower half moving it, that half) picks it whole and moves the marker to its exact start, off the grid too, even when it was picked already. A click where a drag would paint time picks it but sets the play start on the grid line at or before the click, never before the clip's start, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
-selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with no
-clip selected, or while the Launcher view is shown (where the selection is not seen), they play
-from the marker. **Shift+Space** (`transport.playFromSelection` in the keymap) plays from the
-selected clip whatever the setting; while playing, it jumps there.
+selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with a
+time selection painted after the clip was picked, no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
+from the marker.
 
 Playing from a clip **moves the marker** to the clip's start rather than leaving it where it was.
 The marker is where the playhead rests while stopped and where Stop returns, so moving it keeps
 what is seen and what is heard the same: Stop goes back to the clip's start, the next Play
-(with either setting) starts there again, and auditioning one clip over and over is Shift+Space
+(with either setting) starts there again, and auditioning one clip over and over is Space
 and Space in turn. Leaving the marker behind would make Stop jump to a place the user did not
 start from.
 
@@ -804,7 +807,7 @@ own band last. Bands narrow with depth: 6, 4, 3, then 2 px at every deeper level
 bands. Descendants keep each ancestor's band aligned with its header, so a group reads as one
 block without deep nesting crowding the controls. Every header keeps the fold triangle's room.
 A group's menu
-has **Assign track color to all tracks and clips**, which gives every track inside it, at any depth,
+has **Recolor group**, which gives every track inside it, at any depth,
 the colour the group shows, and turns the clips of the group and of those tracks back to their
 track's colour (`track.colorGroup` with `clips`, one undo step). A looping clip's top notches are at most 2.5 px wide on each side of the boundary and
 shrink with the lane height. Its 1 px boundary line uses half the leading edge's contrast; the top notch cuts through to the canvas colour for a clearer silhouette. A group that holds tracks has
@@ -854,7 +857,8 @@ input lines follow below.
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging
 one field moves every selected track's by the same amount (the others follow it as it is dragged,
-and the commands land when it is let go), one click on a track-on or a solo button turns them all
+and the commands land when it is let go; a number typed or a double-click sets them all to that
+value), one click on a track-on or a solo button turns them all
 off or on, and the whole list is one undo step. With one track selected, or with a click outside
 the selection, they act on that track alone, and it is heard while it is dragged: each frame sets
 the value with `continue`, so the drag is one undo step.
@@ -998,13 +1002,14 @@ apply live and persist as application settings without modifying project data.
 A note-playing track has one small control immediately after its record-arm button that reads
 the track's monitoring mode, Auto, In or Off (the chip shows In as **On**), before its name or volume controls. A click opens the three choices, with a tooltip
 explaining the current state; it is not a second record-arm button or headphone cue. The same
-choices appear in the MIDI input menu, beside port and channel selection. Auto (the default)
+choices appear in the MIDI input menu, beside port and channel selection; a header too narrow
+or too low for the chip to end inside its row, before the take lanes' button when that ends the row, leaves it out, and that menu is the way (#876). Auto (the default)
 hears the input while armed; In hears it independently of arming; Off never hears the live
 input. Recording still depends on arm and record, including when monitoring is Off; In alone
 never records. Monitoring does not suppress clip playback. The selected mode is project data,
 set through `track.setMidiInput` with `monitor: auto | in | off`, and supports undo and redo.
 Changing mode releases notes that are no longer monitored, without retriggering held keys.
-Old projects without this field retain Auto. Compact and expanded headers reserve space for the monitor control before names and level controls.
+Old projects without this field retain Auto. Where the chip shows, compact and expanded headers reserve its space before names and level controls; where it is left out, the name starts after the arm button.
 
 The popup is titled Hear your MIDI keyboard and offers three single-line choices: Automatic,
 Always on and Off. A fixed-height footer explains the hovered or keyboard-focused choice,
@@ -1027,8 +1032,11 @@ than forcing an already audible effect tail to zero. It does not move note times
 of latency, and spans render-block boundaries. Offline command rendering uses the same path.
 
 Stopping a running transport, whether returning to the marker or keeping the current position,
-uses the same latency-aligned transition unless all instrument slots provide their own smooth
-stop. Hosted instruments with a transport gate fade their own output over 5 ms instead.
+uses the same latency-aligned transition over 5 ms, unless no arrangement audio clip is playing and
+either no plug-in is loaded or the project has instrument slots that all provide their own smooth
+stop. A project with plug-in effects and no plug-in instrument takes it. Hosted instruments with a transport gate fade
+their own output over 5 ms instead; an arrangement audio clip has no fade of its own, so it always
+takes the transition, with or without plug-ins in the project.
 Note-off messages still arrive immediately; the transition smooths an abrupt release without
 cutting off effect tails.
 Stopping an already stopped transport does not begin a new transition.

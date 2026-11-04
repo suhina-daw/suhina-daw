@@ -11,41 +11,34 @@ primary platform; Windows and macOS are supported.
 | M3 | **Commands and agents:** command registry with undo; CLI and MCP server on the same commands | in progress: commands, undo, MCP, edits heard while playing, and saving projects in Suhina's own format (`.suhina`) work; more commands to come |
 | M4 | **Clip launching:** launch quantisation, scenes, stop buttons, follow actions | in progress: launching, scenes, stops, quantisation, follow actions, the metronome, launch modes, legato, per-clip quantisation and launch keys work; launching from live MIDI notes to come |
 | M5 | **Audio playback:** imported audio clips with gain, transpose, warping and time-stretching | done (verified by ear on a heavily warped set) |
-| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows and Linux X11; still to do: automation lanes in the UI, macOS and Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
+| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); still to do: automation lanes in the UI, Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
 | M7 | **More formats:** DAWproject import and export | not started |
 | M8 | **UI:** Launcher and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Launcher and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
 What Suhina aims at, what it leaves out and the order the missing parts are built in:
-[ADR 0016](docs/decisions/0016-scope.md) (proposed). [`docs/features.md`](docs/features.md),
-written from [`docs/features.json`](docs/features.json), lists what is done in each area.
+[ADR 0016](docs/decisions/0016-scope.md) (proposed). The README's status figure shows how much of
+each area works today.
 
 ## Next (order proposed in ADR 0016)
 
 The gaps that matter most, in the order [ADR 0016](docs/decisions/0016-scope.md) proposes
 (its build order has the reasons and sizes):
 
-1. **MIDI note editing, the rest:** the piano roll works; still to do are note commands for the
-   command line and agents ([#200](https://github.com/suhina-daw/suhina-daw/issues/200)), MIDI tools
-   ([#349](https://github.com/suhina-daw/suhina-daw/issues/349)), chords, strum and arpeggiate
-   ([#350](https://github.com/suhina-daw/suhina-daw/issues/350)), editing a slot clip's notes
-   ([#343](https://github.com/suhina-daw/suhina-daw/issues/343)) and per-note expression
-   ([#921](https://github.com/suhina-daw/suhina-daw/issues/921); [spec](docs/spec/ui-clip-editor.md)).
-2. **Automation, the rest:** envelopes for the mixer, devices and plug-ins work; still to do are an
-   automation view over the clips ([#819](https://github.com/suhina-daw/suhina-daw/issues/819)),
-   painting ranges and shapes ([#1005](https://github.com/suhina-daw/suhina-daw/issues/1005)),
-   recording automation from the controls and editing tempo automation.
-3. **Recording, the rest:** audio and MIDI recording, inputs, monitoring and count-in work; still to
-   do are take lanes and comping ([#989](https://github.com/suhina-daw/suhina-daw/issues/989)),
-   resampling ([#987](https://github.com/suhina-daw/suhina-daw/issues/987)), overdubbing MIDI and
-   capturing what was played.
+1. **MIDI note editing:** the piano roll in the detail area and note commands (add, move, resize,
+   velocity, deactivate), quantise ([#200](https://github.com/suhina-daw/suhina-daw/issues/200),
+   [spec](docs/spec/ui-clip-editor.md)).
+2. **Automation:** device, plug-in and mixer parameters first, then tempo
+   ([#109](https://github.com/suhina-daw/suhina-daw/issues/109) for plug-in parameters).
+3. **Recording and inputs:** audio and MIDI recording, audio inputs, monitoring, count-in
+   ([#263](https://github.com/suhina-daw/suhina-daw/issues/263); arming and playing from MIDI
+   controllers work).
 4. **The crossfader and track delay:** sends and return tracks play, level meters are done and
    the cue output works.
-5. **Arrangement editing:** inserting and deleting time
-   ([#713](https://github.com/suhina-daw/suhina-daw/issues/713)) and resizing several clips together
-   ([#956](https://github.com/suhina-daw/suhina-daw/issues/956)); the loop brace and markers are done.
-6. **Filter** ([#382](https://github.com/suhina-daw/suhina-daw/issues/382)), then bus compressor and a
-   modulation delay (see the devices below; the EQ, delay and reverb are done).
-7. **Launching from live MIDI notes** (the rest of M4).
+5. **Arrangement editing:** the loop brace ([#98](https://github.com/suhina-daw/suhina-daw/issues/98)),
+   locators ([#99](https://github.com/suhina-daw/suhina-daw/issues/99)).
+6. **EQ and filter**, then bus compressor and a modulation delay (see the devices below; the delay
+   and reverb are done).
+7. **Launching from live MIDI notes** (the rest of M4, [#264](https://github.com/suhina-daw/suhina-daw/issues/264)).
 
 Finishing what is in flight (M3's commands, M6's automation and editors, M7, M8's installers and
 detail area) goes alongside this list, not after it.
@@ -75,8 +68,7 @@ its copyright notices kept and credited in [`ATTRIBUTION.md`](ATTRIBUTION.md).
   and tested: [`docs/spec/device-import.md`](docs/spec/device-import.md). The sampler and drum
   sampler as import targets: [#101](https://github.com/suhina-daw/suhina-daw/issues/101).
 - **Order:** EQ and filter first, then bus compressor and the modulation delay (the delay and
-  reverb are done); multiband dynamics,
-  saturation, the sampler and drum sampler later
+  reverb are done, and multiband dynamics); saturation, the sampler and drum sampler later
   ([ADR 0016](docs/decisions/0016-scope.md)).
 
 ### The devices
@@ -97,14 +89,14 @@ exists in `devices/`, passes its tests and runs in track chains.
 | NAM Amp Modeler: a `.nam` capture through the pure-Rust `nam-rs` inference (MIT), with trims, its own EQ, HQ for the A2 width dial, a trim delay | nam-rs (MIT) | done |
 | NAM Cab Loader: a `.wav` impulse response through uniform-partitioned FFT convolution, with a phase invert, a high pass, tone cuts, a trim delay and a volume | fft-convolver (MIT) under `dsp` | done |
 | pitch, a MIDI effect: transposes by semitones or scale degrees, Block, Fold or Limit to a key window | own | done; step buttons planned |
-| multiband dynamics, upward and downward | own crossovers and detectors | planned |
+| multiband: three bands, above and below stages (downward and upward compression, expansion), Amount and Time; imported from Live Sets | own crossovers and level followers | done; side-chain planned |
 | delay: stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze | own (`dsp` delay lines) | done |
 | modulation delay | own delay lines | planned |
 | reverb: algorithmic, early reflections, damped feedback delay network, chorus, freeze | own | done |
 | convolution reverb | own convolution | planned |
 | saturator: eight curves, Color filters and their inverse, post clip, waveshaper, dry/wet | own, oversampled | done |
 | multi-stage saturation | own, oversampled | planned |
-| EQ: eight bands of eight types, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q | own (`dsp` state-variable filters) | done; analyser, Audition and a curve display planned |
+| EQ: eight bands of eight types, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q | own (`dsp` state-variable filters) | done, with the panel's response display and its output spectrum's analyser; Audition planned |
 | filter | own (`dsp` filters) | planned |
 | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine (32 algorithms) done; more waveforms and a filter planned |
 | wavetable synth | Vital (GPL-3.0), under its own name | planned |
@@ -141,12 +133,14 @@ but has not been tried yet ([ADR 0008](docs/decisions/0008-patch-devices.md), pr
 
 **ARA** after VST3 hosting works in the sandbox: Arrangement first, since looping, quantised
 Launcher clips do not fit ARA's linear timeline; Launcher view later. The design is
-[ADR 0028](docs/decisions/0028-ara-hosting.md) (proposed) and the stages are the epic
+[ADR 0033](docs/decisions/0033-ara-hosting.md) (proposed) and the stages are the epic
 [#587](https://github.com/suhina-daw/suhina-daw/issues/587): the document lives in the plug-in host,
 audio reaches it through shared memory, and an ARA clip that would overlap another audio clip is
 refused or suspended, never by losing its edits.
 
 ## What works now
+
+<!-- A new bullet goes in a file of its own under docs/works-now/ (its README says how), not here. -->
 
 - Audio settings can open the active ASIO driver's native control panel, and
   show the engine block separately from the measured driver callback size.
@@ -189,7 +183,7 @@ refused or suspended, never by losing its edits.
 
 - Every built-in effect, instrument and MIDI effect has editable controls in the device panel:
   its layout (in Rust, or as `devices/<name>/panel.json`: dials, buttons and band graphs in the compact panel, an expanded panel where a device has many parameters, and a generated list below the compact panel for parameters the compact layout does not place), or a parameter list generated from the device's own parameters,
-  260 px wide and at most 168 px high, scrolling past that. Each change is `device.setParam`, so it
+  in 260 px columns at most 168 px high, continuing in columns to the right rather than scrolling. Each change is `device.setParam`, so it
   is one undo step and an automation lane takes it over. Built-ins are native code with a layout
   loaded by their id, not `.sd` files ([ADR 0021](docs/decisions/0021-device-graph-files.md) ›
   Amendment: device panels).
@@ -205,6 +199,19 @@ refused or suspended, never by losing its edits.
   waveform, SDK controls, browser/system sample drops and recording from the armed
   track's selected audio input. Sample replacement is undoable; missing sources can
   be relinked. Multisample zones remain planned.
+
+- Sampler has visible Sample/Slice/Grain modes, a source-tempo grid with snap,
+  editable automatic boundaries with persistent corrections, stereo waveform lanes,
+  pointer-anchored zoom, slice selection and audition, and separate slice overlap/release controls.
+
+- Mixer selections move together: a send, fader or pan dragged on one of several selected tracks moves
+  the others by the same amount while it is dragged, in one undo step, and Ctrl-click and Shift-click
+  select from a channel strip's background too (`track.setMixerValues`). Sends stop at 0 dB.
+- A plug-in editor in a window of its own is titled after its track and follows a rename or a move.
+
+- Bluetooth headphones are in Settings › Audio › Output's Device list: a device that cannot say what
+  it offers yet stays listed, an output connected while the page shows appears within a few seconds,
+  and on Linux a running PulseAudio or PipeWire server is a driver of its own to choose them on.
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
@@ -274,6 +281,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The NAM Amp Modeler and NAM Cab Loader run a `.nam` model and a `.wav` impulse response from
   the NAM folders in Settings, with `device.setNamFile` to load a file and `device.file` to read
   it ([nam spec](docs/spec/nam-amp-and-cab.md)).
+- Multiband dynamics: the multiband effect splits a track into three bands and gives each an above stage (downward compression or upward expansion) and a below stage (upward compression or downward expansion), with Amount and Time over all of them; a Live Set's multiband dynamics device imports into it with its settings ([spec](docs/spec/multiband.md)). Its panel shows each band's level, gain change and the input spectrum as it plays, with crossovers and thresholds dragged directly, a solo per band and an OTT quick preset. The side-chain is planned.
+- Live values on device panels: a built-in device can hand its panel levels, gain changes or a spectrum while it plays ([ADR 0032](docs/decisions/0032-device-readouts.md)); the multiband panel is the first to use it.
 - MIDI effects run before a track's instrument: the pitch effect transposes the notes by
   semitones or by steps along the playing clip's scale and keeps them inside a window of keys
   (Block, Fold, Limit); a note-off always ends the key its note started
@@ -431,7 +440,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   default one process per plug-in file, or per vendor, or one per instance
   (`plugin.setHosting`); a crash or hang costs that plug-in's sound, not the project
   ([ADR 0006](docs/decisions/0006-plug-in-hosting.md)). The host runs on Linux, Windows and
-  macOS (editors on macOS still to come).
+  macOS (there editors open in a window of their own).
 - An opened Live Set's plug-ins play in the app: each is found among the installed ones (a VST3
   version for a VST2 plug-in too) and started with the settings the project saved; instruments
   play their track's notes, effects process their track. Missing ones are named in the status
@@ -447,9 +456,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   editor, Close editor or Restart; the same commands work from the CLI and MCP. P opens or
   closes the shown track's plug-in's editor (the device the chain panel selects, else the
   track's first running one; mappable, Settings › Keys). Editors float
-  above Suhina's window, owned by it (Windows, X11), and respond at once; a setting
-  (Plug-ins › Editors › Device view) shows them inside the device panel instead, as part of
-  the chain. On Linux the window is an X11 one whenever an X server (or XWayland) is there,
+  above Suhina's window, owned by it (Windows, X11), and respond at once; on macOS they
+  float in a plain window of the host's own, since a view of another process's cannot attach
+  to Suhina's window (ADR 0006). A setting (Plug-ins › Editors › Device view) shows them
+  inside the device panel instead, as part of the chain, on Windows and X11; on macOS the
+  setting falls back to the window. On Linux the window is an X11 one whenever an X server (or XWayland) is there,
   so this works on Wayland desktops too.
 - Renders (`suhina-cli render`, MCP `project_render`) run the same plug-ins.
 - MCP `project_render` from an open project starts its plug-ins with the state the running ones
@@ -479,8 +490,16 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   about one heavy plug-in, and a slow or hung plug-in holds up only its own track
   ([#151](https://github.com/suhina-daw/suhina-daw/issues/151)).
 - Still to do: checking an imported Live Set
-  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), Wayland and
-  macOS editors, VST2 hosting (not decided).
+  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), and the
+  Wayland editors — VST2 hosting decided in
+  [ADR 0022](docs/decisions/0022-vst2-interface-description.md) (VeSTige, pinned; the
+  2026-10-31 amendment allows shipping) and built in: the interface layer, the mock and the
+  probe, the host that runs a VST2 plug-in on the same boundary as the other formats, the
+  scan of the VST folders and added folders, a project's VST2 plug-in that has no VST3 or
+  CLAP copy running through it with its saved bank, and its editor in a window of its own or
+  embedded where the platform allows (Windows, X11)
+  ([#1066](https://github.com/suhina-daw/suhina-daw/issues/1066),
+  [spec](docs/spec/plugin-vst2.md)).
 
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it
@@ -696,13 +715,13 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   sub-rows ([spec](docs/spec/arrangement-editing.md)).
 - A plug-in scan notes which VST3 plug-ins support ARA (`plugin.list` shows `ara`), and such a
   plug-in is never given a host process of its own, since its document and every instance
-  editing it share one ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
+  editing it share one ([ADR 0033](docs/decisions/0033-ara-hosting.md)).
 - A plug-in that edits clips (ARA, such as a pitch editor) on an audio track is loaded with the
   track's arrangement audio clips: its editor shows them and it plays its edited version of them
   in time with the song. Its edits are saved with the project, and it follows the clips as they
   are moved, trimmed, added or deleted while it plays, without loading again; an undo brings a
   deleted clip back with its edits. Warped and looped
-  clips and the overlap guard come later ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
+  clips and the overlap guard come later ([ADR 0033](docs/decisions/0033-ara-hosting.md)).
 - Selecting an audio clip on such a track shows the plug-in's editor in the detail area, where a
   MIDI clip has its piano roll, with that clip shown in it; the clip's menu (**Open in** the
   plug-in) and Alt+M open it, adding the installed one (Melodyne first) to the track when it has
@@ -710,7 +729,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   ([clip editor](docs/spec/ui-clip-editor.md) › Where it opens).
 - `arrangement.audioOverlaps` lists the audio clips that sound together on one track because their
   spans overlap, clips that only touch left out, for agents and the CLI; the first step towards ARA
-  ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
+  ([ADR 0033](docs/decisions/0033-ara-hosting.md)).
 - Arrangement clips split and consolidate: Ctrl+E cuts the selected clip at the playhead and
   a clip's right-click menu has Split here (`clip.split`, the second part playing on from where
   the clip was); Ctrl+J or Consolidate turns a range of one track into one clip, MIDI by joining

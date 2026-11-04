@@ -126,6 +126,42 @@ fn folders_keep_their_format_and_whether_they_are_on() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// A leading `~` alone or before a separator is the home folder; `~name` and absolute paths stay.
+#[test]
+fn a_folder_typed_with_a_leading_tilde_expands_to_the_home_folder() {
+    let home = PathBuf::from("/Users/me");
+    let expand = |folder: &str, home: Option<&OsStr>| expand_home(Path::new(folder), home);
+    let with_home = Some(home.as_os_str());
+    assert_eq!(expand("~/Plug-ins/VST", with_home), PathBuf::from("/Users/me/Plug-ins/VST"));
+    assert_eq!(expand("~", with_home), PathBuf::from("/Users/me"));
+    assert_eq!(expand("~/", with_home), PathBuf::from("/Users/me"));
+    assert_eq!(expand("~user/plug-ins", with_home), PathBuf::from("~user/plug-ins"), "another user's home stays");
+    assert_eq!(expand("/plug-ins", with_home), PathBuf::from("/plug-ins"), "absolute stays");
+    assert_eq!(expand("relative/plug-ins", with_home), PathBuf::from("relative/plug-ins"), "relative stays");
+    assert_eq!(expand("~/Plug-ins", None), PathBuf::from("~/Plug-ins"), "no home folder, no expansion");
+}
+
+/// `HOME` first; where it is missing on Windows, the profile stands in. On other systems the
+/// profile does not count.
+#[test]
+fn the_home_falls_back_to_the_windows_profile() {
+    let home = Some(OsString::from("/Users/me"));
+    let profile = Some(OsString::from(r"C:\Users\me"));
+    assert_eq!(home_folder(home.clone(), profile.clone()), home, "HOME comes first");
+    assert_eq!(
+        home_folder(None, profile.clone()),
+        if cfg!(windows) { profile.clone() } else { None },
+        "where HOME is missing, Windows's profile stands in; elsewhere there is none"
+    );
+    assert_eq!(home_folder(None, None), None);
+    assert_eq!(
+        home_folder(Some(OsString::new()), profile.clone()),
+        if cfg!(windows) { profile } else { None },
+        "an empty HOME is a missing one"
+    );
+    assert_eq!(home_folder(None, Some(OsString::new())), None, "an empty profile too");
+}
+
 #[test]
 fn the_earlier_folders_file_is_read() {
     let (added, off) = parse_folders(r#"["/plugins/a", 5, "/plugins/b"]"#);
@@ -141,6 +177,24 @@ fn the_earlier_folders_file_is_read() {
     assert_eq!(parse_folders("junk"), (Vec::new(), Vec::new()));
     assert_eq!(standard_format(Path::new("C:/Program Files/Common Files/VST3")), FolderFormat::Vst3);
     assert_eq!(standard_format(Path::new("/home/me/.clap")), FolderFormat::Clap);
+    // A VST2 plug-in is a plain library, which only its folder marks as one.
+    assert_eq!(standard_format(Path::new("/Library/Audio/Plug-Ins/VST")), FolderFormat::Vst2);
+    assert_eq!(standard_format(Path::new("/home/me/.vst")), FolderFormat::Vst2);
+    assert_eq!(standard_format(Path::new("C:/Program Files/Common Files/VST2")), FolderFormat::Vst2);
+    assert_eq!(standard_format(Path::new("C:/Program Files/VSTPlugins")), FolderFormat::Vst2);
+}
+
+/// A `CLAP_PATH` folder named as a VST2 folder is named so; its CLAP plug-ins are still found.
+#[test]
+fn a_clap_path_folder_keeps_its_clap_files_whatever_its_name() {
+    let folder = scratch("clap-path").join("shared");
+    std::fs::create_dir_all(&folder).unwrap();
+    let plugin = folder.join("Thing.clap");
+    std::fs::write(&plugin, b"").unwrap();
+    let format = folder_format(&folder, std::slice::from_ref(&folder));
+    assert_eq!(format, FolderFormat::Any);
+    assert_eq!(crate::scan::find_files_of(&[(folder.clone(), format)]), [plugin]);
+    assert_eq!(folder_format(&folder, &[]), FolderFormat::Vst2, "the same name elsewhere is a VST2 folder");
 }
 
 #[test]

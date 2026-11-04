@@ -165,6 +165,9 @@ pub struct ViewSettings {
     /// Clips picked while stopped move the play start marker to the first one's start (on by
     /// default, #721).
     pub play_from_clip: bool,
+    /// A long parameter list opened from its device's chevron scrolls down in two columns, instead
+    /// of continuing in columns to the right (the default).
+    pub device_list_vertical: bool,
     /// New tracks all get the palette's first colour, instead of the next one in turn (off by
     /// default, #709).
     pub fixed_track_colour: bool,
@@ -243,6 +246,7 @@ impl Default for ViewSettings {
             stretch_alt: true,
             rename_selected: true,
             play_from_clip: true,
+            device_list_vertical: false,
             fixed_track_colour: false,
             new_clip_track_colour: true,
             recent_chips: false,
@@ -267,7 +271,8 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\n",
+            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\n",
+            if self.device_list_vertical { "vertical" } else { "horizontal" },
             self.mixer_height,
             self.strip_fader,
             self.detail_layout.param(),
@@ -392,6 +397,7 @@ impl ViewSettings {
             ("stretch_alt_drag", "on" | "off") => self.stretch_alt = value == "on",
             ("rename_selected_clips", "on" | "off") => self.rename_selected = value == "on",
             ("play_from_selected_clip", "on" | "off") => self.play_from_clip = value == "on",
+            ("device_list_scroll", "horizontal" | "vertical") => self.device_list_vertical = value == "vertical",
             ("new_track_colour", "fixed" | "alternating") => self.fixed_track_colour = value == "fixed",
             ("new_clip_colour", "track" | "theme") => self.new_clip_track_colour = value == "track",
             ("browser_recent", "chips" | "indented") => self.recent_chips = value == "chips",
@@ -455,6 +461,7 @@ mod tests {
             stretch_alt: false,
             rename_selected: false,
             play_from_clip: false,
+            device_list_vertical: false,
             fixed_track_colour: true,
             new_clip_track_colour: false,
             recent_chips: true,
