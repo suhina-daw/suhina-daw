@@ -207,7 +207,9 @@ pub enum Widget {
     /// bounds along its travel (sideways with an X binding), in canvas units, for a value that
     /// starts where another ends. With both bindings it is a point: a dot at both values, dragged
     /// on both axes as one undo step. `dot` draws a one-axis handle the same way, in the middle
-    /// of its line.
+    /// of its line. `relative` moves the value by how far the pointer moves, a full bounds for
+    /// its whole range, rather than to where the pointer is: for a handle whose `offset` follows
+    /// its own value (a dot that stays on a curve it bends), which would otherwise run away.
     Handle {
         color: [u8; 4],
         #[serde(default)]
@@ -216,6 +218,8 @@ pub enum Widget {
         offset: Option<crate::ui::UiValue>,
         #[serde(default)]
         dot: bool,
+        #[serde(default)]
+        relative: bool,
     },
 }
 impl CustomControl {

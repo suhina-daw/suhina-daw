@@ -116,13 +116,13 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
   the ear hardly hears, has a small place. A control that does nothing right now (Morph unless the type is Morph, Drive
   on the Clean circuit) is dimmed and still answers. A dot on a tab says that section is on.
 - **Envelopes.** The picture moves with its times, levels and slopes, and each stage's end is one dot,
-  dragged in time and level at once. A smaller move of the dot in a stage's middle bends that stage.
+  dragged in time and level at once. The dot in a stage's middle lies on its curve and bends it as it is dragged up or down.
   **ADSR** and **Rates** choose the model. A rates-and-levels stage further right has a lower rate. A line
   marks where the key goes up.
 - **The filter's picture** is its response, for each type and through Morph, with a line at the cutoff
   and frequency and resonance on one dot, or, with **Envelope** above it, its envelope, and the dials
   follow. On a low-pass or a high-pass the dot lies on the curve.
-- **The LFO's picture** is its wave, quietly, and in colour as much of it as reaches the sound after its
+- **The LFO's picture** is its wave on a grid, quietly, and in colour as much of it as reaches the sound after its
   amount and its envelope. More cycles fit as its rate rises (two seconds' worth on the low range), and
   while it is on they run, at its rate up to three cycles a second. **Rate in** chooses Hz, Audio (hertz
   up to audio rate) or Sync (a note length). The classic LFO's rate reads in hertz too.

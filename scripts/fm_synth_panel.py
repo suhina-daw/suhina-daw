@@ -71,8 +71,8 @@ RELEASE_STRETCH = 0.28
 STAGE_GAP = 7.0
 # Where a stage's curve is sampled, as shares of it.
 CURVE_SAMPLES = (0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875)
-# How far a stage's curve dot travels, in pixels.
-CURVE_TRAVEL = 36.0
+# How far the pointer moves a stage's curve dot through its whole range, in pixels.
+CURVE_TRAVEL = 100.0
 ROW_GAP = 2.0
 # The filter's picture: 20 Hz to 20 kHz across, as hearing spreads pitch, and decibels up and down.
 FILTER_TOP_DB, FILTER_BOTTOM_DB = 30.0, -60.0
@@ -336,9 +336,10 @@ def dim(cid, bounds, when):
     return graphic(cid, "Inactive", bounds, [rect(0.0, 0.0, w, h, tint(PANEL, 165))], when)
 
 
-def point(cid, name, bounds, x_pid, y_pid, visible, log_x=False, flip_x=False, offset=None, span=None, flip_y=False):
-    """A dot on a picture, dragged along the axes it has parameters for."""
-    return {"widget": {"kind": "handle", "color": HIGHLIGHT, "span": span, "offset": offset, "dot": True}, "visible_when": visible,
+def point(cid, name, bounds, x_pid, y_pid, visible, log_x=False, flip_x=False, offset=None, span=None, flip_y=False, relative=False):
+    """A dot on a picture, dragged along the axes it has parameters for: to where the pointer is, or
+    `relative`, by how far it moves."""
+    return {"widget": {"kind": "handle", "color": HIGHLIGHT, "span": span, "offset": offset, "dot": True, "relative": relative}, "visible_when": visible,
             "id": cid, "name": name, "tooltip": name, "bounds": bounds,
             "gesture": "position", "x": binding(x_pid, log_x, flip_x), "y": binding(y_pid, flip=flip_y), "drawing": []}
 
@@ -412,10 +413,17 @@ def env_points(prefix, tag, x, y, w, h, visible, top, bottom):
     keyup = w * RELEASE_AT
 
     def bend_dot(name, slope, x0, x1, y0, y1, flip):
+        """The dot in the middle of a stage, on its curve: dragged up or down by the pointer's
+        travel, it bends the stage and stays on it."""
+        pid = f"{prefix}{slope}"
         middle = add(x, mul(add(x0, x1), 0.5))
-        height = mul(add(level(y0), level(y1)), 0.5)
-        return point(f"{prefix}{slope}_point{tag}", name, [x, y, w, CURVE_TRAVEL], None, f"{prefix}{slope}", visible,
-                     offset=add(height, -CURVE_TRAVEL / 2.0), span=[add(middle, -6.0), add(middle, 6.0)], flip_y=flip)
+        start = level(y0)
+        on_curve = add(start, mul(sub(level(y1), start), bent(0.5, par(pid))))
+        share = sub(1.0, par(pid, True)) if flip else par(pid, True)
+        # The handle stands at the bottom of its bounds less its share of them: the offset puts that on the curve.
+        offset = add(add(on_curve, -CURVE_TRAVEL), mul(share, CURVE_TRAVEL))
+        return point(f"{pid}_point{tag}", name, [x, y, w, CURVE_TRAVEL], None, pid, visible, offset=offset,
+                     span=[add(middle, -6.0), add(middle, 6.0)], flip_y=flip, relative=True)
     return [
         point(f"{prefix}initial_point{tag}", "Initial level", [x, upper, w, tall], None, f"{prefix}initial", visible, span=[x - 6.0, x + 6.0]),
         point(f"{prefix}attack_point{tag}", "Attack and peak", [x + STAGE_GAP, upper, zone, tall], f"{prefix}attack", f"{prefix}peak", visible, log_x=True),
@@ -606,7 +614,9 @@ def lfo_picture(x, y, w, h, tag, visible=None):
     """The second LFO: its wave quietly, and in colour as much of it as reaches the sound. More cycles
     fit as its rate rises, they run while it is on, and its amount and envelope shape the colour."""
     reach = h / 2.0 - 5.0
-    controls = [graphic(f"lfo_ground{tag}", "LFO wave", [x, y, w, h], [rect(0.0, 0.0, w, h, DISPLAY, 3.0), line([0.0, h / 2.0], [w, h / 2.0], GRID)], visible)]
+    grid = [line([0.0, h * k / 4.0], [w, h * k / 4.0], GRID) for k in (1, 3)] + [line([w * k / 8.0, 0.0], [w * k / 8.0, h], GRID) for k in range(1, 8)]
+    ground = [rect(0.0, 0.0, w, h, DISPLAY, 3.0)] + grid + [line([0.0, h / 2.0], [w, h / 2.0], tint(TEXT, 60))]
+    controls = [graphic(f"lfo_ground{tag}", "LFO wave", [x, y, w, h], ground, visible)]
     for index in range(3):
         shown, speed = lfo_motion(index)
         reached = mul(mul(par("lfo2Amount"), reach), lfo_envelope())

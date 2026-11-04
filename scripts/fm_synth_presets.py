@@ -36,7 +36,7 @@ def filter_env(attack, decay, sustain, release):
 
 PRESETS = {
     "warm-fm-bass": ("Warm FM Bass", ["bass", "fm", "punchy"], {
-        "algorithm": 5.0, "feedback": 5.0, "volume": 0.0, "voices": 8.0,
+        "algorithm": 5.0, "feedback": 5.0, "volume": 0.0, "voices": 8.0, "transpose": -24.0,
         "filterOn": 1.0, "filterType": 0.0, "filterSlope": 1.0, "filterCircuit": 1.0, "filterFreq": 1700.0, "filterRes": 0.22, "filterDrive": 6.0, "filterEnv": 0.55,
         **filter_env(0.001, 0.2, 0.0, 0.1),
         **op(1, 1, 96, 0.001, 0.5, -9.0, 0.09), **op(2, 1, 86, 0.001, 0.22, -18.0, 0.08),
@@ -65,7 +65,7 @@ PRESETS = {
         **op(5, 2, 78, 0.35, 1.0, -2.0, 1.2, detune=-5, wave=SAW_64), **op(6, 0, 80, 0.35, 1.0, -2.0, 1.2, wave=SAW_64),
     }),
     "slow-warm-pad": ("Slow Warm Pad", ["pad", "warm", "fm"], {
-        "algorithm": 5.0, "feedback": 0.0, "volume": -4.0, "voices": 24.0, "spread": 0.75, "panRandom": 0.25,
+        "algorithm": 5.0, "feedback": 0.0, "volume": -4.0, "voices": 24.0, "spread": 0.75, "panRandom": 0.25, "transpose": -12.0,
         "filterOn": 1.0, "filterType": 0.0, "filterSlope": 0.0, "filterCircuit": 1.0, "filterFreq": 2400.0, "filterRes": 0.12, "filterDrive": 2.0, "filterEnv": 0.25,
         **filter_env(2.5, 4.0, 0.35, 2.0),
         **op(1, 1, 90, 0.004, 2.0, -3.0, 2.4, detune=-2), **op(2, 1, 62, 2.6, 3.0, -8.0, 2.2), **op(3, 1, 88, 1.8, 2.0, -3.0, 2.6, detune=3),

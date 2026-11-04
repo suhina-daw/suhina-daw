@@ -1354,10 +1354,11 @@ fn handle(
     painter: &egui::Painter,
     (canvas, bounds, stretch): (Rect, Rect, Vec2),
     control: &suhina_device_sdk::ui::CustomControl,
-    (line_color, span, offset, dot): (
+    (line_color, span, offset, dot, relative): (
         [u8; 4],
         Option<&[suhina_device_sdk::ui::UiValue; 2]>,
         Option<&suhina_device_sdk::ui::UiValue>,
+        bool,
         bool,
     ),
     parameters: &[GraphParameter],
@@ -1457,8 +1458,23 @@ fn handle(
         (0.0, 0.0)
     };
     let pointer = (response.dragged() || response.drag_stopped()).then(|| response.interact_pointer_pos()).flatten();
-    let along_x = pointer.map(|pos| (pos.x - bounds.left()) / bounds.width());
-    let along_y = pointer.map(|pos| (bounds.bottom() - pos.y) / bounds.height());
+    let (along_x, along_y) = if relative {
+        // From where the value stood when the drag began, by how far the pointer has moved since.
+        let start_id = id.with("relative-start");
+        if response.drag_started() {
+            let start = (x_axis.map_or(0.0, |a| a.share() as f32), y_axis.map_or(0.0, |a| a.share() as f32));
+            ui.data_mut(|d| d.insert_temp(start_id, start));
+        }
+        let start = ui.data(|d| d.get_temp::<(f32, f32)>(start_id));
+        let moved = response.total_drag_delta().unwrap_or_default();
+        let moving = pointer.and(start);
+        (moving.map(|(x, _)| x + moved.x / bounds.width()), moving.map(|(_, y)| y - moved.y / bounds.height()))
+    } else {
+        (
+            pointer.map(|pos| (pos.x - bounds.left()) / bounds.width()),
+            pointer.map(|pos| (bounds.bottom() - pos.y) / bounds.height()),
+        )
+    };
     for (axis, keys, along) in [(x_axis, keys_x, along_x), (y_axis, keys_y, along_y)] {
         let Some(axis) = axis else { continue };
         let value = if response.double_clicked() {
@@ -2099,13 +2115,13 @@ pub(crate) fn show(
             );
             continue;
         }
-        if let Some(Widget::Handle { color: line_color, span, offset, dot }) = &control.widget {
+        if let Some(Widget::Handle { color: line_color, span, offset, dot, relative }) = &control.widget {
             handle(
                 ui,
                 &painter,
                 (rect, bounds, stretch),
                 control,
-                (*line_color, span.as_ref(), offset.as_ref(), *dot),
+                (*line_color, span.as_ref(), offset.as_ref(), *dot, *relative),
                 parameters,
                 (track, at),
                 actions,

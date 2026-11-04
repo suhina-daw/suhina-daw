@@ -161,7 +161,7 @@
 "lfoKeySync": 1.0,
 "lfoWave": 0.0,
 "pitchModSens": 3.0,
-"transpose": 0.0,
+"transpose": -24.0,
 "pitchBendRange": 2.0,
 "pitchBendStep": 0.0,
 "portamento": 0.0,

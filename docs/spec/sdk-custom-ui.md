@@ -235,7 +235,7 @@ of it: dragging sets the value from the pointer as `position` does, a double cli
 drag is one undo step. `span` (optional value expressions, canvas units) limits the line and where
 it is grabbed across the other axis. With both an X and a Y binding it is a point: a dot at both
 values, dragged on both axes as one undo step, with the arrow keys along each. `"dot": true` draws a
-one-axis handle as a dot in the middle of its line. A binding's negative `drag_scale` runs a handle's
+one-axis handle as a dot in the middle of its line. `"relative": true` moves the value by how far the pointer moves (its bounds for the whole range) rather than to where it is, for a dot whose `offset` follows its own value, such as one that stays on a curve it bends. A binding's negative `drag_scale` runs a handle's
 travel the other way along that axis (a rate: further along is slower). A `value` drawing (`{"kind": "value", "position": [x, y],
 "value": expression, "prefix", "suffix", "decimals", "color", "size", "align"}`) writes a number an
 expression computes. A `{"preset": 0}` gesture applies the canvas's quick preset 0: a button with no bindings that sets

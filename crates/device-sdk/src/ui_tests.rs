@@ -98,6 +98,7 @@ fn handles_bind_an_axis_or_two_and_presets_name_declared_values() {
             span: Some([0.0.into(), readout(0)]),
             offset: None,
             dot: false,
+            relative: false,
         }),
         gesture: UiGesture::Position,
         x: Some(UiBinding::new("cut")),

@@ -1839,7 +1839,7 @@ fn click_to_focus(position: Pos2) -> Vec<Vec<egui::Event>> {
 }
 
 fn handle_widget() -> Option<Widget> {
-    Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: None, dot: false })
+    Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: None, dot: false, relative: false })
 }
 
 #[test]
@@ -1847,13 +1847,39 @@ fn a_handles_offset_moves_where_it_is_grabbed() {
     let mut canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("level"));
     let control = &mut Arc::make_mut(&mut canvas).controls[0];
     control.bounds = [0.0, 0.0, 200.0, 100.0];
-    control.widget =
-        Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: Some(100.0.into()), dot: false });
+    control.widget = Some(Widget::Handle {
+        color: [255, 255, 255, 255],
+        span: None,
+        offset: Some(100.0.into()),
+        dot: false,
+        relative: false,
+    });
     // At half its travel, a handle over 0..200 moved by 100 is at 200, and 300 is its 1.0.
     let (grab, to) = (Pos2::new(200.0, 50.0), Pos2::new(250.0, 50.0));
     let events = vec![
         vec![egui::Event::PointerMoved(grab)],
         press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let actions = frames(&canvas, Vec2::new(400.0, 100.0), &[parameter("level", false)], events);
+    let value = last_value(&actions).expect("the handle was dragged");
+    assert!((value - 0.75).abs() < 0.01, "{value}");
+}
+
+#[test]
+fn a_relative_handle_moves_by_the_pointers_travel_and_not_to_it() {
+    let mut canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("level"));
+    let control = &mut Arc::make_mut(&mut canvas).controls[0];
+    control.bounds = [0.0, 0.0, 200.0, 100.0];
+    control.widget =
+        Some(Widget::Handle { color: [255, 255, 255, 255], span: None, offset: None, dot: false, relative: true });
+    // Grabbed at its value, half way, and moved a quarter of its bounds: a quarter of the range on.
+    let (grab, to) = (Pos2::new(100.0, 50.0), Pos2::new(150.0, 50.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(Pos2::new(125.0, 50.0))],
         vec![egui::Event::PointerMoved(to)],
         press(to, false),
     ];
