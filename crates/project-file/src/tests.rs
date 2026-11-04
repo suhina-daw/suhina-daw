@@ -273,6 +273,7 @@ fn everything() -> Project {
         extensions: ext("LiveSet"),
         default_scale: None,
         next_id: 0,
+        session_ids: suhina_model::SessionCounter::default(),
     };
     // Every lane, clip and scene gets an id, as a project in the app has.
     project.assign_ids().unwrap();
@@ -284,6 +285,44 @@ fn every_part_of_a_project_survives_a_round_trip() {
     let project = everything();
     assert_eq!(project.validate(), Ok(()));
     assert_eq!(from_json(&to_json(&project)), Ok(project));
+}
+
+/// Markers, automation points and tempo changes have ids only while the project is open
+/// (#763 › 1): the file holds none, a reader gives them in document order, and saving a project
+/// again after reading it leaves `next_id` where it was.
+#[test]
+fn markers_points_and_tempo_changes_are_written_without_ids() {
+    let project = everything();
+    assert!(!project.arrangement.markers.is_empty() && !project.transport.tempo_changes.is_empty());
+    assert!(project.all_automation_points().next().is_some());
+    let text = to_json(&project);
+    let file: Value = serde_json::from_str(&text).unwrap();
+    let has_id = |v: &Value| v.get("id").is_some();
+    assert!(!file["project"]["arrangement"]["markers"].as_array().unwrap().iter().any(has_id), "{text}");
+    assert!(!file["project"]["transport"]["tempo_changes"].as_array().unwrap().iter().any(has_id), "{text}");
+    for channel in file["project"]["channels"].as_array().unwrap() {
+        let lanes = channel["automation"].as_array().into_iter().flatten();
+        let device_lanes = channel["devices"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|d| d["automation"].as_array().into_iter().flatten());
+        for lane in lanes.chain(device_lanes) {
+            assert!(!lane["points"].as_array().unwrap().iter().any(has_id), "{lane}");
+        }
+    }
+
+    let read = from_json(&text).unwrap();
+    assert_eq!(read.next_id, project.next_id);
+    let ids: Vec<_> = read.arrangement.markers.iter().map(|m| m.id.0).collect();
+    assert_eq!(ids, [1, 2, 3]);
+    assert_eq!(to_json(&read), text, "a project read and written again is the same file");
+
+    // An id a file has anyway (one written by hand) is not taken: the reader gives its own.
+    let mut file = file;
+    file["project"]["arrangement"]["markers"][0]["id"] = json!(500);
+    let read = from_json(&file.to_string()).unwrap();
+    assert_eq!(read.arrangement.markers[0].id.0, 1);
 }
 
 /// A channel's cue is written only when on, so a project without one reads and writes as it
@@ -1197,31 +1236,11 @@ fn every_feature() -> Project {
     renumbered(project)
 }
 
-/// Every automation point without its id.
-fn forget_point_ids(project: &mut Project) {
-    fn devices(list: &mut [Device]) {
-        for device in list {
-            device.automation.iter_mut().flat_map(|l| &mut l.points).for_each(|p| p.id = PointId::NONE);
-            if let Some(group) = device.as_group_mut() {
-                group.branches.iter_mut().for_each(|b| devices(&mut b.devices));
-            }
-        }
-    }
-    for channel in &mut project.channels {
-        channel.automation.iter_mut().flat_map(|l| &mut l.points).for_each(|p| p.id = PointId::NONE);
-        devices(&mut channel.devices);
-    }
-}
-
 /// `project` with its devices' ids given again in document order, right after the other objects'
 /// ids, as a reader gives them to a file written before devices had ids (version 6).
 fn renumbered(mut project: Project) -> Project {
     // `forget_ids` keeps each macro mapping on its device while the ids are gone.
     project.channels.iter_mut().flat_map(|c| &mut c.devices).for_each(Device::forget_ids);
-    // Markers, automation points and tempo changes got theirs with version 8, after the devices.
-    project.arrangement.markers.iter_mut().for_each(|m| m.id = MarkerId::NONE);
-    project.transport.tempo_changes.iter_mut().for_each(|t| t.id = TempoPointId::NONE);
-    forget_point_ids(&mut project);
     project.next_id = project.max_object_id() + 1;
     project.assign_ids().unwrap();
     project

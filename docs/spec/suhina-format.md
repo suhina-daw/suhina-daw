@@ -53,6 +53,10 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
   `id` in the file is moved past them; one beyond 32 bits is refused, and so is a file whose
   counter runs out before every object has an id. Writing ids always, so a reader never derives
   them, is the version after 3 ([ADR 0026](../decisions/0026-project-folder-and-package.md) › 10).
+- Markers, automation points and tempo changes have ids only while the project is open, and the
+  file holds none: nothing refers to one of them across a save
+  ([ADR 0025](../decisions/0025-object-identity.md) › Decided since). A reader gives them in
+  document order and ignores an `id` a file has on one.
 - `extensions` (on the project, a track, channel, device, content or clip) is a list of
   `{ "format", "key", "data" }`: what an importer kept from its format; it is left out when empty.
 - The project must hold together as an imported one must: ids unique, every reference resolves,
@@ -88,7 +92,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | 5 | Versioned sampler source corrections in the `suhina/sample_edits` device extension ([sampler](sampler.md#source-correction-storage)) | Issue #1026 |
 | 6 | A device's `id`, from the project's object counter ([ADR 0025](../decisions/0025-object-identity.md)); an earlier file's devices get theirs in document order | #763 › 1 |
 | 7 | A macro mapping's `device` is the target device's `id`, not its path in the group; an earlier file's path is read as the device at that place | #763 › 1 |
-| 8 | Markers, automation points and tempo changes have an `id` from the project's counter; an earlier file's get theirs in document order after the devices' (markers, then the channels' points, then the tempo changes); a launch mapping's `scene` counts from 0, as the commands do, where earlier versions counted from 1 | #763 › 1 |
+| 8 | A launch mapping's `scene` counts from 0, as the commands do, where earlier versions counted from 1 | #763 › 1 |
 
 ## Parts
 

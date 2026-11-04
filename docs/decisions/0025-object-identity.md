@@ -264,13 +264,28 @@ device in document order a new id. A file before version 6 gives its devices ids
 after the other objects'. Commands name a device by it as `"device": {"id": 7}`, and report it as
 `device_id`, since a device's `id` already says what it is (a built-in's or a plug-in's).
 
-Decided since: **markers, automation points and tempo changes too** (#763 › 1, `.suhina` version
-8), from the same counter. A command that takes a marker's `index`, a lane's `point` or `points`, or
-a tempo change's `point` takes `{"id": n}` in its place, found where it is now; `project.markers`,
+Decided since: **markers, automation points and tempo changes too, but only while the project is
+open** (#763 › 1). A command that takes a marker's `index`, a lane's `point` or `points`, or a
+tempo change's `point` takes `{"id": n}` in its place, found where it is now; `project.markers`,
 `automation.list` and `tempo.points` list each one's `id`, and the commands that add one return it.
 A copy is a new object: `assign_ids` gives the later of two with one id a new one. Two points are
 equal without their ids, so a range tool that draws a line again as it was changes nothing. Notes
 stay named by their index in a clip, out of scope for this (#763 › 1).
+
+Their ids are **not written to the file**, and they come from a second counter,
+`Project::session_ids`, that is not written either. The rule: **an id is saved when something
+refers to its object across a save** — another part of the file (a clip's `content`, a macro
+mapping's `device`), a plug-in's saved state (an ARA archive names its regions `clip-<id>` and
+modifications `content-<id>`), or a later version of the project being merged. Nothing refers to a
+marker, a point or a tempo change that way: a version merge matches tempo changes by beat
+([ADR 0024](0024-musical-time-and-tempo.md) › 5), and automation merges by lane or time range, since
+a point is a sample of a curve rather than an object with an identity in the music. What the ids
+are for — a command from an earlier read not hitting the wrong object — lasts as long as the project
+is open. A reader gives them in document order, after the saved kinds' (markers, then the channels'
+points, then the tempo changes), so a file always reads with the same ones; undo and redo keep the
+counter past every id handed out, as they do `next_id`. Their values may repeat a clip's or a
+device's, since a command always says which kind it names. Saving them later, if a merge comes to
+need it, is a format version like any other.
 
 Decided since: **an imported `.als` gets fresh ids.** Its own id space is separate and its object-id
 counter is not ours to reinterpret; the importer gives every lane, clip and scene a new id in

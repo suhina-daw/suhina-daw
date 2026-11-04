@@ -75,8 +75,10 @@ fn one_beat_holds_a_glide_and_a_jump() {
     run(&mut session, "tempo.addPoint", json!({ "beat": 8, "bpm": 130, "ramp": true })).unwrap();
     run(&mut session, "tempo.movePoint", json!({ "point": 1, "beat": 8 })).unwrap();
     assert_eq!(beats(&session), [(8.0, 130.0, true), (8.0, 150.0, false)]);
+    // The file round-trips. A tempo change's id is not in it (#763 › 1): a read gives new ones.
     let text = suhina_project_file::to_json(session.project());
-    assert_eq!(suhina_project_file::from_json(&text).as_ref(), Ok(session.project()));
+    let read = suhina_project_file::from_json(&text).unwrap();
+    assert_eq!(suhina_project_file::to_json(&read), text);
 }
 
 #[test]
@@ -160,8 +162,10 @@ fn a_saved_project_keeps_its_tempo_map() {
     let mut session = Session::new(Project::default());
     run(&mut session, "tempo.addPoint", json!({ "beat": 8, "bpm": 90, "ramp": true })).unwrap();
     run(&mut session, "timeSignature.add", json!({ "bar": 3, "numerator": 5, "denominator": 4 })).unwrap();
+    // The file round-trips. A tempo change's id is not in it (#763 › 1): a read gives new ones.
     let text = suhina_project_file::to_json(session.project());
-    assert_eq!(suhina_project_file::from_json(&text).as_ref(), Ok(session.project()));
+    let read = suhina_project_file::from_json(&text).unwrap();
+    assert_eq!(suhina_project_file::to_json(&read), text);
 }
 
 /// The tempo field sends the tempo while it is dragged, each call after the first with

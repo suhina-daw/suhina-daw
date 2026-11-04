@@ -26,8 +26,8 @@ use suhina_model::{
     DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels,
     LaneData, LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn,
     LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
-    MappedDevice, MappingSource, MappingTarget, Marker, MarkerId, MidiInput, MidiPort, Monitor, Note, PointId, Project,
-    Rgb, Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TempoPointId, TimeSignature,
+    MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, PointId, Project, Rgb,
+    Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TempoPointId, TimeSignature,
     TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
 };
 
@@ -223,13 +223,7 @@ fn project_value(p: &Project) -> Value {
             let changes = p.transport.tempo_changes.iter();
             t.insert(
                 "tempo_changes".into(),
-                changes
-                    .map(|c| {
-                        let mut v = json!({ "beat": number(c.beat), "bpm": number(c.bpm), "ramp": c.ramp });
-                        with_id(&mut v, c.id.0);
-                        v
-                    })
-                    .collect(),
+                changes.map(|c| json!({ "beat": number(c.beat), "bpm": number(c.bpm), "ramp": c.ramp })).collect(),
             );
         }
         if !p.transport.time_signature_changes.is_empty() {
@@ -259,16 +253,9 @@ fn project_value(p: &Project) -> Value {
     }).collect::<Vec<_>>() });
     // Left out when there are none, so a project without markers is written as before.
     if !p.arrangement.markers.is_empty() {
-        arrangement["markers"] = p
-            .arrangement
-            .markers
-            .iter()
-            .map(|m| {
-                let mut v = json!({ "beat": number(m.beat), "name": m.name });
-                with_id(&mut v, m.id.0);
-                v
-            })
-            .collect();
+        // A marker's id lives only while the project is open, so it is not written (#763 › 1).
+        arrangement["markers"] =
+            p.arrangement.markers.iter().map(|m| json!({ "beat": number(m.beat), "name": m.name })).collect();
     }
     // Take lanes (#909), left out when there are none, so a project without is written as before.
     if !p.arrangement.takes.is_empty() {
@@ -427,7 +414,6 @@ fn lanes_value(lanes: &[AutomationLane]) -> Value {
                 .iter()
                 .map(|p| {
                     let mut point = json!({ "beat": number(p.beat), "value": number(p.value) });
-                    with_id(&mut point, p.id.0);
                     if !p.curve.is_straight()
                         && let Some(map) = point.as_object_mut()
                     {
@@ -846,7 +832,8 @@ fn tempo_changes(t: &Obj) -> Result<Vec<TempoPoint>, ProjectFileError> {
             if !valid_bpm(bpm) {
                 return Err(format!("{at}.bpm: {bpm} is not a tempo").into());
             }
-            Ok(TempoPoint { id: TempoPointId(read_id(c, &at)?), beat, bpm, ramp: flag(c, "ramp", false, &at)? })
+            // Its id lives only while the project is open (#763 › 1): `assign_ids` gives it.
+            Ok(TempoPoint { id: TempoPointId::NONE, beat, bpm, ramp: flag(c, "ramp", false, &at)? })
         })
         .collect()
 }
@@ -956,7 +943,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                 if beat < 0.0 {
                     return Err(format!("{at}.beat: expected a beat from 0 on").into());
                 }
-                markers.push(Marker { id: MarkerId(read_id(m, &at)?), beat, name: text(m, "name", &at)? });
+                markers.push(Marker::new(beat, text(m, "name", &at)?));
             }
             let mut takes = Vec::new();
             for (i, v) in list(a, "takes", "project.arrangement")?.iter().enumerate() {
@@ -1036,10 +1023,12 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
         extensions: extensions(p, "project")?,
         default_scale: read_scale(p, "default_scale", "project")?,
         next_id: optional_whole(p, "next_id", "project")?.unwrap_or(0),
+        session_ids: suhina_model::SessionCounter::default(),
     };
     // A file written before ids, or an object added by hand without one: the objects without an
     // id get the next ones in document order, so the same file always reads with the same ids.
-    // A stale `next_id` moves past the ids in use.
+    // A stale `next_id` moves past the ids in use. Markers, automation points and tempo changes
+    // always get theirs here: the file does not hold them (#763 › 1).
     project.assign_ids().map_err(|e| ProjectFileError(format!("project: {e}")))?;
     Ok(project)
 }
@@ -1209,7 +1198,8 @@ fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileErr
             let p = object(p, &at)?;
             let curve = read_curve(p, &at)?;
             let (beat, value) = (float(p, "beat", &at)?, float(p, "value", &at)?);
-            points.push(AutomationPoint { id: PointId(read_id(p, &at)?), beat, value, curve });
+            // Its id lives only while the project is open (#763 › 1): `assign_ids` gives it.
+            points.push(AutomationPoint { id: PointId::NONE, beat, value, curve });
         }
         // In beat order, as the model keeps them; points at the same beat keep their order.
         points.sort_by(|a, b| a.beat.total_cmp(&b.beat));

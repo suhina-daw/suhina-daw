@@ -12,6 +12,14 @@
 //! column, then the channels' devices, a group before the devices in it), which is also how a
 //! file written before ids existed gets them.
 //!
+//! Markers, automation points and tempo changes have ids too, but only while the project is open
+//! (#763 › 1): nothing refers to one of them across a save, so the file does not hold their ids.
+//! They come from a second counter, [`Project::session_ids`], which the file does not hold either;
+//! [`Project::assign_ids`] gives them after the saved kinds, in document order (markers, then the
+//! channels' points, then the tempo changes), so a file always reads with the same ones. A value
+//! is still never handed out twice while the project is open, undo included. Their values may
+//! repeat a clip's or a device's: a command always says which kind it names.
+//!
 //! Tracks and channels have ids of their own ([`TrackId`], [`ChannelId`]);
 //! [`Project::track`] and [`Project::channel`] find one by it.
 
@@ -116,6 +124,20 @@ pub struct TempoPointId(pub u32);
 
 object_id!(ClipId, LaneId, SceneId, DeviceId, MarkerId, PointId, TempoPointId);
 
+/// The next id a marker, an automation point or a tempo change gets: ids that live only while the
+/// project is open and are not written to the file (#763 › 1). 0 means nothing was handed out yet.
+///
+/// Not part of what the project holds: two projects are equal whatever their counters say, as
+/// two projects that write the same file are.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SessionCounter(pub u32);
+
+impl PartialEq for SessionCounter {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
 /// The counter has reached the largest id there is: the project can name no more objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IdsExhausted;
@@ -173,22 +195,31 @@ impl Project {
         self.next_object_id().map(SceneId).ok_or(IdsExhausted)
     }
 
-    /// The largest object id in use, 0 when there is none.
+    /// The largest id in use of the kinds the file holds (lanes, clips, scenes, devices), 0 when
+    /// there is none.
     pub fn max_object_id(&self) -> u32 {
         let lanes = self.arrangement.lanes.iter().map(|l| l.id.0);
         let clips = self.all_clips().map(|c| c.id.0);
         let scenes = self.launcher.scenes.iter().map(|s| s.id.0);
         let devices = self.all_devices().map(|d| d.id.0);
+        lanes.chain(clips).chain(scenes).chain(devices).max().unwrap_or(0)
+    }
+
+    /// The largest id in use of the kinds that have one only while the project is open (markers,
+    /// automation points, tempo changes), 0 when there is none.
+    pub fn max_session_id(&self) -> u32 {
         let markers = self.arrangement.markers.iter().map(|m| m.id.0);
         let points = self.all_automation_points().map(|p| p.id.0);
         let tempo = self.transport.tempo_changes.iter().map(|t| t.id.0);
-        lanes.chain(clips).chain(scenes).chain(devices).chain(markers).chain(points).chain(tempo).max().unwrap_or(0)
+        markers.chain(points).chain(tempo).max().unwrap_or(0)
     }
 
-    /// Moves the counter past every id in use, then gives every lane, clip and scene that has no
-    /// id ([`ClipId::NONE`]) the next ones, in document order. Objects that have an id keep it,
-    /// so calling it again changes nothing. Fails, leaving the objects it did not reach without
-    /// an id, when the counter runs out.
+    /// Moves each counter past the ids in use, then gives every object that has no id
+    /// ([`ClipId::NONE`]) the next ones, in document order: lanes, clips, scenes and devices from
+    /// [`Project::next_id`], then markers, automation points and tempo changes from
+    /// [`Project::session_ids`]. Objects that have an id keep it, so calling it again changes
+    /// nothing. Fails, leaving the objects it did not reach without an id, when a counter runs
+    /// out.
     pub fn assign_ids(&mut self) -> Result<(), IdsExhausted> {
         let used = self.max_object_id();
         if used == u32::MAX {
@@ -198,6 +229,14 @@ impl Project {
         let mut counter = Counter(if used == 0 { self.next_id } else { self.next_id.max(used + 1) });
         let result = self.fill_ids(&mut counter);
         self.next_id = counter.0;
+        result?;
+        let used = self.max_session_id();
+        if used == u32::MAX {
+            return Err(IdsExhausted);
+        }
+        let mut counter = Counter(if used == 0 { self.session_ids.0 } else { self.session_ids.0.max(used + 1) });
+        let result = self.fill_session_ids(&mut counter);
+        self.session_ids.0 = counter.0;
         result
     }
 
@@ -223,8 +262,12 @@ impl Project {
         for channel in &mut self.channels {
             fill_device_ids(&mut channel.devices, counter, &mut seen, &mut Vec::new())?;
         }
-        // Markers, automation points and tempo points the same way: one that has no id, or one an
-        // earlier one has (a copied lane's points), gets the next.
+        Ok(())
+    }
+
+    fn fill_session_ids(&mut self, counter: &mut Counter) -> Result<(), IdsExhausted> {
+        // As for devices: one that has no id, or one an earlier one has (a copied lane's points),
+        // gets the next.
         let mut seen = std::collections::HashSet::new();
         for marker in &mut self.arrangement.markers {
             if !marker.id.is_some() || !seen.insert(marker.id) {

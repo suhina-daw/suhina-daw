@@ -219,6 +219,7 @@ impl Reader {
             extensions: Extensions::default(),
             default_scale: None,
             next_id: 0,
+            session_ids: suhina_model::SessionCounter::default(),
         };
         self.untangle_groups(&mut project);
         project

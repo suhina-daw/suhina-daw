@@ -38,7 +38,9 @@ pub const PROJECT_EXTENSION: &str = "suhina";
 pub fn is_project_file(path: &std::path::Path) -> bool {
     path.extension().is_some_and(|e| e.eq_ignore_ascii_case(PROJECT_EXTENSION))
 }
-pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, PointId, SceneId, TempoPointId};
+pub use ids::{
+    ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, PointId, SceneId, SessionCounter, TempoPointId,
+};
 
 mod launch;
 mod mapping;
@@ -94,6 +96,9 @@ pub struct Project {
     /// ([ADR 0025](../../docs/decisions/0025-object-identity.md)). Allocate with
     /// [`Project::new_clip_id`] and its neighbours; 0 means nothing was handed out yet.
     pub next_id: u32,
+    /// The next id a marker, an automation point or a tempo change gets. Unlike `next_id` it is
+    /// not written to the file, and neither are their ids (#763 › 1).
+    pub session_ids: SessionCounter,
 }
 
 /// The song's tempo and time signature: `tempo_bpm` and `time_signature` hold from the start,
@@ -1176,24 +1181,23 @@ impl Project {
         let scene_ids = unique(scene_ids, ValidationError::DuplicateScene, &mut errors);
         let device_ids = self.all_devices().map(|d| d.id).filter(|id| id.is_some());
         let device_ids = unique(device_ids, ValidationError::DuplicateDevice, &mut errors);
+        // Markers, points and tempo changes have their own counter, which the file does not hold
+        // (#763 › 1), so only a value used twice within one kind is refused.
         let marker_ids = self.arrangement.markers.iter().map(|m| m.id).filter(|id| id.is_some());
-        let marker_ids = unique(marker_ids, |id: MarkerId| ValidationError::DuplicateObject(id.0), &mut errors);
+        unique(marker_ids, |id: MarkerId| ValidationError::DuplicateObject(id.0), &mut errors);
         let point_ids = self.all_automation_points().map(|p| p.id).filter(|id| id.is_some());
-        let point_ids = unique(point_ids, |id: PointId| ValidationError::DuplicateObject(id.0), &mut errors);
+        unique(point_ids, |id: PointId| ValidationError::DuplicateObject(id.0), &mut errors);
         let tempo_ids = self.transport.tempo_changes.iter().map(|t| t.id).filter(|id| id.is_some());
-        let tempo_ids = unique(tempo_ids, |id: TempoPointId| ValidationError::DuplicateObject(id.0), &mut errors);
-        // The kinds share one counter, so a value names at most one object of any of them
-        // (ADR 0025 › 2): a lane and a clip with the same value are refused as well.
+        unique(tempo_ids, |id: TempoPointId| ValidationError::DuplicateObject(id.0), &mut errors);
+        // The kinds the file holds share one counter, so a value names at most one object of any
+        // of them (ADR 0025 › 2): a lane and a clip with the same value are refused as well.
         let mut kinds: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
         let values = clip_ids
             .iter()
             .map(|c| c.0)
             .chain(lane_ids.iter().map(|l| l.0))
             .chain(scene_ids.iter().map(|s| s.0))
-            .chain(device_ids.iter().map(|d| d.0))
-            .chain(marker_ids.iter().map(|m| m.0))
-            .chain(point_ids.iter().map(|p| p.0))
-            .chain(tempo_ids.iter().map(|t| t.0));
+            .chain(device_ids.iter().map(|d| d.0));
         for value in values {
             *kinds.entry(value).or_default() += 1;
         }

@@ -61,6 +61,7 @@ fn alone(project: &Project, track: TrackId) -> Project {
     Project {
         // The clips keep their ids, so the counter stays past them.
         next_id: project.next_id,
+        session_ids: project.session_ids,
         // The range is rendered straight through: the arrangement's loop region does not wrap it.
         transport: Transport { loop_enabled: false, ..project.transport.clone() },
         tracks: vec![Track {

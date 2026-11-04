@@ -290,3 +290,14 @@ fn every_command_that_takes_a_clip_index_takes_a_clip_id_and_says_the_index_is_d
         assert!(takes_ids, "{id} takes clip ids");
     }
 }
+
+/// A marker's id is not written to the file (#763 › 1), but undo still never hands it out
+/// again: a command from a read before the undo must not find the next marker under it.
+#[test]
+fn a_marker_id_freed_by_undo_is_not_handed_out_again() {
+    let mut session = Session::new(project());
+    let added = run(&mut session, "marker.add", json!({ "beat": 4 })).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let again = run(&mut session, "marker.add", json!({ "beat": 8 })).unwrap();
+    assert!(again["id"].as_u64() > added["id"].as_u64(), "{added} then {again}");
+}
