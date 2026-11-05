@@ -12,6 +12,7 @@ covers:
   - .github/workflows/test-build-links.yml
   - .github/workflows/ready-to-merge.yml
   - scripts/build_reuse.py
+  - scripts/release_packages_check.sh
   - scripts/test_build_reuse.py
   - scripts/test_merge_approval.py
   - scripts/branch_update.py
@@ -71,7 +72,11 @@ becomes the latest.
 5. For the next candidate, or the final release, repeat from step 1 with `0.1.0-rc.2` or `0.1.0`.
 
 Running the workflow by hand (Actions › Release › Run workflow) builds the same packages as
-workflow artifacts without creating a release, to test the pipeline.
+workflow artifacts without creating a release, to test the pipeline. Every run's artifacts are
+kept for 7 days; a nightly or a release keeps its packages on its release page. A release or a
+nightly is published only with all three platforms' packages
+(`scripts/release_packages_check.sh`): when one build failed, re-run the whole workflow, since a
+build re-run after the others' artifacts expired brings only its own.
 
 On Windows the three executables carry version information, which the file's Properties ›
 Details and Task Manager show: the product name Suhina, what each program is (Suhina, Suhina
