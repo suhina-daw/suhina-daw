@@ -2403,31 +2403,9 @@ impl App {
         };
         // A critical operation is backed up first, when the settings say so.
         self.projects.back_up_before(action.id);
-        let mut no_input = false;
         let Ok(session) = self.projects.session_mut(None) else { return };
-        // An audio track armed while it hears no input gets the device's first input (a stereo
-        // pair where there are two channels), so Record has something to record and stays on
-        // (#682). Without one, recording refuses the track.
-        if action.id == "track.setArm"
-            && action.params["armed"].as_bool() == Some(true)
-            && let Some(track) = action.params["track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId)
-            && session.project().tracks.iter().any(|t| {
-                t.id == track && !t.content.notes && t.audio_input.channels == suhina_engine::model::InputChannels::None
-            })
-        {
-            let inputs = session.player().and_then(suhina_session::Player::output_info).map_or(0, |i| i.input_channels);
-            let input = match inputs {
-                0 => None,
-                1 => Some("1"),
-                _ => Some("1/2"),
-            };
-            if let Some(input) = input {
-                let _ = session.execute("track.setAudioInput", &json!({ "track": track.0, "input": input }));
-            } else {
-                // Armed with nothing to hear: say so, rather than a button that seems not to work.
-                no_input = true;
-            }
-        }
+        // An audio track armed while it hears no input gets the default track input, or the
+        // device's first input: the session gives it and says which (`track.setArm`, #682, #1191).
         suhina_plugins::trace!("action {} {}", action.id, action.params);
         // The track to select once tracks are deleted or cut: the next one, or the one before
         // when they were the last (#918). Known before the command, while they are there.
@@ -2447,12 +2425,17 @@ impl App {
             _ => None,
         };
         match session.execute(action.id, params) {
-            Ok(_) if no_input => {
+            Ok(result) if result["no_input"].as_bool() == Some(true) => {
                 self.revision += 1;
                 self.status = Status::Hint(
                     "Armed, but the audio device has no input: choose an input device in Settings › Audio, then pick it under Audio From"
                         .into(),
                 );
+            }
+            Ok(result) if result["input_given"].is_string() => {
+                self.revision += 1;
+                let input = result["input_given"].as_str().unwrap_or_default();
+                self.status = Status::Hint(format!("Armed, hearing In {input}: change it under Audio From"));
             }
             Ok(result) => {
                 if action.id == "edit.undo" {

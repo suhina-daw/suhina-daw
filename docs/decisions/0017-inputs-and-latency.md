@@ -1,6 +1,6 @@
 ---
 description: How played input reaches the engine (MIDI controllers first, audio inputs later), what arming a track is, and what a key press costs in latency today and how that is made smaller
-read_when: MIDI input, MIDI controller, keyboard, arm, armed track, track.setArm, midi.inputs, live notes, sustain pedal, input latency, monitoring, recording, low latency, midir
+read_when: MIDI input, default track input, audio.setTrackInput, MIDI controller, keyboard, arm, armed track, track.setArm, midi.inputs, live notes, sustain pedal, input latency, monitoring, recording, low latency, midir
 type: decision
 status: accepted
 built: yes
@@ -89,7 +89,8 @@ engine code.
    track armed by hand is never disarmed by it, and selecting one already armed leaves it as it
    is. Only a track that plays notes or audio through a regular channel is armed: a return,
    the main track or a group leaves the arm where it is. An audio track is armed as its arm
-   button arms it: one with no audio input gets the device's first input (#682). While a take records, the selection
+   button arms it: one with no audio input gets the default track input, or else the device's
+   first input (#682; Amendment: default track input). While a take records, the selection
    does not move the arm (a take asked to end still records until it is a clip: a slot's, to its
    launch boundary); once the take ends, the track selected then is armed. Turning the
    setting off leaves the arm as it is. The window remembers which track it armed, per project.
@@ -162,6 +163,10 @@ engine code.
      waiting in the ring, and then the same path as a key on a MIDI controller (decision 5); an
      armed track keeps the shallower queue (decision 6). `audio.info` reports the input device,
      its channels and its underruns.
+   - *The default track input* (Amendment: default track input). New audio tracks hear the
+     channels Settings › Audio › Default track input names (`audio.setTrackInput`), while an
+     input device is chosen; an audio track armed while it hears nothing gets them too.
+   *Amended 2026-11-05, see Amendment: default track input.*
 
 10. **Notes are placed by when they were played** (amendment,
     [#269](https://github.com/suhina-daw/suhina-daw/issues/269)). A note on the first frame of the
@@ -202,6 +207,30 @@ engine code.
     transport stopped and starts the transport on the frame it ends. A loopback test (the
     output fed back into the input offline, with a known delay) checks that a recorded frame
     lands on the frame it was played at.
+
+## Amendment: default track input (2026-11-05)
+
+[#1191](https://github.com/suhina-daw/suhina-daw/issues/1191). Before, every new audio track heard
+nothing until its input was picked by hand. Suhina now keeps a *default track input*: none (as
+before), one channel or a neighbouring pair of the input device. It belongs to the app, not to a
+project: Settings › Audio › Output › Default track input keeps it across starts, and
+`audio.setTrackInput {input}` sets it from MCP and the CLI (`audio.devices` and `audio.info` show
+it as `chosen.track_input`). `Projects` hands the default in effect to every open project
+(`Session::set_default_input`); it is none while the input device is Off, so the default never
+makes a track use a microphone the user has not chosen (decision 9).
+
+- Every audio track a command adds takes it: `track.add` (one or `count`), tracks made for
+  dropped audio files, and split stems. MIDI tracks, returns and groups do not. It is part of the
+  edit that adds the track, so undo takes both back.
+- An audio track armed while it hears nothing (`track.setArm`) gets it in an undo step of its
+  own before it is armed; with no default it gets the device's first channels, as before (#682).
+  The arm's result says which in `input_given`, or with `no_input` that the device has no input
+  to give; the window shows it in the status bar. This moved from the window into the session,
+  so arming from MCP gives the input too.
+- A default the open input device does not have (In 3/4 on a two-channel device) is not given;
+  with no output open the channels are not known and it is given as chosen. Settings lists the
+  device's channels and its pairs, and keeps a choice the device lacks listed and marked.
+- Changing the default leaves the tracks that are there as they are.
 
 ## Amendment: playback reserve (2026-10-29)
 

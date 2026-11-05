@@ -2208,6 +2208,46 @@ pub(crate) fn audio_output(cx: &mut Cx<'_>, y: &mut f32) {
     }
 }
 
+/// Audio › Output › Default track input (#1191): none, or a channel or a stereo pair of the
+/// input device, listed from its channels; the app runs `audio.setTrackInput` with it.
+pub(crate) fn default_track_input(cx: &mut Cx<'_>, r: Rect) {
+    let choice = cx.settings.output_choice();
+    let channels = match &cx.about.audio_live {
+        Some(live) if live.input.is_some() => live.input_channels,
+        _ => {
+            let host = chosen(cx.settings, cx.about).host;
+            let inputs = host.map_or(&[][..], |h| h.inputs.as_slice());
+            match &choice.input {
+                suhina_session::InputChoice::Off => 0,
+                suhina_session::InputChoice::Default => inputs.iter().find(|i| i.default).map_or(0, |i| i.channels),
+                suhina_session::InputChoice::Named(name) => {
+                    inputs.iter().find(|i| &i.name == name).map_or(0, |i| i.channels)
+                }
+            }
+        }
+    };
+    let options = track_input_options(channels, &cx.settings.audio_track_input);
+    cx.note(if choice.input == suhina_session::InputChoice::Off {
+        "No effect while Input is Off: new audio tracks hear nothing until an input device is chosen"
+    } else {
+        "What a new audio track hears, and an armed track that hears nothing; tracks that are there keep theirs"
+    });
+    cx.dropdown(r, &options, |s| &mut s.audio_track_input);
+}
+
+/// The choices of Default track input for a device with `channels` inputs: None, each channel,
+/// then each stereo pair; and `current` when the device does not have it.
+pub(crate) fn track_input_options(channels: u16, current: &str) -> Vec<(String, String)> {
+    let channels = channels.min(suhina_engine::model::MAX_INPUT_CHANNEL);
+    let mut options = vec![("None".to_string(), "none".to_string())];
+    options.extend((1..=channels).map(|c| (format!("In {c}"), c.to_string())));
+    options.extend((1..channels).step_by(2).map(|c| (format!("In {c}/{}", c + 1), format!("{c}/{}", c + 1))));
+    if !options.iter().any(|(_, value)| value == current) {
+        options.push((format!("In {current} (not on this device)"), current.to_string()));
+    }
+    options
+}
+
 /// Audio › Cue: the cue's output pair and volume.
 pub(crate) fn audio_cue(cx: &mut Cx<'_>, y: &mut f32) {
     let picked = cue_rows(cx.ui, cx.painter, cx.page, y, cx.settings, cx.about);

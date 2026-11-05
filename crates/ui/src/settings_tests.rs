@@ -182,6 +182,7 @@ fn settings_survive_a_round_trip() {
         audio_cue_pair: 2,
         audio_cue_volume: -6,
         audio_input: "Line In (Interface)".into(),
+        audio_track_input: "3/4".into(),
         midi_inputs_off: vec!["Keys, port 1".into(), "Pads:Pads MIDI 1 20:0".into()],
         zoom: 130,
         map_window: true,
@@ -231,6 +232,32 @@ fn browser_values_out_of_range_are_limited() {
     assert_eq!((settings.browser_width, settings.preview_volume), (BROWSER_WIDTHS.1, PREVIEW_VOLUMES.0));
     assert_eq!(settings.warp_mode, WarpMode::Rhythmic);
     assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn the_default_track_input_is_kept_and_nonsense_keeps_none() {
+    use suhina_engine::model::InputChannels;
+    assert_eq!(Settings::default().track_input(), InputChannels::None);
+    for (text, input) in [
+        ("none", InputChannels::None),
+        ("2", InputChannels::Mono(2)),
+        ("3/4", InputChannels::Stereo(3)),
+        (" 1/2 ", InputChannels::Stereo(1)),
+    ] {
+        let (settings, warnings) = Settings::from_text(&format!(
+            "audio_track_input = {text}
+"
+        ));
+        assert_eq!((settings.track_input(), warnings.len()), (input, 0), "{text}");
+        assert_eq!(Settings::from_text(&settings.to_text()).0.track_input(), input, "{text} written again");
+    }
+    for nonsense in ["2/4", "0", "loud", ""] {
+        let (settings, warnings) = Settings::from_text(&format!(
+            "audio_track_input = {nonsense}
+"
+        ));
+        assert_eq!((settings.audio_track_input.as_str(), warnings.len()), ("none", 1), "{nonsense:?}");
+    }
 }
 
 #[test]

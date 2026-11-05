@@ -82,6 +82,18 @@ pub fn cue_channels(pair: u16) -> (u32, u32) {
     (first, first + 1)
 }
 
+/// The input channels `text` names, as `audio.setTrackInput` takes them: "none", a channel
+/// from 1 ("3") or a pair of neighbouring channels ("1/2"); `None` for anything else.
+pub fn input_channels_from_text(text: &str) -> Option<suhina_model::InputChannels> {
+    crate::commands::parse_input_channels(&Value::String(text.to_string())).ok()
+}
+
+/// Input channels as `audio.setTrackInput` takes them and the settings keep them: "none", "3"
+/// or "1/2".
+pub fn input_channels_text(channels: suhina_model::InputChannels) -> String {
+    crate::commands::input_channels_text(channels)
+}
+
 /// A gain in dB, rounded to a hundredth; silence is `None` (JSON null).
 fn gain_db(gain: f32) -> Option<f64> {
     (gain > 0.0).then(|| (20.0 * f64::from(gain).log10() * 100.0).round() / 100.0)
@@ -514,6 +526,18 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
+        id: "audio.setTrackInput",
+        label: "Choose the default track input: the channels of the audio input device a new audio track hears, and an armed track that hears none (none, one channel or a stereo pair). It has no effect while no input device is chosen (audio.setOutput's input), and tracks that are there keep their own input",
+        params: &[param(
+            "input",
+            ParamType::Text,
+            "\"none\" (the default), a channel from 1 (\"3\"), or a pair (\"1/2\")",
+        )],
+        kind: CommandKind::Audio,
+        run: set_track_input,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
         id: "output.setCuePair",
         label: "Choose the output pair of the same device the cue plays on: previews and tracks whose cue is on are heard there (headphones) and not on the main output's channels 1 and 2. Pair 0 plays the cue with the main output. Reopens the output, keeping the transport where it is",
         params: &[param("pair", ParamType::Integer, "1 for channels 3/4, 2 for 5/6 … up to 31; 0 for the main output")],
@@ -583,7 +607,24 @@ pub(crate) fn hosts_json(hosts: &[HostInfo]) -> Value {
 
 fn devices(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
     let hosts = system(projects)?.hosts();
-    Ok(json!({ "hosts": hosts_json(&hosts), "chosen": projects.output_choice().to_json() }))
+    Ok(json!({ "hosts": hosts_json(&hosts), "chosen": chosen_json(projects) }))
+}
+
+/// The output chosen, with the default track input.
+fn chosen_json(projects: &Projects) -> Value {
+    let mut chosen = projects.output_choice().to_json();
+    chosen["track_input"] = json!(crate::commands::input_channels_text(projects.track_input()));
+    chosen
+}
+
+fn set_track_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let input = crate::commands::parse_input_channels(Args::new(params).value("input").unwrap_or(&Value::Null))?;
+    projects.set_track_input(input);
+    let off = projects.output_choice().input == InputChoice::Off;
+    Ok(json!({
+        "track_input": crate::commands::input_channels_text(input),
+        "in_effect": !off,
+    }))
 }
 
 fn set_output(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
@@ -628,7 +669,7 @@ fn set_cue_volume(projects: &mut Projects, params: &Value) -> Result<Value, Comm
 }
 
 fn info(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
-    let chosen = projects.output_choice().to_json();
+    let chosen = chosen_json(projects);
     let playing = projects.session_mut(None).ok().and_then(|s| s.player()).and_then(Player::output_info);
     Ok(match playing {
         Some(info) => {

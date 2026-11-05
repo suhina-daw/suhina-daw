@@ -36,6 +36,7 @@ pub(crate) mod take;
 mod tempo;
 mod time_signature;
 mod track;
+pub(crate) use track::parse_input_channels;
 mod transport;
 
 pub(crate) use args::Args;
@@ -972,14 +973,20 @@ fn rename_clips(session: &mut Session, params: &Value) -> Result<Value, CommandE
     Ok(json!({ "name": name, "clips": contents.len() }))
 }
 
-/// A track's audio input as commands show it: `input` "none", "3" or "1/2", and `monitor`.
-pub(crate) fn audio_input_json(input: &suhina_model::AudioInput) -> Value {
-    use suhina_model::{InputChannels, Monitor};
-    let channels = match input.channels {
+/// Input channels as commands show and take them: "none", "3" or "1/2".
+pub(crate) fn input_channels_text(channels: suhina_model::InputChannels) -> String {
+    use suhina_model::InputChannels;
+    match channels {
         InputChannels::None => "none".to_string(),
         InputChannels::Mono(c) => c.to_string(),
         InputChannels::Stereo(c) => format!("{c}/{}", c.saturating_add(1)),
-    };
+    }
+}
+
+/// A track's audio input as commands show it: `input` "none", "3" or "1/2", and `monitor`.
+pub(crate) fn audio_input_json(input: &suhina_model::AudioInput) -> Value {
+    use suhina_model::Monitor;
+    let channels = input_channels_text(input.channels);
     let monitor = match input.monitor {
         Monitor::Auto => "auto",
         Monitor::In => "in",

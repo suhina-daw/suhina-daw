@@ -133,6 +133,30 @@ impl App {
         }
     }
 
+    /// New audio tracks hear the default track input the settings choose (`audio.setTrackInput`,
+    /// #1191); the tracks that are there keep theirs.
+    pub(super) fn choose_track_input(&mut self) {
+        let input = self.settings.audio_track_input.clone();
+        match self.projects.execute("audio.setTrackInput", &json!({ "input": input })) {
+            Ok(result) => {
+                let shown = match result["track_input"].as_str() {
+                    Some("none") | None => "none".to_string(),
+                    Some(input) => format!("In {input}"),
+                };
+                self.status = if result["in_effect"].as_bool() == Some(false) && shown != "none" {
+                    Status::Hint(format!("Default track input: {shown}, once an input device is chosen under Input"))
+                } else {
+                    Status::Done(format!("Default track input: {shown}"))
+                };
+            }
+            Err(e) => {
+                self.settings.audio_track_input =
+                    suhina_session::audio::input_channels_text(self.projects.track_input());
+                self.status = Status::Error(e.message().to_owned());
+            }
+        }
+    }
+
     /// Settings can stay over the main view or move into an independent native window.
     pub(super) fn settings_dialog(&mut self, ui: &Ui, window: Rect) {
         if suhina_plugins::trace::on() {
@@ -318,6 +342,9 @@ impl App {
         }
         if let Some((port, enabled)) = outcome.midi_input.clone() {
             self.set_midi_input(&port, enabled);
+        }
+        if outcome.changed && self.settings.track_input() != self.projects.track_input() {
+            self.choose_track_input();
         }
         if outcome.changed {
             self.projects.set_backup_settings(self.settings.backup, self.settings.backup_clean_up);

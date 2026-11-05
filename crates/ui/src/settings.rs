@@ -469,6 +469,9 @@ pub struct Settings {
     /// The audio input device (Settings › Audio, `audio.setOutput`'s `input`): "off" (the
     /// default), "default" or a device's name.
     pub audio_input: String,
+    /// The default track input (Settings › Audio, `audio.setTrackInput`): the channels of the
+    /// input device a new audio track hears, "none" (the default), "3" or "1/2".
+    pub audio_track_input: String,
     /// The MIDI input ports turned off, by name (Settings › MIDI, `midi.setInput`); every
     /// other port is on. One `midi_input_off` line each, since a port's name may hold commas.
     pub midi_inputs_off: Vec<String>,
@@ -547,6 +550,7 @@ impl Default for Settings {
             audio_cue_pair: 0,
             audio_cue_volume: 0,
             audio_input: "off".into(),
+            audio_track_input: "none".into(),
             midi_inputs_off: Vec::new(),
             zoom: ZOOM,
             backup: suhina_session::backup::Interval::default(),
@@ -594,6 +598,11 @@ impl Settings {
             },
             input: suhina_session::InputChoice::from_text(&self.audio_input),
         }
+    }
+
+    /// The default track input these settings choose (`audio.setTrackInput`).
+    pub fn track_input(&self) -> suhina_engine::model::InputChannels {
+        suhina_session::audio::input_channels_from_text(&self.audio_track_input).unwrap_or_default()
     }
 
     /// Keeps `choice` as the audio output.
@@ -697,6 +706,7 @@ impl Settings {
             self.audio_cue_pair,
             self.audio_cue_volume,
             self.audio_input,
+            self.audio_track_input,
             self.zoom,
             self.backup.name(),
             on(self.backup_clean_up),
@@ -888,6 +898,11 @@ impl Settings {
                 }
                 ("audio_input", input) => {
                     settings.audio_input = suhina_session::InputChoice::from_text(input).as_text().to_string()
+                }
+                ("audio_track_input", input) if suhina_session::audio::input_channels_from_text(input).is_some() => {
+                    settings.audio_track_input = suhina_session::audio::input_channels_from_text(input)
+                        .map(suhina_session::audio::input_channels_text)
+                        .unwrap_or_else(|| "none".into());
                 }
                 ("midi_input_off", port) if !port.is_empty() => {
                     if !settings.midi_inputs_off.iter().any(|p| p == port) {

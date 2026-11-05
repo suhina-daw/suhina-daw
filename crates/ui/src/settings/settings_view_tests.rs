@@ -170,3 +170,17 @@ fn the_device_row_says_where_bluetooth_headphones_are_and_why_a_list_is_empty() 
     let failed = HostInfo { error: Some("no answer".into()), ..host("WASAPI") };
     assert_eq!(super::device_note(Some(&failed), &[]), "WASAPI cannot list its devices: no answer");
 }
+
+#[test]
+fn the_default_track_input_lists_the_devices_channels() {
+    let values = track_input_options;
+    assert_eq!(values(0, "none"), vec![("None".to_string(), "none".to_string())], "no input device: only None");
+    let four: Vec<String> = values(4, "none").into_iter().map(|(label, _)| label).collect();
+    assert_eq!(four, ["None", "In 1", "In 2", "In 3", "In 4", "In 1/2", "In 3/4"]);
+    // Three channels make one pair; the third is a channel of its own.
+    let three: Vec<String> = values(3, "1/2").into_iter().map(|(_, value)| value).collect();
+    assert_eq!(three, ["none", "1", "2", "3", "1/2"]);
+    // A choice the device does not have stays listed, marked, so it is not lost unseen.
+    let missing = values(2, "5/6");
+    assert_eq!(missing.last(), Some(&("In 5/6 (not on this device)".to_string(), "5/6".to_string())));
+}

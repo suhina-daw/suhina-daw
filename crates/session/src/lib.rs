@@ -198,6 +198,10 @@ pub struct Session {
     /// The take lane heard in place of its track's clips (`take.solo`, #989): its track and its
     /// index in `arrangement.takes`. Not saved, not an undo step.
     pub(crate) take_solo: Option<(suhina_model::TrackId, usize)>,
+    /// The audio input a new audio track takes, and an armed one that hears none: the
+    /// default track input of Settings › Audio while an input device is chosen, else none
+    /// ([`Session::set_default_input`], ADR 0017).
+    default_input: suhina_model::InputChannels,
 }
 
 /// Files kept decoded ahead of the commands that use them.
@@ -225,7 +229,28 @@ impl Session {
             backup: backup::SessionBackups::default(),
             live: live_input::LiveInput::default(),
             take_solo: None,
+            default_input: suhina_model::InputChannels::None,
         }
+    }
+
+    /// Sets the audio input new audio tracks take from now on ([`Projects`] keeps it in line
+    /// with Settings › Audio). Tracks that are there already keep theirs.
+    pub fn set_default_input(&mut self, input: suhina_model::InputChannels) {
+        self.default_input = input;
+    }
+
+    /// The audio input a new audio track takes now: the default set, when there is one and the
+    /// open input device has its channels. With no output open the channels are not known, and
+    /// the default is taken as it is.
+    pub fn default_input(&self) -> Option<suhina_model::InputChannels> {
+        use suhina_model::InputChannels;
+        let last = match self.default_input {
+            InputChannels::None => return None,
+            InputChannels::Mono(c) => c,
+            InputChannels::Stereo(c) => c.checked_add(1)?,
+        };
+        let channels = self.player().and_then(Player::output_info).map(|i| i.input_channels);
+        channels.is_none_or(|n| last <= n).then_some(self.default_input)
     }
 
     /// Sets how long the fades of parts comped from now on are, in milliseconds.

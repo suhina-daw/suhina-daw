@@ -71,6 +71,9 @@ struct Devices {
     audio: Option<std::sync::Arc<dyn crate::AudioSystem>>,
     /// The output the user chose (`audio.setOutput`, the window's settings).
     output_choice: crate::OutputChoice,
+    /// The audio input new audio tracks take (`audio.setTrackInput`, Settings › Audio ›
+    /// Default track input), while an input device is chosen (ADR 0017).
+    track_input: suhina_model::InputChannels,
     /// When a failed output was last opened again, so a device that keeps failing is tried
     /// every [`OUTPUT_RETRY`], not every frame.
     output_retried: Option<std::time::Instant>,
@@ -248,6 +251,38 @@ impl Projects {
     pub fn set_output_choice(&mut self, choice: crate::OutputChoice) {
         self.devices.output_choice = choice;
         self.devices.output_watched = None;
+        self.share_track_input();
+    }
+
+    /// The default track input chosen (`audio.setTrackInput`), whether or not an input device
+    /// is chosen for it to be heard on.
+    pub fn track_input(&self) -> suhina_model::InputChannels {
+        self.devices.track_input
+    }
+
+    /// Chooses the audio input new audio tracks take from now on, and armed tracks that hear
+    /// none; the tracks that are there keep theirs. It has no effect while the input device is
+    /// off, so nothing opens a microphone unasked (ADR 0017).
+    pub fn set_track_input(&mut self, input: suhina_model::InputChannels) {
+        self.devices.track_input = input;
+        self.share_track_input();
+    }
+
+    /// Gives every open project the default track input in effect: none while no input device
+    /// is chosen.
+    fn share_track_input(&mut self) {
+        let input = self.effective_track_input();
+        for open in &mut self.tabs.open {
+            open.session.set_default_input(input);
+        }
+    }
+
+    fn effective_track_input(&self) -> suhina_model::InputChannels {
+        if self.devices.output_choice.input == crate::InputChoice::Off {
+            suhina_model::InputChannels::None
+        } else {
+            self.devices.track_input
+        }
     }
 
     /// Opens the chosen output for project `id` (the active one when `None`), with its
@@ -353,6 +388,7 @@ impl Projects {
             let source = session.source().map(Path::to_path_buf);
             session.set_trusted(self.trusted_audio_for(source.as_deref()));
         }
+        session.set_default_input(self.effective_track_input());
         self.tabs.open.push(Open { id, name, session });
         self.activate(id);
         Ok(id)

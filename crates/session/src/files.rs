@@ -12,9 +12,9 @@ use suhina_device_api::Role;
 use suhina_engine::AudioData;
 use suhina_media::info::{FileKind, Tempo, TempoSource, kind_of};
 use suhina_model::{
-    ArrangementLane, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipContent, ContentId, ContentKinds,
-    ContentLane, LaneData, LauncherColumn, LoopRange, Note, Project, Scene, Slot, StretchMode, Track, TrackId,
-    WarpMarker,
+    ArrangementLane, AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipContent, ContentId,
+    ContentKinds, ContentLane, InputChannels, LaneData, LauncherColumn, LoopRange, Note, Project, Scene, Slot,
+    StretchMode, Track, TrackId, WarpMarker,
 };
 
 use crate::commands::{Args, make_room, track_at};
@@ -76,12 +76,14 @@ fn end_of_regular_tracks(p: &Project) -> usize {
 }
 
 /// Adds a track of `kind` named `name` with its channel, clip slots for every scene and an
-/// arrangement lane, right after `after` (in its group) or at the end of the regular tracks.
+/// arrangement lane, right after `after` (in its group) or at the end of the regular tracks. An
+/// audio track hears `input` ([`Session::default_input`]); a MIDI track hears no audio input.
 pub(crate) fn insert_track(
     p: &mut Project,
     kind: TrackKind,
     name: &str,
     after: Option<TrackId>,
+    input: Option<InputChannels>,
 ) -> Result<TrackId, CommandError> {
     if p.tracks.len() >= MAX_TRACKS {
         return Err(format!("a project holds at most {MAX_TRACKS} tracks").into());
@@ -119,7 +121,10 @@ pub(crate) fn insert_track(
         channel: Some(channel),
         parent,
         midi_input: Default::default(),
-        audio_input: Default::default(),
+        audio_input: AudioInput {
+            channels: input.filter(|_| kind == TrackKind::Audio).unwrap_or_default(),
+            ..AudioInput::default()
+        },
         extensions: Default::default(),
     };
     let at = at.min(p.tracks.len());
@@ -273,10 +278,11 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         if device.is_some() || preset_values.is_some() || sd.is_some() {
             return Err("count adds empty tracks; leave out device, preset, stock and sd".into());
         }
+        let input = session.default_input();
         let mut tracks = Vec::with_capacity(count);
         let mut after = after;
         for _ in 0..count {
-            let track = insert_track(&mut session.project, kind, &name, after)?;
+            let track = insert_track(&mut session.project, kind, &name, after, input)?;
             tracks.push(track.0);
             after = Some(track);
         }
@@ -286,7 +292,8 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         };
         return Ok(json!({ "track": tracks.first(), "tracks": tracks, "name": name, "kind": kind }));
     }
-    let track = insert_track(&mut session.project, kind, &name, after)?;
+    let input = session.default_input();
+    let track = insert_track(&mut session.project, kind, &name, after, input)?;
     let mut added = Value::Null;
     if device.is_some() || preset_values.is_some() || sd.is_some() {
         let mut device_params = json!({ "track": track.0 });
@@ -442,6 +449,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
         target_kind = Some(first.kind);
     }
     // Which track each clip goes on.
+    let input = session.default_input();
     let p = &mut session.project;
     let mut new_tracks: Vec<TrackId> = Vec::new();
     let mut groups: Vec<(TrackId, Vec<Source>)> = Vec::new();
@@ -457,7 +465,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
                 groups.push((target, vec![first]));
             }
             for source in iter {
-                let id = insert_track(p, source.kind, &source.name, last)?;
+                let id = insert_track(p, source.kind, &source.name, last, input)?;
                 new_tracks.push(id);
                 last = Some(id);
                 groups.push((id, vec![source]));
@@ -469,7 +477,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
     // The rest go on new tracks: one per kind, or one each.
     if separate {
         for source in rest {
-            let id = insert_track(p, source.kind, &source.name, last)?;
+            let id = insert_track(p, source.kind, &source.name, last, input)?;
             new_tracks.push(id);
             if target.is_some() {
                 last = Some(id);
@@ -486,7 +494,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
                 [one] => one.name.clone(),
                 _ => numbered_name(kind),
             };
-            let id = insert_track(p, kind, &name, last)?;
+            let id = insert_track(p, kind, &name, last, input)?;
             new_tracks.push(id);
             if target.is_some() {
                 last = Some(id);
@@ -945,6 +953,7 @@ fn place_stems(
     }
 
     // The tracks, after the target or at the end of a target group.
+    let input = session.default_input();
     let p = &mut session.project;
     let into = target.filter(|&t| is_group(p, t));
     let mut after = match into {
@@ -953,7 +962,7 @@ fn place_stems(
     };
     let mut tracks = Vec::with_capacity(sources.len());
     for (track_name, color, _) in &sources {
-        let id = insert_track(p, TrackKind::Audio, track_name, after)?;
+        let id = insert_track(p, TrackKind::Audio, track_name, after, input)?;
         if let Some(group) = into {
             let group_channel = p.track(group).and_then(|t| t.channel);
             let channel = p.track_mut(id).and_then(|t| {

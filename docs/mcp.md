@@ -149,6 +149,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   what a track hears: `input` `"none"`, a channel (`"3"`) or a pair (`"1/2"`), `monitor`
   `auto` (while armed), `in` or `off`; it is an edit, saved with the project. Arm several
   tracks with `track.setArm` and `exclusive: false` to hear a band on separate tracks.
+  `audio.setTrackInput {input}` chooses the default track input, in the same form: what new
+  audio tracks hear, and an audio track armed while it hears nothing (whose arm result then says
+  `input_given`, or `no_input` when there was nothing to give); it has no effect while the input
+  device is off, and `audio.info` and `audio.devices` show it as `chosen.track_input`.
   `audio.info` adds `input`, `input_channels` and `input_underruns`. Arming is not an edit (no undo step, not saved) and works
   before an engine plays; `project.tracks` says which tracks are `armed`. Without `--audio`,
   `midi.*` returns an error.
@@ -494,7 +498,7 @@ suhina-cli mcp --attach
   and browser library. Agents cannot grant themselves access. Revocation applies to subsequent
   operations and exports still gathering state; it does not cancel a render already started.
 - **Settings.** Commands that change the app's settings or the person's library rather than a
-  project are refused: `audio.setOutput`, `output.setCuePair`, `output.setCueVolume`,
+  project are refused: `audio.setOutput`, `audio.setTrackInput`, `output.setCuePair`, `output.setCueVolume`,
   `midi.setInput`, `plugin.setHosting`, `library.setPluginsView`, `library.pin`, `library.unpin`,
   `library.tag`, `library.setTag`, `library.removeTag`, `soundmap.setKind`, and
   `project.autosave` with `interval` or `cleanUp`. Transport commands play on the window's output.
