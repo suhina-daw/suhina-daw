@@ -597,6 +597,13 @@ impl AheadReader {
         for reader in &mut self.readers {
             reader.fade_left = 0;
         }
+        self.move_voices(to);
+    }
+
+    /// [`AheadReader::move_to`], for a graph swapped in off where its voices were rendered for:
+    /// the fades from the old voices play on, as their rings are where the playhead is, and
+    /// cover the new voices' silence until the worker has moved them.
+    pub(crate) fn move_voices(&mut self, to: u64) {
         self.shared.seek_to.store(to, Ordering::Release);
         self.shared.playhead.store(to, Ordering::Release);
         self.shared.requested.fetch_add(1, Ordering::AcqRel);

@@ -46,7 +46,9 @@ clip; devices (ADR 0004) will add many more parameters.
 3. **The swap happens at an exact frame.** The controller picks a frame a little ahead of the
    playhead it reads from the monitor (`SWAP_AHEAD_SECONDS`), moves the new graph's stretch voices there
    and fills their rings before sending it. `process` splits its block at that frame, so the
-   block before it is the old graph and the frames from it the new one.
+   block before it is the old graph and the frames from it the new one. The playhead is read as
+   the audio thread published it for one block (`LauncherMonitor::playhead`), and a frame past the
+   loop end is counted on from the loop start, where the playhead will be.
 4. **State carries over at the swap, without allocation.** The playhead stays in beats: if the
    tempo map changed, the transport's origin is moved so the same beat plays on (the old map's
    beat at the playhead, placed through the new map; between two constant tempos the old
@@ -80,7 +82,8 @@ clip; devices (ADR 0004) will add many more parameters.
    that queue is full, the audio thread keeps the old graph and takes no new one until it can.
 6. **If the playhead moved unexpectedly** (the transport stopped, started or jumped between the
    build and the swap), the swap moves the stretch voices to where the playhead really is
-   (`AheadReader::move_to`); with the transport stopped, to the play start marker, where the
+   (`AheadReader::move_voices`, which lets the fades from changed clips' old voices play on);
+   with the transport stopped, to the play start marker, where the
    next start begins. Until the worker has done so, stretched clips are silent; they
    never play out of time. That silence is the move's, so it is not counted as underruns.
 7. **The stretch worker thread serves every graph.** It owns a list of workers; a new graph's
