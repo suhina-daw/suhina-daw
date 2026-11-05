@@ -12,9 +12,10 @@ use crate::kit::surface::Backgrounds as _;
 use egui::{Color32, CursorIcon, Id, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
 
-use crate::detail::piano_roll::{BEAT_WIDTH_RANGE, PianoClip, PianoRollState, note_grid};
+use crate::detail::piano_roll::{PianoClip, PianoRollState, note_grid};
 use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme;
+use crate::kit::time_axis::{PIANO_ROLL_BEAT_WIDTHS, clamp_beat_width};
 use crate::kit::widgets::{self, Action};
 
 /// Height of the loop row at the top of the ruler, of the bar in it, and how far from a handle or
@@ -115,21 +116,7 @@ pub struct RulerState {
 }
 
 /// The time axis: the x of beat 0 and the points per beat.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Axis {
-    pub origin: f32,
-    pub beat_width: f32,
-}
-
-impl Axis {
-    pub fn x_of(&self, beat: f64) -> f32 {
-        self.origin + beat as f32 * self.beat_width
-    }
-
-    pub fn beat_at(&self, x: f32) -> f64 {
-        f64::from((x - self.origin) / self.beat_width.max(f32::MIN_POSITIVE))
-    }
-}
+pub use crate::kit::time_axis::TimeViewport as Axis;
 
 /// What a press at `pos` in the `ruler` grabs: in the loop row a handle (the nearer one when both
 /// are in reach) or the bar between them; under it the start marker or the end marker. `None`
@@ -275,8 +262,8 @@ pub fn interact(
 ) -> Option<ClipShape> {
     let grid = note_grid(clip, state.beat_width);
     let axis = |state: &PianoRollState| Axis { origin: left - state.scroll.x, beat_width: state.beat_width };
-    let response = ui.interact(ruler, Id::new("piano-roll-ruler"), Sense::click_and_drag());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Piano roll ruler"));
+    let response = ui.interact(ruler, Id::unique("piano-roll-ruler"), Sense::click_and_drag());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Piano roll ruler"));
     let shape = clip.shape;
 
     if let Some(pos) = response.hover_pos() {
@@ -324,7 +311,7 @@ pub fn interact(
                 let beat = axis(state).beat_at(x);
                 let x = x + delta.x;
                 state.beat_width =
-                    (state.beat_width * (delta.y * ZOOM_PER_POINT).exp()).clamp(BEAT_WIDTH_RANGE.0, BEAT_WIDTH_RANGE.1);
+                    clamp_beat_width(state.beat_width * (delta.y * ZOOM_PER_POINT).exp(), &PIANO_ROLL_BEAT_WIDTHS);
                 state.scroll.x = (beat as f32 * state.beat_width - (x - left)).max(0.0);
                 state.ruler.drag = Some(Drag::Zoom { x });
             }
@@ -422,8 +409,8 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
             continue;
         }
         let label = format!("{} at beat {}", part.label(), round(beat));
-        let response = ui.interact(rect, Id::new(("piano-roll-ruler-part", part.label())), Sense::hover());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, part.label()));
+        let response = ui.interact(rect, Id::unique(("piano-roll-ruler-part", part.label())), Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, part.label()));
         response.on_hover_text(label);
     }
 }

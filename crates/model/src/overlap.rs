@@ -146,7 +146,7 @@ mod tests {
             id: ContentId(id),
             name: format!("Clip {id}"),
             length: 4.0,
-            lanes: vec![ContentLane { target, data }],
+            lanes: vec![ContentLane { target, data }].into(),
             extensions: Extensions::default(),
             scale: None,
         }

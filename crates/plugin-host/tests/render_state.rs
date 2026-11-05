@@ -64,6 +64,7 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                id: Default::default(),
                 name: "Test vst3".into(),
                 // The catalog lists the built-in test plug-ins as CLAP (their file is not a `.vst3`).
                 kind: DeviceKind::Clap { id: "vst3".into() },
@@ -81,7 +82,7 @@ fn project() -> Project {
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -148,7 +149,7 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": 0 });
     until(&mut session, &mut renderer, "starting", |s| {
         s.execute("device.plugin", &device).unwrap()["status"] == "running"
@@ -183,7 +184,7 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
     // project is as it was. The change made in the editor is unsaved all the same (issue #362).
     assert!(!session.can_undo());
     assert_eq!(session.project(), &opened);
-    session.check_plugin_edits();
+    session.rack_mut().check_edits();
     assert!(session.has_unsaved_changes());
 }
 
@@ -194,7 +195,7 @@ fn a_duplicated_track_starts_its_plug_in_with_the_state_it_has_now() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened);
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": 0 });
     until(&mut session, &mut renderer, "starting", |s| {
         s.execute("device.plugin", &device).unwrap()["status"] == "running"

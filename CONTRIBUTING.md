@@ -18,10 +18,9 @@
   DSP and engine code is tested by rendering offline and comparing against golden files.
   A test module over 150 lines lives in a `<file>_tests.rs` beside its source, not inline;
   `python scripts/inline_tests.py move <file>` moves one, and CI checks it (`--check`).
-- **Documentation, settings help, parity:** a pull request carries them as
+- **Documentation and settings help:** a pull request carries them as
   [`docs/workflow.md`](docs/workflow.md) › What a pull request carries says: the documents that
-  describe what changed, the website help of a setting, the parity coverage it moves, and
-  *How to check it* steps.
+  describe what changed, the website help of a setting, and *How to check it* steps.
 - **Style:** `cargo fmt`, and `cargo clippy --all-targets -- -D warnings`. Comments explain *why*.
 - **Names and licence header:** packages are `suhina-<name>` (`suhina-device-<name>` for
   devices), and every source file starts with the licence header
@@ -146,12 +145,9 @@ when asked to finish a pull request.
 
 **Workflows and scripts need the owner's review.** To protect code that runs with the
 repository's secrets, [`.github/CODEOWNERS`](.github/CODEOWNERS) names the repository owner for
-`.github/` and `scripts/`, except `scripts/parity/`. The main ruleset requires a code owner's
+`.github/` and `scripts/`. The main ruleset requires a code owner's
 approval for the protected paths: `ready to merge` alone does not merge such a change, also
-not one from another maintainer. Parity scripts run without environment secrets; the generated
-documentation is published in a separate job that does not execute them. Changes confined to
-`scripts/parity/` therefore follow the usual review and `ready to merge` process. Keep parity
-code out of jobs that use environment secrets.
+not one from another maintainer.
 
 **The updater needs the owner's review too.** Suhina installs and runs what its updater downloads,
 so the same approval applies to `crates/update/` and the updater's two files in `crates/ui`, and a

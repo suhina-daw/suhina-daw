@@ -10,6 +10,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
+mod audio_data;
 pub mod automation;
 mod build;
 mod comping;
@@ -23,20 +24,39 @@ pub use tempo::{
     Meter, TempoMap, TempoPoint, TimeSignatureChange, valid_bpm,
 };
 
+pub use audio_data::{AudioData, AudioPool};
 pub use groups::{
     Branch, DeviceGroup, MACROS, MAX_BRANCHES, MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_MACRO_MAPPINGS, Macro,
-    MacroMapping, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups, walk_devices,
+    MacroMapping, MappedDevice, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups,
+    walk_devices,
 };
-pub use ids::{ClipId, ClipPlace, IdsExhausted, LaneId, SceneId};
+
+/// The extension of a Suhina project file, without the dot.
+pub const PROJECT_EXTENSION: &str = "suhina";
+
+/// Whether `path` names a project file by its extension, `.suhina` in either case. A device preset
+/// ends the same way and is not one.
+pub fn is_project_file(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(PROJECT_EXTENSION)) && !is_preset_file(path)
+}
+
+/// Whether `path` names a device preset by its ending, `.preset.suhina` in either case, as in
+/// `Warm FM Bass.fm-synth.preset.suhina` ([ADR 0014](docs/decisions/0014-stock-presets.md)).
+pub fn is_preset_file(path: &std::path::Path) -> bool {
+    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(".preset.suhina"))
+}
+pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, SceneId};
 
 mod launch;
 mod mapping;
 mod overlap;
 mod scale;
+mod shared;
 pub use launch::{LaunchMode, LaunchQuantization, LaunchSettings};
 pub use mapping::{KEY_NAME_MAX, LaunchMapping, MappingSource, MappingTarget};
 pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, TOUCH_TOLERANCE};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
+pub use shared::{Bytes, Shared};
 
 /// Identifies a [`Track`] within a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -285,6 +305,9 @@ pub enum DeviceKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Device {
+    /// Which device this is; [`DeviceId::NONE`] until the project gives it one
+    /// ([`Project::assign_ids`]). A copy of a device is a new device and gets a new id.
+    pub id: DeviceId,
     pub name: String,
     pub kind: DeviceKind,
     pub enabled: bool,
@@ -292,7 +315,7 @@ pub struct Device {
     /// validated `.sd` graph JSON. For VST2 it is the standard VST2
     /// bank (an `.fxb` file's contents), which also a VST3 version standing in for the plug-in
     /// reads; for VST3 it is the component's state.
-    pub state: Option<Vec<u8>>,
+    pub state: Option<Bytes>,
     /// Parameter values set on the device. A built-in effect or instrument's
     /// (`DeviceKind::Builtin`) go by the parameter's stable id; a plug-in's by its parameter id
     /// (the number the plug-in gives it, written in decimal) in the plug-in's own range, and are
@@ -394,7 +417,7 @@ impl Device {
             self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "sample_reference"));
             self.extensions.0.push(Extension { format: "suhina".into(), key: "sample_reference".into(), data });
         } else {
-            self.state = Some(data);
+            self.state = Some(data.into());
         }
     }
 }
@@ -446,7 +469,8 @@ pub struct ClipContent {
     pub name: String,
     /// Length in beats.
     pub length: f64,
-    pub lanes: Vec<ContentLane>,
+    /// Shared between copies of the project until one of them changes a lane (#763 › 3).
+    pub lanes: Shared<Vec<ContentLane>>,
     pub extensions: Extensions,
     /// The scale the notes are written in, if any: the piano roll marks its keys
     /// ([ADR 0001](../../docs/decisions/0001-daw-neutral-model.md) › Amendment: clip scales).
@@ -987,6 +1011,7 @@ pub enum ValidationError {
     DuplicateLane(LaneId),
     /// Two scenes have this id.
     DuplicateScene(SceneId),
+    DuplicateDevice(DeviceId),
     /// Objects of two kinds (a clip, a lane, a scene) have this id; the kinds share one counter,
     /// so a value names at most one object.
     SharedId(u32),
@@ -1061,6 +1086,7 @@ impl fmt::Display for ValidationError {
             Self::DuplicateClip(id) => write!(f, "clip id {id} is used twice"),
             Self::DuplicateLane(id) => write!(f, "arrangement lane id {id} is used twice"),
             Self::DuplicateScene(id) => write!(f, "scene id {id} is used twice"),
+            Self::DuplicateDevice(id) => write!(f, "device id {id} is used twice"),
             Self::SharedId(id) => write!(f, "object id {id} is used by a clip, a lane or a scene at once"),
             Self::IdAhead(id) => write!(f, "object id {id} is not below the project's next id"),
             Self::GroupCycle(id) => write!(f, "track {} is inside itself through its groups", id.0),
@@ -1145,11 +1171,17 @@ impl Project {
         let lane_ids = unique(lane_ids, ValidationError::DuplicateLane, &mut errors);
         let scene_ids = self.launcher.scenes.iter().map(|s| s.id).filter(|id| id.is_some());
         let scene_ids = unique(scene_ids, ValidationError::DuplicateScene, &mut errors);
-        // The three kinds share one counter, so a value names at most one object of any of them
+        let device_ids = self.all_devices().map(|d| d.id).filter(|id| id.is_some());
+        let device_ids = unique(device_ids, ValidationError::DuplicateDevice, &mut errors);
+        // The four kinds share one counter, so a value names at most one object of any of them
         // (ADR 0025 › 2): a lane and a clip with the same value are refused as well.
         let mut kinds: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
-        let values =
-            clip_ids.iter().map(|c| c.0).chain(lane_ids.iter().map(|l| l.0)).chain(scene_ids.iter().map(|s| s.0));
+        let values = clip_ids
+            .iter()
+            .map(|c| c.0)
+            .chain(lane_ids.iter().map(|l| l.0))
+            .chain(scene_ids.iter().map(|s| s.0))
+            .chain(device_ids.iter().map(|d| d.0));
         for value in values {
             *kinds.entry(value).or_default() += 1;
         }

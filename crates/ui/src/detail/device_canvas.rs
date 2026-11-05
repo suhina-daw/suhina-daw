@@ -111,10 +111,10 @@ fn sample_channel_peaks(source: &suhina_engine::AudioData, range: (usize, usize)
 
 pub(crate) type SampleTarget = (Rect, TrackId, usize);
 pub(crate) fn sample_targets_id() -> egui::Id {
-    egui::Id::new("sampler-drop-targets")
+    egui::Id::unique("sampler-drop-targets")
 }
 pub(crate) fn sample_source_id(track: TrackId, device: usize) -> egui::Id {
-    egui::Id::new(("sampler-source", track.0, device))
+    egui::Id::unique(("sampler-source", track.0, device))
 }
 
 pub(crate) fn finish_sample_audition(
@@ -122,7 +122,7 @@ pub(crate) fn finish_sample_audition(
     project: Option<suhina_session::ProjectId>,
     actions: &mut Vec<Action>,
 ) {
-    let id = egui::Id::new("sample-audition");
+    let id = egui::Id::unique("sample-audition");
     let changed_project = ctx.data_mut(|data| {
         let old = data.get_temp::<Option<suhina_session::ProjectId>>(id.with("project")).flatten();
         data.insert_temp(id.with("project"), project);
@@ -254,7 +254,7 @@ fn clock(seconds: f64) -> String {
 
 /// Plays a slice's note for a moment, as a click on the slice does.
 fn audition(ui: &egui::Ui, actions: &mut Vec<Action>, track: TrackId, key: u8) {
-    let id = egui::Id::new("sample-audition");
+    let id = egui::Id::unique("sample-audition");
     if let Some((track, key, _)) = ui.ctx().data(|d| d.get_temp::<(TrackId, u8, f64)>(id)) {
         actions.push(Action::new("preview.noteOff", json!({"track":track.0,"key":key})));
     }
@@ -339,7 +339,7 @@ fn sample_waveform(
     let edits = ui
         .ctx()
         .data(|d| d.get_temp::<Arc<suhina_device_api::sample_edits::SampleEdits>>(source_id.with("slice-edits")));
-    let params: Vec<_> = suhina_device_sdk::sampler::PARAMS
+    let params: Vec<_> = suhina_device_sdk::sample_instrument::PARAMS
         .iter()
         .map(|p| parameters.iter().find(|v| v.id == p.id).map_or(p.default, |v| v.value))
         .collect();
@@ -347,12 +347,12 @@ fn sample_waveform(
     if slicing && let Some(source) = &source {
         let cache_id = source_id.with("slices");
         let cached = ui.ctx().data(|d| {
-            d.get_temp::<(Arc<suhina_engine::AudioData>, suhina_device_sdk::sampler::SliceAnalysis)>(cache_id)
+            d.get_temp::<(Arc<suhina_engine::AudioData>, suhina_device_sdk::sample_instrument::SliceAnalysis)>(cache_id)
         });
         let analysis = if let Some((_, analysis)) = cached.filter(|(old, _)| Arc::ptr_eq(old, source)) {
             analysis
         } else {
-            let analysis = suhina_device_sdk::sampler::SliceAnalysis::new(
+            let analysis = suhina_device_sdk::sample_instrument::SliceAnalysis::new(
                 &source.samples,
                 usize::from(source.channels),
                 f64::from(source.sample_rate),
@@ -360,7 +360,7 @@ fn sample_waveform(
             ui.ctx().data_mut(|d| d.insert_temp(cache_id, (source.clone(), analysis.clone())));
             analysis
         };
-        let tempo = ui.ctx().data(|d| d.get_temp::<f64>(egui::Id::new("sampler-tempo"))).unwrap_or(120.);
+        let tempo = ui.ctx().data(|d| d.get_temp::<f64>(egui::Id::unique("sampler-tempo"))).unwrap_or(120.);
         automatic_points = analysis
             .points(&params, source.frames(), f64::from(source.sample_rate), tempo)
             .into_iter()
@@ -393,7 +393,7 @@ fn sample_waveform(
                 && automatic_points.contains(&previous)
                 && let Some(source) = &source
             {
-                params_json["identity"] = json!(suhina_device_sdk::sampler::SliceAnalysis::identity(
+                params_json["identity"] = json!(suhina_device_sdk::sample_instrument::SliceAnalysis::identity(
                     &params,
                     source.frames(),
                     f64::from(source.sample_rate),
@@ -941,7 +941,7 @@ fn sample_waveform(
             color(accent_text(sample_marker_color())),
         );
         let response = ui
-            .interact(marker, ui.id().with(("sample-marker", track.0, device, id)), egui::Sense::click_and_drag())
+            .interact(marker, ui.scope_id().with(("sample-marker", track.0, device, id)), egui::Sense::click_and_drag())
             .on_hover_text(format!("Drag {}", id.replace('_', " ")))
             .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
         if response.double_clicked() {
@@ -1086,7 +1086,7 @@ fn envelope(
             .min_by(|i, j| plot.points[*i].distance_sq(pos).total_cmp(&plot.points[*j].distance_sq(pos)))
     });
     for index in 1..count {
-        let id = ui.id().with(("sd-envelope", target.0.0, target.1, &control.id, index));
+        let id = ui.scope_id().with(("sd-envelope", target.0.0, target.1, &control.id, index));
         let state_id = id.with("press");
         let state = ui.ctx().data(|data| data.get_temp::<([f64; 4], [f64; 4])>(state_id));
         let sense = if nearest == Some(index) || state.is_some() {
@@ -1106,7 +1106,7 @@ fn envelope(
             .flatten()
             .collect::<Vec<_>>()
             .join(" + ");
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &caption));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &caption));
         let response = response
             .on_hover_text(format!("{caption}: drag point; Shift for precision; double-click resets"))
             .on_hover_cursor(egui::CursorIcon::Grab);
@@ -1238,7 +1238,7 @@ fn styled_drawings(
     palette: WidgetPalette,
 ) -> Arc<[Draw]> {
     type Cache = std::collections::HashMap<(usize, usize, [[u8; 4]; 6]), Arc<[Draw]>>;
-    let key = egui::Id::new("sd-styled-drawings");
+    let key = egui::Id::unique("sd-styled-drawings");
     let index = loaded.source.controls.iter().position(|c| std::ptr::eq(c, control)).unwrap_or(usize::MAX);
     let colors = [palette.text, palette.panel, palette.control, palette.border, palette.accent, palette.accent_text];
     let cache_key = (Arc::as_ptr(&loaded.source) as usize, index, colors);
@@ -1257,7 +1257,7 @@ fn styled_drawings(
 
 fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
     let palette = widget_palette();
-    let key = egui::Id::new("sd-image-cache");
+    let key = egui::Id::unique("sd-image-cache");
     let mut cache = ctx.data_mut(|d| d.get_temp::<Vec<Arc<Loaded>>>(key)).unwrap_or_default();
     if let Some(found) = cache.iter().find(|v| Arc::ptr_eq(&v.source, source) && v.palette == palette) {
         return found.clone();
@@ -1414,7 +1414,7 @@ fn handle(
     if !grab.is_positive() {
         return;
     }
-    let id = ui.id().with(("sd-handle", track.0, at.value().to_string(), &control.id));
+    let id = ui.scope_id().with(("sd-handle", track.0, at.value().to_string(), &control.id));
     let cursor = match (x_axis.is_some(), y_axis.is_some()) {
         (true, true) => egui::CursorIcon::Grab,
         (true, false) => egui::CursorIcon::ResizeHorizontal,
@@ -1512,7 +1512,7 @@ fn handle(
             ));
         }
     }
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &control.name));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, &control.name));
 }
 
 /// The parts of a plot's line between `top` and `bottom`, each a line of its own: where the curve
@@ -2120,7 +2120,7 @@ pub(crate) fn show(
     paint_scaled(&painter, &canvas.layers, rect.min, &values, &loaded, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;
-    let stroke_id = ui.id().with(("sd-draw", track.0, device));
+    let stroke_id = ui.scope_id().with(("sd-draw", track.0, device));
     let stroke = draw_stroke(ui, stroke_id);
     for (control, drawings) in canvas.controls.iter().zip(&loaded.controls) {
         if sample_panel
@@ -2223,7 +2223,7 @@ pub(crate) fn show(
             let response = ui
                 .interact(
                     bounds,
-                    ui.id().with(("sd-custom", track.0, device, &control.id)),
+                    ui.scope_id().with(("sd-custom", track.0, device, &control.id)),
                     egui::Sense::click_and_drag(),
                 )
                 .on_hover_text(&control.tooltip);
@@ -2314,7 +2314,7 @@ pub(crate) fn show(
                 ));
             }
             response.widget_info(|| {
-                let mut info = egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &control.name);
+                let mut info = egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &control.name);
                 info.current_text_value = Some(format!("{}: {} {}", p.name, p.value, p.unit));
                 info
             });
@@ -2322,7 +2322,7 @@ pub(crate) fn show(
         }
         if let UiGesture::Expand(page) = control.gesture {
             let response = ui
-                .interact(bounds, ui.id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
+                .interact(bounds, ui.scope_id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
                 .on_hover_text(&control.tooltip);
             paint_control(
                 &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
@@ -2347,12 +2347,12 @@ pub(crate) fn show(
                 }
                 crate::detail::detail_view::open_expanded(ui.ctx(), track, at.clone());
             }
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &control.name));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &control.name));
             continue;
         }
         if control.gesture == UiGesture::Randomize {
             let response = ui
-                .interact(bounds, ui.id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
+                .interact(bounds, ui.scope_id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
                 .on_hover_text(&control.tooltip);
             paint_control(
                 &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
@@ -2368,12 +2368,12 @@ pub(crate) fn show(
             if response.clicked() {
                 actions.push(Action::new("device.randomize", json!({ "track": track.0, "device": at.value() })));
             }
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &control.name));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &control.name));
             continue;
         }
         if let UiGesture::Preset(index) = control.gesture {
             let response = ui
-                .interact(bounds, ui.id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
+                .interact(bounds, ui.scope_id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
                 .on_hover_text(&control.tooltip);
             paint_control(
                 &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
@@ -2401,7 +2401,7 @@ pub(crate) fn show(
                     ));
                 }
             }
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &control.name));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &control.name));
             continue;
         }
         if matches!(
@@ -2424,7 +2424,7 @@ pub(crate) fn show(
         let tooltip = if sample_panel && control.y.as_ref().is_some_and(|b| b.parameter == "source_bpm") {
             let source = parameters.iter().find(|p| p.id == "source_bpm").map_or(0., |p| p.value);
             let enabled = parameters.iter().find(|p| p.id == "warp").is_some_and(|p| p.value > 0.);
-            let bpm = ui.ctx().data(|d| d.get_temp::<f64>(egui::Id::new("sampler-tempo"))).unwrap_or(120.);
+            let bpm = ui.ctx().data(|d| d.get_temp::<f64>(egui::Id::unique("sampler-tempo"))).unwrap_or(120.);
             format!(
                 "{}\nProject tempo: {bpm:.2} BPM. Source: {}. Warp {}.",
                 control.tooltip,
@@ -2467,7 +2467,7 @@ pub(crate) fn show(
                 })
                 .inner
                 .on_hover_text("Drag to adjust, click to type; Shift for precision");
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &control.name));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &control.name));
             if value.is_finite() && (response.changed() || response.drag_stopped()) {
                 actions.push(Action::new(
                     "device.setParam",
@@ -2483,7 +2483,7 @@ pub(crate) fn show(
             .interact(
                 bounds,
                 // Scoped to the canvas: the compact panel under an expanded one has controls of the same ids.
-                ui.id().with(("sd-custom", track.0, device, &control.id)),
+                ui.scope_id().with(("sd-custom", track.0, device, &control.id)),
                 if control.gesture == UiGesture::Menu { egui::Sense::click() } else { egui::Sense::click_and_drag() },
             )
             .on_hover_text(tooltip);
@@ -2793,9 +2793,9 @@ pub(crate) fn show(
                 control.gesture,
                 UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_) | UiGesture::Menu
             ) {
-                egui::WidgetType::Button
+                egui::Role::Button
             } else {
-                egui::WidgetType::DragValue
+                egui::Role::SpinButton
             };
             let mut info = egui::WidgetInfo::labeled(kind, true, &control.name);
             info.current_text_value = Some(descriptions.join(", "));

@@ -74,7 +74,7 @@ mod tests {
             id: ContentId(1),
             name: "take".into(),
             length: 24.0,
-            lanes: Vec::new(),
+            lanes: Vec::new().into(),
             extensions: Default::default(),
             scale: None,
         });
@@ -152,7 +152,8 @@ mod tests {
         p.contents[0].lanes = vec![suhina_model::ContentLane {
             target: None,
             data: suhina_model::LaneData::Audio(suhina_model::AudioRegion::new("t.wav")),
-        }];
+        }]
+        .into();
         // Only the first two parts: 0.2 from take 1, then 0.6 from take 2.
         p.arrangement.lanes[0].clips.truncate(2);
         p.assign_ids().unwrap();

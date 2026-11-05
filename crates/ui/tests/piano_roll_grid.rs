@@ -32,6 +32,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -263,6 +265,7 @@ fn an_adaptive_grid_gets_coarser_as_ctrl_and_the_wheel_zoom_out() {
             delta: vec2(0.0, -60.0),
             modifiers: Modifiers::COMMAND,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.step();
         h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
@@ -289,6 +292,8 @@ fn render_the_grid_menu() {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut h = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(40)

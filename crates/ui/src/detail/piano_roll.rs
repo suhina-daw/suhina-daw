@@ -21,6 +21,7 @@ use crate::detail::piano_roll_scale::{self as scale_view, Fold, KeyRows};
 use crate::interaction::grid::track_colour;
 use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme;
+use crate::kit::time_axis::{PIANO_ROLL_BEAT_WIDTHS, clamp_beat_width};
 use crate::kit::widgets::{self, Action};
 use crate::settings::ToolbarSize;
 use crate::settings::workflow::Workflow;
@@ -80,7 +81,6 @@ const TOOL_GAP: f32 = 3.0;
 /// Key row heights and points per beat: the default and the zoom ranges.
 const DEFAULT_KEY_HEIGHT: f32 = 12.0;
 const KEY_HEIGHT_RANGE: (f32, f32) = (6.0, 160.0);
-pub(crate) const BEAT_WIDTH_RANGE: (f32, f32) = (4.0, 1600.0);
 /// How much one point of Alt and the wheel scales key rows.
 const KEY_ZOOM_PER_POINT: f32 = 0.004;
 /// Grid lines closer than this, in points, are thinned out.
@@ -303,7 +303,7 @@ pub fn show(
 
     // The grid's gestures: one widget for the whole grid, so a note under the pointer and the
     // empty grid around it are told apart by where the press was.
-    let response = ui.interact(grid_rect, Id::new("piano-roll-grid"), Sense::click_and_drag());
+    let response = ui.interact(grid_rect, Id::unique("piano-roll-grid"), Sense::click_and_drag());
     let pointer = response.interact_pointer_pos().or_else(|| ui.ctx().pointer_hover_pos());
     let mut eraser = None;
     if let Some(pos) = ui.ctx().pointer_hover_pos().filter(|p| grid_rect.contains(*p)) {
@@ -493,7 +493,7 @@ pub fn show(
 
     // The velocity lane's gestures.
     let lane_response =
-        (lane.height() > 4.0).then(|| ui.interact(lane, Id::new("piano-roll-velocity"), Sense::click_and_drag()));
+        (lane.height() > 4.0).then(|| ui.interact(lane, Id::unique("piano-roll-velocity"), Sense::click_and_drag()));
     if let Some(lane_response) = &lane_response {
         let at = lane_response.interact_pointer_pos();
         if lane_response.clicked()

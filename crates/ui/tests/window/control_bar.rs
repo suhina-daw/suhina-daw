@@ -118,6 +118,8 @@ fn a_narrow_window_leaves_out_what_would_reach_the_position_readout() {
     app.set_session(session, &[]);
     let size = (640.0, 400.0);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(size)
         .with_step_dt(0.25)
         .with_max_steps(4)

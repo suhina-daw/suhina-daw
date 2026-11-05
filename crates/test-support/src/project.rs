@@ -173,7 +173,7 @@ impl ProjectBuilder {
             id: ContentId(id),
             name: name.into(),
             length,
-            lanes: vec![ContentLane { target: None, data }],
+            lanes: vec![ContentLane { target: None, data }].into(),
             extensions: Extensions::default(),
             scale: None,
         });
@@ -186,6 +186,13 @@ impl ProjectBuilder {
 
     fn channel_mut(&mut self, id: u32) -> &mut Channel {
         self.project.channel_mut(ChannelId(id)).unwrap_or_else(|| panic!("no channel {id}"))
+    }
+}
+
+/// A builder that adds to `project` as it stands: a blank project's tracks and scenes, say.
+impl From<Project> for ProjectBuilder {
+    fn from(project: Project) -> Self {
+        Self { project }
     }
 }
 

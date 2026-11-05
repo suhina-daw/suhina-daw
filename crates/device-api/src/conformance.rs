@@ -92,7 +92,7 @@ fn check_info(device: &dyn Device, failures: &mut Vec<String>) {
         if p.group.len() > 64 || p.group.trim() != p.group {
             failures.push(format!("parameter {:?}: group {:?} is longer than 64 bytes or padded", p.id, p.group));
         }
-        if let ParamKind::Choice(options) = p.kind
+        if let ParamKind::Choice(options) = &p.kind
             && options.is_empty()
         {
             failures.push(format!("parameter {:?}: a choice needs options", p.id));
@@ -101,7 +101,8 @@ fn check_info(device: &dyn Device, failures: &mut Vec<String>) {
 }
 
 fn check_params(device: &mut dyn Device, failures: &mut Vec<String>) {
-    let params = device.info().params;
+    // The description is the device's own: a copy, since the device changes below.
+    let params = device.info().params.clone();
     for (i, p) in params.iter().enumerate() {
         if device.param(i) != Some(p.default) {
             failures.push(format!("parameter {:?} starts at {:?}, not its default", p.id, device.param(i)));
@@ -122,7 +123,8 @@ fn check_params(device: &mut dyn Device, failures: &mut Vec<String>) {
 
 /// Settings that push every parameter to its ends, in turn, while the device runs.
 fn extreme_settings(device: &mut dyn Device, step: usize) {
-    for (i, p) in device.info().params.iter().enumerate() {
+    let params = device.info().params.clone();
+    for (i, p) in params.iter().enumerate() {
         let value = match (step + i) % 4 {
             0 => p.min,
             1 => p.max,

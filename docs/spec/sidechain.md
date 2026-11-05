@@ -3,7 +3,7 @@ description: Planned key inputs - a device whose detector reads another channel'
 read_when: sidechain, key input, key source, tap point, pre FX, post FX, post fader, routing, aux input, aux output, multi-out, multiple outputs, bus, audio port, region version, protocol version, VST2 bus, device input
 type: spec
 status: planned
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/model/src/lib.rs
   - crates/engine/src/chain.rs
@@ -22,9 +22,8 @@ covers:
 
 - **Sources:** Suhina's own design, from the routing model as it is built ([ADR 0001](../decisions/0001-daw-neutral-model.md),
   the device chain in [ADR 0004](../decisions/0004-built-in-devices.md) › 9 and 10, the plug-in boundary in
-  [ADR 0006](../decisions/0006-plug-in-hosting.md)) and from the gap the parity measurement records
-  ([`docs/research/parity-live-12.md`](../research/parity-live-12.md): chapter 17 lists *sidechain* and *multi-timbral*
-  among what is missing). Nothing here is observed from another program; nothing is implemented yet.
+  [ADR 0006](../decisions/0006-plug-in-hosting.md)) and from what is missing in routing today: a key input
+  (sidechain) and plug-ins with more than one output (multi-timbral). Nothing here is observed from another program; nothing is implemented yet.
 - **Status:** planned. What this document had to choose, it says and why, so work can start without an answer;
   the choices the maintainer can still turn are in *Open questions*, and the split into issues is at the end.
 
@@ -173,7 +172,7 @@ pub struct Device {
     pub name: String,
     pub kind: DeviceKind,
     pub enabled: bool,
-    pub state: Option<Vec<u8>>,
+    pub state: Option<Bytes>,
     pub params: Vec<DeviceParam>,
     /// The device's ports that read another signal (docs/spec/sidechain.md). Empty for almost every
     /// device. At most one entry in the first version.
@@ -306,7 +305,7 @@ fn process(&mut self, context: &ProcessContext, inputs: Inputs<'_>, buffer: &mut
 
 - The key is **read-only** (`&[f32]`): a device cannot leak it into its output by accident.
 - A port the engine has no source for is handed **silence**, never left unset, so a device needs one code path.
-- `DeviceInfo` gains the ports it declares (`key_ports: &'static [&'static str]`, empty for almost every device),
+- `DeviceInfo` gains the ports it declares (`key_ports`, empty for almost every device),
   so the model, the command and the panel agree on what a device can read.
 - Every built-in device is updated mechanically; `devices/compressor` is the first that uses it,
   and `limiter`, `overdrive` and the planned `bus-compressor` (issue #385) follow.
@@ -388,17 +387,15 @@ be true, and they belong in the `.sd` work rather than after it:
    ("stereo input of the track") say the device has one input, so a key cannot be expressed at all.
 2. **The graph runs its input nodes from their own buffers.** The runtime binds each declared input node to the
    buffer the engine hands it; a node with no source reads silence. Nothing else in the graph changes.
-3. **A graph device reports what a device reports.** The prepared graph is wrapped in a type that implements
-   `suhina_device_api::Device`: its `info()` from the graph's parameters and role, its ports from the graph's
-   declarations, its `latency()` from the graph's own delay nodes, and its `process` taking `Inputs` like every
-   other device.
+3. **A graph device reports what a device reports.** Done (#763 › 6): the prepared graph is wrapped in
+   `suhina_device_sdk::GraphDevice`, which implements `suhina_device_api::Device`. Its `info()` comes from the
+   graph's parameters and role (a device's description may own its names, so one read at run time is a
+   description like a built-in's), and it runs the same conformance checks. What is left for keys: its ports
+   from the graph's declarations, and its `process` taking `Inputs` like every other device.
 
-The last point is a *change to how the engine runs a graph device today*: a graph device is a separate slot kind
-that the engine drives through the SDK's own processing entry point, so it does not have the trait, the contract
-tests, the latency reporting or the device registry that every built-in device has. Without the wrapper the key
-input would have to be implemented twice — once for built-in devices and once for graphs — and a third time for
-plug-ins; with it, a key is one path for all three, and the graph's delay nodes are latency-compensated like any
-other device's.
+The engine runs a graph through the same `Slot::Device` and `Slot::MidiDevice` as a built-in, so the key input
+is one path for built-ins and graphs, and one more for plug-ins. A graph reports a latency of 0: its delay nodes
+are the sound (an echo), not delay to compensate (`docs/spec/sdk-nodes.md`).
 
 ## Import and export
 
@@ -445,14 +442,10 @@ is gone, whose branch no longer exists, or whose plug-in is missing shows *missi
 reference and does nothing. Everything the row does is `device.setKey` / `device.clearKey`; the panel changes
 nothing itself.
 
-## Parity
+## What the documents say when it lands
 
-Chapter 17 (Routing and I/O) counts sidechain and multi-timbral as missing today, at 10 %; chapter 18 (Mixing)
-does not mention a key at all. When the built-in key lands, `scripts/parity/score.py` says so and
-`python scripts/parity/update_report.py` rewrites the marked parts of
-[`docs/research/parity-live-12.md`](../research/parity-live-12.md); the plug-in buses and auxiliary outputs move
-the same numbers in their own pull requests. ROADMAP's *What works now* gains a bullet when a user can hear a
-keyed compressor, and the devices table says which devices read a key.
+ROADMAP's *What works now* gains a bullet when a user can hear a keyed compressor, the devices table says
+which devices read a key.
 
 ## Open questions
 
@@ -514,7 +507,7 @@ first slice; the boundary work follows and is independent of it.
    refuses an old region. ADR 0006 › 3 and 7 amended (region and protocol versions, "silent buffers for any other
    bus" replaced), `docs/architecture.md` updated.
 8. **Auxiliary outputs**, then a channel's input can name a plug-in port (`track.setInput` and the same panel
-   row for inputs). ADR 0006 › 7 amended; the parity chapter 17 line on multi-timbral changes here.
+   row for inputs). ADR 0006 › 7 amended.
 9. **A key in a data-only graph device (`.sd`)**, in the device SDK's own pull request: the format and the SDK
    declare a graph's input ports, validation allows one main input plus declared key inputs, the runtime binds
    each input node to its buffer, and the prepared graph is wrapped in a `suhina_device_api::Device` so a graph

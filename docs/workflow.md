@@ -1,9 +1,9 @@
 ---
-description: The one copy of how work is done on Suhina - issues and their types, claims, posting as the bot, branch names, overlapping work, merging, and what a pull request carries (how to check it, parity, settings help, documents, generated files, front matter)
-read_when: opening an issue, claiming, /claim, opening a pull request, branch name, issue type, labels, overlapping work, Depends on, post as the bot, agent_post, how to check it, parity, settings help, which documents to update, generated files, front matter, last_verified, merging
+description: The one copy of how work is done on Suhina - issues and their types, claims, posting as the bot, branch names, overlapping work, merging, and what a pull request carries (how to check it, settings help, documents, generated files, front matter)
+read_when: opening an issue, claiming, /claim, opening a pull request, branch name, issue type, labels, overlapping work, Depends on, post as the bot, agent_post, how to check it, settings help, which documents to update, generated files, front matter, last_verified, merging
 type: howto
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-05
 covers:
   - scripts/agent_post.py
   - scripts/branch_name.py
@@ -49,6 +49,10 @@ Status, a Priority (P0 to P2) and a Phase (the ROADMAP milestone).
   and release work) or `epic` (a larger piece split into issues); `question` is for asking, not
   for work. One or more area labels (`engine`, `ui`, `formats`, `browser`, `audio-io`, `plug-ins`,
   `devices`, `presets`, `tests`), and `windows`, `macos` or `linux` when it concerns one platform.
+  A feature or a bug in something a user does also gets one `area:` label, the area of Suhina
+  it belongs to (`area: launcher`, `area: arrangement`, `area: effects` …; the label list has
+  them all): the README's status figure shows each area's open bugs from it (drawn by the
+  maintainers' bot and published in [suhina-status](https://github.com/suhina-daw/suhina-status)).
   The forms set the type, and `.github/workflows/issue-labels.yml` adds area and platform labels
   from the form's answers.
 - Items imported from the earlier board keep their old key in the title (`(LOOP-27)`); a pull
@@ -279,19 +283,6 @@ Write them by doing them in the build, not from the code. A change with nothing 
 (a refactor, tests, CI, documentation) says so in one line instead; an engine change a user can
 hear or measure is not one of them.
 
-### Parity
-
-Every change that adds, changes or removes something a user can do (the same changes that need a
-*How to check it* section) updates, in the same pull request, the coverage of the chapters it
-moves in [`scripts/parity/score.py`](../scripts/parity/score.py), and
-[`scripts/parity/devices.json`](../scripts/parity/devices.json) for a built-in effect or
-instrument, and nothing else: the numbers in [`research/parity-live-12.md`](research/parity-live-12.md)
-(its marked parts, the command count among them) are regenerated on `main` after the merge, so a
-pull request leaves them alone, even when it adds a command. A pull request that moves no coverage
-writes `Parity: no change` and the reason in its description ("Parity: no change, a refactor").
-When a pull request changes `crates/`, `devices/` or `apps/` and does neither, the
-[Parity notice](../.github/workflows/parity-notice.yml) check warns; it does not fail.
-
 ### Built-in devices and settings
 
 - **A built-in device** is compiled into the app, not an `.sd` file. After changing one, its
@@ -335,7 +326,6 @@ enforces it, and `python scripts/docs.py impact` lists the documents that cover 
 | What a `.suhina` or `.sd` file holds | its `VERSION`, a file for the new version and a row in the spec's *Versions* ([ADR 0010](decisions/0010-project-files.md) › Amendment: format versions) |
 | MCP tools, or how agents use commands | [`mcp.md`](mcp.md) (the command list, [`commands.md`](commands.md), is generated) |
 | What works for users | a new bullet as a file of its own in [`works-now/`](works-now/README.md), folded into [`ROADMAP.md`](../ROADMAP.md) › What works now on `main`; a bullet already there is changed in `ROADMAP.md`; [`README.md`](../README.md) if it shows it |
-| What the parity measurement says (a milestone that lands, a feature that appears or is dropped) | the coverage of the chapters it changes in `scripts/parity/score.py`; the marked parts of [`research/parity-live-12.md`](research/parity-live-12.md) are regenerated on `main`, and its prose is edited in that file like any other document |
 | A setting in the Settings window (`settings_rows.rs`) | the table and rules in [`spec/ui-settings.md`](spec/ui-settings.md), and `docs/guide-data/settings-help.json` |
 | A rule in `AGENTS.md` or this file | that file only: each rule is written once |
 | A checklist a skill in `.claude/skills/` gives | that skill (`docs.py check` checks the paths and symbols it names) |
@@ -350,29 +340,15 @@ to (the crate table), add a row of your own rather than extending someone else's
 matter) and [`commands.md`](commands.md) (from the command registry) are regenerated on `main`
 after every merge by [`docs-generated.yml`](../.github/workflows/docs-generated.yml), and a pull
 request that edits one of them fails CI rather than losing the edit silently. The same workflow
-writes three more things a pull request leaves alone, so that two pull requests never conflict on
-them:
-
-- the parts of [`research/parity-live-12.md`](research/parity-live-12.md) between its
-  `parity:begin` and `parity:end` markers, which `scripts/parity/update_report.py` writes from
-  `scripts/parity/score.py`, `scripts/parity/devices.json` and the command registry. The rest of
-  the report is an ordinary document that a pull request edits freely. CI checks only that the
-  inputs render (`update_report.py --check-inputs`), so marked parts that are stale, or that a pull
-  request regenerated anyway, never fail it;
-- its two figures, rendered from the same numbers;
-- `last_verified` in a document's front matter: after the merge, `python scripts/docs.py stamp`
-  moves it up to the day of the document's last change on `main`.
-
-When a merge of `main` into a branch conflicts inside the marked parts, take `main`'s side there
-(`git checkout --theirs` on the file when the branch changed nothing else in it); the workflow
-writes them again after the merge either way.
+writes one more thing a pull request leaves alone: `last_verified` in a document's front matter,
+which `python scripts/docs.py stamp` moves up to the day of the document's last change on `main`
+after the merge.
 
 ```sh
 python scripts/docs.py impact   # documents that cover code you changed but you have not updated
                                 # (a notice only, for files three or more documents cover)
 python scripts/docs.py check    # what CI runs: front matter, covered paths, links and #anchors
 python scripts/docs.py index    # prints the index with your documents in it; writes nothing
-python scripts/parity/update_report.py --check-inputs   # what CI runs for the parity report
 ```
 
 **Front matter.** Every file under `docs/` starts with front matter (format in `scripts/docs.py`):

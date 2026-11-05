@@ -15,6 +15,7 @@ path = "src/main.rs"
 asio = ["suhina-output/asio"]
 
 [dependencies]
+suhina-fs.workspace = true
 # The main window's native handle, for plug-in editors to float above it.
 raw-window-handle = "0.6"  # MIT OR Apache-2.0 OR Zlib
 suhina-engine.workspace = true
@@ -33,7 +34,7 @@ suhina-theme-package.workspace = true
 chrono.workspace = true
 zip.workspace = true
 serde_json.workspace = true
-eframe = { version = "0.36", features = ["glow", "persistence"] }  # MIT OR Apache-2.0
+eframe = { version = "0.37", features = ["glow", "persistence"] }  # MIT OR Apache-2.0
 # The system's own file and folder dialogs (Browse… beside a path field); on Linux through the
 # desktop portal, in Rust, with no GTK.
 rfd = "0.17"  # MIT

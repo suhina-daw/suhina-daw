@@ -65,7 +65,7 @@ fn devices_are_added_set_switched_and_removed_with_undo() {
     for _ in 0..7 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
-    assert_eq!(session.project(), &project());
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn sd_device_updates_migrate_values_atomically_and_undo_to_the_embedded_revision
     let device = &session.project().channels[0].devices[0];
     assert_eq!(device.name, "New Gain");
     assert_eq!(device.params, vec![DeviceParam::new("level", 1.75)]);
-    let state = String::from_utf8(device.state.clone().expect("updated graph is embedded")).unwrap();
+    let state = String::from_utf8(device.state.clone().expect("updated graph is embedded").to_vec()).unwrap();
     assert_eq!(DeviceGraph::from_sd(&state).unwrap().device_version, 2);
 
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -339,7 +339,7 @@ fn nothing_goes_before_the_midi_effects_but_a_midi_effect() {
     std::fs::write(&instrument_path, instrument.to_sd().expect("valid instrument")).expect("write test file");
 
     let mut session = Session::new(project());
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "pitch" })).unwrap();
     let before = session.project().clone();
     // Without an instrument, an effect still goes after the MIDI effects.
@@ -460,7 +460,7 @@ fn installed_plug_ins_are_added_from_the_catalog() {
     // Without a catalog there is nothing to add from.
     let error = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Verb" })).unwrap_err();
     assert!(error.contains("catalog"), "{error}");
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
     let verb = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "verb" })).unwrap();
     assert_eq!(
@@ -484,7 +484,7 @@ fn installed_plug_ins_are_added_from_the_catalog() {
 fn a_clip_opens_in_the_installed_plug_in_that_edits_clips() {
     let mut session = Session::new(project());
     assert_eq!(session.ara_plugin(), None, "no catalog");
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     let (name, spec) = session.ara_plugin().unwrap();
     assert_eq!(name, "Tune");
     assert!(spec.starts_with("vst3:"), "{spec}");
@@ -503,14 +503,14 @@ fn a_clip_opens_in_the_installed_plug_in_that_edits_clips() {
     };
     let mut catalog = Catalog::new();
     catalog.insert(melodyne.path.clone(), vec![melodyne]);
-    session.set_plugin_env(std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into())));
+    session.rack_mut().set_env(std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into())));
     assert_eq!(session.ara_plugin().map(|(name, _)| name).as_deref(), Some("Melodyne"));
 }
 
 #[test]
 fn a_plug_in_that_edits_clips_goes_first() {
     let mut session = Session::new(project());
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
     // Asked for after the utility, it goes before it, as it plays the clips from their files.
     let tune = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Tune", "position": 1 })).unwrap();
@@ -529,7 +529,7 @@ fn a_plug_in_that_edits_clips_goes_first() {
 #[test]
 fn plug_in_commands_need_a_plug_in_and_a_playing_project() {
     let mut session = Session::new(project());
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
     run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Verb" })).unwrap();
     let device = json!({ "track": 1, "device": 1 });
@@ -751,7 +751,7 @@ fn a_nam_device_loads_its_file_with_the_command() {
     assert_eq!(file_info["file"], amp_path);
     assert_eq!(file_info["name"], "Test amp 1965");
     let asset = session.device_asset(&amp_path).unwrap();
-    assert!(matches!(asset, suhina_device_registry::DeviceAsset::Nam(_)));
+    assert_eq!(asset.device(), "nam-amp-modeler");
 
     let ir_file = ir_path.display().to_string();
     run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 1, "path": &ir_file })).unwrap();
@@ -759,7 +759,7 @@ fn a_nam_device_loads_its_file_with_the_command() {
     assert_eq!(ir["file"], ir_file);
     // The cab's shown name is its parent folder's, per the spec (its files are the cabs).
     assert_eq!(ir["name"], "IRs");
-    assert!(matches!(session.device_asset(&ir_file), Some(suhina_device_registry::DeviceAsset::Ir(_))));
+    assert_eq!(session.device_asset(&ir_file).map(|a| a.device()), Some("nam-cab-loader"));
 
     // A wrong extension is refused with a message that names what it wants.
     let error =
@@ -798,7 +798,7 @@ fn a_projects_stored_path_gets_the_extension_check() {
 
     let mut project = project();
     project.channels[0].devices.push(Device {
-        state: Some(impostor.display().to_string().into_bytes()),
+        state: Some(impostor.display().to_string().into_bytes().into()),
         ..Device::new("Amp", DeviceKind::Builtin("nam-amp-modeler".into()))
     });
     let file = dir.join("with-nam.suhina");
@@ -1039,7 +1039,7 @@ fn an_added_instrument_replaces_the_one_on_the_track() {
         session.project().channels[0].devices.iter().map(|d| d.name.clone()).collect()
     };
     let mut session = Session::new(project());
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "pitch" })).unwrap();
     run(&mut session, "device.add", json!({ "track": 1, "id": "sampler" })).unwrap();
     run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
@@ -1144,7 +1144,8 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
                 channel: 0,
                 muted: false,
             }]),
-        }],
+        }]
+        .into(),
     });
     saved.arrangement.lanes.push(ArrangementLane {
         id: Default::default(),
@@ -1202,8 +1203,55 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
     let (_, warnings) = suhina_media::decode_project_audio(&restored, &moved);
     assert!(!warnings.is_empty(), "missing resource must be reported");
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &before);
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..before });
     let _ = std::fs::remove_dir_all(root);
+}
+
+/// A device has an id from the project's counter: an adding command returns it, a command names
+/// the device by it wherever the device has gone, and a copy gets a new one (#763 › 1).
+#[test]
+fn a_device_is_named_by_its_id_wherever_it_moves() {
+    let mut session = Session::new(project());
+    let utility = run(&mut session, "device.add", json!({ "track": "Keys", "id": "utility" })).unwrap();
+    let overdrive = run(&mut session, "device.add", json!({ "track": "Keys", "id": "overdrive" })).unwrap();
+    let (u, o) = (utility["device_id"].as_u64().unwrap(), overdrive["device_id"].as_u64().unwrap());
+    assert_ne!(u, o);
+    // The overdrive moved before the utility: its id still names it, its old index does not.
+    run(&mut session, "device.move", json!({ "track": "Keys", "device": 1, "to": 0 })).unwrap();
+    run(&mut session, "device.setEnabled", json!({ "track": "Keys", "device": { "id": u }, "enabled": false }))
+        .unwrap();
+    let list = run(&mut session, "track.devices", json!({ "track": "Keys" })).unwrap();
+    assert_eq!(list[1]["device_id"], json!(u));
+    assert_eq!(list[1]["enabled"], json!(false));
+    assert_eq!(list[0]["enabled"], json!(true));
+    // A copy is a new device.
+    let copy = run(&mut session, "device.duplicate", json!({ "track": "Keys", "device": { "id": o } })).unwrap();
+    let ids: Vec<u64> = run(&mut session, "track.devices", json!({ "track": "Keys" }))
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["device_id"].as_u64().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 3);
+    assert!(ids[0] == o && ids[1] != o && ids[1] != u, "{ids:?} {copy}");
+    // An id the track does not have is refused, and undo brings ids back as they were.
+    let missing =
+        run(&mut session, "device.setEnabled", json!({ "track": "Keys", "device": { "id": 9999 }, "enabled": true }));
+    assert!(missing.unwrap_err().contains("device_id 9999"));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let list = run(&mut session, "track.devices", json!({ "track": "Keys" })).unwrap();
+    assert_eq!((list[0]["device_id"].as_u64(), list[1]["device_id"].as_u64()), (Some(o), Some(u)));
+    // A duplicated track's devices are new devices too.
+    let ids_of = |session: &mut Session, track: Value| -> Vec<u64> {
+        let list = run(session, "track.devices", json!({ "track": track })).unwrap();
+        list.as_array().unwrap().iter().map(|d| d["device_id"].as_u64().unwrap()).collect()
+    };
+    let duplicated = run(&mut session, "track.duplicate", json!({ "tracks": ["Keys"] })).unwrap();
+    let new_track = duplicated["tracks"][0].clone();
+    let (old_ids, new_ids) = (ids_of(&mut session, json!("Keys")), ids_of(&mut session, new_track));
+    assert_eq!(new_ids.len(), old_ids.len());
+    assert!(new_ids.iter().all(|id| !old_ids.contains(id)), "{old_ids:?} {new_ids:?}");
 }
 
 /// Sets `calls` as one gesture on `device`, the last call ending it, as a preset does.

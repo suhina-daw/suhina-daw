@@ -63,6 +63,7 @@ fn env() -> Arc<PluginEnv> {
 
 fn plugin_device(id: &str) -> Device {
     Device {
+        id: Default::default(),
         name: format!("Test {id}"),
         kind: DeviceKind::Clap { id: id.into() },
         enabled: true,
@@ -118,7 +119,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -185,7 +186,7 @@ fn an_offline_render_plays_notes_on_a_plug_in_instrument() {
     // The VST3 test plug-in answers each note with its velocity on the note's frame and
     // reports 32 frames of latency; it is the track's instrument, so no sine voices play.
     let mut device = plugin_device("vst3");
-    device.state = Some(1.0f32.to_le_bytes().to_vec());
+    device.state = Some(1.0f32.to_le_bytes().to_vec().into());
     let p = project(2.0, true, vec![device]);
     let started = suhina_session::start_offline(&p, &AudioPool::new(), &env(), SR);
     assert!(started.notices.is_empty(), "{:?}", started.notices);
@@ -391,7 +392,7 @@ fn session(project: Project, offline: bool) -> (Session, Renderer) {
     let controller = renderer.controller();
     let mut session = Session::new(project);
     session.attach_player(Player::new(controller, None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     (session, renderer)
 }
 
@@ -414,9 +415,11 @@ fn until(session: &mut Session, renderer: &mut Renderer, what: &str, done: impl 
 fn a_session_starts_its_projects_plug_ins_and_reports_the_missing_ones() {
     let mut missing = plugin_device("not-installed");
     missing.name = "Gone".into();
-    missing.state = Some(vec![1, 2, 3]);
+    missing.state = Some(vec![1, 2, 3].into());
     // A note long enough to still sound however long the plug-in takes to start.
-    let p = project(256.0, false, vec![plugin_device("gain"), missing]);
+    let mut p = project(256.0, false, vec![plugin_device("gain"), missing]);
+    // With the ids the session gives its devices, so they compare as the same devices.
+    p.assign_ids().unwrap();
     let (mut session, mut renderer) = session(p.clone(), true);
     session.execute("transport.play", &json!({})).unwrap();
     let notices = session.sync_plugins();
@@ -428,7 +431,7 @@ fn a_session_starts_its_projects_plug_ins_and_reports_the_missing_ones() {
     assert_eq!(listed[0]["plugin"]["status"], "running");
     assert_eq!(listed[0]["plugin"]["plugin"]["name"], "Test gain");
     // The missing plug-in keeps its state untouched, to be saved back as it was.
-    assert_eq!(session.project().channels[0].devices[1].state, Some(vec![1, 2, 3]));
+    assert_eq!(session.project().channels[0].devices[1].state.as_deref(), Some(&[1, 2, 3][..]));
     assert_eq!(session.project().channels[0].devices, p.channels[0].devices);
 
     // The plug-in is heard: the track at half its level, once the graph with it plays.
@@ -529,7 +532,7 @@ fn an_editor_edit_survives_a_restart() {
         let (mut session, mut renderer) = session(p, false);
         // The state is never read again in this test: what carries the edit through the
         // restart is the values set since the state was last read.
-        session.set_plugin_read_interval(Duration::from_secs(3600));
+        session.rack_mut().set_save_every(Duration::from_secs(3600));
         until(&mut session, &mut renderer, "starting", |s| s["status"] == "running");
         let device = json!({ "track": 1, "device": 0 });
         let editor_ok = cfg!(windows)
@@ -650,7 +653,7 @@ fn an_editor_is_owned_by_the_engines_window() {
     assert_ne!(owner, 0);
     let p = project(8.0, false, vec![plugin_device("vst3")]);
     let (mut session, mut renderer) = session(p, false);
-    session.set_editor_owner(Some(owner as u64));
+    session.rack_mut().set_owner(Some(owner as u64));
     until(&mut session, &mut renderer, "starting", |s| s["status"] == "running");
     // The editor opens in the background: the session's thread (the app's window thread)
     // must not wait for the host, which waits for the owner window while it makes the editor's.
@@ -693,8 +696,8 @@ fn an_editor_embeds_in_the_engines_window_when_the_setting_says_so() {
     let parent = ParentWindow::open();
     let p = project(8.0, false, vec![plugin_device("vst3")]);
     let (mut session, mut renderer) = session(p, false);
-    session.set_editor_owner(Some(parent.id()));
-    session.set_editor_embedding(true);
+    session.rack_mut().set_owner(Some(parent.id()));
+    session.rack_mut().set_embedding(true);
     until(&mut session, &mut renderer, "starting", |s| s["status"] == "running");
     let device = json!({ "track": 1, "device": 0 });
     assert_eq!(session.execute("device.openEditor", &device).unwrap()["editor_open"], "opening");
@@ -717,7 +720,7 @@ fn an_editor_embeds_in_the_engines_window_when_the_setting_says_so() {
         );
     }
     // Embedding off: the editor closes and opens again in a window of its own.
-    session.set_editor_embedding(false);
+    session.rack_mut().set_embedding(false);
     assert!(
         soon(PATIENT, || {
             session.sync_plugins();
@@ -756,7 +759,7 @@ fn a_plug_in_that_could_not_start_starts_again_on_restart() {
     catalog.insert(path, vec![info]);
     let p = project(8.0, false, vec![plugin_device("broken")]);
     let (mut session, mut renderer) = session(p, false);
-    session.set_plugin_env(Arc::new(PluginEnv::new(catalog, host())));
+    session.rack_mut().set_env(Arc::new(PluginEnv::new(catalog, host())));
     until(&mut session, &mut renderer, "failing", |s| s["status"] == "failed");
     session.execute("device.restart", &json!({ "track": 1, "device": 0 })).unwrap();
     let status = session.execute("device.plugin", &json!({ "track": 1, "device": 0 })).unwrap();

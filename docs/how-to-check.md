@@ -3,7 +3,7 @@ description: How to write a pull request's "How to check it" section, steps a ne
 read_when: how to check it, test steps, QA steps, how to test, pull request description, manual testing, reviewer steps, check a change
 type: howto
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-04
 covers:
   - .github/pull_request_template.md
   - .claude/skills/how-to-check/SKILL.md
@@ -23,12 +23,6 @@ writes, a `suhina-cli` command, an MCP tool, a setting. An engine change counts 
 hear or measure it (a render that sounds different, a file that now loads). No only for refactors,
 tests, CI and documentation: then the section is one line, "Nothing a user can notice changes:
 <what changed instead>."
-
-The same pull requests update the parity measurement in the same change: the coverage they move in
-`scripts/parity/score.py` (and `scripts/parity/devices.json` for a built-in effect or instrument);
-the report's numbers are regenerated on `main` after the merge. One that moves no coverage writes `Parity: no
-change` and the reason in its description, next to this section. [workflow.md › Parity](workflow.md#parity) has the rule, and the *Parity notice* check warns when
-a change to `crates/`, `devices/` or `apps/` does neither.
 
 ## 2. Collect the facts first, never invent them
 

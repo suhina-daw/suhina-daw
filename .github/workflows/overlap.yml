@@ -10,7 +10,7 @@ name: Overlap
 # Pull requests in one stack (each one's base branch is the branch of the one below it, down to
 # main) change the same code on purpose and are not listed, nor are the claims of the issues the
 # pull request closes, nor the files every pull request may meet (`Cargo.lock`, the generated
-# index and command list; the parity report is generated only in parts, so it stays).
+# index and command list).
 #
 # pull_request_target runs this file as it is on main, so pull requests from forks get the comment
 # too; it never checks out or runs the pull request's code, it only reads lists through the API.

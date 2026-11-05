@@ -42,7 +42,7 @@ pub(crate) fn project(notes: Vec<Note>, length: f64, devices: Vec<Device>) -> Pr
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -156,7 +156,7 @@ fn an_sd_effect_plays_its_stored_parameter_value() {
     for (stored, gain) in [(0.5, 0.5_f32), (3.0, 2.0)] {
         let mut effect = device("sd", &[("gain", stored)]);
         effect.kind = DeviceKind::Sd;
-        effect.state = graph.to_sd().ok().map(String::into_bytes);
+        effect.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
         let notes = vec![note(0.0, 1.0, 69)];
         let plain = render_offline(&project(notes.clone(), 1.0, vec![device("fm-synth", &[])]), SR, 512).unwrap();
         let processed = render_offline(&project(notes, 1.0, vec![device("fm-synth", &[]), effect]), SR, 512).unwrap();
@@ -181,7 +181,7 @@ fn an_sd_gain_graph_runs_in_the_offline_device_chain() {
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     let mut effect = device("sd", &[]);
     effect.kind = DeviceKind::Sd;
-    effect.state = graph.to_sd().ok().map(String::into_bytes);
+    effect.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     effect.automation = vec![AutomationLane {
         param: "gain".into(),
         points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(0.5, 0.0)],
@@ -213,7 +213,7 @@ fn an_sd_midi_effect_transposes_notes_before_the_instrument() {
         vec![suhina_device_sdk::Connection::new("in", "up"), suhina_device_sdk::Connection::new("up", "out")];
     let mut transpose = device("sd", &[]);
     transpose.kind = DeviceKind::Sd;
-    transpose.state = graph.to_sd().ok().map(String::into_bytes);
+    transpose.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     transpose.automation = vec![AutomationLane {
         param: "semitones".into(),
         points: vec![AutomationPoint::new(0.0, 12.0), AutomationPoint::new(0.5, 0.0)],
@@ -255,7 +255,7 @@ fn an_sd_instrument_renders_from_timestamped_note_events() {
     ];
     let mut instrument = device("sd", &[]);
     instrument.kind = DeviceKind::Sd;
-    instrument.state = graph.to_sd().ok().map(String::into_bytes);
+    instrument.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     let audio = render_offline(&project(vec![note(0.0, 0.1, 60)], 1.0, vec![instrument]), SR, 512).unwrap();
     assert!(audio.iter().any(|sample| sample.abs() > 0.01));
     assert!(audio.iter().skip(BEAT / 10 * 2).all(|sample| sample.abs() < 1e-6));
@@ -427,7 +427,7 @@ fn a_held_note_ends_when_an_edit_takes_it_away_while_playing() {
     let mut shorter = p.clone();
     for (project, notes) in [(&mut no_note, vec![]), (&mut shorter, vec![note(0.0, 1.5, 69)])] {
         project.contents[0].lanes =
-            vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(notes) }];
+            vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(notes) }].into();
     }
     for (name, edited, silent_from) in
         [("clip deleted", &no_clip, 24_000), ("note deleted", &no_note, 24_000), ("note shortened", &shorter, 36_000)]
@@ -500,7 +500,7 @@ fn sdk_device(name: &str) -> Device {
     let graph = sdk_examples::build(name).unwrap();
     let mut stored = device("sd", &[]);
     stored.kind = DeviceKind::Sd;
-    stored.state = Some(graph.to_sd().unwrap().into_bytes());
+    stored.state = Some(graph.to_sd().unwrap().into_bytes().into());
     stored
 }
 
@@ -535,6 +535,93 @@ fn sdk_delay_tail_and_oscillator_phase_carry_through_graph_swaps() {
         let reference = blocks(&mut untouched, 120, 480);
         assert!(max_diff(&out, &reference) < 1e-5, "{name}: {}", max_diff(&out, &reference));
     }
+}
+
+/// A device inserted before a delay: the synth and the delay keep running by their ids
+/// (#763 › 1), so the echoes and the note carry on as if nothing changed, the new utility at
+/// unity passing them through. Without ids the whole chain starts again.
+#[test]
+fn running_devices_survive_an_insert_before_them_by_their_ids() {
+    let render = |ids: bool| {
+        let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), device("delay", &[])]);
+        if ids {
+            p.assign_ids().unwrap();
+        }
+        let mut edited = p.clone();
+        edited.channels[0].devices.insert(1, device("utility", &[]));
+        if ids {
+            edited.assign_ids().unwrap();
+        }
+        let inputs = || RenderInputs::from_audio(&crate::AudioPool::new());
+        let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+        let mut controller = renderer.controller();
+        // The edit lands while the delay still echoes the note.
+        let mut out = blocks(&mut renderer, 60, 480);
+        controller.update(&edited).unwrap();
+        out.extend(blocks(&mut renderer, 60, 480));
+        let mut untouched = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+        let reference = blocks(&mut untouched, 120, 480);
+        max_diff(&out, &reference)
+    };
+    let kept = render(true);
+    assert!(kept < 1e-4, "{kept}");
+    let restarted = render(false);
+    assert!(restarted > 1e-3, "without ids the delay starts empty: {restarted}");
+}
+
+/// Two devices of the same kind trading places: each keeps its running state by its id, not by
+/// its place. The echoing delay moves behind a dry one, so the track sounds as if nothing moved;
+/// kept by place, the echoes would stay in the first delay, now dry, and stop.
+#[test]
+fn identical_devices_that_trade_places_keep_their_own_running_state() {
+    let echoing = device("delay", &[("feedback", 0.9), ("mix", 0.5)]);
+    let dry = device("delay", &[("mix", 0.0)]);
+    let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), echoing, dry]);
+    p.assign_ids().unwrap();
+    let mut edited = p.clone();
+    edited.channels[0].devices.swap(1, 2);
+    let inputs = || RenderInputs::from_audio(&crate::AudioPool::new());
+    let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 60, 480);
+    controller.update(&edited).unwrap();
+    out.extend(blocks(&mut renderer, 60, 480));
+    let mut untouched = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+    let reference = blocks(&mut untouched, 120, 480);
+    let diff = max_diff(&out, &reference);
+    assert!(diff < 1e-4, "{diff}");
+}
+
+/// The same inside a device group: a group whose devices traded places starts again as a whole,
+/// as one whose devices changed does, instead of keeping each running device by its place under
+/// the other's settings. It sounds as a new group with the same devices would.
+#[test]
+fn a_group_whose_identical_devices_trade_places_starts_again() {
+    let echoing = device("delay", &[("feedback", 0.9), ("mix", 0.5)]);
+    let short = device("delay", &[("feedback", 0.0), ("mix", 0.5)]);
+    let group = DeviceGroup::with_branches(vec![Branch { devices: vec![echoing, short], ..Branch::new("") }]);
+    let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), Device::group("G", group)]);
+    p.assign_ids().unwrap();
+    let mut swapped = p.clone();
+    if let Some(g) = swapped.channels[0].devices[1].as_group_mut() {
+        g.branches[0].devices.swap(0, 1);
+    }
+    // The same group under an id the running one does not have: built new.
+    let mut fresh = swapped.clone();
+    fresh.channels[0].devices[1].id = DeviceId::NONE;
+    fresh.assign_ids().unwrap();
+    assert_ne!(fresh.channels[0].devices[1].id, p.channels[0].devices[1].id);
+    let render = |edited: &Project| {
+        let inputs = || RenderInputs::from_audio(&crate::AudioPool::new());
+        let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+        let mut controller = renderer.controller();
+        let mut out = blocks(&mut renderer, 60, 480);
+        controller.update(edited).unwrap();
+        out.extend(blocks(&mut renderer, 60, 480));
+        out
+    };
+    let diff = max_diff(&render(&swapped), &render(&fresh));
+    assert!(diff < 1e-6, "{diff}");
 }
 
 /// #911: with the loop on over bars 3 to 10 and playback starting before a MIDI clip at bar 5,

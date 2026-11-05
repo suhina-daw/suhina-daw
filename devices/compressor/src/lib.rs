@@ -48,7 +48,7 @@ pub mod param {
     pub(crate) const COUNT: usize = 9;
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("input", "Input", (-24.0, 24.0), 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("threshold", "Threshold", (-60.0, 0.0), -12.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("ratio", "Ratio", (1.0, 20.0), 3.0, Unit::None, Scale::Logarithmic),
@@ -67,7 +67,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("mix", "Dry/Wet", (0.0, 1.0), 1.0, Unit::Percent, Scale::Linear),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "compressor", name: "Compressor", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("compressor", "Compressor", Role::Effect, &PARAMS);
 
 /// Gain change, in decibels (zero or negative), the gain computer asks for at `level_db` with
 /// `threshold` (dB), `slope` (1 - 1/ratio) and a soft knee `knee` dB wide centred on the
@@ -175,7 +175,7 @@ impl Compressor {
 }
 
 impl Device for Compressor {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

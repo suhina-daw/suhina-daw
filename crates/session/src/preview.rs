@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use suhina_media::info::{FileKind, kind_of};
 use suhina_model::TrackId;
 
+use crate::commands::Args;
 use crate::commands::track_at;
 use crate::files::absolute;
 use crate::{CommandError, Session};
@@ -23,16 +24,16 @@ const DEFAULT_VELOCITY: f64 = 100.0;
 
 pub(crate) fn play(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     session.player_mut()?;
-    let path = params.get("path").and_then(Value::as_str).ok_or("path must be the file to preview")?;
+    let path = Args::new(params).raw_str("path").ok_or("path must be the file to preview")?;
     let path = absolute(Path::new(path));
-    let from = match params.get("from") {
-        None | Some(Value::Null) => 0.0,
+    let from = match Args::new(params).value("from") {
+        None => 0.0,
         Some(v) => v.as_f64().filter(|f| f.is_finite() && *f >= 0.0).ok_or("from must be seconds, at least 0")?,
     };
     let gain_db = gain_db(params)?.unwrap_or(DEFAULT_GAIN_DB);
     let gain = 10f64.powf(gain_db / 20.0) as f32;
-    let track: Option<TrackId> = match params.get("track") {
-        None | Some(Value::Null) => None,
+    let track: Option<TrackId> = match Args::new(params).value("track") {
+        None => None,
         Some(_) => Some(track_at(&session.project, params, "track")?),
     };
     match kind_of(&path) {
@@ -68,8 +69,8 @@ pub(crate) fn play(session: &mut Session, params: &Value) -> Result<Value, Comma
 
 /// A level in dB from `params`' `gain`: finite, at most 12; `None` when left out.
 fn gain_db(params: &Value) -> Result<Option<f64>, CommandError> {
-    match params.get("gain") {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value("gain") {
+        None => Ok(None),
         Some(v) => {
             Ok(Some(v.as_f64().filter(|g| g.is_finite() && *g <= 12.0).ok_or("gain must be decibels, at most 12")?))
         }
@@ -95,8 +96,8 @@ pub(crate) fn stop(session: &mut Session, _: &Value) -> Result<Value, CommandErr
 pub(crate) fn note_on(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_at(&session.project, params, "track")?;
     let keys = held_keys(params)?;
-    let midi = match params.get("velocity") {
-        None | Some(Value::Null) => DEFAULT_VELOCITY,
+    let midi = match Args::new(params).value("velocity") {
+        None => DEFAULT_VELOCITY,
         Some(v) => v.as_f64().filter(|v| (1.0..=127.0).contains(v)).ok_or("velocity must be 1 to 127")?,
     };
     let gain = 10f64.powf(DEFAULT_GAIN_DB / 20.0) as f32;
@@ -116,7 +117,7 @@ pub(crate) fn note_on(session: &mut Session, params: &Value) -> Result<Value, Co
     );
     controller.preview_note_on(notes, gain).map_err(CommandError)?;
     match keys.as_slice() {
-        [key] if params.get("keys").is_none_or(Value::is_null) => {
+        [key] if Args::new(params).value("keys").is_none_or(Value::is_null) => {
             Ok(json!({ "track": track.0, "key": key, "velocity": midi }))
         }
         _ => Ok(json!({ "track": track.0, "keys": keys, "velocity": midi })),
@@ -127,8 +128,8 @@ pub(crate) fn note_on(session: &mut Session, params: &Value) -> Result<Value, Co
 /// counted once), one of them.
 fn held_keys(params: &Value) -> Result<Vec<u8>, CommandError> {
     let one = |v: &Value| -> Option<u8> { v.as_u64().and_then(|k| u8::try_from(k).ok()).filter(|k| *k <= 127) };
-    let key = params.get("key").filter(|v| !v.is_null());
-    let keys = params.get("keys").filter(|v| !v.is_null());
+    let key = Args::new(params).value("key").filter(|v| !v.is_null());
+    let keys = Args::new(params).value("keys").filter(|v| !v.is_null());
     match (key, keys) {
         (Some(_), Some(_)) => Err("give key or keys, not both".into()),
         (None, None) => Err("key must be a whole number from 0 to 127 (or give keys, a list of them)".into()),
@@ -153,8 +154,8 @@ fn held_keys(params: &Value) -> Result<Vec<u8>, CommandError> {
 /// is left out.
 pub(crate) fn note_off(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     track_at(&session.project, params, "track")?;
-    let key = match params.get("key") {
-        None | Some(Value::Null) => None,
+    let key = match Args::new(params).value("key") {
+        None => None,
         Some(v) => Some(
             v.as_u64()
                 .and_then(|k| u8::try_from(k).ok())

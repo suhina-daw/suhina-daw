@@ -63,7 +63,7 @@ impl App {
         self.carry = None;
         self.switch_hover = None;
         self.device_carry = None;
-        ctx.data_mut(|d| d.remove::<(TrackId, usize)>(egui::Id::new(crate::interaction::drop::DEVICE_CARRY)));
+        ctx.data_mut(|d| d.remove::<(TrackId, usize)>(egui::Id::unique(crate::interaction::drop::DEVICE_CARRY)));
         self.arrangement.cancel_clip_drag();
         self.stash_shown();
         for gone in self.stashes.keys().copied().filter(|id| self.projects.get(*id).is_none()).collect::<Vec<_>>() {
@@ -124,7 +124,7 @@ impl App {
         };
         let chosen = floating_list::show(
             ctx,
-            egui::Id::new("project-switcher"),
+            egui::Id::unique("project-switcher"),
             look,
             heading,
             &rows,
@@ -165,8 +165,9 @@ impl App {
             let tab = Rect::from_min_size(Pos2::new(x, bar.top()), Vec2::new(width, bar.height()));
             x = tab.right() + 1.0;
             let close = Rect::from_center_size(Pos2::new(tab.right() - PAD - 4.0, tab.center().y), Vec2::splat(12.0));
-            let response = widgets::button_area(ui, tab, Id::new(("tab", id.0)), format!("Tab {name}"));
-            let close_response = widgets::button_area(ui, close, Id::new(("close-tab", id.0)), format!("Close {name}"));
+            let response = widgets::button_area(ui, tab, Id::unique(("tab", id.0)), format!("Tab {name}"));
+            let close_response =
+                widgets::button_area(ui, close, Id::unique(("close-tab", id.0)), format!("Close {name}"));
             if close_response.clicked() || response.middle_clicked() {
                 actions.push(Action::new("project.close", json!({ "project": id.0 })));
             } else if response.clicked() && Some(id) != active {

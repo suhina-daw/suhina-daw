@@ -32,6 +32,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -386,6 +388,8 @@ fn render_the_workflow_menu_and_settings() {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut h = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(40)
@@ -399,7 +403,7 @@ fn render_the_workflow_menu_and_settings() {
     h.run();
     h.get_by_label("Workflow Select-first").click();
     h.run();
-    h.get_by_label_contains("Double-click on a note: Deletes it").hover();
+    h.get_by_label("Double-click on a note: Deletes it").hover();
     h.run();
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
     std::fs::create_dir_all(&out).unwrap();

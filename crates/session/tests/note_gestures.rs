@@ -44,7 +44,7 @@ fn content(id: u32, lanes: Vec<ContentLane>) -> ClipContent {
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,
-        lanes,
+        lanes: lanes.into(),
         extensions: Extensions::default(),
         scale: None,
     }

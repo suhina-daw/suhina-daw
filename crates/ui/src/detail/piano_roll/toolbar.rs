@@ -420,7 +420,7 @@ pub(super) fn grid_menu(
         });
         let label = format!("Grid value {shown}");
         menu_arrow(ui, menu.response.rect, theme::text_value());
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         menu.response.on_hover_text("The grid: snapping, adaptive or fixed lines, triplets");
     });
     picked.filter(|p| *p != grid)
@@ -458,8 +458,8 @@ pub(crate) fn grid_entries(
         let response = ui.add_enabled(allowed, button);
         let label = if key.is_empty() { name.to_string() } else { format!("{name} ({key})") };
         response.widget_info(|| match on {
-            Some(on) => egui::WidgetInfo::selected(egui::WidgetType::Button, allowed, on, &label),
-            None => egui::WidgetInfo::labeled(egui::WidgetType::Button, allowed, &label),
+            Some(on) => egui::WidgetInfo::selected(egui::Role::Button, allowed, on, &label),
+            None => egui::WidgetInfo::labeled(egui::Role::Button, allowed, &label),
         });
         if response.clicked() {
             picked.set(Some(result));
@@ -475,7 +475,7 @@ pub(crate) fn grid_entries(
                 let allowed = enabled(&result);
                 let text = egui::RichText::new(ticked(on, &name)).font(font.clone());
                 let response = ui.add_enabled(allowed, egui::Button::new(text).frame(false));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, allowed, on, &label));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, allowed, on, &label));
                 if response.clicked() {
                     picked.set(Some(result));
                     ui.close();
@@ -575,7 +575,7 @@ pub(super) fn workflow_menu(
                             ui.selectable_label(index == chosen, egui::RichText::new(*choice).font(font.clone()));
                         let name = format!("{}: {choice}", setting.name());
                         response.widget_info(|| {
-                            egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, index == chosen, &name)
+                            egui::WidgetInfo::selected(egui::Role::Button, true, index == chosen, &name)
                         });
                         if response.clicked() {
                             if index != chosen {
@@ -589,7 +589,7 @@ pub(super) fn workflow_menu(
         });
         let label = format!("Workflow {}", mode.name());
         menu_arrow(ui, menu.response.rect, theme::text_value());
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         shown = menu.response.rect;
         menu.response.on_hover_text("How clicks, right-clicks and double-clicks work: a preset, or Custom");
     });
@@ -614,10 +614,10 @@ impl ButtonPaint<'_> {
     pub(super) fn place(&self, area: Rect, button: IconButton, chosen: bool, active: bool) -> bool {
         let ui = self.ui;
         let painter = self.painter;
-        let response = widgets::button_area(ui, area, Id::new(("piano-roll-icon", button.name())), button.name());
+        let response = widgets::button_area(ui, area, Id::unique(("piano-roll-icon", button.name())), button.name());
         let hint = icon_hint(button, self.keymap);
         let response = response.on_hover_text(hint.clone());
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, active, chosen, hint.clone()));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, active, chosen, hint.clone()));
         // `.piano-tool` styles them all, `#piano-draw` and the others one; `:checked` is the
         // chosen tool or an open column. `piano.draw` (`.on`, `.hover`) replaces its shape.
         let _style = crate::kit::style_class::enter_named_response("piano-tool", button.id(), &response);

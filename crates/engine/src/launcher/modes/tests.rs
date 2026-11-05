@@ -215,7 +215,8 @@ fn legato_audio_continues_from_the_replaced_clips_position() {
                 gain,
                 ..AudioRegion::new("ramp.wav")
             }),
-        }],
+        }]
+        .into(),
         extensions: Extensions::default(),
         scale: None,
     };

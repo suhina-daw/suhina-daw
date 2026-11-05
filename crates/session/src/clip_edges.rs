@@ -10,7 +10,7 @@
 use serde_json::{Value, json};
 use suhina_model::{Clip, ContentId, LaneData, LoopRange, Project, WarpMarker};
 
-use crate::commands::{lane_and_index, make_room, new_content_id};
+use crate::commands::{Args, lane_and_index, make_room, new_content_id};
 use crate::editing::content_rate;
 use crate::{CommandError, Session};
 
@@ -19,20 +19,13 @@ const MIN_LENGTH: f64 = 1.0 / 64.0;
 
 /// An optional beat parameter, finite and at least 0.
 fn edge(params: &Value, key: &str) -> Result<Option<f64>, CommandError> {
-    match params.get(key) {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value(key) {
+        None => Ok(None),
         Some(v) => {
             let beat =
                 v.as_f64().filter(|b| b.is_finite()).ok_or_else(|| format!("{key} must be a number of beats"))?;
             Ok(Some(beat.max(0.0)))
         }
-    }
-}
-
-fn flag(params: &Value, key: &str) -> Result<bool, CommandError> {
-    match params.get(key) {
-        None | Some(Value::Null) => Ok(false),
-        Some(v) => v.as_bool().ok_or_else(|| format!("{key} must be true or false").into()),
     }
 }
 
@@ -59,14 +52,17 @@ fn put_back(p: &mut Project, lane: usize, clip: Clip, stack: bool) -> Result<usi
 /// its lane, in one undo step (#956). Each clip is
 /// found by its id when its turn comes, as an earlier one may have changed where the others are.
 pub(crate) fn trim_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let edge = match params.get("edge").and_then(Value::as_str) {
+    let edge = match Args::new(params).raw_str("edge") {
         Some("start") => "start",
         Some("end") => "end",
         _ => return Err("edge must be start or end".into()),
     };
-    let by =
-        params.get("by").and_then(Value::as_f64).filter(|b| b.is_finite()).ok_or("by must be a number of beats")?;
-    let stack = params.get("stack").cloned().unwrap_or(Value::Bool(false));
+    let by = Args::new(params)
+        .value("by")
+        .and_then(Value::as_f64)
+        .filter(|b| b.is_finite())
+        .ok_or("by must be a number of beats")?;
+    let stack = Args::new(params).value("stack").cloned().unwrap_or(Value::Bool(false));
     let p = &session.project;
     let ids: Vec<u32> = crate::commands::clip_list(p, params)?
         .into_iter()
@@ -127,7 +123,7 @@ pub(crate) fn trim_clips(session: &mut Session, params: &Value) -> Result<Value,
 /// unless stacked. Edges past the limits stop at them.
 pub(crate) fn trim_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let (start, end) = (edge(params, "start")?, edge(params, "end")?);
-    let (turn_loop, stack) = (flag(params, "loop")?, flag(params, "stack")?);
+    let (turn_loop, stack) = (Args::new(params).flag("loop")?, Args::new(params).flag("stack")?);
     if start.is_none() && end.is_none() && !turn_loop {
         return Err("give start, end, or both".into());
     }
@@ -219,7 +215,7 @@ pub(crate) fn trim_clip(session: &mut Session, params: &Value) -> Result<Value, 
 /// warp markers are scaled, and a clip whose content others play gets a content of its own first.
 pub(crate) fn stretch_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let (start, end) = (edge(params, "start")?, edge(params, "end")?);
-    let stack = flag(params, "stack")?;
+    let stack = Args::new(params).flag("stack")?;
     if start.is_none() && end.is_none() {
         return Err("give start, end, or both".into());
     }

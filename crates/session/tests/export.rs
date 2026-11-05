@@ -60,7 +60,7 @@ fn one_track() -> Project {
             id: ContentId(1),
             name: "Riff".into(),
             length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, 69, 0.8)]) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, 69, 0.8)]) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],

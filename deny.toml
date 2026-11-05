@@ -36,7 +36,7 @@ confidence-threshold = 0.93
 # Licences outside rule 9's list, each GPLv3-compatible, each for named crates only.
 exceptions = [
     # Unicode License v3: a permissive licence for Unicode data tables, GPL-compatible. The ICU4X
-    # crates (pulled in through url/idna) and unicode-ident (whose other part is MIT OR Apache-2.0)
+    # crates (pulled in through url/idna), unicode-ident and unicode-properties (whose other part is MIT OR Apache-2.0)
     # carry it.
     { crate = "icu_collections", allow = ["Unicode-3.0"] },
     { crate = "icu_locale_core", allow = ["Unicode-3.0"] },
@@ -49,6 +49,7 @@ exceptions = [
     { crate = "potential_utf", allow = ["Unicode-3.0"] },
     { crate = "tinystr", allow = ["Unicode-3.0"] },
     { crate = "unicode-ident", allow = ["Unicode-3.0"] },
+    { crate = "unicode-properties", allow = ["Unicode-3.0"] },
     { crate = "writeable", allow = ["Unicode-3.0"] },
     { crate = "yoke", allow = ["Unicode-3.0"] },
     { crate = "yoke-derive", allow = ["Unicode-3.0"] },

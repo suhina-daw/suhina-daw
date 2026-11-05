@@ -35,7 +35,7 @@ fn active_toggle_text_stays_visible_over_transparent_or_gradient_panels() {
     motion::set_enabled(&ctx, false);
     let mut output = ctx.run_ui(Default::default(), |ui| {
         let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
-        let response = button_area(ui, rect, Id::new("transparent-toggle"), "Track on");
+        let response = button_area(ui, rect, Id::unique("transparent-toggle"), "Track on");
         let (fill, text) = toggle_colors(ui, &response, true);
         assert_eq!(text.a(), 255);
         assert!(theme::contrast(fill, text) >= 4.5);
@@ -77,7 +77,7 @@ fn form_dropdown_has_an_underline_without_a_box_or_fill() {
     let ctx = egui::Context::default();
     let rect = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(180.0, 18.0));
     let mut output = ctx.run_ui(Default::default(), |ui| {
-        let response = button_area(ui, rect, Id::new("form-dropdown-test"), "Choice");
+        let response = button_area(ui, rect, Id::unique("form-dropdown-test"), "Choice");
         form_dropdown(ui, ui.painter(), rect, &response, "Every 5 minutes");
     });
     assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
@@ -119,7 +119,7 @@ fn a_value_drag_hides_the_pointer_until_the_button_is_up_or_the_window_loses_foc
     let frame = |input| {
         let mut output = ctx.run_ui(input, |ui| {
             release_value_drag(ui.ctx());
-            let response = ui.interact(rect, Id::new("knob"), Sense::drag());
+            let response = ui.interact(rect, Id::unique("knob"), Sense::drag());
             if response.dragged() {
                 moved.set(moved.get() + value_drag_delta(ui, &response));
             }
@@ -173,7 +173,7 @@ fn raw_motion_locks_the_pointer_and_is_scaled_to_points() {
         let input = egui::RawInput { events, ..Default::default() };
         let mut output = ctx.run_ui(input, |ui| {
             release_value_drag(ui.ctx());
-            let response = ui.interact(rect, Id::new("knob"), Sense::drag());
+            let response = ui.interact(rect, Id::unique("knob"), Sense::drag());
             if response.dragged() {
                 moved.set(moved.get() + value_drag_delta(ui, &response));
             }

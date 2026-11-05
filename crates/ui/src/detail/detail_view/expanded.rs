@@ -7,7 +7,7 @@ use super::*;
 
 /// Where the open expanded panel's device is, kept in the window's memory while the app runs.
 pub(super) fn expanded_id() -> Id {
-    Id::new("device-expanded")
+    Id::unique("device-expanded")
 }
 
 /// The device whose expanded panel is open, if one is.
@@ -103,7 +103,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     // a half times its own size), the strip as tall as the scaled canvas; the views stay above.
     // The strip's height: its canvas's at the strip's width unless the header was dragged; kept
     // per device while the app runs.
-    let height_id = Id::new(("device-expanded-height", track.0, &device.at));
+    let height_id = Id::unique(("device-expanded-height", track.0, &device.at));
     let fitted = ROW + PAD + size.y * ((area.width() - PAD * 2.0) / size.x).clamp(0.5, 2.5) + PAD * 2.0;
     let wanted = ui.ctx().data(|d| d.get_temp::<f32>(height_id)).unwrap_or(fitted);
     let slice = if canvas.strip {
@@ -112,7 +112,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     } else {
         area
     };
-    egui::Area::new(Id::new("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(slice.min).show(
+    egui::Area::new(Id::unique("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(slice.min).show(
         ui.ctx(),
         |ui| {
             // The panel takes the pointer, so the views under it get no clicks.
@@ -126,7 +126,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                 // click fits it to its canvas again.
                 let grip = header.with_max_x(header.right() - 32.0);
                 let drag = ui
-                    .interact(grip, Id::new("device-expanded-resize"), Sense::click_and_drag())
+                    .interact(grip, Id::unique("device-expanded-resize"), Sense::click_and_drag())
                     .on_hover_cursor(egui::CursorIcon::ResizeVertical)
                     .on_hover_text("Drag up or down to change the height; double click fits it");
                 if drag.double_clicked() {
@@ -146,7 +146,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             );
             let close =
                 Rect::from_min_size(Pos2::new(header.right() - 28.0, header.top() + 3.0), Vec2::new(24.0, 20.0));
-            let response = widgets::button_area(ui, close, Id::new("device-expanded-close"), "Close expanded panel")
+            let response = widgets::button_area(ui, close, Id::unique("device-expanded-close"), "Close expanded panel")
                 .on_hover_text("Close the expanded panel (Esc)");
             let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
             painter.fill_background(close, 0.0, fill);

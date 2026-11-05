@@ -16,7 +16,9 @@ Everything around the device (the wrapper, the panel, saving, automation, old pr
 its `INFO` and finds parameters by id, so the change is mostly the device's own crate.
 
 1. **Append** a `ParamInfo` to `PARAMS` in `devices/<name>/src/lib.rs`
-   (`ParamInfo::continuous`, `toggle`, `choice`), and its index to `mod param`, raising `COUNT`.
+   (`ParamInfo::continuous`, `toggle`, `integer`, `choice`; in a group,
+   `ParamInfo::in_group("LFO").continuous(…)`), and its index to `mod param`, raising `COUNT`.
+   `PARAMS` and `INFO` are `static`s built in `const` code (`DeviceInfo::new`).
    Append, never insert or reorder: indices are what `set_param` and the tests use, and a
    project stores each value by the parameter's id (`suhina_model::DeviceParam`), so an old
    project that lacks the new id gets its default.
@@ -36,9 +38,7 @@ its `INFO` and finds parameters by id, so the change is mostly the device's own 
 5. **Importing:** when another format's device maps onto this one, its reader in
    `crates/als/src/devices.rs` sets the new parameter, with a test in
    `crates/als/src/devices_tests.rs`, and `docs/spec/device-import.md` says so.
-6. **Documents:** the device's spec in `docs/spec/<name>.md`, when it has one; the parameter
-   count in the device's line of `scripts/parity/devices.json` (the report built from it,
-   `docs/research/parity-live-12.md`, is regenerated on `main`); and the crate's row in
+6. **Documents:** the device's spec in `docs/spec/<name>.md`, when it has one; and the crate's row in
    `docs/architecture.md` when it names the parameters.
 7. **Build the app and look at the panel** (`docs/workflow.md` › Built-in devices and settings).
 
@@ -50,9 +50,10 @@ its `INFO` and finds parameters by id, so the change is mostly the device's own 
    entry in the root `Cargo.toml`'s `[workspace.dependencies]`. It exports `INFO: DeviceInfo`
    and a type that implements `suhina_device_api::Device`. Missing DSP goes into `crates/dsp`,
    not into the device.
-3. **Registry**, `crates/device-registry/src/lib.rs`: `INFO` in `DEVICES` (browser order; the
-   array's length is in its type), its constructor in `create`, and its `panel.json` in
-   `LAYOUT_FILES`.
+3. **Registry**, `crates/device-registry/src/lib.rs`: one row in `ENTRIES` (browser order; the
+   array's length is in its type) with its `INFO`, its constructor, its layout (its
+   `panel.json`, one built in Rust, or the generated list) and whether it runs a file.
+   `DEVICES`, `create`, `layout`, `panel`, `is_file_device` and `load_file` read that row; a device that runs a file gives its `FileKind` there (extension, read, shown name, make), and nothing outside the registry names it to load its file.
 4. **Tests**: the device's own in `devices/<name>/src/tests.rs`; the registry's conformance test
    covers it once it is listed. A device whose sound is the point gets a golden render.
 5. **Documents**: the crate's row in `docs/architecture.md` and the crate map; the devices table

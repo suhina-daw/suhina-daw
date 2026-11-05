@@ -3,7 +3,7 @@ description: Device groups - several devices on a track as one unit, with parall
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/groups.rs
@@ -179,8 +179,8 @@ Nothing about a device changes when it moves into a group.
 
 - **Built-in devices** run in the engine as they do now (ADR 0004): made, prepared and given their
   parameters when the graph is built, real-time safe on the audio thread.
-  A device in a branch is built as one on a track is (`group::Builder` and `Chain::build` give the
-  same results, #766): a Sampler gets its decoded sample and its manual slices, a parameter that
+  A device in a branch is built as one on a track is, by the same `SlotFactory`
+  (`crates/engine/src/slot_factory.rs`, #766, #764 › 4): a Sampler gets its decoded sample and its manual slices, a parameter that
   follows an automation lane starts where the lane starts and follows it while playing (each
   branch keeps the lanes of its devices, planned for every block with the chain's), and a device
   that holds a file is known by a hash of its state, so a changed file is a new device.
@@ -193,11 +193,10 @@ Nothing about a device changes when it moves into a group.
   on as its own plug-in answers, exactly as different tracks' chains do (#151). The first version
   may run branches one after another inside the chain and only later run them side by side; the
   sound is the same, only the deadline is used better.
-- **A plug-in's key** today is its channel, its plug-in and how many of the same plug-in come
-  before it on the channel (`plugin_devices`), which keeps a running plug-in when devices are
-  added or moved around it. With groups, "before it" counts depth-first through the whole tree of
-  the channel's devices, so moving a plug-in into or out of a group keeps its process and state,
-  as long as the order of identical plug-ins does not change.
+- **A plug-in's key** is its channel, its plug-in and its device id (`plugin_devices`, #763 › 1),
+  which keeps a running plug-in when devices are added, removed or moved around it, into or out
+  of a group, identical plug-ins included. A device moved to another track gets a new key, and a
+  new process from its saved state.
 - **State** is saved per device as today: a plug-in inside a group keeps its `state` in its own
   `Device`, read on save and every 30 s (ADR 0006 › 5).
 
@@ -261,9 +260,11 @@ pub struct Macro {
 }
 
 pub struct MacroMapping {
-    /// The target device, as a path relative to the group: branch, index, then branch, index
-    /// again for each nested group ([2, 0] is branch 2's first device).
-    pub device: Vec<u32>,
+    /// The target device, by its id (#763 › 1): inside the group at any depth. It follows the
+    /// device when it moves inside the group; a mapping whose device is removed or leaves the
+    /// group goes. A copied group's mappings name the copy's devices.
+    pub device: MappedDevice, // Id(DeviceId), or Nth(n) while a copy's devices have no ids
+
     /// The parameter's stable id: a built-in parameter id (ADR 0004), a plug-in parameter id as
     /// text, or `macro.N` of a nested group.
     pub param: String,
@@ -300,16 +301,17 @@ with:
 
 ```json
 {
+  "id": 11,
   "name": "Parallel crush",
   "kind": {
     "type": "group",
     "branches": [
       { "name": "Dry", "volume": 1.0, "pan": 0.0, "mute": false, "solo": false, "devices": [] },
       { "name": "Crushed", "volume": 0.5, "pan": 0.0, "mute": false, "solo": false,
-        "devices": [ { "name": "Compressor", "kind": { "type": "builtin", "id": "compressor" }, "params": [] } ] }
+        "devices": [ { "id": 12, "name": "Compressor", "kind": { "type": "builtin", "id": "compressor" }, "params": [] } ] }
     ],
     "macros": [
-      { "name": "Crush", "mappings": [ { "device": [1, 0], "param": "threshold", "min": 0.8, "max": 0.2 } ] }
+      { "name": "Crush", "mappings": [ { "device": 12, "param": "threshold", "min": 0.8, "max": 0.2 } ] }
     ]
   },
   "enabled": true,
@@ -347,7 +349,10 @@ its own `format` name, holding the group's device exactly as the project file wr
 ## Commands
 
 Every behaviour above is a command (AGENTS.md rule 6, ADR 0002); each edit is one undo step and a
-playing engine hears it at once (ADR 0005).
+playing engine hears it at once (ADR 0005). A drag of a branch's volume or pan in the panel sends every frame, the
+first one starting an undo step and the rest continuing it, so the drag is heard as it moves and is
+one undo step; for a group at the top of a chain the playing graph takes it as a message
+(ADR 0005 › Amendment, #763 › 4).
 
 **Addressing devices inside groups.** Today `device` is a device's index on the track. It becomes a
 *device path*: an integer still means a top-level device, so every existing call keeps working;
@@ -371,12 +376,12 @@ is branch 1 of the group at 2, before its device 3. `track.devices` lists a grou
 | `branch.remove` | edit | `track`; `device`; `branch` (integer) | Removes a branch with its devices and their mappings. The last branch cannot be removed. |
 | `branch.duplicate` | edit | `track`; `device`; `branch` | Copies a branch next to itself. |
 | `branch.rename` | edit | `track`; `device`; `branch`; `name` (text) | Renames a branch. |
-| `branch.setVolume` | edit | `track`; `device`; `branch`; `db` (number) | As `track.setVolume`, in decibels. |
-| `branch.setPan` | edit | `track`; `device`; `branch`; `pan` (number, −1 … 1) | As `track.setPan`. |
+| `branch.setVolume` | edit | `track`; `device`; `branch`; `db` (number); `continue` (bool, optional) | As `track.setVolume`, in decibels; `continue` adds a drag's frame to its undo step. |
+| `branch.setPan` | edit | `track`; `device`; `branch`; `pan` (number, −1 … 1); `continue` (bool, optional) | As `track.setPan`. |
 | `branch.setMute` | edit | `track`; `device`; `branch`; `mute` (bool) | Mutes a branch; its devices keep running. |
 | `branch.setSolo` | edit | `track`; `device`; `branch`; `solo` (bool) | Solos a branch within its group. |
 | `macro.rename` | edit | `track`; `device` (group); `macro` (integer 1 … 8); `name` (text) | Renames a macro. |
-| `macro.map` | edit | `track`; `device` (group); `macro`; `target` (path relative to the group); `param` (text); `min`, `max` (numbers 0 … 1, default 0 and 1) | Maps a parameter to a macro. Refused when the parameter is mapped already, or the device is not inside the group. |
+| `macro.map` | edit | `track`; `device` (group); `macro`; `target` (a device inside the group: its path relative to the group or `{"id": N}`); `param` (text); `min`, `max` (numbers 0 … 1, default 0 and 1) | Maps a parameter to a macro. Refused when the parameter is mapped already, or the device is not inside the group. |
 | `macro.unmap` | edit | `track`; `device` (group); `macro`; `target`; `param` | Removes one mapping; the parameter keeps its current value. |
 | `macro.list` | read | `track`; `device` (group) | Each macro's name, value and mappings, with the targets' names and current values. |
 | `device.savePreset` | read | `track`; `device` (path); `name` (text); `tags` (list of text, optional); `path` (text, optional: default the user's presets folder) | Writes the device (a group, or later a single device, ADR 0014) as a preset file. Plug-ins' state is read from them first, as `project.save` does. It changes nothing in the project, so it is a `read` command like `project.save` and not an undo step. |
@@ -473,5 +478,4 @@ it.
    reported, the browser listing them; ADR 0014 amended for the group format.
 9. **Key and velocity ranges for branches** of instrument groups (open question 5).
 
-ROADMAP gets a line under *Built-in effects and instruments* when item 2 lands, and the parity
-coverage (`scripts/parity/score.py`) changes then, not with this spec.
+ROADMAP gets a line under *Built-in effects and instruments* when item 2 lands, not with this spec.

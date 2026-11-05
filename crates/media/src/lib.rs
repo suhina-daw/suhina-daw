@@ -23,8 +23,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use suhina_engine::model::{LaneData, Project};
-pub use suhina_engine::{AudioData, AudioPool};
+pub use suhina_model::{AudioData, AudioPool};
+use suhina_model::{LaneData, Project};
 use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::Hint;
@@ -138,7 +138,7 @@ pub fn decode_project_audio_trusted(
                             Ok(all) => done.extend(
                                 all.into_iter()
                                     .zip(0u16..)
-                                    .map(|(data, n)| (suhina_engine::model::stream_key(file, n), Ok(data))),
+                                    .map(|(data, n)| (suhina_model::stream_key(file, n), Ok(data))),
                             ),
                             Err(e) => done.push((file.clone(), Err(failed(e)))),
                         }
@@ -321,14 +321,14 @@ pub fn missing_audio_trusted(project: &Project, project_dir: &Path, trusted: &Tr
         }
     }
     // Count the clips that play each missing file.
-    let uses = |content: suhina_engine::model::ContentId, file: &str| {
+    let uses = |content: suhina_model::ContentId, file: &str| {
         project
             .contents
             .iter()
             .filter(|c| c.id == content)
             .any(|c| c.lanes.iter().any(|l| matches!(&l.data, LaneData::Audio(r) if r.file == file)))
     };
-    let clips: Vec<suhina_engine::model::ContentId> = project
+    let clips: Vec<suhina_model::ContentId> = project
         .arrangement
         .lanes
         .iter()

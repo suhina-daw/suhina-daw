@@ -89,7 +89,7 @@ fn capture_instrument_and_mix_around_pause() {
     .unwrap();
     control
         .load_state(SavedState {
-            data: device.state.clone().unwrap(),
+            data: device.state.clone().unwrap().to_vec(),
             controller: device.extensions.0.iter().find(|e| e.key == "Vst3ControllerState").map(|e| e.data.clone()),
         })
         .unwrap();

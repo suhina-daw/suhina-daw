@@ -37,7 +37,7 @@ pub fn vertical_bar(ui: &mut Ui, area: Rect, id_salt: impl Hash + std::fmt::Debu
             // Room for the content, nothing in it: the rows are the view's own.
             ui.set_min_height(content);
         });
-    let moved = output.state.offset.y.clamp(0.0, most);
+    let moved = output.state.unclamped_offset().y.clamp(0.0, most);
     if (moved - *offset).abs() > f32::EPSILON {
         *offset = moved;
         ui.ctx().request_repaint();
@@ -58,14 +58,14 @@ mod tests {
     /// A list of rows that each take clicks and drags across the whole width, as the browser's
     /// do, with the bar over them.
     fn list(offset: f32) -> Harness<'static, f32> {
-        Harness::builder().with_size(Vec2::new(300.0, 300.0)).build_ui_state(
+        Harness::builder().allow_missing_glyphs().with_size(Vec2::new(300.0, 300.0)).build_ui_state(
             |ui, offset: &mut f32| {
                 for row in 0..100 {
                     let top = AREA.top() + row as f32 * 20.0 - *offset;
                     let rect = Rect::from_min_size(Pos2::new(AREA.left(), top), Vec2::new(AREA.width(), 20.0));
                     let shown = rect.intersect(AREA);
                     if shown.height() > 0.0 {
-                        let _ = ui.interact(shown, egui::Id::new(("row", row)), egui::Sense::click_and_drag());
+                        let _ = ui.interact(shown, egui::Id::unique(("row", row)), egui::Sense::click_and_drag());
                     }
                 }
                 vertical_bar(ui, AREA, "test-list", 2000.0, offset);
@@ -118,6 +118,8 @@ mod tests {
     #[test]
     fn content_that_fits_has_no_bar_and_an_offset_past_the_end_is_brought_back() {
         let mut short = Harness::builder()
+            .allow_missing_glyphs()
+            .allow_missing_glyphs()
             .with_size(Vec2::new(300.0, 300.0))
             .build_ui_state(|ui, offset: &mut f32| vertical_bar(ui, AREA, "short", 100.0, offset), 50.0);
         short.run();

@@ -450,7 +450,7 @@ fn a_tall_header_routes_its_track_into_a_group() {
     let mut state = ArrangementViewState::default();
     state.set_lane_height(suhina_engine::model::TrackId(2), 90.0);
     let view = Arrangement { timeline: Timeline::build(&project_with_a_group(), None), state, actions: Vec::new() };
-    let mut harness = Harness::builder().with_size(SIZE).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
         |ui, v: &mut Arrangement| arrangement_view::show(ui, &v.timeline, &mut v.state, &mut v.actions),
         view,
     );
@@ -1016,11 +1016,11 @@ fn an_audio_clip_renames_and_moves_like_a_midi_one() {
     // Renaming through the slot's menu: click into the field, select all, type, Enter.
     harness.get_by_label("Launch Audio clip on 5 Audio (scene 1)").click_secondary();
     harness.run();
-    harness.get_by_label_contains("Rename clip Audio clip").click();
+    harness.get_by_label("Rename clip Audio clip").click();
     harness.run();
     harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
     harness.run();
-    harness.get_by_label_contains("Rename clip Audio clip").type_text("Break");
+    harness.get_by_label("Rename clip Audio clip").type_text("Break");
     harness.run();
     harness.key_press(Key::Enter);
     harness.run();
@@ -1164,7 +1164,7 @@ fn an_empty_rename_field_clears_the_clips_name() {
     let mut harness = window(demo_app_with_name_field());
     harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
     harness.run();
-    harness.get_by_label_contains("Rename clip Walk").click();
+    harness.get_by_label("Rename clip Walk").click();
     harness.run();
     harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
     harness.run();
@@ -1183,9 +1183,9 @@ fn a_rename_draft_dies_with_its_menu() {
     let mut harness = window(demo_app_with_name_field());
     harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
     harness.run();
-    harness.get_by_label_contains("Rename clip Walk").click();
+    harness.get_by_label("Rename clip Walk").click();
     harness.run();
-    harness.get_by_label_contains("Rename clip Walk").type_text("X");
+    harness.get_by_label("Rename clip Walk").type_text("X");
     harness.run();
     harness.key_press(Key::Escape);
     harness.run();
@@ -1193,7 +1193,7 @@ fn a_rename_draft_dies_with_its_menu() {
     // Reopening starts from the name as it is now, not the typing that was never applied.
     harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
     harness.run();
-    let field = harness.get_by_label_contains("Rename clip Walk");
+    let field = harness.get_by_label("Rename clip Walk");
     assert_eq!(field.value().as_deref(), Some("Walk"), "the reopened field carries the name, not the stale draft");
 }
 

@@ -12,6 +12,8 @@ use suhina_ui::{App, kit::theme};
 
 fn window(app: App) -> Harness<'static, App> {
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size((1280.0, 800.0))
         .with_step_dt(0.25)
         .with_max_steps(4)

@@ -30,9 +30,12 @@ Every change a user makes to a project is a command (AGENTS.md rule 6). The regi
    `PathKind::WriteFolder`) needs the command's own case in `confine` in
    `crates/automation/src/confine.rs`, with a test in `confine_tests.rs`. Without it, the path
    sweep in `crates/automation/src/server.rs` fails. `docs/mcp.md` describes each such rule.
-3. **Read the parameters** with `Args` (`crates/session/src/commands/args.rs`) in new code. Only
-   `marker.*` uses it so far (#764 › 1); older commands read `params` by hand, and a new
-   parameter on one follows the code around it.
+3. **Read the parameters** with `Args` (`crates/session/src/commands/args.rs`): `f64`, `index`,
+   `bool`, `flag`, `text` and their `opt_` forms, `has` and `value`. Every command reads through
+   it, so a rule (a finite number, a trimmed text, `null` as left out) and its error are written
+   once; add a reader there rather than a helper beside the command. What a command does after
+   it has run, for the open projects (share a clipboard, record a recent item, a save's steps), is
+   its `Policy`'s `after`, not a check of its id.
 4. **Return** the ids of what it made or changed as JSON (`{ "clips": [...] }`): the UI selects
    from it and agents chain on it.
 5. **Tests** in `crates/session/tests/<area>.rs` with `support::run(&mut session, "id", json!(..))`

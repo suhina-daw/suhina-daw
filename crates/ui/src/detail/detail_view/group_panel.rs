@@ -23,7 +23,7 @@ pub(super) const BRANCH_VALUE: f32 = 44.0;
 /// The branch of the group at `at` whose devices the chain shows, kept per group while the app
 /// runs (the first one until another is clicked).
 pub(super) fn shown_branch(ui: &Ui, track: TrackId, at: &DeviceAt, branches: usize) -> usize {
-    let id = Id::new(("group-branch", track.0, at));
+    let id = Id::unique(("group-branch", track.0, at));
     ui.data(|d| d.get_temp::<usize>(id)).unwrap_or(0).min(branches.saturating_sub(1))
 }
 
@@ -66,7 +66,7 @@ pub(super) fn value_row(
     per_point: f64,
 ) -> Dragged {
     let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_text("Drag sideways; double-click resets");
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, format!("{label} {text}")));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("{label} {text}")));
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
     painter.fill_background(rect, 0.0, fill);
     let inner = rect.shrink2(Vec2::new(PAD / 2.0, 0.0));
@@ -90,26 +90,40 @@ pub(super) fn value_row(
     }
 }
 
-/// A branch value (volume or pan) dragged: shown from a draft while the drag lasts and set with
-/// one command when it ends, so a drag is one undo step.
-pub(super) fn branch_value(ui: &Ui, id: Id, stored: f64, dragged: &Dragged, min: f64, max: f64) -> (f64, Option<f64>) {
+/// A branch's value under a drag of its row: the value to show, and the value to send with
+/// whether it continues the drag's undo step. Every frame that moves it sends it, so a playing
+/// group is heard following the drag (#763 › 4); every value after the first it sends continues
+/// the step, so the drag is one undo step. A reset sends the default on its own step.
+pub(super) fn branch_value(
+    ui: &Ui,
+    id: Id,
+    stored: f64,
+    dragged: &Dragged,
+    min: f64,
+    max: f64,
+) -> (f64, Option<(f64, bool)>) {
     let draft = ui.data(|d| d.get_temp::<f64>(id));
     if dragged.reset {
         ui.data_mut(|d| d.remove::<f64>(id));
         // Both reset to 0: 0 dB, or the centre.
-        return (stored, Some(0.0f64.clamp(min, max)));
+        return (stored, Some((0.0f64.clamp(min, max), false)));
     }
+    let last = draft.unwrap_or(stored);
+    let next = (last + dragged.delta).clamp(min, max);
     if dragged.dragging {
-        let next = (draft.unwrap_or(stored) + dragged.delta).clamp(min, max);
+        // Nothing moved yet (a drag that starts against a limit): no draft, so what it sends
+        // first opens the step instead of continuing the previous drag's.
+        if draft.is_none() && next == stored {
+            return (stored, None);
+        }
         ui.data_mut(|d| d.insert_temp(id, next));
-        return (next, None);
+        return (next, (next != last || draft.is_none()).then_some((next, draft.is_some())));
     }
     if dragged.ended {
         ui.data_mut(|d| d.remove::<f64>(id));
-        let value = (draft.unwrap_or(stored) + dragged.delta).clamp(min, max);
-        return (value, (value != stored).then_some(value));
+        return (next, (next != last).then_some((next, draft.is_some())));
     }
-    (draft.unwrap_or(stored), None)
+    (last, None)
 }
 
 /// Where a loop's start or end may be dragged: the start from 0 to a quarter beat before the end,
@@ -157,12 +171,12 @@ pub(super) fn group_panel(
 ) -> bool {
     let at = device.at.value();
     let panel = ui
-        .interact(rect, Id::new(("device-panel", track.0, &device.at)), Sense::click_and_drag())
+        .interact(rect, Id::unique(("device-panel", track.0, &device.at)), Sense::click_and_drag())
         .on_hover_text("Right-click for the group's menu; drag onto another track to move it there, Ctrl to copy it");
     if panel.drag_started_by(egui::PointerButton::Primary) && device.at.top() {
         crate::interaction::drop::start_device_carry(ui.ctx(), track, device.index);
     }
-    panel.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Device {}", device.name)));
+    panel.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Device {}", device.name)));
     let clicked = panel.clicked();
     panel.context_menu(|ui| menus::device_menu(ui, track, &device.at, Some(group.branches.len()), actions));
     painter.fill_background(rect, 0.0, theme::panel_background());
@@ -173,7 +187,7 @@ pub(super) fn group_panel(
         Vec2::splat(ON_SWITCH),
     );
     let label = if device.enabled { format!("Bypass {}", device.name) } else { format!("Enable {}", device.name) };
-    let bypass = widgets::button_area(ui, switch, Id::new(("device-bypass", track.0, &device.at)), &label);
+    let bypass = widgets::button_area(ui, switch, Id::unique(("device-bypass", track.0, &device.at)), &label);
     if bypass.clicked() {
         actions.push(Action::new(
             "device.setEnabled",
@@ -189,7 +203,7 @@ pub(super) fn group_panel(
     let remove = widgets::button_area(
         ui,
         close,
-        Id::new(("device-remove", track.0, &device.at)),
+        Id::unique(("device-remove", track.0, &device.at)),
         format!("Remove {}", device.name),
     );
     if remove.clicked() {
@@ -218,7 +232,7 @@ pub(super) fn group_panel(
         ui,
         painter,
         mix_row,
-        Id::new(("group-mix", track.0, &device.at)),
+        Id::unique(("group-mix", track.0, &device.at)),
         "Mix",
         &format!("{:.0}%", group.mix * 100.0),
         0.005,
@@ -239,7 +253,7 @@ pub(super) fn group_panel(
         ui,
         painter,
         gain_row,
-        Id::new(("group-gain", track.0, &device.at)),
+        Id::unique(("group-gain", track.0, &device.at)),
         "Gain",
         &if silent { "-inf".into() } else { format!("{:.1}", group.gain_db) },
         0.1,
@@ -277,11 +291,11 @@ pub(super) fn group_panel(
         let pick = widgets::button_area(
             ui,
             name,
-            Id::new(("group-branch-name", track.0, &device.at, index)),
+            Id::unique(("group-branch-name", track.0, &device.at, index)),
             format!("Show branch {}", branch.name),
         );
         if pick.clicked() {
-            ui.data_mut(|d| d.insert_temp(Id::new(("group-branch", track.0, &device.at)), index));
+            ui.data_mut(|d| d.insert_temp(Id::unique(("group-branch", track.0, &device.at)), index));
         }
         let lit = index == shown;
         let fill = if lit {
@@ -300,32 +314,35 @@ pub(super) fn group_panel(
             color,
         );
 
-        let volume_id = Id::new(("branch-volume", track.0, &device.at, index));
+        let volume_id = Id::unique(("branch-volume", track.0, &device.at, index));
         let shown_db = ui.data(|d| d.get_temp::<f64>(volume_id)).unwrap_or(branch.volume_db);
         let dragged = value_row(ui, painter, volume, volume_id.with("drag"), "", &db_text(shown_db), 0.1);
         let stored = if branch.volume_db.is_finite() { branch.volume_db } else { -70.0 };
         let (_, set) = branch_value(ui, volume_id, stored, &dragged, -70.0, 6.0);
-        if let Some(db) = set {
+        if let Some((db, more)) = set {
             actions.push(Action::new(
                 "branch.setVolume",
-                json!({ "track": track.0, "device": at, "branch": index, "db": commands::exact_db_param(db, -70.0) }),
+                json!({
+                    "track": track.0, "device": at, "branch": index,
+                    "db": commands::exact_db_param(db, -70.0), "continue": more,
+                }),
             ));
         }
-        let pan_id = Id::new(("branch-pan", track.0, &device.at, index));
+        let pan_id = Id::unique(("branch-pan", track.0, &device.at, index));
         let shown_pan = ui.data(|d| d.get_temp::<f64>(pan_id)).unwrap_or(branch.pan);
         let dragged = value_row(ui, painter, pan, pan_id.with("drag"), "", &pan_text(shown_pan), 0.01);
         let (_, set) = branch_value(ui, pan_id, branch.pan, &dragged, -1.0, 1.0);
-        if let Some(value) = set {
+        if let Some((value, more)) = set {
             actions.push(Action::new(
                 "branch.setPan",
-                json!({ "track": track.0, "device": at, "branch": index, "pan": value }),
+                json!({ "track": track.0, "device": at, "branch": index, "pan": value, "continue": more }),
             ));
         }
 
         let response = widgets::button_area(
             ui,
             mute,
-            Id::new(("branch-mute", track.0, &device.at, index)),
+            Id::unique(("branch-mute", track.0, &device.at, index)),
             if branch.mute { format!("Unmute branch {}", branch.name) } else { format!("Mute branch {}", branch.name) },
         );
         let (fill, text) = widgets::toggle_colors(ui, &response, branch.mute);
@@ -340,7 +357,7 @@ pub(super) fn group_panel(
         let response = widgets::button_area(
             ui,
             solo,
-            Id::new(("branch-solo", track.0, &device.at, index)),
+            Id::unique(("branch-solo", track.0, &device.at, index)),
             if branch.solo {
                 format!("End solo on branch {}", branch.name)
             } else {
@@ -363,7 +380,7 @@ pub(super) fn group_panel(
     let response = widgets::button_area(
         ui,
         add,
-        Id::new(("branch-add", track.0, &device.at)),
+        Id::unique(("branch-add", track.0, &device.at)),
         format!("Add a branch to {}", device.name),
     );
     let fill = motion::mix(theme::window_background(), theme::control_hover(), widgets::hover(ui, &response));

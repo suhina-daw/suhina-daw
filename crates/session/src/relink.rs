@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use suhina_library::find::{MAX_CANDIDATES, MAX_NAMES, rank_candidates, walk_for_names};
 use suhina_model::LaneData;
 
+use crate::commands::Args;
 use crate::{CommandError, Projects, Session};
 
 /// Files relinked by one `project.relinkFiles` at most.
@@ -151,8 +152,8 @@ pub const COLLECTED: [&str; 2] = ["Samples", "Collected"];
 /// (› Collect and save in `docs/spec/missing-files.md`). A copy of the same name and size that
 /// is already there is used; another of the same name gets a number.
 pub(crate) fn collect(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let folder = match params.get("folder") {
-        None | Some(Value::Null) => session
+    let folder = match Args::new(params).value("folder") {
+        None => session
             .source()
             .and_then(Path::parent)
             .map(Path::to_path_buf)
@@ -245,8 +246,8 @@ pub(crate) fn find_files(projects: &mut Projects, params: &Value) -> Result<Valu
     if names.len() > MAX_NAMES {
         return Err(format!("at most {MAX_NAMES} names at once").into());
     }
-    let folder = match params.get("folder") {
-        None | Some(Value::Null) => None,
+    let folder = match Args::new(params).value("folder") {
+        None => None,
         Some(v) => Some(PathBuf::from(v.as_str().ok_or("folder must be a text")?)),
     };
     let (found, note) = search(projects, &names, folder.as_deref(), &AtomicBool::new(false), &AtomicUsize::new(0))?;

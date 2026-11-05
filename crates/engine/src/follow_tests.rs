@@ -44,7 +44,7 @@ fn project(notes: Vec<Vec<Note>>, slots: Vec<Slot>) -> Project {
                 id: ContentId(id),
                 name: format!("c{id}"),
                 length: 4.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             })

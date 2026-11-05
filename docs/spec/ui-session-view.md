@@ -258,7 +258,9 @@ scene can change it.
 ### Launch keys
 
 **Suhina:** a computer key can launch a slot, a scene or a track's stop button
-([clip launching](clip-launching.md#launching-from-keys-and-notes)).
+([clip launching](clip-launching.md#launching-from-keys-and-notes)). When controller mappings
+are built, this mode becomes their mapping mode and **Map keys** becomes **Map**
+([MIDI mapping › Mapping mode](midi-mapping.md#mapping-mode)); keys keep working as below.
 
 - **Mapping mode.** **Map keys** at the right end of the title bar, after the view names, or
   Ctrl+M (`view.mappingMode`) turns it on and shows the Launcher view; **Map keys** is lit while

@@ -22,24 +22,24 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
     Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, Channel, ChannelId,
-    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceKind,
-    DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels, LaneData,
-    LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange,
-    MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
-    MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene,
-    SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId,
-    Transport, WarpMarker, automation, valid_bpm,
+    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceId,
+    DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels,
+    LaneData, LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn,
+    LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
+    MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale,
+    ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange,
+    Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
 };
 
 /// The file extension, without the dot.
-pub const EXTENSION: &str = "suhina";
+pub const EXTENSION: &str = suhina_model::PROJECT_EXTENSION;
 /// The `format` every file names.
 const FORMAT: &str = "suhina";
 /// The version every file is written as, and the newest this crate reads. It rises with every
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 5;
+pub const VERSION: u64 = 7;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -67,17 +67,7 @@ impl From<&str> for ProjectFileError {
     }
 }
 
-/// Whether `path` names a project file by its extension, `.suhina` in either case. A device preset
-/// ends the same way and is not one.
-pub fn is_project_file(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION)) && !is_preset_file(path)
-}
-
-/// Whether `path` names a device preset by its ending, `.preset.suhina` in either case, as in
-/// `Warm FM Bass.fm-synth.preset.suhina` ([ADR 0014](docs/decisions/0014-stock-presets.md)).
-pub fn is_preset_file(path: &Path) -> bool {
-    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(".preset.suhina"))
-}
+pub use suhina_model::{is_preset_file, is_project_file};
 
 /// Reads a project file.
 pub fn read_file(path: &Path) -> Result<Project, ProjectFileError> {
@@ -93,18 +83,8 @@ pub fn read_file(path: &Path) -> Result<Project, ProjectFileError> {
 /// Writes `project` to `path`: to a file beside it first, then moved over it, so a failed save
 /// never leaves half a project.
 pub fn write_file(path: &Path, project: &Project) -> Result<(), ProjectFileError> {
-    let failed = |e: std::io::Error| ProjectFileError(format!("could not save {}: {e}", path.display()));
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent).map_err(failed)?;
-    }
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".saving");
-    let temporary = PathBuf::from(temporary);
-    std::fs::write(&temporary, to_json(project)).map_err(failed)?;
-    std::fs::rename(&temporary, path).map_err(|e| {
-        let _gone = std::fs::remove_file(&temporary);
-        failed(e)
-    })
+    suhina_fs::write_atomic(path, to_json(project))
+        .map_err(|e| ProjectFileError(format!("could not save {}: {e}", path.display())))
 }
 
 /// The project as the text of a `.suhina` file.
@@ -483,6 +463,9 @@ fn device_value(d: &Device) -> Value {
         "params": d.params.iter().map(|p| json!({ "id": p.id, "value": number(p.value) })).collect::<Vec<_>>(),
     });
     if let Some(map) = out.as_object_mut() {
+        if d.id.is_some() {
+            map.insert("id".into(), json!(d.id.0));
+        }
         // Only devices with automation say so, so files without any keep their shape.
         if !d.automation.is_empty() {
             map.insert("automation".into(), lanes_value(&d.automation));
@@ -522,7 +505,23 @@ fn group_value(g: &DeviceGroup) -> Value {
             let mappings: Vec<Value> = m
                 .mappings
                 .iter()
-                .map(|x| json!({ "device": x.device, "param": x.param, "min": number(x.min), "max": number(x.max) }))
+                .filter_map(|x| {
+                    // From version 7 the device's id (#763 › 1). A device with none yet (a
+                    // project built without a session) is written by its path in the group,
+                    // which every version reads; a mapping whose device is gone is left out, as
+                    // no reader could place it.
+                    let device = match x.device {
+                        MappedDevice::Id(id) => {
+                            g.inner_devices().iter().any(|(_, d)| id.is_some() && d.id == id).then(|| json!(id.0))?
+                        }
+                        MappedDevice::Nth(n) => {
+                            let inner = g.inner_devices();
+                            let (path, d) = inner.get(usize::try_from(n).ok()?)?;
+                            if d.id.is_some() { json!(d.id.0) } else { json!(path) }
+                        }
+                    };
+                    Some(json!({ "device": device, "param": x.param, "min": number(x.min), "max": number(x.max) }))
+                })
                 .collect();
             json!({ "name": m.name, "mappings": mappings })
         })
@@ -1265,10 +1264,12 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
     }
     let automation = read_lanes(d, at)?;
     Ok(Device {
+        // From version 6 (#763 › 1); earlier files' devices get theirs when the project is opened.
+        id: DeviceId(read_id(d, at)?),
         name: text(d, "name", at)?,
         kind,
         enabled: flag(d, "enabled", true, at)?,
-        state: bytes(d, "state", at)?,
+        state: bytes(d, "state", at)?.map(Into::into),
         params,
         automation,
         clip_host: flag(d, "clip_host", false, at)?,
@@ -1298,7 +1299,7 @@ fn read_group(k: &Obj, at: &str) -> Result<DeviceGroup, ProjectFileError> {
             extensions: extensions(b, &at)?,
         });
     }
-    let mut macros = Vec::new();
+    let mut group = DeviceGroup { branches, macros: Vec::new() };
     for (i, v) in list(k, "macros", at)?.iter().enumerate() {
         let at = format!("{at}.macros[{i}]");
         let m = object(v, &at)?;
@@ -1306,21 +1307,37 @@ fn read_group(k: &Obj, at: &str) -> Result<DeviceGroup, ProjectFileError> {
         for (j, v) in list(m, "mappings", &at)?.iter().enumerate() {
             let at = format!("{at}.mappings[{j}]");
             let x = object(v, &at)?;
-            let mut device = Vec::new();
-            for step in list(x, "device", &at)? {
-                let step = step.as_u64().and_then(|n| u32::try_from(n).ok());
-                device.push(step.ok_or_else(|| format!("{at}.device: expected a list of whole numbers"))?);
-            }
             mappings.push(MacroMapping {
-                device,
+                device: read_mapped_device(&group, x, &at)?,
                 param: required_text(x, "param", &at)?,
                 min: float_or(x, "min", 0.0, &at)?,
                 max: float_or(x, "max", 1.0, &at)?,
             });
         }
-        macros.push(Macro { name: text(m, "name", &at)?, mappings });
+        group.macros.push(Macro { name: text(m, "name", &at)?, mappings });
     }
-    Ok(DeviceGroup { branches, macros })
+    Ok(group)
+}
+
+/// A macro mapping's device: its id from version 7 (#763 › 1), or before that its path relative
+/// to the group (`[branch, index, …]`), read as its place among the group's devices until the
+/// project gives them ids.
+fn read_mapped_device(group: &DeviceGroup, x: &Obj, at: &str) -> Result<MappedDevice, ProjectFileError> {
+    match x.get("device") {
+        Some(Value::Number(n)) => {
+            let id = n.as_u64().and_then(|n| u32::try_from(n).ok()).filter(|&n| n != 0);
+            id.map(|id| MappedDevice::Id(DeviceId(id)))
+                .ok_or_else(|| format!("{at}.device: expected a device id, a whole number from 1").into())
+        }
+        _ => {
+            let mut path = Vec::new();
+            for step in list(x, "device", at)? {
+                let step = step.as_u64().and_then(|n| u32::try_from(n).ok());
+                path.push(step.ok_or_else(|| format!("{at}.device: expected a list of whole numbers"))?);
+            }
+            group.nth_at(&path).ok_or_else(|| format!("{at}.device: no device in the group at {path:?}").into())
+        }
+    }
 }
 
 fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError> {
@@ -1363,7 +1380,7 @@ fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError
         id: ContentId(whole(c, "id", at)?),
         name: text(c, "name", at)?,
         length: float(c, "length", at)?,
-        lanes,
+        lanes: lanes.into(),
         extensions: extensions(c, at)?,
         scale: read_scale(c, "scale", at)?,
     })

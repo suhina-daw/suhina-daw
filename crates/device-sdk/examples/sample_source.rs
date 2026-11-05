@@ -3,7 +3,7 @@
 
 //! Render a resource-bound polyphonic source through an ordinary SDK gain node.
 use std::sync::Arc;
-use suhina_device_api::{Device, NoteEvent};
+use suhina_device_api::{NoteEvent, SampleSource as _};
 use suhina_device_sdk::{DeviceRole, NodeKind, Parameter, ProcessContext, author::GraphBuilder};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -104,7 +104,7 @@ pub fn show(
                             );
                             let label = row.label.clone();
                             response.widget_info(|| {
-                                egui::WidgetInfo::selected(egui::WidgetType::Button, true, lit, label.clone())
+                                egui::WidgetInfo::selected(egui::Role::Button, true, lit, label.clone())
                             });
                             if lit && follow {
                                 response.scroll_to_me(None);

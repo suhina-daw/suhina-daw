@@ -25,7 +25,7 @@ pub(super) fn key_column(
     if keys.height() <= 1.0 {
         return;
     }
-    let response = ui.interact(*keys, Id::new("piano-roll-keys"), Sense::click_and_drag());
+    let response = ui.interact(*keys, Id::unique("piano-roll-keys"), Sense::click_and_drag());
     // The key under the pointer along the keys and the grid: the strip names it and the keys light
     // it. Over the strip itself the pointer is zooming, not reading a row.
     let rows = keys.union(layout.grid);
@@ -95,11 +95,11 @@ pub(super) fn draw_start_marker(ui: &Ui, layout: &Layout, beat: f64) {
     ));
     let response = ui.interact(
         Rect::from_center_size(Pos2::new(x, layout.ruler.center().y), Vec2::new(3.0, layout.ruler.height())),
-        Id::new("piano-roll-start-marker"),
+        Id::unique("piano-roll-start-marker"),
         Sense::hover(),
     );
     let label = format!("Play start at beat {}", round_beat(beat));
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
 }
 
 pub(super) fn draw_playhead(ui: &Ui, layout: &Layout, beat: f64) {
@@ -112,11 +112,11 @@ pub(super) fn draw_playhead(ui: &Ui, layout: &Layout, beat: f64) {
     painter.vline(x, area.y_range(), Stroke::new(1.0, theme::accent()));
     let response = ui.interact(
         Rect::from_center_size(Pos2::new(x, area.center().y), Vec2::new(3.0, area.height())),
-        Id::new("piano-roll-playhead"),
+        Id::unique("piano-roll-playhead"),
         Sense::hover(),
     );
     let label = format!("Playhead at beat {}", round_beat(beat));
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
 }
 
 /// The note a draw drag from `from` to `now` makes: it starts where the press was, and its end
@@ -507,9 +507,9 @@ pub(super) fn draw(
 /// Names the piano roll's parts for screen readers and tests: the grid, each note in view and
 /// its velocity stem.
 pub(super) fn for_readers(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRollState) {
-    let grid = ui.interact(layout.grid, Id::new("piano-roll-readers"), Sense::hover());
+    let grid = ui.interact(layout.grid, Id::unique("piano-roll-readers"), Sense::hover());
     let count = clip.notes.len();
-    grid.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("Piano roll, {count} notes")));
+    grid.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Piano roll, {count} notes")));
     ghost_view::for_readers(ui, &clip.ghosts, layout.grid, |g| layout.note_rect(&g.note()));
     for (i, note) in clip.notes.iter().enumerate() {
         let rect = layout.note_rect(note).intersect(layout.grid);
@@ -523,8 +523,8 @@ pub(super) fn for_readers(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &Pi
         } else {
             format!("Note {} at beat {}", key_name(note.key), round_beat(note.time))
         };
-        let response = ui.interact(rect, Id::new(("piano-roll-note", i)), Sense::hover());
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Other, true, selected, &label));
+        let response = ui.interact(rect, Id::unique(("piano-roll-note", i)), Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Unknown, true, selected, &label));
         let x = layout.x_of(note.time);
         let stem = Rect::from_min_max(Pos2::new(x - 2.0, layout.lane.top()), Pos2::new(x + 2.0, layout.lane.bottom()))
             .intersect(layout.lane);
@@ -532,8 +532,8 @@ pub(super) fn for_readers(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &Pi
             let velocity = suhina_session::midi_velocity(note.velocity);
             let label =
                 format!("Velocity of note {} at beat {}: {velocity}", key_name(note.key), round_beat(note.time));
-            let response = ui.interact(stem, Id::new(("piano-roll-stem", i)), Sense::hover());
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+            let response = ui.interact(stem, Id::unique(("piano-roll-stem", i)), Sense::hover());
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
         }
     }
 }

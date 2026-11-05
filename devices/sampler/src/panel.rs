@@ -157,7 +157,7 @@ pub(super) fn header() -> DeviceUi {
         size: [HEADER_WIDTH, 20.],
         // Clear, so the header row stays one colour behind its controls.
         background: [0, 0, 0, 0],
-        hidden_parameters: PARAMS.iter().map(|p| p.id.into()).collect(),
+        hidden_parameters: PARAMS.iter().map(|p| p.id.to_string()).collect(),
         ..DeviceUi::default()
     };
     control(&mut ui, "recording", Widget::SampleRecording, [0., 0., 200., 20.], UiGesture::Drag, None);
@@ -179,7 +179,7 @@ pub(super) fn panel() -> DeviceUi {
     let mut ui = DeviceUi {
         size: [900., 168.],
         viewport_size: Some([900., 168.]),
-        hidden_parameters: PARAMS.iter().map(|p| p.id.into()).collect(),
+        hidden_parameters: PARAMS.iter().map(|p| p.id.to_string()).collect(),
         ..DeviceUi::default()
     };
     // Section backgrounds first, under the controls: the sound row's filter, LFO and voice.

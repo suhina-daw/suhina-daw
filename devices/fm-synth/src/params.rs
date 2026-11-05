@@ -6,7 +6,7 @@
 //! wheels and pedals do, volume), then the parts the DX7 format does not have (ADR 0034): each
 //! is neutral by default, so an old project and a voice file sound as they did.
 
-use suhina_device_api::{ParamInfo, Scale, Unit};
+use suhina_device_api::{ParamInfo, ParamSpec, Scale, Unit};
 
 pub const OP_PARAMS: usize = 22;
 /// Index of the first global voice parameter.
@@ -258,119 +258,119 @@ const LFO_WAVES: &[&str] = &["Triangle", "Saw Down", "Saw Up", "Square", "Sine",
 macro_rules! op_params {
     ($n:literal, $level:literal) => {
         [
-            ParamInfo::integer(concat!("op", $n, ".rate1"), concat!("Op ", $n, " Rate 1"), (0, 99), 99, Unit::None),
-            ParamInfo::integer(concat!("op", $n, ".rate2"), concat!("Op ", $n, " Rate 2"), (0, 99), 99, Unit::None),
-            ParamInfo::integer(concat!("op", $n, ".rate3"), concat!("Op ", $n, " Rate 3"), (0, 99), 99, Unit::None),
-            ParamInfo::integer(concat!("op", $n, ".rate4"), concat!("Op ", $n, " Rate 4"), (0, 99), 99, Unit::None),
-            ParamInfo::integer(concat!("op", $n, ".level1"), concat!("Op ", $n, " Level 1"), (0, 99), 99, Unit::None),
-            ParamInfo::integer(concat!("op", $n, ".level2"), concat!("Op ", $n, " Level 2"), (0, 99), 99, Unit::None),
-            ParamInfo::integer(concat!("op", $n, ".level3"), concat!("Op ", $n, " Level 3"), (0, 99), 99, Unit::None),
-            ParamInfo::integer(concat!("op", $n, ".level4"), concat!("Op ", $n, " Level 4"), (0, 99), 0, Unit::None),
-            ParamInfo::integer(
+            ParamSpec::integer(concat!("op", $n, ".rate1"), concat!("Op ", $n, " Rate 1"), (0, 99), 99, Unit::None),
+            ParamSpec::integer(concat!("op", $n, ".rate2"), concat!("Op ", $n, " Rate 2"), (0, 99), 99, Unit::None),
+            ParamSpec::integer(concat!("op", $n, ".rate3"), concat!("Op ", $n, " Rate 3"), (0, 99), 99, Unit::None),
+            ParamSpec::integer(concat!("op", $n, ".rate4"), concat!("Op ", $n, " Rate 4"), (0, 99), 99, Unit::None),
+            ParamSpec::integer(concat!("op", $n, ".level1"), concat!("Op ", $n, " Level 1"), (0, 99), 99, Unit::None),
+            ParamSpec::integer(concat!("op", $n, ".level2"), concat!("Op ", $n, " Level 2"), (0, 99), 99, Unit::None),
+            ParamSpec::integer(concat!("op", $n, ".level3"), concat!("Op ", $n, " Level 3"), (0, 99), 99, Unit::None),
+            ParamSpec::integer(concat!("op", $n, ".level4"), concat!("Op ", $n, " Level 4"), (0, 99), 0, Unit::None),
+            ParamSpec::integer(
                 concat!("op", $n, ".breakPoint"),
                 concat!("Op ", $n, " Break Point"),
                 (0, 99),
                 39,
                 Unit::None,
             ),
-            ParamInfo::integer(
+            ParamSpec::integer(
                 concat!("op", $n, ".leftDepth"),
                 concat!("Op ", $n, " Left Depth"),
                 (0, 99),
                 0,
                 Unit::None,
             ),
-            ParamInfo::integer(
+            ParamSpec::integer(
                 concat!("op", $n, ".rightDepth"),
                 concat!("Op ", $n, " Right Depth"),
                 (0, 99),
                 0,
                 Unit::None,
             ),
-            ParamInfo::choice(concat!("op", $n, ".leftCurve"), concat!("Op ", $n, " Left Curve"), CURVES, 0),
-            ParamInfo::choice(concat!("op", $n, ".rightCurve"), concat!("Op ", $n, " Right Curve"), CURVES, 0),
-            ParamInfo::integer(
+            ParamSpec::choice(concat!("op", $n, ".leftCurve"), concat!("Op ", $n, " Left Curve"), CURVES, 0),
+            ParamSpec::choice(concat!("op", $n, ".rightCurve"), concat!("Op ", $n, " Right Curve"), CURVES, 0),
+            ParamSpec::integer(
                 concat!("op", $n, ".rateScaling"),
                 concat!("Op ", $n, " Rate Scaling"),
                 (0, 7),
                 0,
                 Unit::None,
             ),
-            ParamInfo::integer(
+            ParamSpec::integer(
                 concat!("op", $n, ".ampModSens"),
                 concat!("Op ", $n, " Amp Mod Sensitivity"),
                 (0, 3),
                 0,
                 Unit::None,
             ),
-            ParamInfo::integer(
+            ParamSpec::integer(
                 concat!("op", $n, ".velocitySens"),
                 concat!("Op ", $n, " Velocity Sensitivity"),
                 (0, 7),
                 0,
                 Unit::None,
             ),
-            ParamInfo::integer(
+            ParamSpec::integer(
                 concat!("op", $n, ".level"),
                 concat!("Op ", $n, " Output Level"),
                 (0, 99),
                 $level,
                 Unit::None,
             ),
-            ParamInfo::choice(concat!("op", $n, ".mode"), concat!("Op ", $n, " Mode"), MODES, 0),
-            ParamInfo::integer(concat!("op", $n, ".coarse"), concat!("Op ", $n, " Coarse"), (0, 31), 1, Unit::None),
-            ParamInfo::integer(concat!("op", $n, ".fine"), concat!("Op ", $n, " Fine"), (0, 99), 0, Unit::None),
-            ParamInfo::integer(concat!("op", $n, ".detune"), concat!("Op ", $n, " Detune"), (-7, 7), 0, Unit::None),
-            ParamInfo::toggle(concat!("op", $n, ".on"), concat!("Op ", $n, " On"), true),
+            ParamSpec::choice(concat!("op", $n, ".mode"), concat!("Op ", $n, " Mode"), MODES, 0),
+            ParamSpec::integer(concat!("op", $n, ".coarse"), concat!("Op ", $n, " Coarse"), (0, 31), 1, Unit::None),
+            ParamSpec::integer(concat!("op", $n, ".fine"), concat!("Op ", $n, " Fine"), (0, 99), 0, Unit::None),
+            ParamSpec::integer(concat!("op", $n, ".detune"), concat!("Op ", $n, " Detune"), (-7, 7), 0, Unit::None),
+            ParamSpec::toggle(concat!("op", $n, ".on"), concat!("Op ", $n, " On"), true),
         ]
     };
 }
 
-const OPS: [[ParamInfo; OP_PARAMS]; 6] =
+const OPS: [[ParamSpec; OP_PARAMS]; 6] =
     [op_params!(1, 99), op_params!(2, 0), op_params!(3, 0), op_params!(4, 0), op_params!(5, 0), op_params!(6, 0)];
 
-const GLOBALS: [ParamInfo; GLOBAL_COUNT] = [
-    ParamInfo::integer("pitchRate1", "Pitch Rate 1", (0, 99), 99, Unit::None),
-    ParamInfo::integer("pitchRate2", "Pitch Rate 2", (0, 99), 99, Unit::None),
-    ParamInfo::integer("pitchRate3", "Pitch Rate 3", (0, 99), 99, Unit::None),
-    ParamInfo::integer("pitchRate4", "Pitch Rate 4", (0, 99), 99, Unit::None),
-    ParamInfo::integer("pitchLevel1", "Pitch Level 1", (0, 99), 50, Unit::None),
-    ParamInfo::integer("pitchLevel2", "Pitch Level 2", (0, 99), 50, Unit::None),
-    ParamInfo::integer("pitchLevel3", "Pitch Level 3", (0, 99), 50, Unit::None),
-    ParamInfo::integer("pitchLevel4", "Pitch Level 4", (0, 99), 50, Unit::None),
-    ParamInfo::integer("algorithm", "Algorithm", (1, 43), 1, Unit::None),
-    ParamInfo::integer("feedback", "Feedback", (0, 7), 0, Unit::None),
-    ParamInfo::toggle("oscKeySync", "Oscillator Key Sync", true),
-    ParamInfo::integer("lfoSpeed", "LFO Speed", (0, 99), 35, Unit::None),
-    ParamInfo::integer("lfoDelay", "LFO Delay", (0, 99), 0, Unit::None),
-    ParamInfo::integer("lfoPitchDepth", "LFO Pitch Depth", (0, 99), 0, Unit::None),
-    ParamInfo::integer("lfoAmpDepth", "LFO Amp Depth", (0, 99), 0, Unit::None),
-    ParamInfo::toggle("lfoKeySync", "LFO Key Sync", true),
-    ParamInfo::choice("lfoWave", "LFO Wave", LFO_WAVES, 0),
-    ParamInfo::integer("pitchModSens", "Pitch Mod Sensitivity", (0, 7), 3, Unit::None),
-    ParamInfo::integer("transpose", "Transpose", (-24, 24), 0, Unit::None),
+const GLOBALS: [ParamSpec; GLOBAL_COUNT] = [
+    ParamSpec::integer("pitchRate1", "Pitch Rate 1", (0, 99), 99, Unit::None),
+    ParamSpec::integer("pitchRate2", "Pitch Rate 2", (0, 99), 99, Unit::None),
+    ParamSpec::integer("pitchRate3", "Pitch Rate 3", (0, 99), 99, Unit::None),
+    ParamSpec::integer("pitchRate4", "Pitch Rate 4", (0, 99), 99, Unit::None),
+    ParamSpec::integer("pitchLevel1", "Pitch Level 1", (0, 99), 50, Unit::None),
+    ParamSpec::integer("pitchLevel2", "Pitch Level 2", (0, 99), 50, Unit::None),
+    ParamSpec::integer("pitchLevel3", "Pitch Level 3", (0, 99), 50, Unit::None),
+    ParamSpec::integer("pitchLevel4", "Pitch Level 4", (0, 99), 50, Unit::None),
+    ParamSpec::integer("algorithm", "Algorithm", (1, 43), 1, Unit::None),
+    ParamSpec::integer("feedback", "Feedback", (0, 7), 0, Unit::None),
+    ParamSpec::toggle("oscKeySync", "Oscillator Key Sync", true),
+    ParamSpec::integer("lfoSpeed", "LFO Speed", (0, 99), 35, Unit::None),
+    ParamSpec::integer("lfoDelay", "LFO Delay", (0, 99), 0, Unit::None),
+    ParamSpec::integer("lfoPitchDepth", "LFO Pitch Depth", (0, 99), 0, Unit::None),
+    ParamSpec::integer("lfoAmpDepth", "LFO Amp Depth", (0, 99), 0, Unit::None),
+    ParamSpec::toggle("lfoKeySync", "LFO Key Sync", true),
+    ParamSpec::choice("lfoWave", "LFO Wave", LFO_WAVES, 0),
+    ParamSpec::integer("pitchModSens", "Pitch Mod Sensitivity", (0, 7), 3, Unit::None),
+    ParamSpec::integer("transpose", "Transpose", (-24, 24), 0, Unit::None),
 ];
 
 macro_rules! route_params {
     ($id:literal, $name:literal, $range:literal, $pitch:literal) => {
         [
-            ParamInfo::integer(concat!($id, "Range"), concat!($name, " Range"), (0, 99), $range, Unit::None),
-            ParamInfo::toggle(concat!($id, "Pitch"), concat!($name, " to Pitch"), $pitch),
-            ParamInfo::toggle(concat!($id, "Amp"), concat!($name, " to Amp"), false),
-            ParamInfo::toggle(concat!($id, "EgBias"), concat!($name, " to EG Bias"), false),
+            ParamSpec::integer(concat!($id, "Range"), concat!($name, " Range"), (0, 99), $range, Unit::None),
+            ParamSpec::toggle(concat!($id, "Pitch"), concat!($name, " to Pitch"), $pitch),
+            ParamSpec::toggle(concat!($id, "Amp"), concat!($name, " to Amp"), false),
+            ParamSpec::toggle(concat!($id, "EgBias"), concat!($name, " to EG Bias"), false),
         ]
     };
 }
 
-const PERFORMANCE_PARAMS: [ParamInfo; 5] = [
-    ParamInfo::integer("pitchBendRange", "Pitch Bend Range", (0, 12), 2, Unit::None),
-    ParamInfo::integer("pitchBendStep", "Pitch Bend Step", (0, 12), 0, Unit::None),
-    ParamInfo::toggle("portamento", "Portamento", false),
-    ParamInfo::toggle("glissando", "Glissando", false),
-    ParamInfo::integer("portamentoTime", "Portamento Time", (0, 99), 0, Unit::None),
+const PERFORMANCE_PARAMS: [ParamSpec; 5] = [
+    ParamSpec::integer("pitchBendRange", "Pitch Bend Range", (0, 12), 2, Unit::None),
+    ParamSpec::integer("pitchBendStep", "Pitch Bend Step", (0, 12), 0, Unit::None),
+    ParamSpec::toggle("portamento", "Portamento", false),
+    ParamSpec::toggle("glissando", "Glissando", false),
+    ParamSpec::integer("portamentoTime", "Portamento Time", (0, 99), 0, Unit::None),
 ];
 
-const ROUTE_PARAMS: [[ParamInfo; 4]; 4] = [
+const ROUTE_PARAMS: [[ParamSpec; 4]; 4] = [
     route_params!("wheel", "Wheel", 50, true),
     route_params!("foot", "Foot", 0, false),
     route_params!("breath", "Breath", 0, false),
@@ -386,52 +386,52 @@ const GLOBAL_GROUPS: [&str; GLOBAL_COUNT] = [
     "Voice", "LFO", "LFO", "LFO", "LFO", "LFO", "LFO", "LFO", "Voice",
 ];
 
-const VOLUME_PARAM: ParamInfo =
-    ParamInfo::continuous("volume", "Volume", (-70.0, 6.0), 0.0, Unit::Decibels, Scale::Linear);
+const VOLUME_PARAM: ParamSpec =
+    ParamSpec::continuous("volume", "Volume", (-70.0, 6.0), 0.0, Unit::Decibels, Scale::Linear);
 
-const GLOBAL_EXT_PARAMS: [ParamInfo; GLOBAL_EXT] = [
-    ParamInfo::continuous("pan", "Pan", (-1.0, 1.0), 0.0, Unit::Balance, Scale::Linear).in_group("Output"),
-    ParamInfo::continuous("panByKey", "Pan by Key", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
-    ParamInfo::continuous("panRandom", "Random Pan", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
-    ParamInfo::continuous("spread", "Spread", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
-    ParamInfo::integer("voices", "Voices", (1, 32), 16, Unit::None).in_group("Performance"),
-    ParamInfo::continuous("tone", "Tone", (0.0, 1.0), 1.0, Unit::Percent, Scale::Linear).in_group("Output"),
-    ParamInfo::continuous("time", "Time", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
-    ParamInfo::toggle("retrigger", "Retrigger", true).in_group("Performance"),
-    ParamInfo::toggle("antialias", "Antialias", true).in_group("Performance"),
-    ParamInfo::toggle("interpolation", "Interpolation", true).in_group("Performance"),
+const GLOBAL_EXT_PARAMS: [ParamSpec; GLOBAL_EXT] = [
+    ParamSpec::continuous("pan", "Pan", (-1.0, 1.0), 0.0, Unit::Balance, Scale::Linear).in_group("Output"),
+    ParamSpec::continuous("panByKey", "Pan by Key", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
+    ParamSpec::continuous("panRandom", "Random Pan", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
+    ParamSpec::continuous("spread", "Spread", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
+    ParamSpec::integer("voices", "Voices", (1, 32), 16, Unit::None).in_group("Performance"),
+    ParamSpec::continuous("tone", "Tone", (0.0, 1.0), 1.0, Unit::Percent, Scale::Linear).in_group("Output"),
+    ParamSpec::continuous("time", "Time", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Output"),
+    ParamSpec::toggle("retrigger", "Retrigger", true).in_group("Performance"),
+    ParamSpec::toggle("antialias", "Antialias", true).in_group("Performance"),
+    ParamSpec::toggle("interpolation", "Interpolation", true).in_group("Performance"),
 ];
 
-const FILTER_PARAMS: [ParamInfo; FILTER_FIELDS] = [
-    ParamInfo::toggle("filterOn", "Filter On", false).in_group("Filter"),
-    ParamInfo::choice("filterType", "Filter Type", &["Low-pass", "High-pass", "Band-pass", "Notch", "Morph"], 0)
+const FILTER_PARAMS: [ParamSpec; FILTER_FIELDS] = [
+    ParamSpec::toggle("filterOn", "Filter On", false).in_group("Filter"),
+    ParamSpec::choice("filterType", "Filter Type", &["Low-pass", "High-pass", "Band-pass", "Notch", "Morph"], 0)
         .in_group("Filter"),
-    ParamInfo::choice("filterSlope", "Filter Slope", &["12 dB", "24 dB"], 1).in_group("Filter"),
-    ParamInfo::choice("filterCircuit", "Filter Circuit", &["Clean", "Warm", "Edge", "Bite", "Grit"], 0)
+    ParamSpec::choice("filterSlope", "Filter Slope", &["12 dB", "24 dB"], 1).in_group("Filter"),
+    ParamSpec::choice("filterCircuit", "Filter Circuit", &["Clean", "Warm", "Edge", "Bite", "Grit"], 0)
         .in_group("Filter"),
-    ParamInfo::continuous("filterFreq", "Filter Freq", (20.0, 20_000.0), 20_000.0, Unit::Hertz, Scale::Logarithmic)
+    ParamSpec::continuous("filterFreq", "Filter Freq", (20.0, 20_000.0), 20_000.0, Unit::Hertz, Scale::Logarithmic)
         .in_group("Filter"),
-    ParamInfo::continuous("filterRes", "Filter Res", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Filter"),
-    ParamInfo::continuous("filterMorph", "Filter Morph", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
+    ParamSpec::continuous("filterRes", "Filter Res", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Filter"),
+    ParamSpec::continuous("filterMorph", "Filter Morph", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
         .in_group("Filter"),
-    ParamInfo::continuous("filterDrive", "Filter Drive", (0.0, 24.0), 0.0, Unit::Decibels, Scale::Linear)
+    ParamSpec::continuous("filterDrive", "Filter Drive", (0.0, 24.0), 0.0, Unit::Decibels, Scale::Linear)
         .in_group("Filter"),
-    ParamInfo::continuous("filterEnv", "Filter Env", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Filter"),
-    ParamInfo::continuous("filterByVel", "Filter by Velocity", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
+    ParamSpec::continuous("filterEnv", "Filter Env", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Filter"),
+    ParamSpec::continuous("filterByVel", "Filter by Velocity", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
         .in_group("Filter"),
-    ParamInfo::continuous("filterByKey", "Filter by Key", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
+    ParamSpec::continuous("filterByKey", "Filter by Key", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
         .in_group("Filter"),
-    ParamInfo::choice("shaper", "Shaper", &["Off", "Soft", "Hard", "Sine", "Fold"], 0).in_group("Filter"),
-    ParamInfo::continuous("shaperDrive", "Shaper Drive", (0.0, 24.0), 0.0, Unit::Decibels, Scale::Linear)
+    ParamSpec::choice("shaper", "Shaper", &["Off", "Soft", "Hard", "Sine", "Fold"], 0).in_group("Filter"),
+    ParamSpec::continuous("shaperDrive", "Shaper Drive", (0.0, 24.0), 0.0, Unit::Decibels, Scale::Linear)
         .in_group("Filter"),
-    ParamInfo::continuous("shaperMix", "Shaper Dry/Wet", (0.0, 1.0), 1.0, Unit::Percent, Scale::Linear)
+    ParamSpec::continuous("shaperMix", "Shaper Dry/Wet", (0.0, 1.0), 1.0, Unit::Percent, Scale::Linear)
         .in_group("Filter"),
 ];
 
 macro_rules! env_params {
     ($p:literal, $name:literal, $group:literal, $range:expr, $unit:expr, $initial:literal, $peak:literal, $sustain:literal, $end:literal) => {
         [
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!($p, "attack"),
                 concat!($name, " Attack"),
                 (0.0005, 60.0),
@@ -440,7 +440,7 @@ macro_rules! env_params {
                 SECONDS,
             )
             .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!($p, "decay"),
                 concat!($name, " Decay"),
                 (0.0005, 60.0),
@@ -449,7 +449,7 @@ macro_rules! env_params {
                 SECONDS,
             )
             .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!($p, "release"),
                 concat!($name, " Release"),
                 (0.0005, 60.0),
@@ -458,7 +458,7 @@ macro_rules! env_params {
                 SECONDS,
             )
             .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!($p, "initial"),
                 concat!($name, " Initial"),
                 $range,
@@ -467,9 +467,9 @@ macro_rules! env_params {
                 Scale::Linear,
             )
             .in_group($group),
-            ParamInfo::continuous(concat!($p, "peak"), concat!($name, " Peak"), $range, $peak, $unit, Scale::Linear)
+            ParamSpec::continuous(concat!($p, "peak"), concat!($name, " Peak"), $range, $peak, $unit, Scale::Linear)
                 .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!($p, "sustain"),
                 concat!($name, " Sustain"),
                 $range,
@@ -478,10 +478,10 @@ macro_rules! env_params {
                 Scale::Linear,
             )
             .in_group($group),
-            ParamInfo::continuous(concat!($p, "end"), concat!($name, " End"), $range, $end, $unit, Scale::Linear)
+            ParamSpec::continuous(concat!($p, "end"), concat!($name, " End"), $range, $end, $unit, Scale::Linear)
                 .in_group($group),
-            ParamInfo::choice(concat!($p, "loop"), concat!($name, " Loop"), LOOPS, 0).in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::choice(concat!($p, "loop"), concat!($name, " Loop"), LOOPS, 0).in_group($group),
+            ParamSpec::continuous(
                 concat!($p, "loopTime"),
                 concat!($name, " Loop Time"),
                 (0.0005, 20.0),
@@ -490,8 +490,8 @@ macro_rules! env_params {
                 SECONDS,
             )
             .in_group($group),
-            ParamInfo::choice(concat!($p, "repeat"), concat!($name, " Repeat"), REPEATS, 4).in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::choice(concat!($p, "repeat"), concat!($name, " Repeat"), REPEATS, 4).in_group($group),
+            ParamSpec::continuous(
                 concat!($p, "timeByVel"),
                 concat!($name, " Time by Velocity"),
                 (-1.0, 1.0),
@@ -500,7 +500,7 @@ macro_rules! env_params {
                 Scale::Linear,
             )
             .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!($p, "timeByKey"),
                 concat!($name, " Time by Key"),
                 (0.0, 1.0),
@@ -509,7 +509,7 @@ macro_rules! env_params {
                 Scale::Linear,
             )
             .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!($p, "attackSlope"),
                 concat!($name, " Attack Slope"),
                 (-1.0, 1.0),
@@ -518,7 +518,7 @@ macro_rules! env_params {
                 Scale::Linear,
             )
             .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!($p, "decaySlope"),
                 concat!($name, " Decay Slope"),
                 (-1.0, 1.0),
@@ -527,7 +527,7 @@ macro_rules! env_params {
                 Scale::Linear,
             )
             .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!($p, "releaseSlope"),
                 concat!($name, " Release Slope"),
                 (-1.0, 1.0),
@@ -540,65 +540,65 @@ macro_rules! env_params {
     };
 }
 
-const FILTER_ENV_PARAMS: [ParamInfo; ENV_FIELDS] =
+const FILTER_ENV_PARAMS: [ParamSpec; ENV_FIELDS] =
     env_params!("filterEnv.", "Filter Env", "Filter", (0.0, 1.0), Unit::Percent, 0.0, 1.0, 0.0, 0.0);
-const LFO_ENV_PARAMS: [ParamInfo; ENV_FIELDS] =
+const LFO_ENV_PARAMS: [ParamSpec; ENV_FIELDS] =
     env_params!("lfoEnv.", "LFO Env", "LFO", (0.0, 1.0), Unit::Percent, 1.0, 1.0, 1.0, 1.0);
-const PITCH_ENV_PARAMS: [ParamInfo; ENV_FIELDS] =
+const PITCH_ENV_PARAMS: [ParamSpec; ENV_FIELDS] =
     env_params!("pitchEnv.", "Pitch Env", "Pitch Env", (-48.0, 48.0), Unit::Semitones, 0.0, 0.0, 0.0, 0.0);
 
-const LFO_PARAMS: [ParamInfo; LFO_FIELDS] = [
-    ParamInfo::toggle("lfoOn", "LFO 2 On", false).in_group("LFO"),
-    ParamInfo::choice(
+const LFO_PARAMS: [ParamSpec; LFO_FIELDS] = [
+    ParamSpec::toggle("lfoOn", "LFO 2 On", false).in_group("LFO"),
+    ParamSpec::choice(
         "lfo2Wave",
         "LFO 2 Wave",
         &["Sine", "Square", "Triangle", "Saw Down", "Saw Up", "Sample & Hold", "Noise"],
         0,
     )
     .in_group("LFO"),
-    ParamInfo::choice("lfo2Range", "LFO 2 Range", &["Hz", "Audio", "Sync"], 0).in_group("LFO"),
-    ParamInfo::continuous("lfo2Rate", "LFO 2 Rate", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear).in_group("LFO"),
-    ParamInfo::choice("lfo2Sync", "LFO 2 Sync", REPEATS, 4).in_group("LFO"),
-    ParamInfo::toggle("lfo2Retrigger", "LFO 2 Retrigger", true).in_group("LFO"),
-    ParamInfo::continuous("lfo2ByKey", "LFO 2 Rate by Key", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
+    ParamSpec::choice("lfo2Range", "LFO 2 Range", &["Hz", "Audio", "Sync"], 0).in_group("LFO"),
+    ParamSpec::continuous("lfo2Rate", "LFO 2 Rate", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear).in_group("LFO"),
+    ParamSpec::choice("lfo2Sync", "LFO 2 Sync", REPEATS, 4).in_group("LFO"),
+    ParamSpec::toggle("lfo2Retrigger", "LFO 2 Retrigger", true).in_group("LFO"),
+    ParamSpec::continuous("lfo2ByKey", "LFO 2 Rate by Key", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
         .in_group("LFO"),
-    ParamInfo::continuous("lfo2ByVel", "LFO 2 Amount by Velocity", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
+    ParamSpec::continuous("lfo2ByVel", "LFO 2 Amount by Velocity", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
         .in_group("LFO"),
-    ParamInfo::continuous("lfo2Amount", "LFO 2 Amount", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("LFO"),
-    ParamInfo::toggle("lfo2ToOp1", "LFO 2 to Op 1", true).in_group("LFO"),
-    ParamInfo::toggle("lfo2ToOp2", "LFO 2 to Op 2", true).in_group("LFO"),
-    ParamInfo::toggle("lfo2ToOp3", "LFO 2 to Op 3", true).in_group("LFO"),
-    ParamInfo::toggle("lfo2ToOp4", "LFO 2 to Op 4", true).in_group("LFO"),
-    ParamInfo::toggle("lfo2ToOp5", "LFO 2 to Op 5", true).in_group("LFO"),
-    ParamInfo::toggle("lfo2ToOp6", "LFO 2 to Op 6", true).in_group("LFO"),
-    ParamInfo::toggle("lfo2ToFilter", "LFO 2 to Filter", false).in_group("LFO"),
-    ParamInfo::choice("lfo2DestB", "LFO 2 Destination B", &DESTINATIONS, 0).in_group("LFO"),
-    ParamInfo::continuous("lfo2AmountB", "LFO 2 Amount B", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
+    ParamSpec::continuous("lfo2Amount", "LFO 2 Amount", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("LFO"),
+    ParamSpec::toggle("lfo2ToOp1", "LFO 2 to Op 1", true).in_group("LFO"),
+    ParamSpec::toggle("lfo2ToOp2", "LFO 2 to Op 2", true).in_group("LFO"),
+    ParamSpec::toggle("lfo2ToOp3", "LFO 2 to Op 3", true).in_group("LFO"),
+    ParamSpec::toggle("lfo2ToOp4", "LFO 2 to Op 4", true).in_group("LFO"),
+    ParamSpec::toggle("lfo2ToOp5", "LFO 2 to Op 5", true).in_group("LFO"),
+    ParamSpec::toggle("lfo2ToOp6", "LFO 2 to Op 6", true).in_group("LFO"),
+    ParamSpec::toggle("lfo2ToFilter", "LFO 2 to Filter", false).in_group("LFO"),
+    ParamSpec::choice("lfo2DestB", "LFO 2 Destination B", &DESTINATIONS, 0).in_group("LFO"),
+    ParamSpec::continuous("lfo2AmountB", "LFO 2 Amount B", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
         .in_group("LFO"),
 ];
 
-const PITCH_PARAMS: [ParamInfo; PITCH_FIELDS] = [
-    ParamInfo::toggle("pitchEnvOn", "Pitch Env On", false).in_group("Pitch Env"),
-    ParamInfo::continuous("pitchEnvAmount", "Pitch Env Amount", (-1.0, 1.0), 1.0, Unit::Percent, Scale::Linear)
+const PITCH_PARAMS: [ParamSpec; PITCH_FIELDS] = [
+    ParamSpec::toggle("pitchEnvOn", "Pitch Env On", false).in_group("Pitch Env"),
+    ParamSpec::continuous("pitchEnvAmount", "Pitch Env Amount", (-1.0, 1.0), 1.0, Unit::Percent, Scale::Linear)
         .in_group("Pitch Env"),
-    ParamInfo::toggle("pitchEnvToOp1", "Pitch Env to Op 1", true).in_group("Pitch Env"),
-    ParamInfo::toggle("pitchEnvToOp2", "Pitch Env to Op 2", true).in_group("Pitch Env"),
-    ParamInfo::toggle("pitchEnvToOp3", "Pitch Env to Op 3", true).in_group("Pitch Env"),
-    ParamInfo::toggle("pitchEnvToOp4", "Pitch Env to Op 4", true).in_group("Pitch Env"),
-    ParamInfo::toggle("pitchEnvToOp5", "Pitch Env to Op 5", true).in_group("Pitch Env"),
-    ParamInfo::toggle("pitchEnvToOp6", "Pitch Env to Op 6", true).in_group("Pitch Env"),
-    ParamInfo::toggle("pitchEnvToLfo", "Pitch Env to LFO 2", false).in_group("Pitch Env"),
-    ParamInfo::choice("pitchEnvDestB", "Pitch Env Destination B", &DESTINATIONS, 0).in_group("Pitch Env"),
-    ParamInfo::continuous("pitchEnvAmountB", "Pitch Env Amount B", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
+    ParamSpec::toggle("pitchEnvToOp1", "Pitch Env to Op 1", true).in_group("Pitch Env"),
+    ParamSpec::toggle("pitchEnvToOp2", "Pitch Env to Op 2", true).in_group("Pitch Env"),
+    ParamSpec::toggle("pitchEnvToOp3", "Pitch Env to Op 3", true).in_group("Pitch Env"),
+    ParamSpec::toggle("pitchEnvToOp4", "Pitch Env to Op 4", true).in_group("Pitch Env"),
+    ParamSpec::toggle("pitchEnvToOp5", "Pitch Env to Op 5", true).in_group("Pitch Env"),
+    ParamSpec::toggle("pitchEnvToOp6", "Pitch Env to Op 6", true).in_group("Pitch Env"),
+    ParamSpec::toggle("pitchEnvToLfo", "Pitch Env to LFO 2", false).in_group("Pitch Env"),
+    ParamSpec::choice("pitchEnvDestB", "Pitch Env Destination B", &DESTINATIONS, 0).in_group("Pitch Env"),
+    ParamSpec::continuous("pitchEnvAmountB", "Pitch Env Amount B", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
         .in_group("Pitch Env"),
 ];
 
 macro_rules! matrix_params {
     ($p:literal, $name:literal) => {
         [
-            ParamInfo::choice(concat!("mod.", $p, ".dest1"), concat!($name, " Destination"), &DESTINATIONS, 0)
+            ParamSpec::choice(concat!("mod.", $p, ".dest1"), concat!($name, " Destination"), &DESTINATIONS, 0)
                 .in_group("Modulation"),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!("mod.", $p, ".amount1"),
                 concat!($name, " Amount"),
                 (-1.0, 1.0),
@@ -607,9 +607,9 @@ macro_rules! matrix_params {
                 Scale::Linear,
             )
             .in_group("Modulation"),
-            ParamInfo::choice(concat!("mod.", $p, ".dest2"), concat!($name, " Destination 2"), &DESTINATIONS, 0)
+            ParamSpec::choice(concat!("mod.", $p, ".dest2"), concat!($name, " Destination 2"), &DESTINATIONS, 0)
                 .in_group("Modulation"),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!("mod.", $p, ".amount2"),
                 concat!($name, " Amount 2"),
                 (-1.0, 1.0),
@@ -622,7 +622,7 @@ macro_rules! matrix_params {
     };
 }
 
-const MATRIX_PARAMS: [[ParamInfo; 4]; MATRIX_SOURCES] = [
+const MATRIX_PARAMS: [[ParamSpec; 4]; MATRIX_SOURCES] = [
     matrix_params!("velocity", "Velocity"),
     matrix_params!("key", "Key"),
     matrix_params!("pressure", "Pressure"),
@@ -637,8 +637,8 @@ const MATRIX_PARAMS: [[ParamInfo; 4]; MATRIX_SOURCES] = [
 macro_rules! op_ext_params {
     ($n:literal, $group:literal) => {
         [
-            ParamInfo::choice(concat!("op", $n, ".wave"), concat!("Op ", $n, " Wave"), &WAVES, 0).in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::choice(concat!("op", $n, ".wave"), concat!("Op ", $n, " Wave"), &WAVES, 0).in_group($group),
+            ParamSpec::continuous(
                 concat!("op", $n, ".feedback"),
                 concat!("Op ", $n, " Feedback"),
                 (0.0, 1.0),
@@ -647,7 +647,7 @@ macro_rules! op_ext_params {
                 Scale::Linear,
             )
             .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!("op", $n, ".phase"),
                 concat!("Op ", $n, " Phase"),
                 (0.0, 1.0),
@@ -656,9 +656,9 @@ macro_rules! op_ext_params {
                 Scale::Linear,
             )
             .in_group($group),
-            ParamInfo::toggle(concat!("op", $n, ".retrigger"), concat!("Op ", $n, " Retrigger"), false)
+            ParamSpec::toggle(concat!("op", $n, ".retrigger"), concat!("Op ", $n, " Retrigger"), false)
                 .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!("op", $n, ".freqByVel"),
                 concat!("Op ", $n, " Frequency by Velocity"),
                 (-1.0, 1.0),
@@ -667,9 +667,9 @@ macro_rules! op_ext_params {
                 Scale::Linear,
             )
             .in_group($group),
-            ParamInfo::toggle(concat!("op", $n, ".freqQuantize"), concat!("Op ", $n, " Frequency Quantize"), false)
+            ParamSpec::toggle(concat!("op", $n, ".freqQuantize"), concat!("Op ", $n, " Frequency Quantize"), false)
                 .in_group($group),
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!("op", $n, ".levelByKey"),
                 concat!("Op ", $n, " Level by Key"),
                 (-1.0, 1.0),
@@ -678,24 +678,24 @@ macro_rules! op_ext_params {
                 Scale::Linear,
             )
             .in_group($group),
-            ParamInfo::choice(
+            ParamSpec::choice(
                 concat!("op", $n, ".envMode"),
                 concat!("Op ", $n, " Envelope Mode"),
                 &["Rates and levels", "Time"],
                 0,
             )
             .in_group($group),
-            ParamInfo::choice(concat!("op", $n, ".partials"), concat!("Op ", $n, " Partials"), &["16", "32", "64"], 0)
+            ParamSpec::choice(concat!("op", $n, ".partials"), concat!("Op ", $n, " Partials"), &["16", "32", "64"], 0)
                 .in_group($group),
-            ParamInfo::choice(
+            ParamSpec::choice(
                 concat!("op", $n, ".repeat"),
                 concat!("Op ", $n, " Partial Repeat"),
                 &["Off", "1", "2", "3", "4", "5", "6"],
                 0,
             )
             .in_group($group),
-            ParamInfo::toggle(concat!("op", $n, ".normalize"), concat!("Op ", $n, " Normalize"), true).in_group($group),
-            ParamInfo::choice(
+            ParamSpec::toggle(concat!("op", $n, ".normalize"), concat!("Op ", $n, " Normalize"), true).in_group($group),
+            ParamSpec::choice(
                 concat!("op", $n, ".oddEven"),
                 concat!("Op ", $n, " Partials Used"),
                 &["All", "Odd", "Even"],
@@ -706,7 +706,7 @@ macro_rules! op_ext_params {
     };
 }
 
-const OP_EXT_PARAMS: [[ParamInfo; 12]; 6] = [
+const OP_EXT_PARAMS: [[ParamSpec; 12]; 6] = [
     op_ext_params!(1, "Op 1"),
     op_ext_params!(2, "Op 2"),
     op_ext_params!(3, "Op 3"),
@@ -715,7 +715,7 @@ const OP_EXT_PARAMS: [[ParamInfo; 12]; 6] = [
     op_ext_params!(6, "Op 6"),
 ];
 
-const OP_ENV_PARAMS: [[ParamInfo; ENV_FIELDS]; 6] = [
+const OP_ENV_PARAMS: [[ParamSpec; ENV_FIELDS]; 6] = [
     env_params!("op1.env.", "Op 1 Env", "Op 1", (-70.0, 0.0), Unit::Decibels, -70.0, 0.0, 0.0, -70.0),
     env_params!("op2.env.", "Op 2 Env", "Op 2", (-70.0, 0.0), Unit::Decibels, -70.0, 0.0, 0.0, -70.0),
     env_params!("op3.env.", "Op 3 Env", "Op 3", (-70.0, 0.0), Unit::Decibels, -70.0, 0.0, 0.0, -70.0),
@@ -726,7 +726,7 @@ const OP_ENV_PARAMS: [[ParamInfo; ENV_FIELDS]; 6] = [
 
 macro_rules! harmonics {
     ($n:literal, $group:literal; $($h:literal)*) => {
-        [$(ParamInfo::continuous(
+        [$(ParamSpec::continuous(
             concat!("op", $n, ".h", $h),
             concat!("Op ", $n, " Partial ", $h),
             (0.0, 1.0),
@@ -746,7 +746,7 @@ macro_rules! op_harmonics {
 }
 
 #[allow(clippy::large_const_arrays)] // read once, to build `PARAMS`
-const DRAWN_PARAMS: [[ParamInfo; HARMONICS]; 6] = [
+const DRAWN_PARAMS: [[ParamSpec; HARMONICS]; 6] = [
     op_harmonics!(1, "Op 1 Partials"),
     op_harmonics!(2, "Op 2 Partials"),
     op_harmonics!(3, "Op 3 Partials"),
@@ -758,7 +758,7 @@ const DRAWN_PARAMS: [[ParamInfo; HARMONICS]; 6] = [
 macro_rules! section_params {
     ($p:literal, $name:literal, $amount:literal, $on:literal) => {
         [
-            ParamInfo::continuous(
+            ParamSpec::continuous(
                 concat!("random.", $p, ".amount"),
                 concat!("Randomize ", $name),
                 (0.0, 1.0),
@@ -767,28 +767,28 @@ macro_rules! section_params {
                 Scale::Linear,
             )
             .in_group("Panel"),
-            ParamInfo::toggle(concat!("random.", $p, ".on"), concat!("Randomize ", $name, " On"), $on)
+            ParamSpec::toggle(concat!("random.", $p, ".on"), concat!("Randomize ", $name, " On"), $on)
                 .in_group("Panel"),
         ]
     };
 }
 
-const PANEL_HEAD: [ParamInfo; 5] = [
-    ParamInfo::integer("panel.op", "Selected Operator", (1, 6), 1, Unit::None).in_group("Panel"),
-    ParamInfo::choice(
+const PANEL_HEAD: [ParamSpec; 5] = [
+    ParamSpec::integer("panel.op", "Selected Operator", (1, 6), 1, Unit::None).in_group("Panel"),
+    ParamSpec::choice(
         "panel.page",
         "Page",
         &["Env", "Wave", "Filter", "LFO", "Pitch", "Algo", "Mod", "Voice", "Random"],
         0,
     )
     .in_group("Panel"),
-    ParamInfo::choice("panel.filterView", "Filter Picture", &["Response", "Envelope"], 0).in_group("Panel"),
-    ParamInfo::continuous("random.amount", "Randomize Amount", (0.0, 1.0), 0.35, Unit::Percent, Scale::Linear)
+    ParamSpec::choice("panel.filterView", "Filter Picture", &["Response", "Envelope"], 0).in_group("Panel"),
+    ParamSpec::continuous("random.amount", "Randomize Amount", (0.0, 1.0), 0.35, Unit::Percent, Scale::Linear)
         .in_group("Panel"),
-    ParamInfo::integer("random.seed", "Randomize Seed", (0, 99_999), 1, Unit::None).in_group("Panel"),
+    ParamSpec::integer("random.seed", "Randomize Seed", (0, 99_999), 1, Unit::None).in_group("Panel"),
 ];
 
-const SECTION_PARAMS: [[ParamInfo; 2]; SECTIONS.len()] = [
+const SECTION_PARAMS: [[ParamSpec; 2]; SECTIONS.len()] = [
     section_params!("envelopes", "Envelopes", 0.6, true),
     section_params!("levels", "Levels", 0.4, true),
     section_params!("waves", "Waves", 0.3, true),
@@ -801,7 +801,7 @@ const SECTION_PARAMS: [[ParamInfo; 2]; SECTIONS.len()] = [
     section_params!("algorithm", "Algorithm", 1.0, false),
 ];
 
-const fn build() -> [ParamInfo; COUNT] {
+const fn build() -> [ParamSpec; COUNT] {
     let mut out = [VOLUME_PARAM; COUNT];
     let mut i = 0;
     while i < 6 {
@@ -910,4 +910,4 @@ const fn build() -> [ParamInfo; COUNT] {
 }
 
 /// Every parameter, in index order, each in its group.
-pub static PARAMS: [ParamInfo; COUNT] = build();
+pub static PARAMS: [ParamInfo; COUNT] = suhina_device_api::params(&build());

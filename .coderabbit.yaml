@@ -44,9 +44,8 @@ reviews:
     - path: "docs/**/*.md"
       instructions: |
         Documents follow the front matter format in scripts/docs.py. Do not ask for the
-        last_verified date or the marked parts of docs/research/parity-live-12.md to be updated:
-        main writes them after the merge. Other DAWs are named only in docs/spec, docs/decisions,
-        docs/design/brief.md and docs/research.
+        last_verified date to be updated: main writes it after the merge. Other DAWs are named
+        only in docs/spec, docs/decisions and docs/design/brief.md.
     - path: "**/tests/**"
       instructions: |
         Tests may unwrap. A timing check must not depend on how busy a shared CI runner is;

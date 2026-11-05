@@ -5,7 +5,7 @@ use super::*;
 use suhina_device_api::sample_edits::SampleEdits;
 
 fn parameters(method: f64) -> Vec<f64> {
-    let mut params: Vec<_> = crate::sampler::PARAMS.iter().map(|p| p.default).collect();
+    let mut params: Vec<_> = crate::sample_instrument::PARAMS.iter().map(|p| p.default).collect();
     params[0] = 2.;
     params[60] = method;
     params[83] = 120.;
