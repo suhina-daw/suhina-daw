@@ -358,3 +358,11 @@ fn a_toolbar_in_theme_json_lists_a_module_once_and_bounds_its_offsets() {
     assert_eq!(toolbar.hidden, ["transport"]);
     assert_eq!(offsets.into_iter().collect::<Vec<_>>(), [("views".to_string(), -16384)]);
 }
+
+#[test]
+fn the_package_checks_resolve_swatches_against_the_same_core_properties() {
+    // suhina-theme-package cannot depend on this crate, so it keeps a copy of the core sheet for
+    // `validate`, `pack` and `read` (the CLI's too). After changing the palette or the settings
+    // the core set holds, copy `core_sheet()` into crates/theme-package/src/core.css.
+    assert_eq!(suhina_theme_package::CORE_SHEET, super::super::theme_vars::core_sheet());
+}

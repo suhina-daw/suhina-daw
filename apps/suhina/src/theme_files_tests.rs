@@ -300,3 +300,100 @@ fn a_built_in_themes_package_carries_the_variants_kept_beside_it() {
     assert!(read.files.contains_key("variants/warm.json"), "{:?}", read.files.keys().collect::<Vec<_>>());
     let _clean = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_folder_with_theme_json_is_never_migrated_whatever_its_sheet_holds() {
+    let dir = folder("keep-json");
+    let themes = dir.join("themes");
+    let mut meta = theme::ThemeMeta::new("Night", "#102030");
+    meta.author = Some("Someone".into());
+    std::fs::create_dir_all(themes.join("night")).unwrap();
+    std::fs::write(themes.join("night").join(THEME_JSON), meta.to_json()).unwrap();
+    std::fs::write(themes.join("night").join(THEME_CSS), "@import \"extra.css\";\n:root { --accent: #123456; }\n")
+        .unwrap();
+    std::fs::write(themes.join("night").join("extra.css"), "").unwrap();
+    let mut files = ThemeFiles::new(Some(themes.clone()));
+    let _read = files.read_all();
+    let kept = std::fs::read_to_string(themes.join("night").join(THEME_JSON)).unwrap();
+    assert!(kept.contains("Night") && kept.contains("Someone"), "{kept}");
+    assert!(!themes.join("night").join(LEGACY).exists(), "nothing was migrated");
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_sheet_dropped_on_the_window_brings_the_artwork_it_names() {
+    let dir = folder("import-artwork");
+    let drop = dir.join("drop");
+    std::fs::create_dir_all(drop.join("assets")).unwrap();
+    std::fs::write(
+        drop.join("night.css"),
+        ":root { --accent: #123456; }\nbutton.play { image: url(\"assets/play.svg\"); }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        drop.join("assets/play.svg"),
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4"/></svg>"#,
+    )
+    .unwrap();
+    let mut files = ThemeFiles::new(Some(dir.join("themes")));
+    let imported = files.import_with(&drop.join("night.css"), Again::Copy).unwrap();
+    assert_eq!(imported.ids.len(), 1, "{:?}", imported.warnings);
+    let id = &imported.ids[0];
+    assert!(dir.join("themes").join(id).join("assets/play.svg").is_file(), "{:?}", imported.warnings);
+    let (entries, warnings) = files.read_all();
+    assert!(entries.iter().any(|e| &e.id == id), "the theme reads back: {warnings:?}");
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_backup_with_a_folder_that_cannot_be_read_brings_in_the_rest() {
+    let dir = folder("backup-skip");
+    let mut files = ThemeFiles::new(Some(dir.join("themes")));
+    assert_eq!(files.write("night", &night()), Ok(()));
+    let mut contents = suhina_theme_package::read_folder(&dir.join("themes").join("night")).unwrap();
+    let mut entries: Vec<(String, Vec<u8>)> =
+        contents.iter_mut().map(|(path, bytes)| (format!("night/{path}"), std::mem::take(bytes))).collect();
+    // A folder of the format before theme.json: a theme.css and no theme.json.
+    entries.push(("old/theme.css".into(), b":root { --accent: red; }".to_vec()));
+    let zip = dir.join("backup.zip");
+    write_zip(&zip, &entries).unwrap();
+    let mut other = ThemeFiles::new(Some(dir.join("other")));
+    let imported = other.import_with(&zip, Again::Copy).unwrap();
+    assert_eq!(imported.ids, ["night"]);
+    assert!(
+        imported.warnings.iter().any(|w| w.contains("old") && w.contains("not brought in")),
+        "{:?}",
+        imported.warnings
+    );
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn roles_that_share_an_artwork_file_do_not_overwrite_each_other_on_save() {
+    let dir = folder("shared-artwork");
+    let themes = dir.join("themes");
+    let svg = |n: u32| {
+        format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="{n}" height="{n}"><rect width="{n}" height="{n}"/></svg>"#
+        )
+    };
+    let css = "button.play { image: url(\"assets/transport.svg\"); }\nbutton.stop { image: url(\"assets/transport.svg\"); }\n";
+    hand_written(&themes.join("night"), "Night", css);
+    std::fs::create_dir_all(themes.join("night/assets")).unwrap();
+    std::fs::write(themes.join("night/assets/transport.svg"), svg(4)).unwrap();
+    let mut files = ThemeFiles::new(Some(themes.clone()));
+    let (entries, warnings) = files.read_all();
+    let mut theme = entries.iter().find(|e| e.id == "night").unwrap_or_else(|| panic!("{warnings:?}")).theme.clone();
+    assert_eq!(theme.skin.assets.len(), 2, "{:?}", theme.skin.assets.keys().collect::<Vec<_>>());
+    let (edited, other) = {
+        let mut roles = theme.skin.assets.keys().cloned();
+        (roles.next().unwrap(), roles.next().unwrap())
+    };
+    theme.skin.assets.insert(edited.clone(), svg(8));
+    assert_eq!(files.write("night", &theme), Ok(()));
+    let (entries, warnings) = files.read_all();
+    let back = &entries.iter().find(|e| e.id == "night").unwrap_or_else(|| panic!("{warnings:?}")).theme;
+    assert_eq!(back.skin.assets[&edited], svg(8), "the edit is kept");
+    assert_eq!(back.skin.assets[&other], svg(4), "the other role keeps its artwork");
+    let _clean = std::fs::remove_dir_all(&dir);
+}

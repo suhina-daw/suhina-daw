@@ -325,6 +325,24 @@ pub fn registered<'a>(theme: &'a Theme, name: &str) -> Option<&'a Registered> {
     core().iter().chain(theme.vars.declared.iter()).find(|p| p.name == name)
 }
 
+/// `css` parsed. The last sheet parsed is kept, so the edits of one theme (each of which resolves
+/// it again) do not parse a sheet near the size limit every time.
+fn theme_sheet(css: &Arc<str>) -> Result<Arc<Sheet>, String> {
+    thread_local! {
+        static LAST: std::cell::RefCell<Option<(Arc<str>, Arc<Sheet>)>> = const { std::cell::RefCell::new(None) };
+    }
+    LAST.with(|last| {
+        if let Some((key, sheet)) = &*last.borrow()
+            && Arc::ptr_eq(key, css)
+        {
+            return Ok(sheet.clone());
+        }
+        let sheet = Arc::new(Sheet::parse(css)?);
+        *last.borrow_mut() = Some((css.clone(), sheet.clone()));
+        Ok(sheet)
+    })
+}
+
 /// Sets the model from the theme's own values and the chosen variant's, and the Variant tier's
 /// sheet. A variant value that does not match its property's syntax is skipped with a warning.
 pub fn resolve(theme: &mut Theme) -> Vec<String> {
@@ -363,8 +381,8 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
     theme.skin.variant = variant_sheet(&theme.vars.values);
     // The theme's own variables that refer to a value the variant changes follow it, as they do
     // in the painted sheet.
-    if let (Some(css), Some(variant)) = (theme.skin.css.as_deref(), theme.skin.variant.as_deref())
-        && let (Ok(sheet), Ok(variant)) = (Sheet::parse(css), Sheet::parse(variant))
+    if let (Some(css), Some(variant)) = (theme.skin.css.as_ref(), theme.skin.variant.as_deref())
+        && let (Ok(sheet), Ok(variant)) = (theme_sheet(css), Sheet::parse(variant))
         && let Ok(full) = root_variables(&sheet, Some(&variant))
     {
         values = full;
@@ -385,8 +403,8 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
 /// After the model was edited and [`sync`]ed: the variables the sheet gives under the variant's
 /// values, and the thumbnail and swatch drawn from them, so the gallery shows the edited colours.
 pub fn refresh_view(theme: &mut Theme) {
-    if let Some(css) = theme.skin.css.as_deref()
-        && let Ok(sheet) = Sheet::parse(css)
+    if let Some(css) = theme.skin.css.as_ref()
+        && let Ok(sheet) = theme_sheet(css)
     {
         let variant = theme.skin.variant.as_deref().map(Sheet::parse).transpose().ok().flatten();
         if let Ok(full) = root_variables(&sheet, variant.as_ref()) {
@@ -408,7 +426,10 @@ pub fn picture(theme: &Theme) -> Option<Arc<str>> {
 /// and registered properties (the core ones too) without applying it.
 pub fn swatch(theme: &Theme) -> Result<[u8; 4], String> {
     let core = core_parsed().ok_or("the core theme properties do not parse")?;
-    let sheet = Sheet::parse(theme.skin.css.as_deref().unwrap_or_default())?;
+    let sheet = match theme.skin.css.as_ref() {
+        Some(css) => theme_sheet(css)?,
+        None => Arc::new(Sheet::parse("")?),
+    };
     let variant = theme.skin.variant.as_deref().map(Sheet::parse).transpose()?;
     suhina_theme_package::meta::swatch_color(&theme.meta.swatch, &[core], &sheet, variant.as_ref())
 }

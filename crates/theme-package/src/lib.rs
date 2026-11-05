@@ -44,6 +44,11 @@ pub const MAX_TOTAL: usize = 32 * 1024 * 1024;
 /// Files in one package.
 pub const MAX_FILES: usize = 512;
 
+/// Suhina's core theme properties as `@property` rules with Suhina Dark's values: the defaults a
+/// theme's swatch resolves against, as in the app. A copy of `suhina_ui::kit::theme_vars::
+/// core_sheet()`, which this crate cannot depend on; a test in `suhina-ui` keeps the two equal.
+pub const CORE_SHEET: &str = include_str!("core.css");
+
 /// A package read and checked: its theme's id and name, its files by path, and what the checks
 /// found that does not stop it from being used.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,16 +145,17 @@ pub fn validate(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<String>, String
 }
 
 /// Refuses a theme whose swatch does not resolve to a colour for its default variant and for
-/// every variant in `variants/`.
+/// every variant in `variants/`, with the core properties ([`CORE_SHEET`]) below the theme's sheet.
 fn check_swatch(theme_meta: &meta::ThemeMeta, files: &BTreeMap<String, Vec<u8>>) -> Result<(), String> {
+    let core = suhina_style::sheet::Sheet::parse(CORE_SHEET).map_err(|e| format!("the core theme properties: {e}"))?;
     let css = std::str::from_utf8(&files["theme.css"]).map_err(|_| "theme.css: not UTF-8 text")?;
     let sheet = suhina_style::sheet::Sheet::parse(css).map_err(|e| format!("theme.css: {e}"))?;
-    meta::swatch_color(&theme_meta.swatch, &[], &sheet, None)
+    meta::swatch_color(&theme_meta.swatch, &[&core], &sheet, None)
         .map_err(|e| format!("the swatch for {}: {e}", theme_meta.default_variant()))?;
     for (path, bytes) in files.iter().filter(|(path, _)| path.starts_with("variants/") && path.ends_with(".json")) {
         let variant = meta::variant_sheet(bytes).map_err(|e| format!("{path}: {e}"))?;
         let variant = suhina_style::sheet::Sheet::parse(&variant).map_err(|e| format!("{path}: {e}"))?;
-        meta::swatch_color(&theme_meta.swatch, &[], &sheet, Some(&variant))
+        meta::swatch_color(&theme_meta.swatch, &[&core], &sheet, Some(&variant))
             .map_err(|e| format!("the swatch for {path}: {e}"))?;
     }
     Ok(())

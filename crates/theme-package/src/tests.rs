@@ -120,7 +120,8 @@ fn theme_json_round_trips_and_refuses_a_file_without_a_name_swatch_or_known_form
     assert_eq!(read.default_variant(), "Dark");
     assert_eq!(read.toolbar, Some(serde_json::json!({ "items": ["play"] })));
     assert!(warnings.iter().any(|w| w.contains("extra")), "{warnings:?}");
-    assert_eq!(meta::ThemeMeta::parse(read.to_json().as_bytes()).unwrap(), (read, Vec::new()));
+    // A key it does not read is kept, and named again.
+    assert_eq!(meta::ThemeMeta::parse(read.to_json().as_bytes()).unwrap(), (read, warnings));
     assert_eq!(meta::ThemeMeta::new("A", "red").default_variant(), meta::DEFAULT_VARIANT);
     for (text, why) in [
         (r#"{ "name": "A", "swatch": "red" }"#, "format"),
@@ -143,17 +144,37 @@ fn the_swatch_must_resolve_to_a_colour_for_every_variant() {
             "theme.json".into(),
             format!(r#"{{ "format": 1, "name": "Night", "swatch": "{swatch}" }}"#).into_bytes(),
         );
+        files.insert("theme.css".into(), b":root { --accent: #ff8800; --tint: #ff8800; }".to_vec());
         files.insert("variants/light.json".into(), variant.as_bytes().to_vec());
         validate(&files)
     };
     assert!(with("color-mix(in srgb, var(--accent), white 50%)", r##"{ "values": { "--accent": "#00f" } }"##).is_ok());
-    let error = with("var(--accent)", r#"{ "values": { "--accent": "12px" } }"#).unwrap_err();
+    // `--tint` is unregistered, so the variant's length stands (a core `<color>` would fall back).
+    let error = with("var(--tint)", r#"{ "values": { "--tint": "12px" } }"#).unwrap_err();
     assert!(error.contains("variants/light.json"), "{error}");
     for refused in ["currentColor", "attr(color type(<color>))", "var(--missing)", "12px"] {
         assert!(with(refused, "{}").is_err(), "{refused}");
     }
     let variant = meta::variant_sheet(br##"{ "values": { "--a": "#fff", "b": "red", "--c": "x}" } }"##).unwrap();
     assert_eq!(variant, ":root { --a: #fff; }");
+}
+
+#[test]
+fn the_swatch_resolves_against_the_core_properties() {
+    // A duplicate of Suhina Dark: an empty `:root`, the swatch left as Suhina Dark's.
+    let with = |swatch: &str| {
+        let mut files = theme();
+        files.insert(
+            "theme.json".into(),
+            format!(r#"{{ "format": 1, "name": "Copy", "swatch": "{swatch}" }}"#).into_bytes(),
+        );
+        files.insert("theme.css".into(), b":root {}".to_vec());
+        files
+    };
+    let copy = with("color-mix(in oklab, var(--panel-background), var(--accent) 35%)");
+    assert_eq!(validate(&copy), Ok(Vec::new()));
+    assert!(read(&pack("copy", "Copy", &copy).unwrap()).is_ok());
+    assert!(validate(&with("var(--not-a-core-property)")).is_err());
 }
 
 #[test]
@@ -215,4 +236,15 @@ fn a_thumbnail_must_be_svg_by_namespace_and_have_a_finite_size() {
     ] {
         assert!(with(refused).is_err(), "{refused}");
     }
+}
+
+#[test]
+fn rewriting_theme_json_keeps_the_schema_and_keys_it_does_not_read() {
+    let text = br#"{ "$schema": "https://example.com/theme.json", "format": 1, "name": "Night", "swatch": "red", "next": { "a": 1 } }"#;
+    let (parsed, warnings) = meta::ThemeMeta::parse(text).unwrap();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("next"), "the schema key is known, an unknown one is named");
+    let (again, _) = meta::ThemeMeta::parse(parsed.to_json().as_bytes()).unwrap();
+    assert_eq!(again.extra["$schema"], "https://example.com/theme.json");
+    assert_eq!(again.extra["next"]["a"], 1);
 }

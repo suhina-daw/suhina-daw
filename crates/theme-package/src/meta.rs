@@ -54,6 +54,9 @@ pub struct ThemeMeta {
     pub swatch: String,
     /// The suggested toolbar arrangement, kept as written (#1021 reads it).
     pub toolbar: Option<serde_json::Value>,
+    /// Keys the file has that Suhina does not read (`$schema`, or those of a newer feature), kept
+    /// so that rewriting the file does not drop them.
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl ThemeMeta {
@@ -66,6 +69,7 @@ impl ThemeMeta {
             default_variant: None,
             swatch: swatch.to_owned(),
             toolbar: None,
+            extra: serde_json::Map::new(),
         }
     }
 
@@ -125,16 +129,20 @@ impl ThemeMeta {
             }
             None => None,
         };
-        let known = ["format", "name", "author", "description", "default-variant", "swatch", "toolbar", "$schema"];
-        for key in root.keys().filter(|key| !known.contains(&key.as_str())) {
-            warnings.push(format!("{FILE}: {key} is not part of theme.json"));
+        let known = ["format", "name", "author", "description", "default-variant", "swatch", "toolbar"];
+        let mut extra = serde_json::Map::new();
+        for (key, value) in root.iter().filter(|(key, _)| !known.contains(&key.as_str())) {
+            if key != "$schema" {
+                warnings.push(format!("{FILE}: {key} is not part of theme.json"));
+            }
+            extra.insert(key.clone(), value.clone());
         }
-        Ok((Self { name, author, description, default_variant, swatch, toolbar }, warnings))
+        Ok((Self { name, author, description, default_variant, swatch, toolbar, extra }, warnings))
     }
 
     /// The file's text, as Suhina writes it.
     pub fn to_json(&self) -> String {
-        let mut root = serde_json::Map::new();
+        let mut root = self.extra.clone();
         root.insert("format".into(), FORMAT.into());
         root.insert("name".into(), self.name.clone().into());
         for (key, value) in

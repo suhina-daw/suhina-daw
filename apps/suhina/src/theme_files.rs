@@ -123,7 +123,9 @@ impl ThemeFiles {
             }
             if is_css_theme(path) {
                 let text = read_text(path)?;
-                if !previous_format(&text) {
+                // A folder with a theme.json is today's form, whatever its sheet holds: the file
+                // is the theme's metadata, and a migration would write it anew.
+                if dir.join(THEME_JSON).is_file() || !previous_format(&text) {
                     let (theme, problems) = read_css_theme(path)?;
                     warnings.extend(problems.into_iter().map(|p| format!("{id}: {p}")));
                     return Ok((theme, read_variants(&dir, warnings)));
@@ -501,7 +503,9 @@ impl ThemeFiles {
             }
             found.push((package.id.clone(), theme, package.files.into_iter().collect()));
         } else if is_zip {
-            for loaded in read_zip(path)? {
+            let (loaded, skipped) = read_zip(path)?;
+            warnings.extend(skipped);
+            for loaded in loaded {
                 warnings.extend(loaded.warnings.into_iter().map(|p| format!("{}: {p}", loaded.name)));
                 found.push((stem(&loaded.name), loaded.theme, loaded.files));
             }
@@ -518,10 +522,14 @@ impl ThemeFiles {
             // A sheet of today's form comes in as it is; one of an earlier version is written anew.
             let css = path.extension().is_some_and(|e| e == "css");
             let files = if css && !previous_format(&read_text(path)?) {
-                vec![
+                let text = read_text(path)?;
+                let mut files = vec![
                     (THEME_JSON.to_string(), theme::meta_json(&theme).into_bytes()),
-                    (THEME_CSS.to_string(), read_text(path)?.into_bytes()),
-                ]
+                    (THEME_CSS.to_string(), text.clone().into_bytes()),
+                ];
+                // The artwork and thumbnail it names come with it, or the next reload would refuse it.
+                files.extend(sheet_resources(path, &text)?);
+                files
             } else {
                 Vec::new()
             };
@@ -682,10 +690,11 @@ fn is_css_theme(path: &Path) -> bool {
 fn read_any(path: &Path) -> Result<(Theme, Vec<String>), String> {
     if path.extension().is_some_and(|e| e == "css") {
         let text = read_text(path)?;
-        if previous_format(&text) {
-            read_previous(path)
-        } else if is_css_theme(path) && path.with_file_name(THEME_JSON).is_file() {
+        let today = is_css_theme(path) && path.with_file_name(THEME_JSON).is_file();
+        if today {
             read_css_theme(path)
+        } else if previous_format(&text) {
+            read_previous(path)
         } else {
             read_lone_sheet(path, &text)
         }
@@ -697,15 +706,53 @@ fn read_any(path: &Path) -> Result<(Theme, Vec<String>), String> {
 /// A style sheet dropped on its own, without a `theme.json`: a theme named after the file, with
 /// the default swatch. Its artwork is relative to the file's folder.
 fn read_lone_sheet(path: &Path, text: &str) -> Result<(Theme, Vec<String>), String> {
+    let folder = path.parent().unwrap_or(Path::new("."));
+    lone_sheet(path, text, |relative, max| read_resource(folder, relative, max))
+}
+
+/// [`read_lone_sheet`] with the files it reads given by `resource`.
+fn lone_sheet(
+    path: &Path,
+    text: &str,
+    mut resource: impl FnMut(&str, u64) -> Result<Vec<u8>, String>,
+) -> Result<(Theme, Vec<String>), String> {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Theme");
     let name = stem.strip_suffix(".theme").unwrap_or(stem);
     let name = if name == "theme" { "Theme" } else { name };
     let (mut theme, warnings) = theme::from_folder(theme::ThemeMeta::new(name, theme::DEFAULT_SWATCH), text);
     // The swatch as the colour it is here, since the sheet alone may not say every value it needs.
     theme.meta.swatch = theme::hex(theme.swatch.unwrap_or(theme.colors.panel_background));
-    let folder = path.parent().unwrap_or(Path::new("."));
-    theme::resolve_resources(&mut theme, &mut |relative, max| read_resource(folder, relative, max))?;
+    theme::resolve_resources(&mut theme, &mut resource)?;
     Ok((theme, warnings))
+}
+
+/// The files beside a dropped sheet that its theme reads (artwork, background, thumbnail), by path
+/// relative to the sheet's folder, so an import keeps what the sheet names.
+fn sheet_resources(path: &Path, text: &str) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let folder = path.parent().unwrap_or(Path::new("."));
+    let mut seen: Vec<(String, Vec<u8>)> = Vec::new();
+    if is_css_theme(path) && path.with_file_name(THEME_JSON).is_file() {
+        theme::from_files(|relative, max| {
+            if !safe_relative(relative) {
+                return Err(format!("{relative}: not a path inside the theme"));
+            }
+            if std::fs::symlink_metadata(folder.join(relative)).is_err() {
+                return Ok(None);
+            }
+            let bytes = read_resource(folder, relative, max)?;
+            seen.push((relative.to_owned(), bytes.clone()));
+            Ok(Some(bytes))
+        })?;
+    } else {
+        lone_sheet(path, text, |relative, max| {
+            let bytes = read_resource(folder, relative, max)?;
+            seen.push((relative.to_owned(), bytes.clone()));
+            Ok(bytes)
+        })?;
+    }
+    seen.retain(|(relative, _)| relative != THEME_JSON && relative != THEME_CSS);
+    seen.dedup_by(|a, b| a.0 == b.0);
+    Ok(seen)
 }
 
 /// A style sheet's text, at most a sheet's size.
@@ -872,7 +919,7 @@ fn migrate(folder: &Path, id: &str, theme: &Theme, previous: bool) -> Result<(),
     let comments = old.as_ref().map(|path| read_text(path)).transpose()?.map(|text| leading_comments(&text));
     let sheet = format!("{}{}", comments.unwrap_or_default(), theme_css::sheet(theme, theme.skin.css.as_deref()));
     let sheet = with_editor_rules(theme, sheet);
-    let resources = resource_files(id, theme, &artwork_paths(theme, None))?;
+    let resources = resource_files(id, theme, &artwork_paths(theme, None, None))?;
     let prefix = format!("{id}/");
     let mut files: std::collections::BTreeMap<String, Vec<u8>> = resources
         .iter()
@@ -969,9 +1016,19 @@ fn new_sheet(theme: &Theme) -> String {
 }
 
 /// Where each of the theme's artwork files is kept: the path its sheet names for the role (an
-/// edited image keeps its file), or `assets/<role>.svg` (`.png`).
-fn artwork_paths(theme: &Theme, sheet: Option<&Theme>) -> std::collections::BTreeMap<String, String> {
+/// edited image keeps its file), or `assets/<role>.svg` (`.png`). When several roles name one file
+/// (`dir` is the theme's folder, to see what the file holds now), only a role whose artwork is
+/// what the file holds keeps it; an edited one gets a file of its own, so it does not overwrite
+/// the others' artwork.
+fn artwork_paths(
+    theme: &Theme,
+    sheet: Option<&Theme>,
+    dir: Option<&Path>,
+) -> std::collections::BTreeMap<String, String> {
     use suhina_ui::kit::skin;
+    let data = |source: &str| -> Option<Vec<u8>> {
+        if skin::png_artwork(source) { skin::decode_png(source).ok() } else { Some(source.as_bytes().to_vec()) }
+    };
     theme
         .skin
         .assets
@@ -980,6 +1037,15 @@ fn artwork_paths(theme: &Theme, sheet: Option<&Theme>) -> std::collections::BTre
             let extension = skin::artwork_extension(source);
             let named = sheet.and_then(|sheet| sheet.skin.assets.get(role)).filter(|path| {
                 skin::asset_path(path) && safe_relative(path) && skin::artwork_extension(path) == extension
+            });
+            let shared = |path: &String| {
+                sheet.is_some_and(|sheet| sheet.skin.assets.iter().any(|(other, named)| other != role && named == path))
+            };
+            let named = named.filter(|path| {
+                !shared(path)
+                    || dir
+                        .and_then(|dir| read_bounded(&dir.join(path), skin::MAX_PNG as u64).ok())
+                        .is_some_and(|held| data(source).is_some_and(|mine| held == mine))
             });
             (role.clone(), named.cloned().unwrap_or_else(|| format!("assets/{role}.{extension}")))
         })
@@ -1037,7 +1103,7 @@ fn package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8>)>, Stri
     if sheet.len() > theme_css::MAX_CSS {
         return Err("theme.css exceeds 128 KiB".into());
     }
-    let mut files = resource_files(id, theme, &artwork_paths(theme, None))?;
+    let mut files = resource_files(id, theme, &artwork_paths(theme, None, None))?;
     files.push((format!("{id}/{THEME_JSON}"), theme::meta_json(theme).into_bytes()));
     files.push((format!("{id}/{THEME_CSS}"), sheet.into_bytes()));
     if let Some(thumbnail) = &theme.thumbnail {
@@ -1063,7 +1129,7 @@ fn persist_theme(folder: &Path, id: &str, theme: &Theme) -> Result<(), String> {
     }
     let source = read_text(&sheet_path)?;
     let sheet = theme::from_css(&source).0;
-    let paths = artwork_paths(theme, Some(&sheet));
+    let paths = artwork_paths(theme, Some(&sheet), Some(&dir));
     let mut files = resource_files(id, theme, &paths)?;
     // The editors' rules as the sheet says them now and as the theme has them, the artwork at the
     // paths it is kept at; only the declarations that differ are edited.
@@ -1302,7 +1368,9 @@ fn portable_package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8
     package_files(id, &portable)
 }
 
-fn read_zip(path: &Path) -> Result<Vec<LoadedTheme>, String> {
+/// The themes in a zip (a backup or a package), and a warning for each folder that is not brought
+/// in, so one that cannot be read does not keep the others out.
+fn read_zip(path: &Path) -> Result<(Vec<LoadedTheme>, Vec<String>), String> {
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
     if archive.len() > MAX_ZIP_FILES {
@@ -1342,6 +1410,7 @@ fn read_zip(path: &Path) -> Result<Vec<LoadedTheme>, String> {
         }
     }
     let mut themes = Vec::new();
+    let mut skipped = Vec::new();
     // A package holds CSS themes (`<id>/theme.css`) or, from older versions, JSON themes; a JSON
     // theme in a folder that also has a theme.css is that theme's legacy copy.
     let css_folders: std::collections::BTreeSet<&str> = files
@@ -1373,16 +1442,24 @@ fn read_zip(path: &Path) -> Result<Vec<LoadedTheme>, String> {
             }
             Ok(data.clone())
         };
-        let (theme, warnings, own) = if css && !previous_format(text) {
-            let prefix = if folder.is_empty() { String::new() } else { format!("{folder}/") };
+        let prefix = if folder.is_empty() { String::new() } else { format!("{folder}/") };
+        let today = files.contains_key(&format!("{prefix}{THEME_JSON}"));
+        let (theme, warnings, own) = if css && (today || !previous_format(text)) {
             let own: Vec<(String, Vec<u8>)> = files
                 .iter()
                 .filter_map(|(path, bytes)| Some((path.strip_prefix(&prefix)?.to_owned(), bytes.clone())))
                 .filter(|(path, _)| !path.starts_with(&format!("{LEGACY}/")) && !path.starts_with(EXAMPLES))
                 .collect();
-            let (theme, warnings) = resolve_files(&own.iter().cloned().collect())
-                .map_err(|e| format!("{}: {e}", if folder.is_empty() { THEME_CSS } else { folder }))?;
-            (theme, warnings, own)
+            match resolve_files(&own.iter().cloned().collect()) {
+                Ok((theme, warnings)) => (theme, warnings, own),
+                Err(error) => {
+                    skipped.push(format!(
+                        "{}: not brought in: {error}",
+                        if folder.is_empty() { THEME_CSS } else { folder }
+                    ));
+                    continue;
+                }
+            }
         } else if css {
             let (theme, warnings) = resolve_previous(text, resource)?;
             (theme, warnings, Vec::new())
@@ -1393,9 +1470,9 @@ fn read_zip(path: &Path) -> Result<Vec<LoadedTheme>, String> {
         themes.push(LoadedTheme { name: name.clone(), theme, warnings, files: own });
     }
     if themes.is_empty() {
-        return Err("there are no themes in this package".into());
+        return Err(if skipped.is_empty() { "there are no themes in this package".into() } else { skipped.join("; ") });
     }
-    Ok(themes)
+    Ok((themes, skipped))
 }
 
 /// Whether `path` is a link (a symbolic link, or a junction on Windows) to a folder.

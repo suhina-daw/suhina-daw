@@ -1429,9 +1429,10 @@ fn theme_card(
         )
         .collect();
     let swatches = if variants.len() > 1 { 22.0 } else { 0.0 };
-    // A thumbnail is 16:9 on every card; the large card's is at most 170 points high.
+    // A thumbnail is 16:9 on every card and at most 170 points high, so the cards of a wide page
+    // are not taller than the one in use.
     let preview_width = (width - 10.0).max(16.0);
-    let preview_height = if active { (preview_width * 9.0 / 16.0).min(170.0) } else { preview_width * 9.0 / 16.0 };
+    let preview_height = (preview_width * 9.0 / 16.0).min(170.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, preview_height + 50.0 + swatches), Sense::hover());
     let card = Rect::from_min_size(rect.min, Vec2::new(width, preview_height + 50.0));
     let response = ui.interact(

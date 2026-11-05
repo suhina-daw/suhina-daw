@@ -512,8 +512,10 @@ each theme.
   declarations and Suhina's core properties (`theme_vars::swatch`). `@media` rules that change
   `:root` are read at 1280 by 800. There is no element, so `currentColor`, `attr()` and units
   relative to an element are refused. Importing or validating a theme checks the swatch against
-  the default variant and every file in `variants/`, from the theme's own sheet alone, and
-  refuses the theme with a message naming the variant when it does not resolve to a colour.
+  the default variant and every file in `variants/`, from the theme's own sheet and the core
+  properties (a copy of `theme_vars::core_sheet()` in `suhina-theme-package`, so
+  `suhina-cli theme validate` agrees with the app), and refuses the theme with a message naming
+  the variant when it does not resolve to a colour.
 - The swatch is drawn as a `theme-swatch` element with a `color` attribute, styled by the
   theme in use, never by the theme it shows. Suhina's own default is
   `theme-swatch { background-color: attr(color type(<color>)); border-radius: 6px; }`; a theme
@@ -807,7 +809,7 @@ name without a fallback is left as written. A fallback may hold brackets and fur
 (`var(--x, rgb(0 0 0))`), and a value that is a colour (`color-mix()`, `contrast-color()`, a
 name) goes in as its computed `#rrggbb` or `#rrggbbaa`, since the renderer reads plain colours.
 A theme's swatch colour is resolved the same way for each variant, from the `:root` rules and
-registered initial values alone, without applying the sheet; `currentColor` and `attr()` are
+registered initial values (the core properties' too) alone, without applying the sheet; `currentColor` and `attr()` are
 refused there. The texture cache keys on the substituted
 source, so a variant switch redraws the artwork. `<text>` renders with the bundled typefaces:
 Manrope for the default, sans-serif and serif families, IBM Plex Mono for monospace; system
