@@ -198,7 +198,8 @@ Forest Amber is an original bundled woodland palette with warm amber accents, sa
 and theme-specific liquid strengths. Its built-in id is `suhina-forest-amber`, leaving existing
 custom `forest-amber` files intact. Background images remain separately chosen local files.
 
-Themes that come with Suhina (`crates/ui/themes/`, read-only; editing one makes a copy):
+Themes that come with Suhina (one folder each in `crates/ui/themes/<id>/`, of `theme.json`,
+`theme.css`, `thumbnail.svg` and artwork, built into the app; read-only, editing one makes a copy):
 Suhina Sheet is an original playful spreadsheet-inspired light theme: green chrome,
 white cells, compact Session geometry and embedded square SVG controls. Its palette,
 CSS and artwork travel together when duplicated or exported.
@@ -208,7 +209,8 @@ Suhina Dark (the default), Editor Dark (cool greys and blue, like a code editor)
 Light, High Contrast, and four popular open palettes mapped onto the tokens: Dracula, Nord,
 Catppuccin Mocha and Latte, Solarized Dark (all MIT, licences in `crates/ui/themes/licenses/`).
 
-Settings › Appearance › Themes picks a theme from preview cards. Edit current theme changes its grouped colours (writing the file); the name
+Settings › Appearance › Themes picks a theme from cards showing each theme's thumbnail (or its
+swatch colour), with a swatch per variant. Edit current theme changes its grouped colours (writing the file); the name
 of a theme file is changed there too, and its file is renamed to match. Duplicate copies the
 theme in use, Reload reads the files again, Open folder shows the themes folder, Back up writes
 every theme file into `exports/suhina-themes-<date>.zip`, and Export template writes

@@ -1,0 +1,7 @@
+{
+  "format": 1,
+  "name": "Suhina Glass",
+  "author": "The Suhina contributors",
+  "description": "An original cool-blue glass theme for Suhina: translucent chrome, soft highlights, subtle track materials and independent text roles. Optional private PNG background is selected in Appearance; the native window stays opaque.",
+  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+}

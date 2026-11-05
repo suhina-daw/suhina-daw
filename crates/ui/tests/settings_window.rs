@@ -220,14 +220,14 @@ fn render_themes_gallery_and_editor_for_review() {
 }
 
 #[test]
-fn theme_cards_keep_the_open_projects_clip_colour() {
-    let mut project = demo_project();
-    let source = suhina_engine::model::Rgb(35, 150, 125);
-    project.arrangement.lanes[0].clips[0].color = Some(source);
+fn theme_cards_show_a_thumbnail_or_a_card_in_the_swatch_colour() {
+    let (mut plain, warnings) = theme::from_folder(theme::ThemeMeta::new("Plain", "#123456"), ":root {}");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    plain.thumbnail = None;
     let mut app = App::new();
-    app.set_session(Session::new(project), &[]);
+    let ctx = egui::Context::default();
+    app.set_themes(&ctx, vec![suhina_ui::settings::themes::ThemeEntry { id: "plain".into(), theme: plain }], None);
     let mut harness = Harness::builder()
-        .allow_missing_glyphs()
         .allow_missing_glyphs()
         .with_size((1200.0, 900.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
@@ -237,21 +237,21 @@ fn theme_cards_keep_the_open_projects_clip_colour() {
     harness.run();
     harness.get_by_label("Settings page: Themes").click();
     harness.run();
-    for name in ["Suhina Studio Light", "Suhina Dark"] {
-        harness.get_by_label(&format!("Theme: {name}")).click();
-        harness.run();
-        let card = harness.get_by_label(&format!("Theme: {name}")).rect();
-        let expected = suhina_ui::kit::motion::mix(
-            theme::panel_background(),
-            egui::Color32::from_rgb(source.0, source.1, source.2),
-            0.82,
-        );
-        assert!(
-            harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(shape) if card.contains_rect(shape.rect) && shape.fill == expected)),
-            "{name} must preview the project's explicit clip colour on its own surface"
-        );
-    }
+    // A theme without a thumbnail is a blank card filled with its swatch colour.
+    let card = harness.get_by_label("Theme: Plain").rect();
+    let swatch = egui::Color32::from_rgb(0x12, 0x34, 0x56);
+    assert!(
+        harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
+            egui::Shape::Rect(rect) if card.contains_rect(rect.rect) && rect.fill == swatch && rect.rect.width() > 100.0)),
+        "Plain's card is filled with its swatch"
+    );
+    // A built-in theme's card shows its thumbnail, an SVG drawn with the theme's own values.
+    let card = harness.get_by_label("Theme in use: Suhina Dark").rect();
+    assert!(
+        harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
+            egui::Shape::Rect(rect) if card.contains_rect(rect.rect) && rect.fill_texture_id() != egui::TextureId::default())),
+        "Suhina Dark's card shows its thumbnail"
+    );
 }
 
 #[test]

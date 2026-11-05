@@ -9,6 +9,14 @@ fn folder(name: &str) -> PathBuf {
     dir
 }
 
+/// Writes a theme folder by hand: `theme.json` naming it `name` and `theme.css`.
+pub(super) fn hand_written(dir: &Path, name: &str, css: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    let meta = theme::ThemeMeta::new(name, "#102030");
+    std::fs::write(dir.join(THEME_JSON), meta.to_json()).unwrap();
+    std::fs::write(dir.join(THEME_CSS), css).unwrap();
+}
+
 fn night() -> Theme {
     let mut theme = Theme { name: "Night".into(), ..Theme::default() };
     theme.colors.accent = suhina_ui::kit::theme::parse_hex("#123456").unwrap_or_default();
@@ -92,14 +100,16 @@ fn the_template_holds_a_theme_a_readme_and_examples() {
     for name in ["README.md", "my-theme/theme.css", "my-theme/variants/warm.json", "examples/nord/theme.css"] {
         assert!(names.contains(&name.to_string()), "{name}: {names:?}");
     }
-    assert!(!names.iter().any(|n| n.ends_with(".json") && !n.contains("/variants/")), "{names:?}");
+    let json = |n: &&String| n.ends_with(".json") && !n.contains("/variants/") && !n.ends_with("/theme.json");
+    assert!(!names.iter().any(|n| json(&n)), "only variants and theme.json are JSON: {names:?}");
+    assert!(names.contains(&"my-theme/theme.json".to_string()) && !names.iter().any(|n| n.ends_with("layout.css")));
     let mut template = String::new();
     archive
         .by_name("my-theme/theme.css")
         .unwrap_or_else(|e| panic!("{e}"))
         .read_to_string(&mut template)
         .unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(theme::from_sheet(&template, "").1, Vec::<String>::new());
+    assert_eq!(theme::from_css(&template).1, Vec::<String>::new());
     // The editable example is importable; reference palettes remain examples only.
     let mut into = ThemeFiles::new(Some(dir.join("into")));
     let (ids, warnings) = into.import(&zip).unwrap();
@@ -153,14 +163,13 @@ fn without_a_folder_nothing_is_read_or_written() {
 fn a_folder_without_theme_css_and_two_themes_with_one_name_are_named() {
     let dir = folder("not-themes");
     let themes = dir.join("themes");
-    for (id, file, text) in [
-        ("hidden-extension", "theme.css.txt", "theme { name: \"Mine\"; }"),
-        ("first", "theme.css", "theme { name: \"Twin\"; }"),
-        ("second", "theme.css", "theme { name: \"twin\"; }"),
-    ] {
-        std::fs::create_dir_all(themes.join(id)).unwrap();
-        std::fs::write(themes.join(id).join(file), text).unwrap();
-    }
+    std::fs::create_dir_all(themes.join("hidden-extension")).unwrap();
+    std::fs::write(themes.join("hidden-extension/theme.css.txt"), ":root {}").unwrap();
+    hand_written(&themes.join("first"), "Twin", ":root {}");
+    hand_written(&themes.join("second"), "twin", ":root {}");
+    // A folder of the format before theme.json.
+    std::fs::create_dir_all(themes.join("older")).unwrap();
+    std::fs::write(themes.join("older/theme.css"), "theme { name: \"Older\"; }").unwrap();
     let mut files = ThemeFiles::new(Some(themes));
     let (entries, warnings) = files.read_all();
     let mut ids: Vec<_> = entries.iter().map(|e| e.id.as_str()).collect();
@@ -168,6 +177,7 @@ fn a_folder_without_theme_css_and_two_themes_with_one_name_are_named() {
     assert_eq!(ids, ["first", "second"]);
     assert!(warnings.iter().any(|w| w.contains("hidden-extension") && w.contains("theme.css.txt")), "{warnings:?}");
     assert!(warnings.iter().any(|w| w.contains("two themes are named")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.contains("older") && w.contains("no theme.json")), "{warnings:?}");
     let _clean = std::fs::remove_dir_all(&dir);
 }
 
@@ -175,8 +185,7 @@ fn a_folder_without_theme_css_and_two_themes_with_one_name_are_named() {
 fn a_renamed_folder_leaves_the_list_and_an_empty_one_is_named_once() {
     let dir = folder("renamed");
     let themes = dir.join("themes");
-    std::fs::create_dir_all(themes.join("kierros3")).unwrap();
-    std::fs::write(themes.join("kierros3").join("theme.css"), "theme { name: \"Kierros 3\"; }").unwrap();
+    hand_written(&themes.join("kierros3"), "Kierros 3", ":root {}");
     let mut files = ThemeFiles::new(Some(themes.clone()));
     let (entries, _) = files.read_all();
     assert_eq!(entries.len(), 1);
@@ -266,11 +275,7 @@ fn a_background_picture_in_the_assets_folder_is_read() {
     std::fs::create_dir_all(theme.join("assets")).unwrap();
     let png = b"\x89PNG\r\n\x1a\nfake-data-for-the-path-only".to_vec();
     std::fs::write(theme.join("assets/bg-4k.png"), &png).unwrap();
-    std::fs::write(
-        theme.join("theme.css"),
-        "theme { name: \"Pictured\"; } :root { --background-image: url(\"assets/bg-4k.png\"); }",
-    )
-    .unwrap();
+    hand_written(&theme, "Pictured", ":root { --background-image: url(\"assets/bg-4k.png\"); }");
     let mut files = ThemeFiles::new(Some(dir.join("themes")));
     let (themes, warnings) = files.read_all();
     let pictured = themes.iter().find(|e| e.id == "pictured").expect("the theme reads");

@@ -159,6 +159,25 @@ pub(super) fn scoped(engine: &Engine, stack: &[String]) -> Option<Computed> {
     engine.native.as_ref()?.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.last().map(computed)
 }
 
+/// What the host gives a theme's swatch before any theme styles it.
+const SWATCH_DEFAULTS: &str = "theme-swatch { background-color: attr(color type(<color>)); border-radius: 6px; }";
+
+/// A `theme-swatch` element whose `color` attribute is `color`, as the theme in use styles it.
+pub(super) fn theme_swatch(engine: &Engine, color: &str) -> Option<Computed> {
+    static DEFAULTS: std::sync::OnceLock<Option<Sheet>> = std::sync::OnceLock::new();
+    let defaults = DEFAULTS.get_or_init(|| Sheet::parse(SWATCH_DEFAULTS).ok()).as_ref()?;
+    let mut elements = roots(false);
+    elements.push(Element::new("theme-swatch", Some(1)).with_attribute("color", color));
+    let tree = Tree::new(elements).ok()?;
+    let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
+    engine
+        .native
+        .as_ref()?
+        .styles(&tree, viewport(engine), Some(defaults), variant(engine), &[], user)?
+        .last()
+        .map(computed)
+}
+
 /// Properties that ask for theme layout when a theme writes them on a laid-out element.
 const LAYOUT: &[Property] = &[
     Property::Display,

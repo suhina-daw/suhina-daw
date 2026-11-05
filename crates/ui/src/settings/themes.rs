@@ -22,7 +22,7 @@ pub struct ThemeEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileAction {
     /// Write the theme: for `<theme>@<variant>` the variant's file, and the theme's own files when
-    /// they change (`layout.css`, artwork; `theme.css` only when it has none yet).
+    /// they change (`theme.json`, artwork, and the editors' rules in `theme.css`).
     Save { id: String, theme: Box<Theme> },
     /// Rename `<from>.json` to `<to>.json`, before it is saved under its new name.
     Rename { from: String, to: String },
@@ -148,8 +148,18 @@ impl Themes {
                 .chain(self.entries[..self.built_in].iter().map(|e| (e.id.clone(), e.theme.name.clone(), true)))
                 .collect(),
             current: shown.to_string(),
-            previews: self.entries.iter().map(|entry| (entry.id.clone(), entry.theme.colors)).collect(),
-            preview_scene: Default::default(),
+            swatches: self.entries.iter().filter_map(|entry| Some((entry.id.clone(), entry.theme.swatch?))).collect(),
+            pictures: self
+                .entries
+                .iter()
+                .filter_map(|entry| Some((entry.id.clone(), entry.theme.picture.clone()?)))
+                .collect(),
+            default_variants: self
+                .entries
+                .iter()
+                .filter(own)
+                .map(|entry| (entry.id.clone(), entry.theme.meta.default_variant().to_owned()))
+                .collect(),
             built_in: theme::is_built_in(crate::kit::theme_vars::split_id(shown).0),
             name: theme.name,
             colors: theme.colors,
@@ -275,7 +285,7 @@ impl Themes {
                 if placed > 0 {
                     let controls = if placed == 1 { "control" } else { "controls" };
                     self.notice = Some(format!(
-                        "{name} keeps the {placed} placed {controls} of the theme it copies, in its layout.css"
+                        "{name} keeps the {placed} placed {controls} of the theme it copies, in its theme.css"
                     ));
                 }
                 self.actions.push(Pending::Save(id.clone()));
@@ -404,7 +414,6 @@ impl Themes {
         // The copy is a theme of its own: its variant's values become part of its sheet.
         original.vars.variant = None;
         original.vars.variant_name = None;
-        original.vars.light = None;
         let id = self.free_id(name);
         self.entries.push(ThemeEntry { id: id.clone(), theme: Theme { name: name.to_string(), ..original } });
         id

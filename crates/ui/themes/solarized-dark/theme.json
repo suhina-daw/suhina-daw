@@ -1,0 +1,7 @@
+{
+  "format": 1,
+  "name": "Solarized Dark",
+  "author": "The Suhina contributors",
+  "description": "The Solarized palette (MIT, ethanschoonover.com/solarized), dark, mapped onto Suhina's tokens.",
+  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+}

@@ -91,8 +91,9 @@ fn example_themes_embed_their_paint_and_all_editable_artwork() {
         assert_eq!(native.skin.meter_intensity, sheet.skin.meter_intensity);
         assert_eq!(native.skin.styles, sheet.skin.styles);
     }
-    let first = meadow_background().unwrap();
-    let second = meadow_background().unwrap();
+    let meadow = || built_in_themes().into_iter().find(|(id, _)| *id == "suhina-meadow").unwrap().1;
+    let first = meadow().skin.background.unwrap();
+    let second = meadow().skin.background.unwrap();
     assert!(std::sync::Arc::ptr_eq(&first, &second));
     let bytes = super::super::skin::decode_png(&first).unwrap();
     let image = image::load_from_memory(&bytes).unwrap();
@@ -132,6 +133,7 @@ fn a_theme_survives_a_round_trip() {
         transparent_rgb: Default::default(),
         skin: Default::default(),
         vars: Default::default(),
+        ..Default::default()
     };
     theme.colors.accent = rgb(0x12AB9F);
     theme.colors.window_background = rgb(0x000000);
@@ -189,9 +191,19 @@ fn files_with_the_first_token_names_still_read() {
 fn the_themes_that_come_with_suhina_read_whole() {
     let themes = built_in_themes();
     assert_eq!(themes.first().map(|(id, _)| *id), Some(BUILT_IN));
-    for (id, sheet, layout) in BUILT_IN_FILES {
-        let (theme, warnings) = from_sheet(sheet, layout);
+    for (id, files) in BUILT_IN_FOLDERS {
+        let file = |name: &str, _| Ok(files.iter().find(|(path, _)| *path == name).map(|(_, bytes)| bytes.to_vec()));
+        let (theme, warnings) = from_files(file).unwrap();
         assert!(warnings.is_empty(), "{id}: {warnings:?}");
+        // A built-in theme is a theme folder like any other: the package checks pass.
+        let folder: std::collections::BTreeMap<String, Vec<u8>> =
+            files.iter().map(|(path, bytes)| ((*path).to_owned(), bytes.to_vec())).collect();
+        assert_eq!(suhina_theme_package::validate(&folder), Ok(Vec::new()), "{id}");
+        assert!(!files.iter().any(|(path, _)| *path == "layout.css"), "{id}");
+        let sheet = std::str::from_utf8(&folder["theme.css"]).unwrap();
+        assert!(!sheet.contains("theme {"), "{id}: the name is theme.json's");
+        assert_eq!(theme.name, ThemeMeta::parse(&folder[META]).unwrap().0.name, "{id}");
+        assert!(theme.swatch.is_some() && theme.picture.is_some(), "{id}");
         // Every colour is written out, so none falls back to Suhina Dark by mistake.
         for (key, _, _) in Palette::DARK.tokens() {
             assert!(sheet.contains(&format!("  --{}: ", key.replace('.', "-"))), "{id} leaves out {key}");
@@ -199,7 +211,13 @@ fn the_themes_that_come_with_suhina_read_whole() {
         // The sheet holds the theme's own values: nothing is a variant's.
         assert!(theme.vars.values.is_empty() && theme.skin.variant.is_none(), "{id}");
         assert!(is_built_in(id));
-        assert_ne!(theme.name, Theme::default().name);
+        assert!(id == BUILT_IN || theme.name != Theme::default().name, "{id}");
+        if id == BUILT_IN {
+            // Its sheet says only what the app has without one, so the style engine stays off.
+            let values = super::super::theme_vars::core_values;
+            assert_eq!(values(&theme), values(&Theme::default()));
+            assert_eq!(built_in_themes()[0].1.skin.css, None);
+        }
     }
     assert!(!is_built_in("night"));
 }
@@ -226,7 +244,7 @@ fn studio_themes_keep_text_readable_and_round_trip() {
             assert!(contrast(p.accent, background) >= 3.0, "{id}: accent");
         }
         // Its own sheet, as a copy of it is saved, reads back as the same theme.
-        let (restored, warnings) = from_sheet(&super::super::theme_css::sheet(&theme, None), "");
+        let (restored, warnings) = from_css(&super::super::theme_css::sheet(&theme, None));
         assert!(warnings.is_empty(), "{id}: {warnings:?}");
         let values = super::super::theme_vars::core_values;
         assert_eq!(values(&restored), values(&theme), "{id}: custom colors must survive saving");

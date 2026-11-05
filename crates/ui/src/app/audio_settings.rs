@@ -240,9 +240,6 @@ impl App {
         }
         let mut themes = self.themes.view(&self.settings.theme);
         themes.global_liquid = self.settings.view.liquid;
-        if let Some(session) = self.session() {
-            themes.preview_scene = crate::kit::theme_preview::Scene::from_project(session.project());
-        }
         self.about.projects_default = self.default_folders.0.display().to_string();
         self.about.templates_default = self.default_folders.1.display().to_string();
         self.about.themes_default = self.themes_default_folder.display().to_string();

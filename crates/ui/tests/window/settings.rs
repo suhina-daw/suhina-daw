@@ -86,6 +86,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
             transparent_rgb: Default::default(),
             skin: Default::default(),
             vars: Default::default(),
+            ..Default::default()
         },
     };
     let ctx = harness.ctx.clone();
@@ -144,6 +145,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
             transparent_rgb: Default::default(),
             skin: Default::default(),
             vars: Default::default(),
+            ..Default::default()
         },
     };
     harness.state_mut().put_theme(&ctx, edited);

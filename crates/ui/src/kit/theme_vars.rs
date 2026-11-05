@@ -40,8 +40,6 @@ pub struct Vars {
     pub variant: Option<String>,
     /// The chosen variant's name, as the picker shows it.
     pub variant_name: Option<String>,
-    /// Whether the chosen variant says it is light (`Some(true)`) or dark.
-    pub light: Option<bool>,
     /// Why the theme is still in an earlier file format, when its migration was refused.
     pub kept: Option<Arc<str>>,
 }
@@ -334,9 +332,10 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
     let mut merged = (*theme.vars.base).clone();
     let mut chosen = BTreeMap::new();
     for (name, value) in &theme.vars.values {
-        // A registered property, or a variable the theme's own `:root` sets (a helper colour).
-        if registered(theme, name).is_none() && !theme.vars.base.contains_key(name) {
-            warnings.push(format!("{name}: the theme declares no such property"));
+        // A variant holds values for the theme's declared controls (and Suhina's core
+        // properties) only, no variables of its own.
+        if registered(theme, name).is_none() {
+            warnings.push(format!("{name}: the theme declares no such control"));
             continue;
         }
         merged.insert(name.clone(), value.clone());
@@ -372,7 +371,31 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
     }
     theme.skin.variables = Arc::new(values.clone());
     warnings.extend(apply_core(theme, &values));
+    theme.picture = picture(theme);
+    match swatch(theme) {
+        Ok([r, g, b, a]) => theme.swatch = Some(egui::Color32::from_rgba_unmultiplied(r, g, b, a)),
+        Err(error) => {
+            theme.swatch = None;
+            warnings.push(format!("the swatch: {error}"));
+        }
+    }
     warnings
+}
+
+/// `theme`'s thumbnail for the variant it has chosen: `var()` takes the variant's root values,
+/// colours as computed colours, since the SVG renderer has no `color-mix()`.
+pub fn picture(theme: &Theme) -> Option<Arc<str>> {
+    let source = theme.thumbnail.as_deref()?;
+    Some(Arc::from(suhina_style::artwork::substitute(source, &theme.skin.variables).as_ref()))
+}
+
+/// The colour of `theme`'s swatch for the variant it has chosen, from its sheet's `:root` rules
+/// and registered properties (the core ones too) without applying it.
+pub fn swatch(theme: &Theme) -> Result<[u8; 4], String> {
+    let core = core_parsed().ok_or("the core theme properties do not parse")?;
+    let sheet = Sheet::parse(theme.skin.css.as_deref().unwrap_or_default())?;
+    let variant = theme.skin.variant.as_deref().map(Sheet::parse).transpose()?;
+    suhina_theme_package::meta::swatch_color(&theme.meta.swatch, &[core], &sheet, variant.as_ref())
 }
 
 /// The variant's values as a `:root` rule, or nothing when it sets none.
@@ -414,18 +437,17 @@ fn same_value(name: &str, a: &str, b: &str) -> bool {
     apply_core(&mut first, &one).is_empty() && apply_core(&mut second, &two).is_empty() && first == second
 }
 
-/// A theme variant: values for a theme's properties, in `variants/<id>.json`.
+/// A theme variant: values for a theme's declared controls, in `variants/<id>.json`, and its
+/// name. A theme's default variant is its own values, not a file.
 ///
 /// ```json
-/// { "name": "Frost", "appearance": "light", "values": { "--accent": "#88c0d0" } }
+/// { "name": "Frost", "values": { "--accent": "#88c0d0" } }
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     /// The file's name without `.json`.
     pub id: String,
     pub name: String,
-    /// `Some(true)` for a light variant, `Some(false)` for a dark one.
-    pub light: Option<bool>,
     pub values: BTreeMap<String, String>,
 }
 
@@ -454,15 +476,9 @@ impl Variant {
                 id.to_owned()
             }
         };
-        let light = match root.get("appearance").and_then(|a| a.as_str()) {
-            Some("light") => Some(true),
-            Some("dark") => Some(false),
-            None => None,
-            Some(other) => {
-                warnings.push(format!("{id}: appearance is light or dark, not {other}"));
-                None
-            }
-        };
+        for key in root.keys().filter(|key| !matches!(key.as_str(), "name" | "values" | "$schema")) {
+            warnings.push(format!("{id}: {key} is not part of a variant, which holds only values"));
+        }
         let mut values = BTreeMap::new();
         if let Some(object) = root.get("values").and_then(|v| v.as_object()) {
             for (name, value) in object.iter().take(MAX_VALUES) {
@@ -482,15 +498,12 @@ impl Variant {
                 warnings.push(format!("{id}: only the first {MAX_VALUES} values are read"));
             }
         }
-        Ok((Self { id: id.to_owned(), name, light, values }, warnings))
+        Ok((Self { id: id.to_owned(), name, values }, warnings))
     }
 
     pub fn to_json(&self) -> String {
         let mut root = serde_json::Map::new();
         root.insert("name".into(), self.name.clone().into());
-        if let Some(light) = self.light {
-            root.insert("appearance".into(), if light { "light" } else { "dark" }.into());
-        }
         let values: serde_json::Map<String, serde_json::Value> =
             self.values.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
         root.insert("values".into(), values.into());
@@ -505,7 +518,6 @@ pub fn with_variant(theme: &Theme, variant: Option<&Variant>) -> (Theme, Vec<Str
     chosen.vars.values = variant.map(|v| v.values.clone()).unwrap_or_default();
     chosen.vars.variant = variant.map(|v| v.id.clone());
     chosen.vars.variant_name = variant.map(|v| v.name.clone());
-    chosen.vars.light = variant.and_then(|v| v.light);
     let warnings = resolve(&mut chosen);
     (chosen, warnings)
 }
@@ -517,7 +529,6 @@ impl Variant {
         Some(Self {
             name: theme.vars.variant_name.clone().unwrap_or_else(|| id.clone()),
             id,
-            light: theme.vars.light,
             values: theme.vars.values.clone(),
         })
     }

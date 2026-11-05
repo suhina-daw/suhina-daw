@@ -138,10 +138,11 @@ that pending start clears the resume target; the next ordinary Play uses the mar
 Themes has a search field beside *Other themes*: it shows the themes whose name, id or a
 variant's name contains the text, ignoring case, and *No themes match* when none does; the theme in
 use always shows. A theme left in an earlier file format says *Not converted* on its card, with
-the reason when hovered. Themes shows a miniature musical scene for every built-in or custom palette. The scenes
-use the same browser, MIDI/audio clips, grid, controls and meters; drawing them never
-installs a theme or loads another project. The active card has an accent border and Active
-label. The active theme is featured once at full width with a 170 px preview; other
+the reason when hovered. Each theme's card shows its thumbnail (`thumbnail.svg`, 16:9, drawn with the values of the
+theme and the variant shown), or a blank card filled with its swatch colour when it has none
+([theme skins](theme-skins.md#theme-folders-themejson-themecss-thumbnail-and-variants)).
+Drawing them never installs a theme. The active card has an accent border and Active label.
+The active theme is featured once at full width with a thumbnail at most 170 px high; other
 themes remain in a two-column grid. Clicking a card immediately applies and saves the
 selected theme and returns the gallery to the top. Holding the primary button on the
 active card keeps the background clear, including stationary frames; release restores
@@ -155,12 +156,8 @@ that choice. Existing custom files are already saved by live editing and remain 
 library in either restore path; this is stated in the prompt. Restore never overwrites
 a built-in or deletes the custom theme. A saved copy gets a free file name.
 
-The four miniature lanes use the open project's first four track colours and their first
-arrangement clips' explicit colour overrides. An unset colour follows the candidate theme's
-MIDI or audio clip default. Clip fills use the Arrangement's 82% colour strength over the
-candidate panel surface, rather than raw saturated swatches. A short gallery note explains
-that existing tracks and clips keep their colours when selecting a theme. Previews never
-recolour the project.
+A short gallery note explains that existing tracks and clips keep their colours when selecting
+a theme.
 
 Edit current theme opens a child view, with Back to themes and the current theme name.
 Its Liquid section defaults to Use global liquid settings. Turning that off copies the
@@ -187,10 +184,12 @@ icons for compatibility, but are hidden from this editor. Older theme files inhe
 MIDI default from `track.3` and audio default from `track.1`; explicit new tokens win.
 Changes apply and save live into the variant in use; moving controls or changing artwork of a
 built-in theme creates a custom copy. A theme with variants shows a row of swatches under its
-card, the theme's own values first; clicking one uses that variant. More › New variant starts
+card, the default variant first (named in `theme.json`, *Default* otherwise); clicking one uses
+that variant. Each swatch is a `theme-swatch` element in the variant's swatch colour, styled by
+the theme in use. More › New variant starts
 one from the values in use, and with a variant in use the name field renames the variant.
 *Theme settings* lists the settings the theme declares with `@property`, each with a control
-for its type ([theme skins](theme-skins.md#theme-storage-one-sheet-variants-and-layout)).
+for its type ([theme skins](theme-skins.md#theme-folders-themejson-themecss-thumbnail-and-variants)).
 Save as new theme duplicates the current palette and focuses its editable name. Reset
 changes restores the palette captured when entering the editor, without changing the
 built-in source. The name field reserves the same space for built-in and custom themes,

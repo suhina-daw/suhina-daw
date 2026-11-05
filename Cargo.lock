@@ -5824,6 +5824,7 @@ dependencies = [
  "suhina-soundmap",
  "suhina-style",
  "suhina-test-support",
+ "suhina-theme-package",
  "suhina-update",
  "tiny-skia 0.12.0",
 ]

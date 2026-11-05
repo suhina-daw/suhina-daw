@@ -366,7 +366,7 @@ mod tests {
         assert_eq!(io.pending.len(), 1);
         assert!(!root.exists(), "queueing must not do file I/O on the caller");
         io.finish();
-        assert!(std::fs::read_to_string(root.join("test/theme.css")).unwrap().contains("sample-100"));
+        assert!(std::fs::read_to_string(root.join("test/theme.json")).unwrap().contains("sample-100"));
         std::fs::remove_dir_all(root).unwrap();
     }
 

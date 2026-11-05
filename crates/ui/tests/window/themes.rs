@@ -262,13 +262,12 @@ fn session_pan_knob_keeps_the_native_drag_command_and_value() {
 fn a_variant_swatch_in_settings_uses_that_variant_and_new_variant_makes_one() {
     let mut harness = window(demo_app());
     let sheet = "@property --glow { syntax: \"<number>\"; initial-value: 0.5; label: \"Glow\"; range: 0 1; }\n\
-                 :root { --accent: #123456; }\ntheme { name: \"Ink\"; }";
-    let (ink, warnings) = theme::from_sheet(sheet, "");
+                 :root { --accent: #123456; }";
+    let (ink, warnings) = theme::from_folder(theme::ThemeMeta::new("Ink", theme::DEFAULT_SWATCH), sheet);
     assert!(warnings.is_empty(), "{warnings:?}");
     let dim = suhina_ui::kit::theme_vars::Variant {
         id: "dim".into(),
         name: "Dim".into(),
-        light: Some(false),
         values: [("--accent".to_string(), "#ABCDEF".to_string())].into(),
     };
     let (ink_dim, warnings) = suhina_ui::kit::theme_vars::with_variant(&ink, Some(&dim));
@@ -290,7 +289,7 @@ fn a_variant_swatch_in_settings_uses_that_variant_and_new_variant_makes_one() {
     assert_eq!(theme::accent(), egui::Color32::from_rgb(0xAB, 0xCD, 0xEF));
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.theme), Some("ink@dim".into()));
     // The theme in use shows its swatches on its large card and on its card in the list; both work.
-    let own: Vec<_> = harness.get_all_by_label("Variant: Theme's own").collect();
+    let own: Vec<_> = harness.get_all_by_label("Variant: Default").collect();
     assert_eq!(own.len(), 2, "the large card's swatch and the list card's");
     own[0].click();
     harness.run();

@@ -8,9 +8,11 @@
 //! JSON file of token names and `#RRGGBB` values (see [`Theme::from_json`]). Sizes are fixed.
 
 use std::cell::Cell;
+use std::sync::Arc;
 
 use egui::{Color32, FontFamily, FontId, Stroke, TextStyle};
 use serde_json::{Map, Value};
+pub use suhina_theme_package::meta::{FILE as META, THUMBNAIL, ThemeMeta};
 
 const fn rgb(hex: u32) -> Color32 {
     Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
@@ -258,123 +260,150 @@ pub fn set_palette(ctx: &egui::Context, palette: Palette) {
 /// The id of the default theme, Suhina Dark, in the settings file.
 pub const BUILT_IN: &str = "suhina-dark";
 
-/// The themes that come with Suhina besides Suhina Dark: id, `theme.css` and `layout.css` (empty
-/// when it has none), as a theme's folder holds them. Their artwork and Meadow's background are
-/// attached by `built_in_themes`.
-/// Dracula, Nord, Catppuccin and Solarized are popular open palettes (MIT, their licences in
-/// `themes/licenses/`), mapped onto Suhina's tokens.
-const BUILT_IN_FILES: [(&str, &str, &str); 15] = [
-    ("suhina-studio-dark", include_str!("../../themes/suhina-studio-dark.theme.css"), ""),
-    ("suhina-studio-light", include_str!("../../themes/suhina-studio-light.theme.css"), ""),
-    ("editor-dark", include_str!("../../themes/editor-dark.theme.css"), ""),
-    ("suhina-light", include_str!("../../themes/suhina-light.theme.css"), ""),
-    ("high-contrast", include_str!("../../themes/high-contrast.theme.css"), ""),
-    ("dracula", include_str!("../../themes/dracula.theme.css"), ""),
-    ("nord", include_str!("../../themes/nord.theme.css"), ""),
-    ("catppuccin-mocha", include_str!("../../themes/catppuccin-mocha.theme.css"), ""),
-    ("catppuccin-latte", include_str!("../../themes/catppuccin-latte.theme.css"), ""),
-    ("solarized-dark", include_str!("../../themes/solarized-dark.theme.css"), ""),
-    ("suhina-glass", include_str!("../../themes/suhina-glass.theme.css"), ""),
-    ("suhina-forest-amber", include_str!("../../themes/suhina-forest-amber.theme.css"), ""),
-    (
-        "suhina-sheet",
-        include_str!("../../themes/suhina-sheet.theme.css"),
-        include_str!("../../themes/suhina-sheet.layout.css"),
-    ),
-    (
-        "suhina-meadow",
-        include_str!("../../themes/suhina-meadow.theme.css"),
-        include_str!("../../themes/suhina-meadow.layout.css"),
-    ),
-    (
-        "suhina-blocks",
-        include_str!("../../themes/suhina-blocks.theme.css"),
-        include_str!("../../themes/suhina-blocks.layout.css"),
-    ),
-];
+/// The swatch of a theme that says none: its panels with a little of its accent.
+pub const DEFAULT_SWATCH: &str = "color-mix(in oklab, var(--panel-background), var(--accent) 35%)";
 
-const SHEET_SVGS: &[(&str, &str)] = &[
-    ("fader.cap", include_str!("../../../../assets/themes/sheet/fader.cap.svg")),
-    ("fader.rail", include_str!("../../../../assets/themes/sheet/fader.rail.svg")),
-    ("knob.body", include_str!("../../../../assets/themes/sheet/knob.body.svg")),
-    ("knob.pointer", include_str!("../../../../assets/themes/sheet/knob.pointer.svg")),
-    ("button", include_str!("../../../../assets/themes/sheet/button.svg")),
-    ("play", include_str!("../../../../assets/themes/sheet/play.svg")),
-    ("stop", include_str!("../../../../assets/themes/sheet/stop.svg")),
-    ("record", include_str!("../../../../assets/themes/sheet/record.svg")),
-    ("solo", include_str!("../../../../assets/themes/sheet/solo.svg")),
-    ("arm", include_str!("../../../../assets/themes/sheet/arm.svg")),
-    ("cue", include_str!("../../../../assets/themes/sheet/cue.svg")),
-    ("track.midi", include_str!("../../../../assets/themes/sheet/track.midi.svg")),
-    ("track.audio", include_str!("../../../../assets/themes/sheet/track.audio.svg")),
-    ("track.name", include_str!("../../../../assets/themes/sheet/track.name.svg")),
-    ("track.body", include_str!("../../../../assets/themes/sheet/track.body.svg")),
-    ("meter", include_str!("../../../../assets/themes/sheet/meter.svg")),
-];
+/// A theme folder built into the app: its id and its files by path, as a folder on disk holds
+/// them (`docs/spec/theme-skins.md` › Theme folders).
+type BuiltInFolder = (&'static str, &'static [(&'static str, &'static [u8])]);
 
-const MEADOW_SVGS: &[(&str, &str)] = &[
-    ("fader.cap", include_str!("../../../../assets/themes/meadow/fader.cap.svg")),
-    ("fader.rail", include_str!("../../../../assets/themes/meadow/fader.rail.svg")),
-    ("knob.body", include_str!("../../../../assets/themes/meadow/knob.body.svg")),
-    ("knob.pointer", include_str!("../../../../assets/themes/meadow/knob.pointer.svg")),
-    ("button", include_str!("../../../../assets/themes/meadow/button.svg")),
-    ("track.midi", include_str!("../../../../assets/themes/meadow/track.midi.svg")),
-    ("track.body", include_str!("../../../../assets/themes/meadow/track.body.svg")),
-];
-
-const BLOCKS_SVGS: &[(&str, &str)] = &[
-    ("fader.cap", include_str!("../../../../assets/themes/blocks/fader.cap.svg")),
-    ("fader.rail", include_str!("../../../../assets/themes/blocks/fader.rail.svg")),
-    ("knob.body", include_str!("../../../../assets/themes/blocks/knob.body.svg")),
-    ("knob.pointer", include_str!("../../../../assets/themes/blocks/knob.pointer.svg")),
-    ("button", include_str!("../../../../assets/themes/blocks/button.svg")),
-    ("track.midi", include_str!("../../../../assets/themes/blocks/track.midi.svg")),
-    ("track.audio", include_str!("../../../../assets/themes/blocks/track.audio.svg")),
-    ("track.name", include_str!("../../../../assets/themes/blocks/track.name.svg")),
-    ("track.body", include_str!("../../../../assets/themes/blocks/track.body.svg")),
-    ("track.body.color-ff9a3c", include_str!("../../../../assets/themes/blocks/track.body.color-ff9a3c.svg")),
-    ("track.body.color-f2d541", include_str!("../../../../assets/themes/blocks/track.body.color-f2d541.svg")),
-    ("track.body.color-4fc3f7", include_str!("../../../../assets/themes/blocks/track.body.color-4fc3f7.svg")),
-    ("track.body.color-b38bff", include_str!("../../../../assets/themes/blocks/track.body.color-b38bff.svg")),
-    ("track.body.color-7fdb5a", include_str!("../../../../assets/themes/blocks/track.body.color-7fdb5a.svg")),
-    ("track.body.color-e5484d", include_str!("../../../../assets/themes/blocks/track.body.color-e5484d.svg")),
-    ("track.body.color-80ada1", include_str!("../../../../assets/themes/blocks/track.body.color-80ada1.svg")),
-    ("track.body.color-a84f4f", include_str!("../../../../assets/themes/blocks/track.body.color-a84f4f.svg")),
-];
-
-fn meadow_background() -> Option<std::sync::Arc<str>> {
-    static BACKGROUND: std::sync::OnceLock<Option<std::sync::Arc<str>>> = std::sync::OnceLock::new();
-    BACKGROUND
-        .get_or_init(|| super::skin::encode_png(include_bytes!("../../../../assets/themes/meadow/meadow.png")).ok())
-        .clone()
+/// A built-in theme's folder, `crates/ui/themes/<id>/`, from the files named.
+macro_rules! folder {
+    ($id:literal: $($path:literal),* $(,)?) => {
+        ($id, &[$(($path, include_bytes!(concat!("../../themes/", $id, "/", $path)) as &[u8])),*])
+    };
 }
+
+/// The themes that come with Suhina, Suhina Dark first. Dracula, Nord, Catppuccin and Solarized
+/// are popular open palettes (MIT, their licences in `themes/licenses/`), mapped onto Suhina's
+/// tokens.
+const BUILT_IN_FOLDERS: [BuiltInFolder; 16] = [
+    folder!("suhina-dark": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("suhina-studio-dark": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("suhina-studio-light": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("editor-dark": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("suhina-light": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("high-contrast": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("dracula": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("nord": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("catppuccin-mocha": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("catppuccin-latte": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("solarized-dark": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("suhina-glass": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("suhina-forest-amber": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("suhina-sheet": "theme.json", "theme.css", "thumbnail.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
+    folder!("suhina-meadow": "theme.json", "theme.css", "thumbnail.svg", "background.png", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
+    folder!("suhina-blocks": "theme.json", "theme.css", "thumbnail.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg", "assets/track.body.color-4fc3f7.svg", "assets/track.body.color-7fdb5a.svg", "assets/track.body.color-80ada1.svg", "assets/track.body.color-a84f4f.svg", "assets/track.body.color-b38bff.svg", "assets/track.body.color-e5484d.svg", "assets/track.body.color-f2d541.svg", "assets/track.body.color-ff9a3c.svg"),
+];
 
 /// The themes that come with Suhina, Suhina Dark first, with their ids. They do not change;
 /// editing one makes a copy.
 pub fn built_in_themes() -> Vec<(&'static str, Theme)> {
-    let mut themes = vec![(BUILT_IN, Theme::default())];
-    themes.extend(BUILT_IN_FILES.iter().map(|(id, sheet, layout)| {
-        let mut theme = from_sheet(sheet, layout).0;
-        if matches!(*id, "suhina-sheet" | "suhina-meadow" | "suhina-blocks") {
-            theme.skin.assets = SHEET_SVGS.iter().map(|(role, svg)| ((*role).into(), (*svg).into())).collect();
-            if *id == "suhina-meadow" {
-                theme.skin.assets.extend(MEADOW_SVGS.iter().map(|(role, svg)| ((*role).into(), (*svg).into())));
-                theme.skin.background = meadow_background();
-            } else if *id == "suhina-blocks" {
-                theme.skin.assets.extend(BLOCKS_SVGS.iter().map(|(role, svg)| ((*role).into(), (*svg).into())));
-            }
-        }
-        (*id, theme)
-    }));
-    themes
+    static THEMES: std::sync::OnceLock<Vec<(&'static str, Theme)>> = std::sync::OnceLock::new();
+    THEMES
+        .get_or_init(|| {
+            BUILT_IN_FOLDERS
+                .iter()
+                .map(|(id, files)| {
+                    let files: std::collections::BTreeMap<&str, &[u8]> = files.iter().copied().collect();
+                    let read = from_files(|path, _| Ok(files.get(path).map(|bytes| bytes.to_vec())));
+                    // Every built-in folder reads whole (`the_themes_that_come_with_suhina_read_whole`).
+                    debug_assert!(read.as_ref().is_ok_and(|(_, warnings)| warnings.is_empty()), "{id}: {read:?}");
+                    let mut theme = read.map_or_else(|_| Theme::default(), |(theme, _)| theme);
+                    if *id == BUILT_IN {
+                        // Suhina Dark's sheet sets only the values the app has without one, so the
+                        // style engine has nothing to do for the default theme and stays off.
+                        theme.skin.css = None;
+                    }
+                    (*id, theme)
+                })
+                .collect()
+        })
+        .clone()
 }
 
-/// A theme from its own sheet (`theme.css`) and Suhina's `layout.css` beside it, with warnings
-/// about what could not be read. Artwork and the background stay as paths for the theme's files
-/// to resolve.
-pub fn from_sheet(sheet: &str, layout: &str) -> (Theme, Vec<String>) {
-    let mut theme = Theme::default();
+/// The files of the built-in theme `id` by path, as its folder holds them.
+pub fn built_in_files(id: &str) -> Option<Vec<(&'static str, &'static [u8])>> {
+    BUILT_IN_FOLDERS.iter().find(|(b, _)| b.eq_ignore_ascii_case(id)).map(|(_, files)| files.to_vec())
+}
+
+/// A theme from its folder's files, read through `file` (a path relative to the folder and the
+/// most bytes it may have; `Ok(None)` when it is not there): `theme.json`, `theme.css`, the
+/// artwork and background the sheet names and the optional `thumbnail.svg`. Its variants are
+/// read on their own.
+pub fn from_files(
+    mut file: impl FnMut(&str, u64) -> Result<Option<Vec<u8>>, String>,
+) -> Result<(Theme, Vec<String>), String> {
+    let text = |bytes: Vec<u8>, name: &str| String::from_utf8(bytes).map_err(|_| format!("{name}: not UTF-8 text"));
+    let json = file(META, MAX_META)?.ok_or("a theme needs a theme.json")?;
+    let (meta, mut warnings) = ThemeMeta::parse(&json)?;
+    let css = file("theme.css", super::theme_css::MAX_CSS as u64)?.ok_or("a theme needs a theme.css")?;
+    let sheet = text(css, "theme.css")?;
+    let (mut theme, problems) = from_folder(meta, &sheet);
+    warnings.extend(problems);
+    if let Some(bytes) = file(THUMBNAIL, super::skin::MAX_SVG as u64)? {
+        theme.thumbnail = Some(thumbnail(&text(bytes, THUMBNAIL)?)?);
+        theme.picture = super::theme_vars::picture(&theme);
+    }
+    resolve_resources(&mut theme, &mut |path, max| {
+        let bytes = file(path, max)?.ok_or_else(|| format!("{path}: not in the theme"))?;
+        if bytes.len() as u64 > max { Err(format!("{path} exceeds its theme size limit")) } else { Ok(bytes) }
+    })?;
+    Ok((theme, warnings))
+}
+
+/// The largest a `theme.json` may be.
+pub const MAX_META: u64 = 64 * 1024;
+
+/// A thumbnail's source after the artwork checks and the 16:9 check.
+pub fn thumbnail(source: &str) -> Result<Arc<str>, String> {
+    super::skin::validate_artwork(source).map_err(|e| format!("{THUMBNAIL}: {e}"))?;
+    suhina_theme_package::meta::check_thumbnail(source)?;
+    Ok(Arc::from(source))
+}
+
+/// Replaces the artwork and background paths a theme's sheet names by their contents, read
+/// through `resource` (a path in the theme's folder and the most bytes it may have), within the
+/// package limits.
+pub fn resolve_resources(
+    theme: &mut Theme,
+    resource: &mut impl FnMut(&str, u64) -> Result<Vec<u8>, String>,
+) -> Result<(), String> {
+    use super::skin;
+    if let Some(background) = &theme.skin.background
+        && !background.starts_with("data:image/png;base64,")
+    {
+        // A large picture (a 4K wallpaper) is scaled down to fit rather than refused.
+        let bytes = resource(background, 64 * 1024 * 1024)?;
+        let bytes = super::artwork_png::fit_background(&bytes)?;
+        theme.skin.background = Some(skin::encode_png(&bytes)?);
+    }
+    let mut artwork_bytes = 0usize;
+    for (role, source) in &mut theme.skin.assets {
+        if !source.trim_start().starts_with('<') && !skin::png_artwork(source) {
+            let png = skin::artwork_extension(source) == "png";
+            let data = resource(source, if png { skin::MAX_PNG as u64 } else { skin::MAX_SVG as u64 })?;
+            *source = if png {
+                skin::encode_png(&data)?.to_string()
+            } else {
+                String::from_utf8(data).map_err(|e| e.to_string())?
+            };
+        }
+        artwork_bytes = artwork_bytes
+            .checked_add(source.len())
+            .filter(|total| *total <= skin::MAX_ARTWORK_BYTES)
+            .ok_or("combined artwork exceeds 16 MiB")?;
+        skin::validate_artwork(source).map_err(|e| format!("{role}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// A theme from its `theme.json` and its own sheet (`theme.css`), with warnings about what could
+/// not be read. Artwork and the background stay as paths for the theme's files to resolve.
+pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
+    let mut theme = Theme { name: meta.name.clone(), meta, ..Theme::default() };
     let mut warnings = Vec::new();
+    theme.skin.css = Some(sheet.into());
     match super::theme_vars::read(sheet) {
         Ok((declared, base, notices)) => {
             theme.vars.declared = std::sync::Arc::new(declared);
@@ -383,16 +412,82 @@ pub fn from_sheet(sheet: &str, layout: &str) -> (Theme, Vec<String>) {
         }
         Err(error) => warnings.push(error),
     }
-    warnings.extend(super::theme_vars::resolve(&mut theme));
     warnings.extend(super::theme_css::read_host_rules(&mut theme, sheet));
-    warnings.extend(super::theme_css::apply(&mut theme, layout));
-    theme.skin.css = Some(sheet.into());
+    if let Some((toolbar, offsets)) = theme.meta.toolbar.as_ref().and_then(read_toolbar) {
+        theme.skin.toolbar = Some(toolbar);
+        theme.skin.toolbar_offsets = offsets;
+    }
+    warnings.extend(super::theme_vars::resolve(&mut theme));
     (theme, warnings)
+}
+
+/// The toolbar arrangement in `theme.json` as the toolbar editor has it: `items` (names only) and
+/// `hidden`, and `offsets` of items moved by hand. `None` for an arrangement with groups or
+/// spaces, which this editor cannot show and leaves as it is.
+fn read_toolbar(value: &Value) -> Option<(super::skin::Toolbar, std::collections::BTreeMap<String, i32>)> {
+    let names = |key: &str| -> Option<Vec<String>> {
+        match value.get(key) {
+            None => Some(Vec::new()),
+            Some(Value::Array(items)) => items.iter().map(|item| item.as_str().map(str::to_owned)).collect(),
+            Some(_) => None,
+        }
+    };
+    let known = |name: &String| super::skin::MODULES.contains(&name.as_str());
+    let order: Vec<String> = names("items")?.into_iter().filter(known).collect();
+    let hidden: Vec<String> = names("hidden")?.into_iter().filter(known).collect();
+    let offsets = value
+        .get("offsets")
+        .and_then(Value::as_object)
+        .map(|offsets| {
+            offsets
+                .iter()
+                .filter(|(name, _)| known(name))
+                .filter_map(|(name, offset)| Some((name.clone(), i32::try_from(offset.as_i64()?).ok()?)))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut toolbar = super::skin::Toolbar { order, hidden };
+    // Items this arrangement leaves out keep their place in the default one, at the end.
+    for module in super::skin::Toolbar::default().order {
+        if !toolbar.order.contains(&module) {
+            toolbar.order.push(module);
+        }
+    }
+    Some((toolbar, offsets))
+}
+
+/// The theme's `theme.json` as Suhina writes it: its metadata under the theme's name, and the
+/// toolbar arrangement as the toolbar editor left it (kept as written when unchanged).
+pub fn file_meta(theme: &Theme) -> ThemeMeta {
+    let mut meta = ThemeMeta { name: theme.name.clone(), ..theme.meta.clone() };
+    let read = meta.toolbar.as_ref().and_then(read_toolbar);
+    let current = theme.skin.toolbar.clone().map(|toolbar| (toolbar, theme.skin.toolbar_offsets.clone()));
+    if read != current {
+        meta.toolbar = current.map(|(toolbar, offsets)| {
+            let mut value = serde_json::json!({ "items": toolbar.order, "hidden": toolbar.hidden });
+            if !offsets.is_empty() {
+                value["offsets"] = serde_json::json!(offsets);
+            }
+            value
+        });
+    }
+    meta
+}
+
+/// A theme of a sheet alone, such as one written for a test or the theme editor's CSS box,
+/// named "Theme" with the default swatch.
+pub fn from_css(sheet: &str) -> (Theme, Vec<String>) {
+    from_folder(ThemeMeta::new("Theme", DEFAULT_SWATCH), sheet)
+}
+
+/// The text of [`file_meta`].
+pub fn meta_json(theme: &Theme) -> String {
+    file_meta(theme).to_json()
 }
 
 /// Whether `id` names a theme that comes with Suhina.
 pub fn is_built_in(id: &str) -> bool {
-    id.eq_ignore_ascii_case(BUILT_IN) || BUILT_IN_FILES.iter().any(|(b, _, _)| id.eq_ignore_ascii_case(b))
+    BUILT_IN_FOLDERS.iter().any(|(b, _)| id.eq_ignore_ascii_case(b))
 }
 
 /// A named set of colours, kept in a theme file:
@@ -411,6 +506,14 @@ pub struct Theme {
     pub gradients: super::gradient::Gradients,
     /// The theme's custom properties and the chosen variant's values (`theme_vars`).
     pub vars: super::theme_vars::Vars,
+    /// Its `theme.json`; the name in it is [`Theme::name`].
+    pub meta: ThemeMeta,
+    /// `thumbnail.svg` as written, its `var()` values not yet substituted.
+    pub thumbnail: Option<Arc<str>>,
+    /// The thumbnail for the variant chosen, its `var()` values substituted.
+    pub picture: Option<Arc<str>>,
+    /// The swatch's colour for the variant chosen, `None` when it does not resolve.
+    pub swatch: Option<Color32>,
 }
 
 impl Default for Theme {
@@ -423,6 +526,10 @@ impl Default for Theme {
             transparent_rgb: Default::default(),
             skin: Default::default(),
             vars: Default::default(),
+            meta: ThemeMeta::new("Suhina Dark", DEFAULT_SWATCH),
+            thumbnail: None,
+            picture: None,
+            swatch: None,
         }
     }
 }

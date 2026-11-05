@@ -235,8 +235,12 @@ fn theme_pack_and_validate_work_on_a_folder_and_its_package() {
     let _gone = std::fs::remove_dir_all(&dir);
     let folder = dir.join("night");
     std::fs::create_dir_all(&folder).unwrap();
-    std::fs::write(folder.join("theme.css"), "theme { name: \"Night\"; } :root { --accent: #ff8800; }").unwrap();
+    std::fs::write(folder.join("theme.css"), ":root { --accent: #ff8800; }").unwrap();
     let args = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    // A folder without theme.json is not a theme yet.
+    assert!(theme(&args(&["validate", folder.to_str().unwrap()])).unwrap_err().contains("theme.json"));
+    std::fs::write(folder.join("theme.json"), r#"{ "format": 1, "name": "Night", "swatch": "var(--accent)" }"#)
+        .unwrap();
     theme(&args(&["validate", folder.to_str().unwrap()])).unwrap();
     theme(&args(&["pack", folder.to_str().unwrap()])).unwrap();
     let package = dir.join("night.theme.suhina");

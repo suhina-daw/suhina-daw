@@ -1,0 +1,6 @@
+{
+  "format": 1,
+  "name": "Forest Amber",
+  "author": "The Suhina contributors",
+  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+}

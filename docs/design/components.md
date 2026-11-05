@@ -452,16 +452,16 @@ wheel over it, as far as its last row and no further.
 | Appearance › Waveforms | Waveform scale | Linear (default), dB ([waveforms](../spec/waveforms.md)) |
 | Appearance › Advanced | Graphics renderer | GPU (wgpu, default), OpenGL (glow) |
 
-**Appearance › Themes** features the active palette once in a full-width 220 px card
-with a 170 px preview, followed by the other themes in two columns. Compact cards are 142 px tall with a
-92 px high miniature of the same browser, grid, four MIDI/audio lanes, controls and meters;
-the lanes retain the open project's colour overrides, falling back to the candidate theme,
-with clip colours mixed at 82% over its panel surface, as in the Arrangement;
-a 10 px gap separates cards. Preview painting takes explicit palette snapshots and does
-not install a theme. The active card has an accent border and Active label, and clicking
-another card applies it immediately. A theme with variants has a row of 14 px swatches 22 px
-apart under its name (the variant's window background with its accent inside; the variant in
-use has a 2 px accent ring); the card grows by 22 px for them. The header contains the active theme name,
+**Appearance › Themes** features the active theme once in a full-width card whose thumbnail is
+16:9 and at most 170 px high, followed by the other themes in two columns, each with a 16:9
+thumbnail across the card's width. The thumbnail is the theme's `thumbnail.svg` drawn with the
+values of the theme and variant shown; a theme without one shows a card filled with its swatch
+colour. Drawing cards does not install a theme; a 10 px gap separates them. The active card has
+an accent border and Active label, and clicking another card applies it immediately. A theme
+with variants has a row of 14 px swatches 22 px apart under its name, the default variant first:
+each is a `theme-swatch` element in the variant's swatch colour, styled by the theme in use
+(a rounded square by default), and the variant in use has a 2 px accent outline; the card grows
+by 22 px for them. The header contains the active theme name,
 Edit current theme and a More menu for file actions.
 Holding the active card clears the backdrop until the primary button is released.
 Restore built-in is available in both gallery and editor: choosing an original palette

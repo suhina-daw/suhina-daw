@@ -43,6 +43,7 @@ fn night() -> ThemeEntry {
             transparent_rgb: Default::default(),
             skin: Default::default(),
             vars: Default::default(),
+            ..Default::default()
         },
     }
 }
@@ -94,12 +95,11 @@ fn the_built_in_themes_come_first_and_stay() {
     assert!(view.list.iter().any(|(id, _, built_in)| id == "nord" && *built_in));
     assert_eq!(view.list.len(), theme::built_in_themes().len() + 1);
     assert_eq!(view.colors, night().theme.colors);
-    assert_eq!(view.previews.len(), view.list.len());
-    for (id, _, _) in &view.list {
-        assert_eq!(
-            view.previews.iter().find(|(key, _)| key == id).map(|(_, colors)| *colors),
-            Some(themes.palette(id))
-        );
+    // Every built-in theme has a swatch and a thumbnail for the picker, and names its default variant.
+    for (id, _, built_in) in view.list.iter().filter(|(_, _, built_in)| *built_in) {
+        assert!(view.swatches.iter().any(|(key, _)| key == id), "{id} ({built_in})");
+        assert!(view.pictures.iter().any(|(key, svg)| key == id && !svg.contains("var(")), "{id}");
+        assert!(view.default_variants.iter().any(|(key, name)| key == id && name == "Default"), "{id}");
     }
     assert!(!view.built_in);
     assert!(!themes.put(fake));
@@ -146,7 +146,7 @@ fn editing_a_built_in_themes_colours_makes_a_variant_and_its_layout_a_copy() {
 #[test]
 fn a_declared_setting_is_set_in_the_variant_and_checked_against_its_type() {
     let sheet = "@property --glow { syntax: \"<number>\"; initial-value: 0.5; label: \"Glow\"; range: 0 1; }\n:root { --accent: #123456; }";
-    let (theme, warnings) = crate::kit::theme::from_sheet(sheet, "");
+    let (theme, warnings) = crate::kit::theme::from_css(sheet);
     assert!(warnings.is_empty(), "{warnings:?}");
     let mut themes = Themes::default();
     themes.set(vec![ThemeEntry { id: "ink".into(), theme }], None);

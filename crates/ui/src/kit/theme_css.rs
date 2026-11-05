@@ -471,7 +471,8 @@ pub fn export(theme: &Theme) -> String {
 
 /// A theme's own style sheet (`theme.css`) written from the model, for a theme that has none
 /// yet (one migrated from an earlier version, or a copy of Suhina Dark): its core property values
-/// in a `:root` rule, its name, its artwork, then `advanced`, the free-form CSS it carried.
+/// in a `:root` rule, its artwork, then `advanced`, the free-form CSS it carried. Its name is in
+/// `theme.json`.
 pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
     let mut css = String::from("/* Suhina theme. Settings are custom properties; see README.md. */\n:root {\n");
     let defaults = super::theme_vars::core_values(&Theme::default());
@@ -482,7 +483,7 @@ pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
             css.push_str(&format!("  {name}: {value};\n"));
         }
     }
-    css.push_str(&format!("}}\ntheme {{ name: \"{}\"; }}\n", theme.name.replace(['"', '\\'], "")));
+    css.push_str("}\n");
     for (role, asset) in &theme.skin.assets {
         css.push_str(&artwork_rule(role, asset));
     }
@@ -510,14 +511,12 @@ fn artwork_rule(role: &str, asset: &str) -> String {
     )
 }
 
-/// What Suhina's own editors set beyond settings, as `layout.css`: control placements and
-/// anchors, the toolbar, styles, artwork and the name. Empty when there is nothing to write.
+/// What Suhina's own editors set beyond settings and `sheet_theme` does not say: control
+/// placements and anchors, styles and artwork, as rules for `theme.css`. Empty when
+/// there is nothing to write.
 pub fn layout(theme: &Theme, sheet_theme: &Theme) -> String {
     let full = export(theme);
     let mut css = String::new();
-    if theme.name != sheet_theme.name {
-        css.push_str(&format!("theme {{ name: \"{}\"; }}\n", theme.name.replace(['"', '\\'], "")));
-    }
     // Artwork is compared by where it is kept: an edited image keeps its file, so only artwork
     // the sheet does not name needs a rule here.
     let paths = |theme: &Theme| -> std::collections::BTreeMap<String, String> {
@@ -534,7 +533,8 @@ pub fn layout(theme: &Theme, sheet_theme: &Theme) -> String {
     }
     let structure = |text: &str| -> Vec<String> {
         text.lines()
-            .filter(|line| line.starts_with(".control-") || line.starts_with("toolbar ") || is_style_line(line))
+            // The toolbar's arrangement is `theme.json`'s (`theme::file_meta`), not the sheet's.
+            .filter(|line| line.starts_with(".control-") || is_style_line(line))
             .map(str::to_owned)
             .collect()
     };
@@ -546,6 +546,13 @@ pub fn layout(theme: &Theme, sheet_theme: &Theme) -> String {
         css.push('\n');
     }
     css
+}
+
+/// Edits `source`, a theme's own sheet, from what its editors' rules were (`before`, as [`layout`]
+/// writes them) to what they are (`after`): only the declarations that differ change, and
+/// comments, `@media` rules and hand-written parts stay as they are (`suhina_style::edit`).
+pub fn edit_sheet(source: &str, before: &str, after: &str) -> Result<String, String> {
+    suhina_style::edit::update(source, before, after)
 }
 
 fn is_style_line(line: &str) -> bool {
@@ -660,7 +667,6 @@ pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
                 let property = property.trim();
                 let wanted = property == "image"
                     || match selector {
-                        "theme" => property == "name",
                         "toolbar" => true,
                         _ if selector.starts_with(".control-") => true,
                         _ => super::style_class::valid_selector(selector) && property.starts_with("--suhina-"),

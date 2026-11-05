@@ -184,10 +184,13 @@ pub struct ThemesView {
     pub transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
     /// Each theme's id, name and whether it comes with Suhina: the user's own first.
     pub list: Vec<(String, String, bool)>,
-    /// Palette snapshots for miniature previews; drawing one never installs it globally.
-    pub previews: Vec<(String, Palette)>,
-    /// Existing project colours stay unchanged when a different theme is selected.
-    pub preview_scene: crate::kit::theme_preview::Scene,
+    /// Each theme's and variant's swatch colour, by id (`theme_vars::swatch`).
+    pub swatches: Vec<(String, egui::Color32)>,
+    /// Each theme's and variant's thumbnail with its values substituted, by id; a theme without
+    /// one shows a card filled with its swatch colour.
+    pub pictures: Vec<(String, std::sync::Arc<str>)>,
+    /// Each theme's default variant's name, by the theme's id (`theme.json`).
+    pub default_variants: Vec<(String, String)>,
     /// The id of the theme in use, whether it comes with Suhina, its name and its colours.
     pub current: String,
     pub built_in: bool,
@@ -1415,7 +1418,8 @@ fn theme_card(
     active: bool,
 ) -> (egui::Response, Option<String>) {
     let base = crate::kit::theme_vars::split_id(id).0;
-    let variants: Vec<(&str, &str)> = std::iter::once((base, "Theme's own"))
+    let own = themes.default_variants.iter().find(|(theme, _)| theme == base).map_or("Default", |(_, name)| name);
+    let variants: Vec<(&str, &str)> = std::iter::once((base, own))
         .chain(
             themes
                 .variants
@@ -1425,7 +1429,9 @@ fn theme_card(
         )
         .collect();
     let swatches = if variants.len() > 1 { 22.0 } else { 0.0 };
-    let preview_height = if active { 170.0 } else { 92.0 };
+    // A thumbnail is 16:9 on every card; the large card's is at most 170 points high.
+    let preview_width = (width - 10.0).max(16.0);
+    let preview_height = if active { (preview_width * 9.0 / 16.0).min(170.0) } else { preview_width * 9.0 / 16.0 };
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, preview_height + 50.0 + swatches), Sense::hover());
     let card = Rect::from_min_size(rect.min, Vec2::new(width, preview_height + 50.0));
     let response = ui.interact(
@@ -1446,9 +1452,16 @@ fn theme_card(
         _ => name.clone(),
     };
     if ui.is_rect_visible(rect) {
-        let palette = themes.previews.iter().find(|(key, _)| key == id).map_or(&themes.colors, |(_, p)| p);
-        let preview = Rect::from_min_size(rect.min + Vec2::splat(5.0), Vec2::new(width - 10.0, preview_height));
-        crate::kit::theme_preview::paint(ui.painter(), preview, palette, &themes.preview_scene);
+        let swatch = swatch_of(themes, id);
+        let preview = Rect::from_min_size(
+            rect.min + Vec2::new((width - preview_height * 16.0 / 9.0) / 2.0, 5.0),
+            Vec2::new(preview_height * 16.0 / 9.0, preview_height),
+        );
+        let picture = themes.pictures.iter().find(|(key, _)| key == id).map(|(_, svg)| svg);
+        if !picture.is_some_and(|svg| crate::kit::skin::paint_svg(ui.painter(), preview, svg, 2.0)) {
+            // A theme without a thumbnail: a blank card in its swatch colour.
+            ui.painter().rect_filled(preview, 2.0, swatch);
+        }
         let border = if active {
             theme::accent()
         } else if response.hovered() {
@@ -1509,11 +1522,8 @@ fn theme_card(
                 chosen = Some((*variant).to_string());
             }
             if ui.is_rect_visible(area) {
-                let palette = themes.previews.iter().find(|(key, _)| key == variant).map(|(_, p)| *p);
-                let palette = palette.unwrap_or(themes.colors);
                 let painter = ui.painter();
-                painter.circle_filled(centre, 7.0, palette.window_background);
-                painter.circle_filled(centre, 4.5, palette.accent);
+                paint_swatch(painter, area.shrink(2.0), swatch_of(themes, variant));
                 let selected = *variant == in_use;
                 let ring = if selected {
                     theme::accent()
@@ -1522,11 +1532,39 @@ fn theme_card(
                 } else {
                     theme::border()
                 };
-                painter.circle_stroke(centre, 8.0, egui::Stroke::new(if selected { 2.0 } else { 1.0 }, ring));
+                painter.rect_stroke(
+                    area,
+                    5.0,
+                    egui::Stroke::new(if selected { 2.0 } else { 1.0 }, ring),
+                    egui::StrokeKind::Inside,
+                );
             }
         }
     }
     (response, chosen)
+}
+
+/// The swatch colour of the theme or variant `id`, or the panels' colour when it has none.
+fn swatch_of(themes: &ThemesView, id: &str) -> egui::Color32 {
+    themes.swatches.iter().find(|(key, _)| key == id).map_or(themes.colors.panel_background, |(_, color)| *color)
+}
+
+/// A swatch of `color`: a `theme-swatch` element with that `color` attribute, as the theme in use
+/// styles it, or a rounded square of the colour without a theme sheet.
+fn paint_swatch(painter: &egui::Painter, rect: Rect, color: egui::Color32) {
+    let radius = |r: f32| r.clamp(0.0, rect.width().min(rect.height()) / 2.0);
+    match crate::kit::native_css::theme_swatch(color) {
+        Some(style) => {
+            painter.rect_filled(rect, radius(style.radius), style.background);
+            if style.border_width > 0.0 {
+                let stroke = egui::Stroke::new(style.border_width, style.border);
+                painter.rect_stroke(rect, radius(style.radius), stroke, egui::StrokeKind::Inside);
+            }
+        }
+        None => {
+            painter.rect_filled(rect, radius(6.0), color);
+        }
+    }
 }
 
 /// Each colour appears in exactly one understandable group; the token name stays visible.

@@ -1,0 +1,7 @@
+{
+  "format": 1,
+  "name": "Editor Dark",
+  "author": "The Suhina contributors",
+  "description": "Cool neutral greys with a blue accent and blue selection, like a code editor's dark theme.",
+  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+}
