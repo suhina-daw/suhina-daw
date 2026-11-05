@@ -96,7 +96,9 @@ semitone and the rest.
 beat, as a beat of the clip's content (the clip's start marker plus the beats since the clip's
 start, times its repitch rate when it is not warped). Set on Loop length makes the loop end there.
 A value outside what the control takes is kept inside it. A slot's clip has no place on the
-arrangement's timeline, so its column has no Set buttons.
+arrangement's timeline, so its column has no Set buttons. While the playhead is outside an
+arrangement clip its Set buttons stay, greyed, so they do not come and go as a loop passes the
+clip's end.
 
 ## Tempo
 
@@ -111,8 +113,8 @@ remembers which (`docs/spec/browser.md` › Warping).
 
 - **Typing a tempo** (or dragging it) sets it by hand: the audio then fills the beats it holds at
   that tempo. A higher tempo gives the audio more beats, so it plays slower against the song and
-  the clip gets longer; its start stays. Warp turns on. An arrangement clip made longer replaces
-  what it now covers, as a stretched clip does.
+  the clip gets longer; its start stays. Warp turns on. An arrangement clip made longer stops at the next clip on its lane, so a
+  tempo dragged while it plays never removes another clip.
 - **÷2** and **×2** halve and double it, for the common half- or double-time miss.
 - **Find** (the small button after the source) lists what each source says, `Metadata 96`,
   `File name 96`, `Detected 95.9`, a source that finds nothing greyed; picking one sets the tempo
