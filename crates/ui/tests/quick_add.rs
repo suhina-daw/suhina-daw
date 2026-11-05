@@ -310,5 +310,6 @@ fn a_plugin_shows_its_format_and_the_format_buttons_choose_one() {
     let new = p.tracks.iter().find(|t| plugin_on(t).is_some()).expect("a new track with the synth");
     assert!(new.content.notes, "an instrument makes a MIDI track");
     assert!(matches!(plugin_on(new), Some(suhina_engine::model::DeviceKind::Vst3 { .. })), "{:?}", plugin_on(new));
+    assert_eq!(new.name, "Nova Synth", "named after the plug-in, as a drag of it onto the empty area names it");
     let _ = std::fs::remove_dir_all(&settings);
 }

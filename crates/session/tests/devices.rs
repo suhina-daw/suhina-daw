@@ -451,6 +451,20 @@ fn plugin_env() -> std::sync::Arc<suhina_session::PluginEnv> {
     std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into()))
 }
 
+/// A new track with a plug-in is named after it, however the plug-in is named: its id, its name
+/// or its spec, as the browser and the quick-add palette give it.
+#[test]
+fn a_track_added_with_a_plug_in_takes_its_name_by_any_of_its_names() {
+    let env = plugin_env();
+    let spec = env.catalog.plugins().find(|p| p.name == "Synth").map(|p| p.spec()).unwrap();
+    for device in ["com.vendor.synth", "Synth", spec.as_str()] {
+        let mut session = Session::new(project());
+        session.set_plugin_env(plugin_env());
+        let added = run(&mut session, "track.add", json!({ "device": device })).unwrap();
+        assert_eq!((added["name"].clone(), added["kind"].clone()), (json!("Synth"), json!("midi")), "{device}");
+    }
+}
+
 #[test]
 fn installed_plug_ins_are_added_from_the_catalog() {
     let mut session = Session::new(project());

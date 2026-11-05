@@ -93,3 +93,61 @@ fn the_kind_buttons_choose_what_is_searched() {
     assert_eq!(kinds, [Kind::Instruments]);
     assert!(offered("preset", Some(false)), "a preset says itself whether the track can take it");
 }
+
+/// The tracks' names and devices, to compare two ways of adding.
+fn tracks_and_devices(app: &App) -> Vec<(String, Vec<String>)> {
+    let p = app.session().map(|s| s.project().clone()).unwrap_or_default();
+    p.tracks
+        .iter()
+        .map(|t| {
+            let devices = p.channel_of_track(t.id).map(|c| c.devices.iter().map(|d| d.name.clone()).collect());
+            (p.shown_track_name(t.id), devices.unwrap_or_default())
+        })
+        .collect()
+}
+
+fn blank_app() -> App {
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(suhina_session::blank_project()), &[]);
+    app
+}
+
+/// A device from the palette lands as a drag from the browser does: the same commands, so the
+/// same names (a track named after its new instrument, #946) and the same devices.
+#[test]
+fn a_device_from_the_palette_lands_as_a_drag_from_the_browser_does() {
+    let device = |id: &str, name: &str, kind: &'static str| Found {
+        item: Item::Device(id.into()),
+        name: name.into(),
+        kind,
+        detail: None,
+        plugin: false,
+        format: None,
+        folder: None,
+    };
+    let dragged =
+        |found: &Found, kind| BrowserItem { key: found.item.key(), name: found.name.clone(), kind, plugin: false };
+    let fm = device("fm-synth", "FM Synth", "instrument");
+    let sampler = device("sampler", "Sampler", "instrument");
+    let reverb = device("reverb", "Reverb", "effect");
+    let cases: [(&Found, drop::ItemKind, Option<TrackId>); 4] = [
+        (&fm, drop::ItemKind::Instrument, Some(TrackId(2))),
+        (&reverb, drop::ItemKind::Effect, Some(TrackId(3))),
+        (&fm, drop::ItemKind::Instrument, None),
+        (&reverb, drop::ItemKind::Effect, None),
+    ];
+    for (found, kind, track) in cases {
+        let (mut palette, mut drag) = (blank_app(), blank_app());
+        // An instrument already there is replaced, and the track's name follows.
+        for app in [&mut palette, &mut drag] {
+            app.quick_add_choose(&sampler, Some(TrackId(2)), 0.0);
+        }
+        palette.quick_add_choose(found, track, 0.0);
+        let target = match track {
+            Some(track) => DropTarget::Track(track),
+            None => DropTarget::NewTracks { beat: Some(0.0), scene: None },
+        };
+        drag.drop_items(&[dragged(found, kind)], target, false);
+        assert_eq!(tracks_and_devices(&palette), tracks_and_devices(&drag), "{} on {track:?}", found.name);
+    }
+}
