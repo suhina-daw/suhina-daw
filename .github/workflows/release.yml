@@ -311,6 +311,12 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # A build re-run after the others' artifacts expired (7 days) would bring only its own
+      # package; the release is made only with all three.
+      - name: Check that every platform's package is here
+        env:
+          NAME: ${{ needs.version.outputs.name }}
+        run: scripts/release_packages_check.sh dist "$NAME"
       - name: Create the draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -370,6 +376,12 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # Before the previous nightly is deleted: a build re-run after the others' artifacts expired
+      # (7 days) would bring only its own package.
+      - name: Check that every platform's package is here
+        env:
+          NAME: ${{ needs.version.outputs.name }}
+        run: scripts/release_packages_check.sh dist "$NAME"
       # The commit of the nightly being replaced; the changes are counted from it.
       - name: Note the previous nightly
         id: previous
