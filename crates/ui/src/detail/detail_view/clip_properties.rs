@@ -57,7 +57,7 @@ pub(super) fn beats_text(beats: f64) -> String {
 /// of [`CLIP_WIDTH`] at the left of `area`, stacked the rows it needs at the top; returns the
 /// space it took.
 pub(super) fn clip_properties(
-    ui: &Ui,
+    ui: &mut Ui,
     painter: &egui::Painter,
     area: Rect,
     info: &ClipInfo,
@@ -138,15 +138,28 @@ pub(super) fn clip_properties(
             rows.push((label, name.clone(), ClipEdit::Focus(index)));
         }
     }
+    // An audio clip's column is its panel (`docs/spec/clip-panel.md`): groups instead of rows.
+    let panel = info.at.filter(|_| info.audio).map(|at| {
+        let clip = match at {
+            ClipRef::Arrangement(_, clip) => clip,
+            ClipRef::Slot(..) => ClipId::NONE,
+        };
+        (at, info.panel.clone().unwrap_or(AudioPanel { clip, ..AudioPanel::default() }))
+    });
     let column = if stacked {
-        let height = ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW;
+        let height = match &panel {
+            Some(_) => ROW + PAD * 2.0 + super::clip_panel::stacked_height(info),
+            None => ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW,
+        };
         Rect::from_min_size(area.min, Vec2::new(area.width(), height))
     } else {
-        // `.clip-info { width }` in the theme (120 to 480 points).
+        // `.clip-info { width }` in the theme (120 to 480 points); an audio clip's panel has three
+        // parts side by side (`docs/spec/clip-panel.md` › Groups).
         let width = {
             let _style = crate::kit::style_class::enter("clip-info");
             crate::kit::style_class::computed().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0))
         };
+        let width = if panel.is_some() { super::clip_panel::PART_WIDTH * 3.0 + PAD * 4.0 } else { width };
         Rect::from_min_max(area.min, Pos2::new(area.left() + width, area.bottom()))
     }
     .intersect(area);
@@ -172,14 +185,30 @@ pub(super) fn clip_properties(
         }
         None => (title, None),
     };
-    widgets::text_in(
-        painter,
-        name.shrink2(Vec2::new(PAD, 0.0)),
-        Align2::LEFT_CENTER,
-        &if info.others.is_empty() { info.name.clone() } else { format!("{} selected", info.others.len() + 1) },
-        theme::ui_font(theme::TEXT),
-        theme::text_primary(),
-    );
+    let title_text =
+        if info.others.is_empty() { info.name.clone() } else { format!("{} selected", info.others.len() + 1) };
+    match &panel {
+        // An audio clip's name is renamed by a double-click on it.
+        Some((at, _)) if info.others.is_empty() => {
+            super::clip_panel::clip_name(ui, painter, name.shrink2(Vec2::new(PAD, 0.0)), &info.name, *at, actions);
+        }
+        _ => widgets::text_in(
+            painter,
+            name.shrink2(Vec2::new(PAD, 0.0)),
+            Align2::LEFT_CENTER,
+            &title_text,
+            theme::ui_font(theme::TEXT),
+            theme::text_primary(),
+        ),
+    }
+    if let Some((at, panel)) = &panel {
+        let body = Rect::from_min_max(
+            Pos2::new(column.left() + PAD, title.bottom() + PAD / 2.0),
+            Pos2::new(column.right() - PAD, column.bottom() - PAD / 2.0),
+        );
+        super::clip_panel::audio_panel(ui, painter, body, info, *at, panel, stacked, actions);
+        return (column, picked);
+    }
     let mut y = title.bottom() + PAD;
     for (label, value, edit) in rows {
         let row = Rect::from_min_max(Pos2::new(column.left() + PAD, y), Pos2::new(column.right() - PAD, y + PARAM_ROW));

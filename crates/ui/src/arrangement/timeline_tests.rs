@@ -41,6 +41,7 @@ fn audio_clips_map_beats_to_file_seconds_like_the_engine() {
         seconds_per_beat: 0.5,
         rate: 1.0,
         gain_db: 0.0,
+        envelope: Vec::new(),
     };
     assert_eq!(linear.seconds(0.0), 0.5);
     assert_eq!(linear.seconds(2.0), 1.5);

@@ -40,9 +40,9 @@ mod cue;
 mod cue_tests;
 mod declick;
 #[cfg(test)]
-mod fade_cost_tests;
-#[cfg(test)]
 mod envelope_tests;
+#[cfg(test)]
+mod fade_cost_tests;
 #[cfg(test)]
 mod fade_tests;
 mod follow;

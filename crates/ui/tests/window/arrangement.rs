@@ -2430,3 +2430,62 @@ fn parts_of_two_midi_takes_show_no_crossfade() {
     harness.run();
     assert!(harness.query_by_label("Crossfade end on Drums").is_none());
 }
+
+/// The Loop clip's gain envelope points, as the project has them.
+fn loop_envelope(harness: &Harness<'static, App>) -> Vec<(f64, f64)> {
+    harness
+        .state()
+        .session()
+        .and_then(|s| {
+            let clips = s.project().arrangement.lanes.iter().flat_map(|l| &l.clips);
+            clips
+                .into_iter()
+                .find(|c| c.content == suhina_engine::model::ContentId(300))
+                .map(|c| c.audio.gain_envelope.iter().map(|p| (p.beat, p.db)).collect::<Vec<_>>())
+        })
+        .unwrap_or_default()
+}
+
+/// The clip panel's Envelope switch shows the clip's gain envelope on its waveform: a double-click
+/// on the clip adds a point, a drag moves it, a double-click on it removes it, each one undo step
+/// (`docs/spec/clip-panel.md` › Gain envelope).
+#[test]
+fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
+    let mut harness = window_with_step(audio_app(), 1.0 / 60.0);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let clip = harness.get_by_label("Clip Loop on Loop at bar 1").rect();
+    click_name_bar(&mut harness, "Clip Loop on Loop at bar 1");
+    harness.get_by_label("Envelope: Off").click();
+    harness.run();
+    assert!(harness.query_by_label("Envelope: On").is_some(), "the switch shows it");
+    // A double-click in the clip's body adds a point there.
+    let at = egui::pos2(clip.center().x, clip.bottom() - clip.height() * 0.3);
+    double_click_at(&mut harness, at);
+    let points = loop_envelope(&harness);
+    assert_eq!(points.len(), 1, "{points:?}");
+    assert!(points[0].1 < 0.0, "below 0 dB, where it was clicked: {points:?}");
+    // Dragged up, it rises.
+    let point = harness.get_by_label("Envelope point 1 of Loop").rect().center();
+    harness.hover_at(point);
+    harness.run();
+    harness.drag_at(point);
+    harness.run();
+    harness.hover_at(point - egui::vec2(0.0, 6.0));
+    harness.run();
+    harness.hover_at(point - egui::vec2(0.0, 12.0));
+    harness.run();
+    harness.drop_at(point - egui::vec2(0.0, 12.0));
+    harness.run();
+    let moved = loop_envelope(&harness);
+    assert_eq!(moved.len(), 1);
+    assert!(moved[0].1 > points[0].1, "{moved:?} after {points:?}");
+    // One undo step puts it back where it was added.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(loop_envelope(&harness), points);
+    // A double-click on the point removes it.
+    let point = harness.get_by_label("Envelope point 1 of Loop").rect().center();
+    double_click_at(&mut harness, point);
+    assert!(loop_envelope(&harness).is_empty());
+}

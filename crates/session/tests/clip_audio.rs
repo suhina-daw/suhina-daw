@@ -74,8 +74,8 @@ fn a_gain_envelope_shapes_one_clip_and_undoes_in_one_step() {
     let mut session = two_clips(&wav(&dir, "pad.wav", 2.0, 0.5));
     let [a, b] = clips(&session).try_into().unwrap();
     // Given out of order: kept in beat order. 0 dB at the start, -20 dB from beat 2.
-    let out = run(&mut session, "clip.setEnvelope", json!({ "clip": a.id.0, "points": [2.0, -20.0, 0.0, 0.0] }))
-        .unwrap();
+    let out =
+        run(&mut session, "clip.setEnvelope", json!({ "clip": a.id.0, "points": [2.0, -20.0, 0.0, 0.0] })).unwrap();
     assert_eq!(out["points"], json!([0.0, 0.0, 2.0, -20.0]));
     let [a2, b2] = clips(&session).try_into().unwrap();
     assert_eq!(a2.audio.gain_envelope.len(), 2);

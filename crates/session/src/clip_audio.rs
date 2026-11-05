@@ -38,12 +38,14 @@ pub(crate) fn set_envelope(session: &mut Session, params: &Value) -> Result<Valu
     }
     let (low, high) = (*GAIN_POINT_RANGE.start(), *GAIN_POINT_RANGE.end());
     let mut points = Vec::with_capacity(values.len() / 2);
-    for pair in values.chunks_exact(2) {
-        let (Some(beat), Some(db)) = (pair[0].as_f64(), pair[1].as_f64()) else {
+    for [beat, db] in values.as_chunks::<2>().0 {
+        let (Some(beat), Some(db)) = (beat.as_f64(), db.as_f64()) else {
             return Err("points must be numbers".into());
         };
-        if !(beat.is_finite() && beat >= 0.0 && beat <= suhina_engine::MAX_START_BEAT) {
-            return Err(format!("a point's beat must be from 0 to {}, got {beat}", suhina_engine::MAX_START_BEAT).into());
+        if !(beat.is_finite() && (0.0..=suhina_engine::MAX_START_BEAT).contains(&beat)) {
+            return Err(
+                format!("a point's beat must be from 0 to {}, got {beat}", suhina_engine::MAX_START_BEAT).into()
+            );
         }
         if !(db.is_finite() && (low..=high).contains(&db)) {
             return Err(format!("a point's dB must be from {low} to +{high}, got {db}").into());
@@ -63,9 +65,8 @@ pub(crate) fn set_envelope(session: &mut Session, params: &Value) -> Result<Valu
 fn source_named(params: &Value) -> Result<TempoSource, CommandError> {
     match Args::new(params).value("source") {
         None | Some(Value::Null) => Ok(TempoSource::Manual),
-        Some(Value::String(name)) => TempoSource::from_name(name).ok_or_else(|| {
-            format!("source must be one of metadata, name, detected or manual, got {name:?}").into()
-        }),
+        Some(Value::String(name)) => TempoSource::from_name(name)
+            .ok_or_else(|| format!("source must be one of metadata, name, detected or manual, got {name:?}").into()),
         Some(_) => Err("source must be a name: metadata, name, detected or manual".into()),
     }
 }
@@ -131,6 +132,16 @@ pub(crate) fn tempo_candidates(path: &Path, data: Option<&suhina_engine::AudioDa
     let name = suhina_media::info::tempo_from_name(stem);
     let detected = data.and_then(suhina_media::tempo::detect);
     [metadata, name, detected]
+}
+
+/// What each source says the tempo of clip `id`'s audio is (metadata, file name, detection), for
+/// the clip panel's Find menu; `None` for a clip without audio or one that is not there.
+pub fn clip_tempo_candidates(session: &Session, id: suhina_model::ClipId) -> Option<[Option<f64>; 3]> {
+    let clip = session.project.all_clips().find(|c| c.id == id)?;
+    let region = crate::audio_timing::region(&session.project, clip.content)?;
+    let path = PathBuf::from(region.absolute_file.as_deref().unwrap_or(&region.file));
+    let data = session.audio().files.get(region.pool_key().as_ref()).cloned();
+    Some(tempo_candidates(&path, data.as_deref()))
 }
 
 /// `clip.findTempo`: what each source says the clip's audio tempo is, in the order a drop reads

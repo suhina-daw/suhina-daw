@@ -83,12 +83,13 @@ fn the_clip_column_edits_the_clip() {
     info.audio = true;
     info.gain_db = Some(0.0);
     let detail = Detail::Clip(info, chain);
-    for (label, command, key, value) in [
-        ("Loop: On", "clip.setLoop", "loop", json!(false)),
-        ("Warp: Off", "clip.setAudio", "warp", json!(true)),
-        ("Mode: Smooth", "clip.setAudio", "mode", json!("high-quality")),
+    // The mode is a drop-down: its menu's choice sets it.
+    for (label, choice, command, key, value) in [
+        ("Loop: On", None, "clip.setLoop", "loop", json!(false)),
+        ("Warp: Off", None, "clip.setAudio", "warp", json!(true)),
+        ("Mode: Smooth", Some("High quality"), "clip.setAudio", "mode", json!("high-quality")),
     ] {
-        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(700.0, 400.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 400.0)).build_ui_state(
             |ui, actions: &mut Vec<Action>| {
                 show_row(ui, &detail, &[], actions, &mut Vec::new());
             },
@@ -96,6 +97,10 @@ fn the_clip_column_edits_the_clip() {
         );
         harness.get_by_label(label).click();
         harness.run();
+        if let Some(choice) = choice {
+            harness.get_by_label(choice).click();
+            harness.run();
+        }
         let actions = harness.state();
         assert_eq!(actions.len(), 1, "{label}");
         assert_eq!(actions[0].id, command);
@@ -129,7 +134,7 @@ fn an_audio_clips_column_shows_its_markers_and_gain() {
     info.loop_range = None;
     info.at = Some(ClipRef::Slot(TrackId(1), 0));
     let detail = Detail::Clip(info, chain);
-    let harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(700.0, 500.0)).build_ui_state(
+    let harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 500.0)).build_ui_state(
         |ui, actions: &mut Vec<Action>| {
             show_row(ui, &detail, &[], actions, &mut Vec::new());
         },
@@ -1040,4 +1045,212 @@ fn host_values_reach_devices_inside_groups_with_or_without_live_values() {
     assert!(live);
     assert_eq!(value(&chain.devices, &inner, "#r0"), Some(-3.0));
     assert_eq!(value(&chain.devices, &top, "#r0"), None);
+}
+
+/// The demo's Beat B shown as an audio clip with `panel`, gain `db`, transpose `transpose`, and
+/// its start marker at 1 beat.
+fn audio_detail(panel: AudioPanel, db: f64, transpose: f64) -> (Detail, ClipId) {
+    let project = demo_project();
+    let beat_b = project.arrangement.lanes[0].clips[1].id;
+    let Detail::Clip(mut info, chain) =
+        build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)))
+    else {
+        panic!("expected the clip")
+    };
+    info.audio = true;
+    info.gain_db = Some(db);
+    info.transpose = transpose;
+    info.warped = true;
+    info.markers = (1.0, 5.0);
+    info.looping = false;
+    info.loop_range = None;
+    info.panel = Some(AudioPanel { clip: beat_b, ..panel });
+    (Detail::Clip(info, chain), beat_b)
+}
+
+fn panel_harness(detail: Detail) -> egui_kittest::Harness<'static, Vec<Action>> {
+    egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(egui::vec2(1000.0, 260.0))
+        .with_step_dt(1.0 / 60.0)
+        .build_ui_state(
+            move |ui, actions: &mut Vec<Action>| {
+                show_row(ui, &detail, &[], actions, &mut Vec::new());
+            },
+            Vec::new(),
+        )
+}
+
+/// Two presses at `at` close together: a double-click.
+fn double_click(harness: &mut egui_kittest::Harness<'static, Vec<Action>>, at: egui::Pos2) {
+    harness.hover_at(at);
+    harness.run();
+    for _ in 0..2 {
+        harness.hover_at(at);
+        harness.drag_at(at);
+        harness.drop_at(at);
+        harness.step();
+    }
+    harness.run();
+}
+
+/// The Gain group's fader: dragged up it raises the gain in one command when let go; a
+/// double-click puts it at 0 dB (`docs/spec/clip-panel.md` › Groups).
+#[test]
+fn the_gain_fader_drags_and_resets() {
+    use egui_kittest::kittest::{NodeT, Queryable};
+    let (detail, beat_b) = audio_detail(AudioPanel::default(), -6.0, 0.0);
+    let mut harness = panel_harness(detail);
+    let fader = harness.get_by_label("Gain fader: -6.0 dB");
+    assert_eq!(fader.accesskit_node().role(), egui::accesskit::Role::Slider);
+    let at = fader.rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.run();
+    for dy in [5.0, 10.0, 20.0] {
+        harness.hover_at(at - egui::vec2(0.0, dy));
+        harness.run();
+        assert!(harness.state().is_empty(), "nothing is set while it is dragged");
+    }
+    harness.drop_at(at - egui::vec2(0.0, 20.0));
+    harness.run();
+    let actions = std::mem::take(harness.state_mut());
+    assert_eq!(actions.len(), 1, "one undo step for the drag");
+    assert_eq!((actions[0].id, &actions[0].params["clip"]), ("clip.setGain", &json!(beat_b.0)));
+    assert!(actions[0].params["db"].as_f64().is_some_and(|db| db > -6.0), "{:?}", actions[0].params);
+    double_click(&mut harness, at);
+    let reset = harness.state().last().map(|a| a.params["db"].clone());
+    assert_eq!(reset, Some(json!(0.0)));
+}
+
+/// The Pitch group's knob moves whole semitones and keeps the cents; the Cents field typed after
+/// a double-click keeps the semitones.
+#[test]
+fn the_pitch_knob_and_the_cents_field_set_the_transpose() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, _) = audio_detail(AudioPanel::default(), 0.0, 2.25);
+    let mut harness = panel_harness(detail);
+    let at = harness.get_by_label("Pitch: +2 st").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.run();
+    harness.hover_at(at - egui::vec2(0.0, 6.0));
+    harness.run();
+    harness.hover_at(at - egui::vec2(0.0, 12.0));
+    harness.run();
+    harness.drop_at(at - egui::vec2(0.0, 12.0));
+    harness.run();
+    let actions = std::mem::take(harness.state_mut());
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].id, "clip.setAudio");
+    // 12 points up at a quarter semitone each: 3 semitones up, the 25 cents kept.
+    assert_eq!(actions[0].params["transpose"], json!(5.25));
+    let cents = harness.get_by_label("Cents: +25 ct").rect().center();
+    double_click(&mut harness, cents);
+    harness.get_by_label("Cents value").click();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.get_by_label("Cents value").type_text("-10");
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    let typed = harness.state().last().map(|a| a.params["transpose"].clone());
+    assert_eq!(typed, Some(json!(1.9)), "2 semitones less 10 cents");
+}
+
+/// The tempo is typed into a text field opened by a double-click, halved and doubled, each a
+/// `clip.setTempo` set by hand; Escape leaves a typed tempo unset.
+#[test]
+fn the_tempo_is_typed_halved_and_doubled() {
+    use egui_kittest::kittest::Queryable;
+    let panel = AudioPanel {
+        tempo: Some(96.0),
+        tempo_source: Some(suhina_engine::model::TempoSource::Name),
+        ..AudioPanel::default()
+    };
+    let (detail, beat_b) = audio_detail(panel, 0.0, 0.0);
+    let mut harness = panel_harness(detail);
+    assert!(harness.query_by_label("Tempo: 96.00 BPM").is_some());
+    harness.get_by_label("Halve the tempo").click();
+    harness.run();
+    harness.get_by_label("Double the tempo").click();
+    harness.run();
+    let field = harness.get_by_label("Tempo: 96.00 BPM").rect().center();
+    double_click(&mut harness, field);
+    harness.get_by_label("Tempo value").click();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.get_by_label("Tempo value").type_text("124.5");
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    let sets: Vec<(f64, String)> = harness
+        .state()
+        .iter()
+        .filter(|a| a.id == "clip.setTempo")
+        .map(|a| (a.params["bpm"].as_f64().unwrap_or(0.0), a.params["source"].as_str().unwrap_or("").into()))
+        .collect();
+    assert_eq!(sets, [(48.0, "manual".into()), (192.0, "manual".into()), (124.5, "manual".into())]);
+    assert!(harness.state().iter().all(|a| a.params["clip"] == json!(beat_b.0)));
+    let before = harness.state().len();
+    double_click(&mut harness, field);
+    harness.get_by_label("Tempo value").click();
+    harness.get_by_label("Tempo value").type_text("80");
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert_eq!(harness.state().len(), before);
+}
+
+/// Set beside a marker puts it at the playhead, as a beat of the clip's content, on a quarter beat.
+#[test]
+fn set_puts_a_marker_at_the_playhead() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, _) = audio_detail(AudioPanel { playhead: Some(3.3), ..AudioPanel::default() }, 0.0, 0.0);
+    let mut harness = panel_harness(detail);
+    harness.get_by_label("Set Start marker to the playhead").click();
+    harness.run();
+    harness.get_by_label("Set End marker to the playhead").click();
+    harness.run();
+    let actions = harness.state();
+    assert_eq!(actions[0].id, "clip.setStart");
+    assert_eq!(actions[0].params["offset"], json!(3.25));
+    assert_eq!(actions[1].id, "clip.setLength");
+    assert_eq!(actions[1].params["length"], json!(2.25), "the end at 3.25, from the start marker at 1");
+}
+
+/// A slot's clip has no place on the arrangement's timeline: no Set buttons.
+#[test]
+fn a_slots_clip_has_no_set_buttons() {
+    use egui_kittest::kittest::Queryable;
+    let (Detail::Clip(mut info, chain), _) = audio_detail(AudioPanel::default(), 0.0, 0.0) else {
+        panic!("expected the clip")
+    };
+    info.at = Some(ClipRef::Slot(TrackId(1), 0));
+    let harness = panel_harness(Detail::Clip(info, chain));
+    assert!(harness.query_by_label("Set Start marker to the playhead").is_none());
+    assert!(harness.query_by_label("Start marker: 1 beats").is_some());
+}
+
+/// The fields keep a gap between them: the column is no longer one grey box over its rows
+/// (#1190).
+#[test]
+fn the_panels_fields_do_not_touch() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, _) = audio_detail(AudioPanel { tempo: Some(120.0), ..AudioPanel::default() }, 0.0, 0.0);
+    let harness = panel_harness(detail);
+    let start = harness.get_by_label("Start marker: 1 beats").rect();
+    let end = harness.get_by_label("End marker: 5 beats").rect();
+    assert!(end.top() - start.bottom() >= 3.0, "{start:?} {end:?}");
+    let warp = harness.get_by_label("Warp: On").rect();
+    let mode = harness.get_by_label("Mode: Smooth").rect();
+    assert!(mode.top() - warp.bottom() >= 3.0, "{warp:?} {mode:?}");
+}
+
+#[test]
+fn a_transpose_splits_into_semitones_and_cents_and_the_fader_maps_both_ways() {
+    assert_eq!(super::clip_panel::split_transpose(2.25), (2.0, 25.0));
+    assert_eq!(super::clip_panel::split_transpose(-0.4), (-0.0, -40.0));
+    for db in [-70.0, -40.0, -24.0, -6.0, 0.0, 12.0, 24.0] {
+        let back = super::clip_panel::fader_db(super::clip_panel::fader_position(db));
+        assert!((back - db).abs() < 1e-9, "{db} {back}");
+    }
+    assert_eq!(super::clip_panel::fader_position(0.0), 0.625);
 }

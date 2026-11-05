@@ -41,6 +41,9 @@ pub struct AudioView {
     /// Clip beats per project beat (transpose on an unwarped clip).
     pub rate: f64,
     pub gain_db: f64,
+    /// The clip's gain envelope: points of a content beat and dB from the gain, in beat order
+    /// (ADR 0035).
+    pub envelope: Vec<suhina_engine::model::GainPoint>,
 }
 
 impl AudioView {
@@ -795,6 +798,7 @@ fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<Audi
         seconds_per_beat: if tempo_bpm > 0.0 { 60.0 / tempo_bpm } else { 0.5 },
         rate: if rate.is_finite() && rate > 0.0 { rate } else { 1.0 },
         gain_db: gain_to_db(audio.gain),
+        envelope: audio.envelope_points(),
     })
 }
 

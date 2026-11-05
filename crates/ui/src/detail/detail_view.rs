@@ -25,12 +25,14 @@ use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, Action};
 
+mod clip_panel;
 mod clip_properties;
 mod expanded;
 mod group_panel;
 mod model;
 mod parameters;
 
+pub use self::clip_panel::find_tempo_key;
 use self::clip_properties::*;
 pub use self::expanded::*;
 use self::group_panel::*;

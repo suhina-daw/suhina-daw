@@ -5,4 +5,5 @@
 
 pub mod arrangement_view;
 pub mod automation_lanes;
+pub mod envelope;
 pub mod timeline;

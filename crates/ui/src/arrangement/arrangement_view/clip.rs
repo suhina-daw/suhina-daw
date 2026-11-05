@@ -351,7 +351,11 @@ pub(super) fn clip_box<'a>(
         // Clips picked by a click or moved: the time selection gives way to them.
         state.time_selection = None;
     }
-    if response.double_clicked() {
+    // With its gain envelope shown, a double-click on the clip adds a point there instead of
+    // opening it (`docs/spec/clip-panel.md` › Gain envelope).
+    let envelope_shown = clip.audio_view.is_some() && crate::arrangement::envelope::shown(ui.ctx()) == Some(clip.id);
+    let envelope_added = response.double_clicked().then(|| response.interact_pointer_pos()).flatten();
+    if response.double_clicked() && !envelope_shown {
         state.clip_opened = true;
     }
     if response.clicked() && !tool_click {
@@ -1093,6 +1097,21 @@ pub(super) fn clip_box<'a>(
             0.0,
             egui::Stroke::new(1.0, theme::text_primary()),
             StrokeKind::Inside,
+        );
+    }
+    // The gain envelope, when it is shown, over the waveform and under the gain field.
+    if envelope_shown && let Some(view) = &clip.audio_view {
+        let added = envelope_added.filter(|_| state.clip_drag.is_none());
+        crate::arrangement::envelope::show(
+            ui,
+            &painter.with_clip_rect(row.clip),
+            rect,
+            clip.length,
+            clip.id,
+            name,
+            view,
+            added,
+            actions,
         );
     }
     // The gain sits on top of the clip.
