@@ -32,7 +32,7 @@ fn volume_scale_labels_move_independently_and_can_be_hidden_in_both_directions()
                         egui::pos2(40.0, 40.0),
                         if horizontal { egui::vec2(120.0, 20.0) } else { egui::vec2(18.0, 120.0) },
                     );
-                    let response = ui.interact(fader, Id::new("scale-test"), egui::Sense::hover());
+                    let response = ui.interact(fader, Id::unique("scale-test"), egui::Sense::hover());
                     paint_fader(ui, ui.painter(), Rect::NOTHING, fader, -6.0, &response, false);
                 })
             };
@@ -107,7 +107,7 @@ fn mixer_and_name_css_materials_override_native_tint_and_paint_gradients() {
                         1,
                         0,
                         &mut state,
-                        Id::new("material-strip"),
+                        Id::unique("material-strip"),
                         &mut Vec::new(),
                     );
                 });
@@ -306,7 +306,18 @@ fn a_send_takes_its_class_and_its_own_id() {
             let mut output =
                 ctx.run_ui(egui::RawInput { time: Some(frame as f64 * 0.01), ..Default::default() }, |ui| {
                     let _frame = native_css::frame(ui);
-                    show(ui, ui.painter(), rect, column, &[], 1, 0, &mut state, Id::new("send-strip"), &mut Vec::new());
+                    show(
+                        ui,
+                        ui.painter(),
+                        rect,
+                        column,
+                        &[],
+                        1,
+                        0,
+                        &mut state,
+                        Id::unique("send-strip"),
+                        &mut Vec::new(),
+                    );
                 });
             found = output
                 .shapes

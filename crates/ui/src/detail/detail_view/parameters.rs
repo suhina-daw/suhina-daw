@@ -118,7 +118,7 @@ pub(super) fn parameter_cell(
                 if value != previous {
                     response.mark_changed();
                 }
-                response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &parameter.name));
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &parameter.name));
                 response.on_hover_text(&style.tooltip)
             })
             .inner
@@ -459,7 +459,7 @@ pub(super) fn knob(
     let angle = (-135.0 + 270.0 * position as f32).to_radians();
     let tip = center + Vec2::new(angle.sin(), -angle.cos()) * (radius - 1.0);
     painter.line_segment([center, tip], egui::Stroke::new(1.5, accent.unwrap_or_else(theme::text_primary)));
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &parameter.name));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &parameter.name));
     response
 }
 
@@ -473,7 +473,8 @@ pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Show
             Pos2::new(rect.left() + index as f32 * (part + 1.0), rect.top()),
             Vec2::new(part, rect.height()),
         );
-        let response = widgets::button_area(ui, cell, egui::Id::new(("detail-switch", index)), format!("Show {text}"));
+        let response =
+            widgets::button_area(ui, cell, egui::Id::unique(("detail-switch", index)), format!("Show {text}"));
         if response.clicked() && value != showing {
             picked = Some(value);
         }
@@ -528,7 +529,7 @@ pub(super) fn parameter_layout(
 ) -> Vec<Rect> {
     let (slots, row) = crate::kit::style_class::theme_param_grid();
     let cell = width / slots as f32;
-    let shown = || parameters.iter().filter(|p| !hidden.contains(&p.id));
+    let shown = || parameters.iter().filter(|p| !hidden.contains(&p.id) && !p.is_readout());
     let placed_size = |p: &GraphParameter| p.ui.size.unwrap_or([width, parameter_height(p)]);
     // A placed cell pushes down the columns it reaches into, wherever it is in the list.
     let placed: Vec<Rect> = shown()
@@ -597,7 +598,7 @@ pub(super) fn list_cells(graph: &GraphBox, width: f32, max_height: f32) -> Vec<R
     let Some(canvas) = &graph.canvas else {
         return parameter_layout(&graph.parameters, width, max_height, &[]);
     };
-    let shown = || graph.parameters.iter().filter(|p| !canvas.hidden_parameters.contains(&p.id));
+    let shown = || graph.parameters.iter().filter(|p| !canvas.hidden_parameters.contains(&p.id) && !p.is_readout());
     let mut skipped = canvas.hidden_parameters.clone();
     skipped.extend(shown().filter(|p| p.ui.position.is_some()).map(|p| p.id.clone()));
     let mut flow = parameter_layout(&graph.parameters, width, max_height, &skipped).into_iter();

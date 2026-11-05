@@ -33,8 +33,8 @@
 //! their own or embedded as a child in the engine's window where the engine says (Windows, X11 on
 //! Linux), with state and latency, and test plug-ins (`test:clap`, `test:clap-ports`,
 //! `test:clap-delay`, `test:vst3`, `test:gain`, `test:crash-after:<n>`, `test:hang-after:<n>`,
-//! `test:slow-load:<ms>`, `test:delay-after:<n>:<frames>`, `test:busy:<µs>`). A plug-in that
-//! reports another latency while it runs is restarted as its format asks and the engine is told
+//! `test:slow-load:<ms>`, `test:delay-after:<n>:<frames>`, `test:busy:<µs>`, `test:ring`,
+//! `test:await-ring`). A plug-in that reports another latency while it runs is restarted as its format asks and the engine is told
 //! unasked (`latency_changed`). `--scan <file>` and `--scan-worker` describe plug-in files for the
 //! scanner. ARA (ADR 0033): a VST3 instance loaded with a document is bound to a document
 //! controller the host builds from it (`ara`, over bindings generated from the vendored ARA
@@ -242,8 +242,20 @@ fn describe(file: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String>
         },
         "test:clap" | "test:clap-mix" | "test:clap-delay" | "test:clap-ports" => clap::describe(file),
         "test:vst3" | "test:vst3-mix" => vst3::describe(file),
+        #[cfg(feature = "vst2")]
+        "test:vst2" => vst2::host::describe(file),
         #[cfg(debug_assertions)]
         _ if file.starts_with(FLAKY) => flaky(file),
+        // A VST2 plug-in: a `.vst` bundle, a `.dll` or a `.so`, behind the `vst2` feature
+        // (ADR 0022); a build without it lists the file as failed.
+        _ if suhina_plugins::scan::is_vst2(std::path::Path::new(file)) => {
+            #[cfg(feature = "vst2")]
+            {
+                vst2::host::describe(file)
+            }
+            #[cfg(not(feature = "vst2"))]
+            Err("VST2 plug-ins are not hosted in this build (ADR 0022)".into())
+        }
         _ if file.to_ascii_lowercase().ends_with(".vst3") => vst3::describe(&format!("vst3:{file}")),
         _ => clap::describe(&format!("clap:{file}")),
     }
@@ -319,6 +331,13 @@ fn start(
     }
     if plugin.starts_with("vst3:") || plugin == "test:vst3" || plugin == "test:vst3-mix" {
         return vst3::Vst3Plugin::load(plugin, instance, served, sample_rate, ara).map(|p| Box::new(p) as Loaded);
+    }
+    #[cfg(feature = "vst2")]
+    if plugin.starts_with("vst2:") || plugin == "test:vst2" {
+        if ara.is_some() {
+            return Err("only a VST3 plug-in can be bound to an ARA document".into());
+        }
+        return vst2::host::Vst2Plugin::load(plugin, instance, served, sample_rate).map(|p| Box::new(p) as Loaded);
     }
     if ara.is_some() {
         return Err("only a VST3 plug-in can be bound to an ARA document".into());
@@ -666,7 +685,7 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
             }
             Message::Unloaded { instance }
         }
-        Message::OpenEditor { instance, owner, embedded } => {
+        Message::OpenEditor { instance, owner, embedded, title } => {
             let mode = match (embedded, owner) {
                 (true, Some(parent)) => window::Mode::Embedded { parent },
                 (true, None) => return Some(failed(instance, "no window to embed the editor in".into())),
@@ -675,7 +694,7 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
                     window::Mode::Floating
                 }
             };
-            match instances.get_mut(&instance).map(|loaded| loaded.open_editor(mode)) {
+            match instances.get_mut(&instance).map(|loaded| loaded.open_editor(mode, title.as_deref())) {
                 Some(Ok(size)) => Message::EditorOpened { instance, width: size.width, height: size.height },
                 Some(Err(message)) => failed(instance, message),
                 None => missing(instance),
@@ -684,6 +703,12 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
         Message::PlaceEditor { instance, placement } => {
             if let Some(loaded) = instances.get(&instance) {
                 loaded.place_editor(placement);
+            }
+            return None;
+        }
+        Message::EditorTitle { instance, title } => {
+            if let Some(loaded) = instances.get(&instance) {
+                loaded.set_editor_title(&title);
             }
             return None;
         }

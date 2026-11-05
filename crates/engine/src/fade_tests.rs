@@ -394,6 +394,37 @@ fn a_looping_launched_clip_fades_in_once_like_its_golden_file() {
     assert_golden("launched-loop-fade-in", &out);
 }
 
+/// A transport stop in the middle of an arrangement clip leaves it for silence over 5 ms, with no
+/// step in the output, and starts it again as it was.
+#[test]
+fn stopping_the_transport_joins_a_playing_audio_clip_to_silence_without_a_step() {
+    let (region, pool) = constant();
+    for stop in [LaunchCommand::Stop, LaunchCommand::StopHere] {
+        let mut renderer = crate::Renderer::stopped(&project(region.clone(), 4.0, 0.0, 0.0), &pool, SR).unwrap();
+        let play = |renderer: &mut crate::Renderer, blocks: usize| {
+            let mut out = Vec::new();
+            for _ in 0..blocks {
+                let mut block = vec![0.0f32; 64 * 2];
+                renderer.process(&mut block);
+                out.extend(left(&block));
+            }
+            out
+        };
+        renderer.handle(LaunchCommand::Play);
+        let before = play(&mut renderer, 16);
+        let level = *before.last().unwrap();
+        assert!(level > 0.1, "{level}");
+        renderer.handle(stop);
+        let after = play(&mut renderer, 4);
+        let mut joined = vec![level];
+        joined.extend(&after);
+        let step = joined.windows(2).map(|s| (s[1] - s[0]).abs()).fold(0.0, f32::max);
+        // 40 frames at this rate, a fortieth of the level each.
+        assert!(step <= level / 39.0, "a step of {step} from {level}");
+        assert_eq!(*after.last().unwrap(), 0.0);
+    }
+}
+
 /// Stopping a looping launched clip uses the short stop fade, not the clip's fade-out, so the
 /// stop stays where it was quantised.
 #[test]

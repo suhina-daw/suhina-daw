@@ -190,6 +190,104 @@ fn a_moved_note_with_replace_takes_the_place_of_the_one_it_lands_on() {
     assert_eq!(notes(&session, 1), stacked);
 }
 
+/// A resize to the length a note has changes nothing, so it replaces nothing under it.
+#[test]
+fn a_resize_of_nothing_replaces_nothing() {
+    let mut session = session_of(&[(0.0, 2.0, 60), (1.0, 0.5, 60)]);
+    let still = json!({ "track": 1, "index": 0, "notes": [0], "length": 2.0, "replace": true });
+    assert_eq!(run(&mut session, "note.resize", still).unwrap()["replaced"], json!([]));
+    let by_nothing = json!({ "track": 1, "index": 0, "notes": [0], "by": 0.0, "replace": true });
+    assert_eq!(run(&mut session, "note.resize", by_nothing).unwrap()["replaced"], json!([]));
+    assert_eq!(spans(&session), [(0.0, 2.0, 60), (1.0, 0.5, 60)]);
+}
+
+/// Of the notes a resize names, only those it changes replace what is under them.
+#[test]
+fn a_resize_replaces_only_under_the_notes_it_changes() {
+    let mut session = session_of(&[(0.0, 2.0, 60), (1.0, 0.5, 60), (4.0, 1.0, 62)]);
+    let mixed = json!({ "track": 1, "index": 0, "notes": [0, 2], "lengths": [2.0, 2.0], "replace": true });
+    assert_eq!(run(&mut session, "note.resize", mixed).unwrap()["replaced"], json!([]));
+    assert_eq!(spans(&session), [(0.0, 2.0, 60), (1.0, 0.5, 60), (4.0, 2.0, 62)]);
+}
+
+/// `notes` as (time, length, key), for a rule about where they are.
+fn spans(session: &Session) -> Vec<(f64, f64, u8)> {
+    notes(session, 1).iter().map(|n| (n.time, n.duration, n.key)).collect()
+}
+
+fn session_of(list: &[(f64, f64, u8)]) -> Session {
+    let mut session = Session::new(project());
+    run(&mut session, "note.delete", json!({ "track": 1, "index": 0, "notes": [0, 1, 2] })).unwrap();
+    let new: Vec<Value> = list.iter().map(|(t, l, k)| json!({ "time": t, "length": l, "key": k })).collect();
+    run(&mut session, "note.add", json!({ "track": 1, "index": 0, "notes": new })).unwrap();
+    session
+}
+
+#[test]
+fn replace_leaves_no_two_notes_of_a_key_overlapping() {
+    // A longer note over the next two, and into the third: the first goes, the second goes, the
+    // third keeps what runs on past it. Another key is left alone.
+    let mut session = session_of(&[(0.0, 1.0, 60), (1.0, 0.5, 60), (2.0, 0.5, 60), (3.0, 2.0, 60), (2.0, 1.0, 64)]);
+    let before = notes(&session, 1);
+    let result = run(
+        &mut session,
+        "note.resize",
+        json!({ "track": 1, "index": 0, "notes": [0], "length": 3.5, "replace": true }),
+    )
+    .unwrap();
+    assert_eq!(result, json!({ "notes": [0], "replaced": [1, 2] }));
+    assert_eq!(spans(&session), [(0.0, 3.5, 60), (3.5, 1.5, 60), (2.0, 1.0, 64)]);
+    undoes(&mut session, 1, &before);
+
+    // A note placed inside a longer one cuts that one back to where it starts.
+    let mut session = session_of(&[(0.0, 4.0, 60)]);
+    let new = json!([{ "time": 1.0, "length": 1.0, "key": 60 }]);
+    let result =
+        run(&mut session, "note.add", json!({ "track": 1, "index": 0, "notes": new, "replace": true })).unwrap();
+    assert_eq!(result, json!({ "added": [1], "count": 2, "replaced": [] }));
+    assert_eq!(spans(&session), [(0.0, 1.0, 60), (1.0, 1.0, 60)]);
+
+    // Without replace, notes may overlap, as they always could.
+    let mut session = session_of(&[(0.0, 1.0, 60), (1.0, 0.5, 60)]);
+    run(&mut session, "note.resize", json!({ "track": 1, "index": 0, "notes": [0], "length": 3.0 })).unwrap();
+    assert_eq!(spans(&session), [(0.0, 3.0, 60), (1.0, 0.5, 60)]);
+
+    // Notes moved together onto each other: the later wins, and the earlier one is cut back.
+    let mut session = session_of(&[(0.0, 2.0, 60), (1.0, 1.0, 62)]);
+    run(&mut session, "note.move", json!({ "track": 1, "index": 0, "notes": [1], "semitones": -2, "replace": true }))
+        .unwrap();
+    assert_eq!(spans(&session), [(0.0, 1.0, 60), (1.0, 1.0, 60)]);
+
+    // Paste and duplicate replace too; the index the copies have is the one after the removal.
+    let mut session = session_of(&[(0.0, 1.0, 60), (2.0, 1.0, 60)]);
+    let result = run(
+        &mut session,
+        "note.duplicate",
+        json!({ "track": 1, "index": 0, "notes": [0], "beats": 2.0, "replace": true }),
+    )
+    .unwrap();
+    assert_eq!(result, json!({ "added": [1], "count": 2, "replaced": [1] }));
+    assert_eq!(spans(&session), [(0.0, 1.0, 60), (2.0, 1.0, 60)]);
+}
+
+#[test]
+fn resizing_takes_one_length_per_note() {
+    let mut session = session_of(&[(0.0, 1.0, 60), (2.0, 1.0, 60), (4.0, 1.0, 60)]);
+    let before = notes(&session, 1);
+    run(&mut session, "note.resize", json!({ "track": 1, "index": 0, "notes": [2, 0], "lengths": [1.5, 2.0] }))
+        .unwrap();
+    assert_eq!(spans(&session), [(0.0, 2.0, 60), (2.0, 1.0, 60), (4.0, 1.5, 60)]);
+    undoes(&mut session, 1, &before);
+    for bad in [
+        json!({ "track": 1, "index": 0, "notes": [0], "lengths": [1.0, 2.0] }),
+        json!({ "track": 1, "index": 0, "notes": [0], "lengths": [0.0] }),
+        json!({ "track": 1, "index": 0, "notes": [0], "lengths": [1.0], "by": 1.0 }),
+    ] {
+        assert!(run(&mut session, "note.resize", bad).is_err());
+    }
+    assert_eq!(notes(&session, 1), before);
+}
+
 #[test]
 fn resizing_sets_or_changes_lengths() {
     let mut session = Session::new(project());
@@ -666,4 +764,34 @@ fn malformed_splits_are_refused_and_change_nothing() {
     }
     assert_eq!(session.project(), &before);
     assert!(!session.can_undo());
+}
+
+/// The last notes reach the beat a time selection ends at, and stay as they are without one.
+#[test]
+fn legato_takes_the_last_notes_to_until() {
+    let notes = [(0.0, 0.5, 60), (1.0, 0.5, 64), (2.0, 0.5, 67), (2.0, 0.5, 62)];
+    let mut session = session_of(&notes);
+    run(&mut session, "note.legato", json!({ "track": 1, "index": 0, "until": 4.0 })).unwrap();
+    assert_eq!(spans(&session), [(0.0, 1.0, 60), (1.0, 1.0, 64), (2.0, 2.0, 67), (2.0, 2.0, 62)]);
+
+    let mut session = session_of(&notes);
+    run(&mut session, "note.legato", json!({ "track": 1, "index": 0 })).unwrap();
+    assert_eq!(spans(&session), [(0.0, 1.0, 60), (1.0, 1.0, 64), (2.0, 0.5, 67), (2.0, 0.5, 62)]);
+
+    let mut session = session_of(&notes);
+    run(&mut session, "note.legato", json!({ "track": 1, "index": 0, "until": 2.0 })).unwrap();
+    assert_eq!(
+        spans(&session),
+        [(0.0, 1.0, 60), (1.0, 1.0, 64), (2.0, 0.5, 67), (2.0, 0.5, 62)],
+        "not before they start"
+    );
+}
+
+/// Legato replaces only under the notes it lengthened, not under a selected note it left alone.
+#[test]
+fn legato_replaces_only_under_the_notes_it_lengthens() {
+    let mut session = session_of(&[(0.0, 0.5, 60), (1.0, 1.0, 60), (1.2, 0.5, 60), (2.0, 0.5, 62)]);
+    let params = json!({ "track": 1, "index": 0, "notes": [0, 1, 3], "replace": true });
+    run(&mut session, "note.legato", params).unwrap();
+    assert_eq!(spans(&session), [(0.0, 1.0, 60), (1.0, 1.0, 60), (1.2, 0.5, 60), (2.0, 0.5, 62)]);
 }

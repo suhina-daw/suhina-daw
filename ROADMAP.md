@@ -15,13 +15,13 @@ primary platform; Windows and macOS are supported.
 | M7 | **More formats:** DAWproject import and export | not started |
 | M8 | **UI:** Launcher and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Launcher and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
-How far this is from a full clip-launching DAW, and the order the gap is built in: the
-[parity report](docs/research/parity-live-12.md) and
-[ADR 0016](docs/decisions/0016-parity-target.md) (proposed).
+What Suhina aims at, what it leaves out and the order the missing parts are built in:
+[ADR 0016](docs/decisions/0016-scope.md) (proposed). The README's status figure shows how much of
+each area works today.
 
 ## Next (order proposed in ADR 0016)
 
-The gaps that matter most, in the order [ADR 0016](docs/decisions/0016-parity-target.md) proposes
+The gaps that matter most, in the order [ADR 0016](docs/decisions/0016-scope.md) proposes
 (its build order has the reasons and sizes):
 
 1. **MIDI note editing:** the piano roll in the detail area and note commands (add, move, resize,
@@ -68,9 +68,8 @@ its copyright notices kept and credited in [`ATTRIBUTION.md`](ATTRIBUTION.md).
   and tested: [`docs/spec/device-import.md`](docs/spec/device-import.md). The sampler and drum
   sampler as import targets: [#101](https://github.com/suhina-daw/suhina-daw/issues/101).
 - **Order:** EQ and filter first, then bus compressor and the modulation delay (the delay and
-  reverb are done); multiband dynamics,
-  saturation, the sampler and drum sampler later
-  ([ADR 0016](docs/decisions/0016-parity-target.md)).
+  reverb are done, and multiband dynamics); saturation, the sampler and drum sampler later
+  ([ADR 0016](docs/decisions/0016-scope.md)).
 
 ### The devices
 
@@ -90,16 +89,16 @@ exists in `devices/`, passes its tests and runs in track chains.
 | NAM Amp Modeler: a `.nam` capture through the pure-Rust `nam-rs` inference (MIT), with trims, its own EQ, HQ for the A2 width dial, a trim delay | nam-rs (MIT) | done |
 | NAM Cab Loader: a `.wav` impulse response through uniform-partitioned FFT convolution, with a phase invert, a high pass, tone cuts, a trim delay and a volume | fft-convolver (MIT) under `dsp` | done |
 | pitch, a MIDI effect: transposes by semitones or scale degrees, Block, Fold or Limit to a key window | own | done; step buttons planned |
-| multiband dynamics, upward and downward | own crossovers and detectors | planned |
+| multiband: three bands, above and below stages (downward and upward compression, expansion), Amount and Time; imported from Live Sets | own crossovers and level followers | done; side-chain planned |
 | delay: stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze | own (`dsp` delay lines) | done |
 | modulation delay | own delay lines | planned |
 | reverb: algorithmic, early reflections, damped feedback delay network, chorus, freeze | own | done |
 | convolution reverb | own convolution | planned |
 | saturator: eight curves, Color filters and their inverse, post clip, waveshaper, dry/wet | own, oversampled | done |
 | multi-stage saturation | own, oversampled | planned |
-| EQ: eight bands of eight types, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q | own (`dsp` state-variable filters) | done; analyser, Audition and a curve display planned |
+| EQ: eight bands of eight types, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q | own (`dsp` state-variable filters) | done, with the panel's response display and its output spectrum's analyser; Audition planned |
 | filter | own (`dsp` filters) | planned |
-| FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine (32 algorithms) done; more waveforms and a filter planned |
+| FM synth: six operators, 43 algorithms, waveforms and drawn partials, DX7 and time envelopes, filter and shaper, two LFOs, modulation matrix, spread, randomizer ([spec](docs/spec/fm-synth.md)) | MSFA (Apache-2.0) via Dexed, own parts around it | done; import from Live Sets planned |
 | wavetable synth | Vital (GPL-3.0), under its own name | planned |
 | subtractive synth | own, Surge XT (GPL-3.0) for reference | planned |
 | sampler | own | single-source Simple/Grain instrument, SDK panel, source loading and recording, tempo-synchronised sample Warp with six selectable modes and automatically initialized, editable source BPM |
@@ -124,7 +123,7 @@ command with undo. Behaviour, detectors and tests: [`docs/spec/audio-to-midi.md`
 ## Later, not ordered
 
 FL Studio projects (`.flp`), MIDI controllers and remote mapping (hardware controllers: scope in
-[ADR 0016](docs/decisions/0016-parity-target.md)), devices of an imported project that
+[ADR 0016](docs/decisions/0016-scope.md)), devices of an imported project that
 Suhina cannot run kept as placeholders and copied along with the project
 ([device import](docs/spec/device-import.md)), bridging Windows plug-ins.
 
@@ -141,7 +140,8 @@ refused or suspended, never by losing its edits.
 
 ## What works now
 
-<!-- A new bullet goes in a file of its own under docs/works-now/ (its README says how), not here. -->
+<!-- FM Synth as a full FM instrument: operator waveforms and drawn partials, envelopes in seconds that loop, a filter and shaper per note, a second LFO up to audio rate, a modulation matrix, stereo spread, its own panel, and Random, which gives a sound new values by section (`device.randomize`).
+- A new bullet goes in a file of its own under docs/works-now/ (its README says how), not here. -->
 
 - Audio settings can open the active ASIO driver's native control panel, and
   show the engine block separately from the measured driver callback size.
@@ -200,6 +200,27 @@ refused or suspended, never by losing its edits.
   waveform, SDK controls, browser/system sample drops and recording from the armed
   track's selected audio input. Sample replacement is undoable; missing sources can
   be relinked. Multisample zones remain planned.
+
+- Sampler has visible Sample/Slice/Grain modes, a source-tempo grid with snap,
+  editable automatic boundaries with persistent corrections, stereo waveform lanes,
+  pointer-anchored zoom, slice selection and audition, and separate slice overlap/release controls.
+
+- Mixer selections move together: a send, fader or pan dragged on one of several selected tracks moves
+  the others by the same amount while it is dragged, in one undo step, and Ctrl-click and Shift-click
+  select from a channel strip's background too (`track.setMixerValues`). Sends stop at 0 dB.
+- A plug-in editor in a window of its own is titled after its track and follows a rename or a move.
+
+- Bluetooth headphones are in Settings › Audio › Output's Device list: a device that cannot say what
+  it offers yet stays listed, an output connected while the page shows appears within a few seconds,
+  and on Linux a running PulseAudio or PipeWire server is a driver of its own to choose them on.
+
+- **Take lanes as child rows:** take lanes appear when a recording stops, with a mark on the clip
+  while it runs; each lane sizes and zooms like a track; Ctrl and a drag paints an area across lanes
+  to delete or cut (`take.deleteRange`, `take.cutRange`), pieces move like clips (`take.movePieces`),
+  and a piece's lower corners bring back the recording around it (`take.trimPiece`); crossfades
+  between parts show on the track and are set by a handle (`take.setCrossfade`), with their default
+  in Settings; and a part moved or copied on the track takes its takes along
+  ([#1078](https://github.com/suhina-daw/suhina-daw/issues/1078)).
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
@@ -269,6 +290,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The NAM Amp Modeler and NAM Cab Loader run a `.nam` model and a `.wav` impulse response from
   the NAM folders in Settings, with `device.setNamFile` to load a file and `device.file` to read
   it ([nam spec](docs/spec/nam-amp-and-cab.md)).
+- Multiband dynamics: the multiband effect splits a track into three bands and gives each an above stage (downward compression or upward expansion) and a below stage (upward compression or downward expansion), with Amount and Time over all of them; a Live Set's multiband dynamics device imports into it with its settings ([spec](docs/spec/multiband.md)). Its panel shows each band's level, gain change and the input spectrum as it plays, with crossovers and thresholds dragged directly, a solo per band and an OTT quick preset. The side-chain is planned.
+- Live values on device panels: a built-in device can hand its panel levels, gain changes or a spectrum while it plays ([ADR 0032](docs/decisions/0032-device-readouts.md)); the multiband panel is the first to use it.
 - MIDI effects run before a track's instrument: the pitch effect transposes the notes by
   semitones or by steps along the playing clip's scale and keeps them inside a window of keys
   (Block, Fold, Limit); a note-off always ends the key its note started
@@ -476,11 +499,14 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   about one heavy plug-in, and a slow or hung plug-in holds up only its own track
   ([#151](https://github.com/suhina-daw/suhina-daw/issues/151)).
 - Still to do: checking an imported Live Set
-  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), Wayland and
-  macOS editors, VST2 hosting — decided in
+  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), and the
+  Wayland editors — VST2 hosting decided in
   [ADR 0022](docs/decisions/0022-vst2-interface-description.md) (VeSTige, pinned; the
-  2026-10-31 amendment allows shipping) and begun
-  with the interface layer, the mock and the probe
+  2026-10-31 amendment allows shipping) and built in: the interface layer, the mock and the
+  probe, the host that runs a VST2 plug-in on the same boundary as the other formats, the
+  scan of the VST folders and added folders, a project's VST2 plug-in that has no VST3 or
+  CLAP copy running through it with its saved bank, and its editor in a window of its own or
+  embedded where the platform allows (Windows, X11)
   ([#1066](https://github.com/suhina-daw/suhina-daw/issues/1066),
   [spec](docs/spec/plugin-vst2.md)).
 
@@ -987,3 +1013,15 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - Project-open audio references stay inside the project folder; external files require explicit relinking.
 
 - Sampler Loop playback uses Fade in and Fade out for its edges, without a separate Loop fade field or a shortened loop.
+
+- The piano roll's keys look like a keyboard in a choice of styles (Bone, Stone, Night), name the
+  keys you choose, select ranges by dragging (Shift adds another), and a strip beside them names the
+  row under the pointer and zooms the rows. Notes replace what they land on unless stacked notes are
+  allowed, Legato follows the next note on any key, Shift+arrow stops at the grid and the next note,
+  and the audition sounds notes from the press and at each pitch of a drag. A rectangle over no note
+  selects a stretch of time for the keys to act on, a bar on the ruler shows what is selected in time,
+  and a click leaves a mark where a paste goes. Shift goes on from a time selection, here and in the
+  Arrangement, a selected note has a colour of its own, and a double-click with the right button on
+  a ghost note opens its clip. With several MIDI clips picked, a strip over the ruler shows them all,
+  and a click on a bar or a faint note gives that clip the focus.
+

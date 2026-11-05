@@ -902,7 +902,7 @@ fn paint_variant(
     let scale = painter.ctx().pixels_per_point();
     let w = (rect.width() * scale).ceil().clamp(1.0, 1024.0) as u32;
     let h = (rect.height() * scale).ceil().clamp(1.0, 1024.0) as u32;
-    let cache_id = egui::Id::new("skin-textures");
+    let cache_id = egui::Id::unique("skin-textures");
     let cache = painter
         .ctx()
         .data_mut(|data| data.get_temp_mut_or_default::<Arc<std::sync::Mutex<Textures>>>(cache_id).clone());

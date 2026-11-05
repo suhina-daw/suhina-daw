@@ -7,7 +7,7 @@ use crate::kit::skin::{self, State, Toolbar};
 use crate::settings::settings_view::ThemeRequest;
 
 fn edit_id() -> Id {
-    Id::new("edit-theme-toolbar")
+    Id::unique("edit-theme-toolbar")
 }
 
 #[derive(Clone, Default)]
@@ -18,7 +18,7 @@ struct EditDraft {
 }
 
 fn rects_id() -> Id {
-    Id::new("toolbar-edit-rects")
+    Id::unique("toolbar-edit-rects")
 }
 
 /// Restores each sibling module before entering the next one; geometry remains native.
@@ -80,7 +80,7 @@ impl App {
         actions: &mut Vec<Action>,
     ) -> bool {
         let rect = ui.max_rect();
-        let response = ui.interact(rect, Id::new("toolbar-context"), Sense::click());
+        let response = ui.interact(rect, Id::unique("toolbar-context"), Sense::click());
         ui.ctx().data_mut(|d| d.insert_temp(rects_id(), Vec::<(String, Rect, Rect)>::new()));
         ui.ctx().data_mut(|d| {
             if d.get_temp::<EditDraft>(edit_id()).is_some_and(|draft| draft.theme_id != self.settings.theme) {
@@ -211,7 +211,7 @@ impl App {
         let rects = ui.ctx().data(|d| d.get_temp::<Vec<(String, Rect, Rect)>>(rects_id())).unwrap_or_default();
         let mut done = false;
         let mut cancel = ui.input(|i| i.key_pressed(Key::Escape));
-        egui::Area::new(Id::new("toolbar-edit-overlay"))
+        egui::Area::new(Id::unique("toolbar-edit-overlay"))
             .order(egui::Order::Foreground)
             .movable(false)
             .fixed_pos(bar.min)
@@ -227,9 +227,9 @@ impl App {
                     painter.hline(bar.x_range(), y, egui::Stroke::new(0.5, ink.gamma_multiply(0.18)));
                 }
                 for (name, base, at) in &rects {
-                    let response = overlay.interact(*at, Id::new(("move-toolbar", name)), Sense::click_and_drag());
+                    let response = overlay.interact(*at, Id::unique(("move-toolbar", name)), Sense::click_and_drag());
                     response.widget_info(|| {
-                        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Move toolbar {name}"))
+                        egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Move toolbar {name}"))
                     });
                     overlay.painter().rect_stroke(*at, 2.0, egui::Stroke::new(1.0, ink), egui::StrokeKind::Inside);
                     if response.drag_started() {
@@ -253,7 +253,7 @@ impl App {
                 }
             });
         egui::Window::new("Edit toolbar")
-            .id(Id::new("toolbar-edit-tools"))
+            .id(Id::unique("toolbar-edit-tools"))
             .default_pos(bar.left_bottom() + Vec2::new(8.0, 8.0))
             .resizable(false)
             .collapsible(false)
@@ -333,7 +333,7 @@ impl App {
         match module {
             "browser" => self.browser_toggle(ui, &painter, rect),
             "tempo" => {
-                ui.ctx().data_mut(|d| d.insert_temp(Id::new("sampler-tempo"), grid.tempo_bpm));
+                ui.ctx().data_mut(|d| d.insert_temp(Id::unique("sampler-tempo"), grid.tempo_bpm));
                 self.tempo_field(ui, &painter, rect, grid.tempo_bpm, false, actions);
             }
             "signature" => {
@@ -353,7 +353,7 @@ impl App {
                     &painter,
                     caption,
                     Align2::LEFT_CENTER,
-                    "Grid",
+                    "Quantize",
                     theme::ui_font(theme::TEXT_SMALL),
                     theme::text_hint(),
                 );
@@ -373,9 +373,7 @@ impl App {
                         },
                     )
                     .response;
-                    response.widget_info(|| {
-                        egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, QUANTIZATION_LABEL)
-                    });
+                    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, QUANTIZATION_LABEL));
                 });
                 if chosen != current {
                     actions.push(Action::new("launcher.setQuantization", json!({"value":chosen})));
@@ -408,7 +406,7 @@ impl App {
                     }
                     let at = middle(index as f32 * 29.0, 28.0);
                     let at = crate::kit::control_layout::place(&format!("transport-{role}"), at, ui.max_rect());
-                    let response = widgets::button_area(ui, at, Id::new(role), label);
+                    let response = widgets::button_area(ui, at, Id::unique(role), label);
                     let _style = crate::kit::style_class::enter_named_response("button", role, &response);
                     if response.clicked() {
                         actions.push(if index == 0 { self.play_action() } else { self.stop_action() });
@@ -467,11 +465,11 @@ impl App {
                     theme::mono_font(theme::TEXT_SMALL),
                     theme::text_secondary(),
                 );
-                let response = ui.interact(rect, Id::new("cpu-ram"), Sense::hover());
-                response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &text));
+                let response = ui.interact(rect, Id::unique("cpu-ram"), Sense::hover());
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
             }
             "views" => {
-                let carrying = self.carry.is_some() || self.arrangement.dragged_clip().is_some();
+                let carrying = self.carrying_clip(ui.ctx());
                 for (index, view, name) in [(0, View::Session, "Launcher"), (1, View::Arrangement, "Arrangement")] {
                     let at = middle(index as f32 * 86.0, 86.0);
                     if widgets::button(ui, &painter, at, name, &format!("{name} view")) {

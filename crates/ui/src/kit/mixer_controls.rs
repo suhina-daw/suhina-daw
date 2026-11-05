@@ -304,7 +304,7 @@ pub fn track_type(
         (false, false) => return,
     };
     let response = ui.interact(rect.intersect(painter.clip_rect()), id, egui::Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("{name}: {label}")));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("{name}: {label}")));
     let state = super::skin::State::response(&response, false);
     response.on_hover_text(label);
     let center = rect.center();

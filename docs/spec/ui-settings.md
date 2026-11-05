@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-05
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/gradient_editor.rs
@@ -82,6 +82,7 @@ what is inside it).
 | Devices | Device panels | Device chain layout, Long parameter lists, Detail area width |
 | Importing | Dropping files | Tracks for dropped files, Warp mode for samples |
 | Arrangement | Clip editing | Let audio clips overlap, Let MIDI clips overlap, Double-click makes a clip, Clip menu name field, Clip drag handle, Paste replaces clip |
+| Arrangement | Take lanes | Take crossfade (10 ms, 20 ms, 40 ms, Custom; 10 ms by default), Custom take crossfade (shown with Custom, 1 to 500 ms; [recording](recording.md#take-lanes)) |
 | Arrangement | Time and play | Select time with, Start marker follows selection, Play from, Playhead after Stop |
 | Arrangement | View | Grid inside clips, Waveform size, Waveform and note colour (Theme, Auto, Light, Dark, Custom), Custom waveform colour (shown with Custom), Audio clip colour strength |
 | Arrangement | Tracks | New track colour, New clip colour, Track header colour strength, Track header side (Theme, Left, Right), Return tracks, Returns in new projects (A and B, or None, #898), Alt+wheel resizes |
@@ -91,7 +92,7 @@ what is inside it).
 | Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights, Copy names |
 | Launcher and mixer | Launching | Select launched clip |
 | Launcher and mixer | Mixer | Mixer control style |
-| Clip editor | Piano roll | Full-height piano roll covers, Piano roll grid source, Piano roll toolbar size, Moved notes replace notes |
+| Clip editor | Piano roll | Full-height piano roll covers, Piano roll toolbar size, Allow stacked notes, Piano key style, Piano key names |
 | Browser | Browser | Browser side, Recent item kinds layout, Dropping on a folder |
 | Browser | Previews | Preview selected file, Preview volume |
 | Browser | Sample map | Sample map layout, Preview on map hover, Map sample length limit, Map labels |

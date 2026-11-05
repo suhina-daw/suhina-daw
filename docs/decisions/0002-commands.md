@@ -4,7 +4,7 @@ read_when: adding a command, undo, redo, command registry, params, CommandSpec
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-10-24
+last_verified: 2026-11-02
 covers:
   - crates/session/src/commands.rs
   - crates/session/src/commands

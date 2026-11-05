@@ -445,6 +445,12 @@ fn project_files_are_known_by_their_extension() {
     for name in ["a.locr", "a.LOCR", "a.als", "a.json", "a", "suhina", "a.suhina.saving"] {
         assert!(!is_project_file(Path::new(name)), "{name}");
     }
+    for name in ["Bass.fm-synth.preset.suhina", "Bass.PRESET.SUHINA", "dir/b c.preset.suhina"] {
+        assert!(is_preset_file(Path::new(name)) && !is_project_file(Path::new(name)), "{name}");
+    }
+    for name in ["Bass.fm-synth.suhina", "preset.suhina", "song.reverb.suhina"] {
+        assert!(!is_preset_file(Path::new(name)) && is_project_file(Path::new(name)), "{name}");
+    }
 }
 
 #[test]
@@ -477,6 +483,9 @@ fn hostile_values_are_errors_not_crashes() {
         r#"{ "transport": { "tempo_bpm": 0 } }"#,
         r#"{ "transport": { "time_signature": [0, 4] } }"#,
         r#"{ "transport": { "time_signature": [300, 4] } }"#,
+        r#"{ "transport": { "time_signature": [4, 32] } }"#,
+        r#"{ "transport": { "time_signature": [4, 6] } }"#,
+        r#"{ "launcher": { "scenes": [ { "name": "A", "time_signature": [4, 64] } ], "columns": [] } }"#,
         r#"{ "launcher": { "scenes": [ { "name": "A", "time_signature": [4, 0] } ], "columns": [] } }"#,
         r#"{ "launcher": { "scenes": [ { "name": "A", "time_signature": "4/4" } ], "columns": [] } }"#,
         r#"{ "transport": { "tempo_changes": 3 } }"#,
@@ -489,6 +498,7 @@ fn hostile_values_are_errors_not_crashes() {
         r#"{ "transport": { "time_signature_changes": [ { "bar": 0, "time_signature": [3, 4] } ] } }"#,
         r#"{ "transport": { "time_signature_changes": [ { "bar": -2, "time_signature": [3, 4] } ] } }"#,
         r#"{ "transport": { "time_signature_changes": [ { "bar": 2, "time_signature": [3, 5] } ] } }"#,
+        r#"{ "transport": { "time_signature_changes": [ { "bar": 2, "time_signature": [3, 32] } ] } }"#,
         r#"{ "transport": { "time_signature_changes": [ { "bar": 2, "time_signature": [3] } ] } }"#,
         r#"{ "transport": { "time_signature_changes": [ { "bar": 2 } ] } }"#,
         r#"{ "channels": [ { "id": 1, "role": "boss" } ] }"#,

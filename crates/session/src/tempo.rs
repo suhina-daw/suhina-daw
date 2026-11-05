@@ -145,7 +145,7 @@ fn valid(ts: TimeSignature) -> Result<TimeSignature, CommandError> {
         Ok(ts)
     } else {
         Err(format!(
-            "{}/{} is not a time signature: the numerator is 1 to 99, the denominator 1, 2, 4, 8, 16, 32 or 64",
+            "{}/{} is not a time signature: the numerator is 1 to 99, the denominator 1, 2, 4, 8 or 16",
             ts.numerator, ts.denominator
         )
         .into())

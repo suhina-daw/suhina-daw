@@ -3,7 +3,7 @@ description: What each kind of document under docs/ holds and does not hold, the
 read_when: writing or editing a document, ADR, amendment, spec, decision status, built field, superseding an ADR, where text goes, docs check, Built so far, version history
 type: howto
 status: current
-last_verified: 2026-10-22
+last_verified: 2026-11-02
 covers:
   - scripts/docs.py
   - scripts/test_docs_structure.py

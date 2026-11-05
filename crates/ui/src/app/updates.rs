@@ -170,7 +170,7 @@ impl Updates {
     /// Draws Help › Check for updates… over `area`.
     pub fn show(&mut self, ui: &Ui, area: Rect, settings: &UpdateSettings) -> Option<Wanted> {
         let channel = settings.channel();
-        let choice = egui::Area::new(Id::new("updates-dialog"))
+        let choice = egui::Area::new(Id::unique("updates-dialog"))
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
             .show(ui.ctx(), |ui| {

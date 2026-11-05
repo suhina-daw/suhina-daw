@@ -85,6 +85,7 @@ mod sends;
 mod sends_tests;
 mod sine;
 mod slot_factory;
+pub mod spectrum;
 mod stretch;
 mod swap;
 mod tempo;
@@ -116,7 +117,7 @@ pub use live::{
     LIVE_QUEUE, LiveEvent, LiveFilter, LivePorts, LiveSender, LiveSource, MAX_ARMED, MAX_SOURCES, StampClock, live_now,
     port_id,
 };
-pub use meters::{Level, MAX_METERED_TRACKS, MeterMonitor, PEAK_FALL_DB_PER_SECOND, RMS_SECONDS};
+pub use meters::{Level, MAX_METERED_TRACKS, MAX_READOUT_DEVICES, MeterMonitor, PEAK_FALL_DB_PER_SECOND, RMS_SECONDS};
 pub use metronome::ClickSound;
 use plugin::{DEADLINE_SHARE, Delay};
 pub use plugin::{
@@ -592,6 +593,12 @@ impl Renderer {
         graph.launcher.monitor.running.store(!options.stopped, std::sync::atomic::Ordering::Relaxed);
         let mut meters = meters::MeterWriter::new(sample_rate);
         meters.assign(graph.levels.tracks());
+        // Every chain captures its watched devices' output into the meter monitor's spectrum
+        // rings, on every path that runs its devices (docs/spec/eq.md › The panel › The
+        // analyser).
+        for chain in &mut graph.chains {
+            chain.spectrum = Some(std::sync::Arc::clone(&meters.monitor.spectrum));
+        }
         graph
             .launcher
             .monitor

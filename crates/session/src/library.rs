@@ -7,10 +7,11 @@
 //! on [`Projects`] like the `plugin.*` commands, and never change a project.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use serde_json::{Value, json};
 use suhina_device_api::Role;
-use suhina_library::{FileKind, Group, Item, Library, Query};
+use suhina_library::{FileKind, FileSearch, Group, Item, Library, Query};
 
 use crate::commands::{Args, CommandKind, CommandSpec, Param, ParamType, optional, param};
 use crate::devices::role_name;
@@ -401,6 +402,10 @@ fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
             let detail = Some(format!("{} {}", plugin.format(), plugin.vendor).trim().to_string());
             Some(Found { name: plugin.name.clone(), kind, detail, plugin: true, folder: None, item })
         }
+        Item::Stock(key) => {
+            let name = suhina_device_registry::stock_preset(key)?.preset.name.clone();
+            Some(Found { name, kind: "preset", detail: None, plugin: false, folder: None, item })
+        }
     }
 }
 
@@ -451,6 +456,65 @@ pub fn search_items(
     tags: &[String],
     limit: usize,
 ) -> Result<Vec<Found>, CommandError> {
+    Ok(prepare_search(projects, text, category, place, tags, limit)?.run(&AtomicBool::new(false)))
+}
+
+/// A search with everything that needs the library looked up, and its files still to look
+/// through, which [`PreparedSearch::run`] does on any thread.
+pub struct PreparedSearch {
+    /// A place that lists its items itself (pinned, recent): the answer, in its order.
+    listed: Option<Vec<Found>>,
+    ranked: Vec<(u8, Found)>,
+    files: Option<FileSearch>,
+    words: Vec<String>,
+    limit: usize,
+}
+
+impl PreparedSearch {
+    /// How many files it looks through.
+    pub fn files(&self) -> usize {
+        self.files.as_ref().map_or(0, FileSearch::files)
+    }
+
+    /// What was found, best first; nothing from the files once `cancel` is set.
+    pub fn run(self, cancel: &AtomicBool) -> Vec<Found> {
+        if let Some(listed) = self.listed {
+            return listed;
+        }
+        let mut ranked = self.ranked;
+        for file in self.files.iter().flat_map(|files| files.run(cancel)) {
+            let rank = suhina_library::rank(&self.words, file.name(), &file.rel).unwrap_or(3);
+            ranked.push((
+                rank,
+                Found {
+                    name: file.name().to_string(),
+                    kind: file_kind_name(file.kind),
+                    detail: None,
+                    plugin: false,
+                    folder: Some(file.folder.clone()),
+                    item: Item::File(file.path),
+                },
+            ));
+        }
+        ranked.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then(a.1.name.len().cmp(&b.1.name.len()))
+                .then(suhina_library::natural_cmp(&a.1.name, &b.1.name))
+        });
+        ranked.truncate(self.limit);
+        ranked.into_iter().map(|(_, f)| f).collect()
+    }
+}
+
+/// [`search_items`] up to where it looks through the files.
+pub fn prepare_search(
+    projects: &mut Projects,
+    text: &str,
+    category: Category,
+    place: Option<&str>,
+    tags: &[String],
+    limit: usize,
+) -> Result<PreparedSearch, CommandError> {
     let limit = if limit == 0 { suhina_library::MAX_RESULTS } else { limit.min(suhina_library::MAX_RESULTS) };
     let words = suhina_library::words(text);
     let tagged =
@@ -474,7 +538,7 @@ pub fn search_items(
                 break;
             }
         }
-        return Ok(out);
+        return Ok(PreparedSearch { listed: Some(out), ranked: Vec::new(), files: None, words, limit });
     }
     let within = place.map(PathBuf::from);
     let mut ranked: Vec<(u8, Found)> = Vec::new();
@@ -491,6 +555,22 @@ pub fn search_items(
                 folder: None,
             };
             if let Some(rank) = suhina_library::rank(&words, &info.name, &info.id)
+                && fits(&found, category)
+                && tagged(projects.file_library_mut(), &found.item.key())
+            {
+                ranked.push((rank, found));
+            }
+        }
+        for stock in suhina_device_registry::stock_presets() {
+            let found = Found {
+                item: Item::Stock(stock.key.to_string()),
+                name: stock.preset.name.clone(),
+                kind: "preset",
+                detail: None,
+                plugin: false,
+                folder: None,
+            };
+            if let Some(rank) = suhina_library::rank(&words, &stock.preset.name, &stock.tags.join(" "))
                 && fits(&found, category)
                 && tagged(projects.file_library_mut(), &found.item.key())
             {
@@ -518,30 +598,13 @@ pub fn search_items(
         }
     }
     let kinds = category.file_kinds();
-    if !kinds.is_empty() {
+    let files = (!kinds.is_empty()).then(|| {
         let query = Query { text: text.to_string(), kinds: kinds.to_vec(), within, tags: tags.to_vec(), limit };
         let library = projects.file_library_mut();
         library.poll();
-        for file in library.search(&query) {
-            let rank = suhina_library::rank(&words, file.name(), &file.rel).unwrap_or(3);
-            ranked.push((
-                rank,
-                Found {
-                    name: file.name().to_string(),
-                    kind: file_kind_name(file.kind),
-                    detail: None,
-                    plugin: false,
-                    folder: Some(file.folder.clone()),
-                    item: Item::File(file.path),
-                },
-            ));
-        }
-    }
-    ranked.sort_by(|a, b| {
-        a.0.cmp(&b.0).then(a.1.name.len().cmp(&b.1.name.len())).then(suhina_library::natural_cmp(&a.1.name, &b.1.name))
+        library.prepare_search(&query)
     });
-    ranked.truncate(limit);
-    Ok(ranked.into_iter().map(|(_, f)| f).collect())
+    Ok(PreparedSearch { listed: None, ranked, files, words, limit })
 }
 
 fn search(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
@@ -600,6 +663,10 @@ fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
                 "kind": if crate::is_instrument(plugin) { "instrument" } else { "effect" },
                 "name": plugin.name, "vendor": plugin.vendor, "format": plugin.format(), "version": plugin.version,
             })
+        }
+        Item::Stock(key) => {
+            let stock = suhina_device_registry::stock_preset(key).ok_or_else(|| format!("no stock preset {key:?}"))?;
+            json!({ "kind": "preset", "name": stock.preset.name, "device": stock.preset.device, "preset_tags": stock.tags })
         }
         Item::File(path) | Item::Voice(path, _) => file_info(path, &item)?,
     };
@@ -662,7 +729,8 @@ pub fn file_info(path: &Path, item: &Item) -> Result<Value, CommandError> {
             let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
             let voices =
                 suhina_device_registry::preset_voices(&data).map_err(|e| format!("{}: {e}", path.display()))?;
-            out["device"] = json!("fm-synth");
+            let preset = suhina_device_registry::preset(&data, 1).map_err(|e| format!("{}: {e}", path.display()))?;
+            out["device"] = json!(preset.device);
             out["voices"] =
                 json!(voices.iter().map(|(n, name)| json!({ "voice": n, "name": name })).collect::<Vec<_>>());
             if let Item::Voice(_, voice) = item {
@@ -936,7 +1004,9 @@ pub(crate) fn record_use(library: &mut Library, recent: crate::Recent, params: &
             }
         }
         crate::Recent::Device => {
-            if let Some(path) = Args::new(params).raw_str("sd") {
+            if let Some(key) = Args::new(params).raw_str("stock") {
+                record(Group::Presets, format!("stock:{key}"));
+            } else if let Some(path) = Args::new(params).raw_str("sd") {
                 record(Group::Effects, path.to_string());
             } else if Args::new(params).has("preset") {
                 preset(&mut record, params);

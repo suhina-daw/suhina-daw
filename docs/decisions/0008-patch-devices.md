@@ -4,7 +4,7 @@ read_when: Pure Data, Pd, plugdata, libpd, patch, patch device, community device
 type: decision
 status: proposed
 built: no
-last_verified: 2026-10-19
+last_verified: 2026-11-02
 ---
 
 # 0008: Patch devices

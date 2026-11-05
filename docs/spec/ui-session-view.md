@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -48,8 +48,7 @@ From top to bottom:
    Edit, View, Projects, Options and Help so far; components.md lists what is built.)
 2. **Control bar**, left to right:
    - external sync and tempo: sync toggle, tap tempo, tempo field, nudge, time signature
-   - groove amount, metronome, global launch quantisation (in Suhina also the Arrangement
-     view's grid: [arrangement editing](arrangement-editing.md) › The grid). **Suhina:** the
+   - groove amount, metronome, global launch quantisation (the Arrangement view's grid is apart from it: [arrangement editing](arrangement-editing.md) › The grid). **Suhina:** the
      metronome's button, here and in the main strip, is held and dragged for its level: a
      slider opens above it, or below where there is no room above, and the pointer's height on
      it is the level (−60 to +6 dB), so the whole range is one drag
@@ -220,8 +219,13 @@ a slot to the arrangement, in two ways. **Suhina** decisions, our own design:
 - **Dragging.** While a clip is dragged, holding it over the other view's name in the control bar
   for half a second switches the view, and the drag goes on there: let go over a slot and the clip
   is copied into it; over a track's lane and it is copied there, at the beat under the pointer on
-  the grid (Alt for free), stacking when the setting for its kind says so. **Suhina:** a slot's
-  clip dragged to another slot in the Launcher view **moves** — the target's slot takes it and
+  the grid (Alt for free), stacking when the setting for its kind says so. **Suhina:** Tab does the
+  same while a clip is dragged — or a press is held on it, before the pointer has moved — the view
+  switches at once, and the drag goes on there as a carry (#1063). A press held on a slot's clip
+  selects the slot at once, as the click will, and takes the focus off the tracks. A clip deleted
+  while its press or drag is held carries nothing, an undo or redo lets a carry go, and so does
+  switching projects, a clip's drag included. A slot's clip dragged to another slot in the
+  Launcher view **moves** — the target's slot takes it and
   the source's empties; the two slots **swap** when the target has a clip, so nothing is lost
   (`clip.moveSlot`, one undo step). Ctrl (Cmd on macOS) held on the drop copies instead. A label
   beside the pointer says where it will go ("Move Fill to Drums, scene 5", "Swap Fill and Beat A
@@ -372,8 +376,8 @@ vertical channel strip under its slots, and the strip shows more the taller the 
   is selected with its chain shown, so the editor opened next is the moved or copied device's.
 - **A double-click on the strip** itself (its background or its name, not a fader, knob,
   button or device row) does the same for the whole track: it selects the track and shows its
-  devices in the detail area, opening the detail area if it was hidden. A single click there does
-  nothing, as before.
+  devices in the detail area, opening the detail area if it was hidden. A single click there
+  selects the track alone.
 - The main column shows the main output's meter where a track's meter stands.
 - **The colour band** down the strip's left edge, at every mixer height, is the track colour;
   its name row is filled with it too. A click on the band opens the colour palette (Track
@@ -418,7 +422,8 @@ planned.
 the left of a row or at the top of the stacked column, with the rest of the detail beside or
 under it. Launching a clip on a track selects it; clicking a track's header selects the track
 instead and hides the section (Ctrl-click adds a header to the selection or takes it out,
-Shift-click takes the columns from the header selected last to this one: the same selection as
+Shift-click takes the columns from the header selected last to this one, and both work on the
+channel strip's background too: the same selection as
 the Arrangement view's headers, which Delete, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D and Ctrl+G act on;
 the detail area shows the header clicked; #208); the Arrangement view shows only its own selection. Top to bottom:
 

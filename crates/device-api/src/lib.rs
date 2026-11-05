@@ -727,6 +727,9 @@ impl<const N: usize> ParamBank<N> {
     }
 }
 
+/// Most live values a device hands its panel ([`Device::readouts`]).
+pub const MAX_READOUTS: usize = 35;
+
 /// A device that plays a sample: the host hands it decoded audio, manual slices and source
 /// corrections off the audio thread, and reads where its voices are. Only a sample instrument
 /// implements it ([`Device::samples`]), so every other device carries none of it (#764 › 9).
@@ -796,6 +799,13 @@ pub trait Device: Send {
 
     /// The device as a sample player to read from, when it is one; `None` by default.
     fn samples_ref(&self) -> Option<&dyn SampleSource> {
+        None
+    }
+
+    /// Live values for the device's panel (a band's level, its gain change), read after each
+    /// block: up to [`MAX_READOUTS`], in an order the device's panel knows. `None` for a device
+    /// that shows none. Runs on the audio thread: no allocation.
+    fn readouts(&self) -> Option<[f32; MAX_READOUTS]> {
         None
     }
 

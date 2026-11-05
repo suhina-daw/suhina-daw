@@ -3,7 +3,8 @@
 
 //! Signal-processing building blocks for Suhina's built-in effects and instruments (ADR 0004): gain
 //! conversions, the pan law, parameter smoothing, attack/release followers, filters, crossovers,
-//! LFO waveforms and tempo sync, waveshapers, oversampling, delay lines and allpasses.
+//! LFO waveforms and tempo sync, waveshapers, oversampling, delay lines and allpasses, and a
+//! band spectrum for panels.
 //!
 //! Nothing here depends on the engine, the model or a device: every block is plain state plus a
 //! per-sample or per-block `process`, so it can be tested on its own and reused by any device.
@@ -21,6 +22,7 @@
 //! IR convolution (uniform-partitioned, `fft-convolver`) with its `Ir`. Real-time safe, panic-free
 //! on any input.
 
+pub mod analyser;
 pub mod biquad;
 pub mod convolver;
 pub mod crossover;
@@ -32,6 +34,7 @@ pub mod follower;
 pub mod gain;
 pub mod iir_oversample;
 pub mod lfo;
+pub mod multimode;
 pub mod oversample;
 pub mod pan;
 pub mod resampler;
@@ -41,6 +44,7 @@ pub mod svf;
 pub mod sync;
 pub mod trim_delay;
 
+pub use analyser::Analyser;
 pub use biquad::{Biquad, Coefficients};
 pub use convolver::{Convolver, Ir, MAX_FRAMES as IR_MAX_FRAMES, PARTITION};
 pub use crossover::{LinkwitzRiley, Slope};
@@ -50,6 +54,7 @@ pub use emphasis::Emphasis;
 pub use first_order::{FirstOrder, FirstOrderCoefficients};
 pub use follower::AttackRelease;
 pub use iir_oversample::{IirOversampler2x, IirOversampler4x};
+pub use multimode::{Circuit, Multimode, MultimodeSettings, Response};
 pub use oversample::Oversampler2x;
 pub use resampler::{HALF_TAPS as RESAMPLER_HALF_TAPS, Resampler};
 pub use smooth::{Glide, OnePole, Smoother, time_constant};

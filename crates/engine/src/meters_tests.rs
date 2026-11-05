@@ -214,3 +214,35 @@ fn a_launched_clip_moves_its_track_meter() {
     blocks(&mut renderer, (3.0 * f64::from(SR) / 256.0) as usize, 256);
     assert_level(controller.meter_monitor().track(TrackId(1)).expect("track 1"), [NOTE; 2], "launched");
 }
+
+/// A project whose track 4 runs `devices`, after a moment of playing.
+fn playing_with(devices: Vec<Device>) -> Renderer {
+    let mut project = held(Vec::new());
+    channel(&mut project, 4).devices = devices;
+    play(&project, 0.1).0
+}
+
+#[test]
+fn every_device_hands_its_panel_live_values_inside_groups_too() {
+    let inner = Branch { devices: vec![device("utility", &[]), device("multiband", &[])], ..Branch::new("B") };
+    let group = Device::group("G", DeviceGroup::with_branches(vec![Branch::new("A"), inner]));
+    let renderer = playing_with(vec![device("multiband", &[]), group, device("multiband", &[])]);
+    let monitor = renderer.meter_monitor();
+    let shown = |path: &[usize]| monitor.readouts(TrackId(4), path).is_some();
+    assert!(shown(&[0]));
+    assert!(shown(&[1, 1, 1]));
+    assert!(shown(&[2]));
+    assert!(!shown(&[1]), "the group itself has none");
+    assert!(!shown(&[1, 1, 0]), "the utility has none");
+    assert!(!shown(&[3]));
+    assert!(monitor.readouts(TrackId(1), &[0]).is_none(), "another track's");
+}
+
+#[test]
+fn a_track_shows_as_many_devices_live_values_as_its_row_holds() {
+    let last = crate::MAX_READOUT_DEVICES;
+    let renderer = playing_with((0..=last).map(|_| device("multiband", &[])).collect());
+    let monitor = renderer.meter_monitor();
+    assert!(monitor.readouts(TrackId(4), &[last - 1]).is_some());
+    assert!(monitor.readouts(TrackId(4), &[last]).is_none());
+}

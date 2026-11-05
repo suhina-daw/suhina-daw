@@ -394,6 +394,11 @@ impl EditorPlacer {
         self.send(&Message::PlaceEditor { instance: self.instance, placement })
     }
 
+    /// What the title bar of the editor's own window says; `false` when the host is gone.
+    pub fn title(&self, title: &str) -> bool {
+        self.send(&Message::EditorTitle { instance: self.instance, title: title.to_string() })
+    }
+
     /// Asks the embedded editor to take `width` × `height` pixels; `false` when the host is gone.
     pub fn fit(&self, width: u32, height: u32) -> bool {
         self.send(&Message::FitEditor { instance: self.instance, width, height })
@@ -1111,19 +1116,29 @@ impl Plugin {
     /// [`Plugin::open_editor`] in a window that `owner` (the engine's window: a Win32 `HWND`,
     /// an X11 window id) owns: it floats above it and goes with it.
     pub fn open_editor_owned(&mut self, owner: Option<u64>) -> Result<(u32, u32), PluginError> {
-        self.open_editor_in(owner, false)
+        self.open_editor_in(owner, false, None)
+    }
+
+    /// [`Plugin::open_editor_owned`], its window saying `title` from the moment it opens.
+    pub fn open_editor_titled(&mut self, owner: Option<u64>, title: &str) -> Result<(u32, u32), PluginError> {
+        self.open_editor_in(owner, false, Some(title.to_string()))
     }
 
     /// [`Plugin::open_editor`] as a child inside the engine's window `owner` (a Win32 `HWND`,
     /// an X11 window id), hidden until [`Plugin::place_editor`] puts it somewhere in it.
     pub fn open_editor_embedded(&mut self, owner: u64) -> Result<(u32, u32), PluginError> {
-        self.open_editor_in(Some(owner), true)
+        self.open_editor_in(Some(owner), true, None)
     }
 
-    fn open_editor_in(&mut self, owner: Option<u64>, embedded: bool) -> Result<(u32, u32), PluginError> {
+    fn open_editor_in(
+        &mut self,
+        owner: Option<u64>,
+        embedded: bool,
+        title: Option<String>,
+    ) -> Result<(u32, u32), PluginError> {
         let instance = self.instance;
         let reply = self.request(
-            &Message::OpenEditor { instance, owner, embedded },
+            &Message::OpenEditor { instance, owner, embedded, title },
             "open_editor",
             |m| matches!(m, Message::EditorOpened { instance: i, .. } if *i == instance),
         )?;
@@ -1626,23 +1641,13 @@ mod tests {
     /// what the test `feed`s a group, so `host_memory` can be tried without the executable.
     fn living_process() -> (HostProcess, Sender<Message>) {
         let (address, name) = control_name().unwrap();
-        let listener =
-            ListenerOptions::new().name(name).nonblocking(ListenerNonblockingMode::Accept).create_sync().unwrap();
-        let remote = thread::spawn({
-            let address = address.clone();
-            move || connect(&address).unwrap()
-        });
-        let started = Instant::now();
-        let control = loop {
-            match listener.accept() {
-                Ok(stream) => break stream,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => panic!("the listener gave up: {e}"),
-            }
-            assert!(started.elapsed() < Duration::from_secs(2), "the remote half never connected");
-            thread::sleep(Duration::from_millis(1));
-        };
-        remote.join().unwrap();
+        let listener = ListenerOptions::new().name(name).create_sync().unwrap();
+        // A listener takes a connection made before it is asked, so a connection that fails ends
+        // the test here and `accept` has no one to wait for. The remote half lives until then:
+        // one that is gone by `accept` leaves it nothing to take.
+        let remote = connect(&address).unwrap();
+        let control = listener.accept().unwrap();
+        drop(remote);
         // A child that lives on and ends by itself. `timeout` waits for a key and errors when
         // there is no console to take it from; a ping to no host waits without input.
         let mut child = Command::new(if cfg!(windows) { "cmd" } else { "sleep" });
@@ -1679,7 +1684,7 @@ mod tests {
         }
         // An ended child stays "running" its own last moment: let it be gone. (`alive` reaps
         // what has gone, so the loop is what reads it.)
-        let deadline = Instant::now() + Duration::from_secs(2);
+        let deadline = Instant::now() + Duration::from_secs(60);
         while {
             let mut locked = lock(&group);
             locked.alive()

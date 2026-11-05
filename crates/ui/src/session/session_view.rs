@@ -81,6 +81,10 @@ pub struct SessionViewState {
     /// A clip slot whose drag started this frame (track, scene from 0): the window carries the
     /// clip from there (`docs/spec/ui-session-view.md` › Between the views).
     pub slot_drag: Option<(TrackId, usize)>,
+    /// A clip slot a press is held on (track, scene from 0), before the pointer has moved
+    /// enough for the drag to be decided: the view may switch under the held press (Tab), and
+    /// the press then carries the clip like a drag does.
+    pub pressed_slot: Option<(TrackId, usize)>,
     /// Launching a clip leaves the selection as it is (Settings › Session and mixer › Select on
     /// launch is off); by default a launch selects the clip.
     pub keep_selection_on_launch: bool,
@@ -391,7 +395,7 @@ pub fn show(
     );
     if empty.width() > 24.0 {
         // Under the buttons, so they keep their clicks; a right-click there inserts tracks.
-        let space = ui.interact(empty, Id::new("session-empty-space"), Sense::click());
+        let space = ui.interact(empty, Id::unique("session-empty-space"), Sense::click());
         let selection = state.header_tracks();
         let menu =
             crate::interaction::empty_space::EmptyMenu { selection: &selection, tracks_copied: state.tracks_copied };
@@ -504,8 +508,8 @@ pub fn show(
     // their clicks.
     let main_selected = state.selected == Some(TrackId::MAIN);
     for (rect, id) in [(header_rect, "session-main-header"), (main_mixer, "session-main-strip")] {
-        let response = ui.interact(rect, Id::new(id), Sense::click());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Select Main"));
+        let response = ui.interact(rect, Id::unique(id), Sense::click());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Select Main"));
         if response.clicked() {
             state.selected = Some(TrackId::MAIN);
             state.selected_tracks = vec![TrackId::MAIN];
@@ -575,9 +579,9 @@ fn main_metronome(
     actions: &mut Vec<Action>,
 ) {
     let response = ui
-        .interact(rect.intersect(painter.clip_rect()), Id::new("main-metronome"), Sense::click_and_drag())
+        .interact(rect.intersect(painter.clip_rect()), Id::unique("main-metronome"), Sense::click_and_drag())
         .on_hover_text("Metronome: click to turn it on or off; hold and drag up or down for its level");
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Main metronome"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Main metronome"));
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
@@ -608,9 +612,9 @@ fn mixer_edge(ui: &Ui, painter: &egui::Painter, area: Rect, mixer: Rect, height:
     let line = mixer.top() - 0.5;
     let rect = Rect::from_x_y_ranges(area.x_range(), egui::Rangef::new(line - MIXER_EDGE, line + MIXER_EDGE));
     let response = ui
-        .interact(rect.intersect(area), Id::new("session-mixer-edge"), Sense::click_and_drag())
+        .interact(rect.intersect(area), Id::unique("session-mixer-edge"), Sense::click_and_drag())
         .on_hover_cursor(egui::CursorIcon::ResizeVertical);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Mixer height"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Mixer height"));
     if response.double_clicked() {
         state.mixer_dragged = None;
         state.mixer_height = crate::settings::view_settings::MIXER_HEIGHTS.1 as f32;
@@ -662,7 +666,7 @@ fn draw_column(
     actions: &mut Vec<Action>,
 ) {
     let _work_trace = crate::kit::frame_trace::WorkSpan::new("session column");
-    let id = Id::new(("session-column", column.track.0));
+    let id = Id::unique(("session-column", column.track.0));
     let header = Rect::from_x_y_ranges(span, bands.header.y_range()).intersect(clip);
     column_header(ui, painter, header, column, bands, state, actions);
     let body_clip = bands.body.intersect(clip);
@@ -675,7 +679,7 @@ fn draw_column(
         if body.width() > 0.0 && body.height() > 0.0 {
             let response = ui.interact(body, id.with("return-body"), Sense::click());
             response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("{} column", column.name))
+                egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("{} column", column.name))
             });
             if response.clicked() {
                 let (command, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
@@ -696,6 +700,13 @@ fn draw_column(
         id,
         actions,
     );
+    // Ctrl and Shift on the strip's background add to the selection, as on the header.
+    if strip.clicked() {
+        let (command, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+        if command || shift {
+            select_header(state, &bands.order, column.track, command, shift);
+        }
+    }
     // The strip's background has the track's menu, as its header does.
     track_menu_on(&strip, column, bands, actions);
     // Column separator through header, grid and mixer.
@@ -784,7 +795,7 @@ fn column_header(
     }
     // Right-click opens the track's menu.
     // A click selects the track, a drag moves it, a right-click opens its menu.
-    let response = ui.interact(rect, Id::new(("session-header", column.track.0)), Sense::click_and_drag());
+    let response = ui.interact(rect, Id::unique(("session-header", column.track.0)), Sense::click_and_drag());
     if response.drag_started_by(egui::PointerButton::Primary) {
         state.track_drag = Some(column.track);
     }
@@ -794,8 +805,7 @@ fn column_header(
     {
         state.track_drop = Some((dragged, pointer.x));
     }
-    response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Track {}", column.name)));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Track {}", column.name)));
     track_menu_on(&response, column, bands, actions);
     if response.clicked() {
         let (command, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
@@ -837,7 +847,7 @@ fn column_header(
     if column.kind == ColumnKind::Group {
         let arrow = Rect::from_min_size(text.min, Vec2::new(FOLD_ARROW, text.height())).intersect(rect);
         if arrow.is_positive() {
-            let id = Id::new(("session-fold", column.track.0));
+            let id = Id::unique(("session-fold", column.track.0));
             nesting::fold_arrow(ui, painter, arrow, id, column.track, &column.name, color, &mut state.folded);
         }
         text.min.x = (text.min.x + FOLD_ARROW).min(text.max.x);
@@ -848,7 +858,7 @@ fn column_header(
             ui,
             painter,
             type_rect,
-            Id::new(("session-track-type", column.track.0)),
+            Id::unique(("session-track-type", column.track.0)),
             &column.name,
             (column.plays_notes, column.plays_audio),
             color,
@@ -860,7 +870,7 @@ fn column_header(
     let pass = ui.ctx().cumulative_pass_nr();
     ui.ctx().data_mut(|d| {
         let spot = crate::app::NameSpot { rect: text, pass, fill, text: color, size: theme::TEXT };
-        d.insert_temp(Id::new((crate::app::NAME_RECT_TRACK, u64::from(column.track.0))), spot);
+        d.insert_temp(Id::unique((crate::app::NAME_RECT_TRACK, u64::from(column.track.0))), spot);
     });
 }
 
@@ -958,7 +968,7 @@ fn column_body(
                 let response = ui.interact(rect.intersect(clip), id.with(scene), Sense::click());
                 response.widget_info(|| {
                     let label = format!("Empty slot on {} (scene {number})", column.name);
-                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label)
+                    egui::WidgetInfo::labeled(egui::Role::Button, true, label)
                 });
                 Some(response)
             }
@@ -973,7 +983,7 @@ fn column_body(
                 let verb = if slot.state == SlotState::Playing { "Stop" } else { "Launch" };
                 let label = format!("{verb} {name} on {} (scene {number})", column.name);
                 let response = ui.interact(launch_rect.intersect(clip), id.with(scene), sense);
-                response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
                 Some(response)
             }
         };
@@ -981,9 +991,18 @@ fn column_body(
             let name_rect = Rect::from_min_max(Pos2::new(launch_rect.right(), rect.top()), rect.max);
             let label = format!("Select {name} on {} (scene {number})", column.name);
             let response = ui.interact(name_rect.intersect(clip), id.with(("select", scene)), sense);
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
             response
         });
+        // A press held on the clip's name selects the slot at once, as the click will: a drag
+        // from it starts as a drag, and a view switch under the held press (Tab) carries the
+        // clip before the pointer has moved enough for the drag to be decided.
+        if let Some(select) = &select
+            && select.is_pointer_button_down_on()
+            && ui.input(|i| i.pointer.primary_down())
+        {
+            state.select_slot(column.track, scene);
+        }
         let hover = [&launch, &select].into_iter().flatten().map(|r| widgets::hover(ui, r)).fold(0.0, f32::max);
         let pulse = if slot.state == SlotState::Queued { motion::pulse(ui.ctx()) } else { 1.0 };
         // The launch button launches as the pointer goes down, and releases a gate or repeat
@@ -1033,10 +1052,23 @@ fn column_body(
             // now.
             let menu_open = [&launch, &select].into_iter().flatten().any(egui::Response::context_menu_opened);
             if !menu_open {
-                ui.ctx().data_mut(|d| d.remove::<String>(Id::new(("slot-rename", column.track, number))));
+                ui.ctx().data_mut(|d| d.remove::<String>(Id::unique(("slot-rename", column.track, number))));
             }
             for response in [&launch, &select].into_iter().flatten() {
+                // A click into a slot, its launch mark too, takes the focus off the tracks, so
+                // the edit keys (Delete, Ctrl+C) no longer act on a track selected before it,
+                // whether or not the launch selects the slot.
                 if response.clicked() || response.secondary_clicked() {
+                    state.track_focus = false;
+                }
+                // A press held on a slot with a clip, either control, can be carried by a view
+                // switch before the drag is decided, as a clip's press is in the Arrangement
+                // view. An empty slot has no clip to carry, so it never records. A press that
+                // is let go dies at the frame's start (`begin_clip_carry`), even when this
+                // slot has scrolled away by then. A carried press is never a click, so the
+                // press itself takes the focus off the tracks, as the click would.
+                if has_clip && response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
+                    state.pressed_slot = Some(key);
                     state.track_focus = false;
                 }
                 // An empty slot is selected by a click, any slot by a right-click: Ctrl+C and
@@ -1071,7 +1103,7 @@ fn column_body(
         let pass = ui.ctx().cumulative_pass_nr();
         ui.ctx().data_mut(|d| {
             d.insert_temp(
-                egui::Id::new((crate::app::NAME_RECT_SLOT, u64::from(column.track.0), number as u64)),
+                egui::Id::unique((crate::app::NAME_RECT_SLOT, u64::from(column.track.0), number as u64)),
                 crate::app::NameSpot {
                     rect,
                     pass,
@@ -1275,7 +1307,7 @@ fn scene_column(
         } else {
             format!("{} scene {} {}", if scene.playing { "Stop" } else { "Launch" }, scene.number, scene.name)
         };
-        let response = widgets::button_area(ui, rect.intersect(clip), Id::new(("scene", scene.number)), label);
+        let response = widgets::button_area(ui, rect.intersect(clip), Id::unique(("scene", scene.number)), label);
         let target = MappingTarget::Scene { scene: scene.number.saturating_sub(1) };
         if response.clicked() {
             if keys.mode.on {
@@ -1351,7 +1383,7 @@ fn scene_column(
     let stop_top = top + grid.scenes.len() as f32 * slot_pitch();
     let rect = Rect::from_x_y_ranges(span, egui::Rangef::new(stop_top, stop_top + slot_height()));
     if rect.intersects(clip) {
-        let response = widgets::button_area(ui, rect.intersect(clip), Id::new("stop-all"), "Stop all clips");
+        let response = widgets::button_area(ui, rect.intersect(clip), Id::unique("stop-all"), "Stop all clips");
         if response.clicked() {
             actions.push(Action::new("launcher.stopAll", json!({})));
         }

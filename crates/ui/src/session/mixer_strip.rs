@@ -439,14 +439,14 @@ pub fn show(
     crate::kit::liquid::paint(painter, rect, tint, crate::kit::liquid::Surface::Track);
     crate::kit::native_css::background(painter, rect);
     // The strip's own background, under its controls: a double-click shows the track's devices.
-    strip.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("{} channel strip", column.name))
-    });
+    strip
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("{} channel strip", column.name)));
     if strip.double_clicked() {
         state.open_devices = Some(column.track);
     }
     // A click on the strip selects its track, a return's too; a slot selected on that track stays.
-    if strip.clicked() {
+    // With Ctrl or Shift the column does it, as on its header.
+    if strip.clicked() && !ui.input(|i| i.modifiers.command || i.modifiers.shift) {
         state.selected = Some(column.track);
         state.selected_tracks = vec![column.track];
         state.devices_clicked = true;
@@ -521,12 +521,11 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, rect: Rect, fader: f32
     let response = ui
         .interact(
             rect.intersect(painter.clip_rect()),
-            Id::new(("strip-divider", strip.left() as i32)),
+            Id::unique(("strip-divider", strip.left() as i32)),
             Sense::click_and_drag(),
         )
         .on_hover_cursor(egui::CursorIcon::ResizeVertical);
-    response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Device list and controls divider"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Device list and controls divider"));
     if response.double_clicked() {
         state.strip_fader_dragged = None;
         state.strip_fader = 0.0;
@@ -556,7 +555,7 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
         crate::kit::native_css::hex(colour_picker::fill(column.color, column.mute)),
     );
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("{} strip", column.name)));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{} strip", column.name)));
     // The name stands on the track's colour, as in the column's header.
     let native_fill = colour_picker::fill(column.color, column.mute);
     // An alpha material layers over the track colour. An explicitly authored
@@ -705,7 +704,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
         }
         let response = ui.interact(row.intersect(clip), id.with(("device", index)), Sense::click_and_drag());
         let label = format!("Show {} on {}", device.name, column.name);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         // Dragged onto another track: moved there, Ctrl copies it (#688).
         if response.drag_started_by(egui::PointerButton::Primary) {
             crate::interaction::drop::start_device_carry(ui.ctx(), track, index);
@@ -765,7 +764,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
     // A device of this track carried over its list: a line where it would go, and its place
     // for the drop (#688).
     let carrying = ui.data(|d| {
-        d.get_temp::<(suhina_engine::model::TrackId, usize)>(Id::new(crate::interaction::drop::DEVICE_CARRYING))
+        d.get_temp::<(suhina_engine::model::TrackId, usize)>(Id::unique(crate::interaction::drop::DEVICE_CARRYING))
     });
     if let Some((_, from)) = carrying.filter(|(t, _)| *t == track)
         && let Some(pointer) = ui.ctx().pointer_latest_pos().filter(|p| clip.contains(*p))
@@ -928,6 +927,11 @@ fn volume_drag(
             committed = Some(v);
             actions.push(set_volume(track.0, v, continued));
         }
+        Drag::Set(v) => {
+            state.drag = None;
+            committed = Some(v);
+            actions.push(commands::set_volume(&[track.0], v, None));
+        }
         Drag::None => {
             if continued {
                 state.drag = None;
@@ -1039,7 +1043,7 @@ pub fn main_fader(
         _ => None,
     };
     let label = widgets::format_db(preview.unwrap_or(volume_db));
-    let response = volume_response(ui, painter, readout, fader, Id::new("main-volume"), "Main volume", &label);
+    let response = volume_response(ui, painter, readout, fader, Id::unique("main-volume"), "Main volume", &label);
     let continued = preview.is_some();
     let send = |v: f64, continued: bool| {
         Action::new(
@@ -1054,7 +1058,7 @@ pub fn main_fader(
             actions.push(send(v, continued));
             db = v;
         }
-        Drag::Done(v) => {
+        Drag::Done(v) | Drag::Set(v) => {
             state.drag = None;
             actions.push(send(v, continued));
             db = v;
@@ -1323,6 +1327,12 @@ fn pan_row(
             committed = Some(v);
             actions.push(set_pan(v));
         }
+        Drag::Set(v) => {
+            state.drag = None;
+            committed = Some(v);
+            actions
+                .push(Action::new("track.setPan", json!({ "tracks": [track.0], "pan": (v * 100.0).round() / 100.0 })));
+        }
         Drag::None => {}
     }
     // Shown after this frame's drag, so the knob never trails the pointer.
@@ -1427,11 +1437,20 @@ fn send_knobs(
             Some((t, c, v)) if t == track && c == control => Some(v),
             _ => None,
         };
-        let level = if send.level_db.is_finite() { send.level_db } else { VOLUME_RANGE.0 };
+        let level = if send.level_db.is_finite() { send.level_db } else { widgets::SEND_RANGE.0 };
         let mut committed = None;
         // Heard while it is dragged, every frame of it in one undo step, as the fader is (#705).
         let continued = preview.is_some();
-        match widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, VOLUME_RANGE, VOLUME_RANGE.0) {
+        match widgets::drag_value(
+            ui,
+            &response,
+            &mut preview,
+            level,
+            0.25,
+            1.0,
+            widgets::SEND_RANGE,
+            widgets::SEND_RANGE.0,
+        ) {
             Drag::Moving(v) => {
                 state.drag = Some((track, control, v));
                 actions.push(commands::set_send(track, send.target, v, continued));
@@ -1440,6 +1459,11 @@ fn send_knobs(
                 state.drag = None;
                 committed = Some(v);
                 actions.push(commands::set_send(track, send.target, v, continued));
+            }
+            Drag::Set(v) => {
+                state.drag = None;
+                committed = Some(v);
+                actions.push(commands::set_send_outright(track, send.target, v));
             }
             Drag::None => {}
         }
@@ -1462,7 +1486,8 @@ fn send_knobs(
             }
             _ => committed.unwrap_or(level),
         };
-        let position = ((shown - VOLUME_RANGE.0) / (VOLUME_RANGE.1 - VOLUME_RANGE.0)) as f32;
+        let (low, high) = widgets::SEND_RANGE;
+        let position = ((shown - low) / (high - low)) as f32;
         // `.send` styles every send, `#mixer-send-N` one of them; `--suhina-appearance: knob`
         // draws it as a knob.
         let _style = crate::kit::style_class::enter_named_response("send", &name, &response);

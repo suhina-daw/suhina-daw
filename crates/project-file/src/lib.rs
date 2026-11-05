@@ -67,7 +67,7 @@ impl From<&str> for ProjectFileError {
     }
 }
 
-pub use suhina_model::is_project_file;
+pub use suhina_model::{is_preset_file, is_project_file};
 
 /// Reads a project file.
 pub fn read_file(path: &Path) -> Result<Project, ProjectFileError> {
@@ -783,7 +783,13 @@ fn read_signature(value: Option<&Value>, at: &str) -> Result<Option<TimeSignatur
         Some(Value::Array(pair)) if pair.len() == 2 => {
             let part = |v: &Value| v.as_u64().and_then(|n| u8::try_from(n).ok()).filter(|n| *n > 0);
             match (pair.first().and_then(part), pair.get(1).and_then(part)) {
-                (Some(numerator), Some(denominator)) => Ok(Some(TimeSignature { numerator, denominator })),
+                (Some(numerator), Some(denominator)) => {
+                    let signature = TimeSignature { numerator, denominator };
+                    if !signature.has_valid_denominator() {
+                        return Err(format!("{at}: the denominator is 1, 2, 4, 8 or 16, not {denominator}").into());
+                    }
+                    Ok(Some(signature))
+                }
                 _ => Err(format!("{at}: expected two whole numbers").into()),
             }
         }

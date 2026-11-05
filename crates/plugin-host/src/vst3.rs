@@ -129,7 +129,7 @@ fn binary(path: &Path) -> Result<PathBuf, String> {
 /// The executable in a macOS bundle's `MacOS` folder: the one named after the bundle without
 /// its extension, as most bundles have, or else the first non-hidden file (the bundle format
 /// allows any name; a hidden one, such as a stray `.DS_Store`, is not an executable).
-fn macos_binary(macos: &Path, stem: &OsStr) -> Option<PathBuf> {
+pub(crate) fn macos_binary(macos: &Path, stem: &OsStr) -> Option<PathBuf> {
     let named = macos.join(stem);
     if named.is_file() {
         return Some(named);
@@ -1029,12 +1029,16 @@ impl Vst3Plugin {
     }
 
     /// Opens the plug-in's editor as `mode` says (or returns the size of the one open).
-    pub(crate) fn open_editor(&mut self, mode: crate::window::Mode) -> Result<crate::window::Size, String> {
+    pub(crate) fn open_editor(
+        &mut self,
+        mode: crate::window::Mode,
+        title: Option<&str>,
+    ) -> Result<crate::window::Size, String> {
         if let Some(editor) = &self.editor {
             return Ok(editor.size());
         }
         let controller = self.controller.as_ref().ok_or("the plug-in has no editor")?;
-        let editor = crate::vst3::editor::Editor::open(controller, mode, &self.name)?;
+        let editor = crate::vst3::editor::Editor::open(controller, mode, title.unwrap_or(&self.name))?;
         let size = editor.size();
         self.editor = Some(editor);
         Ok(size)
@@ -1170,6 +1174,12 @@ impl Vst3Plugin {
     }
 
     /// Puts an embedded editor where the engine says.
+    pub(crate) fn set_editor_title(&self, title: &str) {
+        if let Some(editor) = &self.editor {
+            editor.set_title(title);
+        }
+    }
+
     pub(crate) fn place_editor(&self, placement: crate::window::Placement) {
         if let Some(editor) = &self.editor {
             editor.place(placement);

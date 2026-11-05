@@ -13,9 +13,8 @@ target/
 Backup/
 __pycache__/
 *.pyc
-# The parity measurement (scripts/parity/) reads a reference manual the user owns and extracts its
-# text; that output goes under target/ (ignored above) by default. These cover the named folders,
-# so nothing read from such a manual can be committed by accident.
+# Text read from another product's manual (the private parity measurement) is never committed,
+# even when it is run from a checkout of this repository.
 /.parity/
 /parity/
 # macOS Finder

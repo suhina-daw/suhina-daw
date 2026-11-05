@@ -234,7 +234,7 @@ pub(super) fn clip_box<'a>(
     }
     let bar = (clip.start / bar_beats).floor() as u64 + 1;
     let name = if clip.name.is_empty() { "clip" } else { clip.name.as_str() };
-    let response = ui.interact(visible, Id::new(("arrangement-clip", clip.id.0)), Sense::click_and_drag());
+    let response = ui.interact(visible, Id::unique(("arrangement-clip", clip.id.0)), Sense::click_and_drag());
     // The cursor says what a drag does: the lower half moves the clip (a hand; with the copy key
     // held, the copy cursor), the upper half selects time (a text cursor).
     let copy_key = ui.input(|i| if state.time_select_ctrl { i.modifiers.shift } else { i.modifiers.command });
@@ -257,7 +257,7 @@ pub(super) fn clip_box<'a>(
         ui.ctx().set_cursor_icon(if copy_key { egui::CursorIcon::Copy } else { egui::CursorIcon::Grab });
     }
     let label = format!("Clip {name} on {} at bar {bar}", lane.name);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
     let stack = if clip.audio { state.stack_audio } else { state.stack_midi };
     // A right-click remembers the beat under the pointer, for the menu's Split here.
     if response.secondary_clicked()
@@ -274,7 +274,7 @@ pub(super) fn clip_box<'a>(
     // The menu stays open on a click inside: the rename's field and button live here. When it
     // is not open, its rename's draft dies: a reopen starts from the name as it is now.
     if !response.context_menu_opened() {
-        ui.ctx().data_mut(|d| d.remove::<String>(Id::new(("clip-rename", key.1.0))));
+        ui.ctx().data_mut(|d| d.remove::<String>(Id::unique(("clip-rename", key.1.0))));
     }
     egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         menus::clip_menu(ui, &menu_clips, stack, clip.enabled, &clip.name, actions);
@@ -301,15 +301,19 @@ pub(super) fn clip_box<'a>(
     let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
     let tool = state.tool;
     let paints = tool == ArrangementTool::Range || response.interact_pointer_pos().is_some_and(|p| in_body(p.y));
-    // A drag that selects time rather than moving the clip: with Ctrl held, or from the clip's
-    // lower half on a lane tall enough to have one, as the setting says; with the Range tool,
-    // from anywhere (#991).
-    let selects_time = response.drag_started_by(egui::PointerButton::Primary)
-        && (tool == ArrangementTool::Range
-            || (tool == ArrangementTool::Select
-                && ui
-                    .input(|i| i.pointer.press_origin())
-                    .is_some_and(|origin| if state.time_select_ctrl { command } else { selects_at(origin.y) })));
+    // A drag that selects time rather than moving the clip: with the Range tool, from anywhere
+    // on a clip; with the Select tool, with Ctrl held or from the clip's lower half on a lane
+    // tall enough to have one, as the setting says (#991). The press's own place decides, so a
+    // held press knows before the drag is what it is holding: a time-selection's press grabs
+    // no clip.
+    let press_selects_time = match tool {
+        ArrangementTool::Range => ui.input(|i| i.pointer.press_origin()).is_some(),
+        ArrangementTool::Select => ui
+            .input(|i| i.pointer.press_origin())
+            .is_some_and(|origin| if state.time_select_ctrl { command } else { selects_at(origin.y) }),
+        _ => false,
+    };
+    let selects_time = response.drag_started_by(egui::PointerButton::Primary) && press_selects_time;
     // The Split, Erase and Mute tools act on the clip clicked, and nothing else does (#991).
     let tool_click =
         response.clicked() && matches!(tool, ArrangementTool::Split | ArrangementTool::Erase | ArrangementTool::Mute);
@@ -387,6 +391,25 @@ pub(super) fn clip_box<'a>(
     if response.clicked() || (response.drag_started_by(egui::PointerButton::Primary) && !selects_time) {
         // The track being worked on: a folded group shows this track while it is one of its own.
         state.targeted = Some(lane.track);
+    }
+    // A press held on the clip before the pointer has moved enough for the drag to be decided:
+    // the view may switch under it (Tab), and the press then carries the clip like a drag. Only
+    // the Select tool's press grabs: the others act on their click or paint time (#991). A
+    // time-selection's press grabs nothing — its origin said so, or the modifiers say so now.
+    // A press that is let go dies at the frame's start (`begin_clip_carry`), even when this
+    // widget is gone by then.
+    if response.is_pointer_button_down_on() && tool == ArrangementTool::Select && ui.input(|i| i.pointer.primary_down())
+    {
+        // A time selection being painted stays one when its modifiers are let go mid-drag.
+        if press_selects_time || (state.marquee_time && state.marquee.is_some()) {
+            // The modifiers of a time selection arrived while the button is still down: the
+            // press selects time now, and its record of a grab dies here.
+            if state.pressed_clip == Some(key) {
+                state.pressed_clip = None;
+            }
+        } else {
+            state.pressed_clip = Some(key);
+        }
     }
     if response.drag_started_by(egui::PointerButton::Primary) && !selects_time && tool == ArrangementTool::Select {
         state.clip_drag = Some(ClipDrag {
@@ -612,7 +635,7 @@ pub(super) fn clip_box<'a>(
             let response = widgets::value_area(
                 ui,
                 field.intersect(row.clip),
-                Id::new(("clip-gain", clip.id.0)),
+                Id::unique(("clip-gain", clip.id.0)),
                 &label,
                 widgets::format_db(shown.gain_db),
             );
@@ -623,7 +646,7 @@ pub(super) fn clip_box<'a>(
             let mut committed = None;
             match widgets::drag_value(ui, &response, &mut preview, view.gain_db, 0.1, 1.0, CLIP_GAIN_RANGE, 0.0) {
                 Drag::Moving(v) => state.gain_drag = Some((key, v)),
-                Drag::Done(v) => {
+                Drag::Done(v) | Drag::Set(v) => {
                     state.gain_drag = None;
                     committed = Some(v);
                     let db = commands::db_param(v, CLIP_GAIN_RANGE.0);
@@ -663,14 +686,14 @@ pub(super) fn clip_box<'a>(
             if hit.width() <= 0.0 || hit.height() <= 0.0 {
                 continue;
             }
-            let id = Id::new(("clip-edge", clip.id.0, grab as u8));
+            let id = Id::unique(("clip-edge", clip.id.0, grab as u8));
             let response = ui.interact(hit, id, Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
             let what = match grab {
                 EdgeGrab::Left => "Left edge",
                 EdgeGrab::Right => "Right edge",
             };
             let label = format!("{what} of {name} on {}", lane.name);
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &label));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, &label));
             let mine_edge = |d: &EdgeDrag| d.key == key && d.grab == grab;
             if response.drag_started_by(egui::PointerButton::Primary) {
                 let raw = if grab == EdgeGrab::Left { clip.start } else { clip.start + clip.length };
@@ -770,6 +793,10 @@ pub(super) fn clip_box<'a>(
     if clip.audio && fits && state.clip_drag.is_none_or(|d| !mine(&d)) && (pointer_in || selected || fading) {
         let grid = fade_grid;
         for edge in [FadeEdge::In, FadeEdge::Out] {
+            // The crossfade over the cut has the handles there.
+            if crossfades_at(timeline, clip.id, edge) {
+                continue;
+            }
             let (current, now, other) = match edge {
                 FadeEdge::In => (clip.fade_in, shown.fade_in, shown.fade_out),
                 FadeEdge::Out => (clip.fade_out, shown.fade_out, shown.fade_in),
@@ -781,11 +808,11 @@ pub(super) fn clip_box<'a>(
             }
             let which = if edge == FadeEdge::In { "Fade-in" } else { "Fade-out" };
             let label = format!("{which} of {name} on {}", lane.name);
-            let id = Id::new(("clip-fade", clip.id.0, edge == FadeEdge::In));
+            let id = Id::unique(("clip-fade", clip.id.0, edge == FadeEdge::In));
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
             response.widget_info(|| {
-                let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &label);
+                let mut info = egui::WidgetInfo::labeled(egui::Role::Slider, true, &label);
                 info.value = Some(now);
                 info
             });
@@ -887,11 +914,11 @@ pub(super) fn clip_box<'a>(
                 continue;
             }
             let label = format!("{which} curve of {name} on {}", lane.name);
-            let id = Id::new(("clip-fade-curve", clip.id.0, edge == FadeEdge::In));
+            let id = Id::unique(("clip-fade-curve", clip.id.0, edge == FadeEdge::In));
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
             response.widget_info(|| {
-                let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &label);
+                let mut info = egui::WidgetInfo::labeled(egui::Role::Slider, true, &label);
                 info.value = Some(current_curve.curve);
                 info
             });
@@ -953,6 +980,15 @@ pub(super) fn clip_box<'a>(
             }
             curves.push((edge, widgets::hover(ui, &response)));
         }
+    }
+
+    // At a cut the crossfade is drawn over it: the part plays on at full level up to there, so it
+    // draws no fade of its own.
+    if crossfades_at(timeline, clip.id, FadeEdge::In) {
+        shown.fade_in = 0.0;
+    }
+    if crossfades_at(timeline, clip.id, FadeEdge::Out) {
+        shown.fade_out = 0.0;
     }
 
     // Copying (Ctrl held): the clip stays where it is drawn, and its copy shows where it lands.
@@ -1095,26 +1131,7 @@ pub(super) fn clip_box<'a>(
     }
     for (edge, hover) in handles {
         let length = if edge == FadeEdge::In { shown.fade_in } else { shown.fade_out };
-        let handle = fade_handle(rect, edge, length as f32 * state.beat_width);
-        // `.clip-fade-handle`: its fill (`background-color`), border and radius, or the
-        // `clip.fade-handle` artwork.
-        let _style = crate::kit::style_class::enter("clip-fade-handle");
-        let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
-        let state = if hover > 0.5 { crate::kit::skin::State::Hover } else { crate::kit::skin::State::Normal };
-        if !crate::kit::skin::paint(&handle_painter, handle, "clip.fade-handle", state, fill, 0.0) {
-            let authored = crate::kit::style_class::computed();
-            if authored.as_ref().is_some_and(|c| c.authored.background || c.authored.border) {
-                crate::kit::native_css::surface(&handle_painter, handle, 0.0, fill);
-            } else {
-                handle_painter.rect_filled(handle, 0.0, fill);
-                handle_painter.rect_stroke(
-                    handle,
-                    0.0,
-                    theme::hairline(theme::window_background()),
-                    StrokeKind::Outside,
-                );
-            }
-        }
+        paint_fade_handle(&handle_painter, fade_handle(rect, edge, length as f32 * state.beat_width), hover);
     }
     for (edge, hover) in curves {
         let length = if edge == FadeEdge::In { shown.fade_in } else { shown.fade_out };
@@ -1123,6 +1140,24 @@ pub(super) fn clip_box<'a>(
         handle_painter.circle(center, CURVE_HANDLE / 2.0, fill, theme::hairline(theme::window_background()));
     }
     result
+}
+
+/// Draws a fade handle. `.clip-fade-handle` gives its fill (`background-color`), border and radius,
+/// or the `clip.fade-handle` artwork does.
+fn paint_fade_handle(painter: &egui::Painter, handle: Rect, hover: f32) {
+    let _style = crate::kit::style_class::enter("clip-fade-handle");
+    let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
+    let state = if hover > 0.5 { crate::kit::skin::State::Hover } else { crate::kit::skin::State::Normal };
+    if crate::kit::skin::paint(painter, handle, "clip.fade-handle", state, fill, 0.0) {
+        return;
+    }
+    let authored = crate::kit::style_class::computed();
+    if authored.as_ref().is_some_and(|c| c.authored.background || c.authored.border) {
+        crate::kit::native_css::surface(painter, handle, 0.0, fill);
+    } else {
+        painter.rect_filled(handle, 0.0, fill);
+        painter.rect_stroke(handle, 0.0, theme::hairline(theme::window_background()), StrokeKind::Outside);
+    }
 }
 
 /// The square of a fade handle: at the clip's top corner with no fade, at the fade's end along
@@ -1243,7 +1278,7 @@ pub(super) fn paint_clip(
     // Keep the clip colour legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
     let strength = if clip.audio {
-        painter.ctx().data(|d| d.get_temp::<u8>(Id::new(AUDIO_COLOUR_STRENGTH))).unwrap_or(82)
+        painter.ctx().data(|d| d.get_temp::<u8>(Id::unique(AUDIO_COLOUR_STRENGTH))).unwrap_or(82)
     } else {
         82
     };
@@ -1293,7 +1328,7 @@ pub(super) fn paint_clip(
     // A looping clip's passes are marked by the notches and lines at their starts (below), not by
     // shades: the body is one colour all along.
     // The grid shows through the body, faintly, the bars a little stronger.
-    let lines = painter.ctx().data(|d| d.get_temp::<std::sync::Arc<Vec<(f32, bool)>>>(Id::new(CLIP_GRID)));
+    let lines = painter.ctx().data(|d| d.get_temp::<std::sync::Arc<Vec<(f32, bool)>>>(Id::unique(CLIP_GRID)));
     if let Some(lines) = lines.filter(|l| !l.is_empty()) {
         let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
         let span = egui::Rangef::new(below, rect.bottom());
@@ -1307,7 +1342,7 @@ pub(super) fn paint_clip(
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
     let appearance = painter
         .ctx()
-        .data(|d| d.get_temp::<crate::settings::view_settings::WaveformAppearance>(Id::new(WAVEFORM_APPEARANCE)))
+        .data(|d| d.get_temp::<crate::settings::view_settings::WaveformAppearance>(Id::unique(WAVEFORM_APPEARANCE)))
         .unwrap_or_default();
     // Theme: the sheet's `.clip-waveform` and `.clip-notes` colours, else Dark.
     let themed = |class: &str| {
@@ -1334,7 +1369,7 @@ pub(super) fn paint_clip(
         let fill = if bar.is_some() { motion::mix(body, ink_on(body), 0.045) } else { body };
         let size = crate::kit::style_class::font_size(theme::TEXT);
         let spot = crate::app::NameSpot { rect: strip, pass, fill, text: text_color, size };
-        d.insert_temp(Id::new((crate::app::NAME_RECT_CLIP, u64::from(clip.id.0))), spot);
+        d.insert_temp(Id::unique((crate::app::NAME_RECT_CLIP, u64::from(clip.id.0))), spot);
     });
     let has_name = bar.is_some();
     if has_name {
@@ -1360,7 +1395,7 @@ pub(super) fn paint_clip(
         // gain and its fades, drawn as `docs/spec/waveforms.md` says, inside the clip.
         let gain = if shown.gain_db.is_finite() { 10f32.powf(shown.gain_db as f32 / 20.0) } else { 0.0 };
         // The waveform zoom: drawn larger, heard the same.
-        let zoom = painter.ctx().data(|d| d.get_temp::<f32>(Id::new(WAVEFORM_ZOOM))).unwrap_or(1.0);
+        let zoom = painter.ctx().data(|d| d.get_temp::<f32>(Id::unique(WAVEFORM_ZOOM))).unwrap_or(1.0);
         let gain = gain * zoom;
         let from = rect.left().max(view_rect(painter).left()).floor();
         let to = rect.right().min(view_rect(painter).right()).ceil();
@@ -1465,6 +1500,22 @@ pub(super) fn paint_clip(
     if selected {
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, motion::mix(body, ink, 0.45)), StrokeKind::Inside);
     }
+    if clip.take.is_some() {
+        paint_take_marker(painter, rect, ink);
+    }
+}
+
+/// The small mark in a clip's lower left corner that says it holds takes: three stacked lines, as
+/// the track header's button for the take lanes has (#1078).
+fn paint_take_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
+    if rect.height() < 16.0 || rect.width() < 14.0 {
+        return;
+    }
+    let (left, bottom) = (rect.left() + 4.0, rect.bottom() - 4.0);
+    for line in 0..3 {
+        let y = (bottom - line as f32 * 2.5).round() + 0.5;
+        painter.hline(egui::Rangef::new(left, left + 7.0), y, Stroke::new(1.0, ink));
+    }
 }
 
 /// The part of a clip a drag moves it from: its lower half, on a lane tall enough to have an
@@ -1537,12 +1588,11 @@ pub(super) struct TakeLanes {
     pub(super) bar_beats: f64,
 }
 
-use crate::arrangement::timeline::take_colour;
-
 /// Draws `lane`'s take lanes under it (`docs/spec/recording.md` › Take lanes): each take's
-/// clips dimmed in the take's own colour, as they do not play. A click on a take's clip puts the whole clip on the track,
-/// a drag across a take the part dragged over (`take.comp`); the take's name has Delete take in
-/// its menu.
+/// clips dimmed in the take's own colour, as they do not play. A double-click on a take's clip puts
+/// the whole clip on the track, a drag across a take the part dragged over (`take.comp`), a Ctrl
+/// drag paints an area across the lanes or moves pieces, and a piece's lower corners move its
+/// edges; the take's name has Delete take in its menu.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn take_lanes(
     ui: &mut Ui,
@@ -1561,14 +1611,33 @@ pub(super) fn take_lanes(
     let grid = arrangement_grid(state.grid, state.beat_width, at.bar_beats);
     let (scroll_x, beat_width) = (state.scroll.x, state.beat_width);
     let beat_of = |x: f32| ruler_beat(f64::from((x - at.time.min + scroll_x) / beat_width), grid, free);
+    let raw_beat = |x: f32| f64::from((x - at.time.min + scroll_x) / beat_width);
+    let ctrl = ui.input(|i| i.modifiers.command);
+    // Which part of a piece moves it, as for a clip (`docs/spec/arrangement-editing.md`): the name
+    // bar, or the lower half; only the name bar when Ctrl selects time, so a drag can still comp;
+    // the whole piece when it is too low for either.
+    let (name_bar_moves, select_ctrl) = (state.name_bar_moves, state.time_select_ctrl);
+    let moves_at = |rect: Rect, y: f32| {
+        if select_ctrl {
+            return clip_name_bar(rect).is_none_or(|bar| y < bar.bottom());
+        }
+        match clip_name_bar(rect).filter(|_| name_bar_moves) {
+            Some(bar) => y < bar.bottom(),
+            None => clip_grab_area(rect).is_none_or(|grab| y >= grab.top()),
+        }
+    };
+    let mut rows: Vec<(usize, Rect)> = Vec::new();
     let mut y = at.top;
-    let take_row = state.take_row(lane.track);
     for take in timeline.takes.iter().filter(|t| t.track == lane.track) {
+        let take_row = state.take_row(lane.track, take.number);
         let row = Rect::from_x_y_ranges(at.time, egui::Rangef::new(y, y + take_row));
-        let header = Rect::from_x_y_ranges(at.headers, row.y_range());
+        rows.push((take.number, row));
+        let whole_header = Rect::from_x_y_ranges(at.headers, row.y_range());
+        // Set in from the track's header, so a lane reads as belonging to the track above.
+        let header = whole_header.with_min_x((at.headers.min + TAKE_HEADER_INDENT).min(at.headers.max));
         y += take_row + 1.0;
-        // The line under a take lane resizes the track's take lanes, all alike; a double-click
-        // puts them back to the default height (#989).
+        // The line under a take lane resizes that lane, as a track's does; a double-click puts it
+        // back to a track's height (#1078).
         let edge = Rect::from_x_y_ranges(
             egui::Rangef::new(at.time.min.min(at.headers.min), at.time.max.max(at.headers.max)),
             egui::Rangef::new(row.bottom() - 2.0, row.bottom() + 3.0),
@@ -1576,17 +1645,16 @@ pub(super) fn take_lanes(
         .intersect(at.visible);
         if edge.height() > 0.0 {
             let resize = ui
-                .interact(edge, Id::new(("take-lane-edge", lane.track.0, take.number)), Sense::click_and_drag())
+                .interact(edge, Id::unique(("take-lane-edge", lane.track.0, take.number)), Sense::click_and_drag())
                 .on_hover_cursor(egui::CursorIcon::ResizeVertical);
             resize.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, format!("Height of {}", take.name))
+                egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Height of {}", take.name))
             });
             if resize.double_clicked() {
-                state.take_heights.remove(&lane.track);
+                state.take_heights.remove(&(lane.track, take.number));
             } else if resize.dragged() {
-                let height =
-                    (state.take_row(lane.track) + resize.drag_delta().y).clamp(TAKE_ROW_RANGE.0, TAKE_ROW_RANGE.1);
-                state.take_heights.insert(lane.track, height);
+                let height = (take_row + resize.drag_delta().y).clamp(MIN_LANE, MAX_LANE);
+                state.take_heights.insert((lane.track, take.number), height);
             }
         }
         painter.hline(
@@ -1607,21 +1675,52 @@ pub(super) fn take_lanes(
         // at its inner edge, as a track's header has (#989).
         let swatch = crate::interaction::colour_picker::color32(colour);
         let shade = motion::mix(theme::window_background(), swatch, 0.35);
+        painter.rect_filled(whole_header, 0.0, theme::window_background());
         painter.rect_filled(header, 0.0, shade);
         let strip = Rect::from_min_size(header.min, Vec2::new(4.0, header.height()));
         painter.rect_filled(strip, 0.0, swatch);
+        state.take_headers.push(header.intersect(at.visible));
+        let lane_key = (lane.track, take.number);
+        if state.take_lanes_picked.contains(&lane_key) {
+            painter.rect_stroke(header, 0.0, Stroke::new(1.5, theme::selection()), StrokeKind::Inside);
+        }
         let name = ui.interact(
             header.intersect(at.visible),
-            Id::new(("take-name", lane.track.0, take.number)),
+            Id::unique(("take-name", lane.track.0, take.number)),
             Sense::click(),
         );
-        name.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, take.name.clone()));
+        name.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, take.name.clone()));
         // The piece a right-click on the lane was over, which Recolor colours alone (#989).
         let piece = state.take_piece.filter(|(t, n, _)| *t == lane.track && *n == take.number).map(|(_, _, p)| p);
-        let menu = |ui: &mut Ui, actions: &mut Vec<Action>, piece: Option<usize>| {
-            take_menu(ui, lane.track, take, piece, &params, actions)
+        let menu = |ui: &mut Ui, state: &mut ArrangementViewState, actions: &mut Vec<Action>, piece: Option<usize>| {
+            take_menu(ui, lane.track, take, piece, &params, state, actions)
         };
-        name.context_menu(|ui| menu(ui, actions, None));
+        // A click picks the lane, for Delete: with Ctrl it adds it or takes it out, with Shift it
+        // takes the lanes from the last one picked up to it.
+        if name.clicked() {
+            let shift = ui.input(|i| i.modifiers.shift);
+            state.take_lanes_picked.retain(|k| k.0 == lane.track);
+            let order: Vec<usize> = timeline.takes.iter().filter(|t| t.track == lane.track).map(|t| t.number).collect();
+            let place = |number: usize| order.iter().position(|n| *n == number);
+            let from = state.take_lanes_picked.last().and_then(|k| place(k.1));
+            if let (true, Some(from), Some(to)) = (shift, from, place(take.number)) {
+                let range = order.get(from.min(to)..=from.max(to)).unwrap_or_default();
+                state.take_lanes_picked = range.iter().map(|n| (lane.track, *n)).collect();
+            } else if ctrl {
+                if let Some(i) = state.take_lanes_picked.iter().position(|k| *k == lane_key) {
+                    state.take_lanes_picked.remove(i);
+                } else {
+                    state.take_lanes_picked.push(lane_key);
+                }
+            } else {
+                state.take_lanes_picked = vec![lane_key];
+            }
+            state.take_selected.clear();
+            state.take_area = None;
+            state.clear_selected_clip();
+            state.time_selection = None;
+        }
+        name.context_menu(|ui| menu(ui, state, actions, None));
         // Its buttons, as a track's header has (#989): delete, solo, its colour, and the up arrow
         // that puts the whole take on the track.
         let button = Vec2::splat(16.0);
@@ -1635,7 +1734,7 @@ pub(super) fn take_lanes(
         let small = theme::ui_font(theme::TEXT_SMALL);
         let soloed = state.take_solo == Some((lane.track, take.number));
         if header.height() >= button.y + 4.0 {
-            let id = |what: &str| Id::new(("take-button", what, lane.track.0, take.number));
+            let id = |what: &str| Id::unique(("take-button", what, lane.track.0, take.number));
             let clicked = |rect: Rect, what: &str, label: String| {
                 widgets::button_area(ui, rect.intersect(at.visible), id(what), label).on_hover_text(what.to_string())
             };
@@ -1715,12 +1814,10 @@ pub(super) fn take_lanes(
         }
         let body = ui.interact(
             row.intersect(at.visible),
-            Id::new(("take-lane", lane.track.0, take.number)),
+            Id::unique(("take-lane", lane.track.0, take.number)),
             Sense::click_and_drag(),
         );
-        body.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Comp from {}", take.name))
-        });
+        body.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Comp from {}", take.name)));
         if body.secondary_clicked()
             && let Some(pointer) = body.interact_pointer_pos()
         {
@@ -1731,11 +1828,11 @@ pub(super) fn take_lanes(
                 .position(|c| (c.start..c.start + c.length).contains(&beat))
                 .map(|p| (lane.track, take.number, p));
         }
-        body.context_menu(|ui| menu(ui, actions, piece));
+        body.context_menu(|ui| menu(ui, state, actions, piece));
         // A take lane selects: the pointer is the text cursor, a drag picks the part to comp, and
         // the piece a double-click would take shows under the pointer (#953, #989). With Ctrl
-        // held it is the ordinary pointer: a click picks a piece, a drag comps nothing.
-        let ctrl = ui.input(|i| i.modifiers.command);
+        // held it is the ordinary pointer: a click picks a piece, a drag paints an area or moves
+        // pieces (#1078).
         for &(_, _, piece) in state.take_selected.iter().filter(|(t, n, _)| *t == lane.track && *n == take.number) {
             if let Some(clip) = take.clips.get(piece) {
                 let rect = clip_rect(row, clip.start, clip.length, x_of);
@@ -1747,6 +1844,7 @@ pub(super) fn take_lanes(
         if body.clicked()
             && let Some(pointer) = body.interact_pointer_pos()
         {
+            state.take_area = None;
             if ctrl {
                 let beat = f64::from((pointer.x - at.time.min + scroll_x) / beat_width);
                 if let Some(piece) = take.clips.iter().position(|c| (c.start..c.start + c.length).contains(&beat)) {
@@ -1770,15 +1868,116 @@ pub(super) fn take_lanes(
             let beat = f64::from((pointer.x - at.time.min + scroll_x) / beat_width);
             if let Some(clip) = take.clips.iter().find(|c| (c.start..c.start + c.length).contains(&beat)) {
                 let rect = clip_rect(row, clip.start, clip.length, x_of);
+                if moves_at(rect, pointer.y) {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                }
                 painter.rect_stroke(rect, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+            }
+        }
+        // With Ctrl a drag only paints an area, wherever it starts (#1078).
+        if ctrl && state.take_area_drag.is_none() && body.hover_pos().is_some() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+        }
+        if body.drag_started()
+            && let Some(pointer) = ui.input(|i| i.pointer.press_origin()).or(body.interact_pointer_pos())
+        {
+            let beat = raw_beat(pointer.x);
+            let under = take.clips.iter().enumerate().find(|(_, c)| (c.start..c.start + c.length).contains(&beat));
+            if ctrl {
+                state.take_area_drag = Some((lane.track, take.number, beat_of(pointer.x)));
+                state.clear_take_selection();
+            } else if let Some((piece, clip)) = under
+                && moves_at(clip_rect(row, clip.start, clip.length, x_of), pointer.y)
+            {
+                // The part of a piece that moves a clip moves the piece, or those picked with it,
+                // on the grid (Alt for no grid), as a clip's does.
+                let key = (lane.track, take.number, piece);
+                let pieces = if state.take_selected.contains(&key) {
+                    let mine = state.take_selected.iter().filter(|(t, ..)| *t == lane.track);
+                    mine.map(|(_, n, p)| (*n, *p)).collect()
+                } else {
+                    vec![(take.number, piece)]
+                };
+                state.take_move =
+                    Some(TakeMove { take: take.number, track: lane.track, pieces, start: clip.start, grab: beat });
+                state.take_area = None;
+            }
+        }
+        // A piece's lower corners move its edges, bringing back the recording around it; a click
+        // and a drag elsewhere stay the lane's (#1078).
+        for (index, clip) in take.clips.iter().enumerate() {
+            let rect = clip_rect(row, clip.start, clip.length, x_of);
+            let lower = egui::Rangef::new(row.center().y, row.bottom() - 2.0);
+            // A narrow piece has only its right corner, the one that brings back what was cut.
+            let edges: &[bool] = if rect.width() < 16.0 { &[true] } else { &[true, false] };
+            for &end in edges {
+                let held = state
+                    .take_edge
+                    .filter(|e| e.track == lane.track && e.take == take.number && e.piece == index && e.end == end);
+                // The edge being dragged shows where it would stop.
+                if let Some(edge) = held {
+                    let (from, to) = if end { (clip.start, edge.at) } else { (edge.at, clip.start + clip.length) };
+                    let shown = clip_rect(row, from, (to - from).max(0.0), x_of);
+                    painter.rect_filled(shown, 0.0, theme::selection().gamma_multiply(0.25));
+                    painter.rect_stroke(shown, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+                }
+                let span = if end {
+                    egui::Rangef::new(rect.right() - 6.0, rect.right() + 2.0)
+                } else {
+                    egui::Rangef::new(rect.left() - 2.0, rect.left() + 6.0)
+                };
+                let corner = Rect::from_x_y_ranges(span, lower).intersect(at.visible);
+                if corner.width() <= 0.0 || corner.height() <= 0.0 || (ctrl && held.is_none()) {
+                    continue;
+                }
+                let side = if end { "End" } else { "Start" };
+                let id = Id::unique(("take-piece-edge", lane.track.0, take.number, index, end));
+                let grip = ui.interact(corner, id, Sense::drag());
+                grip.widget_info(|| {
+                    let label = format!("{side} of {} piece {}", take.name, index + 1);
+                    egui::WidgetInfo::labeled(egui::Role::Slider, true, label)
+                });
+                let grip = grip.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+                if grip.drag_started() {
+                    let at = if end { clip.start + clip.length } else { clip.start };
+                    state.take_edge = Some(TakeEdge { track: lane.track, take: take.number, piece: index, end, at });
+                }
+                if grip.dragged()
+                    && let Some(pointer) = ui.ctx().pointer_latest_pos()
+                    && let Some(edge) = state.take_edge.as_mut()
+                {
+                    let before = index.checked_sub(1).and_then(|n| take.clips.get(n));
+                    let after = take.clips.get(index + 1);
+                    let (low, high) = if end {
+                        let last =
+                            clip.latest_end.unwrap_or(f64::INFINITY).min(after.map_or(f64::INFINITY, |c| c.start));
+                        (clip.start + 1.0 / 64.0, last)
+                    } else {
+                        let first = clip.earliest_start.max(before.map_or(0.0, |c| c.start + c.length));
+                        (first.min(clip.start), clip.start + clip.length - 1.0 / 64.0)
+                    };
+                    edge.at = beat_of(pointer.x).clamp(low, high.max(low));
+                }
+                if grip.drag_stopped()
+                    && let Some(edge) = state.take_edge.take()
+                {
+                    let was = if end { clip.start + clip.length } else { clip.start };
+                    if (edge.at - was).abs() > 1e-6 {
+                        let mut trim = json!({ "track": lane.track.0, "take": take.number, "piece": index + 1 });
+                        trim[if end { "end" } else { "start" }] = json!(edge.at);
+                        actions.push(Action::new("take.trimPiece", trim));
+                    }
+                }
             }
         }
         // From where the button went down, not where the drag was recognised.
         if body.drag_started()
             && !ctrl
+            && state.take_move.is_none()
             && let Some(pointer) = ui.input(|i| i.pointer.press_origin()).or(body.interact_pointer_pos())
         {
             state.take_drag = Some((lane.track, take.number, beat_of(pointer.x)));
+            state.clear_take_selection();
         }
         if let Some((_, _, from)) = state.take_drag.filter(|d| d.0 == lane.track && d.1 == take.number)
             && let Some(pointer) = ui.ctx().pointer_latest_pos()
@@ -1812,49 +2011,258 @@ pub(super) fn take_lanes(
             }
         }
     }
-    // The passes of a take still recording that the loop or a jump already ended: take lanes
-    // at once, numbered after the kept ones, so each pass shows as soon as it is done (#909).
-    let kept = timeline.takes.iter().filter(|t| t.track == lane.track).count();
-    for (index, pass) in timeline.live_takes.iter().filter(|t| t.track == lane.track && t.finished).enumerate() {
-        let row = Rect::from_x_y_ranges(at.time, egui::Rangef::new(y, y + take_row));
-        let header = Rect::from_x_y_ranges(at.headers, row.y_range());
-        y += take_row + 1.0;
-        painter.hline(
-            egui::Rangef::new(at.time.min.min(at.headers.min), at.time.max.max(at.headers.max)),
-            row.bottom() + 0.5,
-            theme::hairline(theme::border()),
-        );
-        if row.bottom() < at.visible.top() || row.top() > at.visible.bottom() {
+    let down = ui.input(|i| i.pointer.primary_down());
+    let pointer = ui.ctx().pointer_latest_pos();
+    // The area being painted: from the take the drag began on to the one under the pointer, and
+    // from its first beat to the pointer's (on the grid, Alt for no grid).
+    if let Some((_, from_take, from)) = state.take_area_drag.filter(|d| d.0 == lane.track)
+        && let Some(pointer) = pointer
+    {
+        let first = rows.iter().position(|(n, _)| *n == from_take).unwrap_or(0);
+        let last = rows.iter().position(|(_, r)| pointer.y <= r.bottom() + 1.0).unwrap_or(rows.len().saturating_sub(1));
+        let covered = rows.get(first.min(last)..=first.max(last)).unwrap_or_default();
+        let to = beat_of(pointer.x);
+        let (start, end) = (from.min(to), from.max(to));
+        for (_, row) in covered {
+            let lit = Rect::from_x_y_ranges(egui::Rangef::new(x_of(start), x_of(end)), row.y_range());
+            painter.rect_filled(lit, 0.0, theme::selection().gamma_multiply(0.25));
+            painter.rect_stroke(lit, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+        }
+        if !down {
+            state.take_area_drag = None;
+            if end - start > 1e-6 {
+                let takes: Vec<usize> = covered.iter().map(|(n, _)| *n).collect();
+                // Pieces wholly inside are picked too, so a Ctrl drag from one moves them.
+                state.take_selected = timeline
+                    .takes
+                    .iter()
+                    .filter(|t| t.track == lane.track && takes.contains(&t.number))
+                    .flat_map(|t| t.clips.iter().enumerate().map(move |(p, c)| (t.number, p, c)))
+                    .filter(|(_, _, c)| start <= c.start + 1e-6 && c.start + c.length <= end + 1e-6)
+                    .map(|(n, p, _)| (lane.track, n, p))
+                    .collect();
+                state.take_area = Some(TakeArea { track: lane.track, takes, start, end });
+                state.clear_selected_clip();
+                state.time_selection = None;
+            }
+        }
+    }
+    // The area painted, lit on the lanes it covers.
+    if let Some(area) = state.take_area.as_ref().filter(|a| a.track == lane.track) {
+        for (_, row) in rows.iter().filter(|(n, _)| area.takes.contains(n)) {
+            let lit = Rect::from_x_y_ranges(egui::Rangef::new(x_of(area.start), x_of(area.end)), row.y_range());
+            painter.rect_filled(lit, 0.0, theme::selection().gamma_multiply(0.25));
+            painter.rect_stroke(lit, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+        }
+    }
+    // Pieces being moved, shown where they would land: on the grid, Alt for no grid, and as many
+    // lanes up or down as the pointer is from the lane the drag began on.
+    if let Some(drag) = state.take_move.clone().filter(|d| d.track == lane.track)
+        && let Some(pointer) = pointer
+    {
+        let piece = |&(number, index): &(usize, usize)| {
+            let take = timeline.takes.iter().find(|t| t.track == lane.track && t.number == number)?;
+            Some((number, take.clips.get(index)?))
+        };
+        let earliest = drag.pieces.iter().filter_map(piece).map(|(_, c)| c.start).fold(f64::INFINITY, f64::min);
+        let target = ruler_beat(drag.start + raw_beat(pointer.x) - drag.grab, grid, free);
+        let by = (target - drag.start).max(-earliest);
+        let lane_of = |number: usize| rows.iter().position(|(n, _)| *n == number).map(|i| i as i64);
+        let under =
+            rows.iter().position(|(_, r)| pointer.y <= r.bottom() + 1.0).unwrap_or(rows.len().saturating_sub(1));
+        let places: Vec<i64> = drag.pieces.iter().filter_map(|(n, _)| lane_of(*n)).collect();
+        let (first, last) = (places.iter().copied().min().unwrap_or(0), places.iter().copied().max().unwrap_or(0));
+        // They keep their places to each other, so they stop together at the first and last lane.
+        let lanes_by = (under as i64 - lane_of(drag.take).unwrap_or(0)).min(rows.len() as i64 - 1 - last).max(-first);
+        for (number, clip) in drag.pieces.iter().filter_map(piece) {
+            let landing_row =
+                lane_of(number).and_then(|at| usize::try_from(at + lanes_by).ok()).and_then(|at| rows.get(at));
+            if let Some((_, row)) = landing_row {
+                let landing = clip_rect(*row, clip.start + by, clip.length, x_of);
+                painter.rect_filled(landing, 0.0, theme::selection().gamma_multiply(0.25));
+                painter.rect_stroke(landing, 0.0, Stroke::new(1.5, theme::selection()), StrokeKind::Inside);
+            }
+        }
+        if !down {
+            state.take_move = None;
+            if by.abs() > 1e-6 || lanes_by != 0 {
+                let takes: Vec<usize> = drag.pieces.iter().map(|(n, _)| *n).collect();
+                let pieces: Vec<usize> = drag.pieces.iter().map(|(_, p)| p + 1).collect();
+                let mut params = json!({ "track": lane.track.0, "takes": takes, "pieces": pieces, "by": by });
+                if lanes_by != 0 {
+                    params["lanesBy"] = json!(lanes_by);
+                }
+                actions.push(Action::new("take.movePieces", params));
+                // Their numbers in their takes change with the move.
+                state.clear_take_selection();
+            }
+        }
+    }
+    // A corner scrolled out of view mid-drag has no widget left to say the drag ended.
+    if !down {
+        state.take_edge = state.take_edge.filter(|e| e.track != lane.track);
+    }
+}
+
+/// How far a take lane's header is set in from its track's.
+const TAKE_HEADER_INDENT: f32 = 20.0;
+
+/// Whether `clip`'s `edge` is a cut between parts of two takes, where the crossfade stands in for
+/// its fade (#1078).
+fn crossfades_at(timeline: &Timeline, clip: ClipId, edge: FadeEdge) -> bool {
+    timeline.comp_cuts.iter().any(|c| match edge {
+        FadeEdge::In => c.right == clip,
+        FadeEdge::Out => c.left == clip,
+    })
+}
+
+/// The crossfade at a cut between parts of two takes on a track (#1078), in place of the parts' own
+/// fades there: its two curves over the span it plays in, half of it on each side of the cut, at
+/// least wide enough to see. A square handle at each top end, shown with the pointer near, sets its
+/// length: the end follows the pointer and the other end mirrors it. A double-click on one puts it
+/// back to the length in Settings. A round handle where the curves cross, on one wide enough, bends
+/// both of them: dragged up the crossfade stays louder through the cut, down it dips. A double-click
+/// on it takes the bend away.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn comp_crossfade(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    row: Rect,
+    cut: &crate::arrangement::timeline::CompCut,
+    track_name: &str,
+    state: &mut ArrangementViewState,
+    x_of: &dyn Fn(f64) -> f32,
+    actions: &mut Vec<Action>,
+) {
+    let x = x_of(cut.beat);
+    let held = state.comp_fade_drag.filter(|(clip, _)| *clip == cut.left);
+    let length = held.map_or(cut.length, |(_, length)| length);
+    let half = ((length / 2.0) as f32 * state.beat_width).max(4.0);
+    let view = painter.clip_rect();
+    let bending = state.comp_curve_drag.filter(|(clip, ..)| *clip == cut.left);
+    let dragging = held.is_some() || bending.is_some();
+    if !dragging && (x + half + FADE_HANDLE < view.left() || x - half - FADE_HANDLE > view.right()) {
+        return;
+    }
+    let span = Rect::from_x_y_ranges(x - half..=x + half, row.y_range());
+    let ms = length * 60_000.0 / cut.bpm.max(1.0);
+    let mut hover = 0.0f32;
+    let mut handles = Vec::new();
+    for (end, handle_x) in [("start", span.left() - FADE_HANDLE), ("end", span.right())] {
+        let handle = Rect::from_min_size(Pos2::new(handle_x.round(), row.top()), Vec2::splat(FADE_HANDLE));
+        let hit = handle.expand((FADE_HANDLE_HIT - FADE_HANDLE) / 2.0).intersect(view);
+        if hit.width() <= 0.0 || hit.height() <= 0.0 {
             continue;
         }
-        // In its colour and named as the take it becomes ("3 Audio Take 2"), as the kept ones are.
-        let colour = take_colour(kept + index + 1);
-        let swatch = crate::interaction::colour_picker::color32(colour);
-        let shade = motion::mix(theme::window_background(), swatch, 0.35);
-        painter.rect_filled(header, 0.0, shade);
-        painter.rect_filled(Rect::from_min_size(header.min, Vec2::new(4.0, header.height())), 0.0, swatch);
-        widgets::text_in(
-            painter,
-            header.shrink2(Vec2::new(10.0, 0.0)),
-            Align2::LEFT_CENTER,
-            &format!("{} Take {}", lane.name, kept + index + 1),
-            theme::ui_font(theme::TEXT_SMALL),
-            ink_on(shade),
-        );
-        let look = Lane { mute: false, color: colour, ..lane.clone() };
-        paint_live_take(painter, row, &look, pass, x_of, beat_width, timeline);
+        let id = Id::unique(("comp-crossfade", cut.left.0, end));
+        let response = ui.interact(hit, id, Sense::click_and_drag());
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Crossfade {end} on {track_name}"))
+        });
+        let response =
+            response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal).on_hover_text(format!("Crossfade {ms:.0} ms"));
+        if response.double_clicked() {
+            state.comp_fade_drag = None;
+            actions.push(Action::new("take.setCrossfade", json!({ "clip": cut.left.0 })));
+        } else if response.dragged()
+            && let Some(pointer) = ui.ctx().pointer_latest_pos()
+        {
+            // From the cut out to the handle's inner side, so the handle stays under the pointer.
+            let out = ((pointer.x - x).abs() - FADE_HANDLE / 2.0).max(0.0);
+            let beats = f64::from(out / state.beat_width.max(1e-3)) * 2.0;
+            state.comp_fade_drag = Some((cut.left, beats.clamp(1e-3, cut.room.max(1e-3))));
+        }
+        if response.drag_stopped()
+            && let Some((clip, length)) = state.comp_fade_drag.take()
+        {
+            actions.push(Action::new("take.setCrossfade", json!({ "clip": clip.0, "length": length })));
+        }
+        let this = widgets::hover(ui, &response);
+        hover = hover.max(this);
+        handles.push((handle, this));
+    }
+    let shape = FadeShape::EqualPower;
+    let curve = FadeCurve { shape, curve: bending.map_or(cut.curve, |(_, curve, _)| curve) };
+    let center = curve_handle(span, FadeEdge::In, span.width(), curve);
+    let mut bend_handle = None;
+    let hit = Rect::from_center_size(center, Vec2::splat(FADE_HANDLE_HIT)).intersect(view);
+    if held.is_none() && span.width() >= CURVE_HANDLE_MIN_FADE && hit.width() > 0.0 && hit.height() > 0.0 {
+        let id = Id::unique(("comp-crossfade-curve", cut.left.0));
+        let response = ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
+        response.widget_info(|| {
+            let label = format!("Crossfade curve on {track_name}");
+            let mut info = egui::WidgetInfo::labeled(egui::Role::Slider, true, label);
+            info.value = Some(curve.curve);
+            info
+        });
+        let mine = |d: &(ClipId, f64, f32)| d.0 == cut.left;
+        if response.double_clicked() {
+            state.comp_curve_drag = None;
+            actions.push(Action::new("take.setCrossfade", json!({ "clip": cut.left.0, "curve": 0.0 })));
+        } else {
+            if response.drag_started_by(egui::PointerButton::Primary) {
+                // Where the button went down, not where the drag was recognised: the handle keeps
+                // its place under the pointer.
+                let pressed = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos());
+                state.comp_curve_drag = Some((cut.left, curve.curve, pressed.map_or(0.0, |p| p.y - center.y)));
+            }
+            if response.dragged_by(egui::PointerButton::Primary)
+                && let Some(pointer) = response.interact_pointer_pos()
+                && let Some(drag) = state.comp_curve_drag.as_mut().filter(|d| mine(d))
+            {
+                drag.1 = curve_at(span, shape, pointer.y - drag.2);
+            }
+            if response.drag_stopped_by(egui::PointerButton::Primary)
+                && let Some((clip, bend, _)) = state.comp_curve_drag.take_if(|d| mine(d))
+            {
+                let bend = (bend * 1000.0).round() / 1000.0;
+                actions.push(Action::new("take.setCrossfade", json!({ "clip": clip.0, "curve": bend })));
+            }
+        }
+        let this = widgets::hover(ui, &response);
+        hover = hover.max(this);
+        bend_handle = Some(this);
+    }
+    // A handle scrolled out of view mid-drag has no widget left to say the drag ended.
+    if !ui.input(|i| i.pointer.primary_down()) {
+        state.comp_fade_drag = state.comp_fade_drag.filter(|(clip, _)| *clip != cut.left);
+        state.comp_curve_drag = state.comp_curve_drag.filter(|(clip, ..)| *clip != cut.left);
+    }
+    let ink = theme::text_primary();
+    let active = if dragging { 1.0 } else { hover };
+    painter.rect_filled(span, 0.0, ink.gamma_multiply(0.08 + 0.10 * active));
+    let line = Stroke::new(1.0, ink.gamma_multiply(0.85));
+    painter.line(fade_line(span, FadeEdge::Out, span.left(), span.right(), curve), line);
+    painter.line(fade_line(span, FadeEdge::In, span.left(), span.right(), curve), line);
+    if held.is_some() {
+        let label = Rect::from_center_size(span.center(), Vec2::new(64.0, 14.0));
+        let font = theme::mono_font(theme::TEXT_TINY);
+        widgets::text_in(painter, label, Align2::CENTER_CENTER, &format!("{ms:.0} ms"), font, ink);
+    }
+    let near = span.expand2(Vec2::new(24.0, 0.0));
+    let pointer_near = ui.ctx().pointer_latest_pos().is_some_and(|p| near.contains(p) && view.contains(p));
+    if pointer_near || dragging {
+        for (handle, hover) in handles {
+            paint_fade_handle(painter, handle, hover);
+        }
+        if let Some(hover) = bend_handle {
+            let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
+            painter.circle(center, CURVE_HANDLE / 2.0, fill, theme::hairline(theme::window_background()));
+        }
     }
 }
 
 /// A take lane's menu (#989): Recolor lane colours the whole take and its parts on the track;
-/// Recolor only the piece of it the right-click was over (`piece`, from 0) and its parts; Delete
-/// take.
+/// Recolor only the piece of it the right-click was over (`piece`, from 0) and its parts; Add take,
+/// Delete take and the Arrangement's grid.
+#[allow(clippy::too_many_arguments)]
 fn take_menu(
     ui: &mut Ui,
     track: TrackId,
     take: &crate::arrangement::timeline::TakeRow,
     piece: Option<usize>,
     params: &serde_json::Value,
+    state: &mut ArrangementViewState,
     actions: &mut Vec<Action>,
 ) {
     ui.menu_button("Recolor lane", |ui| {
@@ -1876,10 +2284,16 @@ fn take_menu(
         });
     });
     ui.separator();
+    if ui.button("Add take").clicked() {
+        actions.push(Action::new("take.add", json!({ "track": track.0 })));
+        ui.close();
+    }
     if ui.button("Delete take").clicked() {
         actions.push(Action::new("take.delete", json!({ "track": params["track"], "take": params["take"] })));
         ui.close();
     }
+    ui.separator();
+    super::lane_menu::grid_section(ui, state);
 }
 
 /// Draws a take recording into the arrangement on its track's row (#909): from where its pass
@@ -1922,7 +2336,8 @@ pub(super) fn paint_live_take(
         latest_end: None,
         color: lane.color,
         stack_key: (0, take.start.to_bits()),
-        take: None,
+        // It holds takes from its first pass on: the corner mark says so (#1078).
+        take: Some(0),
         ara: false,
     };
     paint_clip(painter, rect, lane, &clip, Shown::of(&clip), take.start, x_of, beat_width, timeline, false);

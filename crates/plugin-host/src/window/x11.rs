@@ -21,6 +21,7 @@ x11rb::atom_manager! {
         WM_PROTOCOLS,
         WM_DELETE_WINDOW,
         _NET_WM_NAME,
+        _NET_WM_PID,
         UTF8_STRING,
     }
 }
@@ -102,6 +103,12 @@ impl Window {
                     b"suhina-plugin-editor\0Suhina\0",
                 )
                 .map_err(error)?;
+            // Which process the editor belongs to: a window manager's reader, and the tests',
+            // which must take a window of its host and no other's.
+            let id = std::process::id();
+            connection
+                .change_property32(PropMode::REPLACE, window, atoms._NET_WM_PID, AtomEnum::CARDINAL, &[id])
+                .map_err(error)?;
             if let Some(owner) = super::owner().and_then(|o| u32::try_from(o).ok()) {
                 // Floats above the engine's window and goes with it.
                 connection
@@ -180,6 +187,12 @@ impl Window {
                     b"suhina-plugin-editor\0Suhina\0",
                 )
                 .map_err(error)?;
+            // Which process the editor belongs to: a window manager's reader, and the tests',
+            // which must take a window of its host and no other's.
+            let id = std::process::id();
+            connection
+                .change_property32(PropMode::REPLACE, window, atoms._NET_WM_PID, AtomEnum::CARDINAL, &[id])
+                .map_err(error)?;
             connection.map_window(window).map_err(error)?;
             connection.flush().map_err(error)?;
             Ok(())
@@ -243,6 +256,22 @@ impl Drop for Window {
             open.close();
         }
     }
+}
+
+/// Sets what window `id`'s title bar says.
+pub(crate) fn set_title(id: WindowId, title: &str) {
+    with_open(id, |open| {
+        let (window, name, utf8) = (open.window, open.atoms._NET_WM_NAME, open.atoms.UTF8_STRING);
+        let _ = open.connection.change_property8(
+            PropMode::REPLACE,
+            window,
+            AtomEnum::WM_NAME,
+            AtomEnum::STRING,
+            title.as_bytes(),
+        );
+        let _ = open.connection.change_property8(PropMode::REPLACE, window, name, utf8, title.as_bytes());
+        let _ = open.connection.flush();
+    });
 }
 
 /// Resizes window `id` so its inside is `size` (a plug-in asked for it).

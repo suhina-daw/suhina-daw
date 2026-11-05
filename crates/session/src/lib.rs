@@ -72,6 +72,7 @@ mod relink;
 mod scales;
 mod sends;
 mod soundmap;
+mod take_carry;
 mod tempo;
 mod track_copy;
 mod track_kind;
@@ -93,7 +94,7 @@ pub use commands::{
 };
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::{MAX_FILES, file_tempo};
-pub use library::{Category, Found, file_info, library_commands, search_items};
+pub use library::{Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items};
 pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
 pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
@@ -177,6 +178,9 @@ pub struct Session {
     source: Option<PathBuf>,
     history: history::History,
     clipboards: clipboards::Clipboards,
+    /// How long the fades of a part comped from a take are, in milliseconds (Settings ›
+    /// Arrangement › Take lanes, #1078): the crossfade where it meets a part of another take.
+    take_crossfade_ms: f64,
     /// The colours a track without one of its own shows, by its place among the tracks (the
     /// window's palette), and the one a new track gets instead, when set ([`Session::set_track_colours`]).
     track_colours: (Vec<suhina_model::Rgb>, Option<suhina_model::Rgb>),
@@ -210,6 +214,7 @@ impl Session {
             source: None,
             history: history::History::default(),
             clipboards: clipboards::Clipboards::default(),
+            take_crossfade_ms: Project::COMP_CROSSFADE_MS,
             track_colours: (Vec::new(), None),
             track_type_colours: None,
             new_clips_take_track_colour: false,
@@ -223,13 +228,24 @@ impl Session {
         }
     }
 
+    /// Sets how long the fades of parts comped from now on are, in milliseconds.
+    pub fn set_take_crossfade_ms(&mut self, ms: f64) {
+        if ms.is_finite() && ms > 0.0 {
+            self.take_crossfade_ms = ms;
+        }
+    }
+
+    /// How long the fades of a part comped now are, in beats at the project's tempo.
+    pub(crate) fn take_crossfade_beats(&self) -> f64 {
+        self.take_crossfade_ms * self.project.transport.tempo_bpm / 60_000.0
+    }
+
     /// The take lane heard in place of its track's clips (`take.solo`), by its track and its
     /// number on the track, from 1.
     pub fn take_solo(&self) -> Option<(suhina_model::TrackId, usize)> {
         let (track, index) = self.take_solo?;
-        let take = self.project.arrangement.takes.get(index).filter(|t| t.track == track)?;
-        let number = self.project.arrangement.takes.iter().take(index + 1).filter(|t| t.track == take.track).count();
-        Some((track, number))
+        self.project.arrangement.takes.get(index).filter(|t| t.track == track)?;
+        Some((track, self.project.take_number(index)?))
     }
 
     /// The project as the engine plays it: with a soloed take lane's clips in place of its
@@ -569,8 +585,7 @@ impl Session {
         self.sync.player.as_mut().and_then(Player::take_live_input)
     }
 
-    /// The launch quantisation `launcher.setQuantization` set last (1 bar until then); the
-    /// Arrangement view's grid follows it too.
+    /// The launch quantisation `launcher.setQuantization` set last (1 bar until then).
     pub fn quantization(&self) -> Quantization {
         self.live.quantization
     }
@@ -911,6 +926,19 @@ impl Session {
     /// state is neither a change nor an undo step.
     pub fn project_as_heard(&mut self) -> Project {
         self.heard().0
+    }
+
+    /// [`Session::project_as_heard`] for a copy of `tracks`: only their plug-ins and those in the
+    /// groups among them are asked, so the wait is for what is copied.
+    pub(crate) fn project_as_heard_on(&mut self, tracks: &[suhina_model::TrackId]) -> Project {
+        let tracks = crate::track_copy::with_their_tracks(&self.project, tracks);
+        let keys: Vec<u64> = suhina_engine::plugin_devices(&self.project)
+            .iter()
+            .filter(|d| d.track.is_some_and(|t| tracks.contains(&t)))
+            .map(|d| d.key)
+            .collect();
+        let states = self.plugins.current_states_of(&keys);
+        self.with_states(&states)
     }
 
     /// [`Session::project_as_heard`], with the plug-in states it holds by device key.

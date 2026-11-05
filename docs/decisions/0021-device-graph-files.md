@@ -4,7 +4,7 @@ read_when: .sd, Suhina device SDK, device graph, community device, graph effect
 type: decision
 status: accepted
 built: partly
-last_verified: 2026-11-01
+last_verified: 2026-11-02
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs

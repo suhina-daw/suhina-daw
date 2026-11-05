@@ -232,6 +232,7 @@ fn the_waveform_zoom_draws_every_audio_clip_larger_and_is_kept_as_a_setting() {
         delta: egui::vec2(-1.0, -1.0),
         modifiers: Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     // The wheel is smoothed over frames: long enough for all of it to land.
     harness.run_steps(30);
@@ -400,6 +401,7 @@ fn settings_set_the_toolbar_size_and_the_mouse_switches() {
             delta: egui::vec2(0.0, -120.0),
             modifiers: Modifiers::NONE,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         harness.run();
     }
@@ -452,8 +454,14 @@ fn settings_set_the_toolbar_size_and_the_mouse_switches() {
 /// The window with Settings › Audio open, on `host` as its only audio host. (`Result` so that a
 /// failure is raised inside the test, where a panic is expected, and not in this helper.)
 fn settings_audio_on(host: &'static str) -> Result<Harness<'static, App>, String> {
+    settings_audio_with(std::sync::Arc::new(StandAudio(host)))
+}
+
+fn settings_audio_with(
+    system: std::sync::Arc<dyn suhina_session::AudioSystem>,
+) -> Result<Harness<'static, App>, String> {
     let mut app = demo_app();
-    app.projects_mut().set_audio_system(std::sync::Arc::new(StandAudio(host)));
+    app.projects_mut().set_audio_system(system);
     app.projects_mut().open_output(None).map_err(|e| e.message().to_owned())?;
     let mut harness = window(app);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
@@ -464,6 +472,51 @@ fn settings_audio_on(host: &'static str) -> Result<Harness<'static, App>, String
         harness.step();
     }
     Ok(harness)
+}
+
+/// The stand-in audio system with the outputs connected so far beside its own.
+struct ConnectedLater(std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>);
+
+impl suhina_session::AudioSystem for ConnectedLater {
+    fn hosts(&self) -> Vec<suhina_session::audio::HostInfo> {
+        let mut hosts = suhina_session::AudioSystem::hosts(&StandAudio("Stand"));
+        let connected = self.0.lock().map(|names| names.clone()).unwrap_or_default();
+        if let Some(host) = hosts.first_mut() {
+            let extra = connected.into_iter().map(|name| suhina_session::audio::DeviceInfo {
+                name: name.into(),
+                channels: 2,
+                ..Default::default()
+            });
+            host.devices.extend(extra);
+        }
+        hosts
+    }
+
+    fn open(
+        &self,
+        project: &suhina_engine::model::Project,
+        audio: &suhina_engine::AudioPool,
+        assets: &suhina_engine::DeviceAssets,
+        choice: &suhina_session::OutputChoice,
+        previous: Option<suhina_session::Player>,
+    ) -> Result<suhina_session::audio::Opened, String> {
+        suhina_session::AudioSystem::open(&StandAudio("Stand"), project, audio, assets, choice, previous)
+    }
+}
+
+/// Headphones connected while the page shows come into the Device list without asking for it.
+#[test]
+fn settings_audio_lists_an_output_connected_after_the_page_opened() {
+    let connected = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let system = std::sync::Arc::new(ConnectedLater(std::sync::Arc::clone(&connected)));
+    let mut harness = settings_audio_with(system).unwrap_or_else(|e| panic!("{e}"));
+    connected.lock().unwrap().push("Late Headphones");
+    harness.step();
+    harness.step();
+    harness.get_by_label("Device: Default (Stand Out)").click();
+    harness.step();
+    harness.step();
+    assert!(harness.query_by_label("Late Headphones").is_some());
 }
 
 #[test]
@@ -555,6 +608,8 @@ fn a_saved_map_window_opens_at_the_start() {
     // The map is laid out on a thread of its own, which a slow machine takes longer than a
     // second of frames for: it is given up to ten seconds of real time to finish.
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.25)
         .with_max_steps(4)
@@ -614,6 +669,7 @@ fn the_wheel_over_open_settings_leaves_the_arrangement_alone() {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(-120.0, -120.0),
                 phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
                 modifiers,
             });
             harness.input_mut().events.push(egui::Event::Zoom(1.5));

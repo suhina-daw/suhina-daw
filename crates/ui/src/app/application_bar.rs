@@ -19,8 +19,8 @@ pub(super) fn show(ui: &mut Ui, settings: ViewSettings, project: &str, timing: &
     let controls_width = if custom_controls { 96.0 } else { 0.0 };
     let controls = Rect::from_min_max(egui::pos2((row.right() - controls_width).max(row.left()), row.top()), row.max);
     let body = Rect::from_min_max(row.min, egui::pos2(controls.left(), row.bottom()));
-    let drag = ui.interact(body, ui.id().with("application-bar-drag"), Sense::click_and_drag());
-    drag.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "Suhina application bar"));
+    let drag = ui.interact(body, ui.scope_id().with("application-bar-drag"), Sense::click_and_drag());
+    drag.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, "Suhina application bar"));
     if custom_controls && drag.drag_started() {
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
     }
@@ -66,7 +66,7 @@ pub(super) fn show(ui: &mut Ui, settings: ViewSettings, project: &str, timing: &
             Rect::from_min_size(controls.min + Vec2::new(index as f32 * 32.0, 0.0), Vec2::new(32.0, row.height()));
         let glyph = ["−", "□", "×"].get(index).copied().unwrap_or("");
         let response = ui.put(rect, egui::Button::new(glyph).frame(false)).on_hover_text(label);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Window {label}")));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Window {label}")));
         if response.clicked() {
             ui.ctx().send_viewport_cmd(command);
         }
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn native_decorations_do_not_duplicate_window_buttons() {
-        let mut harness = Harness::builder().with_size((640.0, 28.0)).build_ui(|ui| {
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size((640.0, 28.0)).build_ui(|ui| {
             show(ui, ViewSettings::default(), "Project", "120 BPM");
         });
         harness.run();

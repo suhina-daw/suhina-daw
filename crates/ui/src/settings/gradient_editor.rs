@@ -32,7 +32,7 @@ pub(super) fn show(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> O
                     stop.position = stop.position.min(100);
                 }
                 gradient.stops.sort_by_key(|stop| stop.position);
-                let selected_id = ui.id().with("selected-stop");
+                let selected_id = ui.scope_id().with("selected-stop");
                 let mut selected = ui
                     .ctx()
                     .data(|data| data.get_temp::<usize>(selected_id))
@@ -51,13 +51,9 @@ pub(super) fn show(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> O
                     let stop = &mut gradient.stops[index];
                     let x = ramp.left() + ramp.width() * f32::from(stop.position) / 100.0;
                     let handle = Rect::from_center_size(Pos2::new(x, ramp.bottom() + 12.0), Vec2::new(18.0, 20.0));
-                    let response = ui.interact(handle, ui.id().with(("stop", index)), Sense::click_and_drag());
+                    let response = ui.interact(handle, ui.scope_id().with(("stop", index)), Sense::click_and_drag());
                     response.widget_info(|| {
-                        egui::WidgetInfo::labeled(
-                            egui::WidgetType::Button,
-                            true,
-                            format!("Select {name} stop {}", index + 1),
-                        )
+                        egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Select {name} stop {}", index + 1))
                     });
                     if response.clicked() || response.dragged() {
                         selected = index;
@@ -95,7 +91,7 @@ pub(super) fn show(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> O
                         let picker = edit_rgba(ui, &mut rgba, egui::color_picker::Alpha::OnlyBlend);
                         picker.widget_info(|| {
                             egui::WidgetInfo::labeled(
-                                egui::WidgetType::ColorButton,
+                                egui::Role::ColorWell,
                                 true,
                                 format!("{name} stop {} colour", selected + 1),
                             )

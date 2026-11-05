@@ -25,7 +25,7 @@ fn lists_the_built_in_devices_and_their_parameters() {
     let algorithm = fm["params"].as_array().unwrap().iter().find(|p| p["id"] == "algorithm").unwrap();
     assert_eq!(
         (algorithm["kind"].as_str(), algorithm["min"].as_f64(), algorithm["max"].as_f64()),
-        (Some("integer"), Some(1.0), Some(32.0))
+        (Some("integer"), Some(1.0), Some(43.0))
     );
     let utility = list.as_array().unwrap().iter().find(|d| d["id"] == "utility").unwrap();
     assert_eq!(utility["role"], "effect");
@@ -42,9 +42,9 @@ fn devices_are_added_set_switched_and_removed_with_undo() {
     let added = run(&mut session, "device.add", json!({ "track": "Keys", "id": "fm-synth" })).unwrap();
     assert_eq!(added["device"], 0);
     let set =
-        run(&mut session, "device.setParam", json!({ "track": 1, "device": 0, "param": "algorithm", "value": 40 }))
+        run(&mut session, "device.setParam", json!({ "track": 1, "device": 0, "param": "algorithm", "value": 400 }))
             .unwrap();
-    assert_eq!(set["value"], 32.0, "limited to the range");
+    assert_eq!(set["value"], 43.0, "limited to the range");
     run(&mut session, "device.setParam", json!({ "track": 1, "device": 0, "param": "algorithm", "value": 5.4 }))
         .unwrap();
     run(&mut session, "device.setEnabled", json!({ "track": 1, "device": 2, "enabled": false })).unwrap();
@@ -55,7 +55,10 @@ fn devices_are_added_set_switched_and_removed_with_undo() {
     let algorithm = devices[0]["params"].as_array().unwrap().iter().find(|p| p["id"] == "algorithm").unwrap();
     assert_eq!(algorithm["value"], 5.0);
     assert_eq!(devices[2]["enabled"], false);
-    assert_eq!(session.project().channels[0].devices[0].params, [DeviceParam::new("algorithm", 5.0)]);
+    let stored = &session.project().channels[0].devices[0].params;
+    assert!(stored.contains(&DeviceParam::new("algorithm", 5.0)));
+    assert!(stored.contains(&DeviceParam::new("op1.envMode", 1.0)), "a new FM Synth starts with envelopes in time");
+    assert!(stored.contains(&DeviceParam::new("op2.on", 0.0)), "and with one operator");
 
     run(&mut session, "device.remove", json!({ "track": 1, "device": 1 })).unwrap();
     assert_eq!(session.project().channels[0].devices.len(), 2);
@@ -1249,4 +1252,69 @@ fn a_device_is_named_by_its_id_wherever_it_moves() {
     let (old_ids, new_ids) = (ids_of(&mut session, json!("Keys")), ids_of(&mut session, new_track));
     assert_eq!(new_ids.len(), old_ids.len());
     assert!(new_ids.iter().all(|id| !old_ids.contains(id)), "{old_ids:?} {new_ids:?}");
+}
+
+/// Sets `calls` as one gesture on `device`, the last call ending it, as a preset does.
+fn one_gesture(session: &mut Session, device: Value, calls: &[(&str, f64)]) {
+    for (i, (param, value)) in calls.iter().enumerate() {
+        let set = run(
+            session,
+            "device.setParam",
+            json!({"track":1,"device":device,"param":param,"value":value,"continuous":i + 1 < calls.len(),"gesture":"preset"}),
+        );
+        assert!(set.is_ok(), "{set:?}");
+    }
+}
+
+#[test]
+fn a_gesture_that_turns_a_lane_off_is_still_one_undo_step() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({"track":1,"id":"utility"})).unwrap();
+    run(&mut session, "automation.addPoint", json!({"track":1,"device":0,"param":"gain","beat":0,"value":6})).unwrap();
+    let before = session.project().clone();
+    one_gesture(&mut session, json!(0), &[("balance", 0.5), ("gain", 3.0), ("balance", 0.25)]);
+    assert_ne!(session.project(), &before);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before);
+}
+
+#[test]
+fn a_gesture_on_a_device_in_a_group_is_one_undo_step() {
+    let mut session = Session::new(project());
+    for _ in 0..2 {
+        run(&mut session, "device.add", json!({"track":1,"id":"utility"})).unwrap();
+    }
+    run(&mut session, "device.group", json!({"track":1,"device":0,"count":2,"name":"G"})).unwrap();
+    let before = session.project().clone();
+    one_gesture(&mut session, json!("0/0/1"), &[("gain", 3.0), ("balance", 0.5), ("gain", 6.0)]);
+    assert_ne!(session.project(), &before);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before);
+}
+
+#[test]
+fn the_randomizer_moves_a_device_as_one_undo_step_and_repeats_from_a_seed() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "fm-synth" })).unwrap();
+    let added = session.project().channels[0].devices[0].params.clone();
+    let randomized = run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "seed": 5 })).unwrap();
+    assert!(randomized["changed"].as_u64().unwrap() > 0);
+    let params = session.project().channels[0].devices[0].params.clone();
+    assert_ne!(params, added);
+
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project().channels[0].devices[0].params, added);
+    run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "seed": 5 })).unwrap();
+    assert_eq!(session.project().channels[0].devices[0].params, params);
+}
+
+#[test]
+fn the_randomizer_refuses_what_it_cannot_do() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "fm-synth" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "utility" })).unwrap();
+    assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 1 })).is_err());
+    assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 9 })).is_err());
+    assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "seed": -1 })).is_err());
+    assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "amount": 2 })).is_err());
 }

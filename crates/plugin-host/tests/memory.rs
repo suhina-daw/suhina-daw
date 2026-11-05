@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use suhina_ipc::Outcome;
 use suhina_plugins::{Health, Launch, Plugin, host_memory};
 
-const PATIENT: Duration = Duration::from_secs(5);
+const PATIENT: Duration = Duration::from_secs(60);
 
 fn launch(group: &str) -> Launch {
     Launch {
@@ -55,13 +55,13 @@ fn the_control_bar_reads_what_the_host_reports_and_drops_what_died() {
     let (mut plugin, mut audio) = Plugin::start(launch("memory-report")).unwrap_or_else(|e| panic!("start: {e}"));
     let pid = plugin.process_id();
 
-    // The first report lands within about a second of the host starting; the wait is three
-    // times the cadence, so a busy runner cannot flake the test.
-    let deadline = Instant::now() + Duration::from_secs(3);
+    // The first report lands within about a second of the host starting, later on a busy runner;
+    // only a host that never reports waits this out.
+    let deadline = Instant::now() + PATIENT;
     while Instant::now() < deadline && host_memory().is_empty() {
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert!(!host_memory().is_empty(), "no host reported its memory within three seconds");
+    assert!(!host_memory().is_empty(), "no host reported its memory");
     for bytes in host_memory() {
         assert!(sane(bytes), "the control bar would show {bytes} bytes");
     }

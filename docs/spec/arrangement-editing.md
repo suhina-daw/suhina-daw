@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-01
+last_verified: 2026-11-05
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -101,9 +101,7 @@ and snapping) and is chosen from the same menu, at the right end of the Arrangem
 under **Grid** in the right-click menu of an empty spot of a lane and at the end of an automation
 lane's menus, all in the menu itself (no submenu): **Snap to grid**, an **adaptive** grid (Widest, Wide, Medium, Narrow, Narrowest:
 its lines follow the zoom) or a **fixed** value (`8 bars` … `1 bar`, `1/2` … `1/32`), **Narrow
-grid**, **Widen grid** and **Triplet grid**. A fixed value or no snapping picked in a right-click menu (a lane's, or an automation lane's)
-also sets the control bar's grid box to it (`launcher.setQuantization`), so the two show the same;
-an adaptive grid, which the box has no value for, stays the Arrangement's alone. While the Arrangement has the keyboard (it was
+grid**, **Widen grid** and **Triplet grid**. Picking here never changes the **Quantize** box, and the box never changes this grid. While the Arrangement has the keyboard (it was
 clicked last), Ctrl+1 makes the grid finer, Ctrl+2 coarser, Ctrl+3 turns triplets on or off and
 Ctrl+4 snapping; with the piano roll clicked last the same keys change its grid. Note values are
 quarter-note beats (`1/16` is a quarter of a beat, a triplet two thirds of that note), and bars are
@@ -132,7 +130,7 @@ goes to beat 3, not 4.
 **One grid for every timeline.** The arrangement, its automation lanes and the piano roll
 ([clip editor](ui-clip-editor.md) › Grid and snapping) draw and snap with the same code,
 `TimelineGrid` in `crates/ui/src/interaction/timeline_grid.rs` (#734). Each view keeps its own grid
-value (the control bar's here, the piano roll's grid menu there) and its own least spacing between
+value (the Arrangement's grid menu here, the piano roll's there) and its own least spacing between
 lines; only the arithmetic is shared.
 
 ## Selecting clips
@@ -277,7 +275,7 @@ whole span, its empty part silent.
 
 ## Time selection
 
-A time selection is a span of beats over some tracks; the keys then act on what plays inside it,
+A drag with Shift, in a lane or on the ruler, goes on from the time selection there is: it holds the time and the tracks of both. A time selection is a span of beats over some tracks; the keys then act on what plays inside it,
 not on whole clips. It is made by:
 
 - a drag from an empty spot of a lane (the rectangle's tracks and beats);
@@ -807,7 +805,7 @@ own band last. Bands narrow with depth: 6, 4, 3, then 2 px at every deeper level
 bands. Descendants keep each ancestor's band aligned with its header, so a group reads as one
 block without deep nesting crowding the controls. Every header keeps the fold triangle's room.
 A group's menu
-has **Assign track color to all tracks and clips**, which gives every track inside it, at any depth,
+has **Recolor group**, which gives every track inside it, at any depth,
 the colour the group shows, and turns the clips of the group and of those tracks back to their
 track's colour (`track.colorGroup` with `clips`, one undo step). A looping clip's top notches are at most 2.5 px wide on each side of the boundary and
 shrink with the lane height. Its 1 px boundary line uses half the leading edge's contrast; the top notch cuts through to the canvas colour for a clearer silhouette. A group that holds tracks has
@@ -857,7 +855,8 @@ input lines follow below.
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging
 one field moves every selected track's by the same amount (the others follow it as it is dragged,
-and the commands land when it is let go), one click on a track-on or a solo button turns them all
+and the commands land when it is let go; a number typed or a double-click sets them all to that
+value), one click on a track-on or a solo button turns them all
 off or on, and the whole list is one undo step. With one track selected, or with a click outside
 the selection, they act on that track alone, and it is heard while it is dragged: each frame sets
 the value with `continue`, so the drag is one undo step.
@@ -1031,8 +1030,11 @@ than forcing an already audible effect tail to zero. It does not move note times
 of latency, and spans render-block boundaries. Offline command rendering uses the same path.
 
 Stopping a running transport, whether returning to the marker or keeping the current position,
-uses the same latency-aligned transition unless all instrument slots provide their own smooth
-stop. Hosted instruments with a transport gate fade their own output over 5 ms instead.
+uses the same latency-aligned transition over 5 ms, unless no arrangement audio clip is playing and
+either no plug-in is loaded or the project has instrument slots that all provide their own smooth
+stop. A project with plug-in effects and no plug-in instrument takes it. Hosted instruments with a transport gate fade
+their own output over 5 ms instead; an arrangement audio clip has no fade of its own, so it always
+takes the transition, with or without plug-ins in the project.
 Note-off messages still arrive immediately; the transition smooths an abrupt release without
 cutting off effect tails.
 Stopping an already stopped transport does not begin a new transition.

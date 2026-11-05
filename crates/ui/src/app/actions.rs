@@ -4,6 +4,7 @@
 //! What the window does with the actions its views hand it: commands run on the active project, and the window's own actions.
 
 use super::*;
+use crate::kit::widgets::{SEND_RANGE, VOLUME_RANGE};
 
 impl App {
     /// Runs a window action (`settings::keymap::actions`) on the next frame, as its key would:
@@ -175,15 +176,23 @@ impl App {
                     actions.push(quantize);
                 }
             }
-            // Delete in the piano roll deletes its selected notes, not the clip.
-            "selection.delete" if let Some(delete) = self.piano_roll.delete_selected() => actions.push(delete),
-            // Copy, cut, paste and duplicate in the piano roll act on its notes, when it has some
-            // to act on; its own keys act only there.
-            "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate"
-                if let Some(edit) = self.piano_key(action) =>
-            {
-                actions.push(edit)
+            // While the piano roll has the keyboard, the edit keys act on its notes, or on nothing
+            // when it has none to act on: never on the clip or the view behind it.
+            "selection.delete" if self.piano_has_keyboard() || self.piano_edits_focused_clip() => {
+                actions.extend(self.piano_roll.delete_selected())
             }
+            "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate"
+                if self.piano_has_keyboard() || self.piano_edits_focused_clip() =>
+            {
+                actions.extend(self.piano_key(action))
+            }
+            "selection.mute"
+            | "selection.rename"
+            | "selection.split"
+            | "selection.consolidate"
+            | "selection.takeUp"
+            | "selection.takeDown"
+                if self.piano_has_keyboard() => {}
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
             // A range painted on an automation lane: copy, cut, paste (from its start), duplicate
             // (right after it) and delete act on it (#916).
@@ -276,8 +285,27 @@ impl App {
             "selection.cut" | "selection.duplicate" if self.shown == View::Session => {
                 self.status = Status::Hint("In the Launcher view, a slot's clip can be copied and pasted".into());
             }
-            // Take pieces picked with Ctrl and a click: Delete deletes them, the last take first so
-            // the numbers of the others hold when an emptied take goes (#989).
+            // Take lanes picked by their headers: Delete deletes them, in one undo step.
+            "selection.delete" if self.shown == View::Arrangement && !self.arrangement.take_lanes_picked.is_empty() => {
+                let picked = std::mem::take(&mut self.arrangement.take_lanes_picked);
+                let Some((track, _)) = picked.first() else { return };
+                let takes: Vec<usize> = picked.iter().map(|(_, n)| *n).collect();
+                actions.push(Action::new("take.delete", json!({ "track": track.0, "takes": takes })));
+            }
+            // An area painted across take lanes with Ctrl and a drag: Delete and Cut take what is
+            // in it, in one undo step (#1078).
+            "selection.delete" | "selection.cut"
+                if self.shown == View::Arrangement && self.arrangement.take_area.is_some() =>
+            {
+                let Some(area) = self.arrangement.take_area.take() else { return };
+                self.arrangement.take_selected.clear();
+                let id = if action == "selection.cut" { "take.cutRange" } else { "take.deleteRange" };
+                let params =
+                    json!({ "track": area.track.0, "takes": area.takes, "start": area.start, "end": area.end });
+                actions.push(Action::new(id, params));
+            }
+            // Take pieces picked with Ctrl and a click: Delete deletes them, one undo step per take
+            // (#989).
             "selection.delete" if self.shown == View::Arrangement && !self.arrangement.take_selected.is_empty() => {
                 let mut picked = std::mem::take(&mut self.arrangement.take_selected);
                 picked.sort_unstable_by_key(|(t, n, p)| (t.0, std::cmp::Reverse(*n), *p));
@@ -1042,6 +1070,71 @@ impl App {
         }
     }
 
+    /// A fader, pan or send moved on one of several selected tracks (a drag, the wheel, the arrow
+    /// keys), as `track.setMixerValues` on all of them: each keeps its distance from the one
+    /// moved, counted from where the selection stood when the drag began, so going to the end of
+    /// the range and back leaves it as it was. A send at silence counts as the bottom of the
+    /// range, so sends not used yet come up together. A send without `continue` was typed or
+    /// reset: every track takes that value. `None` when it is not part of a selection.
+    pub(super) fn drag_to_selection(&mut self, action: &Action) -> Option<Action> {
+        let id = |v: &serde_json::Value| v.as_u64().and_then(|n| u32::try_from(n).ok()).map(TrackId);
+        let (control, moved, target, value) = match action.id {
+            "track.setVolume" | "track.setPan" if action.params.get("continue").is_some() => {
+                let [one] = action.params["tracks"].as_array()?.as_slice() else { return None };
+                match action.id {
+                    "track.setVolume" => ("volume", id(one)?, None, &action.params["db"]),
+                    _ => ("pan", id(one)?, None, &action.params["pan"]),
+                }
+            }
+            "track.setSend" => {
+                ("send", id(&action.params["track"])?, id(&action.params["return"]), &action.params["level"])
+            }
+            _ => return None,
+        };
+        let selected = self.arrangement.selected_tracks.clone();
+        if selected.len() < 2 || !selected.contains(&moved) {
+            self.selection_drag = None;
+            return None;
+        }
+        let (floor, top) = if control == "send" { SEND_RANGE } else { VOLUME_RANGE };
+        let continued = action.params["continue"].as_bool() == Some(true);
+        let outright = action.params.get("continue").is_none();
+        let same = |d: &&SelectionDrag| d.control == control && d.moved == moved && d.target == target;
+        let start = match self.selection_drag.as_ref().filter(same).filter(|_| continued) {
+            Some(drag) => drag.start.clone(),
+            None => {
+                let project = self.session()?.project();
+                let is_return = |t: TrackId| {
+                    project.channel_of_track(t).is_some_and(|c| c.role == suhina_engine::model::ChannelRole::Effect)
+                };
+                selected
+                    .iter()
+                    .filter(|t| **t != TrackId::MAIN && Some(**t) != target)
+                    .filter(|t| control != "send" || **t == moved || !is_return(**t))
+                    .filter_map(|t| Some((*t, mixer_value(project, *t, control, target, floor)?)))
+                    .collect()
+            }
+        };
+        let from = start.iter().find(|(t, _)| *t == moved)?.1;
+        let to = value.as_f64().unwrap_or(floor);
+        let values: Vec<f64> = start
+            .iter()
+            .map(|(_, was)| match control {
+                "pan" => ((was + to - from).clamp(-1.0, 1.0) * 100.0).round() / 100.0,
+                _ if to <= floor || (!outright && was + to - from <= floor) => SILENCE_DB,
+                _ if outright => (to.min(top) * 10.0).round() / 10.0,
+                _ => ((was + to - from).min(top) * 10.0).round() / 10.0,
+            })
+            .collect();
+        let tracks: Vec<u32> = start.iter().map(|(t, _)| t.0).collect();
+        let mut params = json!({ "tracks": tracks, "control": control, "values": values, "continue": continued });
+        if let Some(target) = target {
+            params["return"] = json!(target.0);
+        }
+        self.selection_drag = Some(SelectionDrag { control, moved, target, start });
+        Some(Action::new("track.setMixerValues", params))
+    }
+
     /// `action` widened to the selection it is part of (#948): `device.setEnabled` on one of
     /// several devices picked on its track becomes `device.setEnabledMany` on all of them, and
     /// `track.setMute`, `track.setVolume` or `track.setPan` on one of several selected tracks
@@ -1063,8 +1156,8 @@ impl App {
                     json!({ "track": track.0, "devices": devices, "enabled": enabled }),
                 ))
             }
-            // A value set on one of several selected tracks, by a click, a drag, a typed number or
-            // the arrow keys, is set on all of them (#707, #948).
+            // A value set on one of several selected tracks, by a click or a typed number, is set
+            // on all of them (#707, #948); a drag or the arrow keys go through `drag_to_selection`.
             "track.setMute" | "track.setVolume" | "track.setPan" => {
                 let [one] = action.params["tracks"].as_array()?.as_slice() else { return None };
                 let track = TrackId(id(one)?);
@@ -1104,6 +1197,41 @@ impl App {
     }
 }
 
+/// A selection moving together with one of its faders, pans or sends.
+pub(super) struct SelectionDrag {
+    control: &'static str,
+    /// The track whose control is moved.
+    moved: TrackId,
+    /// The return, for a send.
+    target: Option<TrackId>,
+    /// Every track it moves and where it stood when the drag began.
+    start: Vec<(TrackId, f64)>,
+}
+
+/// A level below what `track.setMixerValues` counts as sound.
+const SILENCE_DB: f64 = -200.0;
+
+/// Where `track`'s `control` stands now: dB from `floor` up, or a pan.
+fn mixer_value(
+    project: &suhina_engine::model::Project,
+    track: TrackId,
+    control: &str,
+    target: Option<TrackId>,
+    floor: f64,
+) -> Option<f64> {
+    let channel = project.channel_of_track(track)?;
+    let db = |gain: f64| if gain > 0.0 { (20.0 * gain.log10()).max(floor) } else { floor };
+    match (control, target) {
+        ("volume", _) => Some(db(channel.volume)),
+        ("pan", _) => Some(channel.pan),
+        (_, Some(target)) => {
+            let target = project.channel_of_track(target)?.id;
+            Some(channel.sends.iter().find(|s| s.target == target).map_or(floor, |s| db(s.level)))
+        }
+        _ => None,
+    }
+}
+
 /// A mapping command's target in words: "track 2 scene 1", "scene 3", "the stop button of track 2".
 pub(super) fn mapping_target(p: &serde_json::Value) -> String {
     match p["target"].as_str() {
@@ -1127,7 +1255,7 @@ pub(super) fn describe(action: &Action) -> Option<String> {
             mapping_target(p)
         ),
         "launcher.removeMapping" => format!("Removed the keys of {}", mapping_target(p)),
-        "launcher.setQuantization" => format!("Grid {}", p["value"].as_str().unwrap_or_default()),
+        "launcher.setQuantization" => format!("Launch quantisation {}", p["value"].as_str().unwrap_or_default()),
         "clip.setLaunchMode" => format!("Launch mode {}", p["mode"].as_str().unwrap_or_default()),
         "clip.setQuantization" => format!("Clip launch quantisation {}", p["value"].as_str().unwrap_or_default()),
         "clip.setLegato" => {
