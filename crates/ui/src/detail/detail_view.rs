@@ -136,14 +136,7 @@ fn chain_row(
             }
             // An editor embedded in the panel is placed for devices on the track itself.
             let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
-            // A NAM panel asks for the mock's wider box (nam spec › The panels); the rest keep
-            // the plain device width.
-            let authored_base =
-                if device.file_device.is_some() { crate::detail::nam_panel::NAM_WIDTH } else { DEVICE_WIDTH };
-            // A NAM panel draws its own controls: the stock graph every built-in has (#600) does
-            // not size it, or its controls are crowded over each other.
-            let graph = device.graph.as_ref().filter(|_| device.file_device.is_none());
-            let authored_width = graph.map_or(authored_base, |graph| {
+            let authored_width = device.graph.as_ref().map_or(DEVICE_WIDTH, |graph| {
                 // The stock controls in columns of a compact panel's width, right of the canvas
                 // when there is one; wider where an `.sd` file places its controls further out.
                 let list = list_right(device, graph);
@@ -174,7 +167,7 @@ fn chain_row(
         })
         .collect();
     let total = boxes.iter().map(|(w, _)| w + 1.0).sum::<f32>();
-    let scroll_id = Id::new(("chain-scroll", chain.track.0));
+    let scroll_id = Id::unique(("chain-scroll", chain.track.0));
     let most = (total - area.width()).max(0.0);
     let mut offset = ui.data(|d| d.get_temp::<f32>(scroll_id)).unwrap_or(0.0).clamp(0.0, most);
     if most > 0.0 && ui.rect_contains_pointer(area) {
@@ -184,7 +177,7 @@ fn chain_row(
     let bar = (most > 0.0).then(|| Rect::from_min_max(Pos2::new(area.left(), area.bottom() - 6.0), area.max));
     if let Some(bar) = bar {
         let response = ui.interact(bar, scroll_id.with("bar"), Sense::drag());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Device chain scroll bar"));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Device chain scroll bar"));
         if response.dragged() {
             offset = (offset + response.drag_delta().x * total / area.width()).clamp(0.0, most);
         }
@@ -236,7 +229,7 @@ fn chain_row(
     }
     ui.set_clip_rect(outer_clip);
     // A device of this chain carried over it: a line where it would go (#688).
-    let carrying = ui.data(|d| d.get_temp::<(TrackId, usize)>(Id::new(crate::interaction::drop::DEVICE_CARRYING)));
+    let carrying = ui.data(|d| d.get_temp::<(TrackId, usize)>(Id::unique(crate::interaction::drop::DEVICE_CARRYING)));
     if let Some((track, from)) = carrying.filter(|(t, _)| *t == chain.track)
         && let Some(pointer) = ui.ctx().pointer_latest_pos().filter(|p| area.contains(*p))
         && let Some(to) = crate::interaction::drop::device_slot_at(&slots, pointer.x, false)
@@ -283,8 +276,6 @@ fn panel_height(device: &DeviceBox, editor: Option<Vec2>) -> f32 {
         if device.plugin.is_some() { 2.0 + BUTTON_HEIGHT / PARAM_ROW } else { device.params.len().max(1) as f32 };
     match editor {
         Some(editor) => EDITOR_TOP + editor.y + PAD,
-        // A NAM panel's own height (nam spec › The panels); the rest take their rows.
-        None if device.file_device.is_some() => crate::detail::nam_panel::NAM_HEIGHT,
         // A plug-in's rows, then its generated list, within the compact panel's height.
         None if device.plugin.is_some() => {
             let rows = ROW + PAD * 2.0 + rows * PARAM_ROW;
@@ -315,18 +306,18 @@ pub(super) struct ListFold {
 /// A list's open state belongs to its project: another project's track and device may match.
 pub(super) fn list_fold_id(ui: &Ui, track: TrackId, at: &DeviceAt) -> Id {
     let project = ui.data(|d| d.get_temp::<u32>(list_project_id())).unwrap_or(0);
-    Id::new(("list-fold", project, track.0, at))
+    Id::unique(("list-fold", project, track.0, at))
 }
 
 fn list_project_id() -> Id {
-    Id::new("device-list-project")
+    Id::unique("device-list-project")
 }
 
 /// The room between the columns of a generated list, with a line in its middle.
 pub(super) const LIST_GAP: f32 = 16.0;
 
 fn list_vertical_id() -> Id {
-    Id::new("device-list-vertical")
+    Id::unique("device-list-vertical")
 }
 
 /// Whether an opened long list scrolls down rather than continuing to the right, for this frame's
@@ -613,7 +604,7 @@ fn plugin_button(
     let response = widgets::button_area(
         ui,
         button,
-        egui::Id::new(("plugin-button", track.0, &device.at)),
+        egui::Id::unique(("plugin-button", track.0, &device.at)),
         format!("{label} {}", device.name),
     );
     let hover = widgets::hover(ui, &response);
@@ -652,9 +643,9 @@ pub fn show_ara_editor(
     let found = chain.devices.iter().find(|d| d.index == device && d.at.top());
     let Some(device) = found.or(chain.host.as_ref().filter(|h| h.index == device)) else { return };
     let Some(plugin) = &device.plugin else { return };
-    let response = ui.interact(area, egui::Id::new(("ara-editor", chain.track.0)), Sense::hover());
+    let response = ui.interact(area, egui::Id::unique(("ara-editor", chain.track.0)), Sense::hover());
     let label = format!("Clip editor {}", device.name);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
     let track = chain.track;
     let device_params = json!({ "track": track.0, "device": device.index });
     // Embedded: a row with Float above the editor, which takes it out to a window of its own.
@@ -674,8 +665,9 @@ pub fn show_ara_editor(
         // At the row's right end the ×, which hides the editor, as the piano roll's does.
         let hide =
             Rect::from_min_size(Pos2::new(area.right() - PAD - BUTTON_HEIGHT, float.top()), Vec2::splat(BUTTON_HEIGHT));
-        let response = crate::kit::widgets::button_area(ui, hide, egui::Id::new(("ara-hide", track.0)), "Hide editor")
-            .on_hover_text("Hide editor");
+        let response =
+            crate::kit::widgets::button_area(ui, hide, egui::Id::unique(("ara-hide", track.0)), "Hide editor")
+                .on_hover_text("Hide editor");
         let fill = crate::kit::motion::mix(
             theme::control_background(),
             theme::control_hover(),
@@ -741,7 +733,7 @@ fn ara_button(
     actions: &mut Vec<Action>,
 ) {
     let response =
-        widgets::button_area(ui, rect, egui::Id::new(("ara-button", id.0.0, id.1)), format!("{label} {plugin}"));
+        widgets::button_area(ui, rect, egui::Id::unique(("ara-button", id.0.0, id.1)), format!("{label} {plugin}"));
     let hover = widgets::hover(ui, &response);
     painter.fill_background(
         rect,
@@ -764,22 +756,20 @@ fn ara_button(
 
 /// Names the clip's properties for screen readers and tests: "Clip Walk, scene 2".
 fn clip_for_readers(ui: &Ui, rect: Rect, info: &ClipInfo) {
-    let response = ui.interact(rect, egui::Id::new("clip-properties"), Sense::hover());
+    let response = ui.interact(rect, egui::Id::unique("clip-properties"), Sense::hover());
     let label = if info.scene {
         format!("Clip {}, scene {}", info.name, info.start)
     } else {
         format!("Clip {}, start {}", info.name, info.start)
     };
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
 }
 
 fn hint(painter: &egui::Painter, area: Rect, text: &str) {
     painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), theme::text_hint());
 }
 
-/// One device: a header with its on switch and name, then its parameters, one per row. A NAM
-/// Amp Modeler or NAM Cab Loader draws its own panel instead
-/// ([docs/spec/nam-amp-and-cab.md] › The panels).
+/// One device: a header with its on switch and name, then its parameters, one per row.
 #[allow(clippy::too_many_arguments)]
 fn device_panel(
     ui: &mut Ui,
@@ -789,18 +779,18 @@ fn device_panel(
     device: &DeviceBox,
     selected: bool,
     actions: &mut Vec<Action>,
-    nam: &crate::detail::nam_panel::Lists,
+    nam: &crate::detail::device_widgets::Lists,
 ) -> bool {
     // The panel answers a right-click with its menu (the device's remove); its label is the
     // screen-reader and test name the chain drew for it before. A click selects the device, so
     // the Delete key takes it off the track.
     let panel = ui
-        .interact(rect, Id::new(("device-panel", track.0, &device.at)), Sense::click_and_drag())
+        .interact(rect, Id::unique(("device-panel", track.0, &device.at)), Sense::click_and_drag())
         .on_hover_text("Right-click for the device's menu; drag onto another track to move it there, Ctrl to copy it");
     if panel.drag_started_by(egui::PointerButton::Primary) && device.at.top() {
         crate::interaction::drop::start_device_carry(ui.ctx(), track, device.index);
     }
-    panel.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Device {}", device.name)));
+    panel.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Device {}", device.name)));
     let clicked = panel.clicked();
     panel.context_menu(|ui| {
         menus::device_menu(ui, track, &device.at, device.group.as_ref().map(|g| g.branches.len()), actions)
@@ -831,12 +821,12 @@ fn device_panel(
     );
     // The switch bypasses the device: off, the sound passes through untouched. It says which
     // way a click goes, and answers for itself to screen readers and tests.
-    let bypass = ui.interact(switch, Id::new(("device-bypass", track.0, &device.at)), Sense::click()).on_hover_text(
+    let bypass = ui.interact(switch, Id::unique(("device-bypass", track.0, &device.at)), Sense::click()).on_hover_text(
         if device.enabled { format!("Bypass {}", device.name) } else { format!("Enable {}", device.name) },
     );
     bypass.widget_info(|| {
         egui::WidgetInfo::labeled(
-            egui::WidgetType::Button,
+            egui::Role::Button,
             true,
             if device.enabled { format!("Bypass {}", device.name) } else { format!("Enable {}", device.name) },
         )
@@ -861,7 +851,7 @@ fn device_panel(
         let label =
             if fold.open { "Show fewer parameters".to_owned() } else { format!("Show {} more parameters", fold.more) };
         let chevron = ui.interact(at, fold_id.with("chevron"), Sense::click()).on_hover_text(label.clone());
-        chevron.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+        chevron.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
         if chevron.clicked() {
             ui.ctx().data_mut(|d| d.insert_temp(fold_id, ListFold { open: !fold.open, ..fold }));
         }
@@ -872,9 +862,9 @@ fn device_panel(
     // The X at the header's right end removes the device, as Remove device in its menu does.
     let close = Rect::from_center_size(Pos2::new(header.right() - PAD - 6.0, header.center().y), Vec2::splat(12.0));
     let remove = ui
-        .interact(close, Id::new(("device-remove", track.0, &device.at)), Sense::click())
+        .interact(close, Id::unique(("device-remove", track.0, &device.at)), Sense::click())
         .on_hover_text(format!("Remove {}", device.name));
-    remove.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Remove {}", device.name)));
+    remove.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Remove {}", device.name)));
     if remove.clicked() {
         actions.push(Action::new("device.remove", json!({ "track": track.0, "device": device.at.value() })));
     }
@@ -897,7 +887,7 @@ fn device_panel(
         let open = expanded(ui.ctx()).is_some_and(|(t, at)| t == track && at == device.at);
         let label =
             if open { format!("Close {}'s expanded panel", device.name) } else { format!("Expand {}", device.name) };
-        let response = widgets::button_area(ui, button, Id::new(("device-expand", track.0, &device.at)), &label)
+        let response = widgets::button_area(ui, button, Id::unique(("device-expand", track.0, &device.at)), &label)
             .on_hover_text(&label);
         if response.clicked() {
             if open {
@@ -915,6 +905,14 @@ fn device_panel(
         }
     }
     let kind_width = widgets::text_width(ui, &device.kind, theme::ui_font(theme::TEXT_TINY));
+    // What a canvas's device widgets read: the device's own state (its name, whether it
+    // runs, the file it is set) and, for a file-backing device, the folders' lists.
+    let state = crate::detail::device_widgets::PanelState {
+        name: device.name.clone(),
+        enabled: device.enabled,
+        file: device.file.as_deref().unwrap_or(""),
+        lists: Some(nam),
+    };
     // A built-in's header controls sit left of its maker, and the name gives way to them.
     let strip = device.graph.as_ref().and_then(|graph| graph.header.as_ref().map(|strip| (graph, strip)));
     let mut name_right = kind_right - PAD - kind_width;
@@ -922,7 +920,7 @@ fn device_panel(
         let size = Vec2::new(strip.size[0], strip.size[1]);
         let left = (name_right - size.x).max(name_left + 120.0);
         let place = Rect::from_min_size(Pos2::new(left, header.center().y - size.y / 2.0), size);
-        crate::detail::device_canvas::show(ui, place, strip, &graph.parameters, track, &device.at, actions);
+        crate::detail::device_canvas::show(ui, place, strip, &state, &graph.parameters, track, &device.at, actions);
         name_right = place.left() - PAD;
     }
     let name =
@@ -941,19 +939,6 @@ fn device_panel(
         Pos2::new(rect.left() + PAD, header.bottom() + PAD),
         Pos2::new(rect.right() - PAD, rect.bottom() - PAD),
     );
-    match device.file_device {
-        Some("nam-amp-modeler") => {
-            crate::detail::nam_panel::show_amp(ui, body, track, device, nam, actions);
-            outline(painter);
-            return clicked;
-        }
-        Some("nam-cab-loader") => {
-            crate::detail::nam_panel::show_cab(ui, body, track, device, nam, actions);
-            outline(painter);
-            return clicked;
-        }
-        _ => {}
-    }
     if let Some(plugin) = &device.plugin {
         let color = match plugin.state {
             PluginState::Crashed => theme::recording(),
@@ -974,7 +959,7 @@ fn device_panel(
         {
             let list = Rect::from_min_max(Pos2::new(body.left(), rect.top() + EDITOR_TOP), body.max);
             if list.height() >= PARAM_ROW {
-                graph_controls(ui, list, graph, list_height(device, graph), track, &device.at, actions);
+                graph_controls(ui, list, graph, &state, list_height(device, graph), track, &device.at, actions);
             }
         }
         outline(painter);
@@ -998,7 +983,7 @@ fn device_panel(
         return clicked;
     }
     if let Some(graph) = &device.graph {
-        graph_controls(ui, body, graph, list_height(device, graph), track, &device.at, actions);
+        graph_controls(ui, body, graph, &state, list_height(device, graph), track, &device.at, actions);
         outline(painter);
         return clicked;
     }

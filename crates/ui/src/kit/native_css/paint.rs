@@ -77,7 +77,7 @@ fn draw(painter: &Painter, rect: Rect, gradient: &Gradient, radius: f32, opacity
     }
     let key = (gradient.key, rect.width().to_bits(), rect.height().to_bits());
     let cache = painter.ctx().data_mut(|data| {
-        data.get_temp_mut_or_default::<Arc<Mutex<Textures>>>(egui::Id::new("css-gradient-textures")).clone()
+        data.get_temp_mut_or_default::<Arc<Mutex<Textures>>>(egui::Id::unique("css-gradient-textures")).clone()
     });
     let Ok(mut cache) = cache.lock() else {
         return false;

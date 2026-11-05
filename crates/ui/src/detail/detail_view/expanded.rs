@@ -7,7 +7,7 @@ use super::*;
 
 /// Where the open expanded panel's device is, kept in the window's memory while the app runs.
 pub(super) fn expanded_id() -> Id {
-    Id::new("device-expanded")
+    Id::unique("device-expanded")
 }
 
 /// The device whose expanded panel is open, if one is.
@@ -16,7 +16,7 @@ pub fn expanded(ctx: &egui::Context) -> Option<(TrackId, DeviceAt)> {
 }
 
 /// Opens the expanded panel of the device at `at` on `track`, closing any other.
-pub(super) fn open_expanded(ctx: &egui::Context, track: TrackId, at: DeviceAt) {
+pub(crate) fn open_expanded(ctx: &egui::Context, track: TrackId, at: DeviceAt) {
     ctx.data_mut(|d| d.insert_temp(expanded_id(), (track, at)));
 }
 
@@ -90,12 +90,20 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     let Some((graph, canvas)) = device.graph.as_ref().and_then(|g| Some((g, g.expanded.as_ref()?))) else {
         return;
     };
+    // The device's own state its body widgets read: no folders' lists here, so a file row
+    // would stay empty — no device's expanded canvas places one for now.
+    let state = crate::detail::device_widgets::PanelState {
+        name: device.name.clone(),
+        enabled: device.enabled,
+        file: device.file.as_deref().unwrap_or(""),
+        lists: None,
+    };
     let size = Vec2::new(canvas.size[0], canvas.size[1]);
     // A strip across the bottom of the main area: the canvas scaled to its width (half to two and
     // a half times its own size), the strip as tall as the scaled canvas; the views stay above.
     // The strip's height: its canvas's at the strip's width unless the header was dragged; kept
     // per device while the app runs.
-    let height_id = Id::new(("device-expanded-height", track.0, &device.at));
+    let height_id = Id::unique(("device-expanded-height", track.0, &device.at));
     let fitted = ROW + PAD + size.y * ((area.width() - PAD * 2.0) / size.x).clamp(0.5, 2.5) + PAD * 2.0;
     let wanted = ui.ctx().data(|d| d.get_temp::<f32>(height_id)).unwrap_or(fitted);
     let slice = if canvas.strip {
@@ -104,7 +112,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     } else {
         area
     };
-    egui::Area::new(Id::new("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(slice.min).show(
+    egui::Area::new(Id::unique("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(slice.min).show(
         ui.ctx(),
         |ui| {
             // The panel takes the pointer, so the views under it get no clicks.
@@ -118,7 +126,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                 // click fits it to its canvas again.
                 let grip = header.with_max_x(header.right() - 32.0);
                 let drag = ui
-                    .interact(grip, Id::new("device-expanded-resize"), Sense::click_and_drag())
+                    .interact(grip, Id::unique("device-expanded-resize"), Sense::click_and_drag())
                     .on_hover_cursor(egui::CursorIcon::ResizeVertical)
                     .on_hover_text("Drag up or down to change the height; double click fits it");
                 if drag.double_clicked() {
@@ -138,7 +146,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             );
             let close =
                 Rect::from_min_size(Pos2::new(header.right() - 28.0, header.top() + 3.0), Vec2::new(24.0, 20.0));
-            let response = widgets::button_area(ui, close, Id::new("device-expanded-close"), "Close expanded panel")
+            let response = widgets::button_area(ui, close, Id::unique("device-expanded-close"), "Close expanded panel")
                 .on_hover_text("Close the expanded panel (Esc)");
             let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
             painter.fill_background(close, 0.0, fill);
@@ -171,6 +179,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                                 ui,
                                 canvas_rect,
                                 canvas,
+                                &state,
                                 &graph.parameters,
                                 track,
                                 &device.at,
@@ -182,7 +191,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                 return;
             }
             // The canvas stretched to the strip on each axis.
-            crate::detail::device_canvas::show(ui, body, canvas, &graph.parameters, track, &device.at, actions);
+            crate::detail::device_canvas::show(ui, body, canvas, &state, &graph.parameters, track, &device.at, actions);
         },
     );
 }
@@ -192,10 +201,12 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
 /// list fills columns a compact panel wide, `list_height` tall, right of the canvas (ADR 0021 ›
 /// Amendment: device panels, 5); a `body` smaller than that scrolls. Every change is one
 /// `device.setParam`.
+#[allow(clippy::too_many_arguments)] // the state's draw bounds, device target and commands
 pub(super) fn graph_controls(
     ui: &mut Ui,
     body: Rect,
     graph: &GraphBox,
+    state: &crate::detail::device_widgets::PanelState<'_>,
     list_height: f32,
     track: TrackId,
     at: &DeviceAt,
@@ -226,7 +237,7 @@ pub(super) fn graph_controls(
             node_rows(painter, body, graph);
             if let Some(canvas) = &graph.canvas {
                 let rect = Rect::from_min_size(body.min + Vec2::new(0.0, nodes_height), custom_size);
-                crate::detail::device_canvas::show(ui, rect, canvas, &graph.parameters, track, at, actions);
+                crate::detail::device_canvas::show(ui, rect, canvas, state, &graph.parameters, track, at, actions);
             }
             let origin = Vec2::new(body.left(), body.top() + nodes_height);
             for x in &separators {

@@ -5,7 +5,8 @@
 // Copyright 2012 Google Inc.
 // Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE in this crate).
 // Changes: translated to Rust; the experimental and NEON kernels were left out; sums wrap as
-// the C code did on every platform it ran on.
+// the C code did on every platform it ran on; eleven four-operator algorithms added after the 32;
+// helpers opened to Suhina's kernel (`kernel.rs`).
 
 //! Six sine operators connected by one of 32 algorithms, rendered one engine block at a time.
 
@@ -23,14 +24,15 @@ pub struct OpParams {
     pub phase: i32,
 }
 
-const OUT_BUS_ADD: u8 = 1 << 2;
-const FB_IN: u8 = 1 << 6;
-const FB_OUT: u8 = 1 << 7;
+pub const OUT_BUS_ADD: u8 = 1 << 2;
+pub const FB_IN: u8 = 1 << 6;
+pub const FB_OUT: u8 = 1 << 7;
 
 /// Per algorithm, per operator (operator 6 first): bits 0-1 the bus written (0 is the
 /// output), bit 2 add to it rather than replace, bits 4-5 the bus read (0 is none), bits 6-7
-/// the feedback loop.
-const ALGORITHMS: [[u8; 6]; 32] = [
+/// the feedback loop. Algorithms 33 to 43 connect operators 1 to 4; 5 and 6 are heard directly
+/// when they are given a level.
+const ALGORITHMS: [[u8; 6]; 43] = [
     [0xc1, 0x11, 0x11, 0x14, 0x01, 0x14], // 1
     [0x01, 0x11, 0x11, 0x14, 0xc1, 0x14], // 2
     [0xc1, 0x11, 0x14, 0x01, 0x11, 0x14], // 3
@@ -63,23 +65,34 @@ const ALGORITHMS: [[u8; 6]; 32] = [
     [0x04, 0xc1, 0x11, 0x14, 0x04, 0x04], // 30
     [0xc1, 0x14, 0x04, 0x04, 0x04, 0x04], // 31
     [0xc4, 0x04, 0x04, 0x04, 0x04, 0x04], // 32
+    [0x04, 0x04, 0x01, 0x11, 0x11, 0x14], // 33: 4 > 3 > 2 > 1
+    [0x04, 0x04, 0x01, 0x05, 0x11, 0x14], // 34: (3 + 4) > 2 > 1
+    [0x04, 0x04, 0x01, 0x11, 0x05, 0x14], // 35: (4 > 3 + 2) > 1
+    [0x04, 0x04, 0x01, 0x05, 0x05, 0x14], // 36: (2 + 3 + 4) > 1
+    [0x04, 0x04, 0x01, 0x11, 0x14, 0x04], // 37: 4 > 3 > 2, 1
+    [0x04, 0x04, 0x01, 0x14, 0x01, 0x14], // 38: 4 > 3, 2 > 1
+    [0x04, 0x04, 0x01, 0x14, 0x14, 0x14], // 39: 4 > (3, 2, 1)
+    [0x04, 0x04, 0x01, 0x14, 0x04, 0x04], // 40: 4 > 3, 2, 1
+    [0x04, 0x04, 0x01, 0x05, 0x14, 0x04], // 41: (3 + 4) > 2, 1
+    [0x04, 0x04, 0x01, 0x14, 0x14, 0x04], // 42: 4 > (3, 2), 1
+    [0x04, 0x04, 0x04, 0x04, 0x04, 0x04], // 43: all heard
 ];
 
-fn flags(algorithm: usize, op: usize) -> u8 {
+pub fn flags(algorithm: usize, op: usize) -> u8 {
     ALGORITHMS.get(algorithm).and_then(|a| a.get(op)).copied().unwrap_or(0)
 }
 
-/// Whether operator `op` (0 is operator 6) is heard directly in `algorithm` (0 to 31).
+/// Whether operator `op` (0 is operator 6) is heard directly in `algorithm` (0 to 42).
 pub fn is_carrier(algorithm: usize, op: usize) -> bool {
     flags(algorithm, op) & OUT_BUS_ADD != 0
 }
 
 /// Gains below this are silent: the operator is skipped.
-const LEVEL_THRESHOLD: i32 = 1_120;
+pub const LEVEL_THRESHOLD: i32 = 1_120;
 
 /// Scratch buses for one block, shared by every voice of a synth.
 #[derive(Debug, Clone, Copy)]
-pub struct Buses([[i32; N]; 2]);
+pub struct Buses(pub [[i32; N]; 2]);
 
 impl Default for Buses {
     fn default() -> Self {
@@ -149,7 +162,12 @@ enum Input<'a> {
     Itself,
 }
 
-fn pick<'a>(bus: usize, output: &'a mut [i32; N], bus1: &'a mut [i32; N], bus2: &'a mut [i32; N]) -> &'a mut [i32; N] {
+pub fn pick<'a>(
+    bus: usize,
+    output: &'a mut [i32; N],
+    bus1: &'a mut [i32; N],
+    bus2: &'a mut [i32; N],
+) -> &'a mut [i32; N] {
     match bus {
         0 => output,
         1 => bus1,
@@ -158,15 +176,15 @@ fn pick<'a>(bus: usize, output: &'a mut [i32; N], bus1: &'a mut [i32; N], bus2: 
 }
 
 /// Gain step per sample, so a block ramps from `gain1` to `gain2`.
-fn gain_step(gain1: i32, gain2: i32) -> i32 {
+pub fn gain_step(gain1: i32, gain2: i32) -> i32 {
     gain2.wrapping_sub(gain1).wrapping_add(N as i32 >> 1) >> LG_N
 }
 
-fn scale(y: i32, gain: i32) -> i32 {
+pub fn scale(y: i32, gain: i32) -> i32 {
     ((i64::from(y) * i64::from(gain)) >> 24) as i32
 }
 
-fn write(slot: &mut i32, y: i32, add: bool) {
+pub fn write(slot: &mut i32, y: i32, add: bool) {
     *slot = if add { slot.wrapping_add(y) } else { y };
 }
 

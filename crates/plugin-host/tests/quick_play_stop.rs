@@ -277,51 +277,72 @@ fn toggle(
 }
 
 /// An instrument that takes longer than a whole block over every block with notes, with play
-/// and stop pressed every third block: the block it is late with is silent, and that is all.
-/// The block after it goes out as soon as the plug-in has caught up, within that block's own
-/// deadline, rather than being refused at once and lost too. Low sample rate, so the blocks
-/// are long (128 ms) and the scheduler's slices small beside them.
+/// and stop pressed every third block. A burst takes 140 ms and a block's deadline is 76.8 ms, so
+/// every press is a late block on any machine: the five that surely bring notes (a start's note-on
+/// at beat 0, a stop's note-off and all-notes-off; the first press finds it already playing) are
+/// at least that many. Only a late block is silent. That the press costs that block only
+/// is checked on a manual clock (`crates/engine/src/chain_wait_tests.rs`) and on the real clock by
+/// [`block_times_with_a_plug_in_late_with_a_start_or_a_stop`].
 #[test]
-fn a_plug_in_late_with_a_start_or_a_stop_costs_that_block_only() {
+fn a_plug_in_late_with_a_start_or_a_stop_is_still_given_every_block() {
     const SR: u32 = 8000;
     const FRAMES: usize = 1024;
-    // 140 ms: past the block's deadline (76.8 ms) and its end (128 ms), and over early in the
-    // next block.
     let (mut renderer, _controls, counts) = renderer(&["test:burst:140000"], SR);
     toggle(&mut renderer, &counts, FRAMES, SR, 3, 1000);
     let run = toggle(&mut renderer, &counts, FRAMES, SR, 18, 3);
     assert_eq!(run.given, [18], "the plug-in was given every block: {run:?}");
     assert!(run.silent <= run.late() as usize, "only a late block may be silent: {run:?}");
-    if DOORBELL_SLEEPS {
-        // Every press brings notes (a start's note-on at beat 0, a stop's note-off and
-        // all-notes-off): six presses, one late block each.
-        assert!(run.late() <= 6, "a press cost more than its own block: {run:?}");
-        assert!(run.late() >= 5, "the plug-in's bursts are past the deadline: {run:?}");
-        let deadline = Duration::from_secs_f64(FRAMES as f64 / f64::from(SR) * 0.6);
-        assert!(
-            run.percentile(1.0) < deadline + Duration::from_millis(15),
-            "a block waited past its deadline: {run:?}"
-        );
-    }
+    assert!(run.late() >= 5, "the plug-in's bursts are past the deadline: {run:?}");
 }
 
 /// Two tracks whose instruments get their notes at the same frame: one takes longer than a
-/// block over them, the other almost no time. While the chain of the first waits for its
-/// plug-in to catch up, the second goes on: it is never late, and the block still ends by the
-/// deadline.
+/// block over them, the other almost no time. Both are given every block, on any machine.
 #[test]
-fn a_plug_in_catching_up_holds_up_no_other_track() {
+fn a_plug_in_catching_up_leaves_the_other_track_given_every_block() {
     const SR: u32 = 8000;
     const FRAMES: usize = 1024;
     let (mut renderer, _controls, counts) = renderer(&["test:burst:140000", "test:burst:200"], SR);
     toggle(&mut renderer, &counts, FRAMES, SR, 3, 1000);
     let run = toggle(&mut renderer, &counts, FRAMES, SR, 18, 3);
     assert_eq!(run.given, [18, 18], "both plug-ins were given every block: {run:?}");
+    assert!(run.late[0] >= 5, "the slow instrument's bursts are past the deadline: {run:?}");
+}
+
+/// What a press costs on the real clock, which a shared machine's scheduler can stretch at any
+/// time, so this says something only on an idle one. An instrument that takes longer than a whole
+/// block over every block with notes: the block it is late with is silent, and that is all. The
+/// block after it goes out as soon as the plug-in has caught up, within that block's own deadline,
+/// rather than being refused at once and lost too. While its chain waits for that, a second
+/// instrument goes on: it is never late, and the block still ends by the deadline. Low sample
+/// rate, so the blocks are long (128 ms) and the scheduler's slices small beside them. Run with
+/// `cargo test -p suhina-plugin-host --release --test quick_play_stop block_times -- --ignored`.
+#[test]
+#[ignore = "bounds on elapsed time, for an idle machine"]
+fn block_times_with_a_plug_in_late_with_a_start_or_a_stop() {
+    const SR: u32 = 8000;
+    const FRAMES: usize = 1024;
+    let deadline = Duration::from_secs_f64(FRAMES as f64 / f64::from(SR) * 0.6);
+    // 140 ms: past the block's deadline (76.8 ms) and its end (128 ms), and over early in the
+    // next block.
+    let (mut renderer, _controls, counts) = renderer(&["test:burst:140000"], SR);
+    toggle(&mut renderer, &counts, FRAMES, SR, 3, 1000);
+    let run = toggle(&mut renderer, &counts, FRAMES, SR, 18, 3);
+    if DOORBELL_SLEEPS {
+        // Six presses, one late block each.
+        assert!(run.late() <= 6, "a press cost more than its own block: {run:?}");
+        assert!(
+            run.percentile(1.0) < deadline + Duration::from_millis(15),
+            "a block waited past its deadline: {run:?}"
+        );
+    }
+
+    let (mut renderer, _controls, counts) = crate::renderer(&["test:burst:140000", "test:burst:200"], SR);
+    toggle(&mut renderer, &counts, FRAMES, SR, 3, 1000);
+    let run = toggle(&mut renderer, &counts, FRAMES, SR, 18, 3);
     if DOORBELL_SLEEPS {
         assert!(run.late[0] <= 6, "a press cost the slow instrument more than its own block: {run:?}");
         assert_eq!(run.silent, 0, "the other instrument sounds through every block: {run:?}");
         assert_eq!(run.late[1], 0, "the other instrument was held up: {run:?}");
-        let deadline = Duration::from_secs_f64(FRAMES as f64 / f64::from(SR) * 0.6);
         assert!(run.percentile(1.0) < deadline + Duration::from_millis(15), "{run:?}");
     }
 }

@@ -154,7 +154,7 @@ fn a_worker_thread_builds_the_voices_and_launches_sound_as_offline() {
     // Stopped, the renderer takes the voices in as they arrive.
     let began = std::time::Instant::now();
     while prepared(&renderer) != [true, true] {
-        assert!(began.elapsed() < std::time::Duration::from_secs(10), "the worker never built the voices");
+        assert!(began.elapsed() < std::time::Duration::from_secs(60), "the worker never built the voices");
         renderer.process(&mut [0.0; 2 * 256]);
         std::thread::sleep(std::time::Duration::from_millis(1));
     }

@@ -75,12 +75,13 @@ pub fn confine(workspace: &Workspace, id: &str, mut params: Value, source: Optio
     Ok(params)
 }
 
-/// A library item is a file, maybe a voice in a bank (`bank.syx#4`), unless it names a device or
-/// a plug-in, which are not on disk.
+/// A library item is a file, maybe a voice in a bank (`bank.syx#4`), unless it names a device, a
+/// plug-in or a stock preset, which are not on disk.
 fn confine_item(workspace: &Workspace, params: &mut Value, name: &str) -> Result<(), String> {
     if let Some(item) = params.get(name).and_then(Value::as_str)
         && !item.starts_with("device:")
         && !item.starts_with("plugin:")
+        && !item.starts_with("stock:")
     {
         let (file, voice) = match item.rsplit_once('#') {
             Some((file, voice)) if voice.parse::<usize>().is_ok() => (file, Some(voice.to_string())),

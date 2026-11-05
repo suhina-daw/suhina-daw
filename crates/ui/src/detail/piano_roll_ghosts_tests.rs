@@ -160,3 +160,57 @@ fn a_slot_clip_shows_the_other_slots_of_its_scene() {
     assert_eq!(got.sources, vec!["Bass".to_string(), "Keys".to_string(), "Vox".to_string()]);
     assert_eq!(got.notes.len(), 12);
 }
+
+/// The clips picked each get a bar in the edited clip's beats, the edited one marked, and the notes of
+/// the others say where they come from.
+#[test]
+fn picked_clips_get_a_bar_each_and_their_notes_find_them() {
+    let project = demo_project();
+    let clips: Vec<ClipRef> = project
+        .arrangement
+        .lanes
+        .iter()
+        .filter_map(|lane| Some((lane.track?, lane)))
+        .flat_map(|(track, lane)| lane.clips.iter().map(move |clip| (track, clip)))
+        .filter(|(track, clip)| notes_of(&project, *track, clip).is_some_and(|notes| !notes.is_empty()))
+        .map(|(track, clip)| ClipRef::Arrangement(track, clip.id))
+        .take(2)
+        .collect();
+    let [edited, other] = clips[..] else { panic!("the demo project has two MIDI clips: {clips:?}") };
+    let mut ghosts = Ghosts::default();
+    add_picked(&project, edited, &[edited, other], &mut ghosts);
+    assert_eq!(ghosts.picked.len(), 2);
+    assert_eq!(ghosts.picked.iter().filter(|bar| bar.edited).map(|bar| bar.clip).collect::<Vec<_>>(), [edited]);
+    assert!(ghosts.is_picked(other) && ghosts.is_picked(edited));
+    assert!(ghosts.picked.iter().all(|bar| bar.length > 0.0 && !bar.name.is_empty()));
+
+    let edited_clip = clip_at(&project, edited).unwrap();
+    let other_clip = clip_at(&project, other).unwrap();
+    let want = placement(other, other_clip).start - placement(edited, edited_clip).start
+        + first_pass(&placement(edited, edited_clip)).unwrap().content;
+    let bar = ghosts.picked.iter().find(|bar| bar.clip == other).unwrap();
+    assert_eq!(bar.start, want, "where it lies in time");
+    assert!(!ghosts.notes.is_empty());
+    assert!(ghosts.notes.iter().all(|note| note.clip == other));
+}
+
+/// Clips at the same time get a row each, clips apart share one, and more than fit share the last.
+#[test]
+fn bars_at_the_same_time_lie_one_above_the_other() {
+    let bar = |start: f64, length: f64| PickedBar {
+        clip: ClipRef::Slot(TrackId(1), 0),
+        start,
+        length,
+        name: String::new(),
+        color: Color32::RED,
+        edited: false,
+        row: 0,
+    };
+    let rows = |mut bars: Vec<PickedBar>| {
+        lay_out_bars(&mut bars);
+        bars.iter().map(|bar| bar.row).collect::<Vec<_>>()
+    };
+    assert_eq!(rows(vec![bar(0.0, 4.0), bar(0.0, 4.0), bar(0.0, 4.0)]), [0, 1, 2]);
+    assert_eq!(rows(vec![bar(4.0, 4.0), bar(0.0, 4.0)]), [0, 0], "side by side");
+    assert_eq!(rows(vec![bar(0.0, 4.0); 6]), [0, 1, 2, 3, 3, 3]);
+}

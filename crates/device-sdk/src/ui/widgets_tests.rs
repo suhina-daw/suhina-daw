@@ -135,6 +135,58 @@ fn widgets_work_with_unrelated_parameter_names() {
 }
 
 #[test]
+fn the_device_state_widgets_bind_no_parameter_and_the_layouts_gate_them() {
+    let parameter = Parameter::new("gain", "Gain", (-24., 24.), 0.);
+    let control = |widget, gesture| CustomControl {
+        id: "one".into(),
+        name: "One".into(),
+        tooltip: String::new(),
+        bounds: [0., 0., 48., 22.],
+        widget: Some(widget),
+        gesture,
+        x: None,
+        y: None,
+        drawing: vec![],
+        visible_when: None,
+    };
+    for (widget, what) in [
+        (Widget::DeviceSwitch, None),
+        (Widget::DeviceNote, None),
+        (Widget::DeviceFiles { part: FileRowPart::Pack, what: "model".into() }, None),
+        (
+            Widget::DeviceFiles { part: FileRowPart::NextFile, what: "cab".into() },
+            Some("a part the rows place".to_owned()),
+        ),
+    ] {
+        let ui = DeviceUi { controls: vec![control(widget.clone(), UiGesture::Drag)], ..DeviceUi::default() };
+        assert!(ui.validate(std::slice::from_ref(&parameter)).is_ok(), "{what:?}");
+        let decoded: DeviceUi = serde_json::from_str(&serde_json::to_string(&ui).unwrap()).unwrap();
+        assert_eq!(decoded.controls[0].widget, Some(widget.clone()));
+        // No drawing of its own: the host draws it from device state.
+        assert!(decoded.controls[0].drawings().is_empty());
+        // A binding of its own reads nothing for these widgets.
+        let mut bound = control(widget, UiGesture::Drag);
+        bound.x = Some(UiBinding::new("gain"));
+        let bound = DeviceUi { controls: vec![bound], ..DeviceUi::default() };
+        assert!(bound.validate(std::slice::from_ref(&parameter)).is_err());
+    }
+    // A `what` without words is refused, so a layout cannot place a row a device takes none.
+    let empty = DeviceUi {
+        controls: vec![control(Widget::DeviceFiles { part: FileRowPart::File, what: String::new() }, UiGesture::Drag)],
+        ..DeviceUi::default()
+    };
+    assert!(empty.validate(std::slice::from_ref(&parameter)).is_err());
+    let long = DeviceUi {
+        controls: vec![control(
+            Widget::DeviceFiles { part: FileRowPart::File, what: "model file".repeat(16) },
+            UiGesture::Drag,
+        )],
+        ..DeviceUi::default()
+    };
+    assert!(long.validate(&[parameter]).is_err());
+}
+
+#[test]
 fn widget_drawings_resolve_the_host_palette() {
     let control = CustomControl {
         widget: Some(Widget::Button { label: "Enable".into(), off_label: None, indicator: false }),

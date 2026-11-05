@@ -35,13 +35,14 @@ const INDEX_FOLDER: &str = "library";
 
 /// What a browser item is, from its key (`docs/spec/browser.md` › Terms): a file by its
 /// absolute path, a voice of a preset bank as `<path>#<n>`, a built-in effect or instrument as
-/// `device:<id>`, a plug-in as `plugin:<spec>`.
+/// `device:<id>`, a plug-in as `plugin:<spec>`, a preset that ships with Suhina as `stock:<key>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Item {
     File(PathBuf),
     Voice(PathBuf, usize),
     Device(String),
     Plugin(String),
+    Stock(String),
 }
 
 impl Item {
@@ -54,6 +55,9 @@ impl Item {
         }
         if let Some(spec) = key.strip_prefix("plugin:") {
             return (!spec.is_empty()).then(|| Self::Plugin(spec.to_string()));
+        }
+        if let Some(stock) = key.strip_prefix("stock:") {
+            return (!stock.is_empty()).then(|| Self::Stock(stock.to_string()));
         }
         if let Some((path, voice)) = key.rsplit_once('#')
             && suhina_media::info::kind_of(Path::new(path)) == Some(FileKind::Preset)
@@ -70,6 +74,7 @@ impl Item {
             Self::Voice(path, voice) => format!("{}#{voice}", path.display()),
             Self::Device(id) => format!("device:{id}"),
             Self::Plugin(spec) => format!("plugin:{spec}"),
+            Self::Stock(key) => format!("stock:{key}"),
         }
     }
 

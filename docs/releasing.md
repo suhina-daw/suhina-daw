@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
 type: howto
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-03
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -251,6 +251,16 @@ The test build follows the same rule: its `cache` job builds the test build's bi
 push to `main` that changes them, only to save the cache, and pull requests' test builds restore it
 and save none. Their own caches, 0.6 to 0.8 GB per system on every build, had filled the 10 GB and
 evicted the others.
+
+**What the tests compile.** `cargo test` builds all of the workspace's crates in every run, with
+the `test` profile, and about 90% of that time is LLVM at `opt-level = 1`; linking is 1 to 3% on
+each system, so a faster linker has nothing to win. The crates that process no sound are built at
+`opt-level = 0` in that profile (`[profile.test.package]` in `Cargo.toml`). Measured on one machine,
+that takes the compile from 236 to 114 seconds on Linux, 600 to 300 on Windows and 380 to 183 on
+macOS, and the tests' run from 108 to 147, 138 to 203 and 148 to 192, about three quarters of it in
+the window tests (`crates/ui/tests/main.rs`). The crates that process sound stay at 1: with them
+at 0, `suhina-engine`'s tests take 93 seconds instead of 7. A new crate starts at 1, and joins the
+list if it processes no sound and takes long to compile.
 
 The queue is a setting, not code: Settings › Rules (or Branches) › the rule for `main` › **Require
 merge queue**, with the merge method used today, a group size of about 5 and *Only merge

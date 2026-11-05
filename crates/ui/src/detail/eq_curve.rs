@@ -123,7 +123,7 @@ struct Address {
 impl Address {
     /// The address of the device at `at`: its command target and its id key.
     fn new(track: TrackId, at: &DeviceAt) -> Self {
-        Self { target: at.value(), ids: egui::Id::new(("eq-curve", track.0, &at.0)) }
+        Self { target: at.value(), ids: egui::Id::unique(("eq-curve", track.0, &at.0)) }
     }
 }
 
@@ -299,7 +299,7 @@ fn frequency_text(frequency: f64) -> String {
 /// The bands it returns are the shown levels, gliding towards each frame's fresh reading with
 /// attack/release ballistics, so the area flows with the music instead of flickering.
 fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f32; ANALYSER_BANDS]> {
-    let monitor = ui.ctx().data(|d| d.get_temp::<Arc<MeterMonitor>>(egui::Id::new("eq-spectrum")))?;
+    let monitor = ui.ctx().data(|d| d.get_temp::<Arc<MeterMonitor>>(egui::Id::unique("eq-spectrum")))?;
     let spectrum = monitor.spectrum();
     // The watch's generation so the held levels know when the row's owner changed: a graph
     // swap resets the watch (and the ring with it), and levels keyed only by track and
@@ -310,14 +310,14 @@ fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f
     // next window; when the engine stops, the count stops and the line holds the last
     // spectrum.
     let cursor = spectrum.appended(track, device).unwrap_or_default();
-    let cursor_id = egui::Id::new(("eq-spectrum-cursor", track.0, device));
+    let cursor_id = egui::Id::unique(("eq-spectrum-cursor", track.0, device));
     if cursor != ui.ctx().data(|d| d.get_temp::<usize>(cursor_id)).unwrap_or(0) {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(30));
     }
     ui.ctx().data_mut(|d| d.insert_temp(cursor_id, cursor));
     // The window and the transform's plan are the same for every panel and every frame; the
     // scratch is built anew, on the UI thread, where allocating is free.
-    let cache = egui::Id::new("eq-spectrum-analyser");
+    let cache = egui::Id::unique("eq-spectrum-analyser");
     let (window, plan) = ui.ctx().data_mut(|d| {
         if d.get_temp::<(Arc<[f32; RING]>, Arc<dyn rustfft::Fft<f32>>)>(cache).is_none() {
             let plan: Arc<dyn rustfft::Fft<f32>> = rustfft::FftPlanner::<f32>::new().plan_fft_forward(RING);
@@ -337,7 +337,7 @@ fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f
     // attack, down with the release — the DSP crate's follower, the compressor's own block,
     // driven once a frame at the frame's own step. Without it each window's transform redraws
     // the area from nothing every 30 ms and percussive material reads as a flicker.
-    let shown_id = egui::Id::new(("eq-spectrum-shown", track.0, device));
+    let shown_id = egui::Id::unique(("eq-spectrum-shown", track.0, device));
     let now = ui.input(|i| i.time);
     // The glide's held levels belong to one monitor at one watch generation: a session
     // switch reuses the same track and device keys, and a graph swap gives the same keys a
@@ -406,8 +406,8 @@ fn draw_display(
 ) {
     let colors = theme::palette();
     let painter = ui.painter_at(display);
-    ui.interact(display, ui.id().with("eq-display"), Sense::hover())
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "EQ response display"));
+    ui.interact(display, ui.scope_id().with("eq-display"), Sense::hover())
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, "EQ response display"));
     painter.rect_filled(display, 2.0, colors.window_background);
     let label = theme::ui_font(9.0);
     // The dB grid: a line every 6 dB, labelled at the left edge; the 0 dB line brightest. The
@@ -532,7 +532,7 @@ fn draw_dots(
             .interact(Rect::from_center_size(at, Vec2::splat(22.0)), id, Sense::click_and_drag())
             .on_hover_text(format!("{caption}. Drag to move; double-click resets the band."))
             .on_hover_cursor(egui::CursorIcon::Move);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &caption));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &caption));
         let selected = selection.1 == index;
         let (fill, ring, ink) = if selected {
             (colors.accent, colors.accent, theme::text_inverse())
@@ -673,7 +673,7 @@ fn draw_strip(
         ))
         .on_hover_cursor(egui::CursorIcon::ResizeVertical);
     response.widget_info(|| {
-        let mut info = egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &parameter.name);
+        let mut info = egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &parameter.name);
         info.current_text_value = Some(text.clone());
         info
     });
@@ -753,8 +753,7 @@ fn draw_type_menus(
             .interact(rect, address.ids.with(("eq-type", selection.0, index)), Sense::click())
             .on_hover_text(format!("Band {}'s type: {}", index + 1, TYPE_NAMES[band.kind]));
         response.widget_info(|| {
-            let mut info =
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Band {} type", index + 1));
+            let mut info = egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Band {} type", index + 1));
             info.current_text_value = Some(TYPE_NAMES[band.kind].to_string());
             info
         });
@@ -843,8 +842,7 @@ fn draw_numbers(
             } else {
                 format!("Band {} is off. Click to switch it on and select it.", index + 1)
             });
-        response
-            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Band {}", index + 1)));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Band {}", index + 1)));
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 2.0, if band.on { colors.accent } else { colors.control_background });
         painter.rect_stroke(
@@ -893,8 +891,7 @@ fn draw_edit_switch(ui: &mut egui::Ui, bounds: Rect, selection: &mut (usize, usi
         let response = ui
             .interact(button, address.ids.with(("eq-edit", index)), Sense::click())
             .on_hover_text(format!("Edit curve {letter}'s bands"));
-        response
-            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Edit curve {letter}")));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Edit curve {letter}")));
         painter.rect_filled(button, 2.0, if selected { colors.accent } else { colors.control_background });
         painter.rect_stroke(button, 2.0, Stroke::new(1.0, colors.border), egui::StrokeKind::Inside);
         painter.text(

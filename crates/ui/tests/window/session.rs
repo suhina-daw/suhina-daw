@@ -18,7 +18,7 @@ fn the_add_track_buttons_keep_their_width_with_many_tracks() {
         state: SessionViewState::default(),
         actions: Vec::new(),
     };
-    let mut harness = Harness::builder().with_size(SIZE).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
         |ui, v: &mut SessionHarness| session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions),
         many,
     );
@@ -98,7 +98,7 @@ fn a_folded_group_hides_its_columns_in_the_session_view() {
     project.tracks.insert(0, group);
     let view =
         SessionHarness { grid: TrackGrid::build(&project, None), state: SessionViewState::default(), actions: vec![] };
-    let mut harness = Harness::builder().with_size(SIZE).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
         |ui, v: &mut SessionHarness| session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions),
         view,
     );
@@ -311,6 +311,66 @@ fn drums_slot(harness: &Harness<'static, App>, scene: usize) -> Option<String> {
     p.content(clip.content).map(|c| c.name.clone())
 }
 
+/// Pressing Tab while an arrangement clip is dragged switches the view and the drag goes on
+/// as a carry: let go over a slot, the clip is copied into it (#1063).
+#[test]
+fn an_arrangement_clip_dragged_with_tab_switch_drops_into_a_slot() {
+    let mut harness = arrangement_app();
+    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_top() + egui::vec2(0.0, 6.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(from + egui::vec2(10.0, 0.0));
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4).as_deref(), Some("Fill"));
+    let starts: Vec<f64> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[0].clips.iter().map(|c| c.start).collect())
+        .unwrap_or_default();
+    assert_eq!(starts, [0.0, 64.0, 112.0, 128.0], "the arrangement clip stays where it was");
+}
+
+/// Pressing Tab while a slot's clip is dragged switches the view and the drag goes on as a
+/// carry: let go over a lane, the clip is copied there (#1063).
+#[test]
+fn a_slot_clip_dragged_with_tab_switch_drops_on_a_lane() {
+    let mut harness = window(demo_app());
+    let from = harness.get_by_label("Launch Walk on Bass (scene 2)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(from + egui::vec2(0.0, 12.0));
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Arrangement);
+    // Bars 1 to 8 of Bass are empty; Root starts at bar 9, 8 points a beat.
+    let root = harness.get_by_label("Clip Root on Bass at bar 9").rect();
+    let to = egui::pos2(root.left() - 16.0 * 8.0, root.center().y);
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+    let bass: Vec<(f64, f64)> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+        .unwrap_or_default();
+    assert!(bass.contains(&(16.0, 4.0)), "{bass:?}");
+    assert!(matches!(harness.state().status(), Status::Done(text) if text.contains("Copied Walk to Bass")));
+}
+
 #[test]
 fn an_arrangement_clip_copied_with_ctrl_c_pastes_into_the_selected_slot() {
     let mut harness = arrangement_app();
@@ -411,6 +471,506 @@ fn a_slot_clip_dragged_over_the_arrangement_switch_drops_on_a_lane() {
         .unwrap_or_default();
     assert!(bass.contains(&(16.0, 4.0)), "{bass:?}");
     assert!(matches!(harness.state().status(), Status::Done(text) if text.contains("Copied Walk to Bass")));
+}
+
+/// Holding the mouse down on an arrangement clip and pressing Tab, before the pointer has
+/// moved enough for the drag to be decided, carries it the same way: let go over a slot and
+/// the clip is copied into it (#1063).
+#[test]
+fn an_arrangement_clip_pressed_with_tab_switch_drops_into_a_slot() {
+    let mut harness = arrangement_app();
+    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_top() + egui::vec2(0.0, 6.0);
+    harness.hover_at(from);
+    harness.step();
+    // The press, a frame for the view to see it, then Tab — the pointer never moves.
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4).as_deref(), Some("Fill"));
+    let starts: Vec<f64> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[0].clips.iter().map(|c| c.start).collect())
+        .unwrap_or_default();
+    assert_eq!(starts, [0.0, 64.0, 112.0, 128.0], "the arrangement clip stays where it was");
+}
+
+/// Holding the mouse down on a slot's clip and pressing Tab, before the pointer has moved
+/// enough for the drag to be decided, selects the slot and carries the clip the same way: let
+/// go over a lane and the clip is copied there (#1063).
+#[test]
+fn a_slot_clip_pressed_with_tab_switch_drops_on_a_lane() {
+    let mut harness = window(demo_app());
+    let from = harness.get_by_label("Select Walk on Bass (scene 2)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    // The press, a frame for the view to see it: the slot is selected at once.
+    harness.drag_at(from);
+    harness.step();
+    assert_eq!(harness.state().selected_slot(), Some((TrackId(2), 1)));
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Arrangement);
+    // Bars 1 to 8 of Bass are empty; Root starts at bar 9, 8 points a beat.
+    let root = harness.get_by_label("Clip Root on Bass at bar 9").rect();
+    let to = egui::pos2(root.left() - 16.0 * 8.0, root.center().y);
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+    let bass: Vec<(f64, f64)> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+        .unwrap_or_default();
+    assert!(bass.contains(&(16.0, 4.0)), "{bass:?}");
+    assert!(matches!(harness.state().status(), Status::Done(text) if text.contains("Copied Walk to Bass")));
+}
+
+/// A press that began a time selection (a clip's body, by default) grabs no clip: held through
+/// a Tab it switches the view and carries nothing, and nothing is copied on the release.
+#[test]
+fn a_time_selection_press_held_through_tab_carries_nothing() {
+    let mut harness = arrangement_app();
+    let clip = harness.get_by_label("Clip Fill on Drums at bar 29").rect();
+    let from = egui::pos2(clip.left() + 20.0, clip.bottom() - 6.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4), None, "the time selection carried no clip");
+    let starts: Vec<f64> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[0].clips.iter().map(|c| c.start).collect())
+        .unwrap_or_default();
+    assert_eq!(starts, [0.0, 64.0, 112.0, 128.0], "the arrangement clip stays where it was");
+}
+
+/// Tab, the move over the slot and the let-go land in one frame: the record of the held press
+/// lives through the frame of its own release, so the switch's first frame probes the drop and
+/// the copy lands on it.
+#[test]
+fn an_arrangement_clip_pressed_tab_and_let_go_in_one_frame_drops_into_a_slot() {
+    // The slot's place: the layout is the same with the Session shown by Tab as shown directly.
+    let slot = window(demo_app()).get_by_label("Stop Drums (scene 5)").rect().center();
+    let mut harness = arrangement_app();
+    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_top() + egui::vec2(0.0, 6.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    // Tab, the move and the release are processed in one frame. A plain `drop_at` would follow
+    // the release with the pointer gone; the release alone is sent here.
+    harness.key_press(Key::Tab);
+    harness.hover_at(slot);
+    harness.event(egui::Event::PointerButton {
+        pos: slot,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.step();
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4).as_deref(), Some("Fill"), "the copy lands on the switch's own frame");
+    let starts: Vec<f64> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[0].clips.iter().map(|c| c.start).collect())
+        .unwrap_or_default();
+    assert_eq!(starts, [0.0, 64.0, 112.0, 128.0], "the arrangement clip stays where it was");
+}
+
+/// An empty slot has no clip to carry: a press held on it through a Tab switches the view and
+/// carries nothing, and the release over a lane leaves the lane as it was, with no error.
+#[test]
+fn pressing_an_empty_slot_held_through_tab_carries_nothing() {
+    // Keys' first slot without its stop button: an empty slot nothing launches or stops, the
+    // kind the has-clip check must not carry.
+    let mut project = demo_project();
+    project.launcher.columns[2].slots[0].has_stop = false;
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut harness = window(app);
+    let bass_before: Vec<(f64, f64)> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+        .unwrap_or_default();
+    let from = harness.get_by_label("Empty slot on Keys (scene 1)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Arrangement);
+    // Bars 1 to 8 of Bass are empty; Root starts at bar 9, 8 points a beat.
+    let root = harness.get_by_label("Clip Root on Bass at bar 9").rect();
+    let to = egui::pos2(root.left() - 16.0 * 8.0, root.center().y);
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+    let bass: Vec<(f64, f64)> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+        .unwrap_or_default();
+    assert_eq!(bass, bass_before, "the empty slot carried no clip");
+    assert!(!matches!(harness.state().status(), Status::Error(_)), "{:?}", harness.state().status());
+}
+
+/// A press that was let go and followed by a new press, with no frame of no button down
+/// between, carries only what the new press holds: the old record dies at the new press
+/// (CodeRabbit review).
+#[test]
+fn a_new_press_replaces_the_record_of_the_press_before_it() {
+    let mut harness = arrangement_app();
+    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_top() + egui::vec2(0.0, 6.0);
+    // Bars 1 to 8 of Bass are empty: a lane spot no clip's own widget could say anything of.
+    let root = harness.get_by_label("Clip Root on Bass at bar 9").rect();
+    let empty = egui::pos2(root.left() - 16.0 * 8.0, root.center().y);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    // The release and the new press land as one frame's events: no frame in between where no
+    // button is down. The new press begins on the empty lane spot.
+    harness.event(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.drag_at(empty);
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4), None, "the new press carried nothing of the old one");
+    let starts: Vec<f64> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[0].clips.iter().map(|c| c.start).collect())
+        .unwrap_or_default();
+    assert_eq!(starts, [0.0, 64.0, 112.0, 128.0], "the arrangement clip stays where it was");
+}
+
+/// A slot's clip deleted while its press is held: the record has no clip to carry, the view
+/// switch under it carries nothing, and the release over a lane leaves the project as it was,
+/// with no error.
+#[test]
+fn a_slot_clip_deleted_while_its_press_is_held_carries_nothing() {
+    let mut harness = window(demo_app());
+    let bass_before: Vec<(f64, f64)> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+        .unwrap_or_default();
+    let from = harness.get_by_label("Select Walk on Bass (scene 2)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    // Delete takes the selected slot's clip while the press is still held.
+    harness.key_press(Key::Delete);
+    harness.step();
+    assert!(harness.query_by_label("Select Walk on Bass (scene 2)").is_none(), "the clip is gone from the slot");
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Arrangement);
+    // Bars 1 to 8 of Bass are empty; Root starts at bar 9, 8 points a beat.
+    let root = harness.get_by_label("Clip Root on Bass at bar 9").rect();
+    let to = egui::pos2(root.left() - 16.0 * 8.0, root.center().y);
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+    let bass: Vec<(f64, f64)> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+        .unwrap_or_default();
+    assert_eq!(bass, bass_before, "a record of a clip that is gone carries nothing");
+    assert!(!matches!(harness.state().status(), Status::Error(_)), "{:?}", harness.state().status());
+}
+
+/// With the Erase tool, a press held on a clip grabs nothing: the tool acts on its click, so a
+/// view switch under the press carries nothing, and nothing is copied on the release.
+#[test]
+fn an_erase_tool_press_held_through_tab_carries_nothing() {
+    let mut harness = arrangement_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.arrangement_toolbar = true;
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    // A click on a lane gives the view the focus; 4 chooses Erase.
+    harness.get_by_label("Lane Drums").click();
+    harness.run();
+    harness.key_press(Key::Num4);
+    harness.run();
+    // High on Beat B's body: the whole clip is in view (the one at bar 29 sits at the window's
+    // edge and vanishes under a settings repaint).
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    let from = egui::pos2(clip.left() + 20.0, clip.top() + 4.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4), None, "the Erase tool's press carried nothing");
+    // The clip stayed, for the Erase tool acts on a click and the press was let go elsewhere.
+    let starts: Vec<f64> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[0].clips.iter().map(|c| c.start).collect())
+        .unwrap_or_default();
+    assert_eq!(starts, [0.0, 64.0, 112.0, 128.0]);
+}
+
+/// With Ctrl choosing time selection on a clip's body, the modifiers can arrive while a press
+/// is held: the press becomes a time-selection's then, and the tab under it carries nothing.
+#[test]
+fn a_press_the_modifiers_turn_into_a_time_selection_carries_nothing() {
+    let mut harness = arrangement_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.time_select_ctrl = true;
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    // High on the clip's body, where a plain press would grab it. Beat B's whole body is in
+    // view; the clip at bar 29 sits at the window's edge and vanishes under a settings repaint.
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    let from = egui::pos2(clip.left() + 20.0, clip.top() + 4.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    // Ctrl down with the button still held: the press is a time selection's now.
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4), None, "the press now selects time, and carries nothing");
+    let starts: Vec<f64> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[0].clips.iter().map(|c| c.start).collect())
+        .unwrap_or_default();
+    assert_eq!(starts, [0.0, 64.0, 112.0, 128.0], "the arrangement clip stays where it was");
+}
+
+/// A slot's clip deleted while its press is held: the press carries nothing, so holding it over
+/// the Arrangement view's name does not switch the view (CodeRabbit review).
+#[test]
+fn a_slot_clip_deleted_while_its_press_is_held_does_not_switch_the_view_on_hover() {
+    let mut harness = window(demo_app());
+    let from = harness.get_by_label("Select Walk on Bass (scene 2)").rect().center();
+    let switch = harness.get_by_label("Arrangement view").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Delete);
+    harness.step();
+    assert!(harness.query_by_label("Select Walk on Bass (scene 2)").is_none(), "the clip is gone from the slot");
+    wait_over(&mut harness, switch);
+    assert_eq!(harness.state().view(), View::Session, "a press with no clip switched the view");
+    harness.drop_at(switch);
+    harness.run();
+}
+
+/// An arrangement clip deleted while its press is held: the Tab under the press carries
+/// nothing, and the release over a slot copies nothing and reports no error (CodeRabbit
+/// review).
+#[test]
+fn an_arrangement_clip_deleted_while_its_press_is_held_carries_nothing() {
+    let mut harness = arrangement_app();
+    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_top() + egui::vec2(0.0, 6.0);
+    // A click selects the clip, so Delete takes it while the next press is held on it.
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.drop_at(from);
+    harness.run();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Delete);
+    harness.step();
+    assert!(harness.query_by_label("Clip Fill on Drums at bar 29").is_none(), "the clip is gone");
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4), None, "a deleted clip carried nothing");
+    assert!(
+        !matches!(harness.state().status(), Status::Error(text) if text.contains("does not exist")),
+        "{:?}",
+        harness.state().status()
+    );
+}
+
+/// An undo while a slot's clip is carried can take the clip out of its slot: the carry lets
+/// go, and the release over a lane copies nothing and reports no error (CodeRabbit review).
+#[test]
+fn an_undo_during_a_carry_lets_it_go() {
+    let mut harness = window(demo_app());
+    let bass = |h: &Harness<'static, App>| -> Vec<(f64, f64)> {
+        h.state()
+            .session()
+            .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+            .unwrap_or_default()
+    };
+    let bass_before = bass(&harness);
+    // Walk copied into Drums' fifth slot: an edit the undo takes back.
+    let walk = harness.get_by_label("Launch Walk on Bass (scene 2)").rect().center();
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.hover_at(walk);
+    harness.step();
+    harness.drag_at(walk);
+    harness.step();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4).as_deref(), Some("Walk"));
+    // The copy pressed and carried to the Arrangement view.
+    let from = harness.get_by_label("Select Walk on Drums (scene 5)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Arrangement);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.step();
+    assert_eq!(drums_slot(&harness, 4), None, "the undo took the copy back");
+    // Bars 1 to 8 of Bass are empty; Root starts at bar 9, 8 points a beat.
+    let root = harness.get_by_label("Clip Root on Bass at bar 9").rect();
+    let to = egui::pos2(root.left() - 16.0 * 8.0, root.center().y);
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(bass(&harness), bass_before, "the carry let go at the undo");
+    assert!(!matches!(harness.state().status(), Status::Error(_)), "{:?}", harness.state().status());
+}
+
+/// With Ctrl choosing time selection, a time selection painted from a clip stays one when Ctrl
+/// is let go mid-drag: the Tab after it carries no clip (CodeRabbit review).
+#[test]
+fn letting_go_of_ctrl_during_a_time_selection_grabs_no_clip() {
+    let mut harness = arrangement_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.time_select_ctrl = true;
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    let from = egui::pos2(clip.left() + 20.0, clip.top() + 4.0);
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(from + egui::vec2(40.0, 0.0));
+    harness.step();
+    assert!(harness.state().arrangement().time_selection().is_some(), "Ctrl and a drag select time");
+    // Ctrl let go with the button still held, then Tab.
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4), None, "the time selection carried no clip");
+}
+
+/// With Select launched clip off, a press held on a clip's launch mark and carried away by Tab
+/// is never a click: the press itself takes the focus off the tracks, so Delete afterwards
+/// does not remove the track selected before it (CodeRabbit review).
+#[test]
+fn a_carried_launch_mark_press_takes_the_focus_off_a_selected_track() {
+    let mut harness = window(demo_app());
+    let ctx = harness.ctx.clone();
+    // The settings as they are, the browser closed: its search field would take the keys.
+    let mut settings = harness.state().settings().clone();
+    settings.select_on_launch = false;
+    harness.state_mut().set_settings(&ctx, settings);
+    let tracks = |h: &Harness<'static, App>| h.state().session().map(|s| s.project().tracks.len()).unwrap_or(0);
+    let before = tracks(&harness);
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    let from = harness.get_by_label("Launch Walk on Bass (scene 2)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    // Tab before the drag is decided: the pointer never moves on the slot.
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Arrangement);
+    // Carried back over the Launcher view's name and let go there: nothing is dropped, and no
+    // click follows.
+    let back = harness.get_by_label("Launcher view").rect().center();
+    wait_over(&mut harness, back);
+    assert_eq!(harness.state().view(), View::Session);
+    harness.drop_at(back);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(tracks(&harness), before, "Delete after the carried press removed the track selected before it");
 }
 
 /// Needs an audio device, so it is ignored by default, like the preview test.
@@ -730,4 +1290,23 @@ fn ctrl_and_shift_clicks_select_several_headers_and_ctrl_d_copies_them_as_a_bloc
     harness.key_press(Key::Delete);
     harness.run();
     assert_eq!(names(&harness)[..2], ["Bass", "Vox"]);
+}
+
+/// With Select launched clip off, a click on a clip's launch mark still takes the focus off the
+/// tracks: Delete after it does not remove the track selected before the launch.
+#[test]
+fn a_launch_marks_click_takes_the_focus_off_a_selected_track() {
+    let mut harness = window(demo_app());
+    let ctx = harness.ctx.clone();
+    let settings = suhina_ui::settings::Settings { select_on_launch: false, ..Default::default() };
+    harness.state_mut().set_settings(&ctx, settings);
+    let tracks = |h: &Harness<'static, App>| h.state().session().map(|s| s.project().tracks.len()).unwrap_or(0);
+    let before = tracks(&harness);
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    harness.get_by_label("Launch Walk on Bass (scene 2)").click();
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(tracks(&harness), before, "Delete after the launch removed the track selected before it");
 }

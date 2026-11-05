@@ -145,14 +145,14 @@ pub fn show(
     if rect.width() <= 0.0 || rect.height() <= 0.0 || !rect.intersects(painter.clip_rect()) {
         return;
     }
-    let id = Id::new(("meter", source));
+    let id = Id::unique(("meter", source));
     let response = ui.interact(rect.intersect(painter.clip_rect()), id, Sense::click());
     let _style = crate::kit::style_class::enter_response("meter", &response);
     // A surrounding CSS gradient has a transparent background-color. The empty
     // rails must retain their native ink unless the meter itself overrides it.
     let background = crate::kit::style_class::background(ui.visuals().extreme_bg_color);
     super::native_css::background(painter, rect);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, describe(name, level)));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, describe(name, level)));
     if response.clicked() && level.clipped {
         actions.push(match source {
             Source::Main => Action::new("mixer.resetClip", json!({ "main": true })),

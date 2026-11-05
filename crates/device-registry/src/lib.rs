@@ -63,7 +63,20 @@ pub const LAYOUT_FILES: &[(&str, &str)] = &[
     ("delay", include_str!("../../../devices/delay/panel.json")),
     ("pitch", include_str!("../../../devices/pitch/panel.json")),
     ("fm-synth", include_str!("../../../devices/fm-synth/panel.json")),
+    ("nam-amp-modeler", include_str!("../../../devices/nam-amp-modeler/panel.json")),
+    ("nam-cab-loader", include_str!("../../../devices/nam-cab-loader/panel.json")),
 ];
+
+/// What a device just added to a project starts with beside its parameters' defaults.
+pub fn new_device_params(id: &str) -> &'static [(&'static str, f64)] {
+    if id == suhina_device_fm_synth::INFO.id { &suhina_device_fm_synth::params::NEW_DEVICE } else { &[] }
+}
+
+/// New values for a device's randomizer from its current `values`, in parameter order: which
+/// parameters change and to what. `None` for a device without a randomizer.
+pub fn randomize(id: &str, values: &[f64], seed: Option<u32>, amount: Option<f64>) -> Option<Vec<(usize, f64)>> {
+    (id == suhina_device_fm_synth::INFO.id).then(|| suhina_device_fm_synth::random::randomize(values, seed, amount))
+}
 
 /// The panel of the device with this id: its parameters from its `DeviceInfo`, laid out by its
 /// layout, or the generated parameter list when it has none or its layout does not load.
@@ -168,15 +181,107 @@ pub struct Preset {
     pub params: Vec<(&'static str, f64)>,
 }
 
-/// The voices a preset file holds: a DX7 single voice (1) or bank (32). Each is `(number from
-/// 1, name)`.
+/// A preset that ships with Suhina (ADR 0014): a file of `presets/` built into the executable.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StockPreset {
+    /// What names it in a browser item, `stock:<key>`, and in `device.add`: `<device id>/<name>`. It
+    /// stays when the shown name changes, as pins and recent items keep it.
+    pub key: &'static str,
+    pub tags: Vec<String>,
+    pub preset: Preset,
+}
+
+/// Every stock preset's key and file.
+const STOCK_FILES: &[(&str, &str)] = &[
+    ("fm-synth/warm-fm-bass", include_str!("../../../presets/fm-synth/Warm FM Bass.fm-synth.preset.suhina")),
+    ("fm-synth/drawbar-organ", include_str!("../../../presets/fm-synth/Drawbar Organ.fm-synth.preset.suhina")),
+    ("fm-synth/struck-fm-keys", include_str!("../../../presets/fm-synth/Struck FM Keys.fm-synth.preset.suhina")),
+    ("fm-synth/wide-trance-pad", include_str!("../../../presets/fm-synth/Wide Trance Pad.fm-synth.preset.suhina")),
+    ("fm-synth/slow-warm-pad", include_str!("../../../presets/fm-synth/Slow Warm Pad.fm-synth.preset.suhina")),
+];
+
+/// The stock presets, read once. A file that does not read is left out; a test keeps there being none.
+pub fn stock_presets() -> &'static [StockPreset] {
+    static STOCK: OnceLock<Vec<StockPreset>> = OnceLock::new();
+    STOCK.get_or_init(|| {
+        STOCK_FILES
+            .iter()
+            .filter_map(|&(key, text)| {
+                let (preset, tags) = read_preset_file(text.as_bytes()).ok()?;
+                Some(StockPreset { key, tags, preset })
+            })
+            .collect()
+    })
+}
+
+/// The stock preset with this key.
+pub fn stock_preset(key: &str) -> Option<&'static StockPreset> {
+    stock_presets().iter().find(|stock| stock.key == key)
+}
+
+/// A device preset's file (ADR 0014) as a preset and its tags. A parameter it does not name takes
+/// its default, and one the device no longer has is left out.
+fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
+    let file: serde_json::Value = serde_json::from_slice(data).map_err(|e| format!("not a preset file: {e}"))?;
+    if file["format"] != "suhina-preset" {
+        return Err("not a preset file".into());
+    }
+    if file["version"] != 1 {
+        return Err("a preset file of a version this Suhina does not know".into());
+    }
+    let id = file["device"].as_str().ok_or("a preset file names its device")?;
+    let info = info(id).ok_or_else(|| format!("a preset for {id:?}, which is not a built-in device"))?;
+    let role = match info.role {
+        suhina_device_api::Role::Effect => "effect",
+        suhina_device_api::Role::MidiEffect => "midi_effect",
+        suhina_device_api::Role::Instrument => "instrument",
+    };
+    if file["role"] != role {
+        return Err(format!("{id:?} is an {role}, and the preset says otherwise"));
+    }
+    let name = file["name"].as_str().map(str::trim).filter(|n| !n.is_empty()).ok_or("a preset file has a name")?;
+    let values = file["params"].as_object().ok_or("a preset file has its parameters")?;
+    let mut params = Vec::with_capacity(info.params.len());
+    for param in info.params {
+        let value = match values.get(param.id) {
+            None => param.default,
+            Some(value) => value.as_f64().ok_or_else(|| format!("{} is not a number", param.id))?,
+        };
+        if !(param.min..=param.max).contains(&value) {
+            return Err(format!("{} is {value}, outside {} to {}", param.id, param.min, param.max));
+        }
+        params.push((param.id, value));
+    }
+    let tags = file["tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str().map(String::from)).collect();
+    Ok((Preset { device: info.id, name: name.to_string(), params }, tags))
+}
+
+/// Whether a preset file's data is a device preset's JSON rather than DX7 voice data.
+fn is_preset_json(data: &[u8]) -> bool {
+    data.trim_ascii_start().first() == Some(&b'{')
+}
+
+/// The voices a preset file holds: one for a device preset or a DX7 single voice, 32 for a DX7 bank.
+/// Each is `(number from 1, name)`.
 pub fn preset_voices(data: &[u8]) -> Result<Vec<(usize, String)>, String> {
+    if is_preset_json(data) {
+        check_preset_size(data)?;
+        return Ok(vec![(1, read_preset_file(data)?.0.name)]);
+    }
     let voices = read_voices(data)?;
     Ok(voices.patches.iter().enumerate().map(|(i, p)| (i + 1, p.name().trim().to_string())).collect())
 }
 
-/// The preset `voice` (from 1) of a preset file: DX7 voice data for the FM synth.
+/// The preset `voice` (from 1) of a preset file: a device preset (its only voice), or DX7 voice data
+/// for the FM synth.
 pub fn preset(data: &[u8], voice: usize) -> Result<Preset, String> {
+    if is_preset_json(data) {
+        check_preset_size(data)?;
+        if voice != 1 {
+            return Err(format!("voice {voice} is not in the file; it holds 1"));
+        }
+        return Ok(read_preset_file(data)?.0);
+    }
     let voices = read_voices(data)?;
     let count = voices.patches.len();
     let patch = voice
@@ -191,10 +296,15 @@ pub fn preset(data: &[u8], voice: usize) -> Result<Preset, String> {
     Ok(Preset { device: info.id, name: patch.name().trim().to_string(), params })
 }
 
-fn read_voices(data: &[u8]) -> Result<suhina_device_fm_synth::patch::Voices, String> {
+fn check_preset_size(data: &[u8]) -> Result<(), String> {
     if data.len() > MAX_PRESET_BYTES {
         return Err(format!("a preset file is at most {} KiB", MAX_PRESET_BYTES / 1024));
     }
+    Ok(())
+}
+
+fn read_voices(data: &[u8]) -> Result<suhina_device_fm_synth::patch::Voices, String> {
+    check_preset_size(data)?;
     suhina_device_fm_synth::patch::read(data).map_err(|e| e.to_string())
 }
 

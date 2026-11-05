@@ -46,6 +46,8 @@ fn window_with(settings: Settings, browser: bool) -> Harness<'static, App> {
     app.set_browser_open(browser);
     app.set_session(Session::new(project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -401,6 +403,8 @@ fn render_the_strip() {
         app.set_browser_open(false);
         app.set_session(Session::new(project()), &[]);
         let mut harness = Harness::builder()
+            .allow_missing_glyphs()
+            .allow_missing_glyphs()
             .with_size(SIZE)
             .with_pixels_per_point(2.0)
             .with_step_dt(0.05)
@@ -676,6 +680,7 @@ fn scrolling_the_send_grid_reaches_later_returns_without_moving_the_fader() {
         delta: vec2(0.0, -1000.0),
         modifiers: Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     harness.run();
     assert!(harness.query_by_label("Drums send to G Return").is_some());
@@ -702,6 +707,7 @@ fn further_sends_continue_horizontally_and_shift_wheel_reaches_them() {
         delta: vec2(0.0, -1000.0),
         modifiers: Modifiers::SHIFT,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     harness.run();
     let d = harness.get_by_label("Drums send to D Return").rect();

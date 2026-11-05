@@ -98,7 +98,7 @@ exists in `devices/`, passes its tests and runs in track chains.
 | multi-stage saturation | own, oversampled | planned |
 | EQ: eight bands of eight types, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q | own (`dsp` state-variable filters) | done, with the panel's response display and its output spectrum's analyser; Audition planned |
 | filter | own (`dsp` filters) | planned |
-| FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine (32 algorithms) done; more waveforms and a filter planned |
+| FM synth: six operators, 43 algorithms, waveforms and drawn partials, DX7 and time envelopes, filter and shaper, two LFOs, modulation matrix, spread, randomizer ([spec](docs/spec/fm-synth.md)) | MSFA (Apache-2.0) via Dexed, own parts around it | done; import from Live Sets planned |
 | wavetable synth | Vital (GPL-3.0), under its own name | planned |
 | subtractive synth | own, Surge XT (GPL-3.0) for reference | planned |
 | sampler | own | single-source Simple/Grain instrument, SDK panel, source loading and recording, tempo-synchronised sample Warp with six selectable modes and automatically initialized, editable source BPM |
@@ -140,7 +140,8 @@ refused or suspended, never by losing its edits.
 
 ## What works now
 
-<!-- A new bullet goes in a file of its own under docs/works-now/ (its README says how), not here. -->
+<!-- FM Synth as a full FM instrument: operator waveforms and drawn partials, envelopes in seconds that loop, a filter and shaper per note, a second LFO up to audio rate, a modulation matrix, stereo spread, its own panel, and Random, which gives a sound new values by section (`device.randomize`).
+- A new bullet goes in a file of its own under docs/works-now/ (its README says how), not here. -->
 
 - Audio settings can open the active ASIO driver's native control panel, and
   show the engine block separately from the measured driver callback size.
@@ -212,6 +213,14 @@ refused or suspended, never by losing its edits.
 - Bluetooth headphones are in Settings › Audio › Output's Device list: a device that cannot say what
   it offers yet stays listed, an output connected while the page shows appears within a few seconds,
   and on Linux a running PulseAudio or PipeWire server is a driver of its own to choose them on.
+
+- **Take lanes as child rows:** take lanes appear when a recording stops, with a mark on the clip
+  while it runs; each lane sizes and zooms like a track; Ctrl and a drag paints an area across lanes
+  to delete or cut (`take.deleteRange`, `take.cutRange`), pieces move like clips (`take.movePieces`),
+  and a piece's lower corners bring back the recording around it (`take.trimPiece`); crossfades
+  between parts show on the track and are set by a handle (`take.setCrossfade`), with their default
+  in Settings; and a part moved or copied on the track takes its takes along
+  ([#1078](https://github.com/suhina-daw/suhina-daw/issues/1078)).
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
@@ -1004,3 +1013,15 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - Project-open audio references stay inside the project folder; external files require explicit relinking.
 
 - Sampler Loop playback uses Fade in and Fade out for its edges, without a separate Loop fade field or a shortened loop.
+
+- The piano roll's keys look like a keyboard in a choice of styles (Bone, Stone, Night), name the
+  keys you choose, select ranges by dragging (Shift adds another), and a strip beside them names the
+  row under the pointer and zooms the rows. Notes replace what they land on unless stacked notes are
+  allowed, Legato follows the next note on any key, Shift+arrow stops at the grid and the next note,
+  and the audition sounds notes from the press and at each pitch of a drag. A rectangle over no note
+  selects a stretch of time for the keys to act on, a bar on the ruler shows what is selected in time,
+  and a click leaves a mark where a paste goes. Shift goes on from a time selection, here and in the
+  Arrangement, a selected note has a colour of its own, and a double-click with the right button on
+  a ghost note opens its clip. With several MIDI clips picked, a strip over the ruler shows them all,
+  and a click on a bar or a faint note gives that clip the focus.
+

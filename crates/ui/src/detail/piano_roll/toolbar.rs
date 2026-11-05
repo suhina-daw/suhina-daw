@@ -272,7 +272,7 @@ pub(super) fn toolbar(
             own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, row.height().max(8.0))),
         )
     };
-    let x = std::cell::Cell::new(row.left() + KEYS - 4.0);
+    let x = std::cell::Cell::new(row.left() + TOOLBAR_INSET);
     let place = || {
         let area = Rect::from_min_size(Pos2::new(x.get(), row.top() + (row.height() - size.y) / 2.0), size);
         x.set(area.right() + gap);
@@ -298,7 +298,7 @@ pub(super) fn toolbar(
         painter.vline(x.get(), row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
     }
     x.set(x.get() + 5.0);
-    let selected = !state.selected.is_empty();
+    let selected = !state.acting().is_empty();
     for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {
         let area = place();
         let active = matches!(button, IconButton::Paste) || selected;
@@ -401,8 +401,7 @@ pub(super) const GRID_MENU: f32 = 76.0;
 
 /// The toolbar's grid menu (› Grid and snapping): its button shows the grid value; its menu holds
 /// Snap to grid, the adaptive widths, the fixed values, Narrow grid, Widen grid and Triplet grid,
-/// each with its key, the chosen ones ticked. While the grid follows the control bar, an entry the
-/// control bar cannot hold is greyed out. Returns the grid picked this frame.
+/// each with its key, the chosen ones ticked. Returns the grid picked this frame.
 pub(super) fn grid_menu(
     ui: &mut Ui,
     rect: Rect,
@@ -416,13 +415,12 @@ pub(super) fn grid_menu(
     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
         let text = egui::RichText::new(format!("{shown}   ")).font(mono.clone()).color(theme::text_value());
         let menu = ui.menu_button(text, |ui| {
-            let follows = clip.grid_follows;
             let keys = grid_key_labels(keymap, &PIANO_GRID_KEYS);
-            picked = grid_entries(ui, grid, &keys, &|g| !follows || g.control_bar_value().is_some());
+            picked = grid_entries(ui, grid, &keys, &|_| true);
         });
         let label = format!("Grid value {shown}");
         menu_arrow(ui, menu.response.rect, theme::text_value());
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         menu.response.on_hover_text("The grid: snapping, adaptive or fixed lines, triplets");
     });
     picked.filter(|p| *p != grid)
@@ -460,8 +458,8 @@ pub(crate) fn grid_entries(
         let response = ui.add_enabled(allowed, button);
         let label = if key.is_empty() { name.to_string() } else { format!("{name} ({key})") };
         response.widget_info(|| match on {
-            Some(on) => egui::WidgetInfo::selected(egui::WidgetType::Button, allowed, on, &label),
-            None => egui::WidgetInfo::labeled(egui::WidgetType::Button, allowed, &label),
+            Some(on) => egui::WidgetInfo::selected(egui::Role::Button, allowed, on, &label),
+            None => egui::WidgetInfo::labeled(egui::Role::Button, allowed, &label),
         });
         if response.clicked() {
             picked.set(Some(result));
@@ -477,7 +475,7 @@ pub(crate) fn grid_entries(
                 let allowed = enabled(&result);
                 let text = egui::RichText::new(ticked(on, &name)).font(font.clone());
                 let response = ui.add_enabled(allowed, egui::Button::new(text).frame(false));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, allowed, on, &label));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, allowed, on, &label));
                 if response.clicked() {
                     picked.set(Some(result));
                     ui.close();
@@ -577,7 +575,7 @@ pub(super) fn workflow_menu(
                             ui.selectable_label(index == chosen, egui::RichText::new(*choice).font(font.clone()));
                         let name = format!("{}: {choice}", setting.name());
                         response.widget_info(|| {
-                            egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, index == chosen, &name)
+                            egui::WidgetInfo::selected(egui::Role::Button, true, index == chosen, &name)
                         });
                         if response.clicked() {
                             if index != chosen {
@@ -591,7 +589,7 @@ pub(super) fn workflow_menu(
         });
         let label = format!("Workflow {}", mode.name());
         menu_arrow(ui, menu.response.rect, theme::text_value());
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         shown = menu.response.rect;
         menu.response.on_hover_text("How clicks, right-clicks and double-clicks work: a preset, or Custom");
     });
@@ -616,10 +614,10 @@ impl ButtonPaint<'_> {
     pub(super) fn place(&self, area: Rect, button: IconButton, chosen: bool, active: bool) -> bool {
         let ui = self.ui;
         let painter = self.painter;
-        let response = widgets::button_area(ui, area, Id::new(("piano-roll-icon", button.name())), button.name());
+        let response = widgets::button_area(ui, area, Id::unique(("piano-roll-icon", button.name())), button.name());
         let hint = icon_hint(button, self.keymap);
         let response = response.on_hover_text(hint.clone());
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, active, chosen, hint.clone()));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, active, chosen, hint.clone()));
         // `.piano-tool` styles them all, `#piano-draw` and the others one; `:checked` is the
         // chosen tool or an open column. `piano.draw` (`.on`, `.hover`) replaces its shape.
         let _style = crate::kit::style_class::enter_named_response("piano-tool", button.id(), &response);

@@ -51,7 +51,7 @@ fn a_clicked_sample_previews() {
     browser.open.insert(samples.display().to_string());
 
     let state = State { projects, browser, settings: Settings::default() };
-    let mut harness = Harness::builder().with_size(egui::vec2(400.0, 600.0)).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(400.0, 600.0)).build_ui_state(
         |ui, s: &mut State| {
             let area = ui.max_rect();
             let cx = browser_view::Context {

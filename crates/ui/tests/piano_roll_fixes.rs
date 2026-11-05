@@ -31,6 +31,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -175,6 +177,7 @@ fn the_right_button_and_the_wheel_stop_at_the_first_and_last_tool_and_never_scro
             delta: vec2(0.0, delta),
             modifiers: Modifiers::NONE,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.step();
     };

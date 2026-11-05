@@ -25,7 +25,7 @@ fn a_dialog_that_marks_its_panel_gets_the_window_blurred_under_it() {
     let mut output = ctx.run_ui(Default::default(), |ui| {
         let ctx = ui.ctx().clone();
         begin_frame(&ctx, Default::default());
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("dialog")));
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("dialog")));
         let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(120.0, 80.0));
         backdrop(&painter, rect);
         painter.rect_filled(rect, 0.0, panel);
@@ -67,11 +67,14 @@ fn a_menu_gets_the_window_blurred_under_its_frame_and_other_floating_layers_do_n
         let ctx = ui.ctx().clone();
         let area = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(300.0, 200.0));
         ctx.layer_painter(egui::LayerId::background()).rect_filled(area, 0.0, window);
-        egui::Area::new(Id::new("menu")).order(egui::Order::Foreground).fixed_pos(pos2(20.0, 20.0)).show(&ctx, |ui| {
-            egui::Frame::menu(ui.style()).show(ui, |ui| ui.label("Open"));
-        });
+        egui::Area::new(Id::unique("menu")).order(egui::Order::Foreground).fixed_pos(pos2(20.0, 20.0)).show(
+            &ctx,
+            |ui| {
+                egui::Frame::menu(ui.style()).show(ui, |ui| ui.label("Open"));
+            },
+        );
         // A floating layer that is not a popup's frame is left alone.
-        egui::Area::new(Id::new("dialog"))
+        egui::Area::new(Id::unique("dialog"))
             .order(egui::Order::Foreground)
             .fixed_pos(pos2(150.0, 20.0))
             .show(&ctx, |ui| ui.label("Dialog"));
@@ -275,7 +278,7 @@ fn default_reduced_effects_and_tiny_surfaces_remain_solid() {
         let before = count();
         paint(&painter, area, Color32::GRAY, Surface::Track);
         assert_eq!(count(), before);
-        ctx.data_mut(|data| data.insert_temp(Id::new(OPTIONS), Options { tracks: 50, ..Default::default() }));
+        ctx.data_mut(|data| data.insert_temp(Id::unique(OPTIONS), Options { tracks: 50, ..Default::default() }));
         paint(&painter, area, Color32::GRAY, Surface::Track);
         assert!(count() > before);
         let coated = count();
@@ -297,10 +300,10 @@ fn failed_capture_does_not_reuse_a_previous_backdrop() {
     let ctx = Context::default();
     ctx.data_mut(|data| {
         data.insert_temp(
-            Id::new(BACKDROP),
+            Id::unique(BACKDROP),
             Backdrop { texture: TextureId::User(42), sharp_texture: None, screen: Rect::EVERYTHING },
         )
     });
     prepare(&ctx);
-    assert!(ctx.data(|data| data.get_temp::<Backdrop>(Id::new(BACKDROP))).is_none());
+    assert!(ctx.data(|data| data.get_temp::<Backdrop>(Id::unique(BACKDROP))).is_none());
 }
