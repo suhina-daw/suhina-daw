@@ -182,7 +182,7 @@ fn settings_survive_a_round_trip() {
         audio_cue_pair: 2,
         audio_cue_volume: -6,
         audio_input: "Line In (Interface)".into(),
-        audio_track_input: "3/4".into(),
+        audio_track_inputs: [("line in (interface)".into(), "3/4".into()), ("default".into(), "1".into())].into(),
         midi_inputs_off: vec!["Keys, port 1".into(), "Pads:Pads MIDI 1 20:0".into()],
         zoom: 130,
         map_window: true,
@@ -235,28 +235,40 @@ fn browser_values_out_of_range_are_limited() {
 }
 
 #[test]
-fn the_default_track_input_is_kept_and_nonsense_keeps_none() {
+fn each_input_device_keeps_its_own_default_track_input() {
     use suhina_engine::model::InputChannels;
-    assert_eq!(Settings::default().track_input(), InputChannels::None);
-    for (text, input) in [
-        ("none", InputChannels::None),
-        ("2", InputChannels::Mono(2)),
-        ("3/4", InputChannels::Stereo(3)),
-        (" 1/2 ", InputChannels::Stereo(1)),
-    ] {
-        let (settings, warnings) = Settings::from_text(&format!(
-            "audio_track_input = {text}
-"
-        ));
-        assert_eq!((settings.track_input(), warnings.len()), (input, 0), "{text}");
-        assert_eq!(Settings::from_text(&settings.to_text()).0.track_input(), input, "{text} written again");
-    }
-    for nonsense in ["2/4", "0", "loud", ""] {
-        let (settings, warnings) = Settings::from_text(&format!(
-            "audio_track_input = {nonsense}
-"
-        ));
-        assert_eq!((settings.audio_track_input.as_str(), warnings.len()), ("none", 1), "{nonsense:?}");
+    let mut settings = Settings::default();
+    assert_eq!(settings.track_input(), InputChannels::None);
+    // While Input is off there is no device to keep one for.
+    settings.set_track_input(InputChannels::Stereo(1));
+    assert!(settings.audio_track_inputs.is_empty());
+
+    settings.audio_input = "Line In (Interface)".into();
+    settings.set_track_input(InputChannels::Stereo(3));
+    settings.audio_input = "default".into();
+    assert_eq!(settings.track_input(), InputChannels::None, "another device has none yet");
+    settings.set_track_input(InputChannels::Mono(2));
+    settings.audio_input = "LINE IN (INTERFACE)".into();
+    assert_eq!(settings.track_input(), InputChannels::Stereo(3), "the device's own comes back");
+
+    let (read, warnings) = Settings::from_text(&settings.to_text());
+    assert_eq!((read.track_inputs(), warnings.len()), (settings.track_inputs(), 0));
+    assert_eq!(
+        read.track_inputs(),
+        [
+            ("default".to_string(), InputChannels::Mono(2)),
+            ("line in (interface)".to_string(), InputChannels::Stereo(3))
+        ]
+        .into()
+    );
+    // A device viewed but given none is not written.
+    settings.audio_input = "USB Mic".into();
+    let _ = settings.track_input_slot();
+    assert!(!Settings::from_text(&settings.to_text()).0.audio_track_inputs.contains_key("usb mic"));
+
+    for nonsense in [r#"{"default": "2/4"}"#, r#"{"default": "0"}"#, r#"{"default": "loud"}"#, "not json"] {
+        let (settings, warnings) = Settings::from_text(&format!("audio_track_inputs = {nonsense}\n"));
+        assert_eq!((settings.audio_track_inputs.len(), warnings.len()), (0, 1), "{nonsense:?}");
     }
 }
 

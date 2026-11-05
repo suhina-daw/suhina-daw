@@ -469,9 +469,10 @@ pub struct Settings {
     /// The audio input device (Settings › Audio, `audio.setOutput`'s `input`): "off" (the
     /// default), "default" or a device's name.
     pub audio_input: String,
-    /// The default track input (Settings › Audio, `audio.setTrackInput`): the channels of the
-    /// input device a new audio track hears, "none" (the default), "3" or "1/2".
-    pub audio_track_input: String,
+    /// The default track input of each input device (Settings › Audio, `audio.setTrackInput`),
+    /// by [`suhina_session::InputChoice::track_input_key`]: the channels of that device a new
+    /// audio track hears, "3" or "1/2". A device missing here, or kept as "none", gives none.
+    pub audio_track_inputs: std::collections::BTreeMap<String, String>,
     /// The MIDI input ports turned off, by name (Settings › MIDI, `midi.setInput`); every
     /// other port is on. One `midi_input_off` line each, since a port's name may hold commas.
     pub midi_inputs_off: Vec<String>,
@@ -550,7 +551,7 @@ impl Default for Settings {
             audio_cue_pair: 0,
             audio_cue_volume: 0,
             audio_input: "off".into(),
-            audio_track_input: "none".into(),
+            audio_track_inputs: Default::default(),
             midi_inputs_off: Vec::new(),
             zoom: ZOOM,
             backup: suhina_session::backup::Interval::default(),
@@ -600,9 +601,50 @@ impl Settings {
         }
     }
 
-    /// The default track input these settings choose (`audio.setTrackInput`).
+    /// The default track input of the input device these settings choose: none while Input is
+    /// off or when none was chosen for the device.
     pub fn track_input(&self) -> suhina_engine::model::InputChannels {
-        suhina_session::audio::input_channels_from_text(&self.audio_track_input).unwrap_or_default()
+        self.output_choice()
+            .input
+            .track_input_key()
+            .and_then(|key| self.audio_track_inputs.get(&key))
+            .and_then(|text| suhina_session::audio::input_channels_from_text(text))
+            .unwrap_or_default()
+    }
+
+    /// The default track input of every input device it was chosen for (`Projects::set_track_inputs`).
+    pub fn track_inputs(&self) -> std::collections::BTreeMap<String, suhina_engine::model::InputChannels> {
+        self.audio_track_inputs
+            .iter()
+            .filter_map(|(key, text)| Some((key.clone(), suhina_session::audio::input_channels_from_text(text)?)))
+            .filter(|(_, input)| *input != suhina_engine::model::InputChannels::None)
+            .collect()
+    }
+
+    /// The setting the Default track input row changes: the one of the input device chosen,
+    /// "none" until one is chosen for it. `None` while Input is off.
+    pub(crate) fn track_input_slot(&mut self) -> Option<&mut String> {
+        let key = self.output_choice().input.track_input_key()?;
+        Some(self.audio_track_inputs.entry(key).or_insert_with(|| "none".into()))
+    }
+
+    /// The default track inputs the settings file keeps: the devices given one, at most
+    /// [`suhina_session::MAX_TRACK_INPUT_DEVICES`].
+    fn saved_track_inputs(&self) -> std::collections::BTreeMap<&str, &str> {
+        self.audio_track_inputs
+            .iter()
+            .filter(|(_, text)| text.as_str() != "none")
+            .map(|(key, text)| (key.as_str(), text.as_str()))
+            .take(suhina_session::MAX_TRACK_INPUT_DEVICES)
+            .collect()
+    }
+
+    /// Keeps `input` as the default track input of the input device chosen; nothing while
+    /// Input is off.
+    pub(crate) fn set_track_input(&mut self, input: suhina_engine::model::InputChannels) {
+        if let Some(slot) = self.track_input_slot() {
+            *slot = suhina_session::audio::input_channels_text(input);
+        }
     }
 
     /// Keeps `choice` as the audio output.
@@ -676,7 +718,7 @@ impl Settings {
             EditorPlacement::DeviceView => "device",
         };
         format!(
-            "# Suhina settings; changed from Options > Settings.\nanimations = {}\ntrack_headers = {headers}\nrenderer = {graphics}\nsample_stacking = {}\nmidi_stacking = {}\nopen_projects = {on_open}\nat_start = {at_start}\nstart_template = {}\nstop = {stop}\nplay_start = {play_from}\ndevice_chain = {devices}\nmixer_controls = {mixer}\nselect_on_launch = {select_on_launch}\nplugin_editors = {editors}\ntheme = {}\nprojects_folder = {}\ntemplates_folder = {}\nnam_models_folder = {}\nirs_folder = {}\nthemes_folder = {}\nbrowser = {}\nbrowser_side = {browser_side}\nbrowser_width = {}\npreview_autoplay = {}\npreview_volume = {}\ndrop_files = {drop}\nwarp_mode = {}\nmap_layout = {map_layout}\nmap_hover_preview = {}\nmap_max_seconds = {}\nmap_dot_size = {}\nmap_label_size = {}\nmap_window = {}\nmap_window_rect = {}\naudio_host = {}\naudio_device = {}\naudio_sample_rate = {}\naudio_buffer = {}\naudio_exclusive = {}\naudio_cue_pair = {}\naudio_cue_volume = {}\naudio_input = {}\naudio_track_input = {}\nzoom = {}\nwaveform_scale = {waveform_scale}\npiano_roll_top = {piano_top}\npiano_roll_toolbar = {piano_toolbar}\nbackup = {}\nbackup_clean_up = {}\n",
+            "# Suhina settings; changed from Options > Settings.\nanimations = {}\ntrack_headers = {headers}\nrenderer = {graphics}\nsample_stacking = {}\nmidi_stacking = {}\nopen_projects = {on_open}\nat_start = {at_start}\nstart_template = {}\nstop = {stop}\nplay_start = {play_from}\ndevice_chain = {devices}\nmixer_controls = {mixer}\nselect_on_launch = {select_on_launch}\nplugin_editors = {editors}\ntheme = {}\nprojects_folder = {}\ntemplates_folder = {}\nnam_models_folder = {}\nirs_folder = {}\nthemes_folder = {}\nbrowser = {}\nbrowser_side = {browser_side}\nbrowser_width = {}\npreview_autoplay = {}\npreview_volume = {}\ndrop_files = {drop}\nwarp_mode = {}\nmap_layout = {map_layout}\nmap_hover_preview = {}\nmap_max_seconds = {}\nmap_dot_size = {}\nmap_label_size = {}\nmap_window = {}\nmap_window_rect = {}\naudio_host = {}\naudio_device = {}\naudio_sample_rate = {}\naudio_buffer = {}\naudio_exclusive = {}\naudio_cue_pair = {}\naudio_cue_volume = {}\naudio_input = {}\nzoom = {}\nwaveform_scale = {waveform_scale}\npiano_roll_top = {piano_top}\npiano_roll_toolbar = {piano_toolbar}\nbackup = {}\nbackup_clean_up = {}\n",
             on(self.animations),
             on(self.sample_stacking),
             on(self.midi_stacking),
@@ -706,7 +748,6 @@ impl Settings {
             self.audio_cue_pair,
             self.audio_cue_volume,
             self.audio_input,
-            self.audio_track_input,
             self.zoom,
             self.backup.name(),
             on(self.backup_clean_up),
@@ -740,6 +781,7 @@ impl Settings {
             + &format!("setting_descriptions = {}\n", self.setting_descriptions.param())
             + &self.updates.to_text()
             + &format!("audio_devices = {}\n", serde_json::json!(self.audio_devices))
+            + &format!("audio_track_inputs = {}\n", serde_json::json!(self.saved_track_inputs()))
             + &self.midi_inputs_off.iter().map(|port| format!("midi_input_off = {port}\n")).collect::<String>()
     }
 
@@ -899,10 +941,29 @@ impl Settings {
                 ("audio_input", input) => {
                     settings.audio_input = suhina_session::InputChoice::from_text(input).as_text().to_string()
                 }
-                ("audio_track_input", input) if suhina_session::audio::input_channels_from_text(input).is_some() => {
-                    settings.audio_track_input = suhina_session::audio::input_channels_from_text(input)
-                        .map(suhina_session::audio::input_channels_text)
-                        .unwrap_or_else(|| "none".into());
+                ("audio_track_inputs", value) if value.len() <= 32_768 => {
+                    match serde_json::from_str::<std::collections::BTreeMap<String, String>>(value) {
+                        Ok(inputs) => {
+                            let listed = inputs.len();
+                            settings.audio_track_inputs = inputs
+                                .into_iter()
+                                .filter(|(key, _)| !key.trim().is_empty() && key.len() <= 1024)
+                                .filter_map(|(key, text)| {
+                                    let input = suhina_session::audio::input_channels_from_text(&text)?;
+                                    Some((key.trim().to_lowercase(), suhina_session::audio::input_channels_text(input)))
+                                })
+                                .filter(|(_, text)| text != "none")
+                                .take(suhina_session::MAX_TRACK_INPUT_DEVICES)
+                                .collect();
+                            if settings.audio_track_inputs.len() < listed {
+                                warnings.push(format!(
+                                    "settings line {}: a default track input that is not a channel or a pair was left out",
+                                    number + 1
+                                ));
+                            }
+                        }
+                        Err(_) => warnings.push(format!("settings line {}: invalid default track inputs", number + 1)),
+                    }
                 }
                 ("midi_input_off", port) if !port.is_empty() => {
                     if !settings.midi_inputs_off.iter().any(|p| p == port) {

@@ -821,7 +821,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   track's strip — Audio From and the three buttons — where the picker is visible without a
   menu ([#267](https://github.com/suhina-daw/suhina-daw/issues/267), ADR 0017). Settings › Audio ›
   Default track input gives new audio tracks, and armed ones that hear nothing, a channel or a
-  pair of the input device (`audio.setTrackInput`,
+  pair of the input device, kept for each input device so switching devices brings back its own
+  (`audio.setTrackInput`,
   [#1191](https://github.com/suhina-daw/suhina-daw/issues/1191)).
 - **A MIDI input per track:** each track hears every MIDI port, one port, or none, and every
   channel or one, so a keyboard and a pad controller (or two players) each play their own armed

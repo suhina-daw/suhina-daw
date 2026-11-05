@@ -149,10 +149,13 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   what a track hears: `input` `"none"`, a channel (`"3"`) or a pair (`"1/2"`), `monitor`
   `auto` (while armed), `in` or `off`; it is an edit, saved with the project. Arm several
   tracks with `track.setArm` and `exclusive: false` to hear a band on separate tracks.
-  `audio.setTrackInput {input}` chooses the default track input, in the same form: what new
-  audio tracks hear, and an audio track armed while it hears nothing (whose arm result then says
-  `input_given`, or `no_input` when there was nothing to give); it has no effect while the input
-  device is off, and `audio.info` and `audio.devices` show it as `chosen.track_input`.
+  `audio.setTrackInput {input}` chooses the default track input of the input device chosen, in
+  the same form: what new audio tracks hear, and an audio track armed while it hears nothing
+  (whose arm result then says `input_given`, or `no_input` when there was nothing to give). Each
+  input device keeps its own, and choosing another one with `audio.setOutput`'s `input` brings
+  back the one kept for it; the result names the device as `input_device`. It is refused while
+  the input device is off, and `audio.info` and `audio.devices` show the device's as
+  `chosen.track_input`.
   `audio.info` adds `input`, `input_channels` and `input_underruns`. Arming is not an edit (no undo step, not saved) and works
   before an engine plays; `project.tracks` says which tracks are `armed`. Without `--audio`,
   `midi.*` returns an error.

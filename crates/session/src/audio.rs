@@ -121,6 +121,16 @@ impl InputChoice {
         }
     }
 
+    /// The key the default track input of this input device is kept under
+    /// (`audio.setTrackInput`): "default" or the device's name, in lower case; none while off.
+    pub fn track_input_key(&self) -> Option<String> {
+        match self {
+            Self::Off => None,
+            Self::Default => Some("default".to_string()),
+            Self::Named(name) => Some(name.trim().to_lowercase()).filter(|name| !name.is_empty()),
+        }
+    }
+
     /// From "off" (or empty), "default" or a device's name.
     pub fn from_text(text: &str) -> Self {
         match text.trim() {
@@ -527,7 +537,7 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
     },
     CommandSpec {
         id: "audio.setTrackInput",
-        label: "Choose the default track input: the channels of the audio input device a new audio track hears, and an armed track that hears none (none, one channel or a stereo pair). It has no effect while no input device is chosen (audio.setOutput's input), and tracks that are there keep their own input",
+        label: "Choose the default track input of the audio input device chosen: the channels of it a new audio track hears, and an armed track that hears none (none, one channel or a stereo pair). Each input device keeps its own, and choosing another device (audio.setOutput's input) brings back the one kept for it. Refused while no input device is chosen; tracks that are there keep their own input",
         params: &[param(
             "input",
             ParamType::Text,
@@ -619,11 +629,10 @@ fn chosen_json(projects: &Projects) -> Value {
 
 fn set_track_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let input = crate::commands::parse_input_channels(Args::new(params).value("input").unwrap_or(&Value::Null))?;
-    projects.set_track_input(input);
-    let off = projects.output_choice().input == InputChoice::Off;
+    let device = projects.set_track_input(input)?;
     Ok(json!({
         "track_input": crate::commands::input_channels_text(input),
-        "in_effect": !off,
+        "input_device": device,
     }))
 }
 

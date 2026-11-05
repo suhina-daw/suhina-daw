@@ -2209,7 +2209,8 @@ pub(crate) fn audio_output(cx: &mut Cx<'_>, y: &mut f32) {
 }
 
 /// Audio › Output › Default track input (#1191): none, or a channel or a stereo pair of the
-/// input device, listed from its channels; the app runs `audio.setTrackInput` with it.
+/// input device, listed from its channels. Each input device keeps its own, so choosing another
+/// device under Input shows and uses the one kept for it; the app runs `audio.setTrackInput`.
 pub(crate) fn default_track_input(cx: &mut Cx<'_>, r: Rect) {
     let choice = cx.settings.output_choice();
     let channels = match &cx.about.audio_live {
@@ -2221,18 +2222,24 @@ pub(crate) fn default_track_input(cx: &mut Cx<'_>, r: Rect) {
                 suhina_session::InputChoice::Off => 0,
                 suhina_session::InputChoice::Default => inputs.iter().find(|i| i.default).map_or(0, |i| i.channels),
                 suhina_session::InputChoice::Named(name) => {
-                    inputs.iter().find(|i| &i.name == name).map_or(0, |i| i.channels)
+                    inputs.iter().find(|i| i.name.eq_ignore_ascii_case(name)).map_or(0, |i| i.channels)
                 }
             }
         }
     };
-    let options = track_input_options(channels, &cx.settings.audio_track_input);
-    cx.note(if choice.input == suhina_session::InputChoice::Off {
-        "No effect while Input is Off: new audio tracks hear nothing until an input device is chosen"
-    } else {
-        "What a new audio track hears, and an armed track that hears nothing; tracks that are there keep theirs"
-    });
-    cx.dropdown(r, &options, |s| &mut s.audio_track_input);
+    if choice.input == suhina_session::InputChoice::Off {
+        cx.note("Choose an input device under Input first: each input device keeps its own default track input");
+        return;
+    }
+    let current = suhina_session::audio::input_channels_text(cx.settings.track_input());
+    let options = track_input_options(channels, &current);
+    cx.note("What a new audio track hears on this input device, and an armed track that hears nothing; each device keeps its own, tracks that are there keep theirs");
+    if let Some(picked) = choice_dropdown(cx.ui, cx.painter, r, cx.name, &options, &current)
+        && let Some(slot) = cx.settings.track_input_slot()
+    {
+        *slot = picked;
+        cx.outcome.changed = true;
+    }
 }
 
 /// The choices of Default track input for a device with `channels` inputs: None, each channel,

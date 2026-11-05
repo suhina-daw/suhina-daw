@@ -133,25 +133,21 @@ impl App {
         }
     }
 
-    /// New audio tracks hear the default track input the settings choose (`audio.setTrackInput`,
-    /// #1191); the tracks that are there keep theirs.
+    /// New audio tracks hear the default track input the settings keep for the input device
+    /// chosen (`audio.setTrackInput`, #1191); the tracks that are there keep theirs.
     pub(super) fn choose_track_input(&mut self) {
-        let input = self.settings.audio_track_input.clone();
+        let input = suhina_session::audio::input_channels_text(self.settings.track_input());
         match self.projects.execute("audio.setTrackInput", &json!({ "input": input })) {
             Ok(result) => {
                 let shown = match result["track_input"].as_str() {
                     Some("none") | None => "none".to_string(),
                     Some(input) => format!("In {input}"),
                 };
-                self.status = if result["in_effect"].as_bool() == Some(false) && shown != "none" {
-                    Status::Hint(format!("Default track input: {shown}, once an input device is chosen under Input"))
-                } else {
-                    Status::Done(format!("Default track input: {shown}"))
-                };
+                self.status = Status::Done(format!("Default track input on this input device: {shown}"));
             }
             Err(e) => {
-                self.settings.audio_track_input =
-                    suhina_session::audio::input_channels_text(self.projects.track_input());
+                let kept = self.projects.track_input();
+                self.settings.set_track_input(kept);
                 self.status = Status::Error(e.message().to_owned());
             }
         }

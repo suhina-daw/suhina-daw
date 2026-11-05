@@ -164,8 +164,9 @@ engine code.
      armed track keeps the shallower queue (decision 6). `audio.info` reports the input device,
      its channels and its underruns.
    - *The default track input* (Amendment: default track input). New audio tracks hear the
-     channels Settings › Audio › Default track input names (`audio.setTrackInput`), while an
-     input device is chosen; an audio track armed while it hears nothing gets them too.
+     channels Settings › Audio › Default track input names for the input device chosen
+     (`audio.setTrackInput`); each input device keeps its own. An audio track armed while it
+     hears nothing gets them too.
    *Amended 2026-11-05, see Amendment: default track input.*
 
 10. **Notes are placed by when they were played** (amendment,
@@ -213,11 +214,18 @@ engine code.
 [#1191](https://github.com/suhina-daw/suhina-daw/issues/1191). Before, every new audio track heard
 nothing until its input was picked by hand. Suhina now keeps a *default track input*: none (as
 before), one channel or a neighbouring pair of the input device. It belongs to the app, not to a
-project: Settings › Audio › Output › Default track input keeps it across starts, and
-`audio.setTrackInput {input}` sets it from MCP and the CLI (`audio.devices` and `audio.info` show
-it as `chosen.track_input`). `Projects` hands the default in effect to every open project
-(`Session::set_default_input`); it is none while the input device is Off, so the default never
-makes a track use a microphone the user has not chosen (decision 9).
+project, and **each input device keeps its own**: a studio interface's In 6 is not a laptop
+microphone's, so switching Input between them brings back the one chosen for that device, with no
+global value that is wrong for the other. The devices are told apart by
+`InputChoice::track_input_key` (the device's name in lower case, or `default` for the host's
+default input); a device not chosen for yet has none. Settings › Audio › Output › Default track
+input shows and changes the one of the device chosen under Input and keeps all of them across
+starts (`audio_track_inputs`, at most 64 devices); `audio.setTrackInput {input}` sets the one of
+the device chosen from MCP and the CLI and is refused while Input is Off, since there is no device
+to keep it for (`audio.devices` and `audio.info` show the device's as `chosen.track_input`).
+`Projects` hands the one in effect to every open project (`Session::set_default_input`) whenever
+the input device or a default changes; it is none while the input device is Off, so the default
+never makes a track use a microphone the user has not chosen (decision 9).
 
 - Every audio track a command adds takes it: `track.add` (one or `count`), tracks made for
   dropped audio files, and split stems. MIDI tracks, returns and groups do not. It is part of the

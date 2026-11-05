@@ -100,6 +100,7 @@ pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
 pub use player::{OutputHandle, Player};
 pub use plugins::{device_plugin, plugin_commands};
+pub use projects::MAX_TRACK_INPUT_DEVICES;
 pub use projects::{
     MAX_OPEN_PROJECTS, ProjectId, Projects, all_commands, commands_markdown, params_of, policy, project_commands,
 };
