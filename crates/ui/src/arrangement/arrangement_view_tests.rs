@@ -614,13 +614,19 @@ fn select_all_spans_every_track_from_the_first_clip_to_the_last() {
 #[test]
 fn a_click_in_a_clip_body_stays_inside_the_clip() {
     let bar = arrangement_grid(PianoGrid::from_value("1 bar"), 40.0, 4.0);
-    // Late in a bar-long clip: its start, not the next bar.
-    assert_eq!(clip_body_beat(7.5, 4.0, bar, false), 4.0);
-    // A clip starting inside the bar: never before its start.
-    assert_eq!(clip_body_beat(7.5, 6.0, bar, false), 6.0);
+    // Late in a bar-long clip: the nearest line is its end, so the line before the click.
+    assert_eq!(clip_body_beat(7.5, 4.0, 8.0, bar, false), 4.0);
+    // A short clip inside the bar: the nearest line is past its end and the one before is
+    // before its start, so its start.
+    assert_eq!(clip_body_beat(6.5, 6.0, 7.5, bar, false), 6.0);
+    // The nearest line inside the clip, after the click too.
+    assert_eq!(clip_body_beat(7.5, 6.0, 10.0, bar, false), 8.0);
+    let quarter = arrangement_grid(PianoGrid::from_value("1/4"), 40.0, 4.0);
+    assert_eq!(clip_body_beat(5.6, 4.0, 8.0, quarter, false), 6.0, "a click that misses a line goes to the nearest");
+    assert_eq!(clip_body_beat(5.4, 4.0, 8.0, quarter, false), 5.0);
     let sixteenth = arrangement_grid(PianoGrid::from_value("1/16"), 200.0, 4.0);
-    assert_eq!(clip_body_beat(5.3, 4.0, sixteenth, false), 5.25);
-    assert_eq!(clip_body_beat(5.3, 4.0, sixteenth, true), 5.3);
+    assert_eq!(clip_body_beat(5.3, 4.0, 8.0, sixteenth, false), 5.25);
+    assert_eq!(clip_body_beat(5.3, 4.0, 8.0, sixteenth, true), 5.3);
 }
 
 #[test]
@@ -667,4 +673,37 @@ fn a_time_selection_goes_on_over_both() {
     let more = first.gone_on(&[TrackId(1), TrackId(2)], 0.0, 5.0, None);
     assert_eq!((more.start, more.end, more.row), (0.0, 6.0, None));
     assert_eq!(more.tracks, [TrackId(1), TrackId(2)]);
+}
+
+/// A clip a few points wide, as far zoomed out: no name or ellipsis, and nothing it draws leaves
+/// its own rect for the lane or the clip beside it (#1198). Wide enough, the name is drawn.
+#[test]
+fn a_narrow_clip_draws_no_name_and_nothing_outside_itself() {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let lane = timeline.lanes.iter().find(|l| l.clips.iter().any(|c| !c.name.is_empty())).unwrap();
+    let clip = lane.clips.iter().find(|c| !c.name.is_empty()).cloned().unwrap();
+    let view = Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::new(800.0, 200.0));
+    let draw = |width: f32| {
+        let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(width, 60.0));
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let lanes = ui.painter().with_clip_rect(view);
+            let beat_width = width / clip.length.max(1e-3) as f32;
+            let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * beat_width;
+            paint_clip(&lanes, rect, lane, &clip, Shown::of(&clip), clip.start, &x_of, beat_width, &timeline, true);
+        });
+        output.textures_delta.clear();
+        // The clip's own shapes: those painted within the lanes' view.
+        let shapes: Vec<egui::epaint::ClippedShape> =
+            output.shapes.into_iter().filter(|s| view.contains_rect(s.clip_rect)).collect();
+        (rect, shapes)
+    };
+    let (rect, shapes) = draw(6.0);
+    assert!(!shapes.is_empty(), "the clip's body is drawn");
+    for shape in &shapes {
+        assert!(rect.expand(0.5).contains_rect(shape.clip_rect), "{:?} leaves {rect:?}", shape.clip_rect);
+    }
+    assert!(!shapes.iter().any(|s| matches!(s.shape, egui::Shape::Text(_))), "no name, no lone ellipsis");
+    let (_, shapes) = draw(240.0);
+    assert!(shapes.iter().any(|s| matches!(s.shape, egui::Shape::Text(_))), "a wide clip shows its name");
 }

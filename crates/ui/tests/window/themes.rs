@@ -720,6 +720,65 @@ fn the_loop_lines_reach_down_past_the_returns_to_main() {
     assert!(tallest > main, "it reaches down past Main's row: ends at {tallest}, Main at {main}");
 }
 
+/// Scrolled so the loop's start lies under the track headers, its line is hidden under them:
+/// the loop lines stay in the timeline (#1197).
+#[test]
+fn a_loop_line_under_the_track_headers_is_not_drawn_over_them() {
+    fn lines(shape: &egui::Shape, ink: egui::Color32, out: &mut Vec<f32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| lines(s, ink, out)),
+            egui::Shape::LineSegment { points, stroke } if stroke.color == ink && points[0].x == points[1].x => {
+                out.push(points[0].x);
+            }
+            _ => {}
+        }
+    }
+    let mut project = demo_project();
+    project.transport.loop_range = Some(suhina_engine::model::LoopRange { start: 0.0, end: 16.0 });
+    project.transport.loop_enabled = true;
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    suhina_ui::kit::native_css::set_user_sheet(Some(".loop-line { color: #00ff00; }".into()));
+    let mut h = window(app);
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    // The wheel sideways over the lanes scrolls the timeline a little to the right.
+    let lane = h.get_by_label("Clip Beat B on Drums at bar 17").rect().center();
+    h.hover_at(lane);
+    h.step();
+    h.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(-60.0, 0.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    h.run();
+    let state = h.state().arrangement();
+    let (scroll, beat_width, header_width, left) =
+        (state.scroll.x, state.beat_width, state.header_width, state.headers_left);
+    let timeline = h.get_by_label("Ruler").rect().x_range();
+    let green = egui::Color32::from_rgb(0, 0xFF, 0);
+    let mut drawn = Vec::new();
+    h.output().shapes.iter().for_each(|s| lines(&s.shape, green, &mut drawn));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(left, "the headers are on the left by default");
+    let start = timeline.min - scroll;
+    assert!(
+        start < timeline.min - 1.0 && start > timeline.min - 1.0 - header_width,
+        "the loop's start lies under the headers: {start}, timeline from {}",
+        timeline.min
+    );
+    assert!(
+        drawn.iter().all(|x| timeline.contains(*x)),
+        "a loop line over the headers: {drawn:?}, timeline {timeline:?}"
+    );
+    let end = start + 16.0 * beat_width;
+    if timeline.contains(end) {
+        assert!(drawn.iter().any(|x| (x - end).abs() <= 1.0), "the end's line is drawn: {drawn:?}, at {end}");
+    }
+}
+
 #[test]
 fn choosing_another_themes_folder_asks_before_its_themes_move() {
     use suhina_ui::interaction::pick::PickField;

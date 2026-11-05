@@ -243,3 +243,32 @@ fn the_frame_a_value_drag_lets_go_the_icon_shows_the_pointer() {
     assert_eq!(icon(Some(held(true))), egui::CursorIcon::Default);
     assert_eq!(icon(None), egui::CursorIcon::Default);
 }
+
+/// `text_in` cuts a name with an ellipsis while a letter still fits before it, and draws
+/// nothing at all where only the ellipsis, or not even that, would fit (#1198).
+#[test]
+fn text_in_draws_nothing_where_only_an_ellipsis_would_fit() {
+    let texts = |width: f32| {
+        let ctx = egui::Context::default();
+        let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(width, 16.0));
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            text_in(ui.painter(), rect, Align2::LEFT_CENTER, "Kick 01", FontId::proportional(12.0), Color32::WHITE);
+        });
+        output.textures_delta.clear();
+        output
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(text) => Some((text.galley.size().x, text.galley.text().to_string())),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    for width in [-4.0, 0.0, 2.0, 5.0] {
+        assert!(texts(width).is_empty(), "{width}: {:?}", texts(width));
+    }
+    let cut = texts(24.0);
+    assert_eq!(cut.len(), 1);
+    assert!(cut[0].0 <= 24.5, "{cut:?}");
+    assert_eq!(texts(400.0).len(), 1, "the whole name");
+}
