@@ -565,6 +565,13 @@ impl Default for Settings {
     }
 }
 
+/// The longest audio device key (`host|device`) and input device name the settings keep for a
+/// card; longer ones are not written, so what is written is read back.
+const MAX_DEVICE_KEY: usize = 2048;
+const MAX_DEVICE_NAME: usize = 1024;
+/// The longest `audio_device_inputs` line read: room for every card at the longest names.
+const MAX_DEVICE_INPUTS_LINE: usize = 262_144;
+
 impl Settings {
     pub(crate) fn remember_output(&mut self, choice: &suhina_session::OutputChoice, default_host: Option<&str>) {
         let Some(host) = choice.host.as_deref().or(default_host) else { return };
@@ -636,6 +643,8 @@ impl Settings {
     ) {
         self.audio_device_inputs = inputs
             .iter()
+            .filter(|(key, kept)| key.len() <= MAX_DEVICE_KEY && kept.input.as_text().len() <= MAX_DEVICE_NAME)
+            .take(suhina_session::MAX_DEVICE_INPUTS)
             .map(|(key, kept)| {
                 let texts =
                     [kept.input.as_text().to_string(), suhina_session::audio::input_channels_text(kept.track_input)];
@@ -970,14 +979,16 @@ impl Settings {
                 ("audio_input", input) => {
                     settings.audio_input = suhina_session::InputChoice::from_text(input).as_text().to_string()
                 }
-                ("audio_device_inputs", value) if value.len() <= 65_536 => {
+                ("audio_device_inputs", value) if value.len() <= MAX_DEVICE_INPUTS_LINE => {
                     match serde_json::from_str::<std::collections::BTreeMap<String, [String; 2]>>(value) {
                         Ok(inputs) => {
                             let listed = inputs.len();
                             settings.audio_device_inputs = inputs
                                 .into_iter()
                                 .filter(|(key, [input, _])| {
-                                    !key.trim().is_empty() && key.len() <= 2048 && input.len() <= 1024
+                                    !key.trim().is_empty()
+                                        && key.len() <= MAX_DEVICE_KEY
+                                        && input.len() <= MAX_DEVICE_NAME
                                 })
                                 .filter_map(|(key, [input, track])| {
                                     let track = suhina_session::audio::input_channels_from_text(&track)?;

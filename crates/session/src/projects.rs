@@ -66,6 +66,17 @@ pub(crate) struct Browser {
 /// How many audio devices keep an input and a default track input of their own.
 pub const MAX_DEVICE_INPUTS: usize = 64;
 
+/// Whether a track could hear `input`: none, or channels from 1 to
+/// [`suhina_model::MAX_INPUT_CHANNEL`] (a pair's right channel too), as `track.setAudioInput` takes them.
+pub(crate) fn valid_track_input(input: suhina_model::InputChannels) -> bool {
+    use suhina_model::{InputChannels, MAX_INPUT_CHANNEL};
+    match input {
+        InputChannels::None => true,
+        InputChannels::Mono(c) => (1..=MAX_INPUT_CHANNEL).contains(&c),
+        InputChannels::Stereo(c) => c >= 1 && c < MAX_INPUT_CHANNEL,
+    }
+}
+
 /// What an audio device (a sound card, by [`crate::OutputChoice::device_key`]) keeps for itself,
 /// so choosing it again brings both back (ADR 0017, Amendment: default track input).
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -301,7 +312,12 @@ impl Projects {
         self.devices.device_inputs = inputs
             .into_iter()
             .filter(|(key, _)| !key.trim().is_empty())
-            .map(|(key, kept)| (key.trim().to_lowercase(), kept))
+            .map(|(key, mut kept)| {
+                if !valid_track_input(kept.track_input) {
+                    kept.track_input = suhina_model::InputChannels::None;
+                }
+                (key.trim().to_lowercase(), kept)
+            })
             .take(MAX_DEVICE_INPUTS)
             .collect();
         let choice = self.devices.output_choice.clone();
@@ -313,6 +329,11 @@ impl Projects {
     /// device keeps its own. Refused while Input is off, since nothing opens a microphone
     /// unasked (ADR 0017). Returns the device's key.
     pub fn set_track_input(&mut self, input: suhina_model::InputChannels) -> Result<String, CommandError> {
+        if !valid_track_input(input) {
+            return Err(
+                format!("a default track input is channels from 1 to {}", suhina_model::MAX_INPUT_CHANNEL).into()
+            );
+        }
         let choice = &self.devices.output_choice;
         if choice.input == crate::InputChoice::Off {
             return Err("no input device is chosen: choose one first (audio.setOutput's input)".into());

@@ -183,6 +183,10 @@ fn the_default_track_input_lists_the_devices_channels() {
     // A choice the device does not have stays listed, marked, so it is not lost unseen.
     let missing = values(2, "5/6");
     assert_eq!(missing.last(), Some(&("In 5/6 (not on this device)".to_string(), "5/6".to_string())));
+    // A pair the list leaves out (set from MCP) but the device has is shown as it is.
+    let between = values(4, "2/3");
+    assert_eq!(between.last(), Some(&("In 2/3".to_string(), "2/3".to_string())));
+    assert_eq!(between.len(), 8);
 }
 
 #[test]

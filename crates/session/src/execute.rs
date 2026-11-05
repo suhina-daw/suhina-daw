@@ -87,43 +87,47 @@ impl Session {
         }
     }
 
-    /// `track.setArm`. An audio track armed while it hears no input first gets one, in an undo
+    /// `track.setArm`. An audio track armed while it hears no input then gets one, in an undo
     /// step of its own (`track.setAudioInput`), so recording has something to record (#682): the
     /// default track input ([`Session::default_input`]), or else the input device's first
-    /// channels (a stereo pair where there are two). The result says which in `input_given`, or
-    /// with `no_input` that there was none to give.
+    /// channels (a stereo pair where there are two). The arm runs first, so a request it refuses
+    /// changes nothing. Only a track on a regular mixer strip is given one: a return or a group
+    /// records nothing. The result says which in `input_given`, or with `no_input` that there was
+    /// none to give.
     fn arm(&mut self, params: &Value) -> Result<Value, CommandError> {
-        use suhina_model::InputChannels;
+        use suhina_model::{ChannelRole, InputChannels};
         let arming = Args::new(params).value("armed").and_then(Value::as_bool) == Some(true);
         let hears_nothing = |s: &Self| {
             let track = commands::track_id(&s.project, params).ok()?;
             s.project
                 .track(track)
-                .filter(|t| t.content.audio && !t.content.notes && t.audio_input.channels == InputChannels::None)
+                .filter(|t| {
+                    let role = t.channel.and_then(|id| s.project.channels.iter().find(|c| c.id == id)).map(|c| c.role);
+                    t.content.audio
+                        && !t.content.notes
+                        && matches!(role, None | Some(ChannelRole::Regular))
+                        && t.audio_input.channels == InputChannels::None
+                })
                 .map(|_| track)
         };
         let track = if arming { hears_nothing(self) } else { None };
-        let mut given = None;
-        if let Some(track) = track {
-            let first = || {
-                let channels = self.player().and_then(crate::Player::output_info).map_or(0, |i| i.input_channels);
-                match channels {
-                    0 => None,
-                    1 => Some(InputChannels::Mono(1)),
-                    _ => Some(InputChannels::Stereo(1)),
-                }
-            };
-            if let Some(input) = self.default_input().or_else(first) {
+        let mut value = self.run("track.setArm", params)?;
+        let Some(track) = track else { return Ok(value) };
+        let first = || {
+            let channels = self.player().and_then(crate::Player::output_info).map_or(0, |i| i.input_channels);
+            match channels {
+                0 => None,
+                1 => Some(InputChannels::Mono(1)),
+                _ => Some(InputChannels::Stereo(1)),
+            }
+        };
+        match self.default_input().or_else(first) {
+            Some(input) => {
                 let text = commands::input_channels_text(input);
                 self.run("track.setAudioInput", &serde_json::json!({ "track": track.0, "input": text }))?;
-                given = Some(text);
+                value["input_given"] = Value::String(text);
             }
-        }
-        let mut value = self.run("track.setArm", params)?;
-        match given {
-            Some(text) => value["input_given"] = Value::String(text),
-            None if track.is_some() => value["no_input"] = Value::Bool(true),
-            None => {}
+            None => value["no_input"] = Value::Bool(true),
         }
         Ok(value)
     }

@@ -2244,14 +2244,27 @@ pub(crate) fn default_track_input(cx: &mut Cx<'_>, r: Rect) {
 }
 
 /// The choices of Default track input for a device with `channels` inputs: None, each channel,
-/// then each stereo pair; and `current` when the device does not have it.
+/// then each stereo pair as the track's Audio From lists them (1/2, 3/4, …); and `current` when
+/// it is not among them: as it is when the device has its channels (a pair such as 2/3 set from
+/// MCP), marked when it does not.
 pub(crate) fn track_input_options(channels: u16, current: &str) -> Vec<(String, String)> {
+    use suhina_engine::model::InputChannels;
     let channels = channels.min(suhina_engine::model::MAX_INPUT_CHANNEL);
     let mut options = vec![("None".to_string(), "none".to_string())];
     options.extend((1..=channels).map(|c| (format!("In {c}"), c.to_string())));
     options.extend((1..channels).step_by(2).map(|c| (format!("In {c}/{}", c + 1), format!("{c}/{}", c + 1))));
     if !options.iter().any(|(_, value)| value == current) {
-        options.push((format!("In {current} (not on this device)"), current.to_string()));
+        let last = match suhina_session::audio::input_channels_from_text(current) {
+            Some(InputChannels::Mono(c)) => Some(c),
+            Some(InputChannels::Stereo(c)) => c.checked_add(1),
+            _ => None,
+        };
+        let label = if last.is_some_and(|last| last <= channels) {
+            format!("In {current}")
+        } else {
+            format!("In {current} (not on this device)")
+        };
+        options.push((label, current.to_string()));
     }
     options
 }

@@ -264,3 +264,35 @@ fn the_default_track_input_refuses_nonsense_and_shows_with_the_output() {
     let info = run(&mut projects, "audio.info", json!({})).unwrap();
     assert_eq!(info["chosen"]["track_input"], json!("7/8"));
 }
+
+#[test]
+fn an_arm_that_is_refused_gives_no_input() {
+    let mut projects = projects(true);
+    run(&mut projects, "audio.setTrackInput", json!({ "input": "1/2" })).unwrap();
+    let audio = inputs(&mut projects)[2].0;
+    let refused = run(&mut projects, "track.setArm", json!({ "track": audio, "armed": true, "exclusive": "yes" }));
+    assert!(refused.is_err());
+    assert_eq!(input_of(&mut projects, &json!(audio)), "none", "nothing changed");
+    let tracks = run(&mut projects, "project.tracks", json!({})).unwrap();
+    assert_eq!(tracks[2]["armed"], json!(false));
+}
+
+#[test]
+fn channels_no_track_could_hear_are_not_a_default() {
+    let mut projects = projects(true);
+    for input in
+        [InputChannels::Mono(0), InputChannels::Stereo(0), InputChannels::Stereo(suhina_model::MAX_INPUT_CHANNEL)]
+    {
+        assert!(projects.set_track_input(input).is_err(), "{input:?}");
+    }
+    assert_eq!(projects.track_input(), InputChannels::None);
+    // Read back from settings, they are dropped and the card's input is kept.
+    let key = projects.output_choice().device_key();
+    projects.set_device_inputs(BTreeMap::from([(
+        key,
+        DeviceInputs { input: InputChoice::Default, track_input: InputChannels::Mono(0) },
+    )]));
+    assert_eq!(projects.track_input(), InputChannels::None);
+    let audio = run(&mut projects, "track.add", json!({ "kind": "audio" })).unwrap();
+    assert_eq!(input_of(&mut projects, &audio["track"]), "none");
+}

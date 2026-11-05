@@ -250,6 +250,9 @@ impl Session {
             InputChannels::Mono(c) => c,
             InputChannels::Stereo(c) => c.checked_add(1)?,
         };
+        if !crate::projects::valid_track_input(self.default_input) || last == 0 {
+            return None;
+        }
         let channels = self.player().and_then(Player::output_info).map(|i| i.input_channels);
         channels.is_none_or(|n| last <= n).then_some(self.default_input)
     }
