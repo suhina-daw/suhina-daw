@@ -1070,9 +1070,14 @@ fn audio_detail(panel: AudioPanel, db: f64, transpose: f64) -> (Detail, ClipId) 
 }
 
 fn panel_harness(detail: Detail) -> egui_kittest::Harness<'static, Vec<Action>> {
+    panel_harness_tall(detail, 260.0)
+}
+
+/// [`panel_harness`] in a window `height` points tall.
+fn panel_harness_tall(detail: Detail, height: f32) -> egui_kittest::Harness<'static, Vec<Action>> {
     egui_kittest::Harness::builder()
         .allow_missing_glyphs()
-        .with_size(egui::vec2(1000.0, 260.0))
+        .with_size(egui::vec2(1000.0, height))
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
         .build_ui_state(
@@ -1083,10 +1088,14 @@ fn panel_harness(detail: Detail) -> egui_kittest::Harness<'static, Vec<Action>> 
         )
 }
 
-/// Two presses at `at` close together: a double-click.
+/// Two presses at `at` close together: a double-click. It waits first, as a person would, so a
+/// click just before does not make it a triple click.
 fn double_click(harness: &mut egui_kittest::Harness<'static, Vec<Action>>, at: egui::Pos2) {
     harness.hover_at(at);
     harness.run();
+    for _ in 0..40 {
+        harness.step();
+    }
     for _ in 0..2 {
         harness.hover_at(at);
         harness.drag_at(at);
@@ -1256,7 +1265,8 @@ fn the_panels_fields_do_not_touch() {
 fn the_scale_is_picked_from_lists_under_its_fields() {
     use egui_kittest::kittest::Queryable;
     let (detail, beat_b) = audio_detail(AudioPanel::default(), 0.0, 0.0);
-    let mut harness = panel_harness(detail);
+    // Tall enough for the list to open under its field (with no room it opens over it).
+    let mut harness = panel_harness_tall(detail, 600.0);
     let field = harness.get_by_label("Scale: None").rect();
     harness.get_by_label("Scale: None").click();
     harness.run();
