@@ -63,8 +63,18 @@ pub(crate) struct Browser {
     pub(crate) sound_map_revision: Option<u64>,
 }
 
-/// How many input devices keep a default track input of their own.
-pub const MAX_TRACK_INPUT_DEVICES: usize = 64;
+/// How many audio devices keep an input and a default track input of their own.
+pub const MAX_DEVICE_INPUTS: usize = 64;
+
+/// What an audio device (a sound card, by [`crate::OutputChoice::device_key`]) keeps for itself,
+/// so choosing it again brings both back (ADR 0017, Amendment: default track input).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DeviceInputs {
+    /// The input device chosen while it played (`audio.setOutput`'s `input`).
+    pub input: crate::InputChoice,
+    /// The default track input chosen for it (`audio.setTrackInput`).
+    pub track_input: suhina_model::InputChannels,
+}
 
 /// The audio and MIDI devices the open projects play through.
 #[derive(Default)]
@@ -74,10 +84,10 @@ struct Devices {
     audio: Option<std::sync::Arc<dyn crate::AudioSystem>>,
     /// The output the user chose (`audio.setOutput`, the window's settings).
     output_choice: crate::OutputChoice,
-    /// The audio input new audio tracks take (`audio.setTrackInput`, Settings › Audio ›
-    /// Default track input), one per input device by [`crate::InputChoice::track_input_key`],
-    /// so each device keeps its own (ADR 0017). A device missing here gives none.
-    track_inputs: std::collections::BTreeMap<String, suhina_model::InputChannels>,
+    /// The input and the default track input each audio device keeps, by
+    /// [`crate::OutputChoice::device_key`] (ADR 0017): choosing a device again brings back its
+    /// input, and new audio tracks take its default track input.
+    device_inputs: std::collections::BTreeMap<String, DeviceInputs>,
     /// When a failed output was last opened again, so a device that keeps failing is tried
     /// every [`OUTPUT_RETRY`], not every frame.
     output_retried: Option<std::time::Instant>,
@@ -251,65 +261,71 @@ impl Projects {
     }
 
     /// Chooses the output players open on from now on; [`Projects::reopen_output`] moves the
-    /// playing one there.
+    /// playing one there. The device keeps the input chosen with it, for the next time it is
+    /// chosen ([`Projects::remembered_input`]).
     pub fn set_output_choice(&mut self, choice: crate::OutputChoice) {
+        let key = choice.device_key();
+        let inputs = &mut self.devices.device_inputs;
+        if inputs.len() < MAX_DEVICE_INPUTS || inputs.contains_key(&key) {
+            inputs.entry(key).or_default().input = choice.input.clone();
+        }
         self.devices.output_choice = choice;
         self.devices.output_watched = None;
         self.share_track_input();
     }
 
-    /// The default track input of the input device chosen: none while Input is off or when
+    /// The input device `device` was last chosen with, when it was chosen before.
+    pub fn remembered_input(&self, device: &crate::OutputChoice) -> Option<crate::InputChoice> {
+        self.devices.device_inputs.get(&device.device_key()).map(|kept| kept.input.clone())
+    }
+
+    /// The default track input of the audio device chosen: none while Input is off or when
     /// none was chosen for this device.
     pub fn track_input(&self) -> suhina_model::InputChannels {
-        self.devices
-            .output_choice
-            .input
-            .track_input_key()
-            .and_then(|key| self.devices.track_inputs.get(&key).copied())
-            .unwrap_or_default()
+        let choice = &self.devices.output_choice;
+        if choice.input == crate::InputChoice::Off {
+            return suhina_model::InputChannels::None;
+        }
+        self.devices.device_inputs.get(&choice.device_key()).map(|kept| kept.track_input).unwrap_or_default()
     }
 
-    /// The default track input of every input device it was chosen for, by
-    /// [`crate::InputChoice::track_input_key`]; the settings keep it.
-    pub fn track_inputs(&self) -> &std::collections::BTreeMap<String, suhina_model::InputChannels> {
-        &self.devices.track_inputs
+    /// The input and default track input every audio device keeps, by
+    /// [`crate::OutputChoice::device_key`]; the settings keep them.
+    pub fn device_inputs(&self) -> &std::collections::BTreeMap<String, DeviceInputs> {
+        &self.devices.device_inputs
     }
 
-    /// Takes the default track inputs kept for each input device (the settings, at start):
-    /// at most [`MAX_TRACK_INPUT_DEVICES`] devices, none of them with no input.
-    pub fn set_track_inputs(&mut self, inputs: std::collections::BTreeMap<String, suhina_model::InputChannels>) {
-        self.devices.track_inputs = inputs
+    /// Takes what each audio device keeps (the settings, at start): at most
+    /// [`MAX_DEVICE_INPUTS`] devices. The device chosen keeps the input it is chosen with.
+    pub fn set_device_inputs(&mut self, inputs: std::collections::BTreeMap<String, DeviceInputs>) {
+        self.devices.device_inputs = inputs
             .into_iter()
-            .filter(|(key, input)| !key.trim().is_empty() && *input != suhina_model::InputChannels::None)
-            .map(|(key, input)| (key.trim().to_lowercase(), input))
-            .take(MAX_TRACK_INPUT_DEVICES)
+            .filter(|(key, _)| !key.trim().is_empty())
+            .map(|(key, kept)| (key.trim().to_lowercase(), kept))
+            .take(MAX_DEVICE_INPUTS)
             .collect();
-        self.share_track_input();
+        let choice = self.devices.output_choice.clone();
+        self.set_output_choice(choice);
     }
 
     /// Chooses the audio input new audio tracks take from now on, and armed tracks that hear
-    /// none, for the input device chosen; the tracks that are there keep theirs, and another
-    /// input device keeps its own. Refused while Input is off, since there is no device to keep
-    /// it for and nothing opens a microphone unasked (ADR 0017). Returns the device's key.
+    /// none, on the audio device chosen; the tracks that are there keep theirs, and another
+    /// device keeps its own. Refused while Input is off, since nothing opens a microphone
+    /// unasked (ADR 0017). Returns the device's key.
     pub fn set_track_input(&mut self, input: suhina_model::InputChannels) -> Result<String, CommandError> {
-        let key = self
-            .devices
-            .output_choice
-            .input
-            .track_input_key()
-            .ok_or("no input device is chosen: choose one first (audio.setOutput's input)")?;
-        if input == suhina_model::InputChannels::None {
-            self.devices.track_inputs.remove(&key);
-        } else if self.devices.track_inputs.len() < MAX_TRACK_INPUT_DEVICES
-            || self.devices.track_inputs.contains_key(&key)
-        {
-            self.devices.track_inputs.insert(key.clone(), input);
-        } else {
-            return Err(format!(
-                "default track inputs are kept for at most {MAX_TRACK_INPUT_DEVICES} input devices; set one to none first"
-            )
-            .into());
+        let choice = &self.devices.output_choice;
+        if choice.input == crate::InputChoice::Off {
+            return Err("no input device is chosen: choose one first (audio.setOutput's input)".into());
         }
+        let key = choice.device_key();
+        let chosen_input = choice.input.clone();
+        let inputs = &mut self.devices.device_inputs;
+        if inputs.len() >= MAX_DEVICE_INPUTS && !inputs.contains_key(&key) {
+            return Err(format!("inputs are kept for at most {MAX_DEVICE_INPUTS} audio devices").into());
+        }
+        let kept = inputs.entry(key.clone()).or_default();
+        kept.input = chosen_input;
+        kept.track_input = input;
         self.share_track_input();
         Ok(key)
     }

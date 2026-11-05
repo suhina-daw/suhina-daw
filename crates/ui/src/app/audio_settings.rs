@@ -133,7 +133,7 @@ impl App {
         }
     }
 
-    /// New audio tracks hear the default track input the settings keep for the input device
+    /// New audio tracks hear the default track input the settings keep for the audio device
     /// chosen (`audio.setTrackInput`, #1191); the tracks that are there keep theirs.
     pub(super) fn choose_track_input(&mut self) {
         let input = suhina_session::audio::input_channels_text(self.settings.track_input());
@@ -143,7 +143,7 @@ impl App {
                     Some("none") | None => "none".to_string(),
                     Some(input) => format!("In {input}"),
                 };
-                self.status = Status::Done(format!("Default track input on this input device: {shown}"));
+                self.status = Status::Done(format!("Default track input on this audio device: {shown}"));
             }
             Err(e) => {
                 let kept = self.projects.track_input();
@@ -343,6 +343,8 @@ impl App {
             self.choose_track_input();
         }
         if outcome.changed {
+            // Each audio device keeps its input and default track input as the session has them.
+            self.settings.keep_device_inputs(self.projects.device_inputs());
             self.projects.set_backup_settings(self.settings.backup, self.settings.backup_clean_up);
             motion::set_enabled(ui.ctx(), self.settings.animations);
             self.arrangement.headers_left = headers_left(self.settings.track_headers);

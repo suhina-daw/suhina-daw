@@ -184,3 +184,33 @@ fn the_default_track_input_lists_the_devices_channels() {
     let missing = values(2, "5/6");
     assert_eq!(missing.last(), Some(&("In 5/6 (not on this device)".to_string(), "5/6".to_string())));
 }
+
+#[test]
+fn choosing_another_audio_device_brings_back_its_input() {
+    use suhina_session::{InputChoice, OutputChoice};
+    let device = |name: &str, input: InputChoice| OutputChoice {
+        host: Some("ASIO".into()),
+        device: Some(name.into()),
+        input,
+        ..OutputChoice::default()
+    };
+    let mut settings = Settings::default();
+    settings.set_output_choice(&device("SSL 2+", InputChoice::Named("SSL 2+ In".into())));
+    settings.set_track_input(suhina_engine::model::InputChannels::Stereo(1));
+    let active = device("Thunderbolt", InputChoice::Default);
+    settings.set_output_choice(&active);
+
+    // The card chosen before gets its input back, and with it its default track input.
+    let picked = restore_input(OutputPick::Device(device("SSL 2+", InputChoice::Default)), &active, &settings);
+    let OutputPick::Device(restored) = picked else { panic!("a device pick stays one") };
+    assert_eq!(restored.input, InputChoice::Named("SSL 2+ In".into()));
+    settings.set_output_choice(&restored);
+    assert_eq!(settings.track_input(), suhina_engine::model::InputChannels::Stereo(1));
+
+    // A card never chosen keeps the input there is; another setting on the same card is left alone.
+    let new = restore_input(OutputPick::Device(device("USB Mic", InputChoice::Default)), &active, &settings);
+    assert!(matches!(new, OutputPick::Device(c) if c.input == InputChoice::Default));
+    let same = device("Thunderbolt", InputChoice::Named("Other".into()));
+    let kept = restore_input(OutputPick::Device(same.clone()), &active, &settings);
+    assert!(matches!(kept, OutputPick::Device(c) if c == same));
+}

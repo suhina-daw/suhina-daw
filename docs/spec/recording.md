@@ -39,8 +39,8 @@ names no other program's behaviour.
     before the track's devices and mixer, as an audio clip. Monitoring (In, Auto, Off) changes
     only what is heard while recording, not what is recorded. An audio track armed
     while it hears no input (`track.setArm`, from the window or MCP) gets the default track input
-    of the input device chosen (Settings › Audio, `audio.setTrackInput`, ADR 0017; each input
-    device keeps its own), or with none chosen for it the device's first
+    of the audio device chosen (Settings › Audio, `audio.setTrackInput`, ADR 0017; each audio
+    device keeps its own with its Input), or with none chosen for it the device's first
     input (channels 1/2, or 1 on a one-channel device), so Record has something to record; new
     audio tracks take the default track input too. Recording an armed track that hears none is
     refused with the track's name.

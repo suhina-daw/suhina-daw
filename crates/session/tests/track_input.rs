@@ -1,15 +1,16 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The default track input (#1191, ADR 0017): `audio.setTrackInput`, kept for each input device,
-//! new audio tracks that take the chosen device's, and armed tracks that hear nothing getting it.
+//! The default track input (#1191, ADR 0017): `audio.setTrackInput`, kept with the input for each
+//! audio device, new audio tracks that take the chosen device's, and armed tracks that hear
+//! nothing getting it.
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
 
 use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 use suhina_model::InputChannels;
-use suhina_session::{InputChoice, OutputChoice, Projects, Session};
+use suhina_session::{DeviceInputs, InputChoice, OutputChoice, Projects, Session};
 
 use crate::support::run;
 
@@ -45,7 +46,7 @@ fn new_audio_tracks_take_the_default_track_input() {
     let mut projects = projects(true);
     let before = inputs(&mut projects);
     let set = run(&mut projects, "audio.setTrackInput", json!({ "input": "1/2" })).unwrap();
-    assert_eq!(set, json!({ "track_input": "1/2", "input_device": "default" }));
+    assert_eq!(set, json!({ "track_input": "1/2", "input_device": "default|default" }));
     assert_eq!(projects.track_input(), InputChannels::Stereo(1));
     assert_eq!(inputs(&mut projects), before, "the tracks that are there keep theirs");
 
@@ -79,57 +80,103 @@ fn new_audio_tracks_take_the_default_track_input() {
     assert_eq!(input_of(&mut projects, &plain["track"]), "none");
 }
 
-/// An input device chosen by name.
+/// The input device chosen on the audio device there is.
 fn input_device(projects: &mut Projects, input: InputChoice) {
-    projects.set_output_choice(OutputChoice { input, ..OutputChoice::default() });
+    let choice = OutputChoice { input, ..projects.output_choice().clone() };
+    projects.set_output_choice(choice);
+}
+
+/// An ASIO audio device chosen by name, with `input`.
+fn audio_device(projects: &mut Projects, device: &str, input: InputChoice) {
+    projects.set_output_choice(OutputChoice {
+        host: Some("ASIO".into()),
+        device: Some(device.into()),
+        input,
+        ..OutputChoice::default()
+    });
 }
 
 #[test]
-fn each_input_device_keeps_its_own_default_track_input() {
-    let mut projects = projects(true);
-    run(&mut projects, "audio.setTrackInput", json!({ "input": "1/2" })).unwrap();
+fn each_audio_device_keeps_its_input_and_default_track_input() {
+    let mut projects = projects(false);
+    audio_device(&mut projects, "Universal Audio Thunderbolt", InputChoice::Default);
+    let set = run(&mut projects, "audio.setTrackInput", json!({ "input": "1" })).unwrap();
+    assert_eq!(set["input_device"], json!("asio|universal audio thunderbolt"));
 
-    // Another device has none until one is chosen for it.
-    input_device(&mut projects, InputChoice::Named("Studio Interface".into()));
+    // Another sound card has none until one is chosen for it.
+    audio_device(&mut projects, "SSL 2+", InputChoice::Named("SSL 2+".into()));
     assert_eq!(projects.track_input(), InputChannels::None);
     let plain = run(&mut projects, "track.add", json!({ "kind": "audio" })).unwrap();
     assert_eq!(input_of(&mut projects, &plain["track"]), "none");
-    let set = run(&mut projects, "audio.setTrackInput", json!({ "input": "6" })).unwrap();
-    assert_eq!(set["input_device"], json!("studio interface"));
-    let six = run(&mut projects, "track.add", json!({ "kind": "audio" })).unwrap();
-    assert_eq!(input_of(&mut projects, &six["track"]), "6");
-
-    // Back on the first device, its own comes back; the name is matched in any case.
-    input_device(&mut projects, InputChoice::Default);
-    assert_eq!(projects.track_input(), InputChannels::Stereo(1));
+    run(&mut projects, "audio.setTrackInput", json!({ "input": "1/2" })).unwrap();
     let pair = run(&mut projects, "track.add", json!({ "kind": "audio" })).unwrap();
     assert_eq!(input_of(&mut projects, &pair["track"]), "1/2");
-    input_device(&mut projects, InputChoice::Named("STUDIO INTERFACE".into()));
-    assert_eq!(projects.track_input(), InputChannels::Mono(6));
-    let info = run(&mut projects, "audio.info", json!({})).unwrap();
-    assert_eq!(info["chosen"]["track_input"], json!("6"));
+
+    // Changing the input on one card does not lose the card's default track input.
+    input_device(&mut projects, InputChoice::Default);
+    assert_eq!(projects.track_input(), InputChannels::Stereo(1));
+
+    // Back on the first card: its own comes back; the name is matched in any case.
+    audio_device(&mut projects, "UNIVERSAL AUDIO THUNDERBOLT", InputChoice::Default);
+    assert_eq!(projects.track_input(), InputChannels::Mono(1));
+    let one = run(&mut projects, "track.add", json!({ "kind": "audio" })).unwrap();
+    assert_eq!(input_of(&mut projects, &one["track"]), "1");
     assert_eq!(input_of(&mut projects, &pair["track"]), "1/2", "the tracks that are there keep theirs");
+    let info = run(&mut projects, "audio.info", json!({})).unwrap();
+    assert_eq!(info["chosen"]["track_input"], json!("1"));
 
     // Kept for the settings, and taken back from them at start.
-    let kept = projects.track_inputs().clone();
+    let kept = projects.device_inputs().clone();
     assert_eq!(
         kept,
         BTreeMap::from([
-            ("default".to_string(), InputChannels::Stereo(1)),
-            ("studio interface".to_string(), InputChannels::Mono(6)),
+            (
+                "asio|ssl 2+".to_string(),
+                DeviceInputs { input: InputChoice::Default, track_input: InputChannels::Stereo(1) }
+            ),
+            (
+                "asio|universal audio thunderbolt".to_string(),
+                DeviceInputs { input: InputChoice::Default, track_input: InputChannels::Mono(1) }
+            ),
         ])
     );
     let mut started = self::projects(false);
-    started.set_track_inputs(kept);
-    assert_eq!(started.track_input(), InputChannels::None, "Input off");
-    input_device(&mut started, InputChoice::Named("Studio Interface".into()));
-    assert_eq!(started.track_input(), InputChannels::Mono(6));
+    started.set_device_inputs(kept);
+    assert_eq!(started.track_input(), InputChannels::None, "no device with Input on yet");
+    audio_device(&mut started, "SSL 2+", InputChoice::Default);
+    assert_eq!(started.track_input(), InputChannels::Stereo(1));
     let restored = run(&mut started, "track.add", json!({ "kind": "audio" })).unwrap();
-    assert_eq!(input_of(&mut started, &restored["track"]), "6");
+    assert_eq!(input_of(&mut started, &restored["track"]), "1/2");
+}
 
-    // None forgets the device's choice.
-    run(&mut started, "audio.setTrackInput", json!({ "input": "none" })).unwrap();
-    assert_eq!(started.track_inputs().len(), 1);
+#[test]
+fn choosing_another_audio_device_brings_back_its_input() {
+    let mut projects = projects(false);
+    let set = |projects: &mut Projects, params: Value| run(projects, "audio.setOutput", params).unwrap();
+    set(&mut projects, json!({ "host": "ASIO", "device": "Interface", "input": "Interface In" }));
+    run(&mut projects, "audio.setTrackInput", json!({ "input": "6" })).unwrap();
+    set(&mut projects, json!({ "device": "SSL 2+", "input": "SSL 2+ In" }));
+    run(&mut projects, "audio.setTrackInput", json!({ "input": "1/2" })).unwrap();
+
+    // Only the device given: its input and default track input come back.
+    let back = set(&mut projects, json!({ "device": "Interface" }));
+    assert_eq!(back["chosen"]["input"], json!("Interface In"));
+    assert_eq!(back["chosen"]["track_input"], json!("6"));
+    let six = run(&mut projects, "track.add", json!({ "kind": "audio" })).unwrap();
+    assert_eq!(input_of(&mut projects, &six["track"]), "6");
+
+    // An input given with the device wins, and is what the device keeps from then on.
+    set(&mut projects, json!({ "device": "SSL 2+", "input": "off" }));
+    assert_eq!(projects.output_choice().input, InputChoice::Off);
+    assert_eq!(projects.track_input(), InputChannels::None);
+    set(&mut projects, json!({ "device": "Interface" }));
+    let again = set(&mut projects, json!({ "device": "SSL 2+" }));
+    assert_eq!(again["chosen"]["input"], json!("off"));
+
+    // A device never chosen keeps the input there is.
+    let new = set(&mut projects, json!({ "device": "USB Mic" }));
+    assert_eq!(new["chosen"]["input"], json!("off"));
+    assert_eq!(projects.remembered_input(&OutputChoice::default()), None);
 }
 
 #[test]
@@ -140,10 +187,10 @@ fn the_default_track_input_does_nothing_while_the_input_device_is_off() {
     let audio = run(&mut projects, "track.add", json!({ "kind": "audio" })).unwrap();
     assert_eq!(input_of(&mut projects, &audio["track"]), "none", "no microphone is chosen unasked");
     assert_eq!(projects.track_input(), InputChannels::None);
-    // With no device to keep it for, a choice is refused and changes nothing.
+    // With no input to hear it on, a choice is refused and changes nothing.
     assert!(run(&mut projects, "audio.setTrackInput", json!({ "input": "3" })).is_err());
 
-    // Choosing the device again puts its own back in effect for the tracks added from then on.
+    // Turning Input on again puts the device's own back in effect.
     input_device(&mut projects, InputChoice::Default);
     let next = run(&mut projects, "track.add", json!({ "kind": "audio" })).unwrap();
     assert_eq!(input_of(&mut projects, &next["track"]), "1/2");

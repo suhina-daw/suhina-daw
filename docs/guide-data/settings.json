@@ -265,17 +265,17 @@
       "workInProgress": false
     },
     {
-      "id": "Audio/Output/audio_track_inputs",
+      "id": "Audio/Output/audio_device_inputs",
       "page": "Audio",
       "section": "Output",
       "name": "Default track input",
       "note": "Give new audio tracks an input, so they are ready to record.",
       "keys": [
-        "audio_track_inputs"
+        "audio_device_inputs"
       ],
-      "sourceFingerprint": "3d14a14a21921cbb8383cb2b5404c8ae35f67bd4de8e1a6e7b1310d3b2a67f91",
+      "sourceFingerprint": "cc5fa47670901b414b0e8bffba7ccccd24f64f3a7bfc2ee130ccee3619e04934",
       "helpStatus": "reviewed",
-      "description": "Default track input chooses which channels of the input device a new audio track listens to. With None, the default, a new audio track hears nothing until you pick its input under Audio From on the track. With a channel or a stereo pair, every audio track you add from then on, also by dropping audio files or splitting stems, starts with that input, and MIDI tracks are not affected. Arming a track that hears nothing also gives it this input, and the status bar says which; with None, arming gives it the device's first channels as before (1/2, or 1 on a one-channel device). Each input device keeps its own choice: it applies to the device chosen under Input, and when you switch Input to another device the row shows, and new tracks get, the choice kept for that device (None until you pick one for it). So an interface can give In 6 while a laptop microphone gives In 1, without changing the setting each time you switch. The list follows that device: its channels one by one, then its neighbouring pairs. A choice the device does not have stays listed and marked, and new tracks are then not given it. While Input is Off the row only says to choose an input device first, so no microphone is used without being chosen. Changing it does not change tracks that already exist. The choices of every device are kept across restarts.",
+      "description": "Default track input chooses which channels of the input device a new audio track listens to. With None, the default, a new audio track hears nothing until you pick its input under Audio From on the track. With a channel or a stereo pair, every audio track you add from then on, also by dropping audio files or splitting stems, starts with that input, and MIDI tracks are not affected. Arming a track that hears nothing also gives it this input, and the status bar says which; with None, arming gives it the device's first channels as before (1/2, or 1 on a one-channel device). Each audio device (the Device above, your sound card) keeps its own, together with its Input: when you choose another Device, Input and Default track input change to what you last chose for that card, and when you go back, the first card's come back. So an interface you use every day can give In 1 while one you use now and then gives In 1/2 on its own input, without changing anything each time you switch. A card you have not chosen before keeps the Input there is and starts at None. It is only a default for new tracks: you can still choose any input on a track, and the project keeps what each track hears. The list follows that device: its channels one by one, then its neighbouring pairs. A choice the device does not have stays listed and marked, and new tracks are then not given it. While Input is Off the row only says to choose an input device first, so no microphone is used without being chosen. Changing it does not change tracks that already exist. The choices of every card are kept across restarts.",
       "options": [
         {
           "name": "None",

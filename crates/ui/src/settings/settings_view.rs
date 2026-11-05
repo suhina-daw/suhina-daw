@@ -2203,14 +2203,15 @@ pub(crate) fn audio_output(cx: &mut Cx<'_>, y: &mut f32) {
             return;
         }
         let picked = restore_driver(picked, cx.settings, cx.about);
+        let picked = restore_input(picked, &active, cx.settings);
         let apply = select_output(&mut cx.state.audio_pending, &active, picked);
         use_output(cx, apply);
     }
 }
 
 /// Audio › Output › Default track input (#1191): none, or a channel or a stereo pair of the
-/// input device, listed from its channels. Each input device keeps its own, so choosing another
-/// device under Input shows and uses the one kept for it; the app runs `audio.setTrackInput`.
+/// input device, listed from its channels. Each audio device (Device) keeps its own with its
+/// Input, so choosing another one brings both back; the app runs `audio.setTrackInput`.
 pub(crate) fn default_track_input(cx: &mut Cx<'_>, r: Rect) {
     let choice = cx.settings.output_choice();
     let channels = match &cx.about.audio_live {
@@ -2228,12 +2229,12 @@ pub(crate) fn default_track_input(cx: &mut Cx<'_>, r: Rect) {
         }
     };
     if choice.input == suhina_session::InputChoice::Off {
-        cx.note("Choose an input device under Input first: each input device keeps its own default track input");
+        cx.note("Choose an input device under Input first: each audio device keeps its own default track input");
         return;
     }
     let current = suhina_session::audio::input_channels_text(cx.settings.track_input());
     let options = track_input_options(channels, &current);
-    cx.note("What a new audio track hears on this input device, and an armed track that hears nothing; each device keeps its own, tracks that are there keep theirs");
+    cx.note("What a new audio track hears, and an armed track that hears nothing; each audio device keeps its own with its Input, tracks that are there keep theirs");
     if let Some(picked) = choice_dropdown(cx.ui, cx.painter, r, cx.name, &options, &current)
         && let Some(slot) = cx.settings.track_input_slot()
     {
@@ -2330,6 +2331,18 @@ fn restore_driver(picked: OutputPick, settings: &Settings, about: &About) -> Out
         }
     }
     OutputPick::Driver(choice)
+}
+
+/// Another audio device brings back the input it was last chosen with, so its default track
+/// input comes back with it (#1191); a device not chosen before keeps the input there is.
+fn restore_input(picked: OutputPick, active: &suhina_session::OutputChoice, settings: &Settings) -> OutputPick {
+    let OutputPick::Device(mut choice) = picked else { return picked };
+    if choice.device_key() != active.device_key()
+        && let Some(input) = settings.remembered_input(&choice)
+    {
+        choice.input = input;
+    }
+    OutputPick::Device(choice)
 }
 
 fn select_output(
