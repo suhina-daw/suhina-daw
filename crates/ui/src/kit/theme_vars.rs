@@ -403,13 +403,22 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
 /// After the model was edited and [`sync`]ed: the variables the sheet gives under the variant's
 /// values, and the thumbnail and swatch drawn from them, so the gallery shows the edited colours.
 pub fn refresh_view(theme: &mut Theme) {
-    if let Some(css) = theme.skin.css.as_ref()
-        && let Ok(sheet) = theme_sheet(css)
-    {
-        let variant = theme.skin.variant.as_deref().map(Sheet::parse).transpose().ok().flatten();
-        if let Ok(full) = root_variables(&sheet, variant.as_ref()) {
-            theme.skin.variables = Arc::new(full);
+    match theme.skin.css.as_ref().map(theme_sheet) {
+        Some(Ok(sheet)) => {
+            let variant = theme.skin.variant.as_deref().map(Sheet::parse).transpose().ok().flatten();
+            if let Ok(full) = root_variables(&sheet, variant.as_ref()) {
+                theme.skin.variables = Arc::new(full);
+            }
         }
+        // A theme without a sheet (Suhina Dark): its base values under the variant's, as `resolve`.
+        None => {
+            let mut merged = (*theme.vars.base).clone();
+            merged.extend(theme.vars.values.clone());
+            if let Ok(resolved) = suhina_style::resolve_variables(&merged) {
+                theme.skin.variables = Arc::new(resolved);
+            }
+        }
+        Some(Err(_)) => {}
     }
     theme.picture = picture(theme);
     theme.swatch = swatch(theme).ok().map(|[r, g, b, a]| egui::Color32::from_rgba_unmultiplied(r, g, b, a));

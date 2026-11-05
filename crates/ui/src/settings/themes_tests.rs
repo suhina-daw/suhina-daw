@@ -226,13 +226,19 @@ fn a_copy_of_a_theme_with_placed_controls_says_so() {
 
 #[test]
 fn editing_a_palette_colour_refreshes_the_swatch_and_thumbnail_of_its_card() {
+    for id in ["nord", BUILT_IN] {
+        a_palette_edit_shows_on_the_card(id);
+    }
+}
+
+fn a_palette_edit_shows_on_the_card(from: &str) {
     let mut themes = Themes::default();
-    let before = themes.get("nord").unwrap().clone();
-    let mut colors = themes.palette("nord");
+    let before = themes.get(from).unwrap().clone();
+    let mut colors = themes.palette(from);
     colors.accent = egui::Color32::from_rgb(250, 10, 120);
     colors.window_background = egui::Color32::from_rgb(10, 250, 120);
     let id = themes
-        .request("nord", ThemeRequest::EditRgba { colors, transparent_rgb: before.transparent_rgb })
+        .request(from, ThemeRequest::EditRgba { colors, transparent_rgb: before.transparent_rgb })
         .expect("a built-in theme's edit makes a variant");
     let edited = themes.get(&id).unwrap().clone();
     // What the card shows is what loading the theme again would show.
