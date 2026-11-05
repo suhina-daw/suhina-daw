@@ -313,8 +313,9 @@ runs a surface program's script. The extension is the script's folder, not the r
 manifest carries in `provides` an entry with the id `surface`, lists in `ports` the port name
 patterns the script claims, lists the script file in `programs` with its SHA-256, and names in
 `runner` the runner it needs (`"lua"`). Suhina starts the runner it shipped with that script, so
-each surface program is one runner process of its own: a script's fault restarts that program
-alone, with its ports back on the profiles meanwhile. A script holds what any surface program
+each surface program is one runner process of its own: a crash or a hang of the runner process
+restarts that program alone, with its ports back on the profiles meanwhile, the way a plug-in
+host's process is restarted. A script holds what any surface program
 is given and nothing more: every message of its claimed ports, with the timestamp it arrived
 with; a send-back leaves from a queue Suhina drains, and the script never waits on an answer to
 send one; commands, reading commands and subscriptions. The runner's Lua environment is
@@ -323,8 +324,8 @@ with it), and `load` reads text chunks only; that narrowing is the runner's conv
 the boundary that is enforced is the process the runner runs in. The runner preloads its own
 helpers, the usual modes, layers and session, mixer and device components, versioned with the
 runner and outside the surface-program protocol, for a script to compose instead of
-reimplement. A script that fails is stopped at an error boundary and shows
-in the extension's state, not left running.
+reimplement. A script whose handler fails is stopped at an error boundary and shows in the
+extension's state: it stays stopped, its ports on their profiles, until `extensions.restart`.
 
 ## Testing
 

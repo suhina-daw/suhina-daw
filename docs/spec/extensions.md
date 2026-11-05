@@ -105,7 +105,8 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
   ([ADR 0019](../decisions/0019-midi-controllers-and-mapping.md)). The `programs` entry is the
   script's file, and it is never started as a process: the child process is the runner the name
   `runner` gives, the one Suhina ships, built from this tree and carrying no manifest of its own.
-  It is the only extension Suhina ships itself. The extension's state, its health and its restart
+  The runner is a program Suhina ships, not an extension and not a surface program; the script's
+  folder is both. The extension's state, its health and its restart
   are the runner process's, and the script's ports fall back to their profiles while that process
   is down.
 - Suhina does the parts it owns: decoding the audio, the resampling and the DSP chain around the
@@ -128,4 +129,5 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
   rather than through commands.
 - Commands of an extension's own outside the namespace its manifest declares.
 - Extensions that Suhina ships itself: what ships stays built from this tree and GPL-compatible.
-  The runner a surface script names in `runner` is one of these (see *Running one*).
+  No extension is shipped yet: the runner a surface script names is a shipped program, not an
+  extension (see *Running one*).
