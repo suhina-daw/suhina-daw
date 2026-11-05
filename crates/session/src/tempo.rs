@@ -11,6 +11,7 @@ use suhina_model::{
 };
 
 use crate::commands::Args;
+use crate::named::{Miss, find_one};
 use crate::{CommandError, Session};
 
 /// Tempos the commands take, as `transport.setTempo` does.
@@ -94,19 +95,12 @@ pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, 
 /// The index of `params.point` among the changes: its number, from 0, or `{"id": n}` with its id
 /// (#763 › 1).
 fn point_index(t: &Transport, params: &Value) -> Result<usize, CommandError> {
-    let count = t.tempo_changes.len();
     let item = Args::new(params).value("point").ok_or("point must name a tempo change, as in tempo.points")?;
-    if let Some(id) = item.get("id") {
-        return id
-            .as_u64()
-            .and_then(|n| t.tempo_changes.position(TempoPointId(n)))
-            .ok_or_else(|| format!("no tempo change has id {}", item["id"]).into());
-    }
-    let number = item.as_u64().ok_or("point must be a whole number from 0, or {\"id\": n}")?;
-    usize::try_from(number)
-        .ok()
-        .filter(|i| *i < count)
-        .ok_or_else(|| format!("tempo point {number} does not exist; the project has {count}").into())
+    find_one(&t.tempo_changes, TempoPointId, item).map_err(|miss| match miss {
+        Miss::Id(id) => format!("no tempo change has id {id}").into(),
+        Miss::NotANumber => "point must be a whole number from 0, or {\"id\": n}".into(),
+        Miss::Range { index, count } => format!("tempo point {index} does not exist; the project has {count}").into(),
+    })
 }
 
 pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

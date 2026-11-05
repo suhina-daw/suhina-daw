@@ -37,13 +37,6 @@ pub struct TempoPoint {
     pub ramp: bool,
 }
 
-impl TempoPoint {
-    /// A change to `bpm` at `beat`, gliding there with `ramp`.
-    pub fn new(beat: f64, bpm: f64, ramp: bool) -> Self {
-        Self { beat, bpm, ramp }
-    }
-}
-
 /// A time-signature change at the start of bar `bar` (counted from 0: the song's first bar is
 /// bar 0, shown as bar 1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

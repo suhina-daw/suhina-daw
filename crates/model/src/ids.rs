@@ -232,15 +232,6 @@ impl Project {
         Ok(())
     }
 
-    /// Every automation point, the channels' lanes first (each channel's mixer lanes, then its
-    /// devices' lanes depth first), in lane order.
-    pub fn all_automation_points(&self) -> impl Iterator<Item = &crate::AutomationPoint> {
-        self.channels.iter().flat_map(|c| {
-            let devices = crate::walk_devices(&c.devices).into_iter().flat_map(|(_, d)| &d.automation);
-            c.automation.iter().chain(devices).flat_map(|lane| &lane.points)
-        })
-    }
-
     /// Every device on every channel, depth-first: a group before the devices in it.
     pub fn all_devices(&self) -> impl Iterator<Item = &crate::Device> {
         self.channels.iter().flat_map(|c| crate::walk_devices(&c.devices).into_iter().map(|(_, d)| d))

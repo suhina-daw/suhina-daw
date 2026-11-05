@@ -102,9 +102,9 @@ impl Player {
         &mut self,
         project: &Project,
         scenes: Option<suhina_engine::SceneShift>,
-    ) -> Result<(), CommandError> {
+    ) -> Result<(), suhina_engine::ControlError> {
         let began = std::time::Instant::now();
-        let updated = self.controller.update_with_scenes(project, scenes).map_err(CommandError::from);
+        let updated = self.controller.update_with_scenes(project, scenes);
         trace_update(began);
         updated
     }

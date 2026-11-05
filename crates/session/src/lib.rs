@@ -56,6 +56,7 @@ mod live_input;
 mod mapping;
 mod meters;
 mod midi;
+mod named;
 mod note_tools;
 mod notes;
 mod player;
@@ -151,6 +152,13 @@ impl fmt::Display for CommandError {
 }
 
 impl std::error::Error for CommandError {}
+
+/// Why the playing engine did not follow an edit ([`Session::follow_player`]).
+struct PlayerLag {
+    error: CommandError,
+    /// The engine was busy; a later try can get through.
+    transient: bool,
+}
 
 impl From<String> for CommandError {
     fn from(message: String) -> Self {
@@ -1124,8 +1132,11 @@ impl Session {
     /// Sends the project to the playing engine again if a continued edit could not reach it
     /// (its queue was full). The window calls it every frame, through `Projects::poll_plugins`.
     pub fn catch_up_player(&mut self) {
-        if self.sync.behind && self.update_player(None).is_ok() {
-            self.sync.behind = false;
+        if self.sync.behind {
+            // A failure that is not the engine being busy would come again every frame, so it
+            // stops the retries; the next edit reports it.
+            let retry = self.follow_player(None);
+            self.sync.behind = retry.as_ref().is_err_and(|lag| lag.transient);
         }
     }
 
@@ -1210,6 +1221,13 @@ impl Session {
     /// The edit stays made if this fails.
     /// `scenes` is the scene inserted or removed since the last update, if that is what changed.
     fn update_player(&mut self, scenes: Option<suhina_engine::SceneShift>) -> Result<(), CommandError> {
+        self.follow_player(scenes).map_err(|lag| lag.error)
+    }
+
+    /// [`Session::update_player`], keeping whether a failure is the engine being busy (its queue
+    /// full, its stretch thread not taking work), which a later try can clear, or one that
+    /// will come again until the project changes (a graph that cannot be built).
+    fn follow_player(&mut self, scenes: Option<suhina_engine::SceneShift>) -> Result<(), PlayerLag> {
         self.sync_device_files();
         let Some(player) = self.sync.player.as_mut() else { return Ok(()) };
         if self.audio.changed {
@@ -1222,8 +1240,9 @@ impl Session {
         }
         let heard = self.take_solo.map(|_| self.heard_project().into_owned());
         let Some(player) = self.sync.player.as_mut() else { return Ok(()) };
-        player.update_with_scenes(heard.as_ref().unwrap_or(&self.project), scenes).map_err(|e| {
-            CommandError(format!("the edit was made, but the playing engine could not follow it: {}", e.0))
+        player.update_with_scenes(heard.as_ref().unwrap_or(&self.project), scenes).map_err(|e| PlayerLag {
+            transient: matches!(e, suhina_engine::ControlError::Full(_) | suhina_engine::ControlError::StretchBusy),
+            error: CommandError(format!("the edit was made, but the playing engine could not follow it: {e}")),
         })
     }
 

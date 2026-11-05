@@ -2766,9 +2766,7 @@ pub(crate) fn show(
             }
         }
         // Both axes are one undo gesture, including a single click or a keyboard step.
-        for action in control_actions {
-            actions.push(action);
-        }
+        actions.extend(control_actions);
         response.widget_info(|| {
             let kind = if matches!(
                 control.gesture,

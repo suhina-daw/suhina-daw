@@ -4,7 +4,7 @@ read_when: adding a command, undo, redo, command registry, params, CommandSpec
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/session/src/commands.rs
   - crates/session/src/commands
@@ -103,9 +103,10 @@ UI, CLI, control channel and MCP server all dispatch commands by id. We take the
    (This replaces `continue`, `replace` and `continuous`, which had a rule each.) Every effective
    update marks the project changed, after a save mid-gesture too. A drag can send graphs faster
    than the engine takes them ([ADR 0005](0005-edits-while-playing.md)), so a call with a gesture
-   whose graph does not fit is not an error: the project keeps the value, and
-   `Session::catch_up_player`, which the window calls every frame, sends it again until the engine
-   has it.
+   whose graph does not fit (its queue is full, or the stretch thread is busy) is not an error:
+   the project keeps the value, and `Session::catch_up_player`, which the window calls every
+   frame, sends it again until the engine has it. Any other failure, such as a project the engine
+   cannot build, is the call's error, in a gesture or not, and is not tried again.
 10. **Lists count from 0.** A position in a list a command reports or takes counts from 0:
     scenes, tempo changes, markers, automation points, notes, devices, clips by index and a take's
     pieces ([#763](https://github.com/suhina-daw/suhina-daw/issues/763) › 1). Scenes, tempo

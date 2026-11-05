@@ -4,6 +4,7 @@
 //! The `marker.*` commands, and what runs them here.
 
 use super::*;
+use crate::named::find_one;
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
@@ -62,11 +63,9 @@ fn marker_beat(args: Args) -> Result<f64, CommandError> {
 
 /// `index`, checked to name a marker: its index, or `{"id": n}` with its id (#763 › 1).
 fn marker_index(p: &Project, args: Args) -> Result<usize, CommandError> {
-    if let Some(id) = args.value("index").and_then(|v| v.get("id")) {
-        let id = id.as_u64().map(suhina_model::MarkerId);
-        return id.and_then(|id| p.arrangement.markers.position(id)).ok_or_else(|| {
-            format!("no marker has id {}", args.value("index").map_or(Value::Null, |v| v["id"].clone())).into()
-        });
+    if let Some(item) = args.value("index").filter(|v| v.get("id").is_some()) {
+        return find_one(&p.arrangement.markers, suhina_model::MarkerId, item)
+            .map_err(|_| format!("no marker has id {}", item["id"]).into());
     }
     let index = args.index("index", "from project.markers")?;
     let count = p.arrangement.markers.len();

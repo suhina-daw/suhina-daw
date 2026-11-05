@@ -518,7 +518,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "actionA",
                 ParamType::Text,
-                "nothing, stop, again, previous, next, first, last, any, other, or \"jump N\" for the slot of scene N",
+                "nothing, stop, again, previous, next, first, last, any, other, or \"jump N\" for the slot of scene N (N from 1, as the window shows it; the scene parameter counts from 0)",
             ),
             optional("actionB", ParamType::Text, "like actionA"),
             optional("chanceA", ParamType::Integer, "weight of action A, 0 to 100"),

@@ -358,6 +358,52 @@ fn a_drag_that_outruns_the_engine_is_kept_and_heard_once_it_catches_up() {
     assert!((quieter / loud - 0.25).abs() < 0.01, "{loud} -> {quieter}");
 }
 
+/// Only the engine being busy is kept for later. A project it cannot build into a graph (a clip
+/// hours out) is the edit's error even inside a drag, so it is not retried every frame unseen.
+#[test]
+fn a_drag_that_the_engine_cannot_build_is_an_error() {
+    let mut long = project();
+    let clip = Clip {
+        id: Default::default(),
+        content: ContentId(1),
+        start: 40_000.0,
+        length: 1.0,
+        offset: 0.0,
+        loop_range: None,
+        enabled: true,
+        fade_in: 0.0,
+        fade_out: 0.0,
+        fade_in_curve: Default::default(),
+        fade_out_curve: Default::default(),
+        follow_action: Default::default(),
+        color: None,
+        ara: false,
+        extensions: Extensions::default(),
+        launch: Default::default(),
+    };
+    long.arrangement.lanes = vec![ArrangementLane {
+        id: Default::default(),
+        name: String::new(),
+        track: Some(TrackId(1)),
+        clips: vec![clip],
+    }];
+    let mut renderer = Renderer::stopped(&project(), &AudioPool::new(), SR, suhina_session::devices()).unwrap();
+    let mut session = Session::new(long);
+    session.attach_player(Player::new(renderer.controller(), None));
+    // Each edit is made and reports that the engine could not follow it.
+    for (beat, value) in [(0, 0.0), (2, 1.0), (4, 0.0)] {
+        let point = json!({ "track": 1, "param": "pan", "beat": beat, "value": value });
+        let error = run(&mut session, "automation.addPoint", point).expect_err("the engine cannot build this project");
+        assert!(error.contains("could not follow"), "{error}");
+    }
+    let scale = json!({ "track": 1, "param": "pan", "points": [0, 1, 2], "factor": 2, "gesture": "drag" });
+    let error =
+        run(&mut session, "automation.scaleRange", scale).expect_err("not a busy engine, so not kept for later");
+    assert!(error.contains("could not follow") && error.contains("limit"), "{error}");
+    advance(&mut renderer, 1);
+    session.catch_up_player();
+}
+
 #[test]
 fn the_metronome_is_a_transport_command() {
     let (mut session, mut renderer) = playing();

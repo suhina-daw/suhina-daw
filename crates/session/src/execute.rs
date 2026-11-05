@@ -170,12 +170,13 @@ impl Session {
                     _ => false,
                 };
             if !sent {
-                match self.update_player(shift) {
+                match self.follow_player(shift) {
                     Ok(()) => self.sync.behind = false,
                     // A drag sends a value every frame and may outrun the engine taking new
-                    // graphs: the engine catches up on a later frame.
-                    Err(_) if prepared.gesture.is_some() => self.sync.behind = true,
-                    Err(e) => return Err(e),
+                    // graphs: the engine catches up on a later frame. Any other failure (a graph
+                    // that cannot be built) is the edit's error, as outside a gesture.
+                    Err(lag) if lag.transient && prepared.gesture.is_some() => self.sync.behind = true,
+                    Err(lag) => return Err(lag.error),
                 }
                 // The edit may have changed what an armed track hears.
                 self.send_armed();

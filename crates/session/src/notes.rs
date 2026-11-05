@@ -16,6 +16,7 @@ use suhina_engine::{MAX_START_BEAT, Quantization};
 use suhina_model::{Clip, ClipContent, ContentId, ContentLane, LaneData, Note, NoteId, Notes, Project, TrackId};
 
 use crate::commands::{Args, parse_quantization, track_id};
+use crate::named::{Miss, Named};
 use crate::{CommandError, Session};
 
 /// The most notes one command may name or add.
@@ -297,23 +298,15 @@ fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Notes, Co
         .ok_or_else(|| "the clip has no notes".into())
 }
 
-/// The note `item` names in `notes`: its index (from 0, as in `note.list`), or `{"id": n}` with
-/// its id, found where it is now (#1182).
-pub(crate) fn note_at(item: &Value, notes: &Notes) -> Result<usize, CommandError> {
-    let count = notes.len();
-    if let Some(id) = item.get("id") {
-        return id
-            .as_u64()
-            .and_then(|n| notes.position(NoteId(n)))
-            .ok_or_else(|| format!("the clip has no note with id {id}; note.list gives the ids").into());
+/// What a note that was not found says.
+fn note_miss(miss: Miss) -> CommandError {
+    match miss {
+        Miss::Id(id) => format!("the clip has no note with id {id}; note.list gives the ids").into(),
+        Miss::NotANumber => {
+            "each note must be a whole number, its index from 0 as in note.list, or {\"id\": n} with its id".into()
+        }
+        Miss::Range { index, count } => format!("note {index} does not exist; the clip has {count} notes").into(),
     }
-    let index = item
-        .as_u64()
-        .ok_or("each note must be a whole number, its index from 0 as in note.list, or {\"id\": n} with its id")?;
-    usize::try_from(index)
-        .ok()
-        .filter(|i| *i < count)
-        .ok_or_else(|| format!("note {index} does not exist; the clip has {count} notes").into())
 }
 
 /// The notes `params.notes` names, by index or by id, each once, as indices in rising order;
@@ -329,7 +322,8 @@ pub(crate) fn indices(params: &Value, notes: &Notes) -> Result<Vec<usize>, Comma
     if list.len() > MAX_NOTES_PER_COMMAND {
         return Err(format!("at most {MAX_NOTES_PER_COMMAND} notes in one command, got {}", list.len()).into());
     }
-    let mut out = list.iter().map(|item| note_at(item, notes)).collect::<Result<Vec<_>, _>>()?;
+    let mut named = Named::new(notes, NoteId);
+    let mut out = list.iter().map(|item| named.at(item).map_err(note_miss)).collect::<Result<Vec<_>, _>>()?;
     out.sort_unstable();
     out.dedup();
     Ok(out)
@@ -513,8 +507,9 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
                 )
                 .into());
             }
+            let mut finder = Named::new(notes, NoteId);
             for (value, new) in named.iter().zip(each) {
-                lengths.insert(note_at(value, notes)?, *new);
+                lengths.insert(finder.at(value).map_err(note_miss)?, *new);
             }
         }
         let mut changes = Vec::with_capacity(resized.len());
@@ -607,8 +602,9 @@ pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Valu
                 .value("notes")
                 .and_then(Value::as_array)
                 .ok_or("notes must be a list of note indices")?;
-            for (value, midi) in named.iter().zip(each) {
-                let index = note_at(value, notes)?;
+            let mut finder = Named::new(notes, NoteId);
+            let found = named.iter().map(|value| finder.at(value).map_err(note_miss)).collect::<Result<Vec<_>, _>>()?;
+            for (index, midi) in found.into_iter().zip(each) {
                 if let Some(note) = notes.get_mut(index) {
                     note.velocity = velocity_of(midi.round());
                 }

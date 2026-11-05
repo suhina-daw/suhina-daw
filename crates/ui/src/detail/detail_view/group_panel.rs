@@ -90,40 +90,30 @@ pub(super) fn value_row(
     }
 }
 
-/// A branch's value under a drag of its row: the value to show, and the value to send with
-/// whether it continues the drag's undo step. Every frame that moves it sends it, so a playing
-/// group is heard following the drag (#763 › 4); every value after the first it sends continues
-/// the step, so the drag is one undo step. A reset sends the default on its own step.
-pub(super) fn branch_value(
-    ui: &Ui,
-    id: Id,
-    stored: f64,
-    dragged: &Dragged,
-    min: f64,
-    max: f64,
-) -> (f64, Option<(f64, bool)>) {
+/// The value a drag of a branch's row sends this frame, if it moves: every frame that moves it
+/// sends it, so a playing group is heard following the drag (#763 › 4). A reset sends the default
+/// (0 dB, or the centre). The drag's calls share a gesture, so they make one undo step.
+pub(super) fn branch_value(ui: &Ui, id: Id, stored: f64, dragged: &Dragged, min: f64, max: f64) -> Option<f64> {
     let draft = ui.data(|d| d.get_temp::<f64>(id));
     if dragged.reset {
         ui.data_mut(|d| d.remove::<f64>(id));
-        // Both reset to 0: 0 dB, or the centre.
-        return (stored, Some((0.0f64.clamp(min, max), false)));
+        return Some(0.0f64.clamp(min, max));
     }
     let last = draft.unwrap_or(stored);
     let next = (last + dragged.delta).clamp(min, max);
     if dragged.dragging {
-        // Nothing moved yet (a drag that starts against a limit): no draft, so what it sends
-        // first opens the step instead of continuing the previous drag's.
+        // Nothing moved yet (a drag that starts against a limit): no draft, and nothing to send.
         if draft.is_none() && next == stored {
-            return (stored, None);
+            return None;
         }
         ui.data_mut(|d| d.insert_temp(id, next));
-        return (next, (next != last || draft.is_none()).then_some((next, draft.is_some())));
+        return (next != last || draft.is_none()).then_some(next);
     }
     if dragged.ended {
         ui.data_mut(|d| d.remove::<f64>(id));
-        return (next, (next != last).then_some((next, draft.is_some())));
+        return (next != last).then_some(next);
     }
-    (last, None)
+    None
 }
 
 /// Where a loop's start or end may be dragged: the start from 0 to a quarter beat before the end,
@@ -318,8 +308,8 @@ pub(super) fn group_panel(
         let shown_db = ui.data(|d| d.get_temp::<f64>(volume_id)).unwrap_or(branch.volume_db);
         let dragged = value_row(ui, painter, volume, volume_id.with("drag"), "", &db_text(shown_db), 0.1);
         let stored = if branch.volume_db.is_finite() { branch.volume_db } else { -70.0 };
-        let (_, set) = branch_value(ui, volume_id, stored, &dragged, -70.0, 6.0);
-        if let Some((db, _)) = set {
+        let set = branch_value(ui, volume_id, stored, &dragged, -70.0, 6.0);
+        if let Some(db) = set {
             actions.push(Action::new(
                 "branch.setVolume",
                 json!({
@@ -332,8 +322,8 @@ pub(super) fn group_panel(
         let pan_id = Id::unique(("branch-pan", track.0, &device.at, index));
         let shown_pan = ui.data(|d| d.get_temp::<f64>(pan_id)).unwrap_or(branch.pan);
         let dragged = value_row(ui, painter, pan, pan_id.with("drag"), "", &pan_text(shown_pan), 0.01);
-        let (_, set) = branch_value(ui, pan_id, branch.pan, &dragged, -1.0, 1.0);
-        if let Some((value, _)) = set {
+        let set = branch_value(ui, pan_id, branch.pan, &dragged, -1.0, 1.0);
+        if let Some(value) = set {
             actions.push(Action::new(
                 "branch.setPan",
                 json!({

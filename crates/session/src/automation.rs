@@ -16,6 +16,7 @@ use suhina_model::{AutomationLane, AutomationPoint, DeviceKind, Entry, IdList, P
 
 use crate::commands::{Args, device_channel, to_db, track_or_main_id};
 use crate::devices::{device_index, is_plugin, plugin_param_id, plugin_value, sd_graph};
+use crate::named::{Miss, Named, find_one};
 use crate::{CommandError, Session};
 
 /// Below this many decibels a volume point is silence, as for `track.setVolume`.
@@ -316,21 +317,16 @@ pub(crate) type Points = IdList<PointId, AutomationPoint>;
 /// The point `item` names on a lane of `points`: its index (from 0, in beat order), or
 /// `{"id": n}` with its id, found where it is now (#763 › 1).
 pub(crate) fn point_at(item: &Value, points: &Points) -> Result<usize, CommandError> {
-    let count = points.len();
-    if let Some(id) = item.get("id") {
-        return id
-            .as_u64()
-            .and_then(|n| points.position(PointId(n)))
-            .ok_or_else(|| format!("the lane has no point with id {}", item["id"]).into());
+    find_one(points, PointId, item).map_err(point_miss)
+}
+
+/// What a point that was not found says.
+fn point_miss(miss: Miss) -> CommandError {
+    match miss {
+        Miss::Id(id) => format!("the lane has no point with id {id}").into(),
+        Miss::NotANumber => "a point is its index, from 0, as in automation.list, or {\"id\": n}".into(),
+        Miss::Range { index, count } => format!("the lane has no point {index}; it has {count}").into(),
     }
-    let index = item
-        .as_u64()
-        .and_then(|n| usize::try_from(n).ok())
-        .ok_or("a point is its index, from 0, as in automation.list, or {\"id\": n}")?;
-    if index >= count {
-        return Err(format!("the lane has no point {index}; it has {count}").into());
-    }
-    Ok(index)
 }
 
 fn point_index(params: &Value, points: &Points) -> Result<usize, CommandError> {
@@ -451,8 +447,9 @@ fn point_list(params: &Value, points: &Points) -> Result<Vec<usize>, CommandErro
         return Err("points must name at least one point".into());
     }
     let mut indices = Vec::with_capacity(list.len().min(points.len()));
+    let mut named = Named::new(points, PointId);
     for item in list {
-        let index = point_at(item, points)?;
+        let index = named.at(item).map_err(point_miss)?;
         if indices.contains(&index) {
             return Err(format!("point {index} is named twice").into());
         }

@@ -294,7 +294,7 @@ fn every_part_of_a_project_survives_a_round_trip() {
 fn markers_points_and_tempo_changes_are_written_without_ids() {
     let project = everything();
     assert!(!project.arrangement.markers.is_empty() && !project.transport.tempo_changes.is_empty());
-    assert!(project.all_automation_points().next().is_some());
+    assert!(project.channels.iter().any(|c| c.automation.iter().any(|lane| !lane.points.is_empty())));
     let text = to_json(&project);
     let file: Value = serde_json::from_str(&text).unwrap();
     let has_id = |v: &Value| v.get("id").is_some();
