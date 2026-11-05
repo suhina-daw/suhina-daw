@@ -50,7 +50,7 @@ pub const DEVICE_CARRY: &str = "device-carry-start";
 
 /// Says that a drag of the top-level device `index` on `track` started this frame.
 pub fn start_device_carry(ctx: &egui::Context, track: suhina_engine::model::TrackId, index: usize) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(DEVICE_CARRY), (track, index)));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(DEVICE_CARRY), (track, index)));
 }
 
 /// Where the shown chain's top-level devices are this frame: the track, the chain's area and
@@ -83,7 +83,7 @@ impl DeviceSlots {
 /// Adds `list` to this frame's device lists (the lists of earlier frames go).
 pub fn note_device_slots(ctx: &egui::Context, list: DeviceSlots) {
     ctx.data_mut(|d| {
-        let lists = d.get_temp_mut_or_default::<Vec<DeviceSlots>>(egui::Id::new(DEVICE_SLOTS));
+        let lists = d.get_temp_mut_or_default::<Vec<DeviceSlots>>(egui::Id::unique(DEVICE_SLOTS));
         lists.retain(|l| l.pass == list.pass && !(l.track == list.track && l.vertical == list.vertical));
         lists.push(list);
     });
@@ -96,7 +96,7 @@ pub fn device_slots_under(
     pointer: egui::Pos2,
 ) -> Option<DeviceSlots> {
     let pass = ctx.cumulative_pass_nr();
-    ctx.data(|d| d.get_temp::<Vec<DeviceSlots>>(egui::Id::new(DEVICE_SLOTS)))?
+    ctx.data(|d| d.get_temp::<Vec<DeviceSlots>>(egui::Id::unique(DEVICE_SLOTS)))?
         .into_iter()
         .find(|l| l.track == track && l.pass + 1 >= pass && l.area.contains(pointer))
 }

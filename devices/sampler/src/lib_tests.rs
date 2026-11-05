@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+use suhina_device_api::SampleSource as _;
 use suhina_device_api::{Device, NoteEvent, ProcessContext};
 
 fn loaded() -> Sampler {
@@ -347,7 +348,7 @@ fn compact_panel_keeps_controls_reachable_on_its_pages() {
     for p in PARAMS {
         if p.id.starts_with("slice_")
             || matches!(
-                p.id,
+                p.id.as_ref(),
                 "start"
                     | "end"
                     | "loop_start"
@@ -365,7 +366,7 @@ fn compact_panel_keeps_controls_reachable_on_its_pages() {
             continue;
         }
         assert!(ui.controls.iter().chain(&super::panel::header().controls).any(|c| c.x.iter().chain(c.y.iter()).any(|b| b.parameter == p.id)
-                || matches!(&c.widget, Some(Widget::Envelope { attack, decay, level, release }) if [Some(attack.as_str()),Some(decay.as_str()),Some(level.as_str()),release.as_deref()].contains(&Some(p.id)))), "{}", p.id);
+                || matches!(&c.widget, Some(Widget::Envelope { attack, decay, level, release }) if [Some(attack.as_str()),Some(decay.as_str()),Some(level.as_str()),release.as_deref()].contains(&Some(&*p.id)))), "{}", p.id);
     }
     assert!(!ui.controls.iter().any(|c| c.id == "grain_cloud"));
     assert_eq!(

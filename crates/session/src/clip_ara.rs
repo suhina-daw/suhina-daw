@@ -8,6 +8,7 @@
 use serde_json::{Value, json};
 use suhina_model::{LaneData, Project, TrackId};
 
+use crate::commands::Args;
 use crate::commands::clip_list;
 use crate::{CommandError, Session};
 
@@ -70,7 +71,7 @@ pub(crate) fn make_host(p: &mut Project, track: TrackId) -> bool {
 /// host, first in its chain and not shown in its device list; a track whose ARA plug-in edited
 /// all its clips before makes it its clip host. Only audio clips on the arrangement take one.
 pub(crate) fn set_ara(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let on = params.get("on").and_then(Value::as_bool).ok_or("on must be true or false")?;
+    let on = Args::new(params).bool("on")?;
     let clips = clip_list(&session.project, params)?;
     let mut tracks: Vec<TrackId> = clips.iter().map(|(t, _)| *t).collect();
     tracks.dedup();
@@ -98,7 +99,7 @@ pub(crate) fn set_ara(session: &mut Session, params: &Value) -> Result<Value, Co
                 make_host(&mut session.project, track);
                 continue;
             }
-            let plugin = match params.get("plugin").and_then(Value::as_str) {
+            let plugin = match Args::new(params).raw_str("plugin") {
                 Some(plugin) => plugin.to_string(),
                 None => session
                     .ara_plugin()

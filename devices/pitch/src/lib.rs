@@ -42,7 +42,7 @@ pub mod mode {
     pub const LIMIT: f64 = 2.0;
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::integer("pitch", "Pitch", (-128, 128), 0, Unit::Semitones),
     ParamInfo::integer("pitchDegrees", "Pitch in Scale Degrees", (-30, 30), 0, Unit::ScaleDegrees),
     ParamInfo::toggle("followScale", "Follow Scale", false),
@@ -51,7 +51,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::choice("mode", "Mode", &["Block", "Fold", "Limit"], 0),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "pitch", name: "Pitch", role: Role::MidiEffect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("pitch", "Pitch", Role::MidiEffect, &PARAMS);
 
 /// A played key that has no note sounding from this device.
 const SILENT: u8 = u8::MAX;
@@ -116,7 +116,7 @@ impl Pitch {
 
 impl Device for Pitch {
     /// The pitch effect's description and parameters.
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

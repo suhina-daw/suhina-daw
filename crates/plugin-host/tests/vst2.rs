@@ -217,10 +217,11 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                id: Default::default(),
                 name: "Suhina Test Gain".into(),
                 kind: DeviceKind::Vst2 { id: 0x5368_5447 },
                 enabled: true,
-                state: Some(state),
+                state: Some(state.into()),
                 params: Vec::new(),
                 clip_host: false,
                 extensions: Extensions::default(),
@@ -233,7 +234,7 @@ fn project() -> Project {
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -268,7 +269,7 @@ fn a_project_s_vst2_plug_in_plays_with_its_saved_settings() {
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(project.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(vst2_env());
+    session.rack_mut().set_env(vst2_env());
     let device = json!({ "track": 1, "device": 0 });
     // The device is found and starts — the direct host, no VST3 or CLAP copy standing in.
     // The start itself is bounded by the launch's timeout, so this only waits for its answer.

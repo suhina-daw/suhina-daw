@@ -51,6 +51,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             GROUP,
             BRANCH,
             param("db", ParamType::Decibels, "level in dB, at most +6; \"-inf\" or below -150 is silence"),
+            CONTINUE,
         ],
         kind: CommandKind::Edit,
         run: device_groups::branch_set_volume,
@@ -59,7 +60,13 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "branch.setPan",
         label: "Set a branch's pan in a device group, as track.setPan",
-        params: &[TRACK, GROUP, BRANCH, param("pan", ParamType::Number, "-1 hard left, 0 centre, 1 hard right")],
+        params: &[
+            TRACK,
+            GROUP,
+            BRANCH,
+            param("pan", ParamType::Number, "-1 hard left, 0 centre, 1 hard right"),
+            CONTINUE,
+        ],
         kind: CommandKind::Edit,
         run: device_groups::branch_set_pan,
         policy: Policy::DEFAULT,

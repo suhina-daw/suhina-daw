@@ -368,7 +368,7 @@ fn an_adaptive_grid_follows_the_zoom_and_the_keys_change_it() {
 #[test]
 fn a_lanes_menu_changes_the_grid_and_sends_no_command() {
     use egui_kittest::kittest::Queryable;
-    let mut h = egui_kittest::Harness::builder().build_ui_state(
+    let mut h = egui_kittest::Harness::builder().allow_missing_glyphs().build_ui_state(
         |ui, (state, actions): &mut (ArrangementViewState, Vec<Action>)| {
             empty_lane_menu(ui, TrackId(1), true, false, state, actions);
         },
@@ -554,7 +554,7 @@ fn a_stretch_goes_past_the_audio_and_a_midi_clip_before_its_notes() {
         id: audio,
         name: "Loop".into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("loop.wav")) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("loop.wav")) }].into(),
         extensions: Extensions::default(),
         scale: None,
     });

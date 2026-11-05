@@ -98,7 +98,7 @@ fn best(records: &[Placed], name: Name, bounds: Rect) -> Option<Placed> {
 }
 
 fn draft_id() -> egui::Id {
-    egui::Id::new("native-control-layout-draft")
+    egui::Id::unique("native-control-layout-draft")
 }
 pub fn editing(ctx: &egui::Context) -> bool {
     ctx.data(|data| data.get_temp::<Arc<Placements>>(draft_id())).is_some()

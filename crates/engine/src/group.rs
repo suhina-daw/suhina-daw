@@ -18,12 +18,12 @@
 use std::time::Instant;
 
 use suhina_device_api::{NoteEvent, ProcessContext, Role};
-use suhina_model::{DeviceKind, DeviceParam};
+use suhina_model::DeviceParam;
 
 use crate::automation::DeviceLanes;
 use crate::chain::{MAX_BLOCK, Slot};
-use crate::plugin::{Delay, PluginDevice, PluginSlot, Plugins};
-use crate::plugin_params::SlotParams;
+use crate::plugin::{Delay, PluginSlot};
+use crate::slot_factory::{Built, SlotFactory};
 
 /// The parameters of a device group, by their stable ids, in index order: `(id, min, max,
 /// default)`. `mix` is a fraction, `gain` decibels (at or below [`SILENT_DB`] silent), the
@@ -117,6 +117,9 @@ pub(crate) struct BranchRun {
     /// another branch is soloed.
     left: Smoothed,
     right: Smoothed,
+    /// Its volume, pan, mute and solo, which its gains follow: a message moves them while the
+    /// group plays (#763 › 4).
+    mix: BranchMix,
     /// The delay its devices add together, in frames.
     pub(crate) latency: u32,
     /// Delays its output by what it lacks of the group's latency, so every branch lines up.
@@ -140,172 +143,7 @@ pub(crate) struct GroupSlot {
     midi_scratch: Vec<(usize, NoteEvent)>,
 }
 
-/// What builds the devices inside a group: the sample rate, the decoded audio a Sampler plays,
-/// the files of file-backed devices, the plug-ins (their slots and processors, by the keys of the
-/// channel's plug-in devices).
-pub(crate) struct Builder<'a> {
-    pub(crate) sample_rate: u32,
-    pub(crate) audio: &'a crate::AudioPool,
-    pub(crate) assets: &'a crate::DeviceAssets,
-    pub(crate) plugins: &'a mut Plugins,
-    pub(crate) keys: &'a [PluginDevice],
-    pub(crate) channel: suhina_model::ChannelId,
-    pub(crate) frames_per_beat: f64,
-}
-
-/// A slot built for a stored device: the slot, its identity for graph swaps, its parameter
-/// values, its latency and its manual sample slices.
-pub(crate) struct Built {
-    pub(crate) slot: Slot,
-    pub(crate) id: String,
-    pub(crate) values: Vec<f64>,
-    pub(crate) latency: u32,
-    pub(crate) slices: Option<std::sync::Arc<[f64]>>,
-    pub(crate) edits: Option<std::sync::Arc<suhina_device_api::sample_edits::SampleEdits>>,
-}
-
-impl Builder<'_> {
-    /// The slot of the device at `path` on the channel, inside a group, or `None` for one that
-    /// does not run there: switched off, unknown, not compiling, or a plug-in that is not
-    /// installed. A switched-off plug-in keeps its slot, and its process, and passes the sound.
-    /// `lanes` is the branch's, and `slot` the index the device takes there: the lanes of its
-    /// automated parameters are added under it. Allocates.
-    pub(crate) fn device(
-        &mut self,
-        stored: &suhina_model::Device,
-        depth: usize,
-        path: &[usize],
-        (lanes, slot): (&mut DeviceLanes, usize),
-    ) -> Option<Built> {
-        if matches!(stored.kind, DeviceKind::Clap { .. } | DeviceKind::Vst3 { .. } | DeviceKind::Vst2 { .. }) {
-            return self.plugin(stored, path);
-        }
-        if !stored.enabled {
-            return None;
-        }
-        match &stored.kind {
-            DeviceKind::Builtin(id) => self.builtin(id, stored, lanes, slot),
-            DeviceKind::Sd => self.sd(stored, lanes, slot),
-            DeviceKind::Group(group) => self.group(stored, group, depth, path),
-            _ => None,
-        }
-    }
-
-    /// A plug-in's slot, by its key: it takes its processor from the plug-ins, or waits for one.
-    fn plugin(&mut self, stored: &suhina_model::Device, path: &[usize]) -> Option<Built> {
-        let key = self.keys.iter().find(|d| d.channel == self.channel && d.path == path)?.key;
-        let info = *self.plugins.info.get(&key)?;
-        let slot = PluginSlot {
-            key,
-            processor: self.plugins.processors.remove(&key),
-            instrument: info.instrument,
-            latency: info.latency,
-            enabled: stored.enabled,
-            missed: 0,
-            busy: 0,
-            longest_us: 0,
-            sent_at: None,
-            params: SlotParams::new(stored, self.frames_per_beat),
-        };
-        let latency = if stored.enabled { info.latency } else { 0 };
-        Some(Built {
-            slot: Slot::Plugin(slot),
-            id: format!("plugin:{key:016x}"),
-            values: Vec::new(),
-            latency,
-            slices: None,
-            edits: None,
-        })
-    }
-
-    fn builtin(&self, id: &str, stored: &suhina_model::Device, lanes: &mut DeviceLanes, slot: usize) -> Option<Built> {
-        let asset = crate::assets::stored_path(id, stored.state.as_deref()).and_then(|path| self.assets.get(path));
-        let mut device = suhina_device_registry::create_with(id, asset)?;
-        // What a chain gives its Sampler: the decoded sample and the manual slices.
-        if let Some(source) = stored.sample_file().and_then(|file| self.audio.files.get(file)) {
-            device.load_shared_sample(source.sample_rate, source.channels, source.clone());
-        }
-        let slices: Option<std::sync::Arc<[f64]>> = stored.sample_slices().map(std::sync::Arc::from);
-        device.load_sample_slices(slices.clone());
-        let edits = crate::assets::sample_edits(stored);
-        device.load_sample_edits(edits.clone());
-        device.prepare(f64::from(self.sample_rate)).ok()?;
-        let info = device.info();
-        let mut values: Vec<f64> = info.params.iter().map(|p| p.default).collect();
-        for p in &stored.params {
-            if let Some(slot) = info.param_index(&p.id).and_then(|i| values.get_mut(i)) {
-                *slot = p.value;
-            }
-        }
-        lanes.add(slot, device.as_ref(), &stored.automation, self.frames_per_beat);
-        for (index, &value) in values.iter().enumerate() {
-            // A parameter that follows a lane starts where the lane starts.
-            device.set_param(index, lanes.initial(slot, index).unwrap_or(value));
-        }
-        device.reset();
-        let latency = device.latency();
-        // A built-in MIDI effect runs on the events, as in a chain (#678).
-        let kind = if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) };
-        Some(Built {
-            slot: kind,
-            id: crate::chain::device_identity(id, stored, self.audio),
-            values,
-            latency,
-            slices,
-            edits,
-        })
-    }
-
-    fn sd(&self, stored: &suhina_model::Device, lanes: &mut DeviceLanes, slot: usize) -> Option<Built> {
-        let bytes = stored.state.as_deref()?;
-        let text = std::str::from_utf8(bytes).ok()?;
-        let graph = suhina_device_sdk::DeviceGraph::from_sd(text).ok()?;
-        let mut samples = suhina_device_sdk::sample_resource::PreparedSamples::default();
-        if let Some(source) = stored.sample_file().and_then(|file| self.audio.files.get(file)) {
-            let asset = suhina_device_sdk::sample_resource::SampleAsset::new(
-                source.clone(),
-                source.sample_rate,
-                source.channels,
-            )
-            .ok()?;
-            samples.insert("sample", std::sync::Arc::new(asset)).ok()?;
-        }
-        let rate = f64::from(self.sample_rate);
-        let mut built = match graph.role {
-            suhina_device_sdk::DeviceRole::Effect => {
-                Slot::Sd(suhina_device_registry::compile_graph_with_samples(&graph, rate, &samples).ok()?)
-            }
-            suhina_device_sdk::DeviceRole::MidiEffect => Slot::MidiSd(graph.compile_midi().ok()?),
-            suhina_device_sdk::DeviceRole::Instrument => {
-                Slot::InstrumentSd(suhina_device_registry::compile_graph_with_samples(&graph, rate, &samples).ok()?)
-            }
-        };
-        lanes.add_sd(slot, &graph.parameters, &stored.automation, self.frames_per_beat);
-        let mut values = Vec::with_capacity(graph.parameters.len());
-        for (index, parameter) in graph.parameters.iter().enumerate() {
-            let value = stored
-                .params
-                .iter()
-                .find(|value| value.id == parameter.id)
-                .map_or(parameter.default, |value| parameter.clamp(value.value));
-            set_sd(&mut built, index, lanes.initial(slot, index).unwrap_or(value));
-            values.push(value);
-        }
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        bytes.hash(&mut hasher);
-        stored.sample_file().hash(&mut hasher);
-        stored.sample_file().and_then(|file| self.audio.files.get(file)).map(std::sync::Arc::as_ptr).hash(&mut hasher);
-        Some(Built {
-            slot: built,
-            id: format!("sd:{}:{:016x}", graph.id, hasher.finish()),
-            values,
-            latency: 0,
-            slices: None,
-            edits: None,
-        })
-    }
-
+impl SlotFactory<'_> {
     /// A group of the stored `group` at `path` on the channel, with its branches built; `depth`
     /// is how many groups it is in. A group never runs deeper than the model allows, so a
     /// malformed one cannot recurse without end.
@@ -334,9 +172,14 @@ impl Builder<'_> {
                 buffer: vec![0.0; MAX_BLOCK * 2],
                 left: Smoothed::new(0.0, self.sample_rate),
                 right: Smoothed::new(0.0, self.sample_rate),
+                mix: BranchMix { volume: branch.volume, pan: branch.pan, mute: branch.mute, solo: branch.solo },
                 latency: 0,
                 delay: Delay::new(0),
             };
+            // What the branch runs, each device with its id: a group whose devices traded
+            // places, even two of the same kind, starts again instead of each running device
+            // taking the other's settings.
+            let mut identity = Vec::new();
             for (i, device) in branch.devices.iter().enumerate() {
                 let mut inner = path.to_vec();
                 inner.extend([b, i]);
@@ -345,15 +188,16 @@ impl Builder<'_> {
                     run.latency = run.latency.saturating_add(built.latency);
                     run.slots.push(built.slot);
                     run.positions.push(i);
+                    identity.push(format!("{}#{}", built.id, device.id.0));
                     run.ids.push(built.id);
                     run.values.push(built.values);
                     run.sample_slices.push(built.slices);
                     run.sample_edits.push(built.edits);
                 }
             }
-            let (left, right) = heard_gains(branch, any_solo);
+            let (left, right) = run.mix.heard_gains(any_solo);
             (run.left.value, run.left.target, run.right.value, run.right.target) = (left, left, right, right);
-            ids.push(run.ids.join(","));
+            ids.push(identity.join(","));
             branches.push(run);
         }
         let values = group_param_values(&stored.params);
@@ -426,10 +270,21 @@ pub(crate) fn visit_readouts(
     }
 }
 
-/// A branch's gains while `any_solo` says whether a branch of its group is soloed: 0 while it
-/// is muted or left out by a solo, else [`branch_gains`].
-fn heard_gains(branch: &suhina_model::Branch, any_solo: bool) -> (f32, f32) {
-    if branch.mute || (any_solo && !branch.solo) { (0.0, 0.0) } else { branch_gains(branch.volume, branch.pan) }
+/// What a branch's gains follow.
+#[derive(Debug, Clone, Copy)]
+struct BranchMix {
+    volume: f64,
+    pan: f64,
+    mute: bool,
+    solo: bool,
+}
+
+impl BranchMix {
+    /// Its gains while `any_solo` says whether a branch of its group is soloed: 0 while it is
+    /// muted or left out by a solo, else [`branch_gains`].
+    fn heard_gains(&self, any_solo: bool) -> (f32, f32) {
+        if self.mute || (any_solo && !self.solo) { (0.0, 0.0) } else { branch_gains(self.volume, self.pan) }
+    }
 }
 
 /// A branch's gains: its volume, and its pan by the equal-power law a track's channel uses,
@@ -445,21 +300,35 @@ pub(crate) fn is_instrument(slot: &Slot) -> bool {
     match slot {
         Slot::Device(device) => device.info().role == Role::Instrument,
         Slot::Plugin(slot) => slot.instrument,
-        Slot::InstrumentSd(_) => true,
         Slot::Group(group) => group.instrument,
-        Slot::MidiDevice(_) | Slot::Sd(_) | Slot::MidiSd(_) => false,
-    }
-}
-
-fn set_sd(slot: &mut Slot, index: usize, value: f64) {
-    match slot {
-        Slot::Sd(effect) | Slot::InstrumentSd(effect) => effect.set_parameter(index, value),
-        Slot::MidiSd(effect) => effect.set_parameter(index, value),
-        Slot::Device(_) | Slot::MidiDevice(_) | Slot::Plugin(_) | Slot::Group(_) => {}
+        Slot::MidiDevice(_) => false,
     }
 }
 
 impl GroupSlot {
+    /// Moves branch `branch`'s volume (linear, at most +6 dB), pan (-1 to 1), mute or solo (on
+    /// at 0.5 and above): its gains, and with a solo every branch's, go to their new targets and
+    /// get there smoothed. Ignored for a branch it does not have or a value that is not finite.
+    /// Never allocates.
+    pub(crate) fn set_branch(&mut self, branch: usize, what: crate::BranchValue, value: f64) {
+        if !value.is_finite() {
+            return;
+        }
+        let Some(run) = self.branches.get_mut(branch) else { return };
+        match what {
+            crate::BranchValue::Volume => run.mix.volume = value.clamp(0.0, suhina_model::automation::MAX_VOLUME),
+            crate::BranchValue::Pan => run.mix.pan = value.clamp(-1.0, 1.0),
+            crate::BranchValue::Mute => run.mix.mute = value >= 0.5,
+            crate::BranchValue::Solo => run.mix.solo = value >= 0.5,
+        }
+        let any_solo = self.branches.iter().any(|b| b.mix.solo);
+        for run in &mut self.branches {
+            let (left, right) = run.mix.heard_gains(any_solo);
+            run.left.target = left;
+            run.right.target = right;
+        }
+    }
+
     /// Sets its parameter `param` ([`GROUP_PARAMS`] order). Never allocates.
     pub(crate) fn set_param(&mut self, param: usize, value: f64) {
         let Some(&(_, min, max, _)) = GROUP_PARAMS.get(param) else { return };
@@ -519,11 +388,13 @@ impl GroupSlot {
             {
                 match (slot, new_slot) {
                     (Slot::Device(device) | Slot::MidiDevice(device), _) => {
-                        if let Some(points) = new.sample_slices.get_mut(position) {
-                            device.swap_sample_slices(points);
-                        }
-                        if let Some(edits) = new.sample_edits.get_mut(position) {
-                            device.swap_sample_edits(edits);
+                        if let Some(samples) = device.samples() {
+                            if let Some(points) = new.sample_slices.get_mut(position) {
+                                samples.swap_sample_slices(points);
+                            }
+                            if let Some(edits) = new.sample_edits.get_mut(position) {
+                                samples.swap_sample_edits(edits);
+                            }
                         }
                         // A parameter that follows a lane keeps its running value until the lane
                         // sets it in the next block.
@@ -531,13 +402,6 @@ impl GroupSlot {
                             values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
                         {
                             device.set_param(index, value);
-                        }
-                    }
-                    (slot @ (Slot::Sd(_) | Slot::InstrumentSd(_) | Slot::MidiSd(_)), _) => {
-                        for (index, &value) in
-                            values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
-                        {
-                            set_sd(slot, index, value);
                         }
                     }
                     (Slot::Group(group), Slot::Group(new_group)) => group.adopt(new_group),
@@ -698,23 +562,6 @@ pub(crate) fn run_slots(
             Slot::Device(device) => {
                 crate::chain::run_device(device, index, buffer, from, to, pending, lanes, context, sample_rate);
             }
-            Slot::Sd(effect) => {
-                crate::chain::run_sd_effect(effect, index, buffer, lanes, crate::chain::SdRun { from, to, context });
-            }
-            Slot::InstrumentSd(instrument) => {
-                span_events.clear();
-                let last = (to - from).saturating_sub(1);
-                span_events.extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
-                crate::chain::run_sd_instrument(
-                    instrument,
-                    index,
-                    buffer,
-                    span_events,
-                    midi_scratch,
-                    lanes,
-                    crate::chain::SdRun { from, to, context },
-                );
-            }
             // A built-in MIDI effect (#678) changes the branch's events as in a chain.
             Slot::MidiDevice(device) => {
                 crate::chain::run_midi_device(
@@ -724,18 +571,7 @@ pub(crate) fn run_slots(
                     span_events,
                     midi_scratch,
                     lanes,
-                    crate::chain::SdRun { from, to, context },
-                );
-                std::mem::swap(pending, midi_scratch);
-            }
-            Slot::MidiSd(effect) => {
-                crate::chain::run_sd_midi(
-                    effect,
-                    index,
-                    pending,
-                    midi_scratch,
-                    lanes,
-                    crate::chain::SdRun { from, to, context },
+                    crate::chain::EventSpan { from, to, context },
                 );
                 std::mem::swap(pending, midi_scratch);
             }

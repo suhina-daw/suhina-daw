@@ -64,7 +64,7 @@ fn a_device_lane_moves_evenly_along_its_parameters_knob() {
     let middle = at_middle("bassMonoFrequency", 50.0, 500.0);
     assert!((middle - (50.0f64 * 500.0).sqrt()).abs() < 0.01, "{middle}");
     // The gain knob: half-way between two settings is the middle of the knob, not of the dB.
-    let gain = info.params.iter().find(|p| p.id == "gain").copied().unwrap();
+    let gain = info.params.iter().find(|p| p.id == "gain").cloned().unwrap();
     let want = gain.from_normalized((gain.to_normalized(-60.0) + gain.to_normalized(0.0)) / 2.0);
     let middle = at_middle("gain", -60.0, 0.0);
     assert!((middle - want).abs() < 1e-9 && middle > -20.0, "{middle} against {want}");
@@ -75,9 +75,9 @@ fn a_device_lane_moves_evenly_along_its_parameters_knob() {
 #[test]
 fn a_whole_number_lane_cuts_its_fraction_toward_zero() {
     // Eight frames a beat: one frame is the measurement's 0.125-beat step.
-    let transpose = ParamInfo::integer("t", "T", (-48, 48), 0, suhina_device_api::Unit::Semitones);
+    let transpose = suhina_device_api::ParamInfo::integer("t", "T", (-48, 48), 0, suhina_device_api::Unit::Semitones);
     let read = |points: &[(f64, f64)], beat: f64| {
-        let envelope = Envelope::new(&lane("t", points), 8.0, false, Position::Param(transpose)).unwrap();
+        let envelope = Envelope::new(&lane("t", points), 8.0, false, Position::Param(transpose.shape())).unwrap();
         envelope.value_at((beat * 8.0) as u64)
     };
     let through_zero = [(0.0, 3.0), (12.0, -3.0)];

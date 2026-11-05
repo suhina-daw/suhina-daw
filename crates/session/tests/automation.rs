@@ -36,10 +36,11 @@ fn sd_device() -> Device {
     graph.connections =
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     Device {
+        id: Default::default(),
         name: "Test Gain".into(),
         kind: DeviceKind::Sd,
         enabled: true,
-        state: graph.to_sd().ok().map(String::into_bytes),
+        state: graph.to_sd().ok().map(String::into_bytes).map(Into::into),
         params: Vec::new(),
         automation: Vec::new(),
         clip_host: false,
@@ -237,7 +238,7 @@ fn a_point_added_on_a_whole_number_lane_keeps_the_envelope() {
     let mut session = Session::new(project());
     run(&mut session, "device.add", json!({ "track": 1, "id": "sampler" })).unwrap();
     let poly = suhina_device_registry::info("sampler")
-        .and_then(|info| info.params.iter().find(|p| p.id == "poly").copied())
+        .and_then(|info| info.params.iter().find(|p| p.id == "poly").cloned())
         .unwrap();
     assert!(matches!(poly.kind, suhina_device_api::ParamKind::Integer));
     let taper = WholeNumbers(poly);

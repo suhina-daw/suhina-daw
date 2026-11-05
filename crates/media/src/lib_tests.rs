@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
-use suhina_engine::model::*;
+use suhina_model::*;
 
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("suhina-media-{name}-{}", std::process::id()));
@@ -30,7 +30,8 @@ fn project_with_audio(file: &str, absolute: Option<String>) -> Project {
             lanes: vec![ContentLane {
                 target: None,
                 data: LaneData::Audio(AudioRegion { absolute_file: absolute, ..AudioRegion::new(file) }),
-            }],
+            }]
+            .into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -60,6 +61,7 @@ fn project_sources_cannot_escape_by_absolute_path_parent_or_symlink() {
         let mut project = project_with_audio(&name, Some(name.clone()));
         project.channels.push(Channel::new(ChannelId(1), "Sampler"));
         project.channels[0].devices.push(Device {
+            id: Default::default(),
             name: "Sampler".into(),
             kind: DeviceKind::Builtin("sampler".into()),
             enabled: true,

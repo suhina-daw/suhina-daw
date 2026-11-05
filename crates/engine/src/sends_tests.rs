@@ -40,7 +40,8 @@ fn sending(level: f64, pre_fader: bool, return_devices: Vec<Device>) -> Project 
             lanes: vec![ContentLane {
                 target: None,
                 data: LaneData::Notes(vec![crate::chain_tests::note(0.0, 1.0, 69)]),
-            }],
+            }]
+            .into(),
             extensions: Extensions::default(),
             scale: None,
         }],

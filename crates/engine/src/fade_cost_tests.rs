@@ -64,7 +64,7 @@ fn project(fades: Option<(FadeShape, f64)>) -> Project {
             id: ContentId(1),
             name: "noise".into(),
             length: CLIP_BEATS,
-            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],

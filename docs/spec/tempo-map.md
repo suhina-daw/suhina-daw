@@ -65,7 +65,11 @@ or frames at the sample rate. Nothing converts with the start tempo alone.
   `T0 / k × (exp(k t / 60) − 1)`. These are exact, so positions are worked out from the map and
   never added up frame by frame: a ramp minutes long does not drift.
 - At a constant tempo the arithmetic is the one the engine has always used (`beats × 60 / T ×
-  rate`), bit for bit, so a project without changes renders exactly as before.
+  rate`), bit for bit, so a project without changes renders exactly as before. In the engine
+  this is `TempoClock` (`crates/engine/src/tempo.rs`): the audio clips, their fades, the
+  stretched clips and the launcher's clock ask it, and it takes that fast path when the map is
+  constant and goes through the map otherwise. Sending a constant tempo through the map instead
+  moves a launched clip by a frame, so the fast path stays.
 - Malformed changes are ignored, not refused: a beat that is not finite, not after beat 0 or past
   beat 120 000, a tempo outside 1 to 999 bpm, more than 10 000 changes. Of two changes on one beat
   the later in the list wins, except a ramp followed by a step: the ramp arrives at its tempo,

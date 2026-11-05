@@ -14,7 +14,7 @@ use suhina_model::automation::{Curve, MAX_POINTS, Taper, value_at};
 use suhina_model::TrackId;
 
 use crate::automation::{Target, target};
-use crate::commands::number;
+use crate::commands::Args;
 use crate::{CommandError, Session};
 
 /// Copied points: their offsets from the range's start, their places on the lane (0 … 1) and
@@ -52,8 +52,8 @@ pub(crate) const MAX_CYCLES: usize = 512;
 
 /// `start` and `end` from `params`: from beat 0, the end after the start.
 fn range(params: &Value) -> Result<(f64, f64), CommandError> {
-    let start = number(params, "start")?;
-    let end = number(params, "end")?;
+    let start = Args::new(params).f64("start")?;
+    let end = Args::new(params).f64("end")?;
     if !(0.0..=MAX_START_BEAT).contains(&start) || !(0.0..=MAX_START_BEAT).contains(&end) {
         return Err(format!("start and end must be from 0 to {MAX_START_BEAT}").into());
     }
@@ -138,7 +138,7 @@ fn points_of(session: &mut Session, target: &Target) -> Result<Vec<AutomationPoi
 pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     // Picked points (`points`): copied as they are, from the first of them.
-    if let Some(list) = params.get("points").filter(|v| !v.is_null()) {
+    if let Some(list) = Args::new(params).value("points").filter(|v| !v.is_null()) {
         let lane = points_of(session, &target)?;
         let mut picked: Vec<AutomationPoint> = Vec::new();
         for value in list.as_array().ok_or("points must be a list of point indices")? {
@@ -177,7 +177,7 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
 /// is there; on another parameter its values sit where they sat on their own lane.
 pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
-    let start = number(params, "start")?;
+    let start = Args::new(params).f64("start")?;
     if !(0.0..=MAX_START_BEAT).contains(&start) {
         return Err(format!("start must be from 0 to {MAX_START_BEAT}").into());
     }
@@ -445,14 +445,14 @@ pub(crate) fn smooth(session: &mut Session, params: &Value) -> Result<Value, Com
 /// lane, kept inside the travel.
 pub(crate) fn scale_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
-    let factor = number(params, "factor")?;
+    let factor = Args::new(params).f64("factor")?;
     if !(0.0..=4.0).contains(&factor) {
         return Err(format!("factor must be from 0 to 4, got {factor}").into());
     }
     let mut points = points_of(session, &target)?;
     // Picked points (`points`): only they move, around the middle of the line over their span, so
     // troughs picked alone deepen while the peaks between them stay.
-    let picked: Option<Vec<usize>> = match params.get("points").filter(|v| !v.is_null()) {
+    let picked: Option<Vec<usize>> = match Args::new(params).value("points").filter(|v| !v.is_null()) {
         None => None,
         Some(list) => {
             let mut out = Vec::new();
@@ -484,7 +484,7 @@ pub(crate) fn scale_range(session: &mut Session, params: &Value) -> Result<Value
     else {
         return Err("the range has no points".into());
     };
-    let middle = match params.get("around").and_then(Value::as_str) {
+    let middle = match Args::new(params).raw_str("around") {
         None | Some("middle") => (low + high) / 2.0,
         Some("bottom") => 0.0,
         Some(other) => return Err(format!("around is \"middle\" or \"bottom\", got {other:?}").into()),
@@ -550,8 +550,8 @@ pub const SHAPES: [&str; 10] =
 
 /// The cycles `params["cycles"]` asks for, from 1 to [`MAX_CYCLES`]; `None` when left out.
 fn cycles(params: &Value) -> Result<Option<usize>, CommandError> {
-    match params.get("cycles") {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value("cycles") {
+        None => Ok(None),
         Some(v) => v
             .as_u64()
             .and_then(|n| usize::try_from(n).ok())
@@ -563,8 +563,8 @@ fn cycles(params: &Value) -> Result<Option<usize>, CommandError> {
 
 /// A share from 0 to 1 that `params[name]` gives, `None` when left out.
 fn share(params: &Value, name: &str) -> Result<Option<f64>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value(name) {
+        None => Ok(None),
         Some(v) => v
             .as_f64()
             .filter(|n| (0.0..=1.0).contains(n))
@@ -662,14 +662,14 @@ pub(crate) fn shape_new_segment(
 /// `cycles` says.
 pub(crate) fn insert_shape(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
-    let name = params.get("shape").and_then(Value::as_str).ok_or("shape must be a shape's name")?;
+    let name = Args::new(params).raw_str("shape").ok_or("shape must be a shape's name")?;
     if shape_points(name).is_none() {
         return Err(format!("no shape {name:?}; the shapes are {}", SHAPES.join(", ")).into());
     }
     let asked = cycles(params)?;
     let depth = share(params, "depth")?.unwrap_or(1.0);
-    let (start, end, heights, cycles) = match params.get("point") {
-        None | Some(Value::Null) => {
+    let (start, end, heights, cycles) = match Args::new(params).value("point") {
+        None => {
             let (start, end) = range(params)?;
             // A shape less than the whole travel swings around the lane's value where the range
             // starts (or `center`), kept inside the travel.

@@ -11,8 +11,7 @@ use suhina_device_api::{Device, DeviceError, DeviceInfo, NoteEvent, ProcessConte
 use crate::chain::CHAIN_INPUT_GAIN;
 use crate::{ATTACK_SECONDS, MAX_VOICES, RELEASE_SECONDS};
 
-pub(crate) static INFO: DeviceInfo =
-    DeviceInfo { id: "sine-tones", name: "Sine tones", role: Role::Instrument, params: &[] };
+pub(crate) static INFO: DeviceInfo = DeviceInfo::new("sine-tones", "Sine tones", Role::Instrument, &[]);
 
 #[derive(Clone, Copy, Default)]
 struct Tone {
@@ -75,7 +74,7 @@ impl SineTones {
 
 impl Device for SineTones {
     /// The sine tones' description: an instrument with no parameters.
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

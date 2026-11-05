@@ -33,7 +33,7 @@ fn project_built(notes: Vec<Note>) -> Project {
         id: ContentId(id),
         name: format!("C{id}"),
         length: 8.0,
-        lanes,
+        lanes: lanes.into(),
         extensions: Extensions::default(),
         scale: None,
     };

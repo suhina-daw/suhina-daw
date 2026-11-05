@@ -40,7 +40,7 @@ MCP) and drawn and edited in the Arrangement view (#420, [below](#in-the-arrange
 | A track's pan | `pan` | -1 (left) to 1 (right) |
 | A track's mute | `mute` | 0 (sounding) or 1 (muted), a step |
 | A built-in effect or instrument's parameter | its stable id (`device.list`) | in the parameter's unit, kept in its range as `device.setParam` keeps it |
-| A data-only `.sd` device's parameter | its stable id in the `.sd` graph | in its unit and range; discrete controls step |
+| A data-only `.sd` device's parameter | its stable id in the `.sd` graph | in its unit and range, of the kind its control shows (a toggle, a choice, a whole number or a continuous value) |
 | A plug-in's parameter | its id, a number (`device.pluginParams`) | in the plug-in's own range (#109) |
 
 The main channel's volume, pan and mute have lanes too ([ADR 0004](../decisions/0004-built-in-devices.md)
@@ -57,12 +57,12 @@ and is deleted with its device. One lane per parameter.
 - Between two points the value moves **evenly along the parameter's control**: its position,
   0 to 1 over the travel of the fader or knob that sets it, not its stored value
   (`automation::Taper`). The volume moves along the volume fader ([below](#the-volume-fader)), a
-  built-in device's parameter along its knob (`ParamInfo::to_normalized`: linear, logarithmic,
-  or Utility's gain law, [utility.md](utility.md#the-gain-knob)), a data-only device's along its
-  control (logarithmic for a log slider or knob), pan and plug-in parameters in their value. What
+  built-in or `.sd` device's parameter along its knob (`ParamInfo::to_normalized`: linear,
+  logarithmic, or Utility's gain law, [utility.md](utility.md#the-gain-knob); a `.sd` parameter is
+  logarithmic on a log slider or knob), pan and plug-in parameters in their value. What
   a lane draws straight is what plays: half-way from 50 Hz to 500 Hz on a logarithmic knob is
   158 Hz.
-- **A whole-number parameter** (`ParamKind::Integer`) moves along the line like any other, and
+- **A whole-number parameter** (`ParamKind::Integer`, and a `.sd` parameter on an integer control) moves along the line like any other, and
   takes the lane's value with its **fraction cut off toward zero** (`ParamInfo::played`): 36.98
   plays 36, 0.94 plays 0 and -2.97 plays -2. It is not rounded or floored: a lane from 40 to 41
   plays 40 until its last point, one from 41 to 40 plays 40 from its first step, and one from 3
@@ -184,8 +184,9 @@ audio thread.
   device's chain splits its block there, so a jump lands on its frame and the device smooths the
   change as it smooths any parameter (ADR 0004, decision 5); a MIDI effect's span of events
   splits there too, the change coming before the events at its frame (ADR 0004 › 14), and its
-  semitone, scale-degree and key values show as `+5 st`, `+2 sd` and `C3`. `.sd` processors receive the same
-  changes through their parameter API; integer, toggle, button and choice controls step. A fresh
+  semitone, scale-degree and key values show as `+5 st`, `+2 sd` and `C3`. A `.sd` device is a
+  `Device` like a built-in (#763 › 6) and takes the same changes: its toggle, button, choice and
+  radio controls step, and an integer control plays as a whole-number parameter (above). A fresh
   device starts at the lane's value at beat 0. While stopped, a parameter keeps its last value.
 - **Plug-in parameters**: as #109 built them (ADR 0006 › 3): a value at the block's start, at
   each point and every 64 frames while it moves, as parameter events at their frames; the curve

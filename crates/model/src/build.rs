@@ -9,7 +9,7 @@
 //! (issue #462). They are not serialisation defaults: a reader that misses a field still says so.
 
 use crate::{
-    AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipId, ContentId, ContentKinds, Device,
+    AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipId, ContentId, ContentKinds, Device, DeviceId,
     DeviceKind, Extensions, FadeCurve, FollowAction, LaunchSettings, MidiInput, Note, StretchMode, Track, TrackId,
 };
 
@@ -119,6 +119,7 @@ impl Device {
     /// An enabled device with no state, no parameters set and no automation.
     pub fn new(name: impl Into<String>, kind: DeviceKind) -> Self {
         Self {
+            id: DeviceId::NONE,
             name: name.into(),
             kind,
             enabled: true,

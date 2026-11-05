@@ -348,7 +348,7 @@ fn pitch_takes_every_stored_value() {
     }
     assert_eq!(params.len(), expected.len(), "the step widths have nowhere to go: {params:?}");
     assert!(warnings.is_empty());
-    let ids: Vec<&str> = suhina_device_pitch::INFO.params.iter().map(|p| p.id).collect();
+    let ids: Vec<&str> = suhina_device_pitch::INFO.params.iter().map(|p| &*p.id).collect();
     assert!(params.iter().all(|p| ids.contains(&p.id.as_str())), "{params:?}");
 }
 
@@ -398,7 +398,7 @@ fn eq_three_takes_every_stored_value() {
     near("lowFrequency", 250.0);
     near("highFrequency", 2500.0);
     near("slope", 1.0);
-    let ids: Vec<&str> = suhina_device_dj_eq::INFO.params.iter().map(|p| p.id).collect();
+    let ids: Vec<&str> = suhina_device_dj_eq::INFO.params.iter().map(|p| &*p.id).collect();
     assert!(params.iter().all(|p| ids.contains(&p.id.as_str())), "{params:?}");
 }
 

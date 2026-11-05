@@ -3,7 +3,7 @@ description: Every executable SDK node, ports, defaults, formulas, state and rea
 read_when: SDK node reference, node ports, DSP primitives, graph authoring, AI device development
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/device-sdk/src/sample_resource.rs
   - crates/device-sdk/src/nodes/audio.rs
@@ -78,7 +78,7 @@ Delay history across all nodes is capped at 2,000,000 stereo frames (32 MB at f6
 Validation budgets history at 384 kHz so accepted files fit at every supported sample rate (8..384 kHz).
 The combined delay capacity is therefore about 5.2 seconds; reduce `max_seconds` if the validator reports a budget error.
 The delay cap is a memory bound, not a CPU deadline guarantee; graph cost depends on nodes used.
-Intentional effect delays are not reported as host compensation latency.
+A graph runs in a chain as a `Device` like a built-in (`GraphDevice`) and reports a latency of 0: a delay node is the sound (an echo), not processing delay for the host to compensate. A node that adds such delay (look-ahead, oversampling) would declare it.
 FFT, external sample assets and oversampled nonlinear processing are not supported by this version.
 
 ## Nodes

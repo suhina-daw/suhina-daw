@@ -17,6 +17,7 @@ rust-version = "1.95"
 [workspace.dependencies]
 # internal
 suhina-model = { path = "crates/model" }
+suhina-fs = { path = "crates/fs" }
 suhina-engine = { path = "crates/engine" }
 suhina-als = { path = "crates/als" }
 suhina-flp = { path = "crates/flp" }

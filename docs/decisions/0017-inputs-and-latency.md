@@ -4,7 +4,7 @@ read_when: MIDI input, MIDI controller, keyboard, arm, armed track, track.setArm
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-04
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/live.rs
@@ -25,7 +25,7 @@ covers:
 
 Until now Suhina had no inputs: it could play a project, but nobody could play an instrument
 into it, monitor a guitar through its effects, or record. That is the first tier's third item in
-[ADR 0016](0016-parity-target.md), and the first place the engine answers to a device rather than
+[ADR 0016](0016-scope.md), and the first place the engine answers to a device rather than
 to its own clock.
 
 Played input is where latency is felt. A clip launch waits for its quantisation anyway; a key

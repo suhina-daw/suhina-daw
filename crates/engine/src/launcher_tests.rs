@@ -45,7 +45,7 @@ pub(super) fn notes(id: u32, notes: Vec<Note>) -> ClipContent {
         id: ContentId(id),
         name: format!("c{id}"),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
         extensions: Extensions::default(),
         scale: None,
     }
@@ -666,7 +666,7 @@ fn launched_audio_loops_from_its_start_marker() {
         id: ContentId(1),
         name: "ramp".into(),
         length: 2.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -708,7 +708,7 @@ fn a_launched_clip_s_plan_leaves_its_stretcher_to_the_stretch_thread() {
         id: ContentId(1),
         name: "sine".into(),
         length: 3.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -744,7 +744,7 @@ fn launched_unwarped_audio_loops_over_the_whole_file() {
         id: ContentId(1),
         name: "hit".into(),
         length: 1.5,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -788,7 +788,7 @@ fn stretched_sine() -> (Project, AudioPool) {
         id: ContentId(1),
         name: "sine".into(),
         length: 2.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -1063,16 +1063,16 @@ fn reopening_during_stretch_preparation_resumes_at_the_playhead() {
     let _worker = renderer.graph.ahead.take_worker_unfilled().unwrap();
     renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
     renderer.handle(LaunchCommand::Play);
-    assert!(renderer.start_waiting.is_some());
+    assert!(renderer.transport.start_waiting.is_some());
     renderer.handle(LaunchCommand::Locate { beat: 8.0 });
     renderer.handle(LaunchCommand::ResumeColumn { column: 0, slot: Some(0), elapsed_beats: 2.0 });
     renderer.handle(LaunchCommand::SetLaunchTempo { bpm: 135.0 });
     // Exhaust the bounded preparation wait without relying on thread scheduling.
     renderer.wait_to_start(SR as u64);
     renderer.wait_to_start(0);
-    assert!(renderer.running);
+    assert!(renderer.transport.running);
     assert_eq!(renderer.graph.launcher.beat, 8.0, "resume must not go back to the marker");
-    assert_eq!(renderer.start_beat, 1.0, "the play start marker stays");
+    assert_eq!(renderer.transport.start_beat, 1.0, "the play start marker stays");
     assert_eq!(renderer.graph.launcher.tempo_bpm, 135.0, "a restored scene tempo stays");
     assert_eq!(renderer.graph.launcher.columns[0].playing.as_ref().map(|p| p.slot), Some(0));
 }
@@ -1086,9 +1086,9 @@ fn cancelling_a_restored_waiting_start_does_not_keep_the_resume_target() {
     renderer.handle(LaunchCommand::Locate { beat: 8.0 });
     renderer.handle(LaunchCommand::ResumeColumn { column: 0, slot: Some(0), elapsed_beats: 2.0 });
     renderer.handle(LaunchCommand::Stop);
-    assert!(!renderer.running);
-    assert!(renderer.start_waiting.is_none());
-    assert_eq!(renderer.start_beat, 1.0);
+    assert!(!renderer.transport.running);
+    assert!(renderer.transport.start_waiting.is_none());
+    assert_eq!(renderer.transport.start_beat, 1.0);
     renderer.handle(LaunchCommand::Play);
     renderer.wait_to_start(SR as u64);
     renderer.wait_to_start(0);

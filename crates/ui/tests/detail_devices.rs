@@ -22,6 +22,7 @@ const SLOT: &str = "Select Beat B on Drums (scene 3)";
 
 fn device(name: &str) -> Device {
     Device {
+        id: Default::default(),
         name: name.into(),
         kind: DeviceKind::Builtin(name.to_lowercase()),
         enabled: true,
@@ -47,6 +48,8 @@ fn window() -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(Session::new(project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -282,7 +285,7 @@ fn nam_project() -> Project {
     let mut project = demo_project();
     for (name, id) in [("NAM Amp Modeler", "nam-amp-modeler"), ("NAM Cab Loader", "nam-cab-loader")] {
         let params = suhina_device_registry::info(id)
-            .map(|info| info.params.iter().map(|p| DeviceParam::new(p.id, p.default)).collect())
+            .map(|info| info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect())
             .unwrap_or_default();
         let device = Device { name: name.into(), kind: DeviceKind::Builtin(id.into()), params, ..device("nam") };
         project.channels[0].devices.push(device);
@@ -313,6 +316,8 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     app.set_session(Session::new(nam_project()), &[]);
     app.set_nam_default_folders(models.clone(), irs.clone());
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -473,7 +478,7 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
         harness.query_by_label_contains("Amp Modeler: pack: Test amp").is_some(),
         "the open pack row lists the folder's pack"
     );
-    harness.get_by_label_contains("Amp Modeler: pack: Test amp").click();
+    harness.get_by_label("Amp Modeler: pack: Test amp").click();
     harness.run();
     assert_eq!(channel_device_state(&harness, 0), model_path.display().to_string());
     // The pack steppers step through the packs (one here: from none, into it).
@@ -502,6 +507,7 @@ fn a_nam_panels_render_for_the_hand_check() {
     app.set_session(Session::new(nam_project()), &[]);
     app.set_nam_default_folders(models.clone(), irs.clone());
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -580,7 +586,7 @@ fn expanded_device() -> Device {
         drawing: vec![],
     });
     graph.expanded = Some(big);
-    Device { state: Some(graph.to_sd().unwrap().into_bytes()), ..Device::new("Big Gain", DeviceKind::Sd) }
+    Device { state: Some(graph.to_sd().unwrap().into_bytes().into()), ..Device::new("Big Gain", DeviceKind::Sd) }
 }
 
 /// A device with an expanded panel has a button in its header that opens it over the main area;

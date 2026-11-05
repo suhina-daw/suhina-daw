@@ -52,6 +52,7 @@ fn project(clip: bool) -> Project {
     };
     let mut channel = Channel::new(ChannelId(1), "C");
     channel.devices.push(Device {
+        id: Default::default(),
         name: "Test vst3".into(),
         // The catalog lists the built-in test plug-ins as CLAP (their file is not a `.vst3`).
         kind: DeviceKind::Clap { id: "vst3".into() },
@@ -74,7 +75,7 @@ fn project(clip: bool) -> Project {
             id: ContentId(1),
             name: "take".into(),
             length: 2.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],

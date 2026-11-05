@@ -76,6 +76,7 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                id: Default::default(),
                 name: "Test vst3".into(),
                 kind: DeviceKind::Clap { id: "vst3".into() },
                 enabled: true,
@@ -95,7 +96,8 @@ fn project() -> Project {
             lanes: vec![ContentLane {
                 target: None,
                 data: LaneData::Notes((0..8).map(|i| note(f64::from(i) * 0.5, 0.4, 43, 0.9)).collect()),
-            }],
+            }]
+            .into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -189,7 +191,7 @@ fn an_export_gathers_its_states_over_frames_without_the_window_waiting() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": 0 });
     let deadline = Instant::now() + Duration::from_secs(30);
 
@@ -237,14 +239,14 @@ fn a_gather_keeps_the_reads_across_a_project_switch() {
     assert_eq!(opened.assign_ids(), Ok(()));
     // The project's saved state is the default gain; the plug-in loads with it.
     let gain_bytes = DEFAULT_GAIN.to_le_bytes().to_vec();
-    opened.channels[0].devices[0].state = Some(gain_bytes);
+    opened.channels[0].devices[0].state = Some(gain_bytes.into());
     let mut projects = suhina_session::Projects::new();
     let id =
         projects.add(Session::new(opened.clone()), Some("gain".into())).map_err(|e| e.message().to_string()).unwrap();
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let device = json!({ "track": 1, "device": 0 });
     projects.get_mut(id).unwrap().attach_player(Player::new(renderer.controller(), None));
-    projects.get_mut(id).unwrap().set_plugin_env(env());
+    projects.get_mut(id).unwrap().rack_mut().set_env(env());
     projects.get_mut(id).unwrap().sync_plugins();
     until_with_projects(&mut projects, id, &mut renderer, "starting", |s| {
         s.execute("device.plugin", &device).unwrap()["status"] == "running"
@@ -327,7 +329,7 @@ fn a_cancelled_gather_starts_nothing_on_a_late_reply() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     // The gate is known before the plug-in's host process is born, which inherits it.
     let mut gate = StateGate::new();
     let device = json!({ "track": 1, "device": 0 });
@@ -365,7 +367,7 @@ fn a_gather_past_its_deadline_says_which_plug_in_did_not_answer() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     // The gate is known before the plug-in's host process is born, which inherits it.
     let mut gate = StateGate::new();
     session.sync_plugins();
@@ -465,7 +467,7 @@ fn an_export_plays_the_running_plug_ins_state_without_a_project_change() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": 0 });
     until(&mut session, &mut renderer, "starting", |s| {
         s.execute("device.plugin", &device).unwrap()["status"] == "running"

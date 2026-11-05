@@ -25,13 +25,12 @@ pub(super) fn show(
 
     // The Focus switch, over the keys.
     let switch = Rect::from_min_max(row.min, Pos2::new(layout.grid.left(), row.bottom())).shrink(1.0);
-    let response = ui.interact(switch, Id::new("piano-roll-focus-first"), Sense::click());
+    let response = ui.interact(switch, Id::unique("piano-roll-focus-first"), Sense::click());
     if response.clicked() {
         state.focus_first = !state.focus_first;
     }
     let on = state.focus_first;
-    response
-        .widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, "Focus on the first clip"));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, "Focus on the first clip"));
     if on {
         painter.rect_filled(switch, 0.0, theme::accent());
     }
@@ -67,10 +66,10 @@ pub(super) fn show(
         if !visible.is_positive() {
             continue;
         }
-        let response = ui.interact(visible, Id::new(("piano-roll-clip-bar", index)), Sense::click());
+        let response = ui.interact(visible, Id::unique(("piano-roll-clip-bar", index)), Sense::click());
         response.widget_info(|| {
             let label = format!("Clip {} in the piano roll", bar.name);
-            egui::WidgetInfo::selected(egui::WidgetType::Button, true, bar.edited, label)
+            egui::WidgetInfo::selected(egui::Role::Button, true, bar.edited, label)
         });
         if response.clicked() && !bar.edited {
             actions.extend(focus_action(bar.clip));

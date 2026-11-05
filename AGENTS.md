@@ -46,16 +46,19 @@ describe a file. Read only the ones that match your task.
    ([ADR 0021](docs/decisions/0021-device-graph-files.md) › Amendment: device panels). Their DSP
    comes from `crates/dsp`, where missing DSP is added so each block exists once.
 9. **Other DAWs are named only where a format is handled:** format crates (`crates/als`), their
-   tests, `docs/spec/`, `docs/decisions/`, the design brief, and the parity measurement
-   (`docs/research/parity-live-12.md`, `scripts/parity/`; never content from another product's
-   manual). ROADMAP, README, the model, engine, CLI and UI describe Suhina's own features under
+   tests, `docs/spec/`, `docs/decisions/` and the design brief. Comparisons with another product
+   (how much of it Suhina covers, which of its features are missing) are not kept in this
+   repository ([ADR 0016](docs/decisions/0016-scope.md) › 5). ROADMAP, README, the model, engine, CLI and UI describe Suhina's own features under
    their own names and neutral words, and other DAWs' product terms are not used as generic words
    ("drum sampler", not "drum rack"). User-facing text may name a format it imports or exports.
    The rule is about other DAWs and music software, not makers of hardware (amplifiers, speakers,
    microphones, synthesizers): content licensed for redistribution, such as an amp model or an
    impulse response, may keep a name that says which hardware it was recorded from, with a note
    that there is no affiliation, and never suggests endorsement
-   ([CONTRIBUTING.md › Clean-room](CONTRIBUTING.md#clean-room)).
+   ([CONTRIBUTING.md › Clean-room](CONTRIBUTING.md#clean-room)). Built-in effects and
+   instruments, branch names and pull request titles get names of Suhina's own: a single generic
+   word that says what a device does stays allowed ("Compressor", "Saturator"), a distinctive
+   name people recognise as one product's device does not.
 10. **GPL-compatible dependencies only** (MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL,
     GPL-3.0; not GPL-2.0-only or non-commercial). The `ci` check runs `cargo-deny`; `deny.toml` has a
     code owner, so the pull request that adds a dependency is not the one that permits its licence.
@@ -71,7 +74,7 @@ describe a file. Read only the ones that match your task.
 |---|---|
 | Where code goes, what a crate does, adding a crate or a source file | [`docs/architecture.md`](docs/architecture.md): layers, the crate table, crate names, the licence header |
 | Opening an issue, claiming, naming a branch, opening a pull request, posting as the bot | [`docs/workflow.md`](docs/workflow.md) › Tasks |
-| Writing a pull request: *How to check it*, parity, settings help, devices, which documents to update | [`docs/workflow.md`](docs/workflow.md) › What a pull request carries |
+| Writing a pull request: *How to check it*, settings help, devices, which documents to update | [`docs/workflow.md`](docs/workflow.md) › What a pull request carries |
 | A common change: a command, a device parameter, a setting, an engine or UI test | the area skills in `.claude/skills/` (`working-on-suhina` lists them) |
 | Reviewing a pull request | [`docs/code-review.md`](docs/code-review.md) |
 | Writing or changing a document | [`docs/README.md`](docs/README.md) |
@@ -97,10 +100,9 @@ python scripts/docs.py check
 
 Keep the tree building at every step. Report each check as passed, failed (with the output) or not
 run (and why). A pull request also carries what [`docs/workflow.md`](docs/workflow.md) › What a
-pull request carries lists: *How to check it*, parity, settings help, a rebuilt app for a device,
+pull request carries lists: *How to check it*, settings help, a rebuilt app for a device,
 and the documents that describe what changed. A branch never edits what `main` generates:
-`docs/commands.md` and the marked parts of `docs/research/parity-live-12.md`. A new *What works
-now* bullet is a file of its own in `docs/works-now/`, not a line in `ROADMAP.md`.
+`docs/INDEX.md` and `docs/commands.md`. A new *What works now* bullet is a file of its own in `docs/works-now/`, not a line in `ROADMAP.md`.
 
 ## Code Review Rules
 

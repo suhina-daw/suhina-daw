@@ -89,42 +89,77 @@ pub mod param {
     pub(crate) const COUNT: usize = 18;
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("drive", "Drive", (-36.0, 36.0), 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::choice("type", "Type", &TYPE_NAMES, 0),
     ParamInfo::continuous("threshold", "Bass Threshold", (-50.0, 0.0), -50.0, Unit::Decibels, Scale::Linear),
     ParamInfo::choice("postClip", "Post Clip", &POST_CLIP_NAMES, 0),
     ParamInfo::continuous("output", "Output", (-36.0, 0.0), 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("mix", "Dry/Wet", (0.0, 1.0), 1.0, Unit::Percent, Scale::Linear),
-    ParamInfo::toggle("color", "Color", true).in_group("Color"),
-    ParamInfo::continuous("colorLow", "Color Low", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Color"),
-    ParamInfo::continuous("colorHigh", "Color High", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear).in_group("Color"),
-    ParamInfo::continuous(
+    ParamInfo::in_group("Color").toggle("color", "Color", true),
+    ParamInfo::in_group("Color").continuous("colorLow", "Color Low", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear),
+    ParamInfo::in_group("Color").continuous("colorHigh", "Color High", (-1.0, 1.0), 0.0, Unit::Percent, Scale::Linear),
+    ParamInfo::in_group("Color").continuous(
         "colorFrequency",
         "Color Frequency",
         (30.0, 18_500.0),
         1_000.0,
         Unit::Hertz,
         Scale::Logarithmic,
-    )
-    .in_group("Color"),
-    ParamInfo::continuous("colorWidth", "Color Width", (0.0, 1.0), 0.3, Unit::Percent, Scale::Linear).in_group("Color"),
-    ParamInfo::continuous("shaperDrive", "Shaper Drive", (0.0, 1.0), 1.0, Unit::Percent, Scale::Linear)
-        .in_group("Waveshaper"),
-    ParamInfo::continuous("shaperCurve", "Shaper Curve", (0.0, 1.0), 0.05, Unit::Percent, Scale::Linear)
-        .in_group("Waveshaper"),
-    ParamInfo::continuous("shaperDepth", "Shaper Depth", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
-        .in_group("Waveshaper"),
-    ParamInfo::continuous("shaperLinear", "Shaper Linear", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear)
-        .in_group("Waveshaper"),
-    ParamInfo::continuous("shaperDamp", "Shaper Damp", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
-        .in_group("Waveshaper"),
-    ParamInfo::continuous("shaperPeriod", "Shaper Period", (0.0, 1.0), 0.0, Unit::Percent, Scale::Linear)
-        .in_group("Waveshaper"),
+    ),
+    ParamInfo::in_group("Color").continuous("colorWidth", "Color Width", (0.0, 1.0), 0.3, Unit::Percent, Scale::Linear),
+    ParamInfo::in_group("Waveshaper").continuous(
+        "shaperDrive",
+        "Shaper Drive",
+        (0.0, 1.0),
+        1.0,
+        Unit::Percent,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Waveshaper").continuous(
+        "shaperCurve",
+        "Shaper Curve",
+        (0.0, 1.0),
+        0.05,
+        Unit::Percent,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Waveshaper").continuous(
+        "shaperDepth",
+        "Shaper Depth",
+        (0.0, 1.0),
+        0.0,
+        Unit::Percent,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Waveshaper").continuous(
+        "shaperLinear",
+        "Shaper Linear",
+        (0.0, 1.0),
+        0.5,
+        Unit::Percent,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Waveshaper").continuous(
+        "shaperDamp",
+        "Shaper Damp",
+        (0.0, 1.0),
+        0.0,
+        Unit::Percent,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Waveshaper").continuous(
+        "shaperPeriod",
+        "Shaper Period",
+        (0.0, 1.0),
+        0.0,
+        Unit::Percent,
+        Scale::Linear,
+    ),
     ParamInfo::toggle("dcFilter", "DC Filter", false),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "saturator", name: "Saturator", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("saturator", "Saturator", Role::Effect, &PARAMS);
 
 const DELAY: usize = LATENCY as usize;
 
@@ -509,7 +544,7 @@ fn shape_sample(path: &mut Path, x: f64, f: &Frame) -> f64 {
 }
 
 impl Device for Saturator {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

@@ -47,17 +47,20 @@ fn render_waveforms_at_several_zooms() {
         (0.5, 0.02 / 600.0, 70.0, Scale::Linear),
         (0.5, 0.003 / 600.0, 70.0, Scale::Linear),
     ];
-    let mut harness = Harness::builder().with_size((640.0, 500.0)).with_pixels_per_point(2.0).wgpu().build_ui(|ui| {
-        let mut y = 10.0;
-        for (from, per_point, height, scale) in rows {
-            let rect = Rect::from_min_size(Pos2::new(20.0, y), vec2(600.0, height));
-            ui.painter().rect_filled(rect, 0.0, theme::control_background());
-            let columns = steady_columns(rect.left(), 600, from, per_point, 1.0);
-            let shape = geometry(&peaks, rect, &columns, scale);
-            paint(ui.painter(), &shape, Colors::from(Color32::from_rgb(0x8B, 0xC4, 0x8A)));
-            y += height + 12.0;
-        }
-    });
+    let mut harness =
+        Harness::builder().allow_missing_glyphs().with_size((640.0, 500.0)).with_pixels_per_point(2.0).wgpu().build_ui(
+            |ui| {
+                let mut y = 10.0;
+                for (from, per_point, height, scale) in rows {
+                    let rect = Rect::from_min_size(Pos2::new(20.0, y), vec2(600.0, height));
+                    ui.painter().rect_filled(rect, 0.0, theme::control_background());
+                    let columns = steady_columns(rect.left(), 600, from, per_point, 1.0);
+                    let shape = geometry(&peaks, rect, &columns, scale);
+                    paint(ui.painter(), &shape, Colors::from(Color32::from_rgb(0x8B, 0xC4, 0x8A)));
+                    y += height + 12.0;
+                }
+            },
+        );
     theme::install(&harness.ctx);
     harness.run();
     let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));

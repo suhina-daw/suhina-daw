@@ -17,7 +17,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Transport,
         run: crate::preview::play,
-        policy: Policy::DEFAULT,
+        policy: Policy::PREVIEW,
     },
     CommandSpec {
         id: "preview.setGain",
@@ -33,7 +33,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[],
         kind: CommandKind::Transport,
         run: crate::preview::stop,
-        policy: Policy::DEFAULT,
+        policy: Policy::PREVIEW,
     },
     CommandSpec {
         id: "preview.noteOn",

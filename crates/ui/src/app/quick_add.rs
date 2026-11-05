@@ -225,7 +225,7 @@ fn toggle_button(ui: &mut Ui, on: bool, title: &str) -> bool {
     let text = egui::RichText::new(title).size(theme::TEXT_SMALL);
     let response = ui.selectable_label(on, text);
     let label = format!("Quick add: {title}");
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label.clone()));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label.clone()));
     response.clicked()
 }
 
@@ -377,7 +377,7 @@ impl App {
         palette.picked = floating_list::step(palette.picked, listed.len(), down, up);
         let rows: Vec<floating_list::Row> = listed.iter().map(|&i| row(&palette.found[i])).collect();
         let searching = palette.job.is_some();
-        let field_id = egui::Id::new("quick-add-field");
+        let field_id = egui::Id::unique("quick-add-field");
         if palette.focus {
             ctx.memory_mut(|m| m.request_focus(field_id));
             palette.focus = false;
@@ -427,7 +427,7 @@ impl App {
             floating_list::Look { width: WIDTH, row_height: 34.0, visible_rows: VISIBLE_ROWS, fixed_height: true };
         let picked = (!rows.is_empty()).then_some(palette.picked);
         let shown =
-            floating_list::show(ctx, egui::Id::new("quick-add"), look, heading, footer, &rows, picked, down + up > 0);
+            floating_list::show(ctx, egui::Id::unique("quick-add"), look, heading, footer, &rows, picked, down + up > 0);
         // A button changed what is listed: the lit row goes back to the top.
         if filter != self.quick_add_filter {
             palette.picked = 0;

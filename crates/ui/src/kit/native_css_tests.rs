@@ -910,7 +910,7 @@ fn checked_and_selected_states_reach_the_sheet() {
     for on in [false, true] {
         let mut header = None;
         let shapes = painted(css, |ui| {
-            let response = ui.interact(field, egui::Id::new("solo-test"), egui::Sense::click());
+            let response = ui.interact(field, egui::Id::unique("solo-test"), egui::Sense::click());
             {
                 let _solo = super::super::style_class::enter_named_response("button", "solo", &response);
                 mark(HostState::Checked, on);
@@ -1276,7 +1276,7 @@ fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_colour_spares_
 fn a_round_button_s_shadow_is_round() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(24.0, 24.0));
     let shapes = painted("#control-stop { border-radius: 50%; background-color: #FF0000; }", |ui| {
-        let response = ui.interact(field, egui::Id::new("stop"), egui::Sense::click());
+        let response = ui.interact(field, egui::Id::unique("stop"), egui::Sense::click());
         let _stop = super::super::style_class::enter_named_response("button", "stop", &response);
         crate::kit::widgets::button_surface(ui.painter(), field, &response, false, egui::Color32::GRAY, 0.0);
     });
@@ -1338,7 +1338,7 @@ fn a_family_class_reaches_every_part_of_its_kind() {
             let _pan = super::super::style_class::enter("pan");
             pan = Some(super::super::style_class::background(egui::Color32::BLACK));
         }
-        let response = ui.interact(field, egui::Id::new("solo"), egui::Sense::click());
+        let response = ui.interact(field, egui::Id::unique("solo"), egui::Sense::click());
         let _solo = super::super::style_class::enter_named_response("button", "solo", &response);
         surface(ui.painter(), field, 0.0, egui::Color32::BLACK);
     });

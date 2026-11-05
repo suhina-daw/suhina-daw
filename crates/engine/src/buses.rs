@@ -162,7 +162,7 @@ pub(crate) fn build(
         .collect();
     for (chain, target) in chains.iter_mut().zip(&targets) {
         let is_bus = buses.iter().any(|(t, _)| *t == chain.track);
-        let frames_per_beat = 60.0 / project.transport.tempo_bpm * f64::from(sample_rate);
+        let frames_per_beat = crate::tempo::frames_per_beat(project.transport.tempo_bpm, f64::from(sample_rate));
         chain.mix = automation::channel_of(project, chain.track)
             .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus, f64::from(sample_rate)));
         // A track's pan applies live (its gains centred, the pan as factors a knob's turn moves),
@@ -296,7 +296,7 @@ fn main_chain(
     let main = project.main_channel()?;
     let mut chain = Chain::build(project, audio, TrackId::MAIN, u32::MAX, (1.0, 1.0), sample_rate, plugins, assets)
         .unwrap_or_else(|| Chain::passthrough(TrackId::MAIN, u32::MAX, sample_rate));
-    let frames_per_beat = 60.0 / project.transport.tempo_bpm * f64::from(sample_rate);
+    let frames_per_beat = crate::tempo::frames_per_beat(project.transport.tempo_bpm, f64::from(sample_rate));
     chain.mix = MixLanes::new(main, frames_per_beat, true, f64::from(sample_rate));
     let volume = if main.mute || !main.volume.is_finite() { 0.0 } else { main.volume.max(0.0) };
     chain.set_main_post(volume as f32);

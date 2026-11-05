@@ -272,13 +272,7 @@ impl FolderCache {
     /// Writes the cache to a file beside `path` and moves it over `path`; the journal, whose
     /// changes are in it now, goes.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        let temporary = path.with_extension("bin.tmp");
-        {
-            let mut file = std::fs::File::create(&temporary)?;
-            file.write_all(&self.to_bytes())?;
-            file.sync_all()?;
-        }
-        std::fs::rename(&temporary, path)?;
+        suhina_fs::write_atomic(path, self.to_bytes())?;
         match std::fs::remove_file(journal_path(path)) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
             _ => Ok(()),

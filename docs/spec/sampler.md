@@ -3,10 +3,10 @@ description: Suhina's sample and granular instrument, sample loading and SDK pan
 read_when: sampler, granular instrument, sample recording, sample drop
 type: spec
 status: draft
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - devices/sampler/**
-  - crates/device-sdk/src/sampler.rs
+  - crates/device-sdk/src/sample_instrument.rs
   - crates/device-sdk/src/sample_axis.rs
   - crates/device-sdk/src/nodes/slicing.rs
   - crates/device-api/src/sample_edits.rs

@@ -21,25 +21,18 @@ fn copied_and_consolidated_clips_do_not_take_creation_defaults() {
 use serde_json::json;
 use suhina_model::*;
 use suhina_session::{Session, blank_project};
+use suhina_test_support::ProjectBuilder;
 
 use crate::support::run;
 
 /// The blank project with two notes clips on track 1 and none on track 2.
 fn project() -> Project {
-    let mut p = blank_project();
-    for id in [1, 2] {
-        p.contents.push(ClipContent {
-            id: ContentId(id),
-            name: format!("Clip {id}"),
-            length: 4.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(Vec::new()) }],
-            extensions: Extensions::default(),
-            scale: None,
-        });
-    }
-    p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(1))).unwrap().clips =
-        vec![Clip::new(ContentId(1), 0.0, 4.0), Clip::new(ContentId(2), 8.0, 4.0)];
-    p
+    ProjectBuilder::from(blank_project())
+        .notes(1, "Clip 1", 4.0, Vec::new())
+        .notes(2, "Clip 2", 4.0, Vec::new())
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .clip(1, Clip::new(ContentId(2), 8.0, 4.0))
+        .build_without_ids()
 }
 
 fn clips(session: &Session, track: u32) -> Vec<Clip> {

@@ -7,15 +7,16 @@
 
 An open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live.
 
-Suhina was called Loopwerk until October 2026; settings kept under the old name carry over on the first start. <!-- rename_suhina: keep -->
-
-<a href="docs/research/parity-live-12-by-area.png">
-  <img width="700" alt="Parity by area: the share of each area of a reference DAW's manual that Suhina covers today" src="docs/research/parity-live-12-by-area.png">
+<a href="https://github.com/suhina-daw/suhina-status">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/suhina-daw/suhina-status/main/status-dark.svg">
+    <img width="680" alt="Suhina by area: how many features are done, in progress and planned, with the open bugs" src="https://raw.githubusercontent.com/suhina-daw/suhina-status/main/status.svg">
+  </picture>
 </a>
 
-> How much of that workflow exists today, measured chapter by chapter against a reference DAW's
-> manual: [the report](docs/research/parity-live-12.md), [the order the gap gets closed in](docs/decisions/0016-parity-target.md).
-> Rebuilt on `main` whenever the numbers change.
+> How much of each area of Suhina works today. A box's size is its number of features, its fill the share done; the red number is the area's open bugs. The maintainers count it from their feature list and a bot redraws it every day ([suhina-status](https://github.com/suhina-daw/suhina-status)).
+
+> What comes next, and in what order: [`ROADMAP.md`](ROADMAP.md) and [ADR 0016](docs/decisions/0016-scope.md).
 
 > **Status:** pre-alpha. Suhina opens Live Sets, plays and renders them (audio clips with
 > real-time time-stretching, MIDI through the built-in FM synth, sandboxed CLAP and VST3 plug-ins,

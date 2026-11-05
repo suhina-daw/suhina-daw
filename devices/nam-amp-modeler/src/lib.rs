@@ -59,7 +59,7 @@ pub mod param {
     pub(crate) const COUNT: usize = 9;
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("inputGain", "Gain", (-24.0, 24.0), 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("eqBass", "Bass", (-12.0, 12.0), 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("eqMid", "Mid", (-12.0, 12.0), 0.0, Unit::Decibels, Scale::Linear),
@@ -71,8 +71,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("outputVolume", "Volume", (-24.0, 24.0), 0.0, Unit::Decibels, Scale::Linear),
 ];
 
-pub const INFO: DeviceInfo =
-    DeviceInfo { id: "nam-amp-modeler", name: "NAM Amp Modeler", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("nam-amp-modeler", "NAM Amp Modeler", Role::Effect, &PARAMS);
 
 /// Reading `.nam` files.
 pub mod model;
@@ -420,7 +419,7 @@ impl NamAmp {
 }
 
 impl Device for NamAmp {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

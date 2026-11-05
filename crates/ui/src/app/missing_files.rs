@@ -250,7 +250,7 @@ impl MissingFiles {
         if self.poll() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
-        egui::Area::new(Id::new("missing-files"))
+        egui::Area::new(Id::unique("missing-files"))
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
             .show(ui.ctx(), |ui| {
@@ -261,7 +261,7 @@ impl MissingFiles {
     }
 
     fn draw(&mut self, ui: &mut Ui, area: Rect, project: &str) -> Option<Outcome> {
-        let behind = ui.interact(area, Id::new("missing-files-behind"), Sense::click_and_drag());
+        let behind = ui.interact(area, Id::unique("missing-files-behind"), Sense::click_and_drag());
         let _swallowed = behind.clicked();
         let painter = ui.painter_at(area);
         painter.rect_filled(area, 0.0, theme::window_background().gamma_multiply(0.6));
@@ -300,7 +300,7 @@ impl MissingFiles {
                         .hint_text("A folder path")
                         .desired_width(220.0),
                 );
-                field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Folder to search"));
+                field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Folder to search"));
                 let entered = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
                 match &self.walk {
                     Some(walk) => {
@@ -394,7 +394,7 @@ fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId) {
                     .desired_width(170.0),
             );
             field.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, format!("Locate {}", row.name()))
+                egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Locate {}", row.name()))
             });
             if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                 let path = PathBuf::from(row.locate.trim());
@@ -559,7 +559,7 @@ mod look {
             locate: String::new(),
         };
         let state = MissingFiles { rows: vec![found, one, lost], open: true, ..MissingFiles::default() };
-        let mut harness = Harness::builder().with_size(egui::vec2(820.0, 520.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(820.0, 520.0)).build_ui_state(
             |ui, state: &mut MissingFiles| {
                 crate::kit::theme::install(ui.ctx());
                 let area = ui.max_rect();

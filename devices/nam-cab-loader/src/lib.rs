@@ -49,7 +49,7 @@ pub mod param {
     pub(crate) const COUNT: usize = 8;
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::toggle("phase", "Phase", false),
     ParamInfo::toggle("hpOn", "HP", true),
     ParamInfo::continuous("cutBass", "Bass", (-24.0, 0.0), 0.0, Unit::Decibels, Scale::Linear),
@@ -60,8 +60,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("volume", "Volume", (-24.0, 24.0), 0.0, Unit::Decibels, Scale::Linear),
 ];
 
-pub const INFO: DeviceInfo =
-    DeviceInfo { id: "nam-cab-loader", name: "NAM Cab Loader", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("nam-cab-loader", "NAM Cab Loader", Role::Effect, &PARAMS);
 
 /// Reading `.wav` files.
 pub mod ir;
@@ -294,7 +293,7 @@ impl CabLoader {
 }
 
 impl Device for CabLoader {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

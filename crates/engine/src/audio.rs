@@ -15,10 +15,12 @@
 //! change (ADR 0003 › Transpose needs the stretcher). A warped clip in a stretching mode that
 //! falls back to this reader loses its transpose for the same reason.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
+pub use suhina_model::{AudioData, AudioPool};
 use suhina_model::{AudioRegion, Clip, FadeShape, TempoMap};
+
+use crate::tempo::TempoClock;
 
 /// File sample rates the direct reader plays; a file outside them is not read (a rate of 0 would
 /// freeze on one frame). Wider than [`STRETCH_SAMPLE_RATES`], since the direct reader is where a
@@ -26,67 +28,6 @@ use suhina_model::{AudioRegion, Clip, FadeShape, TempoMap};
 pub(crate) const FILE_SAMPLE_RATES: std::ops::RangeInclusive<u32> = 1_000..=384_000;
 /// File sample rates the stretcher takes.
 pub(crate) const STRETCH_SAMPLE_RATES: std::ops::RangeInclusive<u32> = 8_000..=192_000;
-
-/// Decoded audio, interleaved f32.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AudioData {
-    pub sample_rate: u32,
-    pub channels: u16,
-    pub samples: Vec<f32>,
-}
-
-impl AsRef<[f32]> for AudioData {
-    fn as_ref(&self) -> &[f32] {
-        &self.samples
-    }
-}
-
-impl AudioData {
-    pub fn frames(&self) -> usize {
-        self.samples.len() / usize::from(self.channels.max(1))
-    }
-
-    /// The stereo sample at `seconds` into the file, linearly interpolated; silence outside it.
-    fn stereo_at(&self, seconds: f64) -> (f32, f32) {
-        self.frame_at(seconds * f64::from(self.sample_rate))
-    }
-
-    /// The stereo sample at frame `position` of the file (fractional frames interpolate
-    /// linearly); silence outside it. Mono plays on both sides.
-    pub(crate) fn frame_at(&self, position: f64) -> (f32, f32) {
-        let channels = usize::from(self.channels.max(1));
-        // Past the end (a huge or infinite position from hostile warp markers or offsets
-        // included) is silence, before the cast could saturate; NaN fails this too.
-        if !(position >= 0.0 && position < self.frames() as f64) {
-            return (0.0, 0.0);
-        }
-        let index = position.floor() as usize;
-        let fraction = (position - position.floor()) as f32;
-        let frame = |i: usize| -> (f32, f32) {
-            let base = i.saturating_mul(channels);
-            let left = self.samples.get(base).copied().unwrap_or(0.0);
-            let right =
-                if channels > 1 { self.samples.get(base.saturating_add(1)).copied().unwrap_or(0.0) } else { left };
-            (left, right)
-        };
-        let (l0, r0) = frame(index);
-        let (l1, r1) = frame(index.saturating_add(1));
-        (l0 + (l1 - l0) * fraction, r0 + (r1 - r0) * fraction)
-    }
-}
-
-/// The audio a project needs, prepared before playback.
-#[derive(Debug, Clone, Default)]
-pub struct AudioPool {
-    /// Decoded files, keyed by the `file` string of the project's audio regions.
-    pub files: HashMap<String, Arc<AudioData>>,
-}
-
-impl AudioPool {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
 
 /// Most warp markers the engine reads from one region, so a malformed project cannot make every
 /// clip placement copy an unbounded list; markers past it are ignored (the last segment extends).
@@ -175,19 +116,19 @@ impl Fades {
         }
     }
 
-    /// The fades of `clip` through the tempo map in frames: their length follows the tempo where
-    /// they are. At a constant tempo exactly [`Fades::new`].
-    pub(crate) fn on_map(clip: &Clip, map: &TempoMap, sample_rate: u32) -> Self {
-        if map.is_constant() {
-            return Self::new(clip, map.start_per_beat(), sample_rate);
+    /// The fades of `clip` on `clock`: their length follows the tempo where they are. At a
+    /// constant tempo exactly [`Fades::new`].
+    pub(crate) fn on(clip: &Clip, clock: &TempoClock, sample_rate: u32) -> Self {
+        if clock.map().is_none() {
+            return Self::new(clip, clock.per_beat(), sample_rate);
         }
         let (fade_in, fade_out) = clip.fitted_fades();
         let end = clip.start + clip.length;
         let frames = |f: f64| if f.is_finite() { f.max(0.0) } else { 0.0 };
         Self {
-            fade_in: frames(map.span(clip.start, fade_in)),
-            fade_out: frames(map.span(end - fade_out, fade_out)),
-            ..Self::new(clip, map.start_per_beat(), sample_rate)
+            fade_in: frames(clock.span(clip.start, fade_in)),
+            fade_out: frames(clock.span(end - fade_out, fade_out)),
+            ..Self::new(clip, clock.per_beat(), sample_rate)
         }
     }
 
@@ -218,15 +159,13 @@ pub(crate) fn start_beat(offset: f64, loop_range: Option<(f64, f64)>) -> f64 {
     }
 }
 
-/// The project timing an audio event is resolved against: the start tempo, and the tempo map in
-/// frames when the tempo changes (`None` for a constant tempo, or a clip placed outside the
-/// arrangement's time).
+/// The project timing an audio event is resolved against: its [`TempoClock`] (a constant one for
+/// a clip placed outside the arrangement's time, which follows the launcher's clock) and the
+/// sample rate.
 #[derive(Debug, Clone)]
 pub(crate) struct Timing {
-    pub frames_per_beat: f64,
-    pub tempo_bpm: f64,
+    pub clock: TempoClock,
     pub sample_rate: u32,
-    pub map: Option<Arc<TempoMap>>,
 }
 
 /// One audio clip placement, resolved to frames.
@@ -263,7 +202,8 @@ impl AudioEvent {
         timing: Timing,
         gains: (f32, f32),
     ) -> Option<Self> {
-        let Timing { frames_per_beat, tempo_bpm, sample_rate, map: tempo } = timing;
+        let Timing { clock, sample_rate } = timing;
+        let (frames_per_beat, tempo_bpm) = (clock.per_beat(), clock.bpm());
         let finite = [clip.start, clip.length, clip.offset, frames_per_beat, tempo_bpm].iter().all(|v| v.is_finite());
         if !finite
             || clip.length <= 0.0
@@ -274,7 +214,7 @@ impl AudioEvent {
         {
             return None;
         }
-        let linear = TimeMap::Linear { seconds_per_beat: 60.0 / tempo_bpm };
+        let linear = TimeMap::Linear { seconds_per_beat: crate::tempo::seconds_per_beat(tempo_bpm) };
         let markers = warp_markers(region);
         let (map, rate) = if region.warped {
             (if markers.len() >= 2 { TimeMap::Warp(markers) } else { linear }, 1.0)
@@ -283,18 +223,11 @@ impl AudioEvent {
             (linear, if rate.is_finite() && rate > 0.0 { rate } else { 1.0 })
         };
         let gain = if region.gain.is_finite() { region.gain.max(0.0) as f32 } else { 0.0 };
-        let to_frame = |beats: f64| match &tempo {
-            Some(map) => crate::tempo::frame_of(map, beats),
-            None => (beats.max(0.0) * frames_per_beat).round() as u64,
-        };
-        let fades = match &tempo {
-            Some(map) => Fades::on_map(clip, map, sample_rate),
-            None => Fades::new(clip, frames_per_beat, sample_rate),
-        };
-        let (start, end) = (to_frame(clip.start), to_frame(clip.start + clip.length));
+        let fades = Fades::on(clip, &clock, sample_rate);
+        let (start, end) = (clock.frame_of(clip.start), clock.frame_of(clip.start + clip.length));
         // An unwarped clip plays at its file's speed whatever the tempo: only its start and end
         // follow the map.
-        let beats = tempo.filter(|m| region.warped && !m.is_constant()).map(|m| (m, clip.start));
+        let beats = clock.map().filter(|_| region.warped).map(|m| (Arc::clone(m), clip.start));
         let loop_range = clip
             .loop_range
             .filter(|r| r.start.is_finite() && r.end.is_finite() && r.end > r.start)

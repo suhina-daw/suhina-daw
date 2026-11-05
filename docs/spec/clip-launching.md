@@ -225,9 +225,12 @@ settings ([Suhina format](suhina-format.md)).
 ## Launching from keys and notes
 
 A **mapping** makes a computer key or a MIDI note launch a slot, a scene or a track's stop
-button, the same way the mouse does. This is Suhina's own design; the general controller
-mappings of [ADR 0019](https://github.com/suhina-daw/suhina-daw/pull/405) (knobs, faders,
-profiles) are planned separately and can take these over.
+button, the same way the mouse does. This is Suhina's own design. The general controller
+mappings of [ADR 0019](../decisions/0019-midi-controllers-and-mapping.md#amendment-launch-keys-are-controller-mappings-2026-11-02) (knobs, faders, profiles; planned) take these over when they are
+built: a launch key becomes a controller mapping with a launch command as its target, kept in
+`controller_mappings`, made in the same mapping mode and by `mapping.*` instead of the
+`launcher.*` commands below ([MIDI mapping › Launch keys](midi-mapping.md#launch-keys)). What
+a key or a note does stays as described here.
 
 1. **Sources.** A key by its name (`key:Q`, `key:1`, `key:Space`, `key:F5`), pressed without
    Ctrl, Alt, Shift or Cmd; or a MIDI note on a channel (`note:<channel 1-16>:<note 0-127>`,

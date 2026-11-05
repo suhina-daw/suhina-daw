@@ -43,6 +43,7 @@ fn clicking_a_second_device_moves_the_selection_so_delete_takes_it() {
     use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions};
     let mut project = project_with_a_device();
     project.channels[0].devices.push(Device {
+        id: Default::default(),
         name: "Utility 2".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,
@@ -87,6 +88,7 @@ fn a_removals_undo_puts_the_selection_back_on_its_device() {
     use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions};
     let mut project = project_with_a_device();
     project.channels[0].devices.push(Device {
+        id: Default::default(),
         name: "Utility 2".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,
@@ -308,6 +310,7 @@ fn removing_a_device_below_the_selected_one_moves_the_selection_with_it() {
     };
     let mut project = project_with_a_device();
     project.channels[0].devices.push(Device {
+        id: Default::default(),
         name: "Utility 2".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,

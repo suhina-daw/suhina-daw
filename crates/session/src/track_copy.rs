@@ -155,6 +155,8 @@ pub(crate) fn paste(
                 output,
                 solo: false,
                 sends: c.sends.iter().filter(|s| returns.contains(&s.target)).cloned().collect(),
+                // A copied track's devices are new devices (#763 › 1).
+                devices: c.devices.iter().map(suhina_model::Device::copied).collect(),
                 ..c.clone()
             }
         });
