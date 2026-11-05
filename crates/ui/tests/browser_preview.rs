@@ -43,7 +43,15 @@ fn a_clicked_sample_previews() {
     let mut projects = Projects::new();
     projects.set_file_library(suhina_library::Library::new(Some(root.join("settings"))));
     let mut session = Session::new(blank_project());
-    let (player, _) = suhina_output::open_player(session.project(), session.audio()).unwrap();
+    let player = suhina_output::open_chosen(
+        session.project(),
+        session.audio(),
+        &suhina_engine::DeviceAssets::new(),
+        &suhina_session::OutputChoice::default(),
+        None,
+    )
+    .unwrap()
+    .player;
     session.attach_player(player);
     projects.add(session, None).unwrap();
     projects.execute("library.addFolder", &json!({ "folder": samples.display().to_string() })).unwrap();

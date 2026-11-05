@@ -483,18 +483,8 @@ impl DeviceGraph {
 
     pub fn write_file(&self, path: &Path) -> Result<(), DeviceSdkError> {
         let text = self.to_sd()?;
-        let failed = |error: std::io::Error| DeviceSdkError(format!("could not save {}: {error}", path.display()));
-        if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
-            std::fs::create_dir_all(parent).map_err(failed)?;
-        }
-        let mut temporary = path.as_os_str().to_owned();
-        temporary.push(".saving");
-        let temporary = std::path::PathBuf::from(temporary);
-        std::fs::write(&temporary, text).map_err(failed)?;
-        std::fs::rename(&temporary, path).map_err(|error| {
-            let _gone = std::fs::remove_file(&temporary);
-            failed(error)
-        })
+        suhina_fs::write_atomic(path, text)
+            .map_err(|error| DeviceSdkError(format!("could not save {}: {error}", path.display())))
     }
 
     /// Prepare at 48 kHz; use compile_at for the actual engine sample rate.

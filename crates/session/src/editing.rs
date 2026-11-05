@@ -11,7 +11,7 @@ use suhina_model::{
     AudioRegion, Clip, ClipContent, ContentId, ContentLane, LaneData, Note, Project, StretchMode, TrackId,
 };
 
-use crate::commands::{content_at, make_room, number, track_id};
+use crate::commands::{Args, content_at, make_room, track_id};
 use crate::{CommandError, Session};
 
 /// How close to a clip's edge, in beats, a cut may be; closer would leave a part with no length.
@@ -25,7 +25,7 @@ pub(crate) const CONSOLIDATED_FOLDER: &str = "Consolidated";
 
 /// `clip.split {track, index, at}`: cuts a clip in two at song position `at`.
 pub(crate) fn split_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let at = number(params, "at")?;
+    let at = Args::new(params).f64("at")?;
     let (lane, index) = crate::commands::lane_and_index(&session.project, params)?;
     let p = &mut session.project;
     let clip = p.arrangement.lanes.get(lane).and_then(|l| l.clips.get(index)).cloned().ok_or("the clip is missing")?;
@@ -105,8 +105,8 @@ pub(crate) fn content_rate(p: &Project, clip: &Clip) -> f64 {
 /// `clips` (clip ids), only those clips are joined and cut away, the others (another row of a
 /// stack) left as they are.
 pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let start = number(params, "start")?;
-    let end = number(params, "end")?;
+    let start = Args::new(params).f64("start")?;
+    let end = Args::new(params).f64("end")?;
     if start < 0.0 || end > suhina_engine::MAX_START_BEAT {
         return Err(format!("start and end must be from 0 to {}", suhina_engine::MAX_START_BEAT).into());
     }
@@ -114,8 +114,8 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         return Err(format!("end must be after start, got start {start} and end {end}").into());
     }
     let track = track_id(&session.project, params)?;
-    let only: Option<Vec<u32>> = match params.get("clips") {
-        None | Some(Value::Null) => None,
+    let only: Option<Vec<u32>> = match Args::new(params).value("clips") {
+        None => None,
         Some(v) => Some(
             v.as_array()
                 .ok_or("clips must be a list of clip ids")?

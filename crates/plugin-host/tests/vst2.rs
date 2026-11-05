@@ -268,7 +268,7 @@ fn a_project_s_vst2_plug_in_plays_with_its_saved_settings() {
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(project.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(vst2_env());
+    session.rack_mut().set_env(vst2_env());
     let device = json!({ "track": 1, "device": 0 });
     // The device is found and starts — the direct host, no VST3 or CLAP copy standing in.
     // The start itself is bounded by the launch's timeout, so this only waits for its answer.

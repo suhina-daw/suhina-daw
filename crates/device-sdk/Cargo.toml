@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+suhina-fs.workspace = true
 base64.workspace = true
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] } # MIT OR Apache-2.0
 suhina-dsp.workspace = true

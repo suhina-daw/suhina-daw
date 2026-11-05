@@ -9,6 +9,7 @@ rust-version.workspace = true
 autotests = false
 
 [dependencies]
+suhina-fs.workspace = true
 suhina-model.workspace = true
 suhina-engine.workspace = true
 suhina-media.workspace = true

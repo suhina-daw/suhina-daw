@@ -155,7 +155,7 @@ fn a_session_sets_and_automates_a_running_plug_ins_parameter() {
     renderer.set_offline(true);
     let mut session = Session::new(p);
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     session.execute("transport.play", &json!({})).unwrap();
     let device = json!({ "track": 1, "device": 0 });
     let deadline = Instant::now() + PATIENT;
@@ -217,7 +217,7 @@ fn a_shown_plug_ins_parameters_are_listed_in_the_background_for_its_panel() {
     renderer.set_offline(true);
     let mut session = Session::new(p);
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     session.execute("transport.play", &json!({})).unwrap();
     let device = json!({ "track": 1, "device": 0 });
     let deadline = Instant::now() + PATIENT;

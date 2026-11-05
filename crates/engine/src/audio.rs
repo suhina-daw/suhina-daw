@@ -15,9 +15,9 @@
 //! change (ADR 0003 › Transpose needs the stretcher). A warped clip in a stretching mode that
 //! falls back to this reader loses its transpose for the same reason.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
+pub use suhina_model::{AudioData, AudioPool};
 use suhina_model::{AudioRegion, Clip, FadeShape, TempoMap};
 
 /// File sample rates the direct reader plays; a file outside them is not read (a rate of 0 would
@@ -26,67 +26,6 @@ use suhina_model::{AudioRegion, Clip, FadeShape, TempoMap};
 pub(crate) const FILE_SAMPLE_RATES: std::ops::RangeInclusive<u32> = 1_000..=384_000;
 /// File sample rates the stretcher takes.
 pub(crate) const STRETCH_SAMPLE_RATES: std::ops::RangeInclusive<u32> = 8_000..=192_000;
-
-/// Decoded audio, interleaved f32.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AudioData {
-    pub sample_rate: u32,
-    pub channels: u16,
-    pub samples: Vec<f32>,
-}
-
-impl AsRef<[f32]> for AudioData {
-    fn as_ref(&self) -> &[f32] {
-        &self.samples
-    }
-}
-
-impl AudioData {
-    pub fn frames(&self) -> usize {
-        self.samples.len() / usize::from(self.channels.max(1))
-    }
-
-    /// The stereo sample at `seconds` into the file, linearly interpolated; silence outside it.
-    fn stereo_at(&self, seconds: f64) -> (f32, f32) {
-        self.frame_at(seconds * f64::from(self.sample_rate))
-    }
-
-    /// The stereo sample at frame `position` of the file (fractional frames interpolate
-    /// linearly); silence outside it. Mono plays on both sides.
-    pub(crate) fn frame_at(&self, position: f64) -> (f32, f32) {
-        let channels = usize::from(self.channels.max(1));
-        // Past the end (a huge or infinite position from hostile warp markers or offsets
-        // included) is silence, before the cast could saturate; NaN fails this too.
-        if !(position >= 0.0 && position < self.frames() as f64) {
-            return (0.0, 0.0);
-        }
-        let index = position.floor() as usize;
-        let fraction = (position - position.floor()) as f32;
-        let frame = |i: usize| -> (f32, f32) {
-            let base = i.saturating_mul(channels);
-            let left = self.samples.get(base).copied().unwrap_or(0.0);
-            let right =
-                if channels > 1 { self.samples.get(base.saturating_add(1)).copied().unwrap_or(0.0) } else { left };
-            (left, right)
-        };
-        let (l0, r0) = frame(index);
-        let (l1, r1) = frame(index.saturating_add(1));
-        (l0 + (l1 - l0) * fraction, r0 + (r1 - r0) * fraction)
-    }
-}
-
-/// The audio a project needs, prepared before playback.
-#[derive(Debug, Clone, Default)]
-pub struct AudioPool {
-    /// Decoded files, keyed by the `file` string of the project's audio regions.
-    pub files: HashMap<String, Arc<AudioData>>,
-}
-
-impl AudioPool {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
 
 /// Most warp markers the engine reads from one region, so a malformed project cannot make every
 /// clip placement copy an unbounded list; markers past it are ignored (the last segment extends).
@@ -274,7 +213,7 @@ impl AudioEvent {
         {
             return None;
         }
-        let linear = TimeMap::Linear { seconds_per_beat: 60.0 / tempo_bpm };
+        let linear = TimeMap::Linear { seconds_per_beat: crate::tempo::seconds_per_beat(tempo_bpm) };
         let markers = warp_markers(region);
         let (map, rate) = if region.warped {
             (if markers.len() >= 2 { TimeMap::Warp(markers) } else { linear }, 1.0)

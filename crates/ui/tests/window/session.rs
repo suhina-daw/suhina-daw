@@ -978,7 +978,15 @@ fn a_carried_launch_mark_press_takes_the_focus_off_a_selected_track() {
 #[ignore]
 fn launching_a_clip_greys_the_arrangement_until_back_to_arrangement() {
     let mut session = Session::new(demo_project());
-    let (player, _) = suhina_output::open_player(session.project(), session.audio()).unwrap();
+    let player = suhina_output::open_chosen(
+        session.project(),
+        session.audio(),
+        &suhina_engine::DeviceAssets::new(),
+        &suhina_session::OutputChoice::default(),
+        None,
+    )
+    .unwrap()
+    .player;
     session.attach_player(player);
     let mut app = App::new();
     app.set_session(session, &[]);
@@ -1119,11 +1127,11 @@ fn a_slots_context_menu_renames_its_clip() {
     harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
     harness.run();
     assert!(harness.query_by_label_contains("Rename clip Walk").is_some(), "the menu carries the clip's name field");
-    harness.get_by_label_contains("Rename clip Walk").click();
+    harness.get_by_label("Rename clip Walk").click();
     harness.run();
     harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
     harness.run();
-    harness.get_by_label_contains("Rename clip Walk").type_text("Walk the bass");
+    harness.get_by_label("Rename clip Walk").type_text("Walk the bass");
     harness.run();
     harness.key_press(Key::Enter);
     harness.run();

@@ -79,7 +79,7 @@ impl Clock<'_> {
     /// Seconds from the clip's start to `played` beats into it.
     fn seconds(&self, played: f64) -> f64 {
         match self {
-            Self::Constant(bpm) => played * (60.0 / bpm),
+            Self::Constant(bpm) => played * crate::tempo::seconds_per_beat(*bpm),
             Self::Map { map, start, sample_rate } => (map.time_at(start + played) - map.time_at(*start)) / sample_rate,
         }
     }
@@ -154,7 +154,7 @@ fn playlist_on(
         let src_start = seconds_at(&markers, beat) * file_rate;
         let src_end = seconds_at(&markers, next) * file_rate;
         let out_seconds = match clock {
-            Clock::Constant(bpm) => (next - beat) * (60.0 / bpm),
+            Clock::Constant(bpm) => (next - beat) * crate::tempo::seconds_per_beat(*bpm),
             Clock::Map { .. } => clock.seconds(played + (next - beat)) - clock.seconds(played),
         };
         let rate = (src_end - src_start) / file_rate / out_seconds;
@@ -179,7 +179,7 @@ fn playlist_on(
         // Cut at the cap: keep whole loops and repeat them, or refuse the clip.
         let (Some(first), Some(last)) = (first_loop, last_loop) else { return None };
         let out = match clock {
-            Clock::Constant(bpm) => (last.1 - first.1) * (60.0 / bpm),
+            Clock::Constant(bpm) => (last.1 - first.1) * crate::tempo::seconds_per_beat(*bpm),
             Clock::Map { .. } => clock.seconds(last.1) - clock.seconds(first.1),
         };
         let repeat = Repeat { first: first.0, out, stream: last.2 - first.2 };

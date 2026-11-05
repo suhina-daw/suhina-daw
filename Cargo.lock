@@ -5299,6 +5299,7 @@ dependencies = [
  "suhina-automation",
  "suhina-device-registry",
  "suhina-engine",
+ "suhina-fs",
  "suhina-library",
  "suhina-media",
  "suhina-midi",
@@ -5534,6 +5535,7 @@ dependencies = [
  "serde_json",
  "suhina-device-api",
  "suhina-dsp",
+ "suhina-fs",
  "suhina-stretch",
 ]
 
@@ -5579,6 +5581,10 @@ name = "suhina-flp"
 version = "0.0.1"
 
 [[package]]
+name = "suhina-fs"
+version = "0.0.1"
+
+[[package]]
 name = "suhina-ipc"
 version = "0.0.1"
 dependencies = [
@@ -5593,6 +5599,7 @@ version = "0.0.1"
 dependencies = [
  "notify-debouncer-full",
  "serde_json",
+ "suhina-fs",
  "suhina-media",
 ]
 
@@ -5607,9 +5614,8 @@ dependencies = [
  "serde_json",
  "suhina-device-compressor",
  "suhina-device-limiter",
- "suhina-engine",
+ "suhina-model",
  "suhina-mp3",
- "suhina-project-file",
  "symphonia",
  "vorbis_rs",
 ]
@@ -5693,6 +5699,7 @@ version = "0.0.1"
 dependencies = [
  "base64",
  "serde_json",
+ "suhina-fs",
  "suhina-model",
  "suhina-test-support",
 ]
@@ -5731,6 +5738,7 @@ dependencies = [
  "suhina-device-registry",
  "suhina-device-sdk",
  "suhina-engine",
+ "suhina-fs",
  "suhina-library",
  "suhina-media",
  "suhina-model",
@@ -5749,6 +5757,7 @@ dependencies = [
  "hound",
  "rayon",
  "realfft",
+ "suhina-fs",
  "suhina-media",
 ]
 

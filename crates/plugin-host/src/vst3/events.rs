@@ -4,7 +4,7 @@
 //! Notes and controllers for a VST3 instrument. Notes go to `process` as an `IEventList`;
 //! controllers, pitch bend and channel pressure (aftertouch, #812) are not events in VST3 but
 //! parameters, found through the controller's `IMidiMapping`, so they go as parameter changes
-//! ([`crate::vst3_params`]). Both lists are made before processing starts, so the audio thread
+//! ([`crate::vst3::params`]). Both lists are made before processing starts, so the audio thread
 //! does not allocate.
 
 use std::cell::RefCell;

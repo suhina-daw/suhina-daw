@@ -97,7 +97,7 @@ fn a_save_writes_the_state_the_running_plug_in_gives() {
     let mut renderer = Renderer::stopped(&imported, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(imported.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
 
     // Wait for the plug-in to run with the bank it was given.
     let device = json!({ "track": 1, "device": 0 });

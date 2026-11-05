@@ -11,6 +11,7 @@
 use serde_json::{Value, json};
 use suhina_model::{Project, Scale};
 
+use crate::commands::Args;
 use crate::note_tools::{mode_of, root_of};
 use crate::notes::{check_midi, copy_on_write, locate};
 use crate::{CommandError, Session};
@@ -32,8 +33,8 @@ pub(crate) fn scale_of_clip(p: &Project, params: &Value) -> Result<Option<Scale>
 
 /// Whether `params.off` asks for no scale.
 fn off(params: &Value) -> Result<bool, CommandError> {
-    match params.get("off") {
-        None | Some(Value::Null) => Ok(false),
+    match Args::new(params).value("off") {
+        None => Ok(false),
         Some(value) => value.as_bool().ok_or_else(|| "off must be true or false".into()),
     }
 }
@@ -41,7 +42,7 @@ fn off(params: &Value) -> Result<bool, CommandError> {
 /// The scale `params` asks for over `current`: `None` for `off: true`; otherwise `root` and
 /// `mode`, the one left out kept from `current` (C or major when there is none).
 fn wanted(params: &Value, current: Option<Scale>) -> Result<Option<Scale>, CommandError> {
-    let given = |key: &str| params.get(key).is_some_and(|v| !v.is_null());
+    let given = |key: &str| Args::new(params).has(key);
     let (has_root, has_mode) = (given("root"), given("mode"));
     if off(params)? {
         if has_root || has_mode {

@@ -12,6 +12,25 @@ use suhina_model::{Meter, TempoMap};
 /// The arrangement frame `beat` starts at, through the project's tempo map, at `sample_rate`;
 /// the same placement the engine's renders use. A beat before 0, or one that is not a number,
 /// is frame 0. Never allocates.
+/// Frames per beat at a constant `bpm` and `sample_rate`: the one place `60 / bpm × rate` is
+/// written, in that order, so every caller rounds the same way.
+#[inline]
+pub(crate) fn frames_per_beat(bpm: f64, sample_rate: f64) -> f64 {
+    60.0 / bpm * sample_rate
+}
+
+/// Beats per frame at a constant `bpm` and `sample_rate`: `bpm / 60 / rate`.
+#[inline]
+pub(crate) fn beats_per_frame(bpm: f64, sample_rate: f64) -> f64 {
+    bpm / 60.0 / sample_rate
+}
+
+/// Seconds per beat at a constant `bpm`: `60 / bpm`.
+#[inline]
+pub(crate) fn seconds_per_beat(bpm: f64) -> f64 {
+    60.0 / bpm
+}
+
 pub fn frame_of_beat(project: &suhina_model::Project, beat: f64, sample_rate: u32) -> u64 {
     let map = project.transport.tempo_map(f64::from(sample_rate));
     frame_of(&map, beat)

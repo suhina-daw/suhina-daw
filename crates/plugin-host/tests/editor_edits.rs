@@ -98,11 +98,11 @@ fn a_running_plug_in_read_again_and_again_is_no_unsaved_change() {
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env_for("vst3"));
+    session.rack_mut().set_env(env_for("vst3"));
     wait_running(&mut session, &mut renderer);
 
     for _ in 0..3 {
-        session.check_plugin_edits();
+        session.rack_mut().check_edits();
         session.sync_plugins();
     }
     assert!(!session.has_unsaved_changes(), "its own form of the state it was given is not an edit");
@@ -115,7 +115,7 @@ fn a_running_plug_in_read_again_and_again_is_no_unsaved_change() {
     std::thread::sleep(Duration::from_millis(200));
     session.attach_player(Player::new(renderer.controller(), None));
     wait_running(&mut session, &mut renderer);
-    session.check_plugin_edits();
+    session.rack_mut().check_edits();
     assert!(!session.has_unsaved_changes());
 }
 
@@ -134,9 +134,9 @@ fn processor_change(id: &str) -> (Session, Renderer) {
     renderer.set_offline(true);
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env_for(id));
+    session.rack_mut().set_env(env_for(id));
     wait_running(&mut session, &mut renderer);
-    session.check_plugin_edits();
+    session.rack_mut().check_edits();
     assert!(!session.has_unsaved_changes());
     session.execute("transport.play", &json!({})).unwrap();
     renderer.process(&mut [0.0; 512]);
@@ -147,7 +147,7 @@ fn processor_change(id: &str) -> (Session, Renderer) {
 fn a_processor_change_without_an_editor_is_checked_before_leaving() {
     for id in ["clap", "vst3"] {
         let (mut session, _renderer) = processor_change(id);
-        session.check_plugin_edits();
+        session.rack_mut().check_edits();
         assert!(session.has_unsaved_changes(), "{id}: a processor change must trigger the save prompt");
         assert!(!session.can_undo(), "the processor change was not a project edit");
     }
@@ -158,7 +158,7 @@ fn the_nonblocking_quit_check_notices_a_processor_change_without_an_editor() {
     for id in ["clap", "vst3"] {
         let (mut session, _renderer) = processor_change(id);
         let deadline = Instant::now() + PATIENT;
-        while !session.poll_plugin_edits() {
+        while !session.rack_mut().poll_edits() {
             assert!(Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(2));
         }
@@ -171,7 +171,7 @@ fn periodic_reads_notice_a_processor_change_without_an_editor() {
     let (mut session, _renderer) = processor_change("clap");
     // The production cadence is 30 seconds; a shorter one tests the same reads. Neither a save
     // nor a quit check may help here.
-    session.set_plugin_read_interval(Duration::from_millis(200));
+    session.rack_mut().set_save_every(Duration::from_millis(200));
     let deadline = Instant::now() + PATIENT;
     while !session.has_unsaved_changes() {
         session.sync_plugins();

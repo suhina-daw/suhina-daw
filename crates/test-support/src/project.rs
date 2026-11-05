@@ -189,6 +189,13 @@ impl ProjectBuilder {
     }
 }
 
+/// A builder that adds to `project` as it stands: a blank project's tracks and scenes, say.
+impl From<Project> for ProjectBuilder {
+    fn from(project: Project) -> Self {
+        Self { project }
+    }
+}
+
 /// `project` with ids on its lanes, clips and scenes, as a session gives them.
 pub fn with_ids(mut project: Project) -> Project {
     project.assign_ids().expect("a test project has room for its ids");

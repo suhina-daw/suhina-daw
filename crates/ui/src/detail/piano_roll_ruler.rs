@@ -115,21 +115,7 @@ pub struct RulerState {
 }
 
 /// The time axis: the x of beat 0 and the points per beat.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Axis {
-    pub origin: f32,
-    pub beat_width: f32,
-}
-
-impl Axis {
-    pub fn x_of(&self, beat: f64) -> f32 {
-        self.origin + beat as f32 * self.beat_width
-    }
-
-    pub fn beat_at(&self, x: f32) -> f64 {
-        f64::from((x - self.origin) / self.beat_width.max(f32::MIN_POSITIVE))
-    }
-}
+pub use crate::kit::time_axis::TimeViewport as Axis;
 
 /// What a press at `pos` in the `ruler` grabs: in the loop row a handle (the nearer one when both
 /// are in reach) or the bar between them; under it the start marker or the end marker. `None`

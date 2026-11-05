@@ -50,9 +50,10 @@ its `INFO` and finds parameters by id, so the change is mostly the device's own 
    entry in the root `Cargo.toml`'s `[workspace.dependencies]`. It exports `INFO: DeviceInfo`
    and a type that implements `suhina_device_api::Device`. Missing DSP goes into `crates/dsp`,
    not into the device.
-3. **Registry**, `crates/device-registry/src/lib.rs`: `INFO` in `DEVICES` (browser order; the
-   array's length is in its type), its constructor in `create`, and its `panel.json` in
-   `LAYOUT_FILES`.
+3. **Registry**, `crates/device-registry/src/lib.rs`: one row in `ENTRIES` (browser order; the
+   array's length is in its type) with its `INFO`, its constructor, its layout (its
+   `panel.json`, one built in Rust, or the generated list) and whether it runs a file.
+   `DEVICES`, `create`, `layout`, `panel` and `is_file_device` read that row.
 4. **Tests**: the device's own in `devices/<name>/src/tests.rs`; the registry's conformance test
    covers it once it is listed. A device whose sound is the point gets a golden render.
 5. **Documents**: the crate's row in `docs/architecture.md` and the crate map; the devices table

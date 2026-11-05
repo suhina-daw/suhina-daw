@@ -7,7 +7,7 @@
 use serde_json::{Value, json};
 use suhina_model::{FollowAction, FollowKind};
 
-use crate::commands::{column_index, number, scene_index};
+use crate::commands::{Args, column_index, scene_index};
 use crate::{CommandError, Session};
 
 /// The parameter list of `clip.setFollowAction`, for its errors.
@@ -27,16 +27,16 @@ pub(crate) fn set_follow_action(session: &mut Session, params: &Value) -> Result
         .ok_or("that slot has no clip")?;
     let old = clip.follow_action;
     let follow = FollowAction {
-        enabled: flag(params, "enabled")?.unwrap_or(old.enabled),
+        enabled: Args::new(params).opt_bool("enabled")?.unwrap_or(old.enabled),
         time: time(params)?.unwrap_or(old.time),
-        linked: flag(params, "linked")?.unwrap_or(old.linked),
+        linked: Args::new(params).opt_bool("linked")?.unwrap_or(old.linked),
         action_a: action(params, "actionA", scenes)?.unwrap_or(old.action_a),
         action_b: action(params, "actionB", scenes)?.unwrap_or(old.action_b),
         chance_a: chance(params, "chanceA")?.unwrap_or(old.chance_a),
         chance_b: chance(params, "chanceB")?.unwrap_or(old.chance_b),
     };
     let given = ["enabled", "time", "linked", "actionA", "actionB", "chanceA", "chanceB"];
-    if !given.iter().any(|name| params.get(name).is_some_and(|v| !v.is_null())) {
+    if !given.iter().any(|name| Args::new(params).has(name)) {
         return Err(format!("give {SETTINGS}").into());
     }
     let slot = session.project.launcher.columns.get_mut(column).and_then(|c| c.slots.get_mut(scene));
@@ -59,19 +59,11 @@ pub(crate) fn describe(f: &FollowAction) -> Value {
     })
 }
 
-fn flag(params: &Value, name: &str) -> Result<Option<bool>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Bool(b)) => Ok(Some(*b)),
-        Some(_) => Err(format!("{name} must be true or false").into()),
-    }
-}
-
 fn time(params: &Value) -> Result<Option<f64>, CommandError> {
-    match params.get("time") {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value("time") {
+        None => Ok(None),
         Some(_) => {
-            let beats = number(params, "time")?;
+            let beats = Args::new(params).f64("time")?;
             if !(beats > 0.0 && beats <= FollowAction::MAX_TIME) {
                 return Err(format!(
                     "time must be more than 0 and at most {} beats, got {beats}",
@@ -85,8 +77,8 @@ fn time(params: &Value) -> Result<Option<f64>, CommandError> {
 }
 
 fn chance(params: &Value, name: &str) -> Result<Option<u32>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value(name) {
+        None => Ok(None),
         Some(value) => value
             .as_u64()
             .and_then(|v| u32::try_from(v).ok())
@@ -97,8 +89,8 @@ fn chance(params: &Value, name: &str) -> Result<Option<u32>, CommandError> {
 }
 
 fn action(params: &Value, name: &str, scenes: usize) -> Result<Option<FollowKind>, CommandError> {
-    let text = match params.get(name) {
-        None | Some(Value::Null) => return Ok(None),
+    let text = match Args::new(params).value(name) {
+        None => return Ok(None),
         Some(Value::String(text)) => text,
         Some(_) => return Err(format!("{name} must be an action name such as \"next\"").into()),
     };
