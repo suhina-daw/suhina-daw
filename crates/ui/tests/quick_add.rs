@@ -58,12 +58,20 @@ fn window(name: &str) -> (Harness<'static, App>, PathBuf) {
 fn window_with_plugins(name: &str) -> (Harness<'static, App>, PathBuf) {
     let (settings, folder) = (temp(&format!("{name}-settings")), temp(name));
     wav(&folder.join("Kick Punchy.wav"), 0.25);
+    // A VST2 plug-in is a `.vst` bundle on macOS, a `.dll` on Windows and a `.so` elsewhere.
+    let vst2 = if cfg!(target_os = "macos") {
+        "/VST2/Nova Synth.vst"
+    } else if cfg!(windows) {
+        "/VST2/Nova Synth.dll"
+    } else {
+        "/VST2/Nova Synth.so"
+    };
     let catalog = serde_json::json!({
         "version": 2,
         "entries": [
             { "path": "/VST3/Nova Synth.vst3", "modified": 1_760_000_000, "size": 10, "plugins": [
                 { "id": "ABCDEF019182FAEB49746D78426E6401", "name": "Nova Synth", "vendor": "Nova", "version": "1.0", "features": ["Instrument", "Synth"], "replaces": [] }] },
-            { "path": "/VST2/Nova Synth.so", "modified": 1_760_000_000, "size": 10, "plugins": [
+            { "path": vst2, "modified": 1_760_000_000, "size": 10, "plugins": [
                 { "id": "NvSy", "name": "Nova Synth", "vendor": "Nova", "version": "1.0", "features": ["instrument"], "replaces": [] }] },
             { "path": "/CLAP/Nova Verb.clap", "modified": 1_760_100_000, "size": 10, "plugins": [
                 { "id": "com.nova.verb", "name": "Nova Verb", "vendor": "Nova", "version": "1.0", "features": ["audio-effect", "reverb"], "replaces": [] }] },
