@@ -70,13 +70,13 @@ documentation and UI). The scope decision it leads to is
 | Measure | Value |
 |---|---|
 | The manual it was measured from | 43 chapters, 1039 PDF pages, 999 pages of feature text |
-| Page-weighted coverage of everything the manual documents | **about 27 %** |
-| Same, without Push 1 and 2, Max for Live (+ its devices) and video | **about 32 %** |
-| Same, over the scope the roadmap aims at (also without accessibility) | **about 32 %** |
+| Page-weighted coverage of everything the manual documents | **about 28 %** |
+| Same, without Push 1 and 2, Max for Live (+ its devices) and video | **about 33 %** |
+| Same, over the scope the roadmap aims at (also without accessibility) | **about 33 %** |
 | Weighting each chapter by its numbered sections instead of its pages | **17 %** (the two weightings agree) |
 | Numbered manual sections | **344**, of which **111 (32 %)** sit in chapters Suhina has not started at all |
 | Built-in devices | **13** (11 effects, 1 MIDI effect, 1 instrument) against Live's 63 (42 audio effects, 8 MIDI effects, 13 instruments) |
-| Commands | **281**, every one reachable from the UI, the CLI and MCP |
+| Commands | **282**, every one reachable from the UI, the CLI and MCP |
 | Still absent as whole features | MPE, Grooves, Tuning, Comping, Racks, Clip Envelopes, Push, Link, video, accessibility |
 <!-- parity:end -->
 
@@ -157,7 +157,7 @@ documented behaviour that exists today.
 | 28 | Working with Video | 6 | 0 % | absent | No video import or window. |
 | 29 | Live Audio Effect Reference | 139 | 23 % | partial | Suhina has 12 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, overdrive, saturator, compressor, multiband, limiter, delay, reverb) against 42 documented audio effects; the EQ, delay and reverb take every parameter of their counterparts, the saturator all but Hi-Quality, the multiband all but the side-chain and the band merge buttons, several others are close in kind but far narrower in parameters and modes. |
 | 30 | Live MIDI Effect Reference | 13 | 10 % | started | One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key window that blocks, folds or limits notes; its step buttons are planned. SDK MIDI-effect graphs run before the instrument too. The other 7 documented MIDI effects are missing. |
-| 31 | Live Instrument Reference | 120 | 12 % | started | FM synth and single-source sample/granular instrument against 13 instruments; graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades, editable automatic slice boundaries with persistent corrections, source-tempo grid/snap and stereo waveform navigation, and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; Simpler and a one-sample Sampler from a Live Set import as the sampler with their sample, region, tuning, envelope, filter and slicing; no multisample zones, drum sampler, wavetable, subtractive or physical modelling yet. |
+| 31 | Live Instrument Reference | 120 | 18 % | started | FM synth with waveforms, time envelopes, filter, LFOs, matrix and spread (its import is planned) and single-source sample/granular instrument against 13 instruments; graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades, editable automatic slice boundaries with persistent corrections, source-tempo grid/snap and stereo waveform navigation, and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; Simpler and a one-sample Sampler from a Live Set import as the sampler with their sample, region, tuning, envelope, filter and slicing; no multisample zones, drum sampler, wavetable, subtractive or physical modelling yet. |
 | 32 | Max for Live | 6 | 5 % | planned | ADR 0021 defines data-only .sd graphs with a Rust SDK, DSP runtime and custom UI nodes; typed sample resources, polyphonic voice/grain subgraphs, slicing, stretch and versioned components are executable through the Rust host API; visual graph editing is planned. Imported Max devices remain placeholders; no Max runtime. |
 | 33 | Max for Live Devices | 35 | 0 % | absent | Not applicable until Max for Live exists. |
 | 34 | MIDI and Key Remote Control | 9 | 25 % | partial | Every command can be bound to a key (keymap.json, Settings > Shortcuts); a key mapping mode (Ctrl+M) maps keys to clip slots, scenes and stop buttons, saved in the project, and launcher.addMapping takes MIDI notes too. No live MIDI remote input, CC mapping, takeover modes or mapping browser. |
@@ -179,7 +179,7 @@ documented behaviour that exists today.
 |---|---|---|
 | Views and editing (ch 6-10, 16) | 140 | 48 % |
 | Browser, files, project (ch 4, 5) | 103 | 48 % |
-| Devices (ch 23-25, 29-31) | 338 | 23 % |
+| Devices (ch 23-25, 29-31) | 338 | 25 % |
 | Mixing, routing, I/O (ch 17, 18, 38) | 47 | 48 % |
 | Automation, envelopes (ch 26, 27) | 35 | 36 % |
 | Generative/transform (ch 11-15) | 67 | 7 % |
@@ -288,7 +288,7 @@ does not name (Meld, Electric, Impulse, External Instrument).
 | External Instrument | 31.6 | external MIDI and audio | none | needs external MIDI and audio I/O |
 | Impulse | 31.7 | drum sampler | none | the planned drum sampler is for drum pads, not this |
 | Meld | 31.8 | macro oscillator synth | none | no planned device matches it |
-| Operator | 31.9 | FM synth | close | Suhina FM synth: DX7-style engine (MSFA port), six operators, 32 algorithms; Operator's filter, waveforms and envelopes are planned |
+| Operator | 31.9 | FM synth | close | Suhina FM synth: six operators, 43 algorithms, waveforms, drawn partials, time envelopes, filter and shaper, two LFOs, matrix, spread; import planned |
 | Sampler | 31.10 | multisample sampler | planned | ROADMAP: sampler |
 | Simpler | 31.11 | single-sample sampler | close | Sampler: single source, looping, simultaneous amplitude/filter/pitch envelope graphs with cumulative timing and directly draggable stage points, persistent full-width waveform in sample/grain modes, shared six-shape pitch/filter/volume/pan LFO with Random and Hz/time/beat/triplet/dotted/16th rate modes and independent source and loop-edge fades without a separate loop-fade control, context-sensitive source/loop S/E markers, fixed-height themed strip with mode icons, filter/fade/output dials, editable LFO rate and a More page for secondary controls, mono/glide, smooth voice replacement, retrigger, independent voice heads, four filter types with 12/24 slopes and ADSR/velocity/key modulation, granular mode; transient, source-tempo beat, equal-region and manual slicing with versioned automatic-boundary corrections, grid/snap, stereo waveform, selected-slice audition, pointer zoom/ruler navigation, and independent mono/poly/through and note-release choices; tempo-synchronised Sample Warp with Repitch and five pitch-preserving modes sharing Signalsmith, automatic source BPM from metadata/name/detection, unknown tempo kept explicit with legacy warp-length fallback, editable original BPM and uninterrupted live warp-mode switching |
 | Tension | 31.12 | physical modelling | planned | ROADMAP: physical-modelling synth |
@@ -319,7 +319,7 @@ placeholders. None of them run today.
 | delay | effect | stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze (27 parameters) |
 | reverb | effect | algorithmic: input band, early reflections, feedback delay network with damping, chorus, freeze (32 parameters) |
 | pitch | MIDI effect | transposes by semitones or scale degrees, keeps notes in a key window: Block, Fold, Limit (6 parameters) |
-| fm-synth | instrument | six operators, 32 algorithms, DX7 voice files (173 parameters) |
+| fm-synth | instrument | six operators, 43 algorithms, waveforms and drawn partials, time envelopes, filter and shaper, two LFOs, matrix, spread, randomizer, DX7 voice files (888 parameters) |
 <!-- parity:end -->
 
 ## 6. Where Suhina is at parity or ahead
@@ -354,7 +354,7 @@ or does something Live does not:
 <!-- parity:begin gap-table -->
 | Gap | Manual pages | Today | What closing it means |
 |---|---|---|---|
-| Devices: effects and instruments | 338 (ch 23-25, 29-31) | 23 % | 35 more audio effects and 12 more instruments, or a decision to cover the common ones only |
+| Devices: effects and instruments | 338 (ch 23-25, 29-31) | 25 % | 35 more audio effects and 12 more instruments, or a decision to cover the common ones only |
 | Browser and file management depth | 103 (ch 4, 5) | 48 % | collections, tag editor, project folders, collect files, unused files, packs, cloud |
 | Views and clip editing | 140 (ch 6-10, 16) | 48 % | MIDI note editor, clip view panels, time selections |
 | MIDI tools, MPE, grooves, tuning | 67 (ch 11-15) | 7 % | transformation and generative tools, MPE editing, groove pool, tuning systems |
