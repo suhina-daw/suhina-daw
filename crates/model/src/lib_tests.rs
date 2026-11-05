@@ -64,7 +64,7 @@ fn per_track_clip_project_validates() {
                 id: ContentId(1),
                 name: "Bass A".into(),
                 length: 4.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 36)]) }],
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 36)]) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             },
@@ -72,7 +72,7 @@ fn per_track_clip_project_validates() {
                 id: ContentId(2),
                 name: "Bass B".into(),
                 length: 4.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(1.0, 38)]) }],
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(1.0, 38)]) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             },
@@ -114,7 +114,8 @@ fn shared_pattern_project_validates_and_shares_content() {
         lanes: vec![
             ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 36), note(2.0, 36)]) },
             ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(1.0, 38), note(3.0, 38)]) },
-        ],
+        ]
+        .into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -229,7 +230,7 @@ fn fades_must_be_non_negative_and_fit_the_clip() {
         id: ContentId(1),
         name: String::new(),
         length: 4.0,
-        lanes: Vec::new(),
+        lanes: Vec::new().into(),
         extensions: Extensions::default(),
         scale: None,
     };

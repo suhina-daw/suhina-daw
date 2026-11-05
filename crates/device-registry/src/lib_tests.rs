@@ -85,7 +85,7 @@ fn every_stock_preset_reads_and_gives_every_parameter_of_its_device() {
         let file: serde_json::Value = serde_json::from_str(text).unwrap();
         let stock = stock_preset(key).unwrap();
         let device = info(stock.preset.device).unwrap();
-        assert_eq!(key.split('/').next(), Some(device.id), "{key} lies in its device's folder");
+        assert_eq!(key.split('/').next(), Some(&*device.id), "{key} lies in its device's folder");
         assert!(text.len() <= MAX_PRESET_BYTES, "{key}");
         let values = file["params"].as_object().unwrap();
         assert_eq!(values.len(), device.params.len(), "{key}: every parameter, and no other");
@@ -156,9 +156,9 @@ fn every_layout_loads_and_names_only_its_devices_parameters() {
     // A layout that names a parameter id its device lacks fails here, rather than falling
     // back to the generated list unnoticed.
     for info in DEVICES {
-        if let Some(layout) = layout(info.id) {
+        if let Some(layout) = layout(&info.id) {
             let panel = layout.and_then(|l| l.panel(info)).unwrap_or_else(|e| panic!("{}: {e}", info.id));
-            assert_eq!(panel_ids(&panel), info.params.iter().map(|p| p.id).collect::<Vec<_>>());
+            assert_eq!(panel_ids(&panel), info.params.iter().map(|p| p.id.clone()).collect::<Vec<_>>());
         }
     }
     for (id, _) in layout_files() {
@@ -216,9 +216,9 @@ fn the_reverbs_expanded_panel_has_every_parameter_and_the_compact_one_fits() {
 #[test]
 fn every_device_has_a_panel_with_its_parameters() {
     for info in DEVICES {
-        let panel = panel(info.id).unwrap_or_else(|| panic!("{} has no panel", info.id));
-        assert_eq!(panel_ids(panel), info.params.iter().map(|p| p.id).collect::<Vec<_>>(), "{}", info.id);
-        for (parameter, native) in panel.parameters.iter().zip(info.params) {
+        let panel = panel(&info.id).unwrap_or_else(|| panic!("{} has no panel", info.id));
+        assert_eq!(panel_ids(panel), info.params.iter().map(|p| &*p.id).collect::<Vec<_>>(), "{}", info.id);
+        for (parameter, native) in panel.parameters.iter().zip(info.params.iter()) {
             assert_eq!((parameter.min, parameter.max, parameter.default), (native.min, native.max, native.default));
         }
     }
@@ -263,9 +263,9 @@ fn panel_ids(panel: &Panel) -> Vec<&str> {
 #[test]
 fn every_listed_device_can_be_made_and_ids_are_unique() {
     for (i, info) in DEVICES.iter().enumerate() {
-        let device = create(info.id).unwrap_or_else(|| panic!("{} cannot be made", info.id));
+        let device = create(&info.id).unwrap_or_else(|| panic!("{} cannot be made", info.id));
         assert_eq!(device.info(), *info);
-        assert_eq!(super::info(info.id), Some(*info));
+        assert_eq!(super::info(&info.id), Some(*info));
         assert!(DEVICES.iter().skip(i + 1).all(|other| other.id != info.id), "{} twice", info.id);
     }
     assert!(create("no-such-device").is_none());
@@ -274,13 +274,53 @@ fn every_listed_device_can_be_made_and_ids_are_unique() {
 
 #[test]
 fn only_the_nam_devices_run_a_file_and_every_row_is_found_by_its_id() {
-    let files: Vec<&str> = ENTRIES.iter().filter(|e| e.runs_a_file).map(|e| e.info.id).collect();
+    let files: Vec<&str> = ENTRIES.iter().filter(|e| e.file.is_some()).map(|e| &*e.info.id).collect();
     assert_eq!(files, ["nam-amp-modeler", "nam-cab-loader"]);
     for (entry, info) in ENTRIES.iter().zip(DEVICES) {
         assert_eq!(entry.info, info);
-        assert_eq!(is_file_device(info.id), entry.runs_a_file);
+        assert_eq!(is_file_device(&info.id), entry.file.is_some());
     }
     assert!(!is_file_device("no-such-device"));
+    assert_eq!(file_extension("nam-amp-modeler"), Some("nam"));
+    assert_eq!(file_extension("nam-cab-loader"), Some("wav"));
+    assert_eq!(file_extension("compressor"), None);
+}
+
+#[test]
+fn a_file_is_refused_before_it_is_read_when_the_device_runs_no_file_or_another_kind() {
+    let path = std::path::Path::new("/no/such/folder/model.wav");
+    assert_eq!(load_file("compressor", path, 48_000).unwrap_err(), "\"compressor\" does not run a file");
+    assert_eq!(load_file("nam-amp-modeler", path, 48_000).unwrap_err(), "a nam-amp-modeler runs a .nam file");
+    let unc = std::path::Path::new(r"\\server\share\model.txt");
+    assert_eq!(load_file("nam-cab-loader", unc, 48_000).unwrap_err(), "a nam-cab-loader runs a .wav file");
+    // The right extension is read, and a missing file says so.
+    assert!(load_file("nam-cab-loader", path, 48_000).is_err());
+}
+
+#[test]
+fn a_device_ignores_an_asset_another_device_read() {
+    let dir = std::env::temp_dir().join(format!("suhina-registry-asset-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let wav = dir.join("ir.wav");
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut writer = hound::WavWriter::create(&wav, spec).unwrap();
+    for s in [1.0f32, 0.5, 0.25] {
+        writer.write_sample(s).unwrap();
+    }
+    writer.finalize().unwrap();
+    let asset = load_file("nam-cab-loader", &wav, 48_000).unwrap();
+    assert_eq!(asset.device(), "nam-cab-loader");
+    assert_eq!(asset.name(&wav), dir.file_name().map(|n| n.to_string_lossy().into_owned()));
+    assert!(create_with("nam-cab-loader", Some(&asset)).is_some());
+    // The Amp Modeler is given the IR: it starts at its defaults, as with no file.
+    let amp = create_with("nam-amp-modeler", Some(&asset)).unwrap();
+    assert_eq!(amp.info().id, "nam-amp-modeler");
+    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]

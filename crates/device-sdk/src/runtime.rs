@@ -345,6 +345,11 @@ impl PreparedEffect {
         self.sample_rate
     }
 
+    /// The value parameter `index` is set to (where its smoothing is heading).
+    pub fn parameter(&self, index: usize) -> Option<f64> {
+        self.targets.get(index).copied()
+    }
+
     pub fn set_parameter(&mut self, index: usize, value: f64) {
         if let Some(spec) = self.parameters.get(index) {
             let target = spec.clamp(value);
@@ -691,7 +696,8 @@ impl PreparedEffect {
         remainder.fill(0.0);
     }
 
-    pub(crate) fn apply_event(&mut self, event: suhina_device_api::NoteEvent) {
+    /// Takes a note or a performance control at the frame the next span starts. Never allocates.
+    pub fn apply_event(&mut self, event: suhina_device_api::NoteEvent) {
         self.dispatch_event(event);
         match event {
             suhina_device_api::NoteEvent::On { key, velocity }

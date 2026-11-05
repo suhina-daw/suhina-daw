@@ -64,6 +64,7 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                id: Default::default(),
                 name: "Test vst3".into(),
                 // The catalog lists the built-in test plug-ins as CLAP (their file is not a `.vst3`).
                 kind: DeviceKind::Clap { id: "vst3".into() },
@@ -81,7 +82,7 @@ fn project() -> Project {
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],

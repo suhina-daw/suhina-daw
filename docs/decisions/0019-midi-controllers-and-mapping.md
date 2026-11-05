@@ -1,6 +1,6 @@
 ---
 description: How hardware MIDI controllers drive Suhina - MIDI learn onto any command that takes a value, controller profiles in the user's settings, mappings to one project's tracks and devices saved in that project, gestures that make one undo step, and surface programs as extensions
-read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob, CC, control change, fader, encoder, relative encoder, takeover, pick up, controller profile, control surface, mapping mode, controller feedback, LED, MIDI output
+read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob, CC, control change, fader, encoder, relative encoder, takeover, pick up, controller profile, control surface, mapping mode, controller feedback, LED, MIDI output, launch keys, launcher.mappings, Map keys
 type: decision
 status: proposed
 built: partly
@@ -154,6 +154,34 @@ have.
     `view.computerKeyboard` (Ctrl+K, the control bar's **Keys** button) on, two rows of letters
     play the armed tracks through the same live input a controller's notes take (ADR 0017), Z
     and X move the octave and C and V the velocity; it maps nothing.
+
+## Amendment: launch keys are controller mappings (2026-11-02)
+
+Launch keys were built before this design ([clip launching](../spec/clip-launching.md#launching-from-keys-and-notes)):
+a computer key or a MIDI note that launches a slot, a scene or a track's stop button, kept in the
+launcher's `mappings`, with a mapping mode on Ctrl+M and **Map keys**. They share the key, the
+mode and the note sources with this design, and would have been a second store in the file
+(#763 › 8). They become one kind of controller mapping, before controller mappings are built:
+
+- **One store.** A project's launch keys are entries of `controller_mappings`, with a launch
+  command as the target: `clip.launch {track, scene}`, `scene.launch {scene}`, `track.stop
+  {track}`. A slot's release runs `clip.release`, as it does today: the value description of
+  decision 2 lets a trigger name the command its release runs.
+- **Computer keys are a source kind**, `key:<name>`, pressed without Ctrl, Alt, Shift or Cmd.
+  A key is a button with no velocity: it can map to triggers and toggles only, and lives only in
+  project mappings (the keymap is the place for keys that work in every project). A key source
+  names no port or profile. A note source that names neither is heard from every port, which is
+  what launch notes do today.
+- **One mapping mode.** Ctrl+M and the title bar's **Map** button (today **Map keys**) learn a
+  key or a MIDI message for any control the mode marks. A mapped key wins over a shortcut on the
+  same key where it does today (the Launcher view shown and nothing else holding the keyboard).
+- **One set of commands.** `mapping.add`, `mapping.remove` and `mapping.list` take launch
+  mappings; `launcher.addMapping`, `launcher.removeMapping` and `launcher.mappings` are removed
+  when they land, not kept as second names.
+- **Order and the file.** The move is the first step of building controller mappings, together
+  with `mapping.*` and `controller_mappings`, so no release has two stores. That step raises the
+  `.suhina` version: a newer Suhina reads the launcher's `mappings` from an older file as
+  `controller_mappings` entries and writes only `controller_mappings`.
 
 ## Consequences
 

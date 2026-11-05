@@ -173,7 +173,7 @@ impl ProjectBuilder {
             id: ContentId(id),
             name: name.into(),
             length,
-            lanes: vec![ContentLane { target: None, data }],
+            lanes: vec![ContentLane { target: None, data }].into(),
             extensions: Extensions::default(),
             scale: None,
         });

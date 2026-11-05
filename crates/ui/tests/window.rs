@@ -206,7 +206,7 @@ pub(super) fn project_with_audio() -> (suhina_engine::model::Project, suhina_ui:
         id: ContentId(300),
         name: "Loop".into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Extensions::default(),
         scale: None,
     });
@@ -256,6 +256,7 @@ pub(super) fn project_with_a_device() -> suhina_engine::model::Project {
     use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions};
     let mut project = demo_project();
     project.channels[0].devices.push(Device {
+        id: Default::default(),
         name: "Utility".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,

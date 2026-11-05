@@ -29,7 +29,7 @@ fn project_built() -> Project {
         id: ContentId(id),
         name: format!("Beat {id}"),
         length: 1.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 0.25, key, 1.0)]) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 0.25, key, 1.0)]) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };

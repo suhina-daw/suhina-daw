@@ -409,11 +409,12 @@ fn put_fm_synth_on_note_tracks(project: &mut Project, patch: &suhina_device_fm_s
         .params
         .iter()
         .enumerate()
-        .filter_map(|(i, p)| synth.param(i).map(|v| DeviceParam::new(p.id, v)))
+        .filter_map(|(i, p)| synth.param(i).map(|v| DeviceParam::new(&*p.id, v)))
         .collect();
     let device = Device {
-        name: suhina_device_fm_synth::INFO.name.into(),
-        kind: DeviceKind::Builtin(suhina_device_fm_synth::INFO.id.into()),
+        id: Default::default(),
+        name: suhina_device_fm_synth::INFO.name.to_string(),
+        kind: DeviceKind::Builtin(suhina_device_fm_synth::INFO.id.to_string()),
         enabled: true,
         state: None,
         params,
@@ -547,7 +548,7 @@ fn demo_project() -> Project {
         id: ContentId(id),
         name: name.into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };

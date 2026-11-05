@@ -42,7 +42,7 @@ fn project(lane: LaneData, length: f64) -> Project {
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: lane }],
+            lanes: vec![ContentLane { target: None, data: lane }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],

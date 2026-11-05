@@ -75,7 +75,7 @@ fn devices_are_grouped_and_ungrouped_with_undo() {
     run(&mut session, "device.ungroup", json!({ "track": 1, "device": 1 })).unwrap();
     assert_eq!(names(devices(&session)), ["Utility", "Overdrive", "Compressor", "Limiter"]);
     undo_all(&mut session, 5);
-    assert_eq!(session.project(), &before);
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..before.clone() });
 }
 
 #[test]
@@ -126,7 +126,7 @@ fn branches_are_added_set_duplicated_and_removed() {
     let last = run(&mut session, "branch.remove", json!({ "track": 1, "device": 0, "branch": 0 }));
     assert!(last.unwrap_err().contains("at least one branch"));
     undo_all(&mut session, 10);
-    assert_eq!(session.project(), &before);
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..before.clone() });
 }
 
 #[test]
@@ -169,20 +169,84 @@ fn a_mapping_follows_its_device_and_goes_when_it_leaves_the_group() {
         ..Branch::new("A")
     };
     let mut group = DeviceGroup::with_branches(vec![branch]);
-    group.macros[0].mappings.push(MacroMapping { device: vec![0, 1], param: "ceiling".into(), min: 0.0, max: 1.0 });
-    group.macros[1].mappings.push(MacroMapping { device: vec![0, 0], param: "drive".into(), min: 0.0, max: 1.0 });
+    // Built before the project has device ids: the limiter is the group's second device.
+    group.macros[0].mappings.push(MacroMapping {
+        device: MappedDevice::Nth(1),
+        param: "ceiling".into(),
+        min: 0.0,
+        max: 1.0,
+    });
+    group.macros[1].mappings.push(MacroMapping {
+        device: MappedDevice::Nth(0),
+        param: "drive".into(),
+        min: 0.0,
+        max: 1.0,
+    });
     p.channels[0].devices = vec![Device::group("G", group)];
     let mut session = Session::new(p);
-    // The limiter moves to the front of its branch: its mapping follows, the overdrive's too.
+    let inner = |session: &Session| {
+        let g = devices(session)[0].as_group().cloned().unwrap();
+        let ids: Vec<_> = g.branches[0].devices.iter().map(|d| (d.name.clone(), d.id)).collect();
+        (g, ids)
+    };
+    let (g, ids) = inner(&session);
+    let (overdrive, limiter) = (ids[0].1, ids[1].1);
+    assert_eq!(g.macros[0].mappings[0].device, MappedDevice::Id(limiter));
+    assert_eq!(g.macros[1].mappings[0].device, MappedDevice::Id(overdrive));
+    // The limiter moves to the front of its branch: the mappings still name the same devices.
     run(&mut session, "device.move", json!({ "track": 1, "device": "0/0/1", "to": "0/0/0" })).unwrap();
-    let g = devices(&session)[0].as_group().cloned().unwrap();
-    assert_eq!(g.macros[0].mappings[0].device, vec![0, 0]);
-    assert_eq!(g.macros[1].mappings[0].device, vec![0, 1]);
+    let (g, ids) = inner(&session);
+    assert_eq!(ids, [("Limiter".to_string(), limiter), ("Overdrive".to_string(), overdrive)]);
+    assert_eq!(g.macros[0].mappings[0].device, MappedDevice::Id(limiter));
+    assert_eq!(g.macros[1].mappings[0].device, MappedDevice::Id(overdrive));
     // The overdrive leaves the group: its mapping goes.
     run(&mut session, "device.move", json!({ "track": 1, "device": "0/0/1", "to": 1 })).unwrap();
-    let g = devices(&session)[0].as_group().cloned().unwrap();
+    let (g, _) = inner(&session);
     assert_eq!(g.macros[0].mappings.len(), 1);
     assert!(g.macros[1].mappings.is_empty());
+    // The limiter is removed: its mapping goes too, in the same undo step.
+    run(&mut session, "device.remove", json!({ "track": 1, "device": "0/0/0" })).unwrap();
+    let (g, _) = inner(&session);
+    assert!(g.macros[0].mappings.is_empty());
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let (g, _) = inner(&session);
+    assert_eq!(g.macros[0].mappings[0].device, MappedDevice::Id(limiter));
+}
+
+#[test]
+fn a_copied_groups_mappings_name_the_copys_devices() {
+    let mut p = project(false);
+    let branch = Branch {
+        devices: vec![
+            Device::new("Overdrive", DeviceKind::Builtin("overdrive".into())),
+            Device::new("Limiter", DeviceKind::Builtin("limiter".into())),
+        ],
+        ..Branch::new("A")
+    };
+    let mut group = DeviceGroup::with_branches(vec![branch]);
+    group.macros[0].mappings.push(MacroMapping {
+        device: MappedDevice::Nth(1),
+        param: "ceiling".into(),
+        min: 0.0,
+        max: 1.0,
+    });
+    p.channels[0].devices = vec![Device::group("G", group)];
+    let mut session = Session::new(p);
+    run(&mut session, "device.duplicate", json!({ "track": 1, "device": 0 })).unwrap();
+    for g in devices(&session).iter().map(|d| d.as_group().unwrap()) {
+        let limiter = g.branches[0].devices[1].id;
+        assert_eq!(g.macros[0].mappings[0].device, MappedDevice::Id(limiter));
+    }
+    let ids: Vec<_> = devices(&session).iter().map(|d| d.as_group().unwrap().branches[0].devices[1].id).collect();
+    assert_ne!(ids[0], ids[1], "the copy's limiter is a new device");
+    // A branch copied inside the group keeps the mapping on the first branch's limiter.
+    run(&mut session, "branch.duplicate", json!({ "track": 1, "device": 0, "branch": 0 })).unwrap();
+    let g = devices(&session)[0].as_group().cloned().unwrap();
+    assert_eq!(g.macros[0].mappings.len(), 1);
+    assert_eq!(g.macros[0].mappings[0].device, MappedDevice::Id(ids[0]));
+    // Removing that first branch takes the mapping with it.
+    run(&mut session, "branch.remove", json!({ "track": 1, "device": 0, "branch": 0 })).unwrap();
+    assert!(devices(&session)[0].as_group().unwrap().macros[0].mappings.is_empty());
 }
 
 #[test]
@@ -192,7 +256,9 @@ fn a_device_is_duplicated_with_everything_in_it() {
     run(&mut session, "device.group", json!({ "track": 1, "device": 0 })).unwrap();
     run(&mut session, "device.duplicate", json!({ "track": 1, "device": 0 })).unwrap();
     assert_eq!(devices(&session).len(), 2);
-    assert_eq!(devices(&session)[0], devices(&session)[1]);
+    // The copy is the same device under a new id.
+    assert_eq!(devices(&session)[0].copied(), devices(&session)[1].copied());
+    assert_ne!(devices(&session)[0].id, devices(&session)[1].id);
     run(&mut session, "device.duplicate", json!({ "track": 1, "device": "1/0/0" })).unwrap();
     assert_eq!(names(&devices(&session)[1].as_group().unwrap().branches[0].devices), ["Overdrive", "Overdrive"]);
 }

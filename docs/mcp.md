@@ -318,7 +318,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   (`key:Q`) or a MIDI note (`note:1:36`) to a slot, a scene or a track's stop button;
   `launcher.removeMapping` and `launcher.mappings` remove and list them. Agents launch with
   `clip.launch` and friends as before; the mappings are for the window and controllers
-  ([spec](spec/clip-launching.md#launching-from-keys-and-notes)).
+  ([spec](spec/clip-launching.md#launching-from-keys-and-notes)). These three commands are
+  replaced by `mapping.*` when controller mappings are built
+  ([spec](spec/midi-mapping.md#launch-keys)).
 - **CPU load.** `launcher.state` reports `cpu`: the audio engine's share of wall time spent
   rendering, in percent, measured over windows of 0.2 s and smoothed so it settles within about
   a second (`0.0` before anything is measured, `null` without an audio output). The control bar shows the same number.
@@ -367,7 +369,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   such as `"2/1/0"` is the device at index 2 (a group), its branch 1, device 0 there. Every
   `device.*` command takes a path for `device`, and `device.add`, `device.addSd`,
   `device.addPlugin` and `device.paste` a path for `position` (`"2/1/3"`: branch 1 of the group
-  at 2, before its device 3). `track.devices` gives each device its `path`, and a group its
+  at 2, before its device 3). A device may also be named by its id, `{"id": 7}`, which stays the
+  same while it moves (ADR 0025); `track.devices` lists it as `device_id`, and a command that adds
+  devices returns `device_id` (or `device_ids`). `track.devices` gives each device its `path`, and a group its
   `params` (`mix`, `gain`, `macro.1` … `macro.8`, set with `device.setParam`), `branches` (name,
   volume, pan, mute, solo and their `devices`) and `macros`. `device.group {track, device, count?,
   name?}` puts consecutive devices into a new group of one branch without changing the sound,

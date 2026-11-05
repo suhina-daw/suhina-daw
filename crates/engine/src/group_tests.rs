@@ -398,7 +398,7 @@ fn a_file_device_in_a_group_is_known_by_its_file() {
     let mut plugins = crate::Plugins::new();
     let mut identity = |state: &[u8]| {
         let mut cab = device("nam-cab-loader", &[]);
-        cab.state = Some(state.to_vec());
+        cab.state = Some(state.to_vec().into());
         let outer = group(vec![branch(vec![cab.clone()])], &[]);
         let mut builder = crate::slot_factory::SlotFactory {
             sample_rate: SR,
@@ -419,4 +419,64 @@ fn a_file_device_in_a_group_is_known_by_its_file() {
     assert_ne!(first, other, "a new file is a new device: a swap rebuilds it");
     assert_ne!(chain_first, chain_other);
     assert!(first.is_some_and(|id| id.contains(&chain_first)), "the same identity as in a chain");
+}
+
+/// The ratio of `out`'s level to `reference`'s over `frames`.
+fn level_ratio(out: &[f32], reference: &[f32], frames: std::ops::Range<usize>) -> f32 {
+    let rms = |s: &[f32]| (s.iter().map(|x| x * x).sum::<f32>() / s.len().max(1) as f32).sqrt();
+    let span = frames.start * 2..frames.end * 2;
+    rms(&out[span.clone()]) / rms(&reference[span]).max(1e-9)
+}
+
+/// A branch's volume, pan, mute and solo reach a playing group as messages, from the next block
+/// and smoothed, without a new graph (#763 › 4).
+#[test]
+fn a_branch_moves_while_the_group_plays_without_a_new_graph() {
+    use crate::{BranchValue, MIXER_BRANCH, branch_param};
+    let devices = || vec![group(vec![branch(vec![device("utility", &[])]), branch(vec![device("utility", &[])])], &[])];
+    let project = project(vec![note(0.0, 8.0, 69)], 8.0, devices());
+    let play = || crate::Renderer::build(&project, RenderInputs::default(), SR, RenderOptions::PLAYING).unwrap();
+    let mut untouched = play();
+    let reference = blocks(&mut untouched, 40, 480);
+    let mut renderer = play();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 10, 480);
+    let send = |controller: &mut crate::Controller, b: usize, what: BranchValue, value: f64| {
+        controller.set_device_param(TrackId(1), MIXER_BRANCH, branch_param(0, b, what), value).unwrap();
+    };
+    // Branch 2 muted: half the sound, after the 20 ms ramp.
+    send(&mut controller, 1, BranchValue::Mute, 1.0);
+    out.extend(blocks(&mut renderer, 10, 480));
+    assert!((level_ratio(&out, &reference, 12 * 480..20 * 480) - 0.5).abs() < 0.01);
+    // Unmuted and branch 1 soloed: still half. Then branch 1's volume halved: a quarter.
+    send(&mut controller, 1, BranchValue::Mute, 0.0);
+    send(&mut controller, 0, BranchValue::Solo, 1.0);
+    out.extend(blocks(&mut renderer, 10, 480));
+    assert!((level_ratio(&out, &reference, 22 * 480..30 * 480) - 0.5).abs() < 0.01);
+    send(&mut controller, 0, BranchValue::Volume, 0.5);
+    out.extend(blocks(&mut renderer, 10, 480));
+    assert!((level_ratio(&out, &reference, 32 * 480..40 * 480) - 0.25).abs() < 0.01);
+}
+
+#[test]
+fn a_branch_parameter_names_its_group_branch_and_value() {
+    use crate::{BranchValue, branch_of_param, branch_param};
+    for (group, branch, value) in [(0, 0, BranchValue::Volume), (3, 15, BranchValue::Solo), (63, 7, BranchValue::Pan)] {
+        assert_eq!(branch_of_param(branch_param(group, branch, value)), Some((group, branch, value)));
+    }
+    assert_eq!(branch_of_param(usize::MAX), None);
+}
+
+#[test]
+fn a_pan_message_moves_a_branch_by_the_channel_law() {
+    use crate::{BranchValue, MIXER_BRANCH, branch_param};
+    let project = project(vec![note(0.0, 8.0, 69)], 8.0, vec![group(vec![branch(vec![device("utility", &[])])], &[])]);
+    let mut renderer = crate::Renderer::build(&project, RenderInputs::default(), SR, RenderOptions::PLAYING).unwrap();
+    let mut controller = renderer.controller();
+    blocks(&mut renderer, 2, 480);
+    controller.set_device_param(TrackId(1), MIXER_BRANCH, branch_param(0, 0, BranchValue::Pan), -1.0).unwrap();
+    let out = blocks(&mut renderer, 20, 480);
+    let right: f32 = out[10 * 960..].iter().skip(1).step_by(2).map(|s| s.abs()).fold(0.0, f32::max);
+    let left: f32 = out[10 * 960..].iter().step_by(2).map(|s| s.abs()).fold(0.0, f32::max);
+    assert!(right < 1e-4 && left > 0.1, "left {left}, right {right}");
 }

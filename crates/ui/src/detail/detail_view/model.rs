@@ -524,7 +524,7 @@ impl Detail {
                     // draws it.
                     use crate::arrangement::automation_lanes::Scale;
                     let scale = match spec {
-                        Some(spec) => Some(Scale::Device(*spec)),
+                        Some(spec) => Some(Scale::Device(spec.clone())),
                         None => device_box
                             .graph
                             .as_ref()
@@ -725,7 +725,7 @@ pub(super) fn device_box(
             info.map(|info| {
                 info.params
                     .iter()
-                    .map(|p| (p.id.to_owned(), stored.get(p.id).map_or(p.default, |value| p.clamp(*value))))
+                    .map(|p| (p.id.to_string(), stored.get(&*p.id).map_or(p.default, |value| p.clamp(*value))))
                     .collect()
             })
             .unwrap_or_default()
@@ -735,7 +735,7 @@ pub(super) fn device_box(
         list_tall: false,
         file_device: match &d.kind {
             DeviceKind::Builtin(id) if suhina_device_registry::is_file_device(id) => {
-                suhina_device_registry::info(id).map(|info| info.id)
+                suhina_device_registry::info(id).map(|info| &*info.id)
             }
             _ => None,
         },

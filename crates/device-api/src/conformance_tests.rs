@@ -4,8 +4,8 @@
 use super::*;
 use crate::{DeviceError, DeviceInfo, ParamInfo, Role, Scale, Unit};
 
-const PARAMS: [ParamInfo; 1] = [ParamInfo::continuous("gain", "Gain", (0.0, 2.0), 1.0, Unit::None, Scale::Linear)];
-const INFO: DeviceInfo = DeviceInfo { id: "broken", name: "Broken", role: Role::Effect, params: &PARAMS };
+static PARAMS: [ParamInfo; 1] = [ParamInfo::continuous("gain", "Gain", (0.0, 2.0), 1.0, Unit::None, Scale::Linear)];
+static INFO: DeviceInfo = DeviceInfo::new("broken", "Broken", Role::Effect, &PARAMS);
 
 /// Breaks the contract in two ways: it applies a gain change once per block (so the output
 /// depends on the block size) and keeps state across `reset`.
@@ -16,7 +16,7 @@ struct Broken {
 }
 
 impl Device for Broken {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
     fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
@@ -64,10 +64,10 @@ impl Late {
     }
 }
 
-const LATE: DeviceInfo = DeviceInfo { id: "late", name: "Late", role: Role::Effect, params: &[] };
+static LATE: DeviceInfo = DeviceInfo::new("late", "Late", Role::Effect, &[]);
 
 impl Device for Late {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &LATE
     }
     fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
@@ -107,7 +107,7 @@ fn catches_unreported_latency_and_state_kept_across_prepare() {
     assert!(failures.iter().any(|f| f.contains("prepared at 96 kHz")), "{failures:#?}");
 }
 
-const MIDI: DeviceInfo = DeviceInfo { id: "sticky", name: "Sticky", role: Role::MidiEffect, params: &PARAMS };
+static MIDI: DeviceInfo = DeviceInfo::new("sticky", "Sticky", Role::MidiEffect, &PARAMS);
 
 /// A MIDI effect that transposes by its gain in octaves and ends a note at the key the
 /// current gain gives, so a change while a note is held leaves it hanging.
@@ -117,7 +117,7 @@ struct Sticky {
 
 impl Device for Sticky {
     /// The broken MIDI effect's description.
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &MIDI
     }
     /// Accepts any sample rate the checks accept.
@@ -178,7 +178,7 @@ struct Through;
 
 impl Device for Through {
     /// The pass-through MIDI effect's description.
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &MIDI
     }
     /// Accepts any sample rate the checks accept.
@@ -214,7 +214,7 @@ struct Doubler {
 
 impl Device for Doubler {
     /// The doubling MIDI effect's description.
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &MIDI
     }
     /// Accepts any sample rate the checks accept.

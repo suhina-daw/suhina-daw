@@ -310,7 +310,7 @@ fn found<'a>(catalog: &'a Catalog, kind: &DeviceKind, name: &str) -> Option<Opti
 pub fn device_plugin<'a>(catalog: &'a Catalog, device: &Device) -> Option<(Match<'a>, Option<SavedState>)> {
     let found = found(catalog, &device.kind, &device.name)??;
     let controller = device.extensions.0.iter().find(|e| e.key == "Vst3ControllerState").map(|e| e.data.clone());
-    let state = device.state.clone().map(|data| SavedState { data, controller });
+    let state = device.state.as_deref().map(|data| SavedState { data: data.to_vec(), controller });
     Some((found, state))
 }
 

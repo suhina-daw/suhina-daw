@@ -58,7 +58,7 @@ pub mod param {
 const FREQUENCY_RANGE: (f64, f64) = (50.0, 18_000.0);
 const WIDTH_RANGE: (f64, f64) = (0.1, 4.0);
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::toggle("tracing", "Tracing", true),
     ParamInfo::continuous("tracingDrive", "Tracing Drive", (0.0, 1.0), 0.25, Unit::Percent, Scale::Linear),
     ParamInfo::continuous(
@@ -95,8 +95,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("crackleDensity", "Crackle Density", (0.1, 200.0), 10.0, Unit::Hertz, Scale::Logarithmic),
 ];
 
-pub const INFO: DeviceInfo =
-    DeviceInfo { id: "vinyl-distortion", name: "Vinyl Distortion", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("vinyl-distortion", "Vinyl Distortion", Role::Effect, &PARAMS);
 
 /// Seed of the crackle's random numbers after a reset.
 const SEED: u32 = 0x1234_5678;
@@ -267,7 +266,7 @@ fn wake(band: &mut Band, smoother: &Smoother, target: f32) {
 }
 
 impl Device for VinylDistortion {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

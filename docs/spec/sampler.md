@@ -6,7 +6,7 @@ status: draft
 last_verified: 2026-11-02
 covers:
   - devices/sampler/**
-  - crates/device-sdk/src/sampler.rs
+  - crates/device-sdk/src/sample_instrument.rs
   - crates/device-sdk/src/sample_axis.rs
   - crates/device-sdk/src/nodes/slicing.rs
   - crates/device-api/src/sample_edits.rs

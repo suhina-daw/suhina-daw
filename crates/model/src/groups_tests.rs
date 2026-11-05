@@ -84,7 +84,7 @@ fn a_group_without_eight_macros_is_refused() {
     let mut device = group(vec![branch(vec![builtin("utility")])]);
     if let Some(g) = device.as_group_mut() {
         g.macros[0].mappings = (0..=MAX_MACRO_MAPPINGS)
-            .map(|i| MacroMapping { device: vec![0, 0], param: format!("p{i}"), min: 0.0, max: 1.0 })
+            .map(|i| MacroMapping { device: MappedDevice::Nth(0), param: format!("p{i}"), min: 0.0, max: 1.0 })
             .collect();
     }
     assert_eq!(errors(vec![device]), vec![ValidationError::GroupMacros { channel: ChannelId(1), device: vec![0] }]);
@@ -128,20 +128,20 @@ fn branch_volumes_and_pans_out_of_range_are_refused() {
 #[test]
 fn mappings_must_resolve_and_stay_on_the_travel() {
     let bad = vec![ValidationError::BadMacroMapping { channel: ChannelId(1), device: vec![0] }];
-    let with = |device: Vec<u32>, min: f64, max: f64| {
+    let with = |device: MappedDevice, min: f64, max: f64| {
         let mut g = group(vec![branch(vec![builtin("utility")])]);
         if let Some(group) = g.as_group_mut() {
             group.macros[0].mappings.push(MacroMapping { device, param: "gain".into(), min, max });
         }
         errors(vec![g])
     };
-    assert_eq!(with(vec![0, 0], 0.8, 0.2), vec![], "an inverted mapping is fine");
-    assert_eq!(with(vec![0, 1], 0.0, 1.0), bad, "no device there");
-    assert_eq!(with(vec![1, 0], 0.0, 1.0), bad, "no branch there");
-    assert_eq!(with(vec![0], 0.0, 1.0), bad, "a path to a branch");
-    assert_eq!(with(vec![], 0.0, 1.0), bad, "an empty path");
-    assert_eq!(with(vec![0, 0], -0.1, 1.0), bad);
-    assert_eq!(with(vec![0, 0], 0.0, f64::NAN), bad);
+    let utility = MappedDevice::Nth(0);
+    assert_eq!(with(utility, 0.8, 0.2), vec![], "an inverted mapping is fine");
+    assert_eq!(with(MappedDevice::Nth(1), 0.0, 1.0), bad, "no device there");
+    assert_eq!(with(MappedDevice::Id(DeviceId(99)), 0.0, 1.0), bad, "no device inside has the id");
+    assert_eq!(with(MappedDevice::Id(DeviceId::NONE), 0.0, 1.0), bad, "no id");
+    assert_eq!(with(utility, -0.1, 1.0), bad);
+    assert_eq!(with(utility, 0.0, f64::NAN), bad);
 }
 
 #[test]
@@ -149,18 +149,29 @@ fn a_parameter_is_mapped_by_one_macro_only() {
     let twice = |outer_too: bool| {
         let mut inner = group(vec![branch(vec![builtin("utility")])]);
         if let Some(g) = inner.as_group_mut() {
-            g.macros[0].mappings.push(MacroMapping { device: vec![0, 0], param: "gain".into(), min: 0.0, max: 1.0 });
+            g.macros[0].mappings.push(MacroMapping {
+                device: MappedDevice::Nth(0),
+                param: "gain".into(),
+                min: 0.0,
+                max: 1.0,
+            });
         }
         let mut outer = group(vec![branch(vec![inner])]);
         if let Some(g) = outer.as_group_mut() {
             let param = if outer_too { "gain" } else { "width" };
             g.macros[2].mappings.push(MacroMapping {
-                device: vec![0, 0, 0, 0],
+                // The utility, inside the inner group.
+                device: MappedDevice::Nth(1),
                 param: param.into(),
                 min: 0.0,
                 max: 1.0,
             });
-            g.macros[3].mappings.push(MacroMapping { device: vec![0, 0], param: "macro.1".into(), min: 0.0, max: 1.0 });
+            g.macros[3].mappings.push(MacroMapping {
+                device: MappedDevice::Nth(0),
+                param: "macro.1".into(),
+                min: 0.0,
+                max: 1.0,
+            });
         }
         errors(vec![outer])
     };
@@ -175,4 +186,39 @@ fn group_parameters_are_ordinary_parameters() {
     let mut device = group(vec![branch(vec![])]);
     device.params = vec![DeviceParam::new("mix", 0.5), DeviceParam::new("macro.1", 0.4)];
     assert_eq!(errors(vec![device]), vec![]);
+}
+
+#[test]
+fn mappings_follow_their_devices_through_a_copy_and_new_ids() {
+    let mut g = group(vec![branch(vec![builtin("utility"), builtin("overdrive")])]);
+    if let Some(group) = g.as_group_mut() {
+        group.macros[0].mappings.push(MacroMapping {
+            device: MappedDevice::Nth(1),
+            param: "drive".into(),
+            min: 0.0,
+            max: 1.0,
+        });
+    }
+    let mut project = project(vec![g]);
+    project.assign_ids().unwrap();
+    let id_of = |d: &Device| d.as_group().unwrap().branches[0].devices[1].id;
+    let mapped = |d: &Device| d.as_group().unwrap().macros[0].mappings[0].device;
+    let original = project.channels[0].devices[0].clone();
+    assert_eq!(mapped(&original), MappedDevice::Id(id_of(&original)));
+    // A copy put before the original names its own overdrive once it has ids, and the original
+    // keeps its own.
+    let copy = original.copied();
+    assert_eq!(mapped(&copy), MappedDevice::Nth(1));
+    project.channels[0].devices.insert(0, copy);
+    // A copy that kept its ids (a clone) gets new ones after the original, and its mapping too.
+    project.channels[0].devices.push(original.clone());
+    project.assign_ids().unwrap();
+    let devices = &project.channels[0].devices;
+    for d in devices {
+        assert_eq!(mapped(d), MappedDevice::Id(id_of(d)), "{:?}", d.id);
+    }
+    assert_eq!(id_of(&devices[1]), id_of(&original), "the original keeps its ids");
+    assert_ne!(id_of(&devices[0]), id_of(&devices[1]));
+    assert_ne!(id_of(&devices[2]), id_of(&devices[1]));
+    assert_eq!(project.validate(), Ok(()));
 }

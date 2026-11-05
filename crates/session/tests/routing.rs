@@ -73,7 +73,8 @@ fn project_built() -> Project {
                     channel: 0,
                     muted: false,
                 }]),
-            }],
+            }]
+            .into(),
             extensions: Extensions::default(),
             scale: None,
         }],

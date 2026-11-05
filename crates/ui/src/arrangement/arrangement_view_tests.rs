@@ -554,7 +554,7 @@ fn a_stretch_goes_past_the_audio_and_a_midi_clip_before_its_notes() {
         id: audio,
         name: "Loop".into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("loop.wav")) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("loop.wav")) }].into(),
         extensions: Extensions::default(),
         scale: None,
     });

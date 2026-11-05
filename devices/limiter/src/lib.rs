@@ -39,13 +39,13 @@ pub mod param {
     pub(crate) const COUNT: usize = 3;
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("threshold", "Threshold", (-30.0, 0.0), 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("ceiling", "Ceiling", (-12.0, 0.0), -0.3, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("release", "Release", (0.001, 1.0), 0.05, Unit::Seconds, Scale::Logarithmic),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "limiter", name: "Limiter", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("limiter", "Limiter", Role::Effect, &PARAMS);
 
 /// Lookahead in frames at `sample_rate`: [`LOOKAHEAD_SECONDS`] rounded up, at least one.
 pub fn lookahead_frames(sample_rate: f64) -> usize {
@@ -203,7 +203,7 @@ impl Limiter {
 }
 
 impl Device for Limiter {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

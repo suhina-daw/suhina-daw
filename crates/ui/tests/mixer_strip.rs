@@ -27,6 +27,7 @@ fn project() -> suhina_engine::model::Project {
     let mut project = demo_project();
     for (name, enabled) in [("Utility", true), ("Limiter", false)] {
         project.channels[0].devices.push(Device {
+            id: Default::default(),
             name: name.into(),
             kind: DeviceKind::Builtin(name.to_lowercase()),
             enabled,
@@ -730,4 +731,85 @@ fn session_track_type_stays_in_the_header_with_the_mixer_collapsed() {
     harness.get_by_label("Track Drums").click();
     harness.run();
     assert_eq!(harness.state().session().map(|s| s.project().clone()), before);
+}
+
+/// A branch's volume sends each frame of its drag, so a playing group follows it, and the drag is
+/// one undo step (#763 › 4).
+#[test]
+fn a_branch_volume_drag_is_sent_while_it_lasts_and_is_one_undo_step() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    harness.run();
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    let volume = |h: &Harness<'static, App>| {
+        drums(h).iter().find_map(Device::as_group).map(|g| g.branches[0].volume).expect("a device group")
+    };
+    let row = harness.get_by_label(" 0.0 dB").rect().center();
+    harness.hover_at(row);
+    harness.run();
+    harness.drag_at(row);
+    harness.step();
+    harness.hover_at(row + egui::vec2(20.0, 0.0));
+    harness.step();
+    harness.step();
+    let during = volume(&harness);
+    assert!(during > 1.0, "heard while the drag lasts: {during}");
+    harness.hover_at(row + egui::vec2(40.0, 0.0));
+    harness.step();
+    harness.step();
+    harness.drop_at(row + egui::vec2(40.0, 0.0));
+    harness.step();
+    harness.run();
+    let after = volume(&harness);
+    assert!(after > during, "{during} -> {after}");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(volume(&harness), 1.0, "the drag was one undo step");
+}
+
+/// A drag that starts against the branch volume's limit is its own undo step: what it sends first
+/// opens a step rather than continuing the previous drag's.
+#[test]
+fn a_branch_volume_drag_from_its_limit_is_its_own_undo_step() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    harness.run();
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    let volume = |h: &Harness<'static, App>| {
+        drums(h).iter().find_map(Device::as_group).map(|g| g.branches[0].volume).expect("a device group")
+    };
+    let row = harness.get_by_label(" 0.0 dB").rect().center();
+    let drag = |harness: &mut Harness<'static, App>, moves: &[f32]| {
+        harness.hover_at(row);
+        harness.run();
+        harness.drag_at(row);
+        harness.step();
+        for &x in moves {
+            harness.hover_at(row + vec2(x, 0.0));
+            harness.step();
+            harness.step();
+        }
+        harness.drop_at(row + vec2(*moves.last().unwrap_or(&0.0), 0.0));
+        harness.step();
+        harness.run();
+    };
+    drag(&mut harness, &[100.0, 300.0]);
+    let top = volume(&harness);
+    assert_eq!(top, suhina_engine::model::automation::MAX_VOLUME, "the first drag reaches the limit");
+    // Pushed further against the limit first, so its first frame sends nothing, then pulled back.
+    drag(&mut harness, &[20.0, -20.0]);
+    assert!(volume(&harness) < top);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(volume(&harness), top, "the second drag was an undo step of its own");
 }

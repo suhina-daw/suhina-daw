@@ -52,7 +52,7 @@ use crate::time_env::Clock;
 use crate::voice::{Controllers, ModRoute, Note};
 use crate::wave::DrawnWave;
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "fm-synth", name: "FM Synth", role: Role::Instrument, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("fm-synth", "FM Synth", Role::Instrument, &PARAMS);
 
 /// The most notes that can sound at once; the Voices parameter chooses how many do.
 pub const VOICES: usize = 32;
@@ -646,7 +646,7 @@ impl Device for FmSynth {
         Some(out)
     }
 
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

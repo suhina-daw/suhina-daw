@@ -720,7 +720,7 @@ fn audio_project_built() -> Project {
         id: ContentId(9),
         name: "Loop".into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("loop.wav")) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("loop.wav")) }].into(),
         extensions: Extensions::default(),
         scale: None,
     });
@@ -1417,7 +1417,8 @@ fn audio_lane_project() -> Project {
     for t in &mut p.tracks {
         t.content = ContentKinds { notes: false, audio: true };
     }
-    p.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("vocal.wav")) }];
+    p.contents[0].lanes =
+        vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("vocal.wav")) }].into();
     let clip = Clip::new(ContentId(1), 0.0, 4.0);
     p.arrangement.lanes.push(ArrangementLane {
         track: Some(TrackId(2)),

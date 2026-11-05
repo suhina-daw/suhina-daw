@@ -554,7 +554,7 @@ pub fn prepare_search(
                 plugin: false,
                 folder: None,
             };
-            if let Some(rank) = suhina_library::rank(&words, info.name, info.id)
+            if let Some(rank) = suhina_library::rank(&words, &info.name, &info.id)
                 && fits(&found, category)
                 && tagged(projects.file_library_mut(), &found.item.key())
             {

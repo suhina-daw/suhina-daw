@@ -58,7 +58,7 @@ fn project_built() -> Project {
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -290,7 +290,7 @@ fn several_clips_fades_move_by_as_much_each_from_its_own_in_one_step() {
     let mut project = project();
     // Only audio clips have fades.
     for content in &mut project.contents[..2] {
-        content.lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("a.wav")) }];
+        content.lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("a.wav")) }].into();
     }
     project.arrangement.lanes[0].clips[1].fade_in = 1.0;
     project.arrangement.lanes[0].clips[1].fade_out = 2.5;
@@ -313,7 +313,8 @@ fn several_clips_fades_move_by_as_much_each_from_its_own_in_one_step() {
 #[test]
 fn shifting_fades_leaves_the_midi_clips_of_a_mixed_selection_alone() {
     let mut project = project();
-    project.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("a.wav")) }];
+    project.contents[0].lanes =
+        vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("a.wav")) }].into();
     let mut session = Session::new(project);
     let ids: Vec<Value> =
         session.project().arrangement.lanes[0].clips.iter().map(|c| json!({ "clip": c.id.0 })).collect();

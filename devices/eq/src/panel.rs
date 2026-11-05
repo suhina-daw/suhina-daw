@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(canvas.size, [WIDTH, COMPACT_HEIGHT]);
         assert_eq!(loaded.expanded, None, "the compact panel is the whole panel");
         let ids: Vec<_> = loaded.parameters.iter().map(|p| p.id.as_str()).collect();
-        assert_eq!(ids, INFO.params.iter().map(|p| p.id).collect::<Vec<_>>());
+        assert_eq!(ids, INFO.params.iter().map(|p| &*p.id).collect::<Vec<_>>());
         let curve = canvas.controls.first().unwrap();
         assert!(matches!(curve.widget, Some(Widget::EqCurve)), "the display is one widget");
         for control in &canvas.controls {

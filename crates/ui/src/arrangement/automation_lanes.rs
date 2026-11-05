@@ -257,7 +257,7 @@ impl Scale {
             Self::Volume => format!("{} dB", widgets::format_db(gain_to_db(value))),
             Self::Pan => widgets::format_pan(value),
             Self::Mute => if value >= 0.5 { "Muted" } else { "Sounding" }.into(),
-            Self::Device(info) => match info.kind {
+            Self::Device(info) => match &info.kind {
                 ParamKind::Toggle => if value >= 0.5 { "On" } else { "Off" }.into(),
                 ParamKind::Choice(options) => {
                     options.get(info.clamp(value) as usize).map_or_else(String::new, |o| (*o).to_string())
@@ -387,17 +387,17 @@ impl Params {
                 match &device.kind {
                     DeviceKind::Builtin(id) => {
                         let Some(info) = suhina_device_registry::info(id) else { continue };
-                        for spec in info.params {
-                            let lane = lane_of(&device.automation, spec.id);
+                        for spec in info.params.iter() {
+                            let lane = lane_of(&device.automation, &spec.id);
                             params.push(Param {
-                                key: LaneKey { device: Some(index), param: spec.id.into() },
-                                name: spec.name.into(),
+                                key: LaneKey { device: Some(index), param: spec.id.to_string() },
+                                name: spec.name.to_string(),
                                 device_name: Some(device.name.clone()),
                                 group: (!spec.group.is_empty()).then(|| spec.group.to_string()),
-                                scale: Scale::Device(*spec),
+                                scale: Scale::Device(spec.clone()),
                                 enabled: lane.as_ref().is_none_or(|l| l.enabled),
                                 points: lane.map(|l| l.points).unwrap_or_default(),
-                                current: set(spec.id).unwrap_or(spec.default),
+                                current: set(&spec.id).unwrap_or(spec.default),
                             });
                         }
                     }

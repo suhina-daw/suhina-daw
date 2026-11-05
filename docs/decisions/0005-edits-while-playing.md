@@ -146,6 +146,17 @@ it is released at once. Notes from the launcher, the piano roll's keys and live 
 marked, so an edit leaves them alone. Audio clips needed nothing: the new graph's list of
 sounding clips is rebuilt from the edited project at the swap.
 
+## Amendment: devices kept by their ids (2026-11-02)
+
+A chain carried its running devices over only when the new graph held the same devices in the
+same order, so inserting, removing or moving one device restarted every other device on the
+track: tails cut, LFOs back to their start. Devices now have ids (#763 › 1). When the order
+changed, even only between two devices of the same kind, the new chain takes each device the old one runs under the same id and running the same
+thing (the same built-in with the same file or sample, the same graph, the same plug-in key),
+wherever it now is, and settles it with the new parameter values; the others start fresh. A
+device group whose devices changed or traded places still starts again as a whole. The match runs on the audio
+thread without allocating (a scan of at most 64 slots).
+
 ## Consequences
 
 - An edit is rendered from the next engine block after the command returns, plus the time to
@@ -161,7 +172,10 @@ sounding clips is rebuilt from the edited project at the swap.
   smoothed like a fader (a one-pole low pass at about 25 Hz). Where that cannot do it (a volume
   or pan on a lane, a group, a send that starts from silence), the message is refused and the
   edit builds a graph as before. A knob of a track that is not heard (muted, outside a solo)
-  changes nothing played, and keeps the playing graph.
+  changes nothing played, and keeps the playing graph. A branch of a device group at the top of
+  a chain takes the same path for its volume, pan, mute and solo (`MIXER_BRANCH`, #763 › 4): the
+  running group keeps each branch's values and moves its smoothed gains to the new ones; a group
+  inside another still builds a graph.
 - Offline rendering stays the oracle (rule 4): tests swap graphs inside an offline render and
   compare against renders of the edited project.
 

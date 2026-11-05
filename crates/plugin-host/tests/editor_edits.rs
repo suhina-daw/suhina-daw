@@ -54,11 +54,12 @@ fn bank(gain: f32) -> Vec<u8> {
 /// One note track with the test plug-in, given a bank.
 fn project() -> Project {
     let plugin = Device {
+        id: Default::default(),
         name: "Test vst3".into(),
         // The catalog lists the built-in test plug-ins as CLAP (their file is not a `.vst3`).
         kind: DeviceKind::Clap { id: "vst3".into() },
         enabled: true,
-        state: Some(bank(0.25)),
+        state: Some(bank(0.25).into()),
         params: Vec::new(),
         clip_host: false,
         extensions: Extensions::default(),
@@ -124,7 +125,7 @@ fn processor_change(id: &str) -> (Session, Renderer) {
     let mut project = project();
     let device = &mut project.channels[0].devices[0];
     device.kind = DeviceKind::Clap { id: id.into() };
-    device.state = Some(0.25f32.to_le_bytes().to_vec());
+    device.state = Some(0.25f32.to_le_bytes().to_vec().into());
     device.automation.push(AutomationLane {
         param: "0".into(),
         points: vec![AutomationPoint { beat: 0.0, value: 0.75, curve: Default::default() }],

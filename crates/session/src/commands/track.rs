@@ -457,6 +457,16 @@ fn adjust_volume(session: &mut Session, params: &Value) -> Result<Value, Command
             crate::automation::override_lane(&mut channel.automation, |l| l.param == suhina_model::automation::VOLUME);
         volumes.push(to_db(channel.volume));
     }
+    // As a fader's move, a message to a playing engine where it can take it (#763 › 4).
+    if !off {
+        session.sync.mixer_edits = channels
+            .iter()
+            .filter_map(|(track, id)| {
+                let value = session.project.channel(*id)?.volume;
+                Some(crate::ParamEdit { track: *track, device: suhina_engine::MIXER_VOLUME, param: 0, value })
+            })
+            .collect();
+    }
     Ok(with_override(json!({ "tracks": track_ids(&channels), "volume_db": volumes }), off))
 }
 

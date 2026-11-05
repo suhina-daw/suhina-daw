@@ -1214,7 +1214,7 @@ fn hosted_project(level: f32, devices: Vec<Device>, first_ara: bool, second: boo
     let mut p = project(Vec::new(), 2.0, devices);
     p.tracks[0].content = ContentKinds { notes: false, audio: true };
     p.launcher.columns.clear();
-    p.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("dc.wav")) }];
+    p.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("dc.wav")) }].into();
     let clip = |start: f64, ara: bool| Clip { ara, ..Clip::new(ContentId(1), start, 1.0) };
     p.arrangement.lanes[0].clips =
         if second { vec![clip(0.0, first_ara), clip(1.0, false)] } else { vec![clip(0.0, first_ara)] };

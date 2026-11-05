@@ -29,7 +29,7 @@ fn content(id: u32, region: AudioRegion) -> ClipContent {
         id: ContentId(id),
         name: format!("take {id}"),
         length: 8.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
         extensions: Default::default(),
         scale: None,
     }

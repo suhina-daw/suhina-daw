@@ -339,7 +339,7 @@ fn sample_waveform(
     let edits = ui
         .ctx()
         .data(|d| d.get_temp::<Arc<suhina_device_api::sample_edits::SampleEdits>>(source_id.with("slice-edits")));
-    let params: Vec<_> = suhina_device_sdk::sampler::PARAMS
+    let params: Vec<_> = suhina_device_sdk::sample_instrument::PARAMS
         .iter()
         .map(|p| parameters.iter().find(|v| v.id == p.id).map_or(p.default, |v| v.value))
         .collect();
@@ -347,12 +347,12 @@ fn sample_waveform(
     if slicing && let Some(source) = &source {
         let cache_id = source_id.with("slices");
         let cached = ui.ctx().data(|d| {
-            d.get_temp::<(Arc<suhina_engine::AudioData>, suhina_device_sdk::sampler::SliceAnalysis)>(cache_id)
+            d.get_temp::<(Arc<suhina_engine::AudioData>, suhina_device_sdk::sample_instrument::SliceAnalysis)>(cache_id)
         });
         let analysis = if let Some((_, analysis)) = cached.filter(|(old, _)| Arc::ptr_eq(old, source)) {
             analysis
         } else {
-            let analysis = suhina_device_sdk::sampler::SliceAnalysis::new(
+            let analysis = suhina_device_sdk::sample_instrument::SliceAnalysis::new(
                 &source.samples,
                 usize::from(source.channels),
                 f64::from(source.sample_rate),
@@ -393,7 +393,7 @@ fn sample_waveform(
                 && automatic_points.contains(&previous)
                 && let Some(source) = &source
             {
-                params_json["identity"] = json!(suhina_device_sdk::sampler::SliceAnalysis::identity(
+                params_json["identity"] = json!(suhina_device_sdk::sample_instrument::SliceAnalysis::identity(
                     &params,
                     source.frames(),
                     f64::from(source.sample_rate),

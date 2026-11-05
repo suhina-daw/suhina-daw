@@ -20,9 +20,10 @@ const CLIP: &str = "Clip Beat B on Drums at bar 17";
 /// The EQ with its parameters at its defaults, as `device.add` leaves it.
 fn eq_device() -> Device {
     let params = suhina_device_registry::info("eq")
-        .map(|info| info.params.iter().map(|p| DeviceParam::new(p.id, p.default)).collect())
+        .map(|info| info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect())
         .unwrap_or_default();
     Device {
+        id: Default::default(),
         name: "EQ".into(),
         kind: DeviceKind::Builtin("eq".into()),
         clip_host: false,
@@ -159,6 +160,7 @@ fn grouped_eq_project() -> Project {
     let mut branch = suhina_engine::model::Branch::new("Branch 1");
     branch.devices.push(grouped);
     let group = Device {
+        id: Default::default(),
         name: "Group".into(),
         kind: DeviceKind::Group(Box::new(suhina_engine::model::DeviceGroup::with_branches(vec![branch]))),
         clip_host: false,

@@ -55,7 +55,7 @@ pub mod param {
     pub(crate) const COUNT: usize = 7;
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("drive", "Drive", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear),
     ParamInfo::continuous("tone", "Tone", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear),
     ParamInfo::continuous("bandFrequency", "Band Frequency", (50.0, 18_000.0), 800.0, Unit::Hertz, Scale::Logarithmic),
@@ -65,7 +65,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("output", "Output", (-24.0, 12.0), 0.0, Unit::Decibels, Scale::Linear),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "overdrive", name: "Overdrive", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("overdrive", "Overdrive", Role::Effect, &PARAMS);
 
 const DELAY: usize = LATENCY as usize;
 
@@ -192,7 +192,7 @@ impl Overdrive {
 }
 
 impl Device for Overdrive {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

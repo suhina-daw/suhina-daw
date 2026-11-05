@@ -892,7 +892,7 @@ fn add_content(p: &mut Project, name: &str, length: f64, data: LaneData) -> Resu
         id,
         name: name.to_string(),
         length,
-        lanes: vec![ContentLane { target: None, data }],
+        lanes: vec![ContentLane { target: None, data }].into(),
         extensions: Default::default(),
         scale,
     });
