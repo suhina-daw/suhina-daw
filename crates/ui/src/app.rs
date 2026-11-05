@@ -2542,6 +2542,21 @@ impl App {
                         self.arrangement.select_clips(copies);
                     }
                 }
+                // Moved clips stay picked, on whichever track they landed: a clip is picked by its
+                // track and its id.
+                if action.id == "clip.move"
+                    || (action.id == "clip.moveMany" && action.params["copy"].as_bool() != Some(true))
+                {
+                    let key = |c: &serde_json::Value| {
+                        let track = u32::try_from(c["track"].as_u64()?).ok()?;
+                        Some((TrackId(track), ClipId(u32::try_from(c["clip"].as_u64()?).ok()?)))
+                    };
+                    let moved: Vec<(TrackId, ClipId)> = match result["clips"].as_array() {
+                        Some(made) => made.iter().filter_map(key).collect(),
+                        None => key(&result).into_iter().collect(),
+                    };
+                    self.arrangement.clips_moved(&moved);
+                }
                 let changes_project = suhina_session::commands()
                     .iter()
                     .find(|c| c.id == action.id)
@@ -2649,6 +2664,10 @@ impl App {
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;
+        let take_crossfade = f64::from(self.settings.view.take_crossfade_ms());
+        if let Ok(session) = self.projects.session_mut(None) {
+            session.set_take_crossfade_ms(take_crossfade);
+        }
         self.arrangement.set_size_settings(self.settings.view.track_sizes);
         if let Some((_, _, timeline)) = &self.timeline {
             self.arrangement.apply_size_defaults(timeline);

@@ -213,6 +213,14 @@ refused or suspended, never by losing its edits.
   it offers yet stays listed, an output connected while the page shows appears within a few seconds,
   and on Linux a running PulseAudio or PipeWire server is a driver of its own to choose them on.
 
+- **Take lanes as child rows:** take lanes appear when a recording stops, with a mark on the clip
+  while it runs; each lane sizes and zooms like a track; Ctrl and a drag paints an area across lanes
+  to delete or cut (`take.deleteRange`, `take.cutRange`), pieces move like clips (`take.movePieces`),
+  and a piece's lower corners bring back the recording around it (`take.trimPiece`); crossfades
+  between parts show on the track and are set by a handle (`take.setCrossfade`), with their default
+  in Settings; and a part moved or copied on the track takes its takes along
+  ([#1078](https://github.com/suhina-daw/suhina-daw/issues/1078)).
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
