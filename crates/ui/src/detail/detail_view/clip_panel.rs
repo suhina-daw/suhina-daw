@@ -510,10 +510,15 @@ pub(super) fn title_row(
     actions: &mut Vec<Action>,
 ) {
     let swatch = Rect::from_center_size(Pos2::new(rect.left() + 8.0 + 6.0, rect.center().y), Vec2::splat(12.0));
-    let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-colour", panel.clip.0)), "Clip colour");
     let colour = panel.color.map_or(theme::text_hint(), colour_picker::color32);
     painter.rect_filled(swatch, 2.0, colour);
     painter.rect_stroke(swatch, 2.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    // `clip.setColor` names arrangement clips: a slot's clip shows its colour without the palette.
+    if !matches!(at, ClipRef::Arrangement(..)) {
+        title_rest(ui, painter, rect, swatch, info, at, panel, actions);
+        return;
+    }
+    let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-colour", panel.clip.0)), "Clip colour");
     egui::Popup::menu(&response).show(|ui| {
         if let Some(picked) = colour_picker::swatch_row(ui, panel.color) {
             let params = json!({ "clip": panel.clip.0, "color": colour_picker::hex(picked) });
@@ -525,6 +530,21 @@ pub(super) fn title_row(
             ui.close();
         }
     });
+    title_rest(ui, painter, rect, swatch, info, at, panel, actions);
+}
+
+/// The title row after the swatch: the clip's name and its length.
+#[allow(clippy::too_many_arguments)]
+fn title_rest(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    swatch: Rect,
+    info: &ClipInfo,
+    at: ClipRef,
+    panel: &AudioPanel,
+    actions: &mut Vec<Action>,
+) {
     let length = format!("{} beats", (panel.length_beats * 100.0).round() / 100.0);
     let mono = theme::mono_font(theme::TEXT_TINY);
     let length_width = widgets::text_width(ui, &length, mono.clone());
@@ -603,6 +623,7 @@ fn clip_part(
     panel: &AudioPanel,
     actions: &mut Vec<Action>,
 ) -> f32 {
+    let clip = panel.clip;
     let bar = bar_of(panel);
     let quarter = |v: f64| (v * 4.0).round() / 4.0;
     let markers = Field {
@@ -631,7 +652,7 @@ fn clip_part(
     name_over(painter, end_name, "End", Align2::LEFT_BOTTOM);
     let start_range = (0.0, (info.markers.1 - 0.25).max(0.0));
     let end_range = (info.markers.0 + 0.25, 120_000.0);
-    let id = Id::unique(("clip-panel-field", "Start marker"));
+    let id = Id::unique(("clip-panel-field", "Start marker", clip.0));
     let start = number_field(
         ui,
         painter,
@@ -649,7 +670,7 @@ fn clip_part(
     if let Some(change) = start {
         actions.push(Action::new("clip.setStart", with_more(on_clip(at, json!({ "offset": change.value })), change)));
     }
-    let id = Id::unique(("clip-panel-field", "End marker"));
+    let id = Id::unique(("clip-panel-field", "End marker", clip.0));
     let end = number_field(
         ui,
         painter,
@@ -686,7 +707,7 @@ fn clip_part(
     name_over(painter, length_name, "Length", Align2::LEFT_BOTTOM);
     let dim = info.loop_range.is_none();
     let position_range = (0.0, 120_000.0 - length);
-    let id = Id::unique(("clip-panel-field", "Loop position"));
+    let id = Id::unique(("clip-panel-field", "Loop position", clip.0));
     let moved = number_field(
         ui,
         painter,
@@ -707,7 +728,7 @@ fn clip_part(
         actions.push(Action::new("clip.setLoop", with_more(params, change)));
     }
     let length_range = (0.25, 120_000.0 - start);
-    let id = Id::unique(("clip-panel-field", "Loop length"));
+    let id = Id::unique(("clip-panel-field", "Loop length", clip.0));
     let text = Text { shown: &length_shown, parse: &parse_length, places: Some(&places) };
     let resized = number_field(
         ui,
@@ -778,6 +799,7 @@ fn audio_part(
     panel: &AudioPanel,
     actions: &mut Vec<Action>,
 ) -> f32 {
+    let clip = panel.clip;
     let row = |y: f32, height: f32| Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), height));
     let mut y = part.top();
     if toggle(ui, painter, row(y, TOGGLE), "Warp", "Warp", info.warped) {
@@ -845,6 +867,8 @@ fn audio_part(
             if d.get_temp::<ClipId>(find_tempo_key()) == Some(panel.clip) {
                 d.remove::<ClipId>(find_tempo_key());
             }
+            // Asked again on the next opening: the file or the project may have changed since.
+            d.remove::<[Option<f64>; 3]>(tempo_candidates_key(panel.clip));
         }
     });
     y += NAME;
@@ -856,7 +880,7 @@ fn audio_part(
         align: Align2::RIGHT_CENTER,
         dim: false,
     };
-    let id = Id::unique(("clip-panel-field", "Tempo"));
+    let id = Id::unique(("clip-panel-field", "Tempo", clip.0));
     let value = panel.tempo.unwrap_or(f64::NAN);
     let shown_tempo = |v: f64| if v.is_finite() { format!("{v:.3}") } else { "—".to_string() };
     let text = Text { shown: &shown_tempo, parse: &plain_number, places: Some(&tempo_places) };
@@ -905,6 +929,11 @@ fn audio_part(
     y + TOGGLE
 }
 
+/// The key the tempo sources of `clip` are kept under while its Find menu is open.
+pub fn tempo_candidates_key(clip: ClipId) -> Id {
+    Id::unique(("clip-tempo-candidates", clip.0))
+}
+
 /// The key under which the clip panel asks for the tempo sources of a clip (its Find menu open).
 pub fn find_tempo_key() -> Id {
     Id::unique("clip-panel-find-tempo")
@@ -931,7 +960,7 @@ fn gain_and_pitch(
         Pos2::new(gain.right() + 12.0 + 64.0, part.bottom()),
     );
     gain_part(ui, painter, gain, info, at, panel, actions);
-    pitch_part(ui, painter, pitch, info, at, actions);
+    pitch_part(ui, painter, pitch, info, at, panel.clip, actions);
 }
 
 fn gain_part(
@@ -943,6 +972,7 @@ fn gain_part(
     panel: &AudioPanel,
     actions: &mut Vec<Action>,
 ) {
+    let clip = panel.clip;
     name_over(painter, Rect::from_min_size(part.min, Vec2::new(part.width(), NAME)), "Gain", Align2::CENTER_BOTTOM);
     let db = info.gain_db.filter(|d| d.is_finite()).unwrap_or(GAIN_RANGE.0).max(GAIN_RANGE.0);
     // The fader between the name and the readout, its scale at its left: 24, 0 half-way, -inf.
@@ -1015,7 +1045,7 @@ fn gain_part(
     };
     let text = Text { shown: &gain_text, parse: &plain_number, places: None };
     if let Some(change) =
-        number_field(ui, painter, field, Id::unique(("clip-panel-field", "Gain")), "Gain", db, text, gain_field)
+        number_field(ui, painter, field, Id::unique(("clip-panel-field", "Gain", clip.0)), "Gain", db, text, gain_field)
     {
         set = Some(change);
     }
@@ -1031,6 +1061,7 @@ fn pitch_part(
     part: Rect,
     info: &ClipInfo,
     at: ClipRef,
+    clip: ClipId,
     actions: &mut Vec<Action>,
 ) {
     name_over(painter, Rect::from_min_size(part.min, Vec2::new(part.width(), NAME)), "Pitch", Align2::CENTER_BOTTOM);
@@ -1039,7 +1070,7 @@ fn pitch_part(
     // number typed and the arrows; a double-click puts it at 0.
     let center = Pos2::new(part.center().x, part.top() + NAME + 4.0 + KNOB / 2.0);
     let rect = Rect::from_center_size(center, Vec2::splat(KNOB));
-    let id = Id::unique(("clip-panel-knob", "pitch"));
+    let id = Id::unique(("clip-panel-knob", "pitch", clip.0));
     let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
     let preview_id = id.with("preview");
     let mut preview = ui.data(|d| d.get_temp::<f64>(preview_id));
@@ -1090,19 +1121,19 @@ fn pitch_part(
         dim: false,
     };
     let text = Text { shown: &signed, parse: &plain_number, places: None };
-    let id = Id::unique(("clip-panel-field", "Semitones"));
+    let id = Id::unique(("clip-panel-field", "Semitones", clip.0));
     if let Some(change) = number_field(ui, painter, st, id, "Semitones", semitones, text, centred(SEMITONES, 0.25)) {
         set_semitones = Some(change);
     }
     let text = Text { shown: &signed, parse: &plain_number, places: None };
-    let id = Id::unique(("clip-panel-field", "Cents"));
+    let id = Id::unique(("clip-panel-field", "Cents", clip.0));
     if let Some(change) = number_field(ui, painter, ct, id, "Cents", cents, text, centred(CENTS, 0.5)) {
         set_cents = Some(change);
     }
     if let Some(change) = set_semitones.or(set_cents) {
         let st = set_semitones.map_or(semitones, |c| c.value);
         let ct = set_cents.map_or(cents, |c| c.value);
-        let transpose = ((st + ct / 100.0) * 100.0).round() / 100.0;
+        let transpose = (((st + ct / 100.0) * 100.0).round() / 100.0).clamp(SEMITONES.0, SEMITONES.1);
         if change.more || (transpose - info.transpose).abs() > 1e-9 {
             let params = on_clip(at, json!({ "transpose": transpose }));
             actions.push(Action::new("clip.setAudio", with_more(params, change)));

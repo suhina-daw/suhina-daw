@@ -1433,7 +1433,22 @@ fn a_bad_gain_envelope_or_tempo_source_is_an_error() {
     };
     assert!(from_json(&file(r#"{ "tempo_source": "guess" }"#)).is_err());
     assert!(from_json(&file(r#"{ "gain_envelope": [ { "beat": 1.0 } ] }"#)).is_err());
+    assert!(from_json(&file(r#"{ "gain_envelope": [ { "beat": 1.0, "db": 10000.0 } ] }"#)).is_err(), "dB out of range");
+    assert!(from_json(&file(r#"{ "stretch": 42 }"#)).is_err(), "a stretch that is not a name");
+    assert!(from_json(&file(r#"{ "gain": 1e300 }"#)).is_err(), "a gain past +24 dB");
     let ok = from_json(&file(r#"{ "gain": 0.5, "tempo_source": "manual" }"#)).expect("reads");
     let clip = &ok.arrangement.lanes[0].clips[0];
     assert_eq!((clip.audio.gain, clip.audio.tempo_source), (0.5, Some(TempoSource::Manual)));
+}
+
+/// A version 7 content whose audio lanes played with different settings is refused: its clips
+/// take one state, which would change how a lane sounds.
+#[test]
+fn an_older_content_with_lanes_of_different_audio_is_refused() {
+    let text = r#"{ "format": "suhina", "version": 7, "project": {
+        "contents": [ { "id": 1, "name": "Two", "length": 4.0, "lanes": [
+          { "audio": { "file": "a.wav", "gain": 0.5 } }, { "audio": { "file": "b.wav", "gain": 0.25 } } ] } ],
+        "arrangement": { "lanes": [ { "name": "A", "clips": [ { "content": 1, "start": 0.0, "length": 4.0 } ] } ] } } }"#;
+    let error = from_json(text).expect_err("refused");
+    assert!(error.0.contains("different gain"), "{error}");
 }

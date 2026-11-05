@@ -17,8 +17,9 @@ use crate::{CommandError, Session};
 /// The clip `params` names, where it is, and the audio region it plays; fails for a clip without
 /// audio.
 fn audio_clip(session: &Session, params: &Value) -> Result<(ClipAt, Clip, suhina_model::AudioRegion), CommandError> {
-    let (at, content, _) = locate(&session.project, params)?;
-    let region = crate::audio_timing::region(&session.project, content).cloned().ok_or("only an audio clip")?;
+    let (at, content, track) = locate(&session.project, params)?;
+    let region =
+        crate::audio_timing::region_on(&session.project, content, track).cloned().ok_or("only an audio clip")?;
     let clip = crate::notes::clip_at(&session.project, at).cloned().ok_or("the clip is missing")?;
     Ok((at, clip, region))
 }
@@ -84,21 +85,40 @@ pub(crate) fn set_tempo(session: &mut Session, params: &Value) -> Result<Value, 
     let source = source_named(params)?;
     let (at, mut clip, region) = audio_clip(session, params).map_err(|_| "only an audio clip has a tempo")?;
     let content_length = session.project.content(clip.content).map_or(0.0, |c| c.length);
-    let old = match clip.audio.tempo() {
-        Some(old) => old,
-        // Not warped yet: the audio plays at its own speed, so it holds the content's beats in its
-        // seconds.
-        None => {
-            let seconds = region.duration_seconds.filter(|s| s.is_finite() && *s > 0.0);
-            let seconds = seconds.ok_or("the audio's length is not known, so its tempo cannot be set")?;
-            content_length / seconds * 60.0
+    let seconds = region.duration_seconds.filter(|s| s.is_finite() && *s > 0.0);
+    // A clip that is not warped plays its file at its own speed: its content beats are its seconds
+    // at the song's tempo, as the engine counts them, whatever markers it kept from before. It is
+    // warped from there, on two markers that map it so.
+    let mut unwarped_beats = None;
+    let old = if clip.audio.warped {
+        match clip.audio.tempo() {
+            Some(old) => old,
+            None => {
+                content_length / seconds.ok_or("the audio's length is not known, so its tempo cannot be set")? * 60.0
+            }
         }
+    } else {
+        let seconds = seconds.ok_or("the audio's length is not known, so its tempo cannot be set")?;
+        let tempo = session.project.transport.tempo_bpm;
+        let beats = seconds * tempo / 60.0;
+        clip.audio.warp_markers = vec![
+            suhina_model::WarpMarker { time: 0.0, audio_time: 0.0 },
+            suhina_model::WarpMarker { time: beats, audio_time: seconds },
+        ];
+        unwarped_beats = Some(beats);
+        tempo
     };
     if !(old.is_finite() && old > 0.0) {
         return Err("the clip's tempo now is not known".into());
     }
     let factor = bpm / old;
     crate::clip_edges::scale_audio(&mut session.project, &mut clip, factor)?;
+    // The content is the clip's own now (a shared one was copied); its length follows the audio.
+    if let Some(beats) = unwarped_beats
+        && let Some(content) = session.project.contents.iter_mut().find(|c| c.id == clip.content)
+    {
+        content.length = beats * factor;
+    }
     clip.length *= factor;
     clip.fit_fades();
     clip.audio.tempo_source = Some(source);
@@ -138,7 +158,11 @@ pub(crate) fn tempo_candidates(path: &Path, data: Option<&suhina_engine::AudioDa
 /// the clip panel's Find menu; `None` for a clip without audio or one that is not there.
 pub fn clip_tempo_candidates(session: &Session, id: suhina_model::ClipId) -> Option<[Option<f64>; 3]> {
     let clip = session.project.all_clips().find(|c| c.id == id)?;
-    let region = crate::audio_timing::region(&session.project, clip.content)?;
+    let track = match session.project.clip_place(id)? {
+        suhina_model::ClipPlace::Lane { lane, .. } => session.project.arrangement.lanes.get(lane)?.track?,
+        suhina_model::ClipPlace::Slot { column, .. } => session.project.launcher.columns.get(column)?.track,
+    };
+    let region = crate::audio_timing::region_on(&session.project, clip.content, track)?;
     let path = PathBuf::from(region.absolute_file.as_deref().unwrap_or(&region.file));
     let data = session.audio().files.get(region.pool_key().as_ref()).cloned();
     Some(tempo_candidates(&path, data.as_deref()))

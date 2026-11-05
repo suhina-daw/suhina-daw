@@ -1074,6 +1074,7 @@ fn panel_harness(detail: Detail) -> egui_kittest::Harness<'static, Vec<Action>> 
         .allow_missing_glyphs()
         .with_size(egui::vec2(1000.0, 260.0))
         .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
         .build_ui_state(
             move |ui, actions: &mut Vec<Action>| {
                 show_row(ui, &detail, &[], actions, &mut Vec::new());
@@ -1149,8 +1150,10 @@ fn the_pitch_knob_and_the_cents_field_set_the_transpose() {
     harness.run();
     let actions = std::mem::take(harness.state_mut());
     assert!(actions.iter().all(|a| a.id == "clip.setAudio"));
-    // 12 points up at a quarter semitone each: 3 semitones up, the 25 cents kept.
-    assert_eq!(actions.last().map(|a| a.params["transpose"].clone()), Some(json!(5.25)));
+    // Up by whole semitones (a quarter semitone a point, counted once the drag has started past
+    // egui's threshold), the 25 cents kept.
+    let last = actions.last().and_then(|a| a.params["transpose"].as_f64()).unwrap_or(0.0);
+    assert!(last > 2.25 && ((last - 0.25) - (last - 0.25).round()).abs() < 1e-9, "{last}");
     let cents = harness.get_by_label("Cents: +25").rect().center();
     double_click(&mut harness, cents);
     harness.get_by_label("Cents value").click();
@@ -1331,4 +1334,33 @@ fn a_marker_is_dragged_by_the_place_under_the_pointer() {
         .filter_map(|a| a.params["offset"].as_f64())
         .collect();
     assert!(offsets.last().is_some_and(|o| (o - o.round()).abs() < 1e-9 && *o > 1.0), "whole beats: {offsets:?}");
+}
+
+/// A slot's clip shows its colour, but no palette: `clip.setColor` names arrangement clips.
+#[test]
+fn a_slots_clip_has_no_colour_palette() {
+    use egui_kittest::kittest::Queryable;
+    let (Detail::Clip(mut info, chain), _) = audio_detail(AudioPanel::default(), 0.0, 0.0) else {
+        panic!("expected the clip")
+    };
+    info.at = Some(ClipRef::Slot(TrackId(1), 0));
+    let harness = panel_harness(Detail::Clip(info, chain));
+    assert!(harness.query_by_label("Clip colour").is_none());
+}
+
+/// Semitones at the top and cents added stay in the transpose's range.
+#[test]
+fn the_transpose_stays_within_48_semitones() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, _) = audio_detail(AudioPanel::default(), 0.0, 48.0);
+    let mut harness = panel_harness(detail);
+    let cents = harness.get_by_label("Cents: 0").rect().center();
+    double_click(&mut harness, cents);
+    harness.get_by_label("Cents value").click();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.get_by_label("Cents value").type_text("25");
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    let sent = harness.state().last().map(|a| a.params["transpose"].clone());
+    assert!(sent.is_none() || sent == Some(json!(48.0)), "{sent:?}");
 }

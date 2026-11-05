@@ -207,7 +207,8 @@ fn bad_input_is_refused_and_changes_nothing() {
             Ok(v) => panic!("{params} was taken: {v}"),
         }
     }
-    assert!(run(&mut session, "clip.scale", json!({ "track": 1, "index": 2 })).is_err());
+    // An audio clip has a scale too (the key of its audio): reading it is not an error.
+    assert!(run(&mut session, "clip.scale", json!({ "track": 1, "index": 2 })).is_ok());
     assert_eq!(session.project(), &before);
     assert!(!session.can_undo());
 }

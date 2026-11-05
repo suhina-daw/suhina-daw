@@ -124,6 +124,7 @@ impl ClipAudio {
     pub fn is_valid(&self) -> bool {
         self.gain.is_finite()
             && self.gain >= 0.0
+            && self.gain <= max_clip_gain()
             && self.transpose.is_finite()
             && self.gain_envelope.len() <= MAX_GAIN_POINTS
             && self.gain_envelope.iter().all(|p| p.beat.is_finite() && p.db.is_finite())
@@ -131,11 +132,20 @@ impl ClipAudio {
 
     /// The clip's tempo from its warp markers: the beats between the first and the last marker over
     /// the seconds of audio between them. `None` when there are fewer than two usable markers.
+    /// Markers on one beat count as the engine plays them: the first of them.
     pub fn tempo(&self) -> Option<f64> {
-        let mut usable =
-            self.warp_markers.iter().filter(|m| m.time.is_finite() && m.audio_time.is_finite()).collect::<Vec<_>>();
-        usable.sort_by(|a, b| a.time.total_cmp(&b.time));
-        let (first, last) = (usable.first()?, usable.last()?);
+        // One pass, no copy: the earliest beat and the latest, each the first marker on its beat.
+        let mut ends: Option<(&WarpMarker, &WarpMarker)> = None;
+        for marker in self.warp_markers.iter().filter(|m| m.time.is_finite() && m.audio_time.is_finite()) {
+            ends = Some(match ends {
+                None => (marker, marker),
+                Some((first, last)) => (
+                    if marker.time < first.time { marker } else { first },
+                    if marker.time > last.time { marker } else { last },
+                ),
+            });
+        }
+        let (first, last) = ends?;
         let (beats, seconds) = (last.time - first.time, last.audio_time - first.audio_time);
         let bpm = beats / seconds * 60.0;
         (beats > 0.0 && seconds > 0.0 && bpm.is_finite() && bpm > 0.0).then_some(bpm)
@@ -153,10 +163,16 @@ pub fn envelope_db_at(points: &[GainPoint], beat: f64) -> f64 {
         (None, Some(next)) => next.db,
         (Some(prev), None) => prev.db,
         (Some(prev), Some(next)) => {
-            let span = next.beat - prev.beat;
-            if span <= 0.0 { next.db } else { prev.db + (beat - prev.beat) / span * (next.db - prev.db) }
+            // Halved, so points far apart cannot overflow the span to infinity.
+            let span = next.beat / 2.0 - prev.beat / 2.0;
+            if span <= 0.0 { next.db } else { prev.db + (beat / 2.0 - prev.beat / 2.0) / span * (next.db - prev.db) }
         }
     }
+}
+
+/// The highest linear gain a clip takes: [`CLIP_GAIN_MAX_DB`].
+pub fn max_clip_gain() -> f64 {
+    db_to_gain(CLIP_GAIN_MAX_DB)
 }
 
 /// `db` as linear gain; below −150 dB is silence.
@@ -220,6 +236,28 @@ mod tests {
         };
         assert_eq!(audio.tempo(), Some(120.0));
         assert_eq!(ClipAudio::default().tempo(), None);
+    }
+
+    #[test]
+    fn markers_on_one_beat_count_as_the_first_of_them() {
+        let marker = |time, audio_time| WarpMarker { time, audio_time };
+        let audio = ClipAudio {
+            warp_markers: vec![marker(0.0, 0.0), marker(4.0, 2.0), marker(4.0, 3.0)],
+            ..ClipAudio::default()
+        };
+        assert_eq!(audio.tempo(), Some(120.0), "as the engine plays it");
+    }
+
+    #[test]
+    fn points_far_apart_interpolate_without_overflow() {
+        let points = [point(-f64::MAX, 0.0), point(f64::MAX, -20.0)];
+        assert!((envelope_db_at(&points, 0.0) + 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_gain_past_the_most_is_not_valid() {
+        assert!(!ClipAudio { gain: 1e300, ..ClipAudio::default() }.is_valid());
+        assert!(ClipAudio { gain: max_clip_gain(), ..ClipAudio::default() }.is_valid());
     }
 
     #[test]

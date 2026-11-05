@@ -241,7 +241,8 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
     // content's beat 0 falls, ramps and changes included; a slot's clip has no place on that map
     // and plays at the song's tempo (a scene's tempo is the launch's, not the clip's).
     let place = Place::of(&clip, matches!(at, ClipAt::Slot(..)));
-    let region = crate::audio_timing::region(&session.project, clip.content)
+    let (_, _, track) = crate::notes::locate(&session.project, params)?;
+    let region = crate::audio_timing::region_on(&session.project, clip.content, track)
         .cloned()
         .ok_or("only an audio clip can be warped or transposed")?;
     let transport = session.project.transport.clone();

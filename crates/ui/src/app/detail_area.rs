@@ -437,13 +437,17 @@ impl App {
                     .filter(|l| l.track == Some(track))
                     .flat_map(|l| &l.clips)
                     .find(|c| c.id == id);
-                panel.playhead = placed.map(|c| detail_view::content_beat_at(c, beat));
+                // Only while the playhead is in the clip: before or after it, Set would put a marker
+                // at the clip's edge.
+                panel.playhead = placed
+                    .filter(|c| beat >= c.start && beat < c.start + c.length)
+                    .map(|c| detail_view::content_beat_at(c, beat));
             }
             if let detail_view::Detail::Clip(info, _) = &mut shown
                 && let Some(panel) = info.panel.as_mut()
                 && ui.ctx().data(|d| d.get_temp::<ClipId>(detail_view::find_tempo_key())) == Some(panel.clip)
             {
-                let key = egui::Id::unique(("clip-tempo-candidates", panel.clip.0));
+                let key = detail_view::tempo_candidates_key(panel.clip);
                 panel.candidates = ui.ctx().data(|d| d.get_temp::<[Option<f64>; 3]>(key)).or_else(|| {
                     let found = suhina_session::clip_tempo_candidates(session, panel.clip)?;
                     ui.ctx().data_mut(|d| d.insert_temp(key, found));

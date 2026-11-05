@@ -244,3 +244,20 @@ fn outside_the_file_is_silent_and_bad_clips_are_rejected() {
         .is_none()
     );
 }
+
+/// An unwarped clip carried on through a tempo edit plays `shift` seconds from its beats; its
+/// envelope is read where the audio is, not where the beats are.
+#[test]
+fn the_envelope_follows_an_unwarped_clip_carried_on_through_a_tempo_edit() {
+    let audio = ClipAudio {
+        gain_envelope: vec![GainPoint { beat: 0.0, db: 0.0 }, GainPoint { beat: 2.0, db: -20.0 }],
+        ..region(false, &[], 0.0)
+    };
+    let mut e = event(&clip(2.0, 0.0, None), &audio);
+    let at = e.frames_per_beat as u64;
+    // Beat 1 of the clip, but the file carried on to 0.75 s: content beat 1.5, -15 dB.
+    e.continue_from(at, 0.75);
+    let (left, _) = e.sample(at);
+    let want = 0.75 * 10f32.powf(-15.0 / 20.0);
+    assert!((left - want).abs() < 1e-3, "{left} {want}");
+}

@@ -236,6 +236,14 @@ pub fn show(
             }
         }
     }
+    // A drag whose point stopped being drawn (its pass moved past the clip's end) never sees its
+    // drag stop: once the button is up, what it moved to is set, and the draft goes.
+    if let Some(done) = ui.data(|d| d.get_temp::<Draft>(draft_key())).filter(|d| d.clip == clip)
+        && !ui.input(|i| i.pointer.any_down())
+    {
+        ui.data_mut(|d| d.remove::<Draft>(draft_key()));
+        actions.push(set(clip, &done.points));
+    }
     if let Some(index) = removed {
         let mut kept = points.clone();
         if index < kept.len() {

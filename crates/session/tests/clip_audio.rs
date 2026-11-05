@@ -194,3 +194,24 @@ fn a_dragged_gain_is_one_undo_step() {
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(clips(&session)[0].audio.gain, 1.0, "one undo step for the whole drag");
 }
+
+/// A clip warped, then unwarped, keeps its markers; its tempo is set from how it plays now (its
+/// seconds at the song's tempo), not from the markers it kept.
+#[test]
+fn an_unwarped_clips_tempo_is_set_from_how_it_plays() {
+    let dir = TempDir::new("clip-audio-unwarped-tempo");
+    let mut session = Session::new(blank_project());
+    run(&mut session, "clip.addFiles", json!({ "paths": [wav(&dir, "hit.wav", 4.0, 0.5)], "track": 3, "start": 0.0 }))
+        .unwrap();
+    let clip = clips(&session)[0].id.0;
+    run(&mut session, "clip.setTempo", json!({ "clip": clip, "bpm": 60.0 })).unwrap();
+    run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": false })).unwrap();
+    // Unwarped, 4 s at 120 BPM are 8 beats again.
+    assert_eq!(clips(&session)[0].length, 8.0);
+    // Set to 120, the tempo it plays at now: its length stays.
+    run(&mut session, "clip.setTempo", json!({ "clip": clip, "bpm": 120.0 })).unwrap();
+    let set = clips(&session)[0].clone();
+    assert!(set.audio.warped);
+    assert!((set.length - 8.0).abs() < 1e-9, "{}", set.length);
+    assert_eq!(set.audio.tempo(), Some(120.0));
+}

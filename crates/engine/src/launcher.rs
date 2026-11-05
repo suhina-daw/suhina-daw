@@ -1194,7 +1194,13 @@ fn plan_clip(
                 let fingerprint = {
                     use std::hash::{Hash, Hasher};
                     let mut hasher = std::hash::DefaultHasher::new();
-                    format!("{region:?}|{placed:?}|{stretch_beats}|{tempo}|{sample_rate}").hash(&mut hasher);
+                    // Only what the stretch voice reads: a gain or envelope edit keeps the voice
+                    // prepared, as `ahead::voice_key` does for arrangement clips.
+                    let mut heard = placed.clone();
+                    heard.audio.gain = 1.0;
+                    heard.audio.gain_envelope.clear();
+                    heard.audio.tempo_source = None;
+                    format!("{region:?}|{heard:?}|{stretch_beats}|{tempo}|{sample_rate}").hash(&mut hasher);
                     // The decoded audio itself: new samples under the same file are another voice.
                     (Arc::as_ptr(data) as usize).hash(&mut hasher);
                     hasher.finish()

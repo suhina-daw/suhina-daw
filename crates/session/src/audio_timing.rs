@@ -101,6 +101,24 @@ pub(crate) fn region(p: &Project, content: ContentId) -> Option<&AudioRegion> {
     })
 }
 
+fn lane_audio(lane: &suhina_model::ContentLane) -> Option<&AudioRegion> {
+    match &lane.data {
+        LaneData::Audio(region) => Some(region),
+        LaneData::Notes(_) => None,
+    }
+}
+
+/// The audio region `content` plays on `track`: its lane for that track, or one that plays on
+/// whichever track the clip is on, as the engine and ARA pick it; else the first audio lane.
+pub(crate) fn region_on(p: &Project, content: ContentId, track: suhina_model::TrackId) -> Option<&AudioRegion> {
+    let lanes = &p.content(content)?.lanes;
+    lanes
+        .iter()
+        .filter(|l| l.target.is_none_or(|t| t == track))
+        .find_map(lane_audio)
+        .or_else(|| lanes.iter().find_map(lane_audio))
+}
+
 /// The mapping of `clip`, at the project's tempo; `None` for a clip without audio.
 pub(crate) fn mapping(p: &Project, clip: &Clip) -> Option<Mapping> {
     region(p, clip.content)?;

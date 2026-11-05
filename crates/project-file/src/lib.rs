@@ -22,15 +22,15 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
-    Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, Channel, ChannelId,
-    ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceGroup,
-    DeviceId, DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind,
-    GainPoint, InputChannels, LaneData, LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings,
-    Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_GAIN_POINTS, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES,
-    MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping, MappedDevice, MappingSource, MappingTarget, Marker, MidiInput,
-    MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane,
-    TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation,
-    valid_bpm,
+    Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, CLIP_GAIN_MAX_DB,
+    Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ContentId, ContentKinds, ContentLane,
+    Device, DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction,
+    FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData, LaneId, LaunchMapping, LaunchMode,
+    LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_GAIN_POINTS,
+    MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping, MappedDevice, MappingSource,
+    MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene, SceneId, Send,
+    Slot, StretchMode, TakeLane, TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track, TrackId,
+    Transport, WarpMarker, automation, max_clip_gain, valid_bpm,
 };
 
 /// The file extension, without the dot.
@@ -946,7 +946,10 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
     // Before version 8 an audio region held the gain, transpose and warp its clips play with; each
     // clip without an audio state of its own takes its content's (ADR 0001 › Amendment: per-clip
     // audio).
-    let legacy: HashMap<ContentId, ClipAudio> = contents.iter().filter_map(|(c, a)| Some((c.id, a.clone()?))).collect();
+    let legacy = Legacy {
+        states: contents.iter().filter_map(|(c, a)| Some((c.id, a.clone()?))).collect(),
+        markers_left: std::cell::Cell::new(MAX_LEGACY_MARKERS),
+    };
     let contents: Vec<ClipContent> = contents.into_iter().map(|(c, _)| c).collect();
     let arrangement = match p.get("arrangement") {
         None | Some(Value::Null) => Arrangement::default(),
@@ -1403,8 +1406,18 @@ fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudi
             }
             (None, Some(audio)) => {
                 let (region, state) = read_audio(audio, &format!("{at}.audio"))?;
-                if legacy.is_none() {
-                    legacy = state;
+                // The clips of a content take one state: a content whose audio lanes played with
+                // different ones cannot be read into it unchanged, so it is refused, not altered.
+                match (&legacy, state) {
+                    (None, state) => legacy = state,
+                    (Some(first), Some(state)) if *first != state => {
+                        return Err(format!(
+                            "{at}.audio: the content's audio lanes have different gain, transpose or warp; \
+                             a clip plays one, so this file of an older version cannot be read"
+                        )
+                        .into());
+                    }
+                    _ => {}
                 }
                 LaneData::Audio(region)
             }
@@ -1446,7 +1459,12 @@ fn read_audio(value: &Value, at: &str) -> Result<(AudioRegion, Option<ClipAudio>
 
 /// A clip's audio state: the `audio` of a clip, or the fields of a region before version 8.
 fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, ProjectFileError> {
-    let stretch = match a.get("stretch").and_then(Value::as_str) {
+    let stretch = match a.get("stretch") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(name)) => Some(name.as_str()),
+        Some(_) => return Err(format!("{at}.stretch: expected a stretch mode's name").into()),
+    };
+    let stretch = match stretch {
         Some("repitch") => StretchMode::Repitch,
         Some("rhythmic") => StretchMode::Rhythmic,
         Some("tonal") => StretchMode::Tonal,
@@ -1465,7 +1483,12 @@ fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, Projec
     for (i, v) in list(a, "gain_envelope", at)?.iter().enumerate() {
         let at = format!("{at}.gain_envelope[{i}]");
         let p = object(v, &at)?;
-        gain_envelope.push(GainPoint { beat: float(p, "beat", &at)?, db: float(p, "db", &at)? });
+        let db = float(p, "db", &at)?;
+        if !GAIN_POINT_RANGE.contains(&db) {
+            let (low, high) = (GAIN_POINT_RANGE.start(), GAIN_POINT_RANGE.end());
+            return Err(format!("{at}.db: {db} is outside {low} to +{high} dB").into());
+        }
+        gain_envelope.push(GainPoint { beat: float(p, "beat", &at)?, db });
     }
     if gain_envelope.len() > MAX_GAIN_POINTS {
         return Err(format!("{at}.gain_envelope: more than {MAX_GAIN_POINTS} points").into());
@@ -1478,8 +1501,12 @@ fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, Projec
         ),
         Some(_) => return Err(format!("{at}.tempo_source: expected a name").into()),
     };
+    let gain = float_or(a, "gain", 1.0, at)?;
+    if !(gain >= 0.0 && gain <= max_clip_gain() * (1.0 + 1e-9)) {
+        return Err(format!("{at}.gain: {gain} is outside 0 to {} (+{CLIP_GAIN_MAX_DB} dB)", max_clip_gain()).into());
+    }
     Ok(ClipAudio {
-        gain: float_or(a, "gain", 1.0, at)?,
+        gain,
         gain_envelope,
         transpose: float_or(a, "transpose", 0.0, at)?,
         warped: flag(a, "warped", false, at)?,
@@ -1489,13 +1516,39 @@ fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, Projec
     })
 }
 
+/// Most warp markers the clips of a file before version 8 are given in all, copied from their
+/// contents' regions: a small file of many clips on one region with many markers would otherwise
+/// copy them for every clip.
+const MAX_LEGACY_MARKERS: usize = 1_000_000;
+
+/// The audio states the regions of a file before version 8 held, by content, and how many more
+/// warp markers the clips that take them may copy.
+struct Legacy {
+    states: HashMap<ContentId, ClipAudio>,
+    markers_left: std::cell::Cell<usize>,
+}
+
+impl Legacy {
+    /// The state of `content`'s region for one more clip, within the marker budget.
+    fn for_clip(&self, content: ContentId, at: &str) -> Result<ClipAudio, ProjectFileError> {
+        let Some(state) = self.states.get(&content) else { return Ok(ClipAudio::default()) };
+        let left = self.markers_left.get().checked_sub(state.warp_markers.len()).ok_or_else(|| {
+            ProjectFileError(format!(
+                "{at}: more than {MAX_LEGACY_MARKERS} warp markers in all for the clips of this file"
+            ))
+        })?;
+        self.markers_left.set(left);
+        Ok(state.clone())
+    }
+}
+
 /// A clip; one without an `audio` state of its own (a file older than version 8) takes the one its
 /// content's region held, from `legacy`.
-fn read_clip(value: &Value, at: &str, legacy: &HashMap<ContentId, ClipAudio>) -> Result<Clip, ProjectFileError> {
+fn read_clip(value: &Value, at: &str, legacy: &Legacy) -> Result<Clip, ProjectFileError> {
     let c = object(value, at)?;
     let content = ContentId(whole(c, "content", at)?);
     let audio = match c.get("audio") {
-        None | Some(Value::Null) => legacy.get(&content).cloned().unwrap_or_default(),
+        None | Some(Value::Null) => legacy.for_clip(content, at)?,
         Some(v) => {
             let at = format!("{at}.audio");
             read_clip_audio(object(v, &at)?, &at)?

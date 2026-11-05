@@ -32,7 +32,7 @@ mod group_panel;
 mod model;
 mod parameters;
 
-pub use self::clip_panel::find_tempo_key;
+pub use self::clip_panel::{find_tempo_key, tempo_candidates_key};
 use self::clip_properties::*;
 pub use self::expanded::*;
 use self::group_panel::*;

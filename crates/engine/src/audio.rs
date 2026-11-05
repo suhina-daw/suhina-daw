@@ -140,8 +140,10 @@ impl Envelope {
         }))
     }
 
-    /// The envelope's gain `since_start` frames after the clip starts. Never allocates.
-    fn gain(&self, since_start: f64) -> f64 {
+    /// The envelope's gain `since_start` frames after the clip starts, `extra` content beats on
+    /// from where the clip's beats put it (an unwarped clip carried on through a tempo edit plays
+    /// that far from them). Never allocates.
+    fn gain(&self, since_start: f64, extra: f64) -> f64 {
         let elapsed = match &self.map {
             Some((map, start, start_beat)) => (map.beat_at(start + since_start) - start_beat).max(0.0),
             None if self.per_beat > 0.0 => since_start / self.per_beat,
@@ -153,7 +155,7 @@ impl Envelope {
         {
             beat = start + (beat - end).rem_euclid(end - start);
         }
-        db_to_gain(envelope_db_at(&self.points, beat))
+        db_to_gain(envelope_db_at(&self.points, beat + extra))
     }
 }
 
@@ -202,6 +204,11 @@ impl Fades {
     /// ends (the end is the frame after the last), 0 … 1. The ramps count the frames before and
     /// after this one, so the first and the last frame are both 0. Never allocates.
     pub(crate) fn gain(&self, since_start: f64, until_end: f64) -> f32 {
+        self.gain_at(since_start, until_end, 0.0)
+    }
+
+    /// [`Fades::gain`] with the envelope read `extra` content beats on, where the reader plays.
+    pub(crate) fn gain_at(&self, since_start: f64, until_end: f64, extra: f64) -> f32 {
         let until_end = until_end - 1.0;
         let guard = (since_start / self.click).min(until_end / self.click);
         // A shape is worked out only inside its fade; past it the gain is 1.
@@ -211,7 +218,7 @@ impl Fades {
         };
         let fade_in = bent(self.fade_in, since_start, self.fade_in_shape, self.fade_in_exponent);
         let fade_out = bent(self.fade_out, until_end, self.fade_out_shape, self.fade_out_exponent);
-        let envelope = self.envelope.as_ref().map_or(1.0, |e| e.gain(since_start));
+        let envelope = self.envelope.as_ref().map_or(1.0, |e| e.gain(since_start, extra));
         (guard.clamp(0.0, 1.0) * fade_in.clamp(0.0, 1.0) * fade_out.clamp(0.0, 1.0) * envelope) as f32
     }
 }
@@ -356,7 +363,13 @@ impl AudioEvent {
     pub(crate) fn sample(&self, position: u64) -> (f32, f32) {
         let since_start = position.saturating_sub(self.start) as f64;
         let until_end = self.end.saturating_sub(position) as f64;
-        let fade = self.fades.gain(since_start, until_end);
+        // The envelope where the reader is: an unwarped clip carried on through a tempo edit plays
+        // `shift` seconds from its beats, so its envelope is read as far on.
+        let extra = match &self.map {
+            TimeMap::Linear { seconds_per_beat } if *seconds_per_beat > 0.0 => self.shift / seconds_per_beat,
+            _ => 0.0,
+        };
+        let fade = self.fades.gain_at(since_start, until_end, extra);
         let seconds = self.map.seconds(self.clip_beat(self.elapsed(position))) + self.shift;
         let (left, right) = self.data.stereo_at(seconds);
         (left * self.gain_left * fade, right * self.gain_right * fade)
