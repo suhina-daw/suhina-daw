@@ -4,7 +4,7 @@ read_when: edit while playing, graph swap, renderer rebuild, Controller::update,
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/engine/src/lib.rs
   - crates/engine/src/swap.rs
