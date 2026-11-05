@@ -501,11 +501,39 @@ struct PointDrag {
     body: bool,
 }
 
-/// Where a point drag is now from `pos`: with Shift, only along the axis the pointer has moved
-/// further on, and up or down at a quarter of the pointer's speed for a finer value.
-fn dragged_to(grab: (f64, f64), beat: f64, position: f64, plot: Rect, geometry: &Geometry, shift: bool) -> (f64, f64) {
+/// How near the top or bottom of a lane's plot a point has to be to take the parameter's maximum
+/// or minimum exactly (#811): one point of the plot is about 3 % of a default lane, and a point
+/// a pixel short of the top looks the same as one on it.
+const END_SNAP: f32 = 2.0;
+
+/// `position` (0 … 1 on the lane), at 1 or 0 when it lies within [`END_SNAP`] of the plot's top
+/// or bottom.
+fn at_ends(plot: Rect, position: f64) -> f64 {
+    let edge = if plot.height() > 0.0 { f64::from(END_SNAP / plot.height()) } else { 0.0 };
+    if position >= 1.0 - edge {
+        1.0
+    } else if position <= edge {
+        0.0
+    } else {
+        position
+    }
+}
+
+/// Where a point drag is now from `pos`: the dragged point, which sat at `start` on the lane,
+/// goes to the lane's end when it comes within [`END_SNAP`] of it ([`at_ends`]). With Shift,
+/// only along the axis the pointer has moved further on, and up or down at a quarter of the
+/// pointer's speed for a finer value, without the ends.
+fn dragged_to(
+    grab: (f64, f64),
+    beat: f64,
+    position: f64,
+    start: f64,
+    plot: Rect,
+    geometry: &Geometry,
+    shift: bool,
+) -> (f64, f64) {
     if !shift {
-        return (beat, position);
+        return (beat, grab.1 + at_ends(plot, start + position - grab.1) - start);
     }
     let across = (beat - grab.0).abs() as f32 * geometry.beat_width;
     let along = (position - grab.1).abs() as f32 * plot.height();
@@ -1257,6 +1285,19 @@ fn drag_delta(drag: &PointDrag, param: &Param, geometry: &Geometry, free: bool) 
     (beats, delta)
 }
 
+/// What the point a drag holds will be when it is let go of: "50R at beat 25.25".
+fn dragged_text(param: &Param, drag: &PointDrag, geometry: &Geometry, free: bool) -> Option<String> {
+    let point = param.points.get(drag.point)?;
+    let (beats, delta) = drag_delta(drag, param, geometry, free);
+    let value = moved_value(param, drag, point.value, delta);
+    Some(format!("{} at beat {}", param.scale.text(value), round(point.beat + beats, 1000.0)))
+}
+
+/// Where the point a drag holds sat on the lane before the drag.
+fn grabbed_at(param: &Param, drag: &PointDrag) -> f64 {
+    param.points.get(drag.point).map_or(drag.grab.1, |p| param.scale.position(p.value))
+}
+
 /// Where a point drag puts a value: one point lands where the pointer is; points moved
 /// together shift by the same amount.
 fn moved_value(param: &Param, drag: &PointDrag, value: f64, delta: f64) -> f64 {
@@ -1453,9 +1494,9 @@ fn lane(
             let beat = geometry.snap(geometry.beat_of(pos.x), free);
             params["beat"] = json!(beat);
             // On a whole-number lane a value between two numbers cannot be kept: the point goes
-            // where the pointer is, as off the line.
+            // where the pointer is, as off the line. Next to the top or bottom it takes the end.
             if !near {
-                params["value"] = param.scale.command(param.scale.value_at(position_of(plot, pos.y)));
+                params["value"] = param.scale.command(param.scale.value_at(at_ends(plot, position_of(plot, pos.y))));
             } else if param.points.is_empty() {
                 let value =
                     automation::value_at(&level, beat, param.scale.stepped(), &param.scale).unwrap_or(param.current);
@@ -1546,7 +1587,15 @@ fn lane(
         && let Some(drag) =
             state.point_drag.as_mut().filter(|d| d.body && !d.segment && d.track == track && &d.key == key)
     {
-        drag.now = dragged_to(drag.grab, geometry.beat_of(pos.x), position_of(plot, pos.y), plot, geometry, shift);
+        drag.now = dragged_to(
+            drag.grab,
+            geometry.beat_of(pos.x),
+            position_of(plot, pos.y),
+            grabbed_at(param, drag),
+            plot,
+            geometry,
+            shift,
+        );
     }
     if body.dragged_by(egui::PointerButton::Primary)
         && let Some(pos) = body.interact_pointer_pos()
@@ -1684,7 +1733,32 @@ fn lane(
     if let Some(drag) = state.point_drag.as_mut().filter(|d| !d.segment && d.track == track && &d.key == key)
         && let Some(pos) = ui.input(|i| i.pointer.primary_down().then(|| i.pointer.latest_pos()).flatten())
     {
-        drag.now = dragged_to(drag.grab, geometry.beat_of(pos.x), position_of(plot, pos.y), plot, geometry, shift);
+        drag.now = dragged_to(
+            drag.grab,
+            geometry.beat_of(pos.x),
+            position_of(plot, pos.y),
+            grabbed_at(param, drag),
+            plot,
+            geometry,
+            shift,
+        );
+    }
+    // While a point is dragged, its value and beat show beside the pointer, as its tooltip does
+    // when it is let go of, so 47R can be told from 50R before the button comes up (#811).
+    if let Some(text) = state
+        .point_drag
+        .as_ref()
+        .filter(|d| d.track == track && &d.key == key && ui.input(|i| i.pointer.primary_down()))
+        .and_then(|drag| dragged_text(param, drag, geometry, free))
+    {
+        egui::Tooltip::always_open(
+            ui.ctx().clone(),
+            ui.layer_id(),
+            id.with("dragged-value"),
+            egui::PopupAnchor::Pointer,
+        )
+        .gap(12.0)
+        .show(|ui| ui.add(egui::Label::new(text).wrap_mode(egui::TextWrapMode::Extend)));
     }
     // Points moved together are picked again where they went, once the move is in.
     if let Some((_, _, beats, frames)) = state.reselect.as_mut().filter(|(t, k, _, _)| *t == track && k == key) {
@@ -1951,7 +2025,15 @@ fn lane(
                 state.point_drag.as_mut().filter(|d| d.track == track && &d.key == key && d.point == index)
         {
             let shift = ui.input(|i| i.modifiers.shift);
-            drag.now = dragged_to(drag.grab, geometry.beat_of(pos.x), position_of(plot, pos.y), plot, geometry, shift);
+            drag.now = dragged_to(
+                drag.grab,
+                geometry.beat_of(pos.x),
+                position_of(plot, pos.y),
+                grabbed_at(param, drag),
+                plot,
+                geometry,
+                shift,
+            );
         }
         if response.drag_stopped_by(egui::PointerButton::Primary)
             && let Some(drag) = state.point_drag.take_if(|d| d.track == track && &d.key == key && d.point == index)

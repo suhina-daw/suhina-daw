@@ -335,10 +335,10 @@ the value set on the mixer or the device. Editing (every edit is one undo step):
 | Gesture | Command |
 |---|---|
 | Point at the line (within 8 % of the lane's height above or below it, at least 6 points), or a lane's faint line | the pointer becomes a hand; a dot on the envelope marks where a click puts the point (on the grid), and the envelope's value there shows beside the pointer |
-| Click away from the line | no point is added: the play start marker moves there (`transport.setStart`, on the grid; Alt: free), as a click on a clip lane does, and the painted range and the selection of points end. With Settings › Arrangement › Automation › **Click anywhere adds** on (off by default), it is `automation.addPoint` at the beat under the pointer (on the nearest line the arrangement's grid draws at this zoom, [arrangement editing](arrangement-editing.md#the-grid); Alt, Option on macOS: free) and the value at its height |
+| Click away from the line | no point is added: the play start marker moves there (`transport.setStart`, on the grid; Alt: free), as a click on a clip lane does, and the painted range and the selection of points end. With Settings › Arrangement › Automation › **Click anywhere adds** on (off by default), it is `automation.addPoint` at the beat under the pointer (on the nearest line the arrangement's grid draws at this zoom, [arrangement editing](arrangement-editing.md#the-grid); Alt, Option on macOS: free) and the value at its height ([the lane's ends](#the-lanes-ends)) |
 | Double-click away from the line (the setting off) | `automation.addPoint` at the pointer, as above |
 | Click on or near the line (within 6 points), or a lane's faint line | `automation.addPoint` without a value: on the envelope, a bent segment split exactly so it plays and draws as before ([Splitting a segment](#splitting-a-segment)); on the faint line, with the parameter's value |
-| Drag a point | `automation.movePoint`, its beat on the grid (Alt, Option on macOS: free) and its value following the pointer; with Shift only along the axis the pointer moved further on, and up or down at a quarter of the speed for a finer value. Points dragged past others keep beat order, and a point dragged onto another's beat stays on the side it came from, so the jump runs as drawn while dragging |
+| Drag a point | `automation.movePoint`, its beat on the grid (Alt, Option on macOS: free) and its value following the pointer, the lane's top and bottom taking the parameter's ends ([the lane's ends](#the-lanes-ends)); with Shift only along the axis the pointer moved further on, and up or down at a quarter of the speed for a finer value, without the ends. While the button is down the point's value and beat show beside the pointer ("50R at beat 25.25"), as its tooltip shows them afterwards. Points dragged past others keep beat order, and a point dragged onto another's beat stays on the side it came from, so the jump runs as drawn while dragging |
 | Right-click the line: **Add value** | `automation.addPoint` on the envelope at that beat, on the grid, as a click on the line does |
 | Right-click a point: **Edit value** | a field beside the point with its value selected (in the set command's unit: dB or `-inf` for the volume; a pan as -1 to 1 or `25L`, `C`, `25R`; `%` and `ms` read for such parameters); Enter or a click elsewhere runs `automation.movePoint` with it, Escape leaves it |
 | The lanes' menus: **Snap to grid** and **Grid** | Snap to grid off (on by default; the window's choice, not saved) places points and ranges where the pointer is, as Alt does; Grid sets the Arrangement's grid ([arrangement editing](arrangement-editing.md#the-grid)) |
@@ -361,6 +361,16 @@ the value set on the mixer or the device. Editing (every edit is one undo step):
 | Double-click a point, or its menu's Delete point | `automation.deletePoint` (the menu deletes the whole selection when the point is part of one) |
 | Shift-drag the line between two points up or down | `automation.movePoints` of the two points by the same change of value, their beats kept (finer than the pointer) |
 | Alt-drag the line between two points up or down (Option on macOS) | `automation.movePoint` with the first point's new curve, along the paths of [Dragging a curve](#dragging-a-curve): up bends the line up |
+
+### The lane's ends
+
+A point placed or dragged within 2 points of the top or bottom of the lane's plot (the lane less
+its 4-point inset above and below) takes the parameter's maximum or minimum exactly: 50R or 50L
+for a pan, +6 dB for the volume, a device parameter's end of range (#811). In a lane of the default
+height one point is about 3 % of the range, so a point a pixel under the top would otherwise play
+47R and be drawn on the same line as 50R. It applies to a click that adds a point away from the
+line and to a point dragged without Shift, the dragged point deciding for the points moved with
+it. A Shift drag and Edit value reach the values next to the ends.
 
 ## In the project file
 
