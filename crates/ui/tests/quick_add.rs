@@ -53,6 +53,43 @@ fn window(name: &str) -> (Harness<'static, App>, PathBuf) {
     (harness, settings)
 }
 
+/// The same window with a plug-in catalog as a scan leaves one: a synth as VST2 and as VST3, an
+/// effect as CLAP.
+fn window_with_plugins(name: &str) -> (Harness<'static, App>, PathBuf) {
+    let (settings, folder) = (temp(&format!("{name}-settings")), temp(name));
+    wav(&folder.join("Kick Punchy.wav"), 0.25);
+    let catalog = serde_json::json!({
+        "version": 2,
+        "entries": [
+            { "path": "/VST3/Nova Synth.vst3", "modified": 1_760_000_000, "size": 10, "plugins": [
+                { "id": "ABCDEF019182FAEB49746D78426E6401", "name": "Nova Synth", "vendor": "Nova", "version": "1.0", "features": ["Instrument", "Synth"], "replaces": [] }] },
+            { "path": "/VST2/Nova Synth.so", "modified": 1_760_000_000, "size": 10, "plugins": [
+                { "id": "NvSy", "name": "Nova Synth", "vendor": "Nova", "version": "1.0", "features": ["instrument"], "replaces": [] }] },
+            { "path": "/CLAP/Nova Verb.clap", "modified": 1_760_100_000, "size": 10, "plugins": [
+                { "id": "com.nova.verb", "name": "Nova Verb", "vendor": "Nova", "version": "1.0", "features": ["audio-effect", "reverb"], "replaces": [] }] },
+        ],
+    });
+    std::fs::create_dir_all(settings.join("plugins")).unwrap();
+    std::fs::write(settings.join("plugins").join("plugin-catalog.json"), catalog.to_string()).unwrap();
+    let mut app = App::with_library(suhina_plugins::library::Library::new(
+        Some(settings.join("plugins")),
+        PathBuf::from("no-host"),
+    ));
+    let mut library = Library::new(Some(settings.clone()));
+    library.add_folder(&folder).unwrap();
+    app.set_file_library(library);
+    app.set_session(Session::new(blank_project()), &[]);
+    let mut harness = Harness::builder()
+        .with_size((1280.0, 800.0))
+        .with_step_dt(0.05)
+        .with_max_steps(20)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.state_mut().do_action("view.arrangement", &mut Vec::new());
+    harness.run();
+    (harness, settings)
+}
+
 fn project(harness: &Harness<'static, App>) -> Project {
     harness.state().session().unwrap().project().clone()
 }
@@ -214,5 +251,56 @@ fn a_sample_goes_on_a_new_track_after_the_selected_one_at_the_beat_under_the_poi
     let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(added)).unwrap();
     assert_eq!(lane.clips.len(), 1);
     assert_eq!(lane.clips[0].start, beat, "at the palette's place");
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+#[test]
+fn the_kind_buttons_under_the_list_narrow_it_and_stay_for_the_next_palette() {
+    let (mut harness, settings) = window("kinds");
+    open(&mut harness);
+    type_text(&mut harness, "k");
+    assert!(harness.query_by_label("Add Kick Punchy.wav").is_some());
+    harness.get_by_label("Quick add: Effects").click();
+    harness.run();
+    assert!(harness.query_by_label("Add Kick Punchy.wav").is_none(), "Effects alone: no samples");
+    harness.get_by_label("Quick add: Samples").click();
+    harness.run();
+    assert!(harness.query_by_label("Add Kick Punchy.wav").is_some(), "Effects and Samples: both");
+    assert!(harness.state().quick_add_open(), "a click on a button keeps the palette open");
+    press(&mut harness, Key::Escape);
+    // The next palette starts with the same buttons on.
+    open(&mut harness);
+    harness.get_by_label("Quick add: Effects").click();
+    harness.run();
+    type_text(&mut harness, "overdrive");
+    assert!(harness.query_by_label("Add Overdrive").is_none(), "Samples alone now");
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+#[test]
+fn a_plugin_shows_its_format_and_the_format_buttons_choose_one() {
+    let (mut harness, settings) = window_with_plugins("formats");
+    open(&mut harness);
+    type_text(&mut harness, "nova");
+    // The synth is there twice, told apart by its format.
+    assert!(harness.query_by_label("Add Nova Synth (VST3)").is_some());
+    assert!(harness.query_by_label("Add Nova Synth (VST2)").is_some());
+    assert!(harness.query_by_label("Add Nova Verb (CLAP)").is_some());
+    assert!(harness.query_by_label("Quick add: VST3").is_none(), "no format buttons until instruments or effects");
+    harness.get_by_label("Quick add: Instruments").click();
+    harness.run();
+    assert!(harness.query_by_label("Add Nova Verb (CLAP)").is_none(), "instruments only");
+    harness.get_by_label("Quick add: VST3").click();
+    harness.run();
+    assert!(harness.query_by_label("Add Nova Synth (VST3)").is_some());
+    assert!(harness.query_by_label("Add Nova Synth (VST2)").is_none(), "VST3 only");
+    press(&mut harness, Key::Enter);
+    let p = project(&harness);
+    let plugin_on = |t: &suhina_engine::model::Track| {
+        p.channels.iter().find(|c| Some(c.id) == t.channel).and_then(|c| c.devices.first()).map(|d| d.kind.clone())
+    };
+    let new = p.tracks.iter().find(|t| plugin_on(t).is_some()).expect("a new track with the synth");
+    assert!(new.content.notes, "an instrument makes a MIDI track");
+    assert!(matches!(plugin_on(new), Some(suhina_engine::model::DeviceKind::Vst3 { .. })), "{:?}", plugin_on(new));
     let _ = std::fs::remove_dir_all(&settings);
 }

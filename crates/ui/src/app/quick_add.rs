@@ -11,12 +11,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 
 use suhina_library::Item;
-use suhina_session::{Category, Found};
+use suhina_plugins::scan::PluginFormat;
+use suhina_session::{Category, Found, PreparedSearch};
 
 use super::*;
 use crate::kit::floating_list;
 
-/// At most this many results are asked for and listed.
+/// At most this many results are asked for, per kind, and listed.
 const LIMIT: usize = 200;
 
 /// The palette's width, in points.
@@ -24,6 +25,86 @@ const WIDTH: f32 = 460.0;
 
 /// The rows that show at once, whatever the search finds; the rest scroll.
 const VISIBLE_ROWS: usize = 12;
+
+/// The kinds of item the buttons under the list narrow the search to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Kind {
+    Instruments,
+    Effects,
+    /// Samples and MIDI files: what becomes a clip.
+    Samples,
+    Presets,
+}
+
+impl Kind {
+    pub(super) const ALL: [Kind; 4] = [Self::Instruments, Self::Effects, Self::Samples, Self::Presets];
+
+    pub(super) fn title(self) -> &'static str {
+        match self {
+            Self::Instruments => "Instruments",
+            Self::Effects => "Effects",
+            Self::Samples => "Samples",
+            Self::Presets => "Presets",
+        }
+    }
+
+    /// The browser's categories it searches.
+    fn categories(self) -> &'static [Category] {
+        match self {
+            Self::Instruments => &[Category::Instruments],
+            Self::Effects => &[Category::Effects],
+            Self::Samples => &[Category::Samples, Category::Midi],
+            Self::Presets => &[Category::Presets],
+        }
+    }
+
+    /// Whether it lists plug-ins, so the format buttons mean something.
+    fn has_plugins(self) -> bool {
+        matches!(self, Self::Instruments | Self::Effects)
+    }
+}
+
+/// What the palette's buttons narrow the list to. Kept while the window is open, so the next
+/// palette starts where the last one was left. Nothing chosen means everything.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct Filter {
+    pub(super) kinds: Vec<Kind>,
+    pub(super) formats: Vec<PluginFormat>,
+}
+
+impl Filter {
+    /// The categories to search, in the order their results are listed.
+    fn categories(&self) -> Vec<Category> {
+        if self.kinds.is_empty() {
+            return vec![Category::All];
+        }
+        Kind::ALL.iter().filter(|k| self.kinds.contains(k)).flat_map(|k| k.categories().iter().copied()).collect()
+    }
+
+    /// Whether the format buttons show: with instruments or effects chosen.
+    pub(super) fn shows_formats(&self) -> bool {
+        self.kinds.iter().any(|k| k.has_plugins())
+    }
+
+    /// Whether `found` passes the format buttons: a plug-in of a chosen format, or anything that
+    /// is not a plug-in. While the format buttons are hidden, every format passes.
+    pub(super) fn keeps(&self, found: &Found) -> bool {
+        match found.format {
+            Some(format) if self.shows_formats() && !self.formats.is_empty() => self.formats.contains(&format),
+            _ => true,
+        }
+    }
+}
+
+/// Flips `item` in `list`: in when it was out, out when it was in.
+fn toggle<T: PartialEq>(list: &mut Vec<T>, item: T) {
+    match list.iter().position(|x| *x == item) {
+        Some(at) => {
+            list.remove(at);
+        }
+        None => list.push(item),
+    }
+}
 
 /// The palette while it is open.
 pub(super) struct QuickAdd {
@@ -36,10 +117,11 @@ pub(super) struct QuickAdd {
     track: Option<TrackId>,
     /// Where a sample or MIDI file starts, in beats.
     beat: f64,
-    /// What the field found, only what can be added here.
+    /// What the search found, only what can be added here; it stays while the next search
+    /// looks, so the list does not jump.
     found: Vec<Found>,
-    /// The text the shown results are for.
-    searched: Option<String>,
+    /// The text and kinds the running or shown search is for.
+    searched: Option<(String, Vec<Kind>)>,
     /// A search of a large library still looking, on a thread of its own.
     job: Option<(Arc<AtomicBool>, Receiver<Vec<Found>>)>,
     /// The field still has to take the keyboard.
@@ -51,8 +133,9 @@ pub(super) struct QuickAdd {
 pub(super) fn offered(kind: &str, notes: Option<bool>) -> bool {
     match kind {
         "instrument" | "midi_effect" => notes != Some(false),
-        "effect" | "sample" | "midi" => true,
-        // Presets, projects, device graphs and Stems files are added from the browser.
+        // A preset is for a built-in device; adding it says so when the track cannot take it.
+        "effect" | "sample" | "midi" | "preset" => true,
+        // Projects, device graphs and Stems files are added from the browser.
         _ => false,
     }
 }
@@ -67,8 +150,19 @@ pub(super) fn kind_label(found: &Found) -> &'static str {
         ("midi_effect", false) => "MIDI effect",
         ("sample", _) => "Sample",
         ("midi", _) => "MIDI file",
+        ("preset", _) => "Preset",
         _ => "Item",
     }
+}
+
+/// A row of the list: the name over its kind, a plug-in's format at the right edge.
+pub(super) fn row(found: &Found) -> floating_list::Row {
+    let tag = found.format.map(|f| f.label().to_string());
+    let label = match found.format {
+        Some(format) => format!("Add {} ({})", found.name, format.label()),
+        None => format!("Add {}", found.name),
+    };
+    floating_list::Row { text: format!("{}\n{}", found.name, kind_label(found)), tag, label }
 }
 
 /// The place a beat is at, as the header names it: `Bar 17`, or `Bar 17.3` between bars.
@@ -105,6 +199,27 @@ fn take_key(ctx: &egui::Context, key: Key) -> bool {
         });
         pressed
     })
+}
+
+/// Runs `searches` one after another and lists what they found in that order.
+fn run_all(searches: Vec<PreparedSearch>, cancel: &AtomicBool) -> Vec<Found> {
+    let mut found = Vec::new();
+    for search in searches {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        found.extend(search.run(cancel));
+    }
+    found
+}
+
+/// A toggle button of the palette, named for tests and assistive tools as `Quick add: <title>`.
+fn toggle_button(ui: &mut Ui, on: bool, title: &str) -> bool {
+    let text = egui::RichText::new(title).size(theme::TEXT_SMALL);
+    let response = ui.selectable_label(on, text);
+    let label = format!("Quick add: {title}");
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label.clone()));
+    response.clicked()
 }
 
 impl App {
@@ -145,40 +260,45 @@ impl App {
         Some(project.track(track)?.content.notes)
     }
 
-    /// Searches again when the field changed, and picks up the answer of a search still looking.
+    /// Searches again when the field or the kinds changed, and picks up the answer of a search
+    /// still looking. What the last search found stays listed meanwhile.
     fn quick_add_search(&mut self, ctx: &egui::Context) {
         let Some(palette) = self.quick_add.as_mut() else { return };
-        if palette.searched.as_deref() != Some(palette.text.as_str()) {
-            palette.searched = Some(palette.text.clone());
-            palette.picked = 0;
+        let wanted = (palette.text.clone(), self.quick_add_filter.kinds.clone());
+        if palette.searched.as_ref() != Some(&wanted) {
+            palette.searched = Some(wanted);
             if let Some((cancel, _)) = palette.job.take() {
                 cancel.store(true, Ordering::Relaxed);
             }
             let text = palette.text.clone();
-            match suhina_session::prepare_search(&mut self.projects, &text, Category::All, None, &[], LIMIT) {
-                Ok(search) if search.files() > crate::browser::SEARCH_ON_THE_WINDOW_THREAD => {
-                    let cancel = Arc::new(AtomicBool::new(false));
-                    let (send, answer) = std::sync::mpsc::channel();
-                    let looking = Arc::clone(&cancel);
-                    let started = std::thread::Builder::new().name("quick-add search".into()).spawn(move || {
-                        let found = search.run(&looking);
-                        if !looking.load(Ordering::Relaxed) {
-                            let _ = send.send(found);
-                        }
-                    });
-                    if let Some(palette) = self.quick_add.as_mut() {
-                        match started {
-                            Ok(_) => palette.job = Some((cancel, answer)),
-                            // The next frame tries again.
-                            Err(_) => palette.searched = None,
-                        }
+            let mut searches = Vec::new();
+            for category in self.quick_add_filter.categories() {
+                match suhina_session::prepare_search(&mut self.projects, &text, category, None, &[], LIMIT) {
+                    Ok(search) => searches.push(search),
+                    Err(e) => self.status = Status::Error(e.message().to_owned()),
+                }
+            }
+            let files: usize = searches.iter().map(PreparedSearch::files).sum();
+            if files > crate::browser::SEARCH_ON_THE_WINDOW_THREAD {
+                let cancel = Arc::new(AtomicBool::new(false));
+                let (send, answer) = std::sync::mpsc::channel();
+                let looking = Arc::clone(&cancel);
+                let started = std::thread::Builder::new().name("quick-add search".into()).spawn(move || {
+                    let found = run_all(searches, &looking);
+                    if !looking.load(Ordering::Relaxed) {
+                        let _ = send.send(found);
+                    }
+                });
+                if let Some(palette) = self.quick_add.as_mut() {
+                    match started {
+                        Ok(_) => palette.job = Some((cancel, answer)),
+                        // The next frame tries again.
+                        Err(_) => palette.searched = None,
                     }
                 }
-                Ok(search) => {
-                    let found = search.run(&AtomicBool::new(false));
-                    self.quick_add_results(found);
-                }
-                Err(e) => self.status = Status::Error(e.message().to_owned()),
+            } else {
+                let found = run_all(searches, &AtomicBool::new(false));
+                self.quick_add_results(found);
             }
         }
         let answer = self.quick_add.as_ref().and_then(|p| p.job.as_ref()).and_then(|(_, a)| a.try_recv().ok());
@@ -196,18 +316,18 @@ impl App {
         }
     }
 
-    /// Keeps what can be added to the palette's track.
+    /// Lists what can be added to the palette's track, the lit row back at the top.
     fn quick_add_results(&mut self, found: Vec<Found>) {
         let notes = self.quick_add.as_ref().and_then(|p| self.quick_add_notes(p.track));
         if let Some(palette) = self.quick_add.as_mut() {
-            palette.found = found.into_iter().filter(|f| offered(f.kind, notes)).take(LIMIT).collect();
-            palette.picked = palette.picked.min(palette.found.len().saturating_sub(1));
+            palette.found = found.into_iter().filter(|f| offered(f.kind, notes)).collect();
+            palette.picked = 0;
         }
     }
 
-    /// The palette, while it is open: the header naming where things go, the field, and what it
-    /// found. Up and Down move, Enter or a click adds and closes, Escape or a click outside
-    /// closes.
+    /// The palette, while it is open: the header naming where things go, the field, the format
+    /// buttons for plug-ins, what it found, and the kind buttons. Up and Down move, Enter or a
+    /// click adds and closes, Escape or a click outside closes.
     pub(super) fn quick_add_ui(&mut self, ctx: &egui::Context) {
         if self.quick_add.is_none() {
             return;
@@ -231,16 +351,12 @@ impl App {
             };
             format!("{target} · {}", place_label(palette.beat, self.bar_beats()))
         };
+        let mut filter = self.quick_add_filter.clone();
         let Some(palette) = self.quick_add.as_mut() else { return };
-        palette.picked = floating_list::step(palette.picked, palette.found.len(), down, up);
-        let rows: Vec<floating_list::Row> = palette
-            .found
-            .iter()
-            .map(|f| floating_list::Row {
-                text: format!("{}\n{}", f.name, kind_label(f)),
-                label: format!("Add {}", f.name),
-            })
-            .collect();
+        // Only what the format buttons keep; the lit row counts among those.
+        let listed: Vec<usize> = (0..palette.found.len()).filter(|&i| filter.keeps(&palette.found[i])).collect();
+        palette.picked = floating_list::step(palette.picked, listed.len(), down, up);
+        let rows: Vec<floating_list::Row> = listed.iter().map(|&i| row(&palette.found[i])).collect();
         let searching = palette.job.is_some();
         let field_id = egui::Id::new("quick-add-field");
         if palette.focus {
@@ -248,29 +364,62 @@ impl App {
             palette.focus = false;
         }
         let text = &mut palette.text;
+        let formats = &mut filter.formats;
+        let shows_formats = filter.kinds.iter().any(|k| k.has_plugins());
         let heading = |ui: &mut Ui| {
-            ui.label(egui::RichText::new(&header).color(theme::text_hint()).size(theme::TEXT_SMALL));
+            // "Searching…" sits at the header's right end, so nothing below it moves.
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(&header).color(theme::text_hint()).size(theme::TEXT_SMALL));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let note = if searching { "Searching…" } else { "" };
+                    ui.label(egui::RichText::new(note).color(theme::text_hint()).size(theme::TEXT_SMALL));
+                });
+            });
             let field = egui::TextEdit::singleline(text)
                 .id(field_id)
-                .hint_text("Search devices, plug-ins and samples")
+                .hint_text("Search devices, plug-ins, samples and presets")
                 .desired_width(f32::INFINITY);
             ui.add(field).widget_info(|| {
-                egui::WidgetInfo::text_edit(true, "", "Quick add", "Search devices, plug-ins and samples")
+                egui::WidgetInfo::text_edit(true, "", "Quick add", "Search devices, plug-ins, samples and presets")
             });
-            if searching {
-                ui.label(egui::RichText::new("Searching…").color(theme::text_hint()).size(theme::TEXT_SMALL));
+            if shows_formats {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Formats").color(theme::text_hint()).size(theme::TEXT_SMALL));
+                    for format in PluginFormat::ALL {
+                        if toggle_button(ui, formats.contains(&format), format.label()) {
+                            toggle(formats, format);
+                        }
+                    }
+                });
             }
+        };
+        let kinds = &mut filter.kinds;
+        let footer = |ui: &mut Ui| {
+            ui.separator();
+            ui.horizontal(|ui| {
+                for kind in Kind::ALL {
+                    if toggle_button(ui, kinds.contains(&kind), kind.title()) {
+                        toggle(kinds, kind);
+                    }
+                }
+            });
         };
         let look =
             floating_list::Look { width: WIDTH, row_height: 34.0, visible_rows: VISIBLE_ROWS, fixed_height: true };
         let picked = (!rows.is_empty()).then_some(palette.picked);
-        let shown = floating_list::show(ctx, egui::Id::new("quick-add"), look, heading, &rows, picked, down + up > 0);
+        let shown =
+            floating_list::show(ctx, egui::Id::new("quick-add"), look, heading, footer, &rows, picked, down + up > 0);
+        // A button changed what is listed: the lit row goes back to the top.
+        if filter != self.quick_add_filter {
+            palette.picked = 0;
+            self.quick_add_filter = filter;
+        }
         // Keep the keyboard in the field while it is open.
         ctx.memory_mut(|m| m.request_focus(field_id));
         let clicked_outside =
             ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !shown.rect.contains(p)));
         let chosen = shown.clicked.or_else(|| enter.then_some(palette.picked).filter(|_| !rows.is_empty()));
-        if let Some(place) = chosen {
+        if let Some(place) = chosen.and_then(|place| listed.get(place).copied()) {
             let Some(palette) = self.quick_add.take() else { return };
             if let Some(found) = palette.found.get(place).cloned() {
                 self.quick_add_choose(&found, palette.track, palette.beat);
@@ -280,8 +429,9 @@ impl App {
         }
     }
 
-    /// Adds `found`: a device to `track` (or on a new track that becomes the selected one), a
-    /// sample or MIDI file as a clip on a new track after `track`, starting at `beat`.
+    /// Adds `found`: a device or a preset to `track` (or on a new track that becomes the
+    /// selected one), a sample or MIDI file as a clip on a new track after `track`, starting at
+    /// `beat`.
     fn quick_add_choose(&mut self, found: &Found, track: Option<TrackId>, beat: f64) {
         let track = track.filter(|t| self.session().is_some_and(|s| s.project().track(*t).is_some()));
         let notes = self.quick_add_notes(track);
@@ -289,55 +439,60 @@ impl App {
             self.status = Status::Hint(why);
             return;
         }
-        match &found.item {
-            Item::Device(_) | Item::Plugin(_) => {
-                let (id, mut params) = match &found.item {
-                    Item::Plugin(spec) => ("device.addPlugin", json!({ "plugin": spec })),
-                    Item::Device(id) => ("device.add", json!({ "id": id })),
-                    _ => return,
-                };
-                match track {
-                    Some(track) => {
-                        params["track"] = json!(track.0);
-                        if self.quick_add_run(id, &params).is_some() {
-                            self.show_devices_of(track);
-                            self.status = Status::Done(format!("Added {} to {}", found.name, self.track_name(track)));
-                        }
+        // A device: what `device.*` takes on a track and `track.add` on a new one.
+        let device = match (&found.item, found.kind) {
+            (Item::Plugin(spec), _) => Some(("device.addPlugin", json!({ "plugin": spec }), json!({ "device": spec }))),
+            (Item::Device(id), _) => Some(("device.add", json!({ "id": id }), json!({ "device": id }))),
+            (Item::Voice(path, voice), _) => {
+                let preset = json!({ "preset": path.display().to_string(), "voice": voice });
+                Some(("device.add", preset.clone(), preset))
+            }
+            (Item::File(path), "preset") => {
+                let preset = json!({ "preset": path.display().to_string() });
+                Some(("device.add", preset.clone(), preset))
+            }
+            (Item::File(_), _) => None,
+        };
+        if let Some((id, mut params, new_track)) = device {
+            match track {
+                Some(track) => {
+                    params["track"] = json!(track.0);
+                    if self.quick_add_run(id, &params).is_some() {
+                        self.show_devices_of(track);
+                        self.status = Status::Done(format!("Added {} to {}", found.name, self.track_name(track)));
                     }
-                    None => {
-                        // A new track with the device, of the kind it needs, as one undo step.
-                        let device = params.get("plugin").or_else(|| params.get("id")).cloned().unwrap_or_default();
-                        let added = self.quick_add_run("track.add", &json!({ "device": device }));
-                        let new = added
-                            .as_ref()
-                            .and_then(|r| r["track"].as_u64())
-                            .and_then(|t| u32::try_from(t).ok())
-                            .map(TrackId);
-                        if let Some(new) = new {
-                            self.show_devices_of(new);
-                            self.status = Status::Done(format!("Added {} on a new track", found.name));
-                        }
+                }
+                None => {
+                    // A new track with the device, of the kind it needs, as one undo step.
+                    let added = self.quick_add_run("track.add", &new_track);
+                    let new = added
+                        .as_ref()
+                        .and_then(|r| r["track"].as_u64())
+                        .and_then(|t| u32::try_from(t).ok())
+                        .map(TrackId);
+                    if let Some(new) = new {
+                        self.show_devices_of(new);
+                        self.status = Status::Done(format!("Added {} on a new track", found.name));
                     }
                 }
             }
-            Item::File(path) => {
-                let mut params = json!({
-                    "paths": [path.display().to_string()],
-                    "start": beat,
-                    "warp": self.settings.warp_mode.param(),
-                    "stack": self.settings.sample_stacking || self.settings.midi_stacking,
-                });
-                let holds_clips = track
-                    .and_then(|t| self.session().and_then(|s| s.project().track(t).map(|x| x.content)))
-                    .is_some_and(|c| c.audio || c.notes);
-                if let Some(track) = track.filter(|_| holds_clips) {
-                    params["after"] = json!(track.0);
-                }
-                let samples = if found.kind == "sample" { vec![path.clone()] } else { Vec::new() };
-                self.decode_then_run(samples, vec![("clip.addFiles", params)]);
-            }
-            Item::Voice(..) => self.status = Status::Hint(format!("{} cannot be added from here", found.name)),
+            return;
         }
+        let Item::File(path) = &found.item else { return };
+        let mut params = json!({
+            "paths": [path.display().to_string()],
+            "start": beat,
+            "warp": self.settings.warp_mode.param(),
+            "stack": self.settings.sample_stacking || self.settings.midi_stacking,
+        });
+        let holds_clips = track
+            .and_then(|t| self.session().and_then(|s| s.project().track(t).map(|x| x.content)))
+            .is_some_and(|c| c.audio || c.notes);
+        if let Some(track) = track.filter(|_| holds_clips) {
+            params["after"] = json!(track.0);
+        }
+        let samples = if found.kind == "sample" { vec![path.clone()] } else { Vec::new() };
+        self.decode_then_run(samples, vec![("clip.addFiles", params)]);
     }
 
     /// Runs one of the palette's commands through the open projects, so what was added becomes

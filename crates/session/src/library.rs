@@ -365,6 +365,8 @@ pub struct Found {
     /// For a plug-in: its format and vendor.
     pub detail: Option<String>,
     pub plugin: bool,
+    /// For a plug-in: its format, which a list shows beside its name and filters by.
+    pub format: Option<suhina_plugins::scan::PluginFormat>,
     /// For a file: the library folder it is in.
     pub folder: Option<PathBuf>,
 }
@@ -377,6 +379,7 @@ impl Found {
             "name": self.name,
             "kind": self.kind,
             "plugin": self.plugin,
+            "format": self.format.map(|f| f.name()),
             "detail": self.detail,
             "folder": self.folder.as_ref().map(|f| f.display().to_string()),
             "tags": library.item_tags(&key),
@@ -397,19 +400,36 @@ fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
             if let Item::Voice(_, voice) = &item {
                 name = format!("{name} #{voice}");
             }
-            Some(Found { name, kind: file_kind_name(kind), detail: None, plugin: false, folder: None, item })
+            Some(Found {
+                name,
+                kind: file_kind_name(kind),
+                detail: None,
+                plugin: false,
+                format: None,
+                folder: None,
+                item,
+            })
         }
         Item::Device(id) => {
             let info = suhina_device_registry::info(id)?;
             let kind = role_name(info.role);
-            Some(Found { name: info.name.to_string(), kind, detail: None, plugin: false, folder: None, item })
+            Some(Found {
+                name: info.name.to_string(),
+                kind,
+                detail: None,
+                plugin: false,
+                format: None,
+                folder: None,
+                item,
+            })
         }
         Item::Plugin(spec) => {
             let env = projects.plugin_env();
             let plugin = env.catalog.plugins().find(|p| p.spec() == *spec || p.name == *spec)?;
             let kind = if crate::is_instrument(plugin) { "instrument" } else { "effect" };
             let detail = Some(format!("{} {}", plugin.format(), plugin.vendor).trim().to_string());
-            Some(Found { name: plugin.name.clone(), kind, detail, plugin: true, folder: None, item })
+            let format = Some(plugin.plugin_format());
+            Some(Found { name: plugin.name.clone(), kind, detail, plugin: true, format, folder: None, item })
         }
     }
 }
@@ -496,6 +516,7 @@ impl PreparedSearch {
                     kind: file_kind_name(file.kind),
                     detail: None,
                     plugin: false,
+                    format: None,
                     folder: Some(file.folder.clone()),
                     item: Item::File(file.path),
                 },
@@ -557,6 +578,7 @@ pub fn prepare_search(
                 kind,
                 detail: None,
                 plugin: false,
+                format: None,
                 folder: None,
             };
             if let Some(rank) = suhina_library::rank(&words, info.name, info.id)
@@ -575,6 +597,7 @@ pub fn prepare_search(
                 kind,
                 detail: Some(format!("{} {}", plugin.format(), plugin.vendor).trim().to_string()),
                 plugin: true,
+                format: Some(plugin.plugin_format()),
                 folder: None,
             };
             let haystack = format!("{} {}", plugin.vendor, plugin.format());

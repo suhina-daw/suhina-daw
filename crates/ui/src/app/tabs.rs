@@ -105,7 +105,7 @@ impl App {
                     .and_then(Session::source)
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|| "Not saved yet".into());
-                floating_list::Row { text: format!("{name}\n{source}"), label: format!("Switch to {name}") }
+                floating_list::Row { text: format!("{name}\n{source}"), tag: None, label: format!("Switch to {name}") }
             })
             .collect();
         let look =
@@ -118,6 +118,7 @@ impl App {
             egui::Id::new("project-switcher"),
             look,
             heading,
+            |_: &mut Ui| {},
             &rows,
             Some(picked),
             down + up > 0,
