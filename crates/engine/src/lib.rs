@@ -914,6 +914,12 @@ impl Renderer {
             let frames = self.frames_to_count_in_end().map_or(frames, |to_end| frames.min(to_end.max(1)));
             // A pending jump lands on its boundary's frame (#657).
             let frames = self.frames_to_jump().map_or(frames, |to_jump| frames.min(to_jump.max(1)));
+            // The stretched clips at the loop start are moved there ahead of the wrap.
+            if self.transport.running
+                && let Some((start, end)) = self.loop_frames()
+            {
+                self.graph.ahead.prepare_wrap(start, end, self.time());
+            }
             let (chunk, rest) = std::mem::take(&mut out).split_at_mut(frames * 2);
             let (cue_chunk, cue_after) = split_cue(cue, chunk.len());
             self.process_chunk(chunk, cue_chunk, deadline);

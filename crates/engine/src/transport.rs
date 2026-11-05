@@ -335,7 +335,7 @@ impl Renderer {
             return;
         }
         if let Some((start, _)) = self.graph.loop_beats {
-            self.jump_to(start);
+            self.jump_to_with(start, true);
         }
         self.graph.launcher.publish();
     }
@@ -366,10 +366,20 @@ impl Renderer {
 
     /// While running, playback continues from `beat` from the next frame on.
     pub(crate) fn jump_to(&mut self, beat: f64) {
+        self.jump_to_with(beat, false);
+    }
+
+    /// [`Renderer::jump_to`]; a loop's `wrap` moves the stretched clips by their own jumps, so the
+    /// ones moved to the loop start ahead of it play at once.
+    fn jump_to_with(&mut self, beat: f64, wrap: bool) {
         self.release_sounding();
         self.locate(beat);
         // Read from the new place; until the worker gets there, stretched clips are silent.
-        self.graph.ahead.move_to(self.transport.time_at_origin);
+        if wrap {
+            self.graph.ahead.wrap_to(self.transport.time_at_origin);
+        } else {
+            self.graph.ahead.move_to(self.transport.time_at_origin);
+        }
         self.stretch_fresh = false;
         let launcher = &mut self.graph.launcher;
         let at_beat = launcher.launch_beat();
