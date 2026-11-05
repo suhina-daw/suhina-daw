@@ -203,6 +203,7 @@ impl Graph {
                                     bus,
                                     meter,
                                     past_host,
+                                    key: (lane_index, clip_index, content_index),
                                 });
                                 continue;
                             }

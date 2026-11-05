@@ -73,7 +73,10 @@ clip; devices (ADR 0004) will add many more parameters.
    tempo, transpose or warp edited while it plays) fades over 20 ms from the old voice's ring to
    the new voice, which plays from another place of the clip; the old ring plays on alone until
    the new voice's frames arrive (`AheadReader::adopt_from`). Cutting from one to the other
-   clicked at every step of a tempo drag. Level meters keep their levels and clip
+   clicked at every step of a tempo drag. A clip whose sound goes from the file directly to a
+   stretch voice or back (its tempo dragged to or from the project's) fades the same way: the old
+   graph is held for those 20 ms and plays its sound of the clip out (`PathFade`). Level meters
+   keep their levels and clip
    indicators while each meter slot plays the same track as before; a slot that now holds
    another track (tracks moved in the project's order) starts from silence
    ([level meters](../spec/level-meters.md)).

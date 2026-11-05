@@ -95,6 +95,13 @@ pub(crate) struct SwapState {
     parked: Vec<(u64, Processor)>,
 }
 
+impl SwapState {
+    /// The old graph held until the controller takes it back, if any.
+    pub(crate) fn held_graph(&mut self) -> Option<&mut Box<Graph>> {
+        self.held.as_mut()
+    }
+}
+
 /// The controller's end: builds graphs and takes old ones back to free them.
 pub(crate) struct Updater {
     swaps: Producer<Swap>,
@@ -193,6 +200,10 @@ impl Renderer {
 
     /// Takes the next graph from the queue, once any old graph has gone back. Never blocks.
     pub(crate) fn receive_swap(&mut self) {
+        // The old graph plays on in the fades between ways of playing (`PathFade`) until they end.
+        if self.path_fade_left > 0 && self.swap.held.is_some() {
+            return;
+        }
         if let Some(old) = self.swap.held.take()
             && let Some(retired) = self.swap.retired.as_mut()
             && let Err(rtrb::PushError::Full(old)) = retired.push(old)
@@ -403,8 +414,48 @@ impl Renderer {
             }
             self.stretch_fresh = true;
         }
+        self.path_fades(&old, old_time, time);
         self.swap.held = Some(old);
         self.receive_swap();
+    }
+
+    /// Finds the clips playing at arrangement frame `time` (`old_time` in `old`, the graph
+    /// swapped out) whose sound goes from the file directly to a stretch voice or back, and fades
+    /// them (`PathFade`). Never allocates: at most [`crate::PATH_FADES`].
+    fn path_fades(&mut self, old: &Graph, old_time: u64, time: u64) {
+        self.path_fades.clear();
+        self.path_fade_left = 0;
+        if !self.transport.running {
+            return;
+        }
+        let playing = |start: u64, end: u64, at: u64| start <= at && at < end;
+        for (new, event) in self.graph.stretch_events.iter().enumerate() {
+            if !playing(event.start, event.end, time) || self.path_fades.len() >= crate::PATH_FADES {
+                continue;
+            }
+            if let Some(old) = old
+                .audio_events
+                .iter()
+                .position(|a| a.key == event.key && playing(a.event.start, a.event.end, old_time))
+            {
+                self.path_fades.push(crate::PathFade::FromDirect { old, new });
+            }
+        }
+        for &new in self.active_audio.get(..self.active_audio_count).unwrap_or_default() {
+            let Some(arranged) = self.graph.audio_events.get(new) else { continue };
+            if self.path_fades.len() >= crate::PATH_FADES {
+                break;
+            }
+            if let Some(old) =
+                old.stretch_events.iter().position(|e| e.key == arranged.key && playing(e.start, e.end, old_time))
+            {
+                self.path_fades.push(crate::PathFade::FromStretch { old, new });
+            }
+        }
+        if !self.path_fades.is_empty() {
+            self.path_fade_at = time;
+            self.path_fade_left = (crate::PATH_FADE_SECONDS * f64::from(self.sample_rate)) as u64;
+        }
     }
 
     /// Publishes the playhead for the controller.

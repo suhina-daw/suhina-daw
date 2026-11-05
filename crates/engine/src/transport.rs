@@ -207,6 +207,7 @@ impl Renderer {
             self.transport.start_beat
         };
         self.transport.running = false;
+        self.path_fade_left = 0;
         self.metronome.reset();
         self.release_sounding();
         // Ready for the next start, at the marker.
@@ -372,6 +373,8 @@ impl Renderer {
     /// [`Renderer::jump_to`]; a loop's `wrap` moves the stretched clips by their own jumps, so the
     /// ones moved to the loop start ahead of it play at once.
     fn jump_to_with(&mut self, beat: f64, wrap: bool) {
+        // The sound moves anyway: no fade from where it was.
+        self.path_fade_left = 0;
         self.release_sounding();
         self.locate(beat);
         // Read from the new place; until the worker gets there, stretched clips are silent.
