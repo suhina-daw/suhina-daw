@@ -27,6 +27,7 @@ suhina-dsp.workspace = true
 nam-rs.workspace = true
 suhina-device-pitch.workspace = true
 suhina-device-sampler.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

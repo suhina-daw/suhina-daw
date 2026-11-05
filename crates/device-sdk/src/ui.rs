@@ -9,12 +9,27 @@ pub use author::ControlGroup;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, io::Cursor, path::Path};
-pub use widgets::Widget;
+pub use widgets::{FileRowPart, Widget};
 
 pub const MAX_ASSET_BYTES: usize = 512 * 1024;
 pub const MAX_ASSETS_BYTES: usize = 1024 * 1024;
 pub const MAX_IMAGE_PIXELS: u64 = 1_000_000;
 pub const MAX_DRAW_COMMANDS: usize = 1024;
+
+/// What a canvas may hold. A `.sd` file comes from anywhere and keeps to [`Limits::SD`]; a built-in
+/// device's layout ships with Suhina and may be larger, with one control per operator's partial.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Limits {
+    pub controls: usize,
+    pub hidden: usize,
+    pub draws: usize,
+    pub expressions: usize,
+}
+
+impl Limits {
+    pub const SD: Self = Self { controls: 128, hidden: 128, draws: MAX_DRAW_COMMANDS, expressions: 32_768 };
+    pub const BUILT_IN: Self = Self { controls: 2_048, hidden: 2_048, draws: 32_768, expressions: 2_000_000 };
+}
 type Color = [u8; 4];
 fn white() -> Color {
     [255; 4]
@@ -45,6 +60,10 @@ pub struct DeviceUi {
     /// Whether a button that is on fills with the accent (`true`) or the control's active colour.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub accent_on: bool,
+    /// While this is above zero the host keeps drawing the canvas, about 30 frames a second, for
+    /// a drawing that moves with `#time` ([`TIME_ID`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animate_when: Option<UiValue>,
     /// Quick presets its `preset` buttons apply.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub presets: Vec<UiPreset>,
@@ -92,6 +111,7 @@ impl Default for DeviceUi {
             hidden_parameters: Vec::new(),
             strip: false,
             accent_on: false,
+            animate_when: None,
             presets: Vec::new(),
             style: None,
         }
@@ -252,6 +272,10 @@ impl UiValue {
     pub fn evaluate(&self, parameter: &impl Fn(&str, bool, bool) -> f64) -> f32 {
         self.eval(parameter, 0).clamp(-16384.0, 16384.0) as f32
     }
+    /// The value as a number to write rather than a place to draw, so without a coordinate's limit.
+    pub fn number(&self, parameter: &impl Fn(&str, bool, bool) -> f64) -> f64 {
+        self.eval(parameter, 0)
+    }
     fn eval(&self, parameter: &impl Fn(&str, bool, bool) -> f64, depth: usize) -> f64 {
         if depth > 16 {
             return 0.0;
@@ -411,6 +435,20 @@ pub enum Draw {
         rect: [UiValue; 4],
         colors: [Color; 4],
     },
+    /// A curve from one expression: `samples` points from `from` to `to` along x, each at the
+    /// height `y` gives while the parameter `#x` ([`PLOT_X_ID`]) reads its share of the way, 0 to
+    /// 1. A part beyond `top` or `bottom` is not drawn: the line ends at the edge.
+    Plot {
+        from: UiValue,
+        to: UiValue,
+        top: UiValue,
+        bottom: UiValue,
+        samples: u16,
+        y: UiValue,
+        color: Color,
+        #[serde(default = "one")]
+        width: f32,
+    },
 }
 impl Draw {
     pub fn rect(rect: [f32; 4], color: Color) -> Self {
@@ -442,6 +480,15 @@ pub enum UiGesture {
     Tab(u16),
     /// Apply the canvas's quick preset at this index: every value it holds, as one undo step.
     Preset(u16),
+    /// Run the device's randomizer (`device.randomize`).
+    Randomize,
+    /// Set the X parameter to a literal value and open the device's expanded panel, for a button
+    /// that goes to one of its pages.
+    Expand(u16),
+    /// One column of a drawing: a press on it and a drag over its neighbours set each one's Y
+    /// parameter to the pointer's height, as one undo step, and the X parameter, if it has one, to
+    /// this value, as a wave drawn by hand asks for the wave that plays it.
+    Draw(u16),
 }
 
 /// A quick preset a canvas button applies: parameter values by id. Parameters it leaves out keep
@@ -481,6 +528,10 @@ pub const THEME_PALETTE_TOKENS: [([u8; 3], &str); 5] =
 
 /// The id a canvas reads to know whether its device's expanded panel is open (1) or not (0).
 pub const EXPANDED_ID: &str = "#expanded";
+/// What a [`Draw::Plot`]'s `y` reads for its share of the way along the curve, 0 to 1.
+pub const PLOT_X_ID: &str = "#x";
+/// What an expression reads for the host's clock, in seconds, for a drawing that moves by itself.
+pub const TIME_ID: &str = "#time";
 
 /// Most quick presets on one canvas.
 pub const MAX_UI_PRESETS: usize = 32;
@@ -522,14 +573,18 @@ pub struct CustomControl {
 
 impl DeviceUi {
     pub(crate) fn validate(&self, parameters: &[Parameter]) -> Result<(), DeviceSdkError> {
+        self.validate_within(parameters, &Limits::SD)
+    }
+
+    pub(crate) fn validate_within(&self, parameters: &[Parameter], limits: &Limits) -> Result<(), DeviceSdkError> {
         let fail = |s: &str| DeviceSdkError(format!("device UI: {s}"));
         if self.viewport_size.is_some_and(|size| size.iter().any(|v| !v.is_finite() || !(24.0..=8192.0).contains(v))) {
             return Err(fail("viewport dimensions exceed limits"));
         }
         if self.size.iter().any(|v| !v.is_finite() || !(24.0..=8192.0).contains(v))
-            || self.controls.len() > 128
+            || self.controls.len() > limits.controls
             || self.assets.len() > 32
-            || self.hidden_parameters.len() > 128
+            || self.hidden_parameters.len() > limits.hidden
         {
             return Err(fail("canvas dimensions or item count exceed limits"));
         }
@@ -537,8 +592,12 @@ impl DeviceUi {
             return Err(fail("panel style exceeds 64 KiB or contains NUL"));
         }
         // Drawings may also read the device's live values (a text's value, a parameter lookup).
-        let readouts =
-            parameters.iter().map(|p| p.id.as_str()).chain(READOUT_IDS).chain([EXPANDED_ID]).collect::<HashSet<_>>();
+        let readouts = parameters
+            .iter()
+            .map(|p| p.id.as_str())
+            .chain(READOUT_IDS)
+            .chain([EXPANDED_ID, PLOT_X_ID, TIME_ID])
+            .collect::<HashSet<_>>();
         let ids = parameters.iter().map(|p| p.id.as_str()).collect::<HashSet<_>>();
         let mut asset_ids = HashSet::new();
         let mut pixels = 0u64;
@@ -579,11 +638,14 @@ impl DeviceUi {
         let count = self.controls.iter().try_fold(self.layers.len(), |total, c| {
             total.checked_add(c.drawings().len()).ok_or_else(|| fail("drawing count overflow"))
         })?;
-        if count > MAX_DRAW_COMMANDS {
-            return Err(fail("more than 1024 drawing commands"));
+        if count > limits.draws {
+            return Err(fail("too many drawing commands"));
         }
         let mut controls = HashSet::new();
-        let mut expression_budget = 32768usize;
+        let mut expression_budget = limits.expressions;
+        if let Some(animate) = &self.animate_when {
+            animate.validate(&readouts, 0, &mut expression_budget)?;
+        }
         for c in &self.controls {
             if c.widget.is_some() && !c.drawing.is_empty() {
                 return Err(fail("widget and drawing are mutually exclusive"));
@@ -596,6 +658,48 @@ impl DeviceUi {
                     | Widget::Graphic { .. }
                     | Widget::SampleWaveform
                     | Widget::SampleRecording => c.x.is_none() && c.y.is_none(),
+                    // The device's body controls that read nothing but host state: the switch
+                    // and the file rows and their steppers. The file rows' `what` names the
+                    // panel's words ("model", "cab") the host checks as it draws.
+                    Widget::DeviceSwitch => c.x.is_none() && c.y.is_none(),
+                    Widget::DeviceFiles { what, .. } => {
+                        c.x.is_none() && c.y.is_none() && !what.is_empty() && what.len() <= 32
+                    }
+                    Widget::DeviceNote => c.x.is_none() && c.y.is_none(),
+                    // Only the built-in EQ's parameter set reads as an EqCurve's bands:
+                    // requiring all 24 keeps a graph file from claiming the host-drawn
+                    // panel for parameters that are not the EQ's.
+                    Widget::EqCurve => {
+                        const EQ_BANDS: [&str; 24] = [
+                            "a1Frequency",
+                            "a1Gain",
+                            "a1Q",
+                            "a2Frequency",
+                            "a2Gain",
+                            "a2Q",
+                            "a3Frequency",
+                            "a3Gain",
+                            "a3Q",
+                            "a4Frequency",
+                            "a4Gain",
+                            "a4Q",
+                            "a5Frequency",
+                            "a5Gain",
+                            "a5Q",
+                            "a6Frequency",
+                            "a6Gain",
+                            "a6Q",
+                            "a7Frequency",
+                            "a7Gain",
+                            "a7Q",
+                            "a8Frequency",
+                            "a8Gain",
+                            "a8Q",
+                        ];
+                        EQ_BANDS.iter().all(|&id| parameters.iter().any(|p| p.id == id))
+                            && c.x.is_none()
+                            && c.y.is_none()
+                    }
                     Widget::Envelope { attack, decay, level, release } => {
                         let ids: Vec<_> =
                             [Some(attack), Some(decay), Some(level), release.as_ref()].into_iter().flatten().collect();
@@ -629,15 +733,18 @@ impl DeviceUi {
                                 | UiGesture::Set(_)
                                 | UiGesture::Tab(_)
                                 | UiGesture::Preset(_)
+                                | UiGesture::Randomize
+                                | UiGesture::Expand(_)
                         )
                     }
                     Widget::Disclosure { .. } => c.gesture == UiGesture::Toggle,
-                    Widget::Handle { span, .. } => {
+                    Widget::Handle { span, offset, .. } => {
                         c.gesture == UiGesture::Position
-                            && c.x.is_some() != c.y.is_some()
+                            && (c.x.is_some() || c.y.is_some())
                             && span.as_ref().is_none_or(|span| {
                                 span.iter().all(|v| v.validate(&readouts, 0, &mut expression_budget).is_ok())
                             })
+                            && offset.as_ref().is_none_or(|v| v.validate(&readouts, 0, &mut expression_budget).is_ok())
                     }
                     Widget::Number { .. } | Widget::Knob { .. } | Widget::Dial { .. } | Widget::Stepper { .. } => {
                         c.gesture == UiGesture::Drag && c.x.is_none() && c.y.is_some()
@@ -721,7 +828,17 @@ impl DeviceUi {
             if let Some(condition) = &c.visible_when {
                 condition.validate(&readouts, 0, &mut expression_budget)?;
             }
-            if let UiGesture::Preset(index) = c.gesture {
+            if matches!(c.gesture, UiGesture::Expand(_)) && c.x.is_none() {
+                return Err(fail("an expand gesture binds X to the parameter it sets"));
+            }
+            if matches!(c.gesture, UiGesture::Draw(_)) && (c.y.is_none() || c.widget.is_some()) {
+                return Err(fail("a draw gesture binds Y and has no widget"));
+            }
+            if c.gesture == UiGesture::Randomize {
+                if !matches!(c.widget, Some(Widget::Button { .. })) || c.x.is_some() || c.y.is_some() {
+                    return Err(fail("a randomize gesture is a button without bindings"));
+                }
+            } else if let UiGesture::Preset(index) = c.gesture {
                 if !matches!(c.widget, Some(Widget::Button { .. })) || c.x.is_some() || c.y.is_some() {
                     return Err(fail("a preset gesture is a button without bindings"));
                 }
@@ -740,6 +857,11 @@ impl DeviceUi {
                             | Widget::SampleWaveform
                             | Widget::SampleRecording
                             | Widget::Envelope { .. }
+                            // The host's device-state controls read no parameter.
+                            | Widget::DeviceSwitch
+                            | Widget::DeviceFiles { .. }
+                            | Widget::DeviceNote
+                            | Widget::EqCurve
                     )
                 )
             {
@@ -841,6 +963,13 @@ impl Draw {
                 rect.iter().collect()
             }
             Self::Gradient { rect, .. } => rect.iter().collect(),
+            Self::Plot { from, to, top, bottom, samples, y, width: w, .. } => {
+                width(*w)?;
+                if !(2..=512).contains(samples) {
+                    return Err(fail("a plot takes 2..512 samples"));
+                }
+                vec![from, to, top, bottom, y]
+            }
             Self::Circle { center, radius, .. } => center.iter().chain([radius]).collect(),
             Self::Line { from, to, width: w, .. } => {
                 width(*w)?;

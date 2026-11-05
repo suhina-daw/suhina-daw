@@ -5,6 +5,14 @@
 
 use super::*;
 
+/// The Arrangement's grid, in a menu itself, as its toolbar offers it.
+pub(super) fn grid_section(ui: &mut Ui, state: &mut ArrangementViewState) {
+    let keys = state.grid_keys.clone();
+    if let Some(picked) = crate::detail::piano_roll::grid_entries(ui, state.grid, &keys, &|_| true) {
+        state.grid = picked;
+    }
+}
+
 /// The menu of an empty spot of a lane: a new empty MIDI clip where it was right-clicked (on a
 /// notes track), and, with a time selection, looping it and consolidating it on this track.
 pub(super) fn empty_lane_menu(
@@ -25,17 +33,18 @@ pub(super) fn empty_lane_menu(
             }
             ui.close();
         }
-        if ui.button("Delete unused takes").clicked() {
-            actions.push(Action::new("take.deleteUnused", json!({ "track": track.0 })));
-            ui.close();
-        }
-        ui.separator();
     }
-    // The Arrangement's grid, in the menu itself, as its toolbar offers it.
-    let keys = state.grid_keys.clone();
-    if let Some(picked) = crate::detail::piano_roll::grid_entries(ui, state.grid, &keys, &|_| true) {
-        super::pick_grid(state, picked, actions);
+    if ui.button("Add take").clicked() {
+        state.takes_hidden.remove(&track);
+        actions.push(Action::new("take.add", json!({ "track": track.0 })));
+        ui.close();
     }
+    if has_takes && ui.button("Delete unused takes").clicked() {
+        actions.push(Action::new("take.deleteUnused", json!({ "track": track.0 })));
+        ui.close();
+    }
+    ui.separator();
+    grid_section(ui, state);
     ui.separator();
     let beat = state.menu_beat.unwrap_or(0.0);
     if ui.add_enabled(notes, egui::Button::new("Insert empty MIDI clip")).clicked() {

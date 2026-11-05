@@ -5,12 +5,20 @@
 // Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE in this crate).
 // Changes: translated to Rust; the rising step is computed in 64 bits (it overflowed in C below
 // about 16 kHz); `retune` replaces `update`, keeping the stage an envelope is in when a
-// parameter changes instead of jumping to stage 3.
+// parameter changes instead of jumping to stage 3; a released level 4 above zero falls away after
+// a second, where the original held it for as long as the voice was not taken.
 
 //! The operator envelope and the pitch envelope: four rates and four levels (0 to 99) each,
 //! advanced once per engine block.
 
 use crate::tables::{LG_N, N, Tables};
+
+/// How long a released envelope holds a level 4 above zero, in samples at 44.1 kHz.
+const TAIL_HOLD: i32 = 44_100;
+/// How far it then falls per block at 44.1 kHz: from full to silence in about two seconds.
+const TAIL_FALL: i32 = 191_000;
+/// The level an envelope is silent at: what `advance` never goes under.
+const SILENT: i32 = 16 << 16;
 
 const LEVEL_LUT: [i32; 20] = [0, 5, 9, 13, 17, 20, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 42, 43, 45, 46];
 
@@ -46,6 +54,8 @@ pub struct Env {
     inc: i32,
     static_count: i32,
     down: bool,
+    /// Samples at 44.1 kHz since it reached a level 4 above zero.
+    tail: i32,
 }
 
 impl Env {
@@ -59,6 +69,7 @@ impl Env {
         self.rate_scaling = rate_scaling;
         self.level = 0;
         self.down = true;
+        self.tail = 0;
         self.advance(0, t);
     }
 
@@ -104,6 +115,14 @@ impl Env {
                     self.advance(self.stage + 1, t);
                 }
             }
+        } else if self.stage >= 4 && self.levels[3] > 0 {
+            // Past its release: a note ends however high its level 4 is.
+            let rate = i64::from(t.env_rate);
+            self.tail = self.tail.saturating_add(((N as i64 * rate) >> 24) as i32);
+            if self.tail >= TAIL_HOLD {
+                let fall = ((i64::from(TAIL_FALL) * rate) >> 24) as i32;
+                self.level = self.level.saturating_sub(fall).max(SILENT);
+            }
         }
         self.level
     }
@@ -115,10 +134,10 @@ impl Env {
         }
     }
 
-    /// Whether it still sounds: started, and either before the end of stage 4 or with a level
-    /// 4 above zero.
+    /// Whether it still sounds: started, and either before the end of stage 4 or falling from a
+    /// level 4 above zero.
     pub fn is_active(&self) -> bool {
-        self.initialised && (self.stage < 4 || self.levels[3] > 0)
+        self.initialised && (self.stage < 4 || (self.levels[3] > 0 && self.level > SILENT))
     }
 
     fn advance(&mut self, stage: usize, t: &Tables) {

@@ -106,6 +106,26 @@ fn child_node(parent: &str, key: &str) -> String {
     format!("{parent}\u{1}{key}")
 }
 
+/// The stock presets of the device `id`.
+fn stock_of(id: &str) -> impl Iterator<Item = &'static suhina_device_registry::StockPreset> + use<'_> {
+    suhina_device_registry::stock_presets().iter().filter(move |stock| stock.preset.device == id)
+}
+
+/// Adds a row per stock preset of the device `id`, inside the node `parent`: a preset is listed under
+/// its device and among the presets, and each row has a node of its own.
+fn stock_rows_of(id: &str, parent: &str, depth: usize, rows: &mut Vec<Row>) {
+    for stock in stock_of(id) {
+        let item = BrowserItem {
+            key: format!("stock:{}", stock.key),
+            name: stock.preset.name.clone(),
+            kind: ItemKind::Preset,
+            plugin: false,
+        };
+        let node = child_node(parent, &item.key);
+        rows.push(Row { item, depth, opens: false, open: false, context: None, columns: None, node: Some(node) });
+    }
+}
+
 /// The columns of one row of the Plug-ins category's list besides the name
 /// ([the plug-in browsing spec](../../docs/spec/plugin-browsing.md) › Instruments and Effects).
 /// The vendor, version and file are the plug-in manager's (Settings › Plug-ins).
@@ -574,6 +594,9 @@ impl BrowserState {
                     self.device_rows("group:effects", "Effects", Role::Effect, &mut rows);
                     self.device_rows("group:midi-effects", "MIDI Effects", Role::MidiEffect, &mut rows);
                 }
+                if matches!(category, Category::All | Category::Presets) {
+                    self.stock_rows(&mut rows);
+                }
                 // The Plug-ins category lists the instruments or the effects as one list; the
                 // other categories keep the plug-ins in the tree under their vendors.
                 if category == Category::Plugins {
@@ -625,7 +648,49 @@ impl BrowserState {
         };
         for info in suhina_device_registry::DEVICES.iter().filter(|info| info.role == role) {
             let item = BrowserItem { key: format!("device:{}", info.id), name: info.name.into(), kind, plugin: false };
-            rows.push(Row { item, depth: 1, opens: false, open: false, context: None, columns: None, node: None });
+            // A device opens on its presets; the row itself stays the device at its defaults.
+            let has_presets = stock_of(info.id).next().is_some();
+            let open = has_presets && self.open.contains(&item.key);
+            let parent = item.key.clone();
+            rows.push(Row { item, depth: 1, opens: has_presets, open, context: None, columns: None, node: None });
+            if open {
+                stock_rows_of(info.id, &parent, 2, rows);
+            }
+        }
+    }
+
+    /// Adds the heading for the presets that ship with Suhina and, when it is open, a heading per
+    /// device that has any and, under an open one, a row per preset.
+    fn stock_rows(&self, rows: &mut Vec<Row>) {
+        const NODE: &str = "group:stock-presets";
+        let open = self.open.contains(NODE);
+        rows.push(Row {
+            item: heading(NODE, "Stock presets"),
+            depth: 0,
+            opens: true,
+            open,
+            context: None,
+            columns: None,
+            node: None,
+        });
+        if !open {
+            return;
+        }
+        for info in suhina_device_registry::DEVICES.iter().filter(|info| stock_of(info.id).next().is_some()) {
+            let node = child_node(NODE, info.id);
+            let open = self.open.contains(&node);
+            rows.push(Row {
+                item: heading(&node, info.name),
+                depth: 1,
+                opens: true,
+                open,
+                context: None,
+                columns: None,
+                node: None,
+            });
+            if open {
+                stock_rows_of(info.id, &node, 2, rows);
+            }
         }
     }
 

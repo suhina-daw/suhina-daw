@@ -142,7 +142,8 @@ fn a_value_drag_hides_the_pointer_until_the_button_is_up_or_the_window_loses_foc
     let shown = frame(pointer(Pos2::new(20.0, 0.0), Some(false)));
     let shown = [shown, frame(pointer(Pos2::new(20.0, 0.0), None))].concat();
     assert!(!held(&ctx));
-    assert!(shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
+    // The icon a view sets next shows it: a command would come after it and overrule a hidden one.
+    assert!(!shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
     // The release went to another window: losing focus gives the pointer back all the same.
     frame(pointer(Pos2::new(20.0, 20.0), None));
     frame(pointer(Pos2::new(20.0, 20.0), Some(true)));
@@ -151,7 +152,7 @@ fn a_value_drag_hides_the_pointer_until_the_button_is_up_or_the_window_loses_foc
     let unfocused = || egui::RawInput { focused: false, ..pointer(Pos2::new(20.0, 10.0), None) };
     let shown = [frame(unfocused()), frame(unfocused())].concat();
     assert!(!held(&ctx), "an unfocused window never holds the pointer");
-    assert!(shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
+    assert!(!shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
     // Focus back with the drag still going (the release never came): the pointer stays shown.
     let back = [frame(pointer(Pos2::new(20.0, 5.0), None)), frame(pointer(Pos2::new(20.0, 0.0), None))].concat();
     assert!(!held(&ctx), "only a new press takes the pointer again");
@@ -221,4 +222,24 @@ fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
     assert_eq!(run(true, true), egui::CursorIcon::None);
     ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
     assert_eq!(run(false, true), egui::CursorIcon::ResizeVertical);
+}
+
+/// The icon is the frame's own: the frame a value drag lets go, no view has to bring the pointer back.
+#[test]
+fn the_frame_a_value_drag_lets_go_the_icon_shows_the_pointer() {
+    let ctx = egui::Context::default();
+    let held = |released| ValueDrag { raw: true, back: None, released };
+    let icon = |drag: Option<ValueDrag>| {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            if let Some(drag) = drag {
+                ui.ctx().data_mut(|d| d.insert_temp(value_drag_id(), drag));
+            }
+            release_value_drag(ui.ctx());
+            hide_pointer_during_value_drag(ui.ctx());
+        });
+        output.textures_delta.clear();
+        output.platform_output.cursor_icon
+    };
+    assert_eq!(icon(Some(held(true))), egui::CursorIcon::Default);
+    assert_eq!(icon(None), egui::CursorIcon::Default);
 }

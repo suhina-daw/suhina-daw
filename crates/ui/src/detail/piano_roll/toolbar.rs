@@ -272,7 +272,7 @@ pub(super) fn toolbar(
             own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, row.height().max(8.0))),
         )
     };
-    let x = std::cell::Cell::new(row.left() + KEYS - 4.0);
+    let x = std::cell::Cell::new(row.left() + TOOLBAR_INSET);
     let place = || {
         let area = Rect::from_min_size(Pos2::new(x.get(), row.top() + (row.height() - size.y) / 2.0), size);
         x.set(area.right() + gap);
@@ -298,7 +298,7 @@ pub(super) fn toolbar(
         painter.vline(x.get(), row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
     }
     x.set(x.get() + 5.0);
-    let selected = !state.selected.is_empty();
+    let selected = !state.acting().is_empty();
     for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {
         let area = place();
         let active = matches!(button, IconButton::Paste) || selected;
@@ -401,8 +401,7 @@ pub(super) const GRID_MENU: f32 = 76.0;
 
 /// The toolbar's grid menu (› Grid and snapping): its button shows the grid value; its menu holds
 /// Snap to grid, the adaptive widths, the fixed values, Narrow grid, Widen grid and Triplet grid,
-/// each with its key, the chosen ones ticked. While the grid follows the control bar, an entry the
-/// control bar cannot hold is greyed out. Returns the grid picked this frame.
+/// each with its key, the chosen ones ticked. Returns the grid picked this frame.
 pub(super) fn grid_menu(
     ui: &mut Ui,
     rect: Rect,
@@ -416,9 +415,8 @@ pub(super) fn grid_menu(
     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
         let text = egui::RichText::new(format!("{shown}   ")).font(mono.clone()).color(theme::text_value());
         let menu = ui.menu_button(text, |ui| {
-            let follows = clip.grid_follows;
             let keys = grid_key_labels(keymap, &PIANO_GRID_KEYS);
-            picked = grid_entries(ui, grid, &keys, &|g| !follows || g.control_bar_value().is_some());
+            picked = grid_entries(ui, grid, &keys, &|_| true);
         });
         let label = format!("Grid value {shown}");
         menu_arrow(ui, menu.response.rect, theme::text_value());

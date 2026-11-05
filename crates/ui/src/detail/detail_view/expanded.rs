@@ -16,7 +16,7 @@ pub fn expanded(ctx: &egui::Context) -> Option<(TrackId, DeviceAt)> {
 }
 
 /// Opens the expanded panel of the device at `at` on `track`, closing any other.
-pub(super) fn open_expanded(ctx: &egui::Context, track: TrackId, at: DeviceAt) {
+pub(crate) fn open_expanded(ctx: &egui::Context, track: TrackId, at: DeviceAt) {
     ctx.data_mut(|d| d.insert_temp(expanded_id(), (track, at)));
 }
 
@@ -89,6 +89,14 @@ pub fn give_host_values(
 pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox, actions: &mut Vec<Action>) {
     let Some((graph, canvas)) = device.graph.as_ref().and_then(|g| Some((g, g.expanded.as_ref()?))) else {
         return;
+    };
+    // The device's own state its body widgets read: no folders' lists here, so a file row
+    // would stay empty — no device's expanded canvas places one for now.
+    let state = crate::detail::device_widgets::PanelState {
+        name: device.name.clone(),
+        enabled: device.enabled,
+        file: device.file.as_deref().unwrap_or(""),
+        lists: None,
     };
     let size = Vec2::new(canvas.size[0], canvas.size[1]);
     // A strip across the bottom of the main area: the canvas scaled to its width (half to two and
@@ -171,6 +179,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                                 ui,
                                 canvas_rect,
                                 canvas,
+                                &state,
                                 &graph.parameters,
                                 track,
                                 &device.at,
@@ -182,7 +191,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                 return;
             }
             // The canvas stretched to the strip on each axis.
-            crate::detail::device_canvas::show(ui, body, canvas, &graph.parameters, track, &device.at, actions);
+            crate::detail::device_canvas::show(ui, body, canvas, &state, &graph.parameters, track, &device.at, actions);
         },
     );
 }
@@ -192,10 +201,12 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
 /// list fills columns a compact panel wide, `list_height` tall, right of the canvas (ADR 0021 ›
 /// Amendment: device panels, 5); a `body` smaller than that scrolls. Every change is one
 /// `device.setParam`.
+#[allow(clippy::too_many_arguments)] // the state's draw bounds, device target and commands
 pub(super) fn graph_controls(
     ui: &mut Ui,
     body: Rect,
     graph: &GraphBox,
+    state: &crate::detail::device_widgets::PanelState<'_>,
     list_height: f32,
     track: TrackId,
     at: &DeviceAt,
@@ -226,7 +237,7 @@ pub(super) fn graph_controls(
             node_rows(painter, body, graph);
             if let Some(canvas) = &graph.canvas {
                 let rect = Rect::from_min_size(body.min + Vec2::new(0.0, nodes_height), custom_size);
-                crate::detail::device_canvas::show(ui, rect, canvas, &graph.parameters, track, at, actions);
+                crate::detail::device_canvas::show(ui, rect, canvas, state, &graph.parameters, track, at, actions);
             }
             let origin = Vec2::new(body.left(), body.top() + nodes_height);
             for x in &separators {

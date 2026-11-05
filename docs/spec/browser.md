@@ -3,7 +3,7 @@ description: How the browser behaves: places, categories, search, the tree, prev
 read_when: browser, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
-last_verified: 2026-11-02
+last_verified: 2026-11-03
 covers:
   - crates/library/**
   - crates/media/src/midi.rs
@@ -37,7 +37,8 @@ project.
 - **Item:** anything the browser lists. A *file* (sample, MIDI file, preset, project, .sd AudioEffect), a *built-in
   device* (an instrument or an effect) or an installed *plug-in*. An item is named by a key: a
   file by its absolute path, a voice in a preset bank by `<path>#<n>` (1–32), a built-in effect or instrument
-  by `device:<id>`, a plug-in by `plugin:<spec>` (the spec `plugin.list` gives).
+  by `device:<id>`, a plug-in by `plugin:<spec>` (the spec `plugin.list` gives), a preset that
+  ships with Suhina by `stock:<device id>/<name>`.
 - **Folder:** a folder the user added to the browser. Only added folders are listed; there are
   none at first.
 - **Place:** what the sidebar offers: Pinned, the Recent groups and the folders.
@@ -51,8 +52,8 @@ project.
 | Sample | `.wav` `.aif` `.aiff` `.flac` `.mp3` `.ogg` `.oga` | Samples |
 | Stems file | `.stem.mp4` `.stem.m4a` (a master and its stems, [spec](stems-format.md)) | Samples |
 | MIDI file | `.mid` `.midi` | MIDI |
-| Preset | `.syx` (DX7 voice data: one voice, or a bank of 32; [spec](dx7-voice-format.md)) | Presets |
-| Project | `.suhina`, `.als` | All only |
+| Preset | `.preset.suhina` (one device's values, [ADR 0014](../decisions/0014-stock-presets.md)); `.syx` (DX7 voice data: one voice, or a bank of 32; [spec](dx7-voice-format.md)) | Presets |
+| Project | `.suhina` other than a preset, `.als` | All only |
 | Device effect | `.sd` (data-only Suhina graph) | All, Effects |
 
 Other files are not listed. Extensions are matched without regard to case.
@@ -353,8 +354,12 @@ Amendment: device panels for built-in devices).
 | The empty area | A new track with the device: a note track for an instrument, an audio track for an effect, named after the device. |
 
 A **preset** is its device with the preset's values: a DX7 voice is the FM synth playing that
-voice (a bank adds its first voice; a voice row inside the bank adds that voice). Several
-devices dropped together are added in the order they were selected.
+voice (a bank adds its first voice; a voice row inside the bank adds that voice). A
+`.preset.suhina` file is the device it names. The ones that ship with Suhina are listed under their
+device twice: a built-in device with presets opens on them with its chevron, and *Stock presets* in
+All and Presets holds a heading per device (search finds them by name and tag). The device's own
+row, dragged or double-clicked, adds it at its defaults, and a preset's row adds it with that
+preset. Several devices dropped together are added in the order they were selected.
 
 ### Copying samples out
 
@@ -472,7 +477,7 @@ the CLI can do the same.
 
 | Command | Params | Does |
 |---|---|---|
-| `track.add` | `kind?` (`audio`, `midi`), `name?`, `after?`, `device?`, `sd?`, `preset?`, `voice?` | adds a track with its mixer channel, clip slots for every scene and an Arrangement lane, after track `after` or at the end of the regular tracks; with `device` (a built-in id or a plug-in from `plugin.list`), `sd` or `preset`, the device too, and `kind` follows from it; `.sd` and built-in instruments and MIDI effects create MIDI tracks |
+| `track.add` | `kind?` (`audio`, `midi`), `name?`, `after?`, `device?`, `sd?`, `preset?`, `stock?`, `voice?` | adds a track with its mixer channel, clip slots for every scene and an Arrangement lane, after track `after` or at the end of the regular tracks; with `device` (a built-in id or a plug-in from `plugin.list`), `sd`, `preset` or `stock` (a stock preset's key), the device too, and `kind` follows from it; `.sd` and built-in instruments and MIDI effects create MIDI tracks |
 | `clip.addFiles` | `paths`, `track?`, `after?`, `start?`, `scene?`, `separate?`, `stack?`, `warp?` | places samples, MIDI files and Stems files as in *Files*: on `track` (or new tracks when it is missing; a Stems file's group goes into `track` when it is a group); with no `track`, `after` puts the new tracks (not a Stems file's group) right after that track, in its group, instead of after the last regular track; from beat `start` in the Arrangement or from `scene` (1-based) in the Launcher (exactly one of the two); `separate` gives each clip a track; `warp` is the stretch mode for samples with a known tempo (`rhythmic` by default); returns the clips, the new tracks, the Stems groups (`groups`) and what was `skipped` |
 | `device.add` | adds `preset?` and `voice?` (1–32) | the built-in effect or instrument with a preset's values |
 
@@ -507,10 +512,10 @@ the user chooses the browser's folders ([`mcp.md`](../mcp.md)). `library.copyTo`
 
 ## Not decided yet
 
-- Loading the shared JSON preset format for built-in and `.sd` devices, and saving user presets;
-  the format and `.sd` compatibility rules are decided in [ADR 0014](../decisions/0014-stock-presets.md),
-  but the loader and browser entries are not implemented. An `.sd` preset applies to an existing
-  device with a matching id and role; it does not install or create the graph.
+- Saving user presets, and presets of `.sd` devices; the format and `.sd` compatibility rules are
+  decided in [ADR 0014](../decisions/0014-stock-presets.md), but only built-in devices' presets
+  load. An `.sd` preset applies to an existing device with a matching id and role; it does not
+  install or create the graph.
 - Presets of plug-ins (CLAP preset discovery, VST3 presets).
 - Previewing in time with the project, and hot-swapping a device or sample by double-click.
 - Key detection by analysis.

@@ -4,7 +4,7 @@ read_when: preset, stock preset, factory preset, preset contribution, CC0, prese
 type: decision
 status: accepted
 built: partly
-last_verified: 2026-11-02
+last_verified: 2026-11-03
 covers:
   - presets/**
   - .github/PULL_REQUEST_TEMPLATE/preset.md
@@ -97,15 +97,28 @@ setting, the name was checked in TMView on 2026-10-28 and is held by no one for 
 and it is not Suhina's branding. The preset's values are still Suhina's own, and a style name is
 never a product's or a device's name.
 
+## Amendment: a preset's file name and the loader (2026-11-03)
+
+A preset file is named `<preset name>.<device id>.preset.suhina`, as in
+`Warm FM Bass.fm-synth.preset.suhina`, following `.theme.suhina`: the name says in a folder what the
+sound is and what it is for, and the file can be dropped where any preset can. The `.preset` is what
+makes it one: a file is known by its name alone, so `Song.reverb.suhina` stays a project, and the
+device the preset applies to is the one the file names inside. A file keeps the JSON format above.
+
+The stock presets are built into the executable from `presets/`, so nothing beside it is needed.
+`device-registry` reads them and a preset file by the same code, and they are added with
+`device.add {stock}` and `track.add {stock}`, or `{preset}` for a file. A preset holds one device's
+values: what a sound gets from effects after it is not in the preset. A test keeps every file in
+`presets/` built in, and every stock preset naming every parameter of its device.
+
 ## Consequences
 
 - `.github/PULL_REQUEST_TEMPLATE/preset.md` and the *Preset contribution* issue form ask for the
   points in 3; [`CONTRIBUTING.md`](../../CONTRIBUTING.md) links them.
-- The browser lists stock presets from `presets/` next to the user's own once the loader exists.
+- The browser lists the stock presets under *Stock presets*, in All and Presets.
 
 ## Not decided yet
 
-- The shared loader in `device-registry`, `.sd` preset application to an existing device, and the
-  browser entries for stock and user presets.
+- `.sd` preset application to an existing device.
 - Saving the user's own presets in the settings folder.
 - CLAP preset discovery and VST3 presets for plug-ins.
