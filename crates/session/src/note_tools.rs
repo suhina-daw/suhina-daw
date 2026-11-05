@@ -3,8 +3,8 @@
 
 //! The MIDI tools of the clip editor: `note.setMuted`, `note.humanize`, `note.fitToScale`,
 //! `note.invert`, `note.reverse`, `note.legato`, `note.stretch`, `note.randomizeVelocity` and
-//! `note.rampVelocity` (`docs/spec/ui-clip-editor.md` › Muting, › Other note tools (MIDI tools
-//! column)).
+//! `note.rampVelocity` (`docs/spec/ui-clip-editor.md` › Muting, › Note tools (the clip
+//! panel's tools)).
 //!
 //! Every one of them edits through [`crate::notes::edit_notes`], so a clip that shares its content
 //! with a duplicate gets a copy of it first (copy on write, ADR 0001) and the whole call is one
@@ -23,9 +23,10 @@ use crate::notes::{
 };
 use crate::{CommandError, Session};
 
-/// The default of `note.humanize`'s `time`, in beats.
-const DEFAULT_HUMANIZE_BEATS: f64 = 0.02;
-/// The most `note.humanize` may move a start by, in beats.
+/// The default of `note.humanize`'s `ms`: how far a start may move, in milliseconds.
+const DEFAULT_HUMANIZE_MS: f64 = 10.0;
+/// The most `note.humanize` may move a start by, in milliseconds (`ms`) and in beats (`time`).
+const MAX_HUMANIZE_MS: f64 = 50.0;
 const MAX_HUMANIZE_BEATS: f64 = 1.0;
 /// The default of `note.humanize`'s `velocity`, in MIDI steps.
 const DEFAULT_HUMANIZE_STEPS: f64 = 8.0;
@@ -68,6 +69,22 @@ impl Rng {
     /// A number in `[-1, 1)`.
     fn next_signed(&mut self) -> f64 {
         self.next_f64() * 2.0 - 1.0
+    }
+
+    /// A normally distributed draw within ±`limit`: most draws small, few large, none past the
+    /// limit (a standard deviation of half the limit, the tails cut off), as a person's timing
+    /// varies (#1214). Box–Muller over two uniform draws.
+    fn next_within(&mut self, limit: f64) -> f64 {
+        if limit <= 0.0 {
+            // Still two draws, so a limit of 0 keeps the rest of the sequence where it was.
+            self.next_f64();
+            self.next_f64();
+            return 0.0;
+        }
+        let u1 = 1.0 - self.next_f64();
+        let u2 = self.next_f64();
+        let gauss = (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos();
+        (gauss * limit / 2.0).clamp(-limit, limit)
     }
 }
 
@@ -220,18 +237,47 @@ pub(crate) fn set_muted(session: &mut Session, params: &Value) -> Result<Value, 
     })
 }
 
-/// `note.humanize`: moves each note's start by a random draw in ±`time` beats and its velocity by
-/// a random draw in ±`velocity` MIDI steps, each kept within its range. The same `seed` gives the
-/// same result, so a call can be repeated.
-pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let beats = Args::new(params).opt_f64("time")?.unwrap_or(DEFAULT_HUMANIZE_BEATS);
-    if !(0.0..=MAX_HUMANIZE_BEATS).contains(&beats) {
-        return Err(format!("time must be 0 to {MAX_HUMANIZE_BEATS} beats, got {beats}").into());
+/// How far `note.humanize` may move a start, in beats: `time` in beats, or `ms` in milliseconds
+/// at the project's tempo (10 ms when neither is given), never both.
+fn humanize_beats(session: &Session, params: &Value) -> Result<f64, CommandError> {
+    let args = Args::new(params);
+    let time = args.opt_f64("time")?;
+    let ms = args.opt_f64("ms")?;
+    match (time, ms) {
+        (Some(_), Some(_)) => Err("give time (beats) or ms (milliseconds), not both".into()),
+        (Some(beats), None) => {
+            if !(0.0..=MAX_HUMANIZE_BEATS).contains(&beats) {
+                return Err(format!("time must be 0 to {MAX_HUMANIZE_BEATS} beats, got {beats}").into());
+            }
+            Ok(beats)
+        }
+        (None, ms) => {
+            let ms = ms.unwrap_or(DEFAULT_HUMANIZE_MS);
+            if !(0.0..=MAX_HUMANIZE_MS).contains(&ms) {
+                return Err(format!("ms must be 0 to {MAX_HUMANIZE_MS} milliseconds, got {ms}").into());
+            }
+            let bpm = session.project.transport.tempo_bpm;
+            let bpm = if bpm.is_finite() && bpm > 0.0 { bpm } else { 120.0 };
+            Ok(ms / 1000.0 * bpm / 60.0)
+        }
     }
+}
+
+/// `note.humanize`: moves each note's start by a normally distributed draw within ±`time` beats
+/// (or ±`ms` milliseconds) and its velocity by one within ±`velocity` MIDI steps, each kept within
+/// its range (#1214). With `chords` (the default) notes that start together move together. A
+/// note's end stays where it was, unless that would run into the next note on the same key. The
+/// same `seed` gives the same result, so a call can be repeated.
+pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let beats = humanize_beats(session, params)?;
     let steps = Args::new(params).opt_f64("velocity")?.unwrap_or(DEFAULT_HUMANIZE_STEPS);
     if !(0.0..=127.0).contains(&steps) {
         return Err(format!("velocity must be 0 to 127 MIDI steps, got {steps}").into());
     }
+    let chords = match Args::new(params).value("chords") {
+        None => true,
+        Some(value) => value.as_bool().ok_or("chords must be true or false")?,
+    };
     let seed = seed_of(params)?;
     if nothing_to_do(session, params)? {
         return Ok(json!({ "notes": [], "seed": seed }));
@@ -239,25 +285,66 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
     edit_notes(&mut session.project, params, move |notes| {
         let named = chosen(params, notes.len())?;
         let mut rng = Rng::new(seed);
+        // The offset each start got, so a later note of a chord moves with the first.
+        let mut starts: Vec<(f64, f64)> = Vec::new();
         let mut moved = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
             let mut humanized = *note;
-            let time = (note.time + rng.next_signed() * beats).clamp(0.0, MAX_BEAT);
+            let drawn = rng.next_within(beats);
+            let offset = match starts.iter().find(|(start, _)| chords && (start - note.time).abs() < EPSILON) {
+                Some((_, offset)) => *offset,
+                None => {
+                    starts.push((note.time, drawn));
+                    drawn
+                }
+            };
+            let time = (note.time + offset).clamp(0.0, MAX_BEAT);
             if time != note.time {
+                // The end stays where it was: the note gets longer or shorter by what it moved.
+                let end = note.time + note.duration;
                 humanized.time = time;
+                humanized.duration = (end - time).max(MIN_LENGTH);
             }
-            let midi = f64::from(midi_velocity(note.velocity)) + rng.next_signed() * steps;
+            let midi = f64::from(midi_velocity(note.velocity)) + rng.next_within(steps);
             apply_velocity(&mut humanized, midi);
             moved.push((index, humanized));
         }
+        let touched: Vec<usize> = moved.iter().filter(|(i, n)| notes.get(*i) != Some(n)).map(|(i, _)| *i).collect();
         for (index, note) in moved {
             if let Some(slot) = notes.get_mut(index) {
                 *slot = note;
             }
         }
+        keep_off_the_next(notes, &touched);
         Ok(json!({ "notes": named, "seed": seed }))
     })
+}
+
+/// Shortens a note that now runs into the next note on its key, where either of the two was moved
+/// (`touched`): its end goes to the next one's start, a hundredth of a beat long at least.
+fn keep_off_the_next(notes: &mut [Note], touched: &[usize]) {
+    if touched.is_empty() {
+        return;
+    }
+    let mut order: Vec<usize> = (0..notes.len()).collect();
+    order.sort_by(|a, b| {
+        let (Some(x), Some(y)) = (notes.get(*a), notes.get(*b)) else { return std::cmp::Ordering::Equal };
+        x.key.cmp(&y.key).then(x.time.total_cmp(&y.time))
+    });
+    for pair in order.windows(2) {
+        let &[a, b] = pair else { continue };
+        if !(touched.contains(&a) || touched.contains(&b)) {
+            continue;
+        }
+        let (Some(first), Some(next)) = (notes.get(a).copied(), notes.get(b).copied()) else { continue };
+        if first.key != next.key || first.time + first.duration <= next.time + EPSILON {
+            continue;
+        }
+        if let Some(slot) = notes.get_mut(a) {
+            slot.duration = (next.time - first.time).max(MIN_LENGTH);
+        }
+    }
 }
 
 /// `note.fitToScale`: moves each note to the nearest key of a scale over a root (the clip's own
