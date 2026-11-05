@@ -142,6 +142,19 @@ impl Scale {
         }
     }
 
+    /// `value` as [`Self::command`] sets it, back in the lane's unit: the pan rounded to a
+    /// thousandth, the volume to a hundredth of a decibel (silent at its floor), so text shown
+    /// before a command is the text the point has after it.
+    fn committed(&self, value: f64) -> f64 {
+        match self {
+            Self::Volume => match self.number(value) {
+                db if value <= 0.0 || db <= VOLUME_FLOOR => 0.0,
+                db => 10f64.powf(db / 20.0),
+            },
+            _ => self.number(value),
+        }
+    }
+
     /// A value as `automation.addPoint` takes it, unrounded, so a point added on the envelope
     /// keeps the envelope's value exactly.
     fn exact(&self, value: f64) -> Value {
@@ -1128,6 +1141,13 @@ fn position_of(plot: Rect, y: f32) -> f64 {
     if plot.height() > 0.0 { f64::from((plot.bottom() - y) / plot.height()).clamp(0.0, 1.0) } else { 0.0 }
 }
 
+/// The lane position at height `y` in `plot`, not held in the lane: 1.2 is a fifth of the plot
+/// above its top. A point drag measures the pointer with it, so a point taken hold of off its
+/// centre still reaches the lane's ends when the pointer goes past them (#811).
+fn place_of(plot: Rect, y: f32) -> f64 {
+    if plot.height() > 0.0 { f64::from((plot.bottom() - y) / plot.height()) } else { 0.0 }
+}
+
 /// A track colour from the project as egui draws it.
 fn color(rgb: Rgb) -> Color32 {
     Color32::from_rgb(rgb.0, rgb.1, rgb.2)
@@ -1290,7 +1310,7 @@ fn dragged_text(param: &Param, drag: &PointDrag, geometry: &Geometry, free: bool
     let point = param.points.get(drag.point)?;
     let (beats, delta) = drag_delta(drag, param, geometry, free);
     let value = moved_value(param, drag, point.value, delta);
-    Some(format!("{} at beat {}", param.scale.text(value), round(point.beat + beats, 1000.0)))
+    Some(format!("{} at beat {}", param.scale.text(param.scale.committed(value)), round(point.beat + beats, 1000.0)))
 }
 
 /// Where the point a drag holds sat on the lane before the drag.
@@ -1458,7 +1478,7 @@ fn lane(
             params["shape"] = json!(shape);
         }
         actions.push(Action::new("automation.addPoint", params));
-        let grab = (geometry.beat_of(pos.x), position_of(plot, pos.y));
+        let grab = (geometry.beat_of(pos.x), place_of(plot, pos.y));
         state.new_point = Some(NewPoint { track, key: key.clone(), beat, grab });
         state.selection = None;
         state.range = None;
@@ -1561,7 +1581,7 @@ fn lane(
                 state.curve_drag = Some(CurveDrag { track, key: key.clone(), point, paths, moved: 0.0, curve });
             }
             Some(point) if shift => {
-                let grab = (geometry.beat_of(pos.x), position_of(plot, pos.y));
+                let grab = (geometry.beat_of(pos.x), place_of(plot, pos.y));
                 state.point_drag = Some(PointDrag {
                     track,
                     key: key.clone(),
@@ -1590,7 +1610,7 @@ fn lane(
         drag.now = dragged_to(
             drag.grab,
             geometry.beat_of(pos.x),
-            position_of(plot, pos.y),
+            place_of(plot, pos.y),
             grabbed_at(param, drag),
             plot,
             geometry,
@@ -1601,7 +1621,7 @@ fn lane(
         && let Some(pos) = body.interact_pointer_pos()
         && let Some(drag) = state.point_drag.as_mut().filter(|d| d.segment && d.track == track && &d.key == key)
     {
-        let position = position_of(plot, pos.y);
+        let position = place_of(plot, pos.y);
         drag.now = (drag.grab.0, drag.grab.1 + (position - drag.grab.1) * 0.25);
     }
     if body.dragged_by(egui::PointerButton::Primary) {
@@ -1736,7 +1756,7 @@ fn lane(
         drag.now = dragged_to(
             drag.grab,
             geometry.beat_of(pos.x),
-            position_of(plot, pos.y),
+            place_of(plot, pos.y),
             grabbed_at(param, drag),
             plot,
             geometry,
@@ -2007,7 +2027,7 @@ fn lane(
                 .as_ref()
                 .filter(|s| s.track == track && &s.key == key)
                 .map_or_else(|| vec![index], |s| s.points.clone());
-            let grab = (geometry.beat_of(pos.x), position_of(plot, pos.y));
+            let grab = (geometry.beat_of(pos.x), place_of(plot, pos.y));
             state.point_drag = Some(PointDrag {
                 track,
                 key: key.clone(),
@@ -2028,7 +2048,7 @@ fn lane(
             drag.now = dragged_to(
                 drag.grab,
                 geometry.beat_of(pos.x),
-                position_of(plot, pos.y),
+                place_of(plot, pos.y),
                 grabbed_at(param, drag),
                 plot,
                 geometry,

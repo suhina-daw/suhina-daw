@@ -431,3 +431,40 @@ fn the_text_of_a_dragged_point_has_its_value_and_beat() {
     let gone = PointDrag { point: 3, ..drag };
     assert_eq!(dragged_text(&param, &gone, &geometry, false), None);
 }
+
+/// A point taken hold of well off its centre still reaches the lane's ends: the pointer is
+/// measured past the plot's top and bottom, not held in it (#811).
+#[test]
+fn a_point_taken_off_its_centre_reaches_the_lanes_ends() {
+    let (plot, geometry) = plot_and_geometry();
+    let param = pan_lane(0.0);
+    // 4.8 points above the point's centre, near the edge of the square that takes it.
+    let grab = (4.0, place_of(plot, plot.center().y - 4.8));
+    let start = grabbed_at(&param, &point_drag(grab));
+    let mut drag = point_drag(grab);
+    // The pointer at the plot's top would leave the point 4.8 points short of it; above the top
+    // it reaches the end.
+    assert!((place_of(plot, plot.top() - 10.0) - (1.0 + 10.0 / 32.0)).abs() < 1e-9);
+    drag.now = dragged_to(grab, 4.0, place_of(plot, plot.top() - 10.0), start, plot, &geometry, false);
+    assert_eq!(dragged_text(&param, &drag, &geometry, false).as_deref(), Some("50R at beat 4"));
+    assert_eq!(drop_points(&drag, &param, &geometry, false).map(|a| a.params["value"].clone()), Some(json!(1.0)));
+    drag.now = dragged_to(grab, 4.0, place_of(plot, plot.bottom() + 10.0), start, plot, &geometry, false);
+    assert_eq!(dragged_text(&param, &drag, &geometry, false).as_deref(), Some("50L at beat 4"));
+    assert_eq!(drop_points(&drag, &param, &geometry, false).map(|a| a.params["value"].clone()), Some(json!(-1.0)));
+}
+
+/// The text shown while dragging is that of the value the command sets: a pan rounded to a
+/// thousandth (0.2499 sets 0.25, 13R, not the 12R its unrounded value reads), a volume to a
+/// hundredth of a decibel, silent at its floor.
+#[test]
+fn the_dragged_text_is_that_of_the_value_the_command_sets() {
+    assert_eq!(Scale::Pan.text(0.2499), "12R");
+    assert_eq!(Scale::Pan.committed(0.2499), 0.25);
+    assert_eq!(Scale::Pan.text(Scale::Pan.committed(0.2499)), "13R");
+    assert_eq!(Scale::Pan.command(0.2499), json!(0.25));
+    let gain = 10f64.powf(-6.004 / 20.0);
+    assert!((gain_to_db(Scale::Volume.committed(gain)) + 6.0).abs() < 1e-9);
+    assert_eq!(Scale::Volume.committed(0.0), 0.0);
+    assert_eq!(Scale::Volume.committed(10f64.powf(-80.0 / 20.0)), 0.0);
+    assert_eq!(Scale::Mute.committed(0.7), 1.0);
+}

@@ -370,7 +370,8 @@ for a pan, +6 dB for the volume, a device parameter's end of range (#811). In a 
 height one point is about 3 % of the range, so a point a pixel under the top would otherwise play
 47R and be drawn on the same line as 50R. It applies to a click that adds a point away from the
 line and to a point dragged without Shift, the dragged point deciding for the points moved with
-it. A Shift drag and Edit value reach the values next to the ends.
+it; the pointer may go past the lane's edge, so a point taken hold of off its centre gets there
+too. The value shown while dragging is the one the command sets (a pan rounded to a thousandth). A Shift drag and Edit value reach the values next to the ends.
 
 ## In the project file
 
