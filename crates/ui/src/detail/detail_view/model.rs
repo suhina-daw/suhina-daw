@@ -392,6 +392,8 @@ pub struct AudioPanel {
     /// What each source says the tempo is (metadata, file name, detection), once the Find menu
     /// asked for it.
     pub candidates: Option<[Option<f64>; 3]>,
+    /// A bar of the project in beats, for the markers' `bar.beat.sixteenth`.
+    pub bar_beats: f64,
 }
 
 /// What the detail area shows for a clip that has an editor: the editor, or its track's devices.
@@ -690,6 +692,7 @@ pub fn build_with(
                     envelope_points: placed.audio.gain_envelope.len(),
                     playhead: None,
                     candidates: None,
+                    bar_beats: bar,
                 }),
             }),
             chain(project, id, plugins, nam.clone()),

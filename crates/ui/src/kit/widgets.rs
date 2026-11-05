@@ -981,6 +981,44 @@ pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response:
     );
 }
 
+/// `bpm` on the steps of the place a drag holds, counted from where it started (`grab`: the step
+/// and the start), to a thousandth of a BPM, within the tempo's range (#829).
+pub fn snap_tempo(grab: Option<(f64, f64)>, bpm: f64) -> f64 {
+    let snapped = match grab {
+        Some((step, from)) if step > 0.0 => from + ((bpm - from) / step).round() * step,
+        _ => bpm,
+    };
+    ((snapped * 1000.0).round() / 1000.0).clamp(20.0, 999.0)
+}
+
+/// The step of the place in the tempo `text` (right-aligned at `right`, characters `width`
+/// apart) under `x`: 1 BPM for the integer part, 0.1, 0.01 or 0.001 for the decimals (#829).
+pub fn tempo_place(text: &str, right: f32, width: f32, x: f32) -> f64 {
+    let len = text.chars().count();
+    let Some(dot) = text.find('.') else { return 1.0 };
+    if width <= 0.0 {
+        return 1.0;
+    }
+    let from_right = ((right - x) / width).floor().max(0.0) as usize;
+    let index = len.saturating_sub(from_right + 1);
+    if index <= dot {
+        return 1.0;
+    }
+    let decimals = (index - dot).min(3);
+    10f64.powi(-(decimals as i32))
+}
+
+/// The characters of the tempo `text` the place of `step` covers, as a range of indices: the
+/// whole integer part for 1 BPM, one decimal otherwise.
+pub fn tempo_place_span(text: &str, step: f64) -> (usize, usize) {
+    let dot = text.find('.').unwrap_or(text.len());
+    if step >= 1.0 {
+        return (0, dot);
+    }
+    let decimals = (-step.log10()).round().max(1.0) as usize;
+    (dot + decimals, dot + decimals + 1)
+}
+
 /// A volume in dB as the mixer shows it.
 pub fn format_db(db: f64) -> String {
     if db.is_finite() && db > -70.0 { format!("{db:.1}") } else { "-inf".into() }

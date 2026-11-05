@@ -58,23 +58,29 @@ it), through `clip.rename`.
 
 Every number in the column is a field that:
 
-- is dragged up or down (sideways for a marker or loop field, as before) and makes one undo step
-  when the drag ends;
+- is dragged up or down, and the clip follows while it moves (a few times a second), the whole
+  drag one undo step (`continue` on the command), as the project's tempo field does;
+- a tempo, marker or loop field is dragged by the place under the pointer where it was pressed:
+  the tempo's integer part steps 1 BPM and each decimal a tenth of the one before (#829); a
+  marker's bar, beat or sixteenth steps a bar, a beat or a quarter beat. The place is underlined;
 - steps with the arrow keys after a click, and takes a number typed after a click with Enter, as
   every value control does ([#707](https://github.com/suhina-daw/suhina-daw/issues/707));
 - opens a text field on a **double-click**: the number is selected in it, Enter sets it, Escape or a
   click elsewhere leaves it as it was. A text that is not a number is ignored.
 
-The fader and the knob are not fields: a double-click on them puts them back to 0 (0 dB, 0
-semitones). Their readouts are fields, so the gain and the pitch can be typed.
+The fader and the knob follow a drag as the fields do, and take keys the same way: clicked, a
+number typed and Enter set them and the arrows step them (the fader 1 dB, Shift 0.1; the knob a
+semitone). A double-click on them puts them back to 0 (0 dB, 0 semitones). A marker typed as
+`3.2` is bar 3, beat 2; `3` alone is bar 3's start.
 
 | Value | Range | Steps (drag, arrows) | Shown |
 |---|---|---|---|
 | Gain | −70 dB to +24 dB (below −70 is silence, shown −inf); on the fader −24 … +24 dB take its upper three quarters, 0 dB at 62.5 % | 0.1 dB | `-6.0 dB` |
 | Semitones | −48 to +48 | 1 semitone | `+7 st` |
 | Cents | −50 to +50 | 1 cent | `+12 ct` |
-| Tempo | 20 to 999 BPM | 0.1 BPM | `96.00 BPM` |
-| Markers, loop | 0 to 120 000 content beats; the loop a quarter beat long at least | a quarter beat | `4.25 beats` |
+| Tempo | 20 to 999 BPM | the place grabbed: 1, 0.1, 0.01 or 0.001 BPM | `96.000` |
+| Markers, loop position | 0 to 120 000 content beats, as `bar.beat.sixteenth` from 1 in the project's time signature | the place grabbed: a bar, a beat or a quarter beat | `3.2.1` |
+| Loop length | a quarter beat to 120 000 beats, as `bars.beats.sixteenths` from 0 | as the markers | `1.0.2` |
 
 The transpose is semitones and cents together (`clip.setAudio` takes semitones with a fraction, a
 cent a hundredth). The knob sets the whole semitones and keeps the cents; the Cents field keeps the

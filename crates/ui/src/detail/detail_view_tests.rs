@@ -140,8 +140,9 @@ fn an_audio_clips_column_shows_its_markers_and_gain() {
         },
         Vec::new(),
     );
-    harness.get_by_label("Start marker: 1 beats");
-    harness.get_by_label("End marker: 5 beats");
+    // Bars, beats and sixteenths, counted from 1.
+    harness.get_by_label("Start marker: 1.2.1");
+    harness.get_by_label("End marker: 2.2.1");
     // The slot's gain is a control to drag, not only a value shown.
     let gain = harness.get_by_label("Gain: 0.0 dB");
     assert_eq!(gain.accesskit_node().role(), egui::accesskit::Role::Slider);
@@ -1111,14 +1112,18 @@ fn the_gain_fader_drags_and_resets() {
     for dy in [5.0, 10.0, 20.0] {
         harness.hover_at(at - egui::vec2(0.0, dy));
         harness.run();
-        assert!(harness.state().is_empty(), "nothing is set while it is dragged");
     }
+    assert!(!harness.state().is_empty(), "the gain follows while it is dragged");
     harness.drop_at(at - egui::vec2(0.0, 20.0));
     harness.run();
     let actions = std::mem::take(harness.state_mut());
-    assert_eq!(actions.len(), 1, "one undo step for the drag");
-    assert_eq!((actions[0].id, &actions[0].params["clip"]), ("clip.setGain", &json!(beat_b.0)));
-    assert!(actions[0].params["db"].as_f64().is_some_and(|db| db > -6.0), "{:?}", actions[0].params);
+    assert!(actions.len() >= 2, "{actions:?}");
+    assert!(actions.iter().all(|a| a.id == "clip.setGain" && a.params["clip"] == json!(beat_b.0)));
+    // One undo step: the first call starts it, every later one continues it.
+    assert_eq!(actions[0].params["continue"], json!(false));
+    assert!(actions[1..].iter().all(|a| a.params["continue"] == json!(true)), "{actions:?}");
+    let last = actions.last().and_then(|a| a.params["db"].as_f64());
+    assert!(last.is_some_and(|db| db > -6.0), "{last:?}");
     double_click(&mut harness, at);
     let reset = harness.state().last().map(|a| a.params["db"].clone());
     assert_eq!(reset, Some(json!(0.0)));
@@ -1143,10 +1148,9 @@ fn the_pitch_knob_and_the_cents_field_set_the_transpose() {
     harness.drop_at(at - egui::vec2(0.0, 12.0));
     harness.run();
     let actions = std::mem::take(harness.state_mut());
-    assert_eq!(actions.len(), 1);
-    assert_eq!(actions[0].id, "clip.setAudio");
+    assert!(actions.iter().all(|a| a.id == "clip.setAudio"));
     // 12 points up at a quarter semitone each: 3 semitones up, the 25 cents kept.
-    assert_eq!(actions[0].params["transpose"], json!(5.25));
+    assert_eq!(actions.last().map(|a| a.params["transpose"].clone()), Some(json!(5.25)));
     let cents = harness.get_by_label("Cents: +25 ct").rect().center();
     double_click(&mut harness, cents);
     harness.get_by_label("Cents value").click();
@@ -1170,12 +1174,12 @@ fn the_tempo_is_typed_halved_and_doubled() {
     };
     let (detail, beat_b) = audio_detail(panel, 0.0, 0.0);
     let mut harness = panel_harness(detail);
-    assert!(harness.query_by_label("Tempo: 96.00 BPM").is_some());
+    assert!(harness.query_by_label("Tempo: 96.000").is_some());
     harness.get_by_label("Halve the tempo").click();
     harness.run();
     harness.get_by_label("Double the tempo").click();
     harness.run();
-    let field = harness.get_by_label("Tempo: 96.00 BPM").rect().center();
+    let field = harness.get_by_label("Tempo: 96.000").rect().center();
     double_click(&mut harness, field);
     harness.get_by_label("Tempo value").click();
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
@@ -1226,7 +1230,7 @@ fn a_slots_clip_has_no_set_buttons() {
     info.at = Some(ClipRef::Slot(TrackId(1), 0));
     let harness = panel_harness(Detail::Clip(info, chain));
     assert!(harness.query_by_label("Set Start marker to the playhead").is_none());
-    assert!(harness.query_by_label("Start marker: 1 beats").is_some());
+    assert!(harness.query_by_label("Start marker: 1.2.1").is_some());
 }
 
 /// The fields keep a gap between them: the column is no longer one grey box over its rows
@@ -1236,8 +1240,8 @@ fn the_panels_fields_do_not_touch() {
     use egui_kittest::kittest::Queryable;
     let (detail, _) = audio_detail(AudioPanel { tempo: Some(120.0), ..AudioPanel::default() }, 0.0, 0.0);
     let harness = panel_harness(detail);
-    let start = harness.get_by_label("Start marker: 1 beats").rect();
-    let end = harness.get_by_label("End marker: 5 beats").rect();
+    let start = harness.get_by_label("Start marker: 1.2.1").rect();
+    let end = harness.get_by_label("End marker: 2.2.1").rect();
     assert!(end.top() - start.bottom() >= 3.0, "{start:?} {end:?}");
     let warp = harness.get_by_label("Warp: On").rect();
     let mode = harness.get_by_label("Mode: Smooth").rect();
@@ -1253,4 +1257,49 @@ fn a_transpose_splits_into_semitones_and_cents_and_the_fader_maps_both_ways() {
         assert!((back - db).abs() < 1e-9, "{db} {back}");
     }
     assert_eq!(super::clip_panel::fader_position(0.0), 0.625);
+}
+
+/// Markers read and type as bars, beats and sixteenths (4/4 here; 6/8 has three beats a bar).
+#[test]
+fn markers_are_bars_beats_and_sixteenths() {
+    use super::clip_panel::{bars_parse, bars_text};
+    assert_eq!(bars_text(0.0, 4.0, true), "1.1.1");
+    assert_eq!(bars_text(9.25, 4.0, true), "3.2.2");
+    assert_eq!(bars_text(196.65, 4.0, true), "50.1.3");
+    assert_eq!(bars_text(4.5, 4.0, false), "1.0.2");
+    assert_eq!(bars_text(3.0, 3.0, true), "2.1.1");
+    assert_eq!(bars_parse("3.2.2", 4.0, true), Some(9.25));
+    assert_eq!(bars_parse("3", 4.0, true), Some(8.0), "a bar alone is its start");
+    assert_eq!(bars_parse("1.0.2", 4.0, false), Some(4.5));
+    assert_eq!(bars_parse("x", 4.0, true), None);
+}
+
+/// A marker dragged by the beat number under the pointer moves by whole beats, following as it
+/// goes, in one undo step, as the project's tempo field steps the place it was grabbed by.
+#[test]
+fn a_marker_is_dragged_by_the_place_under_the_pointer() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, _) = audio_detail(AudioPanel::default(), 0.0, 0.0);
+    let mut harness = panel_harness(detail);
+    let field = harness.get_by_label("Start marker: 1.2.1").rect();
+    // The text is right-aligned: "1.2.1", its beat the third character from the right.
+    let width = 7.0;
+    let at = egui::pos2(field.right() - 3.0 - width * 2.5, field.center().y);
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.run();
+    for dy in [4.0, 8.0] {
+        harness.hover_at(at - egui::vec2(0.0, dy));
+        harness.run();
+    }
+    harness.drop_at(at - egui::vec2(0.0, 8.0));
+    harness.run();
+    let offsets: Vec<f64> = harness
+        .state()
+        .iter()
+        .filter(|a| a.id == "clip.setStart")
+        .filter_map(|a| a.params["offset"].as_f64())
+        .collect();
+    assert!(offsets.last().is_some_and(|o| (o - o.round()).abs() < 1e-9 && *o > 1.0), "whole beats: {offsets:?}");
 }

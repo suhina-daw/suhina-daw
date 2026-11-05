@@ -30,12 +30,96 @@ const GAIN_RANGE: (f64, f64) = (-70.0, 24.0);
 const SEMITONES: (f64, f64) = (-48.0, 48.0);
 const CENTS: (f64, f64) = (-50.0, 50.0);
 
-/// The beat count a marker or loop field shows.
-fn beats(value: f64) -> String {
-    beats_text(value)
+/// How often a drag sends its value while it moves, in seconds: the project follows a few times a
+/// second, in one undo step, as the tempo field's drag does (#916).
+const SEND_EVERY: f64 = 0.1;
+
+/// A value a control sets, and whether it continues the undo step of the control's call before
+/// it (`continue`): every call of one drag after its first does.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Change {
+    pub value: f64,
+    pub more: bool,
 }
 
-/// Semitones as the knob's readout shows them.
+/// What a drag sends: while it moves, at most every [`SEND_EVERY`]; when it ends, always. `id` is
+/// the control's, under which the time of its last send is kept.
+fn send(ui: &Ui, id: Id, value: f64, done: bool) -> Option<Change> {
+    let key = id.with("sent");
+    let sent = ui.data(|d| d.get_temp::<f64>(key));
+    if done {
+        ui.data_mut(|d| d.remove::<f64>(key));
+        return Some(Change { value, more: sent.is_some() });
+    }
+    let now = ui.input(|i| i.time);
+    if sent.is_none_or(|at| now - at >= SEND_EVERY) {
+        ui.data_mut(|d| d.insert_temp(key, now));
+        return Some(Change { value, more: sent.is_some() });
+    }
+    None
+}
+
+/// A bar of the project in beats, never 0.
+fn bar_of(panel: &AudioPanel) -> f64 {
+    if panel.bar_beats.is_finite() && panel.bar_beats > 0.0 { panel.bar_beats } else { 4.0 }
+}
+
+/// A content beat as `bar.beat.sixteenth`, counted from 1 (a position), or from 0 (a length).
+pub(super) fn bars_text(beats: f64, bar: f64, from_one: bool) -> String {
+    let quarters = (beats.max(0.0) * 4.0 + 1e-6).floor();
+    let per_bar = (bar * 4.0).max(1.0);
+    let bars = (quarters / per_bar).floor();
+    let rest = quarters - bars * per_bar;
+    let one = if from_one { 1 } else { 0 };
+    format!("{}.{}.{}", bars as i64 + one, (rest / 4.0).floor() as i64 + one, (rest % 4.0) as i64 + one)
+}
+
+/// `bar.beat.sixteenth` typed, as beats: missing parts are the first (a position) or none (a
+/// length); "3" is bar 3. `None` for what is not that.
+pub(super) fn bars_parse(text: &str, bar: f64, from_one: bool) -> Option<f64> {
+    let one = if from_one { 1.0 } else { 0.0 };
+    let parts: Vec<f64> = text.trim().split('.').map(|p| p.trim().parse::<f64>()).collect::<Result<_, _>>().ok()?;
+    if parts.is_empty() || parts.len() > 3 || parts.iter().any(|p| !p.is_finite()) {
+        return None;
+    }
+    let at = |i: usize| parts.get(i).copied().unwrap_or(one) - one;
+    Some((at(0) * bar + at(1) + at(2) * 0.25).max(0.0))
+}
+
+/// The places of a `bar.beat.sixteenth` text a drag steps: each number and its step in beats.
+fn bars_places(text: &str, bar: f64) -> Vec<(usize, usize, f64)> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    for (index, part) in text.split('.').enumerate() {
+        let len = part.chars().count();
+        let step = [bar, 1.0, 0.25].get(index).copied().unwrap_or(0.25);
+        out.push((from, from + len, step));
+        from += len + 1;
+    }
+    out
+}
+
+/// The places of a tempo's text, as the project's tempo field has them (#829): the integer part
+/// 1 BPM, each decimal a tenth of the one before.
+fn tempo_places(text: &str) -> Vec<(usize, usize, f64)> {
+    let dot = text.find('.').unwrap_or(text.len());
+    let mut out = vec![(0, dot, 1.0)];
+    for decimal in 1..=3 {
+        if dot + decimal < text.len() + 1 && dot + decimal <= text.chars().count() {
+            out.push((dot + decimal, dot + decimal + 1, 10f64.powi(-(decimal as i32))));
+        }
+    }
+    out
+}
+
+/// A number typed, with a unit after it ("96 BPM", "-6 dB") left off.
+fn plain_number(text: &str) -> Option<f64> {
+    let number: String =
+        text.trim().chars().take_while(|c| c.is_ascii_digit() || matches!(c, '-' | '+' | '.' | ',')).collect();
+    number.replace(',', ".").parse::<f64>().ok().filter(|n| n.is_finite())
+}
+
+/// Semitones as the knob/// Semitones as the knob's readout shows them.
 fn semitones_text(st: f64) -> String {
     let st = st.round();
     if st > 0.0 { format!("+{st} st") } else { format!("{st} st") }
@@ -48,10 +132,6 @@ fn cents_text(cents: f64) -> String {
 
 fn gain_text(db: f64) -> String {
     format!("{} dB", widgets::format_db(db))
-}
-
-fn tempo_text(bpm: Option<f64>) -> String {
-    bpm.map_or_else(|| "—".to_string(), |bpm| format!("{bpm:.2} BPM"))
 }
 
 /// What a tempo's source reads as under the field.
@@ -94,20 +174,16 @@ struct Field {
     per_tick: f64,
     /// Rounds a dragged value to its step.
     snap: fn(f64) -> f64,
-    horizontal: bool,
 }
 
-fn quarter(v: f64) -> f64 {
-    (v * 4.0).round() / 4.0
-}
 fn tenth(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
 }
 fn whole(v: f64) -> f64 {
     v.round()
 }
-fn hundredth(v: f64) -> f64 {
-    (v * 100.0).round() / 100.0
+fn thousandth(v: f64) -> f64 {
+    (v * 1000.0).round() / 1000.0
 }
 
 /// A field's surface: inset by [`FIELD_GAP`], so fields one under another never touch.
@@ -116,9 +192,22 @@ fn field_surface(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::
     painter.fill_background(rect, 3.0, fill);
 }
 
-/// A number field in `rect`: dragged, stepped with the arrows, typed after a click and Enter, and
-/// on a double-click a text field (Enter sets it, Escape or a click elsewhere leaves it). Named
-/// "`name`: `shown`". Returns the value to set, when one is set.
+/// The places of a text a drag steps: each a range of characters and its step.
+type Places<'a> = dyn Fn(&str) -> Vec<(usize, usize, f64)> + 'a;
+
+/// How a field reads typed text and which places of its text a drag steps.
+struct Text<'a> {
+    shown: &'a dyn Fn(f64) -> String,
+    parse: &'a dyn Fn(&str) -> Option<f64>,
+    /// The places of the text, each a range of characters and its step: a drag steps the place
+    /// under the pointer where it was pressed, as the project's tempo field does (#829). `None`
+    /// steps the whole value by `per_point`.
+    places: Option<&'a Places<'a>>,
+}
+
+/// A number field in `rect`: dragged up and down (the value follows while it moves, in one undo
+/// step), stepped with the arrows, typed after a click and Enter, and on a double-click a text
+/// field (Enter sets it, Escape or a click elsewhere leaves it). Named "`name`: `shown`".
 #[allow(clippy::too_many_arguments)]
 fn number_field(
     ui: &mut Ui,
@@ -127,26 +216,25 @@ fn number_field(
     id: Id,
     name: &str,
     value: f64,
-    shown: &dyn Fn(f64) -> String,
+    text: Text<'_>,
     field: Field,
-) -> Option<f64> {
+) -> Option<Change> {
     let rect = rect.shrink2(Vec2::new(0.0, FIELD_GAP));
     let edit_id = id.with("typing");
-    if let Some(mut text) = ui.data(|d| d.get_temp::<String>(edit_id)) {
-        let edit = egui::TextEdit::singleline(&mut text)
+    if let Some(mut typed) = ui.data(|d| d.get_temp::<String>(edit_id)) {
+        let edit = egui::TextEdit::singleline(&mut typed)
             .id(id.with("text"))
             .font(theme::mono_font(theme::TEXT_SMALL))
             .align(egui::Align2::RIGHT_CENTER);
         let response = widgets::text_input_at(ui, rect, edit);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("{name} value")));
-        let started = ui.data(|d| d.get_temp::<bool>(id.with("started"))).is_none();
-        if started {
+        if ui.data(|d| d.get_temp::<bool>(id.with("started"))).is_none() {
             response.request_focus();
             // The number is selected, so typing replaces it.
             if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
                 let all = egui::text::CCursorRange::two(
                     egui::text::CCursor::new(0),
-                    egui::text::CCursor::new(text.chars().count()),
+                    egui::text::CCursor::new(typed.chars().count()),
                 );
                 state.cursor.set_char_range(Some(all));
                 state.store(ui.ctx(), response.id);
@@ -161,78 +249,104 @@ fn number_field(
                 d.remove::<bool>(id.with("started"));
             });
             if entered && !escaped {
-                // A unit typed after the number ("96 BPM", "-6 dB") is left off.
-                let number: String = text
-                    .trim()
-                    .chars()
-                    .take_while(|c| c.is_ascii_digit() || matches!(c, '-' | '+' | '.' | ','))
-                    .collect();
-                return number
-                    .replace(',', ".")
-                    .parse::<f64>()
-                    .ok()
-                    .filter(|n| n.is_finite())
-                    .map(|n| n.clamp(field.range.0, field.range.1));
+                return (text.parse)(&typed)
+                    .map(|n| Change { value: n.clamp(field.range.0, field.range.1), more: false });
             }
             return None;
         }
-        ui.data_mut(|d| d.insert_temp(edit_id, text));
+        ui.data_mut(|d| d.insert_temp(edit_id, typed));
         return None;
     }
     let preview_id = id.with("preview");
+    let grab_id = id.with("grab");
     let mut preview = ui.data(|d| d.get_temp::<f64>(preview_id));
-    let text = shown(preview.map_or(value, field.snap));
-    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(if field.horizontal {
-        egui::CursorIcon::ResizeHorizontal
-    } else {
-        egui::CursorIcon::ResizeVertical
-    });
-    let label = format!("{name}: {text}");
+    let grab = ui.data(|d| d.get_temp::<(f64, f64)>(grab_id));
+    // A value dragged by a place snaps to that place's steps from where the drag began.
+    let snapped = |v: f64| match grab {
+        Some((step, from)) if step > 0.0 => thousandth(from + ((v - from) / step).round() * step),
+        _ => (field.snap)(v),
+    };
+    let shown = (text.shown)(preview.map_or(value, snapped));
+    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
+    let label = format!("{name}: {shown}");
     response.widget_info(|| {
         let mut info = egui::WidgetInfo::labeled(egui::Role::Slider, true, &label);
-        info.current_text_value = Some(text.clone());
+        info.current_text_value = Some(shown.clone());
         info
     });
     field_surface(ui, painter, rect, &response);
-    widgets::text_in(
-        painter,
-        rect.shrink2(Vec2::new(PAD / 2.0, 0.0)),
-        Align2::RIGHT_CENTER,
-        &text,
-        theme::mono_font(theme::TEXT_SMALL),
-        theme::text_value(),
-    );
+    let text_area = rect.shrink2(Vec2::new(PAD / 2.0, 0.0));
+    let mono = theme::mono_font(theme::TEXT_SMALL);
+    widgets::text_in(painter, text_area, Align2::RIGHT_CENTER, &shown, mono.clone(), theme::text_value());
     if response.double_clicked() {
-        let typed = shown(value).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
+        let start =
+            (text.shown)(value).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
         ui.data_mut(|d| {
-            d.insert_temp(edit_id, typed);
+            d.insert_temp(edit_id, start);
             d.remove::<f64>(preview_id);
+            d.remove::<(f64, f64)>(grab_id);
         });
         return None;
     }
-    let drag = widgets::drag_value_axis(
-        ui,
-        &response,
-        &mut preview,
-        value,
-        field.per_point,
-        field.per_tick,
-        field.range,
-        value,
-        field.horizontal,
-    );
+    if !value.is_finite() {
+        return None;
+    }
+    // The place under the pointer, or the one the drag holds, underlined.
+    let places = text.places.map(|places| places(&shown)).unwrap_or_default();
+    let char_width = widgets::text_width(ui, "0", mono);
+    let len = shown.chars().count();
+    let place_at = |x: f32| {
+        let from_right = if char_width > 0.0 { ((text_area.right() - x) / char_width).floor().max(0.0) } else { 0.0 };
+        let index = len.saturating_sub(from_right as usize + 1);
+        places.iter().find(|(from, to, _)| index >= *from && index < *to).or(places.first()).copied()
+    };
+    if response.drag_started_by(egui::PointerButton::Primary)
+        && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+        && let Some((_, _, step)) = place_at(origin.x)
+    {
+        ui.data_mut(|d| d.insert_temp(grab_id, (step, value)));
+    }
+    let held = ui.data(|d| d.get_temp::<(f64, f64)>(grab_id)).map(|(step, _)| step);
+    let underlined = match held {
+        Some(step) => places.iter().find(|(_, _, s)| (*s - step).abs() < 1e-12).copied(),
+        None => response.hover_pos().and_then(|p| place_at(p.x)),
+    };
+    if let Some((from, to, _)) = underlined {
+        let right = text_area.right();
+        let span = egui::Rangef::new(right - (len - from) as f32 * char_width, right - (len - to) as f32 * char_width);
+        let ink = if held.is_some() { theme::accent() } else { theme::text_secondary() };
+        painter.hline(span, rect.bottom() - 2.0, egui::Stroke::new(1.0, ink));
+    }
+    // Four points of drag a step of the place grabbed; the arrow keys the hovered place's step.
+    let (per_point, per_tick) = match held.or(underlined.map(|(_, _, s)| s)) {
+        Some(step) if !places.is_empty() => (step / 4.0, step),
+        _ => (field.per_point, field.per_tick),
+    };
+    let drag = widgets::drag_value(ui, &response, &mut preview, value, per_point, per_tick, field.range, value);
     match drag {
         Drag::Moving(v) => {
             ui.data_mut(|d| d.insert_temp(preview_id, v));
-            None
+            send(ui, id, snapped(v).clamp(field.range.0, field.range.1), false)
         }
         Drag::Done(v) | Drag::Set(v) => {
-            ui.data_mut(|d| d.remove::<f64>(preview_id));
-            let v = (field.snap)(v).clamp(field.range.0, field.range.1);
-            ((v - value).abs() > 1e-9).then_some(v)
+            let v = snapped(v).clamp(field.range.0, field.range.1);
+            ui.data_mut(|d| {
+                d.remove::<f64>(preview_id);
+                d.remove::<(f64, f64)>(grab_id);
+            });
+            let change = send(ui, id, v, true);
+            change.filter(|c| c.more || (c.value - value).abs() > 1e-9)
         }
         Drag::None => None,
     }
+}
+
+/// `params` with `continue` set as `change` says.
+fn with_more(mut params: serde_json::Value, change: Change) -> serde_json::Value {
+    if let Some(map) = params.as_object_mut() {
+        map.insert("continue".into(), json!(change.more));
+    }
+    params
 }
 
 /// A small button; returns whether it was clicked.
@@ -468,7 +582,16 @@ fn clip_group(
         info_row(ui, painter, row, name, value);
     }
     let set_width = if panel.playhead.is_some() { SET_WIDTH } else { 0.0 };
-    let markers = Field { range: (0.0, 120_000.0), per_point: 0.0625, per_tick: 0.25, snap: quarter, horizontal: true };
+    let bar = bar_of(panel);
+    let quarter = |v: f64| (v * 4.0).round() / 4.0;
+    let markers =
+        Field { range: (0.0, 120_000.0), per_point: 0.0625, per_tick: 0.25, snap: |v| (v * 4.0).round() / 4.0 };
+    let position = |v: f64| bars_text(v, bar, true);
+    let parse_position = |t: &str| bars_parse(t, bar, true);
+    let length_shown = |v: f64| bars_text(v, bar, false);
+    let parse_length = |t: &str| bars_parse(t, bar, false);
+    let places = |t: &str| bars_places(t, bar);
+    let as_position = || Text { shown: &position, parse: &parse_position, places: Some(&places) };
     // The start marker, and the end marker of a clip that does not loop.
     let mut marker_rows = vec![("Start marker", info.markers.0, (0.0, (info.markers.1 - 0.25).max(0.0)))];
     if !info.looping {
@@ -479,15 +602,17 @@ fn clip_group(
         label(painter, row, name);
         let (field, rest) = value_part(row, set_width);
         let id = Id::unique(("clip-panel-field", name));
-        let set = number_field(ui, painter, field, id, name, value, &beats, Field { range, ..markers });
+        let set = number_field(ui, painter, field, id, name, value, as_position(), Field { range, ..markers });
         let at_playhead = panel
             .playhead
-            .filter(|_| small_button(ui, painter, rest, "Set", &format!("Set {name} to the playhead"), true));
-        if let Some(v) = set.or(at_playhead.map(|p| quarter(p).clamp(range.0, range.1))) {
+            .filter(|_| small_button(ui, painter, rest, "Set", &format!("Set {name} to the playhead"), true))
+            .map(|p| Change { value: quarter(p).clamp(range.0, range.1), more: false });
+        if let Some(change) = set.or(at_playhead) {
+            let v = change.value;
             actions.push(if name == "Start marker" {
-                Action::new("clip.setStart", on_clip(at, json!({ "offset": v })))
+                Action::new("clip.setStart", with_more(on_clip(at, json!({ "offset": v })), change))
             } else {
-                Action::new("clip.setLength", on_clip(at, json!({ "length": v - info.markers.0 })))
+                Action::new("clip.setLength", with_more(on_clip(at, json!({ "length": v - info.markers.0 })), change))
             });
         }
     }
@@ -513,25 +638,32 @@ fn clip_group(
             } else {
                 (length, (0.25, 120_000.0 - start))
             };
-            let set = number_field(ui, painter, field, id, name, value, &beats, Field { range, ..markers });
+            let text = if name == "Loop position" {
+                as_position()
+            } else {
+                Text { shown: &length_shown, parse: &parse_length, places: Some(&places) }
+            };
+            let set = number_field(ui, painter, field, id, name, value, text, Field { range, ..markers });
             let at_playhead = panel
                 .playhead
                 .filter(|_| small_button(ui, painter, rest, "Set", &format!("Set {name} to the playhead"), true));
-            let from_playhead =
-                at_playhead.map(|p| if name == "Loop position" { quarter(p) } else { quarter(p - start).max(0.25) });
-            if let Some(v) = set.or(from_playhead) {
-                let v = v.clamp(range.0, range.1);
+            let from_playhead = at_playhead.map(|p| Change {
+                value: if name == "Loop position" { quarter(p) } else { quarter(p - start).max(0.25) },
+                more: false,
+            });
+            if let Some(change) = set.or(from_playhead) {
+                let v = change.value.clamp(range.0, range.1);
                 // The position moves the loop whole; the length moves its end.
                 let params = if name == "Loop position" {
                     json!({ "start": v, "end": v + length })
                 } else {
                     json!({ "start": start, "end": start + v })
                 };
-                actions.push(Action::new("clip.setLoop", on_clip(at, params)));
+                actions.push(Action::new("clip.setLoop", with_more(on_clip(at, params), change)));
             }
         }
     }
-    let fade = |b: f64| if b > 0.0 { beats(b) } else { "-".into() };
+    let fade = |b: f64| if b > 0.0 { beats_text(b) } else { "-".into() };
     for (name, value) in [("Fade in", fade(info.fades.0)), ("Fade out", fade(info.fades.1))] {
         let Some(row) = rows.next(ROW_HEIGHT) else { return };
         info_row(ui, painter, row, name, &value);
@@ -582,26 +714,26 @@ fn audio_group(
     let (field, rest) = value_part(row, HALVE_WIDTH * 2.0);
     let tempo_field = Field {
         range: (*CLIP_TEMPO_RANGE.start(), *CLIP_TEMPO_RANGE.end()),
-        per_point: 0.1,
-        per_tick: 0.1,
-        snap: hundredth,
-        horizontal: true,
+        per_point: 0.25,
+        per_tick: 1.0,
+        snap: thousandth,
     };
     let id = Id::unique(("clip-panel-field", "Tempo"));
     let value = panel.tempo.unwrap_or(f64::NAN);
-    let shown_tempo = |v: f64| tempo_text(v.is_finite().then_some(v));
-    let mut set = number_field(ui, painter, field, id, "Tempo", value, &shown_tempo, tempo_field)
-        .map(|bpm| (bpm, TempoSource::Manual));
+    let shown_tempo = |v: f64| if v.is_finite() { format!("{v:.3}") } else { "—".to_string() };
+    let text = Text { shown: &shown_tempo, parse: &plain_number, places: Some(&tempo_places) };
+    let mut set = number_field(ui, painter, field, id, "Tempo", value, text, tempo_field)
+        .map(|change| (change.value, TempoSource::Manual, change.more));
     let (halve, double) = (
         Rect::from_min_size(rest.min, Vec2::new(HALVE_WIDTH, rest.height())),
         Rect::from_min_size(rest.min + Vec2::new(HALVE_WIDTH, 0.0), Vec2::new(HALVE_WIDTH, rest.height())),
     );
     let known = panel.tempo.is_some();
     if small_button(ui, painter, halve, "÷2", "Halve the tempo", known) {
-        set = panel.tempo.map(|t| (t / 2.0, TempoSource::Manual));
+        set = panel.tempo.map(|t| (t / 2.0, TempoSource::Manual, false));
     }
     if small_button(ui, painter, double, "×2", "Double the tempo", known) {
-        set = panel.tempo.map(|t| (t * 2.0, TempoSource::Manual));
+        set = panel.tempo.map(|t| (t * 2.0, TempoSource::Manual, false));
     }
     // Under it: where the tempo came from, and Find, which lists what each source says.
     if let Some(row) = rows.next(ROW_HEIGHT) {
@@ -644,7 +776,7 @@ fn audio_group(
                     for ((source, text), bpm) in names.into_iter().zip(found.iter()) {
                         let shown = bpm.map_or_else(|| format!("{text}: none"), |b| format!("{text}: {b:.2}"));
                         if ui.add_enabled(bpm.is_some(), egui::Button::new(shown)).clicked() {
-                            set = bpm.map(|b| (b, source));
+                            set = bpm.map(|b| (b, source, false));
                             ui.close();
                         }
                     }
@@ -664,9 +796,10 @@ fn audio_group(
             }
         });
     }
-    if let Some((bpm, source)) = set {
+    if let Some((bpm, source, more)) = set {
         let bpm = bpm.clamp(*CLIP_TEMPO_RANGE.start(), *CLIP_TEMPO_RANGE.end());
-        actions.push(Action::new("clip.setTempo", on_clip(at, json!({ "bpm": bpm, "source": source.name() }))));
+        let params = json!({ "bpm": bpm, "source": source.name(), "continue": more });
+        actions.push(Action::new("clip.setTempo", on_clip(at, params)));
     }
 }
 
@@ -741,17 +874,28 @@ fn gain_group(
         info.value = Some(shown_db);
         info
     });
-    let mut set = None;
-    if response.double_clicked() {
+    // Clicked, it takes the keys: a number typed and Enter set it, the arrows step it by 1 dB
+    // (Shift: 0.1), as every value control does (#707). Dragged, the gain follows as it moves, in
+    // one undo step; a double-click puts it at 0 dB.
+    let (steps, fine_keys, typed) = widgets::value_keys(ui, &response);
+    let mut set: Option<Change> = None;
+    if let Some(number) = typed.as_deref().and_then(plain_number) {
+        set = Some(Change { value: number.clamp(GAIN_RANGE.0, GAIN_RANGE.1), more: false });
+    } else if steps != 0 {
+        let step = f64::from(steps) * if fine_keys { 0.1 } else { 1.0 };
+        set = Some(Change { value: tenth(db + step).clamp(GAIN_RANGE.0, GAIN_RANGE.1), more: false });
+    } else if response.double_clicked() {
         ui.data_mut(|d| d.remove::<f64>(preview_id));
-        set = Some(0.0);
+        set = Some(Change { value: 0.0, more: false });
     } else if response.dragged_by(egui::PointerButton::Primary) {
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
         let delta = -f64::from(widgets::value_drag_delta(ui, &response).y) / f64::from(track.height()) * fine;
         let from = fader_position(preview.unwrap_or(db));
-        ui.data_mut(|d| d.insert_temp(preview_id, fader_db(from + delta)));
+        let next = fader_db(from + delta);
+        ui.data_mut(|d| d.insert_temp(preview_id, next));
+        set = send(ui, id, tenth(next), false);
     } else if response.drag_stopped_by(egui::PointerButton::Primary) {
-        set = preview.map(tenth);
+        set = preview.and_then(|v| send(ui, id, tenth(v), true));
         ui.data_mut(|d| d.remove::<f64>(preview_id));
     }
     // Drawn: the slot, the 0 dB mark, the cap.
@@ -767,15 +911,16 @@ fn gain_group(
         Pos2::new(track.right() + PAD, body.top()),
         Pos2::new(body.right(), body.top() + ROW_HEIGHT),
     );
-    let gain_field = Field { range: GAIN_RANGE, per_point: 0.1, per_tick: 1.0, snap: tenth, horizontal: false };
-    if let Some(v) =
-        number_field(ui, painter, side, Id::unique(("clip-panel-field", "Gain")), "Gain", db, &gain_text, gain_field)
+    let gain_field = Field { range: GAIN_RANGE, per_point: 0.1, per_tick: 1.0, snap: tenth };
+    let text = Text { shown: &gain_text, parse: &plain_number, places: None };
+    if let Some(change) =
+        number_field(ui, painter, side, Id::unique(("clip-panel-field", "Gain")), "Gain", db, text, gain_field)
     {
-        set = Some(v);
+        set = Some(change);
     }
-    if let Some(v) = set.filter(|v| (v - db).abs() > 1e-9 || info.gain_db.is_none_or(|g| !g.is_finite())) {
-        let db = commands::exact_db_param(v, GAIN_RANGE.0);
-        actions.push(Action::new("clip.setGain", on_clip(at, json!({ "db": db }))));
+    if let Some(change) = set {
+        let db = commands::exact_db_param(change.value, GAIN_RANGE.0);
+        actions.push(Action::new("clip.setGain", with_more(on_clip(at, json!({ "db": db })), change)));
     }
     let envelope = side.translate(Vec2::new(0.0, ROW_HEIGHT + 2.0));
     let arranged = matches!(at, ClipRef::Arrangement(..));
@@ -817,7 +962,7 @@ fn pitch_group(
     let id = Id::unique(("clip-panel-knob", "pitch"));
     let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
     let preview_id = id.with("preview");
-    let preview = ui.data(|d| d.get_temp::<f64>(preview_id));
+    let mut preview = ui.data(|d| d.get_temp::<f64>(preview_id));
     let shown = preview.map_or(semitones, whole);
     let label = format!("Pitch: {}", semitones_text(shown));
     response.widget_info(|| {
@@ -825,57 +970,46 @@ fn pitch_group(
         info.value = Some(shown);
         info
     });
-    let mut set_semitones = None;
-    let mut set_cents = None;
-    if response.double_clicked() {
-        ui.data_mut(|d| d.remove::<f64>(preview_id));
-        set_semitones = Some(0.0);
-    } else if response.dragged_by(egui::PointerButton::Primary) {
-        let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
-        let delta = -f64::from(widgets::value_drag_delta(ui, &response).y) * 0.25 * fine;
-        let next = (preview.unwrap_or(semitones) + delta).clamp(SEMITONES.0, SEMITONES.1);
-        ui.data_mut(|d| d.insert_temp(preview_id, next));
-    } else if response.drag_stopped_by(egui::PointerButton::Primary) {
-        set_semitones = preview.map(whole);
-        ui.data_mut(|d| d.remove::<f64>(preview_id));
+    // Dragged up and down by a quarter semitone a point, following as it moves; clicked, it takes
+    // a number typed and the arrows; a double-click puts it at 0.
+    let mut set_semitones: Option<Change> = None;
+    let mut set_cents: Option<Change> = None;
+    match widgets::drag_value(ui, &response, &mut preview, semitones, 0.25, 1.0, SEMITONES, 0.0) {
+        Drag::Moving(v) => {
+            ui.data_mut(|d| d.insert_temp(preview_id, v));
+            set_semitones = send(ui, id, whole(v), false);
+        }
+        Drag::Done(v) | Drag::Set(v) => {
+            ui.data_mut(|d| d.remove::<f64>(preview_id));
+            set_semitones = send(ui, id, whole(v), true);
+        }
+        Drag::None => {}
     }
     let position = ((shown - SEMITONES.0) / (SEMITONES.1 - SEMITONES.0)) as f32;
     widgets::knob(painter, center, KNOB, position, theme::accent(), Some(&response));
     // Beside it the semitones typed, and under them the cents.
     let side =
         Rect::from_min_max(Pos2::new(rect.right() + PAD, body.top()), Pos2::new(body.right(), body.top() + ROW_HEIGHT));
-    let st_field = Field { range: SEMITONES, per_point: 0.25, per_tick: 1.0, snap: whole, horizontal: false };
-    if let Some(v) = number_field(
-        ui,
-        painter,
-        side,
-        Id::unique(("clip-panel-field", "Semitones")),
-        "Semitones",
-        semitones,
-        &semitones_text,
-        st_field,
-    ) {
-        set_semitones = Some(v);
+    let st_field = Field { range: SEMITONES, per_point: 0.25, per_tick: 1.0, snap: whole };
+    let text = Text { shown: &semitones_text, parse: &plain_number, places: None };
+    let id = Id::unique(("clip-panel-field", "Semitones"));
+    if let Some(change) = number_field(ui, painter, side, id, "Semitones", semitones, text, st_field) {
+        set_semitones = Some(change);
     }
     let cents_row = side.translate(Vec2::new(0.0, ROW_HEIGHT + 2.0));
-    let cents_field = Field { range: CENTS, per_point: 0.5, per_tick: 1.0, snap: whole, horizontal: false };
-    if let Some(v) = number_field(
-        ui,
-        painter,
-        cents_row,
-        Id::unique(("clip-panel-field", "Cents")),
-        "Cents",
-        cents,
-        &cents_text,
-        cents_field,
-    ) {
-        set_cents = Some(v);
+    let cents_field = Field { range: CENTS, per_point: 0.5, per_tick: 1.0, snap: whole };
+    let text = Text { shown: &cents_text, parse: &plain_number, places: None };
+    let id = Id::unique(("clip-panel-field", "Cents"));
+    if let Some(change) = number_field(ui, painter, cents_row, id, "Cents", cents, text, cents_field) {
+        set_cents = Some(change);
     }
-    if set_semitones.is_some() || set_cents.is_some() {
-        let transpose = set_semitones.unwrap_or(semitones) + set_cents.unwrap_or(cents) / 100.0;
-        let transpose = (transpose * 100.0).round() / 100.0;
-        if (transpose - info.transpose).abs() > 1e-9 {
-            actions.push(Action::new("clip.setAudio", on_clip(at, json!({ "transpose": transpose }))));
+    if let Some(change) = set_semitones.or(set_cents) {
+        let st = set_semitones.map_or(semitones, |c| c.value);
+        let ct = set_cents.map_or(cents, |c| c.value);
+        let transpose = ((st + ct / 100.0) * 100.0).round() / 100.0;
+        if change.more || (transpose - info.transpose).abs() > 1e-9 {
+            let params = on_clip(at, json!({ "transpose": transpose }));
+            actions.push(Action::new("clip.setAudio", with_more(params, change)));
         }
     }
 }

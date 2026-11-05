@@ -179,3 +179,18 @@ fn find_tempo_says_what_each_source_finds() {
     let midi = session.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap().clips[0].id;
     assert!(run(&mut session, "clip.findTempo", json!({ "clip": midi.0 })).is_err());
 }
+
+/// The calls of one drag (`continue`) make one undo step, as the clip panel's live controls send
+/// them.
+#[test]
+fn a_dragged_gain_is_one_undo_step() {
+    let dir = TempDir::new("clip-audio-continue");
+    let mut session = two_clips(&wav(&dir, "hit.wav", 2.0, 0.5));
+    let clip = clips(&session)[0].id.0;
+    for (db, more) in [(-1.0, false), (-2.0, true), (-3.0, true)] {
+        run(&mut session, "clip.setGain", json!({ "clip": clip, "db": db, "continue": more })).unwrap();
+    }
+    assert!((clips(&session)[0].audio.gain - 0.708).abs() < 1e-3);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(clips(&session)[0].audio.gain, 1.0, "one undo step for the whole drag");
+}
