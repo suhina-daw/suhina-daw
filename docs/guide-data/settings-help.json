@@ -1446,30 +1446,6 @@
       "docs/spec/ui-clip-editor.md"
     ]
   },
-  "ClipEditor/Piano roll/piano_roll_grid": {
-    "sourceFingerprint": "7ebeceb6b937e4d2ea1865f82f441757207a7415c11494210d322a63b52162c7",
-    "summary": "Give the piano roll its own timing grid or link it to the control bar.",
-    "description": "A timing grid draws beat divisions and supplies the steps that edited notes snap to. The control bar’s value also controls Arrangement placement and clip-launch timing. Linking the piano roll makes its menu and grid shortcuts change that shared value too. The shared control bar cannot represent adaptive grids or a 1/32 triplet, so those choices are unavailable while linked. This chooses the grid source, not the notes’ timing: existing notes are not automatically moved.",
-    "options": [
-      {
-        "name": "Its own",
-        "description": "Keep the piano roll’s independent grid and its full menu, initially a snapping 1/16 grid. This is the default."
-      },
-      {
-        "name": "Control bar",
-        "description": "Follow and edit the control bar’s grid. Unsupported grid choices are disabled; turning snapping off sets the shared value to none."
-      }
-    ],
-    "whenToChange": "Use Its own for detailed note editing without changing Arrangement snapping or launch timing. Use Control bar when you want a shared grid.",
-    "references": [
-      "crates/ui/src/settings/settings_rows.rs",
-      "crates/ui/src/settings.rs",
-      "crates/ui/src/app.rs",
-      "crates/ui/src/detail/piano_roll.rs",
-      "docs/spec/ui-clip-editor.md",
-      "crates/ui/src/detail/piano_roll_grid.rs"
-    ]
-  },
   "ClipEditor/Piano roll/piano_roll_toolbar": {
     "sourceFingerprint": "a0d5c110e2a21f9cb847d0adce1598218f165320f2c760400bd95972f36ea5d3",
     "summary": "Scale the piano roll toolbar without enlarging the rest of the editor.",

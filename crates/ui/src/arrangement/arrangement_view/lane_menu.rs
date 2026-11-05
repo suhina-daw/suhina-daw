@@ -6,10 +6,10 @@
 use super::*;
 
 /// The Arrangement's grid, in a menu itself, as its toolbar offers it.
-pub(super) fn grid_section(ui: &mut Ui, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
+pub(super) fn grid_section(ui: &mut Ui, state: &mut ArrangementViewState) {
     let keys = state.grid_keys.clone();
     if let Some(picked) = crate::detail::piano_roll::grid_entries(ui, state.grid, &keys, &|_| true) {
-        super::pick_grid(state, picked, actions);
+        state.grid = picked;
     }
 }
 
@@ -44,7 +44,7 @@ pub(super) fn empty_lane_menu(
         ui.close();
     }
     ui.separator();
-    grid_section(ui, state, actions);
+    grid_section(ui, state);
     ui.separator();
     let beat = state.menu_beat.unwrap_or(0.0);
     if ui.add_enabled(notes, egui::Button::new("Insert empty MIDI clip")).clicked() {

@@ -315,7 +315,7 @@ pull up.
 - **Built ([#442](https://github.com/suhina-daw/suhina-daw/issues/442), [#346](https://github.com/suhina-daw/suhina-daw/issues/346)):**
   the piano roll has its own grid value; it lives in the window, not the project, and is a
   snapping 1/16 until another is picked. The control bar's grid value (the launch quantisation,
-  `launcher.setQuantization`) applies to the Arrangement view only. The grid value draws the
+  `launcher.setQuantization`) sets when launched clips start, and the piano roll does not use it. The grid value draws the
   vertical lines and is the step that notes snap to. The lines and snapping are the
   Arrangement view's ([arrangement editing](arrangement-editing.md) › The grid), from the same code
   ([#734](https://github.com/suhina-daw/suhina-daw/issues/734)): lines start again at every bar
@@ -352,20 +352,18 @@ pull up.
   The keys work after a click in the piano roll, like its other keys (› Shortcuts). The grid value
   and its steps are the `piano_roll_grid` module of the `ui` crate (`crates/ui/src/detail/piano_roll_grid.rs`);
   the lines and snapping are the shared `TimelineGrid` (`crates/ui/src/interaction/timeline_grid.rs`).
-- **Built:** Settings › Clip editor › Piano roll › **Piano roll grid source** set to **Control bar** makes the
-  piano roll use the control bar's value instead, and its menu and keys then set the control
-  bar's (`launcher.setQuantization`). The control bar has no adaptive grid and no 1/32 triplet,
-  so an entry whose result it cannot hold is greyed out and its key does nothing: the adaptive
-  widths always, and Triplet grid or Narrow grid where they would reach a 1/32 triplet. Snap to
-  grid off is the control bar's `none` (the button shows `1/16 off`); picking a fixed value snaps
-  again.
+- **Built:** the grid and snapping are the piano roll's own and apart from the launch
+  quantisation: the control bar's **Quantize** box sets neither its grid lines nor what its notes
+  snap to, and the grid menu and keys (Snap, Narrow, Widen, Triplet) leave the Quantize box as it
+  is ([clip launching](clip-launching.md) › Launch quantisation). There is no setting that links
+  them (an older settings file's `piano_roll_grid` line is ignored).
 - **Choice left open:** the issue proposed the adaptive grid as the default; the default stays a
   snapping fixed 1/16, as before the menu, until that is decided.
 - **Built:** starts and ends of drawn, moved and resized notes snap to the grid. Holding **Alt**
   while drawing or dragging places them freely (no snapping). A move keeps a note's distance to the
   grid: the drag snaps the **offset** to whole grid steps, so a note that was off the grid stays
   just as far off (it keeps a played-in groove).
-- **Later:** the same grid menu in the Arrangement view, for its own grid.
+- **Built:** the same grid menu in the Arrangement view, for its own grid, in the empty-lane right-click menu and, with the toolbar on, in the toolbar.
 - **Later ([#346](https://github.com/suhina-daw/suhina-daw/issues/346)):** "magnetic" snapping to other notes' starts and ends within a few pixels.
 
 ## Zoom and scroll

@@ -68,8 +68,7 @@ pub(crate) fn note_grid(clip: &PianoClip, beat_width: f32) -> TimelineGrid {
     TimelineGrid { snaps: grid.snaps && clip.grid_menu.snap, ..grid }
 }
 
-/// The grid a grid key (Ctrl+1 to Ctrl+4 by default) makes of `clip`'s; `None` when the grid
-/// follows the control bar and it has no such value.
+/// The grid a grid key (Ctrl+1 to Ctrl+4 by default) makes of `clip`'s.
 pub(super) fn grid_key(action: &str, clip: &PianoClip) -> Option<PianoGrid> {
     let grid = clip.grid_menu;
     let picked = match action {
@@ -79,7 +78,7 @@ pub(super) fn grid_key(action: &str, clip: &PianoClip) -> Option<PianoGrid> {
         "pianoRoll.gridSnap" => grid.toggle_snap(),
         _ => return None,
     };
-    (!clip.grid_follows || picked.control_bar_value().is_some()).then_some(picked)
+    Some(picked)
 }
 
 /// The grid line nearest to `beat`, within the piano roll's beats: what a slice snaps its cut

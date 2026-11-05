@@ -1195,6 +1195,19 @@ fn by_default_only_a_click_on_the_line_adds_a_point() {
     assert_eq!(volume(&harness).0.len(), 1, "a click on the line adds a point");
 }
 
+/// A grid value in a lane's menu is the Arrangement's: the launch quantisation stays.
+#[test]
+fn a_lanes_grid_menu_leaves_the_launch_quantisation_alone() {
+    let mut harness = with_lanes();
+    let rect = lane(&harness);
+    let before = harness.state().session().map(|s| s.quantization());
+    right_click_at(&mut harness, Pos2::new(rect.left() + 700.0, rect.center().y));
+    harness.get_by_label("1/8").click_accesskit();
+    harness.run();
+    assert_eq!(harness.state().arrangement().grid.label(), "1/8");
+    assert_eq!(harness.state().session().map(|s| s.quantization()), before);
+}
+
 /// A right-click on the line offers Add value; a point's menu has Edit value, whose field sets the
 /// value typed; Snap to grid off in the menu lets a point land off the grid (#916).
 #[test]

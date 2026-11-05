@@ -163,10 +163,7 @@ impl App {
             )
             .response;
             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, QUANTIZATION_LABEL));
-            response.on_hover_text(
-                "Grid: when launched clips start, and the Arrangement view's grid lines and snapping (Alt: off the \
-                 grid)",
-            );
+            response.on_hover_text("Launch quantisation: when launched clips start");
         });
         if chosen != current {
             actions.push(Action::new("launcher.setQuantization", json!({ "value": chosen })));

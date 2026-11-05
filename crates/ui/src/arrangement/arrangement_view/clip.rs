@@ -2295,7 +2295,7 @@ fn take_menu(
         ui.close();
     }
     ui.separator();
-    super::lane_menu::grid_section(ui, state, actions);
+    super::lane_menu::grid_section(ui, state);
 }
 
 /// Draws a take recording into the arrangement on its track's row (#909): from where its pass

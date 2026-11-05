@@ -353,7 +353,7 @@ impl App {
                     &painter,
                     caption,
                     Align2::LEFT_CENTER,
-                    "Grid",
+                    "Quantize",
                     theme::ui_font(theme::TEXT_SMALL),
                     theme::text_hint(),
                 );
