@@ -1142,6 +1142,25 @@ fn a_device_group_survives_a_round_trip() {
     assert_eq!(from_json(&to_json(&project)), Ok(project));
 }
 
+/// A project written before its devices have ids (built by hand, not through a session) still
+/// opens: a mapping whose device has no id is written by its path, which every version reads.
+#[test]
+fn a_mapping_to_a_device_with_no_id_is_written_by_its_path() {
+    let project = with_a_group();
+    let written: serde_json::Value = serde_json::from_str(&to_json(&project)).unwrap();
+    let macros = &written["project"]["channels"][0]["devices"][1]["kind"]["macros"];
+    assert_eq!(macros[0]["mappings"][0]["device"], serde_json::json!([1, 0]));
+    assert_eq!(macros[1]["mappings"][0]["device"], serde_json::json!([1, 1]));
+    let read = from_json(&to_json(&project)).expect("the file opens");
+    let group = read.channels[0].devices[1].as_group().unwrap();
+    let compressor = group.branches[1].devices[0].id;
+    let mapped = group.macros[0].mappings[0].device;
+    assert!(
+        mapped == MappedDevice::Nth(0) || compressor.is_some() && mapped == MappedDevice::Id(compressor),
+        "{mapped:?}"
+    );
+}
+
 #[test]
 fn a_mapping_to_a_place_or_an_id_with_no_device_is_an_error() {
     let with = |device: &str| {
