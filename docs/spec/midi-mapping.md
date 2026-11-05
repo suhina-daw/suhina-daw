@@ -1,6 +1,6 @@
 ---
 description: What a MIDI controller can do in Suhina - sources, targets, ranges, takeover, relative encoders, gestures and undo, the controller profile file, mappings saved in a project, the mapping mode and MIDI learn, the commands, and how malformed input is treated
-read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, launch keys, launcher.mappings, Map keys, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback
+read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, launch keys, launcher.mappings, Map keys, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback, surface program, Lua runner
 type: spec
 status: planned
 last_verified: 2026-11-02
@@ -306,6 +306,17 @@ message from those ports, system exclusive included, sends what it asks on their
 and gives it the command protocol: it runs commands, reads state through reading commands and
 subscribes to changes. It never reaches the engine or the model by another way. When it is not
 running, its ports fall back to their profiles.
+
+Suhina ships one surface program ready-made, the **Lua runner**: a separate program built from
+this tree, whose manifest says the same `"provides": "surface"` and names the port patterns it
+claims. Each surface program runs in one runner process of its own, so a script's fault
+restarts that program alone, with its ports back on the profiles meanwhile. A script holds what
+any surface program is given and nothing more: every message of its claimed ports, with the
+timestamp it arrived with; a send-back leaves from a queue Suhina drains, and the script never
+waits on an answer to send one; commands, reading commands and subscriptions. The runner's Lua
+environment exposes no system input or output (`io`, `os` and `require` are not present), and a
+script that fails is stopped at an error boundary and shows in the extension's state, not left
+running.
 
 ## Testing
 

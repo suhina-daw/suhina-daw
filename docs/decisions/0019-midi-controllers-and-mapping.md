@@ -1,6 +1,6 @@
 ---
-description: How hardware MIDI controllers drive Suhina - MIDI learn onto any command that takes a value, controller profiles in the user's settings, mappings to one project's tracks and devices saved in that project, gestures that make one undo step, and surface programs as extensions
-read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob, CC, control change, fader, encoder, relative encoder, takeover, pick up, controller profile, control surface, mapping mode, controller feedback, LED, MIDI output, launch keys, launcher.mappings, Map keys
+description: How hardware MIDI controllers drive Suhina - MIDI learn onto any command that takes a value, controller profiles in the user's settings, mappings to one project's tracks and devices saved in that project, gestures that make one undo step, and surface programs as extensions, with the Lua runner Suhina ships as one
+read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob, CC, control change, fader, encoder, relative encoder, takeover, pick up, controller profile, control surface, mapping mode, controller feedback, LED, MIDI output, launch keys, launcher.mappings, Map keys, Lua, Lua runner
 type: decision
 status: proposed
 built: partly
@@ -143,8 +143,11 @@ have.
     raw messages of those ports (including system exclusive) and sends what it asks to send; the
     program changes Suhina only through commands and reads it only through reading commands and
     the state changes it subscribes to, as an agent over MCP does. Suhina embeds no scripting
-    language. A surface program that crashes or hangs is restarted like a plug-in host, and its
-    ports fall back to the profile's mappings meanwhile.
+    language. The one it ships itself is the Lua runner: a separate program, built from this
+    tree, that runs each surface program in a process of its own. A surface program that crashes
+    or hangs is restarted like a plug-in host, and its ports fall back to the profile's mappings
+    meanwhile.
+    *Amended 2026-11-05, see Amendment: a Lua runner as a surface program.*
 
 11. **Generic first.** The first version supports what a generic controller sends: CC (7 bit and
     14 bit pairs), notes, pitch bend and program change, on any channel; absolute, and relative
@@ -182,6 +185,28 @@ mode and the note sources with this design, and would have been a second store i
   with `mapping.*` and `controller_mappings`, so no release has two stores. That step raises the
   `.suhina` version: a newer Suhina reads the launcher's `mappings` from an older file as
   `controller_mappings` entries and writes only `controller_mappings`.
+
+## Amendment: a Lua runner as a surface program (2026-11-05)
+
+[#1200](https://github.com/suhina-daw/suhina-daw/issues/1200). Decision 10 names the one surface
+program Suhina ships itself: a **Lua runner**, a small separate binary built from this tree,
+started and supervised like the plug-in host ([ADR 0006](0006-plug-in-hosting.md)). No script
+shares a process with Suhina or with another script: each surface program is one runner process
+of its own, because a script is code whose stopping nobody can know in advance — a fault costs
+that program a restart, its ports back on the profile's mappings meanwhile (decision 10). The
+implementation is `mlua` with Lua 5.4 vendored (MIT): the C sources ship in the tree, the build
+needs no system Lua, the interpreter runs only in the runner's processes, outside the audio
+path, with no first-party `unsafe` (rule 2 untouched); `cargo deny check` gates the dependency,
+and `piccolo`, pure Rust, is the route away if the C becomes a burden. A script reaches Suhina
+only through decision 10's protocol: the messages of the ports its manifest claims, each with
+the driver's timestamp it arrived with; send-backs leaving from a queue Suhina drains, with no
+answer the script waits for; and the commands, reading commands and subscriptions the window,
+CLI and MCP already use — one API to keep. Only that: the runner exposes a script no system I/O
+(`io`, `os` and `require` are not present), and an ordinary script failure stops at an error
+boundary and is reported, with the process restart covering the rest. "Suhina embeds no
+scripting language" stands: the language never runs in Suhina's process. Open while the
+surface-program protocol is open ([ADR 0015](0015-extensions.md) › Not decided yet: transport,
+version policy, trust): the script environment's exact shape and its caps.
 
 ## Consequences
 
