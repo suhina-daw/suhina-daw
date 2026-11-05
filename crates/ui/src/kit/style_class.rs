@@ -69,6 +69,16 @@ pub const CLASSES: &[&str] = &[
     "piano-row-black",
     "piano-key",
     "piano-key-black",
+    "piano-key-c",
+    "piano-key-hover",
+    "piano-key-black-hover",
+    "piano-key-line",
+    "piano-scale-mark",
+    "piano-scale-strip",
+    "piano-range",
+    "piano-clip-strip",
+    "piano-time-selection",
+    "piano-insert-mark",
     "piano-note",
     "velocity",
     "piano-tool",
@@ -792,12 +802,12 @@ mod tests {
             .run_ui(egui::RawInput::default(), |ui| {
                 let original = ui.style().clone();
                 let original_clip = ui.clip_rect();
-                let id = ui.id();
+                let id = ui.scope_id();
                 {
                     let _scope = enter("settings");
                     let limited = egui::Rect::from_min_size(ui.max_rect().min, egui::Vec2::splat(16.0));
                     let styled = self::ui(ui).clipped_to(limited);
-                    assert_eq!(styled.id(), id);
+                    assert_eq!(styled.scope_id(), id);
                     assert_eq!(styled.clip_rect(), original_clip.intersect(limited));
                     assert_eq!(styled.visuals().override_text_color, theme::parse_hex("#123456"));
                     assert!(styled.style().text_styles.values().all(|font| font.size == 19.0));

@@ -217,7 +217,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             Chip::List => "Show the samples as a list".to_string(),
             Chip::Map => "Show the samples laid out by how they sound".to_string(),
         };
-        let response = widgets::button_area(ui, rect, Id::new(("browser-filter", title.as_str())), label);
+        let response = widgets::button_area(ui, rect, Id::unique(("browser-filter", title.as_str())), label);
         let _style = crate::kit::style_class::enter_response("button", &response);
         let chosen = match chip {
             Chip::Recent(group) => state.place == Some(Place::Recent(*group)),
@@ -372,7 +372,7 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
         Pos2::new(rect.left() + PAD + 14.0, rect.top() + 4.0),
         Pos2::new(rect.right() - PAD - key_width - 6.0, rect.bottom() - 4.0),
     );
-    let id = Id::new("browser-search");
+    let id = Id::unique("browser-search");
     // egui lets go of a field's focus on Escape before the field is drawn, so whether the
     // field had the keyboard is remembered from the frame before.
     let focused = ui.ctx().memory(|m| m.has_focus(id)) || state.search_focused;
@@ -536,7 +536,7 @@ fn sidebar_view(
             Target::Place(place) => place.param(),
             Target::Category(category) => format!("library:{}", category.title()),
         };
-        let response = ui.interact(rect.intersect(area), Id::new(("browser-place", key.as_str())), Sense::click());
+        let response = ui.interact(rect.intersect(area), Id::unique(("browser-place", key.as_str())), Sense::click());
         // Screen readers and tests: "Show Samples" for the library's kinds, "Place Recent MIDI"
         // for a recent kind, "Place Pinned" and the like for the rest.
         let name = match &target {
@@ -544,7 +544,7 @@ fn sidebar_view(
             Target::Place(Place::Recent(Some(group))) => format!("Place Recent {}", group.title()),
             Target::Place(_) => format!("Place {}", label.trim()),
         };
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
         // A kind of the library is chosen while no place is: the whole of it shows.
         let chosen = match &target {
             Target::Place(place) => state.place.as_ref() == Some(place),
@@ -603,7 +603,7 @@ fn sidebar_view(
             let cleared = widgets::button_area(
                 ui,
                 clear.intersect(area),
-                Id::new(("browser-place-clear", place.param())),
+                Id::unique(("browser-place-clear", place.param())),
                 "Show everything",
             );
             let color =
@@ -680,7 +680,8 @@ fn sidebar_view(
     let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW + 2.0));
     match state.new_folder.as_mut() {
         None => {
-            let response = widgets::button_area(ui, rect.intersect(area), Id::new("browser-add-folder"), "Add folder");
+            let response =
+                widgets::button_area(ui, rect.intersect(area), Id::unique("browser-add-folder"), "Add folder");
             let color =
                 motion::mix(theme::browser_text_hint(), theme::browser_text_primary(), widgets::hover(ui, &response));
             widgets::text_in(
@@ -696,7 +697,7 @@ fn sidebar_view(
             }
         }
         Some(text) => {
-            let id = Id::new("browser-new-folder");
+            let id = Id::unique("browser-new-folder");
             let edit = egui::TextEdit::singleline(text)
                 .id(id)
                 .hint_text("A folder's path")
@@ -811,10 +812,9 @@ fn results_view(
         if shown.height() <= 0.0 {
             continue;
         }
-        let response = ui.interact(shown, Id::new(("browser-row", row.node())), Sense::click_and_drag());
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Browser {}", row.item.name))
-        });
+        let response = ui.interact(shown, Id::unique(("browser-row", row.node())), Sense::click_and_drag());
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Browser {}", row.item.name)));
         let selected = state.selected.iter().any(|s| s.key == row.item.key);
         // `.browser-row`, with `:hover`, `:active` and `:selected`; its `color` is the name's.
         let _row_style = crate::kit::style_class::enter_response("browser-row", &response);
@@ -843,7 +843,7 @@ fn results_view(
             let button = widgets::button_area(
                 ui,
                 lead,
-                Id::new(("browser-play", row.node())),
+                Id::unique(("browser-play", row.node())),
                 format!("Preview {}", row.item.name),
             );
             let playing = state.preview_active_for(&row.item.key);
@@ -926,11 +926,11 @@ fn results_view(
                 let dot = ui
                     .interact(
                         Rect::from_center_size(center, Vec2::splat(DOT_HIT)),
-                        Id::new(("browser-tag-dot", row.node(), name.as_str())),
+                        Id::unique(("browser-tag-dot", row.node(), name.as_str())),
                         Sense::hover(),
                     )
                     .on_hover_text(format!("Tag {name}"));
-                dot.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Tagged {name}")));
+                dot.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Tagged {name}")));
                 if dot.hovered() {
                     out.status = Some(Status::Hint(format!("Tag {name}")));
                 }
@@ -1004,10 +1004,12 @@ fn results_view(
         // gesture's two clicks are within egui's double-click window (0.3 s, 6 pt) and its
         // first one toggled already, so the double would open and close it again (#293); and
         // not on a heading or a folder, whose single clicks toggle above, so a double-click
-        // leaves it open.
+        // leaves it open. A device that opens on its presets is added, as any device is.
         let on_chevron = row.opens
             && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| p.x < chevron_zone(area.left(), row.depth));
-        if row.opens && !on_chevron && !opens_on_click(row) {
+        if on_chevron && row.item.kind != ItemKind::Preset {
+            // Its first click toggled it, and adding it as well would be a second action.
+        } else if row.opens && !on_chevron && row.item.kind == ItemKind::Preset {
             state.toggle(row.node());
         } else if row.item.kind == ItemKind::Project {
             out.open_project = row.item.path();
@@ -1130,7 +1132,7 @@ fn row_menu(
         }
         ui.separator();
         // A new tag, set on the item at once.
-        let id = Id::new("browser-new-tag");
+        let id = Id::unique("browser-new-tag");
         let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
         let response = crate::kit::widgets::text_input(
             ui,
@@ -1200,7 +1202,7 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
     let needed = text_left + widgets::text_width(ui, &tag.name, font.clone()) + 8.0;
     let width = if ui.is_sizing_pass() { needed } else { needed.max(ui.available_width()) };
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, ui.spacing().interact_size.y), Sense::click());
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, &tag.name));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &tag.name));
     let painter = ui.painter();
     let hover = widgets::hover(ui, &response);
     if hover > 0.0 {
@@ -1276,7 +1278,7 @@ fn plugins_view_switch(
         let response = widgets::button_area(
             ui,
             rect,
-            Id::new(("browser-plugins-view", view.name())),
+            Id::unique(("browser-plugins-view", view.name())),
             format!("Show plug-in {}", name.to_lowercase()),
         );
         if response.clicked() && chosen != view {
@@ -1343,7 +1345,7 @@ fn columns_header(ui: &mut Ui, area: Rect, state: &mut BrowserState) {
     for (index, name) in COLUMN_NAMES.into_iter().enumerate() {
         let Some((left, right)) = column_span(area, index) else { continue };
         let rect = Rect::from_min_size(Pos2::new(left, area.top() + 2.0), Vec2::new(right - left, FILTER));
-        let response = widgets::button_area(ui, rect, Id::new(("browser-column", index)), format!("Sort by {name}"));
+        let response = widgets::button_area(ui, rect, Id::unique(("browser-column", index)), format!("Sort by {name}"));
         if response.clicked() {
             state.plugin_sort = (index as u8, if sorted == index as u8 { !descending } else { false });
         }
@@ -1428,9 +1430,9 @@ fn preview_strip(
     // (Settings › Browser › the same setting).
     let auto = Rect::from_min_size(Pos2::new(area.right() - PAD - 40.0, area.top() + 4.0), Vec2::new(40.0, 16.0));
     let response = ui
-        .interact(auto, Id::new("browser-preview-auto"), Sense::click())
+        .interact(auto, Id::unique("browser-preview-auto"), Sense::click())
         .on_hover_text("Auto preview: a sample plays when it is selected");
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Checkbox, true, "Auto preview"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Auto preview"));
     let auto_style = crate::kit::style_class::enter_response("button", &response);
     if response.clicked() {
         out.toggle_autoplay = true;
@@ -1456,7 +1458,7 @@ fn preview_strip(
             let mut hint = area.shrink(PAD);
             if sounding {
                 let stop = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::splat(PLAY));
-                let response = widgets::button_area(ui, stop, Id::new("browser-preview-play"), "Stop preview");
+                let response = widgets::button_area(ui, stop, Id::unique("browser-preview-play"), "Stop preview");
                 widgets::button_surface(&painter, stop, &response, true, theme::control_background(), 0.0);
                 play_glyph(&painter, stop.center(), true, theme::accent(), 7.0);
                 if response.clicked() {
@@ -1488,7 +1490,7 @@ fn preview_strip(
     // Top line: play, name, length, tempo, key.
     let top = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::new(area.width() - PAD * 2.0, PLAY));
     let play = Rect::from_min_size(top.min, Vec2::splat(PLAY));
-    let response = widgets::button_area(ui, play, Id::new("browser-preview-play"), "Preview");
+    let response = widgets::button_area(ui, play, Id::unique("browser-preview-play"), "Preview");
     let play_style = crate::kit::style_class::enter_response("button", &response);
     widgets::button_surface(
         &painter,
@@ -1609,7 +1611,7 @@ fn preview_strip(
     }
     // A click on the waveform previews from there.
     let response =
-        ui.interact(wave, Id::new("browser-preview-wave"), Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
+        ui.interact(wave, Id::unique("browser-preview-wave"), Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
     if response.clicked()
         && total > 0.0
         && let Some(pointer) = response.interact_pointer_pos()
@@ -1648,10 +1650,10 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
             break; // more tags than the popup's room; the footer's dots hold the rest
         }
         y = rect.bottom() + 2.0;
-        let row = ui.interact(rect, Id::new(("tag-editor-row", &tag.name)), Sense::hover());
+        let row = ui.interact(rect, Id::unique(("tag-editor-row", &tag.name)), Sense::hover());
         row.widget_info(|| {
             egui::WidgetInfo::labeled(
-                egui::WidgetType::Button,
+                egui::Role::Button,
                 true,
                 format!("Tag row {} ({} items)", tag.name, counts.get(&tag.name).copied().unwrap_or(0)),
             )
@@ -1678,10 +1680,10 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
             selection.iter().all(|key| projects.file_library_mut().item_tags(key).contains(&tag.name))
         };
         let box_rect = Rect::from_min_size(Pos2::new(rect.left() + 4.0, rect.center().y - 7.0), Vec2::splat(14.0));
-        let check = ui.interact(box_rect, Id::new(("tag-editor-filter", &tag.name)), Sense::click());
+        let check = ui.interact(box_rect, Id::unique(("tag-editor-filter", &tag.name)), Sense::click());
         check.widget_info(|| {
             egui::WidgetInfo::labeled(
-                egui::WidgetType::Checkbox,
+                egui::Role::CheckBox,
                 true,
                 if selection.is_empty() {
                     format!("Filter tag {}", tag.name)
@@ -1738,7 +1740,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
         let field_left = pick_rect.right() + 4.0;
         let field_right = (rect.right() - remove_width - keep_width - count_width - 10.0).max(field_left + 48.0);
         let field_rect = Rect::from_min_max(Pos2::new(field_left, rect.top()), Pos2::new(field_right, rect.bottom()));
-        let id = Id::new(("tag-editor-name", &tag.name));
+        let id = Id::unique(("tag-editor-name", &tag.name));
         let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
         let field = crate::kit::widgets::text_input_at(
             ui,
@@ -1749,9 +1751,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 .font(theme::ui_font(theme::TEXT_SMALL)),
         );
         ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-        field.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, format!("Tag name {}", tag.name))
-        });
+        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Tag name {}", tag.name)));
         if field.lost_focus()
             && ui.input(|i| i.key_pressed(Key::Enter))
             && !name.trim().is_empty()
@@ -1792,7 +1792,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
         let remove = widgets::button_area(
             ui,
             remove_rect,
-            Id::new(("tag-editor-remove", &tag.name)),
+            Id::unique(("tag-editor-remove", &tag.name)),
             format!("Remove tag {}", tag.name),
         );
         widgets::text_in(
@@ -1820,7 +1820,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 Pos2::new(remove_rect.right() + 4.0, rect.center().y - FILTER / 2.0),
                 Vec2::new(keep_width, FILTER),
             );
-            let keep = widgets::button_area(ui, keep_rect, Id::new(("tag-editor-keep", &tag.name)), "Keep");
+            let keep = widgets::button_area(ui, keep_rect, Id::unique(("tag-editor-keep", &tag.name)), "Keep");
             widgets::text_in(
                 &painter,
                 keep_rect,
@@ -1837,7 +1837,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
     // The last row adds a tag: a name and the next default colour, the field the popup wide.
     if y + EDITOR_ROW <= area.bottom() - 2.0 {
         let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), EDITOR_ROW));
-        let id = Id::new("tag-editor-new");
+        let id = Id::unique("tag-editor-new");
         let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
         let field_rect =
             Rect::from_min_max(Pos2::new(area.left() + PAD, rect.top()), Pos2::new(area.right() - PAD, rect.bottom()));
@@ -1851,7 +1851,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 .font(theme::ui_font(theme::TEXT_SMALL)),
         );
         ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-        field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "New tag name".to_string()));
+        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
         if field.lost_focus()
             && ui.input(|i| i.key_pressed(Key::Enter))
             && !name.trim().is_empty()
@@ -1890,8 +1890,9 @@ fn footer_view(
         if x > area.right() - 90.0 - edit_width - 8.0 {
             break;
         }
-        let response = widgets::button_area(ui, rect, Id::new(("browser-tag", &tag.name)), format!("Tag {}", tag.name))
-            .on_hover_text(&tag.name);
+        let response =
+            widgets::button_area(ui, rect, Id::unique(("browser-tag", &tag.name)), format!("Tag {}", tag.name))
+                .on_hover_text(&tag.name);
         if response.hovered() {
             // The tag's name and how many items carry it, in the status bar. The count is read
             // where the tags are kept, not from the editor's `tag_counts`: that is absent until
@@ -1911,7 +1912,7 @@ fn footer_view(
         // Right-click: rename, recolour or remove the tag. Clicks inside do not close it: a
         // tag's new name is typed here (egui's default closes a menu on a click inside it).
         egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-            let id = Id::new(("browser-rename-tag", &tag.name));
+            let id = Id::unique(("browser-rename-tag", &tag.name));
             let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
             let field = crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut name).desired_width(120.0));
             ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
@@ -1962,7 +1963,7 @@ fn footer_view(
     );
     {
         let rect = edit_rect;
-        let response = widgets::button_area(ui, rect, Id::new("browser-edit-tags"), "Edit tags");
+        let response = widgets::button_area(ui, rect, Id::unique("browser-edit-tags"), "Edit tags");
         let _style = crate::kit::style_class::enter_response("button", &response);
         if response.clicked() {
             state.tag_editor = !state.tag_editor;
@@ -2002,7 +2003,7 @@ fn footer_view(
 /// now: the width is saved then, not on every frame of a drag.
 pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32) -> (Option<f32>, bool) {
     let response = ui
-        .interact(handle, Id::new("browser-resize"), Sense::click_and_drag())
+        .interact(handle, Id::unique("browser-resize"), Sense::click_and_drag())
         .on_hover_cursor(CursorIcon::ResizeHorizontal);
     if response.double_clicked() {
         return (Some(default), true);
@@ -2014,7 +2015,7 @@ pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32
     );
     // The width follows the pointer from where the drag began, so it never falls behind it
     // (adding each frame's movement to the width rounded to whole points would).
-    let start_id = Id::new("browser-resize-start");
+    let start_id = Id::unique("browser-resize-start");
     if response.drag_started()
         && let Some(pointer) = response.interact_pointer_pos()
     {

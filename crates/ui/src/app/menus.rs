@@ -130,7 +130,7 @@ fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> 
         let ink = crate::kit::style_class::readable_on(background);
         // The background covers the menu as it was laid out last frame: its own rect, never the
         // layer's clip, which is the whole window.
-        let id = ui.id().with("menu-rect");
+        let id = ui.scope_id().with("menu-rect");
         if let Some(rect) = ui.ctx().data(|d| d.get_temp::<egui::Rect>(id)) {
             crate::kit::native_css::surface(ui.painter(), rect, 0.0, egui::Color32::TRANSPARENT);
         }

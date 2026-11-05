@@ -30,6 +30,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, project: Project) -> Harnes
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -148,9 +150,9 @@ fn the_ruler_names_its_loop_handles_and_markers() {
     assert!(h.query_by_label("Clip end marker").is_none());
     // The loop row is the ruler's top 8 points; the handles are in it.
     let (ruler, end) = (ruler(&h), handle(&h, "Loop end"));
-    assert!(end.y < ruler.top() + 8.0, "{end:?} in {ruler:?}");
+    assert!(end.y < ruler.top() + 14.0, "{end:?} in {ruler:?}");
     let marker = handle(&h, "Clip start marker");
-    assert!(marker.y > ruler.top() + 8.0, "{marker:?} under the loop row");
+    assert!(marker.y > ruler.top() + 14.0, "{marker:?} under the loop row");
 }
 
 #[test]

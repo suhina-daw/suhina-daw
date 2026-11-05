@@ -402,6 +402,10 @@ fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
             let detail = Some(format!("{} {}", plugin.format(), plugin.vendor).trim().to_string());
             Some(Found { name: plugin.name.clone(), kind, detail, plugin: true, folder: None, item })
         }
+        Item::Stock(key) => {
+            let name = suhina_device_registry::stock_preset(key)?.preset.name.clone();
+            Some(Found { name, kind: "preset", detail: None, plugin: false, folder: None, item })
+        }
     }
 }
 
@@ -557,6 +561,22 @@ pub fn prepare_search(
                 ranked.push((rank, found));
             }
         }
+        for stock in suhina_device_registry::stock_presets() {
+            let found = Found {
+                item: Item::Stock(stock.key.to_string()),
+                name: stock.preset.name.clone(),
+                kind: "preset",
+                detail: None,
+                plugin: false,
+                folder: None,
+            };
+            if let Some(rank) = suhina_library::rank(&words, &stock.preset.name, &stock.tags.join(" "))
+                && fits(&found, category)
+                && tagged(projects.file_library_mut(), &found.item.key())
+            {
+                ranked.push((rank, found));
+            }
+        }
         let env = projects.plugin_env();
         for plugin in env.catalog.plugins() {
             let kind = if crate::is_instrument(plugin) { "instrument" } else { "effect" };
@@ -644,6 +664,10 @@ fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
                 "name": plugin.name, "vendor": plugin.vendor, "format": plugin.format(), "version": plugin.version,
             })
         }
+        Item::Stock(key) => {
+            let stock = suhina_device_registry::stock_preset(key).ok_or_else(|| format!("no stock preset {key:?}"))?;
+            json!({ "kind": "preset", "name": stock.preset.name, "device": stock.preset.device, "preset_tags": stock.tags })
+        }
         Item::File(path) | Item::Voice(path, _) => file_info(path, &item)?,
     };
     out["item"] = json!(item.key());
@@ -705,7 +729,8 @@ pub fn file_info(path: &Path, item: &Item) -> Result<Value, CommandError> {
             let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
             let voices =
                 suhina_device_registry::preset_voices(&data).map_err(|e| format!("{}: {e}", path.display()))?;
-            out["device"] = json!("fm-synth");
+            let preset = suhina_device_registry::preset(&data, 1).map_err(|e| format!("{}: {e}", path.display()))?;
+            out["device"] = json!(preset.device);
             out["voices"] =
                 json!(voices.iter().map(|(n, name)| json!({ "voice": n, "name": name })).collect::<Vec<_>>());
             if let Item::Voice(_, voice) = item {
@@ -979,7 +1004,9 @@ pub(crate) fn record_use(library: &mut Library, recent: crate::Recent, params: &
             }
         }
         crate::Recent::Device => {
-            if let Some(path) = Args::new(params).raw_str("sd") {
+            if let Some(key) = Args::new(params).raw_str("stock") {
+                record(Group::Presets, format!("stock:{key}"));
+            } else if let Some(path) = Args::new(params).raw_str("sd") {
                 record(Group::Effects, path.to_string());
             } else if Args::new(params).has("preset") {
                 preset(&mut record, params);

@@ -3,7 +3,7 @@ description: The MCP server for agents: tools, file roots, errors and how to run
 read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-04
 covers:
   - crates/automation/src/server.rs
   - crates/automation/src/workspace.rs
@@ -88,7 +88,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   the window does every frame, so a project plays with them while the agent sends nothing or only
   `project.*` commands that list, switch and close projects.
 - **Choosing the output.** `audio.devices` lists the audio hosts (WASAPI, and ASIO in a build
-  with the `asio` feature; ALSA, JACK or CoreAudio elsewhere) and each one's output devices with
+  with the `asio` feature; ALSA and, with a sound server running, PulseAudio on Linux; JACK or CoreAudio elsewhere) and each one's output devices with
   `sample_rates`, `buffer_sizes` (what the driver allows), `buffer_range` and whether WASAPI
   exclusive mode is possible, plus the output `chosen`. `audio.setOutput {host?, device?,
   sample_rate?, buffer_frames?, exclusive?}` changes the parts given (an empty text or 0 goes back
@@ -253,7 +253,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   amount, `note.fitToScale {notes?, root?, scale?}` moves each note to the nearest key of a scale
   (a key name such as `"C"` or `"F#"`, and `major`, `minor`, `dorian`, `blues` and the rest),
   `note.invert {notes?}` mirrors the pitches, `note.reverse {notes?}` turns them round in time,
-  `note.legato {notes?}` makes each note last until the next of its key, `note.stretch {notes?,
+  `note.legato {notes?}` makes each note last until the next one starts, on any key, `note.stretch {notes?,
   factor}` stretches them in time (`2` is the **×2** button, `0.5` **÷2**),
   `note.randomizeVelocity {notes?, amount?, seed?}` and `note.rampVelocity {notes?, from, to}`
   change velocities. `notes` left out means every note of the clip. The two random tools take a

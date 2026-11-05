@@ -173,7 +173,8 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
                 if themes.skin.assets.get(&state.role).is_some_and(|source| skin::png_artwork(source)) {
                     ui.label("This role uses PNG artwork. Edit its package file externally, or paste SVG below to replace it.");
                 }
-                ui.add(egui::TextEdit::multiline(&mut state.svg).code_editor().desired_rows(5).desired_width(f32::INFINITY));
+                let editor = ui.add(egui::TextEdit::multiline(&mut state.svg).code_editor().desired_rows(5).desired_width(f32::INFINITY));
+                editor.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MultilineTextInput, true, "Artwork SVG"));
                 if ui.button("Apply SVG").clicked() {
                     match skin::parse_svg(&state.svg) {
                         Ok(_) => { let mut skin = themes.skin.clone(); skin.assets.insert(state.role.clone(),state.svg.clone()); request = Some(ThemeRequest::EditSkin(skin)); state.error.clear(); }
@@ -194,7 +195,8 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
                 // The in-app editor keeps images in the model; relative paths are for package files.
                 state.css = state.css.lines().filter(|line| !line.contains("image: url(")).collect::<Vec<_>>().join("\n");
             }
-            ui.add(egui::TextEdit::multiline(&mut state.css).code_editor().desired_rows(8).desired_width(f32::INFINITY));
+            let editor = ui.add(egui::TextEdit::multiline(&mut state.css).code_editor().desired_rows(8).desired_width(f32::INFINITY));
+            editor.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MultilineTextInput, true, "Native CSS"));
             if ui.button("Apply CSS").clicked() {
                 let mut theme = crate::kit::theme::Theme { colors: themes.colors, skin: themes.skin.clone(), transparent_rgb: themes.transparent_rgb.clone(), ..Default::default() };
                 let warnings = theme_css::apply(&mut theme, &state.css);

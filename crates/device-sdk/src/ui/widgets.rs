@@ -199,16 +199,73 @@ pub enum Widget {
     Graphic {
         drawing: Vec<Draw>,
     },
-    /// A line across the control that moves with its one binding and is dragged directly: an X
-    /// binding gives a vertical line moved sideways, a Y binding a horizontal one moved up and
-    /// down. The value maps to the control's bounds as `position` does. `span` limits the line
-    /// (and where it is grabbed) across the other axis, in canvas units; the whole bounds
-    /// without it.
+    /// A line across the control that moves with its binding and is dragged directly: an X binding
+    /// gives a vertical line moved sideways, a Y binding a horizontal one moved up and down. The
+    /// value maps to the control's bounds as `position` does, the other way along an axis whose
+    /// binding has a negative `drag_scale`. `span` limits the line (and where it is grabbed)
+    /// across the other axis, in canvas units; the whole bounds without it. `offset` moves the
+    /// bounds along its travel (sideways with an X binding), in canvas units, for a value that
+    /// starts where another ends. With both bindings it is a point: a dot at both values, dragged
+    /// on both axes as one undo step. `dot` draws a one-axis handle the same way, in the middle
+    /// of its line. `relative` moves the value by how far the pointer moves, a full bounds for
+    /// its whole range, rather than to where the pointer is: for a handle whose `offset` follows
+    /// its own value (a dot that stays on a curve it bends), which would otherwise run away.
+    /// `hollow` draws its dot smaller, as a ring, for a handle that shapes something rather than
+    /// placing it.
     Handle {
         color: [u8; 4],
         #[serde(default)]
         span: Option<[crate::ui::UiValue; 2]>,
+        #[serde(default)]
+        offset: Option<crate::ui::UiValue>,
+        #[serde(default)]
+        dot: bool,
+        #[serde(default)]
+        relative: bool,
+        #[serde(default)]
+        hollow: bool,
     },
+    /// The device's on/off as a control in its own body: the header's square, bigger,
+    /// running `device.setEnabled`. The host reads the state and draws it; it has no
+    /// parameter of its own.
+    DeviceSwitch,
+    /// A file-backing device's pack row or file row: one piece per control, so its bounds,
+    /// accessible name and popup bounds belong to one dropdown or stepper. `part` places it;
+    /// `what` names the device's file ("model", "cab") whose folders' lists the host feeds.
+    DeviceFiles {
+        part: FileRowPart,
+        what: String,
+    },
+    /// The one-line note a file-backing device's panel shows under the controls when its
+    /// file does not run (the fault, or that the file moved); nothing when it does.
+    DeviceNote,
+    /// Host-drawn response display of the eight-band EQ: the grid, the curve of each band
+    /// group in use and a draggable dot per band, with the selected band's Frequency, Gain
+    /// and Q strips, the bands' type menus and numbered selectors, and the Edit switch beside
+    /// them. The host finds the band parameters by their ids (`a1Frequency` … `b8Q`); which
+    /// band is selected is panel state, never a parameter (docs/spec/eq.md › The panel).
+    EqCurve,
+}
+
+/// What a [`Widget::DeviceFiles`] control places: the pack row's or file row's dropdown on
+/// its own control, or one of the row's steppers, so its bounds and accessible name belong
+/// to one button or dropdown. The dropdown and its steppers talk to the same current pack
+/// and file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileRowPart {
+    /// The pack row's dropdown: the device file's pack, the folder's packs under it.
+    Pack,
+    /// The pack row's previous pack stepper.
+    PreviousPack,
+    /// The pack row's next pack stepper.
+    NextPack,
+    /// The file row's dropdown: the file's own name, the current pack's files under it.
+    File,
+    /// The file row's previous file stepper.
+    PreviousFile,
+    /// The file row's next file stepper.
+    NextFile,
 }
 impl CustomControl {
     /// Legacy custom drawings and typed widgets share the host's interaction path.
@@ -251,7 +308,7 @@ fn resolve_widget_draw(draw: &mut Draw, palette: &WidgetPalette) {
         | Draw::Circle { color, .. }
         | Draw::Text { color, .. }
         | Draw::Value { color, .. } => resolve(color),
-        Draw::Line { color, .. } | Draw::Arc { color, .. } => resolve(color),
+        Draw::Line { color, .. } | Draw::Arc { color, .. } | Draw::Plot { color, .. } => resolve(color),
         Draw::Path { color, fill, .. } => {
             resolve(color);
             if let Some(fill) = fill {
@@ -298,7 +355,9 @@ impl Widget {
         if let Self::Graphic { drawing } = self {
             return drawing.clone();
         }
-        if let (Self::Button { label, .. }, UiGesture::Preset(_)) = (self, control.gesture) {
+        if let (Self::Button { label, .. }, UiGesture::Preset(_) | UiGesture::Randomize | UiGesture::Expand(_)) =
+            (self, control.gesture)
+        {
             // A quick preset's button has no parameter of its own: a plain face and its name.
             return vec![rect(0., 0., w.into(), height, [46, 45, 42, 255]), text(w / 2., 0., label, TEXT, true)];
         }
@@ -418,7 +477,9 @@ impl Widget {
                     value,
                 ];
             }
-            Self::SampleWaveform | Self::SampleRecording | Self::Envelope { .. } => {}
+            Self::SampleWaveform | Self::SampleRecording | Self::Envelope { .. } | Self::EqCurve => {}
+            // Host-rendered: the host draws them from its own state.
+            Self::DeviceSwitch | Self::DeviceFiles { .. } | Self::DeviceNote => {}
             Self::Knob { label } => {
                 let label_height = if label.is_empty() { 0. } else { 12. };
                 knob(&mut ui, id, label, [0., label_height, w, height - label_height], binding.logarithmic);

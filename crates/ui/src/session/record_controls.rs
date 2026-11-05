@@ -26,7 +26,7 @@ pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, ac
     }
     let rect = crate::kit::control_layout::place("transport-record", rect, ui.max_rect());
     let label = if recording { "Stop recording" } else { "Record into the arrangement" };
-    let response = widgets::button_area(ui, rect, Id::new("record"), label);
+    let response = widgets::button_area(ui, rect, Id::unique("record"), label);
     let _style = crate::kit::style_class::enter_named_response("button", "record", &response);
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Recording, recording);
     if response.clicked() {
@@ -77,10 +77,10 @@ pub fn metronome_button(
     }
     let rect = crate::kit::control_layout::place("transport-metronome", rect, ui.max_rect());
     let label = if on { "Metronome off" } else { "Metronome on" };
-    let response = ui.interact(rect, Id::new("metronome"), egui::Sense::click_and_drag()).on_hover_text(
+    let response = ui.interact(rect, Id::unique("metronome"), egui::Sense::click_and_drag()).on_hover_text(
         "Metronome: a click on every beat while playing. Hold and drag up or down: its level. Right-click: its sound",
     );
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     let style = crate::kit::style_class::enter_named_response("button", "metronome-toggle", &response);
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
@@ -205,7 +205,7 @@ pub fn count_in_menu(ui: &mut Ui, rect: Rect, bars: u8, actions: &mut Vec<Action
             },
         )
         .response;
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, COUNT_IN_LABEL));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, COUNT_IN_LABEL));
         response.on_hover_text("Count-in: clicks before recording starts the transport");
     });
     if chosen != bars {
@@ -234,7 +234,7 @@ pub fn slot_record(
     } else {
         format!("Record on {track_name} (scene {number})")
     };
-    let response = widgets::button_area(ui, button, Id::new(("slot-record", track, number)), label);
+    let response = widgets::button_area(ui, button, Id::unique(("slot-record", track, number)), label);
     if response.clicked() {
         let id = if recording { "clip.launch" } else { "clip.record" };
         actions.push(Action::new(id, json!({ "track": track, "scene": number })));

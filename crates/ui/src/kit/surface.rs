@@ -34,7 +34,7 @@ struct Host(Arc<dyn Provider>);
 
 /// Installs the provider for a window whose pixels show the desktop through their alpha.
 pub fn install(ctx: &Context, provider: Arc<dyn Provider>) {
-    ctx.data_mut(|data| data.insert_temp(Id::new(HOST), Host(provider)));
+    ctx.data_mut(|data| data.insert_temp(Id::unique(HOST), Host(provider)));
 }
 
 /// Whether backgrounds set the window's pixels in this window: only while the theme asks for a
@@ -42,7 +42,7 @@ pub fn install(ctx: &Context, provider: Arc<dyn Provider>) {
 /// blend with Suhina's own surfaces, never with the desktop. A private image needs normal
 /// blending, so its pixels remain under the theme surfaces instead of exposing the desktop.
 pub fn available(ctx: &Context) -> bool {
-    ctx.data(|data| data.get_temp::<Host>(Id::new(HOST))).is_some()
+    ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST))).is_some()
         && super::theme::window_background().a() < u8::MAX
         && super::liquid::background_image(ctx).is_none()
 }
@@ -53,19 +53,19 @@ pub fn clear(ctx: &Context, rect: Rect) -> Option<Shape> {
     if !available(ctx) {
         return None;
     }
-    let host = ctx.data(|data| data.get_temp::<Host>(Id::new(HOST)))?;
+    let host = ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST)))?;
     Some(host.0.shape(rect, CornerRadius::ZERO, Color32::TRANSPARENT))
 }
 
 /// Forgets the backgrounds of a frame that never finished.
 pub fn begin_frame(ctx: &Context) {
-    ctx.data_mut(|data| data.remove_temp::<Vec<(LayerId, ShapeIdx)>>(Id::new(FILLS)));
+    ctx.data_mut(|data| data.remove_temp::<Vec<(LayerId, ShapeIdx)>>(Id::unique(FILLS)));
 }
 
 /// Swaps this frame's backgrounds for the provider's shapes. Called once everything is painted.
 pub fn finish_frame(ctx: &Context) {
-    let fills = ctx.data_mut(|data| data.remove_temp::<Vec<(LayerId, ShapeIdx)>>(Id::new(FILLS)));
-    let host = ctx.data(|data| data.get_temp::<Host>(Id::new(HOST)));
+    let fills = ctx.data_mut(|data| data.remove_temp::<Vec<(LayerId, ShapeIdx)>>(Id::unique(FILLS)));
+    let host = ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST)));
     let (Some(fills), Some(host)) = (fills, host) else { return };
     ctx.graphics_mut(|layers| {
         for (layer, index) in fills {
@@ -109,7 +109,7 @@ impl Backgrounds for Painter {
             return;
         }
         self.ctx().data_mut(|data| {
-            let fills = data.get_temp_mut_or_default::<Vec<(LayerId, ShapeIdx)>>(Id::new(FILLS));
+            let fills = data.get_temp_mut_or_default::<Vec<(LayerId, ShapeIdx)>>(Id::unique(FILLS));
             if fills.len() < MAX_FILLS {
                 fills.push((layer, index));
             }
@@ -163,7 +163,7 @@ mod tests {
             window.fill_background(rect(), 0.0, Color32::from_rgba_unmultiplied(20, 90, 130, 100));
             // An overlay in the same layer blends.
             window.rect_filled(rect(), 0.0, Color32::from_white_alpha(30));
-            let dialog = ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("dialog")));
+            let dialog = ctx.layer_painter(LayerId::new(Order::Foreground, Id::unique("dialog")));
             dialog.fill_background(rect(), 0.0, Color32::from_rgb(1, 2, 3));
         });
         let circles = shapes.iter().filter(|s| matches!(s, Shape::Circle(_))).count();

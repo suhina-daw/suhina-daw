@@ -33,12 +33,14 @@ pub(super) fn single_click(
         (Some(index), _) if inputs.shift || inputs.command => {
             if !state.selected.remove(&index) {
                 state.selected.insert(index);
+                state.audition_keys(clip.notes.get(index).map(|n| n.key));
             }
         }
         (Some(index), _) => {
             state.selected = BTreeSet::from([index]);
             if let Some(note) = clip.notes.get(index) {
                 state.remember(note);
+                state.audition_keys([note.key]);
             }
         }
         // Draw and Paint add a note; so does Select when a click on empty grid draws (the
@@ -46,7 +48,12 @@ pub(super) fn single_click(
         (None, Tool::Draw | Tool::Paint) => click_adds(gesture, state, actions, pos, inputs),
         (None, Tool::Select) if workflow.empty_click_draws => click_adds(gesture, state, actions, pos, inputs),
         (None, Tool::Slice) => {}
-        (None, Tool::Select) => state.selected.clear(),
+        // A click on an empty spot leaves the mark a paste goes to.
+        (None, Tool::Select) => {
+            state.selected.clear();
+            state.clear_span();
+            state.insert_at = Some(gesture.grid.place(gesture.layout.beat_at(pos.x), inputs.alt, true));
+        }
     }
 }
 
@@ -207,51 +214,34 @@ pub(super) fn commit(
         (Gesture::Move { copy, .. }, Effect::Move(beats, keys)) if !notes.is_empty() && (beats != 0.0 || keys != 0) => {
             let moved: Vec<Note> = notes.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
             state.audition_moved(&moved, keys);
+            if !*copy {
+                state.span_moved(beats);
+            }
             params["beats"] = json!(round_beat(beats));
             params["semitones"] = json!(keys);
             if *copy {
                 // Ctrl+drag: one `note.duplicate` puts the copies where the drag let go; the
                 // copies are appended, so they are the next indices, and they are selected.
+                state.replacing(&mut params);
                 actions.push(Action::new("note.duplicate", params));
-                state.selected = (clip.notes.len()..clip.notes.len() + notes.len()).collect();
+                state.select_copies((clip.notes.len()..clip.notes.len() + notes.len()).collect(), &clip.notes);
+                // They went where the drag put them, not a stretch on.
+                state.span = None;
             } else {
-                // Notes moved onto others of the same key and start replace them (Settings ›
-                // Piano roll › Moved notes replace the notes under them, on by default); the
-                // selection stays on the moved notes as the indices close up.
-                let replace = state.notes_replace;
-                if replace {
-                    params["replace"] = json!(true);
-                    let landed: Vec<Note> = notes
-                        .iter()
-                        .filter_map(|i| clip.notes.get(*i))
-                        .map(|n| Note {
-                            time: n.time + round_beat(beats),
-                            key: u8::try_from(i32::from(n.key) + keys).unwrap_or(n.key),
-                            ..*n
-                        })
-                        .collect();
-                    let covered: Vec<usize> = (0..clip.notes.len())
-                        .filter(|i| !notes.contains(i))
-                        .filter(|i| {
-                            landed
-                                .iter()
-                                .any(|m| m.key == clip.notes[*i].key && (m.time - clip.notes[*i].time).abs() < 1e-9)
-                        })
-                        .collect();
-                    if !covered.is_empty() {
-                        state.selected =
-                            state.selected.iter().map(|i| i - covered.iter().filter(|c| *c < i).count()).collect();
-                    }
-                }
+                // With stacked notes off, moved notes replace what they land on; the window moves
+                // the selection as the indices close up.
+                state.replacing(&mut params);
                 actions.push(Action::new("note.move", params));
             }
         }
         (Gesture::Resize { .. }, Effect::Resize(by)) if !notes.is_empty() && by != 0.0 => {
             params["by"] = json!(round_beat(by));
+            state.replacing(&mut params);
             actions.push(Action::new("note.resize", params));
         }
         (Gesture::ResizeStart { .. }, Effect::ResizeStart(by)) if !notes.is_empty() && by != 0.0 => {
             params["startBy"] = json!(round_beat(by));
+            state.replacing(&mut params);
             actions.push(Action::new("note.resize", params));
         }
         (Gesture::Velocity { .. } | Gesture::NoteVelocity { .. }, Effect::Velocity(by))
@@ -268,7 +258,7 @@ pub(super) fn commit(
             actions.push(Action::new("note.setVelocity", params));
         }
         (Gesture::Draw { .. }, Effect::Draw(Some(note))) => {
-            actions.push(Action::new("note.add", add_params(clip, &[note])));
+            actions.push(state.add_action(clip, &[note]));
             state.selected = BTreeSet::from([clip.notes.len()]);
             state.remember(&note);
             state.audition_keys([note.key]);
@@ -280,7 +270,7 @@ pub(super) fn commit(
                 .filter(|p| !clip.notes.iter().any(|n| n.key == p.key && (n.time - p.time).abs() < EPSILON))
                 .collect();
             if !stroke.is_empty() {
-                actions.push(Action::new("note.add", add_params(clip, &stroke)));
+                actions.push(state.add_action(clip, &stroke));
                 state.selected = (clip.notes.len()..clip.notes.len() + stroke.len()).collect();
                 state.audition_keys(stroke.iter().map(|n| n.key));
                 if let Some(last) = stroke.last() {
@@ -298,13 +288,21 @@ pub(super) fn commit(
             actions.push(Action::new("note.split", params));
         }
         (Gesture::Paint, _) => {
-            // A painted note on top of one already there (same key, same start) is left out.
+            // A painted note on top of one already there (same key, same start) is left out, and so,
+            // where notes do not stack, is one that would start inside it: a stroke paints the gaps.
+            let inside = state.notes_replace;
             let stroke: Vec<Note> = std::mem::take(&mut state.stroke)
                 .into_iter()
-                .filter(|p| !clip.notes.iter().any(|n| n.key == p.key && (n.time - p.time).abs() < EPSILON))
+                .filter(|p| {
+                    !clip.notes.iter().any(|n| {
+                        n.key == p.key
+                            && ((n.time - p.time).abs() < EPSILON
+                                || (inside && n.time < p.time && p.time < n.time + n.duration - EPSILON))
+                    })
+                })
                 .collect();
             if !stroke.is_empty() {
-                actions.push(Action::new("note.add", add_params(clip, &stroke)));
+                actions.push(state.add_action(clip, &stroke));
                 state.selected = (clip.notes.len()..clip.notes.len() + stroke.len()).collect();
                 state.audition_keys(stroke.iter().map(|n| n.key));
             }
@@ -324,6 +322,7 @@ pub(super) fn commit(
             actions.push(Action::new("note.setMuted", params));
         }
         (Gesture::Select { add, .. }, Effect::Select(rect)) => {
+            let kept = if *add { state.span_shown(clip) } else { None };
             if !*add {
                 state.selected.clear();
             }
@@ -332,6 +331,12 @@ pub(super) fn commit(
                     state.selected.insert(i);
                 }
             }
+            state.swept.clear();
+            // What it covered is selected in time, the empty parts too, and one that adds keeps what
+            // was selected in time: the stretch runs over both.
+            let (start, end) = swept_span(note_grid(clip, layout.beat_width), layout, &clip.notes, rect);
+            let (start, end) = kept.map_or((start, end), |k| (k.0.min(start), k.1.max(end)));
+            state.select_span(start, end);
         }
         _ => {}
     }

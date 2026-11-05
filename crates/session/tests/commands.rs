@@ -49,7 +49,7 @@ fn what_follows_a_command_reads_parameters_it_takes() {
             After::Saves => assert_eq!(spec.id, "project.save"),
             After::Recent(Recent::Files) => assert!(takes(spec, "paths"), "{}", spec.id),
             After::Recent(Recent::Device) => {
-                assert!(["id", "device", "sd", "preset"].iter().any(|p| takes(spec, p)), "{}", spec.id)
+                assert!(["id", "device", "sd", "preset", "stock"].iter().any(|p| takes(spec, p)), "{}", spec.id)
             }
             After::Recent(Recent::SdFile) => assert!(takes(spec, "path"), "{}", spec.id),
             After::Recent(Recent::Plugin) => assert!(takes(spec, "plugin"), "{}", spec.id),
@@ -71,6 +71,7 @@ fn what_follows_a_command_reads_parameters_it_takes() {
             "note.cut",
             "range.copy",
             "range.cut",
+            "take.cutRange",
             "track.copy",
             "track.cut"
         ]

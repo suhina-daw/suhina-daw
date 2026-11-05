@@ -482,12 +482,12 @@ pub fn steady_columns(x: f32, count: usize, from: f64, seconds_per_point: f64, g
 
 /// The scale waveforms are drawn with, as the window's settings choose it for this frame.
 pub fn scale(ctx: &egui::Context) -> Scale {
-    ctx.data(|d| d.get_temp::<Scale>(egui::Id::new("waveform-scale"))).unwrap_or_default()
+    ctx.data(|d| d.get_temp::<Scale>(egui::Id::unique("waveform-scale"))).unwrap_or_default()
 }
 
 /// Draws waveforms with `scale` from now on.
 pub fn set_scale(ctx: &egui::Context, scale: Scale) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new("waveform-scale"), scale));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("waveform-scale"), scale));
 }
 
 #[cfg(test)]

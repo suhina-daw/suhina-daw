@@ -605,7 +605,7 @@ impl Cx<'_> {
         let value = field(self.settings);
         let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
         let response = self.ui.put(rect, egui::Slider::new(value, 0..=100).suffix(" %"));
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, self.name));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, self.name));
         self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
         self.outcome.changed |= response.changed();
     }
@@ -614,7 +614,7 @@ impl Cx<'_> {
         let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
         let response =
             self.ui.put(rect, egui::Slider::new(&mut self.settings.view.background_blur, 0..=40).suffix(" px"));
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, self.name));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, self.name));
         self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
         self.outcome.changed |= response.changed();
     }
@@ -629,7 +629,7 @@ impl Cx<'_> {
         let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
         let response =
             self.ui.add_enabled_ui(inherited, |ui| ui.put(rect, egui::Slider::new(value, 0..=100).suffix(" %"))).inner;
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, inherited, self.name));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, inherited, self.name));
         if !crate::kit::liquid::available(self.ui.ctx()) {
             response.clone().on_hover_text("Saved for later. To see liquid, select GPU in Appearance › Advanced › Graphics renderer, enable Animations and restart Suhina.");
         }
@@ -647,7 +647,7 @@ impl Cx<'_> {
                 let popup = ui.auto_id_with("popup");
                 let response =
                     egui::color_picker::color_edit_button_srgba(ui, &mut colour, egui::color_picker::Alpha::Opaque);
-                response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ColorButton, true, self.name));
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, self.name));
                 held = egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
                 ui.label(
                     egui::RichText::new(theme::hex(colour))
@@ -678,11 +678,28 @@ impl Cx<'_> {
         } else {
             self.ui.put(rect, egui::Slider::new(&mut value, lower..=upper).show_value(false))
         };
-        let kind = if sizes.advanced { egui::WidgetType::DragValue } else { egui::WidgetType::Slider };
+        let kind = if sizes.advanced { egui::Role::SpinButton } else { egui::Role::Slider };
         response.widget_info(|| egui::WidgetInfo::labeled(kind, true, self.name));
         self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
         if response.changed() {
             self.settings.view.track_sizes.set_height(size, value);
+            self.outcome.changed = true;
+        }
+    }
+
+    /// The custom length of a take crossfade, in milliseconds.
+    pub fn take_crossfade_custom(&mut self, row: Rect) {
+        let mut value = self.settings.view.take_crossfade_custom;
+        let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
+        let response = crate::kit::widgets::number_input_at(
+            self.ui,
+            rect,
+            egui::DragValue::new(&mut value).range(1..=500).speed(1).suffix(" ms"),
+        );
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, self.name));
+        self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
+        if response.changed() {
+            self.settings.view.take_crossfade_custom = value;
             self.outcome.changed = true;
         }
     }
@@ -692,6 +709,15 @@ impl Cx<'_> {
         let value = field(self.settings);
         if let Some(on) = switch(self.ui, self.painter, row, self.name, *value) {
             *value = on;
+            self.outcome.changed = true;
+        }
+    }
+
+    /// A switch that shows the yes/no setting `field` gives the other way round: on when it is no.
+    pub fn off_on(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut bool) {
+        let value = field(self.settings);
+        if let Some(on) = switch(self.ui, self.painter, row, self.name, !*value) {
+            *value = !on;
             self.outcome.changed = true;
         }
     }
@@ -735,7 +761,7 @@ impl Cx<'_> {
                 .hint_text(hint)
                 .font(theme::ui_font(theme::TEXT_SMALL)),
         );
-        edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, name));
+        edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, name));
         widgets::input_line(self.ui, &edit);
         if edit.changed() {
             self.outcome.changed = true;
@@ -785,8 +811,8 @@ impl Cx<'_> {
             theme::ui_font(theme::TEXT_SMALL),
             color,
         );
-        let shown = self.ui.interact(rect, Id::new(("moved-folder", name)), Sense::hover());
-        shown.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("{name}: {text}")));
+        let shown = self.ui.interact(rect, Id::unique(("moved-folder", name)), Sense::hover());
+        shown.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{name}: {text}")));
     }
 
     /// The most colour tags the browser may have, kept by the library rather than the settings.
@@ -847,8 +873,8 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     if !state.window {
         let grip = Rect::from_min_max(title.min, pos2(title.right() - 180.0, title.bottom()));
         let drag =
-            ui.interact(grip, Id::new("settings-title-drag"), Sense::drag()).on_hover_cursor(egui::CursorIcon::Grab);
-        drag.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Move Settings"));
+            ui.interact(grip, Id::unique("settings-title-drag"), Sense::drag()).on_hover_cursor(egui::CursorIcon::Grab);
+        drag.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Move Settings"));
         outcome.move_by = drag.drag_delta();
     }
     widgets::text_in(
@@ -862,14 +888,14 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     let close = Rect::from_min_max(Pos2::new(title.right() - 52.0, title.top()), title.max);
     // Help, beside Close: how each setting's description is shown.
     let help = Rect::from_min_size(Pos2::new(close.left() - 58.0, close.top()), Vec2::new(52.0, close.height()));
-    let help_response = widgets::button_area(ui, help, Id::new("settings-help"), "Settings help");
+    let help_response = widgets::button_area(ui, help, Id::unique("settings-help"), "Settings help");
     let help_hover = widgets::hover(ui, &help_response);
     painter.rect_filled(help, 0.0, motion::mix(theme::control_background(), theme::control_hover(), help_hover));
     widgets::text_in(&painter, help, Align2::CENTER_CENTER, "Help", theme::ui_font(theme::TEXT), theme::text_primary());
     if help_response.clicked() {
         state.help_open = true;
     }
-    let response = widgets::button_area(ui, close, Id::new("settings-close"), "Close settings");
+    let response = widgets::button_area(ui, close, Id::unique("settings-close"), "Close settings");
     let hover = widgets::hover(ui, &response);
     painter.fill_background(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
     widgets::text_in(
@@ -897,7 +923,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
             .hint_text("Search settings")
             .font(theme::ui_font(theme::TEXT_SMALL)),
     );
-    edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Search settings"));
+    edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Search settings"));
     widgets::input_line(ui, &edit);
     let escaped = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
     if escaped {
@@ -969,7 +995,7 @@ const DESCRIPTION_CHOICES: [(Descriptions, &str); 3] = [
 /// Help over the Settings window: what the names and descriptions are, and how a description is
 /// shown, one choice per line. Escape or Close closes it.
 fn help_dialog(ui: &Ui, settings: &mut Settings, state: &mut PageState, outcome: &mut Outcome) {
-    let modal = egui::Modal::new(Id::new("settings-help-dialog")).show(ui.ctx(), |ui| {
+    let modal = egui::Modal::new(Id::unique("settings-help-dialog")).show(ui.ctx(), |ui| {
         ui.set_width(360.0);
         ui.label(egui::RichText::new("Help").font(theme::ui_font(theme::TEXT + 2.0)).color(theme::text_primary()));
         ui.add_space(6.0);
@@ -1072,7 +1098,7 @@ fn page_body(
                 let rect = Rect::from_min_size(Pos2::new(page.left(), y), Vec2::new(page.width(), SIDEBAR_ROW));
                 let text = if unfolded { "Hide advanced settings" } else { "Show advanced settings" };
                 let response =
-                    widgets::button_area(cx.ui, rect, Id::new(("settings-advanced", entry.page.name())), text);
+                    widgets::button_area(cx.ui, rect, Id::unique(("settings-advanced", entry.page.name())), text);
                 let marker = if unfolded { "v  Advanced" } else { ">  Advanced" };
                 let color = motion::mix(theme::text_hint(), theme::text_secondary(), widgets::hover(cx.ui, &response));
                 widgets::text_in(&painter, rect, Align2::LEFT_CENTER, marker, theme::ui_font(theme::TEXT_SMALL), color);
@@ -1144,7 +1170,7 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
             Vec2::new(rect.width(), SIDEBAR_ROW),
         );
         let response =
-            widgets::button_area(ui, row, Id::new(("settings-page", index)), format!("Settings page: {name}"));
+            widgets::button_area(ui, row, Id::unique(("settings-page", index)), format!("Settings page: {name}"));
         if response.clicked() && Some(page) != shown {
             picked = Some(page);
         }
@@ -1329,7 +1355,7 @@ fn theme_page(
                         .frame(widgets::input_frame())
                         .desired_width(200.0),
                 );
-                search.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Search themes"));
+                search.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Search themes"));
                 widgets::input_line(ui, &search);
             });
             let query = state.theme_search.trim().to_lowercase();
@@ -1404,12 +1430,12 @@ fn theme_card(
     let card = Rect::from_min_size(rect.min, Vec2::new(width, preview_height + 50.0));
     let response = ui.interact(
         card,
-        Id::new(("theme", base, active)),
+        Id::unique(("theme", base, active)),
         if active { Sense::click_and_drag() } else { Sense::click() },
     );
     // The one in use shows twice: large at the top, and in its place in the list.
     let label = if active { format!("Theme in use: {name}") } else { format!("Theme: {name}") };
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
     let mut chosen = None;
     let kept = themes.kept.iter().find(|(kept, _)| kept == base).map(|(_, why)| why.as_str());
     // Two themes with one name: the folder tells them apart.
@@ -1474,9 +1500,9 @@ fn theme_card(
             let area = Rect::from_center_size(centre, Vec2::splat(18.0));
             // The theme in use shows its swatches twice (its large card and its card in the
             // list), so each card's swatch has an id of its own.
-            let swatch = ui.interact(area, Id::new(("theme-variant", *variant, active)), Sense::click());
+            let swatch = ui.interact(area, Id::unique(("theme-variant", *variant, active)), Sense::click());
             swatch.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Variant: {variant_name}"))
+                egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Variant: {variant_name}"))
             });
             let swatch = swatch.on_hover_text(*variant_name);
             if swatch.clicked() {
@@ -1557,7 +1583,7 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
             renamable,
             egui::TextEdit::singleline(name).frame(widgets::input_frame()).desired_width(260.0),
         );
-        edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, renamable, label));
+        edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, renamable, label));
         widgets::input_line(ui, &edit);
         if state.theme_rename_focus {
             edit.request_focus();
@@ -1662,7 +1688,7 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
                         },
                     );
                     swatch.widget_info(|| {
-                        egui::WidgetInfo::labeled(egui::WidgetType::ColorButton, true, format!("Colour {key}"))
+                        egui::WidgetInfo::labeled(egui::Role::ColorWell, true, format!("Colour {key}"))
                     });
                     state.theme_colour_held |=
                         egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
@@ -1694,9 +1720,8 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
                 if !rgb_default {
                     let mut opacity = (f32::from(rgba[3]) * 100.0 / 255.0).round() as u8;
                     let response = ui.add(egui::Slider::new(&mut opacity, 0..=100).suffix(" %").text("Opacity"));
-                    response.widget_info(|| {
-                        egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, format!("Opacity {key}"))
-                    });
+                    response
+                        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Opacity {key}")));
                     state.theme_colour_held |= response.dragged() || response.is_pointer_button_down_on();
                     if response.changed() {
                         rgba[3] = (f32::from(opacity) * 2.55).round() as u8;
@@ -1784,7 +1809,7 @@ fn shortcuts_page(
             .hint_text("Filter shortcuts")
             .font(theme::ui_font(theme::TEXT_SMALL)),
     );
-    edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Filter shortcuts"));
+    edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Filter shortcuts"));
     widgets::input_line(ui, &edit);
     if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         state.key_filter.clear();
@@ -1796,7 +1821,7 @@ fn shortcuts_page(
         Pos2::new(head.right() - 80.0, head.top() + 1.0),
         Pos2::new(head.right(), head.top() + 1.0 + SEGMENT),
     );
-    let response = widgets::button_area(ui, reset, Id::new("reset-keys"), "Reset all keys");
+    let response = widgets::button_area(ui, reset, Id::unique("reset-keys"), "Reset all keys");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
     painter.fill_background(reset, 0.0, fill);
     widgets::text_in(painter, reset, Align2::CENTER_CENTER, "Reset all", small.clone(), theme::text_primary());
@@ -1891,13 +1916,13 @@ fn shortcuts_page(
                     });
                     let change = ui.add(egui::Button::new(egui::RichText::new("Change").font(small.clone())));
                     let label = format!("Change keys of {}", action.id);
-                    change.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+                    change.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
                     if change.clicked() {
                         state.capture = Some(action.id.clone());
                     }
                     let clear = ui.add(egui::Button::new(egui::RichText::new("Clear").font(small.clone())));
                     let label = format!("Clear keys of {}", action.id);
-                    clear.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+                    clear.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
                     if clear.clicked() && !keys.is_empty() {
                         keymap.set(&action.id, Vec::new());
                         changed = true;
@@ -1958,7 +1983,7 @@ fn plugin_folders(
             ui.add_enabled(!plugins.scanning, egui::Checkbox::without_text(&mut enabled))
         });
         let label = format!("Scan {}", folder.path);
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, folder.enabled, &label));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, folder.enabled, &label));
         if response.changed() {
             request = Some(PluginRequest::SetFolderEnabled(folder.path.clone(), enabled));
         }
@@ -1982,7 +2007,7 @@ fn plugin_folders(
             let response = widgets::button_area(
                 ui,
                 remove,
-                Id::new(("remove-folder", &folder.path)),
+                Id::unique(("remove-folder", &folder.path)),
                 format!("Remove {}", folder.path),
             );
             let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
@@ -2010,7 +2035,7 @@ fn plugin_folders(
             .hint_text("A folder to look in as well")
             .font(small.clone()),
     );
-    edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Plug-in folder to add"));
+    edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Plug-in folder to add"));
     widgets::input_line(ui, &edit);
     let width = formats.width() / 4.0;
     for (index, (format, title)) in [
@@ -2029,7 +2054,7 @@ fn plugin_folders(
         let response = widgets::button_area(
             ui,
             cell,
-            Id::new(("folder-format", index)),
+            Id::unique(("folder-format", index)),
             format!("Folder format: {}", format_name(format.name())),
         );
         let chosen = plugins.new_format == format;
@@ -2041,7 +2066,7 @@ fn plugin_folders(
         let color = if chosen { theme::text_inverse() } else { theme::text_secondary() };
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
-    let response = widgets::button_area(ui, add, Id::new("add-folder"), "Add plug-in folder");
+    let response = widgets::button_area(ui, add, Id::unique("add-folder"), "Add plug-in folder");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
     painter.fill_background(add, 0.0, fill);
     widgets::text_in(painter, add, Align2::CENTER_CENTER, "Add", small.clone(), theme::text_primary());
@@ -2099,7 +2124,7 @@ fn plugin_actions(
             Pos2::new(buttons.left() + index as f32 * (half + 1.0), buttons.top()),
             Vec2::new(half, buttons.height()),
         );
-        let response = widgets::button_area(ui, cell, Id::new(("scan", index)), text);
+        let response = widgets::button_area(ui, cell, Id::unique(("scan", index)), text);
         let base = if plugins.scanning { theme::panel_background() } else { theme::control_background() };
         let fill = motion::mix(
             base,
@@ -2118,7 +2143,7 @@ fn plugin_actions(
     let r = line(y, SETTING_ROW);
     label(painter, r, "Plug-in manager", "Every plug-in found, switched on or off, and why files failed");
     let open = control_rect(r, 2);
-    let response = widgets::button_area(ui, open, Id::new("open-plugin-manager"), "Open the plug-in manager");
+    let response = widgets::button_area(ui, open, Id::unique("open-plugin-manager"), "Open the plug-in manager");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
     painter.fill_background(open, 0.0, fill);
     widgets::text_in(painter, open, Align2::CENTER_CENTER, "Manage plug-ins", small, theme::text_primary());
@@ -2210,7 +2235,7 @@ fn driver_panel_row(ui: &Ui, painter: &egui::Painter, r: Rect) -> bool {
     label(painter, r, "Device settings", "Open the active driver's buffer and hardware settings");
     let rect = Rect::from_min_size(Pos2::new(r.right() - 150.0, r.top() + 1.0), Vec2::new(150.0, SEGMENT));
     let response =
-        widgets::button_area(ui, rect, Id::new("asio-control-panel"), "Open the active ASIO driver's control panel");
+        widgets::button_area(ui, rect, Id::unique("asio-control-panel"), "Open the active ASIO driver's control panel");
     let hover = widgets::hover(ui, &response);
     painter.fill_background(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
     widgets::text_in(
@@ -2315,7 +2340,7 @@ fn output_rows(
     } else {
         match (&choice.device, device) {
             (Some(name), None) => format!("{name} is not there; the default output plays"),
-            _ => "The output device on that driver".to_string(),
+            _ => device_note(host, &about.audio_hosts),
         }
     };
     label(painter, r, "Device", &note);
@@ -2447,6 +2472,24 @@ fn output_rows(
     picked.map(OutputPick::Setting)
 }
 
+/// What the Device row says about the driver chosen: why it lists nothing, and where a driver's
+/// list leaves out the outputs people look for first.
+fn device_note(host: Option<&suhina_session::audio::HostInfo>, hosts: &[suhina_session::audio::HostInfo]) -> String {
+    let beside = |name: &str| hosts.iter().any(|h| h.name == name);
+    match host {
+        Some(host) if host.error.is_some() => {
+            format!("{} cannot list its devices: {}", host.name, host.error.as_deref().unwrap_or_default())
+        }
+        Some(host) if host.name == "ASIO" && beside("WASAPI") => {
+            "Interfaces with an ASIO driver; Bluetooth headphones are under WASAPI".to_string()
+        }
+        Some(host) if host.name == "ALSA" && beside("PulseAudio") => {
+            "The sound cards; Bluetooth headphones are under PulseAudio".to_string()
+        }
+        _ => "The output device on that driver".to_string(),
+    }
+}
+
 /// The rows of Audio › Cue; returns a new choice.
 fn cue_rows(
     ui: &Ui,
@@ -2516,7 +2559,7 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
     };
     label(painter, r, "Playing on", &output);
     let refresh = Rect::from_min_size(Pos2::new(r.right() - 120.0, r.top() + 1.0), Vec2::new(120.0, SEGMENT));
-    let response = widgets::button_area(ui, refresh, Id::new("audio-refresh"), "List the audio devices again");
+    let response = widgets::button_area(ui, refresh, Id::unique("audio-refresh"), "List the audio devices again");
     let hover = widgets::hover(ui, &response);
     painter.fill_background(refresh, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
     widgets::text_in(
@@ -2583,7 +2626,8 @@ fn preset_segmented(
         let x = rect.left() + index as f32 * (part + 1.0);
         let segment = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(part, rect.height()));
         let chosen = *value == current;
-        let response = widgets::button_area(ui, segment, Id::new(("keymap-preset", *text)), format!("Preset: {text}"));
+        let response =
+            widgets::button_area(ui, segment, Id::unique(("keymap-preset", *text)), format!("Preset: {text}"));
         let fill = if chosen { theme::control_active() } else { theme::control_background() };
         painter.fill_background(segment, 0.0, motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response)));
         let color = if chosen { theme::text_primary() } else { theme::text_secondary() };
@@ -2667,7 +2711,7 @@ fn choice_dropdown<T: Clone + PartialEq>(
     let left = control_x(row).min(row.right() - DROPDOWN_FIELD);
     let field = Rect::from_min_size(Pos2::new(left, row.top() + 1.0), Vec2::new(row.right() - left, SEGMENT + 2.0));
     let shown = options.iter().find(|(_, v)| v == current).map_or("-", |(text, _)| text.as_str());
-    let response = widgets::button_area(ui, field, Id::new(("audio-setting", name)), format!("{name}: {shown}"));
+    let response = widgets::button_area(ui, field, Id::unique(("audio-setting", name)), format!("{name}: {shown}"));
     widgets::form_dropdown(ui, painter, field, &response, shown);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
@@ -2721,8 +2765,8 @@ fn describe(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, description
         }
         Descriptions::Shown => return,
     };
-    let response = ui.interact(area, Id::new(("setting-description", name)), Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, description));
+    let response = ui.interact(area, Id::unique(("setting-description", name)), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, description));
     response.on_hover_text(description);
 }
 
@@ -2750,8 +2794,8 @@ const SWITCH_WIDTH: f32 = 34.0;
 /// name. Returns the new value when it is clicked.
 fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> Option<bool> {
     let track = Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(SWITCH_WIDTH, SEGMENT));
-    let response = ui.interact(track, Id::new(("setting-switch", name)), Sense::click());
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, name));
+    let response = ui.interact(track, Id::unique(("setting-switch", name)), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, name));
     let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
     let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
     painter.rect_filled(track, 0.0, motion::mix(idle, theme::text_value(), lit));
@@ -2800,7 +2844,7 @@ fn segmented<T: Copy + PartialEq>(
     for (index, (text, value)) in options.iter().enumerate() {
         let x = rect.left() + index as f32 * (part + 1.0);
         let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(part, rect.height()));
-        let response = widgets::button_area(ui, cell, Id::new(("setting", name, index)), format!("{name}: {text}"));
+        let response = widgets::button_area(ui, cell, Id::unique(("setting", name, index)), format!("{name}: {text}"));
         if response.clicked() && *value != current {
             picked = Some(*value);
         }

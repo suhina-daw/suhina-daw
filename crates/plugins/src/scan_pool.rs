@@ -12,7 +12,7 @@
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
@@ -103,8 +103,13 @@ struct Worker {
 
 impl Worker {
     fn start(host: &Path) -> Result<Self, String> {
-        let mut child = crate::host_command(host)
-            .arg("--scan-worker")
+        let mut command = crate::host_command(host);
+        command.arg("--scan-worker");
+        Self::spawn(command)
+    }
+
+    fn spawn(mut command: Command) -> Result<Self, String> {
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -174,14 +179,9 @@ impl Worker {
 
 impl Drop for Worker {
     fn drop(&mut self) {
-        // Closing its input tells a worker to finish; one that does not is ended.
-        let deadline = Instant::now() + Duration::from_millis(500);
-        while Instant::now() < deadline {
-            if !matches!(self.child.try_wait(), Ok(None)) {
-                return;
-            }
-            thread::sleep(Duration::from_millis(5));
-        }
+        // Ended at once rather than asked to finish: it has answered all it was asked and has
+        // nothing to save, and a normal exit would run the exit code of every plug-in it has
+        // loaded (they stay loaded for its life), all of them at once, which nothing here needs.
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -272,6 +272,14 @@ pub fn timeout_for(path: &str, normal: Duration) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `sort`, on every system, reads until its input ends, as a worker does, and the input is
+    /// still open while `drop` runs: only ending the process lets `drop` come back.
+    #[test]
+    fn dropping_a_worker_ends_it() {
+        let worker = Worker::spawn(Command::new("sort")).unwrap_or_else(|e| panic!("{e}"));
+        drop(worker);
+    }
 
     #[test]
     fn shells_are_recognised() {
