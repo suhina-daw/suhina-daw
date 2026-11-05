@@ -43,6 +43,7 @@ fn window(name: &str) -> (Harness<'static, App>, PathBuf) {
     app.set_file_library(library);
     app.set_session(Session::new(blank_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size((1280.0, 800.0))
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -88,6 +89,7 @@ fn window_with_plugins(name: &str) -> (Harness<'static, App>, PathBuf) {
     app.set_file_library(library);
     app.set_session(Session::new(blank_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size((1280.0, 800.0))
         .with_step_dt(0.05)
         .with_max_steps(20)
