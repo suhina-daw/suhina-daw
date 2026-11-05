@@ -622,6 +622,8 @@ fn unlayer(css: &str, depth: usize) -> String {
 pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
     let css = &unlayer(css, 0);
     let mut host = String::new();
+    let mut warnings = Vec::new();
+    let mut toolbar_noted = false;
     let mut rest = css.as_str();
     let mut rules = 0;
     while let Some(start) = rest.find(|c: char| !c.is_whitespace()) {
@@ -665,6 +667,18 @@ pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
             for declaration in body.split(';').filter(|d| !d.trim().is_empty()) {
                 let Some((property, _)) = declaration.split_once(':') else { continue };
                 let property = property.trim();
+                // The toolbar's arrangement is `theme.json`'s; a sheet of an earlier version
+                // says it in the sheet, and is read by `apply` when it is migrated.
+                if selector == "toolbar" && (matches!(property, "order" | "hidden") || property.starts_with("offset-"))
+                {
+                    if !toolbar_noted {
+                        toolbar_noted = true;
+                        warnings.push(
+                            "toolbar rules are not read from theme.css: the toolbar arrangement is theme.json's".into(),
+                        );
+                    }
+                    continue;
+                }
                 let wanted = property == "image"
                     || match selector {
                         "toolbar" => true,
@@ -677,7 +691,8 @@ pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
             }
         }
     }
-    apply(theme, &host)
+    warnings.extend(apply(theme, &host));
+    warnings
 }
 
 #[cfg(test)]

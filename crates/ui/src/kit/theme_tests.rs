@@ -366,3 +366,16 @@ fn the_package_checks_resolve_swatches_against_the_same_core_properties() {
     // the core set holds, copy `core_sheet()` into crates/theme-package/src/core.css.
     assert_eq!(suhina_theme_package::CORE_SHEET, super::super::theme_vars::core_sheet());
 }
+
+#[test]
+fn toolbar_rules_in_a_current_sheet_are_not_read_and_are_named_once() {
+    let sheet = ":root { --accent: #123456; }\ntoolbar { hidden: tempo; }\ntoolbar { offset-transport: 80px; }\n";
+    let (theme, warnings) = from_folder(ThemeMeta::new("Night", DEFAULT_SWATCH), sheet);
+    assert!(theme.skin.toolbar.is_none() && theme.skin.toolbar_offsets.is_empty());
+    assert_eq!(warnings.iter().filter(|w| w.contains("toolbar rules are not read")).count(), 1, "{warnings:?}");
+    // The arrangement is theme.json's.
+    let mut meta = ThemeMeta::new("Night", DEFAULT_SWATCH);
+    meta.toolbar = Some(serde_json::json!({ "items": ["transport"], "hidden": ["tempo"] }));
+    let (theme, _) = from_folder(meta, sheet);
+    assert_eq!(theme.skin.toolbar.unwrap().hidden, ["tempo"]);
+}

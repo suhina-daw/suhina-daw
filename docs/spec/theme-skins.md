@@ -58,7 +58,7 @@ interaction specification based on the supplied screenshots and the public
 (read 2026-10-22), which describes moving visible frames and saving their positions.
 That description is an add-on author's account, not official documentation of
 Blizzard's grid implementation. No third-party source or artwork is reused.
-Canonical native CSS mirrors offsets as `toolbar { offset-transport: 80px; }`.
+A sheet of an earlier version mirrors offsets as `toolbar { offset-transport: 80px; }`; a current `theme.css` does not (see below).
 
 SVG inheritance resolves each control role in this order: theme state artwork,
 theme base artwork, shared default state artwork, shared default base artwork.
@@ -433,12 +433,13 @@ gradients, rounded buttons and bounded text/box shadows without changing the nat
 toolbar/workspace layout.
 
 Host rules the app reads itself, beside the engine: `.meter` accepts `style`, `segments`
-and `intensity`; `.toolbar` accepts comma-separated `order` and `hidden` module lists;
-control `image` declarations name package-relative SVG/PNG artwork, including state
+and `intensity`; control `image` declarations name package-relative SVG/PNG artwork, including state
 suffixes; `.window` accepts a relative PNG `background-image`, `background-opacity` and
 `background-blur` (0–100). Placement offsets on `.control-NAME` rules (`left`, `top`, `right`,
 `bottom`) are the app's too and give no notice. The toolbar's `order`, `hidden` and offsets are
-still read from a sheet of an earlier version, but Suhina writes them to `theme.json`.
+read only from a sheet of an earlier version, when it is migrated (`order` and `hidden` as
+comma-separated module lists), and Suhina writes them to `theme.json`. In a current `theme.css`
+such a rule is ignored, with a warning.
 
 ### Theme folders: theme.json, theme.css, thumbnail and variants
 
