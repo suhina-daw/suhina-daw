@@ -36,7 +36,7 @@ fn is_audio(p: &Project, content: ContentId) -> bool {
 
 /// Puts `clip` back on lane `lane` (it was taken out), replacing what it covers unless `stack`;
 /// answers with its index there.
-fn put_back(p: &mut Project, lane: usize, clip: Clip, stack: bool) -> Result<usize, CommandError> {
+pub(crate) fn put_back(p: &mut Project, lane: usize, clip: Clip, stack: bool) -> Result<usize, CommandError> {
     let stack = stack && !p.lane_takes_cover(lane, clip.start, clip.start + clip.length);
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
     if !stack {
@@ -210,27 +210,14 @@ pub(crate) fn trim_clip(session: &mut Session, params: &Value) -> Result<Value, 
     Ok(json!({ "track": track, "index": index, "start": clip.start, "end": clip.start + clip.length, "loop": looped }))
 }
 
-/// `clip.stretch {track, index, start?, end?, stack?}`: an audio clip's edges moved with its
-/// audio stretched to fill the new length (time-stretched, so its pitch stays): the content's
-/// warp markers are scaled, and a clip whose content others play gets a content of its own first.
-pub(crate) fn stretch_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (start, end) = (edge(params, "start")?, edge(params, "end")?);
-    let stack = Args::new(params).flag("stack")?;
-    if start.is_none() && end.is_none() {
-        return Err("give start, end, or both".into());
+/// Stretches `clip`'s audio by `factor` (its content's beats, not its place): its warp markers,
+/// gain envelope, offset, loop and fades are scaled, and warp is turned on. A clip whose content
+/// another clip plays gets a content of its own first, as the content's length in beats follows.
+/// The clip's start and length are the caller's.
+pub(crate) fn scale_audio(p: &mut Project, clip: &mut Clip, factor: f64) -> Result<(), CommandError> {
+    if !(factor.is_finite() && factor > 0.0) {
+        return Err("the stretch must be a positive number".into());
     }
-    let (lane, index) = lane_and_index(&session.project, params)?;
-    let p = &mut session.project;
-    let mut clip =
-        p.arrangement.lanes.get(lane).and_then(|l| l.clips.get(index)).cloned().ok_or("the clip is missing")?;
-    if !is_audio(p, clip.content) {
-        return Err("only an audio clip stretches; a MIDI clip's edges are moved with clip.trim".into());
-    }
-    let (new_start, new_end) = (start.unwrap_or(clip.start), end.unwrap_or(clip.start + clip.length));
-    if new_end - new_start < MIN_LENGTH {
-        return Err(format!("the clip would be shorter than {MIN_LENGTH} beats").into());
-    }
-    let factor = (new_end - new_start) / clip.length;
     // Played by another clip too: this one gets a copy, so the other keeps its speed.
     let shared = p.arrangement.lanes.iter().flat_map(|l| &l.clips).filter(|c| c.content == clip.content).count()
         + p.launcher
@@ -277,6 +264,31 @@ pub(crate) fn stretch_clip(session: &mut Session, params: &Value) -> Result<Valu
     clip.loop_range = clip.loop_range.map(|r| LoopRange { start: r.start * factor, end: r.end * factor });
     clip.fade_in *= factor;
     clip.fade_out *= factor;
+    Ok(())
+}
+
+/// `clip.stretch {track, index, start?, end?, stack?}`: an audio clip's edges moved with its
+/// audio stretched to fill the new length (time-stretched, so its pitch stays): the content's
+/// warp markers are scaled, and a clip whose content others play gets a content of its own first.
+pub(crate) fn stretch_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let (start, end) = (edge(params, "start")?, edge(params, "end")?);
+    let stack = Args::new(params).flag("stack")?;
+    if start.is_none() && end.is_none() {
+        return Err("give start, end, or both".into());
+    }
+    let (lane, index) = lane_and_index(&session.project, params)?;
+    let p = &mut session.project;
+    let mut clip =
+        p.arrangement.lanes.get(lane).and_then(|l| l.clips.get(index)).cloned().ok_or("the clip is missing")?;
+    if !is_audio(p, clip.content) {
+        return Err("only an audio clip stretches; a MIDI clip's edges are moved with clip.trim".into());
+    }
+    let (new_start, new_end) = (start.unwrap_or(clip.start), end.unwrap_or(clip.start + clip.length));
+    if new_end - new_start < MIN_LENGTH {
+        return Err(format!("the clip would be shorter than {MIN_LENGTH} beats").into());
+    }
+    let factor = (new_end - new_start) / clip.length;
+    scale_audio(p, &mut clip, factor)?;
     clip.start = new_start;
     clip.length = new_end - new_start;
     clip.fit_fades();

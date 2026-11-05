@@ -79,6 +79,14 @@ pub(crate) fn locate(p: &Project, params: &Value) -> Result<(ClipAt, ContentId, 
     Ok((at, clip.content, track))
 }
 
+/// The clip at `at`.
+pub(crate) fn clip_at(p: &Project, at: ClipAt) -> Option<&Clip> {
+    match at {
+        ClipAt::Arrangement(lane, index) => p.arrangement.lanes.get(lane)?.clips.get(index),
+        ClipAt::Slot(column, slot) => p.launcher.columns.get(column)?.slots.get(slot)?.clip.as_ref(),
+    }
+}
+
 /// The clip at `at`, to change.
 pub(crate) fn clip_mut(p: &mut Project, at: ClipAt) -> Option<&mut Clip> {
     match at {

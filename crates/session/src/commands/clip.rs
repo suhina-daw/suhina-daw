@@ -452,7 +452,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setAudio",
-        label: "Set an audio clip's warp switch, warp mode or transpose (an arrangement clip, or the clip in a track's slot by scene); every clip that plays the same audio follows, unless warp turned on would fit its markers to another tempo than theirs",
+        label: "Set an audio clip's warp switch, warp mode or transpose (an arrangement clip, or the clip in a track's slot by scene); only that clip changes, another clip of the same audio keeps its own",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -468,6 +468,51 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Edit,
         run: crate::clip_shape::set_audio,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.setEnvelope",
+        label: "Set an audio clip's gain envelope (an arrangement clip, or the clip in a track's slot by scene): points of a content beat and an offset in dB from the clip's gain, straight in dB between them; an empty list clears it. Only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param(
+                "points",
+                ParamType::Numbers,
+                "the points as pairs, a beat of the content (from 0) and then dB from the clip's gain (-70 to +24): [0, 0, 4, -12] falls 12 dB over the first four beats; two points on one beat make a step",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_audio::set_envelope,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.setTempo",
+        label: "Set the tempo an audio clip's audio is warped from, and where that tempo came from: the audio fills the beats it holds at that tempo (a higher tempo plays slower against the song), the clip's length follows and its start stays; warp turns on. Only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param("bpm", ParamType::Number, "the audio's tempo in beats per minute, 20 to 999"),
+            optional(
+                "source",
+                ParamType::Text,
+                "where the tempo came from: metadata, name, detected or manual (the default, a tempo typed, halved or doubled)",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_audio::set_tempo,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.findTempo",
+        label: "What each source says an audio clip's tempo is (its file's metadata, its file's name, detection in its sound; null where one finds nothing), and the tempo the clip has now with its source",
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
+        kind: CommandKind::Read,
+        run: crate::clip_audio::find_tempo,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
