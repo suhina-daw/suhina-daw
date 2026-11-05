@@ -3,7 +3,7 @@ description: User guide to the keyboard shortcuts, one entry per action with its
 read_when: user guide, keyboard shortcuts, what does this key do, list of keys, every shortcut explained, keybindings, hotkeys, action ids, which action a key runs, back up keys, share keymap, keymap.json, rebind a key, keys for agents
 type: howto
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -107,7 +107,7 @@ The zoom level is remembered the next time Suhina starts.
 | Delete or Backspace | `selection.delete` | Selection | Deletes the selected clips, or in the piano roll the selected notes. |
 | 0 | `selection.mute` | Selection | Mutes the selected clips, or unmutes them if they are muted. A muted clip stays in place but makes no sound. |
 | Ctrl+A | `selection.selectAll` | Anywhere | Selects every clip in the arrangement. In the piano roll, after a click in it, selects every note instead. |
-| Ctrl+E | `selection.split` | Selection | Splits the selected clip in two at the playhead. |
+| Ctrl+E | `selection.split` | Selection | Splits the selected clip in two where you clicked inside it, while playing too. It never splits at the playhead. |
 | Ctrl+J | `selection.consolidate` | Selection | Joins the selected clips, and the space between them, into one new clip. |
 
 Every key that acts on clips acts on the whole selection, and all of it is one undo step.

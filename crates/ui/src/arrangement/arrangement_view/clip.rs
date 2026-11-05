@@ -370,7 +370,7 @@ pub(super) fn clip_box<'a>(
             Some(pointer) if paints => {
                 let free = ui.input(|i| i.modifiers.alt);
                 let raw = f64::from((pointer.x - x_of(0.0)) / state.beat_width);
-                let beat = clip_body_beat(raw, clip.start, grid, free);
+                let beat = clip_body_beat(raw, clip.start, clip.start + clip.length, grid, free);
                 state.picked_whole = false;
                 state.insert = Some((lane.track, beat));
                 // The next start begins there; playback is not moved (#657).
@@ -1275,6 +1275,10 @@ pub(super) fn paint_clip(
         }
         None => painter,
     };
+    // Everything the clip draws stays inside it: at any zoom its name and marks never spill onto
+    // the lane or the clip beside it (#1198).
+    let inside = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
+    let painter = &inside;
     // Keep the clip colour legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
     let strength = if clip.audio {

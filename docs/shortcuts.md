@@ -3,7 +3,7 @@ description: Keyboard shortcuts in the desktop app: the default keys, the keymap
 read_when: shortcuts, keys, keymap, Ctrl+drag copies notes, Alt+drag velocity, left edge, keymap.json, keymap preset, workflow mode, workflow menu, workflow settings, Custom mode, double-click, Draw-first, Select-first, Mouse-first, mouse switches, right click deletes, left click draws, Alt right plays, rebind, cut copy paste, duplicate, mute clips, hotkeys, quantise, Ctrl+U, piano roll keys, tool keys, number keys choose a tool, arrow keys, select all, mute tool key, grid keys, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, narrow grid, widen grid, triplet grid, snap to grid, Z, Shift+Z, zoom to selection, zoom to clip, ruler zoom
 type: howto
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -137,7 +137,7 @@ status bar.
 | In the piano roll: play a key of the key column through the track's instrument while it is held; Ctrl+click, Ctrl+drag select the notes of that pitch or those pitches ([spec](spec/ui-clip-editor.md) › Playing the keys) | click, drag on the key column; Ctrl+click, Ctrl+drag |
 | In the piano roll: move the selected notes' starts and keep their ends; copy the selection to where it is let go; change the selection's velocity ([spec](spec/ui-clip-editor.md) › Resizing, › Moving, › Velocity) | drag a note's left edge; Ctrl+drag a note (Cmd on macOS); Alt+drag a note up or down (Option on macOS) |
 | In the piano roll: give every stem a line spans its height; make the velocity lane taller or shorter ([spec](spec/ui-clip-editor.md) › Velocity, › Layout) | drag from an empty spot of the velocity lane, or Alt+drag in it; drag the lane's top edge |
-| Split the selected clip at the playhead (`selection.split`; [spec](spec/arrangement-editing.md#splitting)) | Ctrl+E |
+| Split the selected clip where it was clicked (`selection.split`; [spec](spec/arrangement-editing.md#splitting)) | Ctrl+E |
 | Consolidate the selected clip into one new clip (`selection.consolidate`; [spec](spec/arrangement-editing.md#consolidating)) | Ctrl+J |
 | Group the selected tracks (`selection.group`); with devices picked in a strip's list or the chain, put them into a device group ([spec](spec/device-groups.md)) | Ctrl+G |
 | Take the picked device group of one branch apart (`selection.ungroup`) | Ctrl+Shift+G |

@@ -561,10 +561,12 @@ impl ArrangementViewState {
         self.time_selection.as_ref()
     }
 
-    /// Sets or clears the time selection: after a duplicate it moves onto the copy.
+    /// Sets or clears the time selection: after a duplicate it moves onto the copy. A time
+    /// selection takes the edit keys from the track headers (#1199).
     pub fn set_time_selection(&mut self, selection: Option<TimeSelection>) {
         if selection.is_some() {
             self.clear_take_selection();
+            self.track_focus = false;
         }
         self.time_selection = selection;
     }
