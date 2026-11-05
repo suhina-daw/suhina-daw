@@ -169,11 +169,11 @@ impl App {
             });
             return;
         }
-        egui::Area::new(Id::new("settings-dialog")).order(egui::Order::Foreground).fixed_pos(window.min).show(
+        egui::Area::new(Id::unique("settings-dialog")).order(egui::Order::Foreground).fixed_pos(window.min).show(
             ui.ctx(),
             |ui| {
                 ui.set_min_size(window.size());
-                let behind = ui.interact(window, Id::new("settings-behind"), Sense::click_and_drag());
+                let behind = ui.interact(window, Id::unique("settings-behind"), Sense::click_and_drag());
                 let _swallowed = behind.clicked();
                 let tint = ui.painter().add(egui::Shape::Noop);
                 // The panel stays above the status bar, which shows what the page reports.
@@ -182,7 +182,7 @@ impl App {
                 let size = Vec2::new(SETTINGS_SIZE.x.min(bounds.width()), SETTINGS_SIZE.y.min(bounds.height()));
                 let position = ui
                     .ctx()
-                    .data(|data| data.get_temp::<Pos2>(Id::new("settings-panel-position")))
+                    .data(|data| data.get_temp::<Pos2>(Id::unique("settings-panel-position")))
                     .unwrap_or(window.center() - size / 2.0);
                 let position = egui::pos2(
                     position.x.clamp(bounds.left(), (bounds.right() - size.x).max(bounds.left())),
@@ -335,7 +335,7 @@ impl App {
         }
         if outcome.move_by.is_finite() && outcome.move_by != Vec2::ZERO {
             let position = ui.max_rect().min + outcome.move_by;
-            ui.ctx().data_mut(|data| data.insert_temp(Id::new("settings-panel-position"), position));
+            ui.ctx().data_mut(|data| data.insert_temp(Id::unique("settings-panel-position"), position));
             ui.ctx().request_repaint();
         }
         outcome.changed

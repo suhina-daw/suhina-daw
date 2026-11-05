@@ -450,7 +450,7 @@ fn a_tall_header_routes_its_track_into_a_group() {
     let mut state = ArrangementViewState::default();
     state.set_lane_height(suhina_engine::model::TrackId(2), 90.0);
     let view = Arrangement { timeline: Timeline::build(&project_with_a_group(), None), state, actions: Vec::new() };
-    let mut harness = Harness::builder().with_size(SIZE).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
         |ui, v: &mut Arrangement| arrangement_view::show(ui, &v.timeline, &mut v.state, &mut v.actions),
         view,
     );

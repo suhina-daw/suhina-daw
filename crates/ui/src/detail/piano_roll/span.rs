@@ -234,10 +234,11 @@ pub(super) fn draw_span_bar(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &
         for x in [bar.left(), bar.right()] {
             painter.vline(x, bottom - 2.0 * SPAN_BAR..=bottom, Stroke::new(1.0, color));
         }
-        let response = ui.interact(bar.intersect(layout.ruler), Id::new("piano-roll-time-selection"), Sense::hover());
+        let response =
+            ui.interact(bar.intersect(layout.ruler), Id::unique("piano-roll-time-selection"), Sense::hover());
         response.widget_info(|| {
             let label = format!("Selected in time, beats {} to {}", round_beat(start), round_beat(end));
-            egui::WidgetInfo::labeled(egui::WidgetType::Other, true, label)
+            egui::WidgetInfo::labeled(egui::Role::Unknown, true, label)
         });
     }
     if let Some(beat) = state.insert_at {
@@ -253,10 +254,10 @@ pub(super) fn draw_span_bar(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &
             Stroke::NONE,
         ));
         let flag = Rect::from_center_size(Pos2::new(x, bottom - MARK_FLAG / 2.0), Vec2::splat(2.0 * MARK_FLAG));
-        let response = ui.interact(flag.intersect(layout.ruler), Id::new("piano-roll-insert-mark"), Sense::hover());
+        let response = ui.interact(flag.intersect(layout.ruler), Id::unique("piano-roll-insert-mark"), Sense::hover());
         response.widget_info(|| {
             let label = format!("Insert mark at beat {}", round_beat(beat));
-            egui::WidgetInfo::labeled(egui::WidgetType::Other, true, label)
+            egui::WidgetInfo::labeled(egui::Role::Unknown, true, label)
         });
     }
 }

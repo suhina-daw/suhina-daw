@@ -35,6 +35,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -212,6 +214,7 @@ fn alt_and_the_wheel_zoom_key_rows() {
         delta: vec2(0.0, 60.0),
         modifiers: Modifiers::ALT,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     h.run();
     h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
@@ -517,6 +520,7 @@ fn the_right_button_and_the_wheel_choose_the_tools() {
             delta: vec2(0.0, delta),
             modifiers: Modifiers::NONE,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.step();
     };

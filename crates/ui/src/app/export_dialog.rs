@@ -241,7 +241,7 @@ impl CloseChoice for ExportChoice {
 /// Draws the export dialog over `area`. Returns what was chosen, or `None` while it stays open.
 pub fn show_export(ui: &Ui, area: Rect, state: &mut ExportDialog) -> Option<ExportChoice> {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("export-dialog"))
+    egui::Area::new(Id::unique("export-dialog"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -279,7 +279,7 @@ fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
     );
     let focus = std::mem::take(&mut state.focus);
     let edit = ui.put(input, egui::TextEdit::singleline(&mut state.path).font(small.clone()));
-    edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "File to export to"));
+    edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "File to export to"));
     if focus {
         edit.request_focus();
     }
@@ -322,7 +322,7 @@ fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
                 }
             })
             .response;
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, format!("Format {shown}")));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("Format {shown}")));
     });
 
     // The sample rate; mp3 offers the rates its encoder writes.
@@ -343,9 +343,8 @@ fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
                 }
             })
             .response;
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, format!("Sample rate {rate_shown}"))
-        });
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("Sample rate {rate_shown}")));
     });
     state.rate = chosen_rate;
 
@@ -373,7 +372,7 @@ fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
                 })
                 .response;
             response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, format!("Bit depth {depth_shown}"))
+                egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("Bit depth {depth_shown}"))
             });
         });
         state.depth = chosen_depth;
@@ -396,9 +395,8 @@ fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
                     }
                 })
                 .response;
-            response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, format!("MP3 rate {mp3_shown}"))
-            });
+            response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("MP3 rate {mp3_shown}")));
         });
         state.mp3_rate = chosen_mp3;
     }
@@ -409,22 +407,22 @@ fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
         Rect::from_min_size(Pos2::new(checks.left() + left, checks.top() + 1.0), Vec2::new(width, LINE - 2.0))
     };
     ui.put(at(0.0, 96.0), egui::Checkbox::new(&mut state.normalize, "Normalize"))
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Checkbox, true, "Normalize".to_string()));
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Normalize".to_string()));
     if state.dither_applies() {
         ui.put(at(100.0, 84.0), egui::Checkbox::new(&mut state.dither, "Dither"))
-            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Checkbox, true, "Dither".to_string()));
+            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Dither".to_string()));
     } else {
         // Greyed where it does not apply: 32f needs none, and ogg takes no depth.
         let mut off = false;
         ui.scope(|scope| {
             scope.disable();
             scope.put(at(100.0, 84.0), egui::Checkbox::new(&mut off, "Dither")).widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Checkbox, false, "Dither does not apply".to_string())
+                egui::WidgetInfo::labeled(egui::Role::CheckBox, false, "Dither does not apply".to_string())
             });
         });
     }
     ui.put(at(188.0, 120.0), egui::Checkbox::new(&mut state.overwrite, "Overwrite"))
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Checkbox, true, "Overwrite".to_string()));
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Overwrite".to_string()));
     y += LINE + 8.0;
 
     // What the export will run as, or why it will not; while it runs, that.

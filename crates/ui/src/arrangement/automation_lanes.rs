@@ -1113,7 +1113,7 @@ pub fn header_button(
 ) {
     let open = state.is_open(track);
     let label = if open { format!("Hide automation of {name}") } else { format!("Show automation of {name}") };
-    let response = widgets::button_area(ui, rect, Id::new(("automation-toggle", track.0)), label);
+    let response = widgets::button_area(ui, rect, Id::unique(("automation-toggle", track.0)), label);
     if response.clicked() {
         state.toggle(track, params);
     }
@@ -1200,7 +1200,7 @@ fn resize_edge(
     if !edge.is_positive() {
         return;
     }
-    let id = Id::new(("automation-resize", lanes.track.0, key.device, key.param.as_str()));
+    let id = Id::unique(("automation-resize", lanes.track.0, key.device, key.param.as_str()));
     let response = ui.interact(edge, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
     if response.double_clicked() {
         state.set_lane_height(lanes.track, key, LANE);
@@ -1372,7 +1372,7 @@ fn lane(
     // Points added and dragged and a painted range go on the grid; Alt, or Snap to grid off in the
     // lane's menu, frees them (#916).
     let free = ui.input(|i| i.modifiers.alt) || state.snap_off;
-    let id = Id::new(("automation-lane", track.0, key.device, key.param.as_str()));
+    let id = Id::unique(("automation-lane", track.0, key.device, key.param.as_str()));
     let label = param.label();
 
     // The lane itself: a click adds a point (on the envelope when near it, so the envelope keeps
@@ -1380,7 +1380,7 @@ fn lane(
     // other drag draws a box that selects the points in it.
     let body = ui.interact(visible, id, Sense::click_and_drag());
     body.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("{label} automation on {}", lanes.name))
+        egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("{label} automation on {}", lanes.name))
     });
     let level = level_points(param);
     let near_line = |pos: Pos2| distance_to(&envelope(&level, &param.scale, plot, geometry), pos) <= segment_hit(plot);
@@ -1822,7 +1822,7 @@ fn lane(
             let response = ui.interact(hit, id.with(("curve", index)), Sense::click_and_drag());
             response.widget_info(|| {
                 egui::WidgetInfo::labeled(
-                    egui::WidgetType::Slider,
+                    egui::Role::Slider,
                     true,
                     format!("{label} curve {} on {}", index + 1, lanes.name),
                 )
@@ -1899,7 +1899,7 @@ fn lane(
         let text = param.scale.text(point.value);
         response.widget_info(|| {
             let mut info = egui::WidgetInfo::labeled(
-                egui::WidgetType::Button,
+                egui::Role::Button,
                 true,
                 format!("{label} point {} on {}", index + 1, lanes.name),
             );
@@ -2021,6 +2021,7 @@ fn lane(
                     .font(theme::mono_font(theme::TEXT_SMALL))
                     .desired_width(60.0),
             );
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Point value"));
             // It opens with the whole value selected, so typing replaces it.
             if !response.has_focus() && !response.lost_focus() {
                 response.request_focus();
@@ -2289,7 +2290,7 @@ fn shape_menu(ui: &mut Ui, title: &str, chosen: Option<&str>) -> Option<&'static
             for &name in row {
                 let (rect, response) = ui.allocate_exact_size(Vec2::new(30.0, 20.0), Sense::click());
                 let label = format!("Insert {}", name.replace('_', " "));
-                response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
                 let response = response.on_hover_text(&label);
                 let painter = ui.painter();
                 let fill = if chosen == Some(name) {
@@ -2443,7 +2444,7 @@ fn heading_row(ui: &mut Ui, name: &str, count: usize, marked: bool, open: bool, 
         let end = Pos2::new(rect.right() - 4.0, rect.center().y);
         painter.text(end, Align2::RIGHT_CENTER, count, font, theme::text_hint());
     }
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::CollapsingHeader, true, open, name));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::DisclosureTriangle, true, open, name));
     response
 }
 
@@ -2458,7 +2459,7 @@ fn parameter_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scr
     let button = egui::Button::selectable(selected, text);
     let response = ui.add_enabled(free, button);
     let label = choice.label();
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, free, selected, &label));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, free, selected, &label));
     if scroll && selected {
         response.scroll_to_me(Some(egui::Align::Center));
     }
@@ -2476,7 +2477,7 @@ fn automated_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scr
     let text = if selected { text.color(theme::text_on(ui.visuals().selection.bg_fill)) } else { text };
     let response = ui.add_enabled(free, egui::Button::selectable(selected, text));
     let label = format!("{label} (automated)");
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, free, selected, &label));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, free, selected, &label));
     if scroll && selected {
         response.scroll_to_me(Some(egui::Align::Center));
     }
@@ -2530,7 +2531,7 @@ fn parameter_menu(
             .font(theme::ui_font(theme::TEXT_SMALL))
             .desired_width(f32::INFINITY),
     );
-    field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Search parameters"));
+    field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Search parameters"));
     if first_frame {
         field.request_focus();
     }
@@ -2651,7 +2652,7 @@ fn lane_header(
     let painter = painter.with_clip_rect(clip);
     painter.fill_background(rect, 0.0, theme::panel_background());
     let track = lanes.track;
-    let id = Id::new(("automation-header", track.0, param.key.device, param.key.param.as_str()));
+    let id = Id::unique(("automation-header", track.0, param.key.device, param.key.param.as_str()));
     // A right-click on the header's free space: the lane's height back to normal (#818).
     let background = ui.interact(clip, id.with("background"), Sense::click());
     background.context_menu(|ui| {

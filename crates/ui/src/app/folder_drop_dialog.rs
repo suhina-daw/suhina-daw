@@ -28,7 +28,7 @@ impl CloseChoice for FolderDropChoice {
 /// Asks whether `count` samples go to `folder` moved or copied, over `area`; `remember` is the
 /// Remember my choice box. Returns the answer, or `None` while it stays open.
 pub fn show(ui: &Ui, area: Rect, count: usize, folder: &str, remember: &mut bool) -> Option<FolderDropChoice> {
-    egui::Area::new(Id::new("folder-drop-prompt"))
+    egui::Area::new(Id::unique("folder-drop-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -54,7 +54,7 @@ fn draw(ui: &mut Ui, area: Rect, count: usize, folder: &str, remember: &mut bool
     painter.galley(Pos2::new(line.left(), line.center().y - fitted.size().y / 2.0), fitted, theme::text_primary());
     // Remember my choice: a box and its label, both one control.
     let check = Rect::from_min_size(Pos2::new(line.left(), line.bottom()), Vec2::new(line.width() * 0.6, LINE));
-    let response = widgets::button_area(ui, check, Id::new("folder-drop-remember"), "Remember my choice");
+    let response = widgets::button_area(ui, check, Id::unique("folder-drop-remember"), "Remember my choice");
     let mark = Rect::from_center_size(Pos2::new(check.left() + 6.0, check.center().y), Vec2::splat(11.0));
     let stroke = if response.hovered() { theme::border_strong() } else { theme::border() };
     painter.rect_stroke(mark, 0.0, theme::hairline(stroke), egui::StrokeKind::Inside);
@@ -96,12 +96,13 @@ mod tests {
     fn it_asks_move_or_copy_and_remembers_the_choice_when_ticked() {
         let mut remember = false;
         let mut answer = None;
-        let mut harness = Harness::builder().with_size(egui::vec2(800.0, 500.0)).build_ui(|ui| {
-            let area = ui.max_rect();
-            if let Some(choice) = show(ui, area, 2, "Drums", &mut remember) {
-                answer = Some(choice);
-            }
-        });
+        let mut harness =
+            Harness::builder().allow_missing_glyphs().with_size(egui::vec2(800.0, 500.0)).build_ui(|ui| {
+                let area = ui.max_rect();
+                if let Some(choice) = show(ui, area, 2, "Drums", &mut remember) {
+                    answer = Some(choice);
+                }
+            });
         harness.get_by_label("Remember my choice").click();
         harness.run();
         harness.get_by_label("Copy the samples into the folder, leaving them where they are").click();

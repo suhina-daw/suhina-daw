@@ -234,7 +234,7 @@ pub(super) fn clip_box<'a>(
     }
     let bar = (clip.start / bar_beats).floor() as u64 + 1;
     let name = if clip.name.is_empty() { "clip" } else { clip.name.as_str() };
-    let response = ui.interact(visible, Id::new(("arrangement-clip", clip.id.0)), Sense::click_and_drag());
+    let response = ui.interact(visible, Id::unique(("arrangement-clip", clip.id.0)), Sense::click_and_drag());
     // The cursor says what a drag does: the lower half moves the clip (a hand; with the copy key
     // held, the copy cursor), the upper half selects time (a text cursor).
     let copy_key = ui.input(|i| if state.time_select_ctrl { i.modifiers.shift } else { i.modifiers.command });
@@ -257,7 +257,7 @@ pub(super) fn clip_box<'a>(
         ui.ctx().set_cursor_icon(if copy_key { egui::CursorIcon::Copy } else { egui::CursorIcon::Grab });
     }
     let label = format!("Clip {name} on {} at bar {bar}", lane.name);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
     let stack = if clip.audio { state.stack_audio } else { state.stack_midi };
     // A right-click remembers the beat under the pointer, for the menu's Split here.
     if response.secondary_clicked()
@@ -274,7 +274,7 @@ pub(super) fn clip_box<'a>(
     // The menu stays open on a click inside: the rename's field and button live here. When it
     // is not open, its rename's draft dies: a reopen starts from the name as it is now.
     if !response.context_menu_opened() {
-        ui.ctx().data_mut(|d| d.remove::<String>(Id::new(("clip-rename", key.1.0))));
+        ui.ctx().data_mut(|d| d.remove::<String>(Id::unique(("clip-rename", key.1.0))));
     }
     egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         menus::clip_menu(ui, &menu_clips, stack, clip.enabled, &clip.name, actions);
@@ -635,7 +635,7 @@ pub(super) fn clip_box<'a>(
             let response = widgets::value_area(
                 ui,
                 field.intersect(row.clip),
-                Id::new(("clip-gain", clip.id.0)),
+                Id::unique(("clip-gain", clip.id.0)),
                 &label,
                 widgets::format_db(shown.gain_db),
             );
@@ -686,14 +686,14 @@ pub(super) fn clip_box<'a>(
             if hit.width() <= 0.0 || hit.height() <= 0.0 {
                 continue;
             }
-            let id = Id::new(("clip-edge", clip.id.0, grab as u8));
+            let id = Id::unique(("clip-edge", clip.id.0, grab as u8));
             let response = ui.interact(hit, id, Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
             let what = match grab {
                 EdgeGrab::Left => "Left edge",
                 EdgeGrab::Right => "Right edge",
             };
             let label = format!("{what} of {name} on {}", lane.name);
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &label));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, &label));
             let mine_edge = |d: &EdgeDrag| d.key == key && d.grab == grab;
             if response.drag_started_by(egui::PointerButton::Primary) {
                 let raw = if grab == EdgeGrab::Left { clip.start } else { clip.start + clip.length };
@@ -808,11 +808,11 @@ pub(super) fn clip_box<'a>(
             }
             let which = if edge == FadeEdge::In { "Fade-in" } else { "Fade-out" };
             let label = format!("{which} of {name} on {}", lane.name);
-            let id = Id::new(("clip-fade", clip.id.0, edge == FadeEdge::In));
+            let id = Id::unique(("clip-fade", clip.id.0, edge == FadeEdge::In));
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
             response.widget_info(|| {
-                let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &label);
+                let mut info = egui::WidgetInfo::labeled(egui::Role::Slider, true, &label);
                 info.value = Some(now);
                 info
             });
@@ -914,11 +914,11 @@ pub(super) fn clip_box<'a>(
                 continue;
             }
             let label = format!("{which} curve of {name} on {}", lane.name);
-            let id = Id::new(("clip-fade-curve", clip.id.0, edge == FadeEdge::In));
+            let id = Id::unique(("clip-fade-curve", clip.id.0, edge == FadeEdge::In));
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
             response.widget_info(|| {
-                let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &label);
+                let mut info = egui::WidgetInfo::labeled(egui::Role::Slider, true, &label);
                 info.value = Some(current_curve.curve);
                 info
             });
@@ -1278,7 +1278,7 @@ pub(super) fn paint_clip(
     // Keep the clip colour legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
     let strength = if clip.audio {
-        painter.ctx().data(|d| d.get_temp::<u8>(Id::new(AUDIO_COLOUR_STRENGTH))).unwrap_or(82)
+        painter.ctx().data(|d| d.get_temp::<u8>(Id::unique(AUDIO_COLOUR_STRENGTH))).unwrap_or(82)
     } else {
         82
     };
@@ -1328,7 +1328,7 @@ pub(super) fn paint_clip(
     // A looping clip's passes are marked by the notches and lines at their starts (below), not by
     // shades: the body is one colour all along.
     // The grid shows through the body, faintly, the bars a little stronger.
-    let lines = painter.ctx().data(|d| d.get_temp::<std::sync::Arc<Vec<(f32, bool)>>>(Id::new(CLIP_GRID)));
+    let lines = painter.ctx().data(|d| d.get_temp::<std::sync::Arc<Vec<(f32, bool)>>>(Id::unique(CLIP_GRID)));
     if let Some(lines) = lines.filter(|l| !l.is_empty()) {
         let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
         let span = egui::Rangef::new(below, rect.bottom());
@@ -1342,7 +1342,7 @@ pub(super) fn paint_clip(
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
     let appearance = painter
         .ctx()
-        .data(|d| d.get_temp::<crate::settings::view_settings::WaveformAppearance>(Id::new(WAVEFORM_APPEARANCE)))
+        .data(|d| d.get_temp::<crate::settings::view_settings::WaveformAppearance>(Id::unique(WAVEFORM_APPEARANCE)))
         .unwrap_or_default();
     // Theme: the sheet's `.clip-waveform` and `.clip-notes` colours, else Dark.
     let themed = |class: &str| {
@@ -1369,7 +1369,7 @@ pub(super) fn paint_clip(
         let fill = if bar.is_some() { motion::mix(body, ink_on(body), 0.045) } else { body };
         let size = crate::kit::style_class::font_size(theme::TEXT);
         let spot = crate::app::NameSpot { rect: strip, pass, fill, text: text_color, size };
-        d.insert_temp(Id::new((crate::app::NAME_RECT_CLIP, u64::from(clip.id.0))), spot);
+        d.insert_temp(Id::unique((crate::app::NAME_RECT_CLIP, u64::from(clip.id.0))), spot);
     });
     let has_name = bar.is_some();
     if has_name {
@@ -1395,7 +1395,7 @@ pub(super) fn paint_clip(
         // gain and its fades, drawn as `docs/spec/waveforms.md` says, inside the clip.
         let gain = if shown.gain_db.is_finite() { 10f32.powf(shown.gain_db as f32 / 20.0) } else { 0.0 };
         // The waveform zoom: drawn larger, heard the same.
-        let zoom = painter.ctx().data(|d| d.get_temp::<f32>(Id::new(WAVEFORM_ZOOM))).unwrap_or(1.0);
+        let zoom = painter.ctx().data(|d| d.get_temp::<f32>(Id::unique(WAVEFORM_ZOOM))).unwrap_or(1.0);
         let gain = gain * zoom;
         let from = rect.left().max(view_rect(painter).left()).floor();
         let to = rect.right().min(view_rect(painter).right()).ceil();
@@ -1645,10 +1645,10 @@ pub(super) fn take_lanes(
         .intersect(at.visible);
         if edge.height() > 0.0 {
             let resize = ui
-                .interact(edge, Id::new(("take-lane-edge", lane.track.0, take.number)), Sense::click_and_drag())
+                .interact(edge, Id::unique(("take-lane-edge", lane.track.0, take.number)), Sense::click_and_drag())
                 .on_hover_cursor(egui::CursorIcon::ResizeVertical);
             resize.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, format!("Height of {}", take.name))
+                egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Height of {}", take.name))
             });
             if resize.double_clicked() {
                 state.take_heights.remove(&(lane.track, take.number));
@@ -1686,10 +1686,10 @@ pub(super) fn take_lanes(
         }
         let name = ui.interact(
             header.intersect(at.visible),
-            Id::new(("take-name", lane.track.0, take.number)),
+            Id::unique(("take-name", lane.track.0, take.number)),
             Sense::click(),
         );
-        name.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, take.name.clone()));
+        name.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, take.name.clone()));
         // The piece a right-click on the lane was over, which Recolor colours alone (#989).
         let piece = state.take_piece.filter(|(t, n, _)| *t == lane.track && *n == take.number).map(|(_, _, p)| p);
         let menu = |ui: &mut Ui, state: &mut ArrangementViewState, actions: &mut Vec<Action>, piece: Option<usize>| {
@@ -1734,7 +1734,7 @@ pub(super) fn take_lanes(
         let small = theme::ui_font(theme::TEXT_SMALL);
         let soloed = state.take_solo == Some((lane.track, take.number));
         if header.height() >= button.y + 4.0 {
-            let id = |what: &str| Id::new(("take-button", what, lane.track.0, take.number));
+            let id = |what: &str| Id::unique(("take-button", what, lane.track.0, take.number));
             let clicked = |rect: Rect, what: &str, label: String| {
                 widgets::button_area(ui, rect.intersect(at.visible), id(what), label).on_hover_text(what.to_string())
             };
@@ -1814,12 +1814,10 @@ pub(super) fn take_lanes(
         }
         let body = ui.interact(
             row.intersect(at.visible),
-            Id::new(("take-lane", lane.track.0, take.number)),
+            Id::unique(("take-lane", lane.track.0, take.number)),
             Sense::click_and_drag(),
         );
-        body.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Comp from {}", take.name))
-        });
+        body.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Comp from {}", take.name)));
         if body.secondary_clicked()
             && let Some(pointer) = body.interact_pointer_pos()
         {
@@ -1933,11 +1931,11 @@ pub(super) fn take_lanes(
                     continue;
                 }
                 let side = if end { "End" } else { "Start" };
-                let id = Id::new(("take-piece-edge", lane.track.0, take.number, index, end));
+                let id = Id::unique(("take-piece-edge", lane.track.0, take.number, index, end));
                 let grip = ui.interact(corner, id, Sense::drag());
                 grip.widget_info(|| {
                     let label = format!("{side} of {} piece {}", take.name, index + 1);
-                    egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, label)
+                    egui::WidgetInfo::labeled(egui::Role::Slider, true, label)
                 });
                 let grip = grip.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
                 if grip.drag_started() {
@@ -2156,10 +2154,10 @@ pub(super) fn comp_crossfade(
         if hit.width() <= 0.0 || hit.height() <= 0.0 {
             continue;
         }
-        let id = Id::new(("comp-crossfade", cut.left.0, end));
+        let id = Id::unique(("comp-crossfade", cut.left.0, end));
         let response = ui.interact(hit, id, Sense::click_and_drag());
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, format!("Crossfade {end} on {track_name}"))
+            egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Crossfade {end} on {track_name}"))
         });
         let response =
             response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal).on_hover_text(format!("Crossfade {ms:.0} ms"));
@@ -2189,11 +2187,11 @@ pub(super) fn comp_crossfade(
     let mut bend_handle = None;
     let hit = Rect::from_center_size(center, Vec2::splat(FADE_HANDLE_HIT)).intersect(view);
     if held.is_none() && span.width() >= CURVE_HANDLE_MIN_FADE && hit.width() > 0.0 && hit.height() > 0.0 {
-        let id = Id::new(("comp-crossfade-curve", cut.left.0));
+        let id = Id::unique(("comp-crossfade-curve", cut.left.0));
         let response = ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
         response.widget_info(|| {
             let label = format!("Crossfade curve on {track_name}");
-            let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, label);
+            let mut info = egui::WidgetInfo::labeled(egui::Role::Slider, true, label);
             info.value = Some(curve.curve);
             info
         });

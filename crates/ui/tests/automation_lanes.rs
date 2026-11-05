@@ -45,6 +45,8 @@ fn arrangement_sized(project: Project, size: (f32, f32)) -> Harness<'static, App
     app.set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1 bar"));
     app.set_session(Session::new(project), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(size)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -941,6 +943,8 @@ fn render_the_lanes() {
     app.set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1 bar"));
     app.set_session(Session::new(project), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)
         .with_step_dt(0.05)

@@ -643,10 +643,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         grid_xs.clear();
     }
     ui.ctx().data_mut(|d| {
-        d.insert_temp(Id::new(CLIP_GRID), std::sync::Arc::new(grid_xs));
-        d.insert_temp(Id::new(WAVEFORM_ZOOM), state.waveform_zoom);
-        d.insert_temp(Id::new(WAVEFORM_APPEARANCE), state.waveform_appearance);
-        d.insert_temp(Id::new(AUDIO_COLOUR_STRENGTH), state.audio_colour_strength);
+        d.insert_temp(Id::unique(CLIP_GRID), std::sync::Arc::new(grid_xs));
+        d.insert_temp(Id::unique(WAVEFORM_ZOOM), state.waveform_zoom);
+        d.insert_temp(Id::unique(WAVEFORM_APPEARANCE), state.waveform_appearance);
+        d.insert_temp(Id::unique(AUDIO_COLOUR_STRENGTH), state.audio_colour_strength);
     });
     // Tempo and time-signature changes: a line in the accent colour and what changes, after
     // room for the bar number.
@@ -686,8 +686,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             );
         }
     }
-    let ruler_response = ui.interact(ruler, Id::new("arrangement-ruler"), Sense::click_and_drag());
-    ruler_response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Ruler"));
+    let ruler_response = ui.interact(ruler, Id::unique("arrangement-ruler"), Sense::click_and_drag());
+    ruler_response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Ruler"));
     // The ruler is the deliberate seek: while playing, the jump waits for the next boundary of the
     // global launch quantisation, and shows where it goes until then (#657).
     if ruler_response.clicked()
@@ -745,8 +745,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         )
     };
     // A right-click on the ruler or the marker row offers a marker there.
-    let row_response = ui.interact(marker_row, Id::new("arrangement-marker-row"), Sense::click());
-    row_response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Markers"));
+    let row_response = ui.interact(marker_row, Id::unique("arrangement-marker-row"), Sense::click());
+    row_response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Markers"));
     for response in [&ruler_response, &row_response] {
         if response.secondary_clicked()
             && let Some(pointer) = response.interact_pointer_pos()
@@ -782,7 +782,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             Pos2::new(ruler.right() - 8.0 - side, ruler.center().y - side / 2.0),
             Vec2::splat(side),
         );
-        let response = widgets::button_area(ui, back, Id::new("back-to-arrangement"), label).on_hover_text(label);
+        let response = widgets::button_area(ui, back, Id::unique("back-to-arrangement"), label).on_hover_text(label);
         if response.clicked() {
             actions.push(Action::new("launcher.backToArrangement", json!({})));
         }
@@ -812,7 +812,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     // Header column top, beside the ruler: right-click moves the headers to the other side.
     let corner = Rect::from_x_y_ranges(headers, egui::Rangef::new(ruler.top(), marker_row.bottom()));
     painter.fill_background(corner, 0.0, theme::panel_background());
-    let corner_response = ui.interact(corner, Id::new("arrangement-header-corner"), Sense::click());
+    let corner_response = ui.interact(corner, Id::unique("arrangement-header-corner"), Sense::click());
     corner_response.context_menu(|ui| {
         let text = if state.headers_left { "Track headers on the right" } else { "Track headers on the left" };
         if ui.button(text).clicked() {
@@ -824,7 +824,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let resize_x =
         if state.headers_left && corner.width() >= 210.0 { corner.right() - 102.0 } else { corner.left() + 6.0 };
     let resize = Rect::from_min_size(Pos2::new(resize_x, corner.top() + 4.0), Vec2::new(96.0, 18.0)).intersect(corner);
-    let response = widgets::button_area(ui, resize, Id::new("arrangement-resize-all"), "Resize all tracks");
+    let response = widgets::button_area(ui, resize, Id::unique("arrangement-resize-all"), "Resize all tracks");
     widgets::subtle_dropdown(ui, &painter, resize, &response, "Resize all", theme::panel_background());
     egui::Popup::menu(&response).show(|ui| {
         for size in TrackSize::ALL {
@@ -860,7 +860,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         };
         let response = ui.interact(
             Rect::from_min_max(mark.min, track.max),
-            Id::new("arrangement-waveform-zoom"),
+            Id::unique("arrangement-waveform-zoom"),
             Sense::click_and_drag(),
         );
         response.widget_info(|| egui::WidgetInfo::slider(true, f64::from(state.waveform_zoom), "Waveform zoom"));
@@ -938,7 +938,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             Vec2::new(width, 18.0),
         )
         .intersect(corner);
-        let response = widgets::button_area(ui, button, Id::new("arrangement-returns-toggle"), label);
+        let response = widgets::button_area(ui, button, Id::unique("arrangement-returns-toggle"), label);
         let hover = widgets::hover(ui, &response);
         painter.fill_background(button, 2.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
         widgets::text_in(&painter, button, Align2::CENTER_CENTER, label, font, theme::text_secondary());
@@ -1043,7 +1043,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         // click or a double-click on one is the clip's.
         let body = ui.interact(
             row.clip.intersect(lanes_area),
-            Id::new(("arrangement-lane", lane.track.0)),
+            Id::unique(("arrangement-lane", lane.track.0)),
             Sense::click_and_drag(),
         );
         // A folded group's row stands for the track whose clips it shows.
@@ -1120,7 +1120,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let has_takes = timeline.takes.iter().any(|t| t.track == clips_lane.track);
             empty_lane_menu(ui, clips_lane.track, clips_lane.notes, has_takes, state, actions);
         });
-        body.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Lane {}", lane.name)));
+        body.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Lane {}", lane.name)));
         if body.clicked() {
             // With an editor pulled to the top the clip stays its: the view would otherwise go
             // back to every track under the pointer, mid-click.
@@ -1484,7 +1484,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let header = Rect::from_x_y_ranges(headers, egui::Rangef::new(y, y + state.main_height));
         // A click on Main's header selects it, so the detail area shows its devices (#687).
         let selected = state.selected_tracks.first() == Some(&TrackId::MAIN);
-        if ui.interact(header.intersect(fixed), Id::new("arrangement-main-header"), Sense::click()).clicked() {
+        if ui.interact(header.intersect(fixed), Id::unique("arrangement-main-header"), Sense::click()).clicked() {
             state.selected_tracks = vec![TrackId::MAIN];
             state.focus = None;
             state.track_focus = false;
@@ -1506,7 +1506,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         // The top edge resizes the row: the fixed rows sit along the bottom, so they grow upward.
         let edge = Rect::from_x_y_ranges(area.x_range(), egui::Rangef::new(y - 1.0, y + 3.0)).intersect(fixed);
         let response = ui
-            .interact(edge, Id::new("arrangement-main-resize"), Sense::drag())
+            .interact(edge, Id::unique("arrangement-main-resize"), Sense::drag())
             .on_hover_cursor(egui::CursorIcon::ResizeVertical);
         if response.dragged_by(egui::PointerButton::Primary) {
             state.main_height = (state.main_height - response.drag_delta().y).clamp(ROW, MAX_LANE);
@@ -1525,7 +1525,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let response = widgets::value_area(
             ui,
             field.intersect(fixed),
-            Id::new("arrangement-main-volume"),
+            Id::unique("arrangement-main-volume"),
             "Main volume",
             widgets::format_db(state.main_drag.unwrap_or(db)),
         );
@@ -1649,7 +1649,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         Rect::from_min_max(Pos2::new(area.left(), tracks_bottom + 1.0), Pos2::new(area.right(), lanes_area.bottom()));
     let empty_time = Rect::from_x_y_ranges(time.x_range(), empty.y_range());
     if empty_time.is_positive() {
-        let space = ui.interact(empty_time, Id::new("arrangement-empty-space"), Sense::click());
+        let space = ui.interact(empty_time, Id::unique("arrangement-empty-space"), Sense::click());
         if space.clicked() {
             state.clear_selected_clip();
         }
@@ -1725,7 +1725,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     // The header column's inner edge resizes it.
     let edge = Rect::from_x_y_ranges(egui::Rangef::new(edge_x - 3.0, edge_x + 3.0), area.y_range());
     let response = ui
-        .interact(edge, Id::new("arrangement-header-edge"), Sense::drag())
+        .interact(edge, Id::unique("arrangement-header-edge"), Sense::drag())
         .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
     if response.dragged_by(egui::PointerButton::Primary) {
         let dx = response.drag_delta().x;

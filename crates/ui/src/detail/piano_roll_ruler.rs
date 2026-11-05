@@ -275,8 +275,8 @@ pub fn interact(
 ) -> Option<ClipShape> {
     let grid = note_grid(clip, state.beat_width);
     let axis = |state: &PianoRollState| Axis { origin: left - state.scroll.x, beat_width: state.beat_width };
-    let response = ui.interact(ruler, Id::new("piano-roll-ruler"), Sense::click_and_drag());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Piano roll ruler"));
+    let response = ui.interact(ruler, Id::unique("piano-roll-ruler"), Sense::click_and_drag());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Piano roll ruler"));
     let shape = clip.shape;
 
     if let Some(pos) = response.hover_pos() {
@@ -422,8 +422,8 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
             continue;
         }
         let label = format!("{} at beat {}", part.label(), round(beat));
-        let response = ui.interact(rect, Id::new(("piano-roll-ruler-part", part.label())), Sense::hover());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, part.label()));
+        let response = ui.interact(rect, Id::unique(("piano-roll-ruler-part", part.label())), Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, part.label()));
         response.on_hover_text(label);
     }
 }

@@ -32,6 +32,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     app.set_session(session, &[]);
     app.set_piano_grid(suhina_ui::detail::piano_roll_grid::PianoGrid::from_value("1/8"));
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)

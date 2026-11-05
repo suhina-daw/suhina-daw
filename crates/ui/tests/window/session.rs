@@ -18,7 +18,7 @@ fn the_add_track_buttons_keep_their_width_with_many_tracks() {
         state: SessionViewState::default(),
         actions: Vec::new(),
     };
-    let mut harness = Harness::builder().with_size(SIZE).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
         |ui, v: &mut SessionHarness| session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions),
         many,
     );
@@ -98,7 +98,7 @@ fn a_folded_group_hides_its_columns_in_the_session_view() {
     project.tracks.insert(0, group);
     let view =
         SessionHarness { grid: TrackGrid::build(&project, None), state: SessionViewState::default(), actions: vec![] };
-    let mut harness = Harness::builder().with_size(SIZE).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
         |ui, v: &mut SessionHarness| session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions),
         view,
     );

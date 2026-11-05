@@ -195,9 +195,9 @@ pub(super) fn clip_properties(
         }
         // The row is named for a reader and a test ("Notes: 1 of 4"), as the piano roll's notes
         // are, so what the column says can be found by name.
-        let response = ui.interact(row, egui::Id::new(("clip-property", label)), Sense::hover());
+        let response = ui.interact(row, egui::Id::unique(("clip-property", label)), Sense::hover());
         let named = format!("{label}: {value}");
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &named));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &named));
         widgets::text_in(
             painter,
             row,
@@ -247,7 +247,7 @@ pub(super) fn clip_edit_row(
         theme::ui_font(theme::TEXT_SMALL),
         theme::text_secondary(),
     );
-    let id = Id::new(("clip-edit", label));
+    let id = Id::unique(("clip-edit", label));
     let draw_value = |response: &egui::Response, text: &str| {
         let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response));
         painter.fill_background(value_rect, 2.0, fill);
@@ -328,7 +328,7 @@ pub(super) fn clip_edit_row(
     let hint = if reset.is_some() { "Drag sideways; double-click resets" } else { "Drag sideways" };
     let response = ui.interact(value_rect, id.with("drag"), Sense::click_and_drag()).on_hover_text(hint);
     let named = format!("{label}: {text}");
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &named));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, &named));
     draw_value(&response, &text);
     let moved = |from: f64| snap((from + f64::from(response.drag_delta().x) * per_point).clamp(min, max));
     let set = if response.double_clicked() {

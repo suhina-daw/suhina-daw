@@ -144,7 +144,7 @@ impl Shadow {
         (self.color, self.inset).hash(&mut hasher);
         let key = hasher.finish();
         let cache = painter.ctx().data_mut(|data| {
-            data.get_temp_mut_or_default::<Arc<Mutex<Textures>>>(egui::Id::new("css-shadow-textures")).clone()
+            data.get_temp_mut_or_default::<Arc<Mutex<Textures>>>(egui::Id::unique("css-shadow-textures")).clone()
         });
         let Ok(mut cache) = cache.lock() else {
             return false;
