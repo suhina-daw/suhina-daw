@@ -326,6 +326,9 @@ fn number_field(
     match drag {
         Drag::Moving(v) => {
             ui.data_mut(|d| d.insert_temp(preview_id, v));
+            // The pointer hides while it drags and comes back on the field, as on every value
+            // control.
+            widgets::value_drag_returns_to(ui.ctx(), response.rect.center());
             send(ui, id, snapped(v).clamp(field.range.0, field.range.1), false)
         }
         Drag::Done(v) | Drag::Set(v) => {
@@ -1016,6 +1019,9 @@ fn gain_part(
         let from = fader_position(preview.unwrap_or(db));
         let next = fader_db(from + delta);
         ui.data_mut(|d| d.insert_temp(preview_id, next));
+        // Hidden while it drags, the pointer comes back on the cap where the drag left it.
+        let cap_y = track.bottom() - fader_position(next) as f32 * track.height();
+        widgets::value_drag_returns_to(ui.ctx(), Pos2::new(track.center().x, cap_y));
         set = send(ui, id, tenth(next), false);
     } else if response.drag_stopped_by(egui::PointerButton::Primary) {
         set = preview.and_then(|v| send(ui, id, tenth(v), true));
@@ -1089,6 +1095,7 @@ fn pitch_part(
     match widgets::drag_value(ui, &response, &mut preview, semitones, 0.25, 1.0, SEMITONES, 0.0) {
         Drag::Moving(v) => {
             ui.data_mut(|d| d.insert_temp(preview_id, v));
+            widgets::value_drag_returns_to(ui.ctx(), center);
             set_semitones = send(ui, id, whole(v), false);
         }
         Drag::Done(v) | Drag::Set(v) => {
