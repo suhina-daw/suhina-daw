@@ -815,11 +815,12 @@ impl Launcher {
         self.quantization = old.quantization;
         self.random = old.random;
         self.beat = old.beat;
-        self.pending_tempo = old.pending_tempo;
-        // An edited tempo map or meter puts the clock back on the map; otherwise a scene's tempo
-        // and time signature stay, with their bars.
-        self.pending_signature = old.pending_signature;
+        // An edited tempo map or meter puts the clock back on the map and drops a scene's tempo
+        // or time signature still waiting for its launch beat; otherwise they stay, with their
+        // bars.
         if self.clock == old.clock && self.meter == old.meter {
+            self.pending_tempo = old.pending_tempo;
+            self.pending_signature = old.pending_signature;
             self.tempo_bpm = old.tempo_bpm;
             self.follows_map = old.follows_map;
             self.time_signature = old.time_signature;

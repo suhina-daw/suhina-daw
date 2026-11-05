@@ -51,6 +51,20 @@ fn event(clip: &Clip, region: &AudioRegion) -> AudioEvent {
 }
 
 #[test]
+fn a_warped_clip_ends_where_the_map_puts_its_last_beat() {
+    // Beat 6 on a map that drops from 120 to 60 bpm at beat 4 is 2 s + 2 s = 192000 frames; a
+    // constant 120 bpm would give 144000.
+    let transport =
+        Transport { tempo_changes: vec![TempoPoint { beat: 4.0, bpm: 60.0, ramp: false }], ..Transport::default() };
+    let map = Arc::new(transport.tempo_map(f64::from(SR)));
+    let clock = crate::tempo::TempoClock::of(&map);
+    let c = Clip { start: 2.0, ..clip(4.0, 0.0, None) };
+    let e =
+        AudioEvent::new(&c, &region(true, &[], 0.0), ramp(), Timing { clock, sample_rate: SR }, (1.0, 1.0)).unwrap();
+    assert_eq!(e.end, 192_000);
+}
+
+#[test]
 fn fades_are_fitted_to_the_clip_and_meet_the_click_guard() {
     // 4 beats of fades on a 2-beat clip are fitted to 1.5 + 0.5 beats, at 100 frames a beat.
     let c = Clip { fade_in: 3.0, fade_out: 1.0, ..clip(2.0, 0.0, None) };
