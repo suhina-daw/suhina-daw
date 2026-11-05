@@ -514,14 +514,15 @@ struct PointDrag {
     body: bool,
 }
 
-/// A point being dragged on a lane, or let go of this frame: its track, its lane and the value
-/// it takes, as the lane keeps it (a gain for the volume). The parameter's controls show that
-/// value while the drag lasts, wherever the playhead is (#811).
+/// A lane whose points or curves are being dragged, or were let go of this frame: its track, its
+/// lane and its points where the drag puts them, as the lane draws them. The parameter's controls
+/// show what this line plays at the playhead while the drag lasts, not only once the command is in
+/// (#811).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dragged {
     pub track: TrackId,
     pub key: LaneKey,
-    pub value: f64,
+    pub points: Vec<AutomationPoint>,
 }
 
 /// How near the top or bottom of a lane's plot a point has to be to take the parameter's maximum
@@ -841,20 +842,18 @@ pub struct LanesState {
     /// begun on a track that reaches over its lanes.
     placed: Vec<(TrackId, LaneKey, usize, Pos2)>,
     placed_pass: u64,
-    /// The point a drag held when the view was last drawn and the value it takes, for the
-    /// headers and panels drawn before the lanes in the next frame.
+    /// The lane a drag held when the view was last drawn, with its points where the drag put
+    /// them, for the headers and panels drawn before the lanes in the next frame.
     pub dragged: Option<Dragged>,
+    /// The same, as the lanes draw it this frame.
+    drawn_drag: Option<Dragged>,
 }
 
 impl LanesState {
-    /// The point a drag holds (or let go of this frame) and the value it takes, as
-    /// [`dragged_text`] shows it; `None` without a drag, or on a lane that is off.
-    pub fn drag_value(&self, params: &Params) -> Option<Dragged> {
-        let drag = self.point_drag.as_ref().or(self.dropped.as_ref())?;
-        let param = params.param(drag.track, &drag.key).filter(|p| p.enabled)?;
-        let point = param.points.get(drag.point)?;
-        let value = moved_value(param, drag, point.value, value_delta(drag, param));
-        Some(Dragged { track: drag.track, key: drag.key.clone(), value: param.scale.committed(value) })
+    /// Takes the lane a drag holds as the lanes drew it this frame: `None` without a drag, or
+    /// on a lane that is off.
+    pub fn take_drawn_drag(&mut self) -> Option<Dragged> {
+        self.drawn_drag.take()
     }
 
     /// Whether `track` shows its automation lanes.
@@ -1322,15 +1321,10 @@ fn drag_delta(drag: &PointDrag, param: &Param, geometry: &Geometry, free: bool) 
     let earliest =
         drag.together.iter().filter_map(|i| param.points.get(*i)).map(|p| p.beat).fold(grabbed.beat, f64::min);
     let beats = (target - grabbed.beat).max(-earliest);
-    (beats, value_delta(drag, param))
-}
-
-/// How far a point drag moves its points' values, in the set command's unit, worked out from the
-/// grabbed point.
-fn value_delta(drag: &PointDrag, param: &Param) -> f64 {
-    let Some(grabbed) = param.points.get(drag.point) else { return 0.0 };
-    let new = param.scale.value_at(param.scale.position(grabbed.value) + drag.now.1 - drag.grab.1);
-    param.scale.number(new) - param.scale.number(grabbed.value)
+    let position = param.scale.position(grabbed.value) + drag.now.1 - drag.grab.1;
+    let new = param.scale.value_at(position);
+    let delta = param.scale.number(new) - param.scale.number(grabbed.value);
+    (beats, delta)
 }
 
 /// What the point a drag holds will be when it is let go of: "50R at beat 25.25".
@@ -1830,6 +1824,12 @@ fn lane(
         }
     }
     let points = shown_points(param, track, geometry, free, state);
+    // A lane being dragged: the controls of its parameter follow the line as it is drawn (#811).
+    let held = state.point_drag.as_ref().or(state.dropped.as_ref()).is_some_and(|d| d.track == track && &d.key == key)
+        || state.curve_drag.as_ref().is_some_and(|d| d.track == track && &d.key == key);
+    if held && param.enabled {
+        state.drawn_drag = Some(Dragged { track, key: key.clone(), points: points.clone() });
+    }
     let ink = if param.enabled { color(lanes.color) } else { theme::text_hint() };
     let line = envelope(&points, &param.scale, plot, geometry);
     // A finished bend asks for its command only now, after the envelope above drew it: the

@@ -490,6 +490,18 @@ impl Detail {
     /// While the transport runs, the panels show what automation plays at `beat`: every enabled
     /// lane of a device's parameter sets the value its knob, slider and text show (#706).
     pub fn follow_automation(&mut self, project: &Project, beat: f64) {
+        self.follow_automation_dragged(project, beat, None);
+    }
+
+    /// [`Detail::follow_automation`], with the line of a lane being dragged in the Arrangement
+    /// view where the drag puts it: its knob follows the drag at the playhead before the command
+    /// is in (#811).
+    pub fn follow_automation_dragged(
+        &mut self,
+        project: &Project,
+        beat: f64,
+        dragged: Option<&crate::arrangement::automation_lanes::Dragged>,
+    ) {
         let chain = match self {
             Self::Devices(chain) | Self::Clip(_, chain) => chain,
             Self::Nothing => return,
@@ -503,13 +515,21 @@ impl Detail {
         else {
             return;
         };
-        fn follow(boxes: &mut [DeviceBox], devices: &[suhina_engine::model::Device], beat: f64) {
+        type Dragged = crate::arrangement::automation_lanes::Dragged;
+        fn follow(
+            boxes: &mut [DeviceBox],
+            devices: &[suhina_engine::model::Device],
+            beat: f64,
+            dragged: Option<&Dragged>,
+        ) {
             for device_box in boxes {
                 if let Some(group) = device_box.group.as_mut() {
                     for branch in &mut group.branches {
-                        follow(&mut branch.devices, devices, beat);
+                        follow(&mut branch.devices, devices, beat, dragged);
                     }
                 }
+                // The lane a drag holds is a device's on the track itself, not one in a group.
+                let held = dragged.filter(|d| d.key.device.is_some_and(|index| device_box.at.0 == [index]));
                 let Some(device) = suhina_engine::model::device_at(devices, &device_box.at.0) else { continue };
                 // A built-in parameter's description, for its kind and range.
                 let info = match &device.kind {
@@ -537,29 +557,22 @@ impl Detail {
                             }),
                     };
                     let Some(scale) = scale else { continue };
-                    let Some(value) = lane.value_at(beat, scale.stepped(), &scale) else { continue };
+                    let points = match held {
+                        Some(held) if held.key.param == lane.param => &held.points,
+                        _ => &lane.points,
+                    };
+                    let Some(value) = suhina_engine::model::automation::value_at(points, beat, scale.stepped(), &scale)
+                    else {
+                        continue;
+                    };
                     // A whole-number parameter shows what it plays, the fraction cut off toward zero.
                     let value = spec.map_or(value, |spec| spec.played(value));
                     show_value(device_box, &lane.param, value);
                 }
             }
         }
-        follow(&mut chain.devices, &channel.devices, beat);
-    }
-
-    /// While a point of a device parameter's lane is dragged, the parameter's knob, slider and
-    /// text show the value the point takes, wherever the playhead is (#811). Called after
-    /// [`Detail::follow_automation`].
-    pub fn follow_drag(&mut self, dragged: Option<&crate::arrangement::automation_lanes::Dragged>) {
-        let chain = match self {
-            Self::Devices(chain) | Self::Clip(_, chain) => chain,
-            Self::Nothing => return,
-        };
-        let Some(dragged) = dragged.filter(|d| d.track == chain.track) else { return };
-        let Some(index) = dragged.key.device else { return };
-        for device_box in chain.devices.iter_mut().filter(|b| b.at.0 == [index]) {
-            show_value(device_box, &dragged.key.param, dragged.value);
-        }
+        let dragged = dragged.filter(|d| d.track == chain.track);
+        follow(&mut chain.devices, &channel.devices, beat, dragged);
     }
 }
 

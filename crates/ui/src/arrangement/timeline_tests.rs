@@ -130,11 +130,13 @@ fn headers_show_what_automation_plays_at_the_playhead_running_or_stopped() {
     assert!(volume(&timeline).abs() < 1e-9, "off: the project's own value");
 }
 
-/// While a point of a volume or pan lane is dragged, the header shows the value the point takes,
-/// wherever the playhead is; Main's volume too, and a device's lane leaves the mixer alone (#811).
+/// While a volume or pan lane is dragged, the header shows what the line as it is dragged plays
+/// at the playhead, not the dragged point's value; Main's volume too, and a device's lane leaves
+/// the mixer alone (#811).
 #[test]
-fn headers_show_the_value_of_a_dragged_point() {
+fn headers_show_the_dragged_line_at_the_playhead() {
     use crate::arrangement::automation_lanes::{Dragged, LaneKey};
+    use suhina_engine::model::AutomationPoint;
     let project = demo_project();
     let track = project.tracks[0].id;
     let mut timeline = Timeline::build(&project, None);
@@ -142,17 +144,33 @@ fn headers_show_the_value_of_a_dragged_point() {
     let before = lane(&timeline);
     timeline.follow_drag(None);
     assert_eq!(lane(&timeline), before);
-    timeline.follow_drag(Some(&Dragged { track, key: LaneKey::mixer("volume"), value: 0.5 }));
-    assert!((lane(&timeline).0 + 6.02).abs() < 0.01, "{}", lane(&timeline).0);
-    timeline.follow_drag(Some(&Dragged { track, key: LaneKey::mixer("volume"), value: 0.0 }));
+    // A point at beat 0 dragged to half the gain, one at beat 8 at full gain: at beat 4, the
+    // playhead, the line is half way between them, not at the dragged point's value.
+    let points = vec![AutomationPoint::new(0.0, 0.5), AutomationPoint::new(8.0, 1.0)];
+    let at =
+        |key: &str, points: &[AutomationPoint]| Dragged { track, key: LaneKey::mixer(key), points: points.to_vec() };
+    timeline.beat = 4.0;
+    timeline.follow_drag(Some(&at("volume", &points)));
+    let halfway = lane(&timeline).0;
+    assert!(halfway > -6.03 && halfway < -0.01, "between the points: {halfway}");
+    timeline.beat = 0.0;
+    timeline.follow_drag(Some(&at("volume", &points)));
+    assert!((lane(&timeline).0 + 6.02).abs() < 0.01, "on the dragged point: {}", lane(&timeline).0);
+    timeline.follow_drag(Some(&at("volume", &[AutomationPoint::new(0.0, 0.0)])));
     assert_eq!(lane(&timeline).0, f64::NEG_INFINITY, "the bottom is silent");
-    timeline.follow_drag(Some(&Dragged { track, key: LaneKey::mixer("pan"), value: -1.0 }));
+    timeline.follow_drag(Some(&at("pan", &[AutomationPoint::new(2.0, -1.0)])));
     assert_eq!(lane(&timeline).1, -1.0);
-    let device = LaneKey { device: Some(0), param: "volume".into() };
-    timeline.follow_drag(Some(&Dragged { track, key: device, value: 1.0 }));
+    let device = Dragged {
+        track,
+        key: LaneKey { device: Some(0), param: "pan".into() },
+        points: vec![AutomationPoint::new(0.0, 1.0)],
+    };
+    timeline.follow_drag(Some(&device));
     assert_eq!(lane(&timeline).1, -1.0, "a device's lane is not the mixer's");
     assert!(timeline.main_volume_db.is_some());
-    timeline.follow_drag(Some(&Dragged { track: TrackId::MAIN, key: LaneKey::mixer("volume"), value: 2.0 }));
+    let main =
+        Dragged { track: TrackId::MAIN, key: LaneKey::mixer("volume"), points: vec![AutomationPoint::new(0.0, 2.0)] };
+    timeline.follow_drag(Some(&main));
     assert!((timeline.main_volume_db.unwrap() - 6.02).abs() < 0.01);
 }
 

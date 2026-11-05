@@ -421,11 +421,9 @@ impl App {
         // without a player, at the start.
         if let Some(session) = self.session() {
             let beat = session.player().map_or(0.0, |p| p.monitor().beat());
-            shown.follow_automation(session.project(), beat);
-        }
-        // A point dragged on a lane: its parameter shows the value it takes (#811).
-        if self.shown == View::Arrangement {
-            shown.follow_drag(self.arrangement.automation.dragged.as_ref());
+            // A lane dragged in the Arrangement view: the knob follows the line as it is dragged.
+            let dragged = self.arrangement.automation.dragged.as_ref().filter(|_| self.shown == View::Arrangement);
+            shown.follow_automation_dragged(session.project(), beat, dragged);
         }
         // What the host hands devices' canvases: whether the panel is open, and live values (a
         // band's level and gain change) while a player runs.

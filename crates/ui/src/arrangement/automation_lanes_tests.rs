@@ -468,30 +468,3 @@ fn the_dragged_text_is_that_of_the_value_the_command_sets() {
     assert_eq!(Scale::Volume.committed(10f64.powf(-80.0 / 20.0)), 0.0);
     assert_eq!(Scale::Mute.committed(0.7), 1.0);
 }
-
-/// While a point is dragged, and in the frame it is let go of, the lanes give the value it takes,
-/// the one its text shows, for the parameter's controls; not on a lane that is off (#811).
-#[test]
-fn a_dragged_point_gives_the_value_its_controls_show() {
-    let (plot, geometry) = plot_and_geometry();
-    let params = Params { tracks: HashMap::from([(TrackId(1), vec![pan_lane(0.0)])]) };
-    let mut state = LanesState::default();
-    assert_eq!(state.drag_value(&params), None);
-    let grab = (4.0, 0.5);
-    let mut drag = point_drag(grab);
-    drag.now = dragged_to(grab, 4.0, 0.8, 0.5, plot, &geometry, false);
-    state.point_drag = Some(drag.clone());
-    let dragged = state.drag_value(&params);
-    assert_eq!(dragged, Some(Dragged { track: TrackId(1), key: LaneKey::mixer(PAN), value: 0.6 }));
-    // Let go of: still the value it went to until its command is in.
-    state.point_drag = None;
-    state.dropped = Some(drag.clone());
-    assert_eq!(state.drag_value(&params), dragged);
-    // Near the top: the end, as the text says.
-    drag.now = dragged_to(grab, 4.0, position_of(plot, plot.top() + 1.0), 0.5, plot, &geometry, false);
-    state.dropped = Some(drag);
-    assert_eq!(state.drag_value(&params).map(|d| d.value), Some(1.0));
-    // A lane that is off plays nothing, so its controls keep their own value.
-    let off = Params { tracks: HashMap::from([(TrackId(1), vec![Param { enabled: false, ..pan_lane(0.0) }])]) };
-    assert_eq!(state.drag_value(&off), None);
-}

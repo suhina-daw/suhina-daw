@@ -167,28 +167,43 @@ fn panels_follow_automation_as_the_engine_plays_it() {
     assert_eq!((value("mono"), value("balance")), (Some(0.0), Some(-1.0)), "the last point, kept in range");
 }
 
-/// While a point of a device parameter's lane is dragged, its knob shows the value the point
-/// takes, wherever the playhead is; a drag on another track or device changes nothing (#811).
+/// While a device parameter's lane is dragged, its knob shows what the line as it is dragged
+/// plays at the playhead; a drag on another track or device changes nothing (#811).
 #[test]
-fn panels_show_the_value_of_a_dragged_point() {
+fn panels_follow_a_dragged_line_at_the_playhead() {
     use crate::arrangement::automation_lanes::{Dragged, LaneKey};
+    use suhina_engine::model::{AutomationLane, AutomationPoint};
     let mut project = demo_project();
-    project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    let mut utility = Device::new("Utility", DeviceKind::Builtin("utility".into()));
+    let mut lane = AutomationLane::new("balance");
+    lane.points = vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(4.0, -1.0)];
+    utility.automation.push(lane);
+    project.channels[0].devices.push(utility);
     let index = project.channels[0].devices.len() - 1;
-    let mut detail = build(&project, Some(TrackId(1)), None);
     let balance = |detail: &Detail| {
         let Detail::Devices(chain) = detail else { return None };
         chain.devices.last().and_then(|d| d.values.iter().find(|(p, _)| p == "balance")).map(|v| v.1)
     };
-    let before = balance(&detail);
+    // The first point dragged from full right down to the centre: at beat 2 the line is half way
+    // from it to the second point, -0.5, where it played 0 before.
+    let points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, -1.0)];
     let key = LaneKey { device: Some(index), param: "balance".into() };
-    detail.follow_drag(Some(&Dragged { track: TrackId(2), key: key.clone(), value: 0.25 }));
-    assert_eq!(balance(&detail), before, "another track's drag");
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, None);
+    assert_eq!(balance(&detail), Some(0.0), "the project's line");
+    let other_track = Dragged { track: TrackId(2), key: key.clone(), points: points.clone() };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&other_track));
+    assert_eq!(balance(&detail), Some(0.0), "another track's drag");
     let elsewhere = LaneKey { device: Some(index + 1), param: "balance".into() };
-    detail.follow_drag(Some(&Dragged { track: TrackId(1), key: elsewhere, value: 0.25 }));
-    assert_eq!(balance(&detail), before, "another device's drag");
-    detail.follow_drag(Some(&Dragged { track: TrackId(1), key, value: 0.25 }));
-    assert_eq!(balance(&detail), Some(0.25));
+    let other_device = Dragged { track: TrackId(1), key: elsewhere, points: points.clone() };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&other_device));
+    assert_eq!(balance(&detail), Some(0.0), "another device's drag");
+    let held = Dragged { track: TrackId(1), key, points };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&held));
+    assert_eq!(balance(&detail), Some(-0.5));
 }
 
 #[test]

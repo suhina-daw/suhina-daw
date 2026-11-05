@@ -534,24 +534,26 @@ impl Timeline {
         }
     }
 
-    /// While a point of a volume or pan lane is dragged, its header shows the value the point
-    /// takes, wherever the playhead is (#811). Called after [`Timeline::follow_automation`].
+    /// While a volume or pan lane is dragged, its header shows what the line as it is dragged
+    /// plays at the playhead, before the command is in (#811). Called after
+    /// [`Timeline::follow_automation`].
     pub fn follow_drag(&mut self, dragged: Option<&crate::arrangement::automation_lanes::Dragged>) {
-        use suhina_engine::model::automation::{PAN, VOLUME};
+        use suhina_engine::model::automation::{PAN, Plain, VOLUME, VolumeTaper, value_at};
         let Some(dragged) = dragged.filter(|d| d.key.device.is_none()) else { return };
-        let volume = dragged.key.param == VOLUME;
-        if dragged.track == TrackId::MAIN {
-            if volume && self.main_volume_db.is_some() {
-                self.main_volume_db = Some(gain_to_db(dragged.value));
+        let beat = self.beat;
+        if dragged.key.param == VOLUME {
+            let Some(db) = value_at(&dragged.points, beat, false, &VolumeTaper).map(gain_to_db) else { return };
+            if dragged.track == TrackId::MAIN {
+                if self.main_volume_db.is_some() {
+                    self.main_volume_db = Some(db);
+                }
+            } else {
+                self.lanes.iter_mut().filter(|l| l.track == dragged.track).for_each(|l| l.volume_db = db);
             }
-            return;
-        }
-        for lane in self.lanes.iter_mut().filter(|l| l.track == dragged.track) {
-            if volume {
-                lane.volume_db = gain_to_db(dragged.value);
-            } else if dragged.key.param == PAN {
-                lane.pan = dragged.value;
-            }
+        } else if dragged.key.param == PAN
+            && let Some(pan) = value_at(&dragged.points, beat, false, &Plain)
+        {
+            self.lanes.iter_mut().filter(|l| l.track == dragged.track).for_each(|l| l.pan = pan);
         }
     }
 

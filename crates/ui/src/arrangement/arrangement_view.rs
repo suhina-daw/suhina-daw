@@ -349,9 +349,9 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
     if state.focus.is_some() {
         state.scroll.y = scrolled;
     }
-    // A dragged point's value, for the headers and panels: they are drawn before the lanes
-    // move it, so a change is drawn again at once (#811).
-    let dragged = state.automation.drag_value(&timeline.automation);
+    // The line a drag holds, for the headers and panels: they are drawn before the lanes move
+    // it, so a change is drawn again at once (#811).
+    let dragged = state.automation.take_drawn_drag();
     if dragged != state.automation.dragged {
         state.automation.dragged = dragged;
         ui.ctx().request_repaint();
