@@ -73,7 +73,7 @@ pub(crate) fn valid_track_input(input: suhina_model::InputChannels) -> bool {
     match input {
         InputChannels::None => true,
         InputChannels::Mono(c) => (1..=MAX_INPUT_CHANNEL).contains(&c),
-        InputChannels::Stereo(c) => c >= 1 && c < MAX_INPUT_CHANNEL,
+        InputChannels::Stereo(c) => (1..MAX_INPUT_CHANNEL).contains(&c),
     }
 }
 
