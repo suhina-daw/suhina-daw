@@ -176,3 +176,43 @@ fn a_thumbnail_is_a_sixteen_by_nine_svg_and_layout_css_is_named() {
     files.insert("layout.css".into(), b"".to_vec());
     assert!(validate(&files).unwrap().iter().any(|w| w.contains("layout.css")));
 }
+
+#[test]
+fn validation_keeps_the_limits_the_disk_reader_keeps() {
+    // theme.json and a variant are read up to 64 KiB, and at most 64 variants.
+    let mut files = theme();
+    files.insert(
+        meta::FILE.into(),
+        format!(
+            r#"{{ "format": 1, "name": "Night", "swatch": "var(--accent)", "description": "{}" }}"#,
+            "x".repeat(70_000)
+        )
+        .into_bytes(),
+    );
+    assert!(validate(&files).unwrap_err().contains("exceeds 64 KiB"));
+    let mut files = theme();
+    files.insert("variants/big.json".into(), format!(r#"{{"name":"{}"}}"#, "x".repeat(70_000)).into_bytes());
+    assert!(validate(&files).unwrap_err().contains("exceeds 64 KiB"));
+    let mut files = theme();
+    for n in 0..65 {
+        files.insert(format!("variants/v{n}.json"), br#"{"name":"V"}"#.to_vec());
+    }
+    assert!(validate(&files).unwrap_err().contains("at most 64 variants"));
+}
+
+#[test]
+fn a_thumbnail_must_be_svg_by_namespace_and_have_a_finite_size() {
+    let with = |svg: &str| {
+        let mut files = theme();
+        files.insert(meta::THUMBNAIL.into(), svg.as_bytes().to_vec());
+        validate(&files)
+    };
+    assert!(with(r#"<svg viewBox="0 0 160 90"/>"#).is_ok(), "a root without a namespace is read");
+    for refused in [
+        r#"<svg xmlns="http://example.com/other" viewBox="0 0 160 90"/>"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="inf" height="inf"/>"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 inf inf"/>"#,
+    ] {
+        assert!(with(refused).is_err(), "{refused}");
+    }
+}

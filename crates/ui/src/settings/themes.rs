@@ -347,6 +347,7 @@ impl Themes {
         // A theme read from a sheet keeps its edited settings as values over the sheet's.
         if !entry.theme.vars.base.is_empty() {
             crate::kit::theme_vars::sync(&mut entry.theme);
+            crate::kit::theme_vars::refresh_view(&mut entry.theme);
         }
         self.actions.push(Pending::Save(id.clone()));
         switched.then_some(id)

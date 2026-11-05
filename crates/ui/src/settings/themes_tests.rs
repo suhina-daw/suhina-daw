@@ -223,3 +223,23 @@ fn a_copy_of_a_theme_with_placed_controls_says_so() {
     themes.request("night", ThemeRequest::Duplicate);
     assert_eq!(themes.take_notice(), None, "nothing placed, nothing said");
 }
+
+#[test]
+fn editing_a_palette_colour_refreshes_the_swatch_and_thumbnail_of_its_card() {
+    let mut themes = Themes::default();
+    let before = themes.get("nord").unwrap().clone();
+    let mut colors = themes.palette("nord");
+    colors.accent = egui::Color32::from_rgb(250, 10, 120);
+    colors.window_background = egui::Color32::from_rgb(10, 250, 120);
+    let id = themes
+        .request("nord", ThemeRequest::EditRgba { colors, transparent_rgb: before.transparent_rgb })
+        .expect("a built-in theme's edit makes a variant");
+    let edited = themes.get(&id).unwrap().clone();
+    // What the card shows is what loading the theme again would show.
+    let mut loaded = edited.clone();
+    crate::kit::theme_vars::resolve(&mut loaded);
+    assert_eq!(edited.skin.variables, loaded.skin.variables);
+    assert_eq!(edited.swatch, loaded.swatch);
+    assert_eq!(edited.picture, loaded.picture);
+    assert!(edited.swatch != before.swatch || edited.picture != before.picture, "the edit shows on the card");
+}

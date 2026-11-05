@@ -344,3 +344,17 @@ fn the_palette_in_use_changes_with_the_theme() {
     set_palette(&ctx, Palette::DARK);
     assert_eq!(accent(), Palette::DARK.accent);
 }
+
+#[test]
+fn a_toolbar_in_theme_json_lists_a_module_once_and_bounds_its_offsets() {
+    let value: Value = serde_json::from_str(
+        r#"{ "items": ["views", "transport", "views", "nope"], "hidden": ["transport", "transport"],
+             "offsets": { "transport": 2147483647, "views": -16384, "nope": 3 } }"#,
+    )
+    .unwrap();
+    let (toolbar, offsets) = read_toolbar(&value).unwrap();
+    assert_eq!(&toolbar.order[..2], ["views", "transport"]);
+    assert_eq!(toolbar.order.iter().filter(|m| *m == "views").count(), 1);
+    assert_eq!(toolbar.hidden, ["transport"]);
+    assert_eq!(offsets.into_iter().collect::<Vec<_>>(), [("views".to_string(), -16384)]);
+}

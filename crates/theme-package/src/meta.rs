@@ -214,7 +214,8 @@ pub fn check_thumbnail(source: &str) -> Result<(), String> {
 pub fn svg(source: &str) -> Result<roxmltree::Document<'_>, String> {
     let options = roxmltree::ParsingOptions { allow_dtd: false, nodes_limit: 100_000, ..Default::default() };
     let doc = roxmltree::Document::parse_with_options(source, options).map_err(|e| e.to_string())?;
-    if doc.root_element().tag_name().name() != "svg" {
+    let root = doc.root_element().tag_name();
+    if root.name() != "svg" || !matches!(root.namespace(), None | Some("http://www.w3.org/2000/svg")) {
         return Err("not an SVG image".into());
     }
     let lower = source.to_ascii_lowercase();
@@ -226,12 +227,16 @@ pub fn svg(source: &str) -> Result<roxmltree::Document<'_>, String> {
 
 /// Whether an SVG's root says a 16:9 picture, by its `viewBox` or else its `width` and `height`.
 pub fn is_sixteen_by_nine(root: roxmltree::Node<'_, '_>) -> Result<(), String> {
-    let number = |text: &str| text.trim().trim_end_matches("px").parse::<f64>().ok().filter(|n| *n > 0.0);
+    let number =
+        |text: &str| text.trim().trim_end_matches("px").parse::<f64>().ok().filter(|n| n.is_finite() && *n > 0.0);
     let size = root
         .attribute("viewBox")
         .and_then(|view| {
-            let parts: Vec<f64> =
-                view.split([' ', ',']).filter(|p| !p.is_empty()).filter_map(|p| p.parse().ok()).collect();
+            let parts: Vec<f64> = view
+                .split([' ', ','])
+                .filter(|p| !p.is_empty())
+                .filter_map(|p| p.parse().ok().filter(|n: &f64| n.is_finite()))
+                .collect();
             (parts.len() == 4 && parts[2] > 0.0 && parts[3] > 0.0).then(|| (parts[2], parts[3]))
         })
         .or_else(|| Some((number(root.attribute("width")?)?, number(root.attribute("height")?)?)))

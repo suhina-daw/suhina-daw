@@ -214,7 +214,8 @@ swatch colour), with a swatch per variant. Edit current theme changes its groupe
 of a theme file is changed there too, and its file is renamed to match. Duplicate copies the
 theme in use, Reload reads the files again, Open folder shows the themes folder, Back up writes
 every theme file into `exports/suhina-themes-<date>.zip`, and Export template writes
-`exports/suhina-theme-template.zip`: `template.json` (every token written out), `README.md`
+`exports/suhina-theme-template.zip`: a `my-theme/` folder (`theme.json`, and `theme.css` with every
+token written out), `README.md`
 (the format and every token, written so an AI agent can make a theme from it alone) and the
 built-in themes in `examples/`. A theme file or a zip of them (a backup) dropped on the window is
 added; a theme already there is not doubled, and one whose id is taken gets `-2`. A theme file

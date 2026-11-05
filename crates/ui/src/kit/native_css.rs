@@ -846,11 +846,12 @@ pub fn theme_swatch(color: Color32) -> Option<Computed> {
         if let Some(values) = engine.contexts.get(&key) {
             return Some(values.clone());
         }
-        if engine.contexts.len() >= MAX_CONTEXTS {
-            return None;
-        }
         let values = native::theme_swatch(&engine, &key[1])?;
-        engine.contexts.insert(key, values.clone());
+        // Past the cache's limit a swatch is worked out each time, so that every swatch in a
+        // gallery is styled alike.
+        if engine.contexts.len() < MAX_CONTEXTS {
+            engine.contexts.insert(key, values.clone());
+        }
         Some(values)
     })
 }

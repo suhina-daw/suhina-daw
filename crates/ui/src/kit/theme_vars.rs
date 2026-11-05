@@ -382,6 +382,21 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
     warnings
 }
 
+/// After the model was edited and [`sync`]ed: the variables the sheet gives under the variant's
+/// values, and the thumbnail and swatch drawn from them, so the gallery shows the edited colours.
+pub fn refresh_view(theme: &mut Theme) {
+    if let Some(css) = theme.skin.css.as_deref()
+        && let Ok(sheet) = Sheet::parse(css)
+    {
+        let variant = theme.skin.variant.as_deref().map(Sheet::parse).transpose().ok().flatten();
+        if let Ok(full) = root_variables(&sheet, variant.as_ref()) {
+            theme.skin.variables = Arc::new(full);
+        }
+    }
+    theme.picture = picture(theme);
+    theme.swatch = swatch(theme).ok().map(|[r, g, b, a]| egui::Color32::from_rgba_unmultiplied(r, g, b, a));
+}
+
 /// `theme`'s thumbnail for the variant it has chosen: `var()` takes the variant's root values,
 /// colours as computed colours, since the SVG renderer has no `color-mix()`.
 pub fn picture(theme: &Theme) -> Option<Arc<str>> {

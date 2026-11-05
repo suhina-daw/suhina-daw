@@ -31,8 +31,14 @@ const VERSION: u64 = 1;
 pub const MAX_TEXT: usize = 128 * 1024;
 /// A PNG is at most this big.
 pub const MAX_PNG: usize = 8 * 1024 * 1024;
-/// Any other file (a variant, a README) is at most this big.
+/// Any other file (a README, say) is at most this big.
 const MAX_OTHER: usize = 1024 * 1024;
+/// `theme.json` is at most this big, as the disk reader limits it.
+const MAX_META: usize = 64 * 1024;
+/// A variant file is at most this big, and a theme has at most this many variants, as the disk
+/// reader limits them.
+const MAX_VARIANT: usize = 64 * 1024;
+const MAX_VARIANTS: usize = 64;
 /// All files together, unpacked.
 pub const MAX_TOTAL: usize = 32 * 1024 * 1024;
 /// Files in one package.
@@ -88,6 +94,10 @@ pub fn validate(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<String>, String
             MAX_TEXT
         } else if lower.ends_with(".png") {
             MAX_PNG
+        } else if path == meta::FILE {
+            MAX_META
+        } else if path.starts_with("variants/") && lower.ends_with(".json") {
+            MAX_VARIANT
         } else {
             MAX_OTHER
         };
@@ -115,6 +125,9 @@ pub fn validate(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<String>, String
     }
     if !files.contains_key("theme.css") {
         return Err("a theme needs a theme.css at its root".into());
+    }
+    if files.keys().filter(|path| path.starts_with("variants/") && path.ends_with(".json")).count() > MAX_VARIANTS {
+        return Err(format!("a theme has at most {MAX_VARIANTS} variants"));
     }
     let (theme_meta, notes) =
         meta::ThemeMeta::parse(files.get(meta::FILE).ok_or("a theme needs a theme.json at its root")?)?;

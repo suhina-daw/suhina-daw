@@ -286,3 +286,17 @@ fn a_background_picture_in_the_assets_folder_is_read() {
     );
     let _clean = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_built_in_themes_package_carries_the_variants_kept_beside_it() {
+    let dir = folder("built-in-variants");
+    let themes = dir.join("themes");
+    let variants = themes.join("suhina-dark").join("variants");
+    std::fs::create_dir_all(&variants).unwrap();
+    std::fs::write(variants.join("warm.json"), r##"{"name":"Warm","values":{"--accent":"#FFB86C"}}"##).unwrap();
+    let files = ThemeFiles::new(Some(themes));
+    let package = files.export_package("suhina-dark", &Theme::default()).unwrap();
+    let read = suhina_theme_package::read(&std::fs::read(&package).unwrap()).unwrap();
+    assert!(read.files.contains_key("variants/warm.json"), "{:?}", read.files.keys().collect::<Vec<_>>());
+    let _clean = std::fs::remove_dir_all(&dir);
+}

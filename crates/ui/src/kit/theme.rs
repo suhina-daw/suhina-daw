@@ -433,8 +433,18 @@ fn read_toolbar(value: &Value) -> Option<(super::skin::Toolbar, std::collections
         }
     };
     let known = |name: &String| super::skin::MODULES.contains(&name.as_str());
-    let order: Vec<String> = names("items")?.into_iter().filter(known).collect();
-    let hidden: Vec<String> = names("hidden")?.into_iter().filter(known).collect();
+    // A module listed twice counts once, at its first place, as in a skin's toolbar.
+    let unique = |names: Vec<String>| -> Vec<String> {
+        let mut seen: Vec<String> = Vec::new();
+        for name in names.into_iter().filter(known) {
+            if !seen.contains(&name) {
+                seen.push(name);
+            }
+        }
+        seen
+    };
+    let order = unique(names("items")?);
+    let hidden = unique(names("hidden")?);
     let offsets = value
         .get("offsets")
         .and_then(Value::as_object)
@@ -442,7 +452,11 @@ fn read_toolbar(value: &Value) -> Option<(super::skin::Toolbar, std::collections
             offsets
                 .iter()
                 .filter(|(name, _)| known(name))
-                .filter_map(|(name, offset)| Some((name.clone(), i32::try_from(offset.as_i64()?).ok()?)))
+                .filter_map(|(name, offset)| {
+                    // The same bound as a skin's offsets and the toolbar editor.
+                    let offset = i32::try_from(offset.as_i64()?).ok().filter(|n| (-16384..=16384).contains(n))?;
+                    Some((name.clone(), offset))
+                })
                 .collect()
         })
         .unwrap_or_default();

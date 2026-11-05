@@ -433,7 +433,18 @@ impl ThemeFiles {
         let files = match (dir, built_in) {
             (Some(dir), _) => suhina_theme_package::read_folder(&dir)?,
             // A built-in theme's folder as it is built into the app.
-            (None, Some(files)) => files.into_iter().map(|(path, bytes)| (path.to_owned(), bytes.to_vec())).collect(),
+            (None, Some(files)) => {
+                let mut files: std::collections::BTreeMap<String, Vec<u8>> =
+                    files.into_iter().map(|(path, bytes)| (path.to_owned(), bytes.to_vec())).collect();
+                // The variants the user keeps for it travel with it (`<id>/variants/` on disk).
+                let mut warnings = Vec::new();
+                if let Some(folder) = &self.folder {
+                    for (variant, text) in read_variants(&folder.join(id), &mut warnings) {
+                        files.insert(format!("{VARIANTS}/{}.json", variant.id), text.into_bytes());
+                    }
+                }
+                files
+            }
             (None, None) => {
                 let prefix = format!("{id}/");
                 package_files(id, theme)?
@@ -887,10 +898,21 @@ fn migrate(folder: &Path, id: &str, theme: &Theme, previous: bool) -> Result<(),
         }
         if copy { std::fs::copy(from, to).map(|_| ()) } else { std::fs::rename(from, to) }.map_err(|e| e.to_string())
     };
+    // The imports are read before theme.css is overwritten.
+    let imports = if previous { theme_css::imports(&read_text(&css)?) } else { Vec::new() };
     if previous {
-        // theme.css is replaced in one step below; its copy is kept first.
+        // theme.css is overwritten below; its copy is kept first.
         keep(&css, THEME_CSS, true)?;
-        for import in theme_css::imports(&read_text(&css)?) {
+    }
+    let mut files = resources;
+    files.push((format!("{id}/{THEME_JSON}"), theme::meta_json(theme).into_bytes()));
+    files.push((format!("{id}/{THEME_CSS}"), sheet.into_bytes()));
+    files.push((format!("{id}/README.md"), theme::template_readme().into_bytes()));
+    write_files(folder, files)?;
+    // The old files move only after the new theme is written, so a failed write leaves the theme
+    // as it was.
+    if previous {
+        for import in imports {
             let path = dir.join(&import);
             if path.is_file() {
                 keep(&path, &import.replace('/', "-"), false)?;
@@ -902,11 +924,7 @@ fn migrate(folder: &Path, id: &str, theme: &Theme, previous: bool) -> Result<(),
         }
         keep(&folder.join(format!("{id}.json")), &format!("{id}.json"), false)?;
     }
-    let mut files = resources;
-    files.push((format!("{id}/{THEME_JSON}"), theme::meta_json(theme).into_bytes()));
-    files.push((format!("{id}/{THEME_CSS}"), sheet.into_bytes()));
-    files.push((format!("{id}/README.md"), theme::template_readme().into_bytes()));
-    write_files(folder, files)
+    Ok(())
 }
 
 /// The comments before a sheet's first rule (past its `@import` statements), each on its own line.
