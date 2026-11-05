@@ -1105,8 +1105,8 @@ impl Chain {
     }
 
     /// Takes the running devices of `old` for the same track, with this chain's parameter
-    /// values and plug-in settings and `old`'s held notes. When `old` holds the same devices in
-    /// the same order, all of them; otherwise each device of this chain that `old` runs under
+    /// values and plug-in settings and `old`'s held notes. When `old` holds the same devices
+    /// under the same ids in the same order, all of them; otherwise each device of this chain that `old` runs under
     /// the same id ([`DeviceId`]) and runs the same thing, wherever it moved (#763 › 1), so an
     /// insert, a removal or a move keeps the other devices' tails, envelopes and LFOs. A device
     /// group whose devices changed starts again as a whole. Returns whether it took anything.
@@ -1115,7 +1115,9 @@ impl Chain {
         if old.track != self.track {
             return false;
         }
-        if old.ids == self.ids {
+        // The same kinds alone is not enough: two identical devices that traded places would
+        // each keep the other's running state.
+        if old.ids == self.ids && old.device_ids == self.device_ids {
             std::mem::swap(&mut self.slots, &mut old.slots);
             for position in 0..self.slots.len() {
                 if let Some(fresh) = old.slots.get_mut(position) {
@@ -1141,12 +1143,15 @@ impl Chain {
         let mut taken = false;
         for position in 0..self.slots.len() {
             let (Some(&id), Some(what)) = (self.device_ids.get(position), self.ids.get(position)) else { continue };
-            if !id.is_some() {
-                continue;
-            }
-            let Some(j) = old.device_ids.iter().zip(&old.ids).position(|(&d, w)| d == id && w == what) else {
-                continue;
+            let j = if id.is_some() {
+                old.device_ids.iter().zip(&old.ids).position(|(&d, w)| d == id && w == what)
+            } else {
+                // A slot the chain adds itself (the sine tones after MIDI effects) has no id: it
+                // is the same one when it is in the same place.
+                let own = |chain: &Chain| chain.positions.get(position) == Some(&usize::MAX);
+                (own(self) && own(old) && old.ids.get(position) == Some(what)).then_some(position)
             };
+            let Some(j) = j else { continue };
             let (Some(slot), Some(running)) = (self.slots.get_mut(position), old.slots.get_mut(j)) else { continue };
             std::mem::swap(slot, running);
             // What is in `old` there now is this slot's fresh copy, never matched again.

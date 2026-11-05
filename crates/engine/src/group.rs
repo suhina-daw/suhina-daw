@@ -176,6 +176,10 @@ impl SlotFactory<'_> {
                 latency: 0,
                 delay: Delay::new(0),
             };
+            // What the branch runs, each device with its id: a group whose devices traded
+            // places, even two of the same kind, starts again instead of each running device
+            // taking the other's settings.
+            let mut identity = Vec::new();
             for (i, device) in branch.devices.iter().enumerate() {
                 let mut inner = path.to_vec();
                 inner.extend([b, i]);
@@ -184,6 +188,7 @@ impl SlotFactory<'_> {
                     run.latency = run.latency.saturating_add(built.latency);
                     run.slots.push(built.slot);
                     run.positions.push(i);
+                    identity.push(format!("{}#{}", built.id, device.id.0));
                     run.ids.push(built.id);
                     run.values.push(built.values);
                     run.sample_slices.push(built.slices);
@@ -192,7 +197,7 @@ impl SlotFactory<'_> {
             }
             let (left, right) = run.mix.heard_gains(any_solo);
             (run.left.value, run.left.target, run.right.value, run.right.target) = (left, left, right, right);
-            ids.push(run.ids.join(","));
+            ids.push(identity.join(","));
             branches.push(run);
         }
         let values = group_param_values(&stored.params);

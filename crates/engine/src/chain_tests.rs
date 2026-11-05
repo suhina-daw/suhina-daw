@@ -569,6 +569,61 @@ fn running_devices_survive_an_insert_before_them_by_their_ids() {
     assert!(restarted > 1e-3, "without ids the delay starts empty: {restarted}");
 }
 
+/// Two devices of the same kind trading places: each keeps its running state by its id, not by
+/// its place. The echoing delay moves behind a dry one, so the track sounds as if nothing moved;
+/// kept by place, the echoes would stay in the first delay, now dry, and stop.
+#[test]
+fn identical_devices_that_trade_places_keep_their_own_running_state() {
+    let echoing = device("delay", &[("feedback", 0.9), ("mix", 0.5)]);
+    let dry = device("delay", &[("mix", 0.0)]);
+    let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), echoing, dry]);
+    p.assign_ids().unwrap();
+    let mut edited = p.clone();
+    edited.channels[0].devices.swap(1, 2);
+    let inputs = || RenderInputs::from_audio(&crate::AudioPool::new());
+    let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 60, 480);
+    controller.update(&edited).unwrap();
+    out.extend(blocks(&mut renderer, 60, 480));
+    let mut untouched = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+    let reference = blocks(&mut untouched, 120, 480);
+    let diff = max_diff(&out, &reference);
+    assert!(diff < 1e-4, "{diff}");
+}
+
+/// The same inside a device group: a group whose devices traded places starts again as a whole,
+/// as one whose devices changed does, instead of keeping each running device by its place under
+/// the other's settings. It sounds as a new group with the same devices would.
+#[test]
+fn a_group_whose_identical_devices_trade_places_starts_again() {
+    let echoing = device("delay", &[("feedback", 0.9), ("mix", 0.5)]);
+    let short = device("delay", &[("feedback", 0.0), ("mix", 0.5)]);
+    let group = DeviceGroup::with_branches(vec![Branch { devices: vec![echoing, short], ..Branch::new("") }]);
+    let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), Device::group("G", group)]);
+    p.assign_ids().unwrap();
+    let mut swapped = p.clone();
+    if let Some(g) = swapped.channels[0].devices[1].as_group_mut() {
+        g.branches[0].devices.swap(0, 1);
+    }
+    // The same group under an id the running one does not have: built new.
+    let mut fresh = swapped.clone();
+    fresh.channels[0].devices[1].id = DeviceId::NONE;
+    fresh.assign_ids().unwrap();
+    assert_ne!(fresh.channels[0].devices[1].id, p.channels[0].devices[1].id);
+    let render = |edited: &Project| {
+        let inputs = || RenderInputs::from_audio(&crate::AudioPool::new());
+        let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+        let mut controller = renderer.controller();
+        let mut out = blocks(&mut renderer, 60, 480);
+        controller.update(edited).unwrap();
+        out.extend(blocks(&mut renderer, 60, 480));
+        out
+    };
+    let diff = max_diff(&render(&swapped), &render(&fresh));
+    assert!(diff < 1e-6, "{diff}");
+}
+
 /// #911: with the loop on over bars 3 to 10 and playback starting before a MIDI clip at bar 5,
 /// the clip's first note sounds on its beat, not later.
 #[test]
