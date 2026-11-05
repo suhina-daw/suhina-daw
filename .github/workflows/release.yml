@@ -282,6 +282,8 @@ jobs:
           fi
           cat "$archive.sha256"
 
+      # The packages reach the publishing job through this artifact, and the release keeps them
+      # after that; a run by hand has a week to download them, as a test build does.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ env.PACKAGE }}
@@ -290,6 +292,7 @@ jobs:
             dist/*.tar.gz
             dist/*.sha256
           if-no-files-found: error
+          retention-days: 7
 
   release:
     name: draft release
