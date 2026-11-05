@@ -1,8 +1,9 @@
 # Stock presets
 
 Presets that ship with Suhina for its built-in effects and instruments, one folder per device
-(`presets/<device id>/`), one `.json` file per preset. The rules and the file format are in
-[ADR 0014](../docs/decisions/0014-stock-presets.md).
+(`presets/<device id>/`), one file per preset, named `<preset name>.<device id>.preset.suhina`. A new
+file also gets a line in `STOCK_FILES` in `crates/device-registry/src/lib.rs`. The rules and the file
+format are in [ADR 0014](../docs/decisions/0014-stock-presets.md).
 
 ## Licence
 

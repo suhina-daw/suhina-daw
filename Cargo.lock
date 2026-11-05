@@ -5418,6 +5418,7 @@ name = "suhina-device-fm-synth"
 version = "0.0.1"
 dependencies = [
  "suhina-device-api",
+ "suhina-dsp",
 ]
 
 [[package]]
@@ -5474,6 +5475,7 @@ name = "suhina-device-registry"
 version = "0.0.1"
 dependencies = [
  "nam-rs",
+ "serde_json",
  "suhina-device-api",
  "suhina-device-auto-pan",
  "suhina-device-compressor",

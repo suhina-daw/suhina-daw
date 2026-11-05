@@ -181,13 +181,25 @@ Omitted or null `viewport_size` preserves automatic sizing: row width is at leas
 width plus 12, row height fills the detail area; stacked width fills the column (normally 272),
 and height fits node rows, canvas and stock controls. Setting `size` does not scale artwork.
 
+A built-in device's layout ships with Suhina and may hold 2048 controls and 32768 drawing commands;
+a `.sd` file keeps the limits below. A button with the gesture `"randomize"` and no binding runs
+`device.randomize` on its device. A button with `{"expand": 6}` sets its X parameter to 6 and opens the
+device's expanded panel. A control with `{"draw": 22}` and a Y binding is one column of a drawing: a press
+on it and a drag over its neighbours set each one's Y parameter to the pointer's height, the way between
+two frames included, as one undo step; its X binding, if it has one, is set to 22 as well.
+
 Canvas size is 24..8192 logical pixels per axis. Up to 128 custom controls and 1024 total drawing
 commands are accepted. Each control has a unique id, accessible name, tooltip, bounds, drawings,
 a gesture and optional X/Y parameter bindings. Bounds stay inside the canvas. Drawing positions
 are local to the canvas or the control. Layer order is array order; controls draw after layers.
 
-Drawing commands: rectangle, circle, line, path, arc, text, image and four-corner gradient.
+Drawing commands: rectangle, circle, line, path, arc, text, image, four-corner gradient and plot.
 Paths have at most 256 points; filled paths must be convex. Arc tessellation is bounded. Colours are RGBA byte quadruples.
+A plot is a curve from one expression: `samples` points (2..512) from `from` to `to` along x, each at the height `y`
+gives while the parameter `#x` reads its share of the way, 0 to 1; a part beyond `top` or `bottom` is not drawn, so the line ends at the edge rather than running along it. One expression
+read many times keeps a large response curve small in the file, and each parameter is looked up once per plot.
+`#time` reads the host's clock in seconds, and while a canvas's `animate_when` (a value expression) is above zero
+the host keeps drawing it, about 30 frames a second, so a drawing can move by itself.
 Text can append a parameter's current value with bounded decimal precision. Numeric drawing
 values can be literals or bounded expressions (parameter, normalized parameter, add, multiply, min, max,
 sine, cosine, exponential, natural logarithm, equality and oscillator waveforms). Expression depth is at most 16, with 32768 expression nodes per canvas;
@@ -220,12 +232,15 @@ widget are not resolved against the theme as widgets' are; they name the theme's
 accent (any alpha). A drawing coloured `[3, 0, 1]` … `[3, 0, 6]` (any alpha) takes a theme token: `--device-display`
 (a display's dark ground, default `#0a1117`), `--device-series-1` … `3` (a device's series, such as
 its bands; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`) `--device-highlight` (`#ffcf7a`) and `--device-spectrum` (`#3fc4e4`), from
-the theme's CSS custom property of that name or the default, with the drawing's alpha. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture A clicked handle takes the focus, and the arrow keys along its travel then move it 1 % of the way (0.1 % with Shift).
-`position`, one binding) draws a line where its parameter is, across its bounds (an X binding: a
-vertical line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 5 points
+the theme's CSS custom property of that name or the default, with the drawing's alpha. A handle's optional `offset` moves its bounds along its travel, in canvas units, for a value that starts where another ends. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture A clicked handle takes the focus, and the arrow keys along its travel then move it 1 % of the way (0.1 % with Shift).
+`position`) draws a line where its parameter is, across its bounds (an X binding: a
+vertical line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 7 points
 of it: dragging sets the value from the pointer as `position` does, a double click resets it, and a
 drag is one undo step. `span` (optional value expressions, canvas units) limits the line and where
-it is grabbed across the other axis. A `value` drawing (`{"kind": "value", "position": [x, y],
+it is grabbed across the other axis. With both an X and a Y binding it is a point: a dot at both
+values, dragged on both axes as one undo step, with the arrow keys along each. `"dot": true` draws a
+one-axis handle as a dot in the middle of its line, and `"hollow": true` as a smaller ring, for a dot that shapes something rather than placing it. `"relative": true` moves the value by how far the pointer moves (its bounds for the whole range) rather than to where it is, for a dot whose `offset` follows its own value, such as one that stays on a curve it bends. A binding's negative `drag_scale` runs a handle's
+travel the other way along that axis (a rate: further along is slower). A `value` drawing (`{"kind": "value", "position": [x, y],
 "value": expression, "prefix", "suffix", "decimals", "color", "size", "align"}`) writes a number an
 expression computes. A `{"preset": 0}` gesture applies the canvas's quick preset 0: a button with no bindings that sets
 every value the preset holds (`"presets": [{"name": "OTT", "values": {"amount": 0.7}}]`, at most
@@ -261,6 +276,7 @@ accepts `UiValue` numbers or expression objects. Colours are `[r,g,b,a]` in 0..2
 | `text` | `position`, `text`, `color`, `size` | `parameter` (none), `decimals` (0) |
 | `image` | `asset`, `rect` | `uv` ([0,0,1,1]), `tint` (white), `tile_size` (none), `fit` (`stretch`) |
 | `gradient` | `rect`, `colors` | Colours ordered top-left, top-right, bottom-right, bottom-left |
+| `plot` | `from`, `to`, `top`, `bottom`, `samples`, `y`, `color` | `width` (1); `y` reads `#x` |
 
 Stroke widths and rectangle corner radii are 0..128; text size is 8..48. Image `fit` also accepts
 `contain` and `cover`. `tile_size` overrides fit with repetition. `text.parameter` appends the

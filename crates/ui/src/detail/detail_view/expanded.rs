@@ -16,7 +16,7 @@ pub fn expanded(ctx: &egui::Context) -> Option<(TrackId, DeviceAt)> {
 }
 
 /// Opens the expanded panel of the device at `at` on `track`, closing any other.
-pub(super) fn open_expanded(ctx: &egui::Context, track: TrackId, at: DeviceAt) {
+pub(crate) fn open_expanded(ctx: &egui::Context, track: TrackId, at: DeviceAt) {
     ctx.data_mut(|d| d.insert_temp(expanded_id(), (track, at)));
 }
 
