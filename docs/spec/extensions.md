@@ -116,5 +116,6 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
   rather than through commands.
 - Commands of an extension's own outside the namespace its manifest declares.
 - Extensions that Suhina ships itself: what ships stays built from this tree and GPL-compatible.
-  The first is the Lua runner for surface programs (`midi-mapping.md` › Surface programs), which
-  ships with the app and is not installed with `extensions.add`.
+  The first is the Lua runner for surface programs (`midi-mapping.md` › Surface programs): the
+  runner binary ships with the app, and a surface script is added like any extension, its
+  manifest naming the runner it needs, which Suhina starts with the script.

@@ -192,21 +192,27 @@ mode and the note sources with this design, and would have been a second store i
 program Suhina ships itself: a **Lua runner**, a small separate binary built from this tree,
 started and supervised like the plug-in host ([ADR 0006](0006-plug-in-hosting.md)). No script
 shares a process with Suhina or with another script: each surface program is one runner process
-of its own, because a script is code whose stopping nobody can know in advance — a fault costs
+of its own, because a script is code whose stopping nobody can know in advance; a fault costs
 that program a restart, its ports back on the profile's mappings meanwhile (decision 10). The
+manifest belongs to the surface program, not the runner: a script's folder is an extension of
+its own ([ADR 0015](0015-extensions.md)), whose manifest names the script, the port patterns it
+claims and the runner it needs, and Suhina starts the shipped runner with that script; that is
+one program per extension over one shipped binary, which decides the Hosting question
+[ADR 0015](0015-extensions.md) › Not decided yet leaves open, for the runner. The
 implementation is `mlua` with Lua 5.4 vendored (MIT): the C sources ship in the tree, the build
-needs no system Lua, the interpreter runs only in the runner's processes, outside the audio
+needs no system Lua, and the interpreter runs only in the runner's processes, outside the audio
 path, with no first-party `unsafe` (rule 2 untouched); `cargo deny check` gates the dependency,
 and `piccolo`, pure Rust, is the route away if the C becomes a burden. A script reaches Suhina
 only through decision 10's protocol: the messages of the ports its manifest claims, each with
 the driver's timestamp it arrived with; send-backs leaving from a queue Suhina drains, with no
-answer the script waits for; and the commands, reading commands and subscriptions the window,
-CLI and MCP already use — one API to keep. Only that: the runner exposes a script no system I/O
-(`io`, `os` and `require` are not present), and an ordinary script failure stops at an error
-boundary and is reported, with the process restart covering the rest. "Suhina embeds no
-scripting language" stands: the language never runs in Suhina's process. Open while the
-surface-program protocol is open ([ADR 0015](0015-extensions.md) › Not decided yet: transport,
-version policy, trust): the script environment's exact shape and its caps.
+answer the script waits for; the same commands, reading commands and subscriptions the window,
+CLI and MCP use, one API to keep. The runner exposes a script no system I/O (`io`, `os` and
+`require` are not present) and preloads its own helpers, the usual modes, layers and session,
+mixer and device components, for scripts to compose instead of reimplement; an ordinary script
+failure stops at an error boundary and is reported, with the process restart covering the
+rest. "Suhina embeds no scripting language" stands: the language never runs in Suhina's
+process. Open while the surface-program protocol is open ([ADR 0015](0015-extensions.md) › Not
+decided yet: transport, version policy, trust): the helper library's exact shape and its caps.
 
 ## Consequences
 
