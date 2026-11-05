@@ -191,19 +191,24 @@ fn panels_follow_a_dragged_line_at_the_playhead() {
     let mut detail = build(&project, Some(TrackId(1)), None);
     detail.follow_automation_dragged(&project, 2.0, None);
     assert_eq!(balance(&detail), Some(0.0), "the project's line");
-    let other_track = Dragged { track: TrackId(2), key: key.clone(), points: points.clone() };
+    let other_track = Dragged { track: TrackId(2), key: key.clone(), points: points.clone(), at: None };
     let mut detail = build(&project, Some(TrackId(1)), None);
     detail.follow_automation_dragged(&project, 2.0, Some(&other_track));
     assert_eq!(balance(&detail), Some(0.0), "another track's drag");
     let elsewhere = LaneKey { device: Some(index + 1), param: "balance".into() };
-    let other_device = Dragged { track: TrackId(1), key: elsewhere, points: points.clone() };
+    let other_device = Dragged { track: TrackId(1), key: elsewhere, points: points.clone(), at: None };
     let mut detail = build(&project, Some(TrackId(1)), None);
     detail.follow_automation_dragged(&project, 2.0, Some(&other_device));
     assert_eq!(balance(&detail), Some(0.0), "another device's drag");
-    let held = Dragged { track: TrackId(1), key, points };
+    let held = Dragged { track: TrackId(1), key: key.clone(), points: points.clone(), at: None };
     let mut detail = build(&project, Some(TrackId(1)), None);
     detail.follow_automation_dragged(&project, 2.0, Some(&held));
     assert_eq!(balance(&detail), Some(-0.5));
+    // A range being painted: the knob shows the line at its moving edge, not at the playhead.
+    let painting = Dragged { track: TrackId(1), key, points, at: Some(4.0) };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&painting));
+    assert_eq!(balance(&detail), Some(-1.0));
 }
 
 #[test]

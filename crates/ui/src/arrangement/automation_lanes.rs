@@ -514,15 +514,18 @@ struct PointDrag {
     body: bool,
 }
 
-/// A lane whose points or curves are being dragged, or were let go of this frame: its track, its
-/// lane and its points where the drag puts them, as the lane draws them. The parameter's controls
-/// show what this line plays at the playhead while the drag lasts, not only once the command is in
-/// (#811).
+/// A lane whose points or curves are being dragged, or a range being painted on it, or either let
+/// go of this frame: its track, its lane and its points where the drag puts them, as the lane draws
+/// them. The parameter's controls show what this line plays at the playhead while the drag lasts,
+/// not only once the command is in, or at `at` (#811).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dragged {
     pub track: TrackId,
     pub key: LaneKey,
     pub points: Vec<AutomationPoint>,
+    /// The beat the controls show the line at instead of the playhead: the moving edge of a range
+    /// being painted, then its start until the play start marker has moved there.
+    pub at: Option<f64>,
 }
 
 /// How near the top or bottom of a lane's plot a point has to be to take the parameter's maximum
@@ -1711,6 +1714,11 @@ fn lane(
             if state.range.is_some() {
                 let beats = start.min(suhina_engine::MAX_START_BEAT);
                 actions.push(Action::new("transport.setStart", json!({ "beats": beats })));
+                // Until the marker is there, after this frame, the controls show the line there.
+                if param.enabled {
+                    let points = param.points.clone();
+                    state.drawn_drag = Some(Dragged { track, key: key.clone(), points, at: Some(beats) });
+                }
             }
         }
     }
@@ -1833,8 +1841,15 @@ fn lane(
     // A lane being dragged: the controls of its parameter follow the line as it is drawn (#811).
     let held = state.point_drag.as_ref().or(state.dropped.as_ref()).is_some_and(|d| d.track == track && &d.key == key)
         || state.curve_drag.as_ref().is_some_and(|d| d.track == track && &d.key == key);
-    if held && param.enabled {
-        state.drawn_drag = Some(Dragged { track, key: key.clone(), points: points.clone() });
+    // A range being painted: they show the line where its moving edge is, under the pointer.
+    let painting = state
+        .box_drag
+        .as_ref()
+        .filter(|d| !d.select && d.track == track && &d.key == key)
+        .map(|d| geometry.snap(geometry.beat_of(d.to.x), free).max(0.0));
+    if (held || painting.is_some()) && param.enabled {
+        let at = if held { None } else { painting };
+        state.drawn_drag = Some(Dragged { track, key: key.clone(), points: points.clone(), at });
     }
     let ink = if param.enabled { color(lanes.color) } else { theme::text_hint() };
     let line = envelope(&points, &param.scale, plot, geometry);

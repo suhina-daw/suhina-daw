@@ -147,8 +147,12 @@ fn headers_show_the_dragged_line_at_the_playhead() {
     // A point at beat 0 dragged to half the gain, one at beat 8 at full gain: at beat 4, the
     // playhead, the line is half way between them, not at the dragged point's value.
     let points = vec![AutomationPoint::new(0.0, 0.5), AutomationPoint::new(8.0, 1.0)];
-    let at =
-        |key: &str, points: &[AutomationPoint]| Dragged { track, key: LaneKey::mixer(key), points: points.to_vec() };
+    let at = |key: &str, points: &[AutomationPoint]| Dragged {
+        track,
+        key: LaneKey::mixer(key),
+        points: points.to_vec(),
+        at: None,
+    };
     timeline.beat = 4.0;
     timeline.follow_drag(Some(&at("volume", &points)));
     let halfway = lane(&timeline).0;
@@ -164,14 +168,23 @@ fn headers_show_the_dragged_line_at_the_playhead() {
         track,
         key: LaneKey { device: Some(0), param: "pan".into() },
         points: vec![AutomationPoint::new(0.0, 1.0)],
+        at: None,
     };
     timeline.follow_drag(Some(&device));
     assert_eq!(lane(&timeline).1, -1.0, "a device's lane is not the mixer's");
     assert!(timeline.main_volume_db.is_some());
-    let main =
-        Dragged { track: TrackId::MAIN, key: LaneKey::mixer("volume"), points: vec![AutomationPoint::new(0.0, 2.0)] };
+    let main = Dragged {
+        track: TrackId::MAIN,
+        key: LaneKey::mixer("volume"),
+        points: vec![AutomationPoint::new(0.0, 2.0)],
+        at: None,
+    };
     timeline.follow_drag(Some(&main));
     assert!((timeline.main_volume_db.unwrap() - 6.02).abs() < 0.01);
+    // A range being painted: the line at its moving edge, beat 8, not at the playhead (beat 0).
+    let painting = Dragged { at: Some(8.0), ..at("volume", &points) };
+    timeline.follow_drag(Some(&painting));
+    assert!(lane(&timeline).0.abs() < 1e-9, "at the range's edge: {}", lane(&timeline).0);
 }
 
 #[test]

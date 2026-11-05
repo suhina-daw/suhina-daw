@@ -557,9 +557,9 @@ impl Detail {
                             }),
                     };
                     let Some(scale) = scale else { continue };
-                    let points = match held {
-                        Some(held) if held.key.param == lane.param => &held.points,
-                        _ => &lane.points,
+                    let (points, beat) = match held {
+                        Some(held) if held.key.param == lane.param => (&held.points, held.at.unwrap_or(beat)),
+                        _ => (&lane.points, beat),
                     };
                     let Some(value) = suhina_engine::model::automation::value_at(points, beat, scale.stepped(), &scale)
                     else {

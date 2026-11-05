@@ -176,7 +176,9 @@ While an enabled lane's points or curves are dragged in the Arrangement view, th
 volume or pan, Main's volume and a device's knob in the detail view show the value of the line as
 it is dragged at the playhead, so a control moves while the drag changes the line where the
 playhead is, not only once the point is let go of (#811). A drag that changes the line elsewhere
-leaves the control as it is. The mixer strips of the Session view are not drawn beside the lanes
+leaves the control as it is. While a time range is painted on a lane, the same controls show the
+line's value at the range's moving edge, under the pointer, and once it is let go of the value at
+its start, where the play start marker moves. The mixer strips of the Session view are not drawn beside the lanes
 and follow once the change is in.
 
 ## How the engine plays them
@@ -351,7 +353,7 @@ the value set on the mixer or the device. Editing (every edit is one undo step):
 | The lanes' menus: **Snap to grid** and **Grid** | Snap to grid off (on by default; the window's choice, not saved) places points and ranges where the pointer is, as Alt does; Grid sets the Arrangement's grid ([arrangement editing](arrangement-editing.md#the-grid)) |
 | Click a point | selects it; Shift or Ctrl adds it to the selection or takes it out. Selecting a clip ends a selection of points |
 | Press on the line and drag | the press runs `automation.addPoint` at once where the guide showed (on the grid, Alt: free), and the drag moves that point with the pointer (`automation.movePoint` when the button comes up), the envelope following it |
-| Drag on the lane's upper half away from the line (the pointer is the text cursor there) | paints a time range over the lane's whole height, its ends on the grid (Alt, Option on macOS: free), and selects the points in it. When it is let go of, the play start marker moves to the range's start (`transport.setStart`), as a time selection on the clips' lanes moves it, so the parameter's controls show the value there and Play starts there. A click on the lane or a point, a clip or a track header ends it |
+| Drag on the lane's upper half away from the line (the pointer is the text cursor there) | paints a time range over the lane's whole height, its ends on the grid (Alt, Option on macOS: free), and selects the points in it. While it is painted, the parameter's controls show the line's value at the range's moving edge, under the pointer. When it is let go of, the play start marker moves to the range's start (`transport.setStart`), as a time selection on the clips' lanes moves it, so the controls show the value there and Play starts there. A click on the lane or a point, a clip or a track header ends it |
 | Drag on the lane's lower half away from the line | draws a box that selects the points in it, as the clips' lanes select with a box from below; no range |
 | Ctrl+C, Ctrl+X, Ctrl+D, Delete with a range painted | `automation.copy`; `automation.copy` and `automation.deleteRange`; `automation.duplicate`, the range moving onto the copy so the next Ctrl+D goes on; `automation.deleteRange`. They act on the range before anything else that is selected |
 | Ctrl+C, Ctrl+X with points selected and no range | `automation.copy` with `points`; Ctrl+X also `automation.deletePoints` |

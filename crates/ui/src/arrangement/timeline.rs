@@ -535,12 +535,13 @@ impl Timeline {
     }
 
     /// While a volume or pan lane is dragged, its header shows what the line as it is dragged
-    /// plays at the playhead, before the command is in (#811). Called after
+    /// plays at the playhead, before the command is in; while a range is painted on it, the line's
+    /// value at the range's moving edge (#811). Called after
     /// [`Timeline::follow_automation`].
     pub fn follow_drag(&mut self, dragged: Option<&crate::arrangement::automation_lanes::Dragged>) {
         use suhina_engine::model::automation::{PAN, Plain, VOLUME, VolumeTaper, value_at};
         let Some(dragged) = dragged.filter(|d| d.key.device.is_none()) else { return };
-        let beat = self.beat;
+        let beat = dragged.at.unwrap_or(self.beat);
         if dragged.key.param == VOLUME {
             let Some(db) = value_at(&dragged.points, beat, false, &VolumeTaper).map(gain_to_db) else { return };
             if dragged.track == TrackId::MAIN {
