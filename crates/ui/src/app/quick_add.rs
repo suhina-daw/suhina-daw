@@ -426,8 +426,16 @@ impl App {
         let look =
             floating_list::Look { width: WIDTH, row_height: 34.0, visible_rows: VISIBLE_ROWS, fixed_height: true };
         let picked = (!rows.is_empty()).then_some(palette.picked);
-        let shown =
-            floating_list::show(ctx, egui::Id::unique("quick-add"), look, heading, footer, &rows, picked, down + up > 0);
+        let shown = floating_list::show(
+            ctx,
+            egui::Id::unique("quick-add"),
+            look,
+            heading,
+            footer,
+            &rows,
+            picked,
+            down + up > 0,
+        );
         // A button changed what is listed: the lit row goes back to the top.
         if filter != self.quick_add_filter {
             palette.picked = 0;

@@ -302,7 +302,7 @@ pub(crate) fn follow_preset(session: &mut Session, params: &Value, result: &Valu
     let (Some(preset), Some(id)) = (result["preset"].as_str(), result["id"].as_str()) else { return };
     let Some(info) = suhina_device_registry::info(id).filter(|i| i.role == Role::Instrument) else { return };
     let Ok(track) = crate::commands::track_id(&session.project, params) else { return };
-    let (from, to) = (suhina_model::names::new_track_name(info.name), suhina_model::names::new_track_name(preset));
+    let (from, to) = (suhina_model::names::new_track_name(&info.name), suhina_model::names::new_track_name(preset));
     if preset.trim().is_empty() || !session.project.track(track).is_some_and(|t| t.name == from) {
         return;
     }

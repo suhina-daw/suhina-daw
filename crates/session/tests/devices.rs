@@ -462,7 +462,7 @@ fn a_track_added_with_a_plug_in_takes_its_name_by_any_of_its_names() {
     let spec = env.catalog.plugins().find(|p| p.name == "Synth").map(|p| p.spec()).unwrap();
     for device in ["com.vendor.synth", "Synth", spec.as_str()] {
         let mut session = Session::new(project());
-        session.set_plugin_env(plugin_env());
+        session.rack_mut().set_env(plugin_env());
         let added = run(&mut session, "track.add", json!({ "device": device })).unwrap();
         assert_eq!((added["name"].clone(), added["kind"].clone()), (json!("Synth"), json!("midi")), "{device}");
     }
