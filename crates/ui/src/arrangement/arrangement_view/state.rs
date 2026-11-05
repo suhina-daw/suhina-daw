@@ -277,6 +277,9 @@ pub struct ArrangementViewState {
     /// A clip dropped on another track this frame: drawn there until the project has moved it,
     /// not back on its own track for a frame (#916).
     pub(super) landing: Option<ClipDrag>,
+    /// The clip a press is held on before the pointer has moved enough for the drag to be
+    /// decided: the view may switch under the held press (Tab), and the press then carries it.
+    pub(super) pressed_clip: Option<(TrackId, ClipId)>,
     /// The empty space under the tracks this frame, top to bottom: a clip dropped there goes to
     /// a new track.
     pub(super) below_tracks: Option<(f32, f32)>,
@@ -437,6 +440,7 @@ impl Default for ArrangementViewState {
             menu_beat: None,
             clip_drag: None,
             landing: None,
+            pressed_clip: None,
             below_tracks: None,
             value_drag: None,
             gain_drag: None,
@@ -743,14 +747,22 @@ impl ArrangementViewState {
         }
     }
 
-    /// The clip being dragged with the mouse, if any: its track and index.
+    /// The clip being dragged with the mouse — or the one a press is held on, before the
+    /// pointer has moved enough for the drag to be decided: its track and index.
     pub fn dragged_clip(&self) -> Option<(TrackId, ClipId)> {
-        self.clip_drag.map(|d| (d.track, d.clip))
+        self.clip_drag.map(|d| (d.track, d.clip)).or(self.pressed_clip)
     }
 
     /// Ends a clip's drag without moving it, as when the window carries it to the other view.
     pub fn cancel_clip_drag(&mut self) {
         self.clip_drag = None;
+        self.pressed_clip = None;
+    }
+
+    /// Forgets a press that was held on a clip whose widget has since gone away (scrolled out
+    /// before the release), so it can carry nothing. A live drag is untouched.
+    pub fn clear_pressed_clip(&mut self) {
+        self.pressed_clip = None;
     }
 
     /// Selects a clip: its track and id.

@@ -142,6 +142,137 @@ fn tabs_switch_keep_each_projects_edits_and_close() {
     assert!(harness.query_by_label("Tab Untitled 1").is_none(), "one project shows no tabs");
 }
 
+/// A carry names a slot in the project it was made in: switching projects while it is held lets
+/// it go, so its release never copies the last project's clip into the new one.
+#[test]
+fn switching_project_while_a_clip_is_carried_lets_it_go() {
+    let mut harness = two_projects();
+    // The active one is the second. Press a slot's clip and Tab: the carry is live.
+    let from = harness.get_by_label("Select Walk on Bass (scene 2)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Arrangement);
+    // Ctrl+Tab switches to the first project while the press is still held. The view is the
+    // one shown, so the release probes the lanes of the project on screen.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Tab);
+    harness.run();
+    let ids = harness.state().projects().ids();
+    assert_eq!(harness.state().projects().active(), ids.first().copied(), "the first project is active");
+    assert_eq!(harness.state().view(), View::Arrangement);
+    let bass_before: Vec<(f64, f64)> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+        .unwrap_or_default();
+    // Bars 1 to 8 of Bass are empty; Root starts at bar 9, 8 points a beat.
+    let root = harness.get_by_label("Clip Root on Bass at bar 9").rect();
+    let to = egui::pos2(root.left() - 16.0 * 8.0, root.center().y);
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+    let bass: Vec<(f64, f64)> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[1].clips.iter().map(|c| (c.start, c.length)).collect())
+        .unwrap_or_default();
+    assert_eq!(bass, bass_before, "the switch let the carry go: nothing is copied");
+    assert!(!matches!(harness.state().status(), Status::Error(_)), "{:?}", harness.state().status());
+}
+
+/// An arrangement clip's drag held through a project switch lets go with the switch: its view
+/// state, brought back with the project later, carries nothing into the Launcher view
+/// (CodeRabbit review).
+#[test]
+fn switching_project_during_an_arrangement_clip_drag_cancels_it() {
+    let mut harness = two_projects();
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_top() + egui::vec2(0.0, 6.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(from + egui::vec2(10.0, 0.0));
+    harness.step();
+    // Ctrl+Tab to the first project with the drag held, and the button let go there.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Tab);
+    harness.run();
+    let ids = harness.state().projects().ids();
+    assert_eq!(harness.state().projects().active(), ids.first().copied(), "the first project is active");
+    harness.drop_at(from + egui::vec2(10.0, 0.0));
+    harness.run();
+    harness.get_by_label("Launcher view").click();
+    harness.run();
+    // Back to the second project with the pointer over an empty slot, in the Launcher view.
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Tab);
+    harness.run();
+    assert_eq!(harness.state().projects().active(), ids.get(1).copied(), "the second project is active");
+    let drums_slot = |h: &Harness<'static, App>| {
+        h.state().session().and_then(|s| {
+            let p = s.project();
+            let clip = p.launcher.columns.first()?.slots.get(4)?.clip.as_ref()?;
+            p.content(clip.content).map(|c| c.name.clone())
+        })
+    };
+    assert_eq!(drums_slot(&harness), None, "the old drag carried nothing");
+}
+
+/// A device drag that starts on the frame a project switch is taken up names a device of the
+/// project being left: it lets go with the switch, and moves nothing in the new project
+/// (CodeRabbit review).
+#[test]
+fn a_device_drag_started_on_a_project_switch_lets_it_go() {
+    // Two projects with a device on Drums.
+    let mut app = App::new();
+    app.open_project(Session::new(project_with_a_device()), &[], OpenAs::NewTab);
+    app.open_project(Session::new(project_with_a_device()), &[], OpenAs::NewTab);
+    let mut harness = window(app);
+    let chains = |h: &Harness<'static, App>| -> Vec<Vec<String>> {
+        let Some(s) = h.state().session() else { return Vec::new() };
+        let p = s.project();
+        p.tracks
+            .iter()
+            .filter_map(|t| p.channel(t.channel?))
+            .map(|c| c.devices.iter().map(|d| d.name.clone()).collect())
+            .collect()
+    };
+    let (drums, index) = {
+        let p = harness.state().session().map(|s| s.project().clone()).unwrap_or_default();
+        let track = p.tracks.iter().find(|t| t.name == "Drums").expect("Drums");
+        let channel = track.channel.and_then(|c| p.channel(c));
+        (track.id, channel.map_or(0, |c| c.devices.len().saturating_sub(1)))
+    };
+    let to = harness.get_by_label("Track Bass").rect().center();
+    harness.hover_at(to);
+    harness.run();
+    let ids = harness.state().projects().ids();
+    let first = ids.first().copied().expect("two projects");
+    let before = {
+        let p = harness.state().projects().get(first).map(|s| s.project().clone()).unwrap_or_default();
+        p.tracks
+            .iter()
+            .filter_map(|t| p.channel(t.channel?))
+            .map(|c| c.devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    };
+    // The drag's start and the switch reach the window on the same frame.
+    let ctx = harness.ctx.clone();
+    suhina_ui::interaction::drop::start_device_carry(&ctx, drums, index);
+    let _ = harness.state_mut().projects_mut().switch(first);
+    harness.step();
+    harness.run();
+    assert_eq!(harness.state().projects().active(), Some(first));
+    assert_eq!(chains(&harness), before, "the drag of the last project's device moved nothing here");
+}
+
 #[test]
 fn opening_while_a_project_is_open_asks_and_can_remember() {
     let mut harness = window(demo_app());

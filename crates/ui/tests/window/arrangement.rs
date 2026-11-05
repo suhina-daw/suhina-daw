@@ -1833,6 +1833,47 @@ fn the_arrangement_toolbar_tools_act_on_clips_and_its_keys_choose_them() {
     assert_eq!(clips(&harness), before - 1);
 }
 
+/// The Range tool paints a time selection from anywhere on a clip — its top half included —
+/// and the clip stays (#991).
+#[test]
+fn the_range_tool_selects_time_from_anywhere_on_a_clip() {
+    let mut harness = arrangement_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.arrangement_toolbar = true;
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    // A click on a lane gives the view the focus; 2 chooses Range.
+    harness.get_by_label("Lane Drums").click();
+    harness.run();
+    harness.key_press(Key::Num2);
+    harness.run();
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    // High on the clip's body: the Range tool does not need the lower half. The whole clip is
+    // in view (the one at bar 29 sits at the window's edge and vanishes under a setting's
+    // repaint).
+    let from = egui::pos2(clip.left() + 20.0, clip.top() + 4.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    let to = egui::pos2(clip.left() + 120.0, from.y);
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+    assert!(
+        harness.state().arrangement().time_selection().is_some(),
+        "the Range tool selected time from the clip's top half"
+    );
+    let starts: Vec<f64> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.lanes[0].clips.iter().map(|c| c.start).collect())
+        .unwrap_or_default();
+    assert_eq!(starts, [0.0, 64.0, 112.0, 128.0], "the clip was not moved by the drag");
+}
+
 /// The line under a take lane makes that lane taller, the others staying as they are; a
 /// double-click puts it back (#1078).
 #[test]
