@@ -267,8 +267,15 @@ Let go, it is
 
 With Ctrl and Alt held (Settings › Arrangement › *Ctrl+Alt-drag on an edge stretches audio*, on by
 default) an
-audio clip's edge stretches its audio to the new length, its pitch kept: `clip.stretch {track, index, start?, end?}` scales the content's warp markers (an unwarped
-clip is warped first) and gives the clip a content of its own when another clip plays the same.
+audio clip's edge stretches its audio to the new length, its pitch kept: `clip.stretch {track, index, start?, end?}` scales the clip's warp markers and its gain
+envelope (an unwarped clip is warped first) and gives the clip a content of its own when another
+clip plays the same, as the content's length in beats changes.
+
+**Each audio clip is its own.** Its gain, gain envelope, transpose, warp and warp markers are the
+clip's: a duplicate, a pasted copy and a split's parts start with the same and change apart, and
+the gain field on a clip changes that clip only ([clip panel](clip-panel.md),
+[ADR 0035](../decisions/0035-clip-gain-envelope.md)). The gain envelope is drawn on the clip's
+waveform while the clip panel's Envelope switch is on (› Gain envelope there).
 
 A time selection over a clip and empty time, consolidated (Ctrl+J), becomes one clip over the
 whole span, its empty part silent.
@@ -383,13 +390,14 @@ the beginning), which must be inside the clip (not on its edges). It is one undo
 both parts' indices (`first`, `second`).
 
 - **Both parts play the same content** (one content in the pool, as before the cut), so editing
-  the notes or the audio of one changes the other, as for a duplicated clip.
+  the notes of one changes the other, as for a duplicated clip; the audio's gain, envelope, pitch
+  and warp are each part's own (#742), and each part plays its own stretch of the envelope.
 - **The second part carries on from where the clip was at the cut:** its start marker
   (`offset`) is the content position the clip had reached there, following the loop (a clip
   whose start marker is at or past the loop end starts at the loop start) and, for a transposed
   audio clip that is not warped, the faster or slower speed it moves through its file at
-  (`2^(transpose / 12)` content beats per beat). Loop, warp markers, warp mode, gain and
-  transpose are the content's or the clip's, and stay as they are.
+  (`2^(transpose / 12)` content beats per beat). Loop, warp markers, warp mode, gain, envelope and
+  transpose are the clip's, and both parts keep them as they were.
 - **Fades:** the first part keeps the fade-in and the second the fade-out, each with its shape
   and curve; there is no fade at the cut (a zero-length fade, so only the engine's 2 ms click
   guard is there). A fade longer than its part shrinks to fit it, as when a clip is shortened.

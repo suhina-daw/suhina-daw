@@ -1,6 +1,6 @@
 ---
 description: Functional spec of the audio clip's panel in the detail area (the clip column): its groups (Clip, Audio, Gain, Pitch), each control, its range and its command; typing numbers; Set to the playhead; the clip's tempo with its source, halve and double; the gain fader, the pitch knob and cents; the gain envelope on the clip's waveform; and the per-clip audio state they edit
-read_when: clip panel, clip column, audio clip properties, clip gain, gain fader, clip fader, pitch knob, transpose, cents, clip tempo, BPM of a clip, tempo of a loop, halve tempo, double tempo, find tempo, tempo source, metadata tempo, tempo from name, detected tempo, warp switch, warp mode, stretch mode, start marker, end marker, loop position, loop length, Set to playhead, type a number, double-click to type, gain envelope, clip envelope, envelope points, clip.setEnvelope, clip.setTempo, clip.findTempo, clip.setGain, clip.setAudio, per-clip gain, independent clips, grey box in the clip column
+read_when: clip panel, clip column, audio clip properties, gain fader, pitch knob, cents, clip tempo, halve or double tempo, find tempo, tempo source, Set to playhead, type a number, gain envelope, clip.setEnvelope, clip.setTempo, clip.findTempo, per-clip gain
 type: spec
 status: draft
 last_verified: 2026-11-05
@@ -8,7 +8,7 @@ covers:
   - crates/ui/src/detail/detail_view/clip_properties.rs
   - crates/ui/src/detail/detail_view/clip_panel.rs
   - crates/ui/src/detail/detail_view/model.rs
-  - crates/ui/src/arrangement/arrangement_view/clip_envelope.rs
+  - crates/ui/src/arrangement/envelope.rs
   - crates/session/src/clip_audio.rs
   - crates/model/src/clip_audio.rs
 ---
@@ -46,8 +46,10 @@ whole, as before.
 | | **Envelope**: a switch that shows the clip's gain envelope on its waveform to edit | `clip.setEnvelope` |
 | **Pitch** | A **knob** in semitones with its readout, and a **Cents** field | `clip.setAudio` (`transpose`) |
 
-The Gain and Pitch groups sit side by side under the Audio group when the column is wide enough
-(180 points or more), one under the other otherwise.
+In a row (the detail area under the views) the panel has three parts side by side, each 184 points
+wide: the Clip group; the Audio group; the Gain and Pitch groups beside each other, the fader as tall
+as the room under them allows. With the detail area stacked at the side, the groups follow one under
+another.
 
 The title's name is renamed by a double-click on it (a text field; Enter keeps it, Escape leaves
 it), through `clip.rename`.
@@ -68,7 +70,7 @@ semitones). Their readouts are fields, so the gain and the pitch can be typed.
 
 | Value | Range | Steps (drag, arrows) | Shown |
 |---|---|---|---|
-| Gain | −70 dB to +24 dB (below −70 is silence, shown −inf) | 0.1 dB | `-6.0 dB` |
+| Gain | −70 dB to +24 dB (below −70 is silence, shown −inf); on the fader −24 … +24 dB take its upper three quarters, 0 dB at 62.5 % | 0.1 dB | `-6.0 dB` |
 | Semitones | −48 to +48 | 1 semitone | `+7 st` |
 | Cents | −50 to +50 | 1 cent | `+12 ct` |
 | Tempo | 20 to 999 BPM | 0.1 BPM | `96.00 BPM` |
@@ -103,7 +105,7 @@ remembers which (`docs/spec/browser.md` › Warping).
   the clip gets longer; its start stays. Warp turns on. An arrangement clip made longer replaces
   what it now covers, as a stretched clip does.
 - **÷2** and **×2** halve and double it, for the common half- or double-time miss.
-- **Find** (the small menu button after the source) lists what each source says, `Metadata 96`,
+- **Find** (the small button after the source) lists what each source says, `Metadata 96`,
   `File name 96`, `Detected 95.9`, a source that finds nothing greyed; picking one sets the tempo
   with that source (`clip.findTempo`, then `clip.setTempo`).
 
@@ -137,8 +139,9 @@ envelope is set by command.
 
 Before #1190 every editable value of the column (Loop to Transpose) was filled with the control
 background over the whole row's height, so the rows touched and read as one grey box over the
-column (#1190). Fields now keep a gap of 3 points above and below, and the switch, drop-down and
-Set controls are drawn as their own controls, so no two touch.
+column (#1190). Fields now keep a gap of 2 points above and below inside their row, so two fields one under
+another are 4 points apart, and the switch, drop-down and Set controls are drawn as their own
+controls.
 
 ## Commands
 
