@@ -1706,6 +1706,12 @@ fn lane(
                 .collect();
             state.selection = (!points.is_empty()).then(|| Selection { track, key: key.clone(), points });
             state.range = (end - start > 1e-6).then(|| LaneRange { track, key: key.clone(), start, end });
+            // A range painted moves the play start marker to its start, as a time selection does
+            // (#937): the parameter's controls show the value there, and Play starts there (#811).
+            if state.range.is_some() {
+                let beats = start.min(suhina_engine::MAX_START_BEAT);
+                actions.push(Action::new("transport.setStart", json!({ "beats": beats })));
+            }
         }
     }
     // The lane's menu: shapes inserted into the painted range, or into the bar under the pointer.
