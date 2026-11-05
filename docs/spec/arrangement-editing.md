@@ -407,9 +407,9 @@ without the audio before it, very slightly for its first moments, as when playba
 (Play position).
 
 In the Arrangement view **Ctrl+E** splits the selected clip where its body was clicked (the
-play start marker that click put there, on the grid; Alt: free), playing or stopped, and at the
-playhead only when nothing inside the clip was clicked (#1186); nothing happens, with a hint in
-the status bar, when neither is inside it. A clip's right-click
+play start marker that click put there, on the grid; Alt: free), playing or stopped, never at
+the playhead (#1186); when the clip was picked without a click inside it (by its name bar, a
+rectangle, Ctrl+A), nothing happens and a hint in the status bar asks for one. A clip's right-click
 menu has **Split here**, which cuts where the clip was right-clicked, on the grid clips snap to
 at that zoom (Alt held while right-clicking: exactly there).
 
