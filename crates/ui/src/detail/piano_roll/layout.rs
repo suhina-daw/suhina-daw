@@ -8,6 +8,8 @@ use super::*;
 /// Where things are this frame.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Layout {
+    /// The scale strip left of the keys.
+    pub(super) strip: Rect,
     pub(super) keys: Rect,
     pub(super) ruler: Rect,
     pub(super) grid: Rect,
@@ -100,6 +102,29 @@ pub fn move_delta(raw: f64, raw_keys: i32, moved: &[Note], grid: TimelineGrid, f
     (if beats.is_finite() { beats } else { 0.0 }, keys)
 }
 
+/// How far an arrow key moves `moved`: the first of them to the next grid line, or with `earlier`
+/// the one before, and the rest with it, so notes off the grid come onto it and then go a line at a
+/// time. A step when the grid does not snap.
+pub fn key_step(moved: &[Note], grid: TimelineGrid, earlier: bool) -> f64 {
+    let first = moved.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
+    if !grid.snaps || !first.is_finite() {
+        return if earlier { -grid.step } else { grid.step };
+    }
+    if earlier { grid.previous_line(first) - first } else { grid.next_line(first) - first }
+}
+
+/// What a selected note is filled with: `accent`, or `plain` where a note of `color` would look much
+/// the same in the accent, so a selected note always stands out from the others.
+pub fn selected_note_color(color: Color32, accent: Color32, plain: Color32) -> Color32 {
+    let [r, g, b, _] = color.to_array();
+    let [ar, ag, ab, _] = accent.to_array();
+    let apart = |a: u8, b: u8| (i32::from(a) - i32::from(b)).pow(2);
+    if apart(r, ar) + apart(g, ag) + apart(b, ab) < NEAR_COLOR * NEAR_COLOR { plain } else { accent }
+}
+
+/// How far apart two colours are at least, in steps of red, green and blue, to tell them apart at a glance.
+const NEAR_COLOR: i32 = 120;
+
 /// How much a drag of the grabbed note's right end by `raw` beats changes the selection's
 /// lengths: the end on the grid unless `free`, and no note shorter than [`MIN_LENGTH`].
 pub fn resize_by(raw: f64, grabbed: &Note, resized: &[Note], grid: TimelineGrid, free: bool) -> f64 {
@@ -171,7 +196,8 @@ pub(super) fn round_beat(beat: f64) -> f64 {
 /// than five key rows of `key_height` are left, and left out when that leaves it under 12 px
 /// (› Layout in `docs/spec/ui-clip-editor.md`).
 pub(super) fn velocity_lane_height(room: f32, key_height: f32, wanted: Option<f32>) -> f32 {
-    let most = room - LEAST_KEY_ROWS * key_height;
+    // At most the default row's height: tall rows are a zoom, and the lane stays through it.
+    let most = room - LEAST_KEY_ROWS * key_height.min(DEFAULT_KEY_HEIGHT);
     let lane = wanted.unwrap_or(VELOCITY_LANE.min(room * 0.3)).min(most);
     if lane.is_finite() && lane >= LEAST_LANE { lane } else { 0.0 }
 }

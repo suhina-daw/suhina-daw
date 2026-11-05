@@ -14,8 +14,8 @@ use crate::settings::settings_view::{Entry, Page, block, row};
 use crate::settings::track_sizes::TrackSize;
 use crate::settings::view_settings::{DetailLayout, FolderDrop, WaveformColour};
 use crate::settings::{
-    AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, OnOpen, PianoRollTop, PlayFrom, Side, StopReturn,
-    ToolbarSize, WarpMode,
+    AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, OnOpen, PianoKeyNames, PianoKeyStyle,
+    PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
 };
 use suhina_update::Channel;
 
@@ -341,6 +341,25 @@ pub(crate) static ROWS: &[Entry] = &[
         &["replace_clip"],
         |cx, r| cx.on_off(r, |s| &mut s.view.replace_clip),
     ),
+    row(
+        Page::Arrangement,
+        "Take lanes",
+        "Take crossfade",
+        "How long parts copied from take lanes fade into each other where they meet",
+        &["take_crossfade"],
+        |cx, r| {
+            cx.choose(r, &[("10 ms", 10), ("20 ms", 20), ("40 ms", 40), ("Custom", 0)], |s| &mut s.view.take_crossfade)
+        },
+    ),
+    row(
+        Page::Arrangement,
+        "Take lanes",
+        "Custom take crossfade",
+        "The length of the crossfade when Take crossfade is Custom",
+        &["take_crossfade_custom"],
+        |cx, r| cx.take_crossfade_custom(r),
+    )
+    .when(|s| s.view.take_crossfade == 0),
     row(
         Page::Arrangement,
         "Time and play",
@@ -695,10 +714,32 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::ClipEditor,
         "Piano roll",
-        "Moved notes replace notes",
-        "A note moved onto another at the same pitch and time takes its place",
+        "Allow stacked notes",
+        "Notes of one pitch may overlap, instead of a new note replacing those under it",
         &["notes_replace"],
-        |cx, r| cx.on_off(r, |s| &mut s.view.notes_replace),
+        |cx, r| cx.off_on(r, |s| &mut s.view.notes_replace),
+    ),
+    row(
+        Page::ClipEditor,
+        "Piano roll",
+        "Piano key style",
+        "How the piano roll's keys are drawn, when the theme does not set them",
+        &["piano_key_style"],
+        |cx, r| {
+            let options: Vec<(&str, PianoKeyStyle)> = PianoKeyStyle::ALL.iter().map(|s| (s.name(), *s)).collect();
+            cx.choose(r, &options, |s| &mut s.piano_key_style);
+        },
+    ),
+    row(
+        Page::ClipEditor,
+        "Piano roll",
+        "Piano key names",
+        "Which of the piano roll's keys show their names",
+        &["piano_key_names"],
+        |cx, r| {
+            let options: Vec<(&str, PianoKeyNames)> = PianoKeyNames::ALL.iter().map(|n| (n.name(), *n)).collect();
+            cx.choose(r, &options, |s| &mut s.piano_key_names);
+        },
     ),
     row(
         Page::Browser,

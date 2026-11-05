@@ -3,7 +3,7 @@ description: How waveforms are computed and drawn in clips, the browser's previe
 read_when: waveform, peaks, RMS, waveform drawing, zoom, samples, stereo lanes, dB scale, clip waveform, preview waveform, sample map tooltip, frame budget
 type: spec
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-11-02
 covers:
   - crates/ui/src/kit/waveform.rs
   - crates/ui/src/kit/waveform/tests.rs
@@ -95,6 +95,7 @@ on, at 255 frames a column, where columns read the samples. Summarising the file
 
 - `src/kit/waveform/tests.rs`: levels and reading per lane, odd files, the dB scale, geometry at
   several zooms against text snapshots in `crates/ui/tests/golden/waveform-*.txt`
-  (`SUHINA_BLESS=1` rewrites them), and the frame budget.
+  (`SUHINA_BLESS=1` rewrites them), and the frame budget (ignored, for an idle machine:
+  `cargo test -p suhina-ui --release --lib a_ten_minute_file -- --ignored --nocapture`).
 - `tests/waveforms.rs` (ignored, needs a GPU): renders the waveform at several zooms to
   `target/ui-snapshots/waveforms.png` for looking at.

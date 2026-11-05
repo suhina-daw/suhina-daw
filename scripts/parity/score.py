@@ -123,7 +123,7 @@ CHAPTERS = [
      "transport.followTempoMap or the next start); the tempo field typed or dragged to a thousandth of a BPM by the place grabbed, clips following while it moves. Missing tap tempo, tempo follower/leader, "
      "auto-warp of long samples, warp-marker editing, quantise audio, drawing the tempo as an "
      "automation envelope."),
-    (10, "Editing MIDI", 41, 0.44, "started",
+    (10, "Editing MIDI", 41, 0.45, "started",
      "A first piano roll draws, selects (click, rectangle, Ctrl+A), moves, resizes and deletes notes "
      "on the grid (Alt off-grid), by mouse or by arrow keys, with Select, Draw, Paint, Erase, Slice and Mute "
      "tools (keys 1 to 6, the wheel with the right button held steps through them) and "
@@ -199,10 +199,15 @@ CHAPTERS = [
      "folded away from a button or a menu; a click copies a take's clip and a drag a part of it onto the track "
      "(take.comp), the parts named and coloured after their takes; Alt+Up/Down swap a part's take, the cut "
      "between two parts dragged (take.moveCut), Recolor lane and Recolor selected take, splits reaching the "
-     "takes, Delete take, take pieces picked with Ctrl and deleted; a take lane soloed in place of its track, "
+     "takes, Delete take, take pieces picked with Ctrl and deleted; an area painted across take lanes with "
+     "Ctrl and deleted or cut (take.deleteRange, take.cutRange), pieces moved along the timeline "
+     "(take.movePieces), a piece's edges dragged to bring the recording back (take.trimPiece), crossfades "
+     "shown and set at their cuts (take.setCrossfade) with their default in Settings, a moved part taking "
+     "its takes along, lanes added by hand (take.add), pieces dragged between lanes, lanes picked and deleted "
+     "from their headers and kept when emptied, each lane "
+     "sized and zoomed like a track, lanes appearing when the recording stops; a take lane soloed in place of its track, "
      "put whole on the track, unused takes deleted; short crossfades where parts of two takes meet; clips "
-     "not stacked over takes; saved with the project. Missing take lanes made by hand, renaming and "
-     "reordering them."),
+     "not stacked over takes; saved with the project. Missing renaming and reordering take lanes."),
     (22, "Stem Separation", 8, 0.00, "planned",
      "Roadmap item (Demucs candidate, weights unaudited). The pipeline around a model (chunking, "
      "resampling) exists in crates/separation with a test backend; no model and nothing a user "
