@@ -186,10 +186,13 @@ impl StretchWorker {
         let passes: &[u64] = if due_only { &[urgent] } else { &[urgent, horizon] };
         for &pass in passes {
             for (index, writer) in self.writers.iter_mut().enumerate() {
-                if writer.start > pass || writer.start.saturating_add(writer.length) < playhead {
+                let Some(jump) = self.shared.jumps.get(index) else { continue };
+                // A voice behind the playhead is done, unless it was moved for a loop's wrap: it
+                // has a jump to follow, or frames to render from where it jumped to.
+                let moved = jump.requested.load(Ordering::Acquire) != writer.jumped || writer.produced < writer.length;
+                if writer.start > pass || (writer.start.saturating_add(writer.length) < playhead && !moved) {
                     continue;
                 }
-                let Some(jump) = self.shared.jumps.get(index) else { continue };
                 if !follow_jump(writer, jump) {
                     continue;
                 }
@@ -404,6 +407,9 @@ impl Drop for StretchThread {
 pub(crate) struct AheadReader {
     readers: Vec<Reader>,
     shared: Arc<Shared>,
+    /// A ring's length in frames: how long before a loop's wrap the voices at its start are
+    /// moved there.
+    ring_frames: u64,
     /// The worker, while no thread has taken it: the reader then fills the rings itself.
     inline: Option<StretchWorker>,
 }
@@ -433,7 +439,7 @@ impl AheadReader {
             scratch: vec![0.0; BLOCK_FRAMES * 2],
             ring: frames as u64,
         };
-        Self { readers, shared, inline: Some(worker) }
+        Self { readers, shared, ring_frames: frames as u64, inline: Some(worker) }
     }
 
     /// Whether there are no stretched clips to read.
@@ -542,8 +548,62 @@ impl AheadReader {
         self.shared.playhead.store(frame, Ordering::Release);
     }
 
-    /// Moves a pending rewind along; call it before reading. Never blocks.
+    /// Before a loop's wrap: once the playhead (arrangement frame `now`) is within a ring's time of
+    /// the loop end, the voices that have played to their end and play again at the loop start
+    /// (`start`) are moved there ahead, each by a jump of its own, so the worker renders their
+    /// frames from there before the wrap reaches them: the wrap then plays them at once, as the
+    /// first pass did, instead of after a silence and from their middle (a click). Never blocks
+    /// or allocates.
+    pub(crate) fn prepare_wrap(&mut self, start: u64, end: u64, now: u64) {
+        if now.saturating_add(self.ring_frames) < end
+            || self.shared.drained.load(Ordering::Acquire) != self.shared.requested.load(Ordering::Acquire)
+        {
+            return;
+        }
+        let lead = self.ring_frames;
+        for (reader, jump) in self.readers.iter_mut().zip(&self.shared.jumps) {
+            let clip_end = reader.start.saturating_add(reader.length);
+            // Only a voice the playhead does not read again before the wrap.
+            if clip_end > now {
+                continue;
+            }
+            let local = if reader.start <= start && start < clip_end {
+                start - reader.start
+            } else if start < reader.start && reader.start < end.min(start.saturating_add(lead)) {
+                0
+            } else {
+                continue;
+            };
+            request_jump(reader, jump, local);
+        }
+        for (reader, jump) in self.readers.iter_mut().zip(&self.shared.jumps) {
+            complete_jump(reader, jump);
+        }
+    }
+
+    /// At a loop's wrap to arrangement frame `to`: every voice goes on from there, each by a jump
+    /// of its own. The voices [`AheadReader::prepare_wrap`] moved there already keep their rings
+    /// and play at once; a voice that played up to the wrap is silent until the worker has moved
+    /// it, and that silence counts as late. Never blocks or allocates.
+    pub(crate) fn wrap_to(&mut self, to: u64) {
+        if self.shared.drained.load(Ordering::Acquire) != self.shared.requested.load(Ordering::Acquire) {
+            self.move_to(to);
+            return;
+        }
+        self.shared.playhead.store(to, Ordering::Release);
+        for (reader, jump) in self.readers.iter_mut().zip(&self.shared.jumps) {
+            let local = to.saturating_sub(reader.start).min(reader.length);
+            request_jump(reader, jump, local);
+        }
+        self.service();
+    }
+
+    /// Moves a pending rewind along, and the jumps the worker has paused for; call it before
+    /// reading. Never blocks.
     pub(crate) fn service(&mut self) {
+        for (reader, jump) in self.readers.iter_mut().zip(&self.shared.jumps) {
+            complete_jump(reader, jump);
+        }
         let requested = self.shared.requested.load(Ordering::Acquire);
         if self.shared.drained.load(Ordering::Acquire) == requested {
             return;
@@ -597,20 +657,11 @@ impl AheadReader {
             return;
         }
         let Some(jump) = self.shared.jumps.get(index) else { return };
-        // A jump ahead under way: once the worker has stopped pushing, the ring is emptied and
-        // the voice goes on from where it jumped to.
-        if let Some(requested) = reader.jumping {
-            if jump.paused.load(Ordering::Acquire) != requested {
-                self.shared.underruns.fetch_add(wanted, Ordering::Relaxed);
-                return;
-            }
-            let queued = reader.consumer.slots();
-            if let Ok(chunk) = reader.consumer.read_chunk(queued) {
-                chunk.commit_all();
-            }
-            reader.next = jump.to.load(Ordering::Acquire).min(reader.length);
-            reader.jumping = None;
-            jump.drained.store(requested, Ordering::Release);
+        // A jump under way: once the worker has stopped pushing, the ring is emptied and the voice
+        // goes on from where it jumped to.
+        if !complete_jump(reader, jump) {
+            self.shared.underruns.fetch_add(wanted, Ordering::Relaxed);
+            return;
         }
         if reader.rewound {
             if reader.consumer.slots() == 0 {
@@ -660,6 +711,38 @@ impl AheadReader {
     pub(crate) fn underruns(&self) -> u64 {
         self.shared.underruns.load(Ordering::Relaxed)
     }
+}
+
+/// Asks for `reader`'s voice to go on from clip frame `local`, unless it is there already or a
+/// jump there is under way.
+fn request_jump(reader: &mut Reader, jump: &Jump, local: u64) {
+    let local = local.min(reader.length);
+    let under_way = reader.jumping.is_some() && jump.to.load(Ordering::Acquire) == local;
+    if under_way || (reader.jumping.is_none() && reader.next == local && !reader.rewound) {
+        return;
+    }
+    let requested = jump.requested.load(Ordering::Acquire) + 1;
+    jump.to.store(local, Ordering::Release);
+    jump.requested.store(requested, Ordering::Release);
+    reader.jumping = Some(requested);
+}
+
+/// Finishes `reader`'s jump once the worker has stopped pushing for it: empties the ring and goes
+/// on from where it jumped to. Returns whether no jump is left under way.
+fn complete_jump(reader: &mut Reader, jump: &Jump) -> bool {
+    let Some(requested) = reader.jumping else { return true };
+    if jump.paused.load(Ordering::Acquire) != requested {
+        return false;
+    }
+    let queued = reader.consumer.slots();
+    if let Ok(chunk) = reader.consumer.read_chunk(queued) {
+        chunk.commit_all();
+    }
+    reader.next = jump.to.load(Ordering::Acquire).min(reader.length);
+    reader.jumping = None;
+    reader.rewound = false;
+    jump.drained.store(requested, Ordering::Release);
+    true
 }
 
 /// What a stretch voice plays, as a number: equal for two graphs' voices that render the same

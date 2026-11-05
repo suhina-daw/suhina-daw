@@ -1158,3 +1158,55 @@ fn a_clip_deleted_or_moved_while_playing_stops_where_it_was() {
         }
     }
 }
+
+/// The largest step between two frames of the left channel in `out[from..to]` (frames).
+fn largest_step(out: &[f32], from: usize, to: usize) -> f32 {
+    let left: Vec<f32> = out.get(from * 2..to * 2).unwrap_or_default().iter().step_by(2).copied().collect();
+    left.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max)
+}
+
+/// A stretched clip played again and again by the arrangement's loop, through the stretch worker
+/// as the app plays it: every pass starts as the first, with no click at the clip's start.
+#[test]
+fn a_stretched_clip_starts_each_loop_pass_as_cleanly_as_the_first() {
+    let beat = SR as usize / 2;
+    for mode in [StretchMode::Smooth, StretchMode::Rhythmic, StretchMode::HighQuality] {
+        // Two seconds of a 220 Hz sine squeezed onto one beat (four times its speed), at beat 1;
+        // the loop runs from beat 0 to beat 3.
+        let (mut project, mut pool) = stretched_project(220.0, 2.0, 1.0, 120.0, mode);
+        // A kick: a sharp attack, a falling pitch, a decay.
+        let kick: Vec<f32> = (0..88_200)
+            .map(|i| {
+                let t = i as f64 / 44_100.0;
+                ((std::f64::consts::TAU * (50.0 + 150.0 * (-t * 30.0).exp()) * t).sin() * (-t * 6.0).exp() * 0.9) as f32
+            })
+            .collect();
+        pool.files.insert(
+            "sine.wav".into(),
+            std::sync::Arc::new(AudioData { sample_rate: 44_100, channels: 1, samples: kick }),
+        );
+        project.arrangement.lanes[0].clips[0].start = 1.0;
+        project.transport.loop_range = Some(LoopRange { start: 1.0, end: 4.0 });
+        project.transport.loop_enabled = true;
+        let mut renderer = Renderer::stopped(&project, &pool, SR).unwrap();
+        let mut worker = renderer.take_stretch_worker().unwrap();
+        renderer.handle(LaunchCommand::Play);
+        // Blocks of 2048, as an ASIO device asks for them, the worker filling between them.
+        let out = blocks(&mut renderer, (10 * beat) / 2048 + 1, 2048, |_| worker.fill());
+        // The first pass from beat 1, then every three beats the loop starts again at the clip.
+        let pass = |k: usize| (k * 3 + 1) * beat;
+        let first = &out[pass(0) * 2..(pass(0) + beat) * 2];
+        let clean = largest_step(&out, pass(0), pass(0) + beat);
+        for k in 1..3 {
+            let at = pass(k);
+            let step = largest_step(&out, at.saturating_sub(64), at + beat);
+            assert!(
+                step <= clean * 1.5 + 1e-3,
+                "{mode:?} pass {k}: a step of {step}, the first pass's largest {clean}"
+            );
+            let worst = max_diff(&out[at * 2..(at + beat) * 2], first);
+            assert!(worst < 0.05, "{mode:?} pass {k}: differs from the first by {worst}");
+        }
+        assert_eq!(renderer.stretch_underruns(), 0, "{mode:?}");
+    }
+}
