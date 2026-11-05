@@ -568,6 +568,7 @@ fn demo_project() -> Project {
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
     };
 

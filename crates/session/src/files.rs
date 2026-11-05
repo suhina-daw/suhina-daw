@@ -12,9 +12,9 @@ use suhina_device_api::Role;
 use suhina_engine::AudioData;
 use suhina_media::info::{FileKind, Tempo, TempoSource, kind_of};
 use suhina_model::{
-    ArrangementLane, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipContent, ContentId, ContentKinds,
-    ContentLane, LaneData, LauncherColumn, LoopRange, Note, Project, Scene, Slot, StretchMode, Track, TrackId,
-    WarpMarker,
+    ArrangementLane, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ContentId,
+    ContentKinds, ContentLane, LaneData, LauncherColumn, LoopRange, Note, Project, Scene, Slot, StretchMode, Track,
+    TrackId, WarpMarker,
 };
 
 use crate::commands::{Args, make_room, track_at};
@@ -340,6 +340,8 @@ pub(crate) struct Source {
     /// Content length in beats (the clip's length too).
     pub(crate) length: f64,
     pub(crate) lane: LaneData,
+    /// How the clip plays its audio: gain, warp, the tempo's source. The starting state for notes.
+    pub(crate) audio: ClipAudio,
     /// Whether the clip loops in a slot.
     pub(crate) loops: bool,
 }
@@ -571,6 +573,7 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
             name: EMPTY_CLIP_NAME.into(),
             length,
             lane: LaneData::Notes(Vec::new()),
+            audio: ClipAudio::default(),
             loops: true,
         },
         TrackKind::Audio => Source {
@@ -585,13 +588,9 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
                 sample_rate: None,
                 channels: None,
                 duration_seconds: None,
-                warped: false,
-                stretch: StretchMode::default(),
-                warp_markers: Vec::new(),
-                gain: 1.0,
-                transpose: 0.0,
                 stream: None,
             }),
+            audio: ClipAudio::default(),
             loops: true,
         },
     };
@@ -682,6 +681,7 @@ pub(crate) fn place_clip(
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: source.audio,
         extensions: Default::default(),
     };
     match row {
@@ -792,18 +792,21 @@ fn read_sources(
                 sample_rate: Some(data.sample_rate),
                 channels: Some(data.channels),
                 duration_seconds: Some(duration),
+                stream: None,
+            };
+            let audio = ClipAudio {
                 warped,
                 stretch: if warped { stretch } else { StretchMode::default() },
                 warp_markers: markers,
-                gain: 1.0,
-                transpose: 0.0,
-                stream: None,
+                tempo_source: tempo_of_file.map(|t| clip_tempo_source(t.source)),
+                ..ClipAudio::default()
             };
             Ok(vec![Source {
                 kind: TrackKind::Audio,
                 name,
                 length: beats,
                 lane: LaneData::Audio(region),
+                audio,
                 // A slot loops a sample over the whole file whether or not its tempo is known
                 // (`docs/spec/browser.md` › Warping); `clip.setLoop` turns it off.
                 loops: true,
@@ -825,7 +828,14 @@ fn read_sources(
                         None => name.clone(),
                     };
                     let notes: Vec<Note> = track.notes;
-                    Source { kind: TrackKind::Midi, name: clip_name, length, lane: LaneData::Notes(notes), loops: true }
+                    Source {
+                        kind: TrackKind::Midi,
+                        name: clip_name,
+                        length,
+                        lane: LaneData::Notes(notes),
+                        audio: ClipAudio::default(),
+                        loops: true,
+                    }
                 })
                 .collect())
         }
@@ -841,6 +851,15 @@ fn read_sources(
 pub fn file_tempo(path: &Path, data: &AudioData) -> Option<Tempo> {
     let from_file = suhina_media::info::sample_info(path).ok().and_then(|i| i.tempo);
     from_file.or_else(|| suhina_media::tempo::detect(data).map(|bpm| Tempo { bpm, source: TempoSource::Detected }))
+}
+
+/// Where a tempo read from a file came from, as a clip keeps it.
+pub(crate) fn clip_tempo_source(source: TempoSource) -> suhina_model::TempoSource {
+    match source {
+        TempoSource::Metadata => suhina_model::TempoSource::Metadata,
+        TempoSource::Name => suhina_model::TempoSource::Name,
+        TempoSource::Detected => suhina_model::TempoSource::Detected,
+    }
 }
 
 /// `path` made absolute against the working folder, without touching the disk.
@@ -893,7 +912,8 @@ fn place_stems(
     let key = absolute.display().to_string();
     // One tempo for all, from the master: the stems stay locked together.
     let tempo = session.project.transport.tempo_bpm;
-    let file_bpm = file_tempo(&absolute, master).map(|t| t.bpm).filter(|b| b.is_finite() && *b > 0.0);
+    let file_tempo = file_tempo(&absolute, master).filter(|t| t.bpm.is_finite() && t.bpm > 0.0);
+    let file_bpm = file_tempo.map(|t| t.bpm);
     let mut sources = Vec::with_capacity(streams.len());
     for (n, data) in streams.iter().enumerate() {
         let duration = data.frames() as f64 / f64::from(data.sample_rate.max(1));
@@ -918,12 +938,14 @@ fn place_stems(
             sample_rate: Some(data.sample_rate),
             channels: Some(data.channels),
             duration_seconds: Some(duration),
+            stream: Some(u16::try_from(n).map_err(|_| "too many tracks")?),
+        };
+        let audio = ClipAudio {
             warped,
             stretch: if warped { stretch } else { StretchMode::default() },
             warp_markers: markers,
-            gain: 1.0,
-            transpose: 0.0,
-            stream: Some(u16::try_from(n).map_err(|_| "too many tracks")?),
+            tempo_source: file_tempo.map(|t| clip_tempo_source(t.source)),
+            ..ClipAudio::default()
         };
         let clip_name = match stem {
             Some(s) => format!("{name} – {}", s.name),
@@ -939,6 +961,7 @@ fn place_stems(
                 name: clip_name,
                 length: beats,
                 lane: LaneData::Audio(region),
+                audio,
                 loops: true,
             },
         ));

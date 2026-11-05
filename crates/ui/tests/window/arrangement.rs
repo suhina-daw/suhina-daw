@@ -750,10 +750,8 @@ fn dragging_an_audio_clips_gain_sets_it() {
     harness.drop_at(field - egui::vec2(0.0, 30.0));
     harness.run();
     let gain = harness.state().session().and_then(|s| {
-        s.project().content(suhina_engine::model::ContentId(300)).and_then(|c| match &c.lanes[0].data {
-            suhina_engine::model::LaneData::Audio(region) => Some(region.gain),
-            suhina_engine::model::LaneData::Notes(_) => None,
-        })
+        let clips = s.project().arrangement.lanes.iter().flat_map(|l| &l.clips);
+        clips.into_iter().find(|c| c.content == suhina_engine::model::ContentId(300)).map(|c| c.audio.gain)
     });
     // 30 points up at 0.1 dB a point: +3 dB.
     assert!(gain.is_some_and(|g| (g - 1.4125).abs() < 1e-3), "{gain:?}");

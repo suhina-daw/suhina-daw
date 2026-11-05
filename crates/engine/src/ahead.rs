@@ -683,9 +683,9 @@ pub(crate) fn voice_key(
     }
     clip.loop_range.map(|r| (r.start.to_bits(), r.end.to_bits())).hash(&mut hasher);
     region.pool_key().hash(&mut hasher);
-    (region.warped, region.transpose.to_bits()).hash(&mut hasher);
-    std::mem::discriminant(&region.stretch).hash(&mut hasher);
-    for marker in &region.warp_markers {
+    (clip.audio.warped, clip.audio.transpose.to_bits()).hash(&mut hasher);
+    std::mem::discriminant(&clip.audio.stretch).hash(&mut hasher);
+    for marker in &clip.audio.warp_markers {
         (marker.time.to_bits(), marker.audio_time.to_bits()).hash(&mut hasher);
     }
     hasher.finish()
@@ -694,7 +694,7 @@ pub(crate) fn voice_key(
 #[cfg(test)]
 mod handover_tests {
     use super::*;
-    use suhina_model::{AudioRegion, Clip, ContentId, StretchMode, WarpMarker};
+    use suhina_model::{AudioRegion, Clip, ClipAudio, ContentId, StretchMode, WarpMarker};
 
     const SR: u32 = 48_000;
     const LENGTH: u64 = 2 * SR as u64;
@@ -703,17 +703,14 @@ mod handover_tests {
     fn reader() -> AheadReader {
         let samples = (0..2 * SR as usize).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
         let data = Arc::new(crate::AudioData { sample_rate: SR, channels: 1, samples });
-        let region = AudioRegion {
+        let audio = ClipAudio {
             warped: true,
             stretch: StretchMode::Smooth,
             warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 4.0, audio_time: 2.0 }],
-            sample_rate: Some(SR),
-            channels: Some(1),
-            duration_seconds: Some(2.0),
-            ..AudioRegion::new("sine.wav")
+            ..ClipAudio::default()
         };
-        let clip = Clip::new(ContentId(1), 0.0, 4.0);
-        let Some(voice) = StretchVoice::new(&clip, &region, data, 100.0, SR) else { panic!("no voice") };
+        let clip = Clip { audio, ..Clip::new(ContentId(1), 0.0, 4.0) };
+        let Some(voice) = StretchVoice::new(&clip, data, 100.0, SR) else { panic!("no voice") };
         AheadReader::new(vec![(voice, 0, LENGTH, 7)], SR)
     }
 

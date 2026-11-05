@@ -40,13 +40,13 @@ fn project(fades: Option<(FadeShape, f64)>) -> Project {
         fade_out: fade,
         fade_in_curve: curve,
         fade_out_curve: curve,
+        audio: ClipAudio { stretch: StretchMode::Repitch, ..ClipAudio::default() },
         ..Clip::new(ContentId(1), f64::from(i) * CLIP_BEATS, CLIP_BEATS)
     };
     let region = AudioRegion {
         sample_rate: Some(SR),
         channels: Some(1),
         duration_seconds: Some(2.0),
-        stretch: StretchMode::Repitch,
         ..AudioRegion::new("noise.wav")
     };
     Project {

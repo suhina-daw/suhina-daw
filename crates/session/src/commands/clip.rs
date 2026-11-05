@@ -71,7 +71,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setGain",
-        label: "Set an audio clip's gain, an arrangement clip's or a slot's (every clip that plays the same audio content follows)",
+        label: "Set an audio clip's gain, an arrangement clip's or a slot's; only that clip changes",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -702,19 +702,12 @@ fn set_clip_gain(session: &mut Session, params: &Value) -> Result<Value, Command
         return Err(format!("db must be at most +24, got {db}").into());
     }
     let gain = if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) };
-    let (_, content, _) = crate::notes::locate(&session.project, params)?;
-    let content =
-        session.project.contents.iter_mut().find(|c| c.id == content).ok_or("the clip's content is missing")?;
-    let mut audio = false;
-    for lane in &mut content.lanes {
-        if let LaneData::Audio(region) = &mut lane.data {
-            region.gain = gain;
-            audio = true;
-        }
-    }
-    if !audio {
+    let (at, content, _) = crate::notes::locate(&session.project, params)?;
+    if crate::audio_timing::region(&session.project, content).is_none() {
         return Err("only an audio clip has a gain".into());
     }
+    // Only this clip: every clip has its own gain (#742).
+    crate::notes::clip_mut(&mut session.project, at).ok_or("the clip is missing")?.audio.gain = gain;
     Ok(json!({ "gain_db": to_db(gain) }))
 }
 

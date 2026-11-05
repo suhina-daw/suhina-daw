@@ -195,12 +195,15 @@ pub(super) fn project_with_audio() -> (suhina_engine::model::Project, suhina_ui:
         sample_rate: Some(8000),
         channels: Some(1),
         duration_seconds: Some(2.0),
+        stream: None,
+    };
+    let region_audio = ClipAudio {
         warped: true,
         stretch: StretchMode::default(),
         warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 4.0, audio_time: 2.0 }],
         gain: 1.0,
         transpose: 0.0,
-        stream: None,
+        ..ClipAudio::default()
     };
     project.contents.push(ClipContent {
         id: ContentId(300),
@@ -226,6 +229,7 @@ pub(super) fn project_with_audio() -> (suhina_engine::model::Project, suhina_ui:
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: region_audio,
         extensions: Extensions::default(),
     };
     project.arrangement.lanes.push(ArrangementLane {

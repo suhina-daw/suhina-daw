@@ -34,6 +34,7 @@ fn clip(content: u32) -> Clip {
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
     }
 }
@@ -59,11 +60,6 @@ fn project_built() -> Project {
         sample_rate: None,
         channels: None,
         duration_seconds: None,
-        warped: false,
-        stretch: StretchMode::default(),
-        warp_markers: Vec::new(),
-        gain: 1.0,
-        transpose: 0.0,
         stream: None,
     };
     Project {

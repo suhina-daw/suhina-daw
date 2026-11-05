@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 pub use suhina_model::{AudioData, AudioPool};
-use suhina_model::{AudioRegion, Clip, FadeShape, TempoMap};
+use suhina_model::{Clip, ClipAudio, FadeShape, GainPoint, TempoMap, db_to_gain, envelope_db_at};
 
 use crate::tempo::TempoClock;
 
@@ -33,10 +33,10 @@ pub(crate) const STRETCH_SAMPLE_RATES: std::ops::RangeInclusive<u32> = 8_000..=1
 /// clip placement copy an unbounded list; markers past it are ignored (the last segment extends).
 pub(crate) const MAX_WARP_MARKERS: usize = 100_000;
 
-/// A region's usable warp markers as (beat, seconds): finite, sorted by beat, one per beat, at
+/// A clip's usable warp markers as (beat, seconds): finite, sorted by beat, one per beat, at
 /// most [`MAX_WARP_MARKERS`].
-pub(crate) fn warp_markers(region: &AudioRegion) -> Vec<(f64, f64)> {
-    let mut markers: Vec<(f64, f64)> = region
+pub(crate) fn warp_markers(audio: &ClipAudio) -> Vec<(f64, f64)> {
+    let mut markers: Vec<(f64, f64)> = audio
         .warp_markers
         .iter()
         .filter(|m| m.time.is_finite() && m.audio_time.is_finite())
@@ -78,11 +78,12 @@ impl TimeMap {
     }
 }
 
-/// How loud a clip is near its edges: a short click guard at both ends, times the clip's own
-/// fade-in and fade-out (`docs/spec/arrangement-editing.md` › Fades). All lengths are in frames;
-/// the fades follow their shape and curve, the guard is linear, and they multiply. The curves'
-/// exponents are worked out here, off the audio thread.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// How loud a clip is over its length: a short click guard at both ends, times the clip's own
+/// fade-in and fade-out (`docs/spec/arrangement-editing.md` › Fades), times its gain envelope
+/// (ADR 0035). All lengths are in frames; the fades follow their shape and curve, the guard is
+/// linear, and they multiply. The curves' exponents and the envelope's points are worked out here,
+/// off the audio thread.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Fades {
     click: f64,
     fade_in: f64,
@@ -91,6 +92,69 @@ pub(crate) struct Fades {
     fade_out_shape: FadeShape,
     fade_in_exponent: f64,
     fade_out_exponent: f64,
+    /// The clip's gain envelope; `None` when it has none (flat at its gain).
+    envelope: Option<Arc<Envelope>>,
+}
+
+/// A clip's gain envelope as the audio thread reads it: its points, and how a frame since the
+/// clip's start maps to a beat of its content, as the readers play it (offset, loop, the repitch
+/// rate of an unwarped clip, the tempo map of a warped one). Built off the audio thread.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Envelope {
+    points: Vec<GainPoint>,
+    /// The content beat the clip starts playing at.
+    offset: f64,
+    loop_range: Option<(f64, f64)>,
+    /// Content beats per project beat.
+    rate: f64,
+    /// Frames per project beat, at a constant tempo.
+    per_beat: f64,
+    /// A warped clip on a changing tempo: the map, the clip's start frame and start beat.
+    map: Option<(Arc<TempoMap>, f64, f64)>,
+}
+
+impl Envelope {
+    /// The envelope of `clip` on `clock`, or `None` when it has no points.
+    fn of(clip: &Clip, clock: &TempoClock) -> Option<Arc<Self>> {
+        let points = clip.audio.envelope_points();
+        if points.is_empty() {
+            return None;
+        }
+        let audio = &clip.audio;
+        let rate = if audio.warped { 1.0 } else { 2f64.powf(audio.transpose / 12.0) };
+        let loop_range = clip
+            .loop_range
+            .filter(|r| r.start.is_finite() && r.end.is_finite() && r.end > r.start)
+            .map(|r| (r.start, r.end));
+        let map = clock
+            .map()
+            .filter(|_| audio.warped)
+            .map(|m| (Arc::clone(m), clock.frame_of(clip.start) as f64, clip.start));
+        Some(Arc::new(Self {
+            points,
+            offset: start_beat(clip.offset, loop_range),
+            loop_range,
+            rate: if rate.is_finite() && rate > 0.0 { rate } else { 1.0 },
+            per_beat: clock.per_beat(),
+            map,
+        }))
+    }
+
+    /// The envelope's gain `since_start` frames after the clip starts. Never allocates.
+    fn gain(&self, since_start: f64) -> f64 {
+        let elapsed = match &self.map {
+            Some((map, start, start_beat)) => (map.beat_at(start + since_start) - start_beat).max(0.0),
+            None if self.per_beat > 0.0 => since_start / self.per_beat,
+            None => 0.0,
+        };
+        let mut beat = self.offset + elapsed * self.rate;
+        if let Some((start, end)) = self.loop_range
+            && beat >= end
+        {
+            beat = start + (beat - end).rem_euclid(end - start);
+        }
+        db_to_gain(envelope_db_at(&self.points, beat))
+    }
 }
 
 /// The click guard at both ends of every audio clip, in seconds.
@@ -113,6 +177,7 @@ impl Fades {
             fade_out_shape: clip.fade_out_curve.shape,
             fade_in_exponent: clip.fade_in_curve.exponent(),
             fade_out_exponent: clip.fade_out_curve.exponent(),
+            envelope: Envelope::of(clip, &TempoClock::Constant { bpm: 0.0, per_beat: frames_per_beat }),
         }
     }
 
@@ -128,6 +193,7 @@ impl Fades {
         Self {
             fade_in: frames(clock.span(clip.start, fade_in)),
             fade_out: frames(clock.span(end - fade_out, fade_out)),
+            envelope: Envelope::of(clip, clock),
             ..Self::new(clip, clock.per_beat(), sample_rate)
         }
     }
@@ -145,7 +211,8 @@ impl Fades {
         };
         let fade_in = bent(self.fade_in, since_start, self.fade_in_shape, self.fade_in_exponent);
         let fade_out = bent(self.fade_out, until_end, self.fade_out_shape, self.fade_out_exponent);
-        (guard.clamp(0.0, 1.0) * fade_in.clamp(0.0, 1.0) * fade_out.clamp(0.0, 1.0)) as f32
+        let envelope = self.envelope.as_ref().map_or(1.0, |e| e.gain(since_start));
+        (guard.clamp(0.0, 1.0) * fade_in.clamp(0.0, 1.0) * fade_out.clamp(0.0, 1.0) * envelope) as f32
     }
 }
 
@@ -195,13 +262,7 @@ pub(crate) struct AudioEvent {
 }
 
 impl AudioEvent {
-    pub(crate) fn new(
-        clip: &Clip,
-        region: &AudioRegion,
-        data: Arc<AudioData>,
-        timing: Timing,
-        gains: (f32, f32),
-    ) -> Option<Self> {
+    pub(crate) fn new(clip: &Clip, data: Arc<AudioData>, timing: Timing, gains: (f32, f32)) -> Option<Self> {
         let Timing { clock, sample_rate } = timing;
         let (frames_per_beat, tempo_bpm) = (clock.per_beat(), clock.bpm());
         let finite = [clip.start, clip.length, clip.offset, frames_per_beat, tempo_bpm].iter().all(|v| v.is_finite());
@@ -215,19 +276,19 @@ impl AudioEvent {
             return None;
         }
         let linear = TimeMap::Linear { seconds_per_beat: crate::tempo::seconds_per_beat(tempo_bpm) };
-        let markers = warp_markers(region);
-        let (map, rate) = if region.warped {
+        let markers = warp_markers(&clip.audio);
+        let (map, rate) = if clip.audio.warped {
             (if markers.len() >= 2 { TimeMap::Warp(markers) } else { linear }, 1.0)
         } else {
-            let rate = 2f64.powf(region.transpose / 12.0);
+            let rate = 2f64.powf(clip.audio.transpose / 12.0);
             (linear, if rate.is_finite() && rate > 0.0 { rate } else { 1.0 })
         };
-        let gain = if region.gain.is_finite() { region.gain.max(0.0) as f32 } else { 0.0 };
+        let gain = if clip.audio.gain.is_finite() { clip.audio.gain.max(0.0) as f32 } else { 0.0 };
         let fades = Fades::on(clip, &clock, sample_rate);
         let (start, end) = (clock.frame_of(clip.start), clock.frame_of(clip.start + clip.length));
         // An unwarped clip plays at its file's speed whatever the tempo: only its start and end
         // follow the map.
-        let beats = clock.map().filter(|_| region.warped).map(|m| (Arc::clone(m), clip.start));
+        let beats = clock.map().filter(|_| clip.audio.warped).map(|m| (Arc::clone(m), clip.start));
         let loop_range = clip
             .loop_range
             .filter(|r| r.start.is_finite() && r.end.is_finite() && r.end > r.start)
@@ -244,15 +305,15 @@ impl AudioEvent {
             gain_left: gains.0 * gain,
             gain_right: gains.1 * gain,
             fades,
-            warped: region.warped,
+            warped: clip.audio.warped,
             shift: 0.0,
             beats,
         })
     }
 
-    /// The gain envelope at the clip's edges.
-    pub(crate) fn fades(&self) -> Fades {
-        self.fades
+    /// The clip's fades and gain envelope.
+    pub(crate) fn fades(&self) -> &Fades {
+        &self.fades
     }
 
     pub(crate) fn warped(&self) -> bool {

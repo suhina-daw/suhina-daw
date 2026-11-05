@@ -162,7 +162,8 @@ impl Graph {
                                 .and_then(|i| chains.get(i))
                                 .is_some_and(|c| c.ara.is_some());
                             if has_host && clip.ara {
-                                let gain = if region.gain.is_finite() { region.gain.max(0.0) as f32 } else { 0.0 };
+                                let gain =
+                                    if clip.audio.gain.is_finite() { clip.audio.gain.max(0.0) as f32 } else { 0.0 };
                                 let to_frame = |beats: f64| tempo::frame_of(&tempo, beats);
                                 hosted.push(HostedClip {
                                     start: to_frame(clip.start),
@@ -179,12 +180,13 @@ impl Graph {
                             // Warped clips are time-stretched as they play; the rest, and clips
                             // the stretcher cannot handle, are re-pitched.
                             let voice_began = std::time::Instant::now();
-                            let voice = (region.warped && region.stretch != suhina_model::StretchMode::Repitch)
-                                .then(|| StretchVoice::on_map(clip, region, data.clone(), &tempo, sample_rate))
+                            let voice = (clip.audio.warped && clip.audio.stretch != suhina_model::StretchMode::Repitch)
+                                .then(|| StretchVoice::on_map(clip, data.clone(), &tempo, sample_rate))
                                 .flatten();
                             voices_took += voice_began.elapsed();
                             if let Some(voice) = voice {
-                                let gain = if region.gain.is_finite() { region.gain.max(0.0) as f32 } else { 0.0 };
+                                let gain =
+                                    if clip.audio.gain.is_finite() { clip.audio.gain.max(0.0) as f32 } else { 0.0 };
                                 let to_frame = |beats: f64| tempo::frame_of(&tempo, beats);
                                 let (start, end) = (to_frame(clip.start), to_frame(clip.start + clip.length));
                                 let length = end.saturating_sub(start);
@@ -205,16 +207,16 @@ impl Graph {
                                 continue;
                             }
                             let timing = audio::Timing { clock: clock.clone(), sample_rate };
-                            audio_events.extend(AudioEvent::new(clip, region, data.clone(), timing, gains).map(
-                                |event| ArrangedAudio {
+                            audio_events.extend(AudioEvent::new(clip, data.clone(), timing, gains).map(|event| {
+                                ArrangedAudio {
                                     event,
                                     column,
                                     bus,
                                     meter,
                                     key: (lane_index, clip_index, content_index),
                                     past_host,
-                                },
-                            ));
+                                }
+                            }));
                         }
                     }
                 }

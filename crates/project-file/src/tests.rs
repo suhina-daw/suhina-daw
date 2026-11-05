@@ -196,14 +196,6 @@ fn everything() -> Project {
                         sample_rate: Some(44_100),
                         channels: Some(2),
                         duration_seconds: Some(7.5),
-                        warped: true,
-                        stretch: StretchMode::HighQuality,
-                        warp_markers: vec![
-                            WarpMarker { time: 0.0, audio_time: 0.0 },
-                            WarpMarker { time: 16.0, audio_time: 7.5 },
-                        ],
-                        gain: 0.8,
-                        transpose: -1.5,
                         stream: Some(3),
                         ..AudioRegion::new("Samples/loop.wav")
                     }),
@@ -225,7 +217,27 @@ fn everything() -> Project {
                     id: Default::default(),
                     name: "Free".into(),
                     track: None,
-                    clips: vec![Clip { enabled: false, loop_range: None, ..clip(2, 4.0) }],
+                    clips: vec![Clip {
+                        enabled: false,
+                        loop_range: None,
+                        audio: ClipAudio {
+                            warped: true,
+                            stretch: StretchMode::HighQuality,
+                            warp_markers: vec![
+                                WarpMarker { time: 0.0, audio_time: 0.0 },
+                                WarpMarker { time: 16.0, audio_time: 7.5 },
+                            ],
+                            gain: 0.8,
+                            transpose: -1.5,
+                            gain_envelope: vec![
+                                GainPoint { beat: 0.0, db: 0.0 },
+                                GainPoint { beat: 4.0, db: -12.5 },
+                                GainPoint { beat: 4.0, db: 3.0 },
+                            ],
+                            tempo_source: Some(TempoSource::Name),
+                        },
+                        ..clip(2, 4.0)
+                    }],
                 },
             ],
             markers: vec![Marker::new(0.0, "Intro"), Marker::new(16.0, "Verse"), Marker::new(16.0, "")],
@@ -1240,6 +1252,14 @@ fn a_file_of_every_version_reads() {
         if version < 5 {
             expected.channels[0].devices[0].clear_sample_edits();
         }
+        if version < 8 {
+            // Before version 8 the audio state was the region's, which had no envelope and no
+            // tempo source; each clip takes it from its content (#742).
+            for clip in expected.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+                clip.audio.gain_envelope.clear();
+                clip.audio.tempo_source = None;
+            }
+        }
         // Devices get their ids in document order when a file before version 6 is read.
         assert_eq!(from_json(&text).map(renumbered), Ok(renumbered(expected)), "version {version}");
     }
@@ -1349,4 +1369,71 @@ fn groups_nested_past_the_parsers_limit_are_an_error() {
         r#"{{ "format": "suhina", "version": 2, "project": {{ "channels": [ {{ "id": 1, "devices": [ {{ "kind": {kind} }} ] }} ] }} }}"#
     );
     assert!(from_json(&text).is_err());
+}
+
+/// Before version 8 a region held the gain, transpose and warp; every clip that plays it takes
+/// them, and a clip of another content keeps the starting state (#742).
+#[test]
+fn an_older_files_region_audio_moves_to_each_clip_that_plays_it() {
+    let text = r#"{ "format": "suhina", "version": 7, "project": {
+        "tracks": [ { "id": 1, "name": "Audio", "content": { "notes": false, "audio": true } } ],
+        "contents": [
+          { "id": 1, "name": "Loop", "length": 8.0, "lanes": [ { "audio": { "file": "loop.wav",
+            "warped": true, "stretch": "tonal", "gain": 0.5, "transpose": 2.0,
+            "warp_markers": [ { "time": 0.0, "audio_time": 0.0 }, { "time": 8.0, "audio_time": 4.0 } ] } } ] },
+          { "id": 2, "name": "Hit", "length": 1.0, "lanes": [ { "audio": { "file": "hit.wav" } } ] } ],
+        "arrangement": { "lanes": [ { "name": "Audio", "track": 1, "clips": [
+          { "content": 1, "start": 0.0, "length": 8.0 }, { "content": 1, "start": 8.0, "length": 8.0 },
+          { "content": 2, "start": 16.0, "length": 1.0 } ] } ] } } }"#;
+    let project = from_json(text).expect("a version 7 file reads");
+    let clips: Vec<&Clip> = project.arrangement.lanes[0].clips.iter().collect();
+    for clip in &clips[..2] {
+        assert_eq!((clip.audio.gain, clip.audio.transpose, clip.audio.warped), (0.5, 2.0, true));
+        assert_eq!((clip.audio.stretch, clip.audio.warp_markers.len()), (StretchMode::Tonal, 2));
+        assert_eq!(clip.audio.tempo(), Some(120.0));
+    }
+    assert_eq!(clips[2].audio, ClipAudio::default());
+    // Written again, the state is the clips' and the regions keep only the source.
+    let written = to_json(&project);
+    let again = from_json(&written).expect("it reads back");
+    assert_eq!(again, project);
+    let root: Value = serde_json::from_str(&written).unwrap();
+    let region = &root["project"]["contents"][0]["lanes"][0]["audio"];
+    assert!(region.get("warped").is_none() && region.get("gain").is_none(), "{region}");
+    assert_eq!(root["project"]["arrangement"]["lanes"][0]["clips"][1]["audio"]["gain"], 0.5);
+}
+
+/// Two clips of one content keep their own gain and envelope through a save (#742).
+#[test]
+fn two_clips_of_one_audio_content_keep_their_own_state() {
+    let mut project = every_feature();
+    let lane = &mut project.arrangement.lanes[1];
+    let mut second = lane.clips[0].clone();
+    second.id = ClipId::NONE;
+    second.start = 32.0;
+    second.audio.gain = 0.25;
+    second.audio.gain_envelope = vec![GainPoint { beat: 1.0, db: -6.0 }];
+    lane.clips.push(second);
+    project.assign_ids().unwrap();
+    let again = from_json(&to_json(&project)).expect("it reads back");
+    let clips = &again.arrangement.lanes[1].clips;
+    assert_eq!((clips[0].audio.gain, clips[1].audio.gain), (0.8, 0.25));
+    assert_eq!(clips[1].audio.gain_envelope, vec![GainPoint { beat: 1.0, db: -6.0 }]);
+    assert_eq!(clips[0].audio.gain_envelope.len(), 3);
+}
+
+#[test]
+fn a_bad_gain_envelope_or_tempo_source_is_an_error() {
+    let file = |audio: &str| {
+        format!(
+            r#"{{ "format": "suhina", "version": 8, "project": {{
+            "contents": [ {{ "id": 1, "name": "a", "length": 1.0, "lanes": [ {{ "audio": {{ "file": "a.wav" }} }} ] }} ],
+            "arrangement": {{ "lanes": [ {{ "name": "a", "clips": [ {{ "content": 1, "start": 0.0, "length": 1.0, "audio": {audio} }} ] }} ] }} }} }}"#
+        )
+    };
+    assert!(from_json(&file(r#"{ "tempo_source": "guess" }"#)).is_err());
+    assert!(from_json(&file(r#"{ "gain_envelope": [ { "beat": 1.0 } ] }"#)).is_err());
+    let ok = from_json(&file(r#"{ "gain": 0.5, "tempo_source": "manual" }"#)).expect("reads");
+    let clip = &ok.arrangement.lanes[0].clips[0];
+    assert_eq!((clip.audio.gain, clip.audio.tempo_source), (0.5, Some(TempoSource::Manual)));
 }

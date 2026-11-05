@@ -13,7 +13,7 @@ use egui::{Key, Modifiers, Pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
-use suhina_engine::model::{ChannelId, LaneData};
+use suhina_engine::model::ChannelId;
 use suhina_library::Library;
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
@@ -738,12 +738,7 @@ fn a_sample_dragged_onto_the_empty_space_makes_an_audio_track() {
     let track = session.project().tracks.iter().find(|t| t.name == "Loop 120bpm").unwrap();
     assert!(track.content.audio);
     // The loop's tempo is in its name, so it is warped.
-    let warped = session
-        .project()
-        .contents
-        .iter()
-        .flat_map(|c| &c.lanes)
-        .any(|l| matches!(&l.data, LaneData::Audio(r) if r.warped));
+    let warped = session.project().arrangement.lanes.iter().flat_map(|l| &l.clips).any(|c| c.audio.warped);
     assert!(warped);
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);

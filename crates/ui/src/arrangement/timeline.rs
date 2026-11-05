@@ -777,7 +777,8 @@ fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<Audi
         LaneData::Audio(region) => Some(region),
         LaneData::Notes(_) => None,
     })?;
-    let mut markers: Vec<(f64, f64)> = region
+    let audio = &clip.audio;
+    let mut markers: Vec<(f64, f64)> = audio
         .warp_markers
         .iter()
         .filter(|m| m.time.is_finite() && m.audio_time.is_finite())
@@ -785,15 +786,15 @@ fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<Audi
         .collect();
     markers.sort_by(|a, b| a.0.total_cmp(&b.0));
     markers.dedup_by(|a, b| a.0 == b.0);
-    let rate = if region.warped { 1.0 } else { 2f64.powf(region.transpose / 12.0) };
+    let rate = if audio.warped { 1.0 } else { 2f64.powf(audio.transpose / 12.0) };
     Some(AudioView {
         file: region.pool_key().into_owned(),
         offset: clip.offset,
         loop_range: clip.loop_range.filter(|r| r.end > r.start).map(|r| (r.start, r.end)),
-        markers: if region.warped { markers } else { Vec::new() },
+        markers: if audio.warped { markers } else { Vec::new() },
         seconds_per_beat: if tempo_bpm > 0.0 { 60.0 / tempo_bpm } else { 0.5 },
         rate: if rate.is_finite() && rate > 0.0 { rate } else { 1.0 },
-        gain_db: gain_to_db(region.gain),
+        gain_db: gain_to_db(audio.gain),
     })
 }
 

@@ -249,22 +249,27 @@ pub(crate) fn stretch_clip(session: &mut Session, params: &Value) -> Result<Valu
     }
     let content = p.contents.iter_mut().find(|c| c.id == clip.content).ok_or("the clip's content is missing")?;
     let old_length = content.length;
-    for lane in &mut content.lanes {
-        if let LaneData::Audio(region) = &mut lane.data {
-            if region.warp_markers.is_empty() {
-                let seconds = region.duration_seconds.ok_or("the audio's length is not known, so it cannot stretch")?;
-                region.warp_markers = vec![
-                    WarpMarker { time: 0.0, audio_time: 0.0 },
-                    WarpMarker { time: old_length, audio_time: seconds },
-                ];
-            }
-            if !region.warped {
-                region.warped = true;
-                region.stretch = suhina_model::StretchMode::default();
-            }
-            for marker in &mut region.warp_markers {
-                marker.time *= factor;
-            }
+    let seconds = content.lanes.iter().find_map(|l| match &l.data {
+        LaneData::Audio(region) => Some(region.duration_seconds),
+        LaneData::Notes(_) => None,
+    });
+    if let Some(seconds) = seconds {
+        let audio = &mut clip.audio;
+        if audio.warp_markers.is_empty() {
+            let seconds = seconds.ok_or("the audio's length is not known, so it cannot stretch")?;
+            audio.warp_markers =
+                vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: old_length, audio_time: seconds }];
+        }
+        if !audio.warped {
+            audio.warped = true;
+            audio.stretch = suhina_model::StretchMode::default();
+        }
+        for marker in &mut audio.warp_markers {
+            marker.time *= factor;
+        }
+        // The envelope is on the content's beats too: it stretches with the audio.
+        for point in &mut audio.gain_envelope {
+            point.beat *= factor;
         }
     }
     content.length = old_length * factor;

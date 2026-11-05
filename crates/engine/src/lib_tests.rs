@@ -77,6 +77,7 @@ fn clip(start: f64, length: f64) -> Clip {
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
     }
 }
@@ -339,15 +340,19 @@ fn stretched_project(hz: f64, seconds: f64, beats: f64, bpm: f64, mode: StretchM
         sample_rate: Some(file_rate),
         channels: Some(1),
         duration_seconds: Some(seconds),
+        stream: None,
+    };
+    let region_audio = ClipAudio {
         warped: true,
         stretch: mode,
         warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: beats, audio_time: seconds }],
-        gain: 1.0,
-        transpose: 0.0,
-        stream: None,
+        ..ClipAudio::default()
     };
-    let mut project =
-        project_with(vec![ContentLane { target: None, data: LaneData::Audio(region) }], vec![clip(0.0, beats)], 1);
+    let mut project = project_with(
+        vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        vec![Clip { audio: region_audio, ..clip(0.0, beats) }],
+        1,
+    );
     project.transport.tempo_bpm = bpm;
     let mut pool = AudioPool::new();
     pool.files.insert("sine.wav".into(), std::sync::Arc::new(data));
@@ -718,12 +723,8 @@ fn an_edit_refused_by_a_full_queue_leaves_the_playing_voices_alone() {
 fn an_unwarped_clip_carries_on_through_a_tempo_edit() {
     // Unwarped audio plays at its own speed: a tempo edit must not move it in its file.
     let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
-    for content in &mut project.contents {
-        for lane in &mut content.lanes {
-            if let LaneData::Audio(region) = &mut lane.data {
-                region.warped = false;
-            }
-        }
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warped = false;
     }
     let mut slower = project.clone();
     slower.transport.tempo_bpm = 90.0;

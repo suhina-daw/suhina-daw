@@ -1179,18 +1179,18 @@ fn plan_clip(
                     clock: crate::tempo::TempoClock::Constant { bpm: tempo, per_beat: frames_per_beat },
                     sample_rate,
                 };
-                let Some(event) = AudioEvent::new(&placed, region, data.clone(), timing, gains) else { continue };
+                let Some(event) = AudioEvent::new(&placed, data.clone(), timing, gains) else { continue };
                 // Warped clips are time-stretched like arrangement clips; the stretch voice gets
                 // the region gain, the direct reader has it already.
                 let stretch_beats = if loop_range.is_some() { STRETCH_LOOP_BEATS } else { clip.length };
-                let stretch = (region.warped && region.stretch != suhina_model::StretchMode::Repitch)
+                let stretch = (clip.audio.warped && clip.audio.stretch != suhina_model::StretchMode::Repitch)
                     .then(|| {
                         let stretched = suhina_model::Clip { length: stretch_beats, ..placed.clone() };
-                        StretchVoice::new(&stretched, region, data.clone(), tempo, sample_rate)
+                        StretchVoice::new(&stretched, data.clone(), tempo, sample_rate)
                     })
                     // Prepared later, off the audio thread (`prepare`).
                     .flatten();
-                let region_gain = if region.gain.is_finite() { region.gain.max(0.0) as f32 } else { 0.0 };
+                let region_gain = if clip.audio.gain.is_finite() { clip.audio.gain.max(0.0) as f32 } else { 0.0 };
                 let fingerprint = {
                     use std::hash::{Hash, Hasher};
                     let mut hasher = std::hash::DefaultHasher::new();
@@ -1201,7 +1201,7 @@ fn plan_clip(
                 };
                 audio_plans.push(PlanAudio {
                     event,
-                    follows_tempo: region.warped,
+                    follows_tempo: clip.audio.warped,
                     stretch,
                     voice: None,
                     stretch_beats,
