@@ -32,7 +32,8 @@ it, Escape leaves it; `clip.rename`) and its length in beats at the right. A lin
 
 Under it, in a row (the detail area under the views), three parts side by side, 8 points in from the
 panel's edges and 12 points apart; with the detail area stacked at the side, one under another, the
-Gain and Pitch part centred. Every control has its name over it (small, at its left) rather than
+Gain and Pitch part centred. The Gain and Pitch part is at most 150 points tall, as tall as the
+other parts, so its fader does not stretch when the detail area is made taller. Every control has its name over it (small, at its left) rather than
 beside it, and controls are 6 points apart, so no two touch.
 
 | Part | Controls | Command |

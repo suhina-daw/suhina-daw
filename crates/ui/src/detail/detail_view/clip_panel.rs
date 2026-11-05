@@ -952,6 +952,9 @@ fn gain_and_pitch(
     stacked: bool,
     actions: &mut Vec<Action>,
 ) {
+    // As tall as the other parts, however tall the detail area is: the fader does not stretch to
+    // the area's bottom.
+    let part = Rect::from_min_size(part.min, Vec2::new(part.width(), part.height().min(STACKED_GAIN)));
     let width = 52.0 + 12.0 + 64.0;
     let left = if stacked { part.center().x - width / 2.0 } else { part.left() };
     let gain = Rect::from_min_max(Pos2::new(left, part.top()), Pos2::new(left + 52.0, part.bottom()));
