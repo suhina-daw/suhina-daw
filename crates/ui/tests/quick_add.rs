@@ -13,6 +13,7 @@ use egui_kittest::kittest::Queryable;
 use suhina_engine::model::{Project, TrackId};
 use suhina_library::Library;
 use suhina_session::{Session, blank_project};
+use suhina_ui::kit::widgets::Action;
 use suhina_ui::{App, Status, kit::theme};
 
 fn temp(name: &str) -> PathBuf {
@@ -241,32 +242,60 @@ fn an_audio_track_is_offered_no_instrument_or_midi_effect() {
     let _ = std::fs::remove_dir_all(&settings);
 }
 
-#[test]
-fn a_sample_goes_on_a_new_track_after_the_selected_one_at_the_beat_under_the_pointer() {
-    let (mut harness, settings) = window("sample");
-    select(&mut harness, "1 MIDI");
-    // The pointer over the timeline, on the first track's lane, when the shortcut is pressed.
-    let lane = harness.get_by_label("Track 1 MIDI").rect().center().y;
+/// Opens the palette with the pointer over `track`'s lane, right of the headers, and adds the
+/// sample; the beat it was opened for.
+fn add_sample_over(harness: &mut Harness<'static, App>, track: &str) -> f64 {
+    let lane = harness.get_by_label(&format!("Track {track}")).rect().center().y;
     harness.hover_at(Pos2::new(900.0, lane));
     harness.run();
-    open(&mut harness);
-    let (track, beat) = harness.state().quick_add_target().unwrap();
-    assert_eq!(track, Some(TrackId(1)));
+    open(harness);
+    let (_, beat) = harness.state().quick_add_target().unwrap();
     assert!(beat > 0.0 && beat.fract() == 0.0, "the beat under the pointer, on the grid: {beat}");
-    type_text(&mut harness, "kick punchy");
+    type_text(harness, "kick punchy");
     assert!(harness.query_by_label("Add Kick Punchy.wav").is_some());
-    press(&mut harness, Key::Enter);
+    press(harness, Key::Enter);
     // The sample is read on another thread; wait for that, then the clip is placed.
     harness.state_mut().finish_drop();
     harness.run();
     assert!(!matches!(harness.state().status(), Status::Error(_)), "{:?}", harness.state().status());
+    beat
+}
+
+/// The clips on `track`'s arrangement lane: their starts.
+fn clip_starts(harness: &Harness<'static, App>, track: TrackId) -> Vec<f64> {
+    let p = project(harness);
+    p.arrangement
+        .lanes
+        .iter()
+        .filter(|l| l.track == Some(track))
+        .flat_map(|l| l.clips.iter().map(|c| c.start))
+        .collect()
+}
+
+#[test]
+fn a_sample_goes_on_the_selected_audio_track_at_the_beat_under_the_pointer() {
+    let (mut harness, settings) = window("sample");
+    let tracks = project(&harness).tracks.len();
+    select(&mut harness, "3 Audio");
+    let beat = add_sample_over(&mut harness, "3 Audio");
+    assert_eq!(project(&harness).tracks.len(), tracks, "no new track: as a drop on the lane");
+    assert_eq!(clip_starts(&harness, TrackId(3)), [beat], "on the selected track, at the palette's place");
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+#[test]
+fn a_sample_a_track_cannot_hold_goes_on_a_new_track_right_after_it() {
+    let (mut harness, settings) = window("sample-midi");
+    // A MIDI track with a clip holds no audio. (An empty one would become an audio track for the
+    // sample, as a drop on its lane makes it, #945.)
+    harness.state_mut().run(&Action::new("clip.create", serde_json::json!({ "track": 1, "start": 0.0 })));
+    harness.run();
+    select(&mut harness, "1 MIDI");
+    let beat = add_sample_over(&mut harness, "1 MIDI");
     let p = project(&harness);
     let names: Vec<String> = p.tracks.iter().map(|t| p.shown_track_name(t.id)).collect();
     assert_eq!(names[..2], ["1 MIDI".to_string(), "Kick Punchy".to_string()], "right after the selected track");
-    let added = p.tracks[1].id;
-    let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(added)).unwrap();
-    assert_eq!(lane.clips.len(), 1);
-    assert_eq!(lane.clips[0].start, beat, "at the palette's place");
+    assert_eq!(clip_starts(&harness, p.tracks[1].id), [beat], "at the palette's place");
     let _ = std::fs::remove_dir_all(&settings);
 }
 

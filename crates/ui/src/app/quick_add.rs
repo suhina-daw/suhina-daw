@@ -470,8 +470,8 @@ impl App {
     }
 
     /// Adds `found`: a device or a preset to `track` (or on a new track that becomes the
-    /// selected one), a sample or MIDI file as a clip on a new track after `track`, starting at
-    /// `beat`.
+    /// selected one), a sample or MIDI file as a clip on `track` starting at `beat` (on a new
+    /// track after it when it cannot hold the file, or with no track).
     fn quick_add_choose(&mut self, found: &Found, track: Option<TrackId>, beat: f64) {
         let track = track.filter(|t| self.session().is_some_and(|s| s.project().track(*t).is_some()));
         let notes = self.quick_add_notes(track);
@@ -529,8 +529,10 @@ impl App {
         let holds_clips = track
             .and_then(|t| self.session().and_then(|s| s.project().track(t).map(|x| x.content)))
             .is_some_and(|c| c.audio || c.notes);
+        // Onto the selected track, as a drop on its lane: a file it cannot hold goes on a new track
+        // right after it (`clip.addFiles` decides, and an empty track takes the file's kind).
         if let Some(track) = track.filter(|_| holds_clips) {
-            params["after"] = json!(track.0);
+            params["track"] = json!(track.0);
         }
         let samples = if found.kind == "sample" { vec![path.clone()] } else { Vec::new() };
         self.decode_then_run(samples, vec![("clip.addFiles", params)]);

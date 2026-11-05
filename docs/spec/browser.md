@@ -453,10 +453,11 @@ where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no tr
   `device.add` with `preset` (and `voice` for one voice of a bank, or `stock` for a stock preset) on the selected track, or
   `track.add` with them on a new one; a track that cannot take the preset's device says so in
   the status line. A sample or MIDI file
-  is `clip.addFiles` with no `track`: a new track (audio for a sample, MIDI for a MIDI file)
-  right after the selected track (`after`), or after the last regular track with none selected,
-  its clip starting at the palette's place. A sample is read on another thread first, as a drop
-  is.
+  is `clip.addFiles` on the selected track, as a drop on its lane: the clip starts at the
+  palette's place on that track when it holds the file (a sample on an audio track, a MIDI file
+  on a MIDI track, an empty track taking the file's kind, #945); a track that cannot hold it
+  gets a new track right after it. With no track selected, a new track after the last regular
+  track. A sample is read on another thread first, as a drop is.
 - **The palette's place:** with the pointer over the Arrangement's lanes when the shortcut is
   pressed, the beat under it, snapped to the grid; anywhere else, the play start marker.
 

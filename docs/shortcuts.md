@@ -108,7 +108,7 @@ status bar.
 | Add an audio track, a MIDI track below the selected one (`track.addAudio`, `track.addMidi`) | Ctrl+T, Ctrl+Shift+T |
 | Open the sample map in a window of its own, or put it back (`view.sampleMapWindow`; [spec](spec/sample-map.md) › Where the map is shown) | Ctrl+Alt+M |
 | Search in the browser (`browser.search`; shows it when hidden). In the search field: Up and Down move through the results, Enter adds the selection to the selected track, Escape clears the search and then leaves the field | Ctrl+F |
-| Open the quick-add palette (`view.quickAdd`; [spec](spec/browser.md#quick-add)): type part of a name, Up and Down move, Enter or a click adds the lit device to the selected track (or a new one) or the lit sample or MIDI file as a clip on a new track, Escape or a click outside closes | Ctrl+P |
+| Open the quick-add palette (`view.quickAdd`; [spec](spec/browser.md#quick-add)): type part of a name, Up and Down move, Enter or a click adds the lit device to the selected track (or a new one) or the lit sample or MIDI file as a clip on that track (a new track when it cannot hold the file), Escape or a click outside closes | Ctrl+P |
 | Open or close Settings (`settings.open`) | Ctrl+, |
 | Make the whole window larger, smaller, its normal size (`view.zoomIn`, `view.zoomOut`, `view.zoomReset`; 50–200 % in 10 % steps, kept in `settings.txt`, [spec](spec/window-zoom.md)) | Ctrl+Plus, Ctrl+Equals; Ctrl+Minus; Ctrl+0 |
 | Choose the Arrangement's tools while it has the keyboard and its toolbar shows: Select, Range, Split, Erase, Draw, Mute (`arrangement.tool1` … `arrangement.tool6`; [spec](spec/arrangement-editing.md#tools)) | 1; 2; 3; 4; 5; 6 |
