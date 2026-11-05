@@ -42,7 +42,9 @@ names no other program's behaviour.
     of the audio device chosen (Settings › Audio, `audio.setTrackInput`, ADR 0017; each audio
     device keeps its own with its Input), or with none chosen for it the device's first
     input (channels 1/2, or 1 on a one-channel device), so Record has something to record; new
-    audio tracks take the default track input too. Recording an armed track that hears none is
+    audio tracks take the default track input too, and so do the audio tracks that hear nothing
+    in a new project nothing has changed yet (blank or from a template), until its first edit.
+    Recording an armed track that hears none is
     refused with the track's name.
 - **Notes as they were heard.** A note starts when its key went down and ends when the sound
   was let go: at the key's release, or, while the sustain pedal is down, when the pedal comes

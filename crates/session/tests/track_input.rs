@@ -15,13 +15,15 @@ use suhina_session::{DeviceInputs, InputChoice, OutputChoice, Projects, Session}
 use crate::support::run;
 
 /// Projects with the blank project open and, when `input` is on, an input device chosen. No
-/// audio system: nothing opens, the choice is only kept.
+/// audio system: nothing opens, the choice is only kept. The project has been changed (its
+/// tempo), so the tracks that are there keep their inputs as an opened project's do.
 fn projects(input: bool) -> Projects {
     let mut projects = Projects::new();
     if input {
         projects.set_output_choice(OutputChoice { input: InputChoice::Default, ..OutputChoice::default() });
     }
     projects.add(Session::new(suhina_session::blank_project()), None).unwrap();
+    run(&mut projects, "transport.setTempo", json!({ "bpm": 121 })).unwrap();
     projects
 }
 
@@ -295,4 +297,36 @@ fn channels_no_track_could_hear_are_not_a_default() {
     assert_eq!(projects.track_input(), InputChannels::None);
     let audio = run(&mut projects, "track.add", json!({ "kind": "audio" })).unwrap();
     assert_eq!(input_of(&mut projects, &audio["track"]), "none");
+}
+
+#[test]
+fn a_new_project_nothing_has_changed_follows_the_default_track_input() {
+    let mut projects = Projects::new();
+    projects.set_output_choice(OutputChoice { input: InputChoice::Default, ..OutputChoice::default() });
+    run(&mut projects, "audio.setTrackInput", json!({ "input": "1/2" })).unwrap();
+    projects.add(Session::new(suhina_session::blank_project()), None).unwrap();
+    // The blank project's audio tracks hear the default from the start; MIDI tracks and returns
+    // do not, and it is not an edit: nothing to undo, nothing to save.
+    let tracks = inputs(&mut projects);
+    let heard: Vec<&str> = tracks.iter().map(|(_, input)| input.as_str()).collect();
+    assert_eq!(heard, ["none", "none", "1/2", "1/2", "none", "none"]);
+    let session = projects.get(projects.active().unwrap()).unwrap();
+    assert!(!session.can_undo() && !session.has_unsaved_changes());
+
+    // While it stays unchanged, the tracks follow another sound card's default.
+    projects.set_output_choice(OutputChoice {
+        host: Some("ASIO".into()),
+        device: Some("SSL 2+".into()),
+        input: InputChoice::Default,
+        ..OutputChoice::default()
+    });
+    assert_eq!(input_of(&mut projects, &json!(tracks[2].0)), "none", "nothing chosen for this card");
+    run(&mut projects, "audio.setTrackInput", json!({ "input": "2" })).unwrap();
+    assert_eq!(input_of(&mut projects, &json!(tracks[3].0)), "2");
+
+    // A track given an input by hand is the project's first change: from then on nothing follows.
+    run(&mut projects, "track.setAudioInput", json!({ "track": tracks[2].0, "input": "5" })).unwrap();
+    run(&mut projects, "audio.setTrackInput", json!({ "input": "1" })).unwrap();
+    assert_eq!(input_of(&mut projects, &json!(tracks[2].0)), "5");
+    assert_eq!(input_of(&mut projects, &json!(tracks[3].0)), "2");
 }

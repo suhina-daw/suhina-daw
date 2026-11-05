@@ -95,18 +95,14 @@ impl Session {
     /// records nothing. The result says which in `input_given`, or with `no_input` that there was
     /// none to give.
     fn arm(&mut self, params: &Value) -> Result<Value, CommandError> {
-        use suhina_model::{ChannelRole, InputChannels};
+        use suhina_model::InputChannels;
         let arming = Args::new(params).value("armed").and_then(Value::as_bool) == Some(true);
         let hears_nothing = |s: &Self| {
             let track = commands::track_id(&s.project, params).ok()?;
             s.project
                 .track(track)
                 .filter(|t| {
-                    let role = t.channel.and_then(|id| s.project.channels.iter().find(|c| c.id == id)).map(|c| c.role);
-                    t.content.audio
-                        && !t.content.notes
-                        && matches!(role, None | Some(ChannelRole::Regular))
-                        && t.audio_input.channels == InputChannels::None
+                    crate::records_audio(t, &s.project.channels) && t.audio_input.channels == InputChannels::None
                 })
                 .map(|_| track)
         };

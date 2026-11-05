@@ -242,7 +242,14 @@ with the project.
 - A default the open input device does not have (In 3/4 on a two-channel device) is not given;
   with no output open the channels are not known and it is given as chosen. Settings lists the
   device's channels and its pairs, and keeps a choice the device lacks listed and marked.
-- Changing the default leaves the tracks that are there as they are.
+- Changing the default leaves the tracks that are there as they are, except in a new project
+  nothing has changed yet (blank or from a template, never saved, no edit made): its audio tracks
+  that hear nothing take the default when it opens, and follow it while the project stays
+  unchanged, so choosing another sound card before the first edit moves them with it. Giving it
+  there is not an edit (no undo step, nothing to save); the first edit ends it
+  (`Session::set_default_input`).
+- Only an audio track on a regular mixer strip is given a default: a return or a group records
+  nothing.
 
 ## Amendment: playback reserve (2026-10-29)
 
