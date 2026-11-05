@@ -405,6 +405,14 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
         }
         None => (None, None),
     };
+    // Where new tracks go when no track is given: after this one, or at the end.
+    let after = match params.get("after") {
+        None | Some(Value::Null) => None,
+        Some(_) if stems_target.is_some() => {
+            return Err("give either track (to place them on) or after (new tracks after it), not both".into());
+        }
+        Some(_) => Some(track_at(&session.project, params, "after")?),
+    };
 
     // Read every file; the ones that cannot be read are skipped with a reason.
     let tempo = session.project.transport.tempo_bpm;
@@ -445,7 +453,8 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
     let p = &mut session.project;
     let mut new_tracks: Vec<TrackId> = Vec::new();
     let mut groups: Vec<(TrackId, Vec<Source>)> = Vec::new();
-    let mut last = target;
+    let mut last = target.or(after);
+    let follows = last.is_some();
     let (fits, rest): (Vec<Source>, Vec<Source>) =
         sources.into_iter().partition(|s| target_kind.is_some_and(|k| k == s.kind));
     if let Some(target) = target
@@ -471,7 +480,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
         for source in rest {
             let id = insert_track(p, source.kind, &source.name, last)?;
             new_tracks.push(id);
-            if target.is_some() {
+            if follows {
                 last = Some(id);
             }
             groups.push((id, vec![source]));
@@ -488,7 +497,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
             };
             let id = insert_track(p, kind, &name, last)?;
             new_tracks.push(id);
-            if target.is_some() {
+            if follows {
                 last = Some(id);
             }
             groups.push((id, of_kind));

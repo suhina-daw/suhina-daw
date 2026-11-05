@@ -4,6 +4,7 @@
 //! Project tabs: the tab row, Ctrl+Tab's switcher, and what each tab keeps of the views.
 
 use super::*;
+use crate::kit::floating_list;
 
 impl App {
     /// Puts the shown project's view state aside, under its id.
@@ -101,56 +102,36 @@ impl App {
         }
         // Down and Up move through the list too, as Tab and Shift+Tab do; the keys go no further
         // while it is open (#681).
-        let (down, up) = ctx.input_mut(|i| {
-            let mut moves = (0usize, 0usize);
-            i.events.retain(|event| match event {
-                egui::Event::Key { key: egui::Key::ArrowDown, pressed: true, .. } => {
-                    moves.0 += 1;
-                    false
-                }
-                egui::Event::Key { key: egui::Key::ArrowUp, pressed: true, .. } => {
-                    moves.1 += 1;
-                    false
-                }
-                _ => true,
-            });
-            moves
-        });
-        let count = ids.len();
-        let picked = (picked + down % count + count - up % count) % count;
+        let (down, up) = floating_list::take_arrow_moves(ctx);
+        let picked = floating_list::step(picked, ids.len(), down, up);
         self.tab_switcher = Some(picked);
-        let mut chosen = None;
-        egui::Area::new(egui::Id::unique("project-switcher"))
-            .order(egui::Order::Foreground)
-            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-            .show(ctx, |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_min_width(360.0);
-                    ui.label(egui::RichText::new("Open projects").color(theme::text_hint()).size(theme::TEXT_SMALL));
-                    for (place, id) in ids.iter().enumerate() {
-                        let name = self.projects.name(*id).unwrap_or("Untitled").to_string();
-                        let source = self
-                            .projects
-                            .get(*id)
-                            .and_then(Session::source)
-                            .map(|p| p.display().to_string())
-                            .unwrap_or_else(|| "Not saved yet".into());
-                        let lit = place == picked;
-                        let text = egui::RichText::new(format!("{name}\n{source}")).color(if lit {
-                            theme::text_primary()
-                        } else {
-                            theme::text_secondary()
-                        });
-                        let row = ui.add(egui::Button::selectable(lit, text).min_size(Vec2::new(360.0, 34.0)));
-                        row.widget_info(|| {
-                            egui::WidgetInfo::selected(egui::Role::Button, true, lit, format!("Switch to {name}"))
-                        });
-                        if row.clicked() {
-                            chosen = Some(place);
-                        }
-                    }
-                });
-            });
+        let rows: Vec<floating_list::Row> = ids
+            .iter()
+            .map(|id| {
+                let name = self.projects.name(*id).unwrap_or("Untitled").to_string();
+                let source = self
+                    .projects
+                    .get(*id)
+                    .and_then(Session::source)
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "Not saved yet".into());
+                floating_list::Row { text: format!("{name}\n{source}"), label: format!("Switch to {name}") }
+            })
+            .collect();
+        let look = floating_list::Look { width: 360.0, row_height: 34.0, visible_rows: rows.len() };
+        let heading = |ui: &mut Ui| {
+            ui.label(egui::RichText::new("Open projects").color(theme::text_hint()).size(theme::TEXT_SMALL));
+        };
+        let chosen = floating_list::show(
+            ctx,
+            egui::Id::unique("project-switcher"),
+            look,
+            heading,
+            &rows,
+            Some(picked),
+            down + up > 0,
+        )
+        .clicked;
         // Ctrl let go (or a click): to the picked project.
         let to = chosen.or((!held).then_some(picked));
         if let Some(place) = to {

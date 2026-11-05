@@ -582,6 +582,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Track,
                 "the track to place them on; files it cannot hold go on a new track after it (default: new tracks)",
             ),
+            optional(
+                "after",
+                ParamType::Track,
+                "with no track: put the new tracks after this one, in its group (default: after the last regular track)",
+            ),
             optional("start", ParamType::Number, "arrangement beat the first clip starts at"),
             optional("scene", ParamType::Integer, "scene number, from 1, of the first clip slot"),
             optional(
