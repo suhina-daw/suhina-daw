@@ -5,12 +5,16 @@ use super::*;
 
 #[test]
 fn a_track_that_plays_no_notes_is_offered_no_instrument_or_midi_effect() {
+    assert!(offered("instrument", None), "an instrument makes a new track");
     for kind in ["instrument", "midi_effect"] {
-        assert!(offered(kind, None), "{kind} on a new track");
         assert!(offered(kind, Some(true)), "{kind} on a MIDI track");
         assert!(!offered(kind, Some(false)), "{kind} on an audio track");
     }
-    for kind in ["effect", "sample", "midi"] {
+    for kind in ["effect", "midi_effect"] {
+        assert!(!offered(kind, None), "{kind} goes on the selected track only");
+    }
+    assert!(offered("effect", Some(false)) && offered("effect", Some(true)));
+    for kind in ["sample", "midi"] {
         assert!(offered(kind, Some(false)) && offered(kind, Some(true)) && offered(kind, None), "{kind}");
     }
     for kind in ["project", "audio_effect", "stems", ""] {
@@ -130,11 +134,11 @@ fn a_device_from_the_palette_lands_as_a_drag_from_the_browser_does() {
     let fm = device("fm-synth", "FM Synth", "instrument");
     let sampler = device("sampler", "Sampler", "instrument");
     let reverb = device("reverb", "Reverb", "effect");
-    let cases: [(&Found, drop::ItemKind, Option<TrackId>); 4] = [
+    // An effect with no track selected is not added from the palette (see below).
+    let cases: [(&Found, drop::ItemKind, Option<TrackId>); 3] = [
         (&fm, drop::ItemKind::Instrument, Some(TrackId(2))),
         (&reverb, drop::ItemKind::Effect, Some(TrackId(3))),
         (&fm, drop::ItemKind::Instrument, None),
-        (&reverb, drop::ItemKind::Effect, None),
     ];
     for (found, kind, track) in cases {
         let (mut palette, mut drag) = (blank_app(), blank_app());
@@ -150,4 +154,22 @@ fn a_device_from_the_palette_lands_as_a_drag_from_the_browser_does() {
         drag.drop_items(&[dragged(found, kind)], target, false);
         assert_eq!(tracks_and_devices(&palette), tracks_and_devices(&drag), "{} on {track:?}", found.name);
     }
+}
+
+#[test]
+fn an_effect_with_no_track_selected_says_to_select_one_and_adds_nothing() {
+    let mut app = blank_app();
+    let before = tracks_and_devices(&app);
+    let reverb = Found {
+        item: Item::Device("reverb".into()),
+        name: "Reverb".into(),
+        kind: "effect",
+        detail: None,
+        plugin: false,
+        format: None,
+        folder: None,
+    };
+    app.quick_add_choose(&reverb, None, 0.0);
+    assert_eq!(tracks_and_devices(&app), before);
+    assert!(matches!(&app.status, Status::Hint(why) if why.contains("Select a track")), "{:?}", app.status);
 }

@@ -444,6 +444,8 @@ pub struct App {
     quick_add: Option<quick_add::QuickAdd>,
     /// What the palette's buttons narrow it to, kept from one palette to the next.
     quick_add_filter: quick_add::Filter,
+    /// What the palette's field said when it was closed without adding, for the next one.
+    quick_add_kept: String,
     /// The Arrangement's clip selection last frame: when it changes while stopped, the play
     /// start marker goes to its first clip.
     clips_before: Vec<(TrackId, ClipId)>,
@@ -671,6 +673,7 @@ impl App {
             tab_switcher: None,
             quick_add: None,
             quick_add_filter: quick_add::Filter::default(),
+            quick_add_kept: String::new(),
             clips_before: Vec::new(),
             detail_max: false,
             detail_drag: None,

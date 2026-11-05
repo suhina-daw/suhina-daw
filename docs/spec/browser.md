@@ -434,15 +434,22 @@ where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no tr
   devices still among them. The formats are one list in the code (`PluginFormat`), so a new one
   is one more button.
 - **On a track that plays no notes** (an audio track, a group, a return) no instrument or MIDI
-  effect is listed. If one is chosen anyway, the status line says why and nothing is added.
+  effect is listed. **Effects go on the selected track only:** with no track selected, no effect
+  or MIDI effect is listed, and the header says `select a track for effects`. If one is chosen
+  anyway, the status line says why and nothing is added.
+- **The search is kept:** closed without adding (Escape, a click outside, to select a track,
+  say), the palette opens again with what its field said; adding something clears it.
 - **Keys:** Up and Down move the lit row, wrapping round; Enter adds the lit item and closes;
   a click on a row adds it and closes; Escape or a click outside closes without changing
   anything. Letting go of a modifier does not close it.
 - **What a choice runs**, each one command and one undo step, so agents and the CLI do the same:
   a device on the selected track is `device.add` (built-in) or `device.addPlugin` (plug-in), and
-  the detail area shows that track's devices; with no track selected it is `track.add` with
-  `device` (an instrument or a MIDI effect makes a MIDI track, an effect an audio track), and
-  the new track becomes the selected one, so the next add goes there too. A preset is
+  the detail area shows that track's devices; for an instrument with no track selected it is
+  `track.add` with `device` (a MIDI track named after the instrument), and the new track becomes
+  the selected one, so the next add goes there too. Tracks are named as when dragging from the
+  browser ([arrangement editing](arrangement-editing.md) › Names): an instrument names the
+  track, an instrument's preset gives it the preset's name, an effect leaves it as it is. A
+  preset is
   `device.add` with `preset` (and `voice` for one voice of a bank, or `stock` for a stock preset) on the selected track, or
   `track.add` with them on a new one; a track that cannot take the preset's device says so in
   the status line. A sample or MIDI file

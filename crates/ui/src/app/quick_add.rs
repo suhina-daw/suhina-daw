@@ -129,12 +129,16 @@ pub(super) struct QuickAdd {
 }
 
 /// Whether an item of `kind` (as `library.search` names it) is offered; `notes` is whether the
-/// target track plays notes (`None` for a new track, which takes any kind).
+/// target track plays notes (`None` with no track selected: a new track).
 pub(super) fn offered(kind: &str, notes: Option<bool>) -> bool {
     match kind {
-        "instrument" | "midi_effect" => notes != Some(false),
+        // An instrument goes on a track that plays notes, or makes a new one.
+        "instrument" => notes != Some(false),
+        // Effects go on the selected track only: a MIDI effect on one that plays notes.
+        "midi_effect" => notes == Some(true),
+        "effect" => notes.is_some(),
         // A preset is for a built-in device; adding it says so when the track cannot take it.
-        "effect" | "sample" | "midi" | "preset" => true,
+        "sample" | "midi" | "preset" => true,
         // Projects, device graphs and Stems files are added from the browser.
         _ => false,
     }
@@ -179,6 +183,9 @@ fn refused(found: &Found, notes: Option<bool>) -> Option<String> {
         return None;
     }
     Some(match found.kind {
+        "effect" | "midi_effect" if notes.is_none() => {
+            format!("Select a track for {}: an effect goes on the selected track", found.name)
+        }
         "instrument" => format!("{} is an instrument: it goes on a MIDI track, not on this one", found.name),
         "midi_effect" => format!("{} is a MIDI effect: it goes on a MIDI track, not on this one", found.name),
         _ => format!("{} cannot be added from here", found.name),
@@ -223,6 +230,12 @@ fn toggle_button(ui: &mut Ui, on: bool, title: &str) -> bool {
 }
 
 impl App {
+    /// What the palette's field says, or said when it was closed without adding: it is kept
+    /// until something is added.
+    pub fn quick_add_text(&self) -> &str {
+        self.quick_add.as_ref().map_or(self.quick_add_kept.as_str(), |p| p.text.as_str())
+    }
+
     /// Whether the quick-add palette is open.
     pub fn quick_add_open(&self) -> bool {
         self.quick_add.is_some()
@@ -242,7 +255,8 @@ impl App {
         let pointer = if self.shown == View::Arrangement { self.arrangement.pointer_beat } else { None };
         let beat = pointer.unwrap_or_else(|| session.player().map_or(0.0, |p| p.monitor().start_beat())).max(0.0);
         self.quick_add = Some(QuickAdd {
-            text: String::new(),
+            // What was typed before it was closed without adding (to select a track, say).
+            text: self.quick_add_kept.clone(),
             picked: 0,
             track,
             beat,
@@ -337,7 +351,7 @@ impl App {
             return;
         }
         if take_key(ctx, Key::Escape) {
-            self.quick_add = None;
+            self.close_quick_add();
             return;
         }
         let enter = take_key(ctx, Key::Enter);
@@ -349,7 +363,12 @@ impl App {
                 Some(track) => format!("Track: {}", self.track_name(track)),
                 None => "New track".to_string(),
             };
-            format!("{target} · {}", place_label(palette.beat, self.bar_beats()))
+            let place = place_label(palette.beat, self.bar_beats());
+            if palette.track.is_none() {
+                format!("{target} · {place} · select a track for effects")
+            } else {
+                format!("{target} · {place}")
+            }
         };
         let mut filter = self.quick_add_filter.clone();
         let Some(palette) = self.quick_add.as_mut() else { return };
@@ -421,11 +440,24 @@ impl App {
         let chosen = shown.clicked.or_else(|| enter.then_some(palette.picked).filter(|_| !rows.is_empty()));
         if let Some(place) = chosen.and_then(|place| listed.get(place).copied()) {
             let Some(palette) = self.quick_add.take() else { return };
+            // Adding is what clears the field for next time; a choice that cannot be added here
+            // keeps it, so the search is there once a track is selected.
+            self.quick_add_kept.clear();
             if let Some(found) = palette.found.get(place).cloned() {
+                if refused(&found, self.quick_add_notes(palette.track)).is_some() {
+                    self.quick_add_kept = palette.text;
+                }
                 self.quick_add_choose(&found, palette.track, palette.beat);
             }
         } else if clicked_outside {
-            self.quick_add = None;
+            self.close_quick_add();
+        }
+    }
+
+    /// Closes the palette without adding, keeping what its field says for the next one.
+    fn close_quick_add(&mut self) {
+        if let Some(palette) = self.quick_add.take() {
+            self.quick_add_kept = palette.text;
         }
     }
 

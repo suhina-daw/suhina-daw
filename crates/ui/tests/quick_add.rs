@@ -117,7 +117,10 @@ fn open(harness: &mut Harness<'static, App>) {
     harness.run();
 }
 
+/// Types `text` over what the field says (it keeps a search the palette was closed with).
 fn type_text(harness: &mut Harness<'static, App>, text: &str) {
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
     harness.input_mut().events.push(egui::Event::Text(text.into()));
     harness.run();
 }
@@ -137,10 +140,13 @@ fn the_shortcut_opens_the_palette_naming_the_target_and_escape_closes_it() {
     let (mut harness, settings) = window("open");
     open(&mut harness);
     assert!(harness.state().quick_add_open());
-    assert!(harness.query_by_label("New track · Bar 1").is_some(), "no track selected: a new track");
+    assert!(
+        harness.query_by_label("New track · Bar 1 · select a track for effects").is_some(),
+        "no track selected: a new track"
+    );
     let before = project(&harness);
-    type_text(&mut harness, "overdrive");
-    assert!(harness.query_by_label("Add Overdrive").is_some(), "typing finds the effect");
+    type_text(&mut harness, "fm synth");
+    assert!(harness.query_by_label("Add FM Synth").is_some(), "typing finds the instrument");
     press(&mut harness, Key::Escape);
     assert!(!harness.state().quick_add_open(), "Escape closes it");
     assert_eq!(project(&harness), before, "and changes nothing");
@@ -288,6 +294,8 @@ fn the_kind_buttons_under_the_list_narrow_it_and_stay_for_the_next_palette() {
 #[test]
 fn a_plugin_shows_its_format_and_the_format_buttons_choose_one() {
     let (mut harness, settings) = window_with_plugins("formats");
+    // A MIDI track selected, so effects are listed as well as instruments.
+    select(&mut harness, "1 MIDI");
     open(&mut harness);
     type_text(&mut harness, "nova");
     // The synth is there twice, told apart by its format.
@@ -304,12 +312,46 @@ fn a_plugin_shows_its_format_and_the_format_buttons_choose_one() {
     assert!(harness.query_by_label("Add Nova Synth (VST2)").is_none(), "VST3 only");
     press(&mut harness, Key::Enter);
     let p = project(&harness);
+    let on_track = p.channel_of_track(TrackId(1)).and_then(|c| c.devices.first()).map(|d| d.kind.clone());
+    assert!(matches!(on_track, Some(suhina_engine::model::DeviceKind::Vst3 { .. })), "{on_track:?}");
+    assert_eq!(p.shown_track_name(TrackId(1)), "1 Nova Synth", "the track takes the instrument's name");
+
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+#[test]
+fn effects_wait_for_a_selected_track_and_the_search_is_kept_until_something_is_added() {
+    let (mut harness, settings) = window("kept");
+    open(&mut harness);
+    type_text(&mut harness, "reverb");
+    assert!(harness.query_by_label("Add Reverb").is_none(), "no track selected: no effects");
+    // Closed to select a track: the search is still there when it opens again.
+    press(&mut harness, Key::Escape);
+    select(&mut harness, "3 Audio");
+    open(&mut harness);
+    assert_eq!(harness.state().quick_add_text(), "reverb");
+    assert!(harness.query_by_label("Add Reverb").is_some(), "with a track selected the effect is listed");
+    press(&mut harness, Key::Enter);
+    assert_eq!(devices(&harness, TrackId(3)), ["Reverb"]);
+    assert_eq!(project(&harness).tracks[2].name, "# Audio", "an effect does not name the track");
+    // Adding cleared it.
+    open(&mut harness);
+    assert_eq!(harness.state().quick_add_text(), "");
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+#[test]
+fn a_plugin_instrument_with_no_track_selected_makes_a_track_named_after_it() {
+    let (mut harness, settings) = window_with_plugins("plugin-new-track");
+    open(&mut harness);
+    type_text(&mut harness, "nova synth");
+    press(&mut harness, Key::Enter);
+    let p = project(&harness);
     let plugin_on = |t: &suhina_engine::model::Track| {
-        p.channels.iter().find(|c| Some(c.id) == t.channel).and_then(|c| c.devices.first()).map(|d| d.kind.clone())
+        p.channel_of_track(t.id).and_then(|c| c.devices.first()).map(|d| d.kind.clone())
     };
     let new = p.tracks.iter().find(|t| plugin_on(t).is_some()).expect("a new track with the synth");
     assert!(new.content.notes, "an instrument makes a MIDI track");
-    assert!(matches!(plugin_on(new), Some(suhina_engine::model::DeviceKind::Vst3 { .. })), "{:?}", plugin_on(new));
     assert_eq!(new.name, "Nova Synth", "named after the plug-in, as a drag of it onto the empty area names it");
     let _ = std::fs::remove_dir_all(&settings);
 }
