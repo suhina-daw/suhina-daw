@@ -100,7 +100,7 @@ jobs:
       - name: Documents that describe the changed code
         if: github.event_name == 'pull_request'
         run: python3 scripts/docs.py impact HEAD^1
-      # docs/INDEX.md, docs/commands.md and the two status figures are generated
+      # docs/INDEX.md and docs/commands.md are generated
       # on main (docs-generated.yml). A pull request that edits one of them would have the edit
       # overwritten on the next merge, silently, so it is refused here instead and sent to the
       # source of the file. Adding one (the pull request that introduces it) is not an edit.
@@ -109,7 +109,7 @@ jobs:
         env:
           BASE: HEAD^1
         run: |
-          edited=$(git diff --name-only --diff-filter=a "$BASE" HEAD -- docs/INDEX.md docs/commands.md \n            docs/status.svg docs/status-dark.svg || true)
+          edited=$(git diff --name-only --diff-filter=a "$BASE" HEAD -- docs/INDEX.md docs/commands.md || true)
           if [ -z "$edited" ]; then
             echo "No generated file is touched."
             exit 0

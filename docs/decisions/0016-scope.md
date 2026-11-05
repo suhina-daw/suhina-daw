@@ -63,10 +63,12 @@ the missing parts in. It does not schedule the work.
 5. **Suhina describes itself in its own terms.** The roadmap, the README and this ADR list areas
    and features under Suhina's names. Comparisons with other products, where the maintainers make
    them for planning, are kept out of the repository; format specs still say which format they read
-   (AGENTS.md rule 9). The README's status figure is the one thing drawn from that planning here:
-   the maintainers' feature list, kept in a private repository, is counted into done, started and
-   to-do features per Suhina area, and only those numbers reach this repository, with no other
-   product named and nothing of its documentation.
+   (AGENTS.md rule 9). The README's status figure is the one thing drawn from that planning: the
+   maintainers' feature list, kept in a private repository, is counted into done, started and
+   to-do features per Suhina area, drawn there and published to the public
+   [suhina-status](https://github.com/suhina-daw/suhina-status), which the README shows. Only
+   area names of Suhina's own and numbers leave the private repository, with no other product
+   named and nothing of its documentation.
 
 ## The build order
 

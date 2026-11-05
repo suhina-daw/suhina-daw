@@ -5,22 +5,12 @@ name: Generated docs
 #   - last_verified in the front matter of every document changed since it was last set
 #     (scripts/docs.py stamp);
 #   - docs/INDEX.md, from the documents' front matter;
-#   - the README's status figure (docs/status.svg, docs/status-dark.svg and the block between the
-#     status markers in README.md), from the maintainers' feature count and the open bugs of each
-#     `area:` label (scripts/status_figure.py); also once a day, so a closed bug or an updated
-#     count shows without a merge;
 #   - ROADMAP.md › What works now, with each file under docs/works-now/ folded in and deleted
 #     (scripts/works_now.py), so pull requests add a file of their own there rather than editing it.
 # Pull requests leave all of them alone, so two pull requests never conflict on them (issue #462).
 # A pull request changes only the inputs; ci.yml checks that they render.
 #
-# The feature count is status.json of the private repository suhina-daw/suhina-parity: numbers per
-# area only. The `status-data` job reads it with a token of the docs bot app limited to that
-# repository's contents, read only (the app is installed on it too), and the open bugs per area
-# with this workflow's own token; it runs nothing from this repository. Without the app's
-# installation there, the figure is left as it is.
-#
-# Three jobs, so the key that may push to main never shares a machine with code from the repository
+# Two jobs, so the key that may push to main never shares a machine with code from the repository
 # or its dependencies (build scripts, proc macros): `generate` builds and writes the files with no
 # secrets; `publish` runs only git, copies exactly those files and pushes them.
 #
@@ -35,8 +25,6 @@ name: Generated docs
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: "17 4 * * *"
   workflow_dispatch:
 
 permissions:
@@ -51,56 +39,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Reads the numbers the figure is drawn from; runs no code of this repository.
-  status-data:
-    runs-on: ubuntu-latest
-    environment: docs-bot
-    permissions:
-      issues: read
-    env:
-      HAS_APP: ${{ vars.DOCS_BOT_CLIENT_ID != '' && secrets.DOCS_BOT_PRIVATE_KEY != '' }}
-    steps:
-      - name: Token of the docs bot app, to read the private feature count
-        id: app-token
-        if: env.HAS_APP == 'true'
-        continue-on-error: true
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
-          private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
-          # The owner is this repository's; the token reaches that one repository only.
-          repositories: suhina-parity
-          permission-contents: read
-      - name: The feature count and the open bugs per area
-        env:
-          PARITY_TOKEN: ${{ steps.app-token.outputs.token }}
-          GH_TOKEN: ${{ github.token }}
-          OUT: ${{ runner.temp }}/status-data
-        run: |
-          mkdir -p "$OUT"
-          if [ -z "$PARITY_TOKEN" ]; then
-            echo "::warning::No token for suhina-daw/suhina-parity (is the docs bot app installed there?), so the status figure is left as it is."
-            exit 0
-          fi
-          GH_TOKEN="$PARITY_TOKEN" gh api -H "Accept: application/vnd.github.raw" \
-            repos/${{ github.repository_owner }}/suhina-parity/contents/status.json > "$OUT/status.json"
-          gh api -X GET search/issues --paginate \
-            -f q="repo:${{ github.repository }} is:issue is:open label:bug" -f per_page=100 \
-            --jq '.items[].labels[].name' > "$OUT/labels.txt"
-          python3 -c 'import collections, json, sys
-          names = [l.strip() for l in open(sys.argv[1], encoding="utf-8") if l.startswith("area: ")]
-          json.dump(dict(collections.Counter(n[len("area: "):] for n in names)), open(sys.argv[2], "w"))' \
-            "$OUT/labels.txt" "$OUT/bugs.json"
-          rm "$OUT/labels.txt"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: status-data
-          path: ${{ runner.temp }}/status-data
-          if-no-files-found: ignore
-          retention-days: 1
-
   generate:
-    needs: status-data
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -120,20 +59,6 @@ jobs:
         run: python3 scripts/works_now.py fold
       - name: docs/INDEX.md
         run: python3 scripts/docs.py index --write
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        continue-on-error: true
-        with:
-          name: status-data
-          path: ${{ runner.temp }}/status-data
-      - name: The status figure
-        env:
-          DATA: ${{ runner.temp }}/status-data
-        run: |
-          if [ ! -f "$DATA/status.json" ]; then
-            echo "No feature count this run; the status figure stays as it is."
-            exit 0
-          fi
-          python3 scripts/status_figure.py --status "$DATA/status.json" --bugs "$DATA/bugs.json"
       # Every document, since `stamp` may change any of them; publish copies back only the ones
       # that differ and checks what changed in them.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -141,16 +66,12 @@ jobs:
           name: generated-docs
           path: |
             docs/**/*.md
-            docs/status.svg
-            docs/status-dark.svg
           retention-days: 1
       # Apart, since a second root would move every path in the artifact above.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: generated-roadmap
-          path: |
-            ROADMAP.md
-            README.md
+          path: ROADMAP.md
           retention-days: 1
 
   publish:
@@ -183,9 +104,8 @@ jobs:
         env:
           GENERATED: ${{ runner.temp }}/generated
           ROADMAP: ${{ runner.temp }}/roadmap/ROADMAP.md
-          README: ${{ runner.temp }}/roadmap/README.md
         run: |
-          for name in INDEX.md commands.md status.svg status-dark.svg; do
+          for name in INDEX.md commands.md; do
             source="$GENERATED/$name"
             if [ ! -f "$source" ] || [ -L "$source" ]; then
               echo "::error::$name is missing from the generated files or is not a regular file."
@@ -202,12 +122,6 @@ jobs:
               cmp -s "$GENERATED/$rel" "docs/$rel" || cp "$GENERATED/$rel" "docs/$rel"
             fi
           done
-          # README.md, of which only the status block may differ (checked below).
-          if [ ! -f "$README" ] || [ -L "$README" ]; then
-            echo "::error::README.md is missing from the generated files or is not a regular file."
-            exit 1
-          fi
-          cp "$README" README.md
           # ROADMAP.md with the docs/works-now files folded in, and those files deleted: the ones
           # tracked here that the generated set no longer has.
           if [ ! -f "$ROADMAP" ] || [ -L "$ROADMAP" ]; then
@@ -225,8 +139,8 @@ jobs:
           fi
           # Only modified (" M") or new ("??") files, never a rename, and only the files generated
           # above; any other document only modified; deleted (" D") only a folded docs/works-now file.
-          if printf '%s\n' "$changed" | grep -Ev '^( M|\?\?) docs/(INDEX|commands)\.md$|^( M|\?\?) docs/status(-dark)?\.svg$|^ M docs/.*\.md$|^ M (ROADMAP|README)\.md$|^ D docs/works-now/[^/]+/[^/]+\.md$'; then
-            echo "::error::Only the generated docs, the status figure and its README block, last_verified dates and the folded ROADMAP bullets may change (above: anything else)."
+          if printf '%s\n' "$changed" | grep -Ev '^( M|\?\?) docs/(INDEX|commands)\.md$|^ M docs/.*\.md$|^ M ROADMAP\.md$|^ D docs/works-now/[^/]+/[^/]+\.md$'; then
+            echo "::error::Only the generated docs, last_verified dates and the folded ROADMAP bullets may change (above: anything else)."
             exit 1
           fi
           # In ROADMAP.md, lines only added, and each one a line of a deleted docs/works-now file.
@@ -247,13 +161,6 @@ jobs:
             echo "::error::A document changed in more than its last_verified line (above)."
             exit 1
           fi
-          # In README.md, the status block only: with it left out, the committed and the
-          # regenerated README are the same text.
-          outside='s/<!-- status:start.*?<!-- status:end -->/<status>/gs'
-          if ! cmp -s <(git show HEAD:README.md | perl -0pe "$outside") <(perl -0pe "$outside" README.md); then
-            echo "::error::README.md changed outside its status block."
-            exit 1
-          fi
           git diff --stat
           if [ "$HAS_APP" != "true" ]; then
             echo "::warning::DOCS_BOT_CLIENT_ID or DOCS_BOT_PRIVATE_KEY is not set in the docs-bot environment, so the files are not pushed."
@@ -261,10 +168,10 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/INDEX.md docs/commands.md docs/status.svg docs/status-dark.svg
-          git add -u -- 'docs/*.md' ROADMAP.md README.md
+          git add docs/INDEX.md docs/commands.md
+          git add -u -- 'docs/*.md' ROADMAP.md
           # The subject starts "Docs: regenerate", which `docs.py stamp` skips (scripts/docs.py).
-          git commit -m "Docs: regenerate INDEX.md, commands.md, the status figure, and last_verified dates"
+          git commit -m "Docs: regenerate INDEX.md, commands.md and last_verified dates"
           if ! git push origin HEAD:main; then
             echo "::notice::main moved on during this run; the run for the newer commit regenerates the files."
           fi

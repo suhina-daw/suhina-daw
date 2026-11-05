@@ -61,5 +61,5 @@
 
 **Documented**
 - [ ] The documents that describe what changed are updated (`python scripts/docs.py impact`).
-- [ ] Generated files are left alone: the `last_verified` dates, `docs/commands.md` and the
-      README's status figure are written on `main` after the merge.
+- [ ] Generated files are left alone: the `last_verified` dates and `docs/commands.md` are
+      written on `main` after the merge.

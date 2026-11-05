@@ -7,14 +7,14 @@
 
 An open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live.
 
-<!-- status:start (written by scripts/status_figure.py on main; edit that, not this) -->
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/status-dark.svg">
-  <img width="680" alt="Suhina by area: 111 of 368 features done, 43 in progress" src="docs/status.svg">
-</picture>
+<a href="https://github.com/suhina-daw/suhina-status">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/suhina-daw/suhina-status/main/status-dark.svg">
+    <img width="680" alt="Suhina by area: how many features are done, in progress and planned, with the open bugs" src="https://raw.githubusercontent.com/suhina-daw/suhina-status/main/status.svg">
+  </picture>
+</a>
 
-> How much of each area of Suhina works today: 111 of 368 features done and 43 in progress. A box's size is its number of features, its fill the share done; the red number is the area's open bugs. Redrawn on `main` every day.
-<!-- status:end -->
+> How much of each area of Suhina works today. A box's size is its number of features, its fill the share done; the red number is the area's open bugs. The maintainers count it from their feature list and a bot redraws it every day ([suhina-status](https://github.com/suhina-daw/suhina-status)).
 
 > What comes next, and in what order: [`ROADMAP.md`](ROADMAP.md) and [ADR 0016](docs/decisions/0016-scope.md).
 
