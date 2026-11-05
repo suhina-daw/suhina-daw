@@ -179,6 +179,10 @@ impl SlotFactory<'_> {
                 latency: 0,
                 delay: Delay::new(0),
             };
+            // What the branch runs, each device with its id: a group whose devices traded
+            // places, even two of the same kind, starts again instead of each running device
+            // taking the other's settings.
+            let mut identity = Vec::new();
             for (i, device) in branch.devices.iter().enumerate() {
                 let mut inner = path.to_vec();
                 inner.extend([b, i]);
@@ -187,6 +191,7 @@ impl SlotFactory<'_> {
                     run.latency = run.latency.saturating_add(built.latency);
                     run.slots.push(built.slot);
                     run.positions.push(i);
+                    identity.push(format!("{}#{}", built.id, device.id.0));
                     run.ids.push(built.id);
                     run.values.push(built.values);
                     run.sample_slices.push(built.slices);
@@ -195,7 +200,7 @@ impl SlotFactory<'_> {
             }
             let (left, right) = run.mix.heard_gains(any_solo);
             (run.left.value, run.left.target, run.right.value, run.right.target) = (left, left, right, right);
-            ids.push(run.ids.join(","));
+            ids.push(identity.join(","));
             branches.push(run);
         }
         let values = group_param_values(&stored.params);
@@ -352,7 +357,6 @@ pub(crate) fn find_group(slots: &mut [DeviceSlot], number: usize) -> Option<&mut
 }
 
 impl GroupSlot {
-    /// Sets its parameter `param` ([`GROUP_PARAMS`] order). Never allocates.
     /// Moves branch `branch`'s volume (linear, at most +6 dB), pan (-1 to 1), mute or solo (on
     /// at 0.5 and above): its gains, and with a solo every branch's, go to their new targets and
     /// get there smoothed. Ignored for a branch it does not have or a value that is not finite.
@@ -376,6 +380,7 @@ impl GroupSlot {
         }
     }
 
+    /// Sets its parameter `param` ([`GROUP_PARAMS`] order). Never allocates.
     pub(crate) fn set_param(&mut self, param: usize, value: f64) {
         let Some(&(_, min, max, _)) = GROUP_PARAMS.get(param) else { return };
         if !value.is_finite() {

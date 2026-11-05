@@ -16,7 +16,7 @@ const PULSE_PERIOD: f64 = 0.8;
 const EGUI_ANIMATION_TIME: f32 = 0.083;
 
 fn key() -> Id {
-    Id::new("suhina-animations")
+    Id::unique("suhina-animations")
 }
 
 /// Turns animations on or off, ours and egui's own.
@@ -92,8 +92,8 @@ mod tests {
         let ctx = Context::default();
         set_enabled(&ctx, false);
         assert!(!enabled(&ctx));
-        assert_eq!(toward(&ctx, Id::new("a"), true, 1.0), 1.0);
-        assert_eq!(value(&ctx, Id::new("b"), 0.3, 1.0), 0.3);
+        assert_eq!(toward(&ctx, Id::unique("a"), true, 1.0), 1.0);
+        assert_eq!(value(&ctx, Id::unique("b"), 0.3, 1.0), 0.3);
         assert_eq!(pulse(&ctx), 1.0);
     }
 }

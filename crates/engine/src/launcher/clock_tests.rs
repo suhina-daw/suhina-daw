@@ -52,12 +52,16 @@ fn adopting_keeps_the_bars_only_on_the_same_map_and_meter() {
     let mut old = four_four();
     old.quantization = Quantization::Beats(1.0);
     old.leave_map(0.0);
+    old.pending_signature = Some((4.0, THREE));
     let mut new = four_four();
     assert!(new.adopt(&old, true));
     assert!(!new.follows_map);
     assert_eq!(new.quantization, Quantization::Beats(1.0));
+    assert_eq!(new.pending_signature, Some((4.0, THREE)));
+    // An edited map also drops the signature still waiting for its launch beat.
     let mut edited = four_four();
     assert!(!edited.adopt(&old, false));
     assert!(edited.follows_map);
     assert_eq!(edited.quantization, Quantization::Beats(1.0));
+    assert_eq!(edited.pending_signature, None);
 }

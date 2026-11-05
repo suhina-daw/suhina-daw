@@ -56,6 +56,9 @@ pub fn kind_of(path: &Path) -> Option<FileKind> {
     if crate::stems::is_stems_path(path) {
         return Some(FileKind::Stems);
     }
+    if suhina_model::is_preset_file(path) {
+        return Some(FileKind::Preset);
+    }
     if suhina_model::is_project_file(path) {
         return Some(FileKind::Project);
     }
@@ -392,6 +395,7 @@ mod tests {
         assert_eq!(kind_of(Path::new("x.aiff")), Some(FileKind::Sample));
         assert_eq!(kind_of(Path::new("groove.MID")), Some(FileKind::Midi));
         assert_eq!(kind_of(Path::new("bank.syx")), Some(FileKind::Preset));
+        assert_eq!(kind_of(Path::new("Bass.fm-synth.preset.suhina")), Some(FileKind::Preset));
         assert_eq!(kind_of(Path::new("song.suhina")), Some(FileKind::Project));
         assert_eq!(kind_of(Path::new("old song.SUHINA")), Some(FileKind::Project));
         assert_eq!(kind_of(Path::new("set.als")), Some(FileKind::Project));

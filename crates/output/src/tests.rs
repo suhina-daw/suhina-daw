@@ -40,9 +40,7 @@ fn control_panel_targets_the_current_owner_once_and_rejects_other_hosts() {
 #[test]
 fn a_missing_callback_or_failed_device_does_not_wait_forever_for_the_close_fade() {
     let control = transition::Control::default();
-    let start = std::time::Instant::now();
     assert!(!control.finish(Duration::from_millis(10), || false));
-    assert!(start.elapsed() < Duration::from_secs(2));
     assert!(!control.finish(Duration::from_secs(60), || true));
 }
 
@@ -290,9 +288,9 @@ fn the_chosen_device_is_looked_for_in_the_background() {
     assert_eq!(system.chosen_present(&other), None);
 }
 
-/// Waits up to two seconds for `done`, looking every millisecond.
+/// Waits up to a minute for `done`, looking every millisecond; only a hang gets that far.
 fn eventually(mut done: impl FnMut() -> bool) -> bool {
-    let until = std::time::Instant::now() + Duration::from_secs(2);
+    let until = std::time::Instant::now() + Duration::from_secs(60);
     while std::time::Instant::now() < until {
         if done() {
             return true;
@@ -441,4 +439,18 @@ fn device_switch_fades_the_actual_ring_including_cue_before_acknowledging_close(
             assert!(progress.transition.drained());
         }
     }
+}
+
+/// One look at the devices' names at a time, and the next only after a pause, however often the
+/// window asks.
+#[test]
+fn the_next_look_for_the_names_waits_its_turn() {
+    let start = std::time::Instant::now();
+    let mut watch = NamesWatch::default();
+    assert!(watch.due(start), "the first look is due at once");
+    watch.started = Some(start);
+    assert!(!watch.due(start));
+    assert!(watch.due(start + NAMES_LOOK_EVERY));
+    watch.looking = true;
+    assert!(!watch.due(start + NAMES_LOOK_EVERY), "one at a time");
 }

@@ -416,6 +416,105 @@ fn stopping_the_transport_releases_an_instruments_notes() {
     assert!(peak(&after[24_000..]) < 1e-4, "{}", peak(&after[24_000..]));
 }
 
+/// A watched device's output lands in its spectrum ring, after the device's own controls, and
+/// only the watched device's ring has it (docs/spec/eq.md › The panel › The analyser).
+#[test]
+fn a_watched_devices_ring_holds_its_output() {
+    let loud = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[])]);
+    let mut renderer = Renderer::build(
+        &loud,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    let spectrum = monitor.spectrum();
+    spectrum.watch(0, TrackId(1), 0);
+    let out = blocks(&mut renderer, 4, 480);
+    assert!(peak(&out) > 0.05, "the tone plays");
+    let (samples, valid) = spectrum.samples(TrackId(1), 0).expect("the watched device has output");
+    assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
+    let loud_ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(loud_ring > 0.01, "the tone's output is in the ring, peak {loud_ring}");
+    assert!(
+        (loud_ring - peak(&out)).abs() < 0.02,
+        "the ring is the device's output, {loud_ring} against {}",
+        peak(&out)
+    );
+    assert!(spectrum.samples(TrackId(1), 1).is_none(), "another device's ring reads nothing");
+
+    // With the utility 12 dB down, the ring is 12 dB down with it: it is what the device
+    // made of the sound, not what went in.
+    let quiet = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[("gain", -12.0)])]);
+    let mut renderer = Renderer::build(
+        &quiet,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    monitor.spectrum().watch(0, TrackId(1), 0);
+    blocks(&mut renderer, 4, 480);
+    let (samples, _) = monitor.spectrum().samples(TrackId(1), 0).expect("the watched device has output");
+    let quiet_ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!((quiet_ring - loud_ring * 0.25).abs() < 0.02, "the ring heard the gain, {quiet_ring} against {loud_ring}");
+}
+
+#[test]
+fn a_skipped_device_keeps_the_watch_at_its_project_position() {
+    // A disabled utility first: `build` omits it, so the chain's slot 0 is the enabled one
+    // at project position 1. The watch is keyed by the position, so the second utility's own
+    // output lands in its row and the first's ghost slot does not hand it its input instead
+    // (the analyser's line shows the watched device, not its slot's neighbour).
+    let muted = {
+        let mut skipped = device("utility", &[]);
+        skipped.enabled = false;
+        skipped
+    };
+    let eager = project(vec![note(0.0, 8.0, 60)], 8.0, vec![muted, device("utility", &[])]);
+    let mut renderer = Renderer::build(
+        &eager,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let binding = renderer.controller().meter_monitor_arc();
+    let spectrum = binding.spectrum();
+    spectrum.watch(1, TrackId(1), 1);
+    blocks(&mut renderer, 4, 480);
+    let (samples, valid) = spectrum.samples(TrackId(1), 1).expect("the second device's ring holds its output");
+    assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
+    let ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(ring > 0.01, "the second utility's output is in its ring, peak {ring}");
+    assert!(
+        spectrum.samples(TrackId(1), 0).is_none(),
+        "the slot at position 0 was never run, so its ring reads nothing"
+    );
+}
+
+#[test]
+fn a_stopped_transport_keeps_the_watched_ring_empty() {
+    // The chain runs silent blocks while the transport is stopped; a device's output is then
+    // silence, and appending it would pull the analyser's held spectrum to silence. The spec
+    // asks the opposite: the line holds what it last read (docs/spec/eq.md › The analyser).
+    let loud = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[])]);
+    let mut stopped = Renderer::build(
+        &loud,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    let binding = stopped.controller().meter_monitor_arc();
+    let spectrum = binding.spectrum();
+    spectrum.watch(0, TrackId(1), 0);
+    blocks(&mut stopped, 4, 480);
+    assert!(spectrum.samples(TrackId(1), 0).is_none(), "the silent blocks left the ring empty");
+}
+
 #[test]
 fn a_held_note_ends_when_an_edit_takes_it_away_while_playing() {
     // An 8-beat note sounds; at 0.5 s an edit deletes its clip, deletes the note, or shortens it
@@ -589,6 +688,61 @@ fn running_devices_survive_an_insert_before_them_by_their_ids() {
     assert!(kept < 1e-4, "{kept}");
     let restarted = render(false);
     assert!(restarted > 1e-3, "without ids the delay starts empty: {restarted}");
+}
+
+/// Two devices of the same kind trading places: each keeps its running state by its id, not by
+/// its place. The echoing delay moves behind a dry one, so the track sounds as if nothing moved;
+/// kept by place, the echoes would stay in the first delay, now dry, and stop.
+#[test]
+fn identical_devices_that_trade_places_keep_their_own_running_state() {
+    let echoing = device("delay", &[("feedback", 0.9), ("mix", 0.5)]);
+    let dry = device("delay", &[("mix", 0.0)]);
+    let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), echoing, dry]);
+    p.assign_ids().unwrap();
+    let mut edited = p.clone();
+    edited.channels[0].devices.swap(1, 2);
+    let inputs = || RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory());
+    let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 60, 480);
+    controller.update(&edited).unwrap();
+    out.extend(blocks(&mut renderer, 60, 480));
+    let mut untouched = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+    let reference = blocks(&mut untouched, 120, 480);
+    let diff = max_diff(&out, &reference);
+    assert!(diff < 1e-4, "{diff}");
+}
+
+/// The same inside a device group: a group whose devices traded places starts again as a whole,
+/// as one whose devices changed does, instead of keeping each running device by its place under
+/// the other's settings. It sounds as a new group with the same devices would.
+#[test]
+fn a_group_whose_identical_devices_trade_places_starts_again() {
+    let echoing = device("delay", &[("feedback", 0.9), ("mix", 0.5)]);
+    let short = device("delay", &[("feedback", 0.0), ("mix", 0.5)]);
+    let group = DeviceGroup::with_branches(vec![Branch { devices: vec![echoing, short], ..Branch::new("") }]);
+    let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), Device::group("G", group)]);
+    p.assign_ids().unwrap();
+    let mut swapped = p.clone();
+    if let Some(g) = swapped.channels[0].devices[1].as_group_mut() {
+        g.branches[0].devices.swap(0, 1);
+    }
+    // The same group under an id the running one does not have: built new.
+    let mut fresh = swapped.clone();
+    fresh.channels[0].devices[1].id = DeviceId::NONE;
+    fresh.assign_ids().unwrap();
+    assert_ne!(fresh.channels[0].devices[1].id, p.channels[0].devices[1].id);
+    let render = |edited: &Project| {
+        let inputs = || RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory());
+        let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+        let mut controller = renderer.controller();
+        let mut out = blocks(&mut renderer, 60, 480);
+        controller.update(edited).unwrap();
+        out.extend(blocks(&mut renderer, 60, 480));
+        out
+    };
+    let diff = max_diff(&render(&swapped), &render(&fresh));
+    assert!(diff < 1e-6, "{diff}");
 }
 
 /// #911: with the loop on over bars 3 to 10 and playback starting before a MIDI clip at bar 5,

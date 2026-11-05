@@ -4,7 +4,7 @@ read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 ---
 
 # 0019: MIDI controllers and mapping
@@ -16,7 +16,7 @@ last_verified: 2026-11-02
 ## Context
 
 ROADMAP › Later lists MIDI controllers and remote mapping, and
-[ADR 0016](0016-parity-target.md) puts it in the third tier (item 11): a performance feature for
+[ADR 0016](0016-scope.md) puts it in the third tier (item 11): a performance feature for
 people who already work in Suhina. This record is the design, written before any code, so the
 pieces it touches are not built in a way that has to be undone.
 

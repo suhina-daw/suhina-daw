@@ -53,20 +53,22 @@ impl LaunchClock {
         }
     }
 
-    /// Takes over `old`'s quantisation, waiting signature and, when the meter is the same and
-    /// `same_tempo` says the tempo map is too, its bars: an edited map or meter puts the clock
-    /// back on the map. Whether the bars were kept.
+    /// Takes over `old`'s quantisation and, when the meter is the same and `same_tempo` says the
+    /// tempo map is too, its bars and waiting signature: an edited map or meter puts the clock
+    /// back on the map and drops a scene's signature still waiting for its launch beat. Whether
+    /// the bars were kept.
     pub(crate) fn adopt(&mut self, old: &LaunchClock, same_tempo: bool) -> bool {
         self.quantization = old.quantization;
-        self.pending_signature = old.pending_signature;
         let kept = same_tempo && self.meter == old.meter;
         if kept {
+            self.pending_signature = old.pending_signature;
             self.follows_map = old.follows_map;
             self.time_signature = old.time_signature;
             self.bar_beats = old.bar_beats;
             self.bar_origin = old.bar_origin;
             self.bars_before = old.bars_before;
         } else {
+            self.pending_signature = None;
             self.follows_map = true;
         }
         kept

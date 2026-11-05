@@ -65,7 +65,7 @@ pub enum Choice {
 /// Draws the project dialog over `area`, above everything else.
 pub fn show(ui: &Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Option<Choice> {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("project-dialog"))
+    egui::Area::new(Id::unique("project-dialog"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -150,7 +150,7 @@ fn draw(ui: &mut Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Opti
         field,
         egui::TextEdit::singleline(&mut state.path).hint_text("Path to a .suhina or .als file").font(small.clone()),
     );
-    edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Project path"));
+    edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Project path"));
     if std::mem::take(&mut state.focus_path) {
         edit.request_focus();
     }
@@ -211,7 +211,7 @@ pub enum SaveChoice {
 /// Draws the save prompt over `area`.
 pub fn show_save(ui: &Ui, area: Rect, prompt: &mut SavePrompt) -> Option<SaveChoice> {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("save-prompt"))
+    egui::Area::new(Id::unique("save-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -243,7 +243,7 @@ fn draw_save(ui: &mut Ui, area: Rect, prompt: &mut SavePrompt) -> Option<SaveCho
             input.max.x = browse.left() - 4.0;
         }
         let edit = crate::kit::widgets::text_input_at(ui, input, egui::TextEdit::singleline(value).font(small.clone()));
-        edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, label));
+        edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, label));
         if focus {
             edit.request_focus();
         }
@@ -293,7 +293,7 @@ pub enum UnsavedChoice {
 /// Asks whether to save `name`'s changes before `doing` ("closing it", "quitting"), over `area`.
 pub fn show_unsaved(ui: &Ui, area: Rect, name: &str, doing: &str) -> Option<UnsavedChoice> {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("unsaved-prompt"))
+    egui::Area::new(Id::unique("unsaved-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -335,7 +335,7 @@ fn platform() -> String {
 /// Draws the About dialog over `area`. Returns what was chosen, or `None` while it stays open.
 pub fn show_about(ui: &Ui, area: Rect) -> Option<AboutChoice> {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("about-dialog"))
+    egui::Area::new(Id::unique("about-dialog"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -430,7 +430,7 @@ pub enum AraEditsChoice {
 /// Asks whether clips `plugin` edits keep their edits on the track they go to, over `area`.
 pub fn show_ara_edits(ui: &Ui, area: Rect, plugin: &str) -> Option<AraEditsChoice> {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("ara-edits-prompt"))
+    egui::Area::new(Id::unique("ara-edits-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -499,7 +499,7 @@ const RECOVERY_BUTTON: Vec2 = Vec2::new(120.0, 18.0);
 /// file, over `area`; `saved` says whether the project has a file at all.
 pub fn show_recovery(ui: &Ui, area: Rect, name: &str, written: &str, saved: bool) -> Option<RecoveryChoice> {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("recovery-prompt"))
+    egui::Area::new(Id::unique("recovery-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -559,7 +559,7 @@ pub enum AgentChoice {
 /// over `area`.
 pub fn show_agent(ui: &Ui, area: Rect, client: &str) -> Option<AgentChoice> {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("agent-prompt"))
+    egui::Area::new(Id::unique("agent-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -607,7 +607,7 @@ fn draw_agent(ui: &mut Ui, area: Rect, client: &str) -> Option<AgentChoice> {
 /// move, `Some(false)` to leave them.
 pub fn show_folder_move(ui: &Ui, area: Rect, what: &str, to: &str) -> Option<bool> {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("folder-move"))
+    egui::Area::new(Id::unique("folder-move"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -666,7 +666,7 @@ impl CloseChoice for ImportChoice {
 /// it in as a copy, or leave it.
 pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice> {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("theme-import"))
+    egui::Area::new(Id::unique("theme-import"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -709,7 +709,7 @@ pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice
 /// A panel in the middle of `area` with a title row and a Close button, the area behind dimmed
 /// and its clicks swallowed. Returns the panel; `closed` is set when Close is clicked.
 pub(crate) fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str, closed: &mut Option<T>) -> Rect {
-    let behind = ui.interact(area, Id::new(("dialog-behind", title)), Sense::click_and_drag());
+    let behind = ui.interact(area, Id::unique(("dialog-behind", title)), Sense::click_and_drag());
     let _swallowed = behind.clicked();
     let painter = ui.painter_at(area);
     painter.rect_filled(area, 0.0, theme::window_background().gamma_multiply(0.6));
@@ -731,7 +731,7 @@ pub(crate) fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str
         theme::text_primary(),
     );
     let close = Rect::from_min_size(Pos2::new(bar.right() - 52.0, bar.top()), Vec2::new(52.0, ROW));
-    let response = widgets::button_area(ui, close, Id::new(("dialog-close", title)), format!("Close {title}"));
+    let response = widgets::button_area(ui, close, Id::unique(("dialog-close", title)), format!("Close {title}"));
     let hover = widgets::hover(ui, &response);
     painter.fill_background(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
     let small = theme::ui_font(theme::TEXT_SMALL);
@@ -797,7 +797,7 @@ pub(crate) fn heading(painter: &egui::Painter, at: Rect, text: &str) {
 
 /// A row to click: a name, and a note on the right.
 pub(crate) fn row(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, note: &str, label: &str) -> egui::Response {
-    let response = widgets::button_area(ui, rect, Id::new(("dialog-row", label)), label);
+    let response = widgets::button_area(ui, rect, Id::unique(("dialog-row", label)), label);
     let fill = motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response));
     painter.fill_background(rect, 0.0, fill);
     let inner = rect.shrink2(Vec2::new(PAD, 0.0));
@@ -838,7 +838,7 @@ mod tests {
     use egui_kittest::kittest::Queryable;
 
     fn dialog(lists: Lists) -> Harness<'static, (DialogState, Option<Choice>)> {
-        Harness::builder().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
+        Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
             move |ui, (state, chosen): &mut (DialogState, Option<Choice>)| {
                 let area = ui.max_rect();
                 if let Some(choice) = show(ui, area, state, &lists) {
@@ -903,7 +903,7 @@ mod tests {
     fn the_save_prompt_makes_the_path_from_name_and_folder() {
         let prompt =
             SavePrompt { template: false, name: String::new(), folder: "songs".into(), focus: true, collect: false };
-        let mut harness = Harness::builder().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
             |ui, (prompt, chosen): &mut (SavePrompt, Option<SaveChoice>)| {
                 let area = ui.max_rect();
                 if let Some(choice) = show_save(ui, area, prompt) {
@@ -937,15 +937,16 @@ mod tests {
             ("Ignore the backup", RecoveryChoice::Ignore),
             ("Close Backup found", RecoveryChoice::Ignore),
         ] {
-            let mut harness = Harness::builder().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
-                |ui, chosen: &mut Option<RecoveryChoice>| {
-                    let area = ui.max_rect();
-                    if let Some(choice) = show_recovery(ui, area, "Song", "2026-10-15 14:05", true) {
-                        *chosen = Some(choice);
-                    }
-                },
-                None,
-            );
+            let mut harness =
+                Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
+                    |ui, chosen: &mut Option<RecoveryChoice>| {
+                        let area = ui.max_rect();
+                        if let Some(choice) = show_recovery(ui, area, "Song", "2026-10-15 14:05", true) {
+                            *chosen = Some(choice);
+                        }
+                    },
+                    None,
+                );
             harness.run();
             harness.get_by_label(label).click();
             harness.run();

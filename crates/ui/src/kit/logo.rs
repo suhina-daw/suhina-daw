@@ -41,7 +41,7 @@ pub fn texture(ctx: &Context, width: u32, height: u32, name: Color32) -> Option<
     if width == 0 || height == 0 || width > MAX_SIDE || height > MAX_SIDE {
         return None;
     }
-    let id = Id::new(("suhina-logo", width, height, name.to_array()));
+    let id = Id::unique(("suhina-logo", width, height, name.to_array()));
     if let Some(texture) = ctx.data(|d| d.get_temp::<TextureHandle>(id)) {
         return Some(texture);
     }
@@ -69,8 +69,8 @@ pub fn paint(ui: &Ui, painter: &Painter, rect: Rect, font: FontId, opacity: f32)
             theme::text_primary().gamma_multiply(opacity),
         ),
     }
-    let response = ui.interact(rect, Id::new(("suhina-logo", rect.min.x as i32, rect.min.y as i32)), Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "Suhina"));
+    let response = ui.interact(rect, Id::unique(("suhina-logo", rect.min.x as i32, rect.min.y as i32)), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, "Suhina"));
 }
 
 fn render(svg: &str, width: u32, height: u32, name: Color32) -> Option<ColorImage> {

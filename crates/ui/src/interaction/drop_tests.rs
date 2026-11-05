@@ -126,6 +126,14 @@ fn devices_go_on_the_track_or_make_one() {
     let new = plan(&[pitch], DropTarget::NewTracks { beat: Some(0.0), scene: None }, false, "rhythmic", false, &name)
         .unwrap();
     assert_eq!(new.commands, vec![("track.add", json!({ "device": "pitch" }))]);
+    // A preset that ships with Suhina, on a track or on a new one.
+    let stock = item("stock:fm-synth/warm-fm-bass", ItemKind::Preset);
+    let on_track =
+        plan(std::slice::from_ref(&stock), DropTarget::Track(TrackId(2)), false, "rhythmic", false, &name).unwrap();
+    assert_eq!(on_track.commands, vec![("device.add", json!({ "stock": "fm-synth/warm-fm-bass", "track": 2 }))]);
+    let new = plan(&[stock], DropTarget::NewTracks { beat: Some(0.0), scene: None }, false, "rhythmic", false, &name)
+        .unwrap();
+    assert_eq!(new.commands, vec![("track.add", json!({ "stock": "fm-synth/warm-fm-bass" }))]);
     assert!(
         plan(&[item("/s/dir", ItemKind::Folder)], DropTarget::Track(TrackId(1)), false, "rhythmic", false, &name)
             .is_none()

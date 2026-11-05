@@ -45,6 +45,8 @@ fn arrangement_sized(project: Project, size: (f32, f32)) -> Harness<'static, App
     app.set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1 bar"));
     app.set_session(Session::new(project), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(size)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -943,6 +945,8 @@ fn render_the_lanes() {
     app.set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1 bar"));
     app.set_session(Session::new(project), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)
         .with_step_dt(0.05)
@@ -1195,6 +1199,19 @@ fn by_default_only_a_click_on_the_line_adds_a_point() {
     let line = rect.bottom() - 0.85 * (rect.height() - 2.0 * 4.0) - 4.0;
     click_at(&mut harness, Pos2::new(rect.left() + 100.0, line));
     assert_eq!(volume(&harness).0.len(), 1, "a click on the line adds a point");
+}
+
+/// A grid value in a lane's menu is the Arrangement's: the launch quantisation stays.
+#[test]
+fn a_lanes_grid_menu_leaves_the_launch_quantisation_alone() {
+    let mut harness = with_lanes();
+    let rect = lane(&harness);
+    let before = harness.state().session().map(|s| s.quantization());
+    right_click_at(&mut harness, Pos2::new(rect.left() + 700.0, rect.center().y));
+    harness.get_by_label("1/8").click_accesskit();
+    harness.run();
+    assert_eq!(harness.state().arrangement().grid.label(), "1/8");
+    assert_eq!(harness.state().session().map(|s| s.quantization()), before);
 }
 
 /// A right-click on the line offers Add value; a point's menu has Edit value, whose field sets the

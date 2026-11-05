@@ -247,7 +247,7 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     ui.spacing_mut().button_padding.y = 2.0;
 
     // Name: edited in place, applied with Enter.
-    let id = Id::new(("rename", track));
+    let id = Id::unique(("rename", track));
     let mut text = ui.data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| menu.name.to_string());
     let response = crate::kit::widgets::text_input(
         ui,
@@ -387,7 +387,7 @@ pub fn insert_items(ui: &mut Ui, after: Option<TrackId>, actions: &mut Vec<Actio
 pub const NAME_FIELD: &str = "menu-name-field";
 
 fn name_field_on(ui: &Ui) -> bool {
-    ui.ctx().data(|d| d.get_temp::<bool>(Id::new(NAME_FIELD))).unwrap_or(false)
+    ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(NAME_FIELD))).unwrap_or(false)
 }
 
 /// The Rename item: the window asks for the clip's new name (`ui.renameClip`), as Ctrl+R does.
@@ -438,14 +438,12 @@ pub fn clip_menu(
         rename_item(ui, json!({ "clip": clip.0 }), name, actions);
         ui.separator();
     } else if let [(_, clip)] = clips {
-        let id = Id::new(("clip-rename", clip.0));
+        let id = Id::unique(("clip-rename", clip.0));
         let mut draft: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| name.to_string());
         let field =
             crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut draft).id(id).desired_width(140.0));
         ui.ctx().data_mut(|d| d.insert_temp(id, draft.clone()));
-        field.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, format!("Rename clip {}", name))
-        });
+        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename clip {}", name)));
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         // An empty draft clears the name: the command takes it.
         if (enter || ui.button("Rename").clicked()) && draft.trim() != name.trim() {
@@ -545,7 +543,7 @@ pub fn scene_menu(ui: &mut Ui, menu: &SceneMenu<'_>, actions: &mut Vec<Action>) 
         ("signature", signature, "Time signature, such as 3/4"),
     ];
     for (key, current, hint) in fields {
-        let id = Id::new(("scene-field", key, scene));
+        let id = Id::unique(("scene-field", key, scene));
         let mut text = ui.data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| current.clone());
         let response = crate::kit::widgets::text_input(
             ui,
@@ -656,14 +654,12 @@ pub fn slot_menu(
     if has_clip && !name_field_on(ui) {
         rename_item(ui, json!({ "track": track.0, "scene": scene }), name, actions);
     } else if has_clip {
-        let id = Id::new(("slot-rename", track, scene));
+        let id = Id::unique(("slot-rename", track, scene));
         let mut draft: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| name.to_string());
         let field =
             crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut draft).id(id).desired_width(140.0));
         ui.ctx().data_mut(|d| d.insert_temp(id, draft.clone()));
-        field.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, format!("Rename clip {}", name))
-        });
+        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename clip {}", name)));
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         // An empty draft clears the name: the command takes it.
         if (enter || ui.button("Rename").clicked()) && draft.trim() != name.trim() {
@@ -713,7 +709,7 @@ mod tests {
         use egui_kittest::Harness;
         use egui_kittest::kittest::Queryable;
         // Not edited yet: Edit with, which opens it there.
-        let mut harness = Harness::builder().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
             |ui, actions: &mut Vec<Action>| ara_menu(ui, TrackId(2), ClipId(7), "Tune", false, actions),
             Vec::new(),
         );
@@ -725,7 +721,7 @@ mod tests {
         assert_eq!((action.id, action.params.clone()), ("view.araEditor", json!({ "track": 2, "clip": 7 })));
         drop(harness);
         // Edited: Open in, and Stop editing with, which takes the clip off it (#990).
-        let mut harness = Harness::builder().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
             |ui, actions: &mut Vec<Action>| ara_menu(ui, TrackId(2), ClipId(7), "Tune", true, actions),
             Vec::new(),
         );

@@ -176,15 +176,23 @@ impl App {
                     actions.push(quantize);
                 }
             }
-            // Delete in the piano roll deletes its selected notes, not the clip.
-            "selection.delete" if let Some(delete) = self.piano_roll.delete_selected() => actions.push(delete),
-            // Copy, cut, paste and duplicate in the piano roll act on its notes, when it has some
-            // to act on; its own keys act only there.
-            "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate"
-                if let Some(edit) = self.piano_key(action) =>
-            {
-                actions.push(edit)
+            // While the piano roll has the keyboard, the edit keys act on its notes, or on nothing
+            // when it has none to act on: never on the clip or the view behind it.
+            "selection.delete" if self.piano_has_keyboard() || self.piano_edits_focused_clip() => {
+                actions.extend(self.piano_roll.delete_selected())
             }
+            "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate"
+                if self.piano_has_keyboard() || self.piano_edits_focused_clip() =>
+            {
+                actions.extend(self.piano_key(action))
+            }
+            "selection.mute"
+            | "selection.rename"
+            | "selection.split"
+            | "selection.consolidate"
+            | "selection.takeUp"
+            | "selection.takeDown"
+                if self.piano_has_keyboard() => {}
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
             // A range painted on an automation lane: copy, cut, paste (from its start), duplicate
             // (right after it) and delete act on it (#916).
@@ -277,8 +285,27 @@ impl App {
             "selection.cut" | "selection.duplicate" if self.shown == View::Session => {
                 self.status = Status::Hint("In the Launcher view, a slot's clip can be copied and pasted".into());
             }
-            // Take pieces picked with Ctrl and a click: Delete deletes them, the last take first so
-            // the numbers of the others hold when an emptied take goes (#989).
+            // Take lanes picked by their headers: Delete deletes them, in one undo step.
+            "selection.delete" if self.shown == View::Arrangement && !self.arrangement.take_lanes_picked.is_empty() => {
+                let picked = std::mem::take(&mut self.arrangement.take_lanes_picked);
+                let Some((track, _)) = picked.first() else { return };
+                let takes: Vec<usize> = picked.iter().map(|(_, n)| *n).collect();
+                actions.push(Action::new("take.delete", json!({ "track": track.0, "takes": takes })));
+            }
+            // An area painted across take lanes with Ctrl and a drag: Delete and Cut take what is
+            // in it, in one undo step (#1078).
+            "selection.delete" | "selection.cut"
+                if self.shown == View::Arrangement && self.arrangement.take_area.is_some() =>
+            {
+                let Some(area) = self.arrangement.take_area.take() else { return };
+                self.arrangement.take_selected.clear();
+                let id = if action == "selection.cut" { "take.cutRange" } else { "take.deleteRange" };
+                let params =
+                    json!({ "track": area.track.0, "takes": area.takes, "start": area.start, "end": area.end });
+                actions.push(Action::new(id, params));
+            }
+            // Take pieces picked with Ctrl and a click: Delete deletes them, one undo step per take
+            // (#989).
             "selection.delete" if self.shown == View::Arrangement && !self.arrangement.take_selected.is_empty() => {
                 let mut picked = std::mem::take(&mut self.arrangement.take_selected);
                 picked.sort_unstable_by_key(|(t, n, p)| (t.0, std::cmp::Reverse(*n), *p));
@@ -1253,7 +1280,7 @@ pub(super) fn describe(action: &Action) -> Option<String> {
             mapping_target(p)
         ),
         "launcher.removeMapping" => format!("Removed the keys of {}", mapping_target(p)),
-        "launcher.setQuantization" => format!("Grid {}", p["value"].as_str().unwrap_or_default()),
+        "launcher.setQuantization" => format!("Launch quantisation {}", p["value"].as_str().unwrap_or_default()),
         "clip.setLaunchMode" => format!("Launch mode {}", p["mode"].as_str().unwrap_or_default()),
         "clip.setQuantization" => format!("Clip launch quantisation {}", p["value"].as_str().unwrap_or_default()),
         "clip.setLegato" => {

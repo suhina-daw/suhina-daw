@@ -556,6 +556,12 @@ impl Controller {
     pub fn meter_monitor(&self) -> &crate::meters::MeterMonitor {
         &self.meter_monitor
     }
+
+    /// The level meters' monitor by its own arc, so a front end can keep it in frame data
+    /// (the EQ panel's analyser, docs/spec/eq.md › The panel › The analyser).
+    pub fn meter_monitor_arc(&self) -> Arc<crate::meters::MeterMonitor> {
+        Arc::clone(&self.meter_monitor)
+    }
 }
 
 /// A note of a launch clip, in content beats, with its mix resolved.
@@ -788,10 +794,11 @@ impl ClipLauncher {
         std::mem::swap(&mut self.control, &mut old.control);
         self.random = old.random;
         self.beat = old.beat;
-        self.pending_tempo = old.pending_tempo;
-        // An edited tempo map or meter puts the clock back on the map; otherwise a scene's tempo
-        // and time signature stay, with their bars.
+        // An edited tempo map or meter puts the clock back on the map and drops a scene's tempo
+        // or time signature still waiting for its launch beat; otherwise they stay, with their
+        // bars.
         if self.bars.adopt(&old.bars, self.clock == old.clock) {
+            self.pending_tempo = old.pending_tempo;
             self.tempo_bpm = old.tempo_bpm;
         } else {
             self.tempo_bpm = self.clock.bpm_at(self.beat);

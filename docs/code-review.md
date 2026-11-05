@@ -3,7 +3,7 @@ description: How to review pull requests for requirements, correctness, performa
 read_when: code review, reviewing a pull request, review feedback, contributor changes, security review, performance review, approval readiness, Codex review
 type: howto
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-04
 covers:
   - AGENTS.md
   - CONTRIBUTING.md
@@ -92,7 +92,7 @@ paths. In particular, check:
   the shared render path and the out-of-process plug-in boundary;
 - command-based user behaviour, the current device SDK architecture and naming rules;
 - the claim, linked issue and overlapping work under `workflow.md` › Tasks;
-- meaningful regression coverage, *How to check it*, `Parity:` and updates to documents that
+- meaningful regression coverage, *How to check it* and updates to documents that
   describe the changed behaviour under `workflow.md` › What a pull request carries;
 - generated files and `last_verified` dates that a pull request must leave alone.
 - a setting added or moved in `settings_rows.rs`: report a row on the wrong page for its task, a

@@ -243,7 +243,6 @@ pub(super) const FIELDS: &[Field] = &[
     number!("zoom", zoom, u32, clamp ZOOMS),
     either!("waveform_scale", waveform_db, "linear", "db"),
     choice!("piano_roll_top", piano_roll_top, { PianoRollTop::Track => "track", PianoRollTop::Window => "window" }),
-    either!("piano_roll_grid", piano_grid_follows, "own", "control_bar"),
     named!("piano_roll_toolbar", toolbar_size, ToolbarSize),
     Field {
         key: "backup",
@@ -255,6 +254,8 @@ pub(super) const FIELDS: &[Field] = &[
 
 /// The settings `Settings::to_text` writes after the view's.
 pub(super) const LATER: &[Field] = &[
+    named!("piano_key_style", piano_key_style, PianoKeyStyle),
+    named!("piano_key_names", piano_key_names, PianoKeyNames),
     Field {
         key: "background_image",
         write: |s| s.background_image.replace(['\r', '\n'], ""),

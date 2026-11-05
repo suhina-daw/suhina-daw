@@ -182,7 +182,7 @@ fn the_similar_lists_scroll_bar_can_be_dragged() {
     let points: Vec<MapPoint> = (0..60).map(|i| point(i as f32 / 60.0, 0.5, Kind::Kick)).collect();
     let mut view = MapView::default();
     view.show_similar(0, (0..60).collect());
-    let mut harness = Harness::builder().with_size(egui::vec2(600.0, 340.0)).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(600.0, 340.0)).build_ui_state(
         |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
             show(ui, view, &points, None, "60 samples", &[], None, &[], events)
         },
@@ -214,7 +214,7 @@ fn hovering_previews_and_clicking_selects() {
     let points: Vec<MapPoint> =
         (0..20).map(|i| point((i % 5) as f32 / 4.0, (i / 5) as f32 / 3.0, Kind::Kick)).collect();
     let state = (MapView::default(), Vec::<MapEvent>::new());
-    let mut harness = Harness::builder().with_size(egui::vec2(400.0, 340.0)).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(400.0, 340.0)).build_ui_state(
         |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
             show(ui, view, &points, None, "20 samples", &[], None, &[], events)
         },
@@ -246,7 +246,7 @@ fn a_drag_carries_the_pressed_point_not_the_one_under_the_pointer() {
     // A row of points 0.02 apart: a few pixels on screen, a dense cloud.
     let points: Vec<MapPoint> = (0..40).map(|i| point(0.1 + i as f32 * 0.02, 0.5, Kind::Kick)).collect();
     let state = (MapView::default(), Vec::<MapEvent>::new());
-    let mut harness = Harness::builder().with_size(egui::vec2(400.0, 340.0)).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(400.0, 340.0)).build_ui_state(
         |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
             show(ui, view, &points, None, "40 samples", &[], None, &[], events)
         },
@@ -282,7 +282,7 @@ fn the_controls_wrap_instead_of_overlapping_when_the_map_is_narrow() {
     let status = "153534 samples, 25947 too long, 4955 could not be read";
     let mut tops = Vec::new();
     for width in [180.0, 320.0, 900.0] {
-        let mut harness = Harness::builder().with_size(egui::vec2(width, 400.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(width, 400.0)).build_ui_state(
             |ui, view: &mut MapView| show(ui, view, &points, None, status, &[], None, &[], &mut Vec::new()),
             MapView::default(),
         );
@@ -310,7 +310,7 @@ fn the_volume_slider_reports_a_new_level() {
     use egui_kittest::kittest::Queryable;
     let points: Vec<MapPoint> = (0..4).map(|i| point(i as f32 / 4.0, 0.5, Kind::Kick)).collect();
     let state = (MapView::default(), Vec::<MapEvent>::new());
-    let mut harness = Harness::builder().with_size(egui::vec2(900.0, 400.0)).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 400.0)).build_ui_state(
         |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
             show(ui, view, &points, None, "4 samples", &[], None, &[], events)
         },
@@ -340,7 +340,7 @@ fn the_status_tooltip_says_why_samples_are_missing() {
         lines: vec!["2: unsupported codec: adpcm".into(), "    a.wav, b.wav".into()],
     }];
     let status = "4 samples, 2 could not be read";
-    let mut harness = Harness::builder().with_size(egui::vec2(600.0, 340.0)).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(600.0, 340.0)).build_ui_state(
         |ui, view: &mut MapView| show(ui, view, &points, None, status, &details, None, &[], &mut Vec::new()),
         MapView::default(),
     );
@@ -366,7 +366,7 @@ fn the_busy_card_does_not_block_the_map_under_it() {
     let points: Vec<MapPoint> = (0..20).map(|_| point(0.5, 0.5, Kind::Kick)).collect();
     let busy = Busy { title: "Arranging the map".into(), detail: "42 %".into(), fraction: 0.42 };
     let state = (MapView::default(), Vec::<MapEvent>::new());
-    let mut harness = Harness::builder().with_size(egui::vec2(400.0, 340.0)).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(400.0, 340.0)).build_ui_state(
         |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
             show(ui, view, &points, None, "20 samples", &[], Some(&busy), &[], events)
         },
@@ -396,15 +396,15 @@ fn the_wheel_zooms_only_when_no_dialog_is_on_top() {
     let size = egui::vec2(400.0, 340.0);
     // The view, and whether a dialog covers it.
     let state = (MapView::default(), false);
-    let mut harness = Harness::builder().with_size(size).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(size).build_ui_state(
         |ui, (view, dialog): &mut (MapView, bool)| {
             show(ui, view, &points, None, "20 samples", &[], None, &[], &mut Vec::new());
             if *dialog {
-                egui::Area::new(egui::Id::new("dialog")).order(egui::Order::Foreground).fixed_pos(Pos2::ZERO).show(
+                egui::Area::new(egui::Id::unique("dialog")).order(egui::Order::Foreground).fixed_pos(Pos2::ZERO).show(
                     ui.ctx(),
                     |ui| {
                         ui.set_min_size(size);
-                        let _ = ui.interact(Rect::from_min_size(Pos2::ZERO, size), ui.id(), Sense::click());
+                        let _ = ui.interact(Rect::from_min_size(Pos2::ZERO, size), ui.scope_id(), Sense::click());
                     },
                 );
             }
@@ -420,6 +420,7 @@ fn the_wheel_zooms_only_when_no_dialog_is_on_top() {
             unit: egui::MouseWheelUnit::Point,
             delta: Vec2::new(0.0, 120.0),
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
             modifiers: egui::Modifiers::NONE,
         });
         harness.input_mut().events.push(egui::Event::Zoom(1.5));

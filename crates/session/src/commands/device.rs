@@ -40,7 +40,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "preset",
                 ParamType::Path(PathKind::File),
-                "a preset file to load: DX7 voice data (.syx) for the FM synth",
+                "a preset file to load: a device preset (.preset.suhina), or DX7 voice data (.syx) for the FM synth",
+            ),
+            optional(
+                "stock",
+                ParamType::Text,
+                "a preset that ships with Suhina, by its key: what follows stock: in library.search",
             ),
             optional("voice", ParamType::Integer, "which voice of a preset bank, from 1 (default 1)"),
         ],
@@ -295,6 +300,27 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::EDIT,
         run: devices::set_param,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "device.randomize",
+        label: "Give a device with a randomizer (the FM Synth) new values, moved from the current ones by each section's percentage, as one undo step; its sections are its random.* parameters",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            optional(
+                "seed",
+                ParamType::Number,
+                "whole number that picks the result, 0 or more; without it the device's stored seed is used and moves on",
+            ),
+            optional(
+                "amount",
+                ParamType::Number,
+                "0..1 over the sections' percentages; without it the device's Amount",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: devices::randomize,
         policy: Policy::DEFAULT,
     },
     CommandSpec {

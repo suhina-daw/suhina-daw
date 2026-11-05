@@ -24,9 +24,6 @@ pub struct PianoClip {
     pub placement: Placement,
     /// The grid value as the toolbar's grid menu shows it and ticks it, and whether things snap.
     pub grid_menu: PianoGrid,
-    /// The grid is the control bar's (Settings › Piano roll grid): the menu offers only what the
-    /// control bar can hold.
-    pub grid_follows: bool,
     /// The clip's start marker, length and loop, as the ruler shows and changes them.
     pub shape: ClipShape,
     /// The notes of other clips drawn faintly behind this clip's own, and the clips the ghost
@@ -87,17 +84,12 @@ impl Placement {
     }
 }
 
-/// The piano roll for the arrangement clip `id` on `track`, with the grid `quantization`;
-/// `None` when the clip is missing or plays audio.
-pub fn arrangement_clip(
-    project: &Project,
-    track: TrackId,
-    id: ClipId,
-    quantization: Quantization,
-) -> Option<PianoClip> {
+/// The piano roll for the arrangement clip `id` on `track`; `None` when the clip is missing or
+/// plays audio.
+pub fn arrangement_clip(project: &Project, track: TrackId, id: ClipId) -> Option<PianoClip> {
     let lane = project.arrangement.lanes.iter().find(|l| l.track == Some(track))?;
     let clip = lane.clips.iter().find(|c| c.id == id)?;
-    let mut piano = piano_clip_from(project, track, clip, quantization)?;
+    let mut piano = piano_clip_from(project, track, clip)?;
     // The note commands name the clip by its id; the track is there for what reads it.
     piano.address = json!({ "track": track.0, "clip": id.0 });
     // Up to the next clip on the lane, as `clip.setLength` allows.
@@ -112,9 +104,9 @@ pub fn arrangement_clip(
 /// from its launch, not from an arrangement position: its placement starts at the launch and
 /// never ends, so the beats since the launch map through it — the playhead and paste at the
 /// playhead take those beats.
-pub fn launcher_clip(project: &Project, track: TrackId, scene: usize, quantization: Quantization) -> Option<PianoClip> {
+pub fn launcher_clip(project: &Project, track: TrackId, scene: usize) -> Option<PianoClip> {
     let clip = project.launcher.columns.iter().find(|c| c.track == track)?.slots.get(scene)?.clip.as_ref()?;
-    let mut piano = piano_clip_from(project, track, clip, quantization)?;
+    let mut piano = piano_clip_from(project, track, clip)?;
     piano.placement = Placement {
         start: 0.0,
         length: f64::INFINITY,
@@ -127,12 +119,7 @@ pub fn launcher_clip(project: &Project, track: TrackId, scene: usize, quantizati
 
 /// What `arrangement_clip` and `launcher_clip` share: the content's notes and shape as the
 /// piano roll shows them.
-pub(super) fn piano_clip_from(
-    project: &Project,
-    track: TrackId,
-    clip: &Clip,
-    quantization: Quantization,
-) -> Option<PianoClip> {
+pub(super) fn piano_clip_from(project: &Project, track: TrackId, clip: &Clip) -> Option<PianoClip> {
     let content = project.content(clip.content)?;
     let mut notes = None;
     for lane in content.lanes.iter().filter(|l| l.target.is_none_or(|t| t == track)) {
@@ -160,7 +147,7 @@ pub(super) fn piano_clip_from(
         length: content_end(clip.loop_range.map(|l| l.end), clip.offset, clip.length, content.length),
         color: Color32::from_rgb(color.0, color.1, color.2),
         bar_beats,
-        grid: grid_step(quantization, bar_beats),
+        grid: PianoGrid::default().fixed_step(bar_beats),
         placement: Placement {
             start: clip.start,
             length: clip.length,
@@ -168,7 +155,6 @@ pub(super) fn piano_clip_from(
             loop_range: clip.loop_range.map(|l| (l.start, l.end)),
         },
         grid_menu: PianoGrid::default(),
-        grid_follows: false,
         shape: ClipShape {
             offset: clip.offset,
             length: clip.length,

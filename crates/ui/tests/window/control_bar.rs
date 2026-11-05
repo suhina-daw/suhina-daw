@@ -133,6 +133,8 @@ fn a_narrow_window_leaves_out_what_would_reach_the_position_readout() {
     app.set_session(session, &[]);
     let size = (640.0, 400.0);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(size)
         .with_step_dt(0.25)
         .with_max_steps(4)
@@ -155,6 +157,15 @@ fn a_narrow_window_leaves_out_what_would_reach_the_position_readout() {
         assert!(ram.left() >= transport_end, "RAM at {ram:?}");
         assert!(cpu.is_some_and(|cpu| ram.right() <= cpu.left()), "RAM {ram:?} left of the CPU");
     }
+}
+
+#[test]
+fn the_control_bar_box_leaves_the_arrangement_grid_alone() {
+    let mut harness = arrangement_app();
+    choose_arrangement_grid(&mut harness, "1/16");
+    choose_grid(&mut harness, "1/2");
+    assert_eq!(grid_of(&harness), Some(suhina_engine::Quantization::Beats(2.0)));
+    assert_eq!(harness.state().arrangement().grid.label(), "1/16");
 }
 
 #[test]

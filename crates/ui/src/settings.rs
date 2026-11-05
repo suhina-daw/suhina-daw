@@ -95,6 +95,82 @@ pub enum ToolbarSize {
     Larger,
 }
 
+/// How the piano roll's keys are drawn when the theme does not set them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PianoKeyStyle {
+    /// Light keys, the default.
+    #[default]
+    Bone,
+    /// Keys between the two.
+    Stone,
+    /// Dark keys.
+    Night,
+}
+
+impl PianoKeyStyle {
+    pub const ALL: [Self; 3] = [Self::Bone, Self::Stone, Self::Night];
+
+    /// The name the menu and the Settings row show.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Bone => "Bone",
+            Self::Stone => "Stone",
+            Self::Night => "Night",
+        }
+    }
+
+    /// The value the settings file keeps.
+    pub fn param(self) -> &'static str {
+        match self {
+            Self::Bone => "bone",
+            Self::Stone => "stone",
+            Self::Night => "night",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|style| style.param() == value)
+    }
+}
+
+/// Which of the piano roll's keys show their names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PianoKeyNames {
+    /// Every C, the default.
+    #[default]
+    OnlyC,
+    /// The white keys.
+    White,
+    /// Every key.
+    All,
+}
+
+impl PianoKeyNames {
+    pub const ALL: [Self; 3] = [Self::OnlyC, Self::White, Self::All];
+
+    /// The name the menu and the Settings row show.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::OnlyC => "Only C",
+            Self::White => "White keys",
+            Self::All => "All keys",
+        }
+    }
+
+    /// The value the settings file keeps.
+    pub fn param(self) -> &'static str {
+        match self {
+            Self::OnlyC => "only_c",
+            Self::White => "white",
+            Self::All => "all",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|names| names.param() == value)
+    }
+}
+
 impl ToolbarSize {
     pub const ALL: [Self; 3] = [Self::Normal, Self::Large, Self::Larger];
 
@@ -324,9 +400,9 @@ pub struct Settings {
     pub piano_roll_top: PianoRollTop,
     /// How large the piano roll's toolbar is drawn.
     pub toolbar_size: ToolbarSize,
-    /// The control bar's grid value sets the piano roll's too; otherwise the piano roll keeps
-    /// its own.
-    pub piano_grid_follows: bool,
+    /// How the piano roll's keys are drawn, and which of them are named.
+    pub piano_key_style: PianoKeyStyle,
+    pub piano_key_names: PianoKeyNames,
     /// A track's volume and pan as a field or as a knob (Settings › Launcher and mixer).
     pub mixer_controls: MixerControls,
     /// Where plug-in editors open.
@@ -437,7 +513,8 @@ impl Default for Settings {
             updates: crate::settings::update_settings::UpdateSettings::default(),
             piano_roll_top: PianoRollTop::Track,
             toolbar_size: ToolbarSize::Large,
-            piano_grid_follows: false,
+            piano_key_style: PianoKeyStyle::default(),
+            piano_key_names: PianoKeyNames::default(),
             mixer_controls: MixerControls::Field,
             plugin_editors: EditorPlacement::Window,
             theme: crate::kit::theme::BUILT_IN.into(),
@@ -622,6 +699,8 @@ impl Settings {
                         warnings.push(format!("settings line {}: invalid audio device history", number + 1));
                     }
                 }
+                // Retired: the piano roll's grid is no longer linked to the control bar.
+                ("piano_roll_grid", "own" | "control_bar") => {}
                 ("midi_input_off", port) if !port.is_empty() => {
                     if !settings.midi_inputs_off.iter().any(|p| p == port) {
                         settings.midi_inputs_off.push(port.to_string());

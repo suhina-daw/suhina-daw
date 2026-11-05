@@ -281,21 +281,38 @@ fn reversing_turns_the_notes_round_inside_their_own_span() {
 }
 
 #[test]
-fn legato_lasts_until_the_next_note_of_the_same_key() {
-    // Keys 60, 60 and 64: the first 60 lasts until the second one starts; both last notes keep
-    // their length.
+fn legato_lasts_until_the_next_note_on_any_key() {
+    // A line over keys 60, 64 and 60: each note lasts until the next one starts, on any key, and
+    // the last one keeps its length.
     let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(1.5, 1.0, 60), note(0.5, 1.0, 64)]));
     let before = notes_of(&session, 1);
     let result = run(&mut session, "note.legato", json!({ "track": 1, "index": 0 })).unwrap();
     assert_eq!(result, json!({ "notes": [0, 1, 2], "changed": 1 }));
-    close(&lengths(&session), &[1.5, 1.0, 1.0]);
+    close(&lengths(&session), &[0.5, 1.0, 1.0]);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(notes_of(&session, 1), before);
 
-    // Never shorter than a hundredth of a beat: two notes of a key at the same beat.
+    // A chord stays together: both its notes end where the next note starts.
+    let mut chord = Session::new(project(vec![note(0.0, 0.25, 60), note(0.0, 0.5, 64), note(1.0, 1.0, 62)]));
+    run(&mut chord, "note.legato", json!({ "track": 1, "index": 0 })).unwrap();
+    close(&lengths(&chord), &[1.0, 1.0, 1.0]);
+
+    // Only the named notes count: a note left out is no next note.
+    let mut named = Session::new(project(vec![note(0.0, 0.25, 60), note(1.0, 0.25, 62), note(2.0, 0.25, 64)]));
+    run(&mut named, "note.legato", json!({ "track": 1, "index": 0, "notes": [0, 2] })).unwrap();
+    close(&lengths(&named), &[2.0, 0.25, 0.25]);
+
+    // With replace, a note left out that the line now runs over goes.
+    let mut under = Session::new(project(vec![note(0.0, 0.25, 60), note(0.5, 0.25, 60), note(2.0, 0.25, 64)]));
+    let result =
+        run(&mut under, "note.legato", json!({ "track": 1, "index": 0, "notes": [0, 2], "replace": true })).unwrap();
+    assert_eq!(result, json!({ "notes": [0, 1], "changed": 1, "replaced": [1] }));
+    close(&lengths(&under), &[2.0, 0.25]);
+
+    // Notes that start together have no next note to reach.
     let mut together = Session::new(project(vec![note(1.0, 1.0, 60), note(1.0, 2.0, 60)]));
     run(&mut together, "note.legato", json!({ "track": 1, "index": 0 })).unwrap();
-    close(&lengths(&together), &[0.01, 2.0]);
+    close(&lengths(&together), &[1.0, 2.0]);
 
     // A named note whose length is already right changes nothing.
     let mut quiet = Session::new(project(scale_notes()));

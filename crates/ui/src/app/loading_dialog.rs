@@ -25,7 +25,7 @@ const BUTTON: Vec2 = Vec2::new(150.0, 18.0);
 /// user sent it to the background (its button, or Escape).
 pub fn show(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     let _style_class = crate::kit::style_class::enter("dialog");
-    egui::Area::new(Id::new("plugin-loading"))
+    egui::Area::new(Id::unique("plugin-loading"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -40,7 +40,7 @@ pub fn show(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bo
 
 fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     // Dimmed behind, and the clicks there go nowhere while the dialog is up.
-    let behind = ui.interact(area, Id::new("plugin-loading-behind"), Sense::click_and_drag());
+    let behind = ui.interact(area, Id::unique("plugin-loading-behind"), Sense::click_and_drag());
     let _swallowed = behind.clicked();
     let painter = ui.painter_at(area);
     painter.rect_filled(area, 0.0, theme::window_background().gamma_multiply(0.6));
@@ -109,7 +109,7 @@ fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     }
 
     let button = Rect::from_min_size(Pos2::new(inner.right() - BUTTON.x, inner.bottom() - BUTTON.y), BUTTON);
-    let response = widgets::button_area(ui, button, Id::new("plugin-loading-hide"), "Continue in the background");
+    let response = widgets::button_area(ui, button, Id::unique("plugin-loading-hide"), "Continue in the background");
     let hover = widgets::hover(ui, &response);
     painter.fill_background(
         button,
@@ -130,8 +130,8 @@ fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
 
 /// Names a line of the dialog for screen readers and tests.
 fn name_for_readers(ui: &Ui, rect: Rect, label: &str) {
-    let response = ui.interact(rect, Id::new(("plugin-loading-line", label)), Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, label));
+    let response = ui.interact(rect, Id::unique(("plugin-loading-line", label)), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
 }
 
 #[cfg(test)]
@@ -149,7 +149,7 @@ mod tests {
             missing: 2,
             failed: vec!["Verb".into()],
         };
-        let mut harness = Harness::builder().with_size(egui::vec2(800.0, 500.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(800.0, 500.0)).build_ui_state(
             |ui, hidden: &mut bool| {
                 let area = ui.max_rect();
                 if show(ui, area, "Song", &progress) {

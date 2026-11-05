@@ -103,6 +103,23 @@ fn search_finds_built_in_devices_by_category() {
 }
 
 #[test]
+fn search_finds_stock_presets_by_name_and_tag() {
+    let settings = temp("stock");
+    let mut p = projects(&settings);
+    let presets = run(&mut p, "library.search", json!({ "category": "presets" })).unwrap();
+    assert!(names(&presets).iter().any(|name| name == "Warm FM Bass"), "{presets}");
+    let by_tag = run(&mut p, "library.search", json!({ "category": "presets", "text": "trance" })).unwrap();
+    assert_eq!(names(&by_tag), ["Wide Trance Pad"]);
+    assert_eq!(by_tag["items"][0]["item"], "stock:fm-synth/wide-trance-pad");
+    let info = run(&mut p, "library.info", json!({ "item": "stock:fm-synth/wide-trance-pad" })).unwrap();
+    assert_eq!((info["kind"].as_str(), info["device"].as_str()), (Some("preset"), Some("fm-synth")));
+    assert!(run(&mut p, "library.info", json!({ "item": "stock:fm-synth/nothing" })).is_err());
+    let instruments = run(&mut p, "library.search", json!({ "category": "instruments" })).unwrap();
+    assert!(!names(&instruments).iter().any(|name| name == "Warm FM Bass"));
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+#[test]
 fn what_is_added_to_a_project_becomes_recent() {
     let settings = temp("recent-settings");
     let samples = temp("recent");

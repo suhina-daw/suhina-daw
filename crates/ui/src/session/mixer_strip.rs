@@ -439,9 +439,8 @@ pub fn show(
     crate::kit::liquid::paint(painter, rect, tint, crate::kit::liquid::Surface::Track);
     crate::kit::native_css::background(painter, rect);
     // The strip's own background, under its controls: a double-click shows the track's devices.
-    strip.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("{} channel strip", column.name))
-    });
+    strip
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("{} channel strip", column.name)));
     if strip.double_clicked() {
         state.open_devices = Some(column.track);
     }
@@ -522,12 +521,11 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, rect: Rect, fader: f32
     let response = ui
         .interact(
             rect.intersect(painter.clip_rect()),
-            Id::new(("strip-divider", strip.left() as i32)),
+            Id::unique(("strip-divider", strip.left() as i32)),
             Sense::click_and_drag(),
         )
         .on_hover_cursor(egui::CursorIcon::ResizeVertical);
-    response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Device list and controls divider"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Device list and controls divider"));
     if response.double_clicked() {
         state.strip_fader_dragged = None;
         state.strip_fader = 0.0;
@@ -557,7 +555,7 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
         crate::kit::native_css::hex(colour_picker::fill(column.color, column.mute)),
     );
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("{} strip", column.name)));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{} strip", column.name)));
     // The name stands on the track's colour, as in the column's header.
     let native_fill = colour_picker::fill(column.color, column.mute);
     // An alpha material layers over the track colour. An explicitly authored
@@ -706,7 +704,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
         }
         let response = ui.interact(row.intersect(clip), id.with(("device", index)), Sense::click_and_drag());
         let label = format!("Show {} on {}", device.name, column.name);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         // Dragged onto another track: moved there, Ctrl copies it (#688).
         if response.drag_started_by(egui::PointerButton::Primary) {
             crate::interaction::drop::start_device_carry(ui.ctx(), track, index);
@@ -766,7 +764,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
     // A device of this track carried over its list: a line where it would go, and its place
     // for the drop (#688).
     let carrying = ui.data(|d| {
-        d.get_temp::<(suhina_engine::model::TrackId, usize)>(Id::new(crate::interaction::drop::DEVICE_CARRYING))
+        d.get_temp::<(suhina_engine::model::TrackId, usize)>(Id::unique(crate::interaction::drop::DEVICE_CARRYING))
     });
     if let Some((_, from)) = carrying.filter(|(t, _)| *t == track)
         && let Some(pointer) = ui.ctx().pointer_latest_pos().filter(|p| clip.contains(*p))
@@ -1045,7 +1043,7 @@ pub fn main_fader(
         _ => None,
     };
     let label = widgets::format_db(preview.unwrap_or(volume_db));
-    let response = volume_response(ui, painter, readout, fader, Id::new("main-volume"), "Main volume", &label);
+    let response = volume_response(ui, painter, readout, fader, Id::unique("main-volume"), "Main volume", &label);
     let continued = preview.is_some();
     let send = |v: f64, dragged: bool| {
         let mut params = json!({ "db": commands::db_param(v, VOLUME_RANGE.0) });

@@ -67,7 +67,7 @@ impl From<&str> for ProjectFileError {
     }
 }
 
-pub use suhina_model::is_project_file;
+pub use suhina_model::{is_preset_file, is_project_file};
 
 /// Reads a project file.
 pub fn read_file(path: &Path) -> Result<Project, ProjectFileError> {
@@ -506,14 +506,22 @@ fn group_value(g: &DeviceGroup) -> Value {
             let mappings: Vec<Value> = m
                 .mappings
                 .iter()
-                .map(|x| {
-                    // From version 7 the device's id (#763 › 1); a project always has them when
-                    // it is written, so a place is only a fallback.
+                .filter_map(|x| {
+                    // From version 7 the device's id (#763 › 1). A device with none yet (a
+                    // project built without a session) is written by its path in the group,
+                    // which every version reads; a mapping whose device is gone is left out, as
+                    // no reader could place it.
                     let device = match x.device {
-                        MappedDevice::Id(id) => id.0,
-                        MappedDevice::Nth(n) => g.inner_devices().get(n as usize).map_or(0, |(_, d)| d.id.0),
+                        MappedDevice::Id(id) => {
+                            g.inner_devices().iter().any(|(_, d)| id.is_some() && d.id == id).then(|| json!(id.0))?
+                        }
+                        MappedDevice::Nth(n) => {
+                            let inner = g.inner_devices();
+                            let (path, d) = inner.get(usize::try_from(n).ok()?)?;
+                            if d.id.is_some() { json!(d.id.0) } else { json!(path) }
+                        }
                     };
-                    json!({ "device": device, "param": x.param, "min": number(x.min), "max": number(x.max) })
+                    Some(json!({ "device": device, "param": x.param, "min": number(x.min), "max": number(x.max) }))
                 })
                 .collect();
             json!({ "name": m.name, "mappings": mappings })

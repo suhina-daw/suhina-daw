@@ -12,11 +12,11 @@ use super::{motion, theme};
 
 /// The theme panel colour before main-window background opacity is applied.
 pub fn set_panel_base(ctx: &Context, color: Color32) {
-    ctx.data_mut(|data| data.insert_temp(Id::new("liquid-panel-base"), color));
+    ctx.data_mut(|data| data.insert_temp(Id::unique("liquid-panel-base"), color));
 }
 
 pub fn panel_base(ctx: &Context) -> Color32 {
-    ctx.data(|data| data.get_temp::<Color32>(Id::new("liquid-panel-base"))).unwrap_or_else(theme::window_background)
+    ctx.data(|data| data.get_temp::<Color32>(Id::unique("liquid-panel-base"))).unwrap_or_else(theme::window_background)
 }
 
 /// A bounded app-owned background image the host may include in its offscreen renderer.
@@ -27,11 +27,11 @@ pub struct BackgroundImage {
 }
 
 pub fn set_background_image(ctx: &Context, image: Option<BackgroundImage>) {
-    ctx.data_mut(|data| data.insert_temp(Id::new("liquid-background-image"), image));
+    ctx.data_mut(|data| data.insert_temp(Id::unique("liquid-background-image"), image));
 }
 
 pub fn background_image(ctx: &Context) -> Option<BackgroundImage> {
-    ctx.data(|data| data.get_temp::<Option<BackgroundImage>>(Id::new("liquid-background-image"))).flatten()
+    ctx.data(|data| data.get_temp::<Option<BackgroundImage>>(Id::unique("liquid-background-image"))).flatten()
 }
 
 /// Surfaces can be enabled independently without changing a colour theme.
@@ -109,17 +109,17 @@ struct Lens {
 /// Clear frame-local placeholders. The source never contains text or previous-frame lenses.
 pub fn begin_frame(ctx: &Context, gradients: super::gradient::Gradients) {
     ctx.data_mut(|data| {
-        data.insert_temp(Id::new(SURFACES), Surfaces::default());
-        data.insert_temp(Id::new(GRADIENTS), gradients);
-        data.remove_temp::<Vec<Marked>>(Id::new(MARKED));
+        data.insert_temp(Id::unique(SURFACES), Surfaces::default());
+        data.insert_temp(Id::unique(GRADIENTS), gradients);
+        data.remove_temp::<Vec<Marked>>(Id::unique(MARKED));
     });
 }
 
 /// Resolve all content lenses once the visible substrate is complete, before modal chrome.
 pub fn finish_surfaces(ctx: &Context) {
-    let mut surfaces = ctx.data_mut(|data| data.remove_temp::<Surfaces>(Id::new(SURFACES))).unwrap_or_default();
+    let mut surfaces = ctx.data_mut(|data| data.remove_temp::<Surfaces>(Id::unique(SURFACES))).unwrap_or_default();
     if !surfaces.lenses.is_empty() && effects_allowed(ctx) {
-        let host = ctx.data(|data| data.get_temp::<Host>(Id::new(HOST)));
+        let host = ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST)));
         if let Some(backdrop) = host.and_then(|host| host.0.capture_surfaces(ctx, std::mem::take(&mut surfaces.source)))
         {
             for lens in &mut surfaces.lenses {
@@ -131,7 +131,7 @@ pub fn finish_surfaces(ctx: &Context) {
             }
         }
     }
-    ctx.data_mut(|data| data.insert_temp(Id::new(SURFACES), surfaces));
+    ctx.data_mut(|data| data.insert_temp(Id::unique(SURFACES), surfaces));
 }
 
 const MARKED: &str = "liquid-backdrops";
@@ -161,7 +161,7 @@ pub fn backdrop(painter: &Painter, rect: Rect) {
     let marked =
         Marked { layer: painter.layer_id(), clip: painter.clip_rect(), cut, image, rect, opacity: painter.opacity() };
     ctx.data_mut(|data| {
-        let all = data.get_temp_mut_or_default::<Vec<Marked>>(Id::new(MARKED));
+        let all = data.get_temp_mut_or_default::<Vec<Marked>>(Id::unique(MARKED));
         if all.len() < 64 {
             all.push(marked);
         }
@@ -172,11 +172,11 @@ pub fn backdrop(painter: &Painter, rect: Rect) {
 /// them. Called once the frame is painted, before `kit::surface` swaps its backgrounds (the
 /// capture cannot replay those).
 pub fn finish_backdrops(ctx: &Context) {
-    let marked = ctx.data_mut(|data| data.remove_temp::<Vec<Marked>>(Id::new(MARKED))).unwrap_or_default();
+    let marked = ctx.data_mut(|data| data.remove_temp::<Vec<Marked>>(Id::unique(MARKED))).unwrap_or_default();
     if !effects_allowed(ctx) {
         return;
     }
-    let Some(host) = ctx.data(|data| data.get_temp::<Host>(Id::new(HOST))) else { return };
+    let Some(host) = ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST))) else { return };
     // A popup's frame (egui's menus, context menus and dropdowns) is the first shape of its
     // floating layer: the window fill with the window's outline.
     let visuals = ctx.global_style().visuals.clone();
@@ -298,42 +298,42 @@ fn same_colour(a: Color32, b: Color32) -> bool {
 
 /// Updated by the app when reduced effects or a high-contrast theme is selected.
 pub fn set_effects_allowed(ctx: &Context, allowed: bool) {
-    ctx.data_mut(|data| data.insert_temp(Id::new(ACCESSIBLE), allowed));
+    ctx.data_mut(|data| data.insert_temp(Id::unique(ACCESSIBLE), allowed));
 }
 
 fn effects_allowed(ctx: &Context) -> bool {
-    ctx.data(|data| data.get_temp::<bool>(Id::new(ACCESSIBLE))).unwrap_or(true)
+    ctx.data(|data| data.get_temp::<bool>(Id::unique(ACCESSIBLE))).unwrap_or(true)
 }
 
 /// Install an optional native provider. A host without one keeps solid surfaces.
 pub fn install(ctx: &Context, provider: Arc<dyn Provider>) {
     ctx.data_mut(|data| {
-        data.insert_temp(Id::new(HOST), Host(provider));
+        data.insert_temp(Id::unique(HOST), Host(provider));
     });
 }
 
 /// Whether the current host supports the experimental material renderer.
 pub fn available(ctx: &Context) -> bool {
-    ctx.data(|data| data.get_temp::<Host>(Id::new(HOST))).is_some()
+    ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST))).is_some()
 }
 
 /// Apply saved per-surface strengths live. Unsupported hosts retain solid surfaces.
 pub fn configure(ctx: &Context, options: Options) {
     let options = if available(ctx) { options } else { Options::default() };
-    ctx.data_mut(|data| data.insert_temp(Id::new(OPTIONS), options));
+    ctx.data_mut(|data| data.insert_temp(Id::unique(OPTIONS), options));
 }
 
 /// Forget the previous panel's image, then capture this frame before any modal chrome.
 pub fn prepare(ctx: &Context) {
-    ctx.data_mut(|data| data.remove::<Backdrop>(Id::new(BACKDROP)));
-    let options = ctx.data(|data| data.get_temp::<Options>(Id::new(OPTIONS))).unwrap_or_default();
+    ctx.data_mut(|data| data.remove::<Backdrop>(Id::unique(BACKDROP)));
+    let options = ctx.data(|data| data.get_temp::<Options>(Id::unique(OPTIONS))).unwrap_or_default();
     if options.panels == 0 || !effects_allowed(ctx) {
         return;
     }
-    let host = ctx.data(|data| data.get_temp::<Host>(Id::new(HOST)));
+    let host = ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST)));
     // Panel capture replays bodies/foreground but excludes native content lenses: the dialog's
     // backdrop never holds glass drawn from another capture.
-    let surfaces = ctx.data_mut(|data| data.remove_temp::<Surfaces>(Id::new(SURFACES))).unwrap_or_default();
+    let surfaces = ctx.data_mut(|data| data.remove_temp::<Surfaces>(Id::unique(SURFACES))).unwrap_or_default();
     for lens in &surfaces.lenses {
         ctx.layer_painter(lens.layer).with_clip_rect(lens.clip).set(lens.index, egui::Shape::Noop);
     }
@@ -345,9 +345,9 @@ pub fn prepare(ctx: &Context) {
             painter.set(lens.index, mesh.clone());
         }
     }
-    ctx.data_mut(|data| data.insert_temp(Id::new(SURFACES), surfaces));
+    ctx.data_mut(|data| data.insert_temp(Id::unique(SURFACES), surfaces));
     if let Some(backdrop) = backdrop {
-        ctx.data_mut(|data| data.insert_temp(Id::new(BACKDROP), backdrop));
+        ctx.data_mut(|data| data.insert_temp(Id::unique(BACKDROP), backdrop));
     }
 }
 
@@ -366,14 +366,15 @@ pub fn paint(painter: &Painter, rect: Rect, base: Color32, surface: Surface) {
     if super::native_css::background(painter, rect) {
         return;
     }
-    let gradient = painter.ctx().data(|data| data.get_temp::<super::gradient::Gradients>(Id::new(GRADIENTS))).and_then(
-        |gradients| match surface {
+    let gradient = painter
+        .ctx()
+        .data(|data| data.get_temp::<super::gradient::Gradients>(Id::unique(GRADIENTS)))
+        .and_then(|gradients| match surface {
             Surface::Panel => gradients.panels,
             Surface::Track => gradients.tracks,
             Surface::Clip => gradients.clips,
-        },
-    );
-    let options = painter.ctx().data(|data| data.get_temp::<Options>(Id::new(OPTIONS))).unwrap_or_default();
+        });
+    let options = painter.ctx().data(|data| data.get_temp::<Options>(Id::unique(OPTIONS))).unwrap_or_default();
     let level = match surface {
         Surface::Panel => options.panels,
         Surface::Track => options.tracks,
@@ -382,17 +383,14 @@ pub fn paint(painter: &Painter, rect: Rect, base: Color32, surface: Surface) {
     if level == 0 {
         if surface != Surface::Panel && (options.tracks > 0 || options.clips > 0) {
             painter.ctx().data_mut(|data| {
-                let surfaces = data.get_temp_mut_or_default::<Surfaces>(Id::new(SURFACES));
+                let surfaces = data.get_temp_mut_or_default::<Surfaces>(Id::unique(SURFACES));
                 if surfaces.source.len() < 12288 {
                     let clip_rect = painter.clip_rect().intersect(rect);
-                    surfaces.source.push(egui::epaint::ClippedShape {
-                        clip_rect,
-                        shape: egui::Shape::rect_filled(rect, 0.0, base),
-                    });
+                    surfaces
+                        .source
+                        .push(egui::epaint::ClippedShape::new(clip_rect, egui::Shape::rect_filled(rect, 0.0, base)));
                     if let Some(gradient) = &gradient {
-                        surfaces
-                            .source
-                            .push(egui::epaint::ClippedShape { clip_rect, shape: gradient.mesh(rect).into() });
+                        surfaces.source.push(egui::epaint::ClippedShape::new(clip_rect, gradient.mesh(rect)));
                     }
                 }
             });
@@ -407,7 +405,7 @@ pub fn paint(painter: &Painter, rect: Rect, base: Color32, surface: Surface) {
     // Keep the full slider range, but give clips a gentler optical range than large panels.
     let strength = f32::from(level.min(100)) / 100.0 * if surface == Surface::Clip { 0.35 } else { 1.0 };
     if surface == Surface::Panel {
-        let backdrop = painter.ctx().data(|data| data.get_temp::<Backdrop>(Id::new(BACKDROP)));
+        let backdrop = painter.ctx().data(|data| data.get_temp::<Backdrop>(Id::unique(BACKDROP)));
         let Some(backdrop) = backdrop else {
             if let Some(gradient) = gradient {
                 painter.add(gradient.mesh(rect));
@@ -428,18 +426,16 @@ pub fn paint(painter: &Painter, rect: Rect, base: Color32, surface: Surface) {
         }
         let index = painter.add(egui::Shape::Noop);
         painter.ctx().data_mut(|data| {
-            let surfaces = data.get_temp_mut_or_default::<Surfaces>(Id::new(SURFACES));
+            let surfaces = data.get_temp_mut_or_default::<Surfaces>(Id::unique(SURFACES));
             // Bound CPU geometry even for unusually large visible arrangements.
             if surfaces.lenses.len() < 4096 {
                 let clip_rect = painter.clip_rect();
                 surfaces
                     .source
-                    .push(egui::epaint::ClippedShape { clip_rect, shape: egui::Shape::rect_filled(rect, 0.0, base) });
-                surfaces
-                    .source
-                    .push(egui::epaint::ClippedShape { clip_rect, shape: body_mesh(rect, base, strength).into() });
+                    .push(egui::epaint::ClippedShape::new(clip_rect, egui::Shape::rect_filled(rect, 0.0, base)));
+                surfaces.source.push(egui::epaint::ClippedShape::new(clip_rect, body_mesh(rect, base, strength)));
                 if let Some(gradient) = &gradient {
-                    surfaces.source.push(egui::epaint::ClippedShape { clip_rect, shape: gradient.mesh(rect).into() });
+                    surfaces.source.push(egui::epaint::ClippedShape::new(clip_rect, gradient.mesh(rect)));
                 }
                 surfaces.lenses.push(Lens {
                     layer: painter.layer_id(),

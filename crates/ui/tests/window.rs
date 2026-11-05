@@ -63,7 +63,7 @@ pub(super) fn view() -> Harness<'static, SessionHarness> {
         state: SessionViewState::default(),
         actions: Vec::new(),
     };
-    let mut harness = Harness::builder().with_size(SIZE).build_ui_state(
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
         |ui, v: &mut SessionHarness| session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions),
         view,
     );
@@ -89,6 +89,8 @@ pub(super) fn window_with_step(mut app: App, step: f32) -> Harness<'static, App>
     // The window's tests place clips, fades and markers on a bar grid.
     app.set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1 bar"));
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(step)
         .with_max_steps((1.0 / step).ceil() as u64)

@@ -43,18 +43,53 @@ fn cached_listing<T: Clone>(
     Ok(devices)
 }
 
+/// The host's devices that play. The host says which those are: asking each for its formats here
+/// would drop one that cannot answer yet, as a Bluetooth endpoint often cannot, and the list would
+/// not say why. Such a device is listed, and opening it says what is wrong.
 pub(crate) fn output_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>, String> {
-    Ok(host_devices(host)?
-        .into_iter()
-        .filter(|d| d.supported_output_configs().is_ok_and(|mut c| c.next().is_some()))
-        .collect())
+    Ok(host_devices(host)?.into_iter().filter(DeviceTrait::supports_output).collect())
 }
 
+/// The host's devices that record; the host says which, as for [`output_devices`].
 pub(crate) fn input_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>, String> {
-    Ok(host_devices(host)?
-        .into_iter()
-        .filter(|d| d.supported_input_configs().is_ok_and(|mut c| c.next().is_some()))
-        .collect())
+    Ok(host_devices(host)?.into_iter().filter(DeviceTrait::supports_input).collect())
+}
+
+/// The host that plays when none is chosen. On Linux and the BSDs that stays ALSA even with a sound
+/// server running, whose own host is one to choose: ALSA's `default` already plays through the
+/// server, so nobody's playback moves. Elsewhere it is cpal's default.
+pub(crate) fn default_host_id() -> cpal::HostId {
+    #[cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd"))]
+    {
+        cpal::HostId::Alsa
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd")))]
+    {
+        cpal::default_host().id()
+    }
+}
+
+/// A sound server's host: it converts whatever it is given, so it offers every format and channel
+/// count. What its device really is shows only in its default config.
+pub(crate) fn server_converts(host: &str) -> bool {
+    host == "PulseAudio"
+}
+
+/// The buffer to fit on `host`: the one chosen, and on a sound server the engine's own block when
+/// none is. A server left to its default buffers about two seconds ahead.
+pub(crate) fn wanted_buffer(host: &str, chosen: Option<u32>, engine_block: u32) -> Option<u32> {
+    chosen.or(server_converts(host).then_some(engine_block))
+}
+
+/// The name a device goes by, or `None` when it cannot say, as when it was just disconnected. cpal's
+/// `Display` fails then, and `to_string` would panic.
+pub(crate) fn name_of(device: &cpal::Device) -> Option<String> {
+    device.description().ok().map(|description| description.name().to_string())
+}
+
+/// Whether `device` goes by `name`.
+pub(crate) fn named(device: &cpal::Device, name: &str) -> bool {
+    name_of(device).is_some_and(|own| same_name(&own, name))
 }
 
 pub(crate) fn default_output(host: &cpal::Host) -> Option<cpal::Device> {
@@ -214,9 +249,26 @@ fn declared_range(default: Option<(u32, u32)>, supported: impl IntoIterator<Item
     default.or_else(|| supported.into_iter().next())
 }
 
+/// The names of the devices there now, per host and sorted, for noticing one that comes or goes.
+/// Only names are read, no formats, so it is quick. ASIO is not looked at: its list stays until a
+/// restart (see [`host_devices`]) and listing it loads drivers.
+pub(crate) fn device_names() -> Vec<String> {
+    let mut names: Vec<String> = cpal::available_hosts()
+        .into_iter()
+        .filter(|id| id.name() != "ASIO")
+        .filter_map(|id| Some((id.name(), cpal::host_from_id(id).ok()?)))
+        .filter_map(|(host_name, host)| Some((host_name, host.devices().ok()?)))
+        .flat_map(|(host_name, devices)| {
+            devices.filter_map(move |device| Some(format!("{host_name}: {}", name_of(&device)?)))
+        })
+        .collect();
+    names.sort_unstable();
+    names
+}
+
 /// Lists every host cpal offers here and each one's output devices.
 pub fn list_hosts() -> Vec<HostInfo> {
-    let default_host = cpal::default_host().id();
+    let default_host = default_host_id();
     #[cfg(windows)]
     let exclusive = crate::exclusive::capable_devices();
     cpal::available_hosts()
@@ -247,65 +299,130 @@ pub fn list_hosts() -> Vec<HostInfo> {
 /// The host's input devices with their channels and sample rates; none when they cannot be
 /// listed.
 fn list_inputs(host: &cpal::Host) -> Vec<InputInfo> {
-    let default = default_input(host).map(|d| d.to_string());
+    let host_name = host.id().name();
+    let default = default_input(host).as_ref().and_then(name_of);
     let Ok(devices) = input_devices(host) else { return Vec::new() };
     devices
         .into_iter()
-        .map(|device| {
-            let name = device.to_string();
+        .filter_map(|device| {
+            let name = name_of(&device)?;
             let mut ranges = Vec::new();
-            let mut channels = 0;
+            let mut most = 0u16;
             if let Ok(configs) = device.supported_input_configs() {
                 for config in configs {
                     ranges.push((config.min_sample_rate(), config.max_sample_rate()));
-                    channels = channels.max(config.channels());
+                    most = most.max(config.channels());
                 }
             }
-            InputInfo {
+            let own = server_converts(host_name).then(|| device.default_input_config().ok()).flatten();
+            Some(InputInfo {
                 default: default.as_deref() == Some(name.as_str()),
-                channels,
+                channels: listed_channels(host_name, own.map(|config| config.channels()), most),
                 sample_rates: sample_rates(&ranges),
                 name,
-            }
+            })
         })
         .filter(|input| input.channels > 0)
         .collect()
 }
 
-fn list_devices(host: &cpal::Host, host_name: &str) -> Result<Vec<DeviceInfo>, String> {
-    let default = default_output(host).map(|d| d.to_string());
-    let devices = output_devices(host)?;
-    Ok(devices
-        .into_iter()
-        .map(|device| {
-            let name = device.to_string();
-            let mut info = DeviceInfo { default: default.as_deref() == Some(name.as_str()), ..DeviceInfo::default() };
-            let mut ranges = Vec::new();
-            let mut buffer_ranges = Vec::new();
-            if let Ok(configs) = device.supported_output_configs() {
-                for config in configs {
-                    ranges.push((config.min_sample_rate(), config.max_sample_rate()));
-                    info.channels = info.channels.max(config.channels());
-                    if let Some(range) = buffer_range(config.buffer_size()) {
-                        buffer_ranges.push(range);
-                    }
-                }
-            }
-            let default_config = device.default_output_config().ok();
-            if let Some(config) = &default_config {
-                info.default_sample_rate = Some(config.sample_rate()).filter(|r| *r > 0 && *r <= MAX_SAMPLE_RATE);
-                info.channels = info.channels.max(config.channels());
-            }
-            info.buffer_range = declared_range(
-                default_config.as_ref().and_then(|config| buffer_range(config.buffer_size())),
-                buffer_ranges,
-            );
-            info.sample_rates = sample_rates(&ranges);
-            info.buffer_sizes = offered_buffers(host_name, info.buffer_range);
-            info.name = name;
-            info
+/// One format a device offers, as the list reads it.
+#[derive(Clone, Copy)]
+struct Offer {
+    rates: (u32, u32),
+    channels: u16,
+    buffer: Option<(u32, u32)>,
+}
+
+/// What the list asks of a device; cpal's devices answer it, and the tests' own.
+trait Listed {
+    fn name(&self) -> Option<String>;
+    fn plays(&self) -> bool;
+    fn offers(&self) -> Vec<Offer>;
+    /// The format it asks for itself.
+    fn own(&self) -> Option<Offer>;
+}
+
+impl Listed for cpal::Device {
+    fn name(&self) -> Option<String> {
+        name_of(self)
+    }
+
+    fn plays(&self) -> bool {
+        self.supports_output()
+    }
+
+    fn offers(&self) -> Vec<Offer> {
+        self.supported_output_configs().map_or_else(
+            |_| Vec::new(),
+            |configs| {
+                configs
+                    .map(|config| Offer {
+                        rates: (config.min_sample_rate(), config.max_sample_rate()),
+                        channels: config.channels(),
+                        buffer: buffer_range(config.buffer_size()),
+                    })
+                    .collect()
+            },
+        )
+    }
+
+    fn own(&self) -> Option<Offer> {
+        self.default_output_config().ok().map(|config| Offer {
+            rates: (config.sample_rate(), config.sample_rate()),
+            channels: config.channels(),
+            buffer: buffer_range(config.buffer_size()),
         })
-        .collect())
+    }
+}
+
+/// The channels to list for a device: the most it offers, and on a sound server, which offers every
+/// count, the ones it asks for itself. A stereo pair of headphones has no outputs 3/4 to offer.
+fn listed_channels(host_name: &str, own: Option<u16>, most: u16) -> u16 {
+    match own {
+        Some(channels) if server_converts(host_name) => channels,
+        _ => most.max(own.unwrap_or(0)),
+    }
+}
+
+/// The devices that play, with what each offers. A device is left out only when the host says it
+/// does not play or it has no name to choose it by: one that offers one rate, or cannot say what it
+/// offers yet, is listed all the same.
+fn listed_outputs<D: Listed>(
+    devices: impl IntoIterator<Item = D>,
+    host_name: &str,
+    default: Option<&str>,
+) -> Vec<DeviceInfo> {
+    devices
+        .into_iter()
+        .filter(Listed::plays)
+        .filter_map(|device| {
+            let name = device.name()?;
+            let offers = device.offers();
+            let own = device.own();
+            let ranges: Vec<(u32, u32)> = offers.iter().map(|offer| offer.rates).collect();
+            let buffer_range = declared_range(
+                own.as_ref().and_then(|offer| offer.buffer),
+                offers.iter().filter_map(|offer| offer.buffer),
+            );
+            let most = offers.iter().map(|offer| offer.channels).max().unwrap_or(0);
+            Some(DeviceInfo {
+                default: default == Some(name.as_str()),
+                channels: listed_channels(host_name, own.as_ref().map(|offer| offer.channels), most),
+                sample_rates: sample_rates(&ranges),
+                default_sample_rate: own.map(|offer| offer.rates.0).filter(|r| *r > 0 && *r <= MAX_SAMPLE_RATE),
+                buffer_sizes: offered_buffers(host_name, buffer_range),
+                buffer_range,
+                name,
+                ..DeviceInfo::default()
+            })
+        })
+        .collect()
+}
+
+fn list_devices(host: &cpal::Host, host_name: &str) -> Result<Vec<DeviceInfo>, String> {
+    let default = default_output(host).as_ref().and_then(name_of);
+    Ok(listed_outputs(host_devices(host)?, host_name, default.as_deref()))
 }
 
 #[cfg(test)]

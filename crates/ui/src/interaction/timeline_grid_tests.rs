@@ -153,3 +153,20 @@ fn an_adaptive_step_follows_the_zoom_the_bar_and_triplets() {
     assert_eq!(adaptive_step(96.0, false, f32::MIN_POSITIVE, 4.0), 4.0 * 2f64.powi(MAX_BAR_DOUBLINGS));
     assert_eq!(adaptive_step(24.0, false, 40.0, f64::NAN), 1.0, "a broken bar length is 4 beats");
 }
+
+/// A triplet line a command rounded to a millionth is still that line, so a step from it goes on.
+#[test]
+fn a_rounded_triplet_line_is_still_on_the_line() {
+    let third = 1.0 / 3.0;
+    let triplets = TimelineGrid { step: third, bar_beats: 4.0, snaps: true };
+    assert!((triplets.place(0.333333, false, true) - third).abs() < 1e-12);
+    assert!((triplets.next_line(0.333333) - 2.0 * third).abs() < 1e-12);
+    assert!((triplets.next_line(0.666667) - 1.0).abs() < 1e-12);
+    assert_eq!(triplets.previous_line(0.333333), 0.0);
+    assert!((triplets.previous_line(0.666667) - third).abs() < 1e-12);
+    assert!((triplets.next_line(3.666667) - 4.0).abs() < 1e-12, "the last line of the bar goes to the bar line");
+    // The drift of a few moves by a rounded step too.
+    assert!((triplets.place(0.666663, false, true) - 2.0 * third).abs() < 1e-12);
+    // A beat clearly inside a cell stays in it.
+    assert!((triplets.place(0.5, false, true) - third).abs() < 1e-12);
+}

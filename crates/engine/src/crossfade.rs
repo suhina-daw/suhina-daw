@@ -4,14 +4,13 @@
 //! The crossfade at a cut between two parts of a comp that come from different takes (#989):
 //! the part before the cut plays on past it, the part after it starts before it, and each fades
 //! over the span around the cut, so the cut never clicks. Worked out from the project when a
-//! graph is built, so it follows every trim, swap, split and undo with nothing stored.
+//! graph is built, so it follows every trim, swap, split and undo; its length is the parts' own
+//! fades at the cut, or the default ([`Project::comp_crossfade_beats`], #1078), and its bend the
+//! first part's ([`Project::comp_crossfade_curve`]).
 
 use std::borrow::Cow;
 
-use suhina_model::{ArrangementLane, Clip, FadeCurve, FadeShape, Project};
-
-/// How far each part plays past the cut, in seconds: the crossfade is twice as long.
-pub(crate) const COMP_CROSSFADE_SECONDS: f64 = 0.005;
+use suhina_model::{ArrangementLane, Clip, Project};
 
 /// How close two clips' edges must be, in beats, to meet at a cut.
 const MEETS: f64 = 1e-6;
@@ -27,34 +26,30 @@ pub(crate) fn crossfaded<'a>(project: &Project, lane: &ArrangementLane, clip: &'
     let Some(source) = project.comp_source(track, clip) else { return Cow::Borrowed(clip) };
     let end = clip.start + clip.length;
     let other_take = |c: &Clip| project.comp_source(track, c).is_some_and(|s| s != source);
-    let before = lane.clips.iter().any(|c| (c.start + c.length - clip.start).abs() < MEETS && other_take(c));
-    let after = lane.clips.iter().any(|c| (c.start - end).abs() < MEETS && other_take(c));
-    if !before && !after {
+    let before = lane.clips.iter().find(|c| (c.start + c.length - clip.start).abs() < MEETS && other_take(c));
+    let after = lane.clips.iter().find(|c| (c.start - end).abs() < MEETS && other_take(c));
+    if before.is_none() && after.is_none() {
         return Cow::Borrowed(clip);
     }
-    let beats = COMP_CROSSFADE_SECONDS * bpm / 60.0;
     let content = project.content(clip.content).map_or(f64::INFINITY, |c| c.length);
     let mut out = clip.clone();
-    let equal = FadeCurve { shape: FadeShape::EqualPower, curve: 0.0 };
-    if before {
-        // No earlier than the content's start, or the song's.
-        let lead = beats.min(clip.offset).min(clip.start).max(0.0);
+    if let Some(left) = before {
+        // Half of it before the cut: no earlier than the content's start, or the song's.
+        let half = Project::comp_crossfade_beats(left, clip, bpm) / 2.0;
+        let lead = half.min(clip.offset).min(clip.start).max(0.0);
         out.start -= lead;
         out.offset -= lead;
         out.length += lead;
-        if out.fade_in < 2.0 * lead {
-            out.fade_in = 2.0 * lead;
-            out.fade_in_curve = equal;
-        }
+        out.fade_in = 2.0 * lead;
+        out.fade_in_curve = Project::comp_crossfade_curve(left);
     }
-    if after {
-        let tail = if clip.loop_range.is_some() { beats } else { beats.min(content - (clip.offset + clip.length)) };
+    if let Some(right) = after {
+        let half = Project::comp_crossfade_beats(clip, right, bpm) / 2.0;
+        let tail = if clip.loop_range.is_some() { half } else { half.min(content - (clip.offset + clip.length)) };
         let tail = tail.max(0.0);
         out.length += tail;
-        if out.fade_out < 2.0 * tail {
-            out.fade_out = 2.0 * tail;
-            out.fade_out_curve = equal;
-        }
+        out.fade_out = 2.0 * tail;
+        out.fade_out_curve = Project::comp_crossfade_curve(clip);
     }
     out.fit_fades();
     Cow::Owned(out)
@@ -63,7 +58,7 @@ pub(crate) fn crossfaded<'a>(project: &Project, lane: &ArrangementLane, clip: &'
 #[cfg(test)]
 mod tests {
     use super::*;
-    use suhina_model::{ArrangementLane, ContentId, LaneId, TakeLane, TrackId};
+    use suhina_model::{ArrangementLane, ContentId, FadeCurve, FadeShape, LaneId, TakeLane, TrackId};
 
     /// Parts of takes 1 and 2 of one 24-beat file, meeting at beat 4, and a third part of take
     /// 2 right after the second.
@@ -111,6 +106,32 @@ mod tests {
         assert!((second.length - (2.0 + beats)).abs() < 1e-9, "nothing past its end: the next is its own take");
         // The third part follows a part of its own take: no crossfade there.
         assert!(matches!(crossfaded(&p, lane, &lane.clips[2], 120.0), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn the_parts_fades_at_a_cut_set_the_crossfades_length() {
+        let mut p = project();
+        p.arrangement.lanes[0].clips[0].fade_out = 1.0;
+        let lane = p.arrangement.lanes[0].clone();
+        let first = crossfaded(&p, &lane, &lane.clips[0], 120.0);
+        assert_eq!((first.length, first.fade_out), (4.5, 1.0));
+        let second = crossfaded(&p, &lane, &lane.clips[1], 120.0);
+        assert_eq!((second.start, second.fade_in), (3.5, 1.0), "the other part uses the same length");
+    }
+
+    #[test]
+    fn both_fades_of_a_crossfade_take_the_first_parts_bend() {
+        let mut p = project();
+        p.arrangement.lanes[0].clips[0].fade_out_curve = FadeCurve { shape: FadeShape::EqualPower, curve: 0.5 };
+        let lane = p.arrangement.lanes[0].clone();
+        let bent = FadeCurve { shape: FadeShape::EqualPower, curve: 0.5 };
+        assert_eq!(crossfaded(&p, &lane, &lane.clips[0], 120.0).fade_out_curve, bent);
+        assert_eq!(crossfaded(&p, &lane, &lane.clips[1], 120.0).fade_in_curve, bent);
+        // A part's own fade of another shape says nothing about the crossfade.
+        p.arrangement.lanes[0].clips[0].fade_out_curve = FadeCurve { shape: FadeShape::Slow, curve: 0.5 };
+        let lane = p.arrangement.lanes[0].clone();
+        let plain = FadeCurve { shape: FadeShape::EqualPower, curve: 0.0 };
+        assert_eq!(crossfaded(&p, &lane, &lane.clips[1], 120.0).fade_in_curve, plain);
     }
 
     /// Rendered: around the cut both takes sound, each through its fade; away from it each plays

@@ -69,11 +69,12 @@ pub fn play(project: &Project, audio: &AudioPool, assets: &DeviceAssets, choice:
         std::thread::sleep(Duration::from_millis(20));
     }
     std::thread::sleep(TAIL);
-    let underruns = controller.stretch_underruns();
+    let stretched = controller.stretch_underruns();
+    let device = progress.underruns();
     drop(stream);
     drop(controller);
-    if underruns > 0 {
-        eprintln!("warning: {underruns} frames of stretched audio were not ready in time and played as silence");
+    for warning in dropout_warnings(device, stretched) {
+        eprintln!("warning: {warning}");
     }
     println!("done");
     Ok(())
@@ -158,8 +159,28 @@ pub fn launcher(
         eprintln!("warning: {e}");
     }
     std::thread::sleep(TAIL);
+    let device = progress.underruns();
     drop(stream);
+    for warning in dropout_warnings(device, 0) {
+        eprintln!("warning: {warning}");
+    }
     Ok(())
+}
+
+/// What went missing while playing: `device` buffers the engine had not filled in time (or the
+/// driver reported late), and `stretched` frames of stretched audio that were not ready.
+fn dropout_warnings(device: u64, stretched: u64) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if device > 0 {
+        let times = if device == 1 { "once".to_string() } else { format!("{device} times") };
+        warnings.push(format!(
+            "the audio device was not given its sound in time {times}, so playback dropped out there (heard as a click or crackle)"
+        ));
+    }
+    if stretched > 0 {
+        warnings.push(format!("{stretched} frames of stretched audio were not ready in time and played as silence"));
+    }
+    warnings
 }
 
 #[derive(Debug, PartialEq)]
@@ -330,6 +351,18 @@ fn nothing_to_play(project: &Project) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dropouts_are_reported_only_when_there_were_some() {
+        assert!(dropout_warnings(0, 0).is_empty());
+        let once = dropout_warnings(1, 0);
+        assert_eq!(once.len(), 1);
+        assert!(once[0].contains("in time once"), "{once:?}");
+        let both = dropout_warnings(3, 512);
+        assert_eq!(both.len(), 2);
+        assert!(both[0].contains("3 times"), "{both:?}");
+        assert!(both[1].starts_with("512 frames of stretched audio"), "{both:?}");
+    }
 
     #[test]
     fn launcher_lines_become_commands() {

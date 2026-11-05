@@ -547,3 +547,16 @@ fn a_native_panel_blocks_output_and_tab_changes_without_detaching_the_player() {
     projects.close(second).unwrap();
     assert_eq!(projects.active(), Some(first));
 }
+
+#[test]
+fn the_watch_tells_when_the_devices_change_and_not_before() {
+    let names = |list: &[&str]| Some(list.iter().map(ToString::to_string).collect::<Vec<_>>());
+    let mut watch = suhina_session::audio::DeviceWatch::default();
+    assert!(!watch.changed(None), "no answer yet");
+    assert!(!watch.changed(names(&["Speakers"])), "the first answer is what is known");
+    assert!(!watch.changed(None), "no answer says nothing");
+    assert!(!watch.changed(names(&["Speakers"])));
+    assert!(watch.changed(names(&["Headphones", "Speakers"])), "connected");
+    assert!(!watch.changed(names(&["Headphones", "Speakers"])), "said once");
+    assert!(watch.changed(names(&["Speakers"])), "disconnected");
+}

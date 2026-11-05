@@ -3,7 +3,7 @@ description: Device groups - several devices on a track as one unit, with parall
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/groups.rs
@@ -478,5 +478,4 @@ it.
    reported, the browser listing them; ADR 0014 amended for the group format.
 9. **Key and velocity ranges for branches** of instrument groups (open question 5).
 
-ROADMAP gets a line under *Built-in effects and instruments* when item 2 lands, and the parity
-coverage (`scripts/parity/score.py`) changes then, not with this spec.
+ROADMAP gets a line under *Built-in effects and instruments* when item 2 lands, not with this spec.

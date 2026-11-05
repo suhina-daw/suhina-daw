@@ -27,6 +27,8 @@ fn arrangement(session: Session) -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(egui::vec2(1600.0, 800.0))
         .with_step_dt(0.25)
         .with_max_steps(4)
@@ -204,7 +206,7 @@ fn minimum_width_headers_keep_names_controls_and_meters_separate() {
         }
         let name = harness
             .ctx
-            .data(|data| data.get_temp::<suhina_ui::app::NameSpot>(egui::Id::new(("track-name-rect", 1_u64))))
+            .data(|data| data.get_temp::<suhina_ui::app::NameSpot>(egui::Id::unique(("track-name-rect", 1_u64))))
             .unwrap()
             .rect;
         assert!(name.width() >= 48.0 && header.contains_rect(name), "unusable name: {name:?}");

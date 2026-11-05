@@ -68,6 +68,10 @@ pub struct Tools<'a> {
     pub address: &'a Value,
     pub notes: &'a [Note],
     pub selected: &'a BTreeSet<usize>,
+    /// The clip's length in beats.
+    pub length: f64,
+    /// A time selection with no note in it: the tools act on nothing, not on the whole clip.
+    pub nothing: bool,
 }
 
 impl Tools<'_> {
@@ -81,9 +85,30 @@ impl Tools<'_> {
         params
     }
 
+    /// Where Legato's last notes end: at the end of the stretch selected in time (`span_end`), else
+    /// where the next note after them starts, on any key, else at the end of the clip.
+    pub(crate) fn legato_until(&self, span_end: Option<f64>) -> f64 {
+        if let Some(end) = span_end {
+            return end;
+        }
+        let acts_on = |i: usize| self.selected.is_empty() || self.selected.contains(&i);
+        let last = self
+            .notes
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| acts_on(*i))
+            .map(|(_, n)| n.time)
+            .fold(f64::NEG_INFINITY, f64::max);
+        self.notes.iter().map(|n| n.time).filter(|time| *time > last).fold(self.length, f64::min)
+    }
+
     /// What the head says the tools act on.
     fn head(&self) -> &'static str {
-        if self.selected.is_empty() { "Whole clip" } else { "Selected notes" }
+        match (self.selected.is_empty(), self.nothing) {
+            (false, _) => "Selected notes",
+            (true, true) => "No notes in time",
+            (true, false) => "Whole clip",
+        }
     }
 
     /// How many notes the tools act on.
@@ -186,10 +211,10 @@ pub fn show(ui: &mut Ui, area: Rect, tools: &Tools<'_>, state: &mut PianoRollSta
     );
     // The head and the count are named for a reader and a test, as the piano roll's parts are.
     let head_label = tools.head();
-    ui.interact(head, egui::Id::new("piano-roll-tools-head"), egui::Sense::hover())
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, head_label));
-    ui.interact(count, egui::Id::new("piano-roll-tools-count"), egui::Sense::hover())
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &count_text));
+    ui.interact(head, egui::Id::unique("piano-roll-tools-head"), egui::Sense::hover())
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, head_label));
+    ui.interact(count, egui::Id::unique("piano-roll-tools-count"), egui::Sense::hover())
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &count_text));
 
     let body = Rect::from_min_max(Pos2::new(column.left(), count.bottom() + PAD), column.max);
     // In a short column the tools have no room under the head: they are left out, not squeezed.
@@ -248,7 +273,7 @@ fn quantise_block(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, ac
         },
     );
     menu.response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, format!("Quantise grid {shown}")));
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("Quantise grid {shown}")));
     // `.midi-tools .slider { --suhina-appearance: knob }` draws the amount as a knob, dragged up
     // or down; `#quantise-amount` selects it alone.
     let slider_style = crate::kit::style_class::enter_named("slider", "quantise-amount");
@@ -282,9 +307,7 @@ fn quantise_block(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, ac
         )
     };
     drop(slider_style);
-    slider.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, format!("Amount {} %", settings.amount))
-    });
+    slider.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Amount {} %", settings.amount)));
     ui.checkbox(&mut settings.ends, egui::RichText::new("Move ends too").font(small.clone()));
     state.quantize = settings;
     let apply = ui
@@ -299,7 +322,7 @@ fn quantise_block(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, ac
         egui::Button::new(egui::RichText::new("Close").font(small.clone()))
             .min_size(Vec2::new(0.0, ui.spacing().interact_size.y)),
     );
-    close.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Close quantise"));
+    close.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Close quantise"));
     if close.on_hover_text("Close the quantise controls").clicked() {
         state.quantize_open = false;
     }
@@ -308,6 +331,7 @@ fn quantise_block(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, ac
         params["grid"] = json!(state.quantize.grid);
         params["amount"] = json!(state.quantize.amount);
         params["ends"] = json!(state.quantize.ends);
+        state.replacing(&mut params);
         actions.push(Action::new("note.quantize", params));
     }
     ui.add_space(PAD);
@@ -326,15 +350,12 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
         egui::DragValue::new(&mut settings.transpose).range(-24..=24).speed(1.0).prefix(""),
     );
     transpose.widget_info(|| {
-        egui::WidgetInfo::labeled(
-            egui::WidgetType::DragValue,
-            true,
-            format!("Transpose semitones {}", settings.transpose),
-        )
+        egui::WidgetInfo::labeled(egui::Role::SpinButton, true, format!("Transpose semitones {}", settings.transpose))
     });
     if button(ui, "Transpose", &small) {
         let mut params = tools.params();
         params["semitones"] = json!(settings.transpose);
+        state.replacing(&mut params);
         actions.push(Action::new("note.move", params));
     }
 
@@ -346,11 +367,7 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
         egui::DragValue::new(&mut settings.humanize_time).range(0.0..=1.0).speed(0.01).max_decimals(3).prefix("Time "),
     );
     time.widget_info(|| {
-        egui::WidgetInfo::labeled(
-            egui::WidgetType::DragValue,
-            true,
-            format!("Humanise time {:.3}", settings.humanize_time),
-        )
+        egui::WidgetInfo::labeled(egui::Role::SpinButton, true, format!("Humanise time {:.3}", settings.humanize_time))
     });
     let velocity = crate::kit::widgets::number_input(
         ui,
@@ -359,7 +376,7 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
     );
     velocity.widget_info(|| {
         egui::WidgetInfo::labeled(
-            egui::WidgetType::DragValue,
+            egui::Role::SpinButton,
             true,
             format!("Humanise velocity {:.0}", settings.humanize_velocity),
         )
@@ -387,8 +404,7 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
             }
         },
     );
-    menu.response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, format!("Tools root {root}")));
+    menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("Tools root {root}")));
     let scale = SCALES.get(settings.scale).map_or("Major", |(name, _)| *name);
     let menu = crate::kit::widgets::combo_box(
         ui,
@@ -401,8 +417,7 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
             }
         },
     );
-    menu.response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, format!("Tools scale {scale}")));
+    menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("Tools scale {scale}")));
     if button(ui, "Fit to scale", &small) {
         let mut params = tools.params();
         params["root"] = json!(root);
@@ -418,7 +433,10 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
         actions.push(Action::new("note.reverse", tools.params()));
     }
     if button(ui, "Legato", &small) {
-        actions.push(Action::new("note.legato", tools.params()));
+        let mut params = tools.params();
+        params["until"] = json!(tools.legato_until(state.span_end()));
+        state.replacing(&mut params);
+        actions.push(Action::new("note.legato", params));
     }
     ui.horizontal(|ui| {
         let small = small.clone();
@@ -452,7 +470,7 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
     );
     amount.widget_info(|| {
         egui::WidgetInfo::labeled(
-            egui::WidgetType::DragValue,
+            egui::Role::SpinButton,
             true,
             format!("Randomise amount {:.0}", settings.random_amount),
         )
@@ -468,16 +486,14 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
         egui::DragValue::new(&mut settings.ramp_from).range(1..=127).speed(1.0).prefix("From "),
     );
     from.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, format!("Ramp from {}", settings.ramp_from))
+        egui::WidgetInfo::labeled(egui::Role::SpinButton, true, format!("Ramp from {}", settings.ramp_from))
     });
     let to = crate::kit::widgets::number_input(
         ui,
         Some(Vec2::new(ui.available_width().min(64.0), 16.0)),
         egui::DragValue::new(&mut settings.ramp_to).range(1..=127).speed(1.0).prefix("To "),
     );
-    to.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, format!("Ramp to {}", settings.ramp_to))
-    });
+    to.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, format!("Ramp to {}", settings.ramp_to)));
     if button(ui, "Ramp", &small) {
         let mut params = tools.params();
         params["from"] = json!(settings.ramp_from.clamp(1, 127));

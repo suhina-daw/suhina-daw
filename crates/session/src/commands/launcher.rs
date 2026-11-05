@@ -24,7 +24,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "launcher.setQuantization",
-        label: "Set the grid launches wait for and the Arrangement view snaps to (default 1 bar)",
+        label: "Set the grid launches wait for (default 1 bar)",
         params: &[param(
             "value",
             ParamType::Text,

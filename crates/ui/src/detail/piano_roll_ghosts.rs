@@ -73,6 +73,8 @@ pub struct GhostNote {
     pub color: Color32,
     /// Its track's name, as an index into [`Ghosts::sources`].
     pub source: usize,
+    /// The clip it comes from.
+    pub clip: ClipRef,
 }
 
 impl GhostNote {
@@ -86,6 +88,42 @@ impl GhostNote {
             release_velocity: 0.0,
             channel: 0,
             muted: false,
+        }
+    }
+}
+
+/// A clip of several picked, as the strip over the piano roll shows it, in the edited clip's content
+/// beats.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PickedBar {
+    pub clip: ClipRef,
+    pub start: f64,
+    pub length: f64,
+    pub name: String,
+    pub color: Color32,
+    /// Whether it is the clip being edited.
+    pub edited: bool,
+    /// Its row of the strip, from the top: clips at the same time lie one above the other.
+    pub row: usize,
+}
+
+/// How many rows the strip of picked clips has at most; further clips at the same time share the last.
+pub const MAX_STRIP_ROWS: usize = 4;
+
+/// Gives each bar the first row free where it starts, the earliest bars first.
+fn lay_out_bars(bars: &mut [PickedBar]) {
+    let mut order: Vec<usize> = (0..bars.len()).collect();
+    order.sort_by(|a, b| {
+        let start = |i: &usize| bars.get(*i).map_or(0.0, |bar| bar.start);
+        start(a).total_cmp(&start(b))
+    });
+    let mut ends = [f64::NEG_INFINITY; MAX_STRIP_ROWS];
+    for index in order {
+        let Some(bar) = bars.get_mut(index) else { continue };
+        let row = ends.iter().position(|end| *end <= bar.start + 1e-9).unwrap_or(MAX_STRIP_ROWS - 1);
+        bar.row = row;
+        if let Some(end) = ends.get_mut(row) {
+            *end = end.max(bar.start + bar.length);
         }
     }
 }
@@ -104,6 +142,20 @@ pub struct Ghosts {
     /// The names of the tracks the ghost notes come from.
     pub sources: Vec<String>,
     pub choices: Vec<GhostChoice>,
+    /// With several MIDI clips picked, each of them.
+    pub picked: Vec<PickedBar>,
+}
+
+impl Ghosts {
+    /// How many rows the strip of picked clips takes.
+    pub fn strip_rows(&self) -> usize {
+        self.picked.iter().map(|bar| bar.row + 1).max().unwrap_or(0)
+    }
+
+    /// Whether `clip` is one of the clips picked together with the edited one.
+    pub fn is_picked(&self, clip: ClipRef) -> bool {
+        self.picked.iter().any(|bar| bar.clip == clip)
+    }
 }
 
 /// The ghost notes `source` gives the edited clip `edited`, and the clips the menu offers.
@@ -117,7 +169,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         return ghosts;
     };
     // The clips shown, each with the time it is laid out in.
-    let mut shown: Vec<(TrackId, &Clip, Placement)> = Vec::new();
+    let mut shown: Vec<(ClipRef, &Clip, Placement)> = Vec::new();
     let mut add = |clip: ClipRef, rebase: bool| {
         if clip == edited {
             return;
@@ -127,7 +179,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
             if rebase {
                 at.start = mine.start;
             }
-            shown.push((clip.track(), other, at));
+            shown.push((clip, other, at));
         }
     };
     match (source, edited) {
@@ -163,10 +215,11 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         }
         (GhostSource::Clip(clip), _) => add(clip, true),
     }
-    for (track, clip, at) in shown {
+    for (from, clip, at) in shown {
         if ghosts.notes.len() >= MAX_GHOSTS {
             break;
         }
+        let track = from.track();
         let Some(notes) = notes_of(project, track, clip) else { continue };
         let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
         let name = project.tracks.get(position).map_or_else(String::new, |t| project.shown_track_name(t.id));
@@ -184,6 +237,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
             key,
             color,
             source,
+            clip: from,
         });
         // A track is named only when it gave a ghost note.
         if source == ghosts.sources.len() && ghosts.notes.len() > before {
@@ -207,6 +261,31 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
         .map(|p| p.start + p.length)
         .fold(first.end, f64::max);
     let window = Window { end, ..first };
+    for clip in picked.iter().copied() {
+        let Some(other) = clip_at(project, clip) else { continue };
+        let track = clip.track();
+        if notes_of(project, track, other).is_none() {
+            continue;
+        }
+        let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
+        let rgb = project
+            .tracks
+            .get(position)
+            .map(|track| track_colour(track, position))
+            .unwrap_or_else(|| crate::interaction::grid::to_rgb(theme::midi_clip_default()));
+        let at = placement(clip, other);
+        let content = project.content(other.content).map_or("", |c| c.name.as_str());
+        ghosts.picked.push(PickedBar {
+            clip,
+            start: at.start - first.start + first.content,
+            length: at.length,
+            name: format!("{} - {}", project.shown_track_name(track), content),
+            color: Color32::from_rgb(rgb.0, rgb.1, rgb.2),
+            edited: clip == edited,
+            row: 0,
+        });
+    }
+    lay_out_bars(&mut ghosts.picked);
     for clip in picked.iter().copied().filter(|c| *c != edited) {
         if ghosts.notes.len() >= MAX_GHOSTS {
             break;
@@ -236,6 +315,7 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
             key,
             color,
             source,
+            clip,
         });
         if source == ghosts.sources.len() && ghosts.notes.len() > before {
             ghosts.sources.push(name);
@@ -431,6 +511,11 @@ fn choices(project: &Project, edited: ClipRef) -> Vec<GhostChoice> {
 
 /// Paints the ghost notes on `painter` (the grid's), each at the rectangle `rect_of` gives it:
 /// a fill in its track's colour at [`GHOST_ALPHA`], no name, no edge and no velocity stem.
+/// The clip of the ghost note at `pos`, the one drawn last when several are there.
+pub(crate) fn ghost_at(ghosts: &Ghosts, pos: egui::Pos2, rect_of: impl Fn(&GhostNote) -> Rect) -> Option<ClipRef> {
+    ghosts.notes.iter().rev().find(|g| rect_of(g).contains(pos)).map(|g| g.clip)
+}
+
 pub(crate) fn paint(painter: &Painter, ghosts: &Ghosts, visible: Rect, rect_of: impl Fn(&GhostNote) -> Rect) {
     for ghost in &ghosts.notes {
         let rect = rect_of(ghost);
@@ -455,8 +540,8 @@ pub(crate) fn for_readers(ui: &Ui, ghosts: &Ghosts, visible: Rect, rect_of: impl
         labelled += 1;
         let from = ghosts.sources.get(ghost.source).map_or("", String::as_str);
         let label = format!("Ghost note {} at beat {} from {from}", key_name(ghost.key), round(ghost.start));
-        let response = ui.interact(rect, Id::new(("piano-roll-ghost", i)), Sense::hover());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+        let response = ui.interact(rect, Id::unique(("piano-roll-ghost", i)), Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
     }
 }
 
@@ -481,7 +566,7 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
             let mut entry = |ui: &mut Ui, choice: GhostSource, shown: &str, label: &str| {
                 let on = *source == choice;
                 let response = ui.selectable_label(on, egui::RichText::new(shown).font(font.clone()));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, label));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
                 if response.clicked() {
                     picked = Some(choice);
                     ui.close();
@@ -506,12 +591,12 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
                 });
             });
             clip_menu.response.widget_info(|| {
-                egui::WidgetInfo::selected(egui::WidgetType::Button, true, chosen, "Ghost notes: Clip\u{2026}")
+                egui::WidgetInfo::selected(egui::Role::Button, true, chosen, "Ghost notes: Clip\u{2026}")
             });
         });
         let label = format!("Ghost notes {}", source.name(ghosts));
         crate::detail::piano_roll::menu_arrow(ui, menu.response.rect, color);
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         shown = menu.response.rect;
         menu.response.on_hover_text(format!(
             "Ghost notes: {}. Notes of other clips drawn faintly behind this clip's notes",
