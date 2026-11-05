@@ -694,16 +694,10 @@ impl App {
                 }
             }
         }
-        // A grid value picked in the piano roll's grid menu or with its keys: its own, or the
-        // control bar's when the piano roll follows it.
+        // A grid value picked in the piano roll's grid menu or with its keys: the piano roll's
+        // own, apart from the control bar's launch quantisation.
         if let Some(picked) = self.piano_roll.grid_picked.take() {
-            if self.settings.piano_grid_follows {
-                if let Some(value) = picked.control_bar_value() {
-                    actions.push(Action::new("launcher.setQuantization", json!({ "value": value })));
-                }
-            } else {
-                self.piano_grid = picked;
-            }
+            self.piano_grid = picked;
         }
         view
     }
@@ -779,28 +773,20 @@ impl App {
     }
 
     /// The piano roll for the selected arrangement clip, when it is a MIDI clip; its grid is its
-    /// own grid value, or the control bar's when Settings says so.
+    /// own grid value, apart from the control bar's launch quantisation.
     /// The piano roll for the shown clip: an arrangement clip's, or the Launcher view's selected
     /// slot's clip.
     pub(super) fn piano_clip(&self, clip: Option<detail_view::ClipRef>) -> Option<piano_roll::PianoClip> {
-        let follows = self.settings.piano_grid_follows;
-        let control_bar = self.session().map_or(DEFAULT_QUANTIZATION, |s| quantization_label(s.quantization()));
-        let quantization = suhina_session::parse_quantization(control_bar).ok()?;
         let mut piano = match clip? {
             detail_view::ClipRef::Arrangement(track, clip) => {
-                piano_roll::arrangement_clip(self.session()?.project(), track, clip, quantization)?
+                piano_roll::arrangement_clip(self.session()?.project(), track, clip)?
             }
             detail_view::ClipRef::Slot(track, scene) => {
-                piano_roll::launcher_clip(self.session()?.project(), track, scene, quantization)?
+                piano_roll::launcher_clip(self.session()?.project(), track, scene)?
             }
         };
-        if follows {
-            piano.grid_menu = crate::detail::piano_roll_grid::PianoGrid::from_value(control_bar);
-        } else {
-            piano.grid_menu = self.piano_grid;
-            piano.grid = self.piano_grid.fixed_step(piano.bar_beats);
-        }
-        piano.grid_follows = follows;
+        piano.grid_menu = self.piano_grid;
+        piano.grid = self.piano_grid.fixed_step(piano.bar_beats);
         Some(piano)
     }
 

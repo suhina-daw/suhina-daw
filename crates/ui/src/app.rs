@@ -80,8 +80,7 @@ use self::control_bar::*;
 use self::drops::*;
 use self::keys::*;
 
-/// Launch quantisation choices, as `launcher.setQuantization` takes them; the Arrangement
-/// view's grid follows the same value.
+/// Launch quantisation choices, as `launcher.setQuantization` takes them.
 pub(crate) const QUANTIZATION: [&str; 14] = [
     "none", "8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32",
 ];
@@ -1072,10 +1071,20 @@ impl App {
         self.arrangement.selected_clip()
     }
 
+    /// The slot selected in the Launcher view: its track and scene (from 0).
+    pub fn selected_slot(&self) -> Option<(TrackId, usize)> {
+        self.view.selected_slot
+    }
+
     /// The Arrangement view's state: what is selected, how far it is scrolled and which groups are
     /// folded. The view draws itself from it, and the window's tests read it.
     pub fn arrangement(&self) -> &ArrangementViewState {
         &self.arrangement
+    }
+
+    /// The piano roll's grid, to choose as its menu does (the window's tests).
+    pub fn set_piano_grid(&mut self, grid: crate::detail::piano_roll_grid::PianoGrid) {
+        self.piano_grid = grid;
     }
 
     /// The Arrangement's grid, to choose as its menu does (the window's tests).
@@ -2354,6 +2363,11 @@ impl App {
         if let Some(wider) = self.to_selection(action) {
             return self.run(&wider);
         }
+        // An undo or redo can change or take away the clip a carry holds: the carry was made
+        // of what was there before, so it lets go.
+        if matches!(action.id, "edit.undo" | "edit.redo") {
+            self.carry = None;
+        }
         if action.id == "ui.renameClip" {
             let mut target = action.params.clone();
             let name = target.get("name").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
@@ -2538,6 +2552,21 @@ impl App {
                         self.arrangement.select_clips(copies);
                     }
                 }
+                // Moved clips stay picked, on whichever track they landed: a clip is picked by its
+                // track and its id.
+                if action.id == "clip.move"
+                    || (action.id == "clip.moveMany" && action.params["copy"].as_bool() != Some(true))
+                {
+                    let key = |c: &serde_json::Value| {
+                        let track = u32::try_from(c["track"].as_u64()?).ok()?;
+                        Some((TrackId(track), ClipId(u32::try_from(c["clip"].as_u64()?).ok()?)))
+                    };
+                    let moved: Vec<(TrackId, ClipId)> = match result["clips"].as_array() {
+                        Some(made) => made.iter().filter_map(key).collect(),
+                        None => key(&result).into_iter().collect(),
+                    };
+                    self.arrangement.clips_moved(&moved);
+                }
                 let changes_project = suhina_session::commands()
                     .iter()
                     .find(|c| c.id == action.id)
@@ -2645,6 +2674,10 @@ impl App {
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;
+        let take_crossfade = f64::from(self.settings.view.take_crossfade_ms());
+        if let Ok(session) = self.projects.session_mut(None) {
+            session.set_take_crossfade_ms(take_crossfade);
+        }
         self.arrangement.set_size_settings(self.settings.view.track_sizes);
         if let Some((_, _, timeline)) = &self.timeline {
             self.arrangement.apply_size_defaults(timeline);
@@ -2679,7 +2712,7 @@ impl App {
             self.device_focus = false;
         }
         self.frame_trace.mark("input");
-        self.follow_active();
+        self.follow_active(ui.ctx());
         self.frame_trace.mark("follow project");
         self.poll_scan(ui.ctx());
         self.frame_trace.mark("plug-in scan");
@@ -3029,6 +3062,9 @@ impl App {
             }
             self.frame_trace.mark("browser");
             let _main_style = crate::kit::style_class::enter_named("workspace-panel", "panel-main");
+            // A clip whose drag or held press the view switch carried becomes the carry first,
+            // so the probe below reads it on the switch's first frame.
+            self.begin_clip_carry(ui.ctx());
             // A drag from the browser, or files from the system: the views say what is under the
             // pointer.
             let dragged = self.browser.drag.as_ref().or(system.as_ref().map(|(items, _)| items));

@@ -4,14 +4,13 @@
 //! The piano roll's grid menu and keys in the window (`docs/spec/ui-clip-editor.md` › Grid and
 //! snapping): the menu ticks the chosen entries and changes the grid, Ctrl+1 to Ctrl+4 change it
 //! after a click in the piano roll, a drawn note follows the value, snap off places notes freely,
-//! an adaptive grid follows the zoom, and following the control bar greys out what it cannot hold.
+//! and an adaptive grid follows the zoom.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers outside #[test] functions
 
 use egui::{Key, Modifiers, Pos2, Rect, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use suhina_engine::Quantization;
 use suhina_engine::model::{LaneData, Note};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
@@ -279,29 +278,6 @@ fn an_adaptive_grid_gets_coarser_as_ctrl_and_the_wheel_zoom_out() {
     let second = draw_at(&mut h, at);
     let floor = ((beat + 0.8) / coarse).floor() * coarse;
     assert!((second.time - floor).abs() < 1e-9, "on the coarser line: {second:?} for {coarse}");
-}
-
-#[test]
-fn following_the_control_bar_the_menu_sets_its_value_and_greys_out_the_rest() {
-    let mut renderer = engine();
-    let settings = Settings { piano_grid_follows: true, ..Settings::default() };
-    let mut h = piano_app(&mut renderer, settings);
-    let quantization = |h: &Harness<'static, App>| h.state().session().unwrap().quantization();
-    h.get_by_label_contains("Grid value").click();
-    h.run();
-    assert!(h.get_by_label("Adaptive medium").accesskit_node().is_disabled(), "the control bar has no adaptive grid");
-    assert!(!h.get_by_label("1/8").accesskit_node().is_disabled());
-    h.get_by_label("1/8").click_accesskit();
-    h.run();
-    assert_eq!(quantization(&h), Quantization::Beats(0.5));
-    assert_eq!(grid_label(&h), "Grid value 1/8");
-    // Snap off is the control bar's none.
-    pick(&mut h, &format!("Snap to grid ({})", shown("Ctrl+4")));
-    assert_eq!(quantization(&h), Quantization::None);
-    assert_eq!(grid_label(&h), "Grid value 1/16 off");
-    // Picking a value snaps again.
-    pick(&mut h, "1/4");
-    assert_eq!(quantization(&h), Quantization::Beats(1.0));
 }
 
 /// Renders the grid menu open, for a look at it (`cargo test -p suhina-ui --test piano_roll_grid

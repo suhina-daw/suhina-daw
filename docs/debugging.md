@@ -8,6 +8,7 @@ covers:
   - apps/suhina/src/liquid.rs
   - apps/suhina/src/main.rs
   - apps/suhina/src/theme_io.rs
+  - apps/suhina-cli/src/play.rs
   - crates/plugins/src/trace.rs
   - crates/ui/src/kit/frame_trace.rs
   - crates/ui/src/kit/native_css.rs
@@ -186,6 +187,12 @@ What is normal: a few late plug-in blocks in the first second of playback (every
 once), and a few thousand stretched frames late right after a jump of the play position (the
 stretched clips there are made from the new place first). Late blocks that keep coming while it
 plays, or underruns at all, are the bug.
+
+From the command line, `suhina-cli play` (the arrangement once, or the clip launcher with
+`--launcher`) writes no trace, but says when it ends how many times the device was not given its
+sound in time (the device underruns above, a cpal xrun among them) and how many stretched frames
+were late, each as a `warning:` line; a clean run prints neither. A tester on another system can
+send those lines with a recording of a click.
 
 ### Further reading on audio timing
 

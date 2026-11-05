@@ -81,6 +81,10 @@ pub struct SessionViewState {
     /// A clip slot whose drag started this frame (track, scene from 0): the window carries the
     /// clip from there (`docs/spec/ui-session-view.md` › Between the views).
     pub slot_drag: Option<(TrackId, usize)>,
+    /// A clip slot a press is held on (track, scene from 0), before the pointer has moved
+    /// enough for the drag to be decided: the view may switch under the held press (Tab), and
+    /// the press then carries the clip like a drag does.
+    pub pressed_slot: Option<(TrackId, usize)>,
     /// Launching a clip leaves the selection as it is (Settings › Session and mixer › Select on
     /// launch is off); by default a launch selects the clip.
     pub keep_selection_on_launch: bool,
@@ -990,6 +994,15 @@ fn column_body(
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
             response
         });
+        // A press held on the clip's name selects the slot at once, as the click will: a drag
+        // from it starts as a drag, and a view switch under the held press (Tab) carries the
+        // clip before the pointer has moved enough for the drag to be decided.
+        if let Some(select) = &select
+            && select.is_pointer_button_down_on()
+            && ui.input(|i| i.pointer.primary_down())
+        {
+            state.select_slot(column.track, scene);
+        }
         let hover = [&launch, &select].into_iter().flatten().map(|r| widgets::hover(ui, r)).fold(0.0, f32::max);
         let pulse = if slot.state == SlotState::Queued { motion::pulse(ui.ctx()) } else { 1.0 };
         // The launch button launches as the pointer goes down, and releases a gate or repeat
@@ -1042,7 +1055,20 @@ fn column_body(
                 ui.ctx().data_mut(|d| d.remove::<String>(Id::unique(("slot-rename", column.track, number))));
             }
             for response in [&launch, &select].into_iter().flatten() {
+                // A click into a slot, its launch mark too, takes the focus off the tracks, so
+                // the edit keys (Delete, Ctrl+C) no longer act on a track selected before it,
+                // whether or not the launch selects the slot.
                 if response.clicked() || response.secondary_clicked() {
+                    state.track_focus = false;
+                }
+                // A press held on a slot with a clip, either control, can be carried by a view
+                // switch before the drag is decided, as a clip's press is in the Arrangement
+                // view. An empty slot has no clip to carry, so it never records. A press that
+                // is let go dies at the frame's start (`begin_clip_carry`), even when this
+                // slot has scrolled away by then. A carried press is never a click, so the
+                // press itself takes the focus off the tracks, as the click would.
+                if has_clip && response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
+                    state.pressed_slot = Some(key);
                     state.track_focus = false;
                 }
                 // An empty slot is selected by a click, any slot by a right-click: Ctrl+C and

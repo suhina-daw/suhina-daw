@@ -4,6 +4,16 @@
 use super::*;
 
 #[test]
+fn picked_clips_follow_their_move_to_another_track() {
+    let mut state = ArrangementViewState::default();
+    let (a, b, c) = (ClipId(1), ClipId(2), ClipId(3));
+    state.select_clips(vec![(TrackId(1), a), (TrackId(1), b)]);
+    state.clips_moved(&[(TrackId(2), a), (TrackId(2), b), (TrackId(2), c)]);
+    assert_eq!(state.selected_clips(), [(TrackId(2), a), (TrackId(2), b)]);
+    assert_eq!(state.selected_clip(), Some((TrackId(2), a)));
+}
+
+#[test]
 fn shift_click_takes_the_rectangle_from_the_anchor_across_tracks() {
     // Two tracks alike, each with a clip at bar 1 and one at bar 5 (#694).
     let spot = |track: u32, clip: u32, row: usize, start: f64| ClipSpot {
@@ -356,6 +366,23 @@ fn an_adaptive_grid_follows_the_zoom_and_the_keys_change_it() {
 }
 
 #[test]
+fn a_lanes_menu_changes_the_grid_and_sends_no_command() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = egui_kittest::Harness::builder().allow_missing_glyphs().build_ui_state(
+        |ui, (state, actions): &mut (ArrangementViewState, Vec<Action>)| {
+            empty_lane_menu(ui, TrackId(1), true, false, state, actions);
+        },
+        (ArrangementViewState::default(), Vec::new()),
+    );
+    h.run();
+    h.get_by_label("1/8").click_accesskit();
+    h.run();
+    let (state, actions) = h.state();
+    assert_eq!(state.grid.label(), "1/8");
+    assert!(actions.is_empty(), "{actions:?}");
+}
+
+#[test]
 fn snap_off_draws_the_lines_and_does_not_snap() {
     // Snap off keeps its value's lines (1/16 here), as the piano roll's grid does.
     let grid = arrangement_grid(PianoGrid::from_value("none"), 400.0, 4.0);
@@ -420,9 +447,85 @@ fn a_tracks_take_lanes_show_under_it_and_fold_away() {
     assert_eq!(timeline.takes[0].clips.len(), 1);
     let mut state = ArrangementViewState::default();
     let automation = state.automation.height(track, &timeline.automation);
-    assert_eq!(state.below(track, &timeline), 2.0 * (TAKE_ROW + 1.0) + automation);
+    // As tall as a track that has not been resized, each (#1078).
+    let row = state.lane_height(TrackId(999));
+    assert_eq!(state.below(track, &timeline), 2.0 * (row + 1.0) + automation);
     state.takes_hidden.insert(track);
     assert_eq!(state.below(track, &timeline), automation, "folded away");
+}
+
+/// While a take records, the passes already done add no lanes under the track (#1078).
+#[test]
+fn a_take_still_recording_has_no_lanes_under_its_track() {
+    let project = crate::demo::demo_project();
+    let track = project.arrangement.lanes.iter().find_map(|l| l.track).unwrap();
+    let mut timeline = Timeline::build(&project, None);
+    let state = ArrangementViewState::default();
+    let before = state.below(track, &timeline);
+    let pass = |finished| suhina_session::LiveTake {
+        track,
+        start: 0.0,
+        end: 4.0,
+        notes: Vec::new(),
+        audio: false,
+        peaks: Vec::new(),
+        peaks_end: 0.0,
+        finished,
+    };
+    timeline.live_takes = vec![pass(true), pass(true), pass(false)];
+    assert_eq!(state.below(track, &timeline), before);
+}
+
+/// Each take lane has a height of its own, the lanes' zoom takes every one along, and a lane left
+/// alone stays as tall as a track (#1078).
+#[test]
+fn take_lanes_size_and_zoom_like_tracks() {
+    let mut project = crate::demo::demo_project();
+    let lane = project.arrangement.lanes.iter().find(|l| l.track.is_some() && !l.clips.is_empty()).unwrap();
+    let (track, clip) = (lane.track.unwrap(), lane.clips[0].clone());
+    let take = |name: &str| suhina_engine::model::TakeLane {
+        track,
+        name: name.into(),
+        clips: vec![suhina_engine::model::Clip { id: ClipId::NONE, ..clip.clone() }],
+        color: None,
+    };
+    // A take deleted earlier: the lanes keep the numbers the commands know them by.
+    project.arrangement.takes = vec![take("Take 2"), take("Take 3")];
+    let timeline = Timeline::build(&project, None);
+    assert_eq!(timeline.takes.iter().map(|t| t.number).collect::<Vec<_>>(), [2, 3]);
+    let mut state = ArrangementViewState::default();
+    let row = state.lane_height(TrackId(999));
+    assert_eq!(state.take_row(track, 2), row);
+    state.take_heights.insert((track, 2), 100.0);
+    assert_eq!(state.take_row(track, 3), row, "the other lane stays");
+    state.zoom_lanes(&timeline.lanes, 2.0, 0.0);
+    assert_eq!(state.take_row(track, 2), 200.0);
+    assert_eq!(state.take_row(track, 3), state.lane_height(TrackId(999)));
+    assert!(state.take_row(track, 3) > row);
+    assert_eq!(state.takes_height(track, &timeline), 200.0 + 1.0 + state.take_row(track, 3) + 1.0);
+}
+
+/// Small wheel steps add up on a take lane, as they do on a track: its height keeps the fraction.
+#[test]
+fn small_wheel_steps_add_up_on_the_take_lane_under_the_pointer() {
+    let mut project = crate::demo::demo_project();
+    let lane = project.arrangement.lanes.iter().find(|l| l.track.is_some() && !l.clips.is_empty()).unwrap();
+    let (track, clip) = (lane.track.unwrap(), lane.clips[0].clone());
+    let clips = vec![suhina_engine::model::Clip { id: ClipId::NONE, ..clip }];
+    project.arrangement.takes =
+        vec![suhina_engine::model::TakeLane { track, name: "Take 1".into(), clips, color: None }];
+    let timeline = Timeline::build(&project, None);
+    let tracks: Vec<&Lane> = timeline.lanes.iter().filter(|l| l.kind != ColumnKind::Return).collect();
+    let mut state = ArrangementViewState::default();
+    state.zoom_one = true;
+    state.take_heights.insert((track, 1), 64.0);
+    let above: f32 = tracks.iter().take_while(|l| l.track != track).map(|l| state.height(l) + 1.0).sum();
+    let at = tracks.iter().find(|l| l.track == track).map_or(0.0, |l| state.height(l) + 1.0);
+    let offset = above + at + 2.0;
+    for _ in 0..100 {
+        state.zoom_wheel(&tracks, &timeline, 1.004, offset);
+    }
+    assert!(state.take_row(track, 1) >= 90.0, "{}", state.take_row(track, 1));
 }
 
 #[test]

@@ -316,13 +316,17 @@ fn the_erase_tool_deletes_what_it_passes_over_in_one_undo_step() {
 }
 
 #[test]
-fn the_piano_roll_keeps_its_own_grid_unless_settings_link_it_to_the_control_bar() {
+fn the_control_bars_quantize_box_leaves_the_piano_rolls_grid_and_snap_alone() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    // The control bar's grid value sets the Arrangement view's only.
+    // The control bar's Quantize value is the launch quantisation and sets nothing in the piano
+    // roll: not its grid lines, not what its notes snap to.
     h.state_mut().run(&Action::new("launcher.setQuantization", json!({ "value": "1/4" })));
     h.run();
     assert!(h.query_by_label("Grid value 1/16").is_some(), "the piano roll's own grid shows");
+    h.state_mut().run(&Action::new("launcher.setQuantization", json!({ "value": "none" })));
+    h.run();
+    assert!(h.query_by_label("Grid value 1/16").is_some(), "and still, with Quantize at none");
     tool(&mut h, "Draw");
     let key = empty_key(&h);
     let first = notes(&h)[0].time;
@@ -330,12 +334,17 @@ fn the_piano_roll_keeps_its_own_grid_unless_settings_link_it_to_the_control_bar(
     click(&mut h, p0);
     assert_eq!(notes(&h).last().unwrap().duration, 0.25);
 
-    // Following the control bar, its value is the piano roll's.
-    let settings = Settings { piano_grid_follows: true, ..Settings::default() };
-    let ctx = h.ctx.clone();
-    h.state_mut().set_settings(&ctx, settings);
+    // The other way too: picking a grid or turning snap off in the piano roll leaves the launch
+    // quantisation as it was.
+    h.state_mut().run(&Action::new("launcher.setQuantization", json!({ "value": "1/4" })));
     h.run();
-    assert!(h.query_by_label("Grid value 1/4").is_some());
+    let quantization = h.state().session().unwrap().quantization();
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num2);
+    h.run();
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num4);
+    h.run();
+    assert!(h.query_by_label("Grid value 1/8 off").is_some(), "the piano roll's grid changed");
+    assert_eq!(h.state().session().unwrap().quantization(), quantization, "the launch quantisation did not");
 }
 
 #[test]
@@ -379,7 +388,7 @@ fn a_new_note_takes_the_length_of_the_note_last_clicked() {
 }
 
 #[test]
-fn settings_clip_editor_has_both_piano_roll_settings_and_they_change_the_settings() {
+fn settings_clip_editor_has_the_piano_roll_settings_and_they_change_the_settings() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
@@ -387,17 +396,12 @@ fn settings_clip_editor_has_both_piano_roll_settings_and_they_change_the_setting
     assert!(h.state().settings_open());
     h.get_by_label("Settings page: Clip editor").click();
     h.run();
-    // Both rows fit on the page, inside the window.
-    for name in ["Full-height piano roll covers: Whole window", "Piano roll grid source: Control bar"] {
-        let rect = h.get_by_label(name).rect();
-        assert!(rect.bottom() < SIZE.1, "{name} at {rect:?}");
-    }
+    // The row fits on the page, inside the window.
+    let rect = h.get_by_label("Full-height piano roll covers: Whole window").rect();
+    assert!(rect.bottom() < SIZE.1, "at {rect:?}");
     h.get_by_label("Full-height piano roll covers: Whole window").click();
     h.run();
-    h.get_by_label("Piano roll grid source: Control bar").click();
-    h.run();
     assert_eq!(h.state().settings().piano_roll_top, PianoRollTop::Window);
-    assert!(h.state().settings().piano_grid_follows);
 }
 
 /// The number keys choose the tools, the way the toolbar's icons do (after a click in the piano

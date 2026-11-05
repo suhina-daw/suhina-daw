@@ -10,16 +10,6 @@ pub(super) const BEAT_LIMIT: f32 = 120_000.0;
 /// How far Alt and an arrow key moves or resizes notes, in beats: a 1/128 note, finer than any grid.
 const FINE_STEP: f64 = 0.03125;
 
-/// The grid step in beats for the control bar's value; 0 for none.
-pub fn grid_step(quantization: Quantization, bar_beats: f64) -> f64 {
-    let step = match quantization {
-        Quantization::None => 0.0,
-        Quantization::Bars(bars) => f64::from(bars) * bar_beats,
-        Quantization::Beats(beats) => beats,
-    };
-    if step.is_finite() && step > 0.0 { step } else { 0.0 }
-}
-
 /// The grids quantise offers, as `note.quantize` takes them.
 pub const QUANTIZE_GRIDS: [&str; 13] =
     ["1 bar", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32", "2 bars", "4 bars", "8 bars"];

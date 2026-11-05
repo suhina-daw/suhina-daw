@@ -353,7 +353,7 @@ impl App {
                     &painter,
                     caption,
                     Align2::LEFT_CENTER,
-                    "Grid",
+                    "Quantize",
                     theme::ui_font(theme::TEXT_SMALL),
                     theme::text_hint(),
                 );
@@ -469,7 +469,7 @@ impl App {
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
             }
             "views" => {
-                let carrying = self.carry.is_some() || self.arrangement.dragged_clip().is_some();
+                let carrying = self.carrying_clip(ui.ctx());
                 for (index, view, name) in [(0, View::Session, "Launcher"), (1, View::Arrangement, "Arrangement")] {
                     let at = middle(index as f32 * 86.0, 86.0);
                     if widgets::button(ui, &painter, at, name, &format!("{name} view")) {
