@@ -190,6 +190,10 @@ whose content other clips also play is an edit like a note edit: that clip gets 
 content first, and a shared pattern stays one content. On the `Project` it would be one key for a
 whole set, which a song that changes key does not have; on each `Note` it would repeat itself.
 
+An audio clip's content may have a scale too, set through `clip.setScale`: it says the key of its
+audio and changes nothing that plays; it is shown and set in the clip panel
+([clip panel](../spec/clip-panel.md) › Layout, #1190). The default scale still goes to new MIDI clips only.
+
 A scale is something the editor shows and the note tools use (`note.fitToScale` fits to it when
 given none); the engine never reads it and it changes nothing that sounds. The modes are the
 twelve `note.fitToScale` already knew, now one list in the model that the commands, the project
