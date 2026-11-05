@@ -3,7 +3,7 @@ description: How Suhina uses an optional component it does not ship — the mani
 read_when: extension, add-on, optional component, extension manifest, extension.json, model weights, licence shown to the user, extensions.add, extensions.list, missing extension, inference runtime, surface script, Lua runner
 type: spec
 status: planned
-last_verified: 2026-10-13
+last_verified: 2026-11-05
 ---
 
 # Extensions
