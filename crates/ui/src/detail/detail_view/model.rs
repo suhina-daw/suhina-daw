@@ -389,6 +389,9 @@ pub struct AudioPanel {
     /// The playhead as a beat of the clip's content, for the Set buttons; none for a slot's clip,
     /// which has no place on the arrangement's timeline.
     pub playhead: Option<f64>,
+    /// Whether the panel has Set buttons: an arrangement clip's has, greyed while `playhead` is
+    /// none; a slot's clip has none.
+    pub set_buttons: bool,
     /// What each source says the tempo is (metadata, file name, detection), once the Find menu
     /// asked for it.
     pub candidates: Option<[Option<f64>; 3]>,
@@ -695,6 +698,7 @@ pub fn build_with(
                     tempo_source: placed.audio.tempo_source,
                     envelope_points: placed.audio.gain_envelope.len(),
                     playhead: None,
+                    set_buttons: scene.is_none(),
                     candidates: None,
                     bar_beats: bar,
                     length_beats: placed.length,

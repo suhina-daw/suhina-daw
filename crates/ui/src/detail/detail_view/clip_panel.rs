@@ -643,10 +643,15 @@ fn clip_part(
     let parse_length = |t: &str| bars_parse(t, bar, false);
     let places = |t: &str| bars_places(t, bar);
     let as_position = || Text { shown: &position, parse: &parse_position, places: Some(&places) };
+    // An arrangement clip's Set buttons stay where they are, greyed while the playhead is outside
+    // the clip, so they do not come and go as a loop passes the clip's end.
     let set_to = |ui: &Ui, painter: &egui::Painter, name: Rect, what: &str| {
-        panel.playhead.filter(|_| {
-            small_button(ui, painter, set_button(name), "Set", &format!("Set {what} to the playhead"), true)
-        })
+        if !panel.set_buttons {
+            return None;
+        }
+        let label = format!("Set {what} to the playhead");
+        let clicked = small_button(ui, painter, set_button(name), "Set", &label, panel.playhead.is_some());
+        panel.playhead.filter(|_| clicked)
     };
     let mut y = part.top();
     // Start and End: where in its audio the clip plays from and to.

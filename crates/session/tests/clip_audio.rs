@@ -215,3 +215,17 @@ fn an_unwarped_clips_tempo_is_set_from_how_it_plays() {
     assert!((set.length - 8.0).abs() < 1e-9, "{}", set.length);
     assert_eq!(set.audio.tempo(), Some(120.0));
 }
+
+/// A tempo that makes a clip longer stops it at the next clip on its lane; the next clip stays.
+#[test]
+fn a_longer_tempo_never_removes_the_next_clip() {
+    let dir = TempDir::new("clip-audio-tempo-room");
+    // Two seconds: four beats at 120, at beats 0 and 4.
+    let mut session = two_clips(&wav(&dir, "hit.wav", 2.0, 0.5));
+    let first = clips(&session)[0].id.0;
+    run(&mut session, "clip.setTempo", json!({ "clip": first, "bpm": 240.0 })).unwrap();
+    let [a, b] = clips(&session).try_into().unwrap();
+    assert_eq!((a.start, a.length), (0.0, 4.0), "stopped where the next clip starts");
+    assert_eq!(b.start, 4.0, "the next clip is still there");
+    assert_eq!(a.audio.tempo(), Some(240.0));
+}

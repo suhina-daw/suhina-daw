@@ -1219,7 +1219,8 @@ fn the_tempo_is_typed_halved_and_doubled() {
 #[test]
 fn set_puts_a_marker_at_the_playhead() {
     use egui_kittest::kittest::Queryable;
-    let (detail, _) = audio_detail(AudioPanel { playhead: Some(3.3), ..AudioPanel::default() }, 0.0, 0.0);
+    let panel = AudioPanel { playhead: Some(3.3), set_buttons: true, ..AudioPanel::default() };
+    let (detail, _) = audio_detail(panel, 0.0, 0.0);
     let mut harness = panel_harness(detail);
     harness.get_by_label("Set Start marker to the playhead").click();
     harness.run();
@@ -1373,4 +1374,15 @@ fn the_transpose_stays_within_48_semitones() {
     harness.run();
     let sent = harness.state().last().map(|a| a.params["transpose"].clone());
     assert!(sent.is_none() || sent == Some(json!(48.0)), "{sent:?}");
+}
+
+/// With the playhead outside the clip the Set buttons stay, greyed: a click sets nothing.
+#[test]
+fn set_buttons_stay_greyed_while_the_playhead_is_outside_the_clip() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, _) = audio_detail(AudioPanel { set_buttons: true, ..AudioPanel::default() }, 0.0, 0.0);
+    let mut harness = panel_harness(detail);
+    harness.get_by_label("Set Start marker to the playhead").click();
+    harness.run();
+    assert!(harness.state().is_empty());
 }

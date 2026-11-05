@@ -124,14 +124,21 @@ pub(crate) fn set_tempo(session: &mut Session, params: &Value) -> Result<Value, 
     clip.audio.tempo_source = Some(source);
     let id = clip.id;
     match at {
-        // An arrangement clip made longer replaces what it now covers, as a stretch does.
+        // An arrangement clip made longer stops at the next clip on its lane: a tempo, dragged while
+        // it plays, never removes the clips after it.
         ClipAt::Arrangement(lane, index) => {
             let clips = &mut session.project.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?.clips;
-            if index >= clips.len() {
-                return Err("the clip is missing".into());
+            let next = clips
+                .iter()
+                .enumerate()
+                .filter(|(i, c)| *i != index && c.start > clip.start)
+                .map(|(_, c)| c.start)
+                .fold(f64::INFINITY, f64::min);
+            if clip.start + clip.length > next {
+                clip.length = (next - clip.start).max(1.0 / 64.0);
+                clip.fit_fades();
             }
-            clips.remove(index);
-            crate::clip_edges::put_back(&mut session.project, lane, clip.clone(), false)?;
+            *clips.get_mut(index).ok_or("the clip is missing")? = clip.clone();
         }
         ClipAt::Slot(..) => *clip_mut(&mut session.project, at).ok_or("the clip is missing")? = clip.clone(),
     }
