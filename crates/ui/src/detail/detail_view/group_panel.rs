@@ -92,8 +92,8 @@ pub(super) fn value_row(
 
 /// A branch's value under a drag of its row: the value to show, and the value to send with
 /// whether it continues the drag's undo step. Every frame that moves it sends it, so a playing
-/// group is heard following the drag (#763 › 4); every frame after the first continues the step,
-/// so the drag is one undo step. A reset sends the default on its own step.
+/// group is heard following the drag (#763 › 4); every value after the first it sends continues
+/// the step, so the drag is one undo step. A reset sends the default on its own step.
 pub(super) fn branch_value(
     ui: &Ui,
     id: Id,
@@ -111,8 +111,13 @@ pub(super) fn branch_value(
     let last = draft.unwrap_or(stored);
     let next = (last + dragged.delta).clamp(min, max);
     if dragged.dragging {
+        // Nothing moved yet (a drag that starts against a limit): no draft, so what it sends
+        // first opens the step instead of continuing the previous drag's.
+        if draft.is_none() && next == stored {
+            return (stored, None);
+        }
         ui.data_mut(|d| d.insert_temp(id, next));
-        return (next, (next != last || draft.is_none() && next != stored).then_some((next, draft.is_some())));
+        return (next, (next != last || draft.is_none()).then_some((next, draft.is_some())));
     }
     if dragged.ended {
         ui.data_mut(|d| d.remove::<f64>(id));

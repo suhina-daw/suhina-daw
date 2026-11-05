@@ -301,7 +301,6 @@ pub(crate) fn is_instrument(slot: &Slot) -> bool {
 }
 
 impl GroupSlot {
-    /// Sets its parameter `param` ([`GROUP_PARAMS`] order). Never allocates.
     /// Moves branch `branch`'s volume (linear, at most +6 dB), pan (-1 to 1), mute or solo (on
     /// at 0.5 and above): its gains, and with a solo every branch's, go to their new targets and
     /// get there smoothed. Ignored for a branch it does not have or a value that is not finite.
@@ -325,6 +324,7 @@ impl GroupSlot {
         }
     }
 
+    /// Sets its parameter `param` ([`GROUP_PARAMS`] order). Never allocates.
     pub(crate) fn set_param(&mut self, param: usize, value: f64) {
         let Some(&(_, min, max, _)) = GROUP_PARAMS.get(param) else { return };
         if !value.is_finite() {

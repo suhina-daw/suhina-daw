@@ -1064,10 +1064,6 @@ impl Chain {
         self.buffer.get(..end).unwrap_or_default()
     }
 
-    /// Sets parameter `param` of the device at `position` among the channel's devices, as a
-    /// parameter message does (ADR 0005, amendment). Never allocates.
-    /// For a plug-in, `param` is its parameter id, and the value goes at the start of the next
-    /// block.
     /// Moves a branch of the device group at `position` among the channel's devices from the next
     /// block, smoothed: its volume, pan, mute or solo (`docs/spec/device-groups.md`). Ignored for
     /// a position that holds no group. Never allocates.
@@ -1078,6 +1074,10 @@ impl Chain {
         }
     }
 
+    /// Sets parameter `param` of the device at `position` among the channel's devices, as a
+    /// parameter message does (ADR 0005, amendment). Never allocates.
+    /// For a plug-in, `param` is its parameter id, and the value goes at the start of the next
+    /// block.
     pub(crate) fn set_param(&mut self, position: usize, param: usize, value: f64) {
         let Some(index) = self.positions.iter().position(|&p| p == position) else { return };
         match self.slots.get_mut(index) {
