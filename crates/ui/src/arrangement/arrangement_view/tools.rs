@@ -46,9 +46,10 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
             None => name.to_string(),
         };
         let label = format!("Arrangement tool {name}");
-        let response = widgets::button_area(ui, area, Id::new(("arrangement-tool", name)), &label).on_hover_text(&hint);
+        let response =
+            widgets::button_area(ui, area, Id::unique(("arrangement-tool", name)), &label).on_hover_text(&hint);
         let chosen = state.tool == tool;
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, chosen, &label));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, &label));
         let fill = if chosen { theme::control_active() } else { theme::control_background() };
         painter.rect_filled(
             area,
@@ -88,7 +89,7 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
             });
             crate::detail::piano_roll::menu_arrow(ui, response.response.rect, theme::text_value());
             let label = format!("Arrangement grid {shown}");
-            response.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+            response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
             response.response.on_hover_text(
                 "The Arrangement's grid: snapping, adaptive or fixed lines, triplets (Ctrl+1 to Ctrl+4)",
             );

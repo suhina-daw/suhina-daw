@@ -719,7 +719,7 @@ struct Content<'a> {
 fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, events: &mut Vec<MapEvent>) {
     let Content { points, positions, grid, tags } = *content;
     view.area = rect;
-    let id = ui.id().with("sample-map");
+    let id = ui.scope_id().with("sample-map");
     let response = ui.interact(rect, id, Sense::click_and_drag());
     let painter = ui.painter_at(rect);
     painter.fill_background(rect, CornerRadius::ZERO, theme::window_background());
@@ -1376,7 +1376,7 @@ mod similar_keys {
         let points: Vec<MapPoint> = (0..6).map(|i| point(i as f32 / 5.0, 0.5)).collect();
         let mut view = MapView::default();
         view.show_similar(0, vec![4, 2]);
-        let mut harness = Harness::builder().with_size(egui::vec2(500.0, 340.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(500.0, 340.0)).build_ui_state(
             |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
                 show(ui, view, &points, None, "6 samples", &[], None, &[], events)
             },
@@ -1459,14 +1459,15 @@ mod look {
         let grid = suhina_soundmap::grid::snap(&positions, 1.0);
         for layout in [Layout::Cloud, Layout::Grid] {
             let view = MapView { layout, ..MapView::default() };
-            let mut harness = Harness::builder().with_size(egui::vec2(900.0, 640.0)).build_ui_state(
-                |ui, view: &mut MapView| {
-                    crate::kit::theme::install(ui.ctx());
-                    let mut events = Vec::new();
-                    show(ui, view, &points, Some(&grid), "1 200 samples", &[], None, &[], &mut events);
-                },
-                view,
-            );
+            let mut harness =
+                Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 640.0)).build_ui_state(
+                    |ui, view: &mut MapView| {
+                        crate::kit::theme::install(ui.ctx());
+                        let mut events = Vec::new();
+                        show(ui, view, &points, Some(&grid), "1 200 samples", &[], None, &[], &mut events);
+                    },
+                    view,
+                );
             harness.run();
             let image = harness.render().unwrap();
             let name = format!("../../target/sample-map-{layout:?}.png").to_lowercase();
@@ -1480,7 +1481,7 @@ mod look {
     fn render_a_crowded_map() {
         use egui_kittest::Harness;
         let points = super::many::points(200_000);
-        let mut harness = Harness::builder().with_size(egui::vec2(900.0, 640.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 640.0)).build_ui_state(
             |ui, view: &mut MapView| {
                 crate::kit::theme::install(ui.ctx());
                 let mut events = Vec::new();

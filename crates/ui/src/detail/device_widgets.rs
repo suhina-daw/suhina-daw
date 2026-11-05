@@ -123,7 +123,7 @@ fn pack_of_current<'a>(current: &str, sets: &'a [Set]) -> Option<&'a Set> {
 /// The salt a device widget scopes its state and popups by: the device on the track, the
 /// part fits one per panel.
 fn salt(track: TrackId, at: &DeviceAt, part: FileRowPart) -> egui::Id {
-    egui::Id::new(("device-files", track.0, &at.0, part))
+    egui::Id::unique(("device-files", track.0, &at.0, part))
 }
 
 /// Where `current` sits in `files`.
@@ -196,7 +196,7 @@ pub(crate) fn switch(
     actions: &mut Vec<Action>,
 ) {
     let label = state.label();
-    let id = egui::Id::new(("device-switch", track.0, &at.0));
+    let id = egui::Id::unique(("device-switch", track.0, &at.0));
     let response = ui.interact(rect, id, Sense::click()).on_hover_text(if state.enabled {
         format!("Click to switch the device off; the {} keeps its settings", label)
     } else {
@@ -213,7 +213,7 @@ pub(crate) fn switch(
         ));
     }
     response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{}: device {}", label, word.to_lowercase()))
+        egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{}: device {}", label, word.to_lowercase()))
     });
 }
 
@@ -315,9 +315,8 @@ fn dropdown(
             if rows.is_empty() {
                 let empty_label = ui
                     .selectable_label(false, egui::RichText::new(empty).font(theme::ui_font(theme::TEXT_TINY)).weak());
-                empty_label.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("{label}: {empty}"))
-                });
+                empty_label
+                    .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{label}: {empty}")));
             }
             for (path, name) in rows {
                 let mut on = path == current;
@@ -329,22 +328,20 @@ fn dropdown(
                 if item.changed() {
                     choice = Some(path.clone());
                 }
-                item.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("{label}: {name}"))
-                });
+                item.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{label}: {name}")));
             }
         },
     )
     .response;
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, label));
     choice
 }
 
 /// A stepper button drawn in `rect`: a triangle pointing up or down, answering by its label.
 fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) -> egui::Response {
     let painter = ui.painter();
-    let (fill, _) = widgets::toggle_colors(ui, &ui.interact(rect, egui::Id::new(id_salt), Sense::click()), false);
-    let response = ui.interact(rect, egui::Id::new(id_salt), Sense::click());
+    let (fill, _) = widgets::toggle_colors(ui, &ui.interact(rect, egui::Id::unique(id_salt), Sense::click()), false);
+    let response = ui.interact(rect, egui::Id::unique(id_salt), Sense::click());
     painter.fill_background(rect, 2.0, if response.hovered() { theme::control_hover() } else { fill });
     let inner = rect.shrink(5.0);
     let center = inner.center();
@@ -358,7 +355,7 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
         theme::text_hint(),
         egui::Stroke::NONE,
     ));
-    response.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+    response.widget_info(move || egui::WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
     response
 }
 

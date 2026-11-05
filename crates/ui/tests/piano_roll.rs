@@ -10,13 +10,10 @@
 use egui::{Key, Modifiers, Pos2, Rect, Vec2, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use serde_json::json;
 use suhina_engine::model::{LaneData, Note};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
-use suhina_ui::kit::widgets::Action;
-use suhina_ui::settings::Settings;
 use suhina_ui::{App, kit::theme};
 
 const SIZE: (f32, f32) = (1280.0, 800.0);
@@ -33,18 +30,15 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     let mut app = App::new();
     app.set_browser_open(false);
     app.set_session(session, &[]);
-    app.run(&Action::new("launcher.setQuantization", json!({ "value": "1/8" })));
+    app.set_piano_grid(suhina_ui::detail::piano_roll_grid::PianoGrid::from_value("1/8"));
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
-    // These tests set the grid in the control bar, so the piano roll follows it (Settings ›
-    // Clip editor › Piano roll grid); its own grid value has tests of its own.
-    let settings = Settings { piano_grid_follows: true, ..Settings::default() };
-    let ctx = harness.ctx.clone();
-    harness.state_mut().set_settings(&ctx, settings);
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
@@ -324,6 +318,7 @@ fn the_wheel_scrolls_and_ctrl_zooms() {
             delta,
             modifiers,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.run();
         h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));

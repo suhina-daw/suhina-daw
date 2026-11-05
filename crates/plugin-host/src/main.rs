@@ -33,8 +33,8 @@
 //! their own or embedded as a child in the engine's window where the engine says (Windows, X11 on
 //! Linux), with state and latency, and test plug-ins (`test:clap`, `test:clap-ports`,
 //! `test:clap-delay`, `test:vst3`, `test:gain`, `test:crash-after:<n>`, `test:hang-after:<n>`,
-//! `test:slow-load:<ms>`, `test:delay-after:<n>:<frames>`, `test:busy:<µs>`). A plug-in that
-//! reports another latency while it runs is restarted as its format asks and the engine is told
+//! `test:slow-load:<ms>`, `test:delay-after:<n>:<frames>`, `test:busy:<µs>`, `test:ring`,
+//! `test:await-ring`). A plug-in that reports another latency while it runs is restarted as its format asks and the engine is told
 //! unasked (`latency_changed`). `--scan <file>` and `--scan-worker` describe plug-in files for the
 //! scanner. ARA (ADR 0033): a VST3 instance loaded with a document is bound to a document
 //! controller the host builds from it (`ara`, over bindings generated from the vendored ARA

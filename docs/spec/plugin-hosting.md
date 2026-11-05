@@ -368,8 +368,9 @@ Both ways note whether a plug-in supports ARA (an `ARA Main Factory Class` paire
 - Everything else goes to a few long-lived `suhina-plugin-host --scan-worker` processes
 (half the processor's threads, at most 4), each reading file after file. A worker that
 crashes or hangs on a file is ended, the file is marked failed with the reason, and a new
-worker takes the rest. Shells (files with many plug-ins, such as a vendor's shell plug-in) go first
-and get 180 s, other files 30 s.
+worker takes the rest. With no files left a worker is ended at once: it has nothing to save, and a
+normal exit would run the exit code of every plug-in it has loaded. Shells (files with many
+plug-ins, such as a vendor's shell plug-in) go first and get 180 s, other files 30 s.
 - Measured on a Windows machine with 443 plug-in files: a process per file took 11.5 min and
 timed the shells out; this takes 86 s and finds every plug-in (733). Starting a process
 cost about a second there (antivirus checks each start), more than most plug-ins take to

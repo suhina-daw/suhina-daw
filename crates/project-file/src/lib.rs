@@ -67,7 +67,7 @@ impl From<&str> for ProjectFileError {
     }
 }
 
-pub use suhina_model::is_project_file;
+pub use suhina_model::{is_preset_file, is_project_file};
 
 /// Reads a project file.
 pub fn read_file(path: &Path) -> Result<Project, ProjectFileError> {

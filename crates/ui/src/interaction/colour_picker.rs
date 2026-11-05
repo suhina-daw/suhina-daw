@@ -63,7 +63,7 @@ pub fn set_colour(track: TrackId, colour: Rgb) -> Action {
 /// go. Gives the colour picked. Each swatch is a button named "Colour #rrggbb".
 pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
     let mut picked = None;
-    let any_id = ui.id().with("any-colour");
+    let any_id = ui.scope_id().with("any-colour");
     let mut any_open = ui.data(|d| d.get_temp::<bool>(any_id)).unwrap_or(false);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(SWATCH_GAP);
@@ -71,7 +71,7 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
             let (rect, response) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::click());
             let name = format!("Colour {}", hex(colour));
             let chosen = current == Some(colour);
-            response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, chosen, &name));
+            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, &name));
             ui.painter().rect_filled(rect, 0.0, color32(colour));
             if chosen || response.hovered() {
                 let width = if chosen { 1.5 } else { 1.0 };
@@ -83,7 +83,7 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
         }
         // "+": any colour.
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::click());
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, any_open, "Any colour"));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, any_open, "Any colour"));
         let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         ui.painter().fill_background(rect, 0.0, fill);
         widgets::text_in(

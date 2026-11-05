@@ -6076,7 +6076,7 @@
       },
       "sourceFingerprint": "0213af8d4500f2ac409c63303f2ee52cf57cfc0b52eee95d4c753599bc516542",
       "description": "Chooses one finer fixed grid value or one narrower adaptive width. Adaptive grids change spacing with zoom; fixed grids keep a chosen musical value.",
-      "context": "Click the piano roll first. If Piano roll grid follows Control bar, the key changes the control bar; a result it cannot represent does nothing. At the finest value the grid stays unchanged.",
+      "context": "Click the piano roll first. It changes the piano roll's own grid only; the control bar's Quantize box is not affected. At the finest value the grid stays unchanged.",
       "whenToUse": "Place or move notes in smaller rhythmic steps.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [
@@ -6236,7 +6236,7 @@
       },
       "sourceFingerprint": "c78afe78579468abd3734aa130a33c0c4ad76bc7832619f0fc3a85fc0098f7f1",
       "description": "Toggles triplet spacing: note-value steps become two thirds of their straight-grid length, dividing time into groups of three. Bar-sized grid values stay unchanged.",
-      "context": "Click the piano roll first. If the grid follows Control bar, unsupported results such as 1/32 triplets do nothing.",
+      "context": "Click the piano roll first. It changes the piano roll's own grid only; the control bar's Quantize box is not affected.",
       "whenToUse": "Write a triplet rhythm instead of evenly paired subdivisions.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [
@@ -6316,7 +6316,7 @@
       },
       "sourceFingerprint": "bfb7bbce2cac138d507bd9a3bfd3c73fbc9d86b776d104270f6c9bd9f019b619",
       "description": "Turns snapping to the piano-roll grid on or off. With snapping off the grid remains drawn but pointer edits can place notes freely.",
-      "context": "Click the piano roll first. If the grid follows Control bar this changes that control bar's snapping state.",
+      "context": "Click the piano roll first. It changes snapping in the piano roll only; the control bar's Quantize box is not affected.",
       "whenToUse": "Adjust note timing freely without changing the visible grid.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [

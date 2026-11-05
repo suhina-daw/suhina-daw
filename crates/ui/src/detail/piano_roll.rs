@@ -10,7 +10,6 @@ use std::collections::BTreeSet;
 
 use egui::{Align2, Color32, CursorIcon, Id, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
-use suhina_engine::Quantization;
 use suhina_engine::model::{Clip, ClipId, LaneData, Note, Project, Scale, TrackId};
 
 use crate::detail::detail_view::ClipRef;
@@ -306,7 +305,7 @@ pub fn show(
 
     // The grid's gestures: one widget for the whole grid, so a note under the pointer and the
     // empty grid around it are told apart by where the press was.
-    let response = ui.interact(grid_rect, Id::new("piano-roll-grid"), Sense::click_and_drag());
+    let response = ui.interact(grid_rect, Id::unique("piano-roll-grid"), Sense::click_and_drag());
     let pointer = response.interact_pointer_pos().or_else(|| ui.ctx().pointer_hover_pos());
     let mut eraser = None;
     if let Some(pos) = ui.ctx().pointer_hover_pos().filter(|p| grid_rect.contains(*p)) {
@@ -496,7 +495,7 @@ pub fn show(
 
     // The velocity lane's gestures.
     let lane_response =
-        (lane.height() > 4.0).then(|| ui.interact(lane, Id::new("piano-roll-velocity"), Sense::click_and_drag()));
+        (lane.height() > 4.0).then(|| ui.interact(lane, Id::unique("piano-roll-velocity"), Sense::click_and_drag()));
     if let Some(lane_response) = &lane_response {
         let at = lane_response.interact_pointer_pos();
         if lane_response.clicked()

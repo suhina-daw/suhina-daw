@@ -232,6 +232,7 @@ fn the_waveform_zoom_draws_every_audio_clip_larger_and_is_kept_as_a_setting() {
         delta: egui::vec2(-1.0, -1.0),
         modifiers: Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     // The wheel is smoothed over frames: long enough for all of it to land.
     harness.run_steps(30);
@@ -400,6 +401,7 @@ fn settings_set_the_toolbar_size_and_the_mouse_switches() {
             delta: egui::vec2(0.0, -120.0),
             modifiers: Modifiers::NONE,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         harness.run();
     }
@@ -606,6 +608,8 @@ fn a_saved_map_window_opens_at_the_start() {
     // The map is laid out on a thread of its own, which a slow machine takes longer than a
     // second of frames for: it is given up to ten seconds of real time to finish.
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.25)
         .with_max_steps(4)
@@ -665,6 +669,7 @@ fn the_wheel_over_open_settings_leaves_the_arrangement_alone() {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(-120.0, -120.0),
                 phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
                 modifiers,
             });
             harness.input_mut().events.push(egui::Event::Zoom(1.5));

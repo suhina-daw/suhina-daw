@@ -59,15 +59,48 @@ fn graphics_need_no_binding_and_a_negative_drag_scale_is_allowed() {
 }
 
 #[test]
-fn handles_bind_one_axis_and_presets_name_declared_values() {
-    let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.)];
+fn draw_and_expand_gestures_need_their_bindings() {
+    let params = [Parameter::new("bar", "Bar", (0., 1.), 0.), Parameter::new("page", "Page", (0., 6.), 0.)];
+    let control = |id: &str, widget, gesture, x, y| CustomControl {
+        id: id.into(),
+        name: id.into(),
+        tooltip: String::new(),
+        bounds: [0., 0., 20., 20.],
+        widget,
+        gesture,
+        x,
+        y,
+        drawing: vec![],
+        visible_when: None,
+    };
+    let button = || Some(Widget::Button { label: "%".into(), off_label: None, indicator: false });
+    let with = |c| DeviceUi { size: [200., 60.], controls: vec![c], ..DeviceUi::default() };
+    let bar = || Some(UiBinding::new("bar"));
+    let page = || Some(UiBinding::new("page"));
+    with(control("a", None, UiGesture::Draw(2), page(), bar())).validate(&params).unwrap();
+    with(control("b", button(), UiGesture::Expand(6), page(), None)).validate(&params).unwrap();
+    assert!(with(control("c", None, UiGesture::Draw(2), page(), None)).validate(&params).is_err());
+    assert!(with(control("d", button(), UiGesture::Expand(6), None, None)).validate(&params).is_err());
+    assert!(with(control("e", button(), UiGesture::Draw(2), None, bar())).validate(&params).is_err());
+}
+
+#[test]
+fn handles_bind_an_axis_or_two_and_presets_name_declared_values() {
+    let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.), Parameter::new("res", "Res", (0., 1.), 0.)];
     let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
     ui.controls.push(CustomControl {
         id: "cut_handle".into(),
         name: "Cut".into(),
         tooltip: String::new(),
         bounds: [0., 0., 200., 60.],
-        widget: Some(Widget::Handle { color: [255; 4], span: Some([0.0.into(), readout(0)]) }),
+        widget: Some(Widget::Handle {
+            color: [255; 4],
+            span: Some([0.0.into(), readout(0)]),
+            offset: None,
+            dot: false,
+            relative: false,
+            hollow: false,
+        }),
         gesture: UiGesture::Position,
         x: Some(UiBinding::new("cut")),
         y: None,
@@ -75,13 +108,54 @@ fn handles_bind_one_axis_and_presets_name_declared_values() {
         visible_when: Some(UiValue::parameter(EXPANDED_ID, false)),
     });
     ui.validate(&params).unwrap();
+    ui.controls[0].y = Some(UiBinding::new("res"));
+    ui.validate(&params).unwrap();
     ui.controls[0].y = Some(UiBinding::new("cut"));
-    assert!(ui.validate(&params).is_err(), "a handle has one axis");
+    assert!(ui.validate(&params).is_err(), "a point moves two parameters");
+    ui.controls[0].x = None;
     ui.controls[0].y = None;
+    assert!(ui.validate(&params).is_err(), "a handle needs an axis");
+    ui.controls[0].x = Some(UiBinding::new("cut"));
     ui.presets.push(UiPreset { name: "Bright".into(), values: [("cut".into(), 8_000.0)].into() });
     ui.validate(&params).unwrap();
     ui.presets[0].values.insert("cut".into(), 50_000.0);
     assert!(ui.validate(&params).is_err(), "a preset value outside its range");
+}
+
+#[test]
+fn a_panel_that_moves_names_what_it_moves_on() {
+    let params = [Parameter::new("on", "On", (0., 1.), 0.)];
+    let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
+    ui.animate_when = Some(UiValue::parameter("on", false));
+    ui.layers.push(Draw::rect([0., 0., 10., 10.], [255; 4]));
+    ui.validate(&params).unwrap();
+    ui.animate_when = Some(UiValue::parameter("nothing", false));
+    assert!(ui.validate(&params).is_err(), "an unknown parameter");
+    ui.animate_when = Some(UiValue::parameter(TIME_ID, false));
+    ui.validate(&params).unwrap();
+}
+
+#[test]
+fn a_plot_reads_its_position_and_limits_its_samples() {
+    let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.)];
+    let plot = |samples: u16, y: UiValue| Draw::Plot {
+        from: 0.0.into(),
+        to: 100.0.into(),
+        top: 0.0.into(),
+        bottom: 50.0.into(),
+        samples,
+        y,
+        color: [255; 4],
+        width: 1.0,
+    };
+    let canvas = |draw: Draw| DeviceUi { size: [200., 60.], layers: vec![draw], ..DeviceUi::default() };
+    let along = || UiValue::parameter(PLOT_X_ID, false) * UiValue::parameter("cut", true);
+    canvas(plot(64, along())).validate(&params).unwrap();
+    assert!(canvas(plot(1, along())).validate(&params).is_err(), "too few samples");
+    assert!(canvas(plot(513, along())).validate(&params).is_err(), "too many samples");
+    assert!(canvas(plot(64, UiValue::parameter("nothing", false))).validate(&params).is_err(), "an unknown parameter");
+    let saved = serde_json::to_string(&plot(64, along())).unwrap();
+    assert_eq!(serde_json::from_str::<Draw>(&saved).unwrap(), plot(64, along()));
 }
 
 #[test]

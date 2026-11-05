@@ -227,12 +227,17 @@ pub(super) fn graph_parameters(
     parameters: &[suhina_device_sdk::Parameter],
     device: &suhina_engine::model::Device,
 ) -> Vec<GraphParameter> {
+    let stored = stored_values(device);
     parameters
         .iter()
-        .map(|p| {
-            GraphParameter::new(p, device.params.iter().find(|v| v.id == p.id).map_or(p.default, |v| p.clamp(v.value)))
-        })
+        .map(|p| GraphParameter::new(p, stored.get(p.id.as_str()).map_or(p.default, |value| p.clamp(*value))))
         .collect()
+}
+
+/// A device's stored values by id, as a device with hundreds of parameters is listed every frame.
+/// The first of an id wins, as a search through them would have it.
+fn stored_values(device: &suhina_engine::model::Device) -> std::collections::HashMap<&str, f64> {
+    device.params.iter().rev().map(|p| (p.id.as_str(), p.value)).collect()
 }
 
 /// Where a plug-in device's plug-in stands, as its panel shows it.
@@ -716,18 +721,11 @@ pub(super) fn device_box(
         params: d.params.iter().map(|p| (p.id.clone(), format_value(p.value))).collect(),
         values: if let DeviceKind::Builtin(id) = &d.kind {
             let info = suhina_device_registry::info(id);
+            let stored = stored_values(d);
             info.map(|info| {
                 info.params
                     .iter()
-                    .map(|p| {
-                        (
-                            p.id.to_owned(),
-                            d.params
-                                .iter()
-                                .find(|stored| stored.id == p.id)
-                                .map_or(p.default, |stored| p.clamp(stored.value)),
-                        )
-                    })
+                    .map(|p| (p.id.to_owned(), stored.get(p.id).map_or(p.default, |value| p.clamp(*value))))
                     .collect()
             })
             .unwrap_or_default()

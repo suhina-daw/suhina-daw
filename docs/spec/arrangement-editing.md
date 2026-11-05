@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -101,9 +101,7 @@ and snapping) and is chosen from the same menu, at the right end of the Arrangem
 under **Grid** in the right-click menu of an empty spot of a lane and at the end of an automation
 lane's menus, all in the menu itself (no submenu): **Snap to grid**, an **adaptive** grid (Widest, Wide, Medium, Narrow, Narrowest:
 its lines follow the zoom) or a **fixed** value (`8 bars` … `1 bar`, `1/2` … `1/32`), **Narrow
-grid**, **Widen grid** and **Triplet grid**. A fixed value or no snapping picked in a right-click menu (a lane's, or an automation lane's)
-also sets the control bar's grid box to it (`launcher.setQuantization`), so the two show the same;
-an adaptive grid, which the box has no value for, stays the Arrangement's alone. While the Arrangement has the keyboard (it was
+grid**, **Widen grid** and **Triplet grid**. Picking here never changes the **Quantize** box, and the box never changes this grid. While the Arrangement has the keyboard (it was
 clicked last), Ctrl+1 makes the grid finer, Ctrl+2 coarser, Ctrl+3 turns triplets on or off and
 Ctrl+4 snapping; with the piano roll clicked last the same keys change its grid. Note values are
 quarter-note beats (`1/16` is a quarter of a beat, a triplet two thirds of that note), and bars are
@@ -132,7 +130,7 @@ goes to beat 3, not 4.
 **One grid for every timeline.** The arrangement, its automation lanes and the piano roll
 ([clip editor](ui-clip-editor.md) › Grid and snapping) draw and snap with the same code,
 `TimelineGrid` in `crates/ui/src/interaction/timeline_grid.rs` (#734). Each view keeps its own grid
-value (the control bar's here, the piano roll's grid menu there) and its own least spacing between
+value (the Arrangement's grid menu here, the piano roll's there) and its own least spacing between
 lines; only the arithmetic is shared.
 
 ## Selecting clips

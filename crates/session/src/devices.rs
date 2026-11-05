@@ -581,6 +581,16 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
             Some(read_preset(std::path::Path::new(path), voice)?)
         }
     };
+    let preset = match (preset, Args::new(params).value("stock")) {
+        (preset, None | Some(Value::Null)) => preset,
+        (Some(_), Some(_)) => return Err("name a preset file or a stock preset, not both".into()),
+        (None, Some(v)) => {
+            let key = v.as_str().ok_or("stock must be a stock preset's key")?;
+            let stock = suhina_device_registry::stock_preset(key)
+                .ok_or_else(|| format!("no stock preset {key:?}; library.search lists them"))?;
+            Some(stock.preset.clone())
+        }
+    };
     let id = match (Args::new(params).raw_str("id"), &preset) {
         (Some(id), Some(p)) if id != p.device => {
             return Err(format!("the preset is for {:?}, not {id:?}", p.device).into());
@@ -591,9 +601,15 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     };
     let info = suhina_device_registry::info(id)
         .ok_or_else(|| format!("no built-in effect or instrument {id:?}; device.list lists them"))?;
-    let params_of_preset = preset
-        .as_ref()
-        .map_or_else(Vec::new, |p| p.params.iter().map(|(id, value)| DeviceParam::new(*id, *value)).collect());
+    let params_of_preset = preset.as_ref().map_or_else(
+        || {
+            suhina_device_registry::new_device_params(info.id)
+                .iter()
+                .map(|(id, value)| DeviceParam::new(*id, *value))
+                .collect()
+        },
+        |p| p.params.iter().map(|(id, value)| DeviceParam::new(*id, *value)).collect(),
+    );
     let device =
         Device { params: params_of_preset, ..Device::new(info.name, DeviceKind::Builtin(info.id.to_string())) };
     if let Some(value) = crate::device_groups::insert_into_group(session, params, device.clone())? {
@@ -759,7 +775,10 @@ pub(crate) fn update_sd(session: &mut Session, params: &Value) -> Result<Value, 
 }
 
 /// Reads voice `voice` of the preset file at `path`.
-fn read_preset(path: &std::path::Path, voice: usize) -> Result<suhina_device_registry::Preset, CommandError> {
+pub(crate) fn read_preset(
+    path: &std::path::Path,
+    voice: usize,
+) -> Result<suhina_device_registry::Preset, CommandError> {
     let size = std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?.len();
     if size > suhina_device_registry::MAX_PRESET_BYTES as u64 {
         return Err(format!("{}: a preset file is at most 64 KiB", path.display()).into());
@@ -1175,6 +1194,50 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
         session.sync.param_edits = messages;
     }
     Ok(with_override(json!({ "device": path_value(&path), "param": param, "value": value }), off))
+}
+
+/// `device.randomize`: new values for a device with a randomizer, as one edit.
+pub(crate) fn randomize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let seed = match params.get("seed") {
+        None => None,
+        Some(v) => Some(
+            v.as_u64().and_then(|s| u32::try_from(s).ok()).ok_or("seed must be a whole number from 0 to 4294967295")?,
+        ),
+    };
+    let amount = match params.get("amount") {
+        None => None,
+        Some(v) => Some(v.as_f64().filter(|a| (0.0..=1.0).contains(a)).ok_or("amount must be a number from 0 to 1")?),
+    };
+    let track = track_or_main_id(&session.project, params)?;
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
+    let DeviceKind::Builtin(id) = &device.kind else { return Err("this device has no randomizer".into()) };
+    let info = suhina_device_registry::info(id).ok_or_else(|| format!("{id:?} is not a device this version knows"))?;
+    let values: Vec<f64> = info
+        .params
+        .iter()
+        .map(|p| device.params.iter().find(|stored| stored.id == p.id).map_or(p.default, |stored| stored.value))
+        .collect();
+    let changes = suhina_device_registry::randomize(id, &values, seed, amount)
+        .ok_or_else(|| format!("{} has no randomizer", info.name))?;
+    let mut messages = Vec::new();
+    let mut off = false;
+    for (param_index, value) in changes.iter().copied() {
+        let Some(spec) = info.params.get(param_index) else { continue };
+        match device.params.iter_mut().find(|p| p.id == spec.id) {
+            Some(stored) => stored.value = value,
+            None => device.params.push(DeviceParam::new(spec.id, value)),
+        }
+        off |= crate::automation::override_lane(&mut device.automation, |l| l.param == spec.id);
+        if let [index] = path.as_slice() {
+            messages.push(ParamEdit { track, device: *index, param: param_index, value });
+        }
+    }
+    if !off && path.len() == 1 {
+        session.sync.param_edits = messages;
+    }
+    Ok(with_override(json!({ "device": path_value(&path), "changed": changes.len() }), off))
 }
 
 /// Sets parameter `param` (its id) of the plug-in device at `index` on `track`: kept in the

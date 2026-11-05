@@ -242,7 +242,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
             .hint_text("Find by name, vendor or file")
             .font(small.clone()),
     );
-    edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Find a plug-in"));
+    edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Find a plug-in"));
     widgets::input_line(ui, &edit);
     if plugins.scanning {
         let hint = Rect::from_min_max(
@@ -264,8 +264,12 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
             continue;
         }
         let rect = Rect::from_min_max(Pos2::new(left, header.top()), Pos2::new(right, header.bottom()));
-        let response =
-            widgets::button_area(ui, rect, Id::new(("manager-column", index)), format!("Sort the plug-ins by {name}"));
+        let response = widgets::button_area(
+            ui,
+            rect,
+            Id::unique(("manager-column", index)),
+            format!("Sort the plug-ins by {name}"),
+        );
         if response.clicked() {
             let (sorted, descending) = plugins.manager.sort;
             plugins.manager.sort = (index, if sorted == index { !descending } else { false });
@@ -391,7 +395,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
                         });
                         let label = format!("Use {}", plugin.name);
                         response.widget_info(|| {
-                            egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, plugin.enabled, &label)
+                            egui::WidgetInfo::selected(egui::Role::CheckBox, true, plugin.enabled, &label)
                         });
                         if response.changed() {
                             toggled = Some((plugin.spec.clone(), enabled));

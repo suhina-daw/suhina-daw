@@ -343,6 +343,7 @@ fn the_device_widgets_show_state_and_dispatch_their_commands() {
     };
     let harness = |actions: Vec<Action>, enabled: bool, file: String| {
         egui_kittest::Harness::builder()
+            .allow_missing_glyphs()
             .with_size(Vec2::new(428., 168.))
             .build_ui_state(draw, (actions, enabled, file, &lists))
     };
@@ -440,17 +441,20 @@ fn the_device_widgets_show_state_and_dispatch_their_commands() {
 fn sample_stop_is_only_visible_while_recording() {
     use egui_kittest::kittest::Queryable;
     for recording in [false, true] {
-        let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(600., 220.)).build_ui(move |ui| {
-            crate::kit::theme::install(ui.ctx());
-            ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0).with("recording"), recording));
-            sample_recording(
-                ui,
-                Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(550., 180.)),
-                TrackId(1),
-                0,
-                &mut Vec::new(),
-            );
-        });
+        let mut harness = egui_kittest::Harness::builder()
+            .allow_missing_glyphs()
+            .with_size(Vec2::new(600., 220.))
+            .build_ui(move |ui| {
+                crate::kit::theme::install(ui.ctx());
+                ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0).with("recording"), recording));
+                sample_recording(
+                    ui,
+                    Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(550., 180.)),
+                    TrackId(1),
+                    0,
+                    &mut Vec::new(),
+                );
+            });
         harness.run_steps(4);
         assert!(harness.query_by_label("Input: No input").is_some());
         assert_eq!(harness.query_by_label("Stop").is_some(), recording);
@@ -466,19 +470,20 @@ fn historical_sampler_waveforms_keep_recording_controls() {
     canvas.controls.iter_mut().find(|c| matches!(c.widget, Some(Widget::SampleWaveform))).unwrap().bounds =
         [0., 22., 900., 76.];
     let canvas = Arc::new(canvas);
-    let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
-            &canvas,
-            &crate::detail::device_widgets::PanelState::none(),
-            &[],
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
+                &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &[],
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     harness.run_steps(4);
     assert!(harness.query_by_label("Input: No input").is_some());
     assert!(harness.query_by_label_contains("Record").is_some());
@@ -512,18 +517,19 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
     let mut parameters: Vec<_> = panel.parameters.iter().map(|p| GraphParameter::new(p, p.default)).collect();
     let empty_canvas = canvas.clone();
     let empty_parameters = parameters.clone();
-    let mut empty = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
-            &empty_canvas,
-            &crate::detail::device_widgets::PanelState::none(),
-            &empty_parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut empty =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
+                &empty_canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &empty_parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     empty.run_steps(2);
     assert!(empty.query_by_label("Warp").is_none());
     // The middle of the control bound to `param` whose gesture sets `value`, in `canvas`.
@@ -807,35 +813,38 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             crate::kit::theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-light").unwrap().1.colors;
         let preview_canvas = canvas.clone();
         let preview_parameters = parameters.clone();
-        let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
-            crate::kit::theme::install(ui.ctx());
-            if filename.contains("light") {
-                crate::kit::theme::set_palette(ui.ctx(), light);
-            }
-            let data = Arc::new(suhina_engine::AudioData {
-                sample_rate: 48000,
-                channels: 1,
-                samples: (0..4800).map(|i| (i as f32 * 0.17).sin() * (1. - i as f32 / 4800.)).collect(),
+        let mut harness = egui_kittest::Harness::builder()
+            .allow_missing_glyphs()
+            .with_size(Vec2::new(916., 184.))
+            .build_ui(move |ui| {
+                crate::kit::theme::install(ui.ctx());
+                if filename.contains("light") {
+                    crate::kit::theme::set_palette(ui.ctx(), light);
+                }
+                let data = Arc::new(suhina_engine::AudioData {
+                    sample_rate: 48000,
+                    channels: 1,
+                    samples: (0..4800).map(|i| (i as f32 * 0.17).sin() * (1. - i as f32 / 4800.)).collect(),
+                });
+                ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0), data));
+                ui.ctx().data_mut(|d| {
+                    let mut positions = [None::<f32>; 32];
+                    positions[0] = Some(0.22);
+                    positions[1] = Some(0.67);
+                    d.insert_temp(sample_source_id(TrackId(1), 0).with("position"), positions);
+                    d.insert_temp(sample_source_id(TrackId(1), 0).with("name"), "Sampler-test.wav".to_string());
+                });
+                show(
+                    ui,
+                    Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(900., 168.)),
+                    &preview_canvas,
+                    &crate::detail::device_widgets::PanelState::none(),
+                    &preview_parameters,
+                    TrackId(1),
+                    &crate::detail::detail_view::DeviceAt(vec![0]),
+                    &mut Vec::new(),
+                );
             });
-            ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0), data));
-            ui.ctx().data_mut(|d| {
-                let mut positions = [None::<f32>; 32];
-                positions[0] = Some(0.22);
-                positions[1] = Some(0.67);
-                d.insert_temp(sample_source_id(TrackId(1), 0).with("position"), positions);
-                d.insert_temp(sample_source_id(TrackId(1), 0).with("name"), "Sampler-test.wav".to_string());
-            });
-            show(
-                ui,
-                Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(900., 168.)),
-                &preview_canvas,
-                &crate::detail::device_widgets::PanelState::none(),
-                &preview_parameters,
-                TrackId(1),
-                &crate::detail::detail_view::DeviceAt(vec![0]),
-                &mut Vec::new(),
-            );
-        });
         harness.run_steps(4);
         snapshot(&mut harness, filename);
         if filename == "sampler-simple.png" {
@@ -880,19 +889,20 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     let canvas = Arc::new(graph.ui.unwrap());
     let preview_canvas = canvas.clone();
     let preview_parameters = parameters.clone();
-    let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
-            &preview_canvas,
-            &crate::detail::device_widgets::PanelState::none(),
-            &preview_parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                &preview_canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &preview_parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     harness.run();
     for control in &canvas.controls {
         for drawing in control.drawings().iter() {
@@ -935,19 +945,20 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
         };
     }
     let narrow_canvas = canvas.clone();
-    let mut narrow = egui_kittest::Harness::builder().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
-            &narrow_canvas,
-            &crate::detail::device_widgets::PanelState::none(),
-            &narrow_parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut narrow =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                &narrow_canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &narrow_parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     narrow.run();
     narrow.get_by_label("Feedback").click();
     narrow.run();
@@ -962,19 +973,20 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
         }
     }
     let time_canvas = canvas.clone();
-    let mut time_harness = egui_kittest::Harness::builder().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
-            &time_canvas,
-            &crate::detail::device_widgets::PanelState::none(),
-            &time_parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut time_harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 180.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                &time_canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &time_parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     time_harness.run();
     snapshot(&mut time_harness, "delay-time-panel.png");
     let start = Pos2::new(64., 110.);
@@ -1014,29 +1026,30 @@ fn delay_menus_open_choose_and_cancel_without_spurious_edits() {
     let parameters: Vec<_> = graph.parameters.iter().map(|p| GraphParameter::new(p, p.default)).collect();
     let canvas = Arc::new(graph.ui.unwrap());
     let reset_canvas = canvas.clone();
-    let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(956., 210.)).build_ui_state(
-        move |ui, state: &mut (Vec<GraphParameter>, Vec<Action>)| {
-            crate::kit::theme::install(ui.ctx());
-            let mut actions = Vec::new();
-            show(
-                ui,
-                Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
-                &canvas,
-                &crate::detail::device_widgets::PanelState::none(),
-                &state.0,
-                TrackId(1),
-                &crate::detail::detail_view::DeviceAt(vec![0]),
-                &mut actions,
-            );
-            for a in &actions {
-                if let Some(p) = state.0.iter_mut().find(|p| a.params["param"] == p.id) {
-                    p.value = a.params["value"].as_f64().unwrap();
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 210.)).build_ui_state(
+            move |ui, state: &mut (Vec<GraphParameter>, Vec<Action>)| {
+                crate::kit::theme::install(ui.ctx());
+                let mut actions = Vec::new();
+                show(
+                    ui,
+                    Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                    &canvas,
+                    &crate::detail::device_widgets::PanelState::none(),
+                    &state.0,
+                    TrackId(1),
+                    &crate::detail::detail_view::DeviceAt(vec![0]),
+                    &mut actions,
+                );
+                for a in &actions {
+                    if let Some(p) = state.0.iter_mut().find(|p| a.params["param"] == p.id) {
+                        p.value = a.params["value"].as_f64().unwrap();
+                    }
                 }
-            }
-            state.1.extend(actions);
-        },
-        (parameters, Vec::new()),
-    );
+                state.1.extend(actions);
+            },
+            (parameters, Vec::new()),
+        );
     harness.run();
     harness.get_by_label("Motion waveform").click();
     harness.run();
@@ -1158,19 +1171,20 @@ fn sampler_slice_controls_replace_loop_fields() {
     let center = Pos2::new(x + w / 2., y + h / 2.);
     let actions = pointer_gesture(&canvas, &parameters, center, Some(center - Vec2::new(0., 20.)));
     assert!(actions.iter().any(|a| a.params["param"] == "sensitivity"));
-    let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
-            &canvas,
-            &crate::detail::device_widgets::PanelState::none(),
-            &parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
+                &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
     harness.run_steps(2);
     snapshot(&mut harness, "sampler-slices.png");
 }
@@ -1352,26 +1366,27 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         SampleView::default()
     );
     let snapshot_source = source.clone();
-    let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
-        crate::kit::theme::install(ui.ctx());
-        ui.ctx().data_mut(|d| {
-            d.insert_temp(id, snapshot_source.clone());
-            d.insert_temp(
-                id.with("manual-points"),
-                Arc::<[f64]>::from((1..30).map(|i| i as f64 / 30.).collect::<Vec<_>>()),
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(id, snapshot_source.clone());
+                d.insert_temp(
+                    id.with("manual-points"),
+                    Arc::<[f64]>::from((1..30).map(|i| i as f64 / 30.).collect::<Vec<_>>()),
+                );
+            });
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
+                &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
             );
         });
-        show(
-            ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
-            &canvas,
-            &crate::detail::device_widgets::PanelState::none(),
-            &parameters,
-            TrackId(1),
-            &crate::detail::detail_view::DeviceAt(vec![0]),
-            &mut Vec::new(),
-        );
-    });
     harness.run_steps(2);
     snapshot(&mut harness, "sampler-manual-navigation.png");
 }
@@ -1484,7 +1499,9 @@ fn exactly_one_sampler_mode_is_selected_for_each_mode() {
         let selected: Vec<_> = canvas
             .controls
             .iter()
-            .filter(|c| c.x.as_ref().is_some_and(|b| b.parameter == "mode") && control_selected(c, &parameters))
+            .filter(|c| {
+                c.x.as_ref().is_some_and(|b| b.parameter == "mode") && control_selected(c, &Values::new(&parameters))
+            })
             .collect();
         assert_eq!(selected.len(), 1);
         assert!(matches!(selected[0].gesture, UiGesture::Set(target) if f64::from(target) == mode));
@@ -2021,7 +2038,196 @@ fn click_to_focus(position: Pos2) -> Vec<Vec<egui::Event>> {
 }
 
 fn handle_widget() -> Option<Widget> {
-    Some(Widget::Handle { color: [255, 255, 255, 255], span: None })
+    Some(Widget::Handle {
+        color: [255, 255, 255, 255],
+        span: None,
+        offset: None,
+        dot: false,
+        relative: false,
+        hollow: false,
+    })
+}
+
+#[test]
+fn a_handles_offset_moves_where_it_is_grabbed() {
+    let mut canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("level"));
+    let control = &mut Arc::make_mut(&mut canvas).controls[0];
+    control.bounds = [0.0, 0.0, 200.0, 100.0];
+    control.widget = Some(Widget::Handle {
+        color: [255, 255, 255, 255],
+        span: None,
+        offset: Some(100.0.into()),
+        dot: false,
+        relative: false,
+        hollow: false,
+    });
+    // At half its travel, a handle over 0..200 moved by 100 is at 200, and 300 is its 1.0.
+    let (grab, to) = (Pos2::new(200.0, 50.0), Pos2::new(250.0, 50.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let actions = frames(&canvas, Vec2::new(400.0, 100.0), &[parameter("level", false)], events);
+    let value = last_value(&actions).expect("the handle was dragged");
+    assert!((value - 0.75).abs() < 0.01, "{value}");
+}
+
+#[test]
+fn a_relative_handle_moves_by_the_pointers_travel_and_not_to_it() {
+    let mut canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("level"));
+    let control = &mut Arc::make_mut(&mut canvas).controls[0];
+    control.bounds = [0.0, 0.0, 200.0, 100.0];
+    control.widget = Some(Widget::Handle {
+        color: [255, 255, 255, 255],
+        span: None,
+        offset: None,
+        dot: false,
+        relative: true,
+        hollow: false,
+    });
+    // Grabbed at its value, half way, and moved a quarter of its bounds: a quarter of the range on.
+    let (grab, to) = (Pos2::new(100.0, 50.0), Pos2::new(150.0, 50.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(Pos2::new(125.0, 50.0))],
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let actions = frames(&canvas, Vec2::new(400.0, 100.0), &[parameter("level", false)], events);
+    let value = last_value(&actions).expect("the handle was dragged");
+    assert!((value - 0.75).abs() < 0.01, "{value}");
+}
+
+#[test]
+fn a_panel_reads_the_clock_and_its_parameters_by_name() {
+    let parameters = [parameter("level", false)];
+    let values = Values { time: 2.5, ..Values::new(&parameters) };
+    assert_eq!(values.read(suhina_device_sdk::ui::TIME_ID, false, false), 2.5);
+    assert_eq!(values.read("level", false, false), parameters[0].value);
+    assert_eq!(values.read("nothing", false, false), 0.0);
+}
+
+#[test]
+fn a_point_moves_both_its_parameters_as_one_gesture() {
+    let mut canvas = one_control([200.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("a"));
+    let control = &mut Arc::make_mut(&mut canvas).controls[0];
+    control.bounds = [0.0, 0.0, 200.0, 100.0];
+    control.y = Some(UiBinding::new("b"));
+    let (grab, to) = (Pos2::new(100.0, 50.0), Pos2::new(150.0, 25.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let parameters = [parameter("a", false), parameter("b", false)];
+    let actions = frames(&canvas, Vec2::new(200.0, 100.0), &parameters, events);
+    let last_of = |id: &str| {
+        actions
+            .iter()
+            .rev()
+            .find(|a| a.params["param"] == id)
+            .map(|a| (a.params["value"].as_f64(), a.params["gesture"].clone()))
+    };
+    let (a, gesture_a) = last_of("a").expect("the point moved along x");
+    let (b, gesture_b) = last_of("b").expect("the point moved along y");
+    assert!((a.unwrap_or(0.0) - 0.75).abs() < 0.01, "{a:?}");
+    assert!((b.unwrap_or(0.0) - 0.75).abs() < 0.01, "{b:?}");
+    assert_eq!(gesture_a, gesture_b);
+}
+
+#[test]
+fn a_negative_drag_scale_runs_a_handles_travel_the_other_way() {
+    let binding = UiBinding { drag_scale: -1.0, ..UiBinding::new("level") };
+    let mut canvas = one_control([200.0, 100.0], false, handle_widget(), UiGesture::Position, binding);
+    Arc::make_mut(&mut canvas).controls[0].bounds = [0.0, 0.0, 200.0, 100.0];
+    let (grab, to) = (Pos2::new(100.0, 50.0), Pos2::new(50.0, 50.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let actions = frames(&canvas, Vec2::new(200.0, 100.0), &[parameter("level", false)], events);
+    let value = last_value(&actions).expect("the handle was dragged");
+    assert!((value - 0.75).abs() < 0.01, "{value}");
+}
+
+/// Four bars 25 wide over partials `a` to `d`, with `wave` for the X binding of each.
+fn bars() -> (Arc<DeviceUi>, Vec<GraphParameter>) {
+    let mut canvas = one_control([100.0, 100.0], false, None, UiGesture::Draw(3), UiBinding::new("a"));
+    let template = canvas.controls[0].clone();
+    Arc::make_mut(&mut canvas).controls = ["a", "b", "c", "d"]
+        .iter()
+        .enumerate()
+        .map(|(i, id)| CustomControl {
+            id: format!("bar_{id}"),
+            bounds: [i as f32 * 25.0, 0.0, 25.0, 100.0],
+            x: Some(UiBinding::new("wave")),
+            y: Some(UiBinding::new(*id)),
+            ..template.clone()
+        })
+        .collect();
+    let mut parameters: Vec<GraphParameter> = ["a", "b", "c", "d"].iter().map(|id| parameter(id, false)).collect();
+    parameters.push(GraphParameter { min: 0.0, max: 3.0, value: 0.0, ..parameter("wave", false) });
+    (canvas, parameters)
+}
+
+#[test]
+fn dragging_across_bars_draws_each_of_them_as_one_undo_step() {
+    let (canvas, parameters) = bars();
+    let (from, to) = (Pos2::new(5.0, 25.0), Pos2::new(95.0, 75.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(from)],
+        press(from, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+        vec![],
+    ];
+    let actions = frames(&canvas, Vec2::splat(100.0), &parameters, events);
+    // What the stroke set: the action that closes it repeats a bar's stored value, which this
+    // test's parameters never take up.
+    let value_of = |id: &str| {
+        actions
+            .iter()
+            .rev()
+            .find(|a| a.params["param"] == id && a.params["continuous"] == true)
+            .and_then(|a| a.params["value"].as_f64())
+    };
+    // A straight line from the press to the release, read at each bar's middle: the fast drag
+    // leaves no bar out.
+    assert!(value_of("a").is_some_and(|v| v > 0.6), "{actions:?}");
+    assert!(value_of("b").is_some_and(|v| v > 0.5 && v < 0.75), "{actions:?}");
+    assert!(value_of("c").is_some_and(|v| v > 0.25 && v < 0.5), "{actions:?}");
+    assert!(value_of("d").is_some_and(|v| v < 0.4), "{actions:?}");
+    assert_eq!(value_of("wave"), Some(3.0), "drawing asks for the wave that plays it");
+    assert!(actions.iter().all(|a| a.params["gesture"] == actions[0].params["gesture"]));
+    assert_eq!(actions.last().map(|a| a.params["continuous"].as_bool()), Some(Some(false)), "the stroke ends");
+}
+
+#[test]
+fn a_click_on_a_bar_sets_only_that_bar() {
+    let (canvas, parameters) = bars();
+    let at = Pos2::new(30.0, 50.0);
+    let events = vec![vec![egui::Event::PointerMoved(at)], press(at, true), press(at, false), vec![]];
+    let actions = frames(&canvas, Vec2::splat(100.0), &parameters, events);
+    assert!(actions.iter().any(|a| a.params["param"] == "b"), "{actions:?}");
+    assert!(!actions.iter().any(|a| a.params["param"] == "a" || a.params["param"] == "c"), "{actions:?}");
+}
+
+#[test]
+fn an_expand_button_goes_to_its_page_and_opens_the_panel() {
+    let mut canvas = one_control([60.0, 60.0], false, None, UiGesture::Expand(6), UiBinding::new("page"));
+    Arc::make_mut(&mut canvas).controls[0].widget =
+        Some(Widget::Button { label: "%".into(), off_label: None, indicator: false });
+    let page = GraphParameter { min: 0.0, max: 6.0, value: 0.0, ..parameter("page", false) };
+    let at = Pos2::new(30.0, 30.0);
+    let events = vec![vec![egui::Event::PointerMoved(at)], press(at, true), press(at, false), vec![]];
+    let actions = frames(&canvas, Vec2::splat(60.0), &[page], events);
+    assert_eq!(last_value(&actions), Some(6.0));
 }
 
 fn last_value(actions: &[Action]) -> Option<f64> {
@@ -2084,6 +2290,18 @@ fn a_negative_drag_scale_steps_a_discrete_control_the_other_way() {
     assert_eq!(step(1.0), Some(6.0));
     assert_eq!(step(-1.0), Some(4.0));
 }
+
+#[test]
+fn a_plot_ends_where_its_curve_leaves_the_range_and_does_not_run_along_the_edge() {
+    // Falls through the bottom (100) between x 1 and 2, stays below, comes back up between 3 and 4.
+    let points = [(0.0, 50.0), (1.0, 80.0), (2.0, 120.0), (3.0, 140.0), (4.0, 60.0)];
+    let lines = plot_inside(&points, 0.0, 100.0);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert_eq!(lines[0], vec![(0.0, 50.0), (1.0, 80.0), (1.5, 100.0)]);
+    assert_eq!(lines[1], vec![(3.5, 100.0), (4.0, 60.0)]);
+    assert!(plot_inside(&[(0.0, 200.0), (1.0, 300.0)], 0.0, 100.0).is_empty(), "nothing inside, nothing drawn");
+}
+
 #[test]
 fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
     use egui::{ViewportCommand, ViewportId};

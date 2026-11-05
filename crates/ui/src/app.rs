@@ -80,8 +80,7 @@ use self::control_bar::*;
 use self::drops::*;
 use self::keys::*;
 
-/// Launch quantisation choices, as `launcher.setQuantization` takes them; the Arrangement
-/// view's grid follows the same value.
+/// Launch quantisation choices, as `launcher.setQuantization` takes them.
 pub(crate) const QUANTIZATION: [&str; 14] = [
     "none", "8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32",
 ];
@@ -1072,10 +1071,20 @@ impl App {
         self.arrangement.selected_clip()
     }
 
+    /// The slot selected in the Launcher view: its track and scene (from 0).
+    pub fn selected_slot(&self) -> Option<(TrackId, usize)> {
+        self.view.selected_slot
+    }
+
     /// The Arrangement view's state: what is selected, how far it is scrolled and which groups are
     /// folded. The view draws itself from it, and the window's tests read it.
     pub fn arrangement(&self) -> &ArrangementViewState {
         &self.arrangement
+    }
+
+    /// The piano roll's grid, to choose as its menu does (the window's tests).
+    pub fn set_piano_grid(&mut self, grid: crate::detail::piano_roll_grid::PianoGrid) {
+        self.piano_grid = grid;
     }
 
     /// The Arrangement's grid, to choose as its menu does (the window's tests).
@@ -1898,11 +1907,11 @@ impl App {
             // A track by its id, an arrangement clip by its id, a slot's clip by its track and scene.
             let renamed_track = target.get("rename_track").and_then(serde_json::Value::as_u64);
             let key = match (renamed_track, target.get("clip").and_then(serde_json::Value::as_u64)) {
-                (Some(track), _) => egui::Id::new((NAME_RECT_TRACK, track)),
-                (None, Some(clip)) => egui::Id::new((NAME_RECT_CLIP, clip)),
+                (Some(track), _) => egui::Id::unique((NAME_RECT_TRACK, track)),
+                (None, Some(clip)) => egui::Id::unique((NAME_RECT_CLIP, clip)),
                 (None, None) => {
                     let scene = target.get("scene").and_then(serde_json::Value::as_u64).unwrap_or(0);
-                    egui::Id::new((NAME_RECT_SLOT, track, scene))
+                    egui::Id::unique((NAME_RECT_SLOT, track, scene))
                 }
             };
             let what = if renamed_track.is_some() { "Track name" } else { "Clip name" };
@@ -1915,7 +1924,7 @@ impl App {
                     // The field takes the name's own place and colours, with no frame of its
                     // own, the whole name selected to type over (#916).
                     let rect = spot.rect;
-                    egui::Area::new(egui::Id::new("inline-rename"))
+                    egui::Area::new(egui::Id::unique("inline-rename"))
                         .order(egui::Order::Foreground)
                         .fixed_pos(rect.min)
                         .show(ui.ctx(), |ui| {
@@ -1928,7 +1937,7 @@ impl App {
                             let selection = &mut ui.visuals_mut().selection;
                             selection.bg_fill = motion::mix(spot.fill.to_opaque(), spot.text, 0.28);
                             selection.stroke.color = spot.text;
-                            let field_id = egui::Id::new("inline-rename-field");
+                            let field_id = egui::Id::unique("inline-rename-field");
                             let field = ui.put(
                                 rect,
                                 egui::TextEdit::singleline(&mut draft)
@@ -1937,11 +1946,11 @@ impl App {
                                     .margin(egui::Margin::ZERO)
                                     .font(theme::ui_font(spot.size))
                                     .text_color(spot.text)
-                                    .vertical_align(egui::Align::Center)
+                                    .align(egui::Align2::LEFT_CENTER)
                                     .min_size(rect.size())
                                     .desired_width(rect.width()),
                             );
-                            field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, what));
+                            field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, what));
                             let covered = field.rect.union(rect);
                             ui.painter().set(back, egui::Shape::rect_filled(covered, 2.0, spot.fill.to_opaque()));
                             if !focused {
@@ -2354,6 +2363,11 @@ impl App {
         if let Some(wider) = self.to_selection(action) {
             return self.run(&wider);
         }
+        // An undo or redo can change or take away the clip a carry holds: the carry was made
+        // of what was there before, so it lets go.
+        if matches!(action.id, "edit.undo" | "edit.redo") {
+            self.carry = None;
+        }
         if action.id == "ui.renameClip" {
             let mut target = action.params.clone();
             let name = target.get("name").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
@@ -2538,6 +2552,21 @@ impl App {
                         self.arrangement.select_clips(copies);
                     }
                 }
+                // Moved clips stay picked, on whichever track they landed: a clip is picked by its
+                // track and its id.
+                if action.id == "clip.move"
+                    || (action.id == "clip.moveMany" && action.params["copy"].as_bool() != Some(true))
+                {
+                    let key = |c: &serde_json::Value| {
+                        let track = u32::try_from(c["track"].as_u64()?).ok()?;
+                        Some((TrackId(track), ClipId(u32::try_from(c["clip"].as_u64()?).ok()?)))
+                    };
+                    let moved: Vec<(TrackId, ClipId)> = match result["clips"].as_array() {
+                        Some(made) => made.iter().filter_map(key).collect(),
+                        None => key(&result).into_iter().collect(),
+                    };
+                    self.arrangement.clips_moved(&moved);
+                }
                 let changes_project = suhina_session::commands()
                     .iter()
                     .find(|c| c.id == action.id)
@@ -2637,7 +2666,7 @@ impl App {
         crate::detail::device_canvas::finish_sample_audition(ui.ctx(), self.projects.active(), &mut actions);
         let revision = self.revision;
         ui.ctx().data_mut(|d| {
-            d.insert_temp(egui::Id::new(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)
+            d.insert_temp(egui::Id::unique(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)
         });
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
         self.piano_roll.key_style = self.settings.piano_key_style;
@@ -2645,6 +2674,10 @@ impl App {
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;
+        let take_crossfade = f64::from(self.settings.view.take_crossfade_ms());
+        if let Ok(session) = self.projects.session_mut(None) {
+            session.set_take_crossfade_ms(take_crossfade);
+        }
         self.arrangement.set_size_settings(self.settings.view.track_sizes);
         if let Some((_, _, timeline)) = &self.timeline {
             self.arrangement.apply_size_defaults(timeline);
@@ -2679,7 +2712,7 @@ impl App {
             self.device_focus = false;
         }
         self.frame_trace.mark("input");
-        self.follow_active();
+        self.follow_active(ui.ctx());
         self.frame_trace.mark("follow project");
         self.poll_scan(ui.ctx());
         self.frame_trace.mark("plug-in scan");
@@ -2915,7 +2948,7 @@ impl App {
             // its value for when a project opens.
             let browser_wanted = self.settings.browser_open && !self.start_panel_open();
             // It slides in and out from its side, with animations on (#708).
-            self.browser_part = motion::toward(ui.ctx(), Id::new("browser-shown"), browser_wanted, BROWSER_SLIDE);
+            self.browser_part = motion::toward(ui.ctx(), Id::unique("browser-shown"), browser_wanted, BROWSER_SLIDE);
             let browser_shown = self.browser_part > 0.001;
             let stacked = self.settings.device_layout == DeviceLayout::Stack;
             let css_workspace = crate::kit::native_css::workspace(
@@ -2979,10 +3012,10 @@ impl App {
             let monitor = self.session().and_then(|s| s.player()).map(|p| p.meter_monitor_arc());
             ui.ctx().data_mut(|d| match monitor {
                 Some(monitor) => {
-                    d.insert_temp(egui::Id::new("eq-spectrum"), monitor);
+                    d.insert_temp(egui::Id::unique("eq-spectrum"), monitor);
                 }
                 None => {
-                    d.remove::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::new("eq-spectrum"));
+                    d.remove::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::unique("eq-spectrum"));
                 }
             });
             let inner = if grid.is_some()
@@ -3029,6 +3062,9 @@ impl App {
             }
             self.frame_trace.mark("browser");
             let _main_style = crate::kit::style_class::enter_named("workspace-panel", "panel-main");
+            // A clip whose drag or held press the view switch carried becomes the carry first,
+            // so the probe below reads it on the switch's first frame.
+            self.begin_clip_carry(ui.ctx());
             // A drag from the browser, or files from the system: the views say what is under the
             // pointer.
             let dragged = self.browser.drag.as_ref().or(system.as_ref().map(|(items, _)| items));
@@ -3042,7 +3078,7 @@ impl App {
             // A carried clip probes the same way, for a slot or a lane only; a carried device for a
             // track, as a dropped one does.
             if let Some(start) = ui.ctx().data_mut(|d| {
-                let id = Id::new(drop::DEVICE_CARRY);
+                let id = Id::unique(drop::DEVICE_CARRY);
                 let start = d.get_temp::<(TrackId, usize)>(id);
                 d.remove::<(TrackId, usize)>(id);
                 start
@@ -3090,8 +3126,8 @@ impl App {
                 let close =
                     Rect::from_min_size(Pos2::new(inner.right() - 28.0, inner.top() + 4.0), Vec2::new(24.0, 20.0));
                 let over =
-                    ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("sample-map-close")));
-                let response = widgets::button_area(ui, close, Id::new("sample-map-close"), "Close sample map")
+                    ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("sample-map-close")));
+                let response = widgets::button_area(ui, close, Id::unique("sample-map-close"), "Close sample map")
                     .on_hover_text("Close the sample map (Esc)");
                 let fill =
                     motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
@@ -3483,9 +3519,10 @@ impl App {
         // Reading the plug-ins' states before asking whether to save, when the window is closed.
         self.frame_trace.mark("quit check");
         // The views drew before the actions and drops of this frame ran: when the project changed,
-        // ask for a frame at once, so what the user just did (a moved clip, a file that landed)
-        // is on screen without waiting for another click or pointer move.
-        if self.revision != revision {
+        // or a command ran that may have changed what shows without changing the project's revision
+        // (a button on a device's panel), ask for a frame at once, so what the user just did is on
+        // screen without waiting for another click or pointer move.
+        if self.revision != revision || !actions.is_empty() {
             ui.ctx().request_repaint();
         }
         // A transport command changes no revision, and the audio thread takes it at its next block:
@@ -3536,7 +3573,7 @@ impl App {
 /// The label beside the pointer while something is dragged: outlined in the accent colour when
 /// it can land where the pointer is.
 fn drag_label(ctx: &egui::Context, pointer: Pos2, text: &str, lands: bool) {
-    let layer = egui::LayerId::new(egui::Order::Tooltip, Id::new("browser-drag"));
+    let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("browser-drag"));
     let painter = ctx.layer_painter(layer);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);
@@ -3614,7 +3651,7 @@ fn with_bar_line<R>(ui: &mut Ui, class: &str, show: impl FnOnce(&mut Ui) -> R) -
 /// (both in the same cells), on a layer above the view, so it shows and takes the pointer there.
 fn over_view<R>(ui: &mut Ui, name: &str, panel: Rect, main: Rect, draw: impl FnOnce(&mut Ui) -> R) -> R {
     if panel.intersect(main).is_positive() {
-        let layer = egui::LayerId::new(egui::Order::Middle, Id::new(("workspace-overlay", name)));
+        let layer = egui::LayerId::new(egui::Order::Middle, Id::unique(("workspace-overlay", name)));
         ui.scope_builder(egui::UiBuilder::new().layer_id(layer), draw).inner
     } else {
         draw(ui)

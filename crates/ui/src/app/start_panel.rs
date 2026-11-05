@@ -248,7 +248,8 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
         let font = theme::ui_font(theme::TEXT);
         let w = widgets::text_width(ui, text, font.clone()) + 2.0 * PAD;
         let rect = Rect::from_min_size(Pos2::new(x, inner.top()), Vec2::new(w, LINE));
-        let response = widgets::button_area(ui, rect, egui::Id::new(("start-tab", text)), format!("{text} projects"));
+        let response =
+            widgets::button_area(ui, rect, egui::Id::unique(("start-tab", text)), format!("{text} projects"));
         let on = state.tab == tab;
         let color = if on { theme::text_primary() } else { theme::text_hint() };
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, text, font, color);
@@ -269,7 +270,7 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
             field,
             egui::TextEdit::singleline(&mut state.search).hint_text("Search").font(theme::ui_font(theme::TEXT_SMALL)),
         );
-        edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Search projects"));
+        edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Search projects"));
     }
     let top = inner.top() + LINE + PAD;
     painter.hline(inner.x_range(), top - PAD / 2.0, theme::hairline(theme::border()));
@@ -411,7 +412,7 @@ mod tests {
     fn panel_with(lists: Lists, size: Vec2, notice: Option<Notice>) -> Harness<'static, Panel> {
         let audio = AudioSummary { device: "Speakers".into(), sample_rate: "48000 Hz".into(), buffer: "256".into() };
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
-        Harness::builder().with_size(size).build_ui_state(
+        Harness::builder().allow_missing_glyphs().with_size(size).build_ui_state(
             move |ui, (state, chosen): &mut Panel| {
                 let area = ui.max_rect();
                 if let Some(choice) = show(ui, area, state, &lists, &audio, "0.26.0", notice.as_ref(), now) {

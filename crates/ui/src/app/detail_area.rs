@@ -375,8 +375,8 @@ impl App {
             let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
             let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
             let sense = Sense::click_and_drag();
-            let response = ui.interact(splitter, Id::new("detail-splitter"), sense).on_hover_cursor(cursor);
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
+            let response = ui.interact(splitter, Id::unique("detail-splitter"), sense).on_hover_cursor(cursor);
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
             // A double-click closes the detail area, as a double-click on a split view's divider does
             // on macOS; a double-click on the closed splitter opens it at its default size.
             if response.double_clicked() {
@@ -429,11 +429,23 @@ impl App {
             let monitor = self.session().and_then(|s| s.player()).map(suhina_session::Player::meter_monitor);
             let open = detail_view::expanded(ui.ctx()).filter(|(track, _)| *track == chain.track).map(|(_, at)| at);
             let track = chain.track;
+            let mut seen = Vec::new();
             let live = detail_view::give_host_values(&mut chain.devices, open.as_ref(), &mut |at| {
-                monitor.and_then(|monitor| monitor.readouts(track, &at.0))
+                let values = monitor.and_then(|monitor| monitor.readouts(track, &at.0));
+                if let Some(values) = &values {
+                    seen.extend_from_slice(values);
+                }
+                values
             });
             if live {
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+                // Frames while they move; while they rest, often enough to catch a note that starts.
+                let moved = ui.ctx().data_mut(|data| {
+                    let last = data.get_temp_mut_or_default::<Vec<f32>>(egui::Id::unique("device-readouts"));
+                    let moved = *last != seen;
+                    *last = seen;
+                    moved
+                });
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(if moved { 33 } else { 100 }));
             }
         }
         self.expanded_panel = detail_view::expanded_device(ui.ctx(), &shown);
@@ -694,16 +706,10 @@ impl App {
                 }
             }
         }
-        // A grid value picked in the piano roll's grid menu or with its keys: its own, or the
-        // control bar's when the piano roll follows it.
+        // A grid value picked in the piano roll's grid menu or with its keys: the piano roll's
+        // own, apart from the control bar's launch quantisation.
         if let Some(picked) = self.piano_roll.grid_picked.take() {
-            if self.settings.piano_grid_follows {
-                if let Some(value) = picked.control_bar_value() {
-                    actions.push(Action::new("launcher.setQuantization", json!({ "value": value })));
-                }
-            } else {
-                self.piano_grid = picked;
-            }
+            self.piano_grid = picked;
         }
         view
     }
@@ -714,9 +720,9 @@ impl App {
     pub(super) fn collapsed_splitter(&mut self, ui: &mut Ui, area: Rect) -> Rect {
         let splitter = Rect::from_min_max(Pos2::new(area.left(), (area.bottom() - SPLITTER).max(area.top())), area.max);
         let response = ui
-            .interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag())
+            .interact(splitter, Id::unique("detail-splitter"), Sense::click_and_drag())
             .on_hover_cursor(egui::CursorIcon::ResizeVertical);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
         if response.double_clicked() {
             self.show_editor();
             self.detail_height = DETAIL_HEIGHT;
@@ -779,28 +785,20 @@ impl App {
     }
 
     /// The piano roll for the selected arrangement clip, when it is a MIDI clip; its grid is its
-    /// own grid value, or the control bar's when Settings says so.
+    /// own grid value, apart from the control bar's launch quantisation.
     /// The piano roll for the shown clip: an arrangement clip's, or the Launcher view's selected
     /// slot's clip.
     pub(super) fn piano_clip(&self, clip: Option<detail_view::ClipRef>) -> Option<piano_roll::PianoClip> {
-        let follows = self.settings.piano_grid_follows;
-        let control_bar = self.session().map_or(DEFAULT_QUANTIZATION, |s| quantization_label(s.quantization()));
-        let quantization = suhina_session::parse_quantization(control_bar).ok()?;
         let mut piano = match clip? {
             detail_view::ClipRef::Arrangement(track, clip) => {
-                piano_roll::arrangement_clip(self.session()?.project(), track, clip, quantization)?
+                piano_roll::arrangement_clip(self.session()?.project(), track, clip)?
             }
             detail_view::ClipRef::Slot(track, scene) => {
-                piano_roll::launcher_clip(self.session()?.project(), track, scene, quantization)?
+                piano_roll::launcher_clip(self.session()?.project(), track, scene)?
             }
         };
-        if follows {
-            piano.grid_menu = crate::detail::piano_roll_grid::PianoGrid::from_value(control_bar);
-        } else {
-            piano.grid_menu = self.piano_grid;
-            piano.grid = self.piano_grid.fixed_step(piano.bar_beats);
-        }
-        piano.grid_follows = follows;
+        piano.grid_menu = self.piano_grid;
+        piano.grid = self.piano_grid.fixed_step(piano.bar_beats);
         Some(piano)
     }
 

@@ -91,7 +91,7 @@ impl App {
         let tempo_rect = row(x, 56.0);
         x = tempo_rect.right() + PAD;
         let tempo_rect = native_styles.place(ui, "tempo", tempo_rect);
-        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("sampler-tempo"), grid.tempo_bpm));
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("sampler-tempo"), grid.tempo_bpm));
         self.tempo_field(ui, &painter, tempo_rect, grid.tempo_bpm, true, actions);
         // The time signature playing, like the tempo: a launched scene may have changed it.
         let ts = grid.time_signature();
@@ -115,7 +115,7 @@ impl App {
         } else {
             "Computer keyboard".into()
         };
-        let response = widgets::button_area(ui, keys_rect, Id::new("computer-keyboard"), label);
+        let response = widgets::button_area(ui, keys_rect, Id::unique("computer-keyboard"), label);
         if response.clicked() {
             self.toggle_typing_keys();
         }
@@ -162,11 +162,8 @@ impl App {
                 },
             )
             .response;
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, QUANTIZATION_LABEL));
-            response.on_hover_text(
-                "Grid: when launched clips start, and the Arrangement view's grid lines and snapping (Alt: off the \
-                 grid)",
-            );
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, QUANTIZATION_LABEL));
+            response.on_hover_text("Launch quantisation: when launched clips start");
         });
         if chosen != current {
             actions.push(Action::new("launcher.setQuantization", json!({ "value": chosen })));
@@ -203,7 +200,7 @@ impl App {
         let play_base = row(x, 28.0);
         let play = crate::kit::control_layout::place("transport-play", play_base, bar);
         if !crate::kit::control_layout::placement("transport-play").hidden {
-            let response = widgets::button_area(ui, play, Id::new("play"), "Play");
+            let response = widgets::button_area(ui, play, Id::unique("play"), "Play");
             let play_style = crate::kit::style_class::enter_named_response("button", "play", &response);
             crate::kit::native_css::mark(crate::kit::native_css::HostState::Playing, grid.running);
             if response.clicked() {
@@ -251,7 +248,7 @@ impl App {
         let stop_base = row(x, 28.0);
         let stop = crate::kit::control_layout::place("transport-stop", stop_base, bar);
         if !crate::kit::control_layout::placement("transport-stop").hidden {
-            let response = widgets::button_area(ui, stop, Id::new("stop"), "Stop");
+            let response = widgets::button_area(ui, stop, Id::unique("stop"), "Stop");
             let stop_style = crate::kit::style_class::enter_named_response("button", "stop", &response);
             if response.clicked() {
                 actions.push(self.stop_action());
@@ -305,7 +302,7 @@ impl App {
         let mut underline_at = None;
         // A clip dragged in the Arrangement view, or carried, switches the view when it hovers
         // over the other view's name for a moment.
-        let carrying = self.carry.is_some() || self.arrangement.dragged_clip().is_some();
+        let carrying = self.carrying_clip(ui.ctx());
         let pointer = ui.ctx().pointer_latest_pos();
         let mut hovered_switch = None;
         for (view, name) in [(View::Arrangement, "Arrangement"), (View::Session, "Launcher")] {
@@ -316,7 +313,7 @@ impl App {
             let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
             right = rect.left() - 12.0;
             let rect = native_styles.place(ui, "views", rect);
-            let response = widgets::button_area(ui, rect, Id::new(("view", name)), format!("{name} view"));
+            let response = widgets::button_area(ui, rect, Id::unique(("view", name)), format!("{name} view"));
             if response.clicked() {
                 self.shown = view;
             }
@@ -364,10 +361,9 @@ impl App {
             let full = Rect::from_min_max(track.min, Pos2::new(track.left() + fill, track.bottom()));
             let color = if milli >= 800 { theme::meter_hot() } else { theme::meter_normal() };
             painter.rect_filled(full, 0.0, color);
-            let response = ui.interact(rect, Id::new("cpu-load"), Sense::hover());
-            response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("CPU load {percent:.1}%"))
-            });
+            let response = ui.interact(rect, Id::unique("cpu-load"), Sense::hover());
+            response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("CPU load {percent:.1}%")));
         }
         // Left of that, the program's own RAM (its resident memory), in megabytes or gigabytes.
         if let Some(bytes) = ram.filter(|_| fits(right, 76.0)) {
@@ -392,9 +388,9 @@ impl App {
                 theme::mono_font(theme::TEXT_SMALL),
                 theme::text_secondary(),
             );
-            let response = ui.interact(rect, Id::new("ram-usage"), Sense::hover());
+            let response = ui.interact(rect, Id::unique("ram-usage"), Sense::hover());
             response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("RAM usage {}", ram_text(bytes)))
+                egui::WidgetInfo::labeled(egui::Role::Label, true, format!("RAM usage {}", ram_text(bytes)))
             });
         }
         // Left of that, the mapping mode's button, lit while the mode is on.
@@ -408,7 +404,7 @@ impl App {
                 let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
                 right = rect.left() - PAD;
                 let rect = native_styles.place(ui, "mapping", rect);
-                let response = widgets::button_area(ui, rect, Id::new("map-keys"), "Map keys to slots and scenes");
+                let response = widgets::button_area(ui, rect, Id::unique("map-keys"), "Map keys to slots and scenes");
                 if response.clicked() {
                     self.toggle_mapping_mode();
                 }
@@ -428,7 +424,7 @@ impl App {
             let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "agents", rect);
-            let response = widgets::button_area(ui, rect, Id::new(("agent", connection)), text.clone());
+            let response = widgets::button_area(ui, rect, Id::unique(("agent", connection)), text.clone());
             if response.clicked() {
                 self.agent_disconnects.push(connection);
                 self.status = Status::Done(format!("Disconnected {client}"));
@@ -441,8 +437,8 @@ impl App {
         // The underline slides to the view that was picked.
         if let Some((x, y, width, color)) = underline_at {
             let ctx = ui.ctx();
-            let x = motion::value(ctx, Id::new("view-underline-x"), x, motion::SLIDE);
-            let width = motion::value(ctx, Id::new("view-underline-width"), width, motion::SLIDE);
+            let x = motion::value(ctx, Id::unique("view-underline-x"), x, motion::SLIDE);
+            let width = motion::value(ctx, Id::unique("view-underline-width"), width, motion::SLIDE);
             painter.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, 1.0)), 0.0, color);
         }
         painter.hline(bar.x_range(), bar.bottom() - 0.5, theme::hairline(theme::border()));
@@ -453,7 +449,7 @@ impl App {
     /// in the native toolbar and in one a theme lays out.
     pub(crate) fn browser_toggle(&mut self, ui: &Ui, painter: &egui::Painter, browser_rect: Rect) {
         let label = if self.settings.browser_open { "Hide browser" } else { "Show browser" };
-        let response = widgets::button_area(ui, browser_rect, Id::new("browser-toggle"), label);
+        let response = widgets::button_area(ui, browser_rect, Id::unique("browser-toggle"), label);
         let response = match self.keymap.binding_text("view.browser") {
             Some(keys) => response.on_hover_text(format!("{label} ({keys})")),
             None => response.on_hover_text(label),
@@ -563,7 +559,7 @@ impl App {
         let grab = self.tempo_grab;
         let tempo_shown = self.tempo_drag.map_or(bpm_now, |bpm| snap_tempo(grab, bpm));
         let tempo_text = format!("{tempo_shown:.3}");
-        let response = widgets::value_area(ui, tempo_rect, Id::new("tempo"), "Tempo", tempo_text.clone());
+        let response = widgets::value_area(ui, tempo_rect, Id::unique("tempo"), "Tempo", tempo_text.clone());
         if native {
             crate::kit::native_css::surface(
                 painter,

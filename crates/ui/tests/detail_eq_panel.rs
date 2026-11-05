@@ -51,6 +51,7 @@ fn window_with(project: Project) -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(Session::new(project), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -109,6 +110,7 @@ fn the_eq_panels_analyser_receives_the_playing_output() {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size((1280.0, 900.0))
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -132,7 +134,7 @@ fn the_eq_panels_analyser_receives_the_playing_output() {
         harness.run_steps(2);
         harness
             .ctx
-            .data(|d| d.get_temp::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::new("eq-spectrum")))
+            .data(|d| d.get_temp::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::unique("eq-spectrum")))
             .and_then(|monitor| monitor.spectrum().samples(TrackId(1), 0))
             .unwrap_or_else(|| panic!("the EQ's ring holds the playing output"))
     };
@@ -145,7 +147,7 @@ fn the_eq_panels_analyser_receives_the_playing_output() {
     );
     // The panel drew its analyser from the ring and asked for the next frame while the
     // engine appends: the count it keeps moved with the engine's blocks.
-    let cursor = harness.ctx.data(|d| d.get_temp::<usize>(egui::Id::new(("eq-spectrum-cursor", 1u32, 0usize))));
+    let cursor = harness.ctx.data(|d| d.get_temp::<usize>(egui::Id::unique(("eq-spectrum-cursor", 1u32, 0usize))));
     assert!(cursor.is_some_and(|cursor| cursor > 0), "the panel follows the ring while it plays");
 }
 
@@ -184,6 +186,7 @@ fn a_grouped_eqs_panel_claims_no_watch() {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size((1280.0, 900.0))
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -198,7 +201,7 @@ fn a_grouped_eqs_panel_claims_no_watch() {
     assert!(harness.query_by_label("EQ response display").is_some(), "the grouped EQ's panel is drawn");
     let monitor = harness
         .ctx
-        .data(|d| d.get_temp::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::new("eq-spectrum")))
+        .data(|d| d.get_temp::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::unique("eq-spectrum")))
         .expect("the frame carries the monitor");
     // The grouped EQ's branch-local index is 0: no row may watch it, or a top-level device at
     // index 0 would be tapped into that row and show as the grouped EQ's own spectrum.
@@ -235,13 +238,14 @@ fn a_session_without_a_player_drops_the_previous_sessions_monitor() {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
     harness.run();
-    let monitor_id = egui::Id::new("eq-spectrum");
+    let monitor_id = egui::Id::unique("eq-spectrum");
     assert!(
         harness.ctx.data(|d| d.get_temp::<std::sync::Arc<suhina_engine::MeterMonitor>>(monitor_id)).is_some(),
         "the frame carries the player's monitor"
@@ -407,6 +411,7 @@ fn render_the_panel() {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
         .with_size((1280.0, 900.0))
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)

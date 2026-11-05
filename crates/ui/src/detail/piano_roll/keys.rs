@@ -398,9 +398,9 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
         painter.rect_filled(chip, 1.0, theme::text_primary());
         let name = key_name(key);
         painter.text(centre, Align2::CENTER_CENTER, &name, font, theme::text_inverse());
-        let response = ui.interact(chip.intersect(strip), Id::new("piano-roll-pointer-key"), Sense::hover());
+        let response = ui.interact(chip.intersect(strip), Id::unique("piano-roll-pointer-key"), Sense::hover());
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("Row under the pointer: {name}"))
+            egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Row under the pointer: {name}"))
         });
     }
 }
@@ -423,8 +423,8 @@ pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRoll
     if strip.width() < 1.0 || strip.height() < 1.0 {
         return;
     }
-    let response = ui.interact(strip, Id::new("piano-roll-scale-strip"), Sense::drag());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Row height strip"));
+    let response = ui.interact(strip, Id::unique("piano-roll-scale-strip"), Sense::drag());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Row height strip"));
     if response.hovered() && !response.dragged() {
         state.magnifier = true;
     }
@@ -448,7 +448,7 @@ pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRoll
 /// the pointer is hidden and a magnifier is drawn where it is, as the eraser is.
 pub(super) fn draw_magnifier(ui: &Ui, pos: Pos2) {
     ui.ctx().set_cursor_icon(CursorIcon::None);
-    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::new("piano-roll-magnifier")));
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("piano-roll-magnifier")));
     let (halo, line) = (theme::window_background(), theme::text_primary());
     let handle = [pos + Vec2::splat(MAGNIFIER_RADIUS * 0.7), pos + Vec2::splat(MAGNIFIER_RADIUS * 1.7)];
     painter.line_segment(handle, Stroke::new(4.0, halo));
@@ -500,9 +500,7 @@ pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
             if theme_keys {
                 let theme_label = egui::RichText::new("Theme").font(font.clone());
                 let response = ui.selectable_label(true, theme_label);
-                response.widget_info(|| {
-                    egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, true, "Key style: Theme")
-                });
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, true, "Key style: Theme"));
             }
             for style in PianoKeyStyle::ALL {
                 let on = !theme_keys && state.key_style == style;
@@ -511,7 +509,7 @@ pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
                     egui::Button::selectable(on, egui::RichText::new(style.name()).font(font.clone())),
                 );
                 let name = format!("Key style: {}", style.name());
-                response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, &name));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, &name));
                 if response.clicked() {
                     picked = Some(ViewPick::KeyStyle(style));
                     ui.close();
@@ -523,7 +521,7 @@ pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
                 let on = state.key_names == names;
                 let response = ui.selectable_label(on, egui::RichText::new(names.name()).font(font.clone()));
                 let name = format!("Key names: {}", names.name());
-                response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, &name));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, &name));
                 if response.clicked() {
                     picked = Some(ViewPick::KeyNames(names));
                     ui.close();
@@ -532,16 +530,15 @@ pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
             ui.separator();
             let stacked = !state.notes_replace;
             let response = ui.selectable_label(stacked, egui::RichText::new("Allow stacked notes").font(font.clone()));
-            response.widget_info(|| {
-                egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, stacked, "Allow stacked notes")
-            });
+            response
+                .widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, stacked, "Allow stacked notes"));
             if response.clicked() {
                 picked = Some(ViewPick::AllowStacked(!stacked));
                 ui.close();
             }
         });
         menu_arrow(ui, menu.response.rect, theme::text_value());
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Piano roll view"));
+        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Piano roll view"));
         menu.response.on_hover_text("How the keys look, which keys are named, and whether notes may overlap");
     });
     if picked.is_some() {
