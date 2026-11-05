@@ -148,7 +148,8 @@ consequences below ask for, done without asking. A content with a lane that targ
 shared pattern) is not copied: its placements are one pattern on purpose. Copying on duplicate
 instead was rejected because it would leave nothing for a linked copy to share and doubles the
 contents of a set full of repeats that are never edited. `clip.paste` already gives the pasted
-clip its own content. Audio content edits (`clip.setGain`) still act on the shared content.
+clip its own content. Audio edits (`clip.setGain`, `clip.setAudio`) act on the clip, not the
+content: see Amendment: per-clip audio.
 
 ## Amendment: muted notes (2026-10-15)
 
@@ -233,6 +234,19 @@ that a take's track and its clips' contents exist; deleting a track deletes its 
 
 The project file writes them under `arrangement.takes`, left out when there are none; files with
 them are version 4 ([`.suhina` format](../spec/suhina-format.md) › Versions).
+
+## Amendment: per-clip audio (2026-11-05)
+
+An audio clip's gain, gain envelope, transpose, warp switch, warp mode, warp markers and the source
+of its tempo are the clip's (`Clip::audio`), not its content's: two clips that play one file never
+share them ([ADR 0035](0035-clip-gain-envelope.md),
+[#742](https://github.com/suhina-daw/suhina-daw/issues/742)). `AudioRegion` keeps the source only:
+the file, its stream, sample rate, channels and length. A content may still be played by several
+clips (a duplicate, a take and the part comped from it), each with its own state; nothing is copied
+to make an audio clip independent. Formats map their clip-level audio settings (a Live Set's
+`AudioClip` warp, gain and pitch) onto the clip. The project file writes the state on the clip from
+version 8 and reads an older file's region state into every clip of that content
+([`.suhina` format](../spec/suhina-format.md) › Versions).
 
 ## Consequences
 
