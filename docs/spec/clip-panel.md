@@ -1,6 +1,6 @@
 ---
 description: Functional spec of the audio clip's panel in the detail area (the clip column): its groups (Clip, Audio, Gain, Pitch), each control, its range and its command; typing numbers; Set to the playhead; the clip's tempo with its source, halve and double; the gain fader, the pitch knob and cents; the gain envelope on the clip's waveform; and the per-clip audio state they edit
-read_when: clip panel, clip column, audio clip properties, gain fader, pitch knob, cents, clip tempo, halve or double tempo, find tempo, tempo source, Set to playhead, type a number, gain envelope, clip.setEnvelope, clip.setTempo, clip.findTempo, per-clip gain
+read_when: clip panel, clip column, audio clip properties, gain fader, pitch knob, cents, clip tempo, find tempo, tempo source, Set to playhead, audio clip scale, lists under a field, gain envelope, clip.setEnvelope, clip.setTempo, per-clip gain
 type: spec
 status: draft
 last_verified: 2026-11-05
@@ -24,35 +24,37 @@ clip alone: two clips that play the same file have their own gain, envelope, pit
 [ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: per-clip audio). A MIDI clip's
 column is as the clip editor spec describes it.
 
-## Groups
+## Layout
 
-From the top, under the title row (the clip's name, and the Clip / Devices switch where there is
-one). Each group has a small heading. Rows that do not fit under the column's bottom are left out
-whole, as before.
+**Title row** (26 points): the clip's **colour** (a swatch; a click opens the palette, as a track's
+colour does; `clip.setColor`), its **name** (a double-click renames it in a text field, Enter keeps
+it, Escape leaves it; `clip.rename`) and its length in beats at the right. A line under it.
 
-| Group | Controls | Command |
+Under it, in a row (the detail area under the views), three parts side by side, 8 points in from the
+panel's edges and 12 points apart; with the detail area stacked at the side, one under another, the
+Gain and Pitch part centred. Every control has its name over it (small, at its left) rather than
+beside it, and controls are 6 points apart, so no two touch.
+
+| Part | Controls | Command |
 |---|---|---|
-| **Clip** | **Colour** (a swatch; a click opens the palette, as a track's colour does) | `clip.setColor` |
-| | **Track**, **Start** (or **Scene**), **Length**: read only | |
-| | **Start marker** with **Set** | `clip.setStart` |
-| | **End marker** with **Set**, when the clip does not loop | `clip.setLength` |
-| | **Loop** switch | `clip.setLoop` |
-| | **Loop position** and **Loop length**, each with **Set**, when it loops | `clip.setLoop` (`start`, `end`) |
-| | **Fade in**, **Fade out**: read only | |
-| **Audio** | **Warp** switch | `clip.setAudio` (`warp`) |
-| | **Mode**: a drop-down of Re-pitch, Rhythmic, Tonal, Texture, Smooth, High quality | `clip.setAudio` (`mode`) |
-| | **Tempo** in BPM, with **÷2** and **×2**, and what it came from | `clip.setTempo` |
-| **Gain** | A vertical **fader** with a dB readout under it | `clip.setGain` |
-| | **Envelope**: a switch that shows the clip's gain envelope on its waveform to edit | `clip.setEnvelope` |
-| **Pitch** | A **knob** in semitones with its readout, and a **Cents** field | `clip.setAudio` (`transpose`) |
+| **Clip** (156 points) | **Start** and **End** side by side, each with **Set** at the right of its name | `clip.setStart`, `clip.setLength` |
+| | **Loop**: a switch the width of the part, lit while on | `clip.setLoop` |
+| | **Position** and **Length** of the loop side by side, each with **Set**; faint while the loop is off, a change turns it on | `clip.setLoop` (`start`, `end`) |
+| | **Scale**: the root (C, C#/Db … B) and the mode (None, then Major, Minor … Blues), each a list | `clip.setScale` |
+| **Audio** (112 points) | **Warp**: a switch the width of the part | `clip.setAudio` (`warp`) |
+| | **Mode**: a list of Re-pitch, Rhythmic, Tonal, Texture, Smooth, High quality | `clip.setAudio` (`mode`) |
+| | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
+| | **Gain envelope**: a switch that shows the clip's gain envelope on its waveform to edit; it says how many points the envelope has | `clip.setEnvelope` |
+| **Gain and Pitch** (128 points) | **Gain**: a vertical fader, its scale at its left (24, 0 half-way, −inf at the bottom), the dB readout under it | `clip.setGain` |
+| | **Pitch**: a knob in semitones; under it the semitones and the cents side by side, `st` and `ct` under them | `clip.setAudio` (`transpose`) |
 
-In a row (the detail area under the views) the panel has three parts side by side, each 184 points
-wide: the Clip group; the Audio group; the Gain and Pitch groups beside each other, the fader as tall
-as the room under them allows. With the detail area stacked at the side, the groups follow one under
-another.
+**Lists** (Mode, the scale's root and mode) open right under their field, as wide as it (the scale's
+mode as wide as both scale fields), the value they hold lit; a click on an entry sets it and closes
+the list, a click elsewhere closes it.
 
-The title's name is renamed by a double-click on it (a text field; Enter keeps it, Escape leaves
-it), through `clip.rename`.
+**Scale.** An audio clip's scale says the key of its audio, as a MIDI clip's says the key its notes
+are written in; it changes nothing that plays. It is the content's, as a MIDI clip's is, and a content
+other clips play is copied for this clip first.
 
 ## Numbers
 
@@ -75,9 +77,9 @@ semitone). A double-click on them puts them back to 0 (0 dB, 0 semitones). A mar
 
 | Value | Range | Steps (drag, arrows) | Shown |
 |---|---|---|---|
-| Gain | −70 dB to +24 dB (below −70 is silence, shown −inf); on the fader −24 … +24 dB take its upper three quarters, 0 dB at 62.5 % | 0.1 dB | `-6.0 dB` |
-| Semitones | −48 to +48 | 1 semitone | `+7 st` |
-| Cents | −50 to +50 | 1 cent | `+12 ct` |
+| Gain | −70 dB to +24 dB (below −70 is silence, shown −inf); on the fader 0 dB is half-way, 0 … +24 dB the upper half, −24 … 0 dB the next three tenths, −70 … −24 dB the lowest fifth | 0.1 dB | `-6.0 dB` |
+| Semitones | −48 to +48 | 1 semitone | `+7` |
+| Cents | −50 to +50 | 1 cent | `+12` |
 | Tempo | 20 to 999 BPM | the place grabbed: 1, 0.1, 0.01 or 0.001 BPM | `96.000` |
 | Markers, loop position | 0 to 120 000 content beats, as `bar.beat.sixteenth` from 1 in the project's time signature | the place grabbed: a bar, a beat or a quarter beat | `3.2.1` |
 | Loop length | a quarter beat to 120 000 beats, as `bars.beats.sixteenths` from 0 | as the markers | `1.0.2` |
@@ -145,9 +147,7 @@ envelope is set by command.
 
 Before #1190 every editable value of the column (Loop to Transpose) was filled with the control
 background over the whole row's height, so the rows touched and read as one grey box over the
-column (#1190). Fields now keep a gap of 2 points above and below inside their row, so two fields one under
-another are 4 points apart, and the switch, drop-down and Set controls are drawn as their own
-controls.
+column (#1190). The panel now keeps its controls 6 points apart, with their names over them.
 
 ## Commands
 

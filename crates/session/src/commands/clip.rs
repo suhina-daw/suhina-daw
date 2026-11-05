@@ -675,7 +675,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setScale",
-        label: "Set the scale of a MIDI clip (the piano roll marks its keys), or clear it with off; a content other clips also play is copied for this clip first",
+        label: "Set the scale of a clip: a MIDI clip's marks the piano roll's keys, an audio clip's says the key of its audio; clear it with off; a content other clips also play is copied for this clip first",
         params: &[
             CLIP_TRACK,
             CLIP,

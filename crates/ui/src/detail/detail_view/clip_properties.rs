@@ -148,18 +148,18 @@ pub(super) fn clip_properties(
     });
     let column = if stacked {
         let height = match &panel {
-            Some(_) => ROW + PAD * 2.0 + super::clip_panel::stacked_height(info),
+            Some(_) => 26.0 + super::clip_panel::stacked_height(info),
             None => ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW,
         };
         Rect::from_min_size(area.min, Vec2::new(area.width(), height))
     } else {
         // `.clip-info { width }` in the theme (120 to 480 points); an audio clip's panel has three
-        // parts side by side (`docs/spec/clip-panel.md` › Groups).
+        // parts side by side (`docs/spec/clip-panel.md` › Layout).
         let width = {
             let _style = crate::kit::style_class::enter("clip-info");
             crate::kit::style_class::computed().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0))
         };
-        let width = if panel.is_some() { super::clip_panel::PART_WIDTH * 3.0 + PAD * 4.0 } else { width };
+        let width = if panel.is_some() { super::clip_panel::ROW_WIDTH } else { width };
         Rect::from_min_max(area.min, Pos2::new(area.left() + width, area.bottom()))
     }
     .intersect(area);
@@ -170,6 +170,15 @@ pub(super) fn clip_properties(
     // title last; text never wraps (› Clip column in `docs/spec/ui-clip-editor.md`).
     let title = Rect::from_min_size(column.min, Vec2::new(column.width(), ROW));
     if title.bottom() > column.bottom() + 0.5 {
+        return (column, None);
+    }
+    // An audio clip's panel has a title row of its own: colour, name, length, a line under it.
+    if let Some((at, panel)) = &panel {
+        let title = Rect::from_min_size(column.min, Vec2::new(column.width(), 26.0));
+        super::clip_panel::title_row(ui, painter, title, info, *at, panel, actions);
+        painter.hline(title.x_range(), title.bottom() - 0.5, theme::hairline(theme::border()));
+        let body = Rect::from_min_max(Pos2::new(column.left(), title.bottom()), column.max);
+        super::clip_panel::audio_panel(ui, painter, body, info, *at, panel, stacked, actions);
         return (column, None);
     }
     // The Clip / Devices switch ends the title row; the name keeps clear of it.
@@ -187,28 +196,14 @@ pub(super) fn clip_properties(
     };
     let title_text =
         if info.others.is_empty() { info.name.clone() } else { format!("{} selected", info.others.len() + 1) };
-    match &panel {
-        // An audio clip's name is renamed by a double-click on it.
-        Some((at, _)) if info.others.is_empty() => {
-            super::clip_panel::clip_name(ui, painter, name.shrink2(Vec2::new(PAD, 0.0)), &info.name, *at, actions);
-        }
-        _ => widgets::text_in(
-            painter,
-            name.shrink2(Vec2::new(PAD, 0.0)),
-            Align2::LEFT_CENTER,
-            &title_text,
-            theme::ui_font(theme::TEXT),
-            theme::text_primary(),
-        ),
-    }
-    if let Some((at, panel)) = &panel {
-        let body = Rect::from_min_max(
-            Pos2::new(column.left() + PAD, title.bottom() + PAD / 2.0),
-            Pos2::new(column.right() - PAD, column.bottom() - PAD / 2.0),
-        );
-        super::clip_panel::audio_panel(ui, painter, body, info, *at, panel, stacked, actions);
-        return (column, picked);
-    }
+    widgets::text_in(
+        painter,
+        name.shrink2(Vec2::new(PAD, 0.0)),
+        Align2::LEFT_CENTER,
+        &title_text,
+        theme::ui_font(theme::TEXT),
+        theme::text_primary(),
+    );
     let mut y = title.bottom() + PAD;
     for (label, value, edit) in rows {
         let row = Rect::from_min_max(Pos2::new(column.left() + PAD, y), Pos2::new(column.right() - PAD, y + PARAM_ROW));

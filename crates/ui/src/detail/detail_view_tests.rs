@@ -1151,7 +1151,7 @@ fn the_pitch_knob_and_the_cents_field_set_the_transpose() {
     assert!(actions.iter().all(|a| a.id == "clip.setAudio"));
     // 12 points up at a quarter semitone each: 3 semitones up, the 25 cents kept.
     assert_eq!(actions.last().map(|a| a.params["transpose"].clone()), Some(json!(5.25)));
-    let cents = harness.get_by_label("Cents: +25 ct").rect().center();
+    let cents = harness.get_by_label("Cents: +25").rect().center();
     double_click(&mut harness, cents);
     harness.get_by_label("Cents value").click();
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
@@ -1234,7 +1234,7 @@ fn a_slots_clip_has_no_set_buttons() {
 }
 
 /// The fields keep a gap between them: the column is no longer one grey box over its rows
-/// (#1190).
+/// (#1190). Start and End sit side by side, Warp over Mode.
 #[test]
 fn the_panels_fields_do_not_touch() {
     use egui_kittest::kittest::Queryable;
@@ -1242,10 +1242,37 @@ fn the_panels_fields_do_not_touch() {
     let harness = panel_harness(detail);
     let start = harness.get_by_label("Start marker: 1.2.1").rect();
     let end = harness.get_by_label("End marker: 2.2.1").rect();
-    assert!(end.top() - start.bottom() >= 3.0, "{start:?} {end:?}");
+    assert!(end.left() - start.right() >= 4.0, "{start:?} {end:?}");
     let warp = harness.get_by_label("Warp: On").rect();
     let mode = harness.get_by_label("Mode: Smooth").rect();
-    assert!(mode.top() - warp.bottom() >= 3.0, "{warp:?} {mode:?}");
+    assert!(mode.top() - warp.bottom() >= 4.0, "{warp:?} {mode:?}");
+}
+
+/// The scale's root and mode are lists under their fields; a pick sets the clip's scale.
+#[test]
+fn the_scale_is_picked_from_lists_under_its_fields() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, beat_b) = audio_detail(AudioPanel::default(), 0.0, 0.0);
+    let mut harness = panel_harness(detail);
+    let field = harness.get_by_label("Scale: None").rect();
+    harness.get_by_label("Scale: None").click();
+    harness.run();
+    let minor = harness.get_by_label("Minor").rect();
+    assert!(
+        minor.top() >= field.bottom() && (minor.left() - field.left()).abs() < 80.0,
+        "under its field: {minor:?} {field:?}"
+    );
+    harness.get_by_label("Minor").click();
+    harness.run();
+    harness.get_by_label("Scale root: —").click();
+    harness.run();
+    harness.get_by_label("F#/Gb").click();
+    harness.run();
+    let actions = harness.state();
+    assert_eq!(actions.len(), 2, "{actions:?}");
+    assert_eq!((actions[0].id, &actions[0].params["mode"]), ("clip.setScale", &json!("minor")));
+    assert_eq!((actions[1].id, &actions[1].params["root"]), ("clip.setScale", &json!("F#")));
+    assert!(actions.iter().all(|a| a.params["clip"] == json!(beat_b.0)));
 }
 
 #[test]
@@ -1256,7 +1283,9 @@ fn a_transpose_splits_into_semitones_and_cents_and_the_fader_maps_both_ways() {
         let back = super::clip_panel::fader_db(super::clip_panel::fader_position(db));
         assert!((back - db).abs() < 1e-9, "{db} {back}");
     }
-    assert_eq!(super::clip_panel::fader_position(0.0), 0.625);
+    assert_eq!(super::clip_panel::fader_position(0.0), 0.5, "0 dB half-way");
+    assert_eq!(super::clip_panel::fader_position(24.0), 1.0);
+    assert_eq!(super::clip_panel::fader_position(-70.0), 0.0);
 }
 
 /// Markers read and type as bars, beats and sixteenths (4/4 here; 6/8 has three beats a bar).

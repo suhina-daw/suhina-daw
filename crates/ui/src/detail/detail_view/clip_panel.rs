@@ -8,23 +8,11 @@
 use super::*;
 use crate::interaction::colour_picker;
 use crate::kit::widgets::Drag;
-use suhina_engine::model::{CLIP_TEMPO_RANGE, TempoSource};
+use suhina_engine::model::{CLIP_TEMPO_RANGE, ROOT_NAMES, ScaleMode, TempoSource};
 
-/// A row of the panel, and the gap a field keeps above and below inside it, so no two fields
-/// touch (the grey box of #1190).
-const ROW_HEIGHT: f32 = 18.0;
-const FIELD_GAP: f32 = 2.0;
-/// A group's heading.
-const HEADING: f32 = 14.0;
-/// The Set button beside a marker or loop field, and the ÷2 / ×2 buttons.
-const SET_WIDTH: f32 = 28.0;
-const HALVE_WIDTH: f32 = 22.0;
-/// The gain fader's track and cap, and the pitch knob.
+/// The gain fader's cap, and the pitch knob.
 const FADER_WIDTH: f32 = 18.0;
-const FADER_HEIGHT: f32 = 100.0;
 const KNOB: f32 = 34.0;
-/// In a row the panel's three parts (Clip; Audio; Gain and Pitch) are side by side, each this wide.
-pub(super) const PART_WIDTH: f32 = 184.0;
 /// The gain fader's range in dB: below its bottom is silence.
 const GAIN_RANGE: (f64, f64) = (-70.0, 24.0);
 const SEMITONES: (f64, f64) = (-48.0, 48.0);
@@ -119,15 +107,10 @@ fn plain_number(text: &str) -> Option<f64> {
     number.replace(',', ".").parse::<f64>().ok().filter(|n| n.is_finite())
 }
 
-/// Semitones as the knob/// Semitones as the knob's readout shows them.
+/// Semitones as the knob says them.
 fn semitones_text(st: f64) -> String {
     let st = st.round();
     if st > 0.0 { format!("+{st} st") } else { format!("{st} st") }
-}
-
-fn cents_text(cents: f64) -> String {
-    let cents = cents.round();
-    if cents > 0.0 { format!("+{cents} ct") } else { format!("{cents} ct") }
 }
 
 fn gain_text(db: f64) -> String {
@@ -153,17 +136,29 @@ pub(super) fn split_transpose(transpose: f64) -> (f64, f64) {
     (semitones, cents)
 }
 
-/// Where a gain sits on the fader, 0 … 1: −24 … +24 dB over its upper three quarters (0 dB at
-/// 0.625), −70 … −24 dB over its lowest quarter.
+/// Where a gain sits on the fader, 0 … 1: 0 dB half-way, 0 … +24 dB over the upper half, −24 …
+/// 0 dB over the next three tenths, −70 … −24 dB over the lowest fifth.
 pub(super) fn fader_position(db: f64) -> f64 {
     let db = if db.is_finite() { db.clamp(GAIN_RANGE.0, GAIN_RANGE.1) } else { GAIN_RANGE.0 };
-    if db >= -24.0 { 0.25 + 0.75 * (db + 24.0) / 48.0 } else { 0.25 * (db - GAIN_RANGE.0) / (-24.0 - GAIN_RANGE.0) }
+    if db >= 0.0 {
+        0.5 + 0.5 * db / GAIN_RANGE.1
+    } else if db >= -24.0 {
+        0.2 + 0.3 * (db + 24.0) / 24.0
+    } else {
+        0.2 * (db - GAIN_RANGE.0) / (-24.0 - GAIN_RANGE.0)
+    }
 }
 
 /// The gain at fader position `t`, the inverse of [`fader_position`].
 pub(super) fn fader_db(t: f64) -> f64 {
     let t = t.clamp(0.0, 1.0);
-    if t >= 0.25 { -24.0 + (t - 0.25) / 0.75 * 48.0 } else { GAIN_RANGE.0 + t / 0.25 * (-24.0 - GAIN_RANGE.0) }
+    if t >= 0.5 {
+        (t - 0.5) / 0.5 * GAIN_RANGE.1
+    } else if t >= 0.2 {
+        -24.0 + (t - 0.2) / 0.3 * 24.0
+    } else {
+        GAIN_RANGE.0 + t / 0.2 * (-24.0 - GAIN_RANGE.0)
+    }
 }
 
 /// How a number field takes its value.
@@ -174,6 +169,10 @@ struct Field {
     per_tick: f64,
     /// Rounds a dragged value to its step.
     snap: fn(f64) -> f64,
+    /// Where its text sits: at the right for a position or a tempo, centred under a fader or knob.
+    align: Align2,
+    /// Drawn faint: a value that does not apply now (the loop's, while the loop is off).
+    dim: bool,
 }
 
 fn tenth(v: f64) -> f64 {
@@ -186,7 +185,8 @@ fn thousandth(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
 }
 
-/// A field's surface: inset by [`FIELD_GAP`], so fields one under another never touch.
+/// A field's surface. Fields keep the panel's gaps between them, so none touch (the grey box of
+/// #1190).
 fn field_surface(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response) {
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response));
     painter.fill_background(rect, 3.0, fill);
@@ -219,7 +219,6 @@ fn number_field(
     text: Text<'_>,
     field: Field,
 ) -> Option<Change> {
-    let rect = rect.shrink2(Vec2::new(0.0, FIELD_GAP));
     let edit_id = id.with("typing");
     if let Some(mut typed) = ui.data(|d| d.get_temp::<String>(edit_id)) {
         let edit = egui::TextEdit::singleline(&mut typed)
@@ -277,7 +276,8 @@ fn number_field(
     field_surface(ui, painter, rect, &response);
     let text_area = rect.shrink2(Vec2::new(PAD / 2.0, 0.0));
     let mono = theme::mono_font(theme::TEXT_SMALL);
-    widgets::text_in(painter, text_area, Align2::RIGHT_CENTER, &shown, mono.clone(), theme::text_value());
+    let ink = if field.dim { theme::text_hint() } else { theme::text_value() };
+    widgets::text_in(painter, text_area, field.align, &shown, mono.clone(), ink);
     if response.double_clicked() {
         let start =
             (text.shown)(value).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
@@ -349,117 +349,6 @@ fn with_more(mut params: serde_json::Value, change: Change) -> serde_json::Value
     params
 }
 
-/// A small button; returns whether it was clicked.
-fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str, enabled: bool) -> bool {
-    let rect = rect.shrink2(Vec2::new(1.0, FIELD_GAP));
-    let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-button", label)), label);
-    let fill = if enabled {
-        motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response))
-    } else {
-        theme::panel_background()
-    };
-    painter.fill_background(rect, 3.0, fill);
-    painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
-    let ink = if enabled { theme::text_primary() } else { theme::text_hint() };
-    widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
-    enabled && response.clicked()
-}
-
-/// A switch: "`name`: On" or "Off", a click turns it.
-fn switch_row(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, on: bool) -> bool {
-    let rect = rect.shrink2(Vec2::new(0.0, FIELD_GAP));
-    let text = if on { "On" } else { "Off" };
-    let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-switch", name)), format!("{name}: {text}"));
-    let (fill, ink) = widgets::toggle_colors(ui, &response, on);
-    painter.fill_background(rect, 3.0, fill);
-    widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
-    response.clicked()
-}
-
-/// A label at the left of a row.
-fn label(painter: &egui::Painter, row: Rect, text: &str) {
-    widgets::text_in(
-        painter,
-        row,
-        Align2::LEFT_CENTER,
-        text,
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_secondary(),
-    );
-}
-
-/// A read-only row: its label, and its value at the right, named "`name`: `value`" for readers.
-fn info_row(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, value: &str) {
-    let response = ui.interact(row, Id::unique(("clip-panel-info", name)), Sense::hover());
-    let named = format!("{name}: {value}");
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &named));
-    label(painter, row, name);
-    widgets::text_in(
-        painter,
-        row,
-        Align2::RIGHT_CENTER,
-        value,
-        theme::mono_font(theme::TEXT_SMALL),
-        theme::text_value(),
-    );
-}
-
-/// Lays rows out from the top of a part, and stops at its bottom.
-struct Rows {
-    left: f32,
-    right: f32,
-    y: f32,
-    bottom: f32,
-}
-
-impl Rows {
-    fn heading(&mut self, painter: &egui::Painter, text: &str) -> bool {
-        if self.y + HEADING > self.bottom + 0.5 {
-            return false;
-        }
-        let rect = Rect::from_min_max(Pos2::new(self.left, self.y), Pos2::new(self.right, self.y + HEADING));
-        widgets::text_in(
-            painter,
-            rect,
-            Align2::LEFT_BOTTOM,
-            text,
-            theme::ui_font(theme::TEXT_TINY),
-            theme::text_hint(),
-        );
-        self.y += HEADING;
-        true
-    }
-
-    /// The next row, or none when it would not fit whole.
-    fn next(&mut self, height: f32) -> Option<Rect> {
-        if self.y + height > self.bottom + 0.5 {
-            return None;
-        }
-        let rect = Rect::from_min_max(Pos2::new(self.left, self.y), Pos2::new(self.right, self.y + height));
-        self.y += height;
-        Some(rect)
-    }
-}
-
-/// A row's value part (after the label), less `buttons` points at its right for buttons.
-fn value_part(row: Rect, buttons: f32) -> (Rect, Rect) {
-    let value = Rect::from_min_max(Pos2::new(row.left() + LABEL_WIDTH + 8.0, row.top()), row.max);
-    let field = Rect::from_min_max(value.min, Pos2::new(value.right() - buttons, value.bottom()));
-    let rest = Rect::from_min_max(Pos2::new(field.right(), value.top()), value.max);
-    (field, rest)
-}
-
-/// How tall the panel is with its groups one under another (the detail area stacked).
-pub(super) fn stacked_height(info: &ClipInfo) -> f32 {
-    let markers = if info.looping { 1.0 } else { 2.0 };
-    let loop_rows = if info.loop_range.is_some() { 2.0 } else { 0.0 };
-    // Colour, track, start, length, the markers, loop, its rows, two fades.
-    let clip = HEADING + ROW_HEIGHT * (4.0 + markers + 1.0 + loop_rows + 2.0);
-    let audio = HEADING + ROW_HEIGHT * 4.0;
-    let block = HEADING + FADER_HEIGHT;
-    clip + PAD + audio + PAD + block * 2.0
-}
-
 /// The clip's name in the title row; a double-click opens a text field to rename it
 /// (`clip.rename`): Enter keeps the name, Escape or a click elsewhere leaves it.
 pub(super) fn clip_name(
@@ -504,7 +393,156 @@ pub(super) fn clip_name(
     }
 }
 
-/// The audio clip's groups in `area` under the title row; `stacked` keeps them in one column.
+/// A small button, as the kit draws one; returns whether it was clicked.
+fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str, enabled: bool) -> bool {
+    let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-button", label)), label);
+    let fill = if enabled {
+        motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response))
+    } else {
+        theme::panel_background()
+    };
+    painter.fill_background(rect, 3.0, fill);
+    painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+    let ink = if enabled { theme::text_primary() } else { theme::text_hint() };
+    let size = if rect.height() < 15.0 { theme::TEXT_TINY } else { theme::TEXT_SMALL };
+    widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(size), ink);
+    enabled && response.clicked()
+}
+
+/// A switch the width of its part, showing `text`, lit while on; named "`name`: On" or "Off".
+fn toggle(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, text: &str, on: bool) -> bool {
+    let state = if on { "On" } else { "Off" };
+    let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-switch", name)), format!("{name}: {state}"));
+    let (fill, ink) = widgets::toggle_colors(ui, &response, on);
+    painter.fill_background(rect, 3.0, fill);
+    if !on {
+        painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+    }
+    widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
+    response.clicked()
+}
+
+/// A name over a control: the name at the left of `rect`, small.
+fn name_over(painter: &egui::Painter, rect: Rect, text: &str, align: Align2) {
+    widgets::text_in(painter, rect, align, text, theme::ui_font(theme::TEXT_TINY), theme::text_secondary());
+}
+
+/// A drop-down field: its value and a chevron; a click opens its list right under it, as wide as
+/// the field, the value in it lit. The list's entries are buttons named as they read; `None` is a
+/// line between entries. Returns the index of the entry picked.
+#[allow(clippy::too_many_arguments)]
+fn drop_down(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    id: Id,
+    name: &str,
+    shown: &str,
+    entries: &[Option<(&str, bool)>],
+    list_width: f32,
+) -> Option<usize> {
+    let response = widgets::button_area(ui, rect, id, format!("{name}: {shown}"));
+    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+    painter.fill_background(rect, 3.0, fill);
+    let text = Rect::from_min_max(rect.min + Vec2::new(6.0, 0.0), rect.max - Vec2::new(14.0, 0.0));
+    widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, theme::ui_font(theme::TEXT_SMALL), theme::text_value());
+    widgets::chevron(painter, Pos2::new(rect.right() - 8.0, rect.center().y), false, theme::text_secondary());
+    let mut picked = None;
+    egui::Popup::menu(&response).width(list_width).gap(2.0).align(egui::RectAlign::BOTTOM_START).show(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::new(0.0, 1.0);
+        for (index, entry) in entries.iter().enumerate() {
+            let Some((label, selected)) = entry else {
+                let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 5.0), Sense::hover());
+                ui.painter().hline(line.x_range(), line.center().y, theme::hairline(theme::border()));
+                continue;
+            };
+            let (row, item) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::click());
+            item.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, *selected, *label));
+            let lit = *selected || item.hovered();
+            if lit {
+                let fill = if *selected { theme::control_selected() } else { theme::control_hover() };
+                ui.painter().rect_filled(row, 2.0, fill);
+            }
+            let ink = if *selected { theme::text_on(theme::control_selected()) } else { theme::text_primary() };
+            let inset = row.shrink2(Vec2::new(6.0, 0.0));
+            widgets::text_in(ui.painter(), inset, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), ink);
+            if item.clicked() {
+                picked = Some(index);
+                ui.close();
+            }
+        }
+    });
+    picked
+}
+
+/// The widths and gaps of the panel's parts in a row, as the design has them: Clip, Audio, then
+/// Gain and Pitch.
+const CLIP_PART: f32 = 156.0;
+const AUDIO_PART: f32 = 112.0;
+const GAIN_PART: f32 = 128.0;
+const PART_GAP: f32 = 12.0;
+/// The panel's width in a row: its three parts, their gaps and its padding.
+pub(super) const ROW_WIDTH: f32 = CLIP_PART + AUDIO_PART + GAIN_PART + PART_GAP * 2.0 + 16.0;
+/// A name over a field, a field, a toggle, and the space between controls.
+const NAME: f32 = 14.0;
+const FIELD: f32 = 18.0;
+const TOGGLE: f32 = 20.0;
+const GAP: f32 = 6.0;
+/// The height of the Gain and Pitch part when the panel is stacked.
+const STACKED_GAIN: f32 = 150.0;
+
+/// How tall the panel is with its parts one under another (the detail area stacked).
+pub(super) fn stacked_height(_info: &ClipInfo) -> f32 {
+    let clip = (NAME + FIELD) * 3.0 + TOGGLE + GAP * 3.0;
+    let audio = TOGGLE + FIELD + (NAME + FIELD + 4.0 + FIELD + 3.0 + 12.0) + TOGGLE + GAP * 3.0;
+    clip + 14.0 + audio + 14.0 + STACKED_GAIN + 16.0
+}
+
+/// The title row of an audio clip's panel: its colour (a click opens the palette), its name (a
+/// double-click renames it) and its length in beats.
+pub(super) fn title_row(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    info: &ClipInfo,
+    at: ClipRef,
+    panel: &AudioPanel,
+    actions: &mut Vec<Action>,
+) {
+    let swatch = Rect::from_center_size(Pos2::new(rect.left() + 8.0 + 6.0, rect.center().y), Vec2::splat(12.0));
+    let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-colour", panel.clip.0)), "Clip colour");
+    let colour = panel.color.map_or(theme::text_hint(), colour_picker::color32);
+    painter.rect_filled(swatch, 2.0, colour);
+    painter.rect_stroke(swatch, 2.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    egui::Popup::menu(&response).show(|ui| {
+        if let Some(picked) = colour_picker::swatch_row(ui, panel.color) {
+            let params = json!({ "clip": panel.clip.0, "color": colour_picker::hex(picked) });
+            actions.push(Action::new("clip.setColor", params));
+            ui.close();
+        }
+        if ui.button("Track colour").clicked() {
+            actions.push(Action::new("clip.setColor", json!({ "clip": panel.clip.0, "color": "none" })));
+            ui.close();
+        }
+    });
+    let length = format!("{} beats", (panel.length_beats * 100.0).round() / 100.0);
+    let mono = theme::mono_font(theme::TEXT_TINY);
+    let length_width = widgets::text_width(ui, &length, mono.clone());
+    let right =
+        Rect::from_min_max(Pos2::new(rect.right() - 8.0 - length_width, rect.top()), rect.max - Vec2::new(8.0, 0.0));
+    widgets::text_in(painter, right, Align2::RIGHT_CENTER, &length, mono, theme::text_hint());
+    let name =
+        Rect::from_min_max(Pos2::new(swatch.right() + 8.0, rect.top()), Pos2::new(right.left() - 8.0, rect.bottom()));
+    if info.others.is_empty() {
+        clip_name(ui, painter, name, &info.name, at, actions);
+    } else {
+        let text = format!("{} selected", info.others.len() + 1);
+        widgets::text_in(painter, name, Align2::LEFT_CENTER, &text, theme::ui_font(theme::TEXT), theme::text_primary());
+    }
+}
+
+/// The audio clip's parts in `area` under the title row: side by side in a row, one under another
+/// when `stacked` (`docs/spec/clip-panel.md` › Layout).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn audio_panel(
     ui: &mut Ui,
@@ -516,218 +554,319 @@ pub(super) fn audio_panel(
     stacked: bool,
     actions: &mut Vec<Action>,
 ) {
-    let rows_in = |part: Rect| Rows { left: part.left(), right: part.right(), y: part.top(), bottom: part.bottom() };
-    if !stacked && area.width() >= PART_WIDTH * 3.0 {
-        let width = (area.width() - PAD * 2.0) / 3.0;
-        let part = |i: f32| {
-            let left = area.left() + i * (width + PAD);
-            Rect::from_min_max(Pos2::new(left, area.top()), Pos2::new(left + width, area.bottom()))
-        };
-        clip_group(ui, painter, &mut rows_in(part(0.0)), info, at, panel, actions);
-        audio_group(ui, painter, &mut rows_in(part(1.0)), info, at, panel, actions);
-        gain_and_pitch(ui, painter, &mut rows_in(part(2.0)), info, at, panel, actions);
+    let area = area.shrink(8.0);
+    if stacked {
+        let mut top = area.top();
+        let part =
+            |top: f32, height: f32| Rect::from_min_size(Pos2::new(area.left(), top), Vec2::new(area.width(), height));
+        top = clip_part(ui, painter, part(top, area.height()), info, at, panel, actions) + 14.0;
+        top = audio_part(ui, painter, part(top, area.bottom() - top), info, at, panel, actions) + 14.0;
+        let gain = part(top, STACKED_GAIN.min(area.bottom() - top));
+        gain_and_pitch(ui, painter, gain, info, at, panel, true, actions);
         return;
     }
-    let mut rows = rows_in(area);
-    clip_group(ui, painter, &mut rows, info, at, panel, actions);
-    rows.y += PAD;
-    audio_group(ui, painter, &mut rows, info, at, panel, actions);
-    rows.y += PAD;
-    gain_and_pitch(ui, painter, &mut rows, info, at, panel, actions);
+    let column =
+        |left: f32, width: f32| Rect::from_min_max(Pos2::new(left, area.top()), Pos2::new(left + width, area.bottom()));
+    let clip = column(area.left(), CLIP_PART);
+    let audio = column(clip.right() + PART_GAP, AUDIO_PART);
+    let gain = column(audio.right() + PART_GAP, GAIN_PART);
+    clip_part(ui, painter, clip, info, at, panel, actions);
+    audio_part(ui, painter, audio, info, at, panel, actions);
+    gain_and_pitch(ui, painter, gain, info, at, panel, false, actions);
 }
 
-/// The Clip group: colour, where it is, its markers and its loop.
-fn clip_group(
+/// Two fields side by side with their names over them, each with a Set button at the right of its
+/// name when the playhead is known; returns the rects of the two fields.
+fn pair(part: Rect, top: f32) -> [(Rect, Rect); 2] {
+    let half = (part.width() - GAP) / 2.0;
+    [0.0, 1.0].map(|i| {
+        let left = part.left() + i * (half + GAP);
+        let name = Rect::from_min_size(Pos2::new(left, top), Vec2::new(half, NAME));
+        let field = Rect::from_min_size(Pos2::new(left, top + NAME), Vec2::new(half, FIELD));
+        (name, field)
+    })
+}
+
+/// The Set button at the right of a name row.
+fn set_button(name: Rect) -> Rect {
+    Rect::from_min_max(Pos2::new(name.right() - 24.0, name.top()), Pos2::new(name.right(), name.bottom() - 1.0))
+}
+
+/// The Clip part: the start and end markers, the loop with its position and length, and the
+/// scale. Returns where it ends.
+fn clip_part(
     ui: &mut Ui,
     painter: &egui::Painter,
-    rows: &mut Rows,
+    part: Rect,
     info: &ClipInfo,
     at: ClipRef,
     panel: &AudioPanel,
     actions: &mut Vec<Action>,
-) {
-    if !rows.heading(painter, "CLIP") {
-        return;
-    }
-    // Colour: a swatch; a click opens the palette.
-    if let Some(row) = rows.next(ROW_HEIGHT) {
-        label(painter, row, "Colour");
-        let (field, _) = value_part(row, 0.0);
-        let swatch = Rect::from_min_size(
-            Pos2::new(field.right() - field.height() + FIELD_GAP, field.top() + FIELD_GAP),
-            Vec2::splat(field.height() - FIELD_GAP * 2.0),
-        );
-        let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-colour", panel.clip.0)), "Clip colour");
-        let colour = panel.color.map_or(theme::text_hint(), colour_picker::color32);
-        painter.rect_filled(swatch, 2.0, colour);
-        painter.rect_stroke(swatch, 2.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-        egui::Popup::menu(&response).show(|ui| {
-            if let Some(picked) = colour_picker::swatch_row(ui, panel.color) {
-                let params = json!({ "clip": panel.clip.0, "color": colour_picker::hex(picked) });
-                actions.push(Action::new("clip.setColor", params));
-                ui.close();
-            }
-            if ui.button("Track colour").clicked() {
-                actions.push(Action::new("clip.setColor", json!({ "clip": panel.clip.0, "color": "none" })));
-                ui.close();
-            }
-        });
-    }
-    for (name, value) in [
-        ("Track", info.track.as_str()),
-        (if info.scene { "Scene" } else { "Start" }, info.start.as_str()),
-        ("Length", info.length.as_str()),
-    ] {
-        let Some(row) = rows.next(ROW_HEIGHT) else { return };
-        info_row(ui, painter, row, name, value);
-    }
-    let set_width = if panel.playhead.is_some() { SET_WIDTH } else { 0.0 };
+) -> f32 {
     let bar = bar_of(panel);
     let quarter = |v: f64| (v * 4.0).round() / 4.0;
-    let markers =
-        Field { range: (0.0, 120_000.0), per_point: 0.0625, per_tick: 0.25, snap: |v| (v * 4.0).round() / 4.0 };
+    let markers = Field {
+        range: (0.0, 120_000.0),
+        per_point: 0.0625,
+        per_tick: 0.25,
+        snap: |v| (v * 4.0).round() / 4.0,
+        align: Align2::RIGHT_CENTER,
+        dim: false,
+    };
     let position = |v: f64| bars_text(v, bar, true);
     let parse_position = |t: &str| bars_parse(t, bar, true);
     let length_shown = |v: f64| bars_text(v, bar, false);
     let parse_length = |t: &str| bars_parse(t, bar, false);
     let places = |t: &str| bars_places(t, bar);
     let as_position = || Text { shown: &position, parse: &parse_position, places: Some(&places) };
-    // The start marker, and the end marker of a clip that does not loop.
-    let mut marker_rows = vec![("Start marker", info.markers.0, (0.0, (info.markers.1 - 0.25).max(0.0)))];
-    if !info.looping {
-        marker_rows.push(("End marker", info.markers.1, (info.markers.0 + 0.25, 120_000.0)));
+    let set_to = |ui: &Ui, painter: &egui::Painter, name: Rect, what: &str| {
+        panel.playhead.filter(|_| {
+            small_button(ui, painter, set_button(name), "Set", &format!("Set {what} to the playhead"), true)
+        })
+    };
+    let mut y = part.top();
+    // Start and End: where in its audio the clip plays from and to.
+    let [(start_name, start_field), (end_name, end_field)] = pair(part, y);
+    name_over(painter, start_name, "Start", Align2::LEFT_BOTTOM);
+    name_over(painter, end_name, "End", Align2::LEFT_BOTTOM);
+    let start_range = (0.0, (info.markers.1 - 0.25).max(0.0));
+    let end_range = (info.markers.0 + 0.25, 120_000.0);
+    let id = Id::unique(("clip-panel-field", "Start marker"));
+    let start = number_field(
+        ui,
+        painter,
+        start_field,
+        id,
+        "Start marker",
+        info.markers.0,
+        as_position(),
+        Field { range: start_range, ..markers },
+    )
+    .or_else(|| {
+        set_to(ui, painter, start_name, "Start marker")
+            .map(|p| Change { value: quarter(p).clamp(start_range.0, start_range.1), more: false })
+    });
+    if let Some(change) = start {
+        actions.push(Action::new("clip.setStart", with_more(on_clip(at, json!({ "offset": change.value })), change)));
     }
-    for (name, value, range) in marker_rows {
-        let Some(row) = rows.next(ROW_HEIGHT) else { return };
-        label(painter, row, name);
-        let (field, rest) = value_part(row, set_width);
-        let id = Id::unique(("clip-panel-field", name));
-        let set = number_field(ui, painter, field, id, name, value, as_position(), Field { range, ..markers });
-        let at_playhead = panel
-            .playhead
-            .filter(|_| small_button(ui, painter, rest, "Set", &format!("Set {name} to the playhead"), true))
-            .map(|p| Change { value: quarter(p).clamp(range.0, range.1), more: false });
-        if let Some(change) = set.or(at_playhead) {
-            let v = change.value;
-            actions.push(if name == "Start marker" {
-                Action::new("clip.setStart", with_more(on_clip(at, json!({ "offset": v })), change))
-            } else {
-                Action::new("clip.setLength", with_more(on_clip(at, json!({ "length": v - info.markers.0 })), change))
-            });
-        }
+    let id = Id::unique(("clip-panel-field", "End marker"));
+    let end = number_field(
+        ui,
+        painter,
+        end_field,
+        id,
+        "End marker",
+        info.markers.1,
+        as_position(),
+        Field { range: end_range, ..markers },
+    )
+    .or_else(|| {
+        set_to(ui, painter, end_name, "End marker")
+            .map(|p| Change { value: quarter(p).clamp(end_range.0, end_range.1), more: false })
+    });
+    if let Some(change) = end {
+        let params = on_clip(at, json!({ "length": change.value - info.markers.0 }));
+        actions.push(Action::new("clip.setLength", with_more(params, change)));
     }
-    // The loop: its switch, and where it starts and how long it is.
-    let Some(row) = rows.next(ROW_HEIGHT) else { return };
-    label(painter, row, "Loop");
-    let (field, _) = value_part(row, 0.0);
-    if switch_row(ui, painter, field, "Loop", info.looping) {
+    y += NAME + FIELD + GAP;
+    // The loop switch, the width of the part.
+    let switch = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), TOGGLE));
+    if toggle(ui, painter, switch, "Loop", "Loop", info.looping) {
         for other in &info.others {
             actions.push(Action::new("clip.setLoop", json!({ "clip": other, "loop": !info.looping })));
         }
         actions.push(Action::new("clip.setLoop", on_clip(at, json!({ "loop": !info.looping }))));
     }
-    if let Some((start, end)) = info.loop_range {
-        let length = end - start;
-        for name in ["Loop position", "Loop length"] {
-            let Some(row) = rows.next(ROW_HEIGHT) else { return };
-            label(painter, row, name);
-            let (field, rest) = value_part(row, set_width);
-            let id = Id::unique(("clip-panel-field", name));
-            let (value, range) = if name == "Loop position" {
-                (start, (0.0, 120_000.0 - length.max(0.25)))
-            } else {
-                (length, (0.25, 120_000.0 - start))
-            };
-            let text = if name == "Loop position" {
-                as_position()
-            } else {
-                Text { shown: &length_shown, parse: &parse_length, places: Some(&places) }
-            };
-            let set = number_field(ui, painter, field, id, name, value, text, Field { range, ..markers });
-            let at_playhead = panel
-                .playhead
-                .filter(|_| small_button(ui, painter, rest, "Set", &format!("Set {name} to the playhead"), true));
-            let from_playhead = at_playhead.map(|p| Change {
-                value: if name == "Loop position" { quarter(p) } else { quarter(p - start).max(0.25) },
-                more: false,
-            });
-            if let Some(change) = set.or(from_playhead) {
-                let v = change.value.clamp(range.0, range.1);
-                // The position moves the loop whole; the length moves its end.
-                let params = if name == "Loop position" {
-                    json!({ "start": v, "end": v + length })
-                } else {
-                    json!({ "start": start, "end": start + v })
-                };
-                actions.push(Action::new("clip.setLoop", with_more(on_clip(at, params), change)));
-            }
-        }
+    y += TOGGLE + GAP;
+    // Position and Length: dimmed while the loop is off; a change turns it on.
+    let (start, end) = info.loop_range.unwrap_or(info.markers);
+    let length = (end - start).max(0.25);
+    let [(position_name, position_field), (length_name, length_field)] = pair(part, y);
+    name_over(painter, position_name, "Position", Align2::LEFT_BOTTOM);
+    name_over(painter, length_name, "Length", Align2::LEFT_BOTTOM);
+    let dim = info.loop_range.is_none();
+    let position_range = (0.0, 120_000.0 - length);
+    let id = Id::unique(("clip-panel-field", "Loop position"));
+    let moved = number_field(
+        ui,
+        painter,
+        position_field,
+        id,
+        "Loop position",
+        start,
+        as_position(),
+        Field { range: position_range, dim, ..markers },
+    )
+    .or_else(|| {
+        set_to(ui, painter, position_name, "Loop position")
+            .map(|p| Change { value: quarter(p).clamp(position_range.0, position_range.1), more: false })
+    });
+    if let Some(change) = moved {
+        // The position moves the loop whole.
+        let params = on_clip(at, json!({ "start": change.value, "end": change.value + length }));
+        actions.push(Action::new("clip.setLoop", with_more(params, change)));
     }
-    let fade = |b: f64| if b > 0.0 { beats_text(b) } else { "-".into() };
-    for (name, value) in [("Fade in", fade(info.fades.0)), ("Fade out", fade(info.fades.1))] {
-        let Some(row) = rows.next(ROW_HEIGHT) else { return };
-        info_row(ui, painter, row, name, &value);
+    let length_range = (0.25, 120_000.0 - start);
+    let id = Id::unique(("clip-panel-field", "Loop length"));
+    let text = Text { shown: &length_shown, parse: &parse_length, places: Some(&places) };
+    let resized = number_field(
+        ui,
+        painter,
+        length_field,
+        id,
+        "Loop length",
+        length,
+        text,
+        Field { range: length_range, dim, ..markers },
+    )
+    .or_else(|| {
+        set_to(ui, painter, length_name, "Loop length")
+            .map(|p| Change { value: quarter(p - start).clamp(length_range.0, length_range.1), more: false })
+    });
+    if let Some(change) = resized {
+        let params = on_clip(at, json!({ "start": start, "end": start + change.value }));
+        actions.push(Action::new("clip.setLoop", with_more(params, change)));
     }
+    y += NAME + FIELD + GAP;
+    // The scale: its root and its mode, each a list under its field.
+    let name = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), NAME));
+    name_over(painter, name, "Scale", Align2::LEFT_BOTTOM);
+    let root_rect = Rect::from_min_size(Pos2::new(part.left(), y + NAME), Vec2::new(52.0, FIELD));
+    let mode_rect = Rect::from_min_max(
+        Pos2::new(root_rect.right() + 4.0, root_rect.top()),
+        Pos2::new(part.right(), root_rect.bottom()),
+    );
+    let root = panel.scale.map(|s| usize::from(s.root()));
+    let root_shown = root.and_then(|r| ROOT_LABELS.get(r)).copied().unwrap_or("—");
+    let roots: Vec<Option<(&str, bool)>> =
+        ROOT_LABELS.iter().enumerate().map(|(i, name)| Some((*name, root == Some(i)))).collect();
+    let id = Id::unique(("clip-panel-scale-root", panel.clip.0));
+    if let Some(picked) =
+        drop_down(ui, painter, root_rect, id, "Scale root", root_shown, &roots, root_rect.width() + 20.0)
+    {
+        let name = ROOT_NAMES.get(picked).copied().unwrap_or("C");
+        actions.push(Action::new("clip.setScale", on_clip(at, json!({ "root": name }))));
+    }
+    let mode = panel.scale.map(|s| s.mode);
+    let mode_shown = mode.map_or("None", |m| m.label());
+    let mut modes: Vec<Option<(&str, bool)>> = vec![Some(("None", mode.is_none())), None];
+    modes.extend(ScaleMode::ALL.iter().map(|m| Some((m.label(), mode == Some(*m)))));
+    let id = Id::unique(("clip-panel-scale-mode", panel.clip.0));
+    if let Some(picked) =
+        drop_down(ui, painter, mode_rect, id, "Scale", mode_shown, &modes, mode_rect.width() + root_rect.width() + 4.0)
+    {
+        let params = match picked.checked_sub(2).and_then(|i| ScaleMode::ALL.get(i)) {
+            Some(mode) => json!({ "mode": mode.name() }),
+            None => json!({ "off": true }),
+        };
+        actions.push(Action::new("clip.setScale", on_clip(at, params)));
+    }
+    y + NAME + FIELD
 }
 
-/// The Audio group: the warp switch, the warp mode and the clip's tempo.
-fn audio_group(
+/// The roots as the Scale list shows them.
+const ROOT_LABELS: [&str; 12] = ["C", "C#/Db", "D", "D#/Eb", "E", "F", "F#/Gb", "G", "G#/Ab", "A", "A#/Bb", "B"];
+
+/// The Audio part: warp, the warp mode, the clip's tempo and the gain envelope's switch. Returns
+/// where it ends.
+fn audio_part(
     ui: &mut Ui,
     painter: &egui::Painter,
-    rows: &mut Rows,
+    part: Rect,
     info: &ClipInfo,
     at: ClipRef,
     panel: &AudioPanel,
     actions: &mut Vec<Action>,
-) {
-    if !rows.heading(painter, "AUDIO") {
-        return;
-    }
-    let Some(row) = rows.next(ROW_HEIGHT) else { return };
-    label(painter, row, "Warp");
-    let (field, _) = value_part(row, 0.0);
-    if switch_row(ui, painter, field, "Warp", info.warped) {
+) -> f32 {
+    let row = |y: f32, height: f32| Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), height));
+    let mut y = part.top();
+    if toggle(ui, painter, row(y, TOGGLE), "Warp", "Warp", info.warped) {
         actions.push(Action::new("clip.setAudio", on_clip(at, json!({ "warp": !info.warped }))));
     }
-    // The warp mode: a drop-down of the six.
-    let Some(row) = rows.next(ROW_HEIGHT) else { return };
-    label(painter, row, "Mode");
-    let (field, _) = value_part(row, 0.0);
-    let field = field.shrink2(Vec2::new(0.0, FIELD_GAP));
+    y += TOGGLE + GAP;
+    // The warp mode: a list of the six under the field.
     let shown = WARP_MODES.iter().find(|(m, _, _)| *m == info.stretch).map_or("Smooth", |(_, _, s)| s);
-    let response =
-        widgets::button_area(ui, field, Id::unique(("clip-panel-mode", panel.clip.0)), format!("Mode: {shown}"));
-    widgets::dropdown(ui, painter, field, &response, shown);
-    egui::Popup::menu(&response).show(|ui| {
-        for (mode, name, text) in WARP_MODES {
-            if ui.selectable_label(mode == info.stretch, text).clicked() {
-                if mode != info.stretch {
-                    actions.push(Action::new("clip.setAudio", on_clip(at, json!({ "mode": name }))));
+    let entries: Vec<Option<(&str, bool)>> =
+        WARP_MODES.iter().map(|(m, _, text)| Some((*text, *m == info.stretch))).collect();
+    let field = row(y, FIELD);
+    let id = Id::unique(("clip-panel-mode", panel.clip.0));
+    if let Some(picked) = drop_down(ui, painter, field, id, "Mode", shown, &entries, field.width())
+        && let Some((mode, name, _)) = WARP_MODES.get(picked)
+        && *mode != info.stretch
+    {
+        actions.push(Action::new("clip.setAudio", on_clip(at, json!({ "mode": name }))));
+    }
+    y += FIELD + GAP;
+    // The tempo: its name with Find, the field, ÷2 and ×2, and where it came from.
+    let name = row(y, NAME);
+    name_over(painter, name, "Tempo", Align2::LEFT_BOTTOM);
+    let find = set_button(name);
+    let response = widgets::button_area(ui, find, Id::unique(("clip-panel-find", panel.clip.0)), "Find tempo");
+    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+    painter.fill_background(find, 3.0, fill);
+    painter.rect_stroke(find, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+    widgets::text_in(
+        painter,
+        find,
+        Align2::CENTER_CENTER,
+        "Find",
+        theme::ui_font(theme::TEXT_TINY),
+        theme::text_primary(),
+    );
+    let mut set: Option<(f64, TempoSource, bool)> = None;
+    let open = egui::Popup::menu(&response).show(|ui| {
+        let names = [
+            (TempoSource::Metadata, "Metadata"),
+            (TempoSource::Name, "File name"),
+            (TempoSource::Detected, "Detected"),
+        ];
+        match &panel.candidates {
+            None => {
+                ui.label("Looking…");
+            }
+            Some(found) => {
+                for ((source, text), bpm) in names.into_iter().zip(found.iter()) {
+                    let shown = bpm.map_or_else(|| format!("{text}: none"), |b| format!("{text}: {b:.2}"));
+                    if ui.add_enabled(bpm.is_some(), egui::Button::new(shown)).clicked() {
+                        set = bpm.map(|b| (b, source, false));
+                        ui.close();
+                    }
                 }
-                ui.close();
             }
         }
     });
-    // The tempo, halved or doubled, and where it came from.
-    let Some(row) = rows.next(ROW_HEIGHT) else { return };
-    label(painter, row, "Tempo");
-    let (field, rest) = value_part(row, HALVE_WIDTH * 2.0);
+    // The detail area works the sources out while the menu is open (they read the file).
+    let wanted = open.is_some().then_some(panel.clip);
+    ui.data_mut(|d| match wanted {
+        Some(clip) => {
+            d.insert_temp(find_tempo_key(), clip);
+        }
+        None => {
+            if d.get_temp::<ClipId>(find_tempo_key()) == Some(panel.clip) {
+                d.remove::<ClipId>(find_tempo_key());
+            }
+        }
+    });
+    y += NAME;
     let tempo_field = Field {
         range: (*CLIP_TEMPO_RANGE.start(), *CLIP_TEMPO_RANGE.end()),
         per_point: 0.25,
         per_tick: 1.0,
         snap: thousandth,
+        align: Align2::RIGHT_CENTER,
+        dim: false,
     };
     let id = Id::unique(("clip-panel-field", "Tempo"));
     let value = panel.tempo.unwrap_or(f64::NAN);
     let shown_tempo = |v: f64| if v.is_finite() { format!("{v:.3}") } else { "—".to_string() };
     let text = Text { shown: &shown_tempo, parse: &plain_number, places: Some(&tempo_places) };
-    let mut set = number_field(ui, painter, field, id, "Tempo", value, text, tempo_field)
-        .map(|change| (change.value, TempoSource::Manual, change.more));
-    let (halve, double) = (
-        Rect::from_min_size(rest.min, Vec2::new(HALVE_WIDTH, rest.height())),
-        Rect::from_min_size(rest.min + Vec2::new(HALVE_WIDTH, 0.0), Vec2::new(HALVE_WIDTH, rest.height())),
-    );
+    if let Some(change) = number_field(ui, painter, row(y, FIELD), id, "Tempo", value, text, tempo_field) {
+        set = Some((change.value, TempoSource::Manual, change.more));
+    }
+    y += FIELD + 4.0;
+    let half = (part.width() - 4.0) / 2.0;
+    let halve = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(half, FIELD));
+    let double = Rect::from_min_size(Pos2::new(part.left() + half + 4.0, y), Vec2::new(half, FIELD));
     let known = panel.tempo.is_some();
     if small_button(ui, painter, halve, "÷2", "Halve the tempo", known) {
         set = panel.tempo.map(|t| (t / 2.0, TempoSource::Manual, false));
@@ -735,72 +874,35 @@ fn audio_group(
     if small_button(ui, painter, double, "×2", "Double the tempo", known) {
         set = panel.tempo.map(|t| (t * 2.0, TempoSource::Manual, false));
     }
-    // Under it: where the tempo came from, and Find, which lists what each source says.
-    if let Some(row) = rows.next(ROW_HEIGHT) {
-        let (field, rest) = value_part(row, SET_WIDTH + 8.0);
-        let source = source_text(panel.tempo_source, info.warped);
-        widgets::text_in(
-            painter,
-            field,
-            Align2::RIGHT_CENTER,
-            source,
-            theme::ui_font(theme::TEXT_TINY),
-            theme::text_hint(),
-        );
-        let find = rest.shrink2(Vec2::new(1.0, FIELD_GAP));
-        let response = widgets::button_area(ui, find, Id::unique(("clip-panel-find", panel.clip.0)), "Find tempo");
-        painter.fill_background(
-            find,
-            3.0,
-            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
-        );
-        widgets::text_in(
-            painter,
-            find,
-            Align2::CENTER_CENTER,
-            "Find",
-            theme::ui_font(theme::TEXT_SMALL),
-            theme::text_primary(),
-        );
-        let open = egui::Popup::menu(&response).show(|ui| {
-            let names = [
-                (TempoSource::Metadata, "Metadata"),
-                (TempoSource::Name, "File name"),
-                (TempoSource::Detected, "Detected"),
-            ];
-            match &panel.candidates {
-                None => {
-                    ui.label("Looking…");
-                }
-                Some(found) => {
-                    for ((source, text), bpm) in names.into_iter().zip(found.iter()) {
-                        let shown = bpm.map_or_else(|| format!("{text}: none"), |b| format!("{text}: {b:.2}"));
-                        if ui.add_enabled(bpm.is_some(), egui::Button::new(shown)).clicked() {
-                            set = bpm.map(|b| (b, source, false));
-                            ui.close();
-                        }
-                    }
-                }
-            }
-        });
-        // The detail area works the sources out while the menu is open (they read the file).
-        let wanted = open.is_some().then_some(panel.clip);
-        ui.data_mut(|d| match wanted {
-            Some(clip) => {
-                d.insert_temp(find_tempo_key(), clip);
-            }
-            None => {
-                if d.get_temp::<ClipId>(find_tempo_key()) == Some(panel.clip) {
-                    d.remove::<ClipId>(find_tempo_key());
-                }
-            }
-        });
-    }
+    y += FIELD + 3.0;
+    let source = source_text(panel.tempo_source, info.warped);
+    widgets::text_in(
+        painter,
+        row(y, 12.0),
+        Align2::RIGHT_CENTER,
+        source,
+        theme::ui_font(theme::TEXT_TINY),
+        theme::text_hint(),
+    );
+    y += 12.0 + GAP;
     if let Some((bpm, source, more)) = set {
         let bpm = bpm.clamp(*CLIP_TEMPO_RANGE.start(), *CLIP_TEMPO_RANGE.end());
         let params = json!({ "bpm": bpm, "source": source.name(), "continue": more });
         actions.push(Action::new("clip.setTempo", on_clip(at, params)));
     }
+    // The gain envelope's switch: it shows the envelope on the clip's waveform in the Arrangement.
+    if matches!(at, ClipRef::Arrangement(..)) {
+        let on = crate::arrangement::envelope::shown(ui.ctx()) == Some(panel.clip);
+        let text = if panel.envelope_points > 0 {
+            format!("Gain envelope · {}", panel.envelope_points)
+        } else {
+            "Gain envelope".into()
+        };
+        if toggle(ui, painter, row(y, TOGGLE), "Envelope", &text, on) {
+            crate::arrangement::envelope::set_shown(ui.ctx(), (!on).then_some(panel.clip));
+        }
+    }
+    y + TOGGLE
 }
 
 /// The key under which the clip panel asks for the tempo sources of a clip (its Find menu open).
@@ -808,46 +910,31 @@ pub fn find_tempo_key() -> Id {
     Id::unique("clip-panel-find-tempo")
 }
 
-/// The Gain and Pitch groups: the fader and the knob, side by side when there is room.
+/// The Gain and Pitch part: the fader and the knob side by side; centred in the part when
+/// `stacked`.
+#[allow(clippy::too_many_arguments)]
 fn gain_and_pitch(
     ui: &mut Ui,
     painter: &egui::Painter,
-    rows: &mut Rows,
+    part: Rect,
     info: &ClipInfo,
     at: ClipRef,
     panel: &AudioPanel,
+    stacked: bool,
     actions: &mut Vec<Action>,
 ) {
-    // As tall as there is room for, between three rows (the readouts and the switch) and a full
-    // fader.
-    let least = HEADING + ROW_HEIGHT * 3.0 + 4.0;
-    let block = (rows.bottom - rows.y).clamp(least, HEADING + FADER_HEIGHT);
-    let wide = rows.right - rows.left >= 2.0 * (FADER_WIDTH + 70.0);
-    let (gain_part, pitch_part) = if wide {
-        let middle = (rows.left + rows.right) / 2.0;
-        let Some(both) = rows.next(block) else { return };
-        (
-            Rect::from_min_max(both.min, Pos2::new(middle - PAD / 2.0, both.bottom())),
-            Rect::from_min_max(Pos2::new(middle + PAD / 2.0, both.top()), both.max),
-        )
-    } else {
-        let Some(gain) = rows.next(block) else { return };
-        let pitch = rows.next(block);
-        (gain, pitch.unwrap_or(Rect::NOTHING))
-    };
-    gain_group(ui, painter, gain_part, info, at, panel, actions);
-    if pitch_part.is_positive() {
-        pitch_group(ui, painter, pitch_part, info, at, actions);
-    }
+    let width = 52.0 + 12.0 + 64.0;
+    let left = if stacked { part.center().x - width / 2.0 } else { part.left() };
+    let gain = Rect::from_min_max(Pos2::new(left, part.top()), Pos2::new(left + 52.0, part.bottom()));
+    let pitch = Rect::from_min_max(
+        Pos2::new(gain.right() + 12.0, part.top()),
+        Pos2::new(gain.right() + 12.0 + 64.0, part.bottom()),
+    );
+    gain_part(ui, painter, gain, info, at, panel, actions);
+    pitch_part(ui, painter, pitch, info, at, actions);
 }
 
-fn heading_in(painter: &egui::Painter, part: Rect, text: &str) -> Rect {
-    let rect = Rect::from_min_size(part.min, Vec2::new(part.width(), HEADING));
-    widgets::text_in(painter, rect, Align2::LEFT_BOTTOM, text, theme::ui_font(theme::TEXT_TINY), theme::text_hint());
-    Rect::from_min_max(Pos2::new(part.left(), part.top() + HEADING), part.max)
-}
-
-fn gain_group(
+fn gain_part(
     ui: &mut Ui,
     painter: &egui::Painter,
     part: Rect,
@@ -856,15 +943,18 @@ fn gain_group(
     panel: &AudioPanel,
     actions: &mut Vec<Action>,
 ) {
-    let body = heading_in(painter, part, "GAIN");
+    name_over(painter, Rect::from_min_size(part.min, Vec2::new(part.width(), NAME)), "Gain", Align2::CENTER_BOTTOM);
     let db = info.gain_db.filter(|d| d.is_finite()).unwrap_or(GAIN_RANGE.0).max(GAIN_RANGE.0);
-    // The fader: dragged up and down, one undo step when let go; a double-click puts it at 0 dB.
-    let track = Rect::from_min_max(
-        Pos2::new(body.left() + 4.0, body.top() + 4.0),
-        Pos2::new(body.left() + 4.0 + FADER_WIDTH, body.bottom() - 4.0),
-    );
+    // The fader between the name and the readout, its scale at its left: 24, 0 half-way, -inf.
+    let field = Rect::from_min_max(Pos2::new(part.left(), part.bottom() - FIELD), part.max);
+    let area =
+        Rect::from_min_max(Pos2::new(part.left(), part.top() + NAME + 8.0), Pos2::new(part.right(), field.top() - 9.0));
+    let track =
+        Rect::from_min_max(Pos2::new(area.left() + 25.0, area.top()), Pos2::new(area.left() + 43.0, area.bottom()));
     let id = Id::unique(("clip-panel-fader", panel.clip.0));
-    let response = ui.interact(track, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
+    let response = ui
+        .interact(track.expand2(Vec2::new(0.0, 4.0)), id, Sense::click_and_drag())
+        .on_hover_cursor(egui::CursorIcon::ResizeVertical);
     let preview_id = id.with("preview");
     let preview = ui.data(|d| d.get_temp::<f64>(preview_id));
     let shown_db = preview.map_or(db, tenth);
@@ -898,23 +988,34 @@ fn gain_group(
         set = preview.and_then(|v| send(ui, id, tenth(v), true));
         ui.data_mut(|d| d.remove::<f64>(preview_id));
     }
-    // Drawn: the slot, the 0 dB mark, the cap.
+    let y_of = |db: f64| track.bottom() - fader_position(db) as f32 * track.height();
+    let scale = theme::ui_font(theme::TEXT_TINY);
+    for (text, at) in [("24", track.top()), ("0", y_of(0.0)), ("-inf", track.bottom())] {
+        let mark = Rect::from_min_max(Pos2::new(area.left(), at - 6.0), Pos2::new(track.left() - 2.0, at + 6.0));
+        widgets::text_in(painter, mark, Align2::LEFT_CENTER, text, scale.clone(), theme::text_hint());
+    }
     let slot = Rect::from_center_size(track.center(), Vec2::new(4.0, track.height()));
     painter.fill_background(slot, 2.0, theme::control_background());
-    let y_of = |db: f64| track.bottom() - fader_position(db) as f32 * track.height();
-    painter.hline(track.x_range(), y_of(0.0), theme::hairline(theme::text_hint()));
+    painter.hline(
+        egui::Rangef::new(track.left() - 1.0, track.right() + 1.0),
+        y_of(0.0),
+        theme::hairline(theme::text_hint()),
+    );
     let cap = Rect::from_center_size(Pos2::new(track.center().x, y_of(shown_db)), Vec2::new(FADER_WIDTH, 8.0));
     let hover = widgets::hover(ui, &response);
     crate::kit::mixer_controls::fader_cap(painter, cap, hover, crate::kit::skin::State::response(&response, false));
-    // Beside it, the readout (typed), and the envelope switch under it.
-    let side = Rect::from_min_max(
-        Pos2::new(track.right() + PAD, body.top()),
-        Pos2::new(body.right(), body.top() + ROW_HEIGHT),
-    );
-    let gain_field = Field { range: GAIN_RANGE, per_point: 0.1, per_tick: 1.0, snap: tenth };
+    // Under it the readout, typed.
+    let gain_field = Field {
+        range: GAIN_RANGE,
+        per_point: 0.1,
+        per_tick: 1.0,
+        snap: tenth,
+        align: Align2::CENTER_CENTER,
+        dim: false,
+    };
     let text = Text { shown: &gain_text, parse: &plain_number, places: None };
     if let Some(change) =
-        number_field(ui, painter, side, Id::unique(("clip-panel-field", "Gain")), "Gain", db, text, gain_field)
+        number_field(ui, painter, field, Id::unique(("clip-panel-field", "Gain")), "Gain", db, text, gain_field)
     {
         set = Some(change);
     }
@@ -922,31 +1023,9 @@ fn gain_group(
         let db = commands::exact_db_param(change.value, GAIN_RANGE.0);
         actions.push(Action::new("clip.setGain", with_more(on_clip(at, json!({ "db": db })), change)));
     }
-    let envelope = side.translate(Vec2::new(0.0, ROW_HEIGHT + 2.0));
-    let arranged = matches!(at, ClipRef::Arrangement(..));
-    let on = arranged && crate::arrangement::envelope::shown(ui.ctx()) == Some(panel.clip);
-    if arranged && switch_row(ui, painter, envelope, "Envelope", on) {
-        crate::arrangement::envelope::set_shown(ui.ctx(), (!on).then_some(panel.clip));
-    }
-    if panel.envelope_points > 0 {
-        let count = envelope.translate(Vec2::new(0.0, ROW_HEIGHT));
-        let text = if panel.envelope_points == 1 {
-            "1 point".to_string()
-        } else {
-            format!("{} points", panel.envelope_points)
-        };
-        widgets::text_in(
-            painter,
-            count,
-            Align2::CENTER_CENTER,
-            &text,
-            theme::ui_font(theme::TEXT_TINY),
-            theme::text_hint(),
-        );
-    }
 }
 
-fn pitch_group(
+fn pitch_part(
     ui: &mut Ui,
     painter: &egui::Painter,
     part: Rect,
@@ -954,10 +1033,11 @@ fn pitch_group(
     at: ClipRef,
     actions: &mut Vec<Action>,
 ) {
-    let body = heading_in(painter, part, "PITCH");
+    name_over(painter, Rect::from_min_size(part.min, Vec2::new(part.width(), NAME)), "Pitch", Align2::CENTER_BOTTOM);
     let (semitones, cents) = split_transpose(info.transpose);
-    // The knob: whole semitones, dragged up and down; a double-click puts it at 0.
-    let center = Pos2::new(body.left() + KNOB / 2.0 + 4.0, body.top() + KNOB / 2.0 + 4.0);
+    // The knob: whole semitones, dragged up and down, following as it moves; clicked, it takes a
+    // number typed and the arrows; a double-click puts it at 0.
+    let center = Pos2::new(part.center().x, part.top() + NAME + 4.0 + KNOB / 2.0);
     let rect = Rect::from_center_size(center, Vec2::splat(KNOB));
     let id = Id::unique(("clip-panel-knob", "pitch"));
     let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
@@ -970,8 +1050,6 @@ fn pitch_group(
         info.value = Some(shown);
         info
     });
-    // Dragged up and down by a quarter semitone a point, following as it moves; clicked, it takes
-    // a number typed and the arrows; a double-click puts it at 0.
     let mut set_semitones: Option<Change> = None;
     let mut set_cents: Option<Change> = None;
     match widgets::drag_value(ui, &response, &mut preview, semitones, 0.25, 1.0, SEMITONES, 0.0) {
@@ -986,21 +1064,39 @@ fn pitch_group(
         Drag::None => {}
     }
     let position = ((shown - SEMITONES.0) / (SEMITONES.1 - SEMITONES.0)) as f32;
-    widgets::knob(painter, center, KNOB, position, theme::accent(), Some(&response));
-    // Beside it the semitones typed, and under them the cents.
-    let side =
-        Rect::from_min_max(Pos2::new(rect.right() + PAD, body.top()), Pos2::new(body.right(), body.top() + ROW_HEIGHT));
-    let st_field = Field { range: SEMITONES, per_point: 0.25, per_tick: 1.0, snap: whole };
-    let text = Text { shown: &semitones_text, parse: &plain_number, places: None };
+    widgets::dial(painter, center, KNOB, position, Some(&response));
+    // Under it the semitones and the cents side by side, typed, their units under them.
+    let top = rect.bottom() + 6.0;
+    let half = (part.width() - 4.0) / 2.0;
+    let st = Rect::from_min_size(Pos2::new(part.left(), top), Vec2::new(half, FIELD));
+    let ct = Rect::from_min_size(Pos2::new(st.right() + 4.0, top), Vec2::new(half, FIELD));
+    for (rect, unit) in [(st, "st"), (ct, "ct")] {
+        let under = Rect::from_min_size(Pos2::new(rect.left(), rect.bottom() + 1.0), Vec2::new(rect.width(), 11.0));
+        widgets::text_in(
+            painter,
+            under,
+            Align2::CENTER_TOP,
+            unit,
+            theme::ui_font(theme::TEXT_TINY),
+            theme::text_hint(),
+        );
+    }
+    let centred = |range, per_point| Field {
+        range,
+        per_point,
+        per_tick: 1.0,
+        snap: whole,
+        align: Align2::CENTER_CENTER,
+        dim: false,
+    };
+    let text = Text { shown: &signed, parse: &plain_number, places: None };
     let id = Id::unique(("clip-panel-field", "Semitones"));
-    if let Some(change) = number_field(ui, painter, side, id, "Semitones", semitones, text, st_field) {
+    if let Some(change) = number_field(ui, painter, st, id, "Semitones", semitones, text, centred(SEMITONES, 0.25)) {
         set_semitones = Some(change);
     }
-    let cents_row = side.translate(Vec2::new(0.0, ROW_HEIGHT + 2.0));
-    let cents_field = Field { range: CENTS, per_point: 0.5, per_tick: 1.0, snap: whole };
-    let text = Text { shown: &cents_text, parse: &plain_number, places: None };
+    let text = Text { shown: &signed, parse: &plain_number, places: None };
     let id = Id::unique(("clip-panel-field", "Cents"));
-    if let Some(change) = number_field(ui, painter, cents_row, id, "Cents", cents, text, cents_field) {
+    if let Some(change) = number_field(ui, painter, ct, id, "Cents", cents, text, centred(CENTS, 0.5)) {
         set_cents = Some(change);
     }
     if let Some(change) = set_semitones.or(set_cents) {
@@ -1012,4 +1108,10 @@ fn pitch_group(
             actions.push(Action::new("clip.setAudio", with_more(params, change)));
         }
     }
+}
+
+/// A whole number with its sign: `+3`, `0`, `-12`.
+fn signed(value: f64) -> String {
+    let value = value.round();
+    if value > 0.0 { format!("+{value}") } else { format!("{value}") }
 }

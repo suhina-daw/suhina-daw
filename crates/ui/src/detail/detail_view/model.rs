@@ -394,6 +394,10 @@ pub struct AudioPanel {
     pub candidates: Option<[Option<f64>; 3]>,
     /// A bar of the project in beats, for the markers' `bar.beat.sixteenth`.
     pub bar_beats: f64,
+    /// The clip's length in beats, as its title says it.
+    pub length_beats: f64,
+    /// The key of its audio, when one was given (`clip.setScale`).
+    pub scale: Option<suhina_engine::model::Scale>,
 }
 
 /// What the detail area shows for a clip that has an editor: the editor, or its track's devices.
@@ -693,6 +697,8 @@ pub fn build_with(
                     playhead: None,
                     candidates: None,
                     bar_beats: bar,
+                    length_beats: placed.length,
+                    scale: content.and_then(|c| c.scale),
                 }),
             }),
             chain(project, id, plugins, nam.clone()),
