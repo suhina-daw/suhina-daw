@@ -460,6 +460,30 @@ fn a_stacked_paste_or_duplicate_leaves_the_others_alone() {
     );
 }
 
+/// Several clips are duplicated as one block, right after the last of them, each copy keeping its
+/// place among the others: two clips side by side give two copies after both, never a copy over
+/// the clip it follows, stacked or not (#1206).
+#[test]
+fn duplicated_clips_go_after_the_selection_as_one_block() {
+    let both = json!([{ "track": "Bass", "index": 0 }, { "track": "Bass", "index": 1 }]);
+    for stack in [false, true] {
+        let mut session = Session::new(lane_project());
+        let made = run(&mut session, "clip.duplicate", json!({ "clips": both, "stack": stack })).unwrap();
+        let starts: Vec<f64> = made["clips"].as_array().unwrap().iter().map(|c| c["start"].as_f64().unwrap()).collect();
+        assert_eq!(starts, [8.0, 12.0], "stack {stack}");
+        let spans = spans(&session);
+        assert_eq!(spans[..2], [(0.0, 4.0, 0.0), (4.0, 4.0, 0.0)], "the originals stay whole: {spans:?}");
+        // Nothing lies over the originals.
+        assert!(spans[2..].iter().all(|s| s.0 >= 8.0), "{spans:?}");
+    }
+    // One clip: right after it, as before.
+    let mut session = Session::new(lane_project());
+    let made =
+        run(&mut session, "clip.duplicate", json!({ "clips": [{ "track": "Bass", "index": 1 }], "stack": true }))
+            .unwrap();
+    assert_eq!(made["clips"][0]["start"], 8.0);
+}
+
 fn order(session: &Session) -> Vec<String> {
     session.project().tracks.iter().map(|t| t.name.clone()).collect()
 }

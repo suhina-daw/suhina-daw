@@ -307,11 +307,18 @@ fn ruler_beat(raw: f64, grid: TimelineGrid, free: bool) -> f64 {
     if beat.is_finite() { beat.max(0.0) } else { 0.0 }
 }
 
-/// Where a click `raw` beats into a clip's body puts the play start marker: on the grid line at or
-/// before it, never before the clip's start, so a click on the clip never plays from past it.
-fn clip_body_beat(raw: f64, clip_start: f64, grid: TimelineGrid, free: bool) -> f64 {
+/// Where a click `raw` beats into a clip's body, from `clip_start` to `clip_end`, puts the play
+/// start marker: on the grid line nearest to it, so a click that misses a line still lands on it.
+/// A nearest line at or past the clip's end gives the line before the click instead, and nothing
+/// lands before the clip's start, so a click on the clip never plays from outside it.
+fn clip_body_beat(raw: f64, clip_start: f64, clip_end: f64, grid: TimelineGrid, free: bool) -> f64 {
     let free = free || !grid.snaps;
-    let beat = if free { (raw * 1000.0).round() / 1000.0 } else { grid.place(raw, false, true) };
+    let beat = if free {
+        (raw * 1000.0).round() / 1000.0
+    } else {
+        let nearest = grid.place(raw, false, false);
+        if nearest < clip_end - 1e-9 { nearest } else { grid.place(raw, false, true) }
+    };
     let beat = beat.max(clip_start);
     if beat.is_finite() { beat.max(0.0) } else { 0.0 }
 }

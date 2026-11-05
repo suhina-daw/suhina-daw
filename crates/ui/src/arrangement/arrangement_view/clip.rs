@@ -370,7 +370,7 @@ pub(super) fn clip_box<'a>(
             Some(pointer) if paints => {
                 let free = ui.input(|i| i.modifiers.alt);
                 let raw = f64::from((pointer.x - x_of(0.0)) / state.beat_width);
-                let beat = clip_body_beat(raw, clip.start, grid, free);
+                let beat = clip_body_beat(raw, clip.start, clip.start + clip.length, grid, free);
                 state.picked_whole = false;
                 state.insert = Some((lane.track, beat));
                 // The next start begins there; playback is not moved (#657).

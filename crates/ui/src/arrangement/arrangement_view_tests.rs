@@ -614,13 +614,18 @@ fn select_all_spans_every_track_from_the_first_clip_to_the_last() {
 #[test]
 fn a_click_in_a_clip_body_stays_inside_the_clip() {
     let bar = arrangement_grid(PianoGrid::from_value("1 bar"), 40.0, 4.0);
-    // Late in a bar-long clip: its start, not the next bar.
-    assert_eq!(clip_body_beat(7.5, 4.0, bar, false), 4.0);
+    // Late in a bar-long clip: the nearest line is its end, so the line before the click.
+    assert_eq!(clip_body_beat(7.5, 4.0, 8.0, bar, false), 4.0);
     // A clip starting inside the bar: never before its start.
-    assert_eq!(clip_body_beat(7.5, 6.0, bar, false), 6.0);
+    assert_eq!(clip_body_beat(6.5, 6.0, 10.0, bar, false), 6.0);
+    // The nearest line inside the clip, after the click too.
+    assert_eq!(clip_body_beat(7.5, 6.0, 10.0, bar, false), 8.0);
+    let quarter = arrangement_grid(PianoGrid::from_value("1/4"), 40.0, 4.0);
+    assert_eq!(clip_body_beat(5.6, 4.0, 8.0, quarter, false), 6.0, "a click that misses a line goes to the nearest");
+    assert_eq!(clip_body_beat(5.4, 4.0, 8.0, quarter, false), 5.0);
     let sixteenth = arrangement_grid(PianoGrid::from_value("1/16"), 200.0, 4.0);
-    assert_eq!(clip_body_beat(5.3, 4.0, sixteenth, false), 5.25);
-    assert_eq!(clip_body_beat(5.3, 4.0, sixteenth, true), 5.3);
+    assert_eq!(clip_body_beat(5.3, 4.0, 8.0, sixteenth, false), 5.25);
+    assert_eq!(clip_body_beat(5.3, 4.0, 8.0, sixteenth, true), 5.3);
 }
 
 #[test]

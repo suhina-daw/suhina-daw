@@ -307,8 +307,10 @@ itself) is not built yet.
 
 ## Duplicating and deleting
 
-`clip.duplicate {clips, stack?}` places a copy of each named clip right after it, replacing what
-the copies cover unless stacked, as a moved clip does (the window stacks when the setting for the
+`clip.duplicate {clips, stack?}` places copies of the named clips right after them as one block:
+each copy is moved by the span from the first clip's start to the last one's end, over every
+track at once, so the copies keep their places among each other and never land on the clips they
+copy (one clip goes right after itself; #1206). They replace what they cover unless stacked, as a moved clip does (the window stacks when the setting for the
 clip's kind is on); `clip.delete {clips}` removes them. Both take a list of `{ track, index }` as
 `project.clips` lists them, at least one, and make one undo step for the whole list
 (`clip.delete` also takes one clip as `{track, index}`, or a slot's clip as `{track, scene}`). In the
@@ -642,7 +644,7 @@ pass the setting **Stop** (Settings › Arrangement › Time and play): **Marker
 **Playing from the selected clip.** A clip's start is often where one wants to listen from;
 moving the marker there by hand first is a step too many. **Suhina:** the play/stop key and the
 Play button pass the setting **Play from** (Settings › Arrangement › Time and play): **Selected clip** (default) or
-**Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them; while playing, playback goes on and the next start begins there. A click where a drag would move the clip (by default its name bar; with the lower half moving it, that half) picks it whole and moves the marker to its exact start, off the grid too, even when it was picked already. A click where a drag would paint time picks it but sets the play start on the grid line at or before the click, never before the clip's start, and play starts there, not from the clip's start, until the clip is picked whole again.
+**Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them; while playing, playback goes on and the next start begins there. A click where a drag would move the clip (by default its name bar; with the lower half moving it, that half) picks it whole and moves the marker to its exact start, off the grid too, even when it was picked already. A click where a drag would paint time picks it but sets the play start on the grid line nearest the click (the line before it when the nearest is at or past the clip's end), never before the clip's start, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with a
 time selection painted after the clip was picked, no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
