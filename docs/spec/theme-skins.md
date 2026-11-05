@@ -878,7 +878,8 @@ of bars, and a slider id per parameter.
   clipped below its header and buttons.
 - **Browser:** `.browser-place` and `.browser-row` with their states.
 - **Loop lines:** `.loop-line` (`color`, `width` 0.5–6), from the top of the lanes to the bottom
-  of the fixed rows, at the dragged brace while it moves.
+  of the fixed rows, at the dragged brace while it moves. They stay in the timeline: a loop edge
+  under the track headers, on either side, is hidden under them, as is the insert marker (#1197).
 - **Nine-slice sampling:** the middle column and row sample half a texel inside their pixels.
 - **File order:** `layout.css` is applied after `theme.css`; where both set one role or
   placement, `layout.css` wins.

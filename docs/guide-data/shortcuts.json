@@ -68,7 +68,7 @@
           ]
         }
       },
-      "sourceFingerprint": "17531f801c70e36c3cb36df9f17149ed2cfd2d63a4af03d182c36694ecbd494e",
+      "sourceFingerprint": "b4ed984dce5fe765ee06b631dcdfdd25bbdf81e44b05e69072cfc281055a41c1",
       "description": "Opens the start panel for creating a project or opening an existing one. If the start panel is already open, it stays open.",
       "context": "Available without an open project.",
       "whenToUse": "Start another idea without closing the application.",
@@ -146,7 +146,7 @@
           ]
         }
       },
-      "sourceFingerprint": "6ee1c96c957626b070c2ebe5c6add180fe274ab6e928341127010adb82e97ac3",
+      "sourceFingerprint": "11c18987ec9d8305ff3d67f461ebf5cbae5fcff7b417e07f565d5be9989cb10b",
       "description": "Opens the project picker with its open-project action selected.",
       "context": "Available without an open project; opening behavior also depends on the General project-opening setting.",
       "whenToUse": "Return to a saved project.",
@@ -224,7 +224,7 @@
           ]
         }
       },
-      "sourceFingerprint": "396b3882e70dc76da05ff709c70e2e1c31044a3e45023fa770d4db91e1bb0953",
+      "sourceFingerprint": "1a9e0143114a13214a247551f68b131e039edd6f0b43b9eaf606c01ae9478ec6",
       "description": "Saves the active project. A project that does not yet have a file opens the save prompt.",
       "context": "Requires an open project.",
       "whenToUse": "Keep the edits you have just made.",
@@ -311,7 +311,7 @@
           ]
         }
       },
-      "sourceFingerprint": "e6fbaeff56429fb0457c06f3d12072d8d1d1bc99556633d9ddc44f60789b9fff",
+      "sourceFingerprint": "a5541ddcbb612dbfed061efff06954ebe7d257a305914cadfaab903ca2fc4a44",
       "description": "Opens the save prompt to save the active project under another name or location.",
       "context": "Requires an open project.",
       "whenToUse": "Keep a separate version before trying a different arrangement.",
@@ -344,7 +344,7 @@
           "macos": []
         }
       },
-      "sourceFingerprint": "0e0edb15624d16df574ab96cf5ac8c2398c47b1134bc0ac85aa73eeb195f48b3",
+      "sourceFingerprint": "e170759f3b95716609f49c908ad5af43c1c5212a94c70a08785ba770ad75c75f",
       "description": "Saves the active project as a reusable starting template through the template-save prompt.",
       "context": "Requires an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
       "whenToUse": "Reuse your track and device setup in another project.",
@@ -413,7 +413,7 @@
           ]
         }
       },
-      "sourceFingerprint": "3cb8225a7d0e7374216b788c95f53286d4504bebc7cef10ce30d91c600ff31ed",
+      "sourceFingerprint": "b7edb383fda905a3777d64057a361087d5385c7748d92d91a0f6207169276ccf",
       "description": "Starts playback when stopped and stops it when running. The Transport settings choose where Play starts and whether Stop returns to the play start marker.",
       "context": "Requires an open project; the playhead is the position moving through the song.",
       "whenToUse": "Listen to an edit, then stop without reaching for the transport controls.",
@@ -491,7 +491,7 @@
           ]
         }
       },
-      "sourceFingerprint": "0c647295d9a43a9c4303491ae1ad9e9079ee1cfbabb8accdef8daa1371dfbcb2",
+      "sourceFingerprint": "a8263b1fd6e1de6e89f9dae2d756b5ef89fed4e338ad810e8d92aa0326be41c6",
       "description": "Turns the computer keyboard's notes on or off. While on, A W S E D F T G Y H U J K (and O L P ;) play the armed tracks like a piano's keys, Z and X move the octave and C and V the velocity, and those keys run no shortcut. The control bar's Keys button does the same.",
       "context": "Available whenever a project is open; the notes go to the armed tracks.",
       "whenToUse": "Play or record notes without a MIDI keyboard.",
@@ -560,7 +560,7 @@
           ]
         }
       },
-      "sourceFingerprint": "80c2945050805b8c1fc856dd79d4cd80156bec0704fc1b410e32b3cc80319fe6",
+      "sourceFingerprint": "a3aeb5869182196f0e8be1f67a150dd70df1189fc3b13b9f79ee995e8f01f5bd",
       "description": "Switches the main work area between Session, the clip-slot grid, and Arrangement, the song timeline.",
       "context": "Requires an open project; text fields keep Tab while they accept keyboard input.",
       "whenToUse": "Move between launching clips and editing the song timeline.",
@@ -593,7 +593,7 @@
           "macos": []
         }
       },
-      "sourceFingerprint": "de64fece0b7eebed3905aab26d26a02746b4e9b6e02b8bc75e1457d3be56322a",
+      "sourceFingerprint": "6a2dcb58de123f806fa7fdc4d09995cb068bee8a8d93074b07715eff76d813f3",
       "description": "Shows Session and closes the large sample map so the clip-slot grid is visible.",
       "context": "Requires an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
       "whenToUse": "Go directly to the clip grid instead of toggling views.",
@@ -626,7 +626,7 @@
           "macos": []
         }
       },
-      "sourceFingerprint": "b24c9ad44806cf5c6866a339f733b5ec6c7820c812384d5f9a7babd02dfd1d7c",
+      "sourceFingerprint": "649c029f6794b0e18b017d23953863d7a4d4ced32c15f169a1b684ae539fe6fb",
       "description": "Shows Arrangement and closes the large sample map so the song timeline is visible.",
       "context": "Requires an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
       "whenToUse": "Go directly to the timeline from another main view.",
@@ -704,7 +704,7 @@
           ]
         }
       },
-      "sourceFingerprint": "55f5c556d9933e5e490cd499ecd7bdecaf5cabbb05531288890e45bb75625e01",
+      "sourceFingerprint": "5254f35cbb37c932caed31cb2c8ac2759e0978f2ec2be791525f7f17524ae815",
       "description": "Opens Settings, or closes Settings if it is already open.",
       "context": "Available without an open project; key capture and text editing can temporarily keep the keyboard.",
       "whenToUse": "Change your audio device or find a preference.",
@@ -782,7 +782,7 @@
           ]
         }
       },
-      "sourceFingerprint": "cbc98c06809c5761a406ed2127f60c25f9ab6d7302b681173f8b60fb6234ccee",
+      "sourceFingerprint": "5cd67dc3f711004ec7a90a798df5476a52690be15ff72726e29888858c43c745",
       "description": "Hides or shows the detail area used for clip editing and devices. Toggling also clears the clip-editor-closed state.",
       "context": "Requires an open project.",
       "whenToUse": "Make more room for the main view, then bring the detail area back.",
@@ -869,7 +869,7 @@
           ]
         }
       },
-      "sourceFingerprint": "880b5f8d6dd033eb48509725ea7b3c0ee697fd9a07ce1b30d384808273521c12",
+      "sourceFingerprint": "2d39e9be9f1ab154078c3415e16f037f772d5afedbe5b09c799d095006d75dca",
       "description": "Hides the selected clip's editor or shows it again.",
       "context": "Requires an open project with a shown clip; without one this action does nothing.",
       "whenToUse": "Temporarily hide the clip editor while keeping the main view visible.",
@@ -947,7 +947,7 @@
           ]
         }
       },
-      "sourceFingerprint": "5442786de7af61be9dcee11a1d24177fc0c5363957bb2914f2cc96c8f4fed2e3",
+      "sourceFingerprint": "2a0937eafb0d3c9760fca5a8985f4d14f823d82a141153b82bcba3a7f361eabf",
       "description": "Turns Session key mapping on or off. Entering mapping mode shows Session; click a clip slot, scene or stop button and press the key to assign.",
       "context": "Requires an open project. In mapping mode Delete removes an assignment and Escape leaves mapping mode.",
       "whenToUse": "Assign a convenient key to a frequently launched clip or scene.",
@@ -1028,7 +1028,7 @@
           ]
         }
       },
-      "sourceFingerprint": "cfc83b3eb59878d67db7d0b6eb3a90632b29af2338da490e2f384e2e133362fe",
+      "sourceFingerprint": "5a2ec4c59e46d81b165356ca8814c6d120e7d3802f32703b91b627dbb74d9268",
       "description": "Hides or shows the browser panel for samples, devices and other library items.",
       "context": "Draw-first changes this binding to Ctrl+Shift+B on Windows/Linux or Cmd+Shift+B on macOS, leaving Ctrl/Cmd+B for Duplicate.",
       "whenToUse": "Make room for editing, then reopen the browser to find a sound.",
@@ -1106,7 +1106,7 @@
           ]
         }
       },
-      "sourceFingerprint": "a26a1d0785bce6b90cdce72b3526b19e2540fa5be8f109f17afc92cd61f23fae",
+      "sourceFingerprint": "c58e6efcfea23ded92dc5f727725f54f1e68a0305b218f6f619b2d7f9ad92bf3",
       "description": "Opens the browser if needed, selects its All category and focuses the search field with the existing search selected.",
       "context": "Available without an open project. It closes Settings and replaces the current search when you type.",
       "whenToUse": "Find a sample across the library without first choosing a browser category.",
@@ -1202,7 +1202,7 @@
           ]
         }
       },
-      "sourceFingerprint": "6a0034c20d06c16bc9389776343cac4e1878c20a82ed7c811c4484b1293ec4eb",
+      "sourceFingerprint": "ba0c188f1fb024e5522342fbd89ebd7afd3c9bd13d3aae7600c1e2c5b1cadc57",
       "description": "Shows or hides the sample map in the main work area. The sample map places samples in a visual layout for browsing by sound.",
       "context": "Available without an open project; opening it closes Settings.",
       "whenToUse": "Explore samples visually instead of searching by file name.",
@@ -1289,7 +1289,7 @@
           ]
         }
       },
-      "sourceFingerprint": "5b92b46a8c2d8e3453e0cc411d2a9856e91db416119c33972636b2bac91a79c1",
+      "sourceFingerprint": "b305b144372e28fa5aee58e4dcbd2ef6dd0702035f8fed88b57e35fe67cc6c66",
       "description": "Moves the sample map into a separate window, or returns it from that window.",
       "context": "Available without an open project.",
       "whenToUse": "Keep the sample map available while working in the main song view.",
@@ -1391,7 +1391,7 @@
           ]
         }
       },
-      "sourceFingerprint": "faea2339a95c6c792d194bf518fd2a70dafb4f437081b20213eb9d4ee0f6d38d",
+      "sourceFingerprint": "d8f80b7c12cdb38b2c7edb527064c0ecf9ab3bc5f5f744c72c59ad9c69cb6c87",
       "description": "Enlarges the application's interface: panels, text and controls grow together. This is separate from zooming the song timeline.",
       "context": "Available without an open project. On macOS use Cmd+=; the alternate Ctrl+Plus binding is not delivered as Plus while Cmd is held.",
       "whenToUse": "Make controls easier to read on a high-resolution display.",
@@ -1469,7 +1469,7 @@
           ]
         }
       },
-      "sourceFingerprint": "f8aa389cbcf0a0e09d42ce575df2e23abb67cf2014bdef3023a7777b9c819121",
+      "sourceFingerprint": "ec7a9c28886cea3b291c00b22f20fce384d2c543ef9f6e2bf8371d5576ca31ec",
       "description": "Reduces the scale of the application's interface, showing more controls in the same window.",
       "context": "Available without an open project; the zoom choice is saved in Settings.",
       "whenToUse": "Fit more interface content on a smaller screen.",
@@ -1547,7 +1547,7 @@
           ]
         }
       },
-      "sourceFingerprint": "97ada8a99f8b40e76e8a7886e5de5f43c0826794ddcb9663befaa8380f9183da",
+      "sourceFingerprint": "3da77b2ffe5e5f0c15af67980e5888082bccd8aca1b292aa7a00dc724f025a0d",
       "description": "Restores the application's normal interface scale using its default zoom setting.",
       "context": "Available without an open project.",
       "whenToUse": "Return to the normal interface size after experimenting with zoom.",
@@ -1634,7 +1634,7 @@
           ]
         }
       },
-      "sourceFingerprint": "c50325cb90027a873315362e2a74d1a12873c5830676e6e290abddb9fb7acee5",
+      "sourceFingerprint": "5a4833b6c31222e0e911ef611397f1ceef1426a1c43d694ee153d289a873b875",
       "description": "Draws Arrangement audio waveforms taller without changing the audio signal or clip volume.",
       "context": "Available without an open project, but the visible effect is on Arrangement audio clips.",
       "whenToUse": "Inspect a quiet recording's waveform without turning up its sound.",
@@ -1721,7 +1721,7 @@
           ]
         }
       },
-      "sourceFingerprint": "ed759e477f2b7ac0e91f49e97616183b7bfad3fb1af834f58cb2612c5ce00d2e",
+      "sourceFingerprint": "49a81cbced82ba930ff3e1326d00e2151d627353d287cc3218684182005f6160",
       "description": "Reduces Arrangement waveform display magnification, down to the waveform's own size. Audio volume is unchanged.",
       "context": "Visible on audio clips in Arrangement; this changes the drawing, not the recorded samples.",
       "whenToUse": "Undo waveform magnification after inspecting a quiet passage.",
@@ -1799,7 +1799,7 @@
           ]
         }
       },
-      "sourceFingerprint": "92c70ab7a9122983c110ac9db9e56a0f7b8964262b3d31efe756b364ba46d5a2",
+      "sourceFingerprint": "d22ed7176c2822fbe9311a0c5a1de20d089c9f7fcfd5b64328fe68fb99523b82",
       "description": "Copies the relevant selection: piano-roll notes first when that editor handles the key, then focused devices, the selected Session slot, or Arrangement clips or a time selection. Copy leaves the originals in place.",
       "context": "Click the intended editor or device panel first. If the piano roll cannot act on notes, copying may fall through to a clip selection.",
       "whenToUse": "Reuse a phrase, clip or device setup elsewhere.",
@@ -1879,7 +1879,7 @@
           ]
         }
       },
-      "sourceFingerprint": "4d7afd935bc89eecec9649381e9c392b413f976205605f7ebff45c5d1e344184",
+      "sourceFingerprint": "e76148fb5e447da19ce4389177119daf5e8327dc50dae195aad6784c87c09da3",
       "description": "Copies and removes selected piano-roll notes, focused devices, or Arrangement material. An Arrangement time selection cuts only its span.",
       "context": "Click the intended editor or device panel first. Cutting a Session slot's clip is not supported; copy and paste it instead.",
       "whenToUse": "Move a passage or device rather than leave a second copy.",
@@ -1959,7 +1959,7 @@
           ]
         }
       },
-      "sourceFingerprint": "7801520041aba09d7d81ae5f2c81b61ae1091508fa495419203f27b563acbb0b",
+      "sourceFingerprint": "207c0f034ef972c19dea1a19ff67ff35fec1f678ef1e0614a69919ddb7137edf",
       "description": "Pastes into the focused context. Notes go after selected notes, otherwise at a playhead inside the clip or after their copied position. Devices go after picked devices; Session paste replaces the selected slot. Arrangement paste goes after the selected clip or at the playhead on the selected track; multi-track copies return to their tracks.",
       "context": "Requires copied material and a suitable target. Arrangement overlap follows audio/MIDI stacking settings. Suhina also puts text on the system clipboard because the window delivers Paste only for text clipboard content.",
       "whenToUse": "Place copied material at a chosen clip slot, track, note position or device position.",
@@ -2039,7 +2039,7 @@
           ]
         }
       },
-      "sourceFingerprint": "32654f696c133ddb90ea72a7dcb331d9a13740192f4c702d9536d9e5e2d411da",
+      "sourceFingerprint": "057d24725837d7b3a53dac4c1e81b497c110d453a6815e85e74804c0a29e8ed5",
       "description": "Copies selected notes, devices or Arrangement material directly after the selection. A duplicated Arrangement time selection moves onto the copy so another press repeats it.",
       "context": "Click the intended editor or device panel first. Session slot duplication is not supported. Arrangement overlaps follow stacking settings. Draw-first uses Ctrl/Cmd+B instead of Ctrl/Cmd+D.",
       "whenToUse": "Repeat a musical phrase or an effects chain without a separate paste step.",
@@ -2137,7 +2137,7 @@
           ]
         }
       },
-      "sourceFingerprint": "b171b780dfb71010c844a674ee0971f4d3060dfecde1265e9a4c423e0c3b78a7",
+      "sourceFingerprint": "fdb1cc736eb8e79665eaf604615621feae297b0d743d1a0597d567653113ec06",
       "description": "Deletes the selection handled first: selected piano-roll notes, Arrangement automation points, picked devices, focused tracks, a Session slot's clip, or Arrangement material. A time selection removes the material inside its span.",
       "context": "Click the intended area first: the focused panel and selection decide what is removed.",
       "whenToUse": "Remove selected notes or an unwanted passage after confirming the correct area is focused.",
@@ -2208,7 +2208,7 @@
           ]
         }
       },
-      "sourceFingerprint": "c72f61bbc38307bbbda2a20396b8951cd2c4a5d1d7bf1e4177691883355eb993",
+      "sourceFingerprint": "eaaac80f556f65bcaf7ea99332f9c3f57ab885810737e0e507bf4962436ef077",
       "description": "Turns selected Arrangement clips off, or back on if all are off. When a device is selected and the device panel has focus or is shown, it toggles that device instead.",
       "context": "The clip action uses the Arrangement clip selection. It is separate from the piano roll's Mute tool.",
       "whenToUse": "Compare the song with and without a clip or selected device.",
@@ -2288,7 +2288,7 @@
           ]
         }
       },
-      "sourceFingerprint": "2a55d2e4aef6e2a8aafe189a5733a79ec2a046c28b6f18c75945433aed4b3f40",
+      "sourceFingerprint": "d25da947805b55d0b5a1fb77d2ee746be64d2d012ab3cef830d306a8953bd36b",
       "description": "Opens name editing for a focused track header, otherwise the selected Arrangement clip or Session slot clip. Multiple Arrangement clips can be renamed together when Rename selected clips is enabled.",
       "context": "Click the track header or clip to choose the target; an empty Session slot has no clip to rename.",
       "whenToUse": "Give tracks and clips meaningful names before the project grows.",
@@ -2368,7 +2368,7 @@
           ]
         }
       },
-      "sourceFingerprint": "abe83870b65ebd803bd5698a6ceb0490a450d7ddbf3a0669493b9ec968d88352",
+      "sourceFingerprint": "18e9268303490a28a434c62409538972f4e14c0ba4f90424f1a7ff51515cc7d8",
       "description": "Selects every clip in the Arrangement.",
       "context": "Requires an open project. With piano-roll focus the same key selects notes instead.",
       "whenToUse": "Select the Arrangement's clips before moving or copying them together.",
@@ -2384,7 +2384,7 @@
     },
     {
       "id": "selection.split",
-      "name": "Split the selected clip at the playhead",
+      "name": "Split the selected clip where it was clicked, or at the playhead",
       "category": "Edit",
       "bindings": {
         "Select-first": {
@@ -2448,9 +2448,9 @@
           ]
         }
       },
-      "sourceFingerprint": "e42f379a322feb999fdb25468ce95a8120886f97ff9ec16818cde6cfcd12df0b",
-      "description": "Splits the selected Arrangement clip at the playhead when the playhead lies inside it. With a time selection it splits material at the selection boundaries.",
-      "context": "Requires Arrangement material; move the playhead inside the clip or make a time selection first.",
+      "sourceFingerprint": "833fee87eda3ca73269deffba920596bac4815eaef5b5245bb69b2ab5cbadf3b",
+      "description": "Splits the selected Arrangement clip where its body was clicked, playing or stopped; at the playhead only when nothing inside the clip was clicked. With a time selection it splits material at the selection boundaries.",
+      "context": "Requires Arrangement material; click inside the clip (or move the playhead into it), or make a time selection first.",
       "whenToUse": "Separate a passage so you can edit or remove it independently.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [
@@ -2528,7 +2528,7 @@
           ]
         }
       },
-      "sourceFingerprint": "b6da4f2930326f3eb656b1561f9c4cf845fe7d0493a88589e5fb21916753976f",
+      "sourceFingerprint": "8251a48ba9c2ac66586fe8000e94d22c6fd1840515499fad20a871539b712093",
       "description": "Creates a new clip covering the selected clips' span on the active clip's track. A time selection consolidates each selected track with material over that span, with empty parts silent.",
       "context": "Requires Arrangement clips or a time selection with material. A selected stack row limits the time selection to that row.",
       "whenToUse": "Turn several small edits into a single clip over a chosen passage.",
@@ -2608,7 +2608,7 @@
           ]
         }
       },
-      "sourceFingerprint": "608ec706ef9876336ee9b39263780aeaf78438269dfdd6c9137d70c55e91f618",
+      "sourceFingerprint": "5f3f5b57049460abac9d53ddf6ed7386b3726e7d7af12fdbad1b089a8f8815fe",
       "description": "Groups picked adjacent devices on one track when the device panel has focus; otherwise groups selected Arrangement tracks.",
       "context": "Device picks must sit next to each other on the same track. Without selected tracks or devices there is nothing to group.",
       "whenToUse": "Organize related tracks or package a sequence of devices together.",
@@ -2697,7 +2697,7 @@
           ]
         }
       },
-      "sourceFingerprint": "c1c7e5d2a16c1984bd90723fcb1d22ba12a06b7b3bace0fb2a3fc69b63773ccc",
+      "sourceFingerprint": "38abc814a4179793fefd8e5538f24e53e7392a471b4edba4a787996e462541d3",
       "description": "Takes apart the selected device group when it contains one branch, returning its devices to the parent chain.",
       "context": "Click the device group first; this shortcut does not ungroup tracks.",
       "whenToUse": "Return a simple device group to individual devices in the chain.",
@@ -2777,7 +2777,7 @@
           ]
         }
       },
-      "sourceFingerprint": "1c36df4b8c16d7d653cc4c3bbfcf793d153f9e623d93b7b97cfe41dedb8a9c14",
+      "sourceFingerprint": "1f98943346a176b018d9c416e6c25e66094c29b2c2ee7163518680077658673d",
       "description": "Adds an audio track for audio clips. It is inserted after the selected track and inside that track's group when applicable.",
       "context": "Requires an open project; the selected track determines the insertion position.",
       "whenToUse": "Add a lane for a recording or imported audio.",
@@ -2864,7 +2864,7 @@
           ]
         }
       },
-      "sourceFingerprint": "2f3fcce5c648813b84a9afe19576aeb615dbb999494cf85732f3b4f46813be69",
+      "sourceFingerprint": "db33d6efcadfb84446fb3973dbe11671d04f3b53db84dde2ad8bff28b63d9b89",
       "description": "Adds a MIDI track for note clips and instruments, after the selected track and inside its group when applicable.",
       "context": "Requires an open project; MIDI notes describe what to play rather than containing recorded sound.",
       "whenToUse": "Create another instrument part.",
@@ -2951,7 +2951,7 @@
           ]
         }
       },
-      "sourceFingerprint": "6e8a794ba60eeaecf8d21f9412f209965bc00a6506becc412a63a8912aefb229",
+      "sourceFingerprint": "0ba0416825f170741b51dc265dc0bebf454601ce25d88c13c1daae4ab9b0aac4",
       "description": "Creates an empty MIDI clip over the Arrangement time selection on each selected MIDI track.",
       "context": "Make a time selection that includes a MIDI track first. Audio tracks in the selection do not receive MIDI clips.",
       "whenToUse": "Prepare a blank note clip exactly over the passage you want to write.",
@@ -3020,7 +3020,7 @@
           ]
         }
       },
-      "sourceFingerprint": "d37721a5199b6b297768cae6975d0c2146140cc8be00a21c98a5383fef1c3cb8",
+      "sourceFingerprint": "e0b97491682d59432a1a18079fae81b61efc8c568f7119ee10b75bc0601d77ba",
       "description": "Shows or hides automation lanes across the Arrangement tracks. Automation is a sequence of changes to a parameter over time.",
       "context": "Requires an open project with an Arrangement timeline.",
       "whenToUse": "Reveal volume or device-parameter changes while editing the song.",
@@ -3089,7 +3089,7 @@
           ]
         }
       },
-      "sourceFingerprint": "abf1cc1b78f9758315dc171f0b66949e50854505abdfe9b5ae84ef2a15897a99",
+      "sourceFingerprint": "a80221b1d16e0274a06f2e3c4df4ef739a8d63eca8465c8c6063a6f0c136d58b",
       "description": "Launches the selected Session clip slot using the launcher's scheduling rules.",
       "context": "Requires Session and a selected clip slot. Piano-roll focus keeps its keys separate from slot navigation.",
       "whenToUse": "Start the slot selected with the arrow keys.",
@@ -3160,7 +3160,7 @@
           ]
         }
       },
-      "sourceFingerprint": "851c794d71acfd2c00cda9e53564b0a38a08f83b0a2773bae41eadba75ad7717",
+      "sourceFingerprint": "8ddf49b932d9bb53b30fdefe7bec3f6e7b9161fb34872d24ca6c35efdeae3d1b",
       "description": "Selects the clip slot in the Session row above the current slot.",
       "context": "Click a Session slot first; with piano-roll focus Up moves selected notes instead.",
       "whenToUse": "Navigate vertically through clip choices without launching them.",
@@ -3231,7 +3231,7 @@
           ]
         }
       },
-      "sourceFingerprint": "745ac60d99f08bab90cae734bf651959a26f0dc846cd7d221459dea7fffcefa4",
+      "sourceFingerprint": "124831ac274cdfe692a2e6a516862bf326bad0433d1258920082e7fa4d6c5cdd",
       "description": "Selects the clip slot in the Session row below the current slot.",
       "context": "Click a Session slot first; with piano-roll focus Down moves selected notes instead.",
       "whenToUse": "Move to the next Session row before launching its clip.",
@@ -3302,7 +3302,7 @@
           ]
         }
       },
-      "sourceFingerprint": "c9986b77bef38a9e2d411e433667db15fe56ba82c118a05a741f248d2f291f12",
+      "sourceFingerprint": "5bb677a2d5ac48e60a2947b2364e75804c6e4c96570ac7ba622dad3cad4ea330",
       "description": "Selects the Session clip slot on the track to the left.",
       "context": "Click a Session slot first; with piano-roll focus Left moves selected notes instead.",
       "whenToUse": "Choose a slot on the neighboring track.",
@@ -3373,7 +3373,7 @@
           ]
         }
       },
-      "sourceFingerprint": "ff5837c51c7aa9053d09060e8627f13db2c9d9847968d35865e372fd43426404",
+      "sourceFingerprint": "6392d6e9f9035c369f47a3bce0a5e36da5132145d5c15579762c9f05853b8681",
       "description": "Selects the Session clip slot on the track to the right.",
       "context": "Click a Session slot first; with piano-roll focus Right moves selected notes instead.",
       "whenToUse": "Move across the Session grid to another track.",
@@ -3453,7 +3453,7 @@
           ]
         }
       },
-      "sourceFingerprint": "4b3f15584fd04617b913c423e7d408cc1950feb519070366487d90bb168ea8c9",
+      "sourceFingerprint": "ce9923d872d225a8bd75ca77eb29dcf716faa110ae48ba831af6c0fc964c4196",
       "description": "Moves the selected notes toward a rhythmic grid using the piano roll's last quantise grid, amount and note-end settings. With no selected notes it processes the notes that start in a time selection, or else every note in the shown clip.",
       "context": "The detail area must show a MIDI clip in the piano roll. Unlike the other piano-roll keys, a click to focus that editor is not required.",
       "whenToUse": "Tighten a recorded phrase using the quantise settings you last chose.",
@@ -3533,7 +3533,7 @@
           ]
         }
       },
-      "sourceFingerprint": "996df3a8e32d11297b614ee3eedf5a2d09d94dd770159d159a9664040b091e77",
+      "sourceFingerprint": "d2a18d2e27a94bdfcf958006b8f1264de803eaf505cbedbcdc663331b6ca934a",
       "description": "Selects every note in the MIDI clip shown in the piano roll.",
       "context": "Click the piano-roll note grid first. The same key outside that editor selects Arrangement clips.",
       "whenToUse": "Transpose or copy a whole note phrase.",
@@ -3604,7 +3604,7 @@
           ]
         }
       },
-      "sourceFingerprint": "a3aa351404d25f696a60461910da958832da1bba3614f877e4615391ac16c088",
+      "sourceFingerprint": "544fd3d4fc06b45a8a9ad0a982db3b0ebe6af797d03dc1fbf48c7e382d72e28e",
       "description": "Clears the piano roll's note selection without deleting notes.",
       "context": "Click the piano-roll note grid first; Escape has other uses elsewhere.",
       "whenToUse": "Clear a note selection before drawing or selecting another phrase.",
@@ -3675,7 +3675,7 @@
           ]
         }
       },
-      "sourceFingerprint": "11976e7448a22e92b2344dc4ad0fdb7dcfef600d3719bbb8acb56793fd539b1d",
+      "sourceFingerprint": "b31828189c857614e9b090beddb27d05b3987534eb082b4127ab994ff3068e67",
       "description": "Moves selected notes so the first lands on the previous note-grid line, preserving their relative spacing.",
       "context": "Click the piano roll and select notes first. Movement near the clip start is constrained so notes do not move before the start.",
       "whenToUse": "Shift a phrase earlier while keeping its rhythm together.",
@@ -3746,7 +3746,7 @@
           ]
         }
       },
-      "sourceFingerprint": "a7effadbf6793e75e2cae04ee8949e72d1d3c2614fb5c3589cd240866f19850f",
+      "sourceFingerprint": "f39c52624fefba37e35878d6af3e97d1fdde65d24e461fb33392e0ecac359999",
       "description": "Moves selected notes so the first lands on the next note-grid line, preserving their relative spacing.",
       "context": "Click the piano roll and select notes first; the current grid determines the step.",
       "whenToUse": "Delay a phrase by a rhythmic step.",
@@ -3826,7 +3826,7 @@
           ]
         }
       },
-      "sourceFingerprint": "0ee06fec73c44abadce282b0292988ca6f3a5c45ea8119402b188ff8c3c4549c",
+      "sourceFingerprint": "fea1ce9d41b580687e42922a7dbf490a70ef44b4aa25b1083f5dc739e8164442",
       "description": "Moves the selected notes a 1/128 note earlier, without snapping to the grid.",
       "context": "Click the piano roll and select notes first.",
       "whenToUse": "Nudge notes a little ahead of the beat.",
@@ -3906,7 +3906,7 @@
           ]
         }
       },
-      "sourceFingerprint": "64ada2f92204081e73fa4b12f168912d9330364878a3b9418678ee4c3dfddcad",
+      "sourceFingerprint": "495e9dd72ed1f18253c6739561ac442b91e30f281d45add9f9bccbf16f635ec7",
       "description": "Moves the selected notes a 1/128 note later, without snapping to the grid.",
       "context": "Click the piano roll and select notes first.",
       "whenToUse": "Nudge notes a little behind the beat.",
@@ -3977,7 +3977,7 @@
           ]
         }
       },
-      "sourceFingerprint": "d7a4bcc701d270942a5a58e31826a0830882b7b9d82e3f9de257272bf50a9db6",
+      "sourceFingerprint": "f1e81146a3fc908ccb6a3095706cd60b86e9e3ec35b1412b1d7832147f13d4a0",
       "description": "Raises selected notes by one semitone, the interval between neighboring piano keys.",
       "context": "Click the piano roll and select notes first. A pitch move outside the valid note range leaves pitches unchanged.",
       "whenToUse": "Try a phrase one piano key higher.",
@@ -4048,7 +4048,7 @@
           ]
         }
       },
-      "sourceFingerprint": "b490c00cac3f5bb6bf34e6e202485afe526c3b725ac1b42b5ea1271644570a05",
+      "sourceFingerprint": "bdf59f86e6fee600b6accf6fe6c490f7af504d0a8c4065d17b01501e719f416d",
       "description": "Lowers selected notes by one semitone, the interval between neighboring piano keys.",
       "context": "Click the piano roll and select notes first. A pitch move outside the valid note range leaves pitches unchanged.",
       "whenToUse": "Try a phrase one piano key lower.",
@@ -4128,7 +4128,7 @@
           ]
         }
       },
-      "sourceFingerprint": "3ba9ceba00cd850e9c797144a6fdffb0962d193bbc05231ad7e1c57c7818d2d5",
+      "sourceFingerprint": "a7d749ae44ceda20f05b50a2b07d27b2a4d788502b0b10fd95f442ab4ceaf494",
       "description": "Raises selected notes by an octave, or twelve semitones, while keeping their timing.",
       "context": "Click the piano roll and select notes first; a move outside the valid note range leaves pitches unchanged.",
       "whenToUse": "Move a melody into a higher register.",
@@ -4208,7 +4208,7 @@
           ]
         }
       },
-      "sourceFingerprint": "daf327fffe73d42a741fc8745e6cc1966623985692f11d68a3caa558d5287a96",
+      "sourceFingerprint": "bf26bfdacfe0758da9dc3d8520ff3aab0cbc0afc8e74d3727c3035a429613d2c",
       "description": "Lowers selected notes by an octave, or twelve semitones, while keeping their timing.",
       "context": "Click the piano roll and select notes first; a move outside the valid note range leaves pitches unchanged.",
       "whenToUse": "Try the same melody in a lower register.",
@@ -4288,7 +4288,7 @@
           ]
         }
       },
-      "sourceFingerprint": "b685b7ba7bc81e67edb890b5c4733abc5f3d3b6210971e2c331b770aa7fc7b5b",
+      "sourceFingerprint": "71e646e6ac44d6cb11b7c57b1fe6aa6ccf79098ab211c44ea2c45b34a9ce28be",
       "description": "Takes each selected note's end to the previous grid line without moving its start. No note gets shorter than one grid step.",
       "context": "Click the piano roll and select notes first.",
       "whenToUse": "Make a phrase more detached without moving note starts.",
@@ -4368,7 +4368,7 @@
           ]
         }
       },
-      "sourceFingerprint": "465b81febc2a996b303d839638405c4f0b5469d0b0b03f8c7b9e198bd52914c9",
+      "sourceFingerprint": "a2e5b873bdfb9fcfad722c7b4f85e4828f215f196af663108a3bcdfbf4121074",
       "description": "Takes each selected note's end to the next grid line, or to the start of the next note of its pitch when that comes first, without moving its start. A note already touching the next one stays, unless stacked notes are allowed.",
       "context": "Click the piano roll and select notes first.",
       "whenToUse": "Let a set of notes sustain longer.",
@@ -4457,7 +4457,7 @@
           ]
         }
       },
-      "sourceFingerprint": "28d222a1e7aee6d9557bc8c81c6ab61736ad9b9794876422e4defdb8e91ef85c",
+      "sourceFingerprint": "238a9166570eca0688b996e1d3013372baa339aba0dd6c754d26ad6c44b581ab",
       "description": "Makes the selected notes a 1/128 note shorter, without snapping to the grid. A note never gets shorter than that step.",
       "context": "Click the piano roll and select notes first.",
       "whenToUse": "Leave a small gap after a note.",
@@ -4546,7 +4546,7 @@
           ]
         }
       },
-      "sourceFingerprint": "5528b3bded67e9ad12d21570c07bda2cf2faf88feba3568f8881b02bcb67e327",
+      "sourceFingerprint": "4249949f349ba7462e2d0e036d1b66d1f9882b9360f56bcc51d69523975af571",
       "description": "Makes the selected notes a 1/128 note longer, without snapping to the grid. The next note of the same pitch stops the end unless stacked notes are allowed.",
       "context": "Click the piano roll and select notes first.",
       "whenToUse": "Let a note ring a little longer.",
@@ -4617,7 +4617,7 @@
           ]
         }
       },
-      "sourceFingerprint": "0e5fb644a7f0cbbc975c805fb906b259e5a6d7a847b0119179b4f709155d07a9",
+      "sourceFingerprint": "258fbd114ff3464e7de260469246dbc05c6075ba720acc4917930bf33417a56e",
       "description": "Switches from Draw to Select, or from another tool to Draw.",
       "context": "Click the piano-roll note grid first.",
       "whenToUse": "Alternate between adding notes and selecting them.",
@@ -4688,7 +4688,7 @@
           ]
         }
       },
-      "sourceFingerprint": "f0d8cc10fec35e327fa604fec8554368dac0acdd7f9be986bba9a893acfd214c",
+      "sourceFingerprint": "b8e9dd52c6ae18a7a8443e291cf3e3f4a6619fcae2f6da2af8b911a1e81ce372",
       "description": "Chooses Select, the piano-roll tool for picking and moving notes.",
       "context": "Click the piano-roll note grid first. Workflow settings can also make a left-click on empty space draw a note.",
       "whenToUse": "Return to selecting notes after using another tool.",
@@ -4759,7 +4759,7 @@
           ]
         }
       },
-      "sourceFingerprint": "e73609f7657f75f3e6ca763841d93458bccf3d21354e879b9b31123a2b0ded99",
+      "sourceFingerprint": "6d835e98f134483e5ccc58926fc9fbfa6885f45636414ec096843e0f72ac74fe",
       "description": "Chooses Draw for adding notes in the piano-roll grid.",
       "context": "Click the piano-roll note grid first; note placement follows the grid and workflow settings.",
       "whenToUse": "Enter a melody one note at a time.",
@@ -4830,7 +4830,7 @@
           ]
         }
       },
-      "sourceFingerprint": "64aabbd06cf35b9b8244375e9404d2a9b2f56bbd41643bcda0ceb5f83739a189",
+      "sourceFingerprint": "3d851d9384819c16ad96a9d28cda54f86099986916a11b1127c4f277635cf9fc",
       "description": "Chooses Paint for drawing notes along a drag through the piano-roll grid.",
       "context": "Click the piano-roll note grid first; note placement follows the grid and workflow settings.",
       "whenToUse": "Write a run of repeated notes with a drag.",
@@ -4901,7 +4901,7 @@
           ]
         }
       },
-      "sourceFingerprint": "5ebc12ccb8487e17ed758b9ab080e192728cb521b1d27e2cc10e6d4dcbc1eae8",
+      "sourceFingerprint": "bb0af6c45addce171f96275e9fff3149277873c457f568309f283529db742ad2",
       "description": "Chooses Erase for removing notes with the pointer in the piano roll.",
       "context": "Click the piano-roll note grid first.",
       "whenToUse": "Remove notes by pointing at them instead of making a selection first.",
@@ -4972,7 +4972,7 @@
           ]
         }
       },
-      "sourceFingerprint": "9292a8f9b700e878b12acd559fabb0add48c69ed318d611bd224e2ee3c9a2263",
+      "sourceFingerprint": "fb05b39c0aea79caaf889a8cadb0a63180963a77ffc1013e8f5b1e4ace9e63ef",
       "description": "Chooses Slice for cutting notes at a position in the piano roll.",
       "context": "Click the piano-roll note grid first; slicing follows the grid unless snapping is bypassed.",
       "whenToUse": "Break a sustained note into shorter parts.",
@@ -5043,7 +5043,7 @@
           ]
         }
       },
-      "sourceFingerprint": "c1e4759e227cf34129d751b534e531d0ae49266ef1a9af9537dd5bee461977a5",
+      "sourceFingerprint": "c58c4ea056c627fde8604cb9cd2b5555303fdef3bef7d380f1b88e8b79a077a2",
       "description": "Adds an Arrangement marker at the current playback position, or at the play start marker when stopped. A marker labels a position in the song.",
       "context": "Requires an open project.",
       "whenToUse": "Mark a verse or another useful song position while listening.",
@@ -5121,7 +5121,7 @@
           ]
         }
       },
-      "sourceFingerprint": "65251c2e01637e295c40e9ac2e7672c6b9194013b9f57825db230db466407278",
+      "sourceFingerprint": "1042ca084dd1729616daf4972e3e5ced072a6d7117118e4229149c4f930fccf2",
       "description": "Swaps each selected part of a comp (a part put on the track from a take lane) for the same span of the take above it, going round the takes.",
       "context": "Works in the Arrangement with comped parts selected on a track that has take lanes.",
       "whenToUse": "Audition the take above for the same phrase without opening the take lanes.",
@@ -5199,7 +5199,7 @@
           ]
         }
       },
-      "sourceFingerprint": "91ceefbf77ccde4d3617dd866f8171528d95e2456418faccfe6fa5e835a80d91",
+      "sourceFingerprint": "5240efcf79e438f66a5eca1ba0c2edb6e04be1e01062a9fd153ce5422ba54eb1",
       "description": "Swaps each selected part of a comp (a part put on the track from a take lane) for the same span of the take below it, going round the takes.",
       "context": "Works in the Arrangement with comped parts selected on a track that has take lanes.",
       "whenToUse": "Audition the take below for the same phrase without opening the take lanes.",
@@ -5268,7 +5268,7 @@
           ]
         }
       },
-      "sourceFingerprint": "e644f0ef9278fbd12c935a9da1147777bfb45b501f286a98f359954917ca6189",
+      "sourceFingerprint": "c64ff19b0aee3e21e7c6e3768ec3b924cb91bdc41b7e599c54b4029159c837ca",
       "description": "Chooses the Arrangement's Select tool: click a clip to select it, drag to move it or draw a selection box.",
       "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
       "whenToUse": "Switch to the Select tool without moving the pointer to the toolbar.",
@@ -5337,7 +5337,7 @@
           ]
         }
       },
-      "sourceFingerprint": "67587da10e8e1a30db20599c4db6e8ddd15aca658a5eb4f7f955ba09de2b1edb",
+      "sourceFingerprint": "8e34b08812a92aff1ba2465fb37e2b3545f825649da942d440cf0bf8b9e0407c",
       "description": "Chooses the Arrangement's Range tool: drag across tracks to select a span of time on them.",
       "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
       "whenToUse": "Switch to the Range tool without moving the pointer to the toolbar.",
@@ -5406,7 +5406,7 @@
           ]
         }
       },
-      "sourceFingerprint": "6ee35d5bbfbda8255419cc837f5b8b46a7543d2e5f2fba978ad8f5f847d8b71d",
+      "sourceFingerprint": "665d9e70faef9c4dbcc06f040c01277f00d1c4fcb506b0d5c5bce333285d8ac7",
       "description": "Chooses the Arrangement's Split tool: click a clip to split it at that point.",
       "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
       "whenToUse": "Switch to the Split tool without moving the pointer to the toolbar.",
@@ -5475,7 +5475,7 @@
           ]
         }
       },
-      "sourceFingerprint": "886f5db072329da7b623579ca0a4393615beb6414ae9e78cdaf54c9aa59e2e63",
+      "sourceFingerprint": "19516970f1dbe18d3427d69d7c6f1cd286ed8e9b3923e831595f2f7d8048d3d0",
       "description": "Chooses the Arrangement's Erase tool: click or drag over clips to delete them.",
       "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
       "whenToUse": "Switch to the Erase tool without moving the pointer to the toolbar.",
@@ -5544,7 +5544,7 @@
           ]
         }
       },
-      "sourceFingerprint": "0312d31047e30d53473c84ed9c87f93ec95f1095bedd827c43eb35becca63a44",
+      "sourceFingerprint": "e07338a1652a5cd8b253ca5a55e24e6ac444abe05f7d29b8cc7cd3c06270c2a1",
       "description": "Chooses the Arrangement's Draw tool: drag on an empty lane to draw a new clip.",
       "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
       "whenToUse": "Switch to the Draw tool without moving the pointer to the toolbar.",
@@ -5613,7 +5613,7 @@
           ]
         }
       },
-      "sourceFingerprint": "32a40c540b72aeb83969e3088b5e1d04c049ba2f7fd60b4ba6d93785a83fd134",
+      "sourceFingerprint": "0b685492ecb1125277622912e07500a8b378a2d828f9bb265fc48d28531052fd",
       "description": "Chooses the Arrangement's Mute tool: click a clip to mute or unmute it.",
       "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
       "whenToUse": "Switch to the Mute tool without moving the pointer to the toolbar.",
@@ -5691,7 +5691,7 @@
           ]
         }
       },
-      "sourceFingerprint": "18875774ddae526cf550b5c42232d3d2e7184dcb8f19b4a42668e25760001560",
+      "sourceFingerprint": "1ac5238f927b6d4b16cd7c1c9e8a8dbb26077b519c4e81ec39941b130165a2b7",
       "description": "Makes the Arrangement's grid one step finer: the next fixed value, or the next narrower adaptive width.",
       "context": "Works while the Arrangement has the keyboard (it was clicked last); with the piano roll clicked last the same keys change the piano roll's grid.",
       "whenToUse": "Cut or place clips on finer divisions without opening the grid menu.",
@@ -5769,7 +5769,7 @@
           ]
         }
       },
-      "sourceFingerprint": "5288faeb8e36bd0d946ca782c345813207bbb71f7daeece51fd33732d66ebb50",
+      "sourceFingerprint": "689c1095b04f3fb88822f04c862c2a71f1d36549da25114a48f547a98669cc12",
       "description": "Makes the Arrangement's grid one step coarser: the previous fixed value, or the next wider adaptive width.",
       "context": "Works while the Arrangement has the keyboard (it was clicked last); with the piano roll clicked last the same keys change the piano roll's grid.",
       "whenToUse": "Move clips by bars rather than beats.",
@@ -5847,7 +5847,7 @@
           ]
         }
       },
-      "sourceFingerprint": "ed20e006bfbcbf797a3f53f89d80748eb9349c6870009814541a77313791021a",
+      "sourceFingerprint": "353bd22467e910d38a30e3ab4fad94f22bfbef494b1938d9e7842d16821d8ead",
       "description": "Turns the Arrangement's triplet grid on or off: note values become two thirds as long.",
       "context": "Works while the Arrangement has the keyboard (it was clicked last); with the piano roll clicked last the same keys change the piano roll's grid.",
       "whenToUse": "Place clips on triplet divisions.",
@@ -5925,7 +5925,7 @@
           ]
         }
       },
-      "sourceFingerprint": "bea65e8ef3a7e91a1c4c59f6b169c3dd041bef805243c91decf34138b96ea294",
+      "sourceFingerprint": "01b78d23905c6d881abdc5e45b80455c06436f78b03880c0fa740a3c828352d6",
       "description": "Turns snapping to the Arrangement's grid on or off; the lines stay drawn.",
       "context": "Works while the Arrangement has the keyboard (it was clicked last); with the piano roll clicked last the same keys change the piano roll's grid.",
       "whenToUse": "Place clips anywhere for a while, as Alt does for one drag.",
@@ -5994,7 +5994,7 @@
           ]
         }
       },
-      "sourceFingerprint": "6f28c765cfa879a049e147f6cab033ed13e0e5622e30b36a11faf4c4547c62fa",
+      "sourceFingerprint": "a21996eb788677c2cf9708ef58746bab3299f4f6441e8a95405887824ab26911",
       "description": "Chooses Mute for turning notes off or back on with the pointer, while keeping the notes in the clip.",
       "context": "Click the piano-roll note grid first. This is separate from muting an Arrangement clip or device.",
       "whenToUse": "Try leaving individual notes out of a phrase without deleting them.",
@@ -6074,7 +6074,7 @@
           ]
         }
       },
-      "sourceFingerprint": "0213af8d4500f2ac409c63303f2ee52cf57cfc0b52eee95d4c753599bc516542",
+      "sourceFingerprint": "9bcb52bf5f1e1ae121451d3b1470293cf2fc3b357bcfb95cf6c6b0f73da3a526",
       "description": "Chooses one finer fixed grid value or one narrower adaptive width. Adaptive grids change spacing with zoom; fixed grids keep a chosen musical value.",
       "context": "Click the piano roll first. It changes the piano roll's own grid only; the control bar's Quantize box is not affected. At the finest value the grid stays unchanged.",
       "whenToUse": "Place or move notes in smaller rhythmic steps.",
@@ -6154,7 +6154,7 @@
           ]
         }
       },
-      "sourceFingerprint": "dcbf674513bf5850d14b2578d6f8e74df5532286028199b586da3b4172398461",
+      "sourceFingerprint": "8fb900052b8cab73798e2baf13d5d85a09a059d93e2a7d441b7e7c2ae51bccb7",
       "description": "Chooses one coarser fixed grid value or one wider adaptive width, which spaces editing positions farther apart.",
       "context": "Click the piano roll first. With the Control bar grid setting it changes the control bar; at the coarsest value the grid stays unchanged.",
       "whenToUse": "Use larger rhythmic steps for a broad edit.",
@@ -6234,7 +6234,7 @@
           ]
         }
       },
-      "sourceFingerprint": "c78afe78579468abd3734aa130a33c0c4ad76bc7832619f0fc3a85fc0098f7f1",
+      "sourceFingerprint": "5446c0fd9957a779a9b3fd82a58de571f1c116d4f9c4530bbb792ecdc618b746",
       "description": "Toggles triplet spacing: note-value steps become two thirds of their straight-grid length, dividing time into groups of three. Bar-sized grid values stay unchanged.",
       "context": "Click the piano roll first. It changes the piano roll's own grid only; the control bar's Quantize box is not affected.",
       "whenToUse": "Write a triplet rhythm instead of evenly paired subdivisions.",
@@ -6314,7 +6314,7 @@
           ]
         }
       },
-      "sourceFingerprint": "bfb7bbce2cac138d507bd9a3bfd3c73fbc9d86b776d104270f6c9bd9f019b619",
+      "sourceFingerprint": "1aefd0091b075d232871bb8fdc5cdade704aaeda005f502b2a791f3575df7163",
       "description": "Turns snapping to the piano-roll grid on or off. With snapping off the grid remains drawn but pointer edits can place notes freely.",
       "context": "Click the piano roll first. It changes snapping in the piano roll only; the control bar's Quantize box is not affected.",
       "whenToUse": "Adjust note timing freely without changing the visible grid.",
@@ -6385,7 +6385,7 @@
           ]
         }
       },
-      "sourceFingerprint": "a68324b3000aab2adfc0cad2f833c678eb581470b67b02634b55e2500954f79c",
+      "sourceFingerprint": "beda6a3e931d163d600bdccedc3a4f72ff18089291f05f6d0fc048b76c65eba9",
       "description": "Fits the selected notes' time span across the piano roll's width. If no notes are selected, it fits the whole clip instead.",
       "context": "Click the piano-roll note grid first; pitch positions are unchanged.",
       "whenToUse": "Inspect a short phrase without changing the rest of the clip.",
@@ -6465,7 +6465,7 @@
           ]
         }
       },
-      "sourceFingerprint": "27f946ebf855ebc82baead7e73e5365619f4777a29b7076258dbee2f7c1d376c",
+      "sourceFingerprint": "370e31efe8d81ad7fe08d16a4f5214acf533f52d261e72ee6f02f0e8e294d527",
       "description": "Fits the whole MIDI clip's time span across the piano roll's width, leaving pitch positions unchanged.",
       "context": "Click the piano-roll note grid first.",
       "whenToUse": "Return to the full phrase after zooming into selected notes.",
@@ -6500,7 +6500,7 @@
           "macos": []
         }
       },
-      "sourceFingerprint": "8f8770e526f9d6579367cb6146df65836f3286108db351823ec564f9828cc6a0",
+      "sourceFingerprint": "479c800f3b3cefdd77f03edb056818523fdca7c726a1719e481ff115b61b6839",
       "description": "Opens or closes About Suhina, which identifies the running application version.",
       "context": "Available without an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
       "whenToUse": "Check which build you are using before reporting a problem.",
@@ -6587,7 +6587,7 @@
           ]
         }
       },
-      "sourceFingerprint": "41e3088546b95d547631ae885bc3bc4616478b494c4c332b3e1b4daa10d638ed",
+      "sourceFingerprint": "5d83c23ec8cd7efa475f21e1fda05be3158224b0b2e07544170fcb34cf2fa165",
       "description": "Switches the detail area between the clip and its track's devices. If the detail area is hidden, it opens showing devices.",
       "context": "Requires a selected MIDI clip or an audio clip with a compatible clip-editing plug-in; without an editable clip it does nothing.",
       "whenToUse": "Move from note or clip editing to the track's instrument and effects.",
@@ -6665,7 +6665,7 @@
           ]
         }
       },
-      "sourceFingerprint": "9869658423c823657613566d5b7b2d267f419389c7fde403aa85091625b3b060",
+      "sourceFingerprint": "beefcc1f3a9fd9e93edb7aa484e65d4c7519233f1e4ba0382a5b913d34603490",
       "description": "Opens the selected Arrangement audio clip in a compatible clip-editing plug-in. ARA is the interface that gives such plug-ins access to the clip. If needed, Suhina adds an installed compatible plug-in to the track.",
       "context": "Select an audio clip in Arrangement first and scan/install a compatible ARA plug-in. MIDI clips use the piano roll instead.",
       "whenToUse": "Edit an audio clip using a compatible pitch or timing editor.",
@@ -6734,7 +6734,7 @@
           ]
         }
       },
-      "sourceFingerprint": "a9a1f4bbd7753847ebc3292e84eaca94ed30669f1eb99ad693fae3e80a2ec7ca",
+      "sourceFingerprint": "03029ba6426ea93f1f77a5df6b5d5d90ca0f4a546988576dbd0820265fb6bf1d",
       "description": "Opens or closes the first running plug-in's editor on the selected track.",
       "context": "Select a track first; without a running plug-in there is no editor to toggle. This main implementation targets the first running plug-in, rather than a device-panel pick.",
       "whenToUse": "Bring an instrument or effect's own editor into view.",
@@ -6857,7 +6857,7 @@
           ]
         }
       },
-      "sourceFingerprint": "7d87b394e3c9848bf33b7b92473ec3056564e29afdb3f84c8f9bef6a0a4a58fa",
+      "sourceFingerprint": "cb92474b7dd8c878d53ec9b2605a9247f804f65659f5464a3c2a79cc4bc1167e",
       "description": "Reapplies the next edit that was undone in the active project.",
       "context": "Requires an open project with a redo step available.",
       "whenToUse": "Restore an edit after trying Undo.",
@@ -6937,7 +6937,7 @@
           ]
         }
       },
-      "sourceFingerprint": "1205ab1ff5430ba27291de3e893c9743f685ae02c37a97de9ec3895dc0127128",
+      "sourceFingerprint": "0e81bed78fafb3f2cbd6869df944b4b03a865eae51e101b2ec8818150db6ba23",
       "description": "Reverses the last undoable edit in the active project.",
       "context": "Requires an open project and an edit in its undo history; an empty history has nothing to undo.",
       "whenToUse": "Compare an edit with the state before it.",
@@ -7017,7 +7017,7 @@
           ]
         }
       },
-      "sourceFingerprint": "170eb30f40ad5e364cb931a370eafb2625e3e76bbfef48566e9daf66e93c6b92",
+      "sourceFingerprint": "118d3e1ac57542afca62d32e189a4e6a3b1b0fac56ec8ae5fff3a59e1e9b21d0",
       "description": "Moves forward in the open-project switcher while the modifier stays held. Releasing Ctrl on Windows/Linux or Cmd on macOS activates the chosen project.",
       "context": "Requires at least two open projects; with fewer projects this action does nothing.",
       "whenToUse": "Switch to the next idea without closing the current project.",
@@ -7105,7 +7105,7 @@
           ]
         }
       },
-      "sourceFingerprint": "ef13d05a66d82309b26524538f9d6f81b33d55b043548e8835bc101c811d5a15",
+      "sourceFingerprint": "bb9f249531ac577520b5aa73fc6fc70200bcf2b397e374f2ee1a37b1d7a1de04",
       "description": "Moves backward in the open-project switcher while the modifier stays held. Releasing Ctrl on Windows/Linux or Cmd on macOS activates the chosen project.",
       "context": "Requires at least two open projects; with fewer projects this action does nothing.",
       "whenToUse": "Return to the previous open project.",
@@ -7184,7 +7184,7 @@
           ]
         }
       },
-      "sourceFingerprint": "f614c6e841e73aeb304d66c2ea0d61bc6d3b75a47f9157d1a0b372658ac49612",
+      "sourceFingerprint": "50de23fa83a869853252038fa85be0fb5be11209273b40e09d9e516734d74eba",
       "description": "Loops an Arrangement time selection, otherwise the selected clips' span. Repeating for an already enabled matching region turns looping off. Without a selection it toggles the existing loop; enabling without a region creates one over the first four bars.",
       "context": "Requires an open project. A time selection takes precedence over selected clips.",
       "whenToUse": "Repeat a selected passage while adjusting it.",

@@ -1275,6 +1275,10 @@ pub(super) fn paint_clip(
         }
         None => painter,
     };
+    // Everything the clip draws stays inside it: at any zoom its name and marks never spill onto
+    // the lane or the clip beside it (#1198).
+    let inside = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
+    let painter = &inside;
     // Keep the clip colour legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
     let strength = if clip.audio {

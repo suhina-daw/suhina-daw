@@ -668,3 +668,36 @@ fn a_time_selection_goes_on_over_both() {
     assert_eq!((more.start, more.end, more.row), (0.0, 6.0, None));
     assert_eq!(more.tracks, [TrackId(1), TrackId(2)]);
 }
+
+/// A clip a few points wide, as far zoomed out: no name or ellipsis, and nothing it draws leaves
+/// its own rect for the lane or the clip beside it (#1198). Wide enough, the name is drawn.
+#[test]
+fn a_narrow_clip_draws_no_name_and_nothing_outside_itself() {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let lane = timeline.lanes.iter().find(|l| l.clips.iter().any(|c| !c.name.is_empty())).unwrap();
+    let clip = lane.clips.iter().find(|c| !c.name.is_empty()).cloned().unwrap();
+    let view = Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::new(800.0, 200.0));
+    let draw = |width: f32| {
+        let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(width, 60.0));
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let lanes = ui.painter().with_clip_rect(view);
+            let beat_width = width / clip.length.max(1e-3) as f32;
+            let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * beat_width;
+            paint_clip(&lanes, rect, lane, &clip, Shown::of(&clip), clip.start, &x_of, beat_width, &timeline, true);
+        });
+        output.textures_delta.clear();
+        // The clip's own shapes: those painted within the lanes' view.
+        let shapes: Vec<egui::epaint::ClippedShape> =
+            output.shapes.into_iter().filter(|s| view.contains_rect(s.clip_rect)).collect();
+        (rect, shapes)
+    };
+    let (rect, shapes) = draw(6.0);
+    assert!(!shapes.is_empty(), "the clip's body is drawn");
+    for shape in &shapes {
+        assert!(rect.expand(0.5).contains_rect(shape.clip_rect), "{:?} leaves {rect:?}", shape.clip_rect);
+    }
+    assert!(!shapes.iter().any(|s| matches!(s.shape, egui::Shape::Text(_))), "no name, no lone ellipsis");
+    let (_, shapes) = draw(240.0);
+    assert!(shapes.iter().any(|s| matches!(s.shape, egui::Shape::Text(_))), "a wide clip shows its name");
+}

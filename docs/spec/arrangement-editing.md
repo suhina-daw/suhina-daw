@@ -166,7 +166,9 @@ After a header click Delete removes the selected tracks, not a clip (a clip on t
 selected for the detail area until another is picked); a click on a clip or a lane gives Delete
 back to the clips. In the Launcher view a header click does the same for its track (#690). After a
 header click **Ctrl+C**, **Ctrl+X**, **Ctrl+V** and **Ctrl+D** copy, cut, paste and duplicate the
-selected tracks, in their order, one undo step each (Tracks, #919). The
+selected tracks, in their order, one undo step each (Tracks, #919). A time selection painted
+afterwards, in the lanes or on the ruler, or a click in a lane takes these keys back from the
+tracks: they then act on the painted time, until a header is clicked again (#1199). The
 header shows its track's colour strongly (60 % over the panel); a selected track's is brighter
 and more saturated, with an outline in it. A track keeps the colour it shows when tracks are
 added, removed or moved: one without a colour of its own gets its place's palette colour stored
@@ -404,8 +406,10 @@ both sides (2 ms), and for a warped clip, whose second part starts its time-stre
 without the audio before it, very slightly for its first moments, as when playback starts there
 (Play position).
 
-In the Arrangement view **Ctrl+E** splits the selected clip at the playhead (nothing happens,
-with a hint in the status bar, when the playhead is not inside it), and a clip's right-click
+In the Arrangement view **Ctrl+E** splits the selected clip where its body was clicked (the
+play start marker that click put there, on the grid; Alt: free), playing or stopped, and at the
+playhead only when nothing inside the clip was clicked (#1186); nothing happens, with a hint in
+the status bar, when neither is inside it. A clip's right-click
 menu has **Split here**, which cuts where the clip was right-clicked, on the grid clips snap to
 at that zoom (Alt held while right-clicking: exactly there).
 

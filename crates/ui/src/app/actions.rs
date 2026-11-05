@@ -541,12 +541,24 @@ impl App {
                     return;
                 };
                 let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
-                let beat = timeline.map_or(0.0, |t| t.beat);
                 let clip = timeline
                     .and_then(|t| t.lanes.iter().find(|l| l.track == track))
                     .and_then(|l| l.clips.iter().find(|c| c.id == id))
                     .map(|c| (c.start, c.length));
                 let Some((start, length)) = clip else { return };
+                // Where the clip was clicked, while that click's marker stands, playing or not;
+                // the playhead only when nothing in the clip was clicked (#1186).
+                let clicked = self
+                    .arrangement
+                    .insert
+                    .filter(|(t, at)| {
+                        *t == track
+                            && *at > start
+                            && *at < start + length
+                            && timeline.is_some_and(|tl| (tl.start_beat - at).abs() < 1e-6)
+                    })
+                    .map(|(_, at)| at);
+                let beat = clicked.unwrap_or_else(|| timeline.map_or(0.0, |t| t.beat));
                 if action == "selection.consolidate" {
                     // The selected clips on its track, from the first start to the last end,
                     // become one new clip.
@@ -564,7 +576,9 @@ impl App {
                 } else if beat > start && beat < start + length {
                     actions.push(Action::new("clip.split", json!({ "clip": id.0, "at": beat })));
                 } else {
-                    self.status = Status::Hint("Move the playhead into the selected clip to split it there".into());
+                    self.status = Status::Hint(
+                        "Click inside the selected clip, or move the playhead into it, to split it there".into(),
+                    );
                 }
             }
             "selection.mute" => {

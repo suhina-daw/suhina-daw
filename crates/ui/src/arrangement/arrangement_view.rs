@@ -1133,6 +1133,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             }
             state.time_selection = None;
             state.clear_take_selection();
+            // A click in a lane gives the edit keys back to the lanes, editor or not (#1199).
+            state.track_focus = false;
             // The click also moves the play start marker there, on the clip grid (Alt: free);
             // while playing, playback goes on where it is and the next start begins there (#657).
             if let Some(pointer) = body.interact_pointer_pos() {
@@ -1241,7 +1243,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             && (timeline.start_beat - beat).abs() < 1e-6
         {
             let x = x_of(beat).round() + 0.5;
-            if lanes_area.x_range().contains(x) {
+            // In the timeline only: never over the track headers beside it (#1197).
+            if time.x_range().contains(x) {
                 lanes_painter.vline(x, row.time.y_range(), egui::Stroke::new(1.0, theme::text_primary()));
             }
         }
@@ -1341,6 +1344,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 Some(kept) => Some(kept.gone_on(&tracks, start, end, row)),
                 None => (end - start > 1e-6 && !tracks.is_empty()).then_some(TimeSelection { tracks, start, end, row }),
             };
+            // The edit keys act on the painted time, not on tracks a header click picked (#1199).
+            state.track_focus = false;
             if done {
                 state.marquee = None;
                 state.painted_from = None;
@@ -1611,7 +1616,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let colour = crate::kit::style_class::foreground(theme::accent());
             let width = style.as_ref().and_then(|s| s.width).map_or(1.5, |w| w.clamp(0.5, 6.0));
             let down = egui::Rangef::new(lanes_area.top(), fixed.bottom());
-            let column = Rect::from_x_y_ranges(lanes_area.x_range(), down);
+            // The timeline's width, not the view's: a beat under the track headers, on either
+            // side, is hidden under them (#1197).
+            let column = Rect::from_x_y_ranges(time.x_range(), down);
             let line_painter = painter.with_clip_rect(column);
             for beat in [start, end] {
                 let x = x_of(beat).round() + 0.5;

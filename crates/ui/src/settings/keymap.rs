@@ -146,7 +146,7 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 86] = [
     ("selection.mute", "Mute or unmute the selected clips, or turn the device clicked last off or on", "Edit"),
     ("selection.rename", "Rename the selected clip", "Edit"),
     ("selection.selectAll", "Select every clip in the arrangement", "Edit"),
-    ("selection.split", "Split the selected clip at the playhead", "Edit"),
+    ("selection.split", "Split the selected clip where it was clicked, or at the playhead", "Edit"),
     ("selection.consolidate", "Consolidate the selected clip into a new one", "Edit"),
     ("selection.group", "Group the selected tracks, or the picked devices into a device group", "Tracks"),
     ("selection.ungroup", "Take the picked device group of one branch apart", "Edit"),
