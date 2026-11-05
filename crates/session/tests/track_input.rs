@@ -3,6 +3,7 @@
 
 //! The default track input (#1191, ADR 0017): `audio.setTrackInput`, new audio tracks that take
 //! it while an input device is chosen, and armed tracks that hear nothing getting it.
+#![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
 
 use serde_json::{Value, json};
 use suhina_model::InputChannels;
