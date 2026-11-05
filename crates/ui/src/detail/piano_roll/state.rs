@@ -512,7 +512,7 @@ impl PianoRollState {
     pub(super) fn zoom_to(&mut self, start: f64, end: f64) {
         let width = self.view_width.max(1.0);
         let span = (end - start).max(EPSILON) as f32;
-        self.beat_width = (width / span).clamp(BEAT_WIDTH_RANGE.0, BEAT_WIDTH_RANGE.1);
+        self.beat_width = clamp_beat_width(width / span, &PIANO_ROLL_BEAT_WIDTHS);
         self.scroll.x = (start.max(0.0) as f32 * self.beat_width).max(0.0);
     }
 

@@ -288,7 +288,17 @@ fn z_fits_the_selection_and_shift_z_the_whole_clip() {
     state.selected = BTreeSet::from([0]);
     state.view_width = 100_000.0;
     state.key_action("pianoRoll.zoomSelection", &clip, 0.0, None);
-    assert_eq!(state.beat_width, BEAT_WIDTH_RANGE.1);
+    assert_eq!(state.beat_width, *PIANO_ROLL_BEAT_WIDTHS.end());
+}
+
+#[test]
+fn z_stops_at_the_lower_zoom_bound_for_a_selection_longer_than_the_view() {
+    let long = clip(vec![note(0.0, 200.0, 60)]);
+    let mut state = focused_on(&long);
+    state.view_width = 400.0;
+    state.selected = BTreeSet::from([0]);
+    state.key_action("pianoRoll.zoomSelection", &long, 0.0, None);
+    assert_eq!(state.beat_width, *PIANO_ROLL_BEAT_WIDTHS.start());
 }
 
 fn focused_on(clip: &PianoClip) -> PianoRollState {

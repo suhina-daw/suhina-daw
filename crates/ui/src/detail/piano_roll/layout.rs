@@ -209,7 +209,7 @@ pub(super) fn velocity_lane_height(room: f32, key_height: f32, wanted: Option<f3
 /// A newly shown clip: the whole clip fits the `grid`'s width, and its notes are in the middle.
 pub(super) fn fit(state: &mut PianoRollState, grid: Rect, clip: &PianoClip, rows: &KeyRows) {
     let width = grid.width().max(1.0);
-    state.beat_width = (width / clip.length.max(1.0) as f32).clamp(BEAT_WIDTH_RANGE.0, BEAT_WIDTH_RANGE.1);
+    state.beat_width = clamp_beat_width(width / clip.length.max(1.0) as f32, &PIANO_ROLL_BEAT_WIDTHS);
     state.scroll.x = 0.0;
     state.scrolled_by_hand = false;
     centre_notes(state, grid.height(), clip, rows);
@@ -289,7 +289,7 @@ pub(super) fn scroll_and_zoom_by_hand(ui: &Ui, state: &mut PianoRollState, area:
                 zoom_keys(state, zoom);
             } else {
                 let beat = (pointer.x - grid.left() + state.scroll.x) / state.beat_width;
-                state.beat_width = (state.beat_width * zoom).clamp(BEAT_WIDTH_RANGE.0, BEAT_WIDTH_RANGE.1);
+                state.beat_width = clamp_beat_width(state.beat_width * zoom, &PIANO_ROLL_BEAT_WIDTHS);
                 state.scroll.x = beat * state.beat_width - (pointer.x - grid.left());
                 state.zoom_reach = f64::from((state.scroll.x + grid.width()) / state.beat_width);
             }

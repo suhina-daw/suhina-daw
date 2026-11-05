@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! [`HostedPlugin`]: what the host process does with a loaded plug-in, whatever its format
-//! (#764 › 10). CLAP, VST3 and the test processors each implement it; what a format lacks (an
+//! (#764 › 10). CLAP, VST3, VST2 (with the `vst2` feature) and the test processors each implement it; what a format lacks (an
 //! editor, ARA) has a default that says so, so the host's loop needs no match on the format.
 
 use std::sync::Arc;

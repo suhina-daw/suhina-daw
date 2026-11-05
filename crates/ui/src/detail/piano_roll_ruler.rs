@@ -12,9 +12,10 @@ use crate::kit::surface::Backgrounds as _;
 use egui::{Color32, CursorIcon, Id, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
 
-use crate::detail::piano_roll::{BEAT_WIDTH_RANGE, PianoClip, PianoRollState, note_grid};
+use crate::detail::piano_roll::{PianoClip, PianoRollState, note_grid};
 use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme;
+use crate::kit::time_axis::{PIANO_ROLL_BEAT_WIDTHS, clamp_beat_width};
 use crate::kit::widgets::{self, Action};
 
 /// Height of the loop row at the top of the ruler, of the bar in it, and how far from a handle or
@@ -310,7 +311,7 @@ pub fn interact(
                 let beat = axis(state).beat_at(x);
                 let x = x + delta.x;
                 state.beat_width =
-                    (state.beat_width * (delta.y * ZOOM_PER_POINT).exp()).clamp(BEAT_WIDTH_RANGE.0, BEAT_WIDTH_RANGE.1);
+                    clamp_beat_width(state.beat_width * (delta.y * ZOOM_PER_POINT).exp(), &PIANO_ROLL_BEAT_WIDTHS);
                 state.scroll.x = (beat as f32 * state.beat_width - (x - left)).max(0.0);
                 state.ruler.drag = Some(Drag::Zoom { x });
             }

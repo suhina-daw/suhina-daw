@@ -21,6 +21,7 @@ use crate::detail::piano_roll_scale::{self as scale_view, Fold, KeyRows};
 use crate::interaction::grid::track_colour;
 use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme;
+use crate::kit::time_axis::{PIANO_ROLL_BEAT_WIDTHS, clamp_beat_width};
 use crate::kit::widgets::{self, Action};
 use crate::settings::ToolbarSize;
 use crate::settings::workflow::Workflow;
@@ -80,9 +81,6 @@ const TOOL_GAP: f32 = 3.0;
 /// Key row heights and points per beat: the default and the zoom ranges.
 const DEFAULT_KEY_HEIGHT: f32 = 12.0;
 const KEY_HEIGHT_RANGE: (f32, f32) = (6.0, 160.0);
-/// How wide a beat may be ([`crate::kit::time_axis::PIANO_ROLL_BEAT_WIDTHS`]), as a pair.
-pub(crate) const BEAT_WIDTH_RANGE: (f32, f32) =
-    (*crate::kit::time_axis::PIANO_ROLL_BEAT_WIDTHS.start(), *crate::kit::time_axis::PIANO_ROLL_BEAT_WIDTHS.end());
 /// How much one point of Alt and the wheel scales key rows.
 const KEY_ZOOM_PER_POINT: f32 = 0.004;
 /// Grid lines closer than this, in points, are thinned out.
