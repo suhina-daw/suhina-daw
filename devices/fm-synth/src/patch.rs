@@ -41,7 +41,9 @@ pub const OP_SWITCH: usize = 155;
 
 /// Highest value of each byte of a single voice (operator bytes repeat every 21).
 const OP_MAX: [u8; OP_BYTES] = [99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 3, 3, 7, 3, 7, 99, 1, 31, 99, 14];
-const GLOBAL_MAX: [u8; 19] = [99, 99, 99, 99, 99, 99, 99, 99, 31, 7, 1, 99, 99, 99, 99, 1, 5, 7, 48];
+const GLOBAL_MAX: [u8; 19] = [99, 99, 99, 99, 99, 99, 99, 99, 42, 7, 1, 99, 99, 99, 99, 1, 5, 7, 48];
+/// The highest algorithm a voice file can hold (algorithm 1 is 0).
+const FILE_ALGORITHMS: u8 = 31;
 
 /// The highest value byte `index` of a voice may hold.
 pub fn max_value(index: usize) -> u8 {
@@ -128,6 +130,10 @@ impl Patch {
         for (i, &value) in data.iter().enumerate() {
             patch.set(i, value);
         }
+        // The algorithms after the file format's 32 are the device's own.
+        if data.get(ALGORITHM).copied().unwrap_or(0) > FILE_ALGORITHMS {
+            patch.set(ALGORITHM, FILE_ALGORITHMS);
+        }
         patch.set(OP_SWITCH, 0x3f);
         patch
     }
@@ -137,6 +143,9 @@ impl Patch {
         let mut out = [0u8; VOICE_BYTES];
         if let Some(bytes) = self.bytes.get(..VOICE_BYTES) {
             out.copy_from_slice(bytes);
+        }
+        if let Some(algorithm) = out.get_mut(ALGORITHM) {
+            *algorithm = (*algorithm).min(FILE_ALGORITHMS);
         }
         out
     }
@@ -186,9 +195,9 @@ impl Patch {
         std::array::from_fn(|i| self.byte(PITCH_LEVEL + i))
     }
 
-    /// 0..=31 (algorithm 1 is 0).
+    /// 0..=42 (algorithm 1 is 0).
     pub fn algorithm(&self) -> usize {
-        self.byte(ALGORITHM).clamp(0, 31) as usize
+        self.byte(ALGORITHM).clamp(0, 42) as usize
     }
 
     pub fn feedback(&self) -> i32 {

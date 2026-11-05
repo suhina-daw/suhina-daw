@@ -1484,7 +1484,9 @@ fn exactly_one_sampler_mode_is_selected_for_each_mode() {
         let selected: Vec<_> = canvas
             .controls
             .iter()
-            .filter(|c| c.x.as_ref().is_some_and(|b| b.parameter == "mode") && control_selected(c, &parameters))
+            .filter(|c| {
+                c.x.as_ref().is_some_and(|b| b.parameter == "mode") && control_selected(c, &Values::new(&parameters))
+            })
             .collect();
         assert_eq!(selected.len(), 1);
         assert!(matches!(selected[0].gesture, UiGesture::Set(target) if f64::from(target) == mode));
@@ -2021,7 +2023,196 @@ fn click_to_focus(position: Pos2) -> Vec<Vec<egui::Event>> {
 }
 
 fn handle_widget() -> Option<Widget> {
-    Some(Widget::Handle { color: [255, 255, 255, 255], span: None })
+    Some(Widget::Handle {
+        color: [255, 255, 255, 255],
+        span: None,
+        offset: None,
+        dot: false,
+        relative: false,
+        hollow: false,
+    })
+}
+
+#[test]
+fn a_handles_offset_moves_where_it_is_grabbed() {
+    let mut canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("level"));
+    let control = &mut Arc::make_mut(&mut canvas).controls[0];
+    control.bounds = [0.0, 0.0, 200.0, 100.0];
+    control.widget = Some(Widget::Handle {
+        color: [255, 255, 255, 255],
+        span: None,
+        offset: Some(100.0.into()),
+        dot: false,
+        relative: false,
+        hollow: false,
+    });
+    // At half its travel, a handle over 0..200 moved by 100 is at 200, and 300 is its 1.0.
+    let (grab, to) = (Pos2::new(200.0, 50.0), Pos2::new(250.0, 50.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let actions = frames(&canvas, Vec2::new(400.0, 100.0), &[parameter("level", false)], events);
+    let value = last_value(&actions).expect("the handle was dragged");
+    assert!((value - 0.75).abs() < 0.01, "{value}");
+}
+
+#[test]
+fn a_relative_handle_moves_by_the_pointers_travel_and_not_to_it() {
+    let mut canvas = one_control([400.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("level"));
+    let control = &mut Arc::make_mut(&mut canvas).controls[0];
+    control.bounds = [0.0, 0.0, 200.0, 100.0];
+    control.widget = Some(Widget::Handle {
+        color: [255, 255, 255, 255],
+        span: None,
+        offset: None,
+        dot: false,
+        relative: true,
+        hollow: false,
+    });
+    // Grabbed at its value, half way, and moved a quarter of its bounds: a quarter of the range on.
+    let (grab, to) = (Pos2::new(100.0, 50.0), Pos2::new(150.0, 50.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(Pos2::new(125.0, 50.0))],
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let actions = frames(&canvas, Vec2::new(400.0, 100.0), &[parameter("level", false)], events);
+    let value = last_value(&actions).expect("the handle was dragged");
+    assert!((value - 0.75).abs() < 0.01, "{value}");
+}
+
+#[test]
+fn a_panel_reads_the_clock_and_its_parameters_by_name() {
+    let parameters = [parameter("level", false)];
+    let values = Values { time: 2.5, ..Values::new(&parameters) };
+    assert_eq!(values.read(suhina_device_sdk::ui::TIME_ID, false, false), 2.5);
+    assert_eq!(values.read("level", false, false), parameters[0].value);
+    assert_eq!(values.read("nothing", false, false), 0.0);
+}
+
+#[test]
+fn a_point_moves_both_its_parameters_as_one_gesture() {
+    let mut canvas = one_control([200.0, 100.0], false, handle_widget(), UiGesture::Position, UiBinding::new("a"));
+    let control = &mut Arc::make_mut(&mut canvas).controls[0];
+    control.bounds = [0.0, 0.0, 200.0, 100.0];
+    control.y = Some(UiBinding::new("b"));
+    let (grab, to) = (Pos2::new(100.0, 50.0), Pos2::new(150.0, 25.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let parameters = [parameter("a", false), parameter("b", false)];
+    let actions = frames(&canvas, Vec2::new(200.0, 100.0), &parameters, events);
+    let last_of = |id: &str| {
+        actions
+            .iter()
+            .rev()
+            .find(|a| a.params["param"] == id)
+            .map(|a| (a.params["value"].as_f64(), a.params["gesture"].clone()))
+    };
+    let (a, gesture_a) = last_of("a").expect("the point moved along x");
+    let (b, gesture_b) = last_of("b").expect("the point moved along y");
+    assert!((a.unwrap_or(0.0) - 0.75).abs() < 0.01, "{a:?}");
+    assert!((b.unwrap_or(0.0) - 0.75).abs() < 0.01, "{b:?}");
+    assert_eq!(gesture_a, gesture_b);
+}
+
+#[test]
+fn a_negative_drag_scale_runs_a_handles_travel_the_other_way() {
+    let binding = UiBinding { drag_scale: -1.0, ..UiBinding::new("level") };
+    let mut canvas = one_control([200.0, 100.0], false, handle_widget(), UiGesture::Position, binding);
+    Arc::make_mut(&mut canvas).controls[0].bounds = [0.0, 0.0, 200.0, 100.0];
+    let (grab, to) = (Pos2::new(100.0, 50.0), Pos2::new(50.0, 50.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(grab)],
+        press(grab, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+    ];
+    let actions = frames(&canvas, Vec2::new(200.0, 100.0), &[parameter("level", false)], events);
+    let value = last_value(&actions).expect("the handle was dragged");
+    assert!((value - 0.75).abs() < 0.01, "{value}");
+}
+
+/// Four bars 25 wide over partials `a` to `d`, with `wave` for the X binding of each.
+fn bars() -> (Arc<DeviceUi>, Vec<GraphParameter>) {
+    let mut canvas = one_control([100.0, 100.0], false, None, UiGesture::Draw(3), UiBinding::new("a"));
+    let template = canvas.controls[0].clone();
+    Arc::make_mut(&mut canvas).controls = ["a", "b", "c", "d"]
+        .iter()
+        .enumerate()
+        .map(|(i, id)| CustomControl {
+            id: format!("bar_{id}"),
+            bounds: [i as f32 * 25.0, 0.0, 25.0, 100.0],
+            x: Some(UiBinding::new("wave")),
+            y: Some(UiBinding::new(*id)),
+            ..template.clone()
+        })
+        .collect();
+    let mut parameters: Vec<GraphParameter> = ["a", "b", "c", "d"].iter().map(|id| parameter(id, false)).collect();
+    parameters.push(GraphParameter { min: 0.0, max: 3.0, value: 0.0, ..parameter("wave", false) });
+    (canvas, parameters)
+}
+
+#[test]
+fn dragging_across_bars_draws_each_of_them_as_one_undo_step() {
+    let (canvas, parameters) = bars();
+    let (from, to) = (Pos2::new(5.0, 25.0), Pos2::new(95.0, 75.0));
+    let events = vec![
+        vec![egui::Event::PointerMoved(from)],
+        press(from, true),
+        vec![egui::Event::PointerMoved(to)],
+        press(to, false),
+        vec![],
+    ];
+    let actions = frames(&canvas, Vec2::splat(100.0), &parameters, events);
+    // What the stroke set: the action that closes it repeats a bar's stored value, which this
+    // test's parameters never take up.
+    let value_of = |id: &str| {
+        actions
+            .iter()
+            .rev()
+            .find(|a| a.params["param"] == id && a.params["continuous"] == true)
+            .and_then(|a| a.params["value"].as_f64())
+    };
+    // A straight line from the press to the release, read at each bar's middle: the fast drag
+    // leaves no bar out.
+    assert!(value_of("a").is_some_and(|v| v > 0.6), "{actions:?}");
+    assert!(value_of("b").is_some_and(|v| v > 0.5 && v < 0.75), "{actions:?}");
+    assert!(value_of("c").is_some_and(|v| v > 0.25 && v < 0.5), "{actions:?}");
+    assert!(value_of("d").is_some_and(|v| v < 0.4), "{actions:?}");
+    assert_eq!(value_of("wave"), Some(3.0), "drawing asks for the wave that plays it");
+    assert!(actions.iter().all(|a| a.params["gesture"] == actions[0].params["gesture"]));
+    assert_eq!(actions.last().map(|a| a.params["continuous"].as_bool()), Some(Some(false)), "the stroke ends");
+}
+
+#[test]
+fn a_click_on_a_bar_sets_only_that_bar() {
+    let (canvas, parameters) = bars();
+    let at = Pos2::new(30.0, 50.0);
+    let events = vec![vec![egui::Event::PointerMoved(at)], press(at, true), press(at, false), vec![]];
+    let actions = frames(&canvas, Vec2::splat(100.0), &parameters, events);
+    assert!(actions.iter().any(|a| a.params["param"] == "b"), "{actions:?}");
+    assert!(!actions.iter().any(|a| a.params["param"] == "a" || a.params["param"] == "c"), "{actions:?}");
+}
+
+#[test]
+fn an_expand_button_goes_to_its_page_and_opens_the_panel() {
+    let mut canvas = one_control([60.0, 60.0], false, None, UiGesture::Expand(6), UiBinding::new("page"));
+    Arc::make_mut(&mut canvas).controls[0].widget =
+        Some(Widget::Button { label: "%".into(), off_label: None, indicator: false });
+    let page = GraphParameter { min: 0.0, max: 6.0, value: 0.0, ..parameter("page", false) };
+    let at = Pos2::new(30.0, 30.0);
+    let events = vec![vec![egui::Event::PointerMoved(at)], press(at, true), press(at, false), vec![]];
+    let actions = frames(&canvas, Vec2::splat(60.0), &[page], events);
+    assert_eq!(last_value(&actions), Some(6.0));
 }
 
 fn last_value(actions: &[Action]) -> Option<f64> {
@@ -2084,6 +2275,18 @@ fn a_negative_drag_scale_steps_a_discrete_control_the_other_way() {
     assert_eq!(step(1.0), Some(6.0));
     assert_eq!(step(-1.0), Some(4.0));
 }
+
+#[test]
+fn a_plot_ends_where_its_curve_leaves_the_range_and_does_not_run_along_the_edge() {
+    // Falls through the bottom (100) between x 1 and 2, stays below, comes back up between 3 and 4.
+    let points = [(0.0, 50.0), (1.0, 80.0), (2.0, 120.0), (3.0, 140.0), (4.0, 60.0)];
+    let lines = plot_inside(&points, 0.0, 100.0);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert_eq!(lines[0], vec![(0.0, 50.0), (1.0, 80.0), (1.5, 100.0)]);
+    assert_eq!(lines[1], vec![(3.5, 100.0), (4.0, 60.0)]);
+    assert!(plot_inside(&[(0.0, 200.0), (1.0, 300.0)], 0.0, 100.0).is_empty(), "nothing inside, nothing drawn");
+}
+
 #[test]
 fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
     use egui::{ViewportCommand, ViewportId};

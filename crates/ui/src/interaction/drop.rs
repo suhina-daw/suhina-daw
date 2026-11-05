@@ -337,6 +337,10 @@ pub fn plan(
                 params["plugin"] = json!(spec);
                 "device.addPlugin"
             }
+            (Item::Stock(key), _) => {
+                params["stock"] = json!(key);
+                "device.add"
+            }
         };
         match target {
             DropTarget::Lane { track, .. }
@@ -358,6 +362,8 @@ pub fn plan(
                     if let Some(voice) = params.get("voice") {
                         add["voice"] = voice.clone();
                     }
+                } else if let Some(stock) = params.get("stock") {
+                    add["stock"] = stock.clone();
                 } else if let Some(id) = params.get("id").or_else(|| params.get("plugin")) {
                     add["device"] = id.clone();
                 }

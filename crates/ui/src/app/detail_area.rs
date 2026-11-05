@@ -429,11 +429,23 @@ impl App {
             let monitor = self.session().and_then(|s| s.player()).map(suhina_session::Player::meter_monitor);
             let open = detail_view::expanded(ui.ctx()).filter(|(track, _)| *track == chain.track).map(|(_, at)| at);
             let track = chain.track;
+            let mut seen = Vec::new();
             let live = detail_view::give_host_values(&mut chain.devices, open.as_ref(), &mut |at| {
-                monitor.and_then(|monitor| monitor.readouts(track, &at.0))
+                let values = monitor.and_then(|monitor| monitor.readouts(track, &at.0));
+                if let Some(values) = &values {
+                    seen.extend_from_slice(values);
+                }
+                values
             });
             if live {
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+                // Frames while they move; while they rest, often enough to catch a note that starts.
+                let moved = ui.ctx().data_mut(|data| {
+                    let last = data.get_temp_mut_or_default::<Vec<f32>>(egui::Id::new("device-readouts"));
+                    let moved = *last != seen;
+                    *last = seen;
+                    moved
+                });
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(if moved { 33 } else { 100 }));
             }
         }
         self.expanded_panel = detail_view::expanded_device(ui.ctx(), &shown);

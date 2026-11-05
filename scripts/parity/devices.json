@@ -63,7 +63,7 @@
     ["External Instrument", "31.6", "external MIDI and audio", "none", "needs external MIDI and audio I/O"],
     ["Impulse", "31.7", "drum sampler", "none", "the planned drum sampler is for drum pads, not this"],
     ["Meld", "31.8", "macro oscillator synth", "none", "no planned device matches it"],
-    ["Operator", "31.9", "FM synth", "close", "Suhina FM synth: DX7-style engine (MSFA port), six operators, 32 algorithms; Operator's filter, waveforms and envelopes are planned"],
+    ["Operator", "31.9", "FM synth", "close", "Suhina FM synth: six operators, 43 algorithms, waveforms, drawn partials, time envelopes, filter and shaper, two LFOs, matrix, spread; import planned"],
     ["Sampler", "31.10", "multisample sampler", "planned", "ROADMAP: sampler"],
     ["Simpler", "31.11", "single-sample sampler", "close", "Sampler: single source, looping, simultaneous amplitude/filter/pitch envelope graphs with cumulative timing and directly draggable stage points, persistent full-width waveform in sample/grain modes, shared six-shape pitch/filter/volume/pan LFO with Random and Hz/time/beat/triplet/dotted/16th rate modes and independent source and loop-edge fades without a separate loop-fade control, context-sensitive source/loop S/E markers, fixed-height themed strip with mode icons, filter/fade/output dials, editable LFO rate and a More page for secondary controls, mono/glide, smooth voice replacement, retrigger, independent voice heads, four filter types with 12/24 slopes and ADSR/velocity/key modulation, granular mode; transient, source-tempo beat, equal-region and manual slicing with versioned automatic-boundary corrections, grid/snap, stereo waveform, selected-slice audition, pointer zoom/ruler navigation, and independent mono/poly/through and note-release choices; tempo-synchronised Sample Warp with Repitch and five pitch-preserving modes sharing Signalsmith, automatic source BPM from metadata/name/detection, unknown tempo kept explicit with legacy warp-length fallback, editable original BPM and uninterrupted live warp-mode switching"],
     ["Tension", "31.12", "physical modelling", "planned", "ROADMAP: physical-modelling synth"],
@@ -82,6 +82,6 @@
     ["delay", "effect", "stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze (27 parameters)"],
     ["reverb", "effect", "algorithmic: input band, early reflections, feedback delay network with damping, chorus, freeze (32 parameters)"],
     ["pitch", "MIDI effect", "transposes by semitones or scale degrees, keeps notes in a key window: Block, Fold, Limit (6 parameters)"],
-    ["fm-synth", "instrument", "six operators, 32 algorithms, DX7 voice files (173 parameters)"]
+    ["fm-synth", "instrument", "six operators, 43 algorithms, waveforms and drawn partials, time envelopes, filter and shaper, two LFOs, matrix, spread, randomizer, DX7 voice files (888 parameters)"]
   ]
 }

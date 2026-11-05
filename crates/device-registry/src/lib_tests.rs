@@ -4,6 +4,55 @@
 use super::*;
 
 #[test]
+fn the_fm_synths_panel_shows_every_algorithm_and_draws_its_partials() {
+    use suhina_device_sdk::ui::UiGesture;
+    let panel = panel("fm-synth").unwrap();
+    let (compact, expanded) = (panel.ui.as_ref().unwrap(), panel.expanded.as_ref().unwrap());
+    let count = |canvas: &suhina_device_sdk::ui::DeviceUi, prefix: &str| {
+        canvas.controls.iter().filter(|c| c.id.starts_with(prefix)).count()
+    };
+    assert_eq!(count(compact, "algorithm_picture_"), 43);
+    assert_eq!(count(expanded, "x_pick_"), 43);
+    for canvas in [compact, expanded] {
+        let bars = canvas.controls.iter().filter(|c| matches!(c.gesture, UiGesture::Draw(_))).count();
+        assert_eq!(bars, 6 * (16 + 32 + 64));
+    }
+    assert!(compact.controls.iter().any(|c| matches!(c.gesture, UiGesture::Expand(8))), "Random's way to its settings");
+    // The larger view is a strip above the row, which stays in view, and is no higher than it needs.
+    assert!(expanded.strip);
+    assert!(compact.size[0] < 1100.0 && expanded.size[1] < 240.0);
+    // The LFO's and the filter's main controls stay in view: nothing makes them follow the page.
+    for id in ["filterFreq_main", "filterRes_main", "filterType_main", "lfo2Wave_main", "lfo2Amount_main"] {
+        let control = compact.controls.iter().find(|c| c.id == id).unwrap();
+        assert!(control.visible_when.is_none(), "{id}");
+    }
+    // A control that changes a value says what it is for, not how a mouse moves it.
+    for canvas in [compact, expanded] {
+        for control in canvas.controls.iter().filter(|c| !matches!(c.gesture, UiGesture::Draw(_))) {
+            assert!(!control.tooltip.contains("drag"), "{}: {}", control.id, control.tooltip);
+            if control.y.is_some() && matches!(control.gesture, UiGesture::Drag) {
+                assert!(control.tooltip.len() > control.name.len(), "{} says nothing", control.id);
+            }
+        }
+    }
+    // An operator's square in the picture selects it, in every algorithm and on both canvases.
+    for canvas in [compact, expanded] {
+        let squares = canvas.controls.iter().filter(|c| c.id.starts_with("pick_op")).count();
+        assert_eq!(squares, 43 * 6);
+    }
+    // A card on the Algorithm page takes the click anywhere on it, its picture included.
+    let card = expanded.controls.iter().find(|c| c.id == "x_pick_5").unwrap();
+    assert!(matches!(card.gesture, UiGesture::Set(5)));
+    assert!(card.bounds[3] > 40.0, "the whole card, not its number");
+    let drawn = suhina_device_fm_synth::params::WAVES.iter().position(|w| *w == "Drawn");
+    let wanted = compact.controls.iter().find_map(|c| match c.gesture {
+        UiGesture::Draw(wave) => Some(usize::from(wave)),
+        _ => None,
+    });
+    assert_eq!(wanted, drawn, "drawing asks for the Drawn wave");
+}
+
+#[test]
 fn a_dx7_voice_is_a_preset_for_the_fm_synth() {
     use suhina_device_fm_synth::patch::{Patch, write_bank, write_voice};
     let mut patch = Patch::default();
@@ -27,6 +76,79 @@ fn a_dx7_voice_is_a_preset_for_the_fm_synth() {
     assert!(super::preset(&bank, 0).is_err());
     assert!(super::preset(b"not a preset", 1).is_err());
     assert!(super::preset(&vec![0u8; MAX_PRESET_BYTES + 1], 1).is_err());
+}
+
+#[test]
+fn every_stock_preset_reads_and_gives_every_parameter_of_its_device() {
+    assert_eq!(stock_presets().len(), STOCK_FILES.len(), "a file does not read");
+    for (key, text) in STOCK_FILES {
+        let file: serde_json::Value = serde_json::from_str(text).unwrap();
+        let stock = stock_preset(key).unwrap();
+        let device = info(stock.preset.device).unwrap();
+        assert_eq!(key.split('/').next(), Some(device.id), "{key} lies in its device's folder");
+        assert!(text.len() <= MAX_PRESET_BYTES, "{key}");
+        let values = file["params"].as_object().unwrap();
+        assert_eq!(values.len(), device.params.len(), "{key}: every parameter, and no other");
+        for (param, (id, value)) in device.params.iter().zip(&stock.preset.params) {
+            assert_eq!(param.id, *id);
+            assert_eq!(values[*id].as_f64(), Some(*value), "{key}: {id}");
+        }
+        assert!(!stock.tags.is_empty(), "{key}");
+    }
+}
+
+#[test]
+fn every_preset_file_in_the_folder_is_built_in() {
+    let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../presets");
+    let mut files = 0;
+    for device in std::fs::read_dir(folder).unwrap().flatten().filter(|e| e.path().is_dir()) {
+        let device_id = device.file_name().to_string_lossy().into_owned();
+        for file in std::fs::read_dir(device.path()).unwrap().flatten() {
+            let name = file.file_name().to_string_lossy().into_owned();
+            assert!(name.ends_with(&format!(".{device_id}.preset.suhina")), "{name}");
+            let stem = name.split('.').next().unwrap().to_string();
+            assert!(
+                stock_presets().iter().any(|s| s.preset.name == stem),
+                "{name} is not in STOCK_FILES, or has another name inside"
+            );
+            files += 1;
+        }
+    }
+    assert_eq!(files, STOCK_FILES.len());
+}
+
+#[test]
+fn a_device_preset_file_is_read_and_a_bad_one_refused() {
+    let file = |rest: &str| {
+        format!(
+            r#"{{ "format": "suhina-preset", "version": 1, "device": "fm-synth", "role": "instrument", "name": "Mine", {rest} }}"#
+        )
+    };
+    let good = file(r#""params": { "volume": -3.0, "gone": 1.0 }"#);
+    let read = preset(good.as_bytes(), 1).unwrap();
+    assert_eq!((read.device, read.name.as_str()), ("fm-synth", "Mine"));
+    let value = |id: &str| read.params.iter().find(|(p, _)| *p == id).unwrap().1;
+    assert_eq!(value("volume"), -3.0);
+    assert_eq!(value("voices"), 16.0, "what it leaves out takes its default");
+    assert!(read.params.iter().all(|(id, _)| *id != "gone"), "what the device lacks is left out");
+    assert_eq!(preset_voices(good.as_bytes()).unwrap(), vec![(1, "Mine".to_string())]);
+    assert!(preset(good.as_bytes(), 2).is_err());
+    for bad in [
+        file(r#""params": { "volume": 99.0 }"#),
+        file(r#""params": { "volume": "loud" }"#),
+        file(r#""nothing": 1"#),
+        good.replace("suhina-preset", "other"),
+        good.replace(r#""version": 1"#, r#""version": 2"#),
+        good.replace(r#""fm-synth""#, r#""nothing""#),
+        good.replace(r#""instrument""#, r#""effect""#),
+        good.replace(r#""Mine""#, r#""  ""#),
+        "{ not json".to_string(),
+    ] {
+        assert!(preset(bad.as_bytes(), 1).is_err(), "{bad}");
+    }
+    let mut large = good.into_bytes();
+    large.resize(MAX_PRESET_BYTES + 1, b' ');
+    assert!(preset(&large, 1).is_err());
 }
 
 #[test]
