@@ -417,8 +417,11 @@ impl GroupSlot {
 
     /// Takes the settings of `fresh`, a group built for the same devices after an edit: branch
     /// gains, mute and solo, mix and gain (smoothed from where they are), and its devices'
-    /// parameter values. Its own running devices stay. Never allocates.
+    /// parameter values, and its number. Its own running devices stay. Never allocates.
     pub(crate) fn adopt(&mut self, fresh: &mut GroupSlot) {
+        // The edit can have added or removed groups before this one: the session names a group
+        // by its number in the new project, so the running slot takes the number it is built with.
+        self.number = fresh.number;
         std::mem::swap(&mut self.dry_delay, &mut fresh.dry_delay);
         self.dry_delay.adopt(&mut fresh.dry_delay);
         self.mix.target = fresh.mix.target;

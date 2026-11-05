@@ -576,3 +576,38 @@ fn groups_are_numbered_depth_first_whether_they_run_or_not() {
     assert_eq!(group_number(&devices, &[1, 1, 0]), Some(3));
     assert_eq!(group_number(&devices, &[1, 0, 0]), None);
 }
+
+/// A group that keeps running through an edit takes its new number, so a branch message built
+/// from the new project reaches it (#1149 review).
+#[test]
+fn a_group_keeps_its_message_address_when_an_edit_renumbers_it() {
+    use crate::{BranchValue, MIXER_BRANCH, branch_param, group_number};
+    let a = group(vec![branch(vec![device("utility", &[])])], &[]);
+    let b = group(vec![branch(vec![device("utility", &[])])], &[]);
+    let mut project = project(vec![note(0.0, 8.0, 69)], 8.0, vec![a, b]);
+    // The devices keep their ids across the edit, as the session's edits do.
+    project.assign_ids().unwrap();
+    let kept = project.channels[0].devices[1].id;
+    assert!(kept.is_some());
+    let mut edited = project.clone();
+    edited.channels[0].devices.remove(0);
+    // After deleting A, B is group 0 of the project, though it runs as group 1.
+    assert_eq!(edited.channels[0].devices[0].id, kept);
+    assert_eq!(group_number(&edited.channels[0].devices, &[0]), Some(0));
+    let mut renderer = crate::Renderer::build(
+        &project,
+        RenderInputs::new(suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let before = blocks(&mut renderer, 10, 480);
+    assert!(peak(&before[5 * 960..]) > 0.05);
+    controller.update(&edited).unwrap_or_else(|e| panic!("{e}"));
+    controller.set_device_param(TrackId(1), MIXER_BRANCH, branch_param(0, 0, BranchValue::Mute), 1.0).unwrap();
+    blocks(&mut renderer, 10, 480);
+    // B's only branch is muted, so nothing is left after the ramp.
+    let after = blocks(&mut renderer, 10, 480);
+    assert!(peak(&after) < 1e-4, "{}", peak(&after));
+}
