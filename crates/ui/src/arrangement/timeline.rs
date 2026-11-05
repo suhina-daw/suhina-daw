@@ -534,6 +534,27 @@ impl Timeline {
         }
     }
 
+    /// While a point of a volume or pan lane is dragged, its header shows the value the point
+    /// takes, wherever the playhead is (#811). Called after [`Timeline::follow_automation`].
+    pub fn follow_drag(&mut self, dragged: Option<&crate::arrangement::automation_lanes::Dragged>) {
+        use suhina_engine::model::automation::{PAN, VOLUME};
+        let Some(dragged) = dragged.filter(|d| d.key.device.is_none()) else { return };
+        let volume = dragged.key.param == VOLUME;
+        if dragged.track == TrackId::MAIN {
+            if volume && self.main_volume_db.is_some() {
+                self.main_volume_db = Some(gain_to_db(dragged.value));
+            }
+            return;
+        }
+        for lane in self.lanes.iter_mut().filter(|l| l.track == dragged.track) {
+            if volume {
+                lane.volume_db = gain_to_db(dragged.value);
+            } else if dragged.key.param == PAN {
+                lane.pan = dragged.value;
+            }
+        }
+    }
+
     pub fn follow(&mut self, monitor: Option<&LauncherMonitor>) {
         let (running, beat, start) = monitor.map_or((false, 0.0, 0.0), |m| (m.running(), m.beat(), m.start_beat()));
         let beats = |b: f64| if b.is_finite() { b.max(0.0) } else { 0.0 };

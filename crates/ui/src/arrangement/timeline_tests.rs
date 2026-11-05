@@ -130,6 +130,32 @@ fn headers_show_what_automation_plays_at_the_playhead_running_or_stopped() {
     assert!(volume(&timeline).abs() < 1e-9, "off: the project's own value");
 }
 
+/// While a point of a volume or pan lane is dragged, the header shows the value the point takes,
+/// wherever the playhead is; Main's volume too, and a device's lane leaves the mixer alone (#811).
+#[test]
+fn headers_show_the_value_of_a_dragged_point() {
+    use crate::arrangement::automation_lanes::{Dragged, LaneKey};
+    let project = demo_project();
+    let track = project.tracks[0].id;
+    let mut timeline = Timeline::build(&project, None);
+    let lane = |t: &Timeline| t.lanes.iter().find(|l| l.track == track).map(|l| (l.volume_db, l.pan)).unwrap();
+    let before = lane(&timeline);
+    timeline.follow_drag(None);
+    assert_eq!(lane(&timeline), before);
+    timeline.follow_drag(Some(&Dragged { track, key: LaneKey::mixer("volume"), value: 0.5 }));
+    assert!((lane(&timeline).0 + 6.02).abs() < 0.01, "{}", lane(&timeline).0);
+    timeline.follow_drag(Some(&Dragged { track, key: LaneKey::mixer("volume"), value: 0.0 }));
+    assert_eq!(lane(&timeline).0, f64::NEG_INFINITY, "the bottom is silent");
+    timeline.follow_drag(Some(&Dragged { track, key: LaneKey::mixer("pan"), value: -1.0 }));
+    assert_eq!(lane(&timeline).1, -1.0);
+    let device = LaneKey { device: Some(0), param: "volume".into() };
+    timeline.follow_drag(Some(&Dragged { track, key: device, value: 1.0 }));
+    assert_eq!(lane(&timeline).1, -1.0, "a device's lane is not the mixer's");
+    assert!(timeline.main_volume_db.is_some());
+    timeline.follow_drag(Some(&Dragged { track: TrackId::MAIN, key: LaneKey::mixer("volume"), value: 2.0 }));
+    assert!((timeline.main_volume_db.unwrap() - 6.02).abs() < 0.01);
+}
+
 #[test]
 fn stacked_clips_take_rows_only_where_they_overlap() {
     // Two clips over each other at the start, a third on its own later (#697).

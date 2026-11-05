@@ -540,30 +540,50 @@ impl Detail {
                     let Some(value) = lane.value_at(beat, scale.stepped(), &scale) else { continue };
                     // A whole-number parameter shows what it plays, the fraction cut off toward zero.
                     let value = spec.map_or(value, |spec| spec.played(value));
-                    for (id, v) in &mut device_box.values {
-                        if *id == lane.param {
-                            *v = value;
-                        }
-                    }
-                    for (id, text) in &mut device_box.params {
-                        if *id == lane.param {
-                            *text = format_value(value);
-                        }
-                    }
-                    if let Some(graph) = device_box.graph.as_mut() {
-                        for parameter in graph.parameters.iter_mut().filter(|p| p.id == lane.param) {
-                            let value = value.clamp(parameter.min, parameter.max);
-                            // A plug-in's text is for the value it listed, not the one played.
-                            if value != parameter.value {
-                                parameter.text.clear();
-                            }
-                            parameter.value = value;
-                        }
-                    }
+                    show_value(device_box, &lane.param, value);
                 }
             }
         }
         follow(&mut chain.devices, &channel.devices, beat);
+    }
+
+    /// While a point of a device parameter's lane is dragged, the parameter's knob, slider and
+    /// text show the value the point takes, wherever the playhead is (#811). Called after
+    /// [`Detail::follow_automation`].
+    pub fn follow_drag(&mut self, dragged: Option<&crate::arrangement::automation_lanes::Dragged>) {
+        let chain = match self {
+            Self::Devices(chain) | Self::Clip(_, chain) => chain,
+            Self::Nothing => return,
+        };
+        let Some(dragged) = dragged.filter(|d| d.track == chain.track) else { return };
+        let Some(index) = dragged.key.device else { return };
+        for device_box in chain.devices.iter_mut().filter(|b| b.at.0 == [index]) {
+            show_value(device_box, &dragged.key.param, dragged.value);
+        }
+    }
+}
+
+/// Shows `value` as parameter `param`'s on its device's panel: its knob or slider and its text.
+fn show_value(device_box: &mut DeviceBox, param: &str, value: f64) {
+    for (id, v) in &mut device_box.values {
+        if id.as_str() == param {
+            *v = value;
+        }
+    }
+    for (id, text) in &mut device_box.params {
+        if id.as_str() == param {
+            *text = format_value(value);
+        }
+    }
+    if let Some(graph) = device_box.graph.as_mut() {
+        for parameter in graph.parameters.iter_mut().filter(|p| p.id == param) {
+            let value = value.clamp(parameter.min, parameter.max);
+            // A plug-in's text is for the value it listed, not the one played.
+            if value != parameter.value {
+                parameter.text.clear();
+            }
+            parameter.value = value;
+        }
     }
 }
 

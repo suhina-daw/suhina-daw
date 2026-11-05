@@ -172,6 +172,12 @@ strip's, the returns' and Main's, a device's knob) shows the lane's value at the
 whether the transport runs, is paused or is stopped, and follows the playhead when it is moved
 while stopped (#706, #811). A lane turned off shows the value set by hand.
 
+While a point of an enabled lane is dragged in the Arrangement view, the track header's volume or
+pan, Main's volume and a device's knob in the detail view show the value the point takes, wherever
+the playhead is, so the control moves with the point (#811). When the point is let go of they show
+the lane's value at the playhead again. The mixer strips of the Session view are not drawn beside
+the lanes and keep the value at the playhead.
+
 ## How the engine plays them
 
 The engine runs one render path (offline renders and playback alike), turns lanes into
@@ -338,7 +344,7 @@ the value set on the mixer or the device. Editing (every edit is one undo step):
 | Click away from the line | no point is added: the play start marker moves there (`transport.setStart`, on the grid; Alt: free), as a click on a clip lane does, and the painted range and the selection of points end. With Settings › Arrangement › Automation › **Click anywhere adds** on (off by default), it is `automation.addPoint` at the beat under the pointer (on the nearest line the arrangement's grid draws at this zoom, [arrangement editing](arrangement-editing.md#the-grid); Alt, Option on macOS: free) and the value at its height ([the lane's ends](#the-lanes-ends)) |
 | Double-click away from the line (the setting off) | `automation.addPoint` at the pointer, as above |
 | Click on or near the line (within 6 points), or a lane's faint line | `automation.addPoint` without a value: on the envelope, a bent segment split exactly so it plays and draws as before ([Splitting a segment](#splitting-a-segment)); on the faint line, with the parameter's value |
-| Drag a point | `automation.movePoint`, its beat on the grid (Alt, Option on macOS: free) and its value following the pointer, the lane's top and bottom taking the parameter's ends ([the lane's ends](#the-lanes-ends)); with Shift only along the axis the pointer moved further on, and up or down at a quarter of the speed for a finer value, without the ends. While the button is down the point's value and beat show beside the pointer ("50R at beat 25.25"), as its tooltip shows them afterwards. Points dragged past others keep beat order, and a point dragged onto another's beat stays on the side it came from, so the jump runs as drawn while dragging |
+| Drag a point | `automation.movePoint`, its beat on the grid (Alt, Option on macOS: free) and its value following the pointer, the lane's top and bottom taking the parameter's ends ([the lane's ends](#the-lanes-ends)); with Shift only along the axis the pointer moved further on, and up or down at a quarter of the speed for a finer value, without the ends. While the button is down the point's value and beat show beside the pointer ("50R at beat 25.25"), as its tooltip shows them afterwards, and the parameter's own control (the track header's volume or pan, a device's knob in the detail view) shows the value too, wherever the playhead is; let go of, the control shows what plays at the playhead again. Points dragged past others keep beat order, and a point dragged onto another's beat stays on the side it came from, so the jump runs as drawn while dragging |
 | Right-click the line: **Add value** | `automation.addPoint` on the envelope at that beat, on the grid, as a click on the line does |
 | Right-click a point: **Edit value** | a field beside the point with its value selected (in the set command's unit: dB or `-inf` for the volume; a pan as -1 to 1 or `25L`, `C`, `25R`; `%` and `ms` read for such parameters); Enter or a click elsewhere runs `automation.movePoint` with it, Escape leaves it |
 | The lanes' menus: **Snap to grid** and **Grid** | Snap to grid off (on by default; the window's choice, not saved) places points and ranges where the pointer is, as Alt does; Grid sets the Arrangement's grid ([arrangement editing](arrangement-editing.md#the-grid)) |

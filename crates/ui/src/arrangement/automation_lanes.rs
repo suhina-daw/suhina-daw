@@ -514,6 +514,16 @@ struct PointDrag {
     body: bool,
 }
 
+/// A point being dragged on a lane, or let go of this frame: its track, its lane and the value
+/// it takes, as the lane keeps it (a gain for the volume). The parameter's controls show that
+/// value while the drag lasts, wherever the playhead is (#811).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Dragged {
+    pub track: TrackId,
+    pub key: LaneKey,
+    pub value: f64,
+}
+
 /// How near the top or bottom of a lane's plot a point has to be to take the parameter's maximum
 /// or minimum exactly (#811): one point of the plot is about 3 % of a default lane, and a point
 /// a pixel short of the top looks the same as one on it.
@@ -831,9 +841,22 @@ pub struct LanesState {
     /// begun on a track that reaches over its lanes.
     placed: Vec<(TrackId, LaneKey, usize, Pos2)>,
     placed_pass: u64,
+    /// The point a drag held when the view was last drawn and the value it takes, for the
+    /// headers and panels drawn before the lanes in the next frame.
+    pub dragged: Option<Dragged>,
 }
 
 impl LanesState {
+    /// The point a drag holds (or let go of this frame) and the value it takes, as
+    /// [`dragged_text`] shows it; `None` without a drag, or on a lane that is off.
+    pub fn drag_value(&self, params: &Params) -> Option<Dragged> {
+        let drag = self.point_drag.as_ref().or(self.dropped.as_ref())?;
+        let param = params.param(drag.track, &drag.key).filter(|p| p.enabled)?;
+        let point = param.points.get(drag.point)?;
+        let value = moved_value(param, drag, point.value, value_delta(drag, param));
+        Some(Dragged { track: drag.track, key: drag.key.clone(), value: param.scale.committed(value) })
+    }
+
     /// Whether `track` shows its automation lanes.
     pub fn is_open(&self, track: TrackId) -> bool {
         self.open.contains(&track)
@@ -1299,10 +1322,15 @@ fn drag_delta(drag: &PointDrag, param: &Param, geometry: &Geometry, free: bool) 
     let earliest =
         drag.together.iter().filter_map(|i| param.points.get(*i)).map(|p| p.beat).fold(grabbed.beat, f64::min);
     let beats = (target - grabbed.beat).max(-earliest);
-    let position = param.scale.position(grabbed.value) + drag.now.1 - drag.grab.1;
-    let new = param.scale.value_at(position);
-    let delta = param.scale.number(new) - param.scale.number(grabbed.value);
-    (beats, delta)
+    (beats, value_delta(drag, param))
+}
+
+/// How far a point drag moves its points' values, in the set command's unit, worked out from the
+/// grabbed point.
+fn value_delta(drag: &PointDrag, param: &Param) -> f64 {
+    let Some(grabbed) = param.points.get(drag.point) else { return 0.0 };
+    let new = param.scale.value_at(param.scale.position(grabbed.value) + drag.now.1 - drag.grab.1);
+    param.scale.number(new) - param.scale.number(grabbed.value)
 }
 
 /// What the point a drag holds will be when it is let go of: "50R at beat 25.25".

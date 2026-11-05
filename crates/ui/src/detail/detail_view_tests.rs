@@ -167,6 +167,30 @@ fn panels_follow_automation_as_the_engine_plays_it() {
     assert_eq!((value("mono"), value("balance")), (Some(0.0), Some(-1.0)), "the last point, kept in range");
 }
 
+/// While a point of a device parameter's lane is dragged, its knob shows the value the point
+/// takes, wherever the playhead is; a drag on another track or device changes nothing (#811).
+#[test]
+fn panels_show_the_value_of_a_dragged_point() {
+    use crate::arrangement::automation_lanes::{Dragged, LaneKey};
+    let mut project = demo_project();
+    project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    let index = project.channels[0].devices.len() - 1;
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    let balance = |detail: &Detail| {
+        let Detail::Devices(chain) = detail else { return None };
+        chain.devices.last().and_then(|d| d.values.iter().find(|(p, _)| p == "balance")).map(|v| v.1)
+    };
+    let before = balance(&detail);
+    let key = LaneKey { device: Some(index), param: "balance".into() };
+    detail.follow_drag(Some(&Dragged { track: TrackId(2), key: key.clone(), value: 0.25 }));
+    assert_eq!(balance(&detail), before, "another track's drag");
+    let elsewhere = LaneKey { device: Some(index + 1), param: "balance".into() };
+    detail.follow_drag(Some(&Dragged { track: TrackId(1), key: elsewhere, value: 0.25 }));
+    assert_eq!(balance(&detail), before, "another device's drag");
+    detail.follow_drag(Some(&Dragged { track: TrackId(1), key, value: 0.25 }));
+    assert_eq!(balance(&detail), Some(0.25));
+}
+
 #[test]
 fn a_selected_slot_clip_shows_its_scene_loop_and_fades() {
     let mut project = demo_project();
