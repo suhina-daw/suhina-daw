@@ -199,18 +199,21 @@ its own ([ADR 0015](0015-extensions.md)), whose manifest names the script, the p
 claims and the runner it needs, and Suhina starts the shipped runner with that script; that is
 one program per extension over one shipped binary, which decides the Hosting question
 [ADR 0015](0015-extensions.md) › Not decided yet leaves open, for the runner. The
-implementation is `mlua` with Lua 5.4 vendored (MIT): the C sources ship in the tree, the build
-needs no system Lua, and the interpreter runs only in the runner's processes, outside the audio
-path, with no first-party `unsafe` (rule 2 untouched); `cargo deny check` gates the dependency,
+implementation is `mlua` (MIT), Lua 5.4 built from the `lua-src` crate, so the build needs no
+system Lua; the interpreter runs only in the runner's processes, outside the audio path, with no
+first-party `unsafe` (rule 2 untouched); `cargo deny check` gates the dependency,
 and `piccolo`, pure Rust, is the route away if the C becomes a burden. A script reaches Suhina
 only through decision 10's protocol: the messages of the ports its manifest claims, each with
 the driver's timestamp it arrived with; send-backs leaving from a queue Suhina drains, with no
 answer the script waits for; the same commands, reading commands and subscriptions the window,
-CLI and MCP use, one API to keep. The runner exposes a script no system I/O (`io`, `os` and
-`require` are not present) and preloads its own helpers, the usual modes, layers and session,
-mixer and device components, for scripts to compose instead of reimplement; an ordinary script
-failure stops at an error boundary and is reported, with the process restart covering the
-rest. "Suhina embeds no scripting language" stands: the language never runs in Suhina's
+CLI and MCP use, one API to keep. The runner gives a script an environment narrowed to what it allows: no `io` or
+`os`, no `dofile`, `loadfile` or `package` (no `require` with it), and `load` reads text chunks
+only; the removals are the runner's convenience, and the boundary that is enforced is the
+process ([ADR 0015](0015-extensions.md) › Trust). The runner preloads its own helpers, the
+usual modes, layers and session, mixer and device components, versioned with the runner and
+outside the surface-program protocol, for scripts to compose instead of reimplement; an
+ordinary script failure stops at an error boundary and is reported, with the process restart
+covering the rest. "Suhina embeds no scripting language" stands: the language never runs in Suhina's
 process. Open while the surface-program protocol is open ([ADR 0015](0015-extensions.md) › Not
 decided yet: transport, version policy, trust): the helper library's exact shape and its caps.
 

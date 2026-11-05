@@ -301,26 +301,29 @@ to the control that moves it. The velocities a pad needs for its colours are the
 ## Surface programs (later)
 
 A surface program is an extension ([`extensions.md`](extensions.md)) whose `provides` carries an
-entry with the id `surface`, and which lists the port name patterns it claims. Suhina passes it
-every message from those ports, system exclusive included, sends what it asks on their output
-ports,
+entry with the id `surface`, and whose `ports` are the port name patterns it claims. Suhina
+passes it every message from those ports, system exclusive included, sends what it asks on
+their output ports,
 and gives it the command protocol: it runs commands, reads state through reading commands and
 subscribes to changes. It never reaches the engine or the model by another way. When it is not
 running, its ports fall back to their profiles.
 
 Suhina ships the **Lua runner** ready-made: a small separate program built from this tree, which
 runs a surface program's script. The extension is the script's folder, not the runner: its
-manifest carries in `provides` an entry with the id `surface`, lists the port name patterns the
-script claims, lists the script file in `programs` with its SHA-256, and names the runner it
-needs (`"runner": "lua"`). Suhina starts the runner it shipped with that script, so each surface
-program is one runner process of its own: a script's fault restarts that program alone, with
-its ports back on the profiles meanwhile. A script holds what any surface program is given and
-nothing more: every message of its claimed ports, with the timestamp it arrived with; a
-send-back leaves from a queue Suhina drains, and the script never waits on an answer to send
-one; commands, reading commands and subscriptions. The runner's Lua environment exposes no
-system input or output (`io`, `os` and `require` are not present) and preloads the runner's own
-helpers, the usual modes, layers and session, mixer and device components, for a script to
-compose instead of reimplement. A script that fails is stopped at an error boundary and shows
+manifest carries in `provides` an entry with the id `surface`, lists in `ports` the port name
+patterns the script claims, lists the script file in `programs` with its SHA-256, and names in
+`runner` the runner it needs (`"lua"`). Suhina starts the runner it shipped with that script, so
+each surface program is one runner process of its own: a script's fault restarts that program
+alone, with its ports back on the profiles meanwhile. A script holds what any surface program
+is given and nothing more: every message of its claimed ports, with the timestamp it arrived
+with; a send-back leaves from a queue Suhina drains, and the script never waits on an answer to
+send one; commands, reading commands and subscriptions. The runner's Lua environment is
+narrowed to what it allows: no `io` or `os`, no `dofile`, `loadfile` or `package` (no `require`
+with it), and `load` reads text chunks only; that narrowing is the runner's convenience, and
+the boundary that is enforced is the process the runner runs in. The runner preloads its own
+helpers, the usual modes, layers and session, mixer and device components, versioned with the
+runner and outside the surface-program protocol, for a script to compose instead of
+reimplement. A script that fails is stopped at an error boundary and shows
 in the extension's state, not left running.
 
 ## Testing
