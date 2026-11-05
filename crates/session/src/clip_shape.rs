@@ -271,7 +271,7 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
                 suhina_model::WarpMarker { time: beats, audio_time: seconds },
             ];
             audio.tempo_source = Some(crate::files::clip_tempo_source(source));
-        } else if on && (!audio.warped || audio.warp_markers.is_empty()) && audio.warp_markers.len() < 2 {
+        } else if on && audio.warp_markers.is_empty() {
             let seconds = region.duration_seconds.ok_or("the audio's length is not known, so it cannot warp")?;
             let beats = place.beats_for(&transport, seconds);
             if !(beats.is_finite() && beats > 0.0) {
