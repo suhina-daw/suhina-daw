@@ -1,6 +1,6 @@
 ---
 description: How the browser behaves: places, categories, search, the tree, previewing, dragging samples, MIDI files, devices, presets and plug-ins into the project, pins, recent items and colour tags
-read_when: browser, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
+read_when: browser, quick add, quick-add palette, Ctrl+P, add by name, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
 last_verified: 2026-11-05
@@ -15,6 +15,7 @@ covers:
   - crates/engine/src/preview.rs
   - crates/ui/src/browser.rs
   - crates/ui/src/browser/browser_view.rs
+  - crates/ui/src/app/quick_add.rs
   - crates/ui/src/interaction/drop.rs
   - crates/ui/src/session/session_view.rs
 ---
@@ -407,6 +408,59 @@ a device to its chain; samples and MIDI files in the Arrangement at the play sta
 the Launcher from the first empty slot down. With no track selected, a new track is made as for
 the empty area.
 
+### Quick add
+
+A shortcut (`view.quickAdd`, Ctrl+P by default, rebindable as every other key) opens the
+quick-add palette in the middle of the window, placed as the project switcher (Ctrl+Tab) is:
+a search field over one list of what `library.search` finds, with a small header above it naming
+where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no track selected.
+
+- **The list:** the built-in instruments, effects and MIDI effects, the installed plug-ins, the
+  samples and MIDI files in the browser's folders, and presets, best matches first, at most 200
+  of each kind; each row shows the name and what it is (Instrument, Effect, MIDI effect, Plug-in
+  instrument, Plug-in effect, Sample, MIDI file, Preset), and a plug-in's format (VST2, VST3,
+  CLAP) at its right edge, so one plug-in installed in two formats reads as two rows told
+  apart. The list is twelve rows tall whatever the search finds, so the palette keeps its size
+  while typing; more rows scroll. Projects, device graphs and Stems files are added from the
+  browser. A search through more than 4096 files runs on a thread of its own, as the browser's
+  does, so typing never waits; meanwhile the last results stay listed and the header says
+  *Searching…* at its right end, so nothing moves.
+- **Kind buttons** along the bottom, one row: Instruments, Effects (MIDI effects among them),
+  Samples (MIDI files among them) and Presets. Each turns on or off; with none on, every kind is
+  listed, with some on, only those, in the buttons' order. What they are set to stays for the
+  next palette while the window is open.
+- **Format buttons** under the field, while Instruments or Effects is on: VST2, VST3, CLAP. With
+  none on every format is listed; with some on, only plug-ins of those formats, the built-in
+  devices still among them. The formats are one list in the code (`PluginFormat`), so a new one
+  is one more button.
+- **On a track that plays no notes** (an audio track, a group, a return) no instrument or MIDI
+  effect is listed. **Effects go on the selected track only:** with no track selected, no effect
+  or MIDI effect is listed, and the header says `select a track for effects`. If one is chosen
+  anyway, the status line says why and nothing is added.
+- **The search is kept:** closed without adding (Escape, a click outside, to select a track,
+  say), the palette opens again with what its field said; adding something clears it.
+- **Keys:** Up and Down move the lit row, wrapping round; Enter adds the lit item and closes;
+  a click on a row adds it and closes; Escape or a click outside closes without changing
+  anything. Letting go of a modifier does not close it.
+- **What a choice runs**, each one command and one undo step, so agents and the CLI do the same:
+  a device on the selected track is `device.add` (built-in) or `device.addPlugin` (plug-in), and
+  the detail area shows that track's devices; for an instrument with no track selected it is
+  `track.add` with `device` (a MIDI track named after the instrument), and the new track becomes
+  the selected one, so the next add goes there too. Tracks are named as when dragging from the
+  browser ([arrangement editing](arrangement-editing.md) › Names): an instrument names the
+  track, an instrument's preset gives it the preset's name, an effect leaves it as it is. A
+  preset is
+  `device.add` with `preset` (and `voice` for one voice of a bank, or `stock` for a stock preset) on the selected track, or
+  `track.add` with them on a new one; a track that cannot take the preset's device says so in
+  the status line. A sample or MIDI file
+  is `clip.addFiles` on the selected track, as a drop on its lane: the clip starts at the
+  palette's place on that track when it holds the file (a sample on an audio track, a MIDI file
+  on a MIDI track, an empty track taking the file's kind, #945); a track that cannot hold it
+  gets a new track right after it. With no track selected, a new track after the last regular
+  track. A sample is read on another thread first, as a drop is.
+- **The palette's place:** with the pointer over the Arrangement's lanes when the shortcut is
+  pressed, the beat under it, snapped to the grid; anywhere else, the play start marker.
+
 ## Colour tags
 
 Tags have a name and a colour. There are seven at first: Red, Orange, Yellow, Green, Blue,
@@ -459,7 +513,7 @@ the CLI can do the same.
 | `library.removeFolder` | `folder` | removes it and its part of the index |
 | `library.refresh` | `folder?` | reads a folder (or every folder) again |
 | `library.list` | `folder` | what is directly in a folder: sub-folders and files of the kinds above, with kind and size |
-| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500) |
+| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
 | `library.info` | `item` | a file's kind, size, duration, sample rate, channels, tempo (and where it came from) and key; a Stems file's stems and mastering; a MIDI file's tracks with their notes; a preset's voices; a built-in device's or plug-in's role (and a plug-in's vendor, format and version); the item's tags |
 | `library.pinned` | | the pinned items |
 | `library.pin`, `library.unpin` | `item` | pins or unpins an item |

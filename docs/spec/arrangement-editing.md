@@ -750,7 +750,8 @@ while playing; offline it plays without a gap.
 the tracks (returns and Main left out), in every view, message and file name: "# Bass" on the
 third track shows as "3 Bass" and follows the track when tracks move. New tracks are "# MIDI" and
 "# Audio". A track the user never renamed is named after its instrument with its number
-("# FM Synth", shown "3 FM Synth"), and gets the new tracks' name back when the instrument goes
+("# FM Synth", shown "3 FM Synth"), or after the preset the instrument was added with ("# Warm
+FM Bass"); an effect does not rename it. It gets the new tracks' name back when the instrument goes
 or the track becomes an audio track; a name the user chose stays. Commands find a track by its
 name as shown ("3 FM Synth") or as written.
 

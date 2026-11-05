@@ -253,7 +253,16 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
             }
             (_, Some(path), _) | (_, _, Some(path)) => file_stem(Path::new(path)),
             (Some(id), None, None) => suhina_device_registry::info(id).map_or_else(
-                || session.plugins.env().and_then(|e| e.catalog.find(id).map(|p| p.name.clone())).unwrap_or_default(),
+                // By its id, its name or its spec, as the kind was found above: a plug-in from the
+                // browser or the quick-add palette is named by its spec.
+                || {
+                    session
+                        .plugins
+                        .env()
+                        .and_then(|e| e.catalog.find(id).or_else(|| e.catalog.plugins().find(|p| p.spec() == id)))
+                        .map(|p| p.name.clone())
+                        .unwrap_or_default()
+                },
                 |i| i.name.to_string(),
             ),
             (None, None, None) => numbered_name(kind),

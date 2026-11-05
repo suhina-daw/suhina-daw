@@ -1681,6 +1681,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let beat_at =
         |x: f32, free: bool| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free, false);
     let free = ui.input(|i| i.modifiers.alt);
+    let lanes = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(marker_row.bottom(), area.bottom()));
+    state.pointer_beat =
+        ui.ctx().pointer_hover_pos().filter(|p| lanes.contains(*p)).map(|p| beat_at(p.x, false).max(0.0));
     if let Some(probe) = state.drop.as_mut() {
         for row in rows.iter() {
             let Some(lane) = timeline.lanes.iter().find(|l| l.track == row.track) else { continue };

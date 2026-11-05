@@ -115,10 +115,11 @@ impl App {
                     .and_then(Session::source)
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|| "Not saved yet".into());
-                floating_list::Row { text: format!("{name}\n{source}"), label: format!("Switch to {name}") }
+                floating_list::Row { text: format!("{name}\n{source}"), tag: None, label: format!("Switch to {name}") }
             })
             .collect();
-        let look = floating_list::Look { width: 360.0, row_height: 34.0, visible_rows: rows.len() };
+        let look =
+            floating_list::Look { width: 360.0, row_height: 34.0, visible_rows: rows.len(), fixed_height: false };
         let heading = |ui: &mut Ui| {
             ui.label(egui::RichText::new("Open projects").color(theme::text_hint()).size(theme::TEXT_SMALL));
         };
@@ -127,6 +128,7 @@ impl App {
             egui::Id::unique("project-switcher"),
             look,
             heading,
+            |_: &mut Ui| {},
             &rows,
             Some(picked),
             down + up > 0,

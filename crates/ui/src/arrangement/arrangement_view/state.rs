@@ -331,6 +331,9 @@ pub struct ArrangementViewState {
     /// A drag from the browser over the window: the view says which target is under the
     /// pointer (`docs/spec/browser.md` › Dragging into the project).
     pub drop: Option<DropProbe>,
+    /// The beat under the pointer over the lanes, snapped to the grid, as the view drew it last;
+    /// `None` with the pointer elsewhere. The quick-add palette places a sample there.
+    pub pointer_beat: Option<f64>,
     /// The engine's levels this frame, for the headers' meters.
     pub meters: Meters,
     /// The piano roll is pulled to the top: the view shows only this track, highlighted, and
@@ -465,6 +468,7 @@ impl Default for ArrangementViewState {
             reveal: None,
             zoom_one: false,
             drop: None,
+            pointer_beat: None,
             meters: Meters::default(),
             focus: None,
             clip_clicked: false,

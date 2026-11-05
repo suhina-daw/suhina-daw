@@ -597,6 +597,25 @@ fn a_preset_adds_the_fm_synth_with_its_voice() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// An instrument added with a preset names its track after the preset, as a new track with the
+/// preset is named; a name the user chose stays (#946).
+#[test]
+fn an_instrument_preset_names_its_track_after_the_preset() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "device.add", json!({ "track": 1, "stock": "fm-synth/warm-fm-bass" })).unwrap();
+    assert_eq!(names(session.project())[0], "1 Warm FM Bass");
+    // Undo puts the name back with the device, one step.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(names(session.project())[0], "1 MIDI");
+    // The same instrument without a preset names the track after the device.
+    run(&mut session, "device.add", json!({ "track": 1, "id": "fm-synth" })).unwrap();
+    assert_eq!(names(session.project())[0], "1 FM Synth");
+    // A name the user chose stays.
+    run(&mut session, "track.rename", json!({ "track": 2, "name": "Lead" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 2, "stock": "fm-synth/warm-fm-bass" })).unwrap();
+    assert_eq!(names(session.project())[1], "Lead");
+}
+
 #[test]
 fn a_stock_preset_and_a_preset_file_add_their_device_with_their_values() {
     let dir = temp_dir("stock-preset");

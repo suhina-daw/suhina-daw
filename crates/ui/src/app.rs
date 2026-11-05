@@ -27,6 +27,7 @@ pub mod missing_files;
 pub mod name_clash_dialog;
 mod plugin_host;
 pub mod project_dialog;
+mod quick_add;
 pub mod splash;
 pub mod start_panel;
 mod tabs;
@@ -439,6 +440,12 @@ pub struct App {
     /// The project switcher Ctrl+Tab opens: the open project picked so far (its place among
     /// them). It switches when Ctrl is let go, as most programs' do.
     tab_switcher: Option<usize>,
+    /// The quick-add palette while it is open (`quick_add.rs`).
+    quick_add: Option<quick_add::QuickAdd>,
+    /// What the palette's buttons narrow it to, kept from one palette to the next.
+    quick_add_filter: quick_add::Filter,
+    /// What the palette's field said when it was closed without adding, for the next one.
+    quick_add_kept: String,
     /// The Arrangement's clip selection last frame: when it changes while stopped, the play
     /// start marker goes to its first clip.
     clips_before: Vec<(TrackId, ClipId)>,
@@ -664,6 +671,9 @@ impl App {
             editor_in_chain: false,
             rename: None,
             tab_switcher: None,
+            quick_add: None,
+            quick_add_filter: quick_add::Filter::default(),
+            quick_add_kept: String::new(),
             clips_before: Vec::new(),
             detail_max: false,
             detail_drag: None,
@@ -1899,6 +1909,7 @@ impl App {
             }
         }
         self.tab_switcher_ui(ui.ctx());
+        self.quick_add_ui(ui.ctx());
         if let Some((target, mut draft, focused)) = self.rename.take() {
             let (mut keep, mut apply) = (true, None);
             // The field sits on the clip's name, where the views drew it last frame: Enter or a

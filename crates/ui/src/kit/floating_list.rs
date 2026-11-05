@@ -9,11 +9,12 @@ use egui::{Context, Id, Rect, RichText, Ui, Vec2};
 
 use crate::kit::theme;
 
-/// One row: the text shown (it may have a second line) and the name assistive tools and tests
-/// read.
+/// One row: the text shown (it may have a second line), a short tag drawn at its right edge
+/// (a plug-in's format), and the name assistive tools and tests read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
     pub text: String,
+    pub tag: Option<String>,
     pub label: String,
 }
 
@@ -33,6 +34,9 @@ pub struct Look {
     pub row_height: f32,
     /// How many rows show at once; the rest scroll.
     pub visible_rows: usize,
+    /// Whether the list keeps the height of `visible_rows` with fewer rows, so the panel does
+    /// not change size as a search narrows; otherwise it shrinks to its rows.
+    pub fixed_height: bool,
 }
 
 /// Takes the presses of Down and Up out of this frame's input, so nothing behind the list moves
@@ -65,13 +69,15 @@ pub fn step(picked: usize, count: usize, down: usize, up: usize) -> usize {
 }
 
 /// Draws the list in the middle of the window, above everything else: `heading` first (a label,
-/// a text field), then the rows, `picked` lit. `follow` scrolls the lit row into view (after a
-/// move).
+/// a text field), then the rows, `picked` lit, then `footer` (buttons that filter the rows).
+/// `follow` scrolls the lit row into view (after a move).
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ctx: &Context,
     id: Id,
     look: Look,
     heading: impl FnOnce(&mut Ui),
+    footer: impl FnOnce(&mut Ui),
     rows: &[Row],
     picked: Option<usize>,
     follow: bool,
@@ -90,7 +96,7 @@ pub fn show(
                 egui::ScrollArea::vertical()
                     .id_salt(id.with("rows"))
                     .max_height(height)
-                    .auto_shrink([false, true])
+                    .auto_shrink([false, !look.fixed_height])
                     .show(ui, |ui| {
                         for (place, row) in rows.iter().enumerate() {
                             let lit = picked == Some(place);
@@ -106,6 +112,15 @@ pub fn show(
                             response.widget_info(|| {
                                 egui::WidgetInfo::selected(egui::Role::Button, true, lit, label.clone())
                             });
+                            if let Some(tag) = &row.tag {
+                                ui.painter().text(
+                                    response.rect.right_center() - Vec2::new(10.0, 0.0),
+                                    egui::Align2::RIGHT_CENTER,
+                                    tag,
+                                    egui::FontId::proportional(theme::TEXT_SMALL),
+                                    theme::text_hint(),
+                                );
+                            }
                             if lit && follow {
                                 response.scroll_to_me(None);
                             }
@@ -114,6 +129,7 @@ pub fn show(
                             }
                         }
                     });
+                footer(ui);
             });
         });
     Shown { clicked, rect: shown.response.rect }

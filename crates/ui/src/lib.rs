@@ -17,6 +17,7 @@
 //! | The control bar (transport, grid, CPU, view switch) | [`App::control_bar`] | [`App::do_action`] |
 //! | The status bar | [`App::status_bar`] | — |
 //! | Project tabs and Ctrl+Tab | [`App::tab_row`], [`App::tab_switcher_ui`] | [`App::do_action`] |
+//! | The quick-add palette (Ctrl+P) | [`App::quick_add_ui`] | its choices as commands, [`App::quick_add_ui`] |
 //! | The Launcher view's slots and scenes | [`session::session_view::show`] | [`App::do_action`] |
 //! | A slot's right-click menu | [`interaction::menus::slot_menu`] | [`App::do_action`] |
 //! | A scene's right-click menu | [`interaction::menus::scene_menu`] | [`App::do_action`] |
