@@ -20,6 +20,8 @@
 //! built into the host for tests ([`crate::test_vst3`]), and `test:vst3-mix` the same gain mixing
 //! its first two channels into the first.
 
+#[cfg(target_os = "macos")]
+mod bundle;
 mod editor;
 mod events;
 mod message;
@@ -103,6 +105,13 @@ fn ok(result: tresult) -> bool {
 
 /// A loaded plug-in file (or the built-in test plug-in) and its factory.
 struct ModuleFile {
+    /// The plug-in bundle as the module's macOS contract takes it ([`bundle::Bundle`]):
+    /// first field, so a module holding it outlives the module's exit paths (dropped
+    /// last, after [`Drop for ModuleFile`][Drop] has run them). Loaded for the process's
+    /// life ([`shared_module`]), so the reference stays whole through the module's calls
+    /// wherever the module kept the handle rather than its own retain.
+    #[cfg(target_os = "macos")]
+    _bundle: Option<bundle::Bundle>,
     factory: Option<ComPtr<IPluginFactory>>,
     library: Option<libloading::Library>,
 }
@@ -174,19 +183,30 @@ impl ModuleFile {
                 return Err("the plug-in's ModuleEntry failed".into());
             }
         }
+        // `bundleEntry` (macOS): the counterpart of `InitDll` on Windows and `ModuleEntry`
+        // on Linux, and optional the same way: modules built on the current SDK initialise
+        // in their own static constructors and do not export it, and those that do
+        // (DPF-built modules, such as Cardinal and plugdata) take the handle or null
+        // either way, holding their own bundle when they need it. It is what macOS hosts
+        // that load the module as a bundle pass that stands out: the bundle's handle. The
+        // SDK's own hosts make and pass one, and a module may keep it and read it later
+        // without a null check — as Xfer's Serum 2 2.1.5 did, which crashed its host's
+        // main thread (a null dereference, #1223) the first time its editor's view was
+        // built. The handle is made here for the module to keep, not left null; where
+        // there is no bundle to make (the plug-in is a bare file, the path is not UTF-8,
+        // or the folder is not one), no handle exists, and null stays the contract's
+        // other arm.
+        #[cfg(target_os = "macos")]
+        let bundle = bundle::Bundle::open(path);
         #[cfg(target_os = "macos")]
         {
-            // SAFETY: `bundleEntry` is the entry the VST3 module API defines on macOS, the
-            // counterpart of `InitDll` on Windows and `ModuleEntry` on Linux: hosts that load
-            // the module as a bundle call it before the factory. It is optional: modules built
-            // on the current SDK initialise in their own static constructors and do not export
-            // it. Those that do (DPF-built modules such as Cardinal and plugdata) build the
-            // plugin their class information is read from here, and answering class queries
-            // before it runs crashes them. The old contract passes the bundle's handle; these
-            // modules find their own bundle from the loaded file, so null is fine.
+            let handle = bundle.as_ref().map_or(std::ptr::null_mut(), |bundle| bundle.handle());
+            // SAFETY: `bundleEntry` takes the bundle's handle, live for the whole call
+            // and beyond (held on the module as its `_bundle`), and answers whether it
+            // read one.
             let entry = unsafe { library.get::<extern "system" fn(*mut c_void) -> bool>(b"bundleEntry\0") };
             if let Ok(entry) = entry
-                && !entry(std::ptr::null_mut())
+                && !entry(handle)
             {
                 return Err("the plug-in's bundleEntry failed".into());
             }
@@ -197,11 +217,21 @@ impl ModuleFile {
             .map_err(|_| "the file has no GetPluginFactory; not a VST3 plug-in")?;
         // SAFETY: the pointer is the factory reference the module handed over (or null).
         let factory = unsafe { ComPtr::from_raw(get()) }.ok_or("the plug-in has no factory")?;
-        Ok(Self { factory: Some(factory), library: Some(library) })
+        Ok(Self {
+            #[cfg(target_os = "macos")]
+            _bundle: bundle,
+            factory: Some(factory),
+            library: Some(library),
+        })
     }
 
     fn test(mix: bool) -> Self {
-        Self { factory: crate::test_vst3::factory(mix), library: None }
+        Self {
+            #[cfg(target_os = "macos")]
+            _bundle: None,
+            factory: crate::test_vst3::factory(mix),
+            library: None,
+        }
     }
 
     fn factory(&self) -> Result<&ComPtr<IPluginFactory>, String> {
