@@ -67,7 +67,11 @@ clip; devices (ADR 0004) will add many more parameters.
    launched scene set stays across the swap, like its tempo, unless the project's own changed. A slot
    whose stretched audio is unchanged keeps its built stretch voice (moved from the old graph to
    the new, whether its clip plays or not; ADR 0003 › decision 7); any other playing clip's new
-   voice is moved to the clip's position. Level meters keep their levels and clip
+   voice is moved to the clip's position. An arrangement clip whose stretch voice changed (its
+   tempo, transpose or warp edited while it plays) fades over 20 ms from the old voice's ring to
+   the new voice, which plays from another place of the clip; the old ring plays on alone until
+   the new voice's frames arrive (`AheadReader::adopt_from`). Cutting from one to the other
+   clicked at every step of a tempo drag. Level meters keep their levels and clip
    indicators while each meter slot plays the same track as before; a slot that now holds
    another track (tracks moved in the project's order) starts from silence
    ([level meters](../spec/level-meters.md)).

@@ -1210,3 +1210,32 @@ fn a_stretched_clip_starts_each_loop_pass_as_cleanly_as_the_first() {
         assert_eq!(renderer.stretch_underruns(), 0, "{mode:?}");
     }
 }
+
+/// Dragging a playing clip's tempo sends a new graph for every step: each one plays the clip's
+/// new voice on from the old one's sound, with no click where the two meet.
+#[test]
+fn a_stretched_clip_changes_its_tempo_while_playing_without_a_click() {
+    for mode in [StretchMode::Smooth, StretchMode::Rhythmic, StretchMode::HighQuality] {
+        let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, mode);
+        let mut renderer =
+            Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+        let mut controller = renderer.controller();
+        controller.run_stretch_worker(&mut renderer).unwrap();
+        let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
+        let mut out = blocks(&mut renderer, 50, 480, pace);
+        let clean = largest_step(&out, 12_000, 24_000);
+        // Six steps of a drag, a tenth of a second apart: the clip's tempo up by 3 % each.
+        let mut edited = project.clone();
+        for _ in 0..6 {
+            for marker in &mut edited.arrangement.lanes[0].clips[0].audio.warp_markers {
+                marker.time *= 1.03;
+            }
+            controller.update(&edited).unwrap();
+            out.extend(blocks(&mut renderer, 10, 480, pace));
+        }
+        out.extend(blocks(&mut renderer, 30, 480, pace));
+        let step = largest_step(&out, 24_000, out.len() / 2);
+        assert!(step <= clean * 1.5 + 1e-3, "{mode:?}: a step of {step}, before the drag {clean}");
+        assert_eq!(renderer.stretch_underruns(), 0, "{mode:?}");
+    }
+}
