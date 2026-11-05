@@ -61,8 +61,5 @@
 
 **Documented**
 - [ ] The documents that describe what changed are updated (`python scripts/docs.py impact`).
-- [ ] The parity measurement is current: the coverage this change moves is updated in
-      `scripts/parity/score.py` (and `scripts/parity/devices.json` for a built-in effect or
-      instrument), or the description says `Parity: no change` and why. The report's numbers and
-      the `last_verified` dates are written on `main` after the merge; leave them alone
-      ([docs/workflow.md › Parity](https://github.com/suhina-daw/suhina-daw/blob/main/docs/workflow.md#parity)).
+- [ ] Generated files are left alone: the `last_verified` dates, `docs/INDEX.md` and
+      `docs/commands.md` are written on `main` after the merge.

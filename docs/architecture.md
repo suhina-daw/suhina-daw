@@ -243,8 +243,8 @@ Beside the crates:
 
 - `docs/`: `architecture.md` (this), `decisions/` (ADRs; read 0001 before changing the model, 0004
   before a device), `spec/` (clean-room specs written from observation), `design/` (the UI design
-  brief, component measurements and mockups, ADR 0009), `research/` (status analysis of our own
-  project: parity against another DAW's public manual, ADR 0016, and its figures), the generated
+  brief, component measurements and mockups, ADR 0009), `research/` (research notes of our own
+  project), the generated
   `INDEX.md` and `commands.md`, and `works-now/`;
 - `assets/brand/`: the logo as SVG (`suhina-logo.svg`, drawn on the splash by
   `crates/ui/src/kit/logo.rs`; `suhina-mark.svg`, the wave alone) and `suhina-icon.png`, the app's
@@ -253,8 +253,7 @@ Beside the crates:
   (`asiosdk`, GPL-3.0, built with `asio`), LAME 3.100's encoder (`lame`, LGPL, ADR 0029), `cpal`
   0.18.2 and `asio-sys` 0.4.0 with local patches (`[patch.crates-io]` in `Cargo.toml`), and the ARA
   headers (`ara-api`);
-- `scripts/`: research helpers (extracting and diffing `.als` files), the parity measurement
-  (`parity/`, reading a manual the user owns; its output is never committed), `docs.py` (the docs
+- `scripts/`: research helpers (extracting and diffing `.als` files), `docs.py` (the docs
   index and checks), `release_notes.py` and `discord_post.py`, `agent_post.py` (an agent's issue
   or comment, [`workflow.md`](workflow.md) › Posting as the bot).
 

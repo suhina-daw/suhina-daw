@@ -36,9 +36,7 @@ its `INFO` and finds parameters by id, so the change is mostly the device's own 
 5. **Importing:** when another format's device maps onto this one, its reader in
    `crates/als/src/devices.rs` sets the new parameter, with a test in
    `crates/als/src/devices_tests.rs`, and `docs/spec/device-import.md` says so.
-6. **Documents:** the device's spec in `docs/spec/<name>.md`, when it has one; the parameter
-   count in the device's line of `scripts/parity/devices.json` (the report built from it,
-   `docs/research/parity-live-12.md`, is regenerated on `main`); and the crate's row in
+6. **Documents:** the device's spec in `docs/spec/<name>.md`, when it has one; and the crate's row in
    `docs/architecture.md` when it names the parameters.
 7. **Build the app and look at the panel** (`docs/workflow.md` › Built-in devices and settings).
 
