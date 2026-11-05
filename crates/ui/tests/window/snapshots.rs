@@ -55,10 +55,10 @@ fn render_the_piano_roll() {
     };
     save(&mut harness, "piano-roll.png");
 
-    harness.state_mut().piano_roll_mut().quantize_open = true;
+    harness.state_mut().piano_roll_mut().set_quantize_open(true);
     harness.run();
-    assert!(harness.state().piano_roll().quantize_open, "the block is open");
-    assert!(harness.query_by_label("Quantise notes").is_some(), "and its controls are drawn");
+    assert!(harness.state().piano_roll().quantize_open(), "the block is open");
+    assert!(harness.query_by_label("Quantise clip").is_some(), "and its controls are drawn");
     save(&mut harness, "piano-roll-quantise.png");
 
     let ctx = harness.ctx.clone();
@@ -66,7 +66,7 @@ fn render_the_piano_roll() {
         suhina_ui::settings::Settings { device_layout: suhina_ui::settings::DeviceLayout::Stack, ..Default::default() };
     harness.state_mut().set_settings(&ctx, stacked);
     harness.run();
-    harness.state_mut().piano_roll_mut().quantize_open = true;
+    harness.state_mut().piano_roll_mut().set_quantize_open(true);
     harness.run();
     save(&mut harness, "piano-roll-quantise-stacked.png");
 }

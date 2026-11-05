@@ -685,8 +685,8 @@ shape: an arrow, a crosshair, an eraser (the eraser icon, not a no-entry sign), 
 arrow, an arrow. After a 1 px `border.strong` divider and 5 px,
 the note clipboard's Cut, Copy, Paste and Duplicate icons, greyed out (`text.hint`, no highlight)
 when there is nothing to act on; then the quantise icon (notes snapping onto a line), which shows
-the MIDI tools column with the quantise block open, and the **MIDI tools** icon (three horizontal
-sliders, `control.activeBackground` while the column shows), which shows and hides that column,
+Quantise in the Transform tab of the clip panel's note tools, and the **MIDI tools** icon (three
+horizontal sliders, `control.activeBackground` while the tools show), which shows and hides them,
 and the **Audition** icon (headphones: a 1.1 px band over two filled 3 × 5 px cups,
 `control.activeBackground` with a `text.primary` shape while on, off at start; accessible label
 "Audition"), which makes drawn and moved notes sound once.

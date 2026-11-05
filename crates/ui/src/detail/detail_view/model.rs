@@ -369,13 +369,13 @@ pub struct ClipInfo {
     /// Every picked MIDI clip, for its row in the column that gives it the piano roll's focus
     /// (#1054): its track and clip, what the row says ("Bass · Riff") and whether it has the focus.
     pub picked: Vec<(TrackId, ClipId, String, bool)>,
-    /// The audio clip's own state the panel's groups show (`docs/spec/clip-panel.md`); none for a
-    /// MIDI clip.
+    /// What the clip's panel shows beyond the rows (`docs/spec/clip-panel.md`): its colour, length,
+    /// scale and Set buttons for every clip, and an audio clip's own state.
     pub panel: Option<AudioPanel>,
 }
 
-/// What an audio clip's panel shows beyond the rows: its id, colour, tempo and envelope, and
-/// where the playhead is in it.
+/// What a clip's panel shows beyond the rows: its id, colour, length, scale and where the playhead
+/// is in it, and for an audio clip its tempo and envelope.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AudioPanel {
     pub clip: ClipId,
@@ -399,7 +399,7 @@ pub struct AudioPanel {
     pub bar_beats: f64,
     /// The clip's length in beats, as its title says it.
     pub length_beats: f64,
-    /// The key of its audio, when one was given (`clip.setScale`).
+    /// Its scale (an audio clip's key), when one was given (`clip.setScale`).
     pub scale: Option<suhina_engine::model::Scale>,
 }
 
@@ -691,12 +691,12 @@ pub fn build_with(
                 switch: None,
                 others: Vec::new(),
                 picked: Vec::new(),
-                panel: audio.map(|_| AudioPanel {
+                panel: Some(AudioPanel {
                     clip: placed.id,
                     color: placed.color.or_else(|| project.track(id).and_then(|t| t.color)),
-                    tempo: placed.audio.tempo().filter(|_| placed.audio.warped),
-                    tempo_source: placed.audio.tempo_source,
-                    envelope_points: placed.audio.gain_envelope.len(),
+                    tempo: placed.audio.tempo().filter(|_| audio.is_some() && placed.audio.warped),
+                    tempo_source: placed.audio.tempo_source.filter(|_| audio.is_some()),
+                    envelope_points: if audio.is_some() { placed.audio.gain_envelope.len() } else { 0 },
                     playhead: None,
                     set_buttons: scene.is_none(),
                     candidates: None,

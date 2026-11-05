@@ -133,13 +133,17 @@ pub struct PianoRollState {
     /// The right button and the wheel are choosing tools: the wheel scrolls nothing until the
     /// button is up and the wheel's smoothing has run out.
     pub(super) wheel_tools: bool,
-    /// The settings quantise uses, and whether the quantise block in the MIDI tools column is open.
+    /// The settings quantise uses (Ctrl+U, and Quantise in the tools' Transform tab).
     pub quantize: QuantizeSettings,
-    pub quantize_open: bool,
-    /// The MIDI tools column's own settings, kept until Suhina closes, and whether the column is
-    /// shown at all (the toolbar's three-slider button toggles it; window state, not a command).
+    /// The note tools' own settings, kept until Suhina closes, and whether the clip panel shows its
+    /// tools part at all (the toolbar's three-slider button toggles it; window state, not a
+    /// command).
     pub tools: ToolSettings,
     pub tools_open: bool,
+    /// The tools part's tab, and the transformation its Transform tab shows
+    /// (`docs/spec/ui-clip-editor.md` › Note tools).
+    pub tools_tab: ToolsTab,
+    pub transform: Transform,
     /// The toolbar's tool.
     pub tool: Tool,
     /// Notes placed over others of their key replace them: Allow stacked notes off (Settings; the
@@ -248,9 +252,10 @@ impl Default for PianoRollState {
             panning: false,
             wheel_tools: false,
             quantize: QuantizeSettings::default(),
-            quantize_open: false,
             tools: ToolSettings::default(),
             tools_open: true,
+            tools_tab: ToolsTab::default(),
+            transform: Transform::default(),
             tool: Tool::Select,
             notes_replace: true,
             key_style: crate::settings::PianoKeyStyle::default(),
@@ -295,6 +300,24 @@ impl Default for PianoRollState {
 }
 
 impl PianoRollState {
+    /// Whether the tools show Quantise: the Transform tab with Quantise chosen (the toolbar's
+    /// quantise button lights while they do).
+    pub fn quantize_open(&self) -> bool {
+        self.tools_tab == ToolsTab::Transform && self.transform == Transform::Quantise
+    }
+
+    /// Shows Quantise in the tools (opening the tools part), or, when it shows, goes back to the
+    /// Notes tab.
+    pub fn set_quantize_open(&mut self, open: bool) {
+        if open {
+            self.tools_open = true;
+            self.tools_tab = ToolsTab::Transform;
+            self.transform = Transform::Quantise;
+        } else if self.quantize_open() {
+            self.tools_tab = ToolsTab::Notes;
+        }
+    }
+
     /// What the toolbar's Cut, Copy, Paste and Duplicate buttons do: the same as Ctrl+X, Ctrl+C,
     /// Ctrl+V and the duplicate key, on the selected notes (› Copy, cut, paste and duplicate).
     /// `None` when there is nothing to act on: no note selected, or nothing copied for Paste.
@@ -523,7 +546,7 @@ impl PianoRollState {
         self.clear_span();
         self.gesture = None;
         self.focused = false;
-        self.quantize_open = false;
+        self.set_quantize_open(false);
         self.selecting_new = false;
         self.stroke.clear();
         self.erasing.clear();

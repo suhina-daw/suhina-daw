@@ -221,8 +221,9 @@ fn the_splitter_stops_at_the_piano_rolls_least_height() {
     // Five key rows at the default 12 px row height, at least.
     let grid = h.get_by_label_contains("Piano roll,").rect();
     assert!(grid.height() >= 5.0 * 12.0 - 0.5, "five key rows: the grid is {} px", grid.height());
-    // The clip column's five rows are all there, under its title, inside the detail area.
-    for label in ["Track: ", "Start: ", "Length: ", "Loop: ", "Notes: "] {
+    // The clip panel's first rows are there, under its title, inside the detail area: the markers,
+    // the loop switch and the tools' count of notes.
+    for label in ["Start marker: ", "End marker: ", "Loop: ", "Notes: "] {
         let row = h.get_by_label_contains(label).rect();
         assert!(row.bottom() <= bottom + 0.5, "{label} is whole: {row:?} over {bottom}");
     }

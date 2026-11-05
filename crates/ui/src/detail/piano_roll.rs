@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use suhina_engine::model::{Clip, ClipId, LaneData, Note, Project, Scale, TrackId};
 
 use crate::detail::detail_view::ClipRef;
-use crate::detail::midi_tools::ToolSettings;
+use crate::detail::midi_tools::{ToolSettings, ToolsTab, Transform};
 use crate::detail::piano_roll_ghosts::{self as ghost_view, GhostSource, Ghosts};
 use crate::detail::piano_roll_grid::{FIXED_VALUES, GridMode, PianoGrid, Width};
 use crate::detail::piano_roll_ruler::{self as ruler_view, ClipShape, RulerState};

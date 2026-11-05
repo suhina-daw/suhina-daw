@@ -308,19 +308,17 @@ pub(super) fn toolbar(
             actions.push(command);
         }
     }
-    // A divider, then the quantise button (which shows the MIDI tools column and its quantise
-    // block) and the column's own toggle.
+    // A divider, then the quantise button (which shows Quantise in the clip panel's tools) and the
+    // tools part's own toggle.
     x.set(x.get() + 2.0);
     if x.get() < row.right() {
         painter.vline(x.get(), row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
     }
     x.set(x.get() + 5.0);
     let quantise = place();
-    if paint.place(quantise, IconButton::Quantise, state.quantize_open, true) {
-        state.quantize_open = !state.quantize_open;
-        if state.quantize_open {
-            state.tools_open = true;
-        }
+    if paint.place(quantise, IconButton::Quantise, state.quantize_open(), true) {
+        let open = !state.quantize_open();
+        state.set_quantize_open(open);
     }
     let tools = place();
     if paint.place(tools, IconButton::MidiTools, state.tools_open, true) {
