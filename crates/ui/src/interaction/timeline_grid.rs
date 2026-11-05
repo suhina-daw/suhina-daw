@@ -10,6 +10,11 @@
 /// Beats closer than this are the same grid line.
 const EPSILON: f64 = 1e-9;
 
+/// How far before a line, in beats, a beat still counts as on it when finding the cell it is in.
+/// Commands take beats rounded to a millionth, so a triplet line comes back a little off (a third of
+/// a beat as 0.333333), and moved notes add those up.
+const ON_LINE: f64 = 1e-5;
+
 /// The finest note value an adaptive grid reaches, in beats (1/32).
 const FINEST: f64 = 0.125;
 
@@ -86,12 +91,13 @@ impl TimelineGrid {
         }
         if self.in_bars() {
             let lines = beat / self.step;
-            return (if down { (lines + EPSILON).floor() } else { lines.round() }) * self.step;
+            return (if down { ((beat + ON_LINE) / self.step).floor() } else { lines.round() }) * self.step;
+        }
+        if down {
+            let bar_start = ((beat + ON_LINE) / self.bar_beats).floor() * self.bar_beats;
+            return bar_start + ((beat + ON_LINE - bar_start) / self.step).floor() * self.step;
         }
         let bar_start = (beat / self.bar_beats + EPSILON).floor() * self.bar_beats;
-        if down {
-            return bar_start + ((beat - bar_start) / self.step + EPSILON).floor() * self.step;
-        }
         // Inside a bar: lines from the bar line on, and the next bar line.
         let next_bar = bar_start + self.bar_beats;
         let on_step = bar_start + ((beat - bar_start) / self.step).round() * self.step;
@@ -114,8 +120,8 @@ impl TimelineGrid {
         if !beat.is_finite() || beat <= EPSILON {
             return 0.0;
         }
-        // Just before `beat`, so a line on it is not the one before it.
-        self.place(beat - 1e-6, false, true)
+        // Further before `beat` than a beat counts as on a line, so a line on it is not the one before it.
+        self.place(beat - 2.0 * ON_LINE, false, true)
     }
 
     /// The beats of the lines from `first` to `last` (both included), each with whether it is a

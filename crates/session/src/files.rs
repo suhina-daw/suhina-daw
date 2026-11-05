@@ -197,9 +197,25 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     let device = text(params, "device")?;
     let preset = text(params, "preset")?;
     let sd = text(params, "sd")?;
+    let stock = text(params, "stock")?;
+    // A preset's own values, for what it is for and, in a file that names it, what it is called.
+    let preset_values = match (preset, stock) {
+        (Some(_), Some(_)) => return Err("name a preset file or a stock preset, not both".into()),
+        (Some(path), None) => Some(crate::devices::read_preset(Path::new(path), 1)?),
+        (None, Some(key)) => Some(
+            suhina_device_registry::stock_preset(key)
+                .ok_or_else(|| format!("no stock preset {key:?}; library.search lists them"))?
+                .preset
+                .clone(),
+        ),
+        (None, None) => None,
+    };
     // What the device is decides the kind when none is given.
     let device_role = match (device, preset, sd) {
-        (_, Some(_), _) => Some(Role::Instrument),
+        _ if preset_values.is_some() => {
+            preset_values.as_ref().and_then(|p| suhina_device_registry::info(p.device)).map(|info| info.role)
+        }
+        (_, Some(_), None) => None,
         (_, _, Some(path)) => {
             let graph = suhina_device_sdk::DeviceGraph::read_file(Path::new(path)).map_err(|e| e.to_string())?;
             Some(match graph.role {
@@ -248,6 +264,9 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     let name = match text(params, "name")? {
         Some(n) => n.to_string(),
         None => match (device, preset, sd) {
+            _ if stock.is_some() || preset.is_some_and(|path| suhina_project_file::is_preset_file(Path::new(path))) => {
+                preset_values.as_ref().map_or_else(String::new, |p| p.name.clone())
+            }
             (_, Some(path), _) | (_, _, Some(path)) => file_stem(Path::new(path)),
             (Some(id), None, None) => suhina_device_registry::info(id).map_or_else(
                 // By its id, its name or its spec, as the kind was found above: a plug-in from the
@@ -276,8 +295,8 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
             .ok_or_else(|| format!("count must be a whole number from 1 to {MAX_INSERT}"))?,
     };
     if count > 1 {
-        if device.is_some() || preset.is_some() || sd.is_some() {
-            return Err("count adds empty tracks; leave out device, preset and sd".into());
+        if device.is_some() || preset_values.is_some() || sd.is_some() {
+            return Err("count adds empty tracks; leave out device, preset, stock and sd".into());
         }
         let mut tracks = Vec::with_capacity(count);
         let mut after = after;
@@ -294,13 +313,16 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     }
     let track = insert_track(&mut session.project, kind, &name, after)?;
     let mut added = Value::Null;
-    if device.is_some() || preset.is_some() || sd.is_some() {
+    if device.is_some() || preset_values.is_some() || sd.is_some() {
         let mut device_params = json!({ "track": track.0 });
         if let Some(path) = preset {
             device_params["preset"] = json!(path);
             if let Some(voice) = params.get("voice") {
                 device_params["voice"] = voice.clone();
             }
+        }
+        if let Some(key) = stock {
+            device_params["stock"] = json!(key);
         }
         if let Some(path) = sd {
             device_params["path"] = json!(path);

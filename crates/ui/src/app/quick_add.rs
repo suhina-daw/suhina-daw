@@ -447,6 +447,7 @@ impl App {
                 let preset = json!({ "preset": path.display().to_string(), "voice": voice });
                 Some(("device.add", preset.clone(), preset))
             }
+            (Item::Stock(key), _) => Some(("device.add", json!({ "stock": key }), json!({ "stock": key }))),
             (Item::File(path), "preset") => {
                 let preset = json!({ "preset": path.display().to_string() });
                 Some(("device.add", preset.clone(), preset))

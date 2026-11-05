@@ -218,9 +218,10 @@ fn system_drop(harness: &mut Harness<'static, App>, path: &Path, at: Pos2) {
     harness.step();
 }
 
-/// Steps the window until `done` holds (a drop decodes its samples on another thread).
+/// Steps the window until `done` holds (a drop decodes its samples on another thread); only a
+/// hang gets to the end of its minute.
 fn until(harness: &mut Harness<'static, App>, done: impl Fn(&App) -> bool) -> bool {
-    let end = Instant::now() + Duration::from_secs(10);
+    let end = Instant::now() + Duration::from_secs(60);
     while Instant::now() < end {
         harness.step();
         if done(harness.state()) {
@@ -813,6 +814,55 @@ fn a_device_dragged_onto_a_track_header_joins_its_chain_and_becomes_recent() {
     harness.get_by_label("Place Recent Effects").click();
     harness.run();
     assert!(harness.query_by_label(&row("Overdrive")).is_some(), "Recent › Effects lists it");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A device with stock presets opens on them: its own row adds it at its defaults, a preset's row
+/// with that preset. The same presets are under their device's heading in Stock presets.
+#[test]
+fn a_device_opens_on_its_presets_and_each_row_adds_what_it_names() {
+    let (settings, folder) = (temp("device-presets-settings"), temp("device-presets"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label(&row("Stock presets")).click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Warm FM Bass")).is_none(), "the presets lie under their device");
+    harness.get_by_label(&row("FM Synth")).click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Warm FM Bass")).is_some());
+    harness.get_by_label(&row("FM Synth")).click();
+    harness.run();
+    harness.get_by_label(&row("Stock presets")).click();
+    harness.run();
+
+    let value_on_bass = |app: &App, id: &str| {
+        app.session().and_then(|s| {
+            let p = s.project();
+            let channel = p.tracks.iter().find(|t| t.name == "Bass").and_then(|t| t.channel)?;
+            let device = p.channels.iter().find(|c| c.id == channel)?.devices.first()?;
+            device.params.iter().find(|param| param.id == id).map(|param| param.value)
+        })
+    };
+    harness.get_by_label(&row("Instruments")).click();
+    harness.run();
+    let to = harness.get_by_label("Track Bass").rect().center();
+    let device = harness.get_by_label(&row("FM Synth")).rect();
+    assert!(harness.query_by_label(&row("Warm FM Bass")).is_none(), "closed at first");
+    let from = device.center();
+    drag(&mut harness, from, to);
+    assert!(
+        until(&mut harness, |app| value_on_bass(app, "op2.on") == Some(0.0)),
+        "the device itself starts at its defaults"
+    );
+    quick_click_at(&mut harness, Pos2::new(device.left() + 8.0, device.center().y));
+    harness.run();
+    let from = harness.get_by_label(&row("Warm FM Bass")).rect().center();
+    drag(&mut harness, from, to);
+    assert!(
+        until(&mut harness, |app| value_on_bass(app, "op2.level") == Some(86.0)),
+        "a preset's row brings its values"
+    );
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

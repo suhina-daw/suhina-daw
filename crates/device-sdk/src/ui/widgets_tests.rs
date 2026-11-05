@@ -3,6 +3,42 @@
 
 use super::*;
 #[test]
+fn the_eq_curves_display_takes_no_binding_and_draws_nothing_of_its_own() {
+    let control = |x: Option<UiBinding>, y: Option<UiBinding>| CustomControl {
+        widget: Some(Widget::EqCurve),
+        id: "curve".into(),
+        name: "EQ curve".into(),
+        tooltip: String::new(),
+        bounds: [0., 0., 440., 168.],
+        visible_when: None,
+        gesture: UiGesture::Drag,
+        x,
+        y,
+        drawing: vec![],
+    };
+    // The bands the built-in EQ names: a graph file without them is not the EQ's panel.
+    let bands: Vec<Parameter> = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"]
+        .iter()
+        .flat_map(|band| {
+            ["Frequency", "Gain", "Q"]
+                .iter()
+                .map(move |part| Parameter::new(format!("{band}{part}"), format!("{band} {part}"), (0., 1.), 0.))
+        })
+        .collect();
+    let ui = DeviceUi { controls: vec![control(None, None)], ..DeviceUi::default() };
+    assert!(ui.validate(&bands).is_ok(), "the display finds its bands among the EQ's parameters");
+    assert!(ui.controls[0].drawings().is_empty(), "the host draws it");
+    let ui = DeviceUi { controls: vec![control(Some(UiBinding::new("x")), None)], ..DeviceUi::default() };
+    assert!(ui.validate(&bands).is_err(), "a binding would name one parameter where the bands are forty");
+    // A canvas naming fewer than the twenty-four bands is not the EQ's panel to draw.
+    let ui = DeviceUi { controls: vec![control(None, None)], ..DeviceUi::default() };
+    assert!(ui.validate(&[]).is_err(), "no bands, no curve");
+    let short: Vec<Parameter> = bands.iter().take(bands.len() - 1).cloned().collect();
+    let ui = DeviceUi { controls: vec![control(None, None)], ..DeviceUi::default() };
+    assert!(ui.validate(&short).is_err(), "one band short is still not the EQ's panel");
+}
+
+#[test]
 fn panels_follow_the_theme_and_tabs_validate_their_zero_based_range() {
     let parameter = Parameter::new("view", "View", (0., 2.), 0.);
     let mut ui = DeviceUi::default();
@@ -96,6 +132,58 @@ fn widgets_work_with_unrelated_parameter_names() {
         let ui = DeviceUi { controls: vec![control], ..DeviceUi::default() };
         ui.validate(&[bound_amount, spread.clone()]).unwrap();
     }
+}
+
+#[test]
+fn the_device_state_widgets_bind_no_parameter_and_the_layouts_gate_them() {
+    let parameter = Parameter::new("gain", "Gain", (-24., 24.), 0.);
+    let control = |widget, gesture| CustomControl {
+        id: "one".into(),
+        name: "One".into(),
+        tooltip: String::new(),
+        bounds: [0., 0., 48., 22.],
+        widget: Some(widget),
+        gesture,
+        x: None,
+        y: None,
+        drawing: vec![],
+        visible_when: None,
+    };
+    for (widget, what) in [
+        (Widget::DeviceSwitch, None),
+        (Widget::DeviceNote, None),
+        (Widget::DeviceFiles { part: FileRowPart::Pack, what: "model".into() }, None),
+        (
+            Widget::DeviceFiles { part: FileRowPart::NextFile, what: "cab".into() },
+            Some("a part the rows place".to_owned()),
+        ),
+    ] {
+        let ui = DeviceUi { controls: vec![control(widget.clone(), UiGesture::Drag)], ..DeviceUi::default() };
+        assert!(ui.validate(std::slice::from_ref(&parameter)).is_ok(), "{what:?}");
+        let decoded: DeviceUi = serde_json::from_str(&serde_json::to_string(&ui).unwrap()).unwrap();
+        assert_eq!(decoded.controls[0].widget, Some(widget.clone()));
+        // No drawing of its own: the host draws it from device state.
+        assert!(decoded.controls[0].drawings().is_empty());
+        // A binding of its own reads nothing for these widgets.
+        let mut bound = control(widget, UiGesture::Drag);
+        bound.x = Some(UiBinding::new("gain"));
+        let bound = DeviceUi { controls: vec![bound], ..DeviceUi::default() };
+        assert!(bound.validate(std::slice::from_ref(&parameter)).is_err());
+    }
+    // A `what` without words is refused, so a layout cannot place a row a device takes none.
+    let empty = DeviceUi {
+        controls: vec![control(Widget::DeviceFiles { part: FileRowPart::File, what: String::new() }, UiGesture::Drag)],
+        ..DeviceUi::default()
+    };
+    assert!(empty.validate(std::slice::from_ref(&parameter)).is_err());
+    let long = DeviceUi {
+        controls: vec![control(
+            Widget::DeviceFiles { part: FileRowPart::File, what: "model file".repeat(16) },
+            UiGesture::Drag,
+        )],
+        ..DeviceUi::default()
+    };
+    assert!(long.validate(&[parameter]).is_err());
 }
 
 #[test]

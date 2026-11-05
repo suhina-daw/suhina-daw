@@ -163,10 +163,7 @@ impl App {
             )
             .response;
             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, QUANTIZATION_LABEL));
-            response.on_hover_text(
-                "Grid: when launched clips start, and the Arrangement view's grid lines and snapping (Alt: off the \
-                 grid)",
-            );
+            response.on_hover_text("Launch quantisation: when launched clips start");
         });
         if chosen != current {
             actions.push(Action::new("launcher.setQuantization", json!({ "value": chosen })));
@@ -305,7 +302,7 @@ impl App {
         let mut underline_at = None;
         // A clip dragged in the Arrangement view, or carried, switches the view when it hovers
         // over the other view's name for a moment.
-        let carrying = self.carry.is_some() || self.arrangement.dragged_clip().is_some();
+        let carrying = self.carrying_clip(ui.ctx());
         let pointer = ui.ctx().pointer_latest_pos();
         let mut hovered_switch = None;
         for (view, name) in [(View::Arrangement, "Arrangement"), (View::Session, "Launcher")] {

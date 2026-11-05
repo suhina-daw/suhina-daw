@@ -26,6 +26,9 @@ use crate::kit::widgets::{self, Action};
 const VELOCITY_PER_POINT: f64 = 1.0;
 /// How long an auditioned note sounds before the window lets it go, in seconds.
 pub(super) const AUDITION_SECONDS: f64 = 0.3;
+/// How long a note the selecting rectangle reaches sounds, in seconds: a quick sweep is a quick run
+/// of short notes.
+const SWEEP_SECONDS: f64 = 0.12;
 /// The most keys one audition sounds together.
 const MAX_AUDITION_KEYS: usize = 16;
 /// How far either side of the velocity lane's top edge the pointer grabs it, in points.
@@ -167,7 +170,8 @@ pub(super) fn draw_velocity_label(ui: &Ui, layout: &Layout, clip: &PianoClip, gr
 
 impl PianoRollState {
     /// The keys an audition sounds at the end of this frame, when the toolbar's Audition is on:
-    /// those of notes just drawn, moved or transposed. Each key once, at most a handful.
+    /// those of notes pressed, selected, drawn, moved or transposed. Each key once, at most a
+    /// handful.
     pub(super) fn audition_keys(&mut self, keys: impl IntoIterator<Item = u8>) {
         if !self.audition {
             return;
@@ -196,6 +200,24 @@ impl PianoRollState {
     /// `track`. The window counts the time; nothing waits on the audio thread.
     pub(super) fn audition_frame(&mut self, ui: &Ui, track: Option<u64>, actions: &mut Vec<Action>) {
         let now = ui.input(|i| i.time);
+        // A press holds what it sounds: the same keys asked for again, while the press lasts or as
+        // it ends, go on sounding, and so a drag sounds a new note only at a new pitch.
+        let held = self.audition_press;
+        self.audition_press = held && ui.input(|i| i.pointer.primary_down());
+        if held && self.audition_off.is_some() {
+            let same = {
+                let (mut asked, mut sounding) = (self.audition_pending.clone(), self.audition_sounding.clone());
+                asked.sort_unstable();
+                sounding.sort_unstable();
+                asked == sounding
+            };
+            if same {
+                self.audition_pending.clear();
+            }
+            if let Some((_, until)) = &mut self.audition_off {
+                *until = now + AUDITION_SECONDS;
+            }
+        }
         if let Some((sounding, until)) = self.audition_off
             && (now >= until || !self.audition_pending.is_empty())
         {
@@ -216,7 +238,8 @@ impl PianoRollState {
                 "preview.noteOn",
                 json!({ "track": track, "keys": keys, "velocity": self.last_velocity }),
             ));
-            self.audition_off = Some((track, now + AUDITION_SECONDS));
+            let sweeping = matches!(self.gesture, Some(super::Gesture::Select { .. }));
+            self.audition_off = Some((track, now + if sweeping { SWEEP_SECONDS } else { AUDITION_SECONDS }));
             self.audition_sounding = keys;
         }
         if let Some((_, until)) = self.audition_off {

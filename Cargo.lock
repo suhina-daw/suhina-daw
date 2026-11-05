@@ -5359,6 +5359,7 @@ name = "suhina-device-eq"
 version = "0.0.1"
 dependencies = [
  "suhina-device-api",
+ "suhina-device-sdk",
  "suhina-dsp",
 ]
 
@@ -5367,6 +5368,7 @@ name = "suhina-device-fm-synth"
 version = "0.0.1"
 dependencies = [
  "suhina-device-api",
+ "suhina-dsp",
 ]
 
 [[package]]
@@ -5423,6 +5425,7 @@ name = "suhina-device-registry"
 version = "0.0.1"
 dependencies = [
  "nam-rs",
+ "serde_json",
  "suhina-device-api",
  "suhina-device-auto-pan",
  "suhina-device-compressor",
@@ -5746,12 +5749,13 @@ dependencies = [
  "image",
  "memory-stats",
  "resvg",
+ "rustfft",
  "serde_json",
  "suhina-device-api",
- "suhina-device-nam-amp-modeler",
- "suhina-device-nam-cab-loader",
+ "suhina-device-eq",
  "suhina-device-registry",
  "suhina-device-sdk",
+ "suhina-dsp",
  "suhina-engine",
  "suhina-library",
  "suhina-media",

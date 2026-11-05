@@ -104,6 +104,25 @@ debug = "line-tables-only"
 [profile.test]
 debug = false
 
+# The crates that process no sound are not optimised in test builds: compiling the tests is almost
+# all LLVM at opt-level 1, and these crates are most of it (docs/releasing.md › What the tests
+# compile). The crates that process sound stay at 1: at 0, suhina-engine's tests take 93 s, not 7.
+[profile.test.package]
+suhina = { opt-level = 0 }
+suhina-als = { opt-level = 0 }
+suhina-automation = { opt-level = 0 }
+suhina-cli = { opt-level = 0 }
+suhina-flp = { opt-level = 0 }
+suhina-library = { opt-level = 0 }
+suhina-model = { opt-level = 0 }
+suhina-plugin-host = { opt-level = 0 }
+suhina-plugins = { opt-level = 0 }
+suhina-project-file = { opt-level = 0 }
+suhina-session = { opt-level = 0 }
+suhina-style = { opt-level = 0 }
+suhina-theme-package = { opt-level = 0 }
+suhina-ui = { opt-level = 0 }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

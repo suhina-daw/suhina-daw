@@ -3,7 +3,7 @@ description: How launching clips and scenes behaves: quantisation, stop buttons,
 read_when: clip launching, scenes, launch quantisation, stop, launcher view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, launcher.addMapping
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/engine/src/launcher.rs
   - crates/engine/src/follow.rs
@@ -50,8 +50,10 @@ decides something the sources do not settle, the text says so (**Suhina:**).
   from the moment it starts. A bar is `numerator × 4 / denominator` beats.
 - **Launch quantisation:** the grid that launches wait for. Choices: none, 8, 4, 2 or 1 bars,
   or a note value (1/2, 1/4, 1/8, 1/16, 1/32, and the triplets 1/2T, 1/4T, 1/8T, 1/16T).
-  Default: 1 bar. It is the control bar's **Quantize** box; the Arrangement view has a grid of
-  its own ([arrangement editing](arrangement-editing.md) › The grid). Each open project's session
+  Default: 1 bar. It is the control bar's **Quantize** box, which sets nothing else and which nothing else sets:
+  the Arrangement view and the piano roll each have a grid and snapping of their own
+  ([arrangement editing](arrangement-editing.md) › The grid; [clip editor](ui-clip-editor.md) ›
+  Grid and snapping). Each open project's session
   keeps it, without an audio engine too, and hands it to an engine when one is attached; it is
   not saved in the project.
 

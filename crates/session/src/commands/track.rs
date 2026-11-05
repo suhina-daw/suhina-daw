@@ -312,7 +312,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "preset",
                 ParamType::Path(PathKind::File),
-                "a preset file for the device (DX7 voice data for the FM synth)",
+                "a preset file for the device (a device preset, or DX7 voice data for the FM synth)",
+            ),
+            optional(
+                "stock",
+                ParamType::Text,
+                "a preset that ships with Suhina, by its key: what follows stock: in library.search",
             ),
             optional(
                 "sd",

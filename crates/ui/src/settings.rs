@@ -94,6 +94,82 @@ pub enum ToolbarSize {
     Larger,
 }
 
+/// How the piano roll's keys are drawn when the theme does not set them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PianoKeyStyle {
+    /// Light keys, the default.
+    #[default]
+    Bone,
+    /// Keys between the two.
+    Stone,
+    /// Dark keys.
+    Night,
+}
+
+impl PianoKeyStyle {
+    pub const ALL: [Self; 3] = [Self::Bone, Self::Stone, Self::Night];
+
+    /// The name the menu and the Settings row show.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Bone => "Bone",
+            Self::Stone => "Stone",
+            Self::Night => "Night",
+        }
+    }
+
+    /// The value the settings file keeps.
+    pub fn param(self) -> &'static str {
+        match self {
+            Self::Bone => "bone",
+            Self::Stone => "stone",
+            Self::Night => "night",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|style| style.param() == value)
+    }
+}
+
+/// Which of the piano roll's keys show their names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PianoKeyNames {
+    /// Every C, the default.
+    #[default]
+    OnlyC,
+    /// The white keys.
+    White,
+    /// Every key.
+    All,
+}
+
+impl PianoKeyNames {
+    pub const ALL: [Self; 3] = [Self::OnlyC, Self::White, Self::All];
+
+    /// The name the menu and the Settings row show.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::OnlyC => "Only C",
+            Self::White => "White keys",
+            Self::All => "All keys",
+        }
+    }
+
+    /// The value the settings file keeps.
+    pub fn param(self) -> &'static str {
+        match self {
+            Self::OnlyC => "only_c",
+            Self::White => "white",
+            Self::All => "all",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|names| names.param() == value)
+    }
+}
+
 impl ToolbarSize {
     pub const ALL: [Self; 3] = [Self::Normal, Self::Large, Self::Larger];
 
@@ -323,9 +399,9 @@ pub struct Settings {
     pub piano_roll_top: PianoRollTop,
     /// How large the piano roll's toolbar is drawn.
     pub toolbar_size: ToolbarSize,
-    /// The control bar's grid value sets the piano roll's too; otherwise the piano roll keeps
-    /// its own.
-    pub piano_grid_follows: bool,
+    /// How the piano roll's keys are drawn, and which of them are named.
+    pub piano_key_style: PianoKeyStyle,
+    pub piano_key_names: PianoKeyNames,
     /// A track's volume and pan as a field or as a knob (Settings › Launcher and mixer).
     pub mixer_controls: MixerControls,
     /// Where plug-in editors open.
@@ -436,7 +512,8 @@ impl Default for Settings {
             updates: crate::settings::update_settings::UpdateSettings::default(),
             piano_roll_top: PianoRollTop::Track,
             toolbar_size: ToolbarSize::Large,
-            piano_grid_follows: false,
+            piano_key_style: PianoKeyStyle::default(),
+            piano_key_names: PianoKeyNames::default(),
             mixer_controls: MixerControls::Field,
             plugin_editors: EditorPlacement::Window,
             theme: crate::kit::theme::BUILT_IN.into(),
@@ -590,7 +667,7 @@ impl Settings {
             EditorPlacement::DeviceView => "device",
         };
         format!(
-            "# Suhina settings; changed from Options > Settings.\nanimations = {}\ntrack_headers = {headers}\nrenderer = {graphics}\nsample_stacking = {}\nmidi_stacking = {}\nopen_projects = {on_open}\nat_start = {at_start}\nstart_template = {}\nstop = {stop}\nplay_start = {play_from}\ndevice_chain = {devices}\nmixer_controls = {mixer}\nselect_on_launch = {select_on_launch}\nplugin_editors = {editors}\ntheme = {}\nprojects_folder = {}\ntemplates_folder = {}\nnam_models_folder = {}\nirs_folder = {}\nthemes_folder = {}\nbrowser = {}\nbrowser_side = {browser_side}\nbrowser_width = {}\npreview_autoplay = {}\npreview_volume = {}\ndrop_files = {drop}\nwarp_mode = {}\nmap_layout = {map_layout}\nmap_hover_preview = {}\nmap_max_seconds = {}\nmap_dot_size = {}\nmap_label_size = {}\nmap_window = {}\nmap_window_rect = {}\naudio_host = {}\naudio_device = {}\naudio_sample_rate = {}\naudio_buffer = {}\naudio_exclusive = {}\naudio_cue_pair = {}\naudio_cue_volume = {}\naudio_input = {}\nzoom = {}\nwaveform_scale = {waveform_scale}\npiano_roll_top = {piano_top}\npiano_roll_grid = {piano_grid}\npiano_roll_toolbar = {piano_toolbar}\nbackup = {}\nbackup_clean_up = {}\n",
+            "# Suhina settings; changed from Options > Settings.\nanimations = {}\ntrack_headers = {headers}\nrenderer = {graphics}\nsample_stacking = {}\nmidi_stacking = {}\nopen_projects = {on_open}\nat_start = {at_start}\nstart_template = {}\nstop = {stop}\nplay_start = {play_from}\ndevice_chain = {devices}\nmixer_controls = {mixer}\nselect_on_launch = {select_on_launch}\nplugin_editors = {editors}\ntheme = {}\nprojects_folder = {}\ntemplates_folder = {}\nnam_models_folder = {}\nirs_folder = {}\nthemes_folder = {}\nbrowser = {}\nbrowser_side = {browser_side}\nbrowser_width = {}\npreview_autoplay = {}\npreview_volume = {}\ndrop_files = {drop}\nwarp_mode = {}\nmap_layout = {map_layout}\nmap_hover_preview = {}\nmap_max_seconds = {}\nmap_dot_size = {}\nmap_label_size = {}\nmap_window = {}\nmap_window_rect = {}\naudio_host = {}\naudio_device = {}\naudio_sample_rate = {}\naudio_buffer = {}\naudio_exclusive = {}\naudio_cue_pair = {}\naudio_cue_volume = {}\naudio_input = {}\nzoom = {}\nwaveform_scale = {waveform_scale}\npiano_roll_top = {piano_top}\npiano_roll_toolbar = {piano_toolbar}\nbackup = {}\nbackup_clean_up = {}\n",
             on(self.animations),
             on(self.sample_stacking),
             on(self.midi_stacking),
@@ -637,13 +714,14 @@ impl Settings {
                 PianoRollTop::Track => "track",
                 PianoRollTop::Window => "window",
             },
-            piano_grid = if self.piano_grid_follows { "control_bar" } else { "own" },
             mixer = match self.mixer_controls {
                 MixerControls::Field => "field",
                 MixerControls::Knob => "knob",
             },
             piano_toolbar = self.toolbar_size.param(),
         ) + &self.view.to_text()
+            + &format!("piano_key_style = {}\n", self.piano_key_style.param())
+            + &format!("piano_key_names = {}\n", self.piano_key_names.param())
             + &format!("background_image = {}\n", self.background_image.replace(['\r', '\n'], ""))
             + &format!("agents = {}\n", if self.agents { "on" } else { "off" })
             + &format!("mcp_project_folder = {}\n", if self.mcp_project_folder { "on" } else { "off" })
@@ -799,7 +877,8 @@ impl Settings {
                 }
                 ("piano_roll_top", "track") => settings.piano_roll_top = PianoRollTop::Track,
                 ("piano_roll_top", "window") => settings.piano_roll_top = PianoRollTop::Window,
-                ("piano_roll_grid", "own" | "control_bar") => settings.piano_grid_follows = value == "control_bar",
+                // Retired: the piano roll's grid is no longer linked to the control bar.
+                ("piano_roll_grid", "own" | "control_bar") => {}
                 ("backup", when) if suhina_session::backup::Interval::parse(when).is_some() => {
                     settings.backup = suhina_session::backup::Interval::parse(when).unwrap_or_default();
                 }
@@ -817,6 +896,12 @@ impl Settings {
                 }
                 ("piano_roll_toolbar", size) if ToolbarSize::parse(size).is_some() => {
                     settings.toolbar_size = ToolbarSize::parse(size).unwrap_or_default();
+                }
+                ("piano_key_style", style) if PianoKeyStyle::parse(style).is_some() => {
+                    settings.piano_key_style = PianoKeyStyle::parse(style).unwrap_or_default();
+                }
+                ("piano_key_names", names) if PianoKeyNames::parse(names).is_some() => {
+                    settings.piano_key_names = PianoKeyNames::parse(names).unwrap_or_default();
                 }
                 _ => {
                     warnings.push(format!("settings line {}: {key} = {value} is not a known setting", number + 1));

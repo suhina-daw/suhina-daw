@@ -3,7 +3,7 @@ description: User guide to the keyboard shortcuts, one entry per action with its
 read_when: user guide, keyboard shortcuts, what does this key do, list of keys, every shortcut explained, keybindings, hotkeys, action ids, which action a key runs, back up keys, share keymap, keymap.json, rebind a key, keys for agents
 type: howto
 status: current
-last_verified: 2026-10-31
+last_verified: 2026-11-02
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -167,15 +167,19 @@ of one square of the grid, which follows the zoom and the grid setting.
 | B | `pianoRoll.draw` | Piano roll | Switches between the Select and Draw tools. |
 | Ctrl+A | `pianoRoll.selectAll` | Piano roll | Selects every note in the clip. |
 | Escape | `pianoRoll.deselect` | Piano roll | Clears the note selection. |
-| Left | `pianoRoll.earlier` | Piano roll | Moves the selected notes one grid step earlier. |
-| Right | `pianoRoll.later` | Piano roll | Moves the selected notes one grid step later. |
+| Left | `pianoRoll.earlier` | Piano roll | Moves the selected notes to the previous grid line: the first of them lands on it, and the others keep their distance to it. |
+| Right | `pianoRoll.later` | Piano roll | Moves the selected notes to the next grid line: the first of them lands on it, and the others keep their distance to it. |
 | Up | `pianoRoll.up` | Piano roll | Moves the selected notes one semitone higher. |
 | Down | `pianoRoll.down` | Piano roll | Moves the selected notes one semitone lower. |
+| Alt+Left | `pianoRoll.earlierFine` | Piano roll | Moves the selected notes a fine step (a 1/128 note) earlier, off the grid. |
+| Alt+Right | `pianoRoll.laterFine` | Piano roll | Moves the selected notes a fine step (a 1/128 note) later, off the grid. |
 | Shift+Up | `pianoRoll.octaveUp` | Piano roll | Moves the selected notes one octave (12 semitones) higher. |
 | Shift+Down | `pianoRoll.octaveDown` | Piano roll | Moves the selected notes one octave lower. |
 | Shift+Left | `pianoRoll.shorter` | Piano roll | Makes the selected notes one grid step shorter. A note never gets shorter than one step. |
-| Shift+Right | `pianoRoll.longer` | Piano roll | Makes the selected notes one grid step longer. |
-| Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings in the quantise block of the MIDI tools column. With notes selected it moves only those, otherwise every note. |
+| Shift+Right | `pianoRoll.longer` | Piano roll | Takes each selected note's end to the next grid line, or to the start of the next note of its key when that comes first (unless stacked notes are allowed). |
+| Alt+Shift+Left | `pianoRoll.shorterFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) shorter, off the grid. |
+| Alt+Shift+Right | `pianoRoll.longerFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) longer, off the grid, stopping at the next note of their key unless stacked notes are allowed. |
+| Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings in the quantise block of the MIDI tools column. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
 
 Copy, cut, paste, duplicate and delete in the piano roll use the [Editing](#editing) keys. With no
 note selected (or nothing copied, for paste) they act on the clip instead.

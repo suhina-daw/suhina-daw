@@ -97,6 +97,12 @@ impl OnePole {
         Self { coefficient: time_constant(seconds, crate::usable_sample_rate(sample_rate)), state: 0.0 }
     }
 
+    /// Changes the time constant and keeps the state, which is the output itself, so it can move
+    /// while sound passes without a bump.
+    pub fn set_seconds(&mut self, seconds: f64, sample_rate: f64) {
+        self.coefficient = time_constant(seconds, crate::usable_sample_rate(sample_rate));
+    }
+
     #[inline]
     pub fn process(&mut self, x: f64) -> f64 {
         self.state = crate::flush(x + (self.state - x) * self.coefficient);
@@ -182,6 +188,15 @@ impl Glide {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_one_pole_keeps_its_output_when_its_time_moves() {
+        let mut filter = OnePole::new(0.001, 48_000.0);
+        filter.reset(0.5);
+        filter.set_seconds(0.1, 48_000.0);
+        let next = filter.process(0.5);
+        assert!((next - 0.5).abs() < 1e-12, "{next}");
+    }
 
     #[test]
     fn ramps_linearly_and_lands_on_the_target() {

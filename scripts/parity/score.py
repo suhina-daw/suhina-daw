@@ -125,7 +125,7 @@ CHAPTERS = [
      "transport.followTempoMap or the next start); the tempo field typed or dragged to a thousandth of a BPM by the place grabbed, clips following while it moves. Missing tap tempo, tempo follower/leader, "
      "auto-warp of long samples, warp-marker editing, quantise audio, drawing the tempo as an "
      "automation envelope."),
-    (10, "Editing MIDI", 41, 0.44, "started",
+    (10, "Editing MIDI", 41, 0.45, "started",
      "A first piano roll draws, selects (click, rectangle, Ctrl+A), moves, resizes and deletes notes "
      "on the grid (Alt off-grid), by mouse or by arrow keys, with Select, Draw, Paint, Erase, Slice and Mute "
      "tools (keys 1 to 6, the wheel with the right button held steps through them) and "
@@ -201,10 +201,15 @@ CHAPTERS = [
      "folded away from a button or a menu; a click copies a take's clip and a drag a part of it onto the track "
      "(take.comp), the parts named and coloured after their takes; Alt+Up/Down swap a part's take, the cut "
      "between two parts dragged (take.moveCut), Recolor lane and Recolor selected take, splits reaching the "
-     "takes, Delete take, take pieces picked with Ctrl and deleted; a take lane soloed in place of its track, "
+     "takes, Delete take, take pieces picked with Ctrl and deleted; an area painted across take lanes with "
+     "Ctrl and deleted or cut (take.deleteRange, take.cutRange), pieces moved along the timeline "
+     "(take.movePieces), a piece's edges dragged to bring the recording back (take.trimPiece), crossfades "
+     "shown and set at their cuts (take.setCrossfade) with their default in Settings, a moved part taking "
+     "its takes along, lanes added by hand (take.add), pieces dragged between lanes, lanes picked and deleted "
+     "from their headers and kept when emptied, each lane "
+     "sized and zoomed like a track, lanes appearing when the recording stops; a take lane soloed in place of its track, "
      "put whole on the track, unused takes deleted; short crossfades where parts of two takes meet; clips "
-     "not stacked over takes; saved with the project. Missing take lanes made by hand, renaming and "
-     "reordering them."),
+     "not stacked over takes; saved with the project. Missing renaming and reordering take lanes."),
     (22, "Stem Separation", 8, 0.00, "planned",
      "Roadmap item (Demucs candidate, weights unaudited). The pipeline around a model (chunking, "
      "resampling) exists in crates/separation with a test backend; no model and nothing a user "
@@ -273,8 +278,8 @@ CHAPTERS = [
      "One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key "
      "window that blocks, folds or limits notes; its step buttons are planned. SDK MIDI-effect "
      "graphs run before the instrument too. The other 7 documented MIDI effects are missing."),
-    (31, "Live Instrument Reference", 120, 0.12, "started",
-     "FM synth and single-source sample/granular instrument against 13 instruments; "
+    (31, "Live Instrument Reference", 120, 0.18, "started",
+     "FM synth with waveforms, time envelopes, filter, LFOs, matrix and spread (its import is planned) and single-source sample/granular instrument against 13 instruments; "
      "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades, editable automatic slice boundaries with persistent corrections, source-tempo grid/snap and stereo waveform navigation, and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; Simpler and a one-sample Sampler from a Live Set import as the sampler with their sample, region, tuning, envelope, filter and slicing; no multisample zones, "
      "drum sampler, wavetable, subtractive or physical modelling yet."),
     (32, "Max for Live", 6, 0.05, "planned",
