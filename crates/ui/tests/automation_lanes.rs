@@ -1115,8 +1115,13 @@ fn a_painted_range_moves_the_play_start_marker_to_its_start() {
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut harness = session_sized(session, SIZE);
+    click_anywhere(&mut harness, true);
     harness.get_by_label("Show automation of Drums").click();
     harness.run();
+    // Two points low on the lane, so its upper half is away from the line.
+    for x in [100.0, 200.0] {
+        add_point(&mut harness, x);
+    }
     // Bars 3 to 8 (beats 8 to 32), on the grid, painted from the lane's upper half.
     let rect = lane(&harness);
     drag(&mut harness, Pos2::new(rect.left() + 60.0, rect.top() + rect.height() * 0.25), vec2(180.0, 0.0));
