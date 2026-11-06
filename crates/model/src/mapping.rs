@@ -206,4 +206,18 @@ mod tests {
             Some(MappingTarget::Stop { track: TrackId(1) })
         );
     }
+
+    #[test]
+    fn a_project_with_duplicate_or_too_many_mappings_does_not_validate() {
+        let mapping = |source: MappingSource| ControllerMapping { source, target: MappingTarget::Scene { scene: 0 } };
+        let q = MappingSource::key("Q").unwrap();
+        let mut project = crate::Project { controller_mappings: vec![mapping(q.clone())], ..Default::default() };
+        assert_eq!(project.validate(), Ok(()));
+        project.controller_mappings.push(mapping(q));
+        assert_eq!(project.validate(), Err(vec![crate::ValidationError::DuplicateMapping("key:Q".into())]));
+        project.controller_mappings = (0..=MAX_MAPPINGS)
+            .map(|i| mapping(MappingSource::note(1 + (i / 128 % 16) as u8, (i % 128) as u8).unwrap()))
+            .collect();
+        assert_eq!(project.validate(), Err(vec![crate::ValidationError::TooManyMappings(MAX_MAPPINGS + 1)]));
+    }
 }

@@ -100,8 +100,8 @@ pub struct Project {
     pub default_scale: Option<Scale>,
     /// The project's controller mappings: keys and MIDI notes that run a command, so far the
     /// launch commands of slots, scenes and stop buttons (ADR 0019 › Amendment: launch keys are
-    /// controller mappings). A mapping whose track or scene is gone stays, unused, so an undo
-    /// brings it back working.
+    /// controller mappings). A mapping whose track is gone stays, unused, so an undo brings it back
+    /// working; deleting a scene removes the mappings on it, and undo restores them.
     pub controller_mappings: Vec<ControllerMapping>,
     /// The next id a clip, an arrangement lane or a scene gets: the three kinds share this
     /// counter, and a value is never handed out twice, deleted objects' included
@@ -1034,6 +1034,10 @@ pub enum ValidationError {
     DuplicateLane(LaneId),
     /// Two scenes have this id.
     DuplicateScene(SceneId),
+    /// Two controller mappings have this source (its name, as the file writes it).
+    DuplicateMapping(String),
+    /// The project has more than [`MAX_MAPPINGS`] controller mappings.
+    TooManyMappings(usize),
     DuplicateDevice(DeviceId),
     /// Objects of two kinds (a clip, a lane, a scene) have this id; the kinds share one counter,
     /// so a value names at most one object.
@@ -1109,6 +1113,8 @@ impl fmt::Display for ValidationError {
             Self::DuplicateClip(id) => write!(f, "clip id {id} is used twice"),
             Self::DuplicateLane(id) => write!(f, "arrangement lane id {id} is used twice"),
             Self::DuplicateScene(id) => write!(f, "scene id {id} is used twice"),
+            Self::DuplicateMapping(source) => write!(f, "{source} is mapped twice"),
+            Self::TooManyMappings(n) => write!(f, "the project has {n} mappings, at most {MAX_MAPPINGS} are kept"),
             Self::DuplicateDevice(id) => write!(f, "device id {id} is used twice"),
             Self::SharedId(id) => write!(f, "object id {id} is used by a clip, a lane or a scene at once"),
             Self::IdAhead(id) => write!(f, "object id {id} is not below the project's next id"),
@@ -1194,6 +1200,16 @@ impl Project {
         let lane_ids = unique(lane_ids, ValidationError::DuplicateLane, &mut errors);
         let scene_ids = self.launcher.scenes.iter().map(|s| s.id).filter(|id| id.is_some());
         let scene_ids = unique(scene_ids, ValidationError::DuplicateScene, &mut errors);
+        // What the file reader refuses, so a project that validates can be saved and opened again.
+        if self.controller_mappings.len() > MAX_MAPPINGS {
+            errors.push(ValidationError::TooManyMappings(self.controller_mappings.len()));
+        }
+        let mut sources = HashSet::new();
+        for m in &self.controller_mappings {
+            if !sources.insert(&m.source) {
+                errors.push(ValidationError::DuplicateMapping(m.source.name()));
+            }
+        }
         let device_ids = self.all_devices().map(|d| d.id).filter(|id| id.is_some());
         let device_ids = unique(device_ids, ValidationError::DuplicateDevice, &mut errors);
         // The kinds the file holds share one counter, so a value names at most one object of any

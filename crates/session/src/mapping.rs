@@ -98,7 +98,9 @@ fn describe(p: &Project, index: usize, m: &ControllerMapping) -> Value {
 pub(crate) fn scenes_inserted(p: &mut Project, at: usize) {
     for m in &mut p.controller_mappings {
         match &mut m.target {
-            MappingTarget::Slot { scene, .. } | MappingTarget::Scene { scene } if *scene >= at => *scene += 1,
+            MappingTarget::Slot { scene, .. } | MappingTarget::Scene { scene } if *scene >= at => {
+                *scene = scene.saturating_add(1)
+            }
             _ => {}
         }
     }
