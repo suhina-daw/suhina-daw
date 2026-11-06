@@ -9,7 +9,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[CommandSpec {
     id: "command.list",
     label: "List every command with its parameters",
     params: &[],
-    kind: CommandKind::Read,
+    kind: CommandKind::READ,
     run: list,
     policy: Policy::DEFAULT,
 }];

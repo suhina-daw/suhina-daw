@@ -150,11 +150,16 @@ fn swing_row(
         Rect::from_min_max(Pos2::new(switch.right() + 4.0, switch.top()), Pos2::new(part.right(), switch.bottom()));
     let label = if global { "Swing (global)" } else { "Swing (this clip)" };
     let id = Id::unique(("clip-panel-swing", panel.clip.0));
-    if let Some((amount, continues)) = widgets::percent_slider(ui, painter, slider, id, label, percent, !global) {
+    if let Some((amount, dragged)) = widgets::percent_slider(ui, painter, slider, id, label, percent, !global) {
+        // The frames of one drag are one gesture, one undo step.
+        let mut params = json!({ "amount": amount });
+        if dragged {
+            params["gesture"] = crate::interaction::commands::gesture("clip-panel-swing");
+        }
         let action = if global {
-            Action::new("transport.setSwing", json!({ "amount": amount, "continue": continues }))
+            Action::new("transport.setSwing", params)
         } else {
-            Action::new("clip.setSwing", on_clip(json!({ "amount": amount, "continue": continues })))
+            Action::new("clip.setSwing", on_clip(params))
         };
         actions.push(action);
     }

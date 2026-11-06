@@ -44,6 +44,7 @@ use crate::follow::{FollowPlan, Outcome, Random};
 use crate::stretch::StretchVoice;
 use crate::{AUDIO_HEADROOM, NoteStart, Renderer, bus_chain, note_velocity, route, start_note};
 
+mod clock;
 mod modes;
 mod prepare;
 use modes::SlotLaunch;
@@ -573,8 +574,8 @@ impl Controller {
 
     /// Queues a command for the start of the next audio block. Fails only if the queue is full,
     /// which means the renderer is not running.
-    pub fn send(&mut self, command: LaunchCommand) -> Result<(), String> {
-        self.producer.push(command).map_err(|_| "the audio engine is not taking commands (queue full)".to_string())
+    pub fn send(&mut self, command: LaunchCommand) -> Result<(), crate::ControlError> {
+        self.producer.push(command).map_err(|_| crate::ControlError::Full("commands"))
     }
 
     pub fn monitor(&self) -> &LauncherMonitor {
@@ -718,22 +719,12 @@ pub(crate) struct Column {
     overrides_since: Option<u64>,
 }
 
-pub(crate) struct Launcher {
+pub(crate) struct ClipLauncher {
     pub(crate) columns: Vec<Column>,
     scene_tempos: Vec<Option<f64>>,
     scene_signatures: Vec<Option<TimeSignature>>,
-    quantization: Quantization,
-    /// The time signature playing, and the project's, which the playing one follows when it is
-    /// edited.
-    time_signature: TimeSignature,
-    project_signature: TimeSignature,
-    bar_beats: f64,
-    /// The beat bars are counted from: where a scene last changed the time signature.
-    pub(crate) bar_origin: f64,
-    /// Bars played before `bar_origin`.
-    pub(crate) bars_before: f64,
-    /// A scene's time signature waiting for its launch beat.
-    pub(crate) pending_signature: Option<(f64, TimeSignature)>,
+    /// The bars, the time signature and the launch quantisation (#764 › 5).
+    pub(crate) bars: clock::LaunchClock,
     pub(crate) beat: f64,
     tempo_bpm: f64,
     /// The project's start tempo, which stretch voices are prepared for.
@@ -741,9 +732,6 @@ pub(crate) struct Launcher {
     /// The arrangement's tempo, on the clock its tempo map in frames gives, and its meter
     /// (`docs/spec/tempo-map.md`).
     clock: crate::tempo::TempoClock,
-    meter: Meter,
-    /// The clock runs on the map; a scene tempo takes it off the map until the map is edited.
-    pub(crate) follows_map: bool,
     pub(crate) pending_tempo: Option<(f64, f64)>,
     frames_per_beat_at_build: f64,
     pub(crate) stop_fade_frames: f64,
@@ -754,7 +742,7 @@ pub(crate) struct Launcher {
     voices: prepare::Voices,
 }
 
-impl Launcher {
+impl ClipLauncher {
     pub(crate) fn new(
         project: &Project,
         audio: &AudioPool,
@@ -816,16 +804,8 @@ impl Launcher {
                 .iter()
                 .map(|s| s.time_signature.filter(|ts| ts.numerator > 0 && ts.denominator > 0))
                 .collect(),
-            quantization: Quantization::Bars(1),
-            time_signature: project.transport.time_signature,
-            project_signature: project.transport.time_signature,
-            bar_beats: meter.start_bar_beats(),
-            bar_origin: 0.0,
-            bars_before: 0.0,
-            pending_signature: None,
-            meter,
+            bars: clock::LaunchClock::new(project.transport.time_signature, meter),
             clock: crate::tempo::TempoClock::of(&map),
-            follows_map: true,
             beat: 0.0,
             tempo_bpm: tempo,
             project_tempo_bpm: tempo,
@@ -841,31 +821,23 @@ impl Launcher {
     /// Takes over `old`'s runtime state at a graph swap (ADR 0005): what each column plays, fades
     /// and has queued, the beat, tempo and quantisation, and the control queue and monitor (the
     /// new graph's own go back with the old graph). A slot whose stretched audio has not changed
-    /// keeps its prepared stretch voice ([`Launcher::take_voices`]); any other playing stretch
+    /// keeps its prepared stretch voice ([`ClipLauncher::take_voices`]); any other playing stretch
     /// voice is moved to where its clip is. Slots carry over by index, or along `shift` when a
     /// scene was inserted or removed. A column or slot that no longer exists is dropped. Never
     /// allocates.
-    pub(crate) fn adopt(&mut self, old: &mut Launcher, shift: Option<SceneShift>) {
+    pub(crate) fn adopt(&mut self, old: &mut ClipLauncher, shift: Option<SceneShift>) {
         std::mem::swap(&mut self.monitor, &mut old.monitor);
         std::mem::swap(&mut self.control, &mut old.control);
-        self.quantization = old.quantization;
         self.random = old.random;
         self.beat = old.beat;
         // An edited tempo map or meter puts the clock back on the map and drops a scene's tempo
         // or time signature still waiting for its launch beat; otherwise they stay, with their
         // bars.
-        if self.clock == old.clock && self.meter == old.meter {
+        if self.bars.adopt(&old.bars, self.clock == old.clock) {
             self.pending_tempo = old.pending_tempo;
-            self.pending_signature = old.pending_signature;
             self.tempo_bpm = old.tempo_bpm;
-            self.follows_map = old.follows_map;
-            self.time_signature = old.time_signature;
-            self.bar_beats = old.bar_beats;
-            self.bar_origin = old.bar_origin;
-            self.bars_before = old.bars_before;
         } else {
             self.tempo_bpm = self.clock.bpm_at(self.beat);
-            self.follows_map = true;
         }
         let frames_per_beat = self.frames_per_beat_at_build;
         let map = |slot: usize| shift.map_or(Some(slot), |s| s.map(slot));
@@ -892,7 +864,7 @@ impl Launcher {
         self.columns.get(column as usize).is_some_and(|c| c.overrides_since.is_some())
     }
 
-    /// Like [`Launcher::overrides`], at frame `position` of the block just rendered.
+    /// Like [`ClipLauncher::overrides`], at frame `position` of the block just rendered.
     pub(crate) fn overrides_at(&self, column: u32, position: u64) -> bool {
         self.columns.get(column as usize).and_then(|c| c.overrides_since).is_some_and(|since| since <= position)
     }
@@ -907,26 +879,21 @@ impl Launcher {
         self.beat
     }
 
-    /// Whether beat number `index` (counted from beat 0) starts a bar, for the metronome:
-    /// through the project's meter while the clock follows the tempo map, otherwise through the
-    /// time signature playing, its bars counted from where it last changed.
+    /// Whether beat number `index` (counted from beat 0) starts a bar, for the metronome
+    /// ([`clock::LaunchClock::starts_bar`]).
     pub(crate) fn starts_bar(&self, index: i64) -> bool {
-        if self.follows_map {
-            return crate::tempo::starts_bar(&self.meter, index);
-        }
-        let into_bar = (index as f64 - self.bar_origin).rem_euclid(self.bar_beats);
-        self.bar_beats > 0.0 && (into_bar < 1e-9 || self.bar_beats - into_bar < 1e-9)
+        self.bars.starts_bar(index)
     }
 
     /// Whether the clock reads its beat from the tempo map: it follows the map and the map
     /// changes (a constant map is counted frame by frame, as it always was).
     fn on_map(&self) -> bool {
-        self.follows_map && self.clock.map().is_some()
+        self.bars.follows_map && self.clock.map().is_some()
     }
 
     /// Puts the tempo at the clock's beat, when the clock follows the map.
     pub(crate) fn tempo_from_map(&mut self) {
-        if self.follows_map {
+        if self.bars.follows_map {
             self.tempo_bpm = self.clock.bpm_at(self.beat);
         }
     }
@@ -936,91 +903,31 @@ impl Launcher {
     /// in that bar's time signature until a scene changes it
     /// (`docs/spec/tempo-map.md` › Scenes and the tempo map). Never allocates.
     fn leave_map(&mut self) {
-        if !self.follows_map {
-            return;
-        }
-        let here = self.meter.position(self.beat.max(0.0) + 1e-9);
-        self.time_signature = here.time_signature;
-        self.bar_beats = here.bar_beats;
-        self.bar_origin = here.bar_start;
-        self.bars_before = f64::from(here.bar);
-        self.follows_map = false;
+        self.bars.leave_map(self.beat);
     }
 
     /// The bar the clock is in: its number from 0, the beat it starts at and its time
     /// signature, the map's or the one a scene set. Never allocates.
     pub(crate) fn bar(&self) -> (u32, f64, TimeSignature) {
-        let beat = if self.beat.is_finite() { self.beat.max(0.0) } else { 0.0 };
-        if self.follows_map {
-            let here = self.meter.position(beat + 1e-9);
-            return (here.bar, here.bar_start, here.time_signature);
-        }
-        // Signed: a jump back before where the scene set the bars (a locate) is in a bar before
-        // it, which starts before the playhead, not at `bar_origin` after it.
-        let into = beat - self.bar_origin;
-        let bars = if self.bar_beats > 0.0 && into.is_finite() { (into / self.bar_beats + 1e-9).floor() } else { 0.0 };
-        let number = (self.bars_before + bars).clamp(0.0, f64::from(u32::MAX)) as u32;
-        (number, (self.bar_origin + bars * self.bar_beats).max(0.0), self.time_signature)
+        self.bars.bar(self.beat)
     }
 
     /// Whether the clock follows the tempo map (no scene has taken it off).
     pub(crate) fn follows_map(&self) -> bool {
-        self.follows_map
+        self.bars.follows_map
     }
 
     /// Puts the clock back on the tempo map: the tempo and the bars are the map's again, and a
     /// scene's tempo or time signature still waiting for its beat is dropped. Never allocates.
     pub(crate) fn follow_map(&mut self) {
-        self.follows_map = true;
         self.pending_tempo = None;
-        self.pending_signature = None;
-        self.time_signature = self.project_signature;
-        self.bar_beats = self.meter.start_bar_beats();
-        self.bar_origin = 0.0;
-        self.bars_before = 0.0;
+        self.bars.follow_map();
         self.tempo_from_map();
     }
 
-    /// The beat a launch issued now happens at. Bars are counted from where the time signature
-    /// last changed; note values from beat 0.
+    /// The beat a launch issued now happens at ([`clock::LaunchClock::launch_beat`]).
     pub(crate) fn launch_beat(&self) -> f64 {
-        self.launch_beat_on(self.quantization)
-    }
-
-    /// The beat a launch issued now on the grid `quantization` happens at.
-    fn launch_beat_on(&self, quantization: Quantization) -> f64 {
-        if self.follows_map && !self.meter.is_constant() {
-            return self.launch_beat_on_meter(quantization);
-        }
-        let step = quantization.step(self.bar_beats);
-        if step == 0.0 {
-            return self.beat;
-        }
-        let origin = if matches!(quantization, Quantization::Bars(_)) { self.bar_origin } else { 0.0 };
-        // A launch exactly on a boundary (within rounding) happens there.
-        let index = ((self.beat - origin - 1e-9) / step).ceil();
-        (origin + index * step).max(0.0)
-    }
-
-    /// [`Launcher::launch_beat_on`] when the time signature changes: bars are the meter's, and a
-    /// note value counts from the start of the bar it is in.
-    fn launch_beat_on_meter(&self, quantization: Quantization) -> f64 {
-        let beat = self.beat.max(0.0);
-        // The bar the beat is in; a beat a rounding error before a bar line counts as on it, and
-        // a launch exactly on a boundary happens there.
-        let here = self.meter.position(beat + 1e-9);
-        match quantization {
-            Quantization::Bars(bars) if bars > 0 => {
-                let next = if (here.bar_start - beat).abs() <= 1e-9 { here.bar } else { here.bar.saturating_add(1) };
-                self.meter.bar_start(next.div_ceil(bars).saturating_mul(bars))
-            }
-            Quantization::Beats(step) if step.is_finite() && step > 0.0 => {
-                let index = ((beat - here.bar_start - 1e-9) / step).ceil().max(0.0);
-                // A grid that does not divide the bar ends at the next bar line.
-                (here.bar_start + index * step).min(here.bar_start + here.bar_beats)
-            }
-            _ => self.beat,
-        }
+        self.bars.launch_beat(self.beat, self.bars.quantization)
     }
 
     /// Queues `action` for the next boundary: a clip's launch waits for the clip's own
@@ -1028,24 +935,20 @@ impl Launcher {
     fn queue(&mut self, column: usize, action: Queued) {
         let quantization = match action {
             Queued::Launch(slot) => self.slot_quantization(column, slot),
-            Queued::Stop => self.quantization,
+            Queued::Stop => self.bars.quantization,
         };
         self.queue_on(column, action, quantization);
     }
 
     fn queue_on(&mut self, column: usize, action: Queued, quantization: Quantization) {
-        let at_beat = self.launch_beat_on(quantization);
+        let at_beat = self.bars.launch_beat(self.beat, quantization);
         if let Some(c) = self.columns.get_mut(column) {
             c.pending = Some(Pending { at_beat, action, repeat: false });
         }
     }
 
     fn publish_meter(&self) {
-        let m = &self.monitor;
-        m.signature.store(pack(self.time_signature), Ordering::Relaxed);
-        m.bar_origin.store(self.bar_origin.to_bits(), Ordering::Relaxed);
-        m.bars_before.store(self.bars_before.to_bits(), Ordering::Relaxed);
-        m.follows_map.store(self.follows_map, Ordering::Relaxed);
+        self.bars.publish(&self.monitor);
     }
 
     /// Queues, for this frame, the follow action of each playing clip whose follow time has
@@ -1428,7 +1331,7 @@ impl Renderer {
                     launcher.pending_tempo = Some((launcher.launch_beat(), *bpm));
                 }
                 if let Some(Some(signature)) = launcher.scene_signatures.get(scene) {
-                    launcher.pending_signature = Some((launcher.launch_beat(), *signature));
+                    launcher.bars.pending_signature = Some((launcher.launch_beat(), *signature));
                 }
             }
             LaunchCommand::StopColumn { column } => {
@@ -1456,7 +1359,7 @@ impl Renderer {
                     }
                 }
             }
-            LaunchCommand::SetQuantization(q) => self.graph.launcher.quantization = q,
+            LaunchCommand::SetQuantization(q) => self.graph.launcher.bars.quantization = q,
             LaunchCommand::SeedRandom(seed) => self.graph.launcher.random.seed(seed),
             LaunchCommand::BackToArrangement => {
                 // Every track that plays launched clips stops them (fading out, as a stop does)
@@ -1661,16 +1564,11 @@ impl Renderer {
             self.graph.launcher.pending_tempo = None;
         }
         let launcher = &mut self.graph.launcher;
-        if let Some((at, signature)) = launcher.pending_signature
+        if let Some((at, signature)) = launcher.bars.pending_signature
             && at <= beat
         {
             launcher.leave_map();
-            let bars = ((at - launcher.bar_origin) / launcher.bar_beats - 1e-9).ceil().max(0.0);
-            launcher.bars_before += bars;
-            launcher.time_signature = signature;
-            launcher.bar_beats = bar_beats(signature);
-            launcher.bar_origin = at;
-            launcher.pending_signature = None;
+            launcher.bars.change_signature(at, signature);
         }
         let mut changed = false;
         for index in 0..self.graph.launcher.columns.len() {

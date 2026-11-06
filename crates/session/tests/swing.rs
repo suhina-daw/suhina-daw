@@ -27,7 +27,7 @@ fn project() -> Project {
     suhina_test_support::with_ids(Project {
         tracks: vec![Track { content: ContentKinds { notes: true, audio: true }, ..Track::new(TrackId(1), "Keys") }],
         contents: vec![
-            content(1, vec![ContentLane { target: None, data: LaneData::Notes(notes) }]),
+            content(1, vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }]),
             content(2, vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("a.wav")) }]),
         ],
         arrangement: Arrangement {
@@ -37,7 +37,7 @@ fn project() -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, 4.0), Clip::new(ContentId(2), 4.0, 4.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()

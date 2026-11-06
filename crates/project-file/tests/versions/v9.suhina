@@ -26,11 +26,7 @@
                 2.0
               ],
               "offset": 0.5,
-              "start": 0.0,
-              "swing": {
-                "amount": 0.6,
-                "own": true
-              }
+              "start": 0.0
             },
             {
               "content": 1,
@@ -771,13 +767,13 @@
       ],
       "mappings": [
         {
-          "scene": 2,
+          "scene": 1,
           "source": "key:Q",
           "target": "slot",
           "track": 2
         },
         {
-          "scene": 1,
+          "scene": 0,
           "source": "note:10:36",
           "target": "scene"
         },
@@ -881,7 +877,6 @@
         "end": 12.5,
         "start": 4.0
       },
-      "swing": 0.25,
       "tempo_bpm": 128.5,
       "tempo_changes": [
         {

@@ -59,37 +59,6 @@
         {
           "clips": [
             {
-              "audio": {
-                "gain": 0.8,
-                "gain_envelope": [
-                  {
-                    "beat": 0.0,
-                    "db": 0.0
-                  },
-                  {
-                    "beat": 4.0,
-                    "db": -12.5
-                  },
-                  {
-                    "beat": 4.0,
-                    "db": 3.0
-                  }
-                ],
-                "stretch": "high_quality",
-                "tempo_source": "name",
-                "transpose": -1.5,
-                "warp_markers": [
-                  {
-                    "audio_time": 0.0,
-                    "time": 0.0
-                  },
-                  {
-                    "audio_time": 7.5,
-                    "time": 16.0
-                  }
-                ],
-                "warped": true
-              },
               "content": 2,
               "enabled": false,
               "fade_in": 0.25,
@@ -701,8 +670,22 @@
               "channels": 2,
               "duration_seconds": 7.5,
               "file": "Samples/loop.wav",
+              "gain": 0.8,
               "sample_rate": 44100,
-              "stream": 3
+              "stream": 3,
+              "stretch": "high_quality",
+              "transpose": -1.5,
+              "warp_markers": [
+                {
+                  "audio_time": 0.0,
+                  "time": 0.0
+                },
+                {
+                  "audio_time": 7.5,
+                  "time": 16.0
+                }
+              ],
+              "warped": true
             },
             "target": 3
           }
@@ -767,13 +750,13 @@
       ],
       "mappings": [
         {
-          "scene": 2,
+          "scene": 1,
           "source": "key:Q",
           "target": "slot",
           "track": 2
         },
         {
-          "scene": 1,
+          "scene": 0,
           "source": "note:10:36",
           "target": "scene"
         },

@@ -45,9 +45,14 @@ fn clips(session: &Session) -> Vec<Clip> {
 
 /// The rendered left channel's level at `beat` (at 120 BPM, 24 000 frames a beat).
 fn level_at(session: &Session, beat: f64) -> f32 {
-    let out =
-        suhina_engine::render_offline_from(session.project(), RenderInputs::from_audio(session.audio()), SR, 512, None)
-            .unwrap();
+    let out = suhina_engine::render_offline_from(
+        session.project(),
+        RenderInputs::from_audio(session.audio(), suhina_session::devices()),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
     out.get((beat * 24_000.0) as usize * 2).copied().unwrap_or(0.0).abs()
 }
 
@@ -149,9 +154,9 @@ fn a_clips_tempo_is_set_halved_and_doubled_and_its_length_follows() {
 fn a_slot_clips_tempo_is_its_own() {
     let dir = TempDir::new("clip-audio-slot-tempo");
     let mut session = Session::new(blank_project());
-    run(&mut session, "clip.addFiles", json!({ "paths": [wav(&dir, "hit.wav", 4.0, 0.5)], "track": 3, "scene": 1 }))
+    run(&mut session, "clip.addFiles", json!({ "paths": [wav(&dir, "hit.wav", 4.0, 0.5)], "track": 3, "scene": 0 }))
         .unwrap();
-    run(&mut session, "clip.setTempo", json!({ "track": 3, "scene": 1, "bpm": 240.0 })).unwrap();
+    run(&mut session, "clip.setTempo", json!({ "track": 3, "scene": 0, "bpm": 240.0 })).unwrap();
     let column = session.project().launcher.columns.iter().find(|c| c.track == TrackId(3)).unwrap();
     let clip = column.slots[0].clip.as_ref().unwrap();
     assert_eq!((clip.length, clip.audio.tempo()), (16.0, Some(240.0)));
@@ -180,15 +185,15 @@ fn find_tempo_says_what_each_source_finds() {
     assert!(run(&mut session, "clip.findTempo", json!({ "clip": midi.0 })).is_err());
 }
 
-/// The calls of one drag (`continue`) make one undo step, as the clip panel's live controls send
-/// them.
+/// The calls of one drag (one `gesture`) make one undo step, as the clip panel's live controls
+/// send them.
 #[test]
 fn a_dragged_gain_is_one_undo_step() {
     let dir = TempDir::new("clip-audio-continue");
     let mut session = two_clips(&wav(&dir, "hit.wav", 2.0, 0.5));
     let clip = clips(&session)[0].id.0;
-    for (db, more) in [(-1.0, false), (-2.0, true), (-3.0, true)] {
-        run(&mut session, "clip.setGain", json!({ "clip": clip, "db": db, "continue": more })).unwrap();
+    for db in [-1.0, -2.0, -3.0] {
+        run(&mut session, "clip.setGain", json!({ "clip": clip, "db": db, "gesture": "drag" })).unwrap();
     }
     assert!((clips(&session)[0].audio.gain - 0.708).abs() < 1e-3);
     run(&mut session, "edit.undo", json!({})).unwrap();

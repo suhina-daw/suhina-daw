@@ -44,7 +44,7 @@ fn project(notes: Vec<Vec<Note>>, slots: Vec<Slot>) -> Project {
                 id: ContentId(id),
                 name: format!("c{id}"),
                 length: 4.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             })
@@ -67,7 +67,7 @@ fn after(beats: f64, a: FollowKind) -> FollowAction {
 }
 
 fn render(project: &Project, commands: &[(f64, LaunchCommand)], seconds: f64) -> Vec<f32> {
-    render_launches(project, &AudioPool::new(), SR, commands, seconds).unwrap()
+    render_launches(project, &AudioPool::new(), SR, commands, seconds, suhina_device_registry::factory()).unwrap()
 }
 
 /// Frames where sound starts after more than 100 silent frames.
@@ -193,7 +193,7 @@ fn the_monitor_shows_the_slot_a_follow_action_launched() {
         vec![vec![note(0.0, 60)], vec![note(0.0, 64)]],
         vec![slot(1, 1.0, true, follow(FollowKind::Next)), slot(2, 1.0, true, FollowAction::default())],
     );
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.set_offline(true);
     renderer.handle(LAUNCH);
     let mut block = vec![0.0f32; 2 * BEAT];

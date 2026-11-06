@@ -37,7 +37,7 @@ fn project_built(notes: Vec<Note>) -> Project {
         extensions: Extensions::default(),
         scale: None,
     };
-    let lane = |n: Vec<Note>| vec![ContentLane { target: None, data: LaneData::Notes(n) }];
+    let lane = |n: Vec<Note>| vec![ContentLane { target: None, data: LaneData::Notes(n.into()) }];
     let audio = AudioRegion::new("a.wav");
     Project {
         tracks: vec![Track { content: ContentKinds { notes: true, audio: true }, ..Track::new(TrackId(1), "Keys") }],
@@ -53,7 +53,7 @@ fn project_built(notes: Vec<Note>) -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![clip(1), clip(2), clip(3)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -71,7 +71,7 @@ fn notes_of(session: &Session, content: u32) -> Vec<Note> {
         .lanes
         .iter()
         .find_map(|l| match &l.data {
-            LaneData::Notes(n) => Some(n.clone()),
+            LaneData::Notes(n) => Some(n.to_vec()),
             LaneData::Audio(_) => None,
         })
         .unwrap_or_default()

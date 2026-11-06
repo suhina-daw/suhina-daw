@@ -165,6 +165,14 @@ pub(crate) static ROWS: &[Entry] = &[
         ],
         crate::settings::settings_view::audio_output,
     ),
+    row(
+        Page::Audio,
+        "Output",
+        "Default track input",
+        "The input a new audio track listens to, kept for each audio device, so it is ready to record without picking one each time",
+        &["audio_device_inputs"],
+        crate::settings::settings_view::default_track_input,
+    ),
     block(
         Page::Audio,
         "Cue",

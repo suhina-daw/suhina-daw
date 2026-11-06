@@ -140,7 +140,7 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
     assert!(has_body(&h), "colour-keyed body artwork spans the slot column");
     assert_eq!(
         clicked(&mut h, "Launch Walk on Bass (scene 2)"),
-        [Action::new("clip.launch", json!({"track":2,"scene":2}))]
+        [Action::new("clip.launch", json!({"track":2,"scene":1}))]
     );
     blocks.skin.styles.get_mut(".track-column").unwrap().insert("--suhina-track-artwork".into(), "off".into());
     skin::configure(&blocks.skin);
@@ -172,7 +172,7 @@ fn a_horizontal_session_fader_drags_on_its_drawn_axis_and_keeps_the_native_comma
     assert!(!changes.is_empty());
     assert_eq!(changes.last().unwrap().params["tracks"], json!([1]));
     assert_eq!(changes.last().unwrap().params["db"], json!(-6.0));
-    assert_eq!(changes.last().unwrap().params["continue"], json!(true));
+    assert!(changes.last().unwrap().params["gesture"].is_string());
     skin::configure(&skin::Skin::default());
 }
 
@@ -225,7 +225,7 @@ fn session_density_keeps_slot_launches_and_clip_drop_targets_on_the_drawn_cells(
     assert!((first.height() - 18.0).abs() < 0.01);
     assert_eq!(
         clicked(&mut harness, "Launch Walk on Bass (scene 2)"),
-        [Action::new("clip.launch", json!({"track": 2, "scene": 2}))]
+        [Action::new("clip.launch", json!({"track": 2, "scene": 1}))]
     );
     harness.state_mut().state.drop = Some(DropProbe::for_clip(second.center()));
     harness.run_steps(2);
@@ -718,6 +718,65 @@ fn the_loop_lines_reach_down_past_the_returns_to_main() {
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(tallest > 0.0, "the line takes .loop-line's colour");
     assert!(tallest > main, "it reaches down past Main's row: ends at {tallest}, Main at {main}");
+}
+
+/// Scrolled so the loop's start lies under the track headers, its line is hidden under them:
+/// the loop lines stay in the timeline (#1197).
+#[test]
+fn a_loop_line_under_the_track_headers_is_not_drawn_over_them() {
+    fn lines(shape: &egui::Shape, ink: egui::Color32, out: &mut Vec<f32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| lines(s, ink, out)),
+            egui::Shape::LineSegment { points, stroke } if stroke.color == ink && points[0].x == points[1].x => {
+                out.push(points[0].x);
+            }
+            _ => {}
+        }
+    }
+    let mut project = demo_project();
+    project.transport.loop_range = Some(suhina_engine::model::LoopRange { start: 0.0, end: 16.0 });
+    project.transport.loop_enabled = true;
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    suhina_ui::kit::native_css::set_user_sheet(Some(".loop-line { color: #00ff00; }".into()));
+    let mut h = window(app);
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    // The wheel sideways over the lanes scrolls the timeline a little to the right.
+    let lane = h.get_by_label("Clip Beat B on Drums at bar 17").rect().center();
+    h.hover_at(lane);
+    h.step();
+    h.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(-60.0, 0.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    h.run();
+    let state = h.state().arrangement();
+    let (scroll, beat_width, header_width, left) =
+        (state.scroll.x, state.beat_width, state.header_width, state.headers_left);
+    let timeline = h.get_by_label("Ruler").rect().x_range();
+    let green = egui::Color32::from_rgb(0, 0xFF, 0);
+    let mut drawn = Vec::new();
+    h.output().shapes.iter().for_each(|s| lines(&s.shape, green, &mut drawn));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(left, "the headers are on the left by default");
+    let start = timeline.min - scroll;
+    assert!(
+        start < timeline.min - 1.0 && start > timeline.min - 1.0 - header_width,
+        "the loop's start lies under the headers: {start}, timeline from {}",
+        timeline.min
+    );
+    assert!(
+        drawn.iter().all(|x| timeline.contains(*x)),
+        "a loop line over the headers: {drawn:?}, timeline {timeline:?}"
+    );
+    let end = start + 16.0 * beat_width;
+    if timeline.contains(end) {
+        assert!(drawn.iter().any(|x| (x - end).abs() <= 1.0), "the end's line is drawn: {drawn:?}, at {end}");
+    }
 }
 
 #[test]

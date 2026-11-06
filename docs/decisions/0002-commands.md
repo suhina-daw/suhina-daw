@@ -4,7 +4,7 @@ read_when: adding a command, undo, redo, command registry, params, CommandSpec
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-06
 covers:
   - crates/session/src/commands.rs
   - crates/session/src/commands
@@ -88,19 +88,50 @@ UI, CLI, control channel and MCP server all dispatch commands by id. We take the
    or a plug-in's parameter id.
 9. **One drag, one undo step.** A value dragged in the window is heard while it moves, so the
    window runs the command on every frame of the drag
-   ([#313](https://github.com/suhina-daw/suhina-daw/issues/313)). `track.setVolume`,
-   `track.setPan` and `transport.setTempo` take `continue`: with `true`, the change joins the undo
-   step the previous call of the same command on the same target made, as long as nothing else
-   happened in between; any other edit, a call without it (even one that changes nothing), undo
-   and redo end that step. The window sends the first frame without `continue` and the rest, and
-   the release, with it; a double-click reset is a step of its own. `device.setParam` does the
-   same with `continuous: true`, a final call without it ending the gesture; every effective
+   ([#313](https://github.com/suhina-daw/suhina-daw/issues/313)). Every command a control can drag
+   takes one optional **`gesture`**: an id of 1 to 128 bytes the caller picks
+   ([#1146](https://github.com/suhina-daw/suhina-daw/issues/1146)). The session keeps the open
+   gesture: calls with it make one undo step, which opens with the gesture's first change. It
+   ends with `history.endGesture {gesture}`, on any other edit, on a call with another gesture,
+   and on undo or redo (which end it first, then undo or redo it as one step). A gesture may span
+   tracks and commands (a selection's faders, a pad setting two values). A command whose calls
+   build on the last (`automation.insertShape`, `simplify`, `smooth`, `scaleRange`: its policy's
+   `gesture_replaces` names the parameters it changes live) replaces the gesture's last change
+   when that was a call of the same command on the same target (the same parameters but those):
+   it starts from the project as it was before that run of calls, so a slider's live value
+   replaces the one before and what the gesture changed earlier stays. A call of it on another
+   target, or after another command's change, adds to the step like any call (going back to
+   the first target after that builds on its earlier result), so give each target's slider a
+   gesture of its own. A command that sets a value needs no such thing. The
+   window sends every frame of a drag with a gesture named after its control and ends it once no
+   mouse button is down, so a drag closes on mouse up; a double-click reset is a step of its own.
+   (This replaces `continue`, `replace` and `continuous`, which had a rule each.) Every effective
    update marks the project changed, after a save mid-gesture too. A drag can send graphs faster
-   than the engine takes them ([ADR 0005](0005-edits-while-playing.md)), so a continued call whose
-   graph does not fit is not an error: the project keeps the value, and
-   `Session::catch_up_player`, which the window calls every frame, sends it again until the engine
-   has it.
-10. **A command's rules are on its spec.** What follows from a command beside its work is in its
+   than the engine takes them ([ADR 0005](0005-edits-while-playing.md)), so a call with a gesture
+   whose graph does not fit (its queue is full, or the stretch thread is busy) is not an error:
+   the project keeps the value, and `Session::catch_up_player`, which the window calls every
+   frame, sends it again until the engine has it. Any other failure, such as a project the engine
+   cannot build, is the call's error, in a gesture or not, and is not tried again.
+10. **Lists count from 0.** A position in a list a command reports or takes counts from 0:
+    scenes, tempo changes, markers, automation points, notes, devices, clips by index and a take's
+    pieces ([#763](https://github.com/suhina-daw/suhina-daw/issues/763) › 1). Scenes, tempo
+    changes and take pieces counted from 1 before 2026-11-03, and so did the `.suhina` file's
+    launch mappings before version 8. A number that names a place in the music or is part of a
+    name keeps how it reads: bars from 1, a follow action's `jump N`, a scene's name (a new
+    project's are "1", "2", "3"), a take's number ("Take 3"). The window shows scenes from 1 and
+    converts at the command. Scenes have no exception, though the window numbers them: most
+    commands come from agents, and one rule with none is the one they cannot misremember, where an
+    exception is a wrong scene played without an error whenever it is forgotten. A scene's name is
+    text and its place a number, so `"1"` and `1` stay apart, and `project.launcher` lists each
+    scene's place, id and name side by side. (#1149 counted scenes from 1 for a day, 2026-11-03, and
+    went back before it merged.)
+11. **What a command runs on and what it does are two things.** A spec's `kind` is a `Target`
+    (one project, the open projects, the plug-ins, a running plug-in, the library, audio and MIDI)
+    and an `Effect` (read, edit with an undo step, history, transport, or a change outside a
+    project's undo history), where they were one list that mixed the two
+    ([#764](https://github.com/suhina-daw/suhina-daw/issues/764) › 12). `command.list` gives
+    `target` and `effect` in place of `kind`.
+12. **A command's rules are on its spec.** What follows from a command beside its work is in its
     `CommandSpec`'s `policy` ([#764](https://github.com/suhina-daw/suhina-daw/issues/764) › 1),
     not in lists of ids in other crates: whether the player hears an edit (`heard`), whether a
     backup comes first (`critical`), and whether an agent may run it (`agents`; for example,

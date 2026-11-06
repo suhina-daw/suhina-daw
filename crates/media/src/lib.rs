@@ -59,6 +59,45 @@ pub(crate) fn reserve_audio(samples: &mut Vec<f32>, additional: usize, limit: us
 }
 
 /// Loads every audio file the project uses. Same as [`decode_project_audio`].
+/// Why a file could not be read or written (#764 › 12): the reason, as a person reads it. It
+/// converts into a `String` for the callers that pass the reason on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaError(pub String);
+
+impl std::fmt::Display for MediaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for MediaError {}
+
+/// The reason as text, so a caller can look for words in it as it did in the `String`.
+impl std::ops::Deref for MediaError {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for MediaError {
+    fn from(reason: String) -> Self {
+        Self(reason)
+    }
+}
+
+impl From<&str> for MediaError {
+    fn from(reason: &str) -> Self {
+        Self(reason.to_owned())
+    }
+}
+
+impl From<MediaError> for String {
+    fn from(e: MediaError) -> Self {
+        e.0
+    }
+}
+
 pub fn load_project_audio(project: &Project, project_dir: &Path) -> (AudioPool, Vec<String>) {
     decode_project_audio(project, project_dir)
 }
@@ -129,7 +168,7 @@ pub fn decode_project_audio_trusted(
                             done.push((file.clone(), Err(format!("audio file {file} not found"))));
                             continue;
                         };
-                        let failed = |e: String| format!("audio file {}: {e}", path.display());
+                        let failed = |e: MediaError| format!("audio file {}: {e}", path.display());
                         if !*streams {
                             done.push((file.clone(), decode_file(path).map_err(failed)));
                             continue;
@@ -348,7 +387,7 @@ pub fn missing_audio_trusted(project: &Project, project_dir: &Path, trusted: &Tr
 }
 
 /// Decodes a whole audio file (WAV, AIFF, FLAC, MP3, Ogg Vorbis) to interleaved f32.
-pub fn decode_file(path: &Path) -> Result<AudioData, String> {
+pub fn decode_file(path: &Path) -> Result<AudioData, crate::MediaError> {
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
@@ -382,7 +421,7 @@ pub fn decode_file(path: &Path) -> Result<AudioData, String> {
         let packet = match format.next_packet() {
             Ok(Some(packet)) => packet,
             Ok(None) | Err(SymphoniaError::ResetRequired) => break,
-            Err(e) => return Err(format!("read error: {e}")),
+            Err(e) => return Err(format!("read error: {e}").into()),
         };
         if packet.track_id != track_id {
             continue;
@@ -398,7 +437,7 @@ pub fn decode_file(path: &Path) -> Result<AudioData, String> {
             }
             // A damaged packet is skipped, as players do.
             Err(SymphoniaError::DecodeError(_) | SymphoniaError::IoError(_)) => continue,
-            Err(e) => return Err(format!("decode error: {e}")),
+            Err(e) => return Err(format!("decode error: {e}").into()),
         }
     }
     if samples.is_empty() {

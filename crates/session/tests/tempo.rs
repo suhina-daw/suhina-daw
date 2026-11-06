@@ -26,16 +26,19 @@ fn tempo_points_are_added_in_order_moved_and_deleted() {
     run(&mut session, "tempo.addPoint", json!({ "beat": 16, "bpm": 140 })).unwrap();
     run(&mut session, "tempo.addPoint", json!({ "beat": 8, "bpm": 90, "ramp": true })).unwrap();
     assert_eq!(beats(&session), [(8.0, 90.0, true), (16.0, 140.0, false)]);
-    // Point 2 is the one at beat 16; a point on its beat replaces it.
+    // Point 1 is the one at beat 16; a point on its beat replaces it.
     let listed = run(&mut session, "tempo.addPoint", json!({ "beat": 16, "bpm": 150 })).unwrap();
-    assert_eq!(listed["points"][1], json!({ "point": 2, "beat": 16.0, "bpm": 150.0, "ramp": false }));
+    let id = listed["id"].clone();
+    assert!(id.as_u64().is_some_and(|id| id > 0), "{listed}");
+    assert_eq!(listed["points"][1], json!({ "point": 1, "id": id, "beat": 16.0, "bpm": 150.0, "ramp": false }));
     assert_eq!(listed["start_bpm"], json!(120.0));
-    // Moved before the other, it is numbered 1.
-    run(&mut session, "tempo.movePoint", json!({ "point": 2, "beat": 4, "ramp": true })).unwrap();
+    // Moved before the other, it is numbered 0, and keeps its id.
+    run(&mut session, "tempo.movePoint", json!({ "point": 1, "beat": 4, "ramp": true })).unwrap();
     assert_eq!(beats(&session), [(4.0, 150.0, true), (8.0, 90.0, true)]);
-    run(&mut session, "tempo.movePoint", json!({ "point": 2, "bpm": 60 })).unwrap();
+    assert_eq!(json!(session.project().transport.tempo_changes.id(0).unwrap().0), id);
+    run(&mut session, "tempo.movePoint", json!({ "point": 1, "bpm": 60 })).unwrap();
     assert_eq!(beats(&session), [(4.0, 150.0, true), (8.0, 60.0, true)]);
-    run(&mut session, "tempo.deletePoint", json!({ "point": 1 })).unwrap();
+    run(&mut session, "tempo.deletePoint", json!({ "point": { "id": id } })).unwrap();
     assert_eq!(beats(&session), [(8.0, 60.0, true)]);
     // Each edit is one undo step.
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -66,14 +69,16 @@ fn one_beat_holds_a_glide_and_a_jump() {
     run(&mut session, "tempo.addPoint", json!({ "beat": 16, "bpm": 150, "ramp": true })).unwrap();
     assert_eq!(beats(&session), [(16.0, 150.0, true), (16.0, 90.0, false)]);
     // The glide made a jump replaces the jump; a third point never joins the beat.
-    run(&mut session, "tempo.movePoint", json!({ "point": 1, "ramp": false })).unwrap();
+    run(&mut session, "tempo.movePoint", json!({ "point": 0, "ramp": false })).unwrap();
     assert_eq!(beats(&session), [(16.0, 150.0, false)]);
     // A jump moved onto a beat with only a glide joins it after the glide.
     run(&mut session, "tempo.addPoint", json!({ "beat": 8, "bpm": 130, "ramp": true })).unwrap();
-    run(&mut session, "tempo.movePoint", json!({ "point": 2, "beat": 8 })).unwrap();
+    run(&mut session, "tempo.movePoint", json!({ "point": 1, "beat": 8 })).unwrap();
     assert_eq!(beats(&session), [(8.0, 130.0, true), (8.0, 150.0, false)]);
+    // The file round-trips. A tempo change's id is not in it (#763 › 1): a read gives new ones.
     let text = suhina_project_file::to_json(session.project());
-    assert_eq!(suhina_project_file::from_json(&text).as_ref(), Ok(session.project()));
+    let read = suhina_project_file::from_json(&text).unwrap();
+    assert_eq!(suhina_project_file::to_json(&read), text);
 }
 
 #[test]
@@ -103,7 +108,7 @@ fn time_signature_changes_are_added_moved_and_deleted() {
 #[test]
 fn malformed_params_are_errors_that_change_nothing() {
     let mut start = Project::default();
-    start.transport.tempo_changes = vec![TempoPoint { beat: 8.0, bpm: 100.0, ramp: false }];
+    start.transport.tempo_changes = vec![TempoPoint { beat: 8.0, bpm: 100.0, ramp: false }].into();
     start.transport.time_signature_changes =
         vec![TimeSignatureChange { bar: 4, time_signature: TimeSignature { numerator: 3, denominator: 4 } }];
     let bad = [
@@ -116,11 +121,11 @@ fn malformed_params_are_errors_that_change_nothing() {
         ("tempo.addPoint", json!({ "beat": 4 })),
         ("tempo.addPoint", json!({ "beat": 4, "bpm": 100, "ramp": "yes" })),
         ("tempo.addPoint", json!({ "beat": 4, "bpm": 100, "curve": 1 })),
-        ("tempo.movePoint", json!({ "point": 0, "beat": 4 })),
+        ("tempo.movePoint", json!({ "point": 1, "beat": 4 })),
         ("tempo.movePoint", json!({ "point": 2, "beat": 4 })),
-        ("tempo.movePoint", json!({ "point": 1 })),
-        ("tempo.movePoint", json!({ "point": 1, "beat": 0 })),
-        ("tempo.movePoint", json!({ "point": 1, "bpm": f64::MAX })),
+        ("tempo.movePoint", json!({ "point": 0 })),
+        ("tempo.movePoint", json!({ "point": 0, "beat": 0 })),
+        ("tempo.movePoint", json!({ "point": 0, "bpm": f64::MAX })),
         ("tempo.movePoint", json!({ "point": -1, "bpm": 100 })),
         ("tempo.deletePoint", json!({ "point": 2 })),
         ("tempo.deletePoint", json!({ "point": 1.5 })),
@@ -147,7 +152,7 @@ fn malformed_params_are_errors_that_change_nothing() {
         let mut session = Session::new(start.clone());
         let result = run(&mut session, id, params.clone());
         assert!(result.as_ref().is_err_and(|e| !e.is_empty()), "{id} {params} gave {result:?}");
-        assert_eq!(session.project(), &start, "{id} {params} changed the project");
+        assert_eq!(session.project(), Session::new(start.clone()).project(), "{id} {params} changed the project");
         assert!(!session.can_undo());
     }
 }
@@ -157,19 +162,21 @@ fn a_saved_project_keeps_its_tempo_map() {
     let mut session = Session::new(Project::default());
     run(&mut session, "tempo.addPoint", json!({ "beat": 8, "bpm": 90, "ramp": true })).unwrap();
     run(&mut session, "timeSignature.add", json!({ "bar": 3, "numerator": 5, "denominator": 4 })).unwrap();
+    // The file round-trips. A tempo change's id is not in it (#763 › 1): a read gives new ones.
     let text = suhina_project_file::to_json(session.project());
-    assert_eq!(suhina_project_file::from_json(&text).as_ref(), Ok(session.project()));
+    let read = suhina_project_file::from_json(&text).unwrap();
+    assert_eq!(suhina_project_file::to_json(&read), text);
 }
 
 /// The tempo field sends the tempo while it is dragged, each call after the first with
-/// `continue`, and the drag undoes in one step (#916).
+/// `gesture`, and the drag undoes in one step (#916, #1146).
 #[test]
 fn a_tempo_drag_is_one_undo_step() {
     let mut session = Session::new(suhina_test_support::ProjectBuilder::new().midi_track(1, "Keys").build());
     let before = session.project().transport.tempo_bpm;
-    run(&mut session, "transport.setTempo", json!({ "bpm": 100.0, "continue": false })).unwrap();
-    run(&mut session, "transport.setTempo", json!({ "bpm": 95.0, "continue": true })).unwrap();
-    run(&mut session, "transport.setTempo", json!({ "bpm": 90.0, "continue": true })).unwrap();
+    run(&mut session, "transport.setTempo", json!({ "bpm": 100.0, "gesture": "tempo" })).unwrap();
+    run(&mut session, "transport.setTempo", json!({ "bpm": 95.0, "gesture": "tempo" })).unwrap();
+    run(&mut session, "transport.setTempo", json!({ "bpm": 90.0, "gesture": "tempo" })).unwrap();
     assert_eq!(session.project().transport.tempo_bpm, 90.0);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().transport.tempo_bpm, before);

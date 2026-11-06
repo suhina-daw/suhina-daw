@@ -114,6 +114,11 @@ pub struct PianoRollState {
     pub key_height: f32,
     /// Indices of the selected notes.
     pub selected: BTreeSet<usize>,
+    /// The selected notes as the last frame left them, each index with its note's id, so the
+    /// selection follows its notes when another writer (an agent, a script, undo) adds, deletes or
+    /// moves notes between frames (#1182); `None` when the last frame's own edit set the selection
+    /// for the notes as they are after it, by index.
+    pub(super) selected_ids: Option<Vec<(usize, NoteId)>>,
     /// What is selected in time, the notes that start in it, and what the copies in a row left
     /// behind, for an undo to come back to (› Selecting).
     pub(super) span: Option<TimeSpan>,
@@ -241,6 +246,7 @@ impl Default for PianoRollState {
             zoom_reach: 0.0,
             key_height: DEFAULT_KEY_HEIGHT,
             selected: BTreeSet::new(),
+            selected_ids: None,
             span: None,
             span_notes: BTreeSet::new(),
             span_undo: Vec::new(),
@@ -316,6 +322,31 @@ impl PianoRollState {
         } else if self.quantize_open() {
             self.tools_tab = ToolsTab::Notes;
         }
+    }
+
+    /// Puts the selection back on the notes it was on when another writer's edit since the last
+    /// frame moved them to other indices (#1182): a note that is gone leaves it. A selection the
+    /// window changed since (a key, a menu) is taken as it is.
+    pub(super) fn follow_selection(&mut self, notes: &Notes) {
+        let Some(last) = self.selected_ids.take() else { return };
+        let unchanged = last.len() == self.selected.len() && self.selected.iter().zip(&last).all(|(i, (j, _))| i == j);
+        if !unchanged || last.iter().all(|&(i, id)| notes.id(i) == Some(id)) {
+            return;
+        }
+        let at: std::collections::HashMap<NoteId, usize> =
+            notes.entries().enumerate().map(|(i, (id, _))| (id, i)).collect();
+        self.selected = last.iter().filter_map(|(_, id)| at.get(id).copied()).collect();
+    }
+
+    /// Records which notes the selection is on, each index with its note's id, for
+    /// [`Self::follow_selection`] in the next frame; `by_index` when this frame's own edit chose the
+    /// indices the notes will have after it.
+    pub(super) fn remember_selection(&mut self, notes: &Notes, by_index: bool) {
+        self.selected_ids = if by_index {
+            None
+        } else {
+            self.selected.iter().map(|&i| Some((i, notes.id(i)?))).collect::<Option<Vec<_>>>()
+        };
     }
 
     /// What the toolbar's Cut, Copy, Paste and Duplicate buttons do: the same as Ctrl+X, Ctrl+C,

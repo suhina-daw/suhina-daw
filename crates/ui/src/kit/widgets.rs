@@ -166,15 +166,26 @@ pub fn fitted(painter: &Painter, text: &str, font: FontId, color: Color32, max_w
     painter.layout_job(job)
 }
 
+/// Whether `galley`, laid out by [`fitted`] for `width`, is worth drawing there: it fits, and a
+/// cut kept at least one letter before the ellipsis.
+fn fits(galley: &Galley, width: f32) -> bool {
+    let glyphs = galley.rows.first().map_or(0, |row| row.row.glyphs.len());
+    galley.size().x <= width.max(0.0) + 0.5 && !(galley.elided && glyphs <= 1)
+}
+
 /// How wide `text` is in `font`.
 pub fn text_width(ui: &Ui, text: &str, font: FontId) -> f32 {
     ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font, Color32::WHITE).size().x)
 }
 
 /// Draws one line of text in `rect`, cut to its width, aligned horizontally by `align` and
-/// centred vertically.
+/// centred vertically. Where not even one letter and the ellipsis fit, nothing is drawn: a cut
+/// never leaves a lone ellipsis, or one wider than `rect` (#1198).
 pub fn text_in(painter: &Painter, rect: Rect, align: Align2, text: &str, font: FontId, color: Color32) {
     let galley = fitted(painter, text, font, color, rect.width());
+    if !fits(&galley, rect.width()) {
+        return;
+    }
     let pos = align.align_size_within_rect(galley.size(), rect).min;
     paint_text(painter, pos, galley, color);
 }
@@ -1096,10 +1107,10 @@ pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, l
 }
 
 /// A horizontal slider of a percentage, 0 to 100 (swing, #1221): a click puts the handle there, a
-/// drag moves it and the value follows while it moves (every value of one drag after the first it
-/// sends `continues`, so the drag is one undo step), and a double-click puts it at 0. Named
+/// drag moves it and the value follows while it moves (every value of a drag says so, for the
+/// caller to send them as one gesture, one undo step), and a double-click puts it at 0. Named
 /// "`label`: N %" for a reader and a test. `lit` draws the filled part in the accent, otherwise in
-/// a quieter ink. Returns the value to set, and whether it continues the drag.
+/// a quieter ink. Returns the value to set, and whether it comes from a drag.
 #[allow(clippy::too_many_arguments)]
 pub fn percent_slider(
     ui: &Ui,
@@ -1142,11 +1153,10 @@ pub fn percent_slider(
     {
         let at = (f64::from((pointer.x - track.left()) / track.width()).clamp(0.0, 1.0) * 100.0).round();
         if (at - shown).abs() >= 0.5 {
-            let continues = response.dragged() && ui.data(|d| d.get_temp::<bool>(sent)).is_some();
             if response.dragged() {
                 ui.data_mut(|d| d.insert_temp(sent, true));
             }
-            out = Some((at, continues));
+            out = Some((at, response.dragged()));
         }
     }
     if response.drag_stopped() || !response.dragged() {

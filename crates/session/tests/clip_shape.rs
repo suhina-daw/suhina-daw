@@ -60,7 +60,7 @@ fn project_built() -> Project {
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }].into(),
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note].into()) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -74,7 +74,7 @@ fn project_built() -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![clip(1, 0.0), clip(2, 8.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {
@@ -104,11 +104,11 @@ fn undo(session: &mut Session) {
 #[test]
 fn the_loop_of_a_slot_clip_switches_as_before() {
     let mut session = Session::new(project());
-    let on = run(&mut session, "clip.setLoop", json!({ "track": 1, "scene": 1, "loop": true })).unwrap();
-    assert_eq!(on["scene"], 1);
+    let on = run(&mut session, "clip.setLoop", json!({ "track": 1, "scene": 0, "loop": true })).unwrap();
+    assert_eq!(on["scene"], 0);
     assert_eq!(on["loop"], true);
     assert_eq!(slot(&session).loop_range, Some(LoopRange { start: 0.0, end: 4.0 }));
-    run(&mut session, "clip.setLoop", json!({ "track": "Keys", "scene": 1, "loop": false })).unwrap();
+    run(&mut session, "clip.setLoop", json!({ "track": "Keys", "scene": 0, "loop": false })).unwrap();
     assert_eq!(slot(&session).loop_range, None);
     undo(&mut session);
     assert_eq!(slot(&session).loop_range, Some(LoopRange { start: 0.0, end: 4.0 }));
@@ -134,7 +134,7 @@ fn an_arrangement_clips_loop_is_set_by_start_and_end_in_one_undo_step() {
     undo(&mut session);
     assert_eq!(arranged(&session, 0), before);
     // A slot's clip takes start and end too.
-    run(&mut session, "clip.setLoop", json!({ "track": 1, "scene": 1, "start": 0.5, "end": 2.0 })).unwrap();
+    run(&mut session, "clip.setLoop", json!({ "track": 1, "scene": 0, "start": 0.5, "end": 2.0 })).unwrap();
     assert_eq!(slot(&session).loop_range, Some(LoopRange { start: 0.5, end: 2.0 }));
 }
 
@@ -155,9 +155,9 @@ fn set_loop_refuses_bad_input_and_changes_nothing() {
         json!({ "track": 1, "index": 0, "end": 2.0 }),
         json!({ "track": 1, "index": 9, "loop": true }),
         json!({ "track": 1, "index": -1, "loop": true }),
-        json!({ "track": 1, "index": 0, "scene": 1, "loop": true }),
-        json!({ "track": 1, "scene": 2, "loop": true }),
-        json!({ "track": 1, "scene": 99, "loop": true }),
+        json!({ "track": 1, "index": 0, "scene": 0, "loop": true }),
+        json!({ "track": 1, "scene": 1, "loop": true }),
+        json!({ "track": 1, "scene": 98, "loop": true }),
         json!({ "track": 7, "index": 0, "loop": true }),
         json!({ "track": 1, "loop": true }),
     ] {
@@ -185,7 +185,7 @@ fn the_length_changes_in_one_undo_step_and_never_runs_into_the_next_clip() {
     assert_eq!(session.project(), &before);
     // The last clip on the lane, and a slot's clip, have no neighbour after them.
     run(&mut session, "clip.setLength", json!({ "track": 1, "index": 1, "length": 100.0 })).unwrap();
-    run(&mut session, "clip.setLength", json!({ "track": 1, "scene": 1, "length": 0.5 })).unwrap();
+    run(&mut session, "clip.setLength", json!({ "track": 1, "scene": 0, "length": 0.5 })).unwrap();
     assert_eq!(slot(&session).length, 0.5);
     undo(&mut session);
     assert_eq!(slot(&session).length, 4.0);
@@ -220,7 +220,7 @@ fn set_length_refuses_bad_input_and_changes_nothing() {
         json!({ "track": 1, "index": 0, "length": "4" }),
         json!({ "track": 1, "index": 0, "length": null }),
         json!({ "track": 1, "index": 5, "length": 2.0 }),
-        json!({ "track": 1, "scene": 2, "length": 2.0 }),
+        json!({ "track": 1, "scene": 1, "length": 2.0 }),
         json!({ "track": 1, "length": 2.0 }),
         json!({ "track": "Nobody", "index": 0, "length": 2.0 }),
     ] {
@@ -274,7 +274,7 @@ fn an_earlier_start_marker_may_not_make_the_clip_run_into_the_next() {
     for params in [
         json!({ "track": 1, "index": 0 }),
         json!({ "track": 1, "index": 0, "offset": "1" }),
-        json!({ "track": 1, "scene": 2, "offset": 0.0 }),
+        json!({ "track": 1, "scene": 1, "offset": 0.0 }),
     ] {
         assert!(run(&mut session, "clip.setStart", params.clone()).is_err(), "{params}");
     }

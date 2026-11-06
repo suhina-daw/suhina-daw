@@ -170,3 +170,51 @@ fn the_device_row_says_where_bluetooth_headphones_are_and_why_a_list_is_empty() 
     let failed = HostInfo { error: Some("no answer".into()), ..host("WASAPI") };
     assert_eq!(super::device_note(Some(&failed), &[]), "WASAPI cannot list its devices: no answer");
 }
+
+#[test]
+fn the_default_track_input_lists_the_devices_channels() {
+    let values = track_input_options;
+    assert_eq!(values(0, "none"), vec![("None".to_string(), "none".to_string())], "no input device: only None");
+    let four: Vec<String> = values(4, "none").into_iter().map(|(label, _)| label).collect();
+    assert_eq!(four, ["None", "In 1", "In 2", "In 3", "In 4", "In 1/2", "In 3/4"]);
+    // Three channels make one pair; the third is a channel of its own.
+    let three: Vec<String> = values(3, "1/2").into_iter().map(|(_, value)| value).collect();
+    assert_eq!(three, ["none", "1", "2", "3", "1/2"]);
+    // A choice the device does not have stays listed, marked, so it is not lost unseen.
+    let missing = values(2, "5/6");
+    assert_eq!(missing.last(), Some(&("In 5/6 (not on this device)".to_string(), "5/6".to_string())));
+    // A pair the list leaves out (set from MCP) but the device has is shown as it is.
+    let between = values(4, "2/3");
+    assert_eq!(between.last(), Some(&("In 2/3".to_string(), "2/3".to_string())));
+    assert_eq!(between.len(), 8);
+}
+
+#[test]
+fn choosing_another_audio_device_brings_back_its_input() {
+    use suhina_session::{InputChoice, OutputChoice};
+    let device = |name: &str, input: InputChoice| OutputChoice {
+        host: Some("ASIO".into()),
+        device: Some(name.into()),
+        input,
+        ..OutputChoice::default()
+    };
+    let mut settings = Settings::default();
+    settings.set_output_choice(&device("SSL 2+", InputChoice::Named("SSL 2+ In".into())));
+    settings.set_track_input(suhina_engine::model::InputChannels::Stereo(1));
+    let active = device("Thunderbolt", InputChoice::Default);
+    settings.set_output_choice(&active);
+
+    // The card chosen before gets its input back, and with it its default track input.
+    let picked = restore_input(OutputPick::Device(device("SSL 2+", InputChoice::Default)), &active, &settings);
+    let OutputPick::Device(restored) = picked else { panic!("a device pick stays one") };
+    assert_eq!(restored.input, InputChoice::Named("SSL 2+ In".into()));
+    settings.set_output_choice(&restored);
+    assert_eq!(settings.track_input(), suhina_engine::model::InputChannels::Stereo(1));
+
+    // A card never chosen keeps the input there is; another setting on the same card is left alone.
+    let new = restore_input(OutputPick::Device(device("USB Mic", InputChoice::Default)), &active, &settings);
+    assert!(matches!(new, OutputPick::Device(c) if c.input == InputChoice::Default));
+    let same = device("Thunderbolt", InputChoice::Named("Other".into()));
+    let kept = restore_input(OutputPick::Device(same.clone()), &active, &settings);
+    assert!(matches!(kept, OutputPick::Device(c) if c == same));
+}

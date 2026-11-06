@@ -62,19 +62,19 @@ start marker does not change which sixteenths are delayed.
 
 ## Commands
 
-- `transport.setSwing {amount, continue?}`: the project's swing, `amount` 0 to 100 (percent).
-- `clip.setSwing {clip | track + index | track + scene, amount?, global?, continue?}`: `amount`
+- `transport.setSwing {amount, gesture?}`: the project's swing, `amount` 0 to 100 (percent).
+- `clip.setSwing {clip | track + index | track + scene, amount?, global?, gesture?}`: `amount`
   (0 to 100) is the clip's own and makes the clip play it; `global: true` makes it follow the
   project's again, keeping its amount; `global: false` makes it play its own amount again. Not
   `amount` with `global: true`. A clip without notes is refused. The result gives `amount`,
   `global` and `plays`, the amount it plays now.
 
-Each is one undo step; with `continue` the calls of one drag make one step. A refused call changes
+Each is one undo step; the calls of one drag, with one `gesture`, make one step. A refused call changes
 nothing.
 
 ## Project file
 
 `transport.swing` (0 to 1, left out at 0) and a clip's `swing` `{ amount, own }` (amount 0 to 1,
-left out when the clip follows the project's swing with an amount of 0), from version 9
+left out when the clip follows the project's swing with an amount of 0), from version 10
 ([`.suhina` format](suhina-format.md) › Versions). A value outside 0 to 1 is an error naming where
 it is.

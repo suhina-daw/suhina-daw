@@ -38,7 +38,10 @@ fn render(envelope: &[(f64, f64)], gain: f64, block: usize) -> Vec<f32> {
     let clip = &mut p.arrangement.lanes[0].clips[0];
     clip.audio.gain_envelope = points(envelope);
     clip.audio.gain = gain;
-    left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, block, None).unwrap())
+    left(
+        &render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, block, None)
+            .unwrap(),
+    )
 }
 
 /// `db` as a gain, written out apart from the model's.
@@ -99,7 +102,10 @@ fn a_loop_repeats_the_envelope() {
     let clip = &mut p.arrangement.lanes[0].clips[0];
     clip.loop_range = Some(LoopRange { start: 0.0, end: 2.0 });
     clip.audio.gain_envelope = points(&[(0.0, -20.0), (2.0, 0.0)]);
-    let out = left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
+    let out = left(
+        &render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 512, None)
+            .unwrap(),
+    );
     for pass in 1..4 {
         let at = |beat: f64| out[pass * 2 * BEAT + (beat * BEAT as f64) as usize];
         assert!((at(0.5) - out[BEAT / 2]).abs() < 1e-6, "pass {pass}");
@@ -115,7 +121,10 @@ fn the_envelope_follows_the_start_marker() {
     let clip = &mut p.arrangement.lanes[0].clips[0];
     clip.offset = 2.0;
     clip.audio.gain_envelope = points(&[(0.0, 0.0), (4.0, -40.0)]);
-    let out = left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
+    let out = left(
+        &render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 512, None)
+            .unwrap(),
+    );
     let full = f64::from(render(&[], 1.0, 512)[BEAT]);
     // Clip beat 1 is content beat 3: -30 dB.
     assert!((f64::from(out[BEAT]) - full * gain(-30.0)).abs() < 1e-6, "{}", out[BEAT]);
@@ -132,7 +141,10 @@ fn a_stretched_clip_has_the_same_envelope() {
     let render = |envelope: &[(f64, f64)]| {
         let mut p = project(region("sine.wav", true, StretchMode::Smooth, 2.0), 4.0, 0.0, 0.0);
         p.arrangement.lanes[0].clips[0].audio.gain_envelope = points(envelope);
-        left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap())
+        left(
+            &render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 512, None)
+                .unwrap(),
+        )
     };
     let plain = render(&[]);
     let shaped = render(&[(0.0, 0.0), (4.0, -20.0)]);
@@ -153,13 +165,16 @@ fn a_launched_clip_has_the_same_envelope_as_an_arranged_one() {
     if let Some(clip) = p.launcher.columns[0].slots[0].clip.as_mut() {
         clip.audio.gain_envelope = envelope;
     }
-    let arranged = left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
+    let arranged = left(
+        &render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 512, None)
+            .unwrap(),
+    );
     p.arrangement.lanes.clear();
     let commands = [
         (0.0, LaunchCommand::SetQuantization(crate::Quantization::None)),
         (0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 }),
     ];
-    let launched = left(&render_launches(&p, &pool, SR, &commands, 2.0).unwrap());
+    let launched = left(&render_launches(&p, &pool, SR, &commands, 2.0, suhina_device_registry::factory()).unwrap());
     for frame in [GUARD, BEAT, 2 * BEAT, 3 * BEAT] {
         assert!((launched[frame] - arranged[frame]).abs() < 1e-6, "frame {frame}");
     }

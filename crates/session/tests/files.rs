@@ -200,13 +200,22 @@ fn samples_go_one_after_another_on_a_track_at_their_length() {
     assert!(session.audio().files.contains_key(&region.file), "decoded into the session's pool");
 
     // The offline render plays them: the oracle for what was placed.
-    let renderer =
-        Renderer::build(session.project(), RenderInputs::from_audio(session.audio()), SR, RenderOptions::PLAYING)
-            .unwrap();
+    let renderer = Renderer::build(
+        session.project(),
+        RenderInputs::from_audio(session.audio(), suhina_session::devices()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     drop(renderer);
-    let out =
-        suhina_engine::render_offline_from(session.project(), RenderInputs::from_audio(session.audio()), SR, 512, None)
-            .unwrap();
+    let out = suhina_engine::render_offline_from(
+        session.project(),
+        RenderInputs::from_audio(session.audio(), suhina_session::devices()),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
     let at = |beat: f64| out[((beat * 0.5 + 0.05) * f64::from(SR)) as usize * 2].abs();
     assert!(at(4.0) > 0.1 && at(5.0) > 0.05, "{} {}", at(4.0), at(5.0));
     assert!(at(2.0) < 1e-6, "nothing before the clips");
@@ -267,7 +276,7 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     // 0.75 s at 120 BPM is a beat and a half: not a whole bar, and no tempo to find in it.
     let hit = wav(&dir, "hit.wav", 0.75, 0.5);
     let mut session = Session::new(blank_project());
-    run(&mut session, "clip.addFiles", json!({ "paths": [text(&hit)], "track": "3 Audio", "scene": 1 })).unwrap();
+    run(&mut session, "clip.addFiles", json!({ "paths": [text(&hit)], "track": "3 Audio", "scene": 0 })).unwrap();
     let clip = slot_clip(session.project(), 3, 1);
     assert_eq!((clip.length, clip.loop_range), (1.5, Some(LoopRange { start: 0.0, end: 1.5 })));
     assert!(!clip.audio.warped, "it plays at its own speed");
@@ -276,21 +285,22 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     let column = session.project().launcher.columns.iter().position(|c| c.track == TrackId(3)).unwrap();
     let launch = [(0.0, suhina_engine::LaunchCommand::LaunchClip { column, slot: 0 })];
     let render = |session: &Session| {
-        suhina_engine::render_launches(session.project(), session.audio(), SR, &launch, 2.0).unwrap()
+        suhina_engine::render_launches(session.project(), session.audio(), SR, &launch, 2.0, suhina_session::devices())
+            .unwrap()
     };
     let at = |out: &[f32], seconds: f64| out[(seconds * f64::from(SR)) as usize * 2].abs();
     let out = render(&session);
     assert!(at(&out, 0.3) > 0.1 && at(&out, 1.0) > 0.1 && at(&out, 1.8) > 0.1);
 
     // clip.setLoop off makes it a one-shot: it plays once and the slot falls silent.
-    let done = run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": false })).unwrap();
-    assert_eq!(done, json!({ "clip": slot_clip(session.project(), 3, 1).id.0, "scene": 1, "loop": false }));
+    let done = run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": false })).unwrap();
+    assert_eq!(done, json!({ "clip": slot_clip(session.project(), 3, 1).id.0, "scene": 0, "loop": false }));
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, None);
     let out = render(&session);
     assert!(at(&out, 0.3) > 0.1 && at(&out, 1.0) < 1e-6 && at(&out, 1.8) < 1e-6);
 
     // On again loops the whole clip; one undo step each.
-    run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": true })).unwrap();
+    run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": true })).unwrap();
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, Some(LoopRange { start: 0.0, end: 1.5 }));
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, None);
@@ -298,9 +308,9 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     assert!(slot_clip(session.project(), 3, 1).loop_range.is_some());
 
     // An empty slot, a missing scene and a value that is not true or false are errors.
-    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 2, "loop": true })).is_err());
-    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 99, "loop": true })).is_err());
-    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": "yes" })).is_err());
+    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": true })).is_err());
+    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 98, "loop": true })).is_err());
+    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": "yes" })).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -325,7 +335,7 @@ fn files_go_down_the_slots_from_a_scene_and_add_scenes_when_needed() {
         column.slots.truncate(2);
     }
     let mut session = Session::new(project);
-    run(&mut session, "clip.addFiles", json!({ "paths": paths, "track": "4 Audio", "scene": 2 })).unwrap();
+    run(&mut session, "clip.addFiles", json!({ "paths": paths, "track": "4 Audio", "scene": 1 })).unwrap();
     let p = session.project();
     assert_eq!(p.launcher.scenes.len(), 4, "two scenes added");
     assert!(p.launcher.columns.iter().all(|c| c.slots.len() == 4));
@@ -365,7 +375,7 @@ fn mixed_files_on_empty_space_make_an_audio_and_a_midi_track() {
     let m = midi(&dir, "groove.mid", &[("", &[(0, 96, 60), (192, 96, 64)])]);
     let mut session = Session::new(blank_project());
     let out =
-        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m), text(&b)], "scene": 1 })).unwrap();
+        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m), text(&b)], "scene": 0 })).unwrap();
     assert_eq!(out["tracks"].as_array().map(Vec::len), Some(2));
     let p = session.project();
     assert_eq!(names(p)[4..6], ["5 Audio", "groove"]);
@@ -403,6 +413,45 @@ fn files_a_track_cannot_hold_go_on_a_new_track_after_it() {
 }
 
 #[test]
+fn after_puts_the_new_tracks_after_a_track() {
+    let dir = temp_dir("after");
+    let a = wav(&dir, "pad.wav", 0.5, 0.5);
+    let m = midi(&dir, "riff.mid", &[("", &[(0, 96, 60)])]);
+    let mut session = Session::new(blank_project());
+    let out =
+        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m)], "after": "1 MIDI", "start": 4.0 }))
+            .unwrap();
+    assert_eq!(out["tracks"].as_array().map(Vec::len), Some(2));
+    assert_eq!(names(session.project())[..4], ["1 MIDI", "pad", "riff", "4 MIDI"]);
+
+    // One each with separate, in the order given, still after the track.
+    let b = wav(&dir, "stab.wav", 0.5, 0.5);
+    let mut session = Session::new(blank_project());
+    run(
+        &mut session,
+        "clip.addFiles",
+        json!({ "paths": [text(&a), text(&b)], "after": "1 MIDI", "start": 0.0, "separate": true }),
+    )
+    .unwrap();
+    assert_eq!(names(session.project())[..4], ["1 MIDI", "pad", "stab", "4 MIDI"]);
+
+    // With a track to place them on, after has nothing to say.
+    let mut session = Session::new(blank_project());
+    let err = run(
+        &mut session,
+        "clip.addFiles",
+        json!({ "paths": [text(&a)], "track": "3 Audio", "after": "1 MIDI", "start": 0.0 }),
+    )
+    .unwrap_err();
+    assert!(err.contains("not both"), "{err}");
+    // A track that is not there.
+    let err =
+        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a)], "after": "Nope", "start": 0.0 })).unwrap_err();
+    assert!(!err.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_type_1_midi_file_gives_a_clip_per_track_with_notes() {
     let dir = temp_dir("midi");
     let m =
@@ -425,7 +474,7 @@ fn a_drop_is_one_undo_step() {
     let a = wav(&dir, "a.wav", 0.5, 0.5);
     let m = midi(&dir, "b.mid", &[("", &[(0, 96, 60)])]);
     let mut session = Session::new(blank_project());
-    run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m)], "scene": 3, "separate": true })).unwrap();
+    run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m)], "scene": 2, "separate": true })).unwrap();
     assert_eq!(session.project().tracks.len(), 8);
     run(&mut session, "edit.undo", json!({})).unwrap();
     // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
@@ -464,10 +513,10 @@ fn unreadable_files_are_skipped_and_reported() {
         json!({ "paths": [] , "start": 0.0 }),
         json!({ "paths": "a.wav", "start": 0.0 }),
         json!({ "paths": [text(&good)] }),
-        json!({ "paths": [text(&good)], "start": 0.0, "scene": 1 }),
+        json!({ "paths": [text(&good)], "start": 0.0, "scene": 99 }),
         json!({ "paths": [text(&good)], "start": -1.0 }),
         json!({ "paths": [text(&good)], "start": 1e12 }),
-        json!({ "paths": [text(&good)], "scene": 0 }),
+        json!({ "paths": [text(&good)], "scene": -1 }),
         json!({ "paths": [text(&good)], "scene": 1_000_000 }),
         json!({ "paths": [text(&good)], "start": 0.0, "track": "A Return" }),
         json!({ "paths": [text(&good)], "start": 0.0, "warp": "elastic" }),
@@ -490,7 +539,7 @@ fn a_sample_added_while_playing_reaches_the_engine() {
     let dir = temp_dir("playing");
     let sample = wav(&dir, "late.wav", 2.0, 0.5);
     let project = blank_project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "clip.addFiles", json!({ "paths": [text(&sample)], "track": 3, "start": 0.0 })).unwrap();
@@ -555,6 +604,25 @@ fn a_preset_adds_the_fm_synth_with_its_voice() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// An instrument added with a preset names its track after the preset, as a new track with the
+/// preset is named; a name the user chose stays (#946).
+#[test]
+fn an_instrument_preset_names_its_track_after_the_preset() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "device.add", json!({ "track": 1, "stock": "fm-synth/warm-fm-bass" })).unwrap();
+    assert_eq!(names(session.project())[0], "1 Warm FM Bass");
+    // Undo puts the name back with the device, one step.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(names(session.project())[0], "1 MIDI");
+    // The same instrument without a preset names the track after the device.
+    run(&mut session, "device.add", json!({ "track": 1, "id": "fm-synth" })).unwrap();
+    assert_eq!(names(session.project())[0], "1 FM Synth");
+    // A name the user chose stays.
+    run(&mut session, "track.rename", json!({ "track": 2, "name": "Lead" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 2, "stock": "fm-synth/warm-fm-bass" })).unwrap();
+    assert_eq!(names(session.project())[1], "Lead");
+}
+
 #[test]
 fn a_stock_preset_and_a_preset_file_add_their_device_with_their_values() {
     let dir = temp_dir("stock-preset");
@@ -596,7 +664,7 @@ fn previews_need_a_player_and_show_in_the_launcher_state() {
     let project = blank_project();
     let mut session = Session::new(project.clone());
     assert!(run(&mut session, "preview.play", json!({ "path": text(&sample) })).is_err(), "no engine");
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     session.attach_player(Player::new(renderer.controller(), None));
     let out = run(&mut session, "preview.play", json!({ "path": text(&sample), "gain": 0.0 })).unwrap();
     assert_eq!(out["seconds"], 1.0);

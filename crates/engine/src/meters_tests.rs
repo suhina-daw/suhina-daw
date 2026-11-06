@@ -36,7 +36,7 @@ fn channel(project: &mut Project, id: u32) -> &mut Channel {
 
 /// Plays `seconds` of `project` in blocks of 256 frames; returns the renderer and the output.
 fn play(project: &Project, seconds: f64) -> (Renderer, Vec<f32>) {
-    let mut renderer = Renderer::new(project, SR).expect("renderer");
+    let mut renderer = Renderer::new(project, SR, suhina_device_registry::factory()).expect("renderer");
     let count = (seconds * f64::from(SR) / 256.0).round() as usize;
     let out = blocks(&mut renderer, count, 256);
     (renderer, out)
@@ -174,7 +174,7 @@ fn a_clip_stays_lit_until_reset_and_peaks_fall_once_the_sound_stops() {
 #[test]
 fn meters_follow_their_tracks_through_an_edit_while_playing() {
     let project = held(vec![]);
-    let mut renderer = Renderer::new(&project, SR).expect("renderer");
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).expect("renderer");
     let mut controller = renderer.controller();
     blocks(&mut renderer, 200, 256);
     // A new track first: every slot moves, and each meter stays with its track.
@@ -206,7 +206,8 @@ fn meters_follow_their_tracks_through_an_edit_while_playing() {
 #[test]
 fn a_launched_clip_moves_its_track_meter() {
     let project = crate::chain_tests::project(vec![crate::chain_tests::note(0.0, 4.0, 69)], 4.0, vec![]);
-    let mut renderer = Renderer::stopped(&project, &crate::AudioPool::new(), SR).expect("renderer");
+    let mut renderer =
+        Renderer::stopped(&project, &crate::AudioPool::new(), SR, suhina_device_registry::factory()).expect("renderer");
     let mut controller = renderer.controller();
     blocks(&mut renderer, 20, 256);
     assert_eq!(controller.meter_monitor().track(TrackId(1)), Some(Level::default()));

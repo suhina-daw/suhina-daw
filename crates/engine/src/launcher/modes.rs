@@ -7,7 +7,7 @@
 
 use suhina_model::{LaunchMode, LaunchQuantization, LaunchSettings};
 
-use super::{ClipPlan, Launcher, Pending, Playing, Quantization, Queued};
+use super::{ClipLauncher, ClipPlan, Pending, Playing, Quantization, Queued};
 
 /// A slot clip's launch settings, ready for the audio thread.
 #[derive(Debug, Clone, Copy, Default)]
@@ -36,14 +36,14 @@ impl SlotLaunch {
     }
 }
 
-impl Launcher {
+impl ClipLauncher {
     /// The grid a launch of `slot` in `column` waits for: the clip's own, or the global one.
     pub(super) fn slot_quantization(&self, column: usize, slot: usize) -> Quantization {
         self.columns
             .get(column)
             .and_then(|c| c.slots.get(slot))
             .and_then(|s| s.launch.quantization)
-            .unwrap_or(self.quantization)
+            .unwrap_or(self.bars.quantization)
     }
 
     /// A press of the launch button of `slot`, which holds a clip that can play.
@@ -95,7 +95,7 @@ impl Launcher {
     /// Called when `slot` in `column` was launched at `at_beat`: while the button of a clip in
     /// repeat mode is held, its next launch is queued one grid step later.
     pub(super) fn launched(&mut self, column: usize, slot: usize, at_beat: f64) {
-        let step = self.slot_quantization(column, slot).step(self.bar_beats);
+        let step = self.slot_quantization(column, slot).step(self.bars.bar_beats);
         let Some(c) = self.columns.get_mut(column) else { return };
         if c.held.is_some_and(|held| held != slot) {
             // Another clip took the column over; its release no longer does anything.

@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
 type: howto
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-06
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -331,8 +331,11 @@ network, no AI service). A change is one commit on `main`'s first-parent line, s
 request, listed by its title with a link to the pull request: a squash merge's subject, or for a
 merge commit ("Merge pull request #N from …") the first line of its message, which is the pull
 request's title. Changes that touch only documentation, CI, scripts and tests are counted, not
-listed. Pull request titles are the release notes, so they say what changed for a user: "Clip
-fades: shapes and an adjustable curve".
+listed, and so are changes whose title's area word says they are code structure, tests,
+dependencies or repository work ("Architecture: …", "Code structure: …", "Tests: …", "Deps: …",
+"CI: …", "Docs: …", "Refactor: …"), which touch the programs without a user noticing. Pull
+request titles are the release notes, so they say what changed for a user: "Clip fades: shapes
+and an adjustable curve".
 
 - **Nightly:** the changes since the previous nightly, on its release page and in the Discord post.
 - **Draft of a tagged release:** first *New and changed*, the bullets of ROADMAP.md › What works now

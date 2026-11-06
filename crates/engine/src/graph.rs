@@ -13,7 +13,7 @@ pub(crate) struct Graph {
     /// The tracks that hear the audio input, and whether each is heard this block.
     pub(crate) inputs: Vec<input::InputRoute>,
     pub(crate) inputs_heard: Vec<bool>,
-    pub(crate) events: Vec<NoteEvent>,
+    pub(crate) events: Vec<ArrangedNote>,
     pub(crate) audio_events: Vec<ArrangedAudio>,
     /// Warped clips stretched as they play (ADR 0003), rendered ahead and mixed block by block.
     pub(crate) stretch_events: Vec<StretchEvent>,
@@ -21,7 +21,7 @@ pub(crate) struct Graph {
     pub(crate) hosted: Vec<HostedClip>,
     pub(crate) ahead: AheadReader,
     pub(crate) length: u64,
-    pub(crate) launcher: Launcher,
+    pub(crate) launcher: ClipLauncher,
     /// The tempo map counted in frames: every beat of this graph is placed through it
     /// (`docs/spec/tempo-map.md`).
     pub(crate) tempo: Arc<TempoMap>,
@@ -42,6 +42,13 @@ pub(crate) struct Graph {
     pub(crate) direct_delay: Delay,
     /// Every track's block of sound, for its level meter.
     pub(crate) levels: meters::Levels,
+    /// The main fader when the main channel runs no chain: the volume every track's gains were
+    /// built with, and a fader move since as a factor on the mix (#763 › 4). `None` when the
+    /// main channel runs a chain (its chain takes the move), is muted or has a volume lane.
+    pub(crate) main_fader: Option<(f64, crate::chain::LiveVolume)>,
+    /// The click's latency compensation while the main fader moves: the click is kept out of
+    /// the mix the fader scales, and delayed here as the mix is in `direct_delay`.
+    pub(crate) click_delay: Delay,
 }
 
 impl Graph {
@@ -53,6 +60,7 @@ impl Graph {
         project: &Project,
         audio: &AudioPool,
         assets: &crate::DeviceAssets,
+        devices: &dyn suhina_device_sdk::DeviceFactory,
         sample_rate: u32,
         plugins: &mut Plugins,
         source: Option<TrackId>,
@@ -112,7 +120,8 @@ impl Graph {
             hasher.finish()
         };
         let chains_began = std::time::Instant::now();
-        let (chains, latency) = buses::build(project, audio, sample_rate, plugins, column_of, assets, source);
+        let (chains, latency) =
+            buses::build(project, audio, sample_rate, plugins, column_of, (assets, devices), source);
         let chains_took = chains_began.elapsed();
         let mut voices_took = std::time::Duration::ZERO;
         // The source render's capture: the node's chain, its subtree's chains and a block
@@ -269,7 +278,7 @@ impl Graph {
         ahead.set_heard(&stretch_heard);
         let rings_took = rings_began.elapsed();
         let launcher_began = std::time::Instant::now();
-        let launcher = Launcher::new(project, audio, sample_rate, &chains, Arc::clone(&tempo));
+        let launcher = ClipLauncher::new(project, audio, sample_rate, &chains, Arc::clone(&tempo));
         let launcher_took = launcher_began.elapsed();
         let levels_began = std::time::Instant::now();
         let levels = meters::Levels::build(project, &chains);
@@ -310,8 +319,22 @@ impl Graph {
             capture,
             latency,
             direct_delay: Delay::new(latency as usize),
+            main_fader: main_fader(project, source),
+            click_delay: Delay::new(latency as usize),
         }))
     }
+}
+
+/// The main volume a live fader move is taken relative to, when the main channel runs no chain
+/// and its volume reaches every track's gains: not muted, not on a lane, above silence. A source
+/// render has none.
+fn main_fader(project: &Project, source: Option<TrackId>) -> Option<(f64, crate::chain::LiveVolume)> {
+    if source.is_some() || crate::buses::main_runs_chain(project) {
+        return None;
+    }
+    let main = project.main_channel()?;
+    (!main.mute && main.volume.is_finite() && main.volume > 0.0)
+        .then(|| (main.volume, crate::chain::LiveVolume::default()))
 }
 
 /// The channel `track`'s sounds play through, or the id the validation keeps out of reach: a

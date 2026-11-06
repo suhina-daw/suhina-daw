@@ -536,7 +536,7 @@ mod tests {
         let channel = project.tracks[0].channel.unwrap();
         project.channel_mut(channel).unwrap().automation.push(AutomationLane {
             param: "pan".into(),
-            points: vec![AutomationPoint::new(0.0, 1.0)],
+            points: vec![AutomationPoint::new(0.0, 1.0)].into(),
             enabled: true,
         });
         let grid = TrackGrid::build(&project, None);

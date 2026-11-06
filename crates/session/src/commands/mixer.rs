@@ -11,14 +11,9 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Set the main output's volume, which every track, group and return plays through",
         params: &[
             param("db", ParamType::Decibels, "level in dB, at most +6; \"-inf\" or below -150 is silence"),
-            optional(
-                "continue",
-                ParamType::Bool,
-                "true adds the change to the undo step of the previous call of this command, when no other \
-                 edit came between (one drag, one step)",
-            ),
+            GESTURE,
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: set_main_volume,
         policy: Policy::DEFAULT,
     },
@@ -26,7 +21,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "mixer.levels",
         label: "Read the level meters of the playing engine: the main output's and each track's peak and RMS level per side in dB (null for silence), and whether it clipped",
         params: &[],
-        kind: CommandKind::Transport,
+        kind: CommandKind::TRANSPORT,
         run: meters::levels,
         policy: Policy::DEFAULT,
     },
@@ -37,7 +32,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("track", ParamType::Track, "track id or name, from project.tracks"),
             optional("main", ParamType::Bool, "true turns off the main output's"),
         ],
-        kind: CommandKind::Transport,
+        kind: CommandKind::TRANSPORT,
         run: meters::reset_clip,
         policy: Policy::DEFAULT,
     },
@@ -52,5 +47,13 @@ fn set_main_volume(session: &mut Session, params: &Value) -> Result<Value, Comma
         return Err("the project has no main channel".into());
     };
     main.volume = gain_of_db(db);
-    Ok(json!({ "volume_db": to_db(main.volume) }))
+    let volume = main.volume;
+    // A fader move, nothing else: a playing engine takes it as a message where it can (#763 › 4).
+    session.sync.mixer_edits = vec![crate::ParamEdit {
+        track: suhina_model::TrackId::MAIN,
+        device: suhina_engine::MIXER_VOLUME,
+        param: 0,
+        value: volume,
+    }];
+    Ok(json!({ "volume_db": to_db(volume) }))
 }

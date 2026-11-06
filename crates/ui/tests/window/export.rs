@@ -311,9 +311,10 @@ fn switching_projects_while_the_export_renders_keeps_the_export_and_names_it() {
     // what the engine renders of the same project (the same length the whole-mix export
     // writes, the demo project's own render being far shorter).
     let project = long_demo_project();
-    let expected = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000)
-        .expect("the long project renders")
-        .length();
+    let expected =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .expect("the long project renders")
+            .length();
     let frames = wav_frames(&path);
     assert_eq!(frames, expected, "the exported file is the second project's render");
 }

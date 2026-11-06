@@ -103,8 +103,13 @@ fn eq_project() -> Project {
 /// the engine appends (docs/spec/eq.md › The panel › The analyser).
 #[test]
 fn the_eq_panels_analyser_receives_the_playing_output() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&eq_project(), &suhina_engine::AudioPool::new(), 48_000).expect("a renderer");
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &eq_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .expect("a renderer");
     let mut session = Session::new(eq_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
@@ -179,9 +184,13 @@ fn grouped_eq_project() -> Project {
 /// its own (#1050 keeps the real fix; docs/spec/eq.md › The panel › The analyser).
 #[test]
 fn a_grouped_eqs_panel_claims_no_watch() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&grouped_eq_project(), &suhina_engine::AudioPool::new(), 48_000)
-            .expect("a renderer");
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &grouped_eq_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .expect("a renderer");
     let mut session = Session::new(grouped_eq_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
@@ -232,8 +241,13 @@ fn a_grouped_eqs_panel_edits_the_grouped_device() {
 /// the previous engine's spectrum as its own.
 #[test]
 fn a_session_without_a_player_drops_the_previous_sessions_monitor() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&eq_project(), &suhina_engine::AudioPool::new(), 48_000).expect("a renderer");
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &eq_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .expect("a renderer");
     let mut session = Session::new(eq_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
@@ -405,8 +419,13 @@ fn render_the_panel() {
     save(&mut harness, "eq-panel-b.png");
 
     // With a real renderer playing through the EQ, the analyser's grey line behind the curve.
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&eq_project(), &suhina_engine::AudioPool::new(), 48_000).expect("a renderer");
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &eq_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .expect("a renderer");
     let mut session = Session::new(eq_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
