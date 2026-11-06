@@ -78,7 +78,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
             optional(
                 "place",
                 ParamType::Path(PathKind::Place),
-                "pinned, recent:all, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), or a folder",
+                "pinned, recent:all, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), tag:<name> (the items carrying that tag), or a folder",
             ),
             optional("tags", ParamType::Texts, "only items carrying any of these tags"),
             optional("limit", ParamType::Integer, "at most this many (default and most 500)"),
@@ -441,8 +441,8 @@ fn fits(found: &Found, category: Category) -> bool {
     }
 }
 
-/// The keys a place that is a list holds, in its order: `pinned`, `recent:all` or
-/// `recent:<group>`; `None` for every other place (a folder, or everything).
+/// The keys a place that is a list holds, in its order: `pinned`, `recent:all`, `recent:<group>`
+/// or `tag:<name>`; `None` for every other place (a folder, or everything).
 pub(crate) fn listed_keys(projects: &mut Projects, place: Option<&str>) -> Result<Option<Vec<String>>, CommandError> {
     Ok(match place {
         Some("pinned") => Some(projects.file_library_mut().pinned()),
@@ -462,6 +462,15 @@ pub(crate) fn listed_keys(projects: &mut Projects, place: Option<&str>) -> Resul
         Some(p) if p.starts_with("recent:") => {
             let group = Group::parse(&p["recent:".len()..]).ok_or_else(|| format!("unknown recent group in {p:?}"))?;
             Some(projects.file_library_mut().recent(group))
+        }
+        Some(p) if p.starts_with("tag:") => {
+            let tag = &p["tag:".len()..];
+            let library = projects.file_library_mut();
+            if library.tags().iter().all(|t| t.name != tag) {
+                Err(format!("there is no tag {tag:?}; library.tags lists them"))?;
+            }
+            // An item once: the store keeps its key with the tags next to it.
+            Some(library.items_tagged(tag))
         }
         _ => None,
     })
@@ -540,6 +549,9 @@ pub fn prepare_search(
     let words = suhina_library::words(text);
     let tagged =
         |library: &mut Library, key: &str| tags.is_empty() || library.item_tags(key).iter().any(|t| tags.contains(t));
+    // A tag's place lists its items named first, whatever kind they are; a pin's place keeps
+    // the pins' order, a recent group the recency.
+    let sorted_by_name = place.is_some_and(|p| p.starts_with("tag:"));
     if let Some(keys) = listed_keys(projects, place)? {
         let mut out = Vec::new();
         for key in keys {
@@ -558,6 +570,9 @@ pub fn prepare_search(
             if out.len() >= limit {
                 break;
             }
+        }
+        if sorted_by_name {
+            out.sort_by(|a, b| suhina_library::natural_cmp(&a.name, &b.name));
         }
         return Ok(PreparedSearch { listed: Some(out), ranked: Vec::new(), files: None, words, limit });
     }

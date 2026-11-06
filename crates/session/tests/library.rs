@@ -171,6 +171,44 @@ fn pins_and_tags_are_kept_between_runs() {
     let _ = std::fs::remove_dir_all(&settings);
 }
 
+#[test]
+fn a_tag_place_lists_every_item_that_carries_the_tag_of_any_kind() {
+    let settings = temp("tag-place-settings");
+    let samples = temp("tag-place");
+    wav(&samples.join("Drums").join("Kick Hard.wav"));
+    wav(&samples.join("Drums").join("Snare.wav"));
+    let mut p = projects(&settings);
+    run(&mut p, "library.addFolder", json!({ "folder": samples.display().to_string() })).unwrap();
+    let snare = samples.join("Drums").join("Snare.wav").display().to_string();
+    run(&mut p, "library.tag", json!({ "item": snare, "tag": "Red", "on": true })).unwrap();
+    // Anything tagged anywhere shows: a built-in device and a preset bank's voice.
+    run(&mut p, "library.tag", json!({ "item": "device:utility", "tag": "Red", "on": true })).unwrap();
+    let voice = format!("{}#2", samples.join("Voices.preset.suhina").display());
+    std::fs::write(samples.join("Voices.preset.suhina"), b"").unwrap();
+    run(&mut p, "library.tag", json!({ "item": voice, "tag": "Red", "on": true })).unwrap();
+
+    // Natural order by name, whatever the kind: the sample, the device, the voice.
+    let place = run(&mut p, "library.search", json!({ "place": "tag:Red" })).unwrap();
+    assert_eq!(names(&place), ["Snare.wav", "Utility", "Voices.preset.suhina #2"]);
+    assert_eq!(place["items"][0]["tags"], json!(["Red"]));
+    // The words still narrow the list, as the browser's search field does over a place.
+    let named = run(&mut p, "library.search", json!({ "text": "utility", "place": "tag:Red" })).unwrap();
+    assert_eq!(names(&named), ["Utility"]);
+    // A category keeps its kinds only.
+    let effects = run(&mut p, "library.search", json!({ "place": "tag:Red", "category": "effects" })).unwrap();
+    assert_eq!(names(&effects), ["Utility"]);
+    let snares = run(&mut p, "library.search", json!({ "place": "tag:Red", "category": "samples" })).unwrap();
+    assert_eq!(names(&snares), ["Snare.wav"]);
+    // The tags filter combines: the UI's Places of several tags send this instead (#1196).
+    run(&mut p, "library.setTag", json!({ "name": "Hot", "color": "#336699" })).unwrap();
+    let files = run(&mut p, "library.search", json!({ "tags": ["Red", "Hot"] })).unwrap();
+    assert_eq!(names(&files), ["Utility", "Snare.wav"]);
+    // A place of a tag that no longer is one is an error, not an empty list.
+    assert!(run(&mut p, "library.search", json!({ "place": "tag:Nope" })).is_err());
+    assert!(run(&mut p, "library.search", json!({ "place": "tag:" })).is_err());
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
 /// A plug-in catalog as a scan leaves one, in the settings' plug-in library.
 fn catalog(settings: &Path) {
     let text = json!({

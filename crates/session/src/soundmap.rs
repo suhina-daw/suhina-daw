@@ -17,7 +17,7 @@ use suhina_soundmap::{DEFAULT_MAX_SECONDS, MAX_SECONDS_RANGE, MAX_SIMILAR, Map, 
 use crate::commands::{Args, CommandKind, CommandSpec, ParamType, optional, param};
 use crate::{Agents, CommandError, PathKind, Policy, Projects};
 
-const PLACE: &str = "pinned, recent:all, recent:samples, or a folder (default: every folder)";
+const PLACE: &str = "pinned, recent:all, recent:samples, tag:<name> (the samples carrying that tag), or a folder (default: every folder)";
 
 static SOUND_MAP_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
