@@ -140,7 +140,7 @@ mod tests {
         let data = if audio {
             LaneData::Audio(AudioRegion::new("a.wav"))
         } else {
-            LaneData::Notes(vec![Note::new(0.0, 1.0, 60, 0.8)])
+            LaneData::Notes(vec![Note::new(0.0, 1.0, 60, 0.8)].into())
         };
         ClipContent {
             id: ContentId(id),

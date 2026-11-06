@@ -49,7 +49,7 @@ pub(crate) fn project((region, audio): Source, length: f64, fade_in: f64, fade_o
                 track: Some(TrackId(1)),
                 clips: vec![clip.clone()],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {
@@ -139,7 +139,7 @@ fn render_constant(fade_in: f64, fade_out: f64, block: usize) -> Vec<f32> {
     left(
         &render_offline_from(
             &project(region, 2.0, fade_in, fade_out),
-            RenderInputs::from_audio(&pool),
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
             SR,
             block,
             None,
@@ -191,7 +191,16 @@ fn every_fade_shape_and_curve_renders_as_the_spec_says() {
             let mut p = project(region.clone(), 2.0, 1.0, 1.0);
             let clip = &mut p.arrangement.lanes[0].clips[0];
             (clip.fade_in_curve, clip.fade_out_curve) = (fade, fade);
-            let out = left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
+            let out = left(
+                &render_offline_from(
+                    &p,
+                    RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+                    SR,
+                    512,
+                    None,
+                )
+                .unwrap(),
+            );
             assert_eq!(out.len(), 2 * BEAT);
             // The fade-in's t is the frames before a frame over the fade's frames, the
             // fade-out's the frames after it; the two meet in the middle of the clip.
@@ -234,7 +243,10 @@ fn fades_render_the_specs_numbers_half_way() {
     ] {
         let mut p = project(region.clone(), 2.0, 1.0, 0.0);
         p.arrangement.lanes[0].clips[0].fade_in_curve = FadeCurve { shape, curve };
-        let out = left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
+        let out = left(
+            &render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 512, None)
+                .unwrap(),
+        );
         let got = f64::from(out[BEAT / 2]) / full;
         assert!((got - half).abs() < 1e-6, "{shape:?} at curve {curve}: {got}, the spec says {half}");
     }
@@ -246,9 +258,18 @@ fn the_default_fade_is_the_linear_one() {
     assert_eq!(FadeCurve::default(), FadeCurve { shape: FadeShape::Linear, curve: 0.0 });
     let (region, pool) = constant();
     let mut p = project(region, 2.0, 1.0, 0.5);
-    let plain = left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
+    let plain = left(
+        &render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 512, None)
+            .unwrap(),
+    );
     p.arrangement.lanes[0].clips[0].fade_in_curve = FadeCurve { shape: FadeShape::Linear, curve: 0.0 };
-    assert_eq!(left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap()), plain);
+    assert_eq!(
+        left(
+            &render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 512, None)
+                .unwrap()
+        ),
+        plain
+    );
     assert_eq!(plain, render_constant(1.0, 0.5, 512));
 }
 
@@ -266,7 +287,7 @@ fn bad_fades_are_an_error_not_a_crash() {
     for (fade_in, fade_out) in [(3.0, 1.0), (-1.0, 0.0), (0.0, f64::NAN)] {
         let result = render_offline_from(
             &project(region.clone(), 2.0, fade_in, fade_out),
-            RenderInputs::from_audio(&pool),
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
             SR,
             512,
             None,
@@ -290,7 +311,7 @@ fn stretched_clips_have_the_same_fades() {
         left(
             &render_offline_from(
                 &project(warped.clone(), 4.0, fade_in, fade_out),
-                RenderInputs::from_audio(&pool),
+                RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
                 SR,
                 512,
                 None,
@@ -327,7 +348,14 @@ fn a_clip_ends_on_silence_like_it_starts() {
     let sines = sine();
     let warped = region_for_stretch();
     let stretched = left(
-        &render_offline_from(&project(warped, 4.0, 0.0, 0.0), RenderInputs::from_audio(&sines), SR, 512, None).unwrap(),
+        &render_offline_from(
+            &project(warped, 4.0, 0.0, 0.0),
+            RenderInputs::from_audio(&sines, suhina_device_registry::factory()),
+            SR,
+            512,
+            None,
+        )
+        .unwrap(),
     );
     assert_eq!(stretched.last().copied(), Some(0.0));
     assert!(stretched[stretched.len() - 2].abs() < 0.5 / GUARD as f32 + 1e-6);
@@ -338,7 +366,7 @@ fn a_clip_ends_on_silence_like_it_starts() {
     ];
     let mut p = project(region, 2.0, 0.0, 0.0);
     p.arrangement.lanes.clear();
-    let launched = left(&render_launches(&p, &pool, SR, &commands, 1.5).unwrap());
+    let launched = left(&render_launches(&p, &pool, SR, &commands, 1.5, suhina_device_registry::factory()).unwrap());
     // The clip plays once, two beats: its last frame is silent, and so is everything after.
     assert!(launched[2 * BEAT - 2] > 0.0);
     assert!(launched[2 * BEAT - 1..].iter().all(|s| *s == 0.0), "{:?}", &launched[2 * BEAT - 3..2 * BEAT + 1]);
@@ -357,7 +385,7 @@ fn launch(mut p: Project, pool: &AudioPool, seconds: f64, more: &[(f64, LaunchCo
         (0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 }),
     ];
     commands.extend_from_slice(more);
-    left(&render_launches(&p, pool, SR, &commands, seconds).unwrap())
+    left(&render_launches(&p, pool, SR, &commands, seconds, suhina_device_registry::factory()).unwrap())
 }
 
 /// `p` with its slot clip looping over its whole length.
@@ -407,7 +435,13 @@ fn a_looping_launched_clip_fades_in_once_like_its_golden_file() {
 fn stopping_the_transport_joins_a_playing_audio_clip_to_silence_without_a_step() {
     let (region, pool) = constant();
     for stop in [LaunchCommand::Stop, LaunchCommand::StopHere] {
-        let mut renderer = crate::Renderer::stopped(&project(region.clone(), 4.0, 0.0, 0.0), &pool, SR).unwrap();
+        let mut renderer = crate::Renderer::stopped(
+            &project(region.clone(), 4.0, 0.0, 0.0),
+            &pool,
+            SR,
+            suhina_device_registry::factory(),
+        )
+        .unwrap();
         let play = |renderer: &mut crate::Renderer, blocks: usize| {
             let mut out = Vec::new();
             for _ in 0..blocks {

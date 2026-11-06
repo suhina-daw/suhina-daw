@@ -17,7 +17,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "true writes a copy (a template, a backup) and the project stays with its own file",
             ),
         ],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: save,
         policy: Policy { after: After::Saves, ..Policy::DEFAULT },
     },
@@ -25,7 +25,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "project.info",
         label: "Summarise the open project: tempo, time signature, counts of tracks, scenes, clips and markers, undo state",
         params: &[],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: info,
         policy: Policy::DEFAULT,
     },
@@ -33,7 +33,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "project.tracks",
         label: "List tracks with id, name, volume (dB), pan, mute, whether armed, the MIDI and audio inputs it hears, and devices",
         params: &[],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: tracks,
         policy: Policy::DEFAULT,
     },
@@ -41,15 +41,15 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "project.clips",
         label: "List arrangement clips with their id (what clip commands take), track, index, start and length in beats, and note count",
         params: &[optional("track", ParamType::Track, "only clips on this track (id or name)")],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: clips,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "project.markers",
-        label: "List the arrangement's markers (named positions on the timeline) in beat order, with index, beat and name",
+        label: "List the arrangement's markers (named positions on the timeline) in beat order, with index, id, beat and name",
         params: &[],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: markers,
         policy: Policy::DEFAULT,
     },
@@ -57,7 +57,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "project.launcher",
         label: "List the clip launcher: scenes (name, tempo) and each track's slots (clip name, follow action, stop button)",
         params: &[],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: launcher_grid,
         policy: Policy::DEFAULT,
     },
@@ -98,7 +98,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the track or group of the track tree to render, instead of the whole mix (id or name)",
             ),
         ],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: crate::export::export,
         policy: Policy::DEFAULT,
     },
@@ -106,7 +106,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "project.missingFiles",
         label: "List the audio files the project's clips name that cannot be found, with where they were and how many clips play each",
         params: &[],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: crate::relink::missing_files,
         policy: Policy::DEFAULT,
     },
@@ -121,7 +121,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "for each, the file to play instead (the same order); at most 4096",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::relink::relink_files,
         policy: Policy::CRITICAL,
     },
@@ -133,7 +133,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ParamType::Path(PathKind::WriteFolder),
             "the folder to collect into: the project's own by default; needed before it is saved",
         )],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::relink::collect,
         policy: Policy::DEFAULT,
     },
@@ -145,7 +145,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             SCALE_MODE,
             optional("off", ParamType::Bool, "true clears the default scale; not with root or mode"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::scales::set_default_scale,
         policy: Policy::DEFAULT,
     },
@@ -175,7 +175,7 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
         .launcher
         .scenes
         .iter()
-        .zip(1..)
+        .zip(0..)
         .map(|(scene, number): (_, u32)| {
             json!({
                 "scene": number,
@@ -194,7 +194,7 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
             let slots: Vec<Value> = column
                 .slots
                 .iter()
-                .zip(1..)
+                .zip(0..)
                 .map(|(slot, number): (_, u32)| match &slot.clip {
                     Some(clip) => json!({
                         "scene": number,

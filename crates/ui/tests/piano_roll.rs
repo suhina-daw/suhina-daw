@@ -10,10 +10,12 @@
 use egui::{Key, Modifiers, Pos2, Rect, Vec2, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use serde_json::json;
 use suhina_engine::model::{LaneData, Note};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
+use suhina_ui::kit::widgets::Action;
 use suhina_ui::{App, kit::theme};
 
 const SIZE: (f32, f32) = (1280.0, 800.0);
@@ -48,7 +50,13 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
 }
 
 fn engine() -> suhina_engine::Renderer {
-    suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap()
+    suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap()
 }
 
 /// The edited clip's notes in the project.
@@ -57,7 +65,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let project = session.project();
     let clip = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap();
     match &project.content(clip.content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }
@@ -210,6 +218,48 @@ fn clicks_and_a_rectangle_select_notes() {
     assert_eq!(selected(&h), [0, 1]);
     // Nothing in the project changed.
     assert_eq!(notes(&h), n);
+}
+
+/// The params that name the edited clip in a `note.*` command.
+fn clip_params(h: &Harness<'static, App>) -> serde_json::Value {
+    let project = h.state().session().unwrap().project();
+    let lane = &project.arrangement.lanes[0];
+    let index = lane.clips.iter().position(|c| c.start == CLIP_START).unwrap();
+    json!({ "track": lane.track.unwrap().0, "index": index })
+}
+
+/// The selection stays on the notes it was on when another writer (an agent, a script, undo)
+/// deletes or adds notes before them (#1182), and leaves a note another writer deleted.
+#[test]
+fn the_selection_follows_its_notes_through_another_writers_edits() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let n = notes(&h);
+    assert!(n.len() >= 4, "the demo clip has notes to pick from");
+    for (index, modifiers) in [(2, Modifiers::NONE), (3, Modifiers::SHIFT)] {
+        let at = note_rect(&h, &n[index]).center();
+        click(&mut h, at, modifiers);
+        h.run();
+    }
+    assert_eq!(selected(&h), [2, 3]);
+    // Another writer deletes the first note: the selected notes are now at 1 and 2.
+    let mut params = clip_params(&h);
+    params["notes"] = json!([0]);
+    h.state_mut().run(&Action::new("note.delete", params));
+    h.run();
+    assert_eq!(selected(&h), [1, 2]);
+    let now = notes(&h);
+    assert_eq!((now[1], now[2]), (n[2], n[3]), "the same two notes are selected");
+    // Undo puts the first note back: the selection moves back with its notes.
+    undo(&mut h);
+    assert_eq!(selected(&h), [2, 3]);
+    // Another writer deletes one of the selected notes: the other stays selected.
+    let mut params = clip_params(&h);
+    params["notes"] = json!([2]);
+    h.state_mut().run(&Action::new("note.delete", params));
+    h.run();
+    assert_eq!(selected(&h), [2]);
+    assert_eq!(notes(&h)[2], n[3]);
 }
 
 #[test]

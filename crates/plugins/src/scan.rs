@@ -47,6 +47,44 @@ const HUNG: &str = "hung: ";
 /// Longest failure reason kept; a loader's message can list every path it tried.
 const MAX_REASON: usize = 240;
 
+/// A plug-in's format: what kind of file holds it and how the host loads it. Every place that
+/// names, shows or filters by a format goes through this one list, so a new format (Audio
+/// Units, say) is one more variant here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum PluginFormat {
+    Vst3,
+    Vst2,
+    Clap,
+}
+
+impl PluginFormat {
+    /// Every format, in the order a list of them shows.
+    pub const ALL: [PluginFormat; 3] = [Self::Vst2, Self::Vst3, Self::Clap];
+
+    /// The name it is saved and given as: `vst3`, `vst2` or `clap`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Vst3 => "vst3",
+            Self::Vst2 => "vst2",
+            Self::Clap => "clap",
+        }
+    }
+
+    /// The name it is shown as: `VST3`, `VST2` or `CLAP`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Vst3 => "VST3",
+            Self::Vst2 => "VST2",
+            Self::Clap => "CLAP",
+        }
+    }
+
+    /// The format [`PluginFormat::name`] gives `text`.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|f| f.name() == text)
+    }
+}
+
 /// The plug-in formats a folder can be scanned for. Suhina hosts CLAP, VST3 and — behind the
 /// host's `vst2` feature (ADR 0022) — VST2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -123,23 +161,28 @@ pub struct PluginInfo {
 }
 
 impl PluginInfo {
-    /// Its format: `vst3`, `vst2` or `clap` — from the file's extension, or the name of a
-    /// plug-in built into the host for tests.
+    /// Its format's name: `vst3`, `vst2` or `clap` ([`PluginInfo::plugin_format`]).
     pub fn format(&self) -> &'static str {
+        self.plugin_format().name()
+    }
+
+    /// Its format, from the file's extension, or the name of a plug-in built into the host for
+    /// tests.
+    pub fn plugin_format(&self) -> PluginFormat {
         let path = self.path.display().to_string();
         if path.starts_with("test:") {
             return match path.as_str() {
-                "test:vst3" | "test:vst3-mix" => "vst3",
-                "test:vst2" => "vst2",
-                _ => "clap",
+                "test:vst3" | "test:vst3-mix" => PluginFormat::Vst3,
+                "test:vst2" => PluginFormat::Vst2,
+                _ => PluginFormat::Clap,
             };
         }
         if is_vst3(&self.path) {
-            "vst3"
+            PluginFormat::Vst3
         } else if is_vst2(&self.path) {
-            "vst2"
+            PluginFormat::Vst2
         } else {
-            "clap"
+            PluginFormat::Clap
         }
     }
 
@@ -778,6 +821,21 @@ fn read_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_plugin_format_reads_back_from_its_name_and_has_a_label() {
+        for format in PluginFormat::ALL {
+            assert_eq!(PluginFormat::parse(format.name()), Some(format));
+            assert_eq!(format.label().to_ascii_lowercase(), format.name());
+        }
+        assert_eq!(PluginFormat::parse("au"), None);
+        let mut thing = plugin("x");
+        assert_eq!((thing.plugin_format(), thing.format()), (PluginFormat::Vst3, "vst3"));
+        thing.path = PathBuf::from("/clap/Thing.clap");
+        assert_eq!(thing.plugin_format(), PluginFormat::Clap);
+        thing.path = PathBuf::from("test:vst2");
+        assert_eq!(thing.plugin_format(), PluginFormat::Vst2);
+    }
 
     fn plugin(id: &str) -> PluginInfo {
         PluginInfo {

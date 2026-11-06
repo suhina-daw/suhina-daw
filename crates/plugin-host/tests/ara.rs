@@ -80,7 +80,7 @@ fn project(clip: bool) -> Project {
                 clips: if clip { vec![clip_at] } else { Vec::new() },
                 ..ArrangementLane::default()
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()

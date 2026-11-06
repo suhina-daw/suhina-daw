@@ -537,6 +537,30 @@ impl Timeline {
         }
     }
 
+    /// While a volume or pan lane is dragged, its header shows what the line as it is dragged
+    /// plays at the playhead, before the command is in; while a range is painted on it, the line's
+    /// value at the range's moving edge (#811). Called after
+    /// [`Timeline::follow_automation`].
+    pub fn follow_drag(&mut self, dragged: Option<&crate::arrangement::automation_lanes::Dragged>) {
+        use suhina_engine::model::automation::{PAN, Plain, VOLUME, VolumeTaper, value_at};
+        let Some(dragged) = dragged.filter(|d| d.key.device.is_none()) else { return };
+        let beat = dragged.at.unwrap_or(self.beat);
+        if dragged.key.param == VOLUME {
+            let Some(db) = value_at(&dragged.points, beat, false, &VolumeTaper).map(gain_to_db) else { return };
+            if dragged.track == TrackId::MAIN {
+                if self.main_volume_db.is_some() {
+                    self.main_volume_db = Some(db);
+                }
+            } else {
+                self.lanes.iter_mut().filter(|l| l.track == dragged.track).for_each(|l| l.volume_db = db);
+            }
+        } else if dragged.key.param == PAN
+            && let Some(pan) = value_at(&dragged.points, beat, false, &Plain)
+        {
+            self.lanes.iter_mut().filter(|l| l.track == dragged.track).for_each(|l| l.pan = pan);
+        }
+    }
+
     pub fn follow(&mut self, monitor: Option<&LauncherMonitor>) {
         let (running, beat, start) = monitor.map_or((false, 0.0, 0.0), |m| (m.running(), m.beat(), m.start_beat()));
         let beats = |b: f64| if b.is_finite() { b.max(0.0) } else { 0.0 };

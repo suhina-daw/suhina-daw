@@ -99,7 +99,7 @@ fn a_save_writes_the_state_the_running_plug_in_gives() {
     let mut imported = project();
     // With the ids the session gives its devices, so they compare as the same devices.
     imported.assign_ids().unwrap();
-    let mut renderer = Renderer::stopped(&imported, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&imported, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(imported.clone());
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
@@ -151,7 +151,7 @@ fn removing_the_first_of_two_identical_plug_ins_keeps_the_seconds_own() {
     let second = Device { state: Some(bank(0.75).into()), ..first.clone() };
     p.channels[0].devices = vec![first, second];
     p.assign_ids().unwrap();
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(p);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());

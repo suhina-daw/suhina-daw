@@ -166,15 +166,26 @@ pub fn fitted(painter: &Painter, text: &str, font: FontId, color: Color32, max_w
     painter.layout_job(job)
 }
 
+/// Whether `galley`, laid out by [`fitted`] for `width`, is worth drawing there: it fits, and a
+/// cut kept at least one letter before the ellipsis.
+fn fits(galley: &Galley, width: f32) -> bool {
+    let glyphs = galley.rows.first().map_or(0, |row| row.row.glyphs.len());
+    galley.size().x <= width.max(0.0) + 0.5 && !(galley.elided && glyphs <= 1)
+}
+
 /// How wide `text` is in `font`.
 pub fn text_width(ui: &Ui, text: &str, font: FontId) -> f32 {
     ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font, Color32::WHITE).size().x)
 }
 
 /// Draws one line of text in `rect`, cut to its width, aligned horizontally by `align` and
-/// centred vertically.
+/// centred vertically. Where not even one letter and the ellipsis fit, nothing is drawn: a cut
+/// never leaves a lone ellipsis, or one wider than `rect` (#1198).
 pub fn text_in(painter: &Painter, rect: Rect, align: Align2, text: &str, font: FontId, color: Color32) {
     let galley = fitted(painter, text, font, color, rect.width());
+    if !fits(&galley, rect.width()) {
+        return;
+    }
     let pos = align.align_size_within_rect(galley.size(), rect).min;
     paint_text(painter, pos, galley, color);
 }

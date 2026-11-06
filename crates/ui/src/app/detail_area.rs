@@ -421,7 +421,9 @@ impl App {
         // without a player, at the start.
         if let Some(session) = self.session() {
             let beat = session.player().map_or(0.0, |p| p.monitor().beat());
-            shown.follow_automation(session.project(), beat);
+            // A lane dragged in the Arrangement view: the knob follows the line as it is dragged.
+            let dragged = self.arrangement.automation.dragged.as_ref().filter(|_| self.shown == View::Arrangement);
+            shown.follow_automation_dragged(session.project(), beat, dragged);
             // An audio clip's panel: where the playhead is in the clip, for its Set buttons, and
             // what each source says its tempo is while its Find menu is open
             // (`docs/spec/clip-panel.md`).

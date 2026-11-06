@@ -486,7 +486,7 @@ pub fn along(a: &AutomationPoint, b: &AutomationPoint, t: f64, taper: &impl Tape
 impl AutomationLane {
     /// An enabled lane of `param` with no points.
     pub fn new(param: impl Into<String>) -> Self {
-        Self { param: param.into(), points: Vec::new(), enabled: true }
+        Self { param: param.into(), points: crate::IdList::new(), enabled: true }
     }
 
     /// Puts a point in beat order, after any at the same beat, and returns its index.
@@ -496,15 +496,16 @@ impl AutomationLane {
         index
     }
 
-    /// Puts back a point taken out of index `from`, in beat order, keeping its side of the
-    /// points at its beat: one that comes from before them goes first, one from after them
-    /// last, and one that stays at its beat keeps its place, so moving a point onto another's
-    /// beat, or changing only its value, never turns a jump around. Returns its index.
-    pub fn insert_near(&mut self, point: AutomationPoint, from: usize) -> usize {
-        let first = self.points.partition_point(|p| p.beat < point.beat);
-        let after = self.points.partition_point(|p| p.beat <= point.beat);
+    /// Puts back a point taken out of index `from` ([`crate::IdList::take`]), keeping its id, in
+    /// beat order, keeping its side of the points at its beat: one that comes from before them
+    /// goes first, one from after them last, and one that stays at its beat keeps its place, so
+    /// moving a point onto another's beat, or changing only its value, never turns a jump around.
+    /// Returns its index.
+    pub fn put_near(&mut self, point: crate::Entry<crate::PointId, AutomationPoint>, from: usize) -> usize {
+        let first = self.points.partition_point(|p| p.beat < point.value.beat);
+        let after = self.points.partition_point(|p| p.beat <= point.value.beat);
         let index = from.clamp(first, after);
-        self.points.insert(index, point);
+        self.points.put(index, point);
         index
     }
 

@@ -109,6 +109,8 @@ pub(crate) struct Updater {
     audio: Arc<AudioPool>,
     /// The file-backed devices' files ([docs/spec/nam-amp-and-cab.md]), for every graph built.
     assets: Arc<crate::DeviceAssets>,
+    /// What makes the devices of every graph built (#1147).
+    devices: crate::Devices,
     sample_rate: u32,
     stretch: Option<StretchThread>,
     params: Producer<ParamChange>,
@@ -165,6 +167,7 @@ impl Renderer {
             retired,
             audio: Arc::clone(&self.audio),
             assets: Arc::clone(&self.assets),
+            devices: Arc::clone(&self.devices),
             sample_rate: self.sample_rate,
             stretch: None,
             params,
@@ -173,7 +176,7 @@ impl Renderer {
             plugins,
             retired_plugins,
             tempo: Arc::clone(&self.graph.tempo),
-            live_volumes: self.graph.chains.iter().filter(|c| c.built_volume.is_some()).map(|c| c.track).collect(),
+            live_volumes: live_volumes(&self.graph),
             live_sends: live_sends(&self.graph.chains),
             live_pans: self.graph.chains.iter().filter(|c| c.built_pan.is_some()).map(|c| c.track).collect(),
         }
@@ -223,7 +226,7 @@ impl Renderer {
     pub(crate) fn receive_params(&mut self) {
         let Some(consumer) = self.swap.params.as_mut() else { return };
         while let Ok(change) = consumer.pop() {
-            apply_param(&mut self.graph.chains, change);
+            apply_param(&mut self.graph, change);
             let recent = &mut self.swap.recent;
             if recent.len() < RECENT_PARAMS {
                 recent.push(change);
@@ -340,7 +343,7 @@ impl Renderer {
         order.sort_unstable_by_key(|&i| self.swap.recent.get(i).map_or(0, |c| c.seq));
         for &i in order.iter() {
             if let Some(&change) = self.swap.recent.get(i) {
-                apply_param(&mut self.graph.chains, change);
+                apply_param(&mut self.graph, change);
             }
         }
         // Sounding voices follow their track: its mix (volume, pan, mute) and its chain in the
@@ -560,13 +563,33 @@ fn park(parked: &mut Vec<(u64, Processor)>, retired: &mut Producer<Processor>, k
     }
 }
 
+/// The tracks whose fader a move reaches as a message: those whose chain was built with its
+/// volume, and the main channel's when the graph has its fader.
+fn live_volumes(graph: &Graph) -> Vec<TrackId> {
+    let chains = graph.chains.iter().filter(|c| c.built_volume.is_some()).map(|c| c.track);
+    chains.chain(graph.main_fader.is_some().then_some(TrackId::MAIN)).collect()
+}
+
 /// The sends of `chains` a knob's turn reaches as a message: (track, return).
 fn live_sends(chains: &[crate::chain::Chain]) -> Vec<(TrackId, TrackId)> {
     chains.iter().flat_map(|c| c.live_sends().map(move |target| (c.track, target))).collect()
 }
 
-fn apply_param(chains: &mut [crate::chain::Chain], change: ParamChange) {
-    if let Some(chain) = chains.iter_mut().find(|c| c.track == change.track) {
+fn apply_param(graph: &mut Graph, change: ParamChange) {
+    // The main fader of a main channel with no chain scales the whole mix.
+    if change.track == TrackId::MAIN
+        && change.device == crate::MIXER_VOLUME
+        && let Some((built, fader)) = graph.main_fader.as_mut()
+    {
+        if change.value.is_finite()
+            && change.value >= 0.0
+            && let Some(ratio) = crate::chain::live_ratio(change.value, *built)
+        {
+            fader.target = ratio;
+        }
+        return;
+    }
+    if let Some(chain) = graph.chains.iter_mut().find(|c| c.track == change.track) {
         if change.device == crate::MIXER_VOLUME {
             chain.set_live_volume(change.value);
         } else if change.device == crate::MIXER_PAN {
@@ -587,24 +610,36 @@ impl Controller {
     /// Makes the renderer play `project` from now on, keeping what is playing (ADR 0005): builds
     /// it on this thread and swaps it in about [`SWAP_AHEAD_SECONDS`] from now. Fails if the
     /// project cannot be rendered or the renderer has not taken the previous updates yet.
-    pub fn update(&mut self, project: &Project) -> Result<(), String> {
+    pub fn update(&mut self, project: &Project) -> Result<(), crate::ControlError> {
         self.update_with_scenes(project, None)
     }
 
     /// Like [`Controller::update`], for a project whose launcher differs from the one sent
     /// before by the inserted or removed scene `scenes` ([`SceneShift::between`]): what each
     /// column plays and has queued moves with its slot.
-    pub fn update_with_scenes(&mut self, project: &Project, scenes: Option<SceneShift>) -> Result<(), String> {
+    pub fn update_with_scenes(
+        &mut self,
+        project: &Project,
+        scenes: Option<SceneShift>,
+    ) -> Result<(), crate::ControlError> {
         let updater = &mut self.updater;
         let collect_began = std::time::Instant::now();
         updater.collect();
         let collect_took = collect_began.elapsed();
         let mut plugins = Plugins { info: updater.plugin_info.clone(), processors: HashMap::new(), carried: false };
-        let mut graph = Graph::build(project, &updater.audio, &updater.assets, updater.sample_rate, &mut plugins, None)
-            .map_err(|e| e.to_string())?;
+        let mut graph = Graph::build(
+            project,
+            &updater.audio,
+            &updater.assets,
+            &*updater.devices,
+            updater.sample_rate,
+            &mut plugins,
+            None,
+        )
+        .map_err(crate::ControlError::Build)?;
         crate::build_report::add(&format!("old graphs dropped {:.1} ms", collect_took.as_secs_f64() * 1000.0));
         let sent = Arc::clone(&graph.tempo);
-        updater.live_volumes = graph.chains.iter().filter(|c| c.built_volume.is_some()).map(|c| c.track).collect();
+        updater.live_volumes = live_volumes(&graph);
         updater.live_sends = live_sends(&graph.chains);
         updater.live_pans = graph.chains.iter().filter(|c| c.built_pan.is_some()).map(|c| c.track).collect();
         let monitor = &self.monitor;
@@ -633,7 +668,7 @@ impl Controller {
         // only when the swap is sure to be queued (this is the queue's one producer), or those
         // voices would go with this graph.
         if updater.swaps.is_full() {
-            return Err("the audio engine has not taken the previous edits yet".to_string());
+            return Err(crate::ControlError::Full("edits"));
         }
         if let Some(thread) = updater.stretch.as_mut() {
             let began = std::time::Instant::now();
@@ -651,7 +686,7 @@ impl Controller {
         updater
             .swaps
             .push(Swap { graph, at, arrangement, param_seq: updater.param_seq, scenes })
-            .map_err(|_| "the audio engine has not taken the previous edits yet".to_string())
+            .map_err(|_| crate::ControlError::Full("edits"))
             .map(|()| updater.tempo = sent)
     }
 
@@ -659,26 +694,32 @@ impl Controller {
     /// among `track`'s channel's devices, from the start of the next audio block, without
     /// building a new graph. The project should hold the new value already, so the next graph
     /// built from it keeps it. Fails if the message queue is full.
-    pub fn set_device_param(&mut self, track: TrackId, device: usize, param: usize, value: f64) -> Result<(), String> {
+    pub fn set_device_param(
+        &mut self,
+        track: TrackId,
+        device: usize,
+        param: usize,
+        value: f64,
+    ) -> Result<(), crate::ControlError> {
         let updater = &mut self.updater;
         // A fader move ([`crate::MIXER_VOLUME`]) only reaches a track whose chain can take it.
         if device == crate::MIXER_VOLUME && !updater.live_volumes.contains(&track) {
-            return Err("the track's volume takes a new graph".to_string());
+            return Err(crate::ControlError::NeedsGraph("the track's volume"));
         }
         // A send's turn only reaches a send the playing graph has.
         let target = TrackId(u32::try_from(param).unwrap_or(u32::MAX));
         if device == crate::MIXER_SEND && !updater.live_sends.contains(&(track, target)) {
-            return Err("the send takes a new graph".to_string());
+            return Err(crate::ControlError::NeedsGraph("the send"));
         }
         // A pan on a lane, or a group's, takes a new graph.
         if device == crate::MIXER_PAN && (!updater.live_pans.contains(&track) || !value.is_finite()) {
-            return Err("the track's pan takes a new graph".to_string());
+            return Err(crate::ControlError::NeedsGraph("the track's pan"));
         }
         let seq = updater.param_seq + 1;
         updater
             .params
             .push(ParamChange { seq, track, device, param, value })
-            .map_err(|_| "the audio engine has not taken the previous parameter changes yet".to_string())?;
+            .map_err(|_| crate::ControlError::Full("parameter changes"))?;
         updater.param_seq = seq;
         Ok(())
     }
@@ -698,13 +739,10 @@ impl Controller {
     /// Sends the running plug-in `processor` for the plug-in device `key` to the audio thread:
     /// it plays from the next block in which a graph has its slot, replacing any processor
     /// there (a restarted plug-in replaces its crashed one). Fails if the queue is full.
-    pub fn send_plugin(&mut self, key: u64, processor: Box<dyn PluginProcessor>) -> Result<(), String> {
+    pub fn send_plugin(&mut self, key: u64, processor: Box<dyn PluginProcessor>) -> Result<(), crate::ControlError> {
         let updater = &mut self.updater;
         updater.collect();
-        updater
-            .plugins
-            .push((key, processor))
-            .map_err(|_| "the audio engine has not taken the previous plug-ins yet".to_string())
+        updater.plugins.push((key, processor)).map_err(|_| crate::ControlError::Full("plug-ins"))
     }
 
     /// Drops processors the audio thread has given back (replaced, or of removed devices), and
@@ -739,7 +777,12 @@ impl Controller {
 
     /// Previews `data` from `from` seconds at `gain` (linear), replacing any preview (ADR 0011).
     /// Fails if the queue is full.
-    pub fn preview_sample(&mut self, data: Arc<crate::AudioData>, from: f64, gain: f32) -> Result<(), String> {
+    pub fn preview_sample(
+        &mut self,
+        data: Arc<crate::AudioData>,
+        from: f64,
+        gain: f32,
+    ) -> Result<(), crate::ControlError> {
         let from = if from.is_finite() { from.max(0.0) } else { 0.0 };
         let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
         self.preview.send(crate::preview::PreviewCommand::Sample { data, from, gain })
@@ -748,7 +791,7 @@ impl Controller {
     /// Previews notes ([`crate::preview_notes`] makes them) through their track's instrument,
     /// or through their fallback instrument when the track has none; the fallback plays at
     /// `gain` (linear). Replaces any preview. Fails if the queue is full.
-    pub fn preview_notes(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), String> {
+    pub fn preview_notes(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), crate::ControlError> {
         let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
         self.preview.send(crate::preview::PreviewCommand::Notes { notes: Box::new(notes), gain })
     }
@@ -756,21 +799,21 @@ impl Controller {
     /// Starts the notes ([`crate::preview_notes`] makes them) and holds them until
     /// [`Controller::preview_note_off`]: the piano roll's key column (`preview.noteOn`).
     /// Replaces any preview. Fails if the queue is full.
-    pub fn preview_note_on(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), String> {
+    pub fn preview_note_on(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), crate::ControlError> {
         let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
         self.preview.send(crate::preview::PreviewCommand::Hold { notes: Box::new(notes), gain })
     }
 
     /// Releases the held note of `key`, or every held note when `key` is `None`. Fails if the
     /// queue is full.
-    pub fn preview_note_off(&mut self, key: Option<u8>) -> Result<(), String> {
+    pub fn preview_note_off(&mut self, key: Option<u8>) -> Result<(), crate::ControlError> {
         self.preview.send(crate::preview::PreviewCommand::Release { key })
     }
 
-    /// A fallback instrument for [`crate::preview_notes`]: the FM synth with its first voice,
-    /// prepared at the renderer's rate.
+    /// A fallback instrument for [`crate::preview_notes`]: the device factory's preview
+    /// instrument, prepared at the renderer's rate.
     pub fn preview_instrument(&self) -> Option<Box<dyn suhina_device_api::Device>> {
-        let mut device = suhina_device_registry::create("fm-synth")?;
+        let mut device = self.updater.devices.preview_instrument()?;
         device.prepare(f64::from(self.updater.sample_rate)).ok()?;
         device.reset();
         Some(device)
@@ -778,13 +821,13 @@ impl Controller {
 
     /// Changes the level of what is previewed now to `gain` (linear), gliding there without a
     /// click. Fails if the queue is full.
-    pub fn preview_gain(&mut self, gain: f32) -> Result<(), String> {
+    pub fn preview_gain(&mut self, gain: f32) -> Result<(), crate::ControlError> {
         let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
         self.preview.send(crate::preview::PreviewCommand::Gain(gain))
     }
 
     /// Stops the preview. Fails if the queue is full.
-    pub fn preview_stop(&mut self) -> Result<(), String> {
+    pub fn preview_stop(&mut self) -> Result<(), crate::ControlError> {
         self.preview.send(crate::preview::PreviewCommand::Stop)
     }
 

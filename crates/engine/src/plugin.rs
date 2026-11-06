@@ -323,14 +323,16 @@ impl Plugins {
     /// Reconfigures all retained processors before building a renderer at a new rate.
     /// Never called from rendering. Failure aborts opening the new renderer: mixing
     /// processors configured at different rates would produce incorrect sound.
-    pub fn reconfigure(&mut self, sample_rate: u32, timeout: Duration) -> Result<(), String> {
+    pub fn reconfigure(&mut self, sample_rate: u32, timeout: Duration) -> Result<(), crate::ControlError> {
         let deadline = Instant::now() + timeout;
         for (key, processor) in &mut self.processors {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
-                return Err("plug-in audio reconfiguration timed out".into());
+                return Err(crate::ControlError::Plugin("plug-in audio reconfiguration timed out".into()));
             }
-            let latency = processor.reconfigure(sample_rate, left).map_err(|why| format!("plug-in {key}: {why}"))?;
+            let latency = processor
+                .reconfigure(sample_rate, left)
+                .map_err(|why| crate::ControlError::Plugin(format!("plug-in {key}: {why}")))?;
             if let Some(info) = self.info.get_mut(key) {
                 info.latency = latency;
             }

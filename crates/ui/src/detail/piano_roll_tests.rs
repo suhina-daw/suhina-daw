@@ -193,7 +193,7 @@ fn the_eraser_cursor_is_hidden_so_its_shape_can_be_drawn() {
 fn clip(notes: Vec<Note>) -> PianoClip {
     PianoClip {
         address: json!({ "track": 1, "index": 0 }),
-        notes,
+        notes: notes.into(),
         length: 8.0,
         color: Color32::WHITE,
         bar_beats: 4.0,

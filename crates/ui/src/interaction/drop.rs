@@ -290,13 +290,13 @@ pub fn plan(
             }
             DropTarget::Slot { track, scene } => {
                 params["track"] = json!(track.0);
-                params["scene"] = json!(scene + 1);
+                params["scene"] = json!(scene);
                 label.push(spread(&count, files.len(), separate, &track_name(track)));
             }
             DropTarget::Track(_) | DropTarget::Chain(_) | DropTarget::Sampler { .. } => return None,
             DropTarget::NewTracks { beat, scene } => {
                 match (beat, scene) {
-                    (_, Some(scene)) => params["scene"] = json!(scene + 1),
+                    (_, Some(scene)) => params["scene"] = json!(scene),
                     (beat, None) => params["start"] = json!(beat.unwrap_or(0.0)),
                 }
                 let kinds =

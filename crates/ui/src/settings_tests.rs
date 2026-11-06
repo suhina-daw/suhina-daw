@@ -182,6 +182,11 @@ fn settings_survive_a_round_trip() {
         audio_cue_pair: 2,
         audio_cue_volume: -6,
         audio_input: "Line In (Interface)".into(),
+        audio_device_inputs: [
+            ("asio|universal audio thunderbolt".into(), ["Line In (Interface)".into(), "3/4".into()]),
+            ("wasapi|default".into(), ["off".into(), "1".into()]),
+        ]
+        .into(),
         midi_inputs_off: vec!["Keys, port 1".into(), "Pads:Pads MIDI 1 20:0".into()],
         zoom: 130,
         map_window: true,
@@ -231,6 +236,62 @@ fn browser_values_out_of_range_are_limited() {
     assert_eq!((settings.browser_width, settings.preview_volume), (BROWSER_WIDTHS.1, PREVIEW_VOLUMES.0));
     assert_eq!(settings.warp_mode, WarpMode::Rhythmic);
     assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn each_audio_device_keeps_its_input_and_default_track_input() {
+    use suhina_engine::model::InputChannels;
+    let mut settings =
+        Settings { audio_host: "ASIO".into(), audio_device: "Thunderbolt".into(), ..Settings::default() };
+    assert_eq!(settings.track_input(), InputChannels::None);
+    // While Input is off there is nothing to hear it on.
+    settings.set_track_input(InputChannels::Stereo(1));
+    assert!(settings.audio_device_inputs.is_empty());
+
+    settings.audio_input = "default".into();
+    settings.set_track_input(InputChannels::Mono(1));
+    settings.audio_device = "SSL 2+".into();
+    assert_eq!(settings.track_input(), InputChannels::None, "another card has none yet");
+    settings.audio_input = "SSL 2+ In".into();
+    settings.set_track_input(InputChannels::Stereo(1));
+    settings.audio_device = "THUNDERBOLT".into();
+    settings.audio_input = "default".into();
+    assert_eq!(settings.track_input(), InputChannels::Mono(1), "the card's own comes back");
+
+    let choice = |device: &str| suhina_session::OutputChoice {
+        host: Some("ASIO".into()),
+        device: Some(device.into()),
+        ..suhina_session::OutputChoice::default()
+    };
+    assert_eq!(
+        settings.remembered_input(&choice("SSL 2+")),
+        Some(suhina_session::InputChoice::Named("SSL 2+ In".into()))
+    );
+    assert_eq!(settings.remembered_input(&choice("USB Mic")), None);
+
+    let (read, warnings) = Settings::from_text(&settings.to_text());
+    assert_eq!((read.device_inputs(), warnings.len()), (settings.device_inputs(), 0));
+    assert_eq!(
+        read.device_inputs().get("asio|ssl 2+"),
+        Some(&suhina_session::DeviceInputs {
+            input: suhina_session::InputChoice::Named("SSL 2+ In".into()),
+            track_input: InputChannels::Stereo(1),
+        })
+    );
+    // What the session keeps comes back as the settings keep it.
+    let mut kept = Settings::default();
+    kept.keep_device_inputs(&settings.device_inputs());
+    assert_eq!(kept.audio_device_inputs, settings.audio_device_inputs);
+
+    for nonsense in [
+        r#"{"asio|x": ["default", "2/4"]}"#,
+        r#"{"asio|x": ["default", "0"]}"#,
+        r#"{"asio|x": ["default"]}"#,
+        "not json",
+    ] {
+        let (settings, warnings) = Settings::from_text(&format!("audio_device_inputs = {nonsense}\n"));
+        assert_eq!((settings.audio_device_inputs.len(), warnings.len()), (0, 1), "{nonsense:?}");
+    }
 }
 
 #[test]

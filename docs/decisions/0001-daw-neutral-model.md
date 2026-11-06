@@ -249,7 +249,7 @@ the file, its stream, sample rate, channels and length. A content may still be p
 clips (a duplicate, a take and the part comped from it), each with its own state; nothing is copied
 to make an audio clip independent. Formats map their clip-level audio settings (a Live Set's
 `AudioClip` warp, gain and pitch) onto the clip. The project file writes the state on the clip from
-version 8 and reads an older file's region state into every clip of that content
+version 9 and reads an older file's region state into every clip of that content
 ([`.suhina` format](../spec/suhina-format.md) › Versions).
 
 ## Consequences

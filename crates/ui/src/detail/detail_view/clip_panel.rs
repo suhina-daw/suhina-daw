@@ -22,8 +22,8 @@ const CENTS: (f64, f64) = (-50.0, 50.0);
 /// second, in one undo step, as the tempo field's drag does (#916).
 const SEND_EVERY: f64 = 0.1;
 
-/// A value a control sets, and whether it continues the undo step of the control's call before
-/// it (`continue`): every call of one drag after its first does.
+/// A value a control sets, and whether it is part of a drag (`more`): the calls of one drag carry
+/// one `gesture`, so they make one undo step that ends when the button comes up (#1146).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Change {
     pub value: f64,
@@ -42,7 +42,7 @@ fn send(ui: &Ui, id: Id, value: f64, done: bool) -> Option<Change> {
     let now = ui.input(|i| i.time);
     if sent.is_none_or(|at| now - at >= SEND_EVERY) {
         ui.data_mut(|d| d.insert_temp(key, now));
-        return Some(Change { value, more: sent.is_some() });
+        return Some(Change { value, more: true });
     }
     None
 }
@@ -344,10 +344,15 @@ fn number_field(
     }
 }
 
-/// `params` with `continue` set as `change` says.
+/// The gesture the clip panel's drags send, one drag at a time.
+const GESTURE: &str = "clip-panel";
+
+/// `params` with the drag's `gesture` when `change` is part of a drag.
 fn with_more(mut params: serde_json::Value, change: Change) -> serde_json::Value {
-    if let Some(map) = params.as_object_mut() {
-        map.insert("continue".into(), json!(change.more));
+    if change.more
+        && let Some(map) = params.as_object_mut()
+    {
+        map.insert("gesture".into(), crate::interaction::commands::gesture(GESTURE));
     }
     params
 }
@@ -919,7 +924,10 @@ fn audio_part(
     y += 12.0 + GAP;
     if let Some((bpm, source, more)) = set {
         let bpm = bpm.clamp(*CLIP_TEMPO_RANGE.start(), *CLIP_TEMPO_RANGE.end());
-        let params = json!({ "bpm": bpm, "source": source.name(), "continue": more });
+        let mut params = json!({ "bpm": bpm, "source": source.name() });
+        if more {
+            params["gesture"] = crate::interaction::commands::gesture(GESTURE);
+        }
         actions.push(Action::new("clip.setTempo", on_clip(at, params)));
     }
     // Edit gain envelope: opens the envelope on the clip's waveform in the Arrangement for

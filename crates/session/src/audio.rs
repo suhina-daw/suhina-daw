@@ -82,6 +82,18 @@ pub fn cue_channels(pair: u16) -> (u32, u32) {
     (first, first + 1)
 }
 
+/// The input channels `text` names, as `audio.setTrackInput` takes them: "none", a channel
+/// from 1 ("3") or a pair of neighbouring channels ("1/2"); `None` for anything else.
+pub fn input_channels_from_text(text: &str) -> Option<suhina_model::InputChannels> {
+    crate::commands::parse_input_channels(&Value::String(text.to_string())).ok()
+}
+
+/// Input channels as `audio.setTrackInput` takes them and the settings keep them: "none", "3"
+/// or "1/2".
+pub fn input_channels_text(channels: suhina_model::InputChannels) -> String {
+    crate::commands::input_channels_text(channels)
+}
+
 /// A gain in dB, rounded to a hundredth; silence is `None` (JSON null).
 fn gain_db(gain: f32) -> Option<f64> {
     (gain > 0.0).then(|| (20.0 * f64::from(gain).log10() * 100.0).round() / 100.0)
@@ -140,6 +152,16 @@ impl OutputChoice {
 
     /// The same device and format without the cue's settings, to compare two choices by the
     /// device they open.
+    /// The audio device (sound card) this choice plays on, as what it keeps is filed under
+    /// ([`crate::Projects::device_inputs`]): "host|device" in lower case, "default" for a part
+    /// not chosen.
+    pub fn device_key(&self) -> String {
+        let part = |name: &Option<String>| {
+            name.as_deref().map(str::trim).filter(|n| !n.is_empty()).unwrap_or("default").to_lowercase()
+        };
+        format!("{}|{}", part(&self.host), part(&self.device))
+    }
+
     pub fn device_only(&self) -> Self {
         Self { cue_pair: None, cue_gain: 1.0, ..self.clone() }
     }
@@ -478,7 +500,7 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "audio.openControlPanel",
         label: "Open the active ASIO driver's native control panel",
         params: &[],
-        kind: CommandKind::Audio,
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
         run: open_control_panel,
         policy: Policy::DEFAULT,
     },
@@ -486,13 +508,13 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "audio.devices",
         label: "List the audio hosts (WASAPI, ASIO, ALSA…), each one's output devices with their sample rates and buffer sizes and its input devices with their channels, and the output chosen",
         params: &[],
-        kind: CommandKind::Audio,
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Read),
         run: devices,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "audio.setOutput",
-        label: "Choose the audio output: host, device, sample rate, buffer size (the block the engine renders in, fitted to the sizes the device allows; on WASAPI shared mode the engine's block alone, since Windows sets the device's buffer), WASAPI exclusive mode and the audio input device the tracks' audio inputs hear; parts left out stay, an empty text or 0 goes back to the default. Reopens the active project's output, keeping the transport where it is",
+        label: "Choose the audio output: host, device, sample rate, buffer size (the block the engine renders in, fitted to the sizes the device allows; on WASAPI shared mode the engine's block alone, since Windows sets the device's buffer), WASAPI exclusive mode and the audio input device the tracks' audio inputs hear; parts left out stay, an empty text or 0 goes back to the default. Another device brings back the input it was last chosen with, unless input is given. Reopens the active project's output, keeping the transport where it is",
         params: &[
             optional("host", ParamType::Text, "a host from audio.devices, \"\" for the default"),
             optional("device", ParamType::Text, "an output device of that host, \"\" for its default"),
@@ -509,15 +531,27 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
                 "the audio input device on that host, from audio.devices' inputs: \"off\" (the default), \"default\" or a name",
             ),
         ],
-        kind: CommandKind::Audio,
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
         run: set_output,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "audio.setTrackInput",
+        label: "Choose the default track input of the audio device chosen: the channels of its input a new audio track hears, and an armed track that hears none (none, one channel or a stereo pair). Each audio device keeps its own, with the input chosen for it, and choosing that device again (audio.setOutput) brings both back. Refused while no input device is chosen; tracks that are there keep their own input",
+        params: &[param(
+            "input",
+            ParamType::Text,
+            "\"none\" (the default), a channel from 1 (\"3\"), or a pair (\"1/2\")",
+        )],
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
+        run: set_track_input,
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "output.setCuePair",
         label: "Choose the output pair of the same device the cue plays on: previews and tracks whose cue is on are heard there (headphones) and not on the main output's channels 1 and 2. Pair 0 plays the cue with the main output. Reopens the output, keeping the transport where it is",
         params: &[param("pair", ParamType::Integer, "1 for channels 3/4, 2 for 5/6 … up to 31; 0 for the main output")],
-        kind: CommandKind::Audio,
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
         run: set_cue_pair,
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
@@ -525,7 +559,7 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "output.setCueVolume",
         label: "Set the cue volume: the level of previews and cued tracks on the cue, from silence to +12 dB. The main output does not change, except for previews while the cue plays with it",
         params: &[param("db", ParamType::Decibels, "dB, -inf (or below -150) for silence, at most +12; 0 is unity")],
-        kind: CommandKind::Audio,
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
         run: set_cue_volume,
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
@@ -533,7 +567,7 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "audio.info",
         label: "Say what the active project plays on now: host, device, sample rate, buffer frames, the engine's block, measured latency, the longest a key on a MIDI controller takes to be heard, whether a track is armed (which keeps less queued) and underruns, and whether it plays in place of a chosen device that is not there",
         params: &[],
-        kind: CommandKind::Audio,
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Read),
         run: info,
         policy: Policy::DEFAULT,
     },
@@ -583,12 +617,35 @@ pub(crate) fn hosts_json(hosts: &[HostInfo]) -> Value {
 
 fn devices(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
     let hosts = system(projects)?.hosts();
-    Ok(json!({ "hosts": hosts_json(&hosts), "chosen": projects.output_choice().to_json() }))
+    Ok(json!({ "hosts": hosts_json(&hosts), "chosen": chosen_json(projects) }))
+}
+
+/// The output chosen, with the default track input.
+fn chosen_json(projects: &Projects) -> Value {
+    let mut chosen = projects.output_choice().to_json();
+    chosen["track_input"] = json!(crate::commands::input_channels_text(projects.track_input()));
+    chosen
+}
+
+fn set_track_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let input = crate::commands::parse_input_channels(Args::new(params).value("input").unwrap_or(&Value::Null))?;
+    let device = projects.set_track_input(input)?;
+    Ok(json!({
+        "track_input": crate::commands::input_channels_text(input),
+        "input_device": device,
+    }))
 }
 
 fn set_output(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     projects.ensure_output_can_close()?;
-    let choice = projects.output_choice().with_params(params)?;
+    let mut choice = projects.output_choice().with_params(params)?;
+    // Another audio device brings back the input it was last chosen with, unless one is given.
+    if choice.device_key() != projects.output_choice().device_key()
+        && !Args::new(params).has("input")
+        && let Some(input) = projects.remembered_input(&choice)
+    {
+        choice.input = input;
+    }
     projects.set_output_choice(choice);
     let notice = projects.reopen_output()?;
     let mut result = info(projects, &Value::Null)?;
@@ -628,7 +685,7 @@ fn set_cue_volume(projects: &mut Projects, params: &Value) -> Result<Value, Comm
 }
 
 fn info(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
-    let chosen = projects.output_choice().to_json();
+    let chosen = chosen_json(projects);
     let playing = projects.session_mut(None).ok().and_then(|s| s.player()).and_then(Player::output_info);
     Ok(match playing {
         Some(info) => {

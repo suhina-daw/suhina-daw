@@ -85,7 +85,7 @@ fn hz(left: &[f32], from: f64, to: f64) -> f64 {
 #[test]
 fn launched_stretched_clips_render_like_their_golden_file() {
     let (p, pool) = two_stretched();
-    let out = left(&render_launches(&p, &pool, SR, &LAUNCHES, SECONDS).unwrap());
+    let out = left(&render_launches(&p, &pool, SR, &LAUNCHES, SECONDS, suhina_device_registry::factory()).unwrap());
     // Each clip keeps its pitch: stretched, not re-pitched (396 Hz and 412.5 Hz).
     assert!((hz(&out, 0.2, 0.9) - 440.0).abs() < 8.0, "{} Hz", hz(&out, 0.2, 0.9));
     assert!((hz(&out, 1.2, 1.9) - 330.0).abs() < 8.0, "{} Hz", hz(&out, 1.2, 1.9));
@@ -133,9 +133,13 @@ fn second_slot_edited(p: &Project) -> Project {
 #[test]
 fn building_or_rebuilding_a_graph_prepares_no_launcher_voice() {
     let (p, pool) = two_stretched();
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
-            .unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()).with_plugins(Plugins::new()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
     assert_eq!(prepared(&renderer), [false, false], "nothing is built for slots that do not play");
     // An edit builds a new graph; it builds no stretcher either, on any thread, until a launch.
     let mut controller = renderer.controller();
@@ -148,9 +152,13 @@ fn building_or_rebuilding_a_graph_prepares_no_launcher_voice() {
 #[test]
 fn a_worker_thread_builds_the_voices_and_launches_sound_as_offline() {
     let (p, pool) = two_stretched();
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
-            .unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()).with_plugins(Plugins::new()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
     assert!(!renderer.graph.launcher.voices.inline(), "the thread took the preparer");
@@ -162,16 +170,20 @@ fn a_worker_thread_builds_the_voices_and_launches_sound_as_offline() {
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
     let out = left(&play(&mut renderer, &LAUNCHES, SECONDS));
-    let offline = left(&render_launches(&p, &pool, SR, &LAUNCHES, SECONDS).unwrap());
+    let offline = left(&render_launches(&p, &pool, SR, &LAUNCHES, SECONDS, suhina_device_registry::factory()).unwrap());
     assert_eq!(max_diff(&out, &offline), 0.0, "the same launches, sample for sample");
 }
 
 #[test]
 fn a_launch_before_its_voice_is_ready_starts_on_time_and_its_stretched_audio_joins_where_the_clip_is() {
     let (p, pool) = two_stretched();
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
-            .unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()).with_plugins(Plugins::new()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
     // A worker that has not got round to it yet: nothing builds the voice on the audio side.
     let mut preparer = renderer.graph.launcher.take_preparer().unwrap();
     let quarter = SR as usize / 4;
@@ -188,7 +200,8 @@ fn a_launch_before_its_voice_is_ready_starts_on_time_and_its_stretched_audio_joi
     assert_eq!(prepared(&renderer), [true, false]);
     // It plays from where the clip is, a quarter of a second in: the offline render's frames
     // from there on, after the stretcher's start-up.
-    let offline = left(&render_launches(&p, &pool, SR, &LAUNCHES[..1], 0.5).unwrap());
+    let offline =
+        left(&render_launches(&p, &pool, SR, &LAUNCHES[..1], 0.5, suhina_device_registry::factory()).unwrap());
     let joined = left(joined);
     assert!((hz(&joined, 0.05, 0.25) - 440.0).abs() < 10.0, "{} Hz", hz(&joined, 0.05, 0.25));
     let level = |s: &[f32]| s.iter().fold(0.0f32, |m, x| m.max(x.abs()));
@@ -198,12 +211,16 @@ fn a_launch_before_its_voice_is_ready_starts_on_time_and_its_stretched_audio_joi
 #[test]
 fn a_swap_takes_over_the_voices_of_unchanged_slots_and_the_worker_builds_only_the_changed_one() {
     let (p, pool) = two_stretched();
-    let mut old =
-        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
-            .unwrap();
+    let mut old = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()).with_plugins(Plugins::new()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
     let mut new = Renderer::build(
         &second_slot_edited(&p),
-        RenderInputs::from_audio(&pool).with_plugins(Plugins::new()),
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()).with_plugins(Plugins::new()),
         SR,
         RenderOptions::STOPPED,
     )
@@ -230,12 +247,20 @@ fn a_swap_takes_over_the_voices_of_unchanged_slots_and_the_worker_builds_only_th
 #[test]
 fn a_voice_the_worker_claimed_first_is_not_taken_over_and_arrives_from_the_worker() {
     let (p, pool) = two_stretched();
-    let mut old =
-        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
-            .unwrap();
-    let mut new =
-        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
-            .unwrap();
+    let mut old = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()).with_plugins(Plugins::new()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    let mut new = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()).with_plugins(Plugins::new()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
     let (mut before, mut after) =
         (old.graph.launcher.take_preparer().unwrap(), new.graph.launcher.take_preparer().unwrap());
     while before.work(false) {}
@@ -257,12 +282,16 @@ fn a_scene_inserted_above_keeps_the_voices_with_their_clips() {
     shifted.launcher.columns[0].slots.insert(0, Slot { clip: None, has_stop: true });
     let shift = crate::SceneShift::between(&p.launcher, &shifted.launcher);
     assert_eq!(shift, Some(crate::SceneShift::Inserted(0)));
-    let mut old =
-        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
-            .unwrap();
+    let mut old = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()).with_plugins(Plugins::new()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
     let mut new = Renderer::build(
         &shifted,
-        RenderInputs::from_audio(&pool).with_plugins(Plugins::new()),
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()).with_plugins(Plugins::new()),
         SR,
         RenderOptions::STOPPED,
     )
@@ -278,10 +307,14 @@ fn a_scene_inserted_above_keeps_the_voices_with_their_clips() {
 fn a_playing_clip_plays_on_through_its_own_voice_across_an_edit_of_another_slot() {
     let (p, pool) = two_stretched();
     let launch = [(0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 })];
-    let reference = left(&render_launches(&p, &pool, SR, &launch, 1.0).unwrap());
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
-            .unwrap();
+    let reference = left(&render_launches(&p, &pool, SR, &launch, 1.0, suhina_device_registry::factory()).unwrap());
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()).with_plugins(Plugins::new()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
     renderer.set_offline(true);
     let mut controller = renderer.controller();
     let mut out = play(&mut renderer, &launch, 0.5);

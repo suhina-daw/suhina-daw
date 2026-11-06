@@ -10,7 +10,7 @@ use super::*;
 pub struct PianoClip {
     /// The params that name the clip in a `note.*` command: `track` and `index` or `scene`.
     pub address: Value,
-    pub notes: Vec<Note>,
+    pub notes: Notes,
     /// Where the part of the content the clip plays ends, in beats (its loop's end when it
     /// loops): the grid past it is shaded.
     pub length: f64,
@@ -100,7 +100,7 @@ pub fn arrangement_clip(project: &Project, track: TrackId, id: ClipId) -> Option
 }
 
 /// The piano roll for a launcher slot's clip: `scene` is 0-based, as the session's selection
-/// carries it; the `note.*` commands name the clip by `scene` (1-based). A slot's clip plays
+/// carries it; the `note.*` commands name the clip by `scene` (from 0). A slot's clip plays
 /// from its launch, not from an arrangement position: its placement starts at the launch and
 /// never ends, so the beats since the launch map through it — the playhead and paste at the
 /// playhead take those beats.
@@ -113,7 +113,7 @@ pub fn launcher_clip(project: &Project, track: TrackId, scene: usize) -> Option<
         offset: clip.offset,
         loop_range: clip.loop_range.map(|l| (l.start, l.end)),
     };
-    piano.address = json!({ "track": track.0, "scene": scene + 1 });
+    piano.address = json!({ "track": track.0, "scene": scene });
     Some(piano)
 }
 
