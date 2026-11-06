@@ -168,17 +168,22 @@ fn texts(value: Option<&Value>, limit: usize, what: &str, warnings: &mut Vec<Str
         warnings.push(format!("browser.json: {what} is not a list; ignored"));
         return Vec::new();
     };
+    // Read up to the limit only: a file can hold far more entries than are kept, and each one
+    // kept is compared with those before it.
     let mut out: Vec<String> = Vec::new();
     for item in list {
         match item.as_str() {
-            Some(s) if !s.is_empty() && s.len() <= MAX_KEY && !out.iter().any(|o| o == s) => out.push(s.to_string()),
+            Some(s) if !s.is_empty() && s.len() <= MAX_KEY && !out.iter().any(|o| o == s) => {
+                if out.len() == limit {
+                    warnings
+                        .push(format!("browser.json: {what} had more than {limit} entries; the rest were left out"));
+                    break;
+                }
+                out.push(s.to_string());
+            }
             Some(_) => {}
             None => warnings.push(format!("browser.json: an entry of {what} is not a text; skipped")),
         }
-    }
-    if out.len() > limit {
-        warnings.push(format!("browser.json: {what} had more than {limit} entries; the rest were left out"));
-        out.truncate(limit);
     }
     out
 }
@@ -450,6 +455,25 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn a_long_list_is_read_up_to_its_limit_without_comparing_every_entry() {
+        // 400 000 different pins: compared each with all before it, the read took minutes.
+        let pins: Vec<String> = (0..400_000).map(|i| format!("/p/{i}.wav")).collect();
+        let mut warnings = Vec::new();
+        let started = std::time::Instant::now();
+        let kept = texts(Some(&json!(pins)), MAX_PINS, "pinned", &mut warnings);
+        assert!(started.elapsed() < std::time::Duration::from_secs(20), "{:?}", started.elapsed());
+        assert_eq!(kept.len(), MAX_PINS);
+        assert_eq!(kept.first().map(String::as_str), Some("/p/0.wav"));
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        // Repeats do not count towards the limit.
+        let repeated = json!(["a", "a", "b", "a", "c"]);
+        assert_eq!(texts(Some(&repeated), 2, "pinned", &mut Vec::new()), ["a", "b"]);
+        let mut warnings = Vec::new();
+        assert_eq!(texts(Some(&json!(["a", "a", "b"])), 2, "pinned", &mut warnings), ["a", "b"]);
+        assert!(warnings.is_empty(), "exactly the limit is no warning: {warnings:?}");
     }
 
     #[test]
