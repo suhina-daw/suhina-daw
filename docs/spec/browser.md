@@ -506,7 +506,8 @@ stands it down; a second click removes the tag from the list and from every item
 The menu adds a tag for the section too: a typed **New tag…** name, added with Enter or the
 **Add tag** button beside it, with the colour
 this menu shows outlined — the tag it was added from shows it —, shown dimmed until
-something carries it; the row's menu can rename, recolour or remove every tag there is. The
+something carries it; the menu closes when the add lands, and stays for a refused name (the
+status bar says why). The row's menu can rename, recolour or remove every tag there is. The
 footer's dots stay as they are (#1196): where the section reaches a tag's items as a
 place, the dots are still the quick filter of whatever list is shown, a search's or a place's
 items included. The section is the one place the tags are kept, so the former tag editor and

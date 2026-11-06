@@ -1510,6 +1510,8 @@ fn the_tags_right_menu_adds_a_tag() {
     harness.get_by_label("Add tag").click();
     harness.run();
     assert!(harness.query_by_label("Place Tag Punchy").is_some(), "the section lists the new tag");
+    // The add closes the menu.
+    assert!(harness.query_by_label("New tag name").is_none(), "the menu went with the add");
     let tags = harness.state_mut().projects_mut().file_library_mut().tags();
     let added = tags.iter().find(|t| t.name == "Punchy");
     assert_eq!(

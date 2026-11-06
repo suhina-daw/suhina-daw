@@ -838,6 +838,9 @@ fn sidebar_view(
                         out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
                         ui.ctx().data_mut(|d| d.remove::<String>(new_id));
                         state.relist();
+                        // Done is done: the add closes the menu, as a rename or a remove
+                        // do; a refused name keeps it, so the name can be corrected.
+                        ui.close();
                     }
                 }
             }
@@ -1981,6 +1984,9 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                         out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
                         ui.ctx().data_mut(|d| d.remove::<String>(new_id));
                         state.relist();
+                        // Done is done: the add closes the menu, as a rename or a remove
+                        // do; a refused name keeps it, so the name can be corrected.
+                        ui.close();
                     }
                 }
             }
