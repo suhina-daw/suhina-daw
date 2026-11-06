@@ -16,36 +16,51 @@ fn the_trace_watch_merges_peaks_and_starts_each_interval_from_silence() {
 }
 
 /// The main thread resets the counters while the audio thread keeps adding to them: no
-/// frame is lost, and a peak that was taken never comes back.
+/// frame is lost, and a peak that was taken never comes back. The audio thread is inside
+/// its loop (a barrier) before the first reset and leaves it only when told to after the
+/// last one, so every reset happens while it runs; how many blocks it adds meanwhile varies,
+/// and the assertions hold for any count.
 #[test]
 fn resetting_the_trace_watch_loses_no_frames_and_repeats_no_peak() {
-    const BLOCKS: u32 = 200_000;
+    const RESETS: u32 = 20_000;
+    // Below 2^24, so every block's number is an exact `f32` and the peaks strictly rise.
+    const MOST_BLOCKS: u32 = 1 << 23;
     let watch = Arc::new(Watch::default());
+    let stop = Arc::new(AtomicBool::new(false));
+    let started = Arc::new(std::sync::Barrier::new(2));
     let audio = {
-        let watch = watch.clone();
+        let (watch, stop, started) = (watch.clone(), stop.clone(), started.clone());
         std::thread::spawn(move || {
-            for block in 1..=BLOCKS {
+            started.wait();
+            let mut added = 0_u32;
+            for block in 1..=MOST_BLOCKS {
+                if stop.load(Ordering::Acquire) {
+                    break;
+                }
                 watch.merge_peak(&[block as f32]);
                 watch.frames.fetch_add(1, Ordering::Release);
+                added = block;
             }
+            added
         })
     };
     let (mut frames, mut peaks) = (0_u64, Vec::new());
-    while !audio.is_finished() {
-        frames += watch.take_frames();
+    let mut take = |frames: &mut u64| {
+        *frames += watch.take_frames();
         let peak = watch.take_peak();
         if peak > 0.0 {
             peaks.push(peak);
         }
+    };
+    started.wait();
+    for _ in 0..RESETS {
+        take(&mut frames);
     }
-    audio.join().unwrap();
-    frames += watch.take_frames();
-    let peak = watch.take_peak();
-    if peak > 0.0 {
-        peaks.push(peak);
-    }
-    assert_eq!(frames, u64::from(BLOCKS), "frames were erased by a reset");
-    assert_eq!(peaks.last().copied(), Some(BLOCKS as f32));
+    stop.store(true, Ordering::Release);
+    let added = audio.join().unwrap();
+    take(&mut frames);
+    assert_eq!(frames, u64::from(added), "frames were erased by a reset");
+    assert_eq!(peaks.last().copied(), (added > 0).then_some(added as f32));
     assert!(peaks.windows(2).all(|pair| pair[0] < pair[1]), "an old peak was written back");
 }
 
@@ -66,8 +81,8 @@ fn a_module_is_loaded_once_and_kept() {
 fn class_ids_round_trip_as_hex() {
     let cid: TUID = [0x12, -1, 0, 0x7f, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, -128];
     let hex = cid_hex(&cid);
-    let expected = if cfg!(windows) { "7F00FF12020104030506070809" } else { "12FF007F01020304050607080900" };
-    assert!(hex.starts_with(&expected[..16]), "{hex}");
+    let expected = if cfg!(windows) { "7F00FF120201040305060708090A0B80" } else { "12FF007F0102030405060708090A0B80" };
+    assert_eq!(hex, expected);
     assert_eq!(cid_from_hex(&hex), Some(cid));
     assert_eq!(cid_from_hex("12"), None);
     assert_eq!(cid_from_hex(&"zz".repeat(16)), None);
