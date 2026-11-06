@@ -81,3 +81,17 @@ fn an_editor_edit_turns_its_lane_off_but_an_echo_does_not() {
     assert!(!take_in_param_edits(&mut project, &[(key, 1, 0.95)], Some((false, 4.0))).1);
     assert!(enabled(&project));
 }
+
+/// A parameter moved in a plug-in's own editor is reported for its track's lanes to show, once;
+/// a value its lane sent there is not (#1205).
+#[test]
+fn a_parameter_moved_in_an_editor_is_reported_for_its_lanes() {
+    let project = with_lane();
+    let key = suhina_engine::plugin_devices(&project)[0].key;
+    let edits = [(key, 0, 0.95), (key, 3, 0.2), (key, 3, 0.4)];
+    assert_eq!(touched_by_hand(&project, &edits, Some((false, 4.0))), [(TrackId(1), 0, 0), (TrackId(1), 0, 3)]);
+    // The lane's own value at the playhead, reported back.
+    assert!(touched_by_hand(&project, &[(key, 0, 0.5)], Some((false, 4.0))).is_empty());
+    // A device the project no longer holds.
+    assert!(touched_by_hand(&project, &[(key ^ 1, 0, 0.5)], None).is_empty());
+}

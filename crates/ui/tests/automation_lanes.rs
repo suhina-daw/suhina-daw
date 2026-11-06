@@ -1135,6 +1135,33 @@ fn a_painted_range_moves_the_play_start_marker_to_its_start() {
     assert_eq!(monitor.start_beat(), 36.0);
 }
 
+/// Moving the Drums track's pan by hand shows its pan in the lanes when they are open, in the
+/// top lane's place, ready to draw on; with the lanes closed nothing opens (#1205).
+#[test]
+fn a_pan_moved_by_hand_shows_in_the_open_lanes() {
+    let mut harness = with_lanes();
+    let drums = harness
+        .state()
+        .session()
+        .and_then(|s| s.project().tracks.iter().find(|t| t.name == "Drums").map(|t| t.id))
+        .unwrap();
+    assert!(harness.query_by_label("Volume automation on Drums").is_some());
+    let pan =
+        suhina_ui::kit::widgets::Action::new("track.setPan", serde_json::json!({ "tracks": [drums.0], "pan": 0.5 }));
+    harness.state_mut().run(&pan);
+    harness.run();
+    assert!(harness.query_by_label("Pan automation on Drums").is_some(), "the pan shows");
+    assert!(harness.query_by_label("Volume automation on Drums").is_none(), "in the top lane's place");
+    // Closed lanes stay closed.
+    harness.get_by_label("Hide automation of Drums").click();
+    harness.run();
+    let mute =
+        suhina_ui::kit::widgets::Action::new("track.setMute", serde_json::json!({ "tracks": [drums.0], "mute": true }));
+    harness.state_mut().run(&mute);
+    harness.run();
+    assert!(harness.query_by_label("Mute automation on Drums").is_none());
+}
+
 /// A right-click at `at`.
 fn right_click_at(harness: &mut Harness<'static, App>, at: Pos2) {
     harness.hover_at(at);

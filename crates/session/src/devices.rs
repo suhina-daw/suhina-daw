@@ -1332,6 +1332,12 @@ pub(crate) fn keep_plugin_params_in_step(session: &mut Session) -> bool {
         (monitor.running(), monitor.beat())
     });
     let before = turns_lanes_off(&session.project, &edits, at).then(|| session.project.clone());
+    // The parameters moved by hand, for the window to show in their tracks' lanes.
+    for touched in touched_by_hand(&session.project, &edits, at) {
+        if !session.touched.contains(&touched) && session.touched.len() < MAX_TOUCHED {
+            session.touched.push(touched);
+        }
+    }
     let (changed, off) = take_in_param_edits(&mut session.project, &edits, at);
     if changed || off {
         session.history.changes = session.history.changes.wrapping_add(1);
@@ -1344,6 +1350,33 @@ pub(crate) fn keep_plugin_params_in_step(session: &mut Session) -> bool {
         let _ = session.update_player(None);
     }
     changed || off
+}
+
+/// Most parameters moved in plug-ins' editors kept for the window between two frames.
+const MAX_TOUCHED: usize = 64;
+
+/// The parameters of `edits` the user moved by hand (not a value a lane sent and the plug-in
+/// reported back), by track, the device's place on the track's own chain and the parameter id,
+/// for their lanes to show them (#1205). A plug-in inside a device group, or on no track, has
+/// no lane of its own and is left out.
+pub(crate) fn touched_by_hand(
+    project: &Project,
+    edits: &[(u64, u32, f64)],
+    at: Option<(bool, f64)>,
+) -> Vec<(suhina_model::TrackId, usize, u32)> {
+    let devices = suhina_engine::plugin_devices(project);
+    let mut touched = Vec::new();
+    for (key, id, value) in edits {
+        let Some(found) = devices.iter().find(|d| d.key == *key) else { continue };
+        let (Some(track), [index]) = (found.track, found.path.as_slice()) else { continue };
+        let echo = plugin_device(project, &devices, *key)
+            .and_then(|device| playing_lane(device, *id))
+            .is_some_and(|lane| lane_sent(lane, *value, at));
+        if !echo && !touched.contains(&(track, *index, *id)) {
+            touched.push((track, *index, *id));
+        }
+    }
+    touched
 }
 
 /// The enabled lane with points that plays plug-in parameter `id` of `device`, if there is one.

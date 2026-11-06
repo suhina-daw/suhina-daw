@@ -314,7 +314,16 @@ the track's. Dragging the line under a lane makes it taller or shorter (24 to 24
 the lanes below; the envelope is drawn to the new height. A double-click on that line, or
 **Reset height** in the menu a right-click on the lane's header opens, puts it back to 40 px.
 Each lane keeps its height while the track's lanes are hidden, for as long as the project is
-open (#818). The header:
+open (#818), and when it comes to show another parameter, chosen in its dropdown or brought in
+by a control moved by hand (#1205).
+
+A control moved by hand brings its parameter into view when its track's lanes are shown
+(#1205): the track header's volume, pan or mute (Main's too), a knob of a device on the track's
+own chain in the detail view, or a parameter turned in a hosted plug-in's own editor. A lane
+that shows it already stays where it is; otherwise the top lane shows it, ready to be drawn on,
+and it is the lane clicked last (Ctrl+V pastes onto it). A value set on several tracks at once,
+or a value a lane sent a plug-in and the plug-in reported back, brings nothing forward, and
+closed lanes stay closed. The header:
 
 - **The parameter**, a dropdown of the track's volume, pan and mute and each built-in or `.sd`
   device's parameters, grouped by device; a parameter with points is marked " •". Choosing one

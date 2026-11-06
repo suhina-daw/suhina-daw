@@ -2373,6 +2373,8 @@ impl App {
         if let Some(gesture) = action.params.get("gesture").and_then(serde_json::Value::as_str) {
             self.open_gesture = Some(gesture.to_owned());
         }
+        // A control moved by hand shows its parameter in the track's open lanes (#1205).
+        self.focus_touched_lane(action);
         // A fader or a send dragged on one of several selected tracks moves them together.
         if let Some(wider) = self.drag_to_selection(action) {
             return self.run(&wider);
@@ -3588,6 +3590,8 @@ impl App {
         for (track, index, id, values) in asked {
             session.ask_plugin_texts_at(track, &[index], id, &values);
         }
+        // A parameter moved in a plug-in's own editor shows in its track's open lanes (#1205).
+        let touched = session.take_touched_params();
         let open: Vec<(TrackId, usize)> = session
             .project()
             .tracks
@@ -3608,6 +3612,10 @@ impl App {
             if let Some(texts) = session.plugin_texts_at(track, &[index]) {
                 lists.texts.insert((track, index), texts);
             }
+        }
+        for (track, index, id) in touched {
+            let key = crate::arrangement::automation_lanes::LaneKey { device: Some(index), param: id.to_string() };
+            self.arrangement.automation.focus(track, key);
         }
         lists
     }

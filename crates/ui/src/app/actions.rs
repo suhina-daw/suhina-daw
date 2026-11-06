@@ -1083,6 +1083,52 @@ impl App {
         }
     }
 
+    /// A control moved by hand brings its parameter into view in its track's open lanes, the top
+    /// lane showing it ready to be drawn on (#1205): a track's volume, pan or mute (Main's too),
+    /// a parameter of a device on the track's own chain, a built-in's, an `.sd` device's or a
+    /// plug-in's.
+    pub(super) fn focus_touched_lane(&mut self, action: &Action) {
+        use crate::arrangement::automation_lanes::LaneKey;
+        let id = |v: &serde_json::Value| v.as_u64().and_then(|n| u32::try_from(n).ok()).map(TrackId);
+        let touched: Vec<(TrackId, LaneKey)> = match action.id {
+            "track.setVolume" | "track.setPan" | "track.setMute" => {
+                let param = match action.id {
+                    "track.setVolume" => suhina_engine::model::automation::VOLUME,
+                    "track.setPan" => suhina_engine::model::automation::PAN,
+                    _ => suhina_engine::model::automation::MUTE,
+                };
+                // One track moved by hand; a value set on many at once brings none forward.
+                match action.params["tracks"].as_array().map(Vec::as_slice) {
+                    Some([one]) => id(one).map(|track| (track, LaneKey::mixer(param))).into_iter().collect(),
+                    _ => Vec::new(),
+                }
+            }
+            "device.setParam" => {
+                let track = id(&action.params["track"]);
+                let device = detail_view::DeviceAt::parse(&action.params["device"]);
+                let param = match &action.params["param"] {
+                    serde_json::Value::String(text) => Some(text.clone()),
+                    serde_json::Value::Number(number) => Some(number.to_string()),
+                    _ => None,
+                };
+                // Lanes are of the devices on the track's own chain, not inside a device group.
+                match (track, device, param) {
+                    (Some(track), Some(device), Some(param)) if device.0.len() == 1 => device
+                        .0
+                        .first()
+                        .map(|&index| (track, LaneKey { device: Some(index), param }))
+                        .into_iter()
+                        .collect(),
+                    _ => Vec::new(),
+                }
+            }
+            _ => return,
+        };
+        for (track, key) in touched {
+            self.arrangement.automation.focus(track, key);
+        }
+    }
+
     /// Ends the window's open gesture once no mouse button is down, so a drag is one undo step
     /// that closes on mouse up (#1146), and the next drag of a selection counts from where it
     /// stands then. A range tool's gesture ([`crate::arrangement::automation_lanes::RANGE_GESTURE`])

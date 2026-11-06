@@ -1182,6 +1182,46 @@ impl LanesState {
         }
     }
 
+    /// A parameter of `track` moved by hand (a fader, a knob, a plug-in's own editor) comes into
+    /// view to be drawn on, when `track`'s lanes are shown (#1205): a lane that shows it already
+    /// stays where it is; otherwise the top lane shows it. It becomes the lane clicked last,
+    /// which Ctrl+V pastes onto. Closed lanes stay closed.
+    pub fn focus(&mut self, track: TrackId, key: LaneKey) {
+        if !self.is_open(track) {
+            return;
+        }
+        let shown = self.shown.entry(track).or_default();
+        if !shown.contains(&key) {
+            let replaced = match shown.first_mut() {
+                Some(first) => Some(std::mem::replace(first, key.clone())),
+                None => {
+                    shown.push(key.clone());
+                    None
+                }
+            };
+            // What was picked on the lane that now shows another parameter is let go of; the
+            // lane keeps its height.
+            if let Some(replaced) = replaced {
+                self.carry_height(track, &replaced, &key);
+                if self.selection.as_ref().is_some_and(|s| s.track == track && s.key == replaced) {
+                    self.selection = None;
+                }
+                if self.range.as_ref().is_some_and(|r| r.track == track && r.key == replaced) {
+                    self.range = None;
+                }
+                self.from_automated.remove(&(track, replaced));
+            }
+        }
+        self.last_lane = Some((track, key));
+    }
+
+    /// A lane of `track` that showed `from` and shows `to` now keeps its height (#1205): the
+    /// height goes with the lane, not with the parameter it happens to show.
+    fn carry_height(&mut self, track: TrackId, from: &LaneKey, to: &LaneKey) {
+        let height = self.lane_height(track, from);
+        self.set_lane_height(track, to, height);
+    }
+
     /// Shows `key` in `track`'s lanes (opening them), after the lanes already shown.
     pub fn show_lane(&mut self, track: TrackId, key: LaneKey) {
         self.open.insert(track);
@@ -3142,10 +3182,17 @@ fn lane_header(
                 if top {
                     state.from_automated.insert((track, choice.clone()));
                 }
-                if let Some(keys) = state.shown.get_mut(&track)
+                let switched = if let Some(keys) = state.shown.get_mut(&track)
                     && let Some(slot) = keys.iter_mut().find(|k| **k == param.key)
                 {
-                    *slot = choice;
+                    *slot = choice.clone();
+                    true
+                } else {
+                    false
+                };
+                // The lane keeps its height for the parameter it shows now.
+                if switched {
+                    state.carry_height(track, &param.key, &choice);
                 }
                 state.selection = None;
             }

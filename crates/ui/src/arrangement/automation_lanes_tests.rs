@@ -604,3 +604,39 @@ fn a_plug_in_scale_survives_hostile_ranges() {
     assert_eq!(wild.value_at(0.5), 0.5, "0 … 1 instead");
     assert_eq!(wild.position(f64::NAN), 0.0);
 }
+
+/// A parameter moved by hand comes into view in its track's lanes when they are shown: the top
+/// lane shows it, one shown already stays, and closed lanes stay closed (#1205).
+#[test]
+fn a_parameter_moved_by_hand_comes_into_view_in_open_lanes() {
+    let project = crate::demo::demo_project();
+    let track = project.tracks[0].id;
+    let params = Params::build(&project);
+    let mut lanes = LanesState::default();
+    // Closed: nothing opens.
+    lanes.focus(track, LaneKey::mixer(PAN));
+    assert!(!lanes.is_open(track));
+    lanes.open.insert(track);
+    lanes.shown.insert(track, vec![LaneKey::mixer(VOLUME), LaneKey::mixer(MUTE)]);
+    // The pan, not shown: it takes the top lane's place.
+    lanes.focus(track, LaneKey::mixer(PAN));
+    assert_eq!(lanes.shown(track, &params), [LaneKey::mixer(PAN), LaneKey::mixer(MUTE)]);
+    assert_eq!(lanes.last_lane, Some((track, LaneKey::mixer(PAN))));
+    // The mute, shown already: the lanes stay as they are.
+    lanes.focus(track, LaneKey::mixer(MUTE));
+    assert_eq!(lanes.shown(track, &params), [LaneKey::mixer(PAN), LaneKey::mixer(MUTE)]);
+    assert_eq!(lanes.last_lane, Some((track, LaneKey::mixer(MUTE))));
+}
+
+/// A lane that comes to show another parameter keeps the height it was dragged to (#1205).
+#[test]
+fn a_lane_keeps_its_height_when_it_shows_another_parameter() {
+    let project = crate::demo::demo_project();
+    let track = project.tracks[0].id;
+    let mut lanes = LanesState::default();
+    lanes.open.insert(track);
+    lanes.shown.insert(track, vec![LaneKey::mixer(VOLUME)]);
+    lanes.set_lane_height(track, &LaneKey::mixer(VOLUME), 90.0);
+    lanes.focus(track, LaneKey::mixer(PAN));
+    assert_eq!(lanes.lane_height(track, &LaneKey::mixer(PAN)), 90.0);
+}
