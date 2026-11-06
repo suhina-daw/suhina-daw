@@ -1,6 +1,6 @@
 ---
 description: What a MIDI controller can do in Suhina - sources, targets, ranges, takeover, relative encoders, gestures and undo, the controller profile file, mappings saved in a project, the mapping mode and MIDI learn, the commands, and how malformed input is treated
-read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, launch keys, launcher.mappings, Map keys, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback, surface program, Lua runner
+read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, launch keys, launcher.mappings, Map keys, Map button, mapping.list, mapping.remove, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback, surface program, Lua runner
 type: spec
 status: planned
 last_verified: 2026-11-06
@@ -11,8 +11,12 @@ last_verified: 2026-11-06
 - **Sources:** Suhina's own design ([ADR 0019](../decisions/0019-midi-controllers-and-mapping.md)),
   and the MIDI 1.0 specification for what the messages are (control change, note on and off,
   pitch bend, program change, 14-bit controller pairs).
-- **Status:** planned. Nothing here is implemented; the split into work is in the pull request
-  that added this document ([#403](https://github.com/suhina-daw/suhina-daw/issues/403)). It
+- **Status:** planned. Built so far: the project's `controller_mappings` with launch keys as
+  its first targets, `mapping.add`, `mapping.remove` and `mapping.list` for them, and the
+  **Map** button ([#1162](https://github.com/suhina-daw/suhina-daw/issues/1162), *Launch keys*).
+  Controllers themselves (the other sources and targets, shaping the value, takeover, gestures,
+  profiles, learning MIDI in the mapping mode) are not built; the split into work is in the pull
+  request that added this document ([#403](https://github.com/suhina-daw/suhina-daw/issues/403)). It
   builds on MIDI input (ADR 0017, [#291](https://github.com/suhina-daw/suhina-daw/pull/291)).
 
 ## Words
@@ -224,9 +228,10 @@ empty:
 
 ### Launch keys
 
-Launch keys ([clip launching](clip-launching.md#launching-from-keys-and-notes)) are built and
-become entries of this list when it is built
-([ADR 0019 › Amendment: launch keys are controller mappings](../decisions/0019-midi-controllers-and-mapping.md#amendment-launch-keys-are-controller-mappings-2026-11-02)):
+Launch keys ([clip launching](clip-launching.md#launching-from-keys-and-notes)) are entries of
+this list, the first built
+([ADR 0019 › Amendment: launch keys are controller mappings](../decisions/0019-midi-controllers-and-mapping.md#amendment-launch-keys-are-controller-mappings-2026-11-02),
+#1162):
 
 ```json
 { "source": "key:Q", "target": { "command": "clip.launch", "track": 2, "scene": 0 } },
@@ -242,15 +247,22 @@ become entries of this list when it is built
   decided.
 - A source has one target at most in a project; mapping it again moves it. This is *Conflicts*'
   rule, which launch keys already follow.
-- The version that adds `controller_mappings` reads the launcher's `mappings` of an older file
-  as entries of this list (`slot` → `clip.launch`, `scene` → `scene.launch`, `stop` →
-  `track.stop`, their notes with no port), and never writes the launcher's `mappings` again.
+- Version 9 of the file, which added `controller_mappings`, reads the launcher's `mappings` of
+  an older file as entries of this list (`slot` → `clip.launch`, `scene` → `scene.launch`,
+  `stop` → `track.stop`, their notes with no port), and never writes the launcher's `mappings`
+  again ([Suhina format › Versions](suhina-format.md#versions)).
+- A mapping stays on its scene while scenes change: `scene.insert` and `scene.duplicate` move the
+  targets below the new row down one, `scene.delete` moves those below it up one and removes the
+  mappings on the deleted scene (undo brings them back). A project keeps at most 1024 mappings,
+  and a file with more is refused.
+- A source names neither a `port` nor a `profile` yet: those come with controllers.
 
 ## Mapping mode
 
 - **Turning it on**: the **Map** button at the right of the title bar, or Ctrl+M
-  (`view.mappingMode`). It is the launch keys' mode (**Map keys** today), grown to every
-  mappable control. The button stays lit while the mode is on; Escape or Ctrl+M again leaves.
+  (`view.mappingMode`). It is the launch keys' mode, grown to every mappable control; today it
+  marks slots, scenes and stop buttons and learns keys
+  ([Launcher view › Launch keys](ui-session-view.md#launch-keys)). The button stays lit while the mode is on; Escape or Ctrl+M again leaves.
 - **What it shows**: every control in the window that has a mappable target (a fader, pan knob,
   mute, solo and arm button, a device's knobs, a clip slot, a scene's launch button, the play and
   stop buttons, the tempo) gets a tinted overlay; a control that is mapped shows the source in
@@ -285,8 +297,11 @@ become entries of this list when it is built
 | `mapping.learn` | transport | Waits up to 10 s for the next control moved and returns its source; makes no mapping |
 | `mapping.bankNext`, `mapping.bankPrevious` | transport | Move the bank of eight tracks |
 
-They replace `launcher.addMapping`, `launcher.removeMapping` and `launcher.mappings`, which are
-removed in the same change (*Launch keys*). `controllers.*` runs on `Projects`, like `audio.*`; agents over MCP may run all of them. Adding a
+`mapping.list`, `mapping.add` and `mapping.remove` are built for launch targets (#1162), and
+replace `launcher.addMapping`, `launcher.removeMapping` and `launcher.mappings`, which are gone
+(*Launch keys*). A target is an object, `{ "command", ...the parameters it fixes }`, and
+`mapping.list` gives each mapping its `index`, its `target` as `mapping.add` takes it and
+whether it is `broken`. `controllers.*` runs on `Projects`, like `audio.*`; agents over MCP may run all of them. Adding a
 mapping over MCP is the way an agent maps without a window.
 
 ## Feedback (later)

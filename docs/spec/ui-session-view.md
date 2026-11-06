@@ -258,20 +258,21 @@ scene can change it.
 ### Launch keys
 
 **Suhina:** a computer key can launch a slot, a scene or a track's stop button
-([clip launching](clip-launching.md#launching-from-keys-and-notes)). When controller mappings
-are built, this mode becomes their mapping mode and **Map keys** becomes **Map**
-([MIDI mapping › Mapping mode](midi-mapping.md#mapping-mode)); keys keep working as below.
+([clip launching](clip-launching.md#launching-from-keys-and-notes)), kept as one of the
+project's controller mappings. This mode is the controller mappings' mapping mode
+([MIDI mapping › Mapping mode](midi-mapping.md#mapping-mode)), which grows to knobs and faders
+when controllers are built; keys keep working as below.
 
-- **Mapping mode.** **Map keys** at the right end of the title bar, after the view names, or
-  Ctrl+M (`view.mappingMode`) turns it on and shows the Launcher view; **Map keys** is lit while
+- **Mapping mode.** **Map** at the right end of the title bar, after the view names, or
+  Ctrl+M (`view.mappingMode`) turns it on and shows the Launcher view; **Map** is lit while
   it is on.
   Every slot (empty ones too), scene launch button and track stop button gets a tint, and a
   control with keys mapped to it shows them in small text at its right edge (`Q`, `Note 36`).
   A click picks a control (an outline) and launches nothing; clicking it again drops it.
 - **Mapping a key.** With a control picked, the next key pressed without Ctrl, Alt, Shift or Cmd
-  is mapped to it (`launcher.addMapping`), one undo step; a key mapped elsewhere moves here.
-  Delete or Backspace removes the picked control's keys (`launcher.removeMapping`). Escape, Ctrl+M
-  or **Map keys** again leaves the mode; so does showing the Arrangement view. With nothing picked,
+  is mapped to it (`mapping.add`), one undo step; a key mapped elsewhere moves here.
+  Delete or Backspace removes the picked control's keys (`mapping.remove`). Escape, Ctrl+M
+  or **Map** again leaves the mode; so does showing the Arrangement view. With nothing picked,
   keys do what they always do.
 - **Playing.** Outside the mapping mode a mapped key going down is the press (`clip.launch`,
   `scene.launch`, `track.stop`) and going up the release (`clip.release`, for a clip in gate or

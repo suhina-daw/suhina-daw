@@ -1,6 +1,6 @@
 ---
 description: How launching clips and scenes behaves: quantisation, stop buttons, scene tempo, launched clip fades, follow actions, launch modes, legato, per-clip quantisation, launching from computer keys and MIDI notes, launcher over arrangement
-read_when: clip launching, scenes, launch quantisation, stop, launcher view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, launcher.addMapping
+read_when: clip launching, scenes, launch quantisation, stop, launcher view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, mapping.add
 type: spec
 status: current
 last_verified: 2026-11-06
@@ -232,12 +232,12 @@ settings ([Suhina format](suhina-format.md)).
 ## Launching from keys and notes
 
 A **mapping** makes a computer key or a MIDI note launch a slot, a scene or a track's stop
-button, the same way the mouse does. This is Suhina's own design. The general controller
-mappings of [ADR 0019](../decisions/0019-midi-controllers-and-mapping.md#amendment-launch-keys-are-controller-mappings-2026-11-02) (knobs, faders, profiles; planned) take these over when they are
-built: a launch key becomes a controller mapping with a launch command as its target, kept in
-`controller_mappings`, made in the same mapping mode and by `mapping.*` instead of the
-`launcher.*` commands below ([MIDI mapping › Launch keys](midi-mapping.md#launch-keys)). What
-a key or a note does stays as described here.
+button, the same way the mouse does. This is Suhina's own design. A launch key is a controller
+mapping ([ADR 0019](../decisions/0019-midi-controllers-and-mapping.md#amendment-launch-keys-are-controller-mappings-2026-11-02)):
+an entry of the project's `controller_mappings` with a launch command as its target, made in
+the mapping mode and by the `mapping.*` commands below
+([MIDI mapping › Launch keys](midi-mapping.md#launch-keys)). Knobs, faders and profiles are
+planned there; what a key or a note does stays as described here.
 
 1. **Sources.** A key by its name (`key:Q`, `key:1`, `key:Space`, `key:F5`), pressed without
    Ctrl, Alt, Shift or Cmd; or a MIDI note on a channel (`note:<channel 1-16>:<note 0-127>`,
@@ -250,7 +250,7 @@ a key or a note does stays as described here.
    the ones the mouse sends, with the same quantisation. **Suhina:** a held key that the system
    repeats is not pressed again; a toggle clip would otherwise start and stop.
 3. **Targets that are gone.** A mapping whose track was deleted (or whose track has no slots)
-   stays in the project and does nothing; `launcher.mappings` reports it as `broken`, and an undo
+   stays in the project and does nothing; `mapping.list` reports it as `broken`, and an undo
    that brings the track back makes it work again.
 4. **Where keys count.** In the window a mapped key wins over a shortcut on the same key only
    while the Launcher view is shown and nothing else has the keyboard
@@ -262,11 +262,15 @@ a key or a note does stays as described here.
    through the same lookup (`suhina_session::mapped_command`) as keys, and the window's mapping
    mode learns notes as it learns keys.
 
-**Commands.** `launcher.addMapping {source, target, track?, scene?}` (`target` slot, scene or
-stop; a slot needs `track` and `scene`, a scene `scene`, a stop button `track`) and
-`launcher.removeMapping {source}` or `{target, track?, scene?}` (every mapping of that target)
-are one undo step each; a project keeps at most 1024 mappings. `launcher.mappings` lists them.
-The project file keeps them under the launcher ([Suhina format](suhina-format.md)).
+**Commands.** `mapping.add {source, target}` maps a source to a target, `{ "command":
+"clip.launch", "track", "scene" }`, `{ "command": "scene.launch", "scene" }` or `{ "command":
+"track.stop", "track" }` (a track by id or name, a scene by its number from 0 or `{"id": n}`);
+`mapping.remove {index}`, `{source}` or `{target}` (every mapping of that target) removes; both
+are one undo step each, and a project keeps at most 1024 mappings. `mapping.list` lists them,
+each with its `index`, its target as `mapping.add` takes it, the scene's `scene_id`, the
+`release` command of a slot (`clip.release`) and whether it is `broken`. They replace
+`launcher.addMapping`, `launcher.removeMapping` and `launcher.mappings` (#1162). The project file
+keeps them in `controller_mappings` ([Suhina format](suhina-format.md)).
 
 ## Suhina decisions
 
