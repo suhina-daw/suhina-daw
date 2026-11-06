@@ -230,9 +230,11 @@ input or binding (a display or a curve that must not catch drags). Drawings of a
 widget are not resolved against the theme as widgets' are; they name the theme's palette as
 `[3, 1, 1]` text, `[3, 1, 2]` panel, `[3, 1, 3]` control, `[3, 1, 4]` border and `[3, 1, 5]`
 accent (any alpha). A drawing coloured `[3, 0, 1]` … `[3, 0, 6]` (any alpha) takes a theme token: `--device-display`
-(a display's dark ground, default `#0a1117`), `--device-series-1` … `3` (a device's series, such as
-its bands; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`) `--device-highlight` (`#ffcf7a`) and `--device-spectrum` (`#3fc4e4`), from
-the theme's CSS custom property of that name or the default. A token's colour keeps its own alpha,
+(a display's dark ground, default `#0a1117`) and `--device-series-1` … `5` (a device's series of
+colours, such as its bands or its operators; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`, `#ffcf7a`,
+`#3fc4e4`), from the custom property of that name as the panel's element sees it, or the default.
+A rule on `:root` or `.device-panel` sets a token for every device, one on `#device-<id>` (such as
+`#device-multiband`) for one; the panel works its tokens out once a frame, in its own scope. A token's colour keeps its own alpha,
 multiplied by the drawing's: a translucent theme colour stays translucent, and a drawing at half
 alpha shows it at half of that. A handle's optional `offset` moves its bounds along its travel, in canvas units, for a value that starts where another ends. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture A clicked handle takes the focus, and the arrow keys along its travel then move it 1 % of the way (0.1 % with Shift).
 `position`) draws a line where its parameter is, across its bounds (an X binding: a

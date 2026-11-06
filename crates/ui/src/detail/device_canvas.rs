@@ -1540,7 +1540,34 @@ fn plot_inside(points: &[(f32, f32)], top: f32, bottom: f32) -> Vec<Vec<(f32, f3
     lines
 }
 
-/// A drawing's colour: one of the SDK's theme tokens takes the theme's colour (or its default),
+/// The SDK's theme tokens (`--device-display`, `--device-series-1` …) as a panel's scope resolves
+/// them, each the theme's colour or the token's default; worked out once per panel and frame.
+struct Tokens([Color32; suhina_device_sdk::ui::THEME_TOKENS.len()]);
+impl Tokens {
+    /// The tokens of the style scope open now: a rule on `:root`, `.device-panel` or
+    /// `#device-<id>` reaches them.
+    fn resolve() -> Self {
+        let style = crate::kit::style_class::computed();
+        Self(suhina_device_sdk::ui::THEME_TOKENS.map(|(_, name, [r, g, b])| {
+            style
+                .as_ref()
+                .and_then(|s| s.variable(name))
+                .and_then(crate::kit::theme::parse_hex)
+                .unwrap_or(Color32::from_rgb(r, g, b))
+        }))
+    }
+    /// A drawing's colour: a token takes its colour, the palette's tokens the palette's (`color`).
+    fn color(&self, c: [u8; 4]) -> Color32 {
+        let [r, g, b, a] = c;
+        suhina_device_sdk::ui::THEME_TOKENS
+            .iter()
+            .zip(&self.0)
+            .find(|((rgb, ..), _)| *rgb == [r, g, b])
+            .map_or_else(|| color(c), |(_, base)| with_alpha(*base, a))
+    }
+}
+
+/// A colour of the SDK's palette: one of its theme tokens ([3, 1, k]) takes the theme's colour,
 /// its alpha times the drawing's, so a translucent theme colour stays translucent.
 fn color(c: [u8; 4]) -> Color32 {
     let [r, g, b, a] = c;
@@ -1554,14 +1581,6 @@ fn color(c: [u8; 4]) -> Color32 {
             4 => palette.border,
             _ => palette.accent,
         };
-        return with_alpha(base, a);
-    }
-    if let Some((_, property, default)) = suhina_device_sdk::ui::THEME_TOKENS.iter().find(|(rgb, ..)| *rgb == [r, g, b])
-    {
-        let base = crate::kit::style_class::property(property)
-            .as_deref()
-            .and_then(crate::kit::theme::parse_hex)
-            .unwrap_or(Color32::from_rgb(default[0], default[1], default[2]));
         return with_alpha(base, a);
     }
     Color32::from_rgba_unmultiplied(r, g, b, a)
@@ -1587,8 +1606,10 @@ fn paint_scaled(
     origin: Pos2,
     values: &Values,
     loaded: &Loaded,
+    tokens: &Tokens,
     scale: Vec2,
 ) {
+    let color = |c: [u8; 4]| tokens.color(c);
     let weight = scale.x.min(scale.y);
     let lookup = |id: &str, norm: bool, log: bool| values.read(id, norm, log);
     let value = |v: &UiValue| v.evaluate(&lookup);
@@ -1830,6 +1851,7 @@ fn paint_control(
     bounds: Rect,
     values: &Values,
     loaded: &Loaded,
+    tokens: &Tokens,
     response: Option<&egui::Response>,
     accent_on: bool,
 ) {
@@ -1926,7 +1948,7 @@ fn paint_control(
                 continue;
             }
         }
-        paint_scaled(painter, std::slice::from_ref(draw), origin, values, loaded, scale);
+        paint_scaled(painter, std::slice::from_ref(draw), origin, values, loaded, tokens, scale);
         if !knob_effects
             && matches!(draw, Draw::Circle { .. })
             && let Some((center, radius)) = circle
@@ -2095,11 +2117,12 @@ pub(crate) fn show(
     // a group (#672) is named by its last step.
     let device = at.0.last().copied().unwrap_or(0);
     let loaded = images(ui.ctx(), canvas);
+    let tokens = Tokens::resolve();
     let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
     let background = if canvas.background == DeviceUi::default().background {
         crate::kit::theme::palette().panel_background
     } else {
-        color(canvas.background)
+        tokens.color(canvas.background)
     };
     // A clear background (a header strip's) leaves what is under the canvas showing.
     if canvas.background[3] > 0 {
@@ -2116,7 +2139,7 @@ pub(crate) fn show(
     if canvas.animate_when.as_ref().is_some_and(|v| v.evaluate(&|id, norm, log| values.read(id, norm, log)) > 0.0) {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
     }
-    paint_scaled(&painter, &canvas.layers, rect.min, &values, &loaded, stretch);
+    paint_scaled(&painter, &canvas.layers, rect.min, &values, &loaded, &tokens, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;
     let stroke_id = ui.scope_id().with(("sd-draw", track.0, device));
@@ -2234,6 +2257,7 @@ pub(crate) fn show(
                 bounds,
                 &values,
                 &loaded,
+                &tokens,
                 Some(&response),
                 canvas.accent_on,
             );
@@ -2323,6 +2347,7 @@ pub(crate) fn show(
                 bounds,
                 &values,
                 &loaded,
+                &tokens,
                 Some(&response),
                 canvas.accent_on,
             );
@@ -2353,6 +2378,7 @@ pub(crate) fn show(
                 bounds,
                 &values,
                 &loaded,
+                &tokens,
                 Some(&response),
                 canvas.accent_on,
             );
@@ -2374,6 +2400,7 @@ pub(crate) fn show(
                 bounds,
                 &values,
                 &loaded,
+                &tokens,
                 Some(&response),
                 canvas.accent_on,
             );
@@ -2406,6 +2433,7 @@ pub(crate) fn show(
                 bounds,
                 &values,
                 &loaded,
+                &tokens,
                 None,
                 canvas.accent_on,
             );
@@ -2490,6 +2518,7 @@ pub(crate) fn show(
             bounds,
             &values,
             &loaded,
+            &tokens,
             Some(&response),
             canvas.accent_on,
         );

@@ -59,6 +59,8 @@ pub struct Computed {
     /// `accent-color`: a control's accent, such as a knob's arc.
     pub accent: Color32,
     pub authored: Authored,
+    /// Every custom property the element sees, resolved (`--device-series-1`).
+    variables: Arc<std::collections::BTreeMap<String, String>>,
     gradients: Arc<[paint::Gradient]>,
     shadows: Arc<[shadows::Shadow]>,
     text_shadows: Arc<[text::Shadow]>,
@@ -66,6 +68,11 @@ pub struct Computed {
     animations: Arc<[(Animation, Arc<Frames>)]>,
 }
 impl Computed {
+    /// The custom property `name` (with its `--`) as the element sees it.
+    pub fn variable(&self, name: &str) -> Option<&str> {
+        self.variables.get(name).map(String::as_str)
+    }
+
     pub fn has_gradient(&self) -> bool {
         !self.gradients.is_empty()
     }

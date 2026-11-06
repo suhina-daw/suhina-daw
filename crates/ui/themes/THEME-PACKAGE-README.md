@@ -165,6 +165,16 @@ of a device panel is `#its-id`, for example:
 .device-panel .knob:hover { color: #ffffff; }
 ```
 
+Built-in devices that draw displays (the FM synth, Multiband) take five more colours as custom
+properties: `--device-display`, a display's dark ground, and `--device-series-1` to
+`--device-series-5`, a device's series of colours (bands, operators, a gain line, a spectrum).
+Set them on `:root` or `.device-panel` for every device, or on `#device-<id>` for one:
+
+```css
+:root { --device-display: #101418; }
+#device-multiband { --device-series-1: #ff6b6b; --device-series-2: #ffd93d; }
+```
+
 ## How and when to edit each file
 
 1. Duplicate a bundled theme in the editor or start with the supplied example.

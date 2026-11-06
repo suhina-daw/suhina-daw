@@ -331,6 +331,7 @@ pub(super) fn computed(style: &ComputedStyle) -> Computed {
             accent: style.authored(Property::AccentColor),
             border_width: style.authored(Property::BorderWidth),
         },
+        variables: style.shared_variables(),
         gradients: match style.get(Property::BackgroundImage) {
             Value::Gradients(values) => values
                 .iter()
