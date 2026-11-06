@@ -167,6 +167,17 @@ pub(crate) fn macos_binary(macos: &Path, stem: &OsStr) -> Option<PathBuf> {
     files.into_iter().next()
 }
 
+/// The factory the loaded module hands over, as [`ModuleFile::open`]'s tails need it:
+/// the two calls the module's required entry asks for, same on every system.
+fn factory_from_library(library: &libloading::Library) -> Result<ComPtr<IPluginFactory>, String> {
+    // SAFETY: `GetPluginFactory` is the module's required entry: no arguments, returning an
+    // owned reference to its factory.
+    let get = unsafe { library.get::<extern "system" fn() -> *mut IPluginFactory>(b"GetPluginFactory\0") }
+        .map_err(|_| "the file has no GetPluginFactory; not a VST3 plug-in")?;
+    // SAFETY: the pointer is the factory reference the module handed over (or null).
+    unsafe { ComPtr::from_raw(get()) }.ok_or_else(|| "the plug-in has no factory".into())
+}
+
 impl ModuleFile {
     fn open(path: &Path) -> Result<Self, String> {
         // `bundleEntry` (macOS): the counterpart of `InitDll` on Windows and `ModuleEntry`
@@ -215,26 +226,49 @@ impl ModuleFile {
             }
         }
         // `bundleEntry` (macOS): called after the library is loaded, with the handle the
-        // bundle's `CFBundle` carries, and read one.
+        // bundle's `CFBundle` carries, and read one. Whether the module's entry ran and
+        // read it is what its error paths' clean-ups wait on: a module that exports
+        // `bundleExit` only is entered nowhere, and its counterpart is nobody's to call.
         #[cfg(target_os = "macos")]
-        {
+        let bundle_entry_ran = {
             let handle = bundle.as_ref().map_or(std::ptr::null_mut(), |bundle| bundle.handle());
             // SAFETY: `bundleEntry` takes the bundle's handle, live for the whole call
             // and beyond (held on the module as its `_bundle`), and answers whether it
             // read one.
             let entry = unsafe { library.get::<extern "system" fn(*mut c_void) -> bool>(b"bundleEntry\0") };
-            if let Ok(entry) = entry
-                && !entry(handle)
-            {
-                return Err("the plug-in's bundleEntry failed".into());
+            match entry {
+                Ok(entry) if entry(handle) => true,
+                Ok(_) => return Err("the plug-in's bundleEntry failed".into()),
+                Err(_) => false,
             }
-        }
-        // SAFETY: `GetPluginFactory` is the module's required entry: no arguments, returning an
-        // owned reference to its factory.
-        let get = unsafe { library.get::<extern "system" fn() -> *mut IPluginFactory>(b"GetPluginFactory\0") }
-            .map_err(|_| "the file has no GetPluginFactory; not a VST3 plug-in")?;
-        // SAFETY: the pointer is the factory reference the module handed over (or null).
-        let factory = unsafe { ComPtr::from_raw(get()) }.ok_or("the plug-in has no factory")?;
+        };
+        // The factory: the module's required entry ([`factory_from_library`]), and,
+        // where the module's entry ran on this system, its exit in front of the error:
+        // the unload a `library` drop does on the way out comes too late for anyone
+        // left to run it, which is how [`Drop for ModuleFile`][Drop] handles it.
+        let factory = factory_from_library(&library);
+        #[cfg(not(target_os = "macos"))]
+        let factory = factory?;
+        #[cfg(target_os = "macos")]
+        let factory = match factory {
+            Ok(factory) => factory,
+            Err(why) => {
+                // Where the module's entry ran ([`bundleEntry`]), its counterpart runs
+                // before the unload a plain `library` drop would do on the way out, the
+                // way [`Drop for ModuleFile`][Drop] runs it for the factory that got
+                // made; entry-less modules get none.
+                if bundle_entry_ran {
+                    // SAFETY: `bundleExit` is the optional counterpart of `bundleEntry`,
+                    // searched only where the module may export it; its answer, as in
+                    // [`Drop`][Drop]'s run of it, tells the caller nothing.
+                    let exit = unsafe { library.get::<extern "system" fn() -> bool>(b"bundleExit\0") };
+                    if let Ok(exit) = exit {
+                        exit();
+                    }
+                }
+                return Err(why);
+            }
+        };
         Ok(Self {
             #[cfg(target_os = "macos")]
             _bundle: bundle,
