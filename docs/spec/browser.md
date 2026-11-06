@@ -472,7 +472,7 @@ where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no tr
 Tags have a name and a colour. There are seven at first: Red, Orange, Yellow, Green, Blue,
 Purple and Grey; a right-click on a tag's dot in the footer renames it (a field, Enter; clicks
 inside that menu do not close it),
-recolours it (the swatches of the track colour palette, [components](../design/components.md#colour-palette), or a colour button for any colour) or removes it; new ones are added from a row's Tag menu, up to 64
+recolours it (the swatches of the track colour palette, [components](../design/components.md#colour-palette), or Select colour…, which opens the theme editor's picker in the menu itself) or removes it; new ones are added from a row's Tag menu, up to 64
 (Settings › Browser › Tag limit raises it, at most 1024). Any item can carry any
 number of tags; a tag is a 6 px dot after the name. Hovering a dot — the footer's or an item
 row's — says the tag's name: as a tooltip, and in the status bar (the footer's dot adds how
@@ -491,7 +491,9 @@ As
 any chosen place, the row shows a **×** that lets the place go. While items are dragged, a tag
 row lights up under the pointer and the drop tags every dragged item with the tag (folders and
 headings left out); the drag stops the preview as any drop does not. The row's right-click
-menu renames (typed in; the place and the footer's filter follow the new name), recolours, and
+menu renames (typed in; the place and the footer's filter follow the new name), recolours —
+the palette's swatches, or **Select colour…**, which opens the theme editor's picker in the
+menu itself, where a picker of its own would end the menu as a click outside it does —, and
 removes the tag — the first click on Remove asks, saying how many items carry it, and **Keep**
 stands it down; a second click removes the tag from the list and from every item carrying it.
 The footer's dots stay as they are (#1196): where the section reaches a tag's items as a

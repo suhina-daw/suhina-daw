@@ -7,7 +7,7 @@
 //! is the `track.setColor` command, one undo step.
 
 use crate::kit::surface::Backgrounds as _;
-use egui::{Color32, Id, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{Color32, Id, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::{Rgb, TrackId};
 
@@ -58,13 +58,10 @@ pub fn set_colour(track: TrackId, colour: Rgb) -> Action {
     Action::new("track.setColor", json!({ "track": track.0, "color": hex(colour) }))
 }
 
-/// The palette as a row of swatches, `current` outlined, and after it "+" for any colour: a
-/// colour field and hue strip as the theme editor's, the colour taken when the button is let
-/// go. Gives the colour picked. Each swatch is a button named "Colour #rrggbb".
-pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
+/// The palette's swatches in one row, `current` outlined: the swatch clicked, if any. Each
+/// swatch is a button named "Colour #rrggbb".
+fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
     let mut picked = None;
-    let any_id = ui.scope_id().with("any-colour");
-    let mut any_open = ui.data(|d| d.get_temp::<bool>(any_id)).unwrap_or(false);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(SWATCH_GAP);
         for colour in swatches() {
@@ -81,40 +78,96 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
                 picked = Some(colour);
             }
         }
-        // "+": any colour.
-        let (rect, response) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::click());
-        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, any_open, "Any colour"));
-        let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        ui.painter().fill_background(rect, 0.0, fill);
-        widgets::text_in(
-            ui.painter(),
-            rect,
-            egui::Align2::CENTER_CENTER,
-            "+",
-            theme::ui_font(theme::TEXT_SMALL),
-            theme::text_primary(),
-        );
-        if response.clicked() {
-            any_open = !any_open;
-        }
     });
+    picked
+}
+
+/// The palette as a row of swatches, `current` outlined, and after it "+" for any colour: a
+/// colour field and hue strip as the theme editor's, the colour taken when the button is let
+/// go. Gives the colour picked. Each swatch is a button named "Colour #rrggbb".
+pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
+    let mut picked = swatch_strip(ui, current);
+    let any_id = ui.scope_id().with("any-colour");
+    let mut any_open = ui.data(|d| d.get_temp::<bool>(any_id)).unwrap_or(false);
+    // "+": any colour.
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, any_open, "Any colour"));
+    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+    ui.painter().fill_background(rect, 0.0, fill);
+    widgets::text_in(
+        ui.painter(),
+        rect,
+        egui::Align2::CENTER_CENTER,
+        "+",
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_primary(),
+    );
+    if response.clicked() {
+        any_open = !any_open;
+    }
     if any_open {
-        let value_id = any_id.with("value");
-        let start = current.map_or(Color32::GRAY, color32);
-        let mut value = ui.data(|d| d.get_temp::<Color32>(value_id)).unwrap_or(start);
-        let changed = egui::color_picker::color_picker_color32(ui, &mut value, egui::color_picker::Alpha::Opaque);
-        ui.data_mut(|d| d.insert_temp(value_id, value));
-        // Taken when the drag in the field ends, so one pick is one undo step.
-        if (changed || ui.data(|d| d.get_temp::<bool>(value_id.with("moved"))).unwrap_or(false))
-            && ui.input(|i| i.pointer.any_released())
-        {
-            ui.data_mut(|d| d.remove::<bool>(value_id.with("moved")));
-            picked = Some(to_rgb(value));
-        } else if changed {
-            ui.data_mut(|d| d.insert_temp(value_id.with("moved"), true));
-        }
+        picked = stepped_color_field(ui, any_id.with("value"), current.map_or(Color32::GRAY, color32)).or(picked);
     }
     ui.data_mut(|d| d.insert_temp(any_id, any_open));
+    picked
+}
+
+/// The colour field: `value` follows the field as it is dragged and is kept in `id` between
+/// frames, and the colour is given when a drag in it ends — so one pick is one step, one undo
+/// of what the caller records it as. Swatch_row's "+" and the browser's Select colour rows
+/// share it.
+pub fn stepped_color_field(ui: &mut Ui, id: Id, start: Color32) -> Option<Rgb> {
+    let mut value = ui.data(|d| d.get_temp::<Color32>(id)).unwrap_or(start);
+    let changed = egui::color_picker::color_picker_color32(ui, &mut value, egui::color_picker::Alpha::Opaque);
+    ui.data_mut(|d| d.insert_temp(id, value));
+    // Taken when the drag in the field ends, so one pick is one undo step.
+    if (changed || ui.data(|d| d.get_temp::<bool>(id.with("moved"))).unwrap_or(false))
+        && ui.input(|i| i.pointer.any_released())
+    {
+        ui.data_mut(|d| d.remove::<bool>(id.with("moved")));
+        Some(to_rgb(value))
+    } else {
+        if changed {
+            ui.data_mut(|d| d.insert_temp(id.with("moved"), true));
+        }
+        None
+    }
+}
+
+/// The palette's swatches and a `{label}` press for the theme editor's picker, opened right
+/// here, where a picker of its own would end the menu it sits in as a click outside it does.
+/// The press carries a square of the current colour, as the tag editor's colour button does,
+/// and reads `{label}…` while the field is open. Gives the colour picked — a swatch clicked,
+/// or the field's drag ended. `id` keeps one row's own picker state between frames.
+pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str) -> Option<Rgb> {
+    let mut picked = swatch_strip(ui, current);
+    let mut open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    let text = if open { format!("{label}…") } else { label.to_string() };
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width().max(120.0), SWATCH + 8.0), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text.clone()));
+    let fill = widgets::hover(ui, &response);
+    if fill > 0.0 {
+        ui.painter().rect_filled(rect, 3.0, theme::panel_hover().gamma_multiply(fill));
+    }
+    let square =
+        Rect::from_center_size(Pos2::new(rect.left() + 6.0 + SWATCH / 2.0, rect.center().y), Vec2::splat(SWATCH));
+    ui.painter().rect_filled(square, 2.0, current.map_or(Color32::GRAY, color32));
+    ui.painter().rect_stroke(square, 2.0, Stroke::new(0.5, theme::border()), StrokeKind::Inside);
+    ui.painter().text(
+        Pos2::new(square.right() + 5.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        &text,
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_secondary(),
+    );
+    if response.clicked() {
+        open = !open;
+    }
+    if open {
+        picked = stepped_color_field(ui, id.with("value"), current.map_or(Color32::GRAY, color32)).or(picked);
+    }
+    ui.data_mut(|d| d.insert_temp(id, open));
     picked
 }
 

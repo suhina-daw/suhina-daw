@@ -812,14 +812,16 @@ fn sidebar_view(
                 ui.close();
             }
             let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
-            if let Some(picked) = crate::interaction::colour_picker::swatch_row(ui, current) {
+            // Select colour: the palette's swatches and the theme editor's picker, opened in
+            // the menu (a picker of its own would end the menu as a click outside it does),
+            // the colour one command a pick.
+            if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
+                ui,
+                Id::unique(("browser-tag-colour", &tag.name)),
+                current,
+                "Select colour",
+            ) {
                 let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
-                run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
-            }
-            let mut color = tag_color(&tag.color);
-            if egui::color_picker::color_edit_button_srgba(ui, &mut color, egui::color_picker::Alpha::Opaque).changed()
-            {
-                let hex = format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
                 run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
             }
             let armed = state.tag_remove_confirm.as_deref() == Some(tag.name.as_str());
@@ -2159,17 +2161,19 @@ fn footer_view(
             }
             // The palette track colours take, then any colour.
             let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
-            if let Some(picked) = crate::interaction::colour_picker::swatch_row(ui, current) {
+            // Select colour: the palette's swatches and the theme editor's picker, opened in
+            // the menu (a picker of its own would end the menu as a click outside it does),
+            // the colour one command a pick.
+            if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
+                ui,
+                Id::unique(("browser-tag-colour", &tag.name)),
+                current,
+                "Select colour",
+            ) {
                 let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
                 run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
             }
-            let mut color = tag_color(&tag.color);
-            if egui::color_picker::color_edit_button_srgba(ui, &mut color, egui::color_picker::Alpha::Opaque).changed()
-            {
-                let [r, g, b, _] = color.to_srgba_unmultiplied();
-                let hex = format!("#{r:02X}{g:02X}{b:02X}");
-                run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
-            }
+
             if ui.button("Remove tag").clicked() {
                 if run(projects, "library.removeTag", json!({ "name": tag.name }), out) {
                     state.tag_filter.retain(|t| *t != tag.name);

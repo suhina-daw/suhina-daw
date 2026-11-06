@@ -1589,6 +1589,46 @@ fn the_tags_section_renames_and_removes_a_tag_asking_first() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// The tag's right-click menu recolours it like the tag editor does: a palette swatch, or the
+/// theme editor's picker opened in the menu by Select colour, where a picker of its own would
+/// end the menu as a click outside it does (#1196).
+#[test]
+fn the_tags_right_menu_selects_a_colour() {
+    let (settings, folder) = (temp("tags-colour-settings"), temp("tags-colour"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let item = folder.join("Loop 120bpm.wav").display().to_string();
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.tag", &json!({ "item": item.clone(), "tag": "Red", "on": true }))
+        .unwrap();
+    harness.run();
+    // The menu lists the palette's swatches and Select colour; the picker comes when pressed.
+    harness.get_by_label("Place Tag Red").click_secondary();
+    harness.run();
+    assert!(harness.query_by_label("Select colour").is_some(), "the menu offers it");
+    harness.get_by_label("Select colour").click();
+    harness.run();
+    assert!(harness.query_by_label("Select colour…").is_some(), "the picker opened in the menu");
+    // A palette swatch recolours the tag, in one command, and the menu stays open.
+    let colour = suhina_ui::interaction::colour_picker::swatches()[3];
+    harness.get_by_label(&format!("Colour {}", suhina_ui::interaction::colour_picker::hex(colour))).click();
+    harness.run();
+    let first = harness.state_mut().projects_mut().file_library_mut().tags().swap_remove(0);
+    assert_eq!(
+        (first.name, first.color),
+        ("Red".to_string(), theme::hex(suhina_ui::interaction::colour_picker::color32(colour)))
+    );
+    assert!(harness.query_by_label("Select colour…").is_some(), "the picker stays for a second look");
+    // A second press closes it again.
+    harness.get_by_label("Select colour…").click();
+    harness.run();
+    assert!(harness.query_by_label("Select colour…").is_none());
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 /// Ctrl-click on a tag adds it to the place's tags and takes it off again: the list shows
 /// the items carrying any of them (#1196).
 #[test]
