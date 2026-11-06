@@ -21,11 +21,17 @@ fn percent(params: &Value) -> Result<Option<f64>, CommandError> {
     Ok(Some((amount / 100.0).clamp(*SWING_RANGE.start(), *SWING_RANGE.end())))
 }
 
+/// A fraction of 1 as the percent a result says, rid of the float's last-digit noise
+/// (0.55 × 100 is 55.000000000000014).
+fn as_percent(fraction: f64) -> f64 {
+    (fraction * 100.0 * 1e6).round() / 1e6
+}
+
 /// `transport.setSwing`: the project's swing, which every MIDI clip without its own plays with.
 pub(crate) fn set_project_swing(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let amount = percent(params)?.ok_or("give amount, 0 to 100 percent")?;
     session.project.transport.swing = amount;
-    Ok(json!({ "amount": amount * 100.0 }))
+    Ok(json!({ "amount": as_percent(amount) }))
 }
 
 /// `clip.setSwing`: a MIDI clip's own swing (`amount`, which makes the clip play it), or, with
@@ -59,8 +65,8 @@ pub(crate) fn set_clip_swing(session: &mut Session, params: &Value) -> Result<Va
         clip.swing.own = !global;
     }
     Ok(json!({
-        "amount": clip.swing.amount * 100.0,
+        "amount": as_percent(clip.swing.amount),
         "global": !clip.swing.own,
-        "plays": clip.swing.effective(global_swing) * 100.0,
+        "plays": as_percent(clip.swing.effective(global_swing)),
     }))
 }
