@@ -2569,3 +2569,39 @@ fn parts_of_two_midi_takes_show_no_crossfade() {
     harness.run();
     assert!(harness.query_by_label("Crossfade end on Drums").is_none());
 }
+
+/// Several selected tracks go as one undo step, from Delete and from the track menu: one Ctrl+Z
+/// brings them all back, one Ctrl+Shift+Z deletes them again (#1188).
+#[test]
+fn deleting_several_tracks_is_one_undo_step() {
+    let gone = ["Drums", "Bass", "Keys"];
+    let has = |h: &Harness<'static, App>, name: &str| names(h).iter().any(|n| n == name);
+    let select = |h: &mut Harness<'static, App>| {
+        h.get_by_label("Track Drums").click();
+        h.run();
+        h.get_by_label("Track Bass").click_modifiers(Modifiers::COMMAND);
+        h.run();
+        h.get_by_label("Track Keys").click_modifiers(Modifiers::COMMAND);
+        h.run();
+    };
+    for menu in [false, true] {
+        let mut harness = arrangement_app();
+        let before = names(&harness);
+        select(&mut harness);
+        if menu {
+            harness.get_by_label("Track Bass").click_secondary();
+            harness.run();
+            harness.get_by_label("Delete track").click();
+        } else {
+            harness.key_press(Key::Delete);
+        }
+        harness.run();
+        assert!(gone.iter().all(|n| !has(&harness, n)), "menu {menu}: {:?}", names(&harness));
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run();
+        assert_eq!(names(&harness), before, "menu {menu}: one undo brings all three back in their places");
+        harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+        harness.run();
+        assert!(gone.iter().all(|n| !has(&harness, n)), "menu {menu}: one redo deletes them again");
+    }
+}

@@ -1552,3 +1552,41 @@ fn a_scene_without_an_id_reports_no_id_rather_than_zero() {
     let scene = &grid["scenes"][grid["scenes"].as_array().unwrap().len() - 1];
     assert!(scene["scene_id"].is_null() && scene["id"].is_null(), "{scene}");
 }
+
+/// `track.delete` with `tracks` deletes several tracks as one undo step: one undo brings them all
+/// back in their places, one redo deletes them again (#1188).
+#[test]
+fn several_tracks_delete_as_one_undo_step() {
+    let built = suhina_test_support::with_ids(
+        ProjectBuilder::new()
+            .midi_track(1, "Bass")
+            .midi_track(2, "Lead")
+            .midi_track(3, "Keys")
+            .notes(1, "Riff", 4.0, vec![Note::new(0.0, 1.0, 36, 1.0)])
+            .clip(2, Clip::new(ContentId(1), 0.0, 4.0))
+            .build_without_ids(),
+    );
+    let mut session = Session::new(built.clone());
+    let deleted = run(&mut session, "track.delete", json!({ "tracks": ["Bass", 2] })).unwrap();
+    assert_eq!(deleted["deleted"], json!([1, 2]));
+    assert_eq!(order(&session), ["Keys"]);
+    assert_eq!(session.project().validate(), Ok(()));
+
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &built, "one undo brings both back, Lead's clip too");
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert_eq!(order(&session), ["Keys"], "one redo deletes both again");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+
+    for wrong in [
+        json!({ "track": "Bass", "tracks": ["Lead"] }),
+        json!({}),
+        json!({ "tracks": [] }),
+        json!({ "tracks": "Bass" }),
+        json!({ "tracks": ["Bass", "Nope"] }),
+        json!({ "tracks": [99] }),
+    ] {
+        assert!(run(&mut session, "track.delete", wrong.clone()).is_err(), "{wrong}");
+        assert_eq!(session.project(), &built, "{wrong} changes nothing");
+    }
+}

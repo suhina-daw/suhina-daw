@@ -355,8 +355,10 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         }
         ui.separator();
     }
+    // On a selected track it deletes the selection, as Cut does, in one undo step (#1188).
     if ui.button("Delete track").clicked() {
-        actions.push(Action::new("track.delete", json!({ "track": track })));
+        let tracks: Vec<u32> = if selected { menu.selection.iter().map(|t| t.0).collect() } else { vec![track] };
+        actions.push(Action::new("track.delete", json!({ "tracks": tracks })));
         ui.close();
     }
 }
