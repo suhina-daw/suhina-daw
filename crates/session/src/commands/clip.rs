@@ -512,6 +512,26 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "clip.setSwing",
+        label: "Set a MIDI clip's own swing, which it then plays instead of the project's, or make it follow the project's swing again (it keeps its own amount for later); only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            optional("amount", ParamType::Number, "the clip's own swing in percent, 0 to 100; the clip then plays it"),
+            optional(
+                "global",
+                ParamType::Bool,
+                "true: the clip follows the project's swing; false: it plays its own amount again",
+            ),
+            CONTINUE,
+        ],
+        kind: CommandKind::Edit,
+        run: crate::swing::set_clip_swing,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "clip.findTempo",
         label: "What each source says an audio clip's tempo is (its file's metadata, its file's name, detection in its sound; null where one finds nothing), and the tempo the clip has now with its source",
         params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],

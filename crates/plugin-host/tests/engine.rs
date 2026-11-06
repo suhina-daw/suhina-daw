@@ -145,6 +145,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
                     color: None,
                     ara: false,
                     audio: Default::default(),
+                    swing: Default::default(),
                     extensions: Extensions::default(),
                 }],
             }],

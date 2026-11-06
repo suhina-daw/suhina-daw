@@ -78,6 +78,7 @@ fn clip(start: f64, length: f64) -> Clip {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
     }
 }
@@ -1209,4 +1210,28 @@ fn a_stretched_clip_starts_each_loop_pass_as_cleanly_as_the_first() {
         }
         assert_eq!(renderer.stretch_underruns(), 0, "{mode:?}");
     }
+}
+
+/// Swing delays the second sixteenth of each eighth on every pass of a loop and leaves the eighths
+/// where they are; a note's end moves with the same warp (#1221).
+#[test]
+fn swing_moves_the_second_sixteenth_of_every_pass() {
+    let notes = vec![Note::new(0.0, 0.25, 60, 1.0), Note::new(0.25, 0.25, 62, 1.0)];
+    let lane = ContentLane { target: None, data: LaneData::Notes(notes) };
+    let mut placed = clip(0.0, 1.0);
+    placed.loop_range = Some(LoopRange { start: 0.0, end: 0.5 });
+    // 120 BPM at 48 kHz: 24 000 frames a beat.
+    let map = Transport::default().tempo_map(48_000.0);
+    let events = |swing: f64| {
+        let mut events = Vec::new();
+        collect_notes(&placed, &lane, &map, (TrackId(1), 1.0, 1.0, 0, 0, 0), None, swing, &mut events);
+        let mut spans: Vec<(u64, u64)> = events.iter().map(|e| (e.start, e.end)).collect();
+        spans.sort_unstable();
+        spans
+    };
+    assert_eq!(events(0.0), [(0, 6_000), (6_000, 12_000), (12_000, 18_000), (18_000, 24_000)]);
+    // Full swing: the second sixteenth on the eighth-note triplet, a third of a beat in.
+    assert_eq!(events(1.0), [(0, 8_000), (8_000, 12_000), (12_000, 20_000), (20_000, 24_000)]);
+    // Half way.
+    assert_eq!(events(0.5)[1], (7_000, 12_000));
 }

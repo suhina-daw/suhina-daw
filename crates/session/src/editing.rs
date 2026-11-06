@@ -190,6 +190,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Default::default(),
     };
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;

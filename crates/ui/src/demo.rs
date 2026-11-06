@@ -174,6 +174,7 @@ fn clip_of(content: ContentId) -> Clip {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
     }
 }

@@ -37,6 +37,7 @@ pub(super) fn clip(content: u32, length: f64, looping: bool) -> Clip {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
     }
 }

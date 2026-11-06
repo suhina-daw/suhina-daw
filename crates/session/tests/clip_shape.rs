@@ -30,6 +30,7 @@ fn clip(content: u32, start: f64) -> Clip {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     }

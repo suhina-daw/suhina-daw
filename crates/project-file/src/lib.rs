@@ -23,14 +23,14 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
     Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, CLIP_GAIN_MAX_DB,
-    Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ContentId, ContentKinds, ContentLane,
-    Device, DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction,
-    FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData, LaneId, LaunchMapping, LaunchMode,
+    Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ClipSwing, ContentId, ContentKinds,
+    ContentLane, Device, DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape,
+    FollowAction, FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData, LaneId, LaunchMapping, LaunchMode,
     LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_GAIN_POINTS,
     MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping, MappedDevice, MappingSource,
-    MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene, SceneId, Send,
-    Slot, StretchMode, TakeLane, TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track, TrackId,
-    Transport, WarpMarker, automation, max_clip_gain, valid_bpm,
+    MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, SWING_RANGE, Scale, ScaleMode, Scene,
+    SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track,
+    TrackId, Transport, WarpMarker, automation, max_clip_gain, valid_bpm,
 };
 
 /// The file extension, without the dot.
@@ -41,7 +41,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 8;
+pub const VERSION: u64 = 9;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -213,6 +213,10 @@ fn project_value(p: &Project) -> Value {
         "tempo_bpm": number(p.transport.tempo_bpm),
         "time_signature": [p.transport.time_signature.numerator, p.transport.time_signature.denominator],
     });
+    // Left out when the project does not swing (#1221, version 9).
+    if p.transport.swing != 0.0 {
+        transport["swing"] = json!(number(p.transport.swing));
+    }
     // Left out when there is no loop region, so such a project is written as before.
     if let Some(range) = p.transport.loop_range {
         transport["loop"] =
@@ -650,6 +654,10 @@ fn clip_value(c: &Clip) -> Value {
         if c.audio != ClipAudio::default() {
             map.insert("audio".into(), clip_audio_value(&c.audio));
         }
+        // Only a clip whose swing is not the starting one carries it (#1221, version 9).
+        if !c.swing.is_default() {
+            map.insert("swing".into(), json!({ "amount": number(c.swing.amount), "own": c.swing.own }));
+        }
         with_extensions(map, &c.extensions);
     }
     out
@@ -918,6 +926,10 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                     (Some(range), flag(l, "enabled", false, at)?)
                 }
             };
+            let swing = float_or(t, "swing", 0.0, "project.transport")?;
+            if !SWING_RANGE.contains(&swing) {
+                return Err(format!("project.transport.swing: {swing} is not 0 to 1").into());
+            }
             Transport {
                 tempo_bpm: tempo,
                 time_signature: signature,
@@ -925,6 +937,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 loop_enabled,
                 tempo_changes: tempo_changes(t)?,
                 time_signature_changes: time_signature_changes(t)?,
+                swing,
             }
         }
     };
@@ -1582,8 +1595,26 @@ fn read_clip(value: &Value, at: &str, legacy: &Legacy) -> Result<Clip, ProjectFi
         color: read_color(c.get("color"), at)?,
         ara: flag(c, "ara", false, at)?,
         audio,
+        swing: read_swing(c, at)?,
         extensions: extensions(c, at)?,
     })
+}
+
+/// A clip's `swing` (version 9 on): `{ amount, own }`, the amount 0 to 1; missing or `null` is the
+/// starting one, following the project's swing.
+fn read_swing(c: &Obj, at: &str) -> Result<ClipSwing, ProjectFileError> {
+    match c.get("swing") {
+        None | Some(Value::Null) => Ok(ClipSwing::default()),
+        Some(v) => {
+            let at = format!("{at}.swing");
+            let s = object(v, &at)?;
+            let amount = float_or(s, "amount", 0.0, &at)?;
+            if !SWING_RANGE.contains(&amount) {
+                return Err(format!("{at}.amount: {amount} is not 0 to 1").into());
+            }
+            Ok(ClipSwing { amount, own: flag(s, "own", false, &at)? })
+        }
+    }
 }
 
 /// A `color` field, `#RRGGBB`; missing or null is none.

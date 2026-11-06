@@ -866,6 +866,7 @@ impl Reader {
             color: None,
             ara: false,
             audio,
+            swing: Default::default(),
             extensions: Extensions::default(),
         })
     }

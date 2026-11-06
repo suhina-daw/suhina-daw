@@ -51,6 +51,7 @@ mod sends;
 mod soundmap;
 mod stems;
 mod support;
+mod swing;
 mod temp_dir;
 mod tempo;
 mod track_copy;

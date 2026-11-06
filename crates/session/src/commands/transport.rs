@@ -7,6 +7,25 @@ use super::*;
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
+        id: "transport.setSwing",
+        label: "Set the project's swing: every MIDI clip that has no swing of its own delays every second sixteenth of each eighth by it when it plays; the notes do not move",
+        params: &[
+            param(
+                "amount",
+                ParamType::Number,
+                "percent, 0 to 100: 0 is straight, 100 puts the second sixteenth on the eighth-note triplet",
+            ),
+            optional(
+                "continue",
+                ParamType::Bool,
+                "true adds the change to the undo step of the previous transport.setSwing, when no other edit came between (one drag, one step)",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::swing::set_project_swing,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "transport.setTempo",
         label: "Set the project tempo",
         params: &[

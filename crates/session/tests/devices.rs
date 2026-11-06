@@ -1168,6 +1168,7 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
             color: None,
             ara: false,
             audio: Default::default(),
+            swing: Default::default(),
             extensions: Default::default(),
         }],
     });

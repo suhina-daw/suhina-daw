@@ -83,6 +83,7 @@ fn project_built() -> Project {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
     };
     let slot = |clip: Option<Clip>, has_stop: bool| Slot { clip, has_stop };
@@ -534,6 +535,7 @@ fn playing_with_clips() -> (Session, Renderer) {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     };
