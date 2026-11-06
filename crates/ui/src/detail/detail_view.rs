@@ -12,7 +12,7 @@
 
 use egui::{Align2, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
-use suhina_engine::model::{DeviceKind, LaneData, Note, Project, TrackId};
+use suhina_engine::model::{DeviceKind, LaneData, Meter, Note, Project, TrackId};
 use suhina_session::{Placement, PluginReport, PluginStatus};
 
 use crate::interaction::grid::gain_to_db;
@@ -266,6 +266,16 @@ pub fn bar_beats(project: &Project) -> f64 {
     if ts.denominator == 0 { 4.0 } else { f64::from(ts.numerator.max(1)) * 4.0 / f64::from(ts.denominator) }
 }
 
+/// A song position as the column writes it, `bar.beat` counted from one, with the bars of the
+/// project's meter, so it reads the bar the ruler shows after a time-signature change.
+pub fn song_position(beat: f64, meter: &Meter) -> String {
+    if !beat.is_finite() {
+        return "-".into();
+    }
+    let here = meter.position(beat.max(0.0));
+    format!("{}.{}", u64::from(here.bar) + 1, (beat.max(0.0) - here.bar_start).max(0.0).floor() as u64 + 1)
+}
+
 /// A position as the column writes it: `bar.beat`, counted from one for a position and from zero
 /// for a length.
 pub fn bars_beats(beats: f64, bar_beats: f64, from_one: u64) -> String {
@@ -309,6 +319,7 @@ pub fn build_with(
     plugins: &mut dyn FnMut(TrackId, usize) -> Option<PluginReport>,
 ) -> Detail {
     let bar = bar_beats(project);
+    let meter = project.transport.meter();
     let track_name =
         |id: TrackId| project.tracks.iter().find(|t| t.id == id).map(|t| t.name.clone()).unwrap_or_default();
     let found = clip.and_then(|clip| match clip {
@@ -349,7 +360,7 @@ pub fn build_with(
             Box::new(ClipInfo {
                 name: content.map(|c| c.name.clone()).unwrap_or_default(),
                 track: track_name(id),
-                start: scene.map_or_else(|| bars_beats(placed.start, bar, 1), |s| (s + 1).to_string()),
+                start: scene.map_or_else(|| song_position(placed.start, &meter), |s| (s + 1).to_string()),
                 scene: scene.is_some(),
                 length: bars_beats(placed.length, bar, 0),
                 looping: placed.loop_range.is_some(),
@@ -1328,6 +1339,19 @@ mod tests {
         assert_eq!((info.name.as_str(), info.start.as_str(), info.length.as_str()), ("Beat B", "17.1", "12.0"));
         assert!(info.looping && !info.audio && !info.scene);
         assert_eq!(info.notes, 4);
+    }
+
+    #[test]
+    fn a_clips_start_counts_bars_through_the_time_signature_changes() {
+        // Eight bars of 4/4 (32 beats), then 3/4: beat 64 is beat 3 of bar 19, not bar 17.
+        let mut project = demo_project();
+        project.transport.time_signature_changes = vec![suhina_engine::model::TimeSignatureChange {
+            bar: 8,
+            time_signature: suhina_engine::model::TimeSignature { numerator: 3, denominator: 4 },
+        }];
+        let detail = build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), 1)));
+        let Detail::Clip(info, _) = detail else { panic!("expected the clip") };
+        assert_eq!(info.start, "19.3");
     }
 
     #[test]

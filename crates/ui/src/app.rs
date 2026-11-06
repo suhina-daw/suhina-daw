@@ -3574,7 +3574,8 @@ impl App {
                 }
             }
             DropTarget::Lane { track, beat } => {
-                let bar = (beat / self.bar_beats()).floor() as u64 + 1;
+                let bar = self.session().map_or(0, |s| s.project().transport.meter().position(beat.max(0.0)).bar);
+                let bar = u64::from(bar) + 1;
                 Some(format!("Copy {clip} to {}, bar {bar}", name(track)))
             }
             _ => None,
@@ -3591,14 +3592,6 @@ impl App {
         self.session()
             .and_then(|s| s.project().tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()))
             .unwrap_or_else(|| track.0.to_string())
-    }
-
-    /// Beats in a bar of the shown project, 4 when it has no usable time signature.
-    fn bar_beats(&self) -> f64 {
-        self.session().map_or(4.0, |s| {
-            let ts = s.project().transport.time_signature;
-            if ts.denominator == 0 { 4.0 } else { f64::from(ts.numerator.max(1)) * 4.0 / f64::from(ts.denominator) }
-        })
     }
 
     /// Puts a copy of the carried clip on `target`: `clip.copy` from where it came, then
