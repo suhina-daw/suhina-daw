@@ -40,14 +40,17 @@ gain envelope, and #1190 for a clip panel whose controls change one clip.
    its state; there is no make-unique step and no linked audio copy. The content can still be
    shared (a duplicate and its original, a take and its comped part), which keeps comping's
    take-by-content rule (#989) and costs nothing.
-3. **The envelope is dB offsets on the content's beats.** A point is `{beat, db}`: a beat of the
+3. **The envelope is dB offsets on the content's beats.** A point is `{beat, db, curve}`: a beat of the
    content, as a warp marker's, and an offset from the clip's gain, −70 dB to +24 dB. An empty
    envelope is flat at the gain, so the fader moves the whole envelope. On the content's beats a
    loop plays the same stretch of envelope on every pass, a split clip's parts each keep theirs,
    a moved start marker reads it from there, and a stretch scales it with the markers.
-4. **Straight lines in dB.** Between two points the level moves linearly in dB, so a fade drawn
-   with two points sounds even; linear in amplitude was rejected, as its ramps sound sudden at
-   the quiet end. Before the first point and after the last the level holds; two points on one
+4. **Straight lines in dB, bent as automation bends.** Between two points the level moves
+   linearly in dB, so a fade drawn with two points sounds even; linear in amplitude was rejected,
+   as its ramps sound sudden at the quiet end. A point's `curve` bends the segment to the next
+   point the way an automation segment bends (`automation::Curve`, `docs/spec/automation.md` ›
+   Lanes and points): the share of the way in dB follows the curve, so one shape and one drag
+   work the same on a lane and on a clip. Before the first point and after the last the level holds; two points on one
    beat make a step.
 5. **One engine path.** The envelope is part of the clip's `Fades`: worked out off the audio
    thread when the graph is built (its points sorted and clamped, how a frame since the clip's

@@ -475,7 +475,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setEnvelope",
-        label: "Set an audio clip's gain envelope (an arrangement clip, or the clip in a track's slot by scene): points of a content beat and an offset in dB from the clip's gain, straight in dB between them; an empty list clears it. Only that clip changes",
+        label: "Set an audio clip's gain envelope (an arrangement clip, or the clip in a track's slot by scene): points of a content beat and an offset in dB from the clip's gain, straight in dB between them or along each point's curve; an empty list clears it. Only that clip changes",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -485,6 +485,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "points",
                 ParamType::Numbers,
                 "the points as pairs, a beat of the content (from 0) and then dB from the clip's gain (-70 to +24): [0, 0, 4, -12] falls 12 dB over the first four beats; two points on one beat make a step",
+            ),
+            optional(
+                "curves",
+                ParamType::Curves,
+                "each point's curve to the next, in the order of points, as automation.movePoint's curve: a bend from -1 to 1 or [x1, y1, x2, y2] each from -0.5 to 1.5; null or missing for straight",
             ),
         ],
         kind: CommandKind::EDIT,

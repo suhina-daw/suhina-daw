@@ -124,7 +124,8 @@ remembers which (`docs/spec/browser.md` › Warping).
 
 A clip's gain envelope shapes its level over time: points of a beat of the clip's content and an
 offset in dB from the clip's gain, −70 dB to +24 dB ([ADR 0035](../decisions/0035-clip-gain-envelope.md)).
-Between points it is straight in dB; before the first point and after the last it holds their
+Between points it is straight in dB, or bent along the first point's curve as an automation
+segment bends ([automation](automation.md) › Lanes and points); before the first point and after the last it holds their
 values; a clip with no points plays at its gain. The fader moves the whole envelope with it. Two
 points on one beat make a step. The fades multiply on top.
 
@@ -161,6 +162,10 @@ switch; the same again closes it. While it is open:
   kept between its neighbours. Within 5 points of the middle it goes to 0 dB itself, the sample's
   own level. Shift moves it a tenth as much and off both grids. Its value shows beside the pointer
   while the button is down ("−3 dB");
+- the **round handle** half-way along a sloping segment (one at least 28 points wide) bends it when
+  dragged up or down, as an automation lane's does, and a double-click on it straightens it; Alt
+  and a drag of the body bend the segment under the pointer the same way. A point added on a bent
+  segment cuts its curve in two, so the line keeps its shape (`Curve::split`);
 - **Free move**, a button under the name, lets points move freely, in time and to a tenth of a dB,
   instead of on the grids; Settings › Envelope points move says which it starts as;
 - while a clip's edge is dragged, its envelope is drawn with its waveform: a looping clip dragged
@@ -187,7 +192,7 @@ column (#1190). The panel now keeps its controls 6 points apart, with their name
   `detected`, `manual`; manual by default).
 - `clip.findTempo {…}`: `{metadata, name, detected, found, bpm, source}`, nulls where a source
   finds nothing. Changes nothing.
-- `clip.setEnvelope {…, points}`: the envelope as pairs, `[beat, dB, beat, dB, …]`; `[]` clears it.
+- `clip.setEnvelope {…, points, curves?}`: the envelope as pairs, `[beat, dB, beat, dB, …]`; `[]` clears it. `curves` gives each point its curve to the next, in the order of `points`: a bend from -1 to 1 or `[x1, y1, x2, y2]`, `null` for straight.
 
 Every one changes only the clip it names and is one undo step.
 

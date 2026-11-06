@@ -12,8 +12,9 @@
 //! double-click on a point or Delete over it removes it; each is one `clip.setEnvelope`. The
 //! waveform is drawn through the envelope, so it shows what is heard as a point is dragged.
 
-use egui::{Id, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use serde_json::json;
+use suhina_engine::model::automation::{Curve, CurveDrag};
 use suhina_engine::model::{ClipId, GAIN_POINT_RANGE, GainPoint, db_to_gain, envelope_db_at};
 
 use super::timeline::AudioView;
@@ -21,7 +22,7 @@ use crate::kit::theme;
 use crate::kit::widgets::Action;
 
 /// The side of a point's square, and of the area that takes the pointer around it.
-const POINT: f32 = 6.0;
+const POINT: f32 = 8.0;
 const POINT_HIT: f32 = 11.0;
 /// Most passes of a loop whose points are drawn; a long loop of a short stretch would draw
 /// thousands of squares nobody can tell apart.
@@ -32,6 +33,12 @@ const STEP: f32 = 2.0;
 const GRID_GAP: f32 = 5.0;
 /// How near 0 dB, in points, a dragged point is pulled onto it.
 const ZERO_PULL: f32 = 5.0;
+/// The bend handle half-way along a segment, as an automation lane's: its radius, and the
+/// narrowest segment, in points, that has one.
+const CURVE_HANDLE: f32 = 3.5;
+const CURVE_HANDLE_MIN: f32 = 28.0;
+/// Points of drag for one step of a curve drag, as on an automation lane.
+const POINTS_PER_STEP: f32 = 1.5;
 /// The side of the buttons on the clip: Edit gain envelope by the name, Free move under it.
 pub const BUTTON: f32 = 14.0;
 
@@ -217,6 +224,21 @@ fn draft_key() -> Id {
     Id::unique("clip-envelope-draft")
 }
 
+/// A segment's curve being dragged (its bend handle, or Alt and a drag of the body), as on an
+/// automation lane (`docs/spec/automation.md` › Dragging a curve): the segment's first point,
+/// the drag's paths and how far it has moved.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CurveEdit {
+    clip: ClipId,
+    index: usize,
+    paths: CurveDrag,
+    moved: f32,
+}
+
+fn curve_key() -> Id {
+    Id::unique("clip-envelope-curve")
+}
+
 fn draft(ctx: &egui::Context, clip: ClipId) -> Option<Draft> {
     ctx.data(|d| d.get_temp::<Draft>(draft_key())).filter(|d| d.clip == clip)
 }
@@ -238,7 +260,35 @@ fn flat(points: &[GainPoint]) -> Vec<f64> {
 }
 
 fn set(clip: ClipId, points: &[GainPoint]) -> Action {
-    Action::new("clip.setEnvelope", json!({ "clip": clip.0, "points": flat(points) }))
+    // Each point's curve, null for a straight one.
+    let curves: Vec<serde_json::Value> = points
+        .iter()
+        .map(|p| if p.curve.is_straight() { serde_json::Value::Null } else { json!(p.curve.to_array()) })
+        .collect();
+    let mut params = json!({ "clip": clip.0, "points": flat(points) });
+    if curves.iter().any(|c| !c.is_null()) {
+        params["curves"] = json!(curves);
+    }
+    Action::new("clip.setEnvelope", params)
+}
+
+/// `points` with a point at `beat` and `db` put in beat order; a bent segment it lands on is cut
+/// there so its two halves keep the curve's shape (`Curve::split`). Returns the points and the
+/// new one's index.
+fn with_point(points: &[GainPoint], beat: f64, db: f64) -> (Vec<GainPoint>, usize) {
+    let mut more = points.to_vec();
+    let at = more.partition_point(|p| p.beat <= beat);
+    let mut point = GainPoint::new(beat, db);
+    if let (Some(k), Some(next)) = (at.checked_sub(1), more.get(at).copied())
+        && let Some(prev) = more.get_mut(k)
+        && next.beat > prev.beat
+        && let Some(split) = prev.curve.split((beat - prev.beat) / (next.beat - prev.beat))
+    {
+        prev.curve = split.before;
+        point.curve = split.after;
+    }
+    more.insert(at, point);
+    (more, at)
 }
 
 /// The dB a point dragged to `pointer` gets, `before` being where it was: on the grid (or free),
@@ -265,6 +315,9 @@ pub struct Place {
     pub rect: Rect,
     pub origin: f32,
     pub beat_width: f32,
+    /// The ink that reads on the clip's colour, as its name has: white on most, black on a
+    /// light one. The line and the points are drawn in it.
+    pub ink: egui::Color32,
 }
 
 /// Draws `view`'s envelope over the clip at `place`. While `edit` is on, the dB grid shows, the
@@ -284,7 +337,7 @@ pub fn show(
     snap: &dyn Fn(f64) -> f64,
     actions: &mut Vec<Action>,
 ) {
-    let Place { rect, origin, beat_width } = place;
+    let Place { rect, origin, beat_width, ink: line_ink } = place;
     let length = f64::from((rect.right() - origin) / beat_width.max(1e-3));
     if rect.width() <= 1.0 || rect.height() <= 4.0 || length <= 0.0 {
         return;
@@ -305,6 +358,9 @@ pub fn show(
         if free { elapsed } else { snap(elapsed).clamp(0.0, length) }
     };
     let ink = theme::accent();
+    // Over a halo of the other of black and white, so they read on the waveform too.
+    let light = line_ink.r() as u16 + line_ink.g() as u16 + line_ink.b() as u16 > 3 * 128;
+    let halo = if light { egui::Color32::from_black_alpha(150) } else { egui::Color32::from_white_alpha(150) };
     let visible = painter.clip_rect().intersect(rect);
 
     if edit {
@@ -318,28 +374,28 @@ pub fn show(
         x += STEP;
     }
     if line.len() >= 2 {
-        let width = if edit { 1.5 } else { 1.0 };
-        let stroke = if edit { ink } else { ink.gamma_multiply(0.7) };
+        let width = if edit { 2.5 } else { 2.0 };
+        let stroke = if edit { line_ink } else { line_ink.gamma_multiply(0.85) };
+        painter.add(egui::Shape::line(line.clone(), Stroke::new(width + 2.5, halo)));
         painter.add(egui::Shape::line(line, Stroke::new(width, stroke)));
     }
     if !edit {
         return;
     }
 
-    // The body: a click adds a point, a drag adds one and moves it.
+    // The body: a click adds a point, a drag adds one and moves it; with Alt a drag bends the
+    // segment under the pointer, as on an automation lane.
     let body = ui
         .interact(visible, Id::unique(("clip-envelope-body", clip.0)), Sense::click_and_drag())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     body.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Gain envelope of {name}")));
+    let alt = ui.input(|i| i.modifiers.alt);
     let add_at = |pointer: Pos2| {
         let beat = mapping.content(placed_at(pointer.x));
-        let db = dragged_db(ui, rect, pointer, 0.0, top);
-        let mut more = points.clone();
-        let at = more.partition_point(|p| p.beat <= beat);
-        more.insert(at, GainPoint { beat, db });
-        (more, at)
+        with_point(&points, beat, dragged_db(ui, rect, pointer, 0.0, top))
     };
     if body.clicked()
+        && !alt
         && let Some(pointer) = body.interact_pointer_pos()
     {
         actions.push(set(clip, &add_at(pointer).0));
@@ -348,12 +404,73 @@ pub fn show(
     if body.drag_started_by(egui::PointerButton::Primary)
         && let Some(pointer) = body.interact_pointer_pos()
     {
-        let (more, index) = add_at(pointer);
-        ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: more }));
+        if alt {
+            let beat = mapping.content(elapsed_at(pointer.x));
+            let segment = points.partition_point(|p| p.beat <= beat).checked_sub(1).filter(|i| i + 1 < points.len());
+            if let Some(index) = segment {
+                start_curve(ui, clip, index, &points);
+            }
+        } else {
+            let (more, index) = add_at(pointer);
+            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: more }));
+        }
     }
     let mut dragging = None;
     if body.dragged_by(egui::PointerButton::Primary) {
-        dragging = draft(ui.ctx(), clip).map(|d| d.index);
+        if curve_edit(ui.ctx(), clip).is_some() {
+            drag_curve(ui, clip, body.drag_delta().y);
+        } else {
+            dragging = draft(ui.ctx(), clip).map(|d| d.index);
+        }
+    }
+
+    // The bend handles, half-way along each sloping segment wide enough, on every pass: a drag
+    // bends it, a double-click straightens it.
+    for (index, pair) in points.windows(2).enumerate() {
+        let [a, b] = pair else { continue };
+        if a.db == b.db || b.beat <= a.beat {
+            continue;
+        }
+        let span = (b.beat - a.beat) / mapping.rate;
+        for (pass, at) in mapping.places(a.beat, length).into_iter().enumerate() {
+            let (xa, xb) = (x_of(at), x_of(at + span));
+            if xb - xa < CURVE_HANDLE_MIN || xb < visible.left() || xa > visible.right() {
+                continue;
+            }
+            let mid = (a.beat + b.beat) / 2.0;
+            let center = Pos2::new((xa + xb) / 2.0, y_of(rect, envelope_db_at(&points, mid), top));
+            let hit = Rect::from_center_size(center, Vec2::splat(POINT_HIT)).intersect(visible);
+            if hit.width() <= 0.0 || hit.height() <= 0.0 {
+                continue;
+            }
+            let id = Id::unique(("clip-envelope-curve", clip.0, index, pass));
+            let response =
+                ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Envelope curve {} of {name}", index + 1))
+            });
+            if response.double_clicked() {
+                let mut straight = points.clone();
+                if let Some(p) = straight.get_mut(index) {
+                    p.curve = Curve::STRAIGHT;
+                }
+                ui.data_mut(|d| {
+                    d.remove::<Draft>(draft_key());
+                    d.remove::<CurveEdit>(curve_key());
+                });
+                actions.push(set(clip, &straight));
+                return;
+            }
+            if response.drag_started_by(egui::PointerButton::Primary) {
+                start_curve(ui, clip, index, &points);
+            }
+            if response.dragged_by(egui::PointerButton::Primary) {
+                drag_curve(ui, clip, response.drag_delta().y);
+            }
+            let hover = if response.hovered() || response.dragged() { 1.5 } else { 0.0 };
+            painter.circle_filled(center, CURVE_HANDLE + hover + 1.5, halo);
+            painter.circle_filled(center, CURVE_HANDLE + hover, line_ink);
+        }
     }
 
     // The points, on every pass they play.
@@ -380,8 +497,8 @@ pub fn show(
             });
             let hovered = response.hovered() || response.dragged() || dragging == Some(index);
             let square = Rect::from_center_size(center, Vec2::splat(if hovered { POINT + 2.0 } else { POINT }));
-            painter.rect_filled(square, 0.0, if hovered { ink } else { theme::panel_background() });
-            painter.rect_stroke(square, 0.0, Stroke::new(1.0, ink), StrokeKind::Inside);
+            painter.rect_filled(square.expand(1.5), 1.0, halo);
+            painter.rect_filled(square, 0.0, if hovered { ink } else { line_ink });
             let delete_key = response.hovered() && ui.input(|i| i.key_pressed(egui::Key::Delete));
             if response.double_clicked() || delete_key {
                 removed = Some(index);
@@ -400,7 +517,7 @@ pub fn show(
     if let (Some(index), Some(pointer)) = (dragging, ui.input(|i| i.pointer.latest_pos()))
         && let Some(mut moved) = draft(ui.ctx(), clip).map(|d| d.points)
     {
-        let before = moved.get(index).copied().unwrap_or(GainPoint { beat: 0.0, db: 0.0 });
+        let before = moved.get(index).copied().unwrap_or(GainPoint::new(0.0, 0.0));
         let fine = ui.input(|i| i.modifiers.shift);
         let target = mapping.content(placed_at(pointer.x));
         let beat = if fine { before.beat + (target - before.beat) * 0.1 } else { target };
@@ -422,13 +539,18 @@ pub fn show(
         .gap(12.0)
         .show(|ui| ui.add(egui::Label::new(db_text(db)).wrap_mode(egui::TextWrapMode::Extend)));
     }
-    // Once the button is up, what the point moved to is set, and the draft goes: also for a drag
-    // whose point stopped being drawn (its pass moved past the clip's end).
+    // Once the button is up, what the point or the curve moved to is set, and the draft goes:
+    // also for a drag whose point stopped being drawn (its pass moved past the clip's end).
     if let Some(done) = draft(ui.ctx(), clip)
         && !ui.input(|i| i.pointer.any_down())
     {
-        ui.data_mut(|d| d.remove::<Draft>(draft_key()));
-        actions.push(set(clip, &done.points));
+        ui.data_mut(|d| {
+            d.remove::<Draft>(draft_key());
+            d.remove::<CurveEdit>(curve_key());
+        });
+        if done.points != view.envelope {
+            actions.push(set(clip, &done.points));
+        }
     }
     if let Some(index) = removed {
         let mut kept = points;
@@ -438,6 +560,42 @@ pub fn show(
         ui.data_mut(|d| d.remove::<Draft>(draft_key()));
         actions.push(set(clip, &kept));
     }
+}
+
+fn curve_edit(ctx: &egui::Context, clip: ClipId) -> Option<CurveEdit> {
+    ctx.data(|d| d.get_temp::<CurveEdit>(curve_key())).filter(|c| c.clip == clip)
+}
+
+/// Starts a drag of the curve of the segment from point `index`, the envelope `points` as it is.
+fn start_curve(ui: &Ui, clip: ClipId, index: usize, points: &[GainPoint]) {
+    let curve = points.get(index).map_or(Curve::STRAIGHT, |p| p.curve);
+    let paths = CurveDrag::new(&curve);
+    let mut drafted = points.to_vec();
+    if let Some(p) = drafted.get_mut(index) {
+        p.curve = paths.dragged(0);
+    }
+    ui.data_mut(|d| {
+        d.insert_temp(curve_key(), CurveEdit { clip, index, paths, moved: 0.0 });
+        d.insert_temp(draft_key(), Draft { clip, index, points: drafted });
+    });
+}
+
+/// Moves the curve being dragged by `dy` points of the pointer: up bends the line up, which moves
+/// a rising segment's curve earlier and a falling one's later.
+fn drag_curve(ui: &Ui, clip: ClipId, dy: f32) {
+    let (Some(mut edit), Some(mut drafted)) = (curve_edit(ui.ctx(), clip), draft(ui.ctx(), clip)) else { return };
+    let rising = match (drafted.points.get(edit.index), drafted.points.get(edit.index + 1)) {
+        (Some(a), Some(b)) => b.db >= a.db,
+        _ => true,
+    };
+    edit.moved += if rising { dy } else { -dy };
+    if let Some(p) = drafted.points.get_mut(edit.index) {
+        p.curve = edit.paths.dragged((edit.moved / POINTS_PER_STEP).round() as i32);
+    }
+    ui.data_mut(|d| {
+        d.insert_temp(curve_key(), edit);
+        d.insert_temp(draft_key(), drafted);
+    });
 }
 
 /// A point's value as it is shown: "+1.5 dB", "0 dB", "−6 dB".
@@ -560,7 +718,7 @@ mod tests {
 
     #[test]
     fn the_scale_reaches_a_point_above_the_ceiling() {
-        let points = [GainPoint { beat: 0.0, db: 12.0 }];
+        let points = [GainPoint::new(0.0, 12.0)];
         assert_eq!(top(6.0, &points), 12.0);
         assert_eq!(top(6.0, &[]), 6.0);
         assert_eq!(top(24.0, &points), 24.0);
@@ -574,6 +732,20 @@ mod tests {
         assert_eq!(db_text(-3.0), "\u{2212}3 dB");
         assert_eq!(db_text(1.5), "+1.5 dB");
         assert_eq!(db_text(0.04), "0 dB");
+    }
+
+    #[test]
+    fn a_point_added_on_a_bent_segment_keeps_its_shape() {
+        let first = GainPoint { curve: Curve::bend(0.8), ..GainPoint::new(0.0, 0.0) };
+        let points = [first, GainPoint::new(4.0, -12.0)];
+        let (more, at) = with_point(&points, 1.0, envelope_db_at(&points, 1.0));
+        assert_eq!(at, 1);
+        for beat in [0.5, 1.5, 3.0] {
+            assert!((envelope_db_at(&more, beat) - envelope_db_at(&points, beat)).abs() < 1e-6, "{beat}");
+        }
+        let action = set(ClipId(1), &more);
+        assert_eq!(action.params["curves"].as_array().map(Vec::len), Some(3));
+        assert!(set(ClipId(1), &[GainPoint::new(0.0, 0.0)]).params.get("curves").is_none(), "straight: none sent");
     }
 
     #[test]

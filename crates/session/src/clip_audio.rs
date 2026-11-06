@@ -38,8 +38,15 @@ pub(crate) fn set_envelope(session: &mut Session, params: &Value) -> Result<Valu
         return Err(format!("an envelope has at most {MAX_GAIN_POINTS} points").into());
     }
     let (low, high) = (*GAIN_POINT_RANGE.start(), *GAIN_POINT_RANGE.end());
+    // Each point's curve to the next, as automation's: a bend from -1 to 1 or four numbers;
+    // missing or null for a straight one.
+    let curves = match Args::new(params).value("curves") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(list)) if list.len() <= values.len() / 2 => list.clone(),
+        Some(_) => return Err("curves must be a list with at most one curve for each point".into()),
+    };
     let mut points = Vec::with_capacity(values.len() / 2);
-    for [beat, db] in values.as_chunks::<2>().0 {
+    for (index, [beat, db]) in values.as_chunks::<2>().0.iter().enumerate() {
         let (Some(beat), Some(db)) = (beat.as_f64(), db.as_f64()) else {
             return Err("points must be numbers".into());
         };
@@ -51,7 +58,11 @@ pub(crate) fn set_envelope(session: &mut Session, params: &Value) -> Result<Valu
         if !(db.is_finite() && (low..=high).contains(&db)) {
             return Err(format!("a point's dB must be from {low} to +{high}, got {db}").into());
         }
-        points.push(GainPoint { beat, db });
+        let curve = match curves.get(index) {
+            None | Some(Value::Null) => None,
+            Some(curve) => crate::automation::curve(&json!({ "curve": curve }))?,
+        };
+        points.push(GainPoint { beat, db, curve: curve.unwrap_or_default() });
     }
     // In beat order; points on one beat keep the order they were given in, so a step can be made.
     points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
@@ -59,7 +70,8 @@ pub(crate) fn set_envelope(session: &mut Session, params: &Value) -> Result<Valu
     let clip = clip_mut(&mut session.project, at).ok_or("the clip is missing")?;
     clip.audio.gain_envelope = points;
     let listed: Vec<f64> = clip.audio.gain_envelope.iter().flat_map(|p| [p.beat, p.db]).collect();
-    Ok(json!({ "clip": clip.id.0, "points": listed }))
+    let curves: Vec<[f64; 4]> = clip.audio.gain_envelope.iter().map(|p| p.curve.to_array()).collect();
+    Ok(json!({ "clip": clip.id.0, "points": listed, "curves": curves }))
 }
 
 /// A tempo source by the name the commands use.

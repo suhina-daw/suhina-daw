@@ -584,7 +584,16 @@ fn clip_audio_value(a: &ClipAudio) -> Value {
     });
     if let Some(map) = out.as_object_mut() {
         if !a.gain_envelope.is_empty() {
-            let points = a.gain_envelope.iter().map(|p| json!({ "beat": number(p.beat), "db": number(p.db) }));
+            let points = a.gain_envelope.iter().map(|p| {
+                let mut point = json!({ "beat": number(p.beat), "db": number(p.db) });
+                // A bent segment's curve, as an automation point's.
+                if !p.curve.is_straight()
+                    && let Some(map) = point.as_object_mut()
+                {
+                    map.insert("curve".into(), json!(p.curve.to_array().map(number)));
+                }
+                point
+            });
             map.insert("gain_envelope".into(), Value::Array(points.collect()));
         }
         if let Some(source) = a.tempo_source {
@@ -1493,7 +1502,7 @@ fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, Projec
             let (low, high) = (GAIN_POINT_RANGE.start(), GAIN_POINT_RANGE.end());
             return Err(format!("{at}.db: {db} is outside {low} to +{high} dB").into());
         }
-        gain_envelope.push(GainPoint { beat: float(p, "beat", &at)?, db });
+        gain_envelope.push(GainPoint { beat: float(p, "beat", &at)?, db, curve: read_curve(p, &at)? });
     }
     if gain_envelope.len() > MAX_GAIN_POINTS {
         return Err(format!("{at}.gain_envelope: more than {MAX_GAIN_POINTS} points").into());

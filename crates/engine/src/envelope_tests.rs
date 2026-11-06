@@ -27,7 +27,7 @@ fn constant() -> AudioPool {
 }
 
 fn points(list: &[(f64, f64)]) -> Vec<GainPoint> {
-    list.iter().map(|&(beat, db)| GainPoint { beat, db }).collect()
+    list.iter().map(|&(beat, db)| GainPoint::new(beat, db)).collect()
 }
 
 /// A 4-beat unwarped clip of the constant with `envelope` and `gain`, rendered offline in blocks of

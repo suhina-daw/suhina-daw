@@ -237,9 +237,9 @@ fn everything() -> Project {
                             gain: 0.8,
                             transpose: -1.5,
                             gain_envelope: vec![
-                                GainPoint { beat: 0.0, db: 0.0 },
-                                GainPoint { beat: 4.0, db: -12.5 },
-                                GainPoint { beat: 4.0, db: 3.0 },
+                                GainPoint { curve: Curve::bend(0.5), ..GainPoint::new(0.0, 0.0) },
+                                GainPoint::new(4.0, -12.5),
+                                GainPoint::new(4.0, 3.0),
                             ],
                             tempo_source: Some(TempoSource::Name),
                         },
@@ -1527,13 +1527,13 @@ fn two_clips_of_one_audio_content_keep_their_own_state() {
     second.id = ClipId::NONE;
     second.start = 32.0;
     second.audio.gain = 0.25;
-    second.audio.gain_envelope = vec![GainPoint { beat: 1.0, db: -6.0 }];
+    second.audio.gain_envelope = vec![GainPoint::new(1.0, -6.0)];
     lane.clips.push(second);
     project.assign_ids().unwrap();
     let again = from_json(&to_json(&project)).expect("it reads back");
     let clips = &again.arrangement.lanes[1].clips;
     assert_eq!((clips[0].audio.gain, clips[1].audio.gain), (0.8, 0.25));
-    assert_eq!(clips[1].audio.gain_envelope, vec![GainPoint { beat: 1.0, db: -6.0 }]);
+    assert_eq!(clips[1].audio.gain_envelope, vec![GainPoint::new(1.0, -6.0)]);
     assert_eq!(clips[0].audio.gain_envelope.len(), 3);
 }
 

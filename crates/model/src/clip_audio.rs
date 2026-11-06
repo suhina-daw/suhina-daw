@@ -71,6 +71,16 @@ pub struct GainPoint {
     pub beat: f64,
     /// Offset from the clip's gain in dB, within [`GAIN_POINT_RANGE`]; 0 follows the gain.
     pub db: f64,
+    /// The shape of the segment from this point to the next, as an automation segment's
+    /// ([`crate::automation::Curve`]): straight in dB by default.
+    pub curve: crate::automation::Curve,
+}
+
+impl GainPoint {
+    /// A point at content beat `beat`, `db` from the clip's gain, straight to the next.
+    pub fn new(beat: f64, db: f64) -> Self {
+        Self { beat, db, curve: crate::automation::Curve::STRAIGHT }
+    }
 }
 
 /// Where a clip's tempo came from (#824, `docs/spec/clip-panel.md` › Tempo).
@@ -113,7 +123,11 @@ impl ClipAudio {
             .gain_envelope
             .iter()
             .filter(|p| p.beat.is_finite() && p.db.is_finite())
-            .map(|p| GainPoint { beat: p.beat, db: p.db.clamp(*GAIN_POINT_RANGE.start(), *GAIN_POINT_RANGE.end()) })
+            .map(|p| GainPoint {
+                db: p.db.clamp(*GAIN_POINT_RANGE.start(), *GAIN_POINT_RANGE.end()),
+                curve: p.curve.held(),
+                ..*p
+            })
             .take(MAX_GAIN_POINTS)
             .collect();
         points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
@@ -165,7 +179,13 @@ pub fn envelope_db_at(points: &[GainPoint], beat: f64) -> f64 {
         (Some(prev), Some(next)) => {
             // Halved, so points far apart cannot overflow the span to infinity.
             let span = next.beat / 2.0 - prev.beat / 2.0;
-            if span <= 0.0 { next.db } else { prev.db + (beat / 2.0 - prev.beat / 2.0) / span * (next.db - prev.db) }
+            if span <= 0.0 {
+                next.db
+            } else {
+                // Along the first point's curve, in dB.
+                let t = (beat / 2.0 - prev.beat / 2.0) / span;
+                prev.db + prev.curve.shape(t) * (next.db - prev.db)
+            }
         }
     }
 }
@@ -196,7 +216,7 @@ mod tests {
     use super::*;
 
     fn point(beat: f64, db: f64) -> GainPoint {
-        GainPoint { beat, db }
+        GainPoint::new(beat, db)
     }
 
     #[test]
@@ -273,5 +293,17 @@ mod tests {
         for source in TempoSource::ALL {
             assert_eq!(TempoSource::from_name(source.name()), Some(source));
         }
+    }
+
+    #[test]
+    fn a_bent_segment_follows_its_curve_in_db() {
+        let mut first = point(0.0, 0.0);
+        first.curve = crate::automation::Curve::bend(1.0);
+        let points = [first, point(4.0, -12.0)];
+        let half = envelope_db_at(&points, 2.0);
+        // Bent up toward the second point's level: past half of the way at half of the time.
+        assert!(half < -6.0 && half > -12.0, "{half}");
+        assert_eq!(envelope_db_at(&points, 0.0), 0.0);
+        assert_eq!(envelope_db_at(&points, 4.0), -12.0);
     }
 }

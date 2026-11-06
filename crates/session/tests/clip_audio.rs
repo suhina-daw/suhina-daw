@@ -234,3 +234,25 @@ fn a_longer_tempo_never_removes_the_next_clip() {
     assert_eq!(b.start, 4.0, "the next clip is still there");
     assert_eq!(a.audio.tempo(), Some(240.0));
 }
+
+/// `clip.setEnvelope` takes each point's curve, as automation does: a bend or four numbers, null
+/// for straight; a bad one is refused.
+#[test]
+fn an_envelope_takes_curves_between_its_points() {
+    let dir = TempDir::new("clip-audio-curves");
+    let mut session = two_clips(&wav(&dir, "hit.wav", 2.0, 0.5));
+    let clip = clips(&session)[0].id.0;
+    run(
+        &mut session,
+        "clip.setEnvelope",
+        json!({ "clip": clip, "points": [0.0, 0.0, 4.0, -12.0], "curves": [0.5, null] }),
+    )
+    .unwrap();
+    let points = clips(&session)[0].audio.gain_envelope.clone();
+    assert_eq!(points[0].curve, suhina_engine::model::automation::Curve::bend(0.5));
+    assert!(points[1].curve.is_straight());
+    let bad = json!({ "clip": clip, "points": [0.0, 0.0, 4.0, -12.0], "curves": [7.0] });
+    assert!(run(&mut session, "clip.setEnvelope", bad).is_err());
+    let too_many = json!({ "clip": clip, "points": [0.0, 0.0], "curves": [0.5, 0.5] });
+    assert!(run(&mut session, "clip.setEnvelope", too_many).is_err());
+}

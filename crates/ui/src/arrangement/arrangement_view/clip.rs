@@ -1013,6 +1013,8 @@ pub(super) fn clip_box<'a>(
         );
     };
     let mut envelope_place = None;
+    // The envelope's ink: what reads on the clip's colour, as its name does.
+    let envelope_ink = ink_on(motion::mix(theme::panel_background(), rgb(clip.color), 0.82));
     let result = match state.clip_drag {
         Some(drag) if mine(&drag) && drag.target != lane.track => {
             if drag.copy || copy_key {
@@ -1053,6 +1055,7 @@ pub(super) fn clip_box<'a>(
                 rect: wave_area(rect),
                 origin: x_of(start),
                 beat_width: state.beat_width,
+                ink: envelope_ink,
             });
             // An audio clip's edge dragged with Ctrl and Alt stretches its audio: drawn stretched
             // as it goes, about the edge that stays, not only once it is let go.
@@ -1069,6 +1072,7 @@ pub(super) fn clip_box<'a>(
                         rect: wave_area(rect),
                         origin: stretched(start),
                         beat_width: state.beat_width * factor as f32,
+                        ink: envelope_ink,
                     });
                     paint_clip(
                         &painter.with_clip_rect(clip_area),
@@ -1125,6 +1129,7 @@ pub(super) fn clip_box<'a>(
             rect: wave_area(rect),
             origin: rect.left(),
             beat_width: state.beat_width,
+            ink: envelope_ink,
         });
         let snap = |elapsed: f64| grid.place(clip.start + elapsed, false, false) - clip.start;
         crate::arrangement::envelope::show(ui, &envelope_painter, place, clip.id, name, view, edit, &snap, actions);
