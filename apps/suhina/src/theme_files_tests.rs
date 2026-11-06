@@ -450,3 +450,19 @@ fn a_folder_that_is_not_a_theme_is_not_written_in_by_a_save_or_an_import() {
     unchanged(&before);
     let _clean = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_save_does_not_write_into_a_folder_with_other_files_and_no_theme_css() {
+    let dir = folder("foreign-folder");
+    let themes = dir.join("themes");
+    std::fs::create_dir_all(themes.join("photos")).unwrap();
+    std::fs::write(themes.join("photos").join("background.png"), b"mine").unwrap();
+    let mut files = ThemeFiles::new(Some(themes.clone()));
+    assert!(files.write("photos", &night()).is_err());
+    assert_eq!(std::fs::read(themes.join("photos").join("background.png")).unwrap(), b"mine");
+    assert!(!themes.join("photos").join(THEME_JSON).exists());
+    // An empty folder is a theme's to take.
+    std::fs::create_dir_all(themes.join("empty")).unwrap();
+    assert_eq!(files.write("empty", &night()), Ok(()));
+    let _clean = std::fs::remove_dir_all(&dir);
+}

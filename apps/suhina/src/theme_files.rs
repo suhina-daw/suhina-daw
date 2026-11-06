@@ -580,6 +580,8 @@ impl ThemeFiles {
             let base = slug(if stem.is_empty() { &theme.name } else { &stem });
             let taken = |id: &str| {
                 theme::is_built_in(id)
+                    // The folder itself, in case the scan of the names above stopped short.
+                    || self.folder.as_ref().is_some_and(|f| std::fs::symlink_metadata(f.join(id)).is_ok())
                     || folders.iter().any(|f| f.eq_ignore_ascii_case(id))
                     || existing.iter().chain(written.iter()).any(|e: &ThemeEntry| e.id.eq_ignore_ascii_case(id))
             };
@@ -1144,6 +1146,13 @@ fn package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8>)>, Stri
     Ok(files)
 }
 
+/// Whether `dir` exists and holds something besides a `variants` folder (which a variant saved
+/// just before the theme's own files makes).
+fn holds_other_files(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return std::fs::symlink_metadata(dir).is_ok() };
+    entries.filter_map(Result::ok).any(|e| e.file_name() != VARIANTS)
+}
+
 /// Writes the theme `id`'s own files from `theme`. A theme without a `theme.css` yet gets all of
 /// them. Otherwise what its editors changed (placements, the toolbar, artwork) is edited into its
 /// `theme.css` in place, leaving the rest of the author's text as it is; `theme.json` is written
@@ -1154,6 +1163,10 @@ fn persist_theme(folder: &Path, id: &str, theme: &Theme) -> Result<(), String> {
     let dir = folder.join(id);
     let sheet_path = dir.join(THEME_CSS);
     if !std::fs::symlink_metadata(&sheet_path).is_ok_and(|m| m.is_file()) {
+        // A new theme gets a folder of its own: one that is there with other things in it is not ours.
+        if holds_other_files(&dir) {
+            return Err(format!("{id} is a folder that is not a theme, so nothing was written into it"));
+        }
         return write_files(folder, package_files(id, theme)?);
     }
     // A `theme.css` with no `theme.json` beside it is not this theme's: it is a folder that is not a
