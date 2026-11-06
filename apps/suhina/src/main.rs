@@ -504,6 +504,7 @@ impl Window {
         #[cfg(target_os = "macos")]
         if let Some(menu) = &mut self.mac_menu {
             menu.sync(&self.app.menus());
+            menu.follow_theme(suhina_ui::kit::theme::is_light());
         }
         self.answer_agents();
         if let Some((path, how)) = self.app.take_open_request() {
@@ -846,6 +847,9 @@ impl Window {
             if let Some(css) = reply.user_css {
                 suhina_ui::kit::native_css::set_user_sheet(css);
                 ctx.request_repaint();
+            }
+            if let Some(names) = reply.reserved {
+                self.app.reserve_theme_ids(names);
             }
             if reply.replace {
                 self.app.set_themes(ctx, reply.entries, reply.folder);

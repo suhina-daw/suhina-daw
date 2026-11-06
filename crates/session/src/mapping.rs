@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use suhina_model::{LaunchMapping, MappingSource, MappingTarget, Project};
 
 use crate::commands::Args;
-use crate::commands::{column_index, scene_index, track_id};
+use crate::commands::{column_index, scene_id, scene_index, track_id};
 use crate::{CommandError, Session};
 
 /// The most mappings a project keeps, so a script cannot grow the project without bound.
@@ -60,6 +60,7 @@ fn describe(p: &Project, m: &LaunchMapping) -> Value {
         }
         if let Some(scene) = m.target.scene() {
             map.insert("scene".into(), json!(scene));
+            map.insert("scene_id".into(), scene_id(p, scene));
         }
     }
     out

@@ -24,10 +24,42 @@ fn gradient_edits_copy_builtins_save_duplicate_and_reset_with_the_theme() {
             colors: edited.colors,
             liquid: edited.liquid,
             gradients: Gradients::default(),
+            values: Default::default(),
         },
     );
     assert_eq!(themes.get(&id).unwrap().gradients, Gradients::default());
     assert_eq!(themes.get(&copy).unwrap().gradients, gradients);
+}
+
+#[test]
+fn reset_changes_restores_a_themes_own_settings_and_what_follows_them() {
+    let sheet = "@property --tint { syntax: \"<color>\"; initial-value: #112233; label: \"Accent\"; }\n\
+                 :root { --accent: var(--tint); }";
+    let (ink, warnings) = theme::from_folder(theme::ThemeMeta::new("Ink", theme::DEFAULT_SWATCH), sheet);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let original = ink.clone();
+    let mut themes = Themes::default();
+    themes.put(ThemeEntry { id: "ink".into(), theme: ink });
+    let edit = |tint: &str| ThemeRequest::EditValue { name: "--tint".into(), value: tint.into() };
+    let id = themes.request("ink", edit("#FF0000")).unwrap();
+    assert_eq!(themes.get(&id).unwrap().colors.accent, egui::Color32::from_rgb(255, 0, 0));
+    themes.request(
+        &id,
+        ThemeRequest::ResetEdits {
+            colors: original.colors,
+            liquid: original.liquid,
+            gradients: original.gradients.clone(),
+            transparent_rgb: original.transparent_rgb.clone(),
+            skin: Box::new(original.skin.clone()),
+            values: [("--tint".to_string(), "#112233".to_string())].into(),
+        },
+    );
+    let reset = themes.get(&id).unwrap();
+    assert_eq!(reset.colors.accent, original.colors.accent);
+    assert!(reset.vars.values.is_empty(), "{:?}", reset.vars.values);
+    // The setting still works afterwards.
+    themes.request(&id, edit("#00FF00"));
+    assert_eq!(themes.get(&id).unwrap().colors.accent, egui::Color32::from_rgb(0, 255, 0));
 }
 
 fn night() -> ThemeEntry {
@@ -43,6 +75,7 @@ fn night() -> ThemeEntry {
             transparent_rgb: Default::default(),
             skin: Default::default(),
             vars: Default::default(),
+            ..Default::default()
         },
     }
 }
@@ -86,20 +119,19 @@ fn restoring_a_built_in_can_save_a_copy_without_overwriting_either_theme() {
 #[test]
 fn the_built_in_themes_come_first_and_stay() {
     let mut themes = Themes::default();
-    let fake = ThemeEntry { id: "Suhina-Dark".into(), theme: night().theme };
+    let fake = ThemeEntry { id: "Suhina-Studio".into(), theme: night().theme };
     themes.set(vec![night(), fake.clone(), night()], Some("themes".into()));
     let view = themes.view("night");
     assert_eq!(view.list.first(), Some(&("night".into(), "Night".into(), false)));
-    assert_eq!(view.list.get(1), Some(&(BUILT_IN.into(), "Suhina Dark".into(), true)));
+    assert_eq!(view.list.get(1), Some(&(BUILT_IN.into(), "Suhina Studio".into(), true)));
     assert!(view.list.iter().any(|(id, _, built_in)| id == "nord" && *built_in));
     assert_eq!(view.list.len(), theme::built_in_themes().len() + 1);
     assert_eq!(view.colors, night().theme.colors);
-    assert_eq!(view.previews.len(), view.list.len());
-    for (id, _, _) in &view.list {
-        assert_eq!(
-            view.previews.iter().find(|(key, _)| key == id).map(|(_, colors)| *colors),
-            Some(themes.palette(id))
-        );
+    // Every built-in theme has a swatch and a thumbnail for the picker, and names its default variant.
+    for (id, _, built_in) in view.list.iter().filter(|(_, _, built_in)| *built_in) {
+        assert!(view.swatches.iter().any(|(key, _)| key == id), "{id} ({built_in})");
+        assert!(view.pictures.iter().any(|(key, svg)| key == id && !svg.contains("var(")), "{id}");
+        assert!(view.default_variants.iter().any(|(key, name)| key == id && !name.is_empty()), "{id}");
     }
     assert!(!view.built_in);
     assert!(!themes.put(fake));
@@ -108,7 +140,7 @@ fn the_built_in_themes_come_first_and_stay() {
 }
 
 #[test]
-fn a_missing_theme_draws_with_suhina_dark() {
+fn a_missing_theme_draws_with_suhina_studio() {
     let themes = Themes::default();
     assert_eq!(themes.palette("gone"), Palette::DARK);
     assert_eq!(themes.view("gone").current, BUILT_IN);
@@ -134,7 +166,11 @@ fn editing_a_built_in_themes_colours_makes_a_variant_and_its_layout_a_copy() {
     // The variant is by Nord's card, not a theme of its own.
     let view = themes.view("nord@custom");
     assert!(!view.list.iter().any(|(id, _, _)| id.contains('@')));
-    assert_eq!(view.variants, [("nord@custom".to_string(), "Custom".to_string())]);
+    assert!(view.variants.contains(&("nord@custom".to_string(), "Custom".to_string())));
+    assert!(
+        view.variants.contains(&("nord@snow-storm".to_string(), "Snow Storm".to_string())),
+        "its own variants stay"
+    );
     assert_eq!(view.variant.as_deref(), Some("Custom"));
     // Moving a control is not a setting: the built-in theme is copied.
     let mut skin = themes.get("nord@custom").unwrap().skin.clone();
@@ -146,7 +182,7 @@ fn editing_a_built_in_themes_colours_makes_a_variant_and_its_layout_a_copy() {
 #[test]
 fn a_declared_setting_is_set_in_the_variant_and_checked_against_its_type() {
     let sheet = "@property --glow { syntax: \"<number>\"; initial-value: 0.5; label: \"Glow\"; range: 0 1; }\n:root { --accent: #123456; }";
-    let (theme, warnings) = crate::kit::theme::from_sheet(sheet, "");
+    let (theme, warnings) = crate::kit::theme::from_css(sheet);
     assert!(warnings.is_empty(), "{warnings:?}");
     let mut themes = Themes::default();
     themes.set(vec![ThemeEntry { id: "ink".into(), theme }], None);
@@ -206,8 +242,17 @@ fn ids_are_made_from_names() {
     let themes = Themes::default();
     assert_eq!(themes.free_id("  Night Blue!! "), "night-blue");
     assert_eq!(themes.free_id("../.."), "theme");
-    assert_eq!(themes.free_id("Suhina Dark"), "suhina-dark-2");
+    assert_eq!(themes.free_id("Suhina Studio"), "suhina-studio-2");
     assert_eq!(slug("Café Thème"), "café-thème");
+}
+
+#[test]
+fn a_folder_that_is_not_a_theme_keeps_its_id_from_a_copy() {
+    let mut themes = Themes::default();
+    themes.reserve(vec!["nord-copy".into(), "Night".into()]);
+    assert_eq!(themes.free_id("Nord copy"), "nord-copy-2");
+    assert_eq!(themes.free_id("night"), "night-2");
+    assert_eq!(themes.free_id("Other"), "other");
 }
 
 #[test]
@@ -222,4 +267,69 @@ fn a_copy_of_a_theme_with_placed_controls_says_so() {
     themes.set(vec![night()], None);
     themes.request("night", ThemeRequest::Duplicate);
     assert_eq!(themes.take_notice(), None, "nothing placed, nothing said");
+}
+
+#[test]
+fn editing_a_palette_colour_refreshes_the_swatch_and_thumbnail_of_its_card() {
+    for id in ["nord", BUILT_IN] {
+        a_palette_edit_shows_on_the_card(id);
+    }
+}
+
+fn a_palette_edit_shows_on_the_card(from: &str) {
+    let mut themes = Themes::default();
+    let before = themes.get(from).unwrap().clone();
+    let mut colors = themes.palette(from);
+    colors.accent = egui::Color32::from_rgb(250, 10, 120);
+    colors.window_background = egui::Color32::from_rgb(10, 250, 120);
+    let id = themes
+        .request(from, ThemeRequest::EditRgba { colors, transparent_rgb: before.transparent_rgb })
+        .expect("a built-in theme's edit makes a variant");
+    let edited = themes.get(&id).unwrap().clone();
+    // What the card shows is what loading the theme again would show.
+    let mut loaded = edited.clone();
+    crate::kit::theme_vars::resolve(&mut loaded);
+    assert_eq!(edited.skin.variables, loaded.skin.variables);
+    assert_eq!(edited.swatch, loaded.swatch);
+    assert_eq!(edited.picture, loaded.picture);
+    assert!(edited.swatch != before.swatch || edited.picture != before.picture, "the edit shows on the card");
+}
+
+#[test]
+fn a_saved_edit_of_a_built_in_variant_wins_and_goes_when_its_file_goes() {
+    let mut themes = Themes::default();
+    let original = themes.palette("nord@snow-storm");
+    let mut edited = themes.get("nord@snow-storm").unwrap().clone();
+    edited.colors.accent = egui::Color32::from_rgb(1, 2, 3);
+    themes.set(vec![ThemeEntry { id: "nord@snow-storm".into(), theme: edited.clone() }], None);
+    assert_eq!(themes.palette("nord@snow-storm"), edited.colors);
+    assert_eq!(themes.view("nord").variants.iter().filter(|(id, _)| id == "nord@snow-storm").count(), 1);
+    themes.set(Vec::new(), None);
+    assert_eq!(themes.palette("nord@snow-storm"), original);
+}
+
+#[test]
+fn resetting_a_skin_only_edit_makes_no_variant_and_restores_the_theme_itself() {
+    let (ink, _) =
+        theme::from_folder(theme::ThemeMeta::new("Ink", theme::DEFAULT_SWATCH), ":root { --accent: #112233; }");
+    let original = ink.clone();
+    let mut edited = ink.clone();
+    edited.skin.toolbar_offsets.insert("tempo".into(), 40);
+    let mut themes = Themes::default();
+    themes.put(ThemeEntry { id: "ink".into(), theme: edited });
+    assert_ne!(themes.get("ink").unwrap().skin.toolbar_offsets, original.skin.toolbar_offsets);
+    let switched = themes.request(
+        "ink",
+        ThemeRequest::ResetEdits {
+            colors: original.colors,
+            liquid: original.liquid,
+            gradients: original.gradients.clone(),
+            transparent_rgb: original.transparent_rgb.clone(),
+            skin: Box::new(original.skin.clone()),
+            values: [("--accent".to_string(), "#112233".to_string())].into(),
+        },
+    );
+    assert_eq!(themes.get("ink").unwrap().skin.toolbar_offsets, original.skin.toolbar_offsets);
+    assert!(themes.get("ink@custom").is_none(), "a reset of what was not edited made a variant");
+    assert_ne!(switched.as_deref(), Some("ink@custom"));
 }

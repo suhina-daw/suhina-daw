@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "name": "Nord",
+  "author": "The Suhina contributors",
+  "description": "The Nord palette (MIT, nordtheme.com), mapped onto Suhina's tokens.",
+  "swatch": "var(--window-background)",
+  "default-variant": "Polar Night"
+}

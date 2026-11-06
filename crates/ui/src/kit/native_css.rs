@@ -833,6 +833,29 @@ pub fn scoped(stack: &[String]) -> Option<Computed> {
     })
 }
 
+/// A theme's swatch of `color`, drawn as the theme in use styles a `theme-swatch` element with
+/// that `color` attribute (`docs/spec/theme-skins.md` › Swatches); `None` without a theme sheet.
+pub fn theme_swatch(color: Color32) -> Option<Computed> {
+    let key = vec!["theme-swatch".to_owned(), hex(color)];
+    ENGINE.with(|engine| {
+        let mut engine = engine.borrow_mut();
+        engine.source.as_ref()?;
+        if !same_source(engine.source.as_ref()) {
+            return None;
+        }
+        if let Some(values) = engine.contexts.get(&key) {
+            return Some(values.clone());
+        }
+        let values = native::theme_swatch(&engine, &key[1])?;
+        // Past the cache's limit a swatch is worked out each time, so that every swatch in a
+        // gallery is styled alike.
+        if engine.contexts.len() < MAX_CONTEXTS {
+            engine.contexts.insert(key, values.clone());
+        }
+        Some(values)
+    })
+}
+
 /// One real toolbar child. Drawing and input use this same Taffy rectangle.
 #[derive(Clone, Debug)]
 pub struct Module {

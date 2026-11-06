@@ -294,7 +294,8 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
 
     // clip.setLoop off makes it a one-shot: it plays once and the slot falls silent.
     let done = run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": false })).unwrap();
-    assert_eq!(done, json!({ "clip": slot_clip(session.project(), 3, 1).id.0, "scene": 0, "loop": false }));
+    let (clip, scene_id) = (slot_clip(session.project(), 3, 1).id.0, session.project().launcher.scenes[0].id.0);
+    assert_eq!(done, json!({ "clip": clip, "scene": 0, "scene_id": scene_id, "loop": false }));
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, None);
     let out = render(&session);
     assert!(at(&out, 0.3) > 0.1 && at(&out, 1.0) < 1e-6 && at(&out, 1.8) < 1e-6);

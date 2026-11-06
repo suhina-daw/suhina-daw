@@ -151,7 +151,7 @@ refused or suspended, never by losing its edits.
 - Theme control shapes: buttons, the toolbar's fields and the volume and pan fields take their background, border, corner radius, thickness and shadows from the theme's CSS (`#arrangement-volume`, `.value-fill`, `volume.track` artwork and the rest); a workspace panel can float over the view; a theme can put the Arrangement track headers on a side; Settings › Themes has a search.
 - Theme presentation: native Launcher column widths and row heights come from the theme's CSS; mixer/name backgrounds consume authored materials, and stereo meter gradients retain fixed dBFS colour positions with native peak/RMS opacity and lit-region glow. Fader scales move independently of the rail/cap.
 
-- Forest Amber, the green-and-white Suhina Sheet, blue/cream glass Suhina Meadow and brown pixel-textured Suhina Blocks are available as built-in themes. Sheet and Meadow include compact Session geometry, native CSS and original editable SVG controls; Meadow embeds an original generated green-hill background and liquid settings. Blocks uses brown plank CSS without landscape wallpaper, plus colour-keyed SVG track textures.
+- The green-and-white Suhina Sheet, blue/cream glass Suhina Meadow and brown pixel-textured Suhina Blocks are available as built-in themes. Sheet and Meadow include compact Session geometry, native CSS and original editable SVG controls; Meadow embeds an original generated green-hill background and liquid settings. Blocks uses brown plank CSS without landscape wallpaper, plus colour-keyed SVG track textures.
 
 - Private image backgrounds use a cached source and display-scaled, alpha-correct blur; Settings keeps its own readable material. Native Mica has been removed.
 
@@ -665,9 +665,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - **Themes**: every colour comes from the theme in use, a folder with a `theme.css` in the
   `themes` folder (`theme { name: …; } :root { --accent: #A6A3FF; … }`), which Suhina never
   rewrites; themes from earlier versions are converted once, keeping the originals; track colours and the sample map's
-  kind colours are theme tokens too (`track.1`–`track.8`, `kind.*`). Nine come with Suhina (Suhina
-  Dark and Light, Editor Dark, High Contrast, Dracula, Nord, Catppuccin Mocha and Latte, Solarized
-  Dark). Settings › Appearance › Theme picks one, changes its colours, renames, duplicates, reads
+  kind colours are theme tokens too (`track.1`–`track.8`, `kind.*`). Among those that come with Suhina are Suhina
+  Studio and Suhina Light, High Contrast, Nord, Catppuccin Mocha and Latte). Settings › Appearance › Theme picks one, changes its colours, renames, duplicates, reads
   the files again, backs every theme up into a zip and exports a template zip with a README an AI
   agent can make a theme from; a theme file or backup dropped on the window is added, and a file
   saved in an editor shows within a second.

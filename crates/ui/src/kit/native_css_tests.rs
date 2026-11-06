@@ -261,7 +261,7 @@ fn gloss_surfaces_have_opaque_bases_and_sheet_overlays_preserve_native_fills() {
         assert_eq!(style.background.a(), 255, "{class} exposes the desktop");
         assert!(style.has_gradient(), "{class} lost its gradient");
     }
-    for css in [theme::GLOSS_EXAMPLE, include_str!("../../themes/suhina-sheet.theme.css")] {
+    for css in [theme::GLOSS_EXAMPLE, include_str!("../../themes/suhina-sheet/theme.css")] {
         prepare(css, 1138.0);
         for class in ["track-header", "track-name"] {
             let style = scoped(&[class.into()]).unwrap();
@@ -269,7 +269,7 @@ fn gloss_surfaces_have_opaque_bases_and_sheet_overlays_preserve_native_fills() {
             assert!(style.has_gradient());
         }
     }
-    prepare(include_str!("../../themes/suhina-meadow.theme.css"), 1138.0);
+    prepare(include_str!("../../themes/suhina-meadow/theme.css"), 1138.0);
     for class in ["window", "application-bar", "mixer", "track-header", "track-name"] {
         assert_eq!(scoped(&[class.into()]).unwrap().background.a(), 0, "Meadow's deliberate transparency changed");
     }
@@ -381,7 +381,7 @@ fn palette_and_resize_restyle_retained_tree_and_preserve_author_colours() {
 #[ignore = "manual timing comparison for live palette edits"]
 fn measure_primary_colour_edits() {
     let saved = theme::palette();
-    let css = include_str!("../../themes/suhina-sheet.theme.css");
+    let css = include_str!("../../themes/suhina-sheet/theme.css");
     prepare(css, 800.0);
     let ctx = egui::Context::default();
     let mut samples = Vec::new();
@@ -1004,7 +1004,7 @@ fn a_knob_s_value_goes_where_the_sheet_puts_it() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(60.0, 60.0));
     // The position is a host rule, read from the theme's sheet as the app reads it.
     let text_top = |css: &str| {
-        let (theme, _) = super::super::theme::from_sheet(css, "");
+        let (theme, _) = super::super::theme::from_css(css);
         let shapes = painted("", |ui| {
             skin::configure(&theme.skin);
             let _pan = super::super::style_class::enter("pan");
@@ -1259,7 +1259,7 @@ fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_colour_spares_
     painted(".slider-handle { background-color: #FF0000; }", |_| seen = (themed_slider(), slider_as_knob()));
     assert_eq!(seen, (true, false));
     // The appearance is a host rule, read from the theme's sheet as the app reads it.
-    let (theme, _) = super::super::theme::from_sheet(".slider { --suhina-appearance: knob; }", "");
+    let (theme, _) = super::super::theme::from_css(".slider { --suhina-appearance: knob; }");
     skin::configure(&theme.skin);
     assert!(slider_as_knob());
     skin::configure(&skin::Skin::default());
@@ -1286,7 +1286,7 @@ fn a_round_button_s_shadow_is_round() {
 
 #[test]
 fn a_theme_sets_how_strongly_the_track_colour_tints_its_header() {
-    let (theme, _) = super::super::theme::from_sheet(".arrangement { --suhina-header-tint: 0; }", "");
+    let (theme, _) = super::super::theme::from_css(".arrangement { --suhina-header-tint: 0; }");
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_header_tint(), Some(0));
     skin::configure(&skin::Skin::default());
@@ -1306,10 +1306,10 @@ fn the_native_toolbar_paints_its_gradient() {
 
 #[test]
 fn a_theme_gives_tracks_without_a_height_its_own() {
-    let (theme, _) = super::super::theme::from_sheet(".arrangement { --suhina-track-height: 96px; }", "");
+    let (theme, _) = super::super::theme::from_css(".arrangement { --suhina-track-height: 96px; }");
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_track_height(), Some(96.0));
-    let (theme, _) = super::super::theme::from_sheet(".arrangement { --suhina-track-height: 4px; }", "");
+    let (theme, _) = super::super::theme::from_css(".arrangement { --suhina-track-height: 4px; }");
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_track_height(), None, "out of range is left out");
     skin::configure(&skin::Skin::default());
@@ -1318,7 +1318,7 @@ fn a_theme_gives_tracks_without_a_height_its_own() {
 #[test]
 fn a_value_s_number_and_unit_follow_the_sheet() {
     let (theme, warnings) =
-        super::super::theme::from_sheet(".pan { --suhina-value-decimals: 0; --suhina-value-unit: \" dB\"; }", "");
+        super::super::theme::from_css(".pan { --suhina-value-decimals: 0; --suhina-value-unit: \" dB\"; }");
     let mut seen = Vec::new();
     painted("", |_| {
         skin::configure(&theme.skin);
@@ -1348,7 +1348,7 @@ fn a_family_class_reaches_every_part_of_its_kind() {
         ".track-button reaches #control-solo"
     );
     // Host rules read the family too.
-    let (theme, _) = super::super::theme::from_sheet(".value-control { --suhina-appearance: knob; }", "");
+    let (theme, _) = super::super::theme::from_css(".value-control { --suhina-appearance: knob; }");
     skin::configure(&theme.skin);
     let _send = super::super::style_class::enter("send");
     assert!(super::super::style_class::knob_preference(false));
@@ -1381,9 +1381,8 @@ fn a_level_bar_s_fill_can_take_the_track_s_colour() {
 #[test]
 fn a_low_track_keeps_its_native_layout() {
     use crate::kit::control_layout::{native_only, placement};
-    let (theme, _) = super::super::theme::from_sheet(
-        ".arrangement { --suhina-compact-below: 48px; }",
-        ".control-arrangement-enable { left: -30px; }",
+    let (theme, _) = super::super::theme::from_css(
+        ".arrangement { --suhina-compact-below: 48px; }\n.control-arrangement-enable { left: -30px; }",
     );
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_compact_below(), Some(48.0));

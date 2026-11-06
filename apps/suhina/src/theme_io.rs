@@ -29,6 +29,8 @@ pub struct Reply {
     pub conflict: Option<(std::path::PathBuf, String)>,
     /// The user's style sheet when it changed: `Some(None)` once it is removed.
     pub user_css: Option<Option<std::sync::Arc<str>>>,
+    /// The names of the folders in the themes folder when they changed: ids no new theme may take.
+    pub reserved: Option<Vec<String>>,
 }
 
 pub struct ThemeIo {
@@ -234,6 +236,7 @@ fn execute(files: &mut ThemeFiles, actions: Vec<FileAction>) -> Reply {
         reply.notices.push(Ok(format!("Read {} theme files", entries.len())));
     }
     reply.entries = entries;
+    reply.reserved = files.reserved_changed();
     reply.notices.extend(warnings.into_iter().map(Err));
     match files.user_css(reply.replace) {
         Some(Ok(css)) => reply.user_css = Some(css.map(std::sync::Arc::from)),
@@ -366,7 +369,7 @@ mod tests {
         assert_eq!(io.pending.len(), 1);
         assert!(!root.exists(), "queueing must not do file I/O on the caller");
         io.finish();
-        assert!(std::fs::read_to_string(root.join("test/theme.css")).unwrap().contains("sample-100"));
+        assert!(std::fs::read_to_string(root.join("test/theme.json")).unwrap().contains("sample-100"));
         std::fs::remove_dir_all(root).unwrap();
     }
 
