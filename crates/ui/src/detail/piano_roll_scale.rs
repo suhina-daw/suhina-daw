@@ -156,11 +156,11 @@ pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool) -> egui::Colo
 }
 
 /// The 2 px mark at the right of the key column on a key in the scale (the root's brighter).
-pub(crate) fn key_mark(painter: &egui::Painter, scale: Option<Scale>, key: u8, row: Rect) {
-    let Some(scale) = scale.filter(|s| s.contains(key)) else { return };
-    let color = if key % 12 == scale.root() { theme::text_value() } else { theme::text_secondary() };
-    let mark =
-        Rect::from_min_max(Pos2::new(row.right() - 3.0, row.top() + 1.0), Pos2::new(row.right() - 1.0, row.bottom()));
+pub(crate) fn key_mark(painter: &egui::Painter, scale: Option<Scale>, key: u8, row: Rect, color: egui::Color32) {
+    if !scale.is_some_and(|s| s.contains(key)) {
+        return;
+    }
+    let mark = Rect::from_min_max(Pos2::new(row.right() - 2.0, row.top()), row.max);
     painter.rect_filled(mark, 0.0, color);
 }
 
@@ -189,8 +189,8 @@ pub(crate) fn key_readers(
             Some(scale) if scale.contains(key) => format!("Key {} in scale", key_name(key)),
             _ => format!("Key {}", key_name(key)),
         };
-        let response = ui.interact(rect, Id::new(("piano-roll-key-row", key)), Sense::hover());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+        let response = ui.interact(rect, Id::unique(("piano-roll-key-row", key)), Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
     }
 }
 
@@ -219,8 +219,7 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, clip: &PianoClip, fold: &mut Fold, a
             let entry = |ui: &mut Ui, on: bool, shown: &str, label: &str, enabled: bool| -> bool {
                 let response = ui
                     .add_enabled(enabled, egui::Button::selectable(on, egui::RichText::new(shown).font(font.clone())));
-                response
-                    .widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, enabled, on, label));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, on, label));
                 let clicked = response.clicked();
                 if clicked {
                     ui.close();
@@ -240,9 +239,9 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, clip: &PianoClip, fold: &mut Fold, a
                     }
                 }
             });
-            roots.response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Scale root: {root}"))
-            });
+            roots
+                .response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Scale root: {root}")));
             let mode = scale.map_or(ScaleMode::Major, |s| s.mode).label();
             let modes = ui.menu_button(egui::RichText::new(format!("Mode: {mode}")).font(font.clone()), |ui| {
                 for choice in ScaleMode::ALL {
@@ -252,9 +251,9 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, clip: &PianoClip, fold: &mut Fold, a
                     }
                 }
             });
-            modes.response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Scale mode: {mode}"))
-            });
+            modes
+                .response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Scale mode: {mode}")));
             ui.separator();
             if entry(ui, *fold == Fold::Notes, "Fold", "Fold", true) {
                 folded = Some(if *fold == Fold::Notes { Fold::Off } else { Fold::Notes });
@@ -265,7 +264,7 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, clip: &PianoClip, fold: &mut Fold, a
         });
         let label = menu_label(scale);
         crate::detail::piano_roll::menu_arrow(ui, menu.response.rect, color);
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         shown = menu.response.rect;
         let named = scale.map_or_else(|| "none".to_string(), Scale::describe);
         menu.response

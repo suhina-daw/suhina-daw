@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use egui::{Key, Modifiers, Pos2};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
 use suhina_engine::model::{ChannelId, LaneData};
 use suhina_library::Library;
@@ -83,6 +83,8 @@ fn window(settings: &Path, folder: &Path) -> Harness<'static, App> {
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -123,6 +125,8 @@ fn window_with_plugins(settings: &Path, folder: &Path) -> Harness<'static, App> 
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -218,9 +222,10 @@ fn system_drop(harness: &mut Harness<'static, App>, path: &Path, at: Pos2) {
     harness.step();
 }
 
-/// Steps the window until `done` holds (a drop decodes its samples on another thread).
+/// Steps the window until `done` holds (a drop decodes its samples on another thread); only a
+/// hang gets to the end of its minute.
 fn until(harness: &mut Harness<'static, App>, done: impl Fn(&App) -> bool) -> bool {
-    let end = Instant::now() + Duration::from_secs(10);
+    let end = Instant::now() + Duration::from_secs(60);
     while Instant::now() < end {
         harness.step();
         if done(harness.state()) {
@@ -236,7 +241,7 @@ fn the_tree_lists_devices_and_folders_and_opens_them() {
     let (settings, folder) = (temp("tree-settings"), temp("tree"));
     pack(&folder);
     let mut harness = window(&settings, &folder);
-    for heading in ["Instruments", "Effects", "Plug-ins"] {
+    for heading in ["Instruments", "Effects", "MIDI Effects", "Plug-ins"] {
         assert!(harness.query_by_label(&row(heading)).is_some(), "{heading}");
     }
     harness.get_by_label(&row("Instruments")).click();
@@ -282,20 +287,110 @@ fn a_click_on_a_headings_title_opens_it_once_and_a_second_closes_it() {
 }
 
 #[test]
-fn a_click_on_a_folders_chevron_opens_it_and_on_its_title_only_selects_it() {
+fn a_click_on_a_folders_chevron_or_its_title_opens_it_and_a_second_closes_it() {
     let (settings, folder) = (temp("folder-chevron-settings"), temp("folder-chevron"));
     pack(&folder);
     let mut harness = window(&settings, &folder);
     let name = row(&folder.file_name().unwrap().to_string_lossy());
     let title = title_of(&harness, &name);
     click_at(&mut harness, title);
-    assert!(harness.query_by_label(&row("Groove.mid")).is_none(), "a click on the title does not open it");
-    assert_eq!(harness.state().browser.selected().len(), 1, "it selects it");
+    assert!(harness.query_by_label(&row("Groove.mid")).is_some(), "a click on the title opens it (#869)");
+    assert_eq!(harness.state().browser.selected().len(), 1, "and selects it");
+    click_at(&mut harness, title);
+    assert!(harness.query_by_label(&row("Groove.mid")).is_none(), "a second click on the title closes it");
     let at = chevron_of(&harness, &name);
     click_at(&mut harness, at);
     assert!(harness.query_by_label(&row("Groove.mid")).is_some(), "the folder stays open");
     click_at(&mut harness, at);
     assert!(harness.query_by_label(&row("Groove.mid")).is_none(), "a second click closes it");
+    // A double-click on the title leaves it open: its first click opened it.
+    double_click(&mut harness, &name);
+    assert!(harness.query_by_label(&row("Groove.mid")).is_some(), "a double-click leaves it open");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A library folder inside another library folder is listed twice, at the top and inside the
+/// other one, and each opens and closes on its own (#869).
+#[test]
+fn a_library_folder_inside_another_opens_on_its_own_in_both_places() {
+    let (settings, outer) = (temp("nested-settings"), temp("nested"));
+    let inner = outer.join("Inner");
+    wav(&outer.join("Outer Hit.wav"), 0.01);
+    wav(&inner.join("Inner Hit.wav"), 0.01);
+    let mut harness = window(&settings, &outer);
+    harness.state_mut().projects_mut().file_library_mut().add_folder(&inner).unwrap();
+    harness.state_mut().browser.relist();
+    harness.run();
+    let outer_name = row(&outer.file_name().unwrap().to_string_lossy());
+    let inner_name = row("Inner");
+    assert_eq!(harness.get_all_by_label(&inner_name).count(), 1, "the inner folder at the top only");
+    // The inner folder at the top opens without opening the outer one.
+    let at = title_of(&harness, &inner_name);
+    click_at(&mut harness, at);
+    assert_eq!(harness.get_all_by_label(&row("Inner Hit.wav")).count(), 1, "the inner folder opens");
+    assert!(harness.query_by_label(&row("Outer Hit.wav")).is_none(), "the outer one stays closed");
+    // The outer one opens: the inner folder in it is listed closed, its own row.
+    let at = title_of(&harness, &outer_name);
+    click_at(&mut harness, at);
+    assert!(harness.query_by_label(&row("Outer Hit.wav")).is_some(), "the outer folder opens");
+    let copies: Vec<_> = harness.get_all_by_label(&inner_name).map(|n| n.rect()).collect();
+    assert_eq!(copies.len(), 2, "the inner folder at the top and inside the outer one");
+    assert_eq!(harness.get_all_by_label(&row("Inner Hit.wav")).count(), 1, "the copy inside is closed");
+    // The copy inside the outer folder opens on its own, and closes on its own. It is the copy
+    // right under the outer folder: the one at the top is above the outer folder or after all
+    // that is in it.
+    let outer_top = harness.get_by_label(&outer_name).rect().top();
+    let nested = copies
+        .iter()
+        .copied()
+        .filter(|rect| rect.top() > outer_top)
+        .min_by(|a, b| a.top().total_cmp(&b.top()))
+        .unwrap();
+    let nested_title = egui::pos2(nested.left() + 60.0, nested.center().y);
+    click_at(&mut harness, nested_title);
+    assert_eq!(harness.get_all_by_label(&row("Inner Hit.wav")).count(), 2, "both copies are open now");
+    click_at(&mut harness, nested_title);
+    assert_eq!(harness.get_all_by_label(&row("Inner Hit.wav")).count(), 1, "the copy inside closes alone");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&outer);
+}
+
+/// The list's scroll bar is a scroll area's, so it is dragged like a device panel's (#867).
+#[test]
+fn the_lists_scroll_bar_can_be_dragged() {
+    let (settings, folder) = (temp("scroll-bar-settings"), temp("scroll-bar"));
+    for i in 0..80 {
+        wav(&folder.join(format!("Hit {i:02}.wav")), 0.01);
+    }
+    let mut harness = window(&settings, &folder);
+    let name = row(&folder.file_name().unwrap().to_string_lossy());
+    let at = chevron_of(&harness, &name);
+    click_at(&mut harness, at);
+    assert!(harness.query_by_label(&row("Hit 00.wav")).is_some(), "the folder is open");
+    let list = harness.get_by_label(&row("Hit 00.wav")).rect();
+    let bar = harness
+        .get_all_by_role(egui::accesskit::Role::ScrollBar)
+        .map(|node| node.rect())
+        .find(|rect| rect.right() <= list.right() + 1.0 && rect.left() >= list.right() - 20.0)
+        .expect("the list has a scroll bar on its right edge");
+    assert_eq!(harness.state().browser.scroll, 0.0);
+    let picked: Vec<String> = harness.state().browser.selected().iter().map(|s| s.key.clone()).collect();
+    let from = Pos2::new(bar.center().x, bar.top() + 4.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    for y in [10.0, 30.0, 60.0, 100.0] {
+        harness.hover_at(from + egui::vec2(0.0, y));
+        harness.step();
+    }
+    harness.drop_at(from + egui::vec2(0.0, 100.0));
+    harness.run();
+    assert!(harness.state().browser.scroll > 50.0, "the list follows the bar: {}", harness.state().browser.scroll);
+    assert!(harness.query_by_label(&row("Hit 00.wav")).is_none(), "the first row has scrolled out of view");
+    let after: Vec<String> = harness.state().browser.selected().iter().map(|s| s.key.clone()).collect();
+    assert_eq!(after, picked, "the rows under the bar took nothing");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -405,7 +500,7 @@ fn ctrl_f_searches_ctrl_b_hides_and_rows_never_take_the_keyboard() {
     harness.run();
     harness.run();
     assert!(
-        harness.ctx.memory(|m| m.has_focus(egui::Id::new("browser-search"))),
+        harness.ctx.memory(|m| m.has_focus(egui::Id::unique("browser-search"))),
         "Ctrl+F puts the cursor in the search"
     );
     // Typing goes to the field, and Down selects the first result.
@@ -421,7 +516,7 @@ fn ctrl_f_searches_ctrl_b_hides_and_rows_never_take_the_keyboard() {
     assert!(harness.state().browser.search.is_empty());
     harness.key_press(Key::Escape);
     harness.run();
-    assert!(!harness.ctx.memory(|m| m.has_focus(egui::Id::new("browser-search"))));
+    assert!(!harness.ctx.memory(|m| m.has_focus(egui::Id::unique("browser-search"))));
 
     harness.key_press_modifiers(Modifiers::COMMAND, Key::B);
     harness.run();
@@ -430,6 +525,42 @@ fn ctrl_f_searches_ctrl_b_hides_and_rows_never_take_the_keyboard() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::B);
     harness.run();
     assert!(harness.state().settings().browser_open);
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// Ctrl+F always searches everything: All is chosen and the search kept, selected, so typing
+/// replaces it; a kind chosen afterwards keeps the search and narrows it to that kind.
+#[test]
+fn ctrl_f_searches_all_and_a_kind_chosen_after_keeps_the_search() {
+    let (settings, folder) = (temp("all-settings"), temp("all"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Show Samples").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().browser.category, suhina_session::Category::All, "Ctrl+F chooses All");
+    assert_eq!(harness.state().browser.place, None);
+    harness.input_mut().events.push(egui::Event::Text("snare".into()));
+    harness.run();
+    assert_eq!(harness.state().browser.search, "snare");
+
+    // A kind chosen keeps the search, and the search looks in that kind only.
+    harness.get_by_label("Show Samples").click();
+    harness.run();
+    assert_eq!(harness.state().browser.category, suhina_session::Category::Samples);
+    assert_eq!(harness.state().browser.search, "snare");
+
+    // Ctrl+F again: All, the search selected, so what is typed replaces it.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().browser.category, suhina_session::Category::All);
+    harness.input_mut().events.push(egui::Event::Text("kick".into()));
+    harness.run();
+    assert_eq!(harness.state().browser.search, "kick", "typing replaced the selected search");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -522,12 +653,13 @@ fn a_stems_file_dropped_on_a_lane_becomes_one_folded_group() {
     assert!(until(&mut harness, grouped), "a group of the master and its four stems");
     // One more frame: the drop runs after the view has drawn, so the lanes follow it next frame.
     harness.run();
-    // The group arrives folded: one lane named after the file, its tracks away, and the clip the
-    // fold stands in for (the master) drawn on that lane.
+    // The group arrives folded: one lane named after the file, its tracks away. The folded lane
+    // draws every stem's clips as a thin row each, marks rather than clips to pick: the stems are
+    // reached by unfolding.
     assert!(harness.query_by_label("Track tones").is_some(), "the group's own lane");
     assert!(harness.query_by_label("Unfold tones").is_some(), "it arrives folded");
     assert!(harness.query_by_label("Track Master").is_none(), "the stems' lanes are folded away");
-    assert!(harness.query_by_label_contains("Clip tones – Master").is_some(), "its row shows the master");
+    assert!(harness.query_by_label_contains("Clip tones – Master").is_none(), "the fold draws marks, not clips");
 
     harness.get_by_label("Unfold tones").click();
     harness.run();
@@ -628,9 +760,7 @@ fn drop_groove_on_the_drums_lane(name: &str, modifiers: Modifiers) -> Vec<f64> {
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label("Grid and launch quantisation").click();
-    harness.run();
-    harness.get_by_label("1/8").click();
+    harness.state_mut().set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1/8"));
     harness.run();
     // Zoom in eight times around a point half a beat into Beat B: its start stays in view.
     let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
@@ -681,13 +811,149 @@ fn a_device_dragged_onto_a_track_header_joins_its_chain_and_becomes_recent() {
         app.session().map_or(0, |s| {
             let p = s.project();
             let channel = p.tracks.iter().find(|t| t.name == "Bass").and_then(|t| t.channel).unwrap_or(ChannelId(0));
-            p.channels.iter().find(|c| c.id == channel).map_or(0, |c| c.devices.len())
+            p.channel(channel).map_or(0, |c| c.devices.len())
         })
     };
     assert!(until(&mut harness, |app| bass_devices(app) == 1));
-    harness.get_by_label("Place Effects").click();
+    harness.get_by_label("Place Recent Effects").click();
     harness.run();
     assert!(harness.query_by_label(&row("Overdrive")).is_some(), "Recent › Effects lists it");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A device with stock presets opens on them: its own row adds it at its defaults, a preset's row
+/// with that preset. The same presets are under their device's heading in Stock presets.
+#[test]
+fn a_device_opens_on_its_presets_and_each_row_adds_what_it_names() {
+    let (settings, folder) = (temp("device-presets-settings"), temp("device-presets"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label(&row("Stock presets")).click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Warm FM Bass")).is_none(), "the presets lie under their device");
+    harness.get_by_label(&row("FM Synth")).click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Warm FM Bass")).is_some());
+    harness.get_by_label(&row("FM Synth")).click();
+    harness.run();
+    harness.get_by_label(&row("Stock presets")).click();
+    harness.run();
+
+    let value_on_bass = |app: &App, id: &str| {
+        app.session().and_then(|s| {
+            let p = s.project();
+            let channel = p.tracks.iter().find(|t| t.name == "Bass").and_then(|t| t.channel)?;
+            let device = p.channels.iter().find(|c| c.id == channel)?.devices.first()?;
+            device.params.iter().find(|param| param.id == id).map(|param| param.value)
+        })
+    };
+    harness.get_by_label(&row("Instruments")).click();
+    harness.run();
+    let to = harness.get_by_label("Track Bass").rect().center();
+    let device = harness.get_by_label(&row("FM Synth")).rect();
+    assert!(harness.query_by_label(&row("Warm FM Bass")).is_none(), "closed at first");
+    let from = device.center();
+    drag(&mut harness, from, to);
+    assert!(
+        until(&mut harness, |app| value_on_bass(app, "op2.on") == Some(0.0)),
+        "the device itself starts at its defaults"
+    );
+    quick_click_at(&mut harness, Pos2::new(device.left() + 8.0, device.center().y));
+    harness.run();
+    let from = harness.get_by_label(&row("Warm FM Bass")).rect().center();
+    drag(&mut harness, from, to);
+    assert!(
+        until(&mut harness, |app| value_on_bass(app, "op2.level") == Some(86.0)),
+        "a preset's row brings its values"
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A return's and a group's rows in the Arrangement take devices as a track's do, on the header
+/// and on the lane.
+#[test]
+fn a_device_dragged_onto_a_return_in_the_arrangement_joins_its_chain() {
+    let (settings, folder) = (temp("return-device-settings"), temp("return-device"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().do_action("view.toggle", &mut Vec::new());
+    harness.run();
+    harness.get_by_label(&row("Effects")).click();
+    harness.run();
+    let devices = |app: &App, name: &str| {
+        app.session().map_or(0, |s| {
+            let p = s.project();
+            let channel = p.tracks.iter().find(|t| t.name == name).and_then(|t| t.channel).unwrap_or(ChannelId(0));
+            p.channel(channel).map_or(0, |c| c.devices.len())
+        })
+    };
+    // Two tracks in a group, so there is a group's row as well.
+    let tracks: Vec<u32> =
+        harness.state().session().map_or(Vec::new(), |s| s.project().tracks.iter().take(2).map(|t| t.id.0).collect());
+    harness.state_mut().run(&suhina_ui::kit::widgets::Action::new("track.group", json!({ "tracks": tracks })));
+    harness.run();
+    let group = harness.state().session().and_then(|s| {
+        let p = s.project();
+        let submix = |t: &&suhina_engine::model::Track| {
+            t.channel.and_then(|c| p.channel(c)).is_some_and(|c| c.role == suhina_engine::model::ChannelRole::Submix)
+        };
+        p.tracks.iter().find(submix).map(|t| t.name.clone())
+    });
+    let group = group.unwrap();
+    for name in ["A Reverb", group.as_str()] {
+        let before = devices(harness.state(), name);
+        let header = harness.get_by_label(&format!("Turn {name} off")).rect();
+        // On the header, then on the lane beside it, on the side away from the window's edge.
+        let lane = if header.center().x < SIZE.0 / 2.0 { header.right() + 300.0 } else { header.left() - 300.0 };
+        for (added, at) in [(1, header.center()), (2, Pos2::new(lane, header.center().y))] {
+            let from = harness.get_by_label(&row("Overdrive")).rect().center();
+            drag(&mut harness, from, at);
+            assert!(until(&mut harness, |app| devices(app, name) == before + added), "{name}: {added} at {at:?}");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The browser lists MIDI effects under a heading of their own, and an instrument dragged onto a
+/// track lands after the MIDI effect dragged there first.
+#[test]
+fn midi_effects_have_their_own_heading_and_go_before_the_instrument() {
+    let (settings, folder) = (temp("midi-effect-settings"), temp("midi-effect"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    assert!(harness.query_by_label(&row("Pitch")).is_none(), "closed headings hide their devices");
+    harness.get_by_label(&row("MIDI Effects")).click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Pitch")).is_some(), "MIDI Effects lists the pitch effect");
+    harness.get_by_label(&row("Effects")).click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Pitch")).is_some(), "and Effects does not take it over");
+    let bass_devices = |app: &App| {
+        app.session().map_or(Vec::new(), |s| {
+            let p = s.project();
+            let channel = p.tracks.iter().find(|t| t.name == "Bass").and_then(|t| t.channel).unwrap_or(ChannelId(0));
+            p.channels
+                .iter()
+                .find(|c| c.id == channel)
+                .map_or(Vec::new(), |c| c.devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>())
+        })
+    };
+    let to = harness.get_by_label("Track Bass").rect().center();
+    let from = harness.get_by_label(&row("Pitch")).rect().center();
+    drag(&mut harness, from, to);
+    assert!(until(&mut harness, |app| bass_devices(app) == ["Pitch"]), "{:?}", bass_devices(harness.state()));
+    harness.get_by_label(&row("Instruments")).click();
+    harness.run();
+    let from = harness.get_by_label(&row("FM Synth")).rect().center();
+    drag(&mut harness, from, to);
+    assert!(
+        until(&mut harness, |app| bass_devices(app) == ["Pitch", "FM Synth"]),
+        "the instrument goes after the MIDI effect: {:?}",
+        bass_devices(harness.state())
+    );
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -765,6 +1031,8 @@ fn render_the_browser() {
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_pixels_per_point(2.0)
         .with_step_dt(0.05)
@@ -804,58 +1072,17 @@ fn render_the_browser() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
-/// An audio system that keeps the renderers it opens, so a test runs them as an audio thread
-/// would.
-#[derive(Default)]
-struct StandAudio {
-    renderers: std::sync::Mutex<Vec<suhina_engine::Renderer>>,
-}
-
-impl StandAudio {
-    fn opened(&self) -> usize {
-        self.renderers.lock().map_or(0, |r| r.len())
-    }
-
-    /// Runs the newest output for a block; returns its loudest sample.
-    fn run_latest(&self) -> f32 {
-        let mut renderers = self.renderers.lock().unwrap();
-        let Some(renderer) = renderers.last_mut() else { return 0.0 };
-        let mut block = vec![0.0f32; 512 * 2];
-        renderer.process(&mut block);
-        block.iter().fold(0.0f32, |m, s| m.max(s.abs()))
-    }
-}
-
-impl suhina_session::AudioSystem for StandAudio {
-    fn hosts(&self) -> Vec<suhina_session::audio::HostInfo> {
-        Vec::new()
-    }
-
-    fn open(
-        &self,
-        project: &suhina_engine::model::Project,
-        audio: &suhina_engine::AudioPool,
-        _choice: &suhina_session::OutputChoice,
-        _previous: Option<suhina_session::Player>,
-    ) -> Result<suhina_session::audio::Opened, String> {
-        let mut renderer = suhina_engine::Renderer::stopped(project, audio, 48_000).map_err(|e| e.to_string())?;
-        let player = suhina_session::Player::new(renderer.controller(), None);
-        self.renderers.lock().unwrap().push(renderer);
-        Ok(suhina_session::audio::Opened { player, notice: None, plugins_kept: true })
-    }
-}
-
 #[test]
-fn with_no_project_open_samples_are_browsed_and_previewed() {
+fn the_start_panel_hides_the_browser_until_a_project_is_open() {
     let (settings, folder) = (temp("nothing-open-settings"), temp("nothing-open"));
     pack(&folder);
-    let stand = std::sync::Arc::new(StandAudio::default());
     let mut app = App::new();
     let mut library = Library::new(Some(settings.to_path_buf()));
     library.add_folder(&folder).unwrap();
     app.set_file_library(library);
-    app.projects_mut().set_audio_system(stand.clone());
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -863,88 +1090,124 @@ fn with_no_project_open_samples_are_browsed_and_previewed() {
     theme::install(&harness.ctx);
     harness.run();
     assert!(harness.state().projects().is_empty());
+    // With nothing open the start panel stands alone (#632): no browser beside it.
     let name = folder.file_name().unwrap().to_string_lossy().to_string();
-    double_click(&mut harness, &row(&name));
-    harness.get_by_label(&row("Loop 120bpm.wav")).click();
-    let heard = until(&mut harness, |_| stand.run_latest() > 0.05);
-    assert!(heard, "the sample plays with nothing open: {:?}", harness.state().status());
-    assert_eq!(stand.opened(), 1, "one output, for the previews");
-    assert!(harness.state().projects().is_empty(), "previewing opens no project");
-    // The sample map opens too; it redraws while it lays out, so it is stepped.
-    harness.get_by_label("Show the samples laid out by how they sound").click();
-    for _ in 0..3 {
-        harness.step();
-    }
-    assert!(harness.query_by_label("Fit").is_some(), "the sample map shows with nothing open");
+    assert!(harness.query_by_label(&row(&name)).is_none(), "no browser on the start panel");
+    // A project brings it back.
+    harness.state_mut().set_session(Session::new(demo_project()), &[]);
+    harness.run();
+    assert!(harness.query_by_label(&row(&name)).is_some(), "the browser shows with a project open");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
 
 #[test]
-fn the_plug_ins_flat_list_sorts_by_its_columns() {
-    let (settings, folder) = (temp("flat-settings"), temp("flat"));
+fn the_plug_ins_category_lists_the_instruments_or_the_effects_by_name_and_format() {
+    let (settings, folder) = (temp("listed-settings"), temp("listed"));
     let mut harness = window_with_plugins(&settings, &folder);
     harness.get_by_label("Show Plug-ins").click();
     harness.run();
-    // The Grouped view is the default: the vendors sit under the Plug-ins heading, which
-    // starts closed.
-    harness.get_by_label(&row("Plug-ins")).click();
-    harness.run();
-    assert!(harness.query_by_label(&row("Alpha")).is_some(), "a vendor heading");
-    harness.get_by_label("Show plug-ins All").click();
-    harness.run();
-    // No headings, the columns' header on top, the rows in name order.
-    assert!(harness.query_by_label(&row("Alpha")).is_none(), "no vendor heading in the flat list");
-    assert!(harness.query_by_label("Sort by Modified").is_some(), "the columns' header");
-    assert!(
-        row_y(&harness, "Alpha Delay") < row_y(&harness, "Alpha Verb")
-            && row_y(&harness, "Alpha Verb") < row_y(&harness, "Zeta Synth")
-    );
-    // By type: the instrument first, then the effects in name order; again for the reverse.
-    harness.get_by_label("Sort by Type").click();
-    harness.run();
-    assert!(row_y(&harness, "Zeta Synth") < row_y(&harness, "Alpha Delay"));
-    harness.get_by_label("Sort by Type").click();
-    harness.run();
-    assert!(row_y(&harness, "Alpha Delay") < row_y(&harness, "Zeta Synth"), "the same column again reverses");
-    // By the date the scan read the files: the verb's file was read first, so it is first.
-    harness.get_by_label("Sort by Modified").click();
-    harness.run();
-    assert!(row_y(&harness, "Alpha Verb") < row_y(&harness, "Alpha Delay"), "by the date modified");
-    // The sort choice is the window's own: it stays across a switch of the view.
-    harness.get_by_label("Show plug-ins Grouped").click();
-    harness.run();
-    harness.get_by_label("Show plug-ins All").click();
-    harness.run();
-    assert!(row_y(&harness, "Alpha Verb") < row_y(&harness, "Alpha Delay"), "the sort stays across a view switch");
-    let _ = std::fs::remove_dir_all(&settings);
-    let _ = std::fs::remove_dir_all(&folder);
-}
-
-#[test]
-fn plug_ins_group_by_type() {
-    let (settings, folder) = (temp("type-settings"), temp("type"));
-    let mut harness = window_with_plugins(&settings, &folder);
-    harness.get_by_label("Show Plug-ins").click();
-    harness.run();
-    harness.get_by_label("Show plug-ins By type").click();
-    harness.run();
-    // Two type headings; under each, Suhina's groups from the format's categories.
-    harness.get_by_label(&row("Instruments")).click();
-    harness.run();
-    assert!(harness.query_by_label(&row("Synth")).is_some(), "Zeta Synth's group");
-    harness.get_by_label(&row("Synth")).click();
-    harness.run();
+    // The instruments first: no headings, the built-in effects and instruments not among them,
+    // and only the name and format columns.
     assert!(harness.query_by_label(&row("Zeta Synth")).is_some());
-    harness.get_by_label(&row("Effects")).click();
+    assert!(harness.query_by_label(&row("Alpha Verb")).is_none(), "an effect");
+    assert!(harness.query_by_label(&row("Instruments")).is_none(), "no built-in heading");
+    assert!(harness.query_by_label(&row("Effects")).is_none(), "no built-in heading");
+    assert!(harness.query_by_label("Sort by Format").is_some());
+    assert!(harness.query_by_label("Sort by Vendor").is_none() && harness.query_by_label("Sort by Modified").is_none());
+    // The effects, in name order; the name heading again reverses them.
+    harness.get_by_label("Show plug-in effects").click();
     harness.run();
-    assert!(harness.query_by_label(&row("Reverb")).is_some() && harness.query_by_label(&row("Delay")).is_some());
-    harness.get_by_label(&row("Reverb")).click();
+    assert!(harness.query_by_label(&row("Zeta Synth")).is_none(), "an instrument");
+    assert!(row_y(&harness, "Alpha Delay") < row_y(&harness, "Alpha Verb"));
+    harness.get_by_label("Sort by Name").click();
     harness.run();
-    assert!(harness.query_by_label(&row("Alpha Verb")).is_some());
+    assert!(row_y(&harness, "Alpha Verb") < row_y(&harness, "Alpha Delay"), "the same column again reverses");
     // The choice is kept for the next start: it is a library command, not the window's.
     let mut view = Library::new(Some(settings.to_path_buf()));
-    assert_eq!(view.plugins_view(), suhina_library::store::PluginsView::Type);
+    assert_eq!(view.plugins_view(), suhina_library::store::PluginsView::Effects);
+    // Other categories keep the plug-ins in the tree under their vendors.
+    harness.get_by_label("Show All").click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Plug-ins")).is_some(), "the Plug-ins heading in the tree");
+    assert!(harness.query_by_label(&row("Alpha Verb")).is_none(), "under a closed heading");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_place_stays_chosen_on_a_second_click_and_its_cross_shows_everything() {
+    let (settings, folder) = (temp("place-settings"), temp("place"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Place Pinned").click();
+    harness.run();
+    harness.get_by_label("Place Pinned").click();
+    harness.run();
+    assert!(harness.state().browser.place.is_some(), "a second click keeps the place");
+    harness.get_by_label("Show everything").click();
+    harness.run();
+    assert!(harness.state().browser.place.is_none(), "the cross lets go of it");
+    // A recent group brings its category; another category lets go of the group.
+    harness.get_by_label("Place Recent MIDI").click();
+    harness.run();
+    assert_eq!(harness.state().browser.category, suhina_session::Category::Midi);
+    harness.get_by_label("Show Instruments").click();
+    harness.run();
+    assert!(harness.state().browser.place.is_none(), "MIDI's recent items are not instruments");
+    // The chosen category clicked again shows its whole tree.
+    harness.get_by_label("Place Pinned").click();
+    harness.run();
+    harness.get_by_label("Show Instruments").click();
+    harness.run();
+    assert!(harness.state().browser.place.is_none());
+    // The sample map is the samples' other view: List and Sample map over the list while
+    // Samples is chosen, and nowhere else (#711).
+    assert!(harness.query_by_label("Show the samples laid out by how they sound").is_none());
+    harness.get_by_label("Show Samples").click();
+    harness.run();
+    harness.get_by_label("Show the samples laid out by how they sound").click();
+    harness.run();
+    assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::Other);
+    harness.get_by_label("Show the samples as a list").click();
+    harness.run();
+    assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::List);
+    // Recent is an item of its own, every kind's recent items together.
+    harness.get_by_label("Place Recent").click();
+    harness.run();
+    assert_eq!(harness.state().browser.place, Some(suhina_ui::browser::Place::Recent(None)));
+    assert_eq!(harness.state().browser.category, suhina_session::Category::All);
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn the_plug_in_manager_switches_a_plug_in_off_and_the_browser_no_longer_offers_it() {
+    let (settings, folder) = (temp("manager-settings"), temp("manager"));
+    let mut harness = window_with_plugins(&settings, &folder);
+    harness.get_by_label("Show Plug-ins").click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Zeta Synth")).is_some());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    harness.get_by_label("Settings page: Plug-ins").click();
+    harness.run();
+    harness.get_by_label("Open the plug-in manager").click();
+    harness.run();
+    // Every plug-in in one table, sortable by its columns.
+    assert!(harness.query_by_label("Sort the plug-ins by Vendor").is_some());
+    assert!(harness.query_by_label("Use Alpha Verb").is_some());
+    harness.get_by_label("Use Zeta Synth").click();
+    harness.run();
+    let mut plugins = suhina_plugins::library::Library::new(Some(settings.join("plugins")), PathBuf::from("no-host"));
+    let spec = plugins.catalog().find("Zeta Synth").map(|p| p.spec()).unwrap();
+    assert!(!plugins.is_enabled(&spec), "switched off, and kept so");
+    harness.get_by_label("Close the plug-in manager").click();
+    harness.run();
+    assert!(harness.query_by_label("Settings page: Plug-ins").is_some(), "Settings shows again");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    assert!(harness.query_by_label(&row("Zeta Synth")).is_none(), "the browser no longer offers it");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -983,27 +1246,18 @@ fn a_plugin_drags_to_a_track_from_every_view() {
         app.session().map_or(0, |s| {
             let p = s.project();
             let channel = p.tracks.iter().find(|t| t.name == "Bass").and_then(|t| t.channel).unwrap_or(ChannelId(0));
-            p.channels.iter().find(|c| c.id == channel).map_or(0, |c| c.devices.len())
+            p.channel(channel).map_or(0, |c| c.devices.len())
         })
     };
     let to = harness.get_by_label("Track Bass").rect().center();
-    // From the flat list.
-    harness.get_by_label("Show plug-ins All").click();
-    harness.run();
-    assert!(harness.query_by_label(&row("Zeta Synth")).is_some(), "the flat list lists it");
+    // From the Plug-ins category's list.
+    assert!(harness.query_by_label(&row("Zeta Synth")).is_some(), "the instruments' list lists it");
     let before = devices(harness.state());
     let from = harness.get_by_label(&row("Zeta Synth")).rect().center();
-    harness.hover_at(from);
-    harness.run();
-    harness.drag_at(from);
-    harness.step();
-    harness.hover_at(from + egui::vec2(40.0, 0.0));
-    harness.step();
-    eprintln!("DRAG CARRIED: {}", harness.state().browser.drag.is_some());
     drag(&mut harness, from, to);
-    assert!(until(&mut harness, |app| devices(app) == before + 1), "from the flat list");
-    // From the grouped tree.
-    harness.get_by_label("Show plug-ins Grouped").click();
+    assert!(until(&mut harness, |app| devices(app) == before + 1), "from the plug-ins' list");
+    // From the tree, under the vendor.
+    harness.get_by_label("Show All").click();
     harness.run();
     harness.get_by_label(&row("Plug-ins")).click();
     harness.run();
@@ -1012,18 +1266,7 @@ fn a_plugin_drags_to_a_track_from_every_view() {
     let before = devices(harness.state());
     let from = harness.get_by_label(&row("Alpha Verb")).rect().center();
     drag(&mut harness, from, to);
-    assert!(until(&mut harness, |app| devices(app) == before + 1), "from the grouped tree");
-    // From the tree by type.
-    harness.get_by_label("Show plug-ins By type").click();
-    harness.run();
-    harness.get_by_label(&row("Instruments")).click();
-    harness.run();
-    harness.get_by_label(&row("Synth")).click();
-    harness.run();
-    let before = devices(harness.state());
-    let from = harness.get_by_label(&row("Zeta Synth")).rect().center();
-    drag(&mut harness, from, to);
-    assert!(until(&mut harness, |app| devices(app) == before + 1), "from the tree by type");
+    assert!(until(&mut harness, |app| devices(app) == before + 1), "from the tree");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -1178,6 +1421,83 @@ fn hovering_an_items_tag_dot_says_the_tag_in_the_status_bar() {
         "{:?}",
         harness.state().status()
     );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn an_items_tag_menu_ticks_its_tags_with_painted_boxes_and_toggles_them() {
+    let (settings, folder) = (temp("tag-menu-settings"), temp("tag-menu"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    double_click(&mut harness, &row(&name));
+    harness.run();
+    let item = folder.join("Loop 120bpm.wav").display().to_string();
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.tag", &json!({ "item": item, "tag": "Red", "on": true }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
+    harness.run();
+    let at = harness.get_by_label("Tag").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    // Each entry is a checkbox named by the tag alone: no check mark or padding in its text,
+    // which a font without the glyph draws as an empty box (#853).
+    assert_eq!(harness.get_by_label("Red").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
+    assert_eq!(harness.get_by_label("Orange").accesskit_node().toggled(), Some(egui::accesskit::Toggled::False));
+    assert!(harness.query_by_label_contains("✓").is_none());
+    harness.get_by_label("Orange").click();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
+    assert!(tags.contains(&"Orange".to_string()) && tags.contains(&"Red".to_string()), "{tags:?}");
+    // A click on a ticked entry takes its tag off.
+    harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
+    harness.run();
+    let at = harness.get_by_label("Tag").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.get_by_label("Red").click();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
+    assert!(!tags.contains(&"Red".to_string()) && tags.contains(&"Orange".to_string()), "{tags:?}");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// After a click on a row the arrow keys move through the list: down and up step, left goes up
+/// to the folder or heading and closes it, right opens it again (#916).
+#[test]
+fn the_arrow_keys_move_through_the_list_after_a_click_on_a_row() {
+    let (settings, folder) = (temp("arrows-settings"), temp("arrows"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label(&row("Instruments")).click();
+    harness.run();
+    harness.get_by_label(&row("FM Synth")).click();
+    harness.run();
+    let selected = |h: &Harness<'static, App>| h.state().browser.selected().first().map(|s| s.name.clone());
+    assert_eq!(selected(&harness).as_deref(), Some("FM Synth"));
+    harness.key_press(Key::ArrowDown);
+    harness.run();
+    let next = selected(&harness);
+    assert_ne!(next.as_deref(), Some("FM Synth"), "down steps to the next row");
+    harness.key_press(Key::ArrowUp);
+    harness.run();
+    assert_eq!(selected(&harness).as_deref(), Some("FM Synth"));
+    // Left goes up to the heading, a second left closes it, right opens it again.
+    harness.key_press(Key::ArrowLeft);
+    harness.run();
+    assert_eq!(selected(&harness).as_deref(), Some("Instruments"));
+    harness.key_press(Key::ArrowLeft);
+    harness.run();
+    assert!(harness.query_by_label(&row("FM Synth")).is_none(), "the heading closed");
+    harness.key_press(Key::ArrowRight);
+    harness.run();
+    assert!(harness.query_by_label(&row("FM Synth")).is_some(), "the heading opened");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

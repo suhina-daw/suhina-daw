@@ -3,24 +3,29 @@ run-name: "Open issue: ${{ inputs.title }}"
 
 # Opens an issue as the GitHub App `suhina-bot` (`suhina-bot[bot]`) rather than as the person who
 # starts the run. Agent sessions write to GitHub with the account of the person who runs them;
-# issues they open through this workflow show the bot as their author (AGENTS.md › Tasks). The
+# issues they open through this workflow show the bot as their author (docs/workflow.md › Tasks). The
 # Discord bot writes as the same App (suhina-daw/suhina-bot#1). A pull request itself, its
 # description and its merge stay under the person's account; a review comment on one can be posted
 # as the bot through the Comment on pull request workflow (comment-pr.yml).
 #
 # Start it from Actions › Open issue › Run workflow, with
 # `gh workflow run open-issue.yml --json < request.json` (the inputs as JSON on stdin, so a long body
-# is not cut off by the command line; AGENTS.md › Tasks), or with the GitHub MCP's
+# is not cut off by the command line; docs/workflow.md › Tasks), or with the GitHub MCP's
 # `actions_run_trigger`. The run prints `OPENED_ISSUE=#<number> <url>` in its log and puts the link
 # in its summary; re-running a failed run does not open the issue twice.
 #
-# The actions are pinned to commits (the tag in the comment beside each): this job holds the App's
-# private key, and a tag can be moved to other code.
+# Only an account with write access can start it; GitHub answers anyone else's dispatch with
+# `HTTP 403: Must have admin rights to Repository`. Without write access an agent opens the issue
+# under the person's own account instead: scripts/agent_post.py checks the access and takes the
+# right path (docs/workflow.md › Tasks).
+#
+# The actions are pinned to commits, as in every workflow here (CONTRIBUTING.md › Dependencies):
+# this job holds the App's private key, and a tag can be moved to other code.
 #
 # Setup, by a maintainer only: the App `suhina-bot` has Repository permissions › Issues: Read and
 # write, Pull requests: Read and write (for comment-pr.yml), Organization permissions › Projects:
 # Read and write, and is installed on this repository only. The environment `suhina-bot` (Settings › Environments),
-# limited to the `main` branch, holds its App ID as SUHINA_BOT_APP_ID and a private key as
+# limited to the `main` branch, holds its public Client ID in the variable SUHINA_BOT_CLIENT_ID and a private key in the secret
 # SUHINA_BOT_PRIVATE_KEY.
 on:
   workflow_dispatch:
@@ -71,17 +76,17 @@ jobs:
           TYPE: ${{ inputs.type }}
           LABELS: ${{ inputs.labels }}
           PARENT: ${{ inputs.parent }}
-          # Only whether the secrets are set; the values stay out of this step.
-          HAS_SUHINA_BOT_APP_ID: ${{ secrets.SUHINA_BOT_APP_ID != '' }}
+          # Only whether the Client ID and private key are set; the values stay out of this step.
+          HAS_SUHINA_BOT_CLIENT_ID: ${{ vars.SUHINA_BOT_CLIENT_ID != '' }}
           HAS_SUHINA_BOT_PRIVATE_KEY: ${{ secrets.SUHINA_BOT_PRIVATE_KEY != '' }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const fail = (message) => { core.setFailed(message); throw new Error(message); };
 
-            for (const name of ["SUHINA_BOT_APP_ID", "SUHINA_BOT_PRIVATE_KEY"]) {
+            for (const name of ["SUHINA_BOT_CLIENT_ID", "SUHINA_BOT_PRIVATE_KEY"]) {
               if (process.env[`HAS_${name}`] !== "true") {
-                fail(`The secret ${name} is missing from the environment suhina-bot.`);
+                fail(`The variable or secret ${name} is missing from the environment suhina-bot.`);
               }
             }
 
@@ -137,9 +142,9 @@ jobs:
 
       - name: Token of the suhina-bot App
         id: app-token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.SUHINA_BOT_APP_ID }}
+          client-id: ${{ vars.SUHINA_BOT_CLIENT_ID }}
           private-key: ${{ secrets.SUHINA_BOT_PRIVATE_KEY }}
           permission-issues: write
 
@@ -170,7 +175,7 @@ jobs:
             );
             let issue = found;
             if (!issue) {
-              const payload = { owner, repo, title, body: `${process.env.BODY}\n\n${marker}`, labels };
+              const payload = { owner, repo, title, body: `${process.env.BODY}\n\nOn behalf of @${context.actor}\n\n${marker}`, labels };
               if (issueType) payload.type = issueType;
               ({ data: issue } = await github.request("POST /repos/{owner}/{repo}/issues", payload));
             }

@@ -7,6 +7,8 @@ name: Discord
 #
 # Secrets: DISCORD_WEBHOOK_EVENTS and DISCORD_WEBHOOK_RELEASES, each a channel's webhook URL
 # (Discord: channel settings > Integrations > Webhooks). A channel without its secret gets nothing.
+# The Discord secrets are in the environment `discord`, which only `main` and `v*` tags may use
+# (a release event runs on its tag), so a workflow pushed to another branch cannot read them.
 #
 # pull_request_target, so pull requests from forks are posted too: it runs the workflow and the
 # script from the base branch with the secrets, and never checks out or runs the pull request's
@@ -38,9 +40,13 @@ concurrency:
 jobs:
   post:
     runs-on: ubuntu-latest
+    # For the secrets only: no deployment is recorded on the pull request.
+    environment:
+      name: discord
+      deployment: false
     steps:
       # The base branch, for the script; never the pull request's head.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Post to Discord
@@ -71,8 +77,11 @@ jobs:
     runs-on: ubuntu-latest
     # Two renames of a thread in ten minutes; the script waits out a rate limit.
     timeout-minutes: 15
+    environment:
+      name: discord
+      deployment: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Mark the testing thread merged

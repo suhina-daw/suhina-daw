@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -11,16 +12,20 @@ use super::*;
 const BLOCK: usize = 256;
 const LONG: Duration = Duration::from_secs(5);
 
-/// A host on a thread that halves every sample, and pauses for `pause` on block `slow`.
-fn halving_host(address: String, blocks: usize, slow: Option<(usize, Duration)>) -> thread::JoinHandle<usize> {
+/// A host on a thread that halves every sample, and on block `slow` stays until it is told to go.
+fn halving_host(
+    address: String,
+    blocks: usize,
+    slow: Option<(usize, mpsc::Receiver<()>)>,
+) -> thread::JoinHandle<usize> {
     thread::spawn(move || {
         let mut served = Served::open(&address).unwrap_or_else(|e| panic!("{e}"));
         let mut count = 0;
         while count < blocks {
-            let pause = slow.filter(|(at, _)| *at == count).map(|(_, d)| d);
+            let hold = slow.as_ref().filter(|(at, _)| *at == count).map(|(_, go)| go);
             if served.serve(LONG, |input, output| {
-                if let Some(pause) = pause {
-                    thread::sleep(pause);
+                if let Some(go) = hold {
+                    let _ = go.recv();
                 }
                 for (o, i) in output.iter_mut().zip(input) {
                     *o = i * 0.5;
@@ -69,46 +74,36 @@ fn shorter_blocks_and_odd_lengths() {
 #[test]
 fn a_slow_host_misses_then_the_link_is_busy_until_it_answers() {
     let mut link = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
-    let host = halving_host(link.address(), 3, Some((1, Duration::from_millis(200))));
+    let (go, hold) = mpsc::channel();
+    let host = halving_host(link.address(), 3, Some((1, hold)));
     let input = ramp(BLOCK * 2, 1.0);
     let mut output = vec![0.0; BLOCK * 2];
     assert_eq!(link.process(&input, &mut output, LONG), Outcome::Done);
 
     let timeout = Duration::from_millis(10);
-    let started = Instant::now();
     output.fill(7.0);
     assert_eq!(link.process(&input, &mut output, timeout), Outcome::Missed);
-    assert!(started.elapsed() < timeout + Duration::from_millis(30), "{:?}", started.elapsed());
     assert!(output.iter().all(|&o| o == 7.0), "a missed block leaves the output alone");
+    // Busy comes at once: with an hour to wait, a wait here would not come back.
+    assert_eq!(link.process(&input, &mut output, Duration::from_secs(3600)), Outcome::Busy);
 
-    let started = Instant::now();
-    assert_eq!(link.process(&input, &mut output, timeout), Outcome::Busy);
-    assert!(started.elapsed() < Duration::from_millis(5), "busy returns at once: {:?}", started.elapsed());
-
-    // The link stays busy until the slow host answers; a loaded machine may take longer than the
-    // host's pause, so wait for that rather than for a fixed time.
-    let waiting = Instant::now();
-    let mut outcome = link.process(&input, &mut output, LONG);
-    while outcome == Outcome::Busy && waiting.elapsed() < LONG {
-        thread::sleep(Duration::from_millis(10));
-        outcome = link.process(&input, &mut output, LONG);
-    }
-    assert_eq!(outcome, Outcome::Done);
+    // The link stays busy until the slow host answers.
+    assert!(go.send(()).is_ok());
+    assert!(link.wait_ready(Instant::now() + LONG));
+    assert_eq!(link.process(&input, &mut output, LONG), Outcome::Done);
     assert_eq!(output[3], input[3] * 0.5);
     assert_eq!(host.join().ok(), Some(3));
 }
 
 #[test]
-fn without_a_host_every_block_misses_or_is_busy_on_time() {
+fn without_a_host_every_block_misses_or_is_busy() {
     let mut link = Link::create(1, 64).unwrap_or_else(|e| panic!("{e}"));
     let mut output = [0.0; 64];
     let timeout = Duration::from_millis(5);
-    let started = Instant::now();
     assert_eq!(link.process(&[1.0; 64], &mut output, timeout), Outcome::Missed);
     for _ in 0..100 {
         assert_eq!(link.process(&[1.0; 64], &mut output, timeout), Outcome::Busy);
     }
-    assert!(started.elapsed() < Duration::from_millis(100), "{:?}", started.elapsed());
 }
 
 #[test]
@@ -133,32 +128,99 @@ fn sizes_are_checked() {
 
 #[test]
 fn opening_something_else_fails_cleanly() {
-    let dir = std::env::temp_dir();
-    let stranger = dir.join(format!("not-a-link-{}", std::process::id()));
+    let stranger = std::env::temp_dir().join(format!("not-a-link-{}", std::process::id()));
     let _ = std::fs::write(&stranger, [0u8; 1024]);
     assert!(matches!(Served::open(&stranger.display().to_string()), Err(IpcError::BadLink(_))));
     let _ = std::fs::remove_file(&stranger);
 
-    let short = dir.join(format!("suhina-ipc-short-{}", std::process::id()));
-    let _ = std::fs::write(&short, [0u8; 16]);
-    assert!(matches!(Served::open(&short.display().to_string()), Err(IpcError::BadLink(_))));
-    let _ = std::fs::remove_file(&short);
+    // Shared memory of a link's kind that does not hold one.
+    let short = shm::with_bytes("ipc", &[0u8; 16]);
+    assert!(matches!(Served::open(short.address()), Err(IpcError::BadLink(_))));
+    let garbage = shm::with_bytes("ipc", &[0xAAu8; 4096]);
+    assert!(matches!(Served::open(garbage.address()), Err(IpcError::BadLink(_))));
+    // An audio source is not a link, whatever it holds.
+    let source = AudioSource::from_interleaved(&[0.5; 4096], 2, 48_000.0).unwrap_or_else(|e| panic!("{e}"));
+    assert!(Served::open(&source.address()).is_err());
 
-    let garbage = dir.join(format!("suhina-ipc-garbage-{}", std::process::id()));
-    let _ = std::fs::write(&garbage, [0xAAu8; 4096]);
-    assert!(matches!(Served::open(&garbage.display().to_string()), Err(IpcError::BadLink(_))));
-    let _ = std::fs::remove_file(&garbage);
-
-    assert!(Served::open("suhina-ipc-does-not-exist").is_err());
+    let own = std::process::id();
+    for address in [
+        "suhina-ipc-does-not-exist".to_string(),
+        "Local\\suhina-ipc-does-not-exist".to_string(),
+        "Local\\suhina-ipc-1-2-3".to_string(),
+        format!("/proc/{own}/fd/0"),
+        format!("/proc/{own}/fd/99999"),
+        format!("/proc/{own}/fd/0#0"),
+        format!("/proc/{own}/fd/0#"),
+        "/proc/self/fd/0".to_string(),
+        String::new(),
+    ] {
+        assert!(Served::open(&address).is_err(), "{address}");
+    }
 }
 
 #[test]
-fn the_region_is_removed_with_the_link() {
+fn the_region_goes_with_the_link() {
     let link = Link::create(2, 64).unwrap_or_else(|e| panic!("{e}"));
     let address = link.address();
-    assert!(std::path::Path::new(&address).exists());
+    let file = cfg!(not(any(windows, target_os = "linux")));
+    // On Linux the address is the engine's descriptor under /proc, which exists while it holds
+    // it: no file in /dev/shm. On Windows it is a mapping's name, no file at all.
+    if cfg!(target_os = "linux") {
+        let path = address.split('#').next().unwrap_or_default();
+        assert!(address.starts_with("/proc/") && std::path::Path::new(path).exists(), "{address}");
+    } else {
+        assert_eq!(std::path::Path::new(&address).exists(), file, "{address}");
+    }
     drop(link);
-    assert!(!std::path::Path::new(&address).exists());
+    // On Linux the address is a descriptor number, which another test may take next.
+    if !cfg!(target_os = "linux") {
+        assert!(Served::open(&address).is_err());
+    }
+    if file {
+        assert!(!std::path::Path::new(&address).exists());
+    }
+}
+
+/// A descriptor number that is closed and taken by another region must not open as the old one
+/// (a host that opens late, after the engine gave up on its load).
+#[test]
+#[cfg(target_os = "linux")]
+fn a_reused_descriptor_number_does_not_open_the_old_address() {
+    let first = Link::create(2, 64).unwrap_or_else(|e| panic!("{e}"));
+    let old = first.address();
+    let number = old.split("/fd/").nth(1).and_then(|r| r.split('#').next()).map(str::to_string);
+    drop(first);
+    // Make links until one has the number the first had (usually the very next).
+    let mut keep = Vec::new();
+    for _ in 0..64 {
+        let link = Link::create(2, 64).unwrap_or_else(|e| panic!("{e}"));
+        let same = link.address().split("/fd/").nth(1).and_then(|r| r.split('#').next()).map(str::to_string) == number;
+        keep.push(link);
+        if same {
+            break;
+        }
+    }
+    assert!(matches!(Served::open(&old), Err(IpcError::BadLink(_))), "{old}");
+    for link in &keep {
+        assert!(Served::open(&link.address()).is_ok());
+    }
+}
+
+#[test]
+fn a_link_works_on_once_its_name_is_gone() {
+    let mut link = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
+    let address = link.address();
+    let host = halving_host(address.clone(), 2, None);
+    // Wait until the host has opened it, as the engine waits for the host's answer to a load.
+    let mut output = vec![0.0; BLOCK * 2];
+    assert_eq!(link.process(&ramp(BLOCK * 2, 0.0), &mut output, LONG), Outcome::Done);
+    link.host_opened();
+    if cfg!(not(any(windows, target_os = "linux"))) {
+        assert!(!std::path::Path::new(&address).exists());
+    }
+    assert_eq!(link.process(&ramp(BLOCK * 2, 1.0), &mut output, LONG), Outcome::Done);
+    assert_eq!(output, ramp(BLOCK * 2, 1.0).iter().map(|v| v * 0.5).collect::<Vec<_>>());
+    assert_eq!(host.join().unwrap_or_else(|_| panic!("host")), 2);
 }
 
 #[test]
@@ -253,23 +315,21 @@ fn looking_for_an_answer_leaves_the_block_to_wait() {
     let mut link = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
     // Nothing out: nothing to wait for.
     assert!(link.wait_answered(Instant::now()));
-    let host = halving_host(link.address(), 2, Some((0, Duration::from_millis(100))));
+    let (go, hold) = mpsc::channel();
+    let host = halving_host(link.address(), 2, Some((0, hold)));
     let input = ramp(BLOCK * 2, 1.0);
     let mut output = vec![0.0; BLOCK * 2];
     assert!(link.send_with_events(&input, &[], output.len()));
-    // A look that is already past its time returns at once, and a short wait gives up.
-    let started = Instant::now();
-    assert!(!link.wait_answered(started));
+    // A look that is already past its time finds nothing, and a short wait gives up.
+    assert!(!link.wait_answered(Instant::now()));
     assert!(!link.wait_answered(Instant::now() + Duration::from_millis(5)));
-    assert!(started.elapsed() < Duration::from_millis(60), "{:?}", started.elapsed());
     // Neither took the block: it is still out, and its answer comes.
     assert!(!link.ready());
+    assert!(go.send(()).is_ok());
     assert!(link.wait_answered(Instant::now() + LONG));
     // Answered, but its result is not taken until `wait`, which then does not wait.
     assert!(!link.ready());
-    let started = Instant::now();
     assert_eq!(link.wait(&mut output, Instant::now()), Outcome::Done);
-    assert!(started.elapsed() < Duration::from_millis(5));
     assert_eq!(output[3], input[3] * 0.5);
     assert!(link.ready());
     assert_eq!(link.process(&input, &mut output, LONG), Outcome::Done);

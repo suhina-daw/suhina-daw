@@ -7,6 +7,7 @@
 use serde_json::{Value, json};
 use suhina_engine::Level;
 
+use crate::commands::Args;
 use crate::commands::track_id;
 use crate::{CommandError, Session};
 
@@ -41,7 +42,7 @@ pub(crate) fn levels(session: &mut Session, _: &Value) -> Result<Value, CommandE
             let mut value = describe(*level);
             if let Some(object) = value.as_object_mut() {
                 object.insert("track".into(), json!(track.id.0));
-                object.insert("track_name".into(), json!(track.name));
+                object.insert("track_name".into(), json!(project.shown_track_name(track.id)));
             }
             Some(value)
         })
@@ -51,11 +52,11 @@ pub(crate) fn levels(session: &mut Session, _: &Value) -> Result<Value, CommandE
 
 /// `mixer.resetClip`: turns off one track's clip indicator, the main output's, or all of them.
 pub(crate) fn reset_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let track = match params.get("track") {
+    let track = match Args::new(params).value("track") {
         Some(_) => Some(track_id(session.project(), params)?),
         None => None,
     };
-    let main = match params.get("main") {
+    let main = match Args::new(params).value("main") {
         None => false,
         Some(value) => value.as_bool().ok_or("main must be true or false")?,
     };

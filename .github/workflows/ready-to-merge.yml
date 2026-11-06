@@ -9,9 +9,12 @@ name: Ready to merge
 # - Labelled by a maintainer: the app approves the head commit as the event saw it (main's rule
 #   needs one approval, and a maintainer cannot approve their own pull request), then enables
 #   auto-merge with that commit as the expected head, so a commit pushed in between is never what
-#   gets merged. A contributor's pull request also needs `test-build` (a maintainer read the code
-#   and its build); without it the label comes off with a comment saying why. Dependabot's
-#   Cargo updates do not: the queue's build and tests are what check a new crate.
+#   gets merged. Adding the label is the maintainer's approval of that head, for any author, but
+#   only with a test build of it: a successful, authorized `test build` run whose artifacts are
+#   still available, for that head or for a head it reaches by merging only main
+#   (scripts/build_reuse.py, the lookup /test-build uses). Without one the label comes off with a
+#   comment asking for /test-build; a build that is still running counts as none yet. A pull
+#   request that changes nothing test-build.yml's paths filter builds needs none.
 # - A push by anyone but a maintainer takes the label off, turns auto-merge off and leaves the
 #   pull request out of the queue: the new commits wait for a maintainer to read them, as the
 #   `test-build` label does (test-build-links.yml, job `unlabel`). main's rule dismisses the
@@ -26,10 +29,13 @@ name: Ready to merge
 # It acts with a short-lived token of the repository's GitHub App (the one docs-generated.yml
 # pushes with), not GITHUB_TOKEN: GitHub starts no workflows for a merge made through
 # GITHUB_TOKEN, and the workflows on main must run after every merge. Setup: the app has
-# Repository permissions › Contents: Read and write and Pull requests: Read and write; its App ID
-# and private key are DOCS_BOT_APP_ID and DOCS_BOT_PRIVATE_KEY in the `docs-bot` environment
+# Repository permissions › Contents, Pull requests and Issues: Read and write; its public
+# Client ID is the DOCS_BOT_CLIENT_ID variable and its key the DOCS_BOT_PRIVATE_KEY secret in `docs-bot`
 # (pull_request_target runs on main, which the environment allows); Settings › General › Allow
-# auto-merge is on.
+# auto-merge is on. The queue merges as the app, and GitHub closes the issues a description
+# closes (`Closes #N`) as the one who merged: without Issues, they stay open and nothing reports it.
+# A permission added to the app reaches the token only once the organisation's installation
+# accepts it (Settings › GitHub Apps › suhina-docs-bot › Configure › Accept new permissions).
 
 on:
   pull_request_target:
@@ -41,8 +47,8 @@ permissions: {}
 # must be handled. A push that lands while a run approves is caught by --match-head-commit.
 
 env:
-  # The maintainers are listed here, in test-build.yml, in test-build-links.yml and in claim.yml.
-  MAINTAINERS: juhamikael
+  # All workflows read the repository variable MAINTAINERS.
+  MAINTAINERS: ${{ vars.MAINTAINERS }}
   LABEL: ready to merge
   # Shell functions the jobs source: whether the pull request has the label now (not as the event
   # saw it), and stopping a merge: auto-merge off when it is on, and out of the queue when it is in
@@ -68,21 +74,62 @@ env:
     }
 
 jobs:
+  roles:
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      sender: ${{ steps.roles.outputs.sender }}
+      actor: ${{ steps.roles.outputs.actor }}
+    steps:
+      - id: roles
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          MAINTAINERS: ${{ vars.MAINTAINERS }}
+        with:
+          script: |
+            const maintainers = String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean);
+            const member = login => maintainers.includes(String(login || '').toLowerCase());
+            core.setOutput('sender', member(context.payload.sender?.login));
+            core.setOutput('actor', member(context.actor));
+
   queue:
+    needs: roles
     name: approve and queue
     if: >-
       (github.event.action == 'labeled' && github.event.label.name == 'ready to merge') ||
       (github.event.action == 'synchronize' &&
         contains(github.event.pull_request.labels.*.name, 'ready to merge') &&
-        contains(fromJSON('["juhamikael"]'), github.event.sender.login))
+        needs.roles.outputs.sender == 'true')
     runs-on: ubuntu-latest
     environment: docs-bot
+    # Read-only token for the build lookup; writes go through the app's token.
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
     steps:
+      # main's automation only: the pull request's files are never checked out or run here.
+      - name: Check out default-branch automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Find a test build of the head
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST: '{"command": "test-build", "sha": "${{ github.event.pull_request.head.sha }}", "number": ${{ github.event.pull_request.number }}}'
+          TRUSTED_CONTRIBUTORS: ${{ vars.TRUSTED_CONTRIBUTORS }}
+        run: |
+          build=$(python3 scripts/build_reuse.py)
+          echo "result=$build" >> "$GITHUB_OUTPUT"
       - name: Token of the app
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.DOCS_BOT_APP_ID }}
+          client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
       - name: Approve the commit and turn on merge when ready
         env:
@@ -90,33 +137,31 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
           SENDER: ${{ github.event.sender.login }}
-          AUTHOR: ${{ github.event.pull_request.user.login }}
-          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          HAS_TEST_BUILD: ${{ contains(github.event.pull_request.labels.*.name, 'test-build') }}
+          BUILD: ${{ steps.build.outputs.result }}
         run: |
           eval "$HELPERS"
-          is_maintainer() { printf '%s\n' $MAINTAINERS | grep -Fxq -- "$1"; }
-          # Dependabot's Cargo updates need no `test-build`: a new version of a crate is checked by
-          # the build and the tests the queue runs, not by trying the app by hand. Its updates of
-          # the Actions are not: `ci` skips the Rust jobs for a change under .github/, so nothing
-          # in the queue runs the workflows they change. The login is GitHub's own bot account,
-          # which no one else can open a pull request as, and it names its branches by ecosystem.
-          is_dependabot_cargo() {
-            [ "$AUTHOR" = "dependabot[bot]" ] && [ "$AUTHOR_TYPE" = "Bot" ] && [[ "$HEAD_REF" == dependabot/cargo/* ]]
+          is_maintainer() {
+            printf '%s' "$MAINTAINERS" | tr ',[:space:]' '\n' | sed 's/^@//' | tr '[:upper:]' '[:lower:]' | grep -Fxq -- "${1,,}"
           }
           if ! is_maintainer "$SENDER"; then
             gh pr edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$LABEL"
             echo "::notice::$SENDER is not a maintainer; the label was taken off."
             exit 0
           fi
-          if ! is_maintainer "$AUTHOR" && ! is_dependabot_cargo && [ "$HAS_TEST_BUILD" != "true" ]; then
+          # Nothing merges without a finished test build of this head (or of the head it updated
+          # with main only). A lookup that failed has already failed the job, label kept.
+          state=$(printf '%s' "$BUILD" | jq -r --arg sha "$SHA" 'if .head == $sha then .state // "" else "" end')
+          # no-binary: test-build.yml never runs for this change (documentation, scripts or other
+          # workflows only), so there is no build to wait for.
+          if [ "$state" != "ready" ] && [ "$state" != "no-binary" ]; then
             gh pr edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$LABEL"
             gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body \
-              "\`$LABEL\` needs \`test-build\` on a contributor's pull request: add \`test-build\`, try the build of the commit you read, then add \`$LABEL\` again (CONTRIBUTING.md › Merging many pull requests)."
-            echo "::notice::A contributor's pull request without test-build; the label was taken off."
+              "\`$LABEL\` needs a finished test build of ${SHA:0:7}: comment \`/test-build\`, wait for the build to succeed, then add \`$LABEL\` again (CONTRIBUTING.md › Merging many pull requests)."
+            echo "::notice::No finished test build of ${SHA:0:7}; the label was taken off."
             exit 0
           fi
+          # The maintainer's label approves this exact head. CODEOWNERS and all required checks
+          # still gate the merge queue.
           gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/reviews" \
             -f commit_id="$SHA" -f event=APPROVE \
             -f body="\`$LABEL\`: a maintainer read ${SHA:0:7}; merge when every check is green." >/dev/null
@@ -139,19 +184,20 @@ jobs:
           fi
 
   unlabel:
+    needs: roles
     name: take the label off new commits
     if: >-
       github.event.action == 'synchronize' &&
       contains(github.event.pull_request.labels.*.name, 'ready to merge') &&
-      !contains(fromJSON('["juhamikael"]'), github.event.sender.login)
+      needs.roles.outputs.sender != 'true'
     runs-on: ubuntu-latest
     environment: docs-bot
     steps:
       - name: Token of the app
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.DOCS_BOT_APP_ID }}
+          client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
       # Taking the label off starts the `stop` job below, which turns auto-merge off.
       - name: Remove the label
@@ -170,9 +216,9 @@ jobs:
     steps:
       - name: Token of the app
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.DOCS_BOT_APP_ID }}
+          client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
       - name: Turn off merge when ready, leave the queue, dismiss the approvals
         env:

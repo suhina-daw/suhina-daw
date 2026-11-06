@@ -2,8 +2,9 @@
 description: How the browser's folders are indexed, kept on disk and kept up to date (start-up check, file-system watching, polling), and the limits that protect it from hostile folders
 read_when: file index, library index, folder scan, watching folders, notify, inotify, polling, network drive, browser.json, library crate, search speed
 type: decision
-status: current
-last_verified: 2026-10-14
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - crates/library/**
   - crates/session/src/library.rs
@@ -11,7 +12,6 @@ covers:
 
 # 0012: The file library: an index on disk, watched
 
-- **Status:** accepted
 - **Date:** 2026-10-12
 
 ## Context
@@ -33,13 +33,16 @@ or full of odd names.
    index, the pins, the recent items and the tags. `Projects` holds it, as it holds the plug-in
    library, and the `library.*` commands run on it. It depends on `media` only for what a file
    is (kinds by extension) and does no decoding of its own: durations, tempo and key are read
-   on demand through `media` (`library.info`), never while indexing. The browser's view of the
-   installed plug-ins is kept here too (`library.setPluginsView`, `plugins_view` in
-   `browser.json`; [the plug-in browsing spec](../spec/plugin-browsing.md)).
+   on demand through `media` (`library.info`), never while indexing. Which installed
+   plug-ins the browser's Plug-ins category lists (instruments or effects) is kept here too
+   (`library.setPluginsView`, `plugins_view` in `browser.json`;
+   [the plug-in browsing spec](../spec/plugin-browsing.md)).
 2. **The index lists names, not contents.** Per file: its path below the folder, kind, size
    and modification time; per sub-folder: its modification time. Searching runs over this list
-   in memory on the calling thread (a linear scan over at most 200 000 entries per folder takes
-   milliseconds).
+   in memory, on the calling thread up to 4096 files and on a thread of its own above that (a
+   linear scan over at most 200 000 entries per folder takes milliseconds, which is still too
+   long for every key on the window's thread).
+   *Amended 2026-11-02, see Amendment: a large library's search.*
 3. **Kept on disk**, in `library/index-<n>.tsv` beside `browser.json` (one file per folder,
    named by a hash of its path): a version line, the folder's path, then one tab-separated line
    per entry. A file that does not parse, is of an older version (an index written under the project's old
@@ -83,6 +86,18 @@ or full of odd names.
 - On Linux a folder too large for the watch budget is polled; raising the system limit
   (`sysctl fs.inotify.max_user_watches`) lets it be watched.
 - Moving a folder that is in the library makes it *missing* until it is added again.
+- A file moved through the browser (`library.moveTo`, #943) keeps what the library holds for
+  it: its pin, its places among the recent items and its tags move to its new path, and the
+  folders that held it and hold it now are read again at once, without waiting for the watch.
+  A file moved outside Suhina loses them, as they are kept by path.
+
+## Amendment: a large library's search (2026-11-02, #1111)
+
+A search walked the whole list on the window's thread at every key, which stalled typing in a large
+library. Above 4096 files it now runs on a thread of its own: the earlier results stay until it
+answers, and the next key cancels it. Up to that the search stays on the calling thread, so a small
+library answers in the same frame. What the browser does is in
+[the browser spec](../spec/browser.md).
 
 ## Alternatives considered
 

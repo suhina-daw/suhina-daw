@@ -1,0 +1,13 @@
+{
+  "parameters": {
+    "input": {"control": "knob", "ui": {"decimals": 2, "position": [0.0, 0], "size": [52.0, 84], "font_size": 11.0, "label_position": "top"}},
+    "ratio": {"control": "log_knob", "ui": {"decimals": 2, "position": [52.0, 0], "size": [52.0, 84], "font_size": 11.0, "label_position": "top"}},
+    "attack": {"control": "log_knob", "ui": {"decimals": 3, "position": [104.0, 0], "size": [52.0, 84], "font_size": 11.0, "label_position": "top"}},
+    "release": {"control": "log_knob", "ui": {"decimals": 3, "position": [156.0, 0], "size": [52.0, 84], "font_size": 11.0, "label_position": "top"}},
+    "knee": {"control": "knob", "ui": {"decimals": 2, "position": [208.0, 0], "size": [52.0, 84], "font_size": 11.0, "label_position": "top"}},
+    "threshold": {"control": "knob", "ui": {"decimals": 1, "position": [0.0, 84], "size": [65.0, 84], "font_size": 11.0, "label_position": "top"}},
+    "sidechainHighPass": {"control": "log_knob", "ui": {"decimals": 1, "position": [65.0, 84], "size": [65.0, 84], "font_size": 11.0, "label_position": "top", "tooltip": "Side-Chain High-Pass"}},
+    "output": {"control": "knob", "ui": {"decimals": 2, "position": [130.0, 84], "size": [65.0, 84], "font_size": 11.0, "label_position": "top"}},
+    "mix": {"control": "knob", "ui": {"decimals": 1, "position": [195.0, 84], "size": [65.0, 84], "font_size": 11.0, "label_position": "top"}}
+  }
+}

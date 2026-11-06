@@ -3,7 +3,7 @@ description: User guide to the keyboard shortcuts, one entry per action with its
 read_when: user guide, keyboard shortcuts, what does this key do, list of keys, every shortcut explained, keybindings, hotkeys, action ids, which action a key runs, back up keys, share keymap, keymap.json, rebind a key, keys for agents
 type: howto
 status: current
-last_verified: 2026-10-16
+last_verified: 2026-11-05
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -29,7 +29,7 @@ The technical details (the presets, the mouse switches and the keymap file) are 
   - **Anywhere**: in any view, as long as you are not typing in a text field.
   - **Piano roll**: only after you have clicked inside the piano roll (the editor that shows a
     MIDI clip's notes). Until you click there, the same keys keep their other uses.
-  - **Session slot**: in the Session view, when a clip slot is selected. A slot is one of the boxes
+  - **Launcher slot**: in the Launcher view, when a clip slot is selected. A slot is one of the boxes
     in a track's column that holds a clip.
   - **Selection**: acts on what is selected. In the arrangement that is the selected clips; in the
     piano roll, after a click in it, the selected notes.
@@ -40,7 +40,11 @@ A key does nothing while you type in a text field, such as the browser's search 
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Ctrl+T | `file.new` | Anywhere | Opens the project dialog, where you make a new project or open an existing one. The project opens in a tab of its own. |
+| Ctrl+N | `file.new` | Anywhere but the start panel, which offers the same | Opens the project dialog, where you make a new project or open an existing one. The project opens in a tab of its own. |
+| Ctrl+T | `track.addAudio` | A project | Adds an audio track. |
+| Ctrl+Shift+T | `track.addMidi` | A project | Adds a MIDI track. |
+| Ctrl+Shift+M | `clip.insertMidi` | Arrangement, a time selection | Puts an empty MIDI clip over the time selection on each of its MIDI tracks. |
+| A | `view.automation` | Arrangement | Shows every track's automation lanes, or hides them all when they all show. |
 | Ctrl+O | `file.open` | Anywhere | Opens the same project dialog with the cursor in its file path field, ready to open a project file. The project opens in a tab of its own. |
 | Ctrl+S | `file.save` | Anywhere | Saves the project in the file it came from. A project that has never been saved asks for a name and a place first. |
 | Ctrl+Shift+S | `file.saveAs` | Anywhere | Saves the project under a new name or in a new place. From then on, Ctrl+S saves into the new file. |
@@ -52,8 +56,8 @@ Suhina can have several projects open at once, each in a tab.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Ctrl+Tab | `projects.next` | Anywhere | Switches to the next project tab. After the last tab it goes back to the first. |
-| Ctrl+Shift+Tab | `projects.previous` | Anywhere | Switches to the previous project tab. Before the first tab it goes to the last. |
+| Ctrl+Tab | `project.next` | Anywhere | Shows the open projects while Ctrl is held: each Tab or Down moves to the next (Shift+Tab or Up back), letting go of Ctrl switches, Escape stays. |
+| Ctrl+Shift+Tab | `project.previous` | Anywhere | Switches to the previous project tab. Before the first tab it goes to the last. |
 
 The project you leave stops playing.
 
@@ -61,8 +65,7 @@ The project you leave stops playing.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Space | `transport.toggle` | Anywhere | Starts playback, or stops it when it is playing. Where playback starts and where the playhead goes when it stops are set in Settings › General › **Play from** and **Stop**. |
-| Shift+Space | `transport.playFromSelection` | Anywhere | Plays from the start of the clip selected in the Arrangement view, whatever the Play from setting says. With no clip selected it plays from the play start marker. |
+| Space | `transport.toggle` | Anywhere | Starts playback, or stops it when it is playing. Where playback starts and where the playhead goes when it stops are set in Settings › Arrangement › Time and play › **Play from** and **Stop**. |
 | Ctrl+L | `transport.setLoopEnabled` | Anywhere | Turns looping on or off. While looping is on, the arrangement plays the loop region over and over. If there is no loop region yet, turning it on makes one over the first 4 bars. |
 | M | `marker.addAtPlayhead` | Anywhere | Adds a marker (a named point in the arrangement) where the playhead is. While stopped, it adds the marker at the play start marker. |
 
@@ -70,14 +73,20 @@ The project you leave stops playing.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Tab | `view.toggle` | Anywhere | Switches between the Session view (clips in a grid of slots, launched by hand) and the Arrangement view (clips on a timeline). |
+| Tab | `view.toggle` | Anywhere | Switches between the Launcher view (clips in a grid of slots, launched by hand) and the Arrangement view (clips on a timeline). |
 | Shift+Tab | `view.detail` | Anywhere | Shows or hides the detail area at the bottom of the window, where the clip editor and the track's effects and instruments are. |
 | Ctrl+Shift+E | `view.editor` | Anywhere | Hides the clip editor, or shows it again. In the piano roll, Escape still only clears the note selection. |
+| Alt+M | `view.araEditor` | Arrangement | Opens the selected audio clip in its track's plug-in that edits clips (such as a pitch editor): the detail area shows the clip with the plug-in's editor. |
 | Ctrl+B | `view.browser` | Anywhere | Shows or hides the browser, the panel on the left that lists your samples, presets, effects, instruments and plug-ins. With the Draw-first preset this is Ctrl+Shift+B. |
 | Ctrl+F | `browser.search` | Anywhere | Puts the cursor in the browser's search field, and shows the browser when it is hidden. In the field, Up and Down move through the results, Enter adds the selected result to the selected track, and Escape clears the search and then leaves the field. |
-| Ctrl+Shift+M | `view.sampleMap` | Anywhere | Shows or hides the sample map in the main area. The sample map places your samples on a map by how they sound, so similar sounds are close together. Escape on the map closes it too. |
+| Ctrl+P | `view.quickAdd` | Anywhere, with a project open | Opens the quick-add palette in the middle of the window. The buttons along its bottom (Instruments, Effects, Samples, Presets) narrow what it lists, and with Instruments or Effects on, buttons under the field narrow plug-ins to VST2, VST3 or CLAP; each plug-in shows its format at the right. Type part of a name: Up and Down move through what it finds, and Enter (or a click) adds the lit effect or instrument to the selected track, or puts the lit sample or MIDI file on that track (on a new track below it when the track cannot hold the file), at the beat under the pointer or at the play start marker. With no track selected, a device gets a new track of its own. Escape or a click outside closes it. |
+| Ctrl+Alt+Shift+M | `view.sampleMap` | Anywhere | Shows or hides the sample map in the main area. The sample map places your samples on a map by how they sound, so similar sounds are close together. Escape on the map closes it too. |
 | Ctrl+Alt+M | `view.sampleMapWindow` | Anywhere | Opens the sample map in a window of its own, or puts it back in the main window. |
-| Ctrl+M | `view.mappingMode` | Anywhere | Starts or stops key mapping. While mapping, you click a clip slot, a scene or a stop button and press a key to launch it with. While the Session view is shown, a key mapped this way wins over its shortcut. |
+| 1 to 6 | `arrangement.tool1` … `arrangement.tool6` | Arrangement | With the Arrangement's toolbar on (Settings › Arrangement › Toolbar) and the Arrangement clicked last, choose its Select, Range, Split, Erase, Draw and Mute tools. With the piano roll clicked last, the same keys choose the piano roll's tools. |
+| Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4 | `arrangement.gridNarrow`, `arrangement.gridWiden`, `arrangement.gridTriplet`, `arrangement.gridSnap` | Arrangement | With the Arrangement clicked last, make its grid finer or coarser, turn triplets on or off, or turn snapping on or off. With the piano roll clicked last, the same keys change the piano roll's grid. |
+| Alt+Up, Alt+Down | `selection.takeUp`, `selection.takeDown` | Arrangement | Swaps each selected part of a comp (a part put on the track from a take lane) for the same span of the take above or below it, going round the takes. |
+| Ctrl+K | `view.computerKeyboard` | Anywhere | Turns the computer keyboard's notes on or off. While on, A W S E D F T G Y H U J K (and O L P ;) play the armed tracks like a piano's keys, Z and X move the octave and C and V the velocity, and those keys run no shortcut. The control bar's **Keys** button does the same. |
+| Ctrl+M | `view.mappingMode` | Anywhere | Starts or stops key mapping. While mapping, you click a clip slot, a scene or a stop button and press a key to launch it with. While the Launcher view is shown, a key mapped this way wins over its shortcut. |
 | Ctrl+, | `settings.open` | Anywhere | Opens Settings, or closes it when it is open. |
 | Ctrl+Plus or Ctrl+= | `view.zoomIn` | Anywhere | Makes everything in the window larger, in 10 % steps up to 200 %. Both keys work because on some keyboards Plus needs Shift. |
 | Ctrl+Minus | `view.zoomOut` | Anywhere | Makes everything in the window smaller, in 10 % steps down to 50 %. |
@@ -98,10 +107,24 @@ The zoom level is remembered the next time Suhina starts.
 | Delete or Backspace | `selection.delete` | Selection | Deletes the selected clips, or in the piano roll the selected notes. |
 | 0 | `selection.mute` | Selection | Mutes the selected clips, or unmutes them if they are muted. A muted clip stays in place but makes no sound. |
 | Ctrl+A | `selection.selectAll` | Anywhere | Selects every clip in the arrangement. In the piano roll, after a click in it, selects every note instead. |
-| Ctrl+E | `selection.split` | Selection | Splits the selected clip in two at the playhead. |
+| Ctrl+E | `selection.split` | Selection | Splits the selected clip in two where you clicked inside it, while playing too. It never splits at the playhead. |
 | Ctrl+J | `selection.consolidate` | Selection | Joins the selected clips, and the space between them, into one new clip. |
 
 Every key that acts on clips acts on the whole selection, and all of it is one undo step.
+
+With a time selection in the Arrangement (a drag on empty lanes, on the ruler, or over a clip as
+Settings › Arrangement › *Ctrl+drag selects time over clips* says), Delete, Ctrl+X, Ctrl+C,
+Ctrl+E, Ctrl+D and Ctrl+J act on what plays inside it: clips crossing its edges are split there.
+Ctrl+V puts material copied from several tracks back on its own tracks, from the play start
+marker. Ctrl+R edits a clip's name right on the clip; Enter or a click elsewhere keeps it, Escape
+leaves it. With several clips selected the name goes to all of them, as one undo step (Settings ›
+Arrangement › Rename every selected clip, on by default); after a click on a track's
+header, in either view, Ctrl+R edits the track's name in its header.
+
+Devices picked in a mixer strip's device list or the detail area's chain (a click, Ctrl to add,
+Shift for a run) take Delete, Ctrl+C, Ctrl+X and Ctrl+V the same way; a paste goes after the
+last picked device, with a plug-in's state as it was when copied. A double-click on a plug-in in
+the strip's list opens its editor.
 Ctrl+click a clip to add it to the selection; Shift+click selects everything from the last
 selected clip up to the one you click.
 
@@ -112,19 +135,20 @@ of clip is on.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Ctrl+G | `selection.group` | Selection | Puts the selected tracks in a group track. A group track holds other tracks so you can fold them away and set their volume together. |
+| Ctrl+G | `selection.group` | Selection | Puts the selected tracks in a group track. A group track holds other tracks so you can fold them away and set their volume together. With devices picked (clicked in a mixer strip's device list or in the device chain), it puts those devices into a device group instead: one box that holds them, with branches that run side by side. |
+| Ctrl+Shift+G | `selection.ungroup` | A picked device group | Takes a device group of one branch apart, putting its devices back in its place. |
 
-## Session view
+## Launcher view
 
-These keys work in the Session view when a clip slot is selected.
+These keys work in the Launcher view when a clip slot is selected.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Enter | `selection.launch` | Session slot | Launches the clip in the selected slot: it starts playing at the next launch point. |
-| Up | `selection.up` | Session slot | Selects the slot above. |
-| Down | `selection.down` | Session slot | Selects the slot below. |
-| Left | `selection.left` | Session slot | Selects the slot in the track to the left. |
-| Right | `selection.right` | Session slot | Selects the slot in the track to the right. |
+| Enter | `selection.launch` | Launcher slot | Launches the clip in the selected slot: it starts playing at the next launch point. |
+| Up | `selection.up` | Launcher slot | Selects the slot above. |
+| Down | `selection.down` | Launcher slot | Selects the slot below. |
+| Left | `selection.left` | Launcher slot | Selects the slot in the track to the left. |
+| Right | `selection.right` | Launcher slot | Selects the slot in the track to the right. |
 
 ## Piano roll
 
@@ -143,15 +167,19 @@ of one square of the grid, which follows the zoom and the grid setting.
 | B | `pianoRoll.draw` | Piano roll | Switches between the Select and Draw tools. |
 | Ctrl+A | `pianoRoll.selectAll` | Piano roll | Selects every note in the clip. |
 | Escape | `pianoRoll.deselect` | Piano roll | Clears the note selection. |
-| Left | `pianoRoll.earlier` | Piano roll | Moves the selected notes one grid step earlier. |
-| Right | `pianoRoll.later` | Piano roll | Moves the selected notes one grid step later. |
+| Left | `pianoRoll.earlier` | Piano roll | Moves the selected notes to the previous grid line: the first of them lands on it, and the others keep their distance to it. |
+| Right | `pianoRoll.later` | Piano roll | Moves the selected notes to the next grid line: the first of them lands on it, and the others keep their distance to it. |
 | Up | `pianoRoll.up` | Piano roll | Moves the selected notes one semitone higher. |
 | Down | `pianoRoll.down` | Piano roll | Moves the selected notes one semitone lower. |
+| Alt+Left | `pianoRoll.earlierFine` | Piano roll | Moves the selected notes a fine step (a 1/128 note) earlier, off the grid. |
+| Alt+Right | `pianoRoll.laterFine` | Piano roll | Moves the selected notes a fine step (a 1/128 note) later, off the grid. |
 | Shift+Up | `pianoRoll.octaveUp` | Piano roll | Moves the selected notes one octave (12 semitones) higher. |
 | Shift+Down | `pianoRoll.octaveDown` | Piano roll | Moves the selected notes one octave lower. |
 | Shift+Left | `pianoRoll.shorter` | Piano roll | Makes the selected notes one grid step shorter. A note never gets shorter than one step. |
-| Shift+Right | `pianoRoll.longer` | Piano roll | Makes the selected notes one grid step longer. |
-| Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings in the quantise block of the MIDI tools column. With notes selected it moves only those, otherwise every note. |
+| Shift+Right | `pianoRoll.longer` | Piano roll | Takes each selected note's end to the next grid line, or to the start of the next note of its key when that comes first (unless stacked notes are allowed). |
+| Alt+Shift+Left | `pianoRoll.shorterFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) shorter, off the grid. |
+| Alt+Shift+Right | `pianoRoll.longerFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) longer, off the grid, stopping at the next note of their key unless stacked notes are allowed. |
+| Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings in the quantise block of the MIDI tools column. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
 
 Copy, cut, paste, duplicate and delete in the piano roll use the [Editing](#editing) keys. With no
 note selected (or nothing copied, for paste) they act on the clip instead.
@@ -168,7 +196,7 @@ hear the track's instrument. Ctrl+click and Ctrl+drag on it select every note of
 ## Commands you can give a key
 
 Besides the actions above, every command that needs no further information can get a key. They
-are listed in Settings › Shortcuts under **Commands** and have no key until you give them one. The
+are listed in Settings › Keys under **Commands** and have no key until you give them one. The
 same commands run from `suhina-cli` and from agents through MCP ([`mcp.md`](../mcp.md)); the full
 list is [`commands.md`](../commands.md).
 
@@ -185,7 +213,7 @@ The ones most useful on a key:
 | `return.add` | Adds a return track, a track that effects are shared on; other tracks reach it through sends. |
 | `mixer.resetClip` | Turns off every clip indicator, the red marks that show a signal was too loud. |
 | `preview.stop` | Stops the sound the browser is previewing. |
-| `plugins.scan` | Looks for newly installed plug-ins. |
+| `plugin.scan` | Looks for newly installed plug-ins. |
 | `library.refresh` | Reads the browser's folders again, to pick up files added outside Suhina. |
 | `soundmap.analyse` | Analyses the samples again for the sample map. |
 | `project.autosave` | Reports the project's backups and the backup settings. |
@@ -218,7 +246,7 @@ Your keys are kept in one file, `keymap.json`:
 - **To back up** your keys, copy `keymap.json` somewhere safe.
 - **To move them to another computer** or **share them**, copy the file into the same folder
   there, while Suhina is closed. Suhina reads it when it starts.
-- **To go back to the defaults**, use **Reset all** in Settings › Shortcuts, or delete the file
+- **To go back to the defaults**, use **Reset all** in Settings › Keys, or delete the file
   while Suhina is closed.
 
 Suhina writes every action and its keys into the file, by action id, with the preset and the piano

@@ -9,8 +9,8 @@
 //! (issue #462). They are not serialisation defaults: a reader that misses a field still says so.
 
 use crate::{
-    AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ContentId, ContentKinds, Device, DeviceKind,
-    Extensions, FadeCurve, FollowAction, LaunchSettings, MidiInput, Note, StretchMode, Track, TrackId,
+    AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipId, ContentId, ContentKinds, Device, DeviceId,
+    DeviceKind, Extensions, FadeCurve, FollowAction, LaunchSettings, MidiInput, Note, StretchMode, Track, TrackId,
 };
 
 impl Note {
@@ -75,6 +75,7 @@ impl Clip {
     /// default follow action and launch settings.
     pub fn new(content: ContentId, start: f64, length: f64) -> Self {
         Self {
+            id: ClipId::NONE,
             content,
             start,
             length,
@@ -87,6 +88,8 @@ impl Clip {
             fade_out_curve: FadeCurve::default(),
             follow_action: FollowAction::default(),
             launch: LaunchSettings::default(),
+            color: None,
+            ara: false,
             extensions: Extensions::default(),
         }
     }
@@ -104,7 +107,7 @@ impl AudioRegion {
             duration_seconds: None,
             warped: false,
             stretch: StretchMode::default(),
-            warp_markers: Vec::new(),
+            warp_markers: Default::default(),
             gain: 1.0,
             transpose: 0.0,
             stream: None,
@@ -116,12 +119,14 @@ impl Device {
     /// An enabled device with no state, no parameters set and no automation.
     pub fn new(name: impl Into<String>, kind: DeviceKind) -> Self {
         Self {
+            id: DeviceId::NONE,
             name: name.into(),
             kind,
             enabled: true,
             state: None,
             params: Vec::new(),
             automation: Vec::new(),
+            clip_host: false,
             extensions: Extensions::default(),
         }
     }

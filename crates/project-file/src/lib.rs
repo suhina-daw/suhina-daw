@@ -6,11 +6,8 @@
 //! (ADR 0010, `docs/spec/suhina-format.md`).
 //!
 //! ```json
-//! { "format": "suhina", "version": 1, "project": { "transport": { … }, "tracks": [ … ], … } }
+//! { "format": "suhina", "version": 3, "project": { "transport": { … }, "tracks": [ … ], … } }
 //! ```
-//!
-//! Files saved before October 2026 end in `.locr` and name the format `"locr"`; they are the
-//! same format and still open ([`OLD_EXTENSION`], [`is_project_file`]).
 //!
 //! Binary data (plug-in state, extensions) is base64. Audio files are referred to by path,
 //! relative to the project file; [`rebase_audio`] moves those paths when a project is saved
@@ -24,26 +21,25 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
-    Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Channel, ChannelId,
-    ChannelRole, Clip, ClipContent, ContentId, ContentKinds, ContentLane, Device, DeviceKind, DeviceParam, Extension,
-    Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels, LaneData, LaunchMapping, LaunchMode,
-    LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL,
-    MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor,
-    Note, Project, Rgb, Scale, ScaleMode, Scene, Send, Slot, StretchMode, TempoPoint, TimeSignature,
-    TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
+    Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, Channel, ChannelId,
+    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceId,
+    DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels,
+    LaneData, LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn,
+    LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
+    MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale,
+    ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange,
+    Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
 };
 
 /// The file extension, without the dot.
-pub const EXTENSION: &str = "suhina";
-/// The extension of project files saved before October 2026, without the dot: the same format,
-/// still read, never chosen for a new file.
-pub const OLD_EXTENSION: &str = "locr";
+pub const EXTENSION: &str = suhina_model::PROJECT_EXTENSION;
 /// The `format` every file names.
 const FORMAT: &str = "suhina";
-/// The `format` files saved before October 2026 name; read as [`FORMAT`].
-const OLD_FORMAT: &str = "locr";
-/// The version this crate writes, and the newest it reads.
-pub const VERSION: u64 = 1;
+/// The version every file is written as, and the newest this crate reads. It rises with every
+/// change to what a file holds, so a Suhina that reads up to an older version refuses the file
+/// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
+/// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
+pub const VERSION: u64 = 8;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -71,11 +67,7 @@ impl From<&str> for ProjectFileError {
     }
 }
 
-/// Whether `path` names a project file by its extension: `.suhina`, or `.locr` from before
-/// October 2026 (either case).
-pub fn is_project_file(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION) || e.eq_ignore_ascii_case(OLD_EXTENSION))
-}
+pub use suhina_model::{is_preset_file, is_project_file};
 
 /// Reads a project file.
 pub fn read_file(path: &Path) -> Result<Project, ProjectFileError> {
@@ -91,18 +83,8 @@ pub fn read_file(path: &Path) -> Result<Project, ProjectFileError> {
 /// Writes `project` to `path`: to a file beside it first, then moved over it, so a failed save
 /// never leaves half a project.
 pub fn write_file(path: &Path, project: &Project) -> Result<(), ProjectFileError> {
-    let failed = |e: std::io::Error| ProjectFileError(format!("could not save {}: {e}", path.display()));
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent).map_err(failed)?;
-    }
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".saving");
-    let temporary = PathBuf::from(temporary);
-    std::fs::write(&temporary, to_json(project)).map_err(failed)?;
-    std::fs::rename(&temporary, path).map_err(|e| {
-        let _gone = std::fs::remove_file(&temporary);
-        failed(e)
-    })
+    suhina_fs::write_atomic(path, to_json(project))
+        .map_err(|e| ProjectFileError(format!("could not save {}: {e}", path.display())))
 }
 
 /// The project as the text of a `.suhina` file.
@@ -111,19 +93,25 @@ pub fn to_json(project: &Project) -> String {
     serde_json::to_string_pretty(&file).unwrap_or_default()
 }
 
-/// Reads the text of a `.suhina` file, or of a `.locr` one saved before October 2026. The
-/// project must validate (ids unique, references resolve), as an imported one must.
+/// Reads the text of a `.suhina` file. The project must validate (ids unique, references
+/// resolve), as an imported one must.
 pub fn from_json(text: &str) -> Result<Project, ProjectFileError> {
     let root = serde_json::from_str::<Value>(text).map_err(|e| format!("the project is not JSON: {e}"))?;
     let root = root.as_object().ok_or("a project file is a JSON object")?;
-    if !matches!(root.get("format").and_then(Value::as_str), Some(FORMAT | OLD_FORMAT)) {
-        return Err("this is not a Suhina project (its format is not \"suhina\")".to_string().into());
+    match root.get("format") {
+        Some(Value::String(format)) if format == FORMAT => {}
+        Some(Value::String(format)) => {
+            // Named in the message, cut short: the text is the file's, so it may be anything.
+            let found: String = format.chars().take(40).collect();
+            return Err(format!("this is not a Suhina project: its format is \"{found}\", not \"{FORMAT}\"").into());
+        }
+        _ => return Err(format!("this is not a Suhina project: it does not name the format \"{FORMAT}\"").into()),
     }
     let version = root.get("version").and_then(Value::as_u64).ok_or("the project's version is missing")?;
     if version == 0 || version > VERSION {
         return Err(format!("the project is version {version}; this Suhina reads up to version {VERSION}").into());
     }
-    let project = read_project(root.get("project").ok_or("the project is missing")?)?;
+    let project = read_project(root.get("project").ok_or("the project is missing")?, version)?;
     project.validate().map_err(|errors| {
         let list: Vec<String> = errors.iter().take(5).map(ToString::to_string).collect();
         format!("the project does not hold together: {}", list.join("; "))
@@ -135,9 +123,26 @@ pub fn from_json(text: &str) -> Result<Project, ProjectFileError> {
 /// to `to` (the folder of the file it is saved in): each relative path is written relative to
 /// `to` where both are on one drive, and the absolute path is kept for when it does not resolve.
 pub fn rebase_audio(project: &mut Project, from: &Path, to: &Path) {
+    for device in project.channels.iter_mut().flat_map(|c| &mut c.devices) {
+        let Some(source) = device.sample_file() else { continue };
+        let here = from.join(source);
+        let file = if here.is_file() {
+            here
+        } else {
+            device.sample_absolute_file().map(PathBuf::from).filter(|p| p.is_file()).unwrap_or(here)
+        };
+        let absolute = normalise(&std::path::absolute(&file).unwrap_or(file));
+        let relative = relative_to(&absolute, &normalise(&std::path::absolute(to).unwrap_or(to.into())))
+            .map_or_else(|| source.to_owned(), |p| slashes(&p));
+        device.set_sample_reference(&relative, &absolute.display().to_string());
+    }
     for content in &mut project.contents {
         for lane in &mut content.lanes {
             let LaneData::Audio(region) = &mut lane.data else { continue };
+            // An empty audio clip has no file yet: nothing to move.
+            if region.file.is_empty() {
+                continue;
+            }
             let here = from.join(&region.file);
             let file = if here.is_file() {
                 here
@@ -237,15 +242,40 @@ fn project_value(p: &Project) -> Value {
     out.insert("tracks".into(), p.tracks.iter().map(track_value).collect());
     out.insert("channels".into(), p.channels.iter().map(channel_value).collect());
     out.insert("contents".into(), p.contents.iter().map(content_value).collect());
-    let mut arrangement = json!({ "lanes": p.arrangement.lanes.iter().map(|lane| json!({
-        "name": lane.name,
-        "track": lane.track.map(|t| t.0),
-        "clips": lane.clips.iter().map(clip_value).collect::<Vec<_>>(),
-    })).collect::<Vec<_>>() });
+    let mut arrangement = json!({ "lanes": p.arrangement.lanes.iter().map(|lane| {
+        let mut out = json!({
+            "name": lane.name,
+            "track": lane.track.map(|t| t.0),
+            "clips": lane.clips.iter().map(clip_value).collect::<Vec<_>>(),
+        });
+        with_id(&mut out, lane.id.0);
+        out
+    }).collect::<Vec<_>>() });
     // Left out when there are none, so a project without markers is written as before.
     if !p.arrangement.markers.is_empty() {
+        // A marker's id lives only while the project is open, so it is not written (#763 › 1).
         arrangement["markers"] =
             p.arrangement.markers.iter().map(|m| json!({ "beat": number(m.beat), "name": m.name })).collect();
+    }
+    // Take lanes (#909), left out when there are none, so a project without is written as before.
+    if !p.arrangement.takes.is_empty() {
+        arrangement["takes"] = p
+            .arrangement
+            .takes
+            .iter()
+            .map(|t| {
+                let mut take = json!({
+                    "track": t.track.0,
+                    "name": t.name,
+                    "clips": t.clips.iter().map(clip_value).collect::<Vec<_>>(),
+                });
+                // A take's own colour (#989), left out while it takes the palette's.
+                if let Some(Rgb(r, g, b)) = t.color {
+                    take["color"] = json!(format!("#{r:02X}{g:02X}{b:02X}"));
+                }
+                take
+            })
+            .collect();
     }
     out.insert("arrangement".into(), arrangement);
     let mut launcher = json!({
@@ -264,8 +294,34 @@ fn project_value(p: &Project) -> Value {
     if let Some(scale) = p.default_scale {
         out.insert("default_scale".into(), scale_value(scale));
     }
+    // The counter the ids came from, so an id is never handed out twice (ADR 0025); left out
+    // while nothing has an id.
+    if p.next_id != 0 {
+        out.insert("next_id".into(), json!(p.next_id));
+    }
     with_extensions(&mut out, &p.extensions);
     Value::Object(out)
+}
+
+/// Writes an object's `id`, unless it has none yet (0): a reader gives it one then.
+fn with_id(value: &mut Value, id: u32) {
+    if let (Some(map), true) = (value.as_object_mut(), id != 0) {
+        map.insert("id".into(), json!(id));
+    }
+}
+
+/// An object's `id`, or 0 (none: [`Project::assign_ids`] gives it one) when it is missing, as in
+/// a file written before ids. An id is from 1 to `u32::MAX - 1`; the largest value is never one,
+/// so the counter can always name the next.
+fn read_id(o: &Obj, at: &str) -> Result<u32, ProjectFileError> {
+    match o.get("id") {
+        None | Some(Value::Null) => Ok(0),
+        Some(v) => v
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .filter(|&n| n != 0 && n != u32::MAX)
+            .ok_or_else(|| ProjectFileError(format!("{at}.id: expected a whole number from 1 to {}", u32::MAX - 1))),
+    }
 }
 
 fn track_value(t: &Track) -> Value {
@@ -286,7 +342,15 @@ fn track_value(t: &Track) -> Value {
                 MidiPort::Nothing => Value::String("none".into()),
                 MidiPort::Named(name) => json!({ "name": name }),
             };
-            map.insert("midi_input".into(), json!({ "port": port, "channel": t.midi_input.channel }));
+            let monitor = match t.midi_input.monitor {
+                Monitor::Auto => "auto",
+                Monitor::In => "in",
+                Monitor::Off => "off",
+            };
+            map.insert(
+                "midi_input".into(),
+                json!({ "port": port, "channel": t.midi_input.channel, "monitor": monitor }),
+            );
         }
         // Left out while it is the default: no input, monitored automatically.
         if t.audio_input != AudioInput::default() {
@@ -350,10 +414,10 @@ fn lanes_value(lanes: &[AutomationLane]) -> Value {
                 .iter()
                 .map(|p| {
                     let mut point = json!({ "beat": number(p.beat), "value": number(p.value) });
-                    if p.curve != 0.0
+                    if !p.curve.is_straight()
                         && let Some(map) = point.as_object_mut()
                     {
-                        map.insert("curve".into(), json!(number(p.curve)));
+                        map.insert("curve".into(), json!(p.curve.to_array().map(number)));
                     }
                     point
                 })
@@ -390,6 +454,7 @@ fn device_value(d: &Device) -> Value {
         DeviceKind::Vst3 { id } => json!({ "type": "vst3", "id": id }),
         DeviceKind::Vst2 { id } => json!({ "type": "vst2", "id": id }),
         DeviceKind::Foreign { format, id } => json!({ "type": "foreign", "format": format, "id": id }),
+        DeviceKind::Group(group) => group_value(group),
     };
     let mut out = json!({
         "name": d.name,
@@ -399,13 +464,70 @@ fn device_value(d: &Device) -> Value {
         "params": d.params.iter().map(|p| json!({ "id": p.id, "value": number(p.value) })).collect::<Vec<_>>(),
     });
     if let Some(map) = out.as_object_mut() {
+        if d.id.is_some() {
+            map.insert("id".into(), json!(d.id.0));
+        }
         // Only devices with automation say so, so files without any keep their shape.
         if !d.automation.is_empty() {
             map.insert("automation".into(), lanes_value(&d.automation));
         }
+        // Only a channel's clip host says so (#990), so other devices keep their shape.
+        if d.clip_host {
+            map.insert("clip_host".into(), json!(true));
+        }
         with_extensions(map, &d.extensions);
     }
     out
+}
+
+fn group_value(g: &DeviceGroup) -> Value {
+    let branches: Vec<Value> = g
+        .branches
+        .iter()
+        .map(|b| {
+            let mut out = json!({
+                "name": b.name,
+                "volume": number(b.volume),
+                "pan": number(b.pan),
+                "mute": b.mute,
+                "solo": b.solo,
+                "devices": b.devices.iter().map(device_value).collect::<Vec<_>>(),
+            });
+            if let Some(map) = out.as_object_mut() {
+                with_extensions(map, &b.extensions);
+            }
+            out
+        })
+        .collect();
+    let macros: Vec<Value> = g
+        .macros
+        .iter()
+        .map(|m| {
+            let mappings: Vec<Value> = m
+                .mappings
+                .iter()
+                .filter_map(|x| {
+                    // From version 7 the device's id (#763 › 1). A device with none yet (a
+                    // project built without a session) is written by its path in the group,
+                    // which every version reads; a mapping whose device is gone is left out, as
+                    // no reader could place it.
+                    let device = match x.device {
+                        MappedDevice::Id(id) => {
+                            g.inner_devices().iter().any(|(_, d)| id.is_some() && d.id == id).then(|| json!(id.0))?
+                        }
+                        MappedDevice::Nth(n) => {
+                            let inner = g.inner_devices();
+                            let (path, d) = inner.get(usize::try_from(n).ok()?)?;
+                            if d.id.is_some() { json!(d.id.0) } else { json!(path) }
+                        }
+                    };
+                    Some(json!({ "device": device, "param": x.param, "min": number(x.min), "max": number(x.max) }))
+                })
+                .collect();
+            json!({ "name": m.name, "mappings": mappings })
+        })
+        .collect();
+    json!({ "type": "group", "branches": branches, "macros": macros })
 }
 
 fn content_value(c: &ClipContent) -> Value {
@@ -488,6 +610,7 @@ fn clip_value(c: &Clip) -> Value {
         "fade_out_shape": c.fade_out_curve.shape.name(),
         "fade_out_curve": number(c.fade_out_curve.curve),
     });
+    with_id(&mut out, c.id.0);
     if let Some(map) = out.as_object_mut() {
         if c.follow_action != FollowAction::default() {
             map.insert("follow".into(), follow_value(&c.follow_action));
@@ -497,12 +620,20 @@ fn clip_value(c: &Clip) -> Value {
         if !c.launch.is_default() {
             map.insert("launch".into(), launch_value(&c.launch));
         }
+        // Only a clip with a colour of its own carries one; the others show their track's.
+        if let Some(Rgb(r, g, b)) = c.color {
+            map.insert("color".into(), json!(format!("#{r:02X}{g:02X}{b:02X}")));
+        }
+        // Only a clip edited by its channel's ARA plug-in says so (#990).
+        if c.ara {
+            map.insert("ara".into(), json!(true));
+        }
         with_extensions(map, &c.extensions);
     }
     out
 }
 
-/// A launch mapping; its scene counts from 1, as in the commands.
+/// A launch mapping; its scene counts from 0, as in the commands (from version 8, #763 › 1).
 fn mapping_value(m: &LaunchMapping) -> Value {
     let mut out = json!({ "source": m.source.name(), "target": m.target.kind() });
     if let Some(map) = out.as_object_mut() {
@@ -510,7 +641,7 @@ fn mapping_value(m: &LaunchMapping) -> Value {
             map.insert("track".into(), json!(track.0));
         }
         if let Some(scene) = m.target.scene() {
-            map.insert("scene".into(), json!(scene.saturating_add(1)));
+            map.insert("scene".into(), json!(scene));
         }
     }
     out
@@ -647,6 +778,7 @@ fn extensions(o: &Obj, at: &str) -> Result<Extensions, ProjectFileError> {
 
 fn scene_value(s: &Scene) -> Value {
     let mut scene = json!({ "name": s.name, "tempo_bpm": s.tempo_bpm.map(number) });
+    with_id(&mut scene, s.id.0);
     if let (Some(ts), Some(object)) = (s.time_signature, scene.as_object_mut()) {
         object.insert("time_signature".into(), json!([ts.numerator, ts.denominator]));
     }
@@ -660,7 +792,13 @@ fn read_signature(value: Option<&Value>, at: &str) -> Result<Option<TimeSignatur
         Some(Value::Array(pair)) if pair.len() == 2 => {
             let part = |v: &Value| v.as_u64().and_then(|n| u8::try_from(n).ok()).filter(|n| *n > 0);
             match (pair.first().and_then(part), pair.get(1).and_then(part)) {
-                (Some(numerator), Some(denominator)) => Ok(Some(TimeSignature { numerator, denominator })),
+                (Some(numerator), Some(denominator)) => {
+                    let signature = TimeSignature { numerator, denominator };
+                    if !signature.has_valid_denominator() {
+                        return Err(format!("{at}: the denominator is 1, 2, 4, 8 or 16, not {denominator}").into());
+                    }
+                    Ok(Some(signature))
+                }
                 _ => Err(format!("{at}: expected two whole numbers").into()),
             }
         }
@@ -734,7 +872,8 @@ fn time_signature_changes(t: &Obj) -> Result<Vec<TimeSignatureChange>, ProjectFi
         .collect()
 }
 
-fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
+/// The project of a file of `version`.
+fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError> {
     let p = object(value, "project")?;
     let transport = match p.get("transport") {
         None | Some(Value::Null) => Transport::default(),
@@ -763,7 +902,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 time_signature: signature,
                 loop_range,
                 loop_enabled,
-                tempo_changes: tempo_changes(t)?,
+                tempo_changes: tempo_changes(t)?.into(),
                 time_signature_changes: time_signature_changes(t)?,
             }
         }
@@ -797,6 +936,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                     .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]")))
                     .collect::<Result<_, _>>()?;
                 lanes.push(ArrangementLane {
+                    id: LaneId(read_id(lane, &at)?),
                     name: text(lane, "name", &at)?,
                     track: optional_whole(lane, "track", &at)?.map(TrackId),
                     clips,
@@ -810,9 +950,27 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 if beat < 0.0 {
                     return Err(format!("{at}.beat: expected a beat from 0 on").into());
                 }
-                markers.push(Marker { beat, name: text(m, "name", &at)? });
+                markers.push(Marker::new(beat, text(m, "name", &at)?));
             }
-            let mut arrangement = Arrangement { lanes, markers };
+            let mut takes = Vec::new();
+            for (i, v) in list(a, "takes", "project.arrangement")?.iter().enumerate() {
+                let at = format!("project.arrangement.takes[{i}]");
+                let take = object(v, &at)?;
+                let clips = list(take, "clips", &at)?
+                    .iter()
+                    .enumerate()
+                    .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]")))
+                    .collect::<Result<Vec<_>, _>>()?;
+                // A take's clips have no ids: commands name a take by its track and number.
+                let clips = clips.into_iter().map(|c| Clip { id: ClipId::NONE, ..c }).collect();
+                takes.push(TakeLane {
+                    track: TrackId(whole(take, "track", &at)?),
+                    name: text(take, "name", &at)?,
+                    clips,
+                    color: read_color(take.get("color"), &at)?,
+                });
+            }
+            let mut arrangement = Arrangement { lanes, markers: markers.into(), takes };
             arrangement.sort_markers();
             arrangement
         }
@@ -826,6 +984,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 let at = format!("project.launcher.scenes[{i}]");
                 let s = object(v, &at)?;
                 scenes.push(Scene {
+                    id: SceneId(read_id(s, &at)?),
                     name: text(s, "name", &at)?,
                     tempo_bpm: optional_float(s, "tempo_bpm", &at)?,
                     time_signature: read_signature(s.get("time_signature"), &format!("{at}.time_signature"))?,
@@ -849,7 +1008,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
             }
             let mut mappings: Vec<LaunchMapping> = Vec::new();
             for (i, v) in list(l, "mappings", "project.launcher")?.iter().enumerate() {
-                let mapping = read_mapping(v, &format!("project.launcher.mappings[{i}]"))?;
+                let mapping = read_mapping(v, &format!("project.launcher.mappings[{i}]"), version)?;
                 if mappings.iter().any(|m| m.source == mapping.source) {
                     return Err(ProjectFileError(format!(
                         "project.launcher.mappings[{i}]: {} is mapped twice",
@@ -861,7 +1020,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
             Launcher { scenes, columns, mappings }
         }
     };
-    Ok(Project {
+    let mut project = Project {
         transport,
         tracks,
         channels,
@@ -870,7 +1029,14 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
         launcher,
         extensions: extensions(p, "project")?,
         default_scale: read_scale(p, "default_scale", "project")?,
-    })
+        next_id: optional_whole(p, "next_id", "project")?.unwrap_or(0),
+    };
+    // A file written before ids, or an object added by hand without one: the objects without an
+    // id get the next ones in document order, so the same file always reads with the same ids.
+    // A stale `next_id` moves past the ids in use. Markers, automation points and tempo changes
+    // got new ids as their lists were built: the file holds none (#763 › 1).
+    project.assign_ids().map_err(|e| ProjectFileError(format!("project: {e}")))?;
+    Ok(project)
 }
 
 fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
@@ -937,8 +1103,9 @@ fn read_audio_input(value: Option<&Value>, at: &str) -> Result<AudioInput, Proje
     Ok(AudioInput { channels, monitor })
 }
 
-/// A track's `midi_input`: `{ "port": "all" | "none" | { "name" }, "channel": 1–16 or null }`,
-/// every port and channel when it is left out.
+/// A track's `midi_input`: `{ "port": "all" | "none" | { "name" }, "channel": 1–16 or null,
+/// "monitor": "auto" | "in" | "off" }`, every port and channel when it is left out, and monitored
+/// automatically when `monitor` is (files written before it).
 fn read_midi_input(value: Option<&Value>, at: &str) -> Result<MidiInput, ProjectFileError> {
     let at = format!("{at}.midi_input");
     let Some(value) = value.filter(|v| !v.is_null()) else { return Ok(MidiInput::default()) };
@@ -960,7 +1127,17 @@ fn read_midi_input(value: Option<&Value>, at: &str) -> Result<MidiInput, Project
             _ => return Err(format!("{at}.channel: expected 1 to 16 or null").into()),
         },
     };
-    Ok(MidiInput { port, channel })
+    let monitor = match m.get("monitor") {
+        None | Some(Value::Null) => Monitor::Auto,
+        Some(Value::String(s)) => match s.as_str() {
+            "auto" => Monitor::Auto,
+            "in" => Monitor::In,
+            "off" => Monitor::Off,
+            _ => return Err(format!("{at}.monitor: expected auto, in or off").into()),
+        },
+        Some(_) => return Err(format!("{at}.monitor: expected auto, in or off").into()),
+    };
+    Ok(MidiInput { port, channel, monitor })
 }
 
 fn read_channel(value: &Value, at: &str) -> Result<Channel, ProjectFileError> {
@@ -1010,7 +1187,8 @@ fn read_channel(value: &Value, at: &str) -> Result<Channel, ProjectFileError> {
 }
 
 /// The `automation` lanes of a device or channel: points in beat order (those at one beat keep
-/// their order), a curve from -1 to 1, at most `MAX_POINTS` points a lane.
+/// their order), a curve as its two control points (from version 4) or one bend from -1 to 1 (the
+/// mirrored curve, as earlier versions wrote it), at most `MAX_POINTS` points a lane.
 fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileError> {
     let mut automation = Vec::new();
     for (i, v) in list(map, "automation", at)?.iter().enumerate() {
@@ -1024,21 +1202,43 @@ fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileErr
         for (j, p) in listed.iter().enumerate() {
             let at = format!("{at}.points[{j}]");
             let p = object(p, &at)?;
-            let curve = float_or(p, "curve", 0.0, &at)?;
-            if !(-1.0..=1.0).contains(&curve) {
-                return Err(format!("{at}.curve: must be from -1 to 1, got {curve}").into());
-            }
-            points.push(AutomationPoint { beat: float(p, "beat", &at)?, value: float(p, "value", &at)?, curve });
+            let curve = read_curve(p, &at)?;
+            let (beat, value) = (float(p, "beat", &at)?, float(p, "value", &at)?);
+            points.push(AutomationPoint { beat, value, curve });
         }
         // In beat order, as the model keeps them; points at the same beat keep their order.
         points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        // Each point gets a new id: the file holds none (#763 › 1).
         automation.push(AutomationLane {
             param: required_text(lane, "param", &at)?,
-            points,
+            points: points.into(),
             enabled: flag(lane, "enabled", true, &at)?,
         });
     }
     Ok(automation)
+}
+
+/// A point's `curve`: four numbers (x1, y1, x2, y2), each from -0.5 to 1.5 (a split's halves can
+/// lie outside 0 to 1, `automation::CONTROL_MIN`, `CONTROL_MAX`), or before version 4 one bend
+/// from -1 to 1; straight when left out.
+fn read_curve(p: &Obj, at: &str) -> Result<automation::Curve, ProjectFileError> {
+    let bad =
+        || ProjectFileError(format!("{at}.curve: expected four numbers from -0.5 to 1.5, or a number from -1 to 1"));
+    match p.get("curve") {
+        None | Some(Value::Null) => Ok(automation::Curve::STRAIGHT),
+        Some(Value::Array(list)) => {
+            let values: Option<Vec<f64>> = list.iter().map(Value::as_f64).collect();
+            let values: [f64; 4] = values.and_then(|v| v.try_into().ok()).ok_or_else(bad)?;
+            automation::Curve::from_array(values).ok_or_else(bad)
+        }
+        Some(_) => {
+            let bend = float(p, "curve", at)?;
+            if !(-1.0..=1.0).contains(&bend) {
+                return Err(bad());
+            }
+            Ok(automation::Curve::bend(bend))
+        }
+    }
 }
 
 fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
@@ -1054,7 +1254,12 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         Some("foreign") => {
             DeviceKind::Foreign { format: required_text(k, "format", &kind_at)?, id: required_text(k, "id", &kind_at)? }
         }
-        _ => return Err(format!("{kind_at}.type: expected builtin, sd, clap, vst3, vst2 or foreign").into()),
+        Some("group") => DeviceKind::Group(Box::new(read_group(k, &kind_at)?)),
+        // Dropping a device that is not understood could drop the devices inside it.
+        Some(other) => {
+            return Err(format!("{kind_at}.type: this project uses a device a newer Suhina knows ({other})").into());
+        }
+        None => return Err(format!("{kind_at}.type: expected builtin, sd, clap, vst3, vst2, foreign or group").into()),
     };
     let mut params = Vec::new();
     for (i, v) in list(d, "params", at)?.iter().enumerate() {
@@ -1064,14 +1269,80 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
     }
     let automation = read_lanes(d, at)?;
     Ok(Device {
+        // From version 6 (#763 › 1); earlier files' devices get theirs when the project is opened.
+        id: DeviceId(read_id(d, at)?),
         name: text(d, "name", at)?,
         kind,
         enabled: flag(d, "enabled", true, at)?,
-        state: bytes(d, "state", at)?,
+        state: bytes(d, "state", at)?.map(Into::into),
         params,
         automation,
+        clip_host: flag(d, "clip_host", false, at)?,
         extensions: extensions(d, at)?,
     })
+}
+
+/// A device group. Its limits (branch and macro counts, depth, ranges) are checked by
+/// `Project::validate` after the whole project is read; the JSON parser's own nesting limit
+/// bounds how deep this recursion goes before that.
+fn read_group(k: &Obj, at: &str) -> Result<DeviceGroup, ProjectFileError> {
+    let mut branches = Vec::new();
+    for (i, v) in list(k, "branches", at)?.iter().enumerate() {
+        let at = format!("{at}.branches[{i}]");
+        let b = object(v, &at)?;
+        let mut devices = Vec::new();
+        for (j, d) in list(b, "devices", &at)?.iter().enumerate() {
+            devices.push(read_device(d, &format!("{at}.devices[{j}]"))?);
+        }
+        branches.push(Branch {
+            name: text(b, "name", &at)?,
+            volume: float_or(b, "volume", 1.0, &at)?,
+            pan: float_or(b, "pan", 0.0, &at)?,
+            mute: flag(b, "mute", false, &at)?,
+            solo: flag(b, "solo", false, &at)?,
+            devices,
+            extensions: extensions(b, &at)?,
+        });
+    }
+    let mut group = DeviceGroup { branches, macros: Vec::new() };
+    for (i, v) in list(k, "macros", at)?.iter().enumerate() {
+        let at = format!("{at}.macros[{i}]");
+        let m = object(v, &at)?;
+        let mut mappings = Vec::new();
+        for (j, v) in list(m, "mappings", &at)?.iter().enumerate() {
+            let at = format!("{at}.mappings[{j}]");
+            let x = object(v, &at)?;
+            mappings.push(MacroMapping {
+                device: read_mapped_device(&group, x, &at)?,
+                param: required_text(x, "param", &at)?,
+                min: float_or(x, "min", 0.0, &at)?,
+                max: float_or(x, "max", 1.0, &at)?,
+            });
+        }
+        group.macros.push(Macro { name: text(m, "name", &at)?, mappings });
+    }
+    Ok(group)
+}
+
+/// A macro mapping's device: its id from version 7 (#763 › 1), or before that its path relative
+/// to the group (`[branch, index, …]`), read as its place among the group's devices until the
+/// project gives them ids.
+fn read_mapped_device(group: &DeviceGroup, x: &Obj, at: &str) -> Result<MappedDevice, ProjectFileError> {
+    match x.get("device") {
+        Some(Value::Number(n)) => {
+            let id = n.as_u64().and_then(|n| u32::try_from(n).ok()).filter(|&n| n != 0);
+            id.map(|id| MappedDevice::Id(DeviceId(id)))
+                .ok_or_else(|| format!("{at}.device: expected a device id, a whole number from 1").into())
+        }
+        _ => {
+            let mut path = Vec::new();
+            for step in list(x, "device", at)? {
+                let step = step.as_u64().and_then(|n| u32::try_from(n).ok());
+                path.push(step.ok_or_else(|| format!("{at}.device: expected a list of whole numbers"))?);
+            }
+            group.nth_at(&path).ok_or_else(|| format!("{at}.device: no device in the group at {path:?}").into())
+        }
+    }
 }
 
 fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError> {
@@ -1103,7 +1374,7 @@ fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError
                         muted: flag(n, "muted", false, &at)?,
                     });
                 }
-                LaneData::Notes(notes)
+                LaneData::Notes(notes.into())
             }
             (None, Some(audio)) => LaneData::Audio(read_audio(audio, &format!("{at}.audio"))?),
             _ => return Err(format!("{at}: a lane has either notes or audio").into()),
@@ -1114,7 +1385,7 @@ fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError
         id: ContentId(whole(c, "id", at)?),
         name: text(c, "name", at)?,
         length: float(c, "length", at)?,
-        lanes,
+        lanes: lanes.into(),
         extensions: extensions(c, at)?,
         scale: read_scale(c, "scale", at)?,
     })
@@ -1170,6 +1441,7 @@ fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
         Some(_) => return Err(format!("{at}.loop: expected [start, end]").into()),
     };
     Ok(Clip {
+        id: ClipId(read_id(c, at)?),
         content: ContentId(whole(c, "content", at)?),
         start: float(c, "start", at)?,
         length: float(c, "length", at)?,
@@ -1182,8 +1454,26 @@ fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
         fade_out_curve: fade_curve(c, "fade_out", at)?,
         follow_action: read_follow(c, at)?,
         launch: read_launch(c, at)?,
+        color: read_color(c.get("color"), at)?,
+        ara: flag(c, "ara", false, at)?,
         extensions: extensions(c, at)?,
     })
+}
+
+/// A `color` field, `#RRGGBB`; missing or null is none.
+fn read_color(value: Option<&Value>, at: &str) -> Result<Option<Rgb>, ProjectFileError> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(hex)) => {
+            let digits = hex.strip_prefix('#').unwrap_or(hex);
+            let parsed = (digits.len() == 6 && digits.chars().all(|c| c.is_ascii_hexdigit()))
+                .then(|| u32::from_str_radix(digits, 16).ok())
+                .flatten();
+            let rgb = parsed.ok_or_else(|| ProjectFileError(format!("{at}.color: expected #RRGGBB")))?;
+            Ok(Some(Rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)))
+        }
+        Some(_) => Err(format!("{at}.color: expected #RRGGBB").into()),
+    }
 }
 
 /// A clip's follow action, `follow`: off when missing (files written before follow actions).
@@ -1228,9 +1518,9 @@ fn read_follow(c: &Obj, at: &str) -> Result<FollowAction, ProjectFileError> {
 }
 
 /// A launch mapping: `source` (`key:Q`, `note:1:60`), `target` (slot, scene or stop) and the
-/// `track` and 1-based `scene` the target needs. The track need not exist: a mapping whose track
-/// is gone is kept, unused.
-fn read_mapping(value: &Value, at: &str) -> Result<LaunchMapping, ProjectFileError> {
+/// `track` and `scene` the target needs, the scene from 0 (from version 8, #763 › 1; from 1
+/// before). The track need not exist: a mapping whose track is gone is kept, unused.
+fn read_mapping(value: &Value, at: &str, version: u64) -> Result<LaunchMapping, ProjectFileError> {
     let m = object(value, at)?;
     let name = match m.get("source") {
         Some(Value::String(name)) => name.as_str(),
@@ -1240,6 +1530,9 @@ fn read_mapping(value: &Value, at: &str) -> Result<LaunchMapping, ProjectFileErr
         .ok_or_else(|| ProjectFileError(format!("{at}.source: unknown source {name:?}")))?;
     let scene = || -> Result<usize, ProjectFileError> {
         let number: usize = whole(m, "scene", at)?;
+        if version >= 8 {
+            return Ok(number);
+        }
         number.checked_sub(1).ok_or_else(|| ProjectFileError(format!("{at}.scene: scenes count from 1")))
     };
     let track = || whole(m, "track", at).map(TrackId);

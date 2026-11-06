@@ -12,6 +12,7 @@
 use serde_json::{Map, Value, json};
 use suhina_model::{Clip, LoopRange, Project};
 
+use crate::commands::{Args, scene_id};
 use crate::notes::{ClipAt, MAX_BEAT, clip_mut, locate};
 use crate::{CommandError, Session};
 
@@ -20,8 +21,8 @@ const EPSILON: f64 = 1e-6;
 
 /// An optional beat in `params`: a finite number from 0 to [`MAX_BEAT`], or `None` when left out.
 fn beat(params: &Value, key: &str) -> Result<Option<f64>, CommandError> {
-    match params.get(key) {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value(key) {
+        None => Ok(None),
         Some(v) => {
             let beat = v.as_f64().filter(|b| b.is_finite()).ok_or_else(|| format!("{key} must be a number"))?;
             if !(0.0..=MAX_BEAT).contains(&beat) {
@@ -44,12 +45,22 @@ fn length(value: Option<&Value>, key: &str) -> Result<f64, CommandError> {
     Ok(length)
 }
 
-/// The params that name the clip at `at` in a result: `index` or `scene` (from 1).
-fn address(at: ClipAt) -> Map<String, Value> {
+/// `out` with the `scene_id` of the scene its `scene` names, beside it (#1156).
+fn with_scene_id(p: &Project, mut out: Map<String, Value>) -> Map<String, Value> {
+    if let Some(scene) = out.get("scene").and_then(Value::as_u64).and_then(|n| usize::try_from(n).ok()) {
+        out.insert("scene_id".into(), scene_id(p, scene));
+    }
+    out
+}
+
+/// What names the clip `id` at `at` in a result: its `clip` id, and `index` or `scene` (from 0);
+/// [`with_scene_id`] adds the scene's id.
+fn address(at: ClipAt, id: suhina_model::ClipId) -> Map<String, Value> {
     let mut out = Map::new();
+    out.insert("clip".into(), json!(id.0));
     match at {
         ClipAt::Arrangement(_, index) => out.insert("index".into(), json!(index)),
-        ClipAt::Slot(_, slot) => out.insert("scene".into(), json!(slot.saturating_add(1))),
+        ClipAt::Slot(_, slot) => out.insert("scene".into(), json!(slot)),
     };
     out
 }
@@ -89,8 +100,8 @@ fn named<'a>(session: &'a mut Session, params: &Value) -> Result<(ClipAt, &'a mu
 /// or its loop set to `start` … `end` (which turns it on). An arrangement clip or a slot's clip
 /// (`docs/spec/clip-launching.md` › Loop switch).
 pub(crate) fn set_loop(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let on = match params.get("loop") {
-        None | Some(Value::Null) => None,
+    let on = match Args::new(params).value("loop") {
+        None => None,
         Some(v) => Some(v.as_bool().ok_or("loop must be true or false")?),
     };
     let (start, end) = (beat(params, "start")?, beat(params, "end")?);
@@ -117,27 +128,27 @@ pub(crate) fn set_loop(session: &mut Session, params: &Value) -> Result<Value, C
         }
     };
     clip.loop_range = range;
-    let mut out = address(at);
+    let mut out = address(at, clip.id);
     out.insert("loop".into(), json!(range.is_some()));
     if let Some(range) = range {
         out.insert("start".into(), json!(range.start));
         out.insert("end".into(), json!(range.end));
     }
-    Ok(Value::Object(out))
+    Ok(Value::Object(with_scene_id(&session.project, out)))
 }
 
 /// `clip.setLength`: how long a clip plays, in beats. An arrangement clip keeps its start and
 /// may not run into the next clip on its lane; fades are shortened to fit.
 pub(crate) fn set_length(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let length = length(params.get("length"), "length")?;
+    let length = length(Args::new(params).value("length"), "length")?;
     let (at, _, _) = locate(&session.project, params)?;
     check_room(&session.project, at, length)?;
     let clip = clip_mut(&mut session.project, at).ok_or("the clip is missing")?;
     clip.length = length;
     clip.fit_fades();
-    let mut out = address(at);
+    let mut out = address(at, clip.id);
     out.insert("length".into(), json!(length));
-    Ok(Value::Object(out))
+    Ok(Value::Object(with_scene_id(&session.project, out)))
 }
 
 /// `clip.setStart`: a clip's start marker, where in its content it starts playing. A clip that
@@ -173,8 +184,196 @@ pub(crate) fn set_start(session: &mut Session, params: &Value) -> Result<Value, 
         clip.length = length;
         clip.fit_fades();
     }
-    let mut out = address(at);
+    let mut out = address(at, clip.id);
     out.insert("offset".into(), json!(offset));
     out.insert("length".into(), json!(clip.length));
-    Ok(Value::Object(out))
+    Ok(Value::Object(with_scene_id(&session.project, out)))
+}
+
+/// The names `clip.setAudio` takes and returns for each warp mode.
+const MODES: [(&str, suhina_model::StretchMode); 6] = [
+    ("repitch", suhina_model::StretchMode::Repitch),
+    ("rhythmic", suhina_model::StretchMode::Rhythmic),
+    ("tonal", suhina_model::StretchMode::Tonal),
+    ("texture", suhina_model::StretchMode::Texture),
+    ("smooth", suhina_model::StretchMode::Smooth),
+    ("high-quality", suhina_model::StretchMode::HighQuality),
+];
+
+/// The name of warp mode `mode`, as `clip.setAudio` takes it.
+pub(crate) fn mode_name(mode: suhina_model::StretchMode) -> &'static str {
+    MODES.iter().find(|(_, m)| *m == mode).map_or("smooth", |(name, _)| name)
+}
+
+/// `clip.setAudio`: an audio clip's warp switch, warp mode and transpose, the clip properties'
+/// controls (#699). Every clip that plays the same audio content follows, as with its gain. Warp
+/// turned on for audio whose tempo is known (metadata, name or detection) sets it to that tempo,
+/// unless more than two warp markers were placed; without a known tempo, audio that has no warp
+/// markers gets two, its start and its end, so it plays as it did and then follows the tempo; when another clip plays that audio where the tempo differs,
+/// this clip gets its own copy first (#874).
+pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let warp = match Args::new(params).value("warp") {
+        None => None,
+        Some(v) => Some(v.as_bool().ok_or("warp must be true or false")?),
+    };
+    let mode = match Args::new(params).value("mode") {
+        None => None,
+        Some(v) => {
+            let text = v.as_str().ok_or("mode must be a warp mode's name")?;
+            let names = MODES.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ");
+            Some(
+                MODES
+                    .iter()
+                    .find(|(n, _)| *n == text)
+                    .map(|(_, m)| *m)
+                    .ok_or_else(|| format!("mode must be one of {names}, got {text:?}"))?,
+            )
+        }
+    };
+    let transpose = match Args::new(params).value("transpose") {
+        None => None,
+        Some(v) => {
+            let t = v.as_f64().filter(|t| t.is_finite()).ok_or("transpose must be a number of semitones")?;
+            if !(-48.0..=48.0).contains(&t) {
+                return Err(format!("transpose must be from -48 to 48 semitones, got {t}").into());
+            }
+            Some(t)
+        }
+    };
+    if warp.is_none() && mode.is_none() && transpose.is_none() {
+        return Err("give warp, mode or transpose".into());
+    }
+    let (at, clip) = named(session, params)?;
+    let (id, mut content_id) = (clip.id, clip.content);
+    // Turning warp on keeps the audio at its own speed at the tempo it plays at now, not at the
+    // one it was imported at. An arrangement clip plays by the song's tempo map from where its
+    // content's beat 0 falls, ramps and changes included; a slot's clip has no place on that map
+    // and plays at the song's tempo (a scene's tempo is the launch's, not the clip's).
+    let place = Place::of(clip, matches!(at, ClipAt::Slot(..)));
+    let project = &session.project;
+    let seconds = project.content(content_id).and_then(|c| {
+        c.lanes.iter().find_map(|l| match &l.data {
+            // Audio not warped now, markers kept from before or none (#874).
+            suhina_model::LaneData::Audio(r) if !r.warped || r.warp_markers.is_empty() => r.duration_seconds,
+            _ => None,
+        })
+    });
+    // The markers fit only the tempo where this clip plays: another clip that plays the same
+    // content where the tempo differs would change speed with them (#874), so this clip gets its
+    // own copy of the content, as a stretch does, and the other keeps playing as it did.
+    if warp == Some(true)
+        && let Some(seconds) = seconds
+    {
+        let beats = place.beats_for(&project.transport, seconds);
+        let differs = placements(project, content_id)
+            .any(|other| (other.beats_for(&project.transport, seconds) - beats).abs() > 1e-9);
+        if beats.is_finite() && differs {
+            let new_id = crate::commands::new_content_id(project)?;
+            let content = project.content(content_id).cloned().ok_or("the clip's content is missing")?;
+            session.project.contents.push(suhina_model::ClipContent { id: new_id, ..content });
+            clip_mut(&mut session.project, at).ok_or("the clip is missing")?.content = new_id;
+            content_id = new_id;
+        }
+    }
+    let transport = session.project.transport.clone();
+    // The file's own tempo (its metadata, name or detection, as a drop reads it): warp turned on
+    // sets the audio to it, so a loop of known tempo plays in time again however it was
+    // stretched before, unless its markers were placed by hand (more than its two ends).
+    let file_beats = warp.filter(|on| *on).and_then(|_| {
+        let region = session.project.content(content_id)?.lanes.iter().find_map(|l| match &l.data {
+            suhina_model::LaneData::Audio(r) => Some(r.clone()),
+            suhina_model::LaneData::Notes(_) => None,
+        })?;
+        let seconds = region.duration_seconds.filter(|s| s.is_finite() && *s > 0.0)?;
+        let data = session.audio().files.get(region.pool_key().as_ref())?.clone();
+        let path = std::path::PathBuf::from(region.absolute_file.as_deref().unwrap_or(&region.file));
+        let tempo = crate::files::file_tempo(&path, &data)?;
+        let beats = seconds * tempo.bpm / 60.0;
+        (beats.is_finite() && beats > 0.0).then_some((beats, seconds))
+    });
+    // What the content's beats mean in the file before the change, so every clip that plays it
+    // stays on the same audio after (#830).
+    let before = crate::audio_timing::mapping(&session.project, content_id);
+    let content =
+        session.project.contents.iter_mut().find(|c| c.id == content_id).ok_or("the clip's content is missing")?;
+    let mut found = None;
+    for lane in &mut content.lanes {
+        let suhina_model::LaneData::Audio(region) = &mut lane.data else { continue };
+        if let Some(on) = warp {
+            if on
+                && region.warp_markers.len() <= 2
+                && let Some((beats, seconds)) = file_beats
+            {
+                region.warp_markers = vec![
+                    suhina_model::WarpMarker { time: 0.0, audio_time: 0.0 },
+                    suhina_model::WarpMarker { time: beats, audio_time: seconds },
+                ];
+            } else if on && region.warp_markers.is_empty() {
+                let seconds = region.duration_seconds.ok_or("the audio's length is not known, so it cannot warp")?;
+                let beats = place.beats_for(&transport, seconds);
+                if !(beats.is_finite() && beats > 0.0) {
+                    return Err("the audio's length in beats is not known, so it cannot warp".into());
+                }
+                region.warp_markers = vec![
+                    suhina_model::WarpMarker { time: 0.0, audio_time: 0.0 },
+                    suhina_model::WarpMarker { time: beats, audio_time: seconds },
+                ];
+            }
+            region.warped = on;
+        }
+        if let Some(mode) = mode {
+            region.stretch = mode;
+        }
+        if let Some(t) = transpose {
+            region.transpose = t;
+        }
+        found = Some((region.warped, region.stretch, region.transpose));
+    }
+    let (warped, stretch, transpose) = found.ok_or("only an audio clip can be warped or transposed")?;
+    if let Some(before) = before {
+        crate::audio_timing::follow(&mut session.project, content_id, &before);
+    }
+    let mut out = address(at, id);
+    out.insert("warp".into(), json!(warped));
+    out.insert("mode".into(), json!(mode_name(stretch)));
+    out.insert("transpose".into(), json!(transpose));
+    Ok(Value::Object(with_scene_id(&session.project, out)))
+}
+
+/// Where a clip plays, as the tempo it plays its content at depends on it: an arrangement clip
+/// from where its content's beat 0 falls on the song's tempo map, a slot's clip at the song's tempo.
+#[derive(Clone, Copy)]
+enum Place {
+    Arranged { origin: f64 },
+    Slot,
+}
+
+impl Place {
+    fn of(clip: &Clip, in_slot: bool) -> Self {
+        if in_slot { Self::Slot } else { Self::Arranged { origin: clip.start - clip.offset } }
+    }
+
+    /// How many content beats `seconds` of audio take where the clip plays.
+    fn beats_for(self, transport: &suhina_model::Transport, seconds: f64) -> f64 {
+        match self {
+            Self::Slot => seconds * transport.tempo_bpm / 60.0,
+            Self::Arranged { origin } => {
+                let map = transport.tempo_map(1.0);
+                map.beat_at(map.time_at(origin) + seconds) - origin
+            }
+        }
+    }
+}
+
+/// Where every clip that plays `content` plays, in the arrangement and in the launcher.
+fn placements(p: &Project, content: suhina_model::ContentId) -> impl Iterator<Item = Place> + '_ {
+    let arranged = p.arrangement.lanes.iter().flat_map(|l| &l.clips).filter(move |c| c.content == content);
+    let launched = p
+        .launcher
+        .columns
+        .iter()
+        .flat_map(|c| &c.slots)
+        .filter_map(|s| s.clip.as_ref())
+        .filter(move |c| c.content == content);
+    arranged.map(|c| Place::of(c, false)).chain(launched.map(|c| Place::of(c, true)))
 }

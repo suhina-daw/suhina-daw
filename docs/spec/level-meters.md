@@ -3,7 +3,7 @@ description: What the level meters measure (tracks, groups, returns, the main ou
 read_when: level meter, meters, peak, RMS, clip indicator, clipping, peak hold, mixer.levels, mixer.resetClip, MeterMonitor, track header meter, mixer strip meter, dBFS
 type: spec
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-11-03
 covers:
   - crates/engine/src/meters.rs
   - crates/engine/src/meters_tests.rs
@@ -17,7 +17,9 @@ covers:
 
 Every track, group and return track, and the main output, has a level meter: how loud it is
 now, per side, and whether it went over full scale. The engine measures; the window, the CLI and
-MCP read the same numbers.
+MCP read the same numbers. Launcher mixer meters use two 6 px bars with a 2 px gap;
+compact Arrangement meters retain two 4 px bars. The drawing fills the allocated width
+without changing the scale, ballistics or clip reset behaviour.
 
 ## What is measured
 
@@ -31,9 +33,17 @@ MCP read the same numbers.
 - **The main output** is what the engine hands the audio device: every track through the main
   channel, the metronome and the browser's preview.
 
+The meter monitor also carries the device-spectrum rings the EQ panel's analyser reads
+([docs/spec/eq.md](eq.md) › The panel › The analyser).
+
 Levels are linear, 1.0 being full scale (0 dBFS). A centred track at unity volume playing a
 full-scale audio clip reads 0 dB; the built-in sine voice of a note at full velocity reads
 −12 dB.
+
+**Sampler read heads.** Sample instruments also publish up to 32 voice positions per metered
+track, in fixed atomic slots beside the levels: read heads, not audio levels. An inactive voice
+is absent, so no stale line stays on the waveform. A chain writes them through the meter slots
+it was assigned, so the render callback does not search the meter rows for each chain.
 
 ## Ballistics
 
@@ -56,7 +66,7 @@ the engine does not hold peaks.
 
 Sizes and tokens are in [components](../design/components.md) › Meter.
 
-- **Session view:** each mixer strip (tracks, groups, returns) shows its meter right of the pan
+- **Launcher view:** each mixer strip (tracks, groups, returns) shows its meter right of the pan
   knob, standing up; the main strip under the scene column shows the main output's.
 - **Arrangement view:** each track header shows its meter standing at its right edge, as tall as
   the rows the header shows; the return and main rows along the bottom show theirs lying down,
@@ -66,6 +76,30 @@ Sizes and tokens are in [components](../design/components.md) › Meter.
   the bar turns `meter.hot`. The clip indicator is a light at the top (or right end) in
   `recording` while lit; a click anywhere on the meter turns it off. Each meter is named for
   screen readers, "Drums level: −12.0 dB" or "Main level: silent, clipped".
+- Empty rails and the unlit clip light remain visible without an audio device or signal.
+  Their native background survives surrounding CSS gradients; `.meter { background-color:
+  #081014; }` overrides it for a theme, while `color` controls the normal level ink.
+- A theme can select continuous, segmented, needle or signal-driven artwork frames.
+  Frame artwork uses the louder side's peak on the same dBFS range, preserves the
+  native clip light and reset action, and falls back to continuous stereo bars when
+  no valid sequence exists. Unlike decorative animation it follows measurements
+  even with animations disabled. Theme placement can resize or move the meter;
+  its width/height chooses vertical or horizontal orientation. See
+  [theme skins](theme-skins.md) for artwork, CSS and placement contracts.
+- CSS level gradients use `.meter-vertical .meter-level` or
+  `.meter-horizontal .meter-level` and remain anchored to the entire dBFS scale.
+  Measured peak/RMS extents clip the gradient with native opacity; segment gaps
+  remain empty and optional outset shadows glow around the lit region. Increasing
+  the level reveals higher colours rather than stretching the gradient.
+- Theme `skin.meter-intensity` (integer 0–100, default 100) dims the measured
+  bars, hold marks, needles, artwork frames and glow together, preserving empty
+  native bar rails, the clip light and all measurement geometry. Frame images dim
+  as a whole, including any background authored inside them. Canonical CSS
+  `meter { intensity: 65%; }` and the theme editor's Meter intensity slider
+  mirror this value into JSON. This is visual opacity, not audio gain or colour
+  saturation. Advanced `.meter-level { opacity: .5; }` additionally dims native
+  bars, hold marks and needles as well as CSS fills/glow. An explicitly transparent
+  fill suppresses native fill fallback.
 - The window draws again whenever the levels change, and looks for new levels every 50 ms for
   0.3 s after they last changed while a meter shows something, so falling meters reach the
   bottom; an engine that stopped rendering leaves the window at rest.
@@ -90,4 +124,4 @@ Both need an engine playing the project (`suhina-cli play --launcher`, the MCP s
   a clip) keeps them.
 - A track whose path to the output has a volume of zero after its own (a group at −inf) reads
   silence, as nothing of it is heard.
-- Meters of the cue output and of track inputs come with them (ROADMAP).
+- The cue output and track inputs have no meters yet (ROADMAP).

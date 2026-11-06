@@ -3,7 +3,7 @@ description: Planned key inputs - a device whose detector reads another channel'
 read_when: sidechain, key input, key source, tap point, pre FX, post FX, post fader, routing, aux input, aux output, multi-out, multiple outputs, bus, audio port, region version, protocol version, VST2 bus, device input
 type: spec
 status: planned
-last_verified: 2026-10-15
+last_verified: 2026-11-05
 covers:
   - crates/model/src/lib.rs
   - crates/engine/src/chain.rs
@@ -22,9 +22,8 @@ covers:
 
 - **Sources:** Suhina's own design, from the routing model as it is built ([ADR 0001](../decisions/0001-daw-neutral-model.md),
   the device chain in [ADR 0004](../decisions/0004-built-in-devices.md) › 9 and 10, the plug-in boundary in
-  [ADR 0006](../decisions/0006-plug-in-hosting.md)) and from the gap the parity measurement records
-  ([`docs/research/parity-live-12.md`](../research/parity-live-12.md): chapter 17 lists *sidechain* and *multi-timbral*
-  among what is missing). Nothing here is observed from another program; nothing is implemented yet.
+  [ADR 0006](../decisions/0006-plug-in-hosting.md)) and from what is missing in routing today: a key input
+  (sidechain) and plug-ins with more than one output (multi-timbral). Nothing here is observed from another program; nothing is implemented yet.
 - **Status:** planned. What this document had to choose, it says and why, so work can start without an answer;
   the choices the maintainer can still turn are in *Open questions*, and the split into issues is at the end.
 
@@ -173,7 +172,7 @@ pub struct Device {
     pub name: String,
     pub kind: DeviceKind,
     pub enabled: bool,
-    pub state: Option<Vec<u8>>,
+    pub state: Option<Bytes>,
     pub params: Vec<DeviceParam>,
     /// The device's ports that read another signal (docs/spec/sidechain.md). Empty for almost every
     /// device. At most one entry in the first version.
@@ -280,7 +279,7 @@ already cleans up.
   last two live today (`crates/engine/src/chain.rs`).
 - The key buffer passes the **alignment delay** (above) before the reader sees it.
 - A chain runs its devices as it does now; a slot with a key is handed `(buffer, key)` instead of `buffer`
-  (`Slot::Device` and `Slot::Plugin` both).
+  (`DeviceSlot::Device` and `DeviceSlot::Plugin` both).
 - Order: chains are sorted topologically over sum and key edges (above). A key edge is not a summing target: it
   does not make its source a bus and does not change any gain.
 - Offline renders run this code unchanged (AGENTS.md rule 4), so the golden renders are the oracle: a keyed
@@ -306,9 +305,9 @@ fn process(&mut self, context: &ProcessContext, inputs: Inputs<'_>, buffer: &mut
 
 - The key is **read-only** (`&[f32]`): a device cannot leak it into its output by accident.
 - A port the engine has no source for is handed **silence**, never left unset, so a device needs one code path.
-- `DeviceInfo` gains the ports it declares (`key_ports: &'static [&'static str]`, empty for almost every device),
+- `DeviceInfo` gains the ports it declares (`key_ports`, empty for almost every device),
   so the model, the command and the panel agree on what a device can read.
-- Every built-in device is updated mechanically (eight today); `devices/compressor` is the first that uses it,
+- Every built-in device is updated mechanically; `devices/compressor` is the first that uses it,
   and `limiter`, `overdrive` and the planned `bus-compressor` (issue #385) follow.
 - `crates/device-api/src/conformance.rs` gains the checks that a device with a declared key port reads it (a
   loud key must change its output) and that a device without one is bit-identical to today.
@@ -350,12 +349,12 @@ knows about an instance (latency, instrument or effect, parameters, editor):
 - **Shared memory** (`crates/ipc/src/region.rs`): one region already carries an interleaved buffer of up to
   `MAX_CHANNELS = 64` channels and a 256-byte header, and `Link::create(4, …)` is legal today. So a second stereo
   pair needs **no new region**: the header's unused bytes (16–64) take a small per-pair table (direction, pair
-  index, live, bus index), `CHANNELS` stays the total, and the **region version becomes 3**. Both sides refuse a
+  index, live, bus index), `CHANNELS` stays the total, and the **region version rises by one**. Both sides refuse a
   region made by another version (`Region::open`), so an old host and a new engine fail loudly at start instead
   of playing silence. One region per pair is refused: it costs another doorbell and another round trip per block,
   which the deadline budget (ADR 0006 › 4) cannot pay.
 - **The control protocol** (`crates/plugins/src/protocol.rs`): `Loaded` gains the port list, `Launch.channels`
-  becomes the total the region carries, and the **protocol version becomes 8**. A host that does not know the
+  becomes the total the region carries, and the **protocol version rises by one**. A host that does not know the
   version is refused as it is today (the engine compares the hello answer).
 - **The engine's side** (`crates/engine/src/plugin.rs`): `PluginProcessor::process`/`send`/`wait` take the extra
   pairs as pre-resolved views (`&[&[f32]]` in, `&mut [&mut [f32]]` out), never allocating on the audio thread;
@@ -388,17 +387,15 @@ be true, and they belong in the `.sd` work rather than after it:
    ("stereo input of the track") say the device has one input, so a key cannot be expressed at all.
 2. **The graph runs its input nodes from their own buffers.** The runtime binds each declared input node to the
    buffer the engine hands it; a node with no source reads silence. Nothing else in the graph changes.
-3. **A graph device reports what a device reports.** The prepared graph is wrapped in a type that implements
-   `suhina_device_api::Device`: its `info()` from the graph's parameters and role, its ports from the graph's
-   declarations, its `latency()` from the graph's own delay nodes, and its `process` taking `Inputs` like every
-   other device.
+3. **A graph device reports what a device reports.** Done (#763 › 6): the prepared graph is wrapped in
+   `suhina_device_sdk::GraphDevice`, which implements `suhina_device_api::Device`. Its `info()` comes from the
+   graph's parameters and role (a device's description may own its names, so one read at run time is a
+   description like a built-in's), and it runs the same conformance checks. What is left for keys: its ports
+   from the graph's declarations, and its `process` taking `Inputs` like every other device.
 
-The last point is a *change to how the engine runs a graph device today*: a graph device is a separate slot kind
-that the engine drives through the SDK's own processing entry point, so it does not have the trait, the contract
-tests, the latency reporting or the device registry that every built-in device has. Without the wrapper the key
-input would have to be implemented twice — once for built-in devices and once for graphs — and a third time for
-plug-ins; with it, a key is one path for all three, and the graph's delay nodes are latency-compensated like any
-other device's.
+The engine runs a graph through the same `DeviceSlot::Device` and `DeviceSlot::MidiDevice` as a built-in, so the key input
+is one path for built-ins and graphs, and one more for plug-ins. A graph reports a latency of 0: its delay nodes
+are the sound (an echo), not delay to compensate (`docs/spec/sdk-nodes.md`).
 
 ## Import and export
 
@@ -445,14 +442,10 @@ is gone, whose branch no longer exists, or whose plug-in is missing shows *missi
 reference and does nothing. Everything the row does is `device.setKey` / `device.clearKey`; the panel changes
 nothing itself.
 
-## Parity
+## What the documents say when it lands
 
-Chapter 17 (Routing and I/O) counts sidechain and multi-timbral as missing today, at 10 %; chapter 18 (Mixing)
-does not mention a key at all. When the built-in key lands, `scripts/parity/score.py` says so and
-`python scripts/parity/update_report.py` rewrites the marked parts of
-[`docs/research/parity-live-12.md`](../research/parity-live-12.md); the plug-in buses and auxiliary outputs move
-the same numbers in their own pull requests. ROADMAP's *What works now* gains a bullet when a user can hear a
-keyed compressor, and the devices table says which devices read a key.
+ROADMAP's *What works now* gains a bullet when a user can hear a keyed compressor, the devices table says
+which devices read a key.
 
 ## Open questions
 
@@ -493,7 +486,7 @@ first slice; the boundary work follows and is independent of it.
    `Device.inputs`; the validation rules above with a malformed-input test for each; the file version written only
    when a key is present, round-trip tests; `Project::validate` cycle and missing-point errors. ADR 0001 gets an
    amendment. *Nothing audible yet.*
-2. **device-api: `Inputs`.** `process` takes `Inputs`, `DeviceInfo.key_ports`, the eight devices updated, the
+2. **device-api: `Inputs`.** `process` takes `Inputs`, `DeviceInfo.key_ports`, every built-in device updated, the
    conformance checks for a declared and an undeclared key. ADR 0004 › *Not decided yet* loses the side-chain
    line and gets a decision. *Still nothing audible: no source exists yet.*
 3. **Engine: the read path.** Pass-through chains for key sources, the key buffers, the three tap points at a
@@ -508,13 +501,13 @@ first slice; the boundary work follows and is independent of it.
    parameters; session command tests; `docs/mcp.md` and the components spec for the panel row.
 6. **The interface:** the Sidechain row in the device panel (source dropdown, tap chooser), UI tests that pick a
    source and that a missing source shows *missing*.
-7. **The boundary: one auxiliary input.** Region version 3 with the pair table in its header, `Link::create(4, …)`,
-   protocol 8 with the port list on `Loaded`, `PluginProcessor` views, `PluginSlotInfo` and `PluginReport`, the
+7. **The boundary: one auxiliary input.** The next region version, with the pair table in its header, `Link::create(4, …)`,
+   the next protocol version with the port list on `Loaded`, `PluginProcessor` views, `PluginSlotInfo` and `PluginReport`, the
    VST3 and CLAP hosts feeding the first auxiliary input, `test:vst3`/`test:clap` gaining one, an `ipc` test that
    refuses an old region. ADR 0006 › 3 and 7 amended (region and protocol versions, "silent buffers for any other
    bus" replaced), `docs/architecture.md` updated.
 8. **Auxiliary outputs**, then a channel's input can name a plug-in port (`track.setInput` and the same panel
-   row for inputs). ADR 0006 › 7 amended; the parity chapter 17 line on multi-timbral changes here.
+   row for inputs). ADR 0006 › 7 amended.
 9. **A key in a data-only graph device (`.sd`)**, in the device SDK's own pull request: the format and the SDK
    declare a graph's input ports, validation allows one main input plus declared key inputs, the runtime binds
    each input node to its buffer, and the prepared graph is wrapped in a `suhina_device_api::Device` so a graph

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What the Session view shows, derived from the project and the engine's monitor: columns
+//! What the Launcher view shows, derived from the project and the engine's monitor: columns
 //! (tracks, then return tracks), scenes and the state of every slot. Pure data, so the view and
 //! its tests share one source of truth.
 
@@ -18,15 +18,16 @@ pub fn track_palette() -> [Rgb; 4] {
     [theme::track_color_1(), theme::track_color_2(), theme::track_color_3(), theme::track_color_4()].map(to_rgb)
 }
 
-/// The default colour of the track at `index` among the tracks.
-pub fn default_track_colour(index: usize) -> Rgb {
-    let palette = track_palette();
-    palette.get(index % palette.len()).copied().unwrap_or(Rgb(0x80, 0x80, 0x80))
+/// Legacy tracks resolve their indexed swatch once when attached to the UI. Creation
+/// defaults are applied by the session only to newly created tracks and clips.
+pub fn track_colour(track: &Track, index: usize) -> Rgb {
+    track.color.unwrap_or_else(|| track_palette()[index % 4])
 }
 
 /// A theme colour as a project's track colour.
 pub fn to_rgb(colour: egui::Color32) -> Rgb {
-    Rgb(colour.r(), colour.g(), colour.b())
+    let [r, g, b, _] = colour.to_srgba_unmultiplied();
+    Rgb(r, g, b)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +63,8 @@ pub struct Slot {
     pub length: f64,
     /// The clip's launch settings; `None` for an empty slot.
     pub launch: Option<LaunchSettings>,
+    /// The clip's own colour; `None` takes its track's.
+    pub color: Option<Rgb>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -83,7 +86,7 @@ pub struct Column {
     /// Also heard on the cue output (`track.setCue`).
     pub cue: bool,
     /// The track plays notes, so it can be armed to play a MIDI controller (ADR 0017), and
-    /// whether it is: the session knows, not the project, so [`Grid::build`] leaves it false.
+    /// whether it is: the session knows, not the project, so [`TrackGrid::build`] leaves it false.
     pub armable: bool,
     pub armed: bool,
     /// The scene whose slot records a take now (`docs/spec/recording.md`); set by the app.
@@ -114,10 +117,15 @@ pub struct Column {
 /// A device in a channel strip's list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StripDevice {
+    /// Its index among the channel's devices, as the device commands take it: the clip host
+    /// is not listed (#990), so the list's row is not always the device's index.
+    pub at: usize,
     pub name: String,
     pub enabled: bool,
     /// A plug-in, run outside Suhina; otherwise a built-in effect or instrument.
     pub plugin: bool,
+    /// For a device group: how many devices it holds, at every depth.
+    pub group: Option<usize>,
 }
 
 /// A track's send to one return track, as the mixer strip shows it.
@@ -129,6 +137,42 @@ pub struct SendKnob {
     /// Minus infinity without a send.
     pub level_db: f64,
     pub pre_fader: bool,
+}
+
+/// What a channel's enabled automation plays at `beat`: its volume in dB and its pan, each when
+/// it has a lane with points (#706).
+pub fn played_mixer(channel: &suhina_engine::model::Channel, beat: f64) -> (Option<f64>, Option<f64>) {
+    let lane = |param: &str| channel.automation.iter().find(|l| l.param == param && l.enabled && !l.points.is_empty());
+    (
+        lane("volume")
+            .and_then(|l| l.value_at(beat, false, &suhina_engine::model::automation::VolumeTaper))
+            .map(gain_to_db),
+        lane("pan").and_then(|l| l.value_at(beat, false, &suhina_engine::model::automation::Plain)),
+    )
+}
+
+/// A channel's devices as its strip's list shows them: all but its clip host, the ARA plug-in
+/// its clips play through, which belongs to the clips (#990).
+fn strip_devices(devices: &[suhina_engine::model::Device]) -> Vec<StripDevice> {
+    devices
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| !d.clip_host)
+        .map(|(at, d)| StripDevice {
+            at,
+            name: d.name.clone(),
+            enabled: d.enabled,
+            plugin: matches!(
+                d.kind,
+                suhina_engine::model::DeviceKind::Clap { .. }
+                    | suhina_engine::model::DeviceKind::Vst3 { .. }
+                    | suhina_engine::model::DeviceKind::Vst2 { .. }
+            ),
+            group: d
+                .as_group()
+                .map(|g| g.branches.iter().map(|b| suhina_engine::model::count_devices(&b.devices)).sum()),
+        })
+        .collect()
 }
 
 impl Column {
@@ -169,7 +213,7 @@ impl Scene {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Grid {
+pub struct TrackGrid {
     pub columns: Vec<Column>,
     /// The MIDI input ports there are, for the tracks' MIDI input menus; set by the app.
     pub midi_ports: Vec<String>,
@@ -189,9 +233,15 @@ pub struct Grid {
     /// The keys and notes mapped to slots, scenes and stop buttons that still exist, with the
     /// label the mapping mode shows (`docs/spec/ui-session-view.md` › Launch keys).
     pub mapped: Vec<(MappingTarget, String)>,
+    /// The main output's volume in dB.
+    pub main_volume_db: f64,
+    /// The main channel's devices, for its strip's list.
+    pub main_devices: Vec<StripDevice>,
+    /// The metronome: on, its level in dB, its sound; set by the app.
+    pub metronome: (bool, f64, suhina_engine::ClickSound),
 }
 
-impl Grid {
+impl TrackGrid {
     /// The grid for `project`; with a monitor, slots show what the engine plays and has queued.
     pub fn build(project: &Project, monitor: Option<&LauncherMonitor>) -> Self {
         let scene_count = project.launcher.scenes.len();
@@ -202,12 +252,13 @@ impl Grid {
             .tracks
             .iter()
             .filter(|t| {
-                let channel = t.channel.and_then(|id| project.channels.iter().find(|c| c.id == id));
+                let channel = t.channel.and_then(|id| project.channel(id));
                 channel.is_some_and(|c| c.role == ChannelRole::Effect)
             })
             .collect();
+        let mut number = 0;
         for (index, track) in project.tracks.iter().enumerate() {
-            let channel = track.channel.and_then(|id| project.channels.iter().find(|c| c.id == id));
+            let channel = track.channel.and_then(|id| project.channel(id));
             let role = channel.map_or(ChannelRole::Regular, |c| c.role);
             let kind = match role {
                 ChannelRole::Effect => ColumnKind::Return,
@@ -217,6 +268,9 @@ impl Grid {
             if role == ChannelRole::Master {
                 continue;
             }
+            if kind != ColumnKind::Return {
+                number += 1;
+            }
             let launcher = project.launcher.columns.iter().position(|c| c.track == track.id);
             let status = launcher.zip(monitor).and_then(|(i, m)| m.column(i));
             let playing = status.and_then(|s| s.playing);
@@ -225,7 +279,14 @@ impl Grid {
                 (ColumnKind::Return, _) => Vec::new(),
                 (_, None) => {
                     vec![
-                        Slot { state: SlotState::Empty, name: String::new(), enabled: true, length: 0.0, launch: None };
+                        Slot {
+                            state: SlotState::Empty,
+                            name: String::new(),
+                            enabled: true,
+                            length: 0.0,
+                            launch: None,
+                            color: None
+                        };
                         scene_count
                     ]
                 }
@@ -249,14 +310,20 @@ impl Grid {
                             enabled: clip.is_none_or(|c| c.enabled),
                             length: clip.map_or(0.0, |c| c.loop_range.map_or(c.length, |r| r.end - r.start)),
                             launch: clip.map(|c| c.launch),
+                            color: clip.and_then(|c| c.color),
                         }
                     })
                     .collect(),
             };
             let column = Column {
                 track: track.id,
-                name: track.name.clone(),
-                color: track.color.unwrap_or_else(|| default_track_colour(index)),
+                // Its `#` read as its number (#946).
+                name: if kind == ColumnKind::Return {
+                    track.name.clone()
+                } else {
+                    suhina_engine::model::names::shown_with_number(&track.name, number)
+                },
+                color: track_colour(track, index),
                 kind,
                 notes: kind == ColumnKind::Track && track.content.notes,
                 launcher,
@@ -296,21 +363,7 @@ impl Grid {
                         })
                         .collect(),
                 },
-                devices: channel.map_or_else(Vec::new, |c| {
-                    c.devices
-                        .iter()
-                        .map(|d| StripDevice {
-                            name: d.name.clone(),
-                            enabled: d.enabled,
-                            plugin: matches!(
-                                d.kind,
-                                suhina_engine::model::DeviceKind::Clap { .. }
-                                    | suhina_engine::model::DeviceKind::Vst3 { .. }
-                                    | suhina_engine::model::DeviceKind::Vst2 { .. }
-                            ),
-                        })
-                        .collect()
-                }),
+                devices: channel.map_or_else(Vec::new, |c| strip_devices(&c.devices)),
             };
             if kind == ColumnKind::Return { returns.push(column) } else { columns.push(column) }
         }
@@ -356,7 +409,7 @@ impl Grid {
                 None => mapped.push((m.target, m.source.label())),
             }
         }
-        Self {
+        let mut grid = Self {
             columns,
             midi_ports: Vec::new(),
             input_channels: 0,
@@ -367,6 +420,43 @@ impl Grid {
             meter,
             project_meter: project.transport.meter(),
             mapped,
+            main_volume_db: project
+                .channels
+                .iter()
+                .find(|c| c.role == ChannelRole::Master)
+                .map_or(0.0, |c| gain_to_db(c.volume)),
+            main_devices: project
+                .channels
+                .iter()
+                .find(|c| c.role == ChannelRole::Master)
+                .map_or_else(Vec::new, |c| strip_devices(&c.devices)),
+            metronome: (false, -6.0, suhina_engine::ClickSound::Beep),
+        };
+        grid.follow_automation(project);
+        grid
+    }
+
+    /// The strips show what automation plays at the playhead, running or stopped: volume and
+    /// pan, on returns and Main too (#706, #811).
+    fn follow_automation(&mut self, project: &Project) {
+        let channel_of = |track: TrackId| {
+            let id = project.track(track)?.channel?;
+            project.channel(id)
+        };
+        for column in &mut self.columns {
+            let Some(channel) = channel_of(column.track) else { continue };
+            let (volume, pan) = played_mixer(channel, self.beat);
+            if let Some(volume) = volume {
+                column.volume_db = volume;
+            }
+            if let Some(pan) = pan {
+                column.pan = pan;
+            }
+        }
+        if let Some(main) = project.channels.iter().find(|c| c.role == ChannelRole::Master)
+            && let (Some(volume), _) = played_mixer(main, self.beat)
+        {
+            self.main_volume_db = volume;
         }
     }
 
@@ -406,7 +496,7 @@ mod tests {
 
     #[test]
     fn tracks_come_first_then_returns() {
-        let grid = Grid::build(&demo_project(), None);
+        let grid = TrackGrid::build(&demo_project(), None);
         let kinds: Vec<ColumnKind> = grid.columns.iter().map(|c| c.kind).collect();
         assert_eq!(
             kinds,
@@ -425,7 +515,7 @@ mod tests {
 
     #[test]
     fn slots_without_an_engine_are_stopped_or_empty() {
-        let grid = Grid::build(&demo_project(), None);
+        let grid = TrackGrid::build(&demo_project(), None);
         let drums = &grid.columns[0];
         assert_eq!(drums.slots[0].state, SlotState::Stopped);
         assert_eq!(drums.slots[0].name, "Beat A");
@@ -440,8 +530,23 @@ mod tests {
     }
 
     #[test]
+    fn stopped_strips_show_the_automation_at_the_playhead() {
+        use suhina_engine::model::{AutomationLane, AutomationPoint};
+        let mut project = demo_project();
+        let channel = project.tracks[0].channel.unwrap();
+        project.channel_mut(channel).unwrap().automation.push(AutomationLane {
+            param: "pan".into(),
+            points: vec![AutomationPoint::new(0.0, 1.0)].into(),
+            enabled: true,
+        });
+        let grid = TrackGrid::build(&project, None);
+        assert!(!grid.running);
+        assert_eq!(grid.columns[0].pan, 1.0, "stopped (#811)");
+    }
+
+    #[test]
     fn mixer_values_are_in_db() {
-        let grid = Grid::build(&demo_project(), None);
+        let grid = TrackGrid::build(&demo_project(), None);
         assert!((grid.columns[0].volume_db - 0.0).abs() < 1e-9);
         assert!((gain_to_db(0.5) - -6.0206).abs() < 1e-3);
         assert_eq!(gain_to_db(0.0), f64::NEG_INFINITY);
@@ -449,15 +554,15 @@ mod tests {
 
     #[test]
     fn position_counts_bars_beats_and_sixteenths_from_one() {
-        let grid = Grid { beat: 5.5, ..Grid::default() };
+        let grid = TrackGrid { beat: 5.5, ..TrackGrid::default() };
         assert_eq!(grid.position(), "2.2.3");
-        let start = Grid::default();
+        let start = TrackGrid::default();
         assert_eq!(start.position(), "1.1.1");
         // 4/4 for bar 1, then 3/4: beat 8.5 is in bar 3, on its second beat.
         use suhina_engine::model::{TimeSignature, TimeSignatureChange};
         let changes = [TimeSignatureChange { bar: 1, time_signature: TimeSignature { numerator: 3, denominator: 4 } }];
         let meter = Meter::new(TimeSignature { numerator: 4, denominator: 4 }, &changes);
-        let changing = Grid { beat: 8.5, project_meter: meter, ..Grid::default() };
+        let changing = TrackGrid { beat: 8.5, project_meter: meter, ..TrackGrid::default() };
         assert_eq!(changing.position(), "3.2.3");
         assert_eq!(changing.time_signature(), TimeSignature { numerator: 3, denominator: 4 });
     }

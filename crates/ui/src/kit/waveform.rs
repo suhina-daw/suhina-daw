@@ -314,6 +314,7 @@ pub struct Geometry {
 /// envelope from the level closest to the zoom, or the samples when a sample is wider than a
 /// column.
 pub fn geometry(peaks: &Peaks, rect: Rect, columns: &[Column], scale: Scale) -> Geometry {
+    let _work_trace = crate::kit::frame_trace::WorkSpan::new("waveform geometry");
     let lanes: Vec<Lane> = if peaks.lanes >= 2 && rect.height() >= STEREO_MIN_HEIGHT {
         (0..peaks.lanes).map(Lane::Channel).collect()
     } else {
@@ -413,6 +414,7 @@ impl Colors {
 /// Paints `geometry`: each run of the envelope as a filled shape with anti-aliased edges and the
 /// RMS band inside it, or the samples as a line with dots.
 pub fn paint(painter: &Painter, geometry: &Geometry, colors: Colors) {
+    let _work_trace = crate::kit::frame_trace::WorkSpan::new("waveform paint");
     for (_, shape) in &geometry.lanes {
         match shape {
             LaneShape::Envelope(runs) => {
@@ -480,12 +482,12 @@ pub fn steady_columns(x: f32, count: usize, from: f64, seconds_per_point: f64, g
 
 /// The scale waveforms are drawn with, as the window's settings choose it for this frame.
 pub fn scale(ctx: &egui::Context) -> Scale {
-    ctx.data(|d| d.get_temp::<Scale>(egui::Id::new("waveform-scale"))).unwrap_or_default()
+    ctx.data(|d| d.get_temp::<Scale>(egui::Id::unique("waveform-scale"))).unwrap_or_default()
 }
 
 /// Draws waveforms with `scale` from now on.
 pub fn set_scale(ctx: &egui::Context, scale: Scale) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new("waveform-scale"), scale));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("waveform-scale"), scale));
 }
 
 #[cfg(test)]

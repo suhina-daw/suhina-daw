@@ -6,7 +6,7 @@
 use suhina_model::*;
 
 use crate::chain_tests::{SR, blocks, device, left, max_diff, note, peak};
-use crate::{Renderer, render_offline};
+use crate::{RenderInputs, RenderOptions, Renderer, render_offline};
 
 /// Tracks 1 and 2 each play an A4 for a beat into group track 3 (channel 3), whose channel
 /// holds `group_devices`; track 4 plays the same note straight to the output, unless `outside`
@@ -38,16 +38,22 @@ pub(crate) fn grouped(group_devices: Vec<Device>, outside: bool) -> Project {
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 1.0, 69)]) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 1.0, 69)].into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
         arrangement: Arrangement {
             lanes: players
                 .iter()
-                .map(|&t| ArrangementLane { name: format!("l{t}"), track: Some(TrackId(t)), clips: vec![clip.clone()] })
+                .map(|&t| ArrangementLane {
+                    id: Default::default(),
+                    name: format!("l{t}"),
+                    track: Some(TrackId(t)),
+                    clips: vec![clip.clone()],
+                })
                 .collect(),
-            markers: Vec::new(),
+            markers: Default::default(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }
@@ -63,7 +69,7 @@ fn db(value: f64) -> f32 {
 
 #[test]
 fn a_limiter_on_a_group_limits_the_sum_of_its_tracks() {
-    let plain = render_offline(&grouped(vec![], false), SR, 512).unwrap();
+    let plain = render_offline(&grouped(vec![], false), SR, 512, suhina_device_registry::factory()).unwrap();
     // Two tracks of one note in phase: twice one track's level.
     let single = peak(&plain) / 2.0;
     let ceiling = (single * 1.2).log10() * 20.0;
@@ -71,6 +77,7 @@ fn a_limiter_on_a_group_limits_the_sum_of_its_tracks() {
         &grouped(vec![device("limiter", &[("threshold", f64::from(ceiling)), ("ceiling", f64::from(ceiling))])], false),
         SR,
         512,
+        suhina_device_registry::factory(),
     )
     .unwrap();
     // Each track alone is under the ceiling; their sum is not, and the bus brings it down to it.
@@ -83,8 +90,10 @@ fn a_limiter_on_a_group_limits_the_sum_of_its_tracks() {
 
 #[test]
 fn a_group_without_devices_sounds_as_before_and_a_neutral_bus_changes_nothing() {
-    let plain = render_offline(&grouped(vec![], true), SR, 512).unwrap();
-    let neutral = render_offline(&grouped(vec![device("utility", &[])], true), SR, 512).unwrap();
+    let plain = render_offline(&grouped(vec![], true), SR, 512, suhina_device_registry::factory()).unwrap();
+    let neutral =
+        render_offline(&grouped(vec![device("utility", &[])], true), SR, 512, suhina_device_registry::factory())
+            .unwrap();
     // The bus's chain adds a tail to the render, nothing else.
     assert!(neutral.len() > plain.len());
     assert!(max_diff(&neutral[..plain.len()], &plain) < 1e-5, "{}", max_diff(&neutral[..plain.len()], &plain));
@@ -93,11 +102,11 @@ fn a_group_without_devices_sounds_as_before_and_a_neutral_bus_changes_nothing() 
 
 #[test]
 fn the_group_volume_applies_after_its_devices_and_the_tracks_volume_before() {
-    let plain = render_offline(&grouped(vec![], false), SR, 512).unwrap();
+    let plain = render_offline(&grouped(vec![], false), SR, 512, suhina_device_registry::factory()).unwrap();
     let mut project = grouped(vec![device("utility", &[("gain", -6.0206)])], false);
     project.channels[2].volume = 0.5;
     project.channels[0].volume = 0.0;
-    let out = render_offline(&project, SR, 512).unwrap();
+    let out = render_offline(&project, SR, 512, suhina_device_registry::factory()).unwrap();
     // One of two tracks left, halved by the device and halved again by the group's fader.
     let expected: Vec<f32> = plain.iter().map(|s| s * 0.125).collect();
     assert!(max_diff(&out[..plain.len()], &expected) < 1e-4, "{}", max_diff(&out[..plain.len()], &expected));
@@ -105,13 +114,14 @@ fn the_group_volume_applies_after_its_devices_and_the_tracks_volume_before() {
 
 #[test]
 fn latency_on_a_bus_and_in_it_is_compensated_on_every_path() {
-    let reference = first_sound(&render_offline(&grouped(vec![], true), SR, 512).unwrap());
+    let reference =
+        first_sound(&render_offline(&grouped(vec![], true), SR, 512, suhina_device_registry::factory()).unwrap());
     // A limiter (lookahead) on the group, another on track 1 inside it: track 1 is delayed by
     // both, track 2 by the group's, track 4 by neither; all must still start together.
     let mut project = grouped(vec![device("limiter", &[])], true);
     project.channels[0].devices.push(device("limiter", &[]));
-    let out = render_offline(&project, SR, 512).unwrap();
-    let renderer = Renderer::new(&project, SR).unwrap();
+    let out = render_offline(&project, SR, 512, suhina_device_registry::factory()).unwrap();
+    let renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
     let lookahead = renderer.latency() / 2;
     assert!(lookahead > 0);
     assert_eq!(first_sound(&out), reference + renderer.latency() as usize);
@@ -125,7 +135,7 @@ fn latency_on_a_bus_and_in_it_is_compensated_on_every_path() {
                 channel.volume = 0.0;
             }
         }
-        let out = render_offline(&one, SR, 512).unwrap();
+        let out = render_offline(&one, SR, 512, suhina_device_registry::factory()).unwrap();
         assert_eq!(first_sound(&out), reference + renderer.latency() as usize, "track index {alone}");
     }
 }
@@ -149,28 +159,52 @@ fn nested_groups_and_muting() {
         devices: vec![device("utility", &[("gain", -6.0206)])],
         ..project.channels[2].clone()
     });
-    let plain = render_offline(&grouped(vec![], false), SR, 512).unwrap();
-    let out = render_offline(&project, SR, 512).unwrap();
+    let plain = render_offline(&grouped(vec![], false), SR, 512, suhina_device_registry::factory()).unwrap();
+    let out = render_offline(&project, SR, 512, suhina_device_registry::factory()).unwrap();
     let expected: Vec<f32> = plain.iter().map(|s| s * 0.25).collect();
     assert!(max_diff(&out[..plain.len()], &expected) < 1e-4, "{}", max_diff(&out[..plain.len()], &expected));
 
     project.channels[3].mute = true;
-    assert_eq!(render_offline(&project, SR, 512), Ok(Vec::new()));
+    assert_eq!(render_offline(&project, SR, 512, suhina_device_registry::factory()), Ok(Vec::new()));
 }
 
 #[test]
 fn a_bus_does_not_depend_on_the_block_size() {
     let mut project = grouped(vec![device("limiter", &[("threshold", -12.0)])], true);
     project.channels[1].devices.push(device("utility", &[("gain", 3.0)]));
-    let reference = render_offline(&project, SR, 1024).unwrap();
+    let reference = render_offline(&project, SR, 1024, suhina_device_registry::factory()).unwrap();
     for size in [1usize, 37, 256, 4096] {
-        let out = render_offline(&project, SR, size).unwrap();
+        let out = render_offline(&project, SR, size, suhina_device_registry::factory()).unwrap();
         assert!(max_diff(&out, &reference) < 1e-6, "block {size}: {}", max_diff(&out, &reference));
     }
     // And played live, block by block.
-    let mut renderer = Renderer::new(&project, SR).unwrap();
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
     let live = blocks(&mut renderer, reference.len() / 2 / 300 + 1, 300);
     assert!(max_diff(&live[..reference.len()], &reference) < 1e-6);
+}
+
+/// A watched device on a bus fills its ring like one on a track: the bus's chain never runs
+/// through `advance` (the stages plug-ins share), only through `complete`, and the capture
+/// follows it there too (docs/spec/eq.md › The panel › The analyser).
+#[test]
+fn a_watched_device_on_a_bus_fills_its_ring() {
+    let project = grouped(vec![device("utility", &[])], true);
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    let spectrum = monitor.spectrum();
+    spectrum.watch(0, TrackId(3), 0);
+    let out = blocks(&mut renderer, 4, 480);
+    assert!(peak(&out) > 0.05, "the tone reaches the output through the bus");
+    let (samples, valid) = spectrum.samples(TrackId(3), 0).expect("the bus's watched device has output");
+    assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
+    let ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(ring > 0.01, "the bus device's output is in the ring, peak {ring}");
 }
 
 /// A device that follows the song position (auto-pan synced to the beat) gets the block's own
@@ -188,9 +222,9 @@ fn a_synced_device_gets_its_blocks_own_transport_on_a_track_and_on_a_bus() {
             "track to the output" => project.channels[3].devices.push(synced()),
             _ => project.channels[2].devices.push(synced()),
         }
-        let reference = render_offline(&project, SR, 1024).unwrap();
+        let reference = render_offline(&project, SR, 1024, suhina_device_registry::factory()).unwrap();
         for size in [1usize, 256, 333, 4096] {
-            let out = render_offline(&project, SR, size).unwrap();
+            let out = render_offline(&project, SR, size, suhina_device_registry::factory()).unwrap();
             assert!(max_diff(&out, &reference) < 1e-6, "{place}, block {size}: {}", max_diff(&out, &reference));
         }
     }
@@ -200,7 +234,7 @@ fn a_synced_device_gets_its_blocks_own_transport_on_a_track_and_on_a_bus() {
 fn a_routing_cycle_through_buses_is_silence_not_a_hang() {
     let mut project = grouped(vec![device("utility", &[])], false);
     project.channels[2].output = Some(ChannelId(1));
-    assert_eq!(render_offline(&project, SR, 512), Ok(Vec::new()));
+    assert_eq!(render_offline(&project, SR, 512, suhina_device_registry::factory()), Ok(Vec::new()));
 }
 
 /// Three groups, one inside the other: group 10 inside group 11 inside group 12. Track 1 plays
@@ -246,6 +280,7 @@ fn nested(devices: [Vec<Device>; 3]) -> Project {
     }
     project.arrangement.lanes = (1..=4)
         .map(|t| ArrangementLane {
+            id: Default::default(),
             name: format!("l{t}"),
             track: Some(TrackId(t)),
             clips: project.arrangement.lanes[0].clips.clone(),
@@ -260,7 +295,7 @@ fn one_track() -> Vec<f32> {
     project.tracks.retain(|t| t.id == TrackId(4));
     project.channels.retain(|c| c.id == ChannelId(4));
     project.arrangement.lanes.retain(|l| l.track == Some(TrackId(4)));
-    render_offline(&project, SR, 512).unwrap()
+    render_offline(&project, SR, 512, suhina_device_registry::factory()).unwrap()
 }
 
 fn half() -> Vec<Device> {
@@ -282,7 +317,7 @@ fn three_nested_buses_sum_each_level_through_every_chain_above_it() {
     assert_eq!(project.group_depth(TrackId(1)), Some(3));
     let reference = one_track();
     // Track 1 is halved by three buses, track 2 by two, track 3 by one, track 4 by none.
-    let out = render_offline(&project, SR, 512).unwrap();
+    let out = render_offline(&project, SR, 512, suhina_device_registry::factory()).unwrap();
     assert_scaled(&out, &reference, 0.125 + 0.25 + 0.5 + 1.0, "all four");
     for (alone, scale) in [(0usize, 0.125f32), (1, 0.25), (2, 0.5), (3, 1.0)] {
         let mut one = project.clone();
@@ -291,7 +326,12 @@ fn three_nested_buses_sum_each_level_through_every_chain_above_it() {
                 channel.volume = 0.0;
             }
         }
-        assert_scaled(&render_offline(&one, SR, 512).unwrap(), &reference, scale, &format!("track {}", alone + 1));
+        assert_scaled(
+            &render_offline(&one, SR, 512, suhina_device_registry::factory()).unwrap(),
+            &reference,
+            scale,
+            &format!("track {}", alone + 1),
+        );
     }
 }
 
@@ -300,19 +340,24 @@ fn a_level_without_devices_between_buses_is_a_gain() {
     // The middle group has no devices: a fader at a quarter between two buses.
     let mut project = nested([half(), vec![], half()]);
     project.channels[5].volume = 0.25;
-    let out = render_offline(&project, SR, 512).unwrap();
+    let out = render_offline(&project, SR, 512, suhina_device_registry::factory()).unwrap();
     // Track 1: 0.5 * 0.25 * 0.5; track 2: 0.25 * 0.5; track 3: 0.5; track 4: 1.
     assert_scaled(&out, &one_track(), 0.0625 + 0.125 + 0.5 + 1.0, "mixed levels");
     // The fader of the outer group scales everything inside it, after its devices.
     project.channels[6].volume = 0.0;
-    assert_scaled(&render_offline(&project, SR, 512).unwrap(), &one_track(), 1.0, "outer group down");
+    assert_scaled(
+        &render_offline(&project, SR, 512, suhina_device_registry::factory()).unwrap(),
+        &one_track(),
+        1.0,
+        "outer group down",
+    );
 }
 
 #[test]
 fn solo_and_mute_follow_the_nesting() {
     let project = nested([half(), half(), half()]);
     let reference = one_track();
-    let render = |p: &Project| render_offline(p, SR, 512).unwrap();
+    let render = |p: &Project| render_offline(p, SR, 512, suhina_device_registry::factory()).unwrap();
 
     // A soloed track deep inside is heard through every group above it, and nothing else is.
     let mut solo = project.clone();
@@ -336,11 +381,13 @@ fn solo_and_mute_follow_the_nesting() {
 
 #[test]
 fn latency_through_nested_buses_is_compensated_on_every_path() {
-    let reference = first_sound(&render_offline(&nested([vec![], vec![], vec![]]), SR, 512).unwrap());
+    let reference = first_sound(
+        &render_offline(&nested([vec![], vec![], vec![]]), SR, 512, suhina_device_registry::factory()).unwrap(),
+    );
     // A limiter (lookahead) on the inner and the outer group: track 1 passes both, track 2 and
     // 3 only the outer one, track 4 neither; all still start together.
     let project = nested([vec![device("limiter", &[])], vec![], vec![device("limiter", &[])]]);
-    let latency = Renderer::new(&project, SR).unwrap().latency() as usize;
+    let latency = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap().latency() as usize;
     assert!(latency > 0);
     for alone in 0..4 {
         let mut one = project.clone();
@@ -349,12 +396,15 @@ fn latency_through_nested_buses_is_compensated_on_every_path() {
                 channel.volume = 0.0;
             }
         }
-        let out = render_offline(&one, SR, 512).unwrap();
+        let out = render_offline(&one, SR, 512, suhina_device_registry::factory()).unwrap();
         assert_eq!(first_sound(&out), reference + latency, "track {}", alone + 1);
     }
     // And the render does not depend on the block size.
-    let whole = render_offline(&project, SR, 1024).unwrap();
+    let whole = render_offline(&project, SR, 1024, suhina_device_registry::factory()).unwrap();
     for size in [1usize, 300, 4096] {
-        assert!(max_diff(&render_offline(&project, SR, size).unwrap(), &whole) < 1e-6, "block {size}");
+        assert!(
+            max_diff(&render_offline(&project, SR, size, suhina_device_registry::factory()).unwrap(), &whole) < 1e-6,
+            "block {size}"
+        );
     }
 }

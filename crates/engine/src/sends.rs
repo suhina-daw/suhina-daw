@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Sends and returns (ADR 0004 › 11). A channel's sends feed return tracks: after its devices,
+//! Sends and returns (ADR 0004 › 12). A channel's sends feed return tracks: after its devices,
 //! a track's chain adds its sound to the input of each return it sends to, at the send's level,
 //! before (pre-fader) or after (post-fader) its own volume and pan. A return sums what it is
 //! sent, runs its devices over the sum and plays into its output (the main channel or a group),
@@ -16,7 +16,7 @@
 use suhina_device_api::ProcessContext;
 use suhina_model::{ChannelId, ChannelRole, Project, TrackId};
 
-use crate::chain::{Chain, MAX_BLOCK};
+use crate::chain::{Chain, LiveVolume, MAX_BLOCK};
 use crate::plugin::Delay;
 use crate::track_gains;
 
@@ -30,6 +30,13 @@ pub(crate) struct Planned {
     pub(crate) source: TrackId,
     pub(crate) target: TrackId,
     pub(crate) gains: (f32, f32),
+    /// The send's level the gains were worked out for: a live turn scales them by its ratio.
+    pub(crate) level: f64,
+    /// The source's pan, for a post-fader send: its gains are centred, and the pan applies
+    /// as the chain builds it ([`crate::chain::pan_factors`]).
+    pub(crate) pan: f64,
+    /// After the fader: the channel's live volume ([`Chain::set_live_volume`]) scales it too.
+    pub(crate) post_fader: bool,
 }
 
 /// One send of a built chain: the return chain's index, the gains and its latency compensation.
@@ -38,13 +45,25 @@ pub(crate) struct SendOut {
     /// The return track, so a graph swap can find the same send in the old graph.
     pub(crate) track: TrackId,
     pub(crate) gains: (f32, f32),
+    pub(crate) post_fader: bool,
     pub(crate) delay: Delay,
+    /// The level the gains were built for, and the knob's live level against it, smoothed like
+    /// a fader ([`Chain::set_live_send`]).
+    pub(crate) level: f64,
+    pub(crate) live: LiveVolume,
 }
 
 impl SendOut {
-    /// A send into the chain at `target` (return `track`), delayed by `delay` frames. Allocates.
-    pub(crate) fn new(target: usize, track: TrackId, gains: (f32, f32), delay: usize) -> Self {
-        Self { target, track, gains, delay: Delay::new(delay) }
+    /// A send into the chain at `target` (return `track`), at `gains` for the send's `level`,
+    /// delayed by `delay` frames. Allocates.
+    pub(crate) fn new(
+        target: usize,
+        track: TrackId,
+        (gains, level): ((f32, f32), f64),
+        post_fader: bool,
+        delay: usize,
+    ) -> Self {
+        Self { target, track, gains, post_fader, delay: Delay::new(delay), level, live: LiveVolume::default() }
     }
 }
 
@@ -67,7 +86,7 @@ pub(crate) fn plan(project: &Project) -> Vec<Planned> {
             if send.target == channel.id || !send.level.is_finite() || send.level <= 0.0 {
                 continue;
             }
-            let Some(target_channel) = project.channels.iter().find(|c| c.id == send.target) else { continue };
+            let Some(target_channel) = project.channel(send.target) else { continue };
             if target_channel.role != ChannelRole::Effect {
                 continue;
             }
@@ -79,7 +98,19 @@ pub(crate) fn plan(project: &Project) -> Vec<Planned> {
                 continue;
             }
             edges.push((channel.id, send.target));
-            planned.push(Planned { source, target, gains: gains(channel, send.level, send.pre_fader) });
+            planned.push(Planned {
+                source,
+                target,
+                gains: gains(channel, send.level, send.pre_fader),
+                level: send.level,
+                // A group's pan does not apply to its own output yet (see `buses`), so not to its sends.
+                pan: if channel.pan.is_finite() && channel.role != ChannelRole::Submix {
+                    channel.pan.clamp(-1.0, 1.0)
+                } else {
+                    0.0
+                },
+                post_fader: !send.pre_fader,
+            });
         }
     }
     planned
@@ -87,18 +118,15 @@ pub(crate) fn plan(project: &Project) -> Vec<Planned> {
 
 /// The gains a send adds a chain's buffer to its return at. The buffer holds the track's sound
 /// as a centred track at unity volume would play it (`CHAIN_INPUT_GAIN`, see `chain`); a post-fader send
-/// applies the channel's volume and equal-power pan, as the chain's own output does.
+/// applies the channel's volume, centred: its equal-power pan comes from the chain
+/// ([`Planned::pan`]), as the chain's own output's does.
 fn gains(channel: &suhina_model::Channel, level: f64, pre_fader: bool) -> (f32, f32) {
     if pre_fader {
         return (level as f32, level as f32);
     }
     let volume = if channel.volume.is_finite() { channel.volume.max(0.0) } else { 0.0 };
-    // A group's pan does not apply to its own output yet (see `buses`), so not to its sends.
-    let pan =
-        if channel.pan.is_finite() && channel.role != ChannelRole::Submix { channel.pan.clamp(-1.0, 1.0) } else { 0.0 };
-    let angle = (pan + 1.0) * std::f64::consts::FRAC_PI_4;
-    let scale = level * volume * std::f64::consts::SQRT_2;
-    ((angle.cos() * scale) as f32, (angle.sin() * scale) as f32)
+    let centred = (level * volume) as f32;
+    (centred, centred)
 }
 
 /// Whether `to` can be reached from `from` along `edges`.
@@ -156,21 +184,78 @@ pub(crate) fn order(chains: Vec<Chain>, after: impl Fn(&Chain) -> Vec<TrackId>) 
     sequence.into_iter().filter_map(|i| slots.get_mut(i).and_then(Option::take)).collect()
 }
 
+/// A source render's capture: the chain whose output the render reads, which chains are
+/// inside the source node's subtree (`keep[i]` is chain `i`'s; the returns the subtree sends
+/// to are never inside), and the block buffer the source chain's output is mixed into.
+pub(crate) struct Capture<'a> {
+    pub(crate) chain: usize,
+    pub(crate) keep: &'a [bool],
+    pub(crate) buffer: &'a mut [f32],
+}
+
 /// Runs every chain over the rest of a block of `frames` frames, in order, so a bus or a
 /// return has everything that plays into it before it runs: each chain adds its sound to its
-/// returns, then to its bus or `out`, and, when its cue is on, to the cue bus. Never allocates.
-pub(crate) fn finish(chains: &mut [Chain], out: &mut [f32], cue: &mut [f32], frames: usize, context: &ProcessContext) {
+/// returns, then to its bus or `out`, and, when its cue is on, to the cue bus. With `capture`,
+/// a source render: the named chain's output is mixed into the capture buffer instead of where
+/// it plays, and a chain outside the source node's subtree adds nothing into a chain inside
+/// it (a return routed into the node's bus plays into the mix, not into the node's file).
+/// Never allocates.
+pub(crate) fn finish(
+    chains: &mut [Chain],
+    out: &mut [f32],
+    cue: &mut [f32],
+    frames: usize,
+    context: &ProcessContext,
+    mut capture: Option<Capture>,
+) {
+    // The capture buffer starts empty; the source chain's mix adds to it.
+    if let Some(cap) = capture.as_mut()
+        && let Some(buffer) = cap.buffer.get_mut(..(frames.min(MAX_BLOCK) * 2).min(cap.buffer.len()))
+    {
+        buffer.fill(0.0);
+    }
     for i in 0..chains.len() {
         let (done, later) = chains.split_at_mut(i + 1);
         let Some(chain) = done.last_mut() else { continue };
-        chain.complete(frames, context);
-        for k in 0..chain.sends.len() {
-            let target = chain.sends.get(k).and_then(|s| s.target.checked_sub(i + 1));
-            if let Some(ret) = target.and_then(|t| later.get_mut(t)) {
-                chain.send(k, ret.input(frames), frames);
+        // The main channel's chain, last: what reached the main output so far is its input,
+        // and its output is the main output (#687).
+        if chain.track == suhina_model::TrackId::MAIN {
+            let input = chain.input(frames);
+            for (to, from) in input.iter_mut().zip(out.iter_mut()) {
+                *to += *from;
+                *from = 0.0;
             }
         }
-        match chain.target.and_then(|t| t.checked_sub(i + 1)).and_then(|t| later.get_mut(t)) {
+        chain.complete(frames, context);
+        // Whether chain `i` is inside the source node's subtree; every chain is, when there is
+        // no capture (a normal render).
+        let inside = capture.as_ref().is_none_or(|c| c.keep.get(i).copied().unwrap_or(true));
+        for k in 0..chain.sends.len() {
+            let target = chain.sends.get(k).and_then(|s| s.target.checked_sub(i + 1));
+            let Some(ret) = target.and_then(|t| later.get_mut(t)) else { continue };
+            if !inside
+                && target
+                    .is_some_and(|t| capture.as_ref().is_some_and(|c| c.keep.get(i + 1 + t).copied().unwrap_or(true)))
+            {
+                continue;
+            }
+            chain.send(k, ret.input(frames), frames);
+        }
+        // The source chain's output goes into the capture buffer instead of where it plays; its
+        // latency compensation, gains and mixer lanes are the same `mix` applies.
+        if let Some(cap) = capture.as_mut()
+            && cap.chain == i
+        {
+            chain.mix(&mut *cap.buffer, cue, frames);
+            continue;
+        }
+        let target = chain.target.and_then(|t| t.checked_sub(i + 1));
+        if !inside
+            && target.is_some_and(|t| capture.as_ref().is_some_and(|c| c.keep.get(i + 1 + t).copied().unwrap_or(true)))
+        {
+            continue;
+        }
+        match target.and_then(|t| later.get_mut(t)) {
             Some(bus) => chain.mix(bus.input(frames), cue, frames),
             None => chain.mix(out, cue, frames),
         }
@@ -190,9 +275,46 @@ impl Chain {
         scratch.copy_from_slice(buffer);
         send.delay.run(scratch);
         let (gain_left, gain_right) = send.gains;
-        for ([l, r], [sl, sr]) in input.as_chunks_mut::<2>().0.iter_mut().zip(scratch.as_chunks::<2>().0) {
-            *l += sl * gain_left;
-            *r += sr * gain_right;
+        let post_fader = send.post_fader;
+        let pan = self.pan;
+        let live = post_fader.then_some(self.live);
+        let knob = send.live;
+        for (frame, ([l, r], [sl, sr])) in
+            input.as_chunks_mut::<2>().0.iter_mut().zip(scratch.as_chunks::<2>().0).enumerate()
+        {
+            let fader = live.map_or(1.0, |live| live.at(frame)) * knob.at(frame);
+            // After the fader, the pan's live turn too, as the chain's own output has it.
+            let (pan_left, pan_right) = if post_fader { (pan.0.at(frame), pan.1.at(frame)) } else { (1.0, 1.0) };
+            *l += sl * gain_left * fader * pan_left;
+            *r += sr * gain_right * fader * pan_right;
+        }
+    }
+
+    /// Takes a turn of the send to return `target` to `level` (linear, at most +6 dB) from the
+    /// next block, smoothed; ignored for a send the graph does not have, and for a level whose
+    /// ratio to the built one is not a finite `f32`. Never allocates.
+    pub(crate) fn set_live_send(&mut self, target: TrackId, level: f64) {
+        if let Some(send) = self.sends.iter_mut().find(|s| s.track == target)
+            && send.level > 0.0
+            && level.is_finite()
+            && level >= 0.0
+            && let Some(ratio) = crate::chain::live_ratio(level, send.level)
+        {
+            send.live.target = ratio;
+        }
+    }
+
+    /// The returns this chain sends to, as a new graph has them: a turn of their knob reaches
+    /// them as a message ([`crate::MIXER_SEND`]).
+    pub(crate) fn live_sends(&self) -> impl Iterator<Item = TrackId> + '_ {
+        self.sends.iter().filter(|s| s.level > 0.0).map(|s| s.track)
+    }
+
+    /// Plans the sends' smoothing for the next block of `frames` frames. Never allocates.
+    pub(crate) fn plan_sends(&mut self, frames: usize) {
+        let sample_rate = self.sample_rate;
+        for send in &mut self.sends {
+            send.live.plan(frames, sample_rate);
         }
     }
 

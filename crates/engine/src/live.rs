@@ -1,18 +1,21 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Live input ([ADR 0017](../../../docs/decisions/0017-inputs-and-latency.md)): notes played on a
+//! Live input ([ADR 0017](../../../docs/decisions/0017-inputs-and-latency.md)): notes and
+//! performance controls (a MIDI controller, the pitch bend wheel, channel pressure) played on a
 //! MIDI controller, heard through the instrument of every armed track, whether the transport
 //! runs or not.
 //!
-//! The MIDI driver's thread sends notes over a lock-free queue, each with where it came from (a
-//! port and a channel, [`LiveSource`]) and, when the driver stamped it, when it was played on
-//! the live clock ([`live_now`]); the render thread takes them at the start of each block and
-//! plays them on the chains of the armed tracks whose input ([`LiveFilter`]) takes that source,
-//! the way the preview voice plays its notes (ADR 0011). A stamped note is played a fixed delay
-//! after its time ([`Renderer::set_live_clock`](crate::Renderer::set_live_clock)), at the
-//! frame where that falls, so notes keep the spacing they were played with whatever the block
-//! size (#269); a note without a time plays at the block's first frame.
+//! The MIDI driver's thread sends notes and controls over a lock-free queue, each with where it
+//! came from (a port and a channel, [`LiveSource`]) and, when the driver stamped it, when it was
+//! played on the live clock ([`live_now`]); the render thread takes them at the start of each
+//! block and plays them on the chains of the armed tracks whose input ([`LiveFilter`]) takes
+//! that source, the way the preview voice plays its notes (ADR 0011). A stamped note is played a
+//! fixed delay after its time ([`Renderer::set_live_clock`](crate::Renderer::set_live_clock)), at
+//! the frame where that falls, so notes keep the spacing they were played with whatever the block
+//! size (#269); a note without a time plays at the block's first frame. A controller, pitch bend
+//! or channel pressure message (#812) reaches an armed track's instrument the same way, as a
+//! [`suhina_device_api::NoteEvent`], but carries no key state of its own.
 //! Which tracks are armed, and what each hears, comes from the controller
 //! ([`crate::LaunchCommand::SetArmed`]) and outlives graph swaps. The keys held and the sustain
 //! pedal are kept per source, so one controller's pedal does not hold another's notes. Nothing
@@ -22,6 +25,7 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use rtrb::{Consumer, Producer, RingBuffer};
+use suhina_device_api::NoteEvent;
 use suhina_model::TrackId;
 
 use crate::chain::Chain;
@@ -39,6 +43,11 @@ const UNTIL_RELEASED: u64 = u64::MAX - 1;
 /// Stamped notes waiting for their frame in a later block: more than a hand plays within the
 /// delay. Past that, a note plays at once.
 const MAX_WAITING: usize = 256;
+/// Of those, what controllers, pitch bend and pressure may take, each in a place of its own;
+/// past that, a new value takes the place of the one before it. A stream of them never leaves a
+/// note without a place: a note that played at once could overtake the one before it (a release
+/// before its key), and hang.
+const MAX_WAITING_CONTROLS: usize = MAX_WAITING / 2;
 /// How much of the difference between the render thread's clock and the steady block cadence
 /// is taken in each block: enough to follow a device clock that drifts, too little to follow
 /// the render thread's own jitter.
@@ -97,6 +106,16 @@ pub enum LiveEvent {
     Sustain {
         on: bool,
     },
+    /// A MIDI controller other than the sustain pedal moved: `number` 0 to 127, `value` 0 to 1
+    /// (#812).
+    Controller {
+        number: u8,
+        value: f32,
+    },
+    /// The pitch bend wheel moved, from -1 (full down) through 0 to 1 (full up) (#812).
+    PitchBend(f32),
+    /// Channel pressure (aftertouch) moved, from 0 to 1 (#812).
+    Pressure(f32),
     /// Every key the controller holds goes up (a closed port, an all-notes-off message).
     AllNotesOff,
 }
@@ -196,6 +215,10 @@ struct Keys {
     sustain: bool,
     /// Keys released while the pedal is down, sounding until it comes up.
     sustained: [bool; 128],
+    /// The pitch bend is away from the centre, or the pressure above none: what a track that
+    /// stops hearing the source is set back from, so its instrument is not left bent.
+    bent: bool,
+    pressed: bool,
 }
 
 impl Keys {
@@ -204,6 +227,8 @@ impl Keys {
         held: [false; 128],
         sustain: false,
         sustained: [false; 128],
+        bent: false,
+        pressed: false,
     };
 
     /// `key` sounds because of this source: held down, or sustained by the pedal.
@@ -213,8 +238,45 @@ impl Keys {
     }
 
     fn silent(&self) -> bool {
-        !self.held.contains(&true) && !self.sustained.contains(&true) && !self.sustain
+        !self.held.contains(&true) && !self.sustained.contains(&true) && !self.sustain && !self.bent && !self.pressed
     }
+
+    /// Sets `chain`'s pitch bend and pressure back, at `frame` of the block, where this source
+    /// moved them (#812).
+    fn let_go_controls(&self, chain: &mut Chain, frame: usize) {
+        if self.bent {
+            chain.live_control(frame, NoteEvent::PitchBend(0.0));
+        }
+        if self.pressed {
+            chain.live_control(frame, NoteEvent::Pressure(0.0));
+        }
+    }
+}
+
+/// Where a stamped control goes ([`Live::place_control`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Place {
+    /// In place of one moving the same control, already waiting.
+    Merged,
+    /// In a place of its own, as a note waits.
+    Own,
+    /// Nowhere: it plays at once.
+    Now,
+}
+
+/// `a` and `b` move the same control (one controller, the pitch bend or the pressure), so a
+/// later one may take the place of an earlier one still waiting.
+fn same_control(a: &LiveEvent, b: &LiveEvent) -> bool {
+    match (a, b) {
+        (LiveEvent::Controller { number: x, .. }, LiveEvent::Controller { number: y, .. }) => x == y,
+        (LiveEvent::PitchBend(_), LiveEvent::PitchBend(_)) | (LiveEvent::Pressure(_), LiveEvent::Pressure(_)) => true,
+        _ => false,
+    }
+}
+
+/// `event` moves a control rather than a key or the pedal.
+fn is_control(event: &LiveEvent) -> bool {
+    matches!(event, LiveEvent::Controller { .. } | LiveEvent::PitchBend(_) | LiveEvent::Pressure(_))
 }
 
 /// A note taken from the queue, waiting for its frame.
@@ -240,6 +302,8 @@ pub(crate) struct Live {
     consumer: Option<Consumer<(LiveSource, LiveEvent, u64)>>,
     armed: [(TrackId, LiveFilter); MAX_ARMED],
     armed_count: usize,
+    monitored: [(TrackId, LiveFilter); MAX_ARMED],
+    monitored_count: usize,
     keys: [Keys; MAX_SOURCES],
     keys_count: usize,
     /// Stamped notes whose frame is in a later block, in the order they came.
@@ -263,6 +327,8 @@ impl Live {
             consumer: None,
             armed: [(TrackId(0), LiveFilter::default()); MAX_ARMED],
             armed_count: 0,
+            monitored: [(TrackId(0), LiveFilter::default()); MAX_ARMED],
+            monitored_count: 0,
             keys: [Keys::EMPTY; MAX_SOURCES],
             keys_count: 0,
             waiting: [Waiting { at: 0, source: LiveSource::default(), event: LiveEvent::AllNotesOff }; MAX_WAITING],
@@ -326,9 +392,9 @@ impl Live {
         self.armed().iter().any(|(t, _)| *t == track)
     }
 
-    /// Whether any track is armed: the output then keeps a shallower queue (ADR 0017).
+    /// Whether any track is armed or monitors MIDI: keep the shallower live queue (ADR 0017).
     pub(crate) fn any_armed(&self) -> bool {
-        self.armed_count > 0
+        self.armed_count > 0 || self.monitored_count > 0
     }
 
     /// Arms `track` to hear what `input` takes, or disarms it. Arming an armed track changes
@@ -343,37 +409,64 @@ impl Live {
         input: LiveFilter,
         frame: usize,
     ) {
-        let index = self.armed().iter().position(|(t, _)| *t == track);
-        let before = index.and_then(|i| self.armed.get(i)).map(|(_, f)| *f);
-        match (armed, index) {
+        self.set_input(chains, track, armed, armed, input, frame);
+    }
+
+    fn update_targets(
+        targets: &mut [(TrackId, LiveFilter)],
+        count: &mut usize,
+        track: TrackId,
+        enabled: bool,
+        input: LiveFilter,
+    ) -> Option<LiveFilter> {
+        let index = targets.get(..*count).unwrap_or_default().iter().position(|(t, _)| *t == track);
+        let before = index.and_then(|i| targets.get(i)).map(|(_, f)| *f);
+        match (enabled, index) {
             (true, None) => {
-                if let Some(slot) = self.armed.get_mut(self.armed_count) {
+                if let Some(slot) = targets.get_mut(*count) {
                     *slot = (track, input);
-                    self.armed_count += 1;
+                    *count += 1;
                 }
             }
             (true, Some(index)) => {
-                if let Some(slot) = self.armed.get_mut(index) {
+                if let Some(slot) = targets.get_mut(index) {
                     slot.1 = input;
                 }
             }
             (false, Some(index)) => {
-                let last = self.armed_count - 1;
-                self.armed.swap(index, last);
-                self.armed_count = last;
+                let last = count.saturating_sub(1);
+                targets.swap(index, last);
+                *count = last;
             }
             (false, None) => {}
         }
+        before
+    }
+
+    /// Recording and monitoring are independent; both target lists are bounded and preallocated.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn set_input(
+        &mut self,
+        chains: &mut [Chain],
+        track: TrackId,
+        armed: bool,
+        monitoring: bool,
+        input: LiveFilter,
+        frame: usize,
+    ) {
+        Self::update_targets(&mut self.armed, &mut self.armed_count, track, armed, input);
+        let before = Self::update_targets(&mut self.monitored, &mut self.monitored_count, track, monitoring, input);
         // Let go of what the track heard and no longer does.
         let Some(before) = before else { return };
         let keys = self.keys.get(..self.keys_count).unwrap_or_default();
         for chain in chains.iter_mut().filter(|c| c.instrument && c.track == track) {
-            for source in keys.iter().filter(|k| before.takes(k.source) && !(armed && input.takes(k.source))) {
+            for source in keys.iter().filter(|k| before.takes(k.source) && !(monitoring && input.takes(k.source))) {
                 for key in 0..=127u8 {
                     if source.sounding(key) {
                         chain.release_key(frame, key);
                     }
                 }
+                source.let_go_controls(chain, frame);
             }
         }
     }
@@ -416,7 +509,13 @@ impl Live {
                 .max()
                 .unwrap_or(0);
             let at = at.max(after);
+            let place =
+                if at > position && is_control(&event) { self.place_control(source, event) } else { Place::Own };
+            if place == Place::Merged {
+                continue;
+            }
             if at > position
+                && place == Place::Own
                 && let Some(slot) = self.waiting.get_mut(self.waiting_count)
             {
                 *slot = Waiting { at, source, event };
@@ -427,6 +526,23 @@ impl Live {
             self.play(chains, recorder, source, event, 0, position);
         }
         self.frame(chains, recorder, 0, position);
+    }
+
+    /// Where a stamped control from `source` waits: in a place of its own, as a note does, while
+    /// controls have fewer than [`MAX_WAITING_CONTROLS`], so every value plays at its own frame
+    /// and a wheel moves smoothly. Once they have that many, the latest one waiting from the
+    /// source that moves the same control takes its value, at that one's frame (never a later
+    /// one, which a stream would keep pushing back); with none, it plays at once (a control has
+    /// no key to overtake). Never allocates.
+    fn place_control(&mut self, source: LiveSource, event: LiveEvent) -> Place {
+        let waiting = self.waiting.get(..self.waiting_count).unwrap_or_default();
+        if waiting.iter().filter(|w| is_control(&w.event)).count() < MAX_WAITING_CONTROLS {
+            return Place::Own;
+        }
+        let same = waiting.iter().rposition(|w| w.source == source && same_control(&w.event, &event));
+        let Some(slot) = same.and_then(|index| self.waiting.get_mut(index)) else { return Place::Now };
+        slot.event = event;
+        Place::Merged
     }
 
     /// Plays the waiting notes due by renderer frame `position`, at `frame` of the block, in the
@@ -468,12 +584,14 @@ impl Live {
         #[cfg(test)]
         self.played.push((position, event));
         let Some(slot) = self.keys_of(source) else { return };
-        let Self { armed, armed_count, keys, .. } = self;
+        let Self { armed, armed_count, monitored, monitored_count, keys, .. } = self;
         let armed = armed.get(..*armed_count).unwrap_or_default();
+        let monitored = monitored.get(..*monitored_count).unwrap_or_default();
         let Some(keys) = keys.get_mut(slot) else { return };
         let hearing = || armed.iter().filter(|(_, f)| f.takes(source)).map(|(t, _)| *t);
-        let targets =
-            chains.iter_mut().filter(|c| c.instrument && armed.iter().any(|(t, f)| *t == c.track && f.takes(source)));
+        let targets = chains
+            .iter_mut()
+            .filter(|c| c.instrument && monitored.iter().any(|(t, f)| *t == c.track && f.takes(source)));
         match event {
             LiveEvent::NoteOn { key, velocity } => {
                 let Some(held) = keys.held.get_mut(usize::from(key)) else { return };
@@ -508,6 +626,26 @@ impl Live {
                     recorder.note(track, position, key, None);
                 }
             }
+            LiveEvent::Controller { number, value } => {
+                let value = if value.is_finite() { value.clamp(0.0, 1.0) } else { return };
+                for chain in targets {
+                    chain.live_control(frame, NoteEvent::Controller { number, value });
+                }
+            }
+            LiveEvent::PitchBend(value) => {
+                let value = if value.is_finite() { value.clamp(-1.0, 1.0) } else { return };
+                keys.bent = value != 0.0;
+                for chain in targets {
+                    chain.live_control(frame, NoteEvent::PitchBend(value));
+                }
+            }
+            LiveEvent::Pressure(value) => {
+                let value = if value.is_finite() { value.clamp(0.0, 1.0) } else { return };
+                keys.pressed = value > 0.0;
+                for chain in targets {
+                    chain.live_control(frame, NoteEvent::Pressure(value));
+                }
+            }
             LiveEvent::Sustain { on } => {
                 keys.sustain = on;
                 if on {
@@ -536,6 +674,8 @@ impl Live {
                             chain.release_key(frame, key);
                         }
                     }
+                    // A closed port leaves no wheel bent (#812).
+                    keys.let_go_controls(chain, frame);
                 }
                 for key in 0..=127u8 {
                     if keys.sounding(key) {

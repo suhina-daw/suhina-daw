@@ -12,10 +12,11 @@
 use egui::{Key, Modifiers, Pos2, Rect, Shape, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use suhina_engine::model::{LaneData, Note};
+use suhina_engine::model::{Device, DeviceKind, LaneData, Note};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
+use suhina_ui::settings::keymap::shown;
 use suhina_ui::settings::{DeviceLayout, Settings};
 use suhina_ui::{App, kit::theme};
 
@@ -24,13 +25,15 @@ const SIZE: (f32, f32) = (1280.0, 800.0);
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
 const CLIP_START: f64 = 64.0;
 /// The piano roll's least height (› Least height and closing).
-const LEAST: f32 = 120.0;
+const LEAST: f32 = 132.0;
 
 fn window() -> Harness<'static, App> {
     let mut app = App::new();
     app.set_browser_open(false);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -106,7 +109,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let project = session.project();
     let clip = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap();
     match &project.content(clip.content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }
@@ -186,6 +189,7 @@ fn a_lane_at_its_least_height_still_shows_its_notes() {
             delta: vec2(0.0, -400.0),
             modifiers: Modifiers::ALT,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.run();
     }
@@ -194,6 +198,14 @@ fn a_lane_at_its_least_height_still_shows_its_notes() {
     let short = h.get_by_label(CLIP).rect();
     assert!(short.height() < 21.0, "the lane is at its least height: {short:?}");
     assert!(note_marks(&h, short) > 0, "a 20 px lane still shows its clip's notes");
+    let volume = h.get_by_label("Drums volume").rect();
+    let header = h.get_by_label("Track Drums").rect();
+    assert!(volume.width() >= 48.0, "a compact lane keeps a usable volume field");
+    assert!(header.contains_rect(volume), "the volume hit area stays inside the compact header");
+    let automation = h.get_by_label("Show automation of Drums").rect();
+    let toggle = h.get_by_label("Turn Drums off").rect();
+    assert!(automation.right() <= toggle.left(), "automation stays at the left in compact mode");
+    assert!(header.contains_rect(automation), "automation remains visible inside the compact header");
 }
 
 // 2. The piano roll's least height, and closing it with the splitter.
@@ -291,6 +303,7 @@ fn the_view_keeps_a_scroll_made_by_hand_when_the_height_changes() {
         delta: vec2(0.0, 120.0),
         modifiers: Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     h.run();
     let scrolled = h.state().piano_roll().scroll.y;
@@ -366,14 +379,14 @@ fn the_x_at_the_end_of_the_toolbar_closes_the_editor() {
     assert!(x.bottom() <= grid.top(), "in the toolbar, above the grid");
     let tooltip =
         h.query_all_by_label_contains("Hide editor").find_map(|n| n.accesskit_node().label()).unwrap_or_default();
-    assert!(tooltip.contains("Ctrl+Shift+E"), "its name says its key: {tooltip}");
+    assert!(tooltip.contains(&shown("Ctrl+Shift+E")), "its name says its key: {tooltip}");
     click(&mut h, x.center());
     assert!(!piano_shows(&h), "the editor is closed");
     assert!(h.state().selected_clip().is_some(), "the clip stays selected");
 }
 
 #[test]
-fn selecting_a_clip_opens_the_closed_editor_at_its_height() {
+fn double_clicking_a_clip_opens_the_closed_editor_at_its_height() {
     let mut h = piano_app();
     let bottom = detail_bottom(&h);
     pull_to(&mut h, bottom - 250.0);
@@ -381,10 +394,25 @@ fn selecting_a_clip_opens_the_closed_editor_at_its_height() {
     let x = hide_button(&h).expect("a Hide editor button").center();
     click(&mut h, x);
     assert!(!piano_shows(&h));
-    // A click on the clip again opens it, as tall as it was.
+    // A click only selects the clip: the editor stays closed (#916).
     h.get_by_label(CLIP).click();
     h.run();
-    assert!(piano_shows(&h), "selecting the clip opens the editor");
+    assert!(!piano_shows(&h), "a click does not open the closed editor");
+    // A double-click opens it, as tall as it was.
+    let at = h.get_by_label(CLIP).rect().center();
+    // A second apart from the click before, so the two make a double-click of their own.
+    let ready = h.ctx.input(|i| i.time) + 1.0;
+    while h.ctx.input(|i| i.time) < ready {
+        h.step();
+    }
+    for _ in 0..2 {
+        h.hover_at(at);
+        h.drag_at(at);
+        h.drop_at(at);
+        h.step();
+    }
+    h.run();
+    assert!(piano_shows(&h), "double-clicking the clip opens the editor");
     let again = bottom - splitter(&h).bottom();
     assert!((again - height).abs() < 1.5, "at its height: {again}, was {height}");
 }
@@ -454,7 +482,9 @@ fn a_click_on_empty_arrangement_space_clears_the_clip_selection() {
     let empty = h
         .query_all_by_label_contains("Lane ")
         .map(|n| n.rect())
-        .flat_map(|lane| (0..100).map(move |i| pos2(lane.left() + 4.0 + i as f32 * 10.0, lane.center().y)))
+        .flat_map(|lane| {
+            (0..100).map(move |i| pos2(lane.left() + 4.0 + i as f32 * (lane.width() - 8.0) / 100.0, lane.center().y))
+        })
         .find(|p| !clips.iter().any(|c| c.expand(2.0).contains(*p)) && p.x < SIZE.0 - 8.0)
         .expect("an empty spot on some lane");
     click(&mut h, empty);
@@ -465,4 +495,54 @@ fn a_click_on_empty_arrangement_space_clears_the_clip_selection() {
     h.get_by_label(CLIP).click();
     h.run();
     assert!(piano_shows(&h));
+}
+
+/// A track whose chain is short (one plug-in without its editor embedded) still
+/// lets the detail area be dragged up to its default height: the cap that keeps the area no
+/// taller than its panels never holds it under that height (PR #727, a tester's report).
+#[test]
+fn a_device_row_alone_is_open_at_full_height_or_closed() {
+    let mut project = demo_project();
+    let keys = project.tracks.iter().find(|t| t.name == "Keys").and_then(|t| t.channel).expect("Keys has a channel");
+    // Only a plug-in on the track, its editor not embedded: a short panel.
+    project.channel_mut(keys).expect("its channel").devices =
+        vec![Device::new("Verb", DeviceKind::Vst3 { id: "ABC".into() })];
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut h = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
+        .with_size(SIZE)
+        .with_step_dt(0.05)
+        .with_max_steps(20)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&h.ctx);
+    h.run();
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    let bottom = detail_bottom(&h);
+    let header = h.get_by_label("Track Keys").rect();
+    click(&mut h, pos2(header.left() + 30.0, header.center().y));
+    // Down to a short area: the row stays whole, never cut to an in-between height.
+    pull_to(&mut h, bottom - 150.0);
+    let kept = bottom - splitter(&h).bottom();
+    assert!((kept - 200.0).abs() < 1.5, "the device row keeps its full height: {kept}");
+    pull_to(&mut h, bottom - 400.0);
+    let height = bottom - splitter(&h).bottom();
+    assert!((height - 200.0).abs() < 1.5, "the standalone device row stays at 200 px: {height}");
+    pull_to(&mut h, bottom - 20.0);
+    assert!(splitter(&h).bottom() >= bottom - 1.0, "dragging down collapses the device row");
+    pull_to(&mut h, bottom - 350.0);
+    assert!((bottom - splitter(&h).bottom() - 200.0).abs() < 2.0, "reopening retains the 200 px ceiling");
+}
+
+#[test]
+fn midi_clip_devices_keeps_the_resizable_editor_area() {
+    let mut h = piano_app();
+    h.get_by_label("Show Devices").click();
+    h.run();
+    let start = splitter(&h).top();
+    pull_to(&mut h, start - 100.0);
+    assert!(splitter(&h).top() < start - 80.0, "the MIDI clip Devices tab can still grow");
 }

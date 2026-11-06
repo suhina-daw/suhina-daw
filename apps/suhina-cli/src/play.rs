@@ -7,10 +7,11 @@
 use std::io::BufRead;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use suhina_engine::{RenderInputs, RenderOptions};
 
 use serde_json::{Value, json};
 use suhina_engine::model::{LaneData, Project};
-use suhina_engine::{AudioPool, Renderer};
+use suhina_engine::{AudioPool, DeviceAssets, Plugins, Renderer};
 use suhina_output::{Output, Progress, Stream};
 use suhina_session::{OutputChoice, Player, Session};
 
@@ -34,9 +35,15 @@ fn note_priority(stream: &Stream) {
 }
 
 /// Plays the project's arrangement once on the output `choice` names and returns when it ends.
-pub fn play(project: &Project, audio: &AudioPool, choice: &OutputChoice) -> Result<(), String> {
+pub fn play(project: &Project, audio: &AudioPool, assets: &DeviceAssets, choice: &OutputChoice) -> Result<(), String> {
     let output = chosen_output(choice)?;
-    let mut renderer = Renderer::with_audio(project, audio, output.sample_rate()).map_err(|e| e.to_string())?;
+    let mut renderer = Renderer::build(
+        project,
+        RenderInputs::from_audio(audio, suhina_session::devices()).with_assets(assets),
+        output.sample_rate(),
+        RenderOptions::PLAYING,
+    )
+    .map_err(|e| e.to_string())?;
     let length = renderer.length();
     if length == 0 {
         println!("{}", nothing_to_play(project));
@@ -62,18 +69,19 @@ pub fn play(project: &Project, audio: &AudioPool, choice: &OutputChoice) -> Resu
         std::thread::sleep(Duration::from_millis(20));
     }
     std::thread::sleep(TAIL);
-    let underruns = controller.stretch_underruns();
+    let stretched = controller.stretch_underruns();
+    let device = progress.underruns();
     drop(stream);
     drop(controller);
-    if underruns > 0 {
-        eprintln!("warning: {underruns} frames of stretched audio were not ready in time and played as silence");
+    for warning in dropout_warnings(device, stretched) {
+        eprintln!("warning: {warning}");
     }
     println!("done");
     Ok(())
 }
 
 const LAUNCHER_HELP: &str = "\
-commands (scenes count from 1; a track is its name or id):
+commands (scenes count from 0, as grid lists them; a track is its name or id):
   scene <n>             launch scene n
   clip <track> <n>      launch the clip in scene n of a track (a press of its launch button)
   release <track> <n>   release its launch button: stops a gate clip, ends a repeat clip's repeats
@@ -101,12 +109,23 @@ edits (heard while playing):
 
 /// Plays the project on the output `choice` names with the transport stopped and reads launcher
 /// commands from standard input until `quit` or end of input.
-pub fn launcher(project: Project, audio: &AudioPool, choice: &OutputChoice) -> Result<(), String> {
+pub fn launcher(
+    project: Project,
+    audio: &AudioPool,
+    assets: &DeviceAssets,
+    choice: &OutputChoice,
+) -> Result<(), String> {
     if project.launcher.columns.iter().all(|c| c.slots.iter().all(|s| s.clip.is_none())) {
         println!("note: the project has no clips in its clip launcher; only `play` (the arrangement) will sound");
     }
     let output = chosen_output(choice)?;
-    let mut renderer = Renderer::stopped(&project, audio, output.sample_rate()).map_err(|e| e.to_string())?;
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(audio, suhina_session::devices()).with_assets(assets).with_plugins(Plugins::new()),
+        output.sample_rate(),
+        RenderOptions::STOPPED,
+    )
+    .map_err(|e| e.to_string())?;
     let mut controller = renderer.controller();
     let progress = Arc::new(Progress::default());
     let stream = output.start(renderer, &mut controller, &progress)?;
@@ -140,8 +159,28 @@ pub fn launcher(project: Project, audio: &AudioPool, choice: &OutputChoice) -> R
         eprintln!("warning: {e}");
     }
     std::thread::sleep(TAIL);
+    let device = progress.underruns();
     drop(stream);
+    for warning in dropout_warnings(device, 0) {
+        eprintln!("warning: {warning}");
+    }
     Ok(())
+}
+
+/// What went missing while playing: `device` buffers the engine had not filled in time (or the
+/// driver reported late), and `stretched` frames of stretched audio that were not ready.
+fn dropout_warnings(device: u64, stretched: u64) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if device > 0 {
+        let times = if device == 1 { "once".to_string() } else { format!("{device} times") };
+        warnings.push(format!(
+            "the audio device was not given its sound in time {times}, so playback dropped out there (heard as a click or crackle)"
+        ));
+    }
+    if stretched > 0 {
+        warnings.push(format!("{stretched} frames of stretched audio were not ready in time and played as silence"));
+    }
+    warnings
 }
 
 #[derive(Debug, PartialEq)]
@@ -312,6 +351,25 @@ fn nothing_to_play(project: &Project) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dropouts_are_reported_only_when_there_were_some() {
+        assert!(dropout_warnings(0, 0).is_empty());
+        let once = dropout_warnings(1, 0);
+        assert_eq!(once.len(), 1);
+        assert!(once[0].contains("in time once"), "{once:?}");
+        let both = dropout_warnings(3, 512);
+        assert_eq!(both.len(), 2);
+        assert!(both[0].contains("3 times"), "{both:?}");
+        assert!(both[1].starts_with("512 frames of stretched audio"), "{both:?}");
+    }
+
+    /// The help says scenes count from 0, and the number typed is the one the commands take.
+    #[test]
+    fn the_help_counts_scenes_as_the_commands_do() {
+        assert!(LAUNCHER_HELP.contains("scenes count from 0"));
+        assert_eq!(parse_line("scene 0"), Ok(Line::Command("scene.launch".into(), json!({ "scene": 0 }))));
+    }
 
     #[test]
     fn launcher_lines_become_commands() {

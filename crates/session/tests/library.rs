@@ -11,6 +11,9 @@ use serde_json::{Value, json};
 use suhina_library::Library;
 use suhina_session::{Projects, Session, blank_project};
 
+use crate::support::run;
+use suhina_test_support::{WavFormat, write_wav};
+
 fn temp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("suhina-libcmd-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -19,16 +22,7 @@ fn temp(name: &str) -> PathBuf {
 }
 
 fn wav(path: &Path) {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    let spec =
-        hound::WavSpec { channels: 1, sample_rate: 8000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
-    let mut writer = hound::WavWriter::create(path, spec).unwrap();
-    for _ in 0..4000 {
-        writer.write_sample(8000i16).unwrap();
-    }
-    writer.finalize().unwrap();
+    write_wav(path, 8000, 1, WavFormat::Int16, &[8000.0 / 32767.0; 4000]);
 }
 
 /// Projects with a library kept in `settings` (and its own empty plug-in library) and one open
@@ -39,10 +33,6 @@ fn projects(settings: &Path) -> Projects {
     projects.set_file_library(Library::new(Some(settings.to_path_buf())));
     projects.add(Session::new(blank_project()), None).unwrap();
     projects
-}
-
-fn run(projects: &mut Projects, id: &str, params: Value) -> Result<Value, String> {
-    projects.execute(id, &params).map_err(|e| e.0)
 }
 
 fn names(result: &Value) -> Vec<String> {
@@ -102,13 +92,30 @@ fn search_finds_built_in_devices_by_category() {
     let settings = temp("devices");
     let mut p = projects(&settings);
     let instruments = run(&mut p, "library.search", json!({ "category": "instruments" })).unwrap();
-    assert_eq!(names(&instruments), ["FM Synth"]);
-    assert_eq!(instruments["items"][0]["item"], "device:fm-synth");
+    assert_eq!(names(&instruments), ["Sampler", "FM Synth"]);
+    assert_eq!(instruments["items"][0]["item"], "device:sampler");
     let effects = run(&mut p, "library.search", json!({ "category": "effects", "text": "drive" })).unwrap();
     assert_eq!(names(&effects), ["Overdrive"]);
     assert!(names(&run(&mut p, "library.search", json!({ "category": "plugins" })).unwrap()).is_empty());
     let info = run(&mut p, "library.info", json!({ "item": "device:dj-eq" })).unwrap();
     assert_eq!(info["kind"], "effect");
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+#[test]
+fn search_finds_stock_presets_by_name_and_tag() {
+    let settings = temp("stock");
+    let mut p = projects(&settings);
+    let presets = run(&mut p, "library.search", json!({ "category": "presets" })).unwrap();
+    assert!(names(&presets).iter().any(|name| name == "Warm FM Bass"), "{presets}");
+    let by_tag = run(&mut p, "library.search", json!({ "category": "presets", "text": "trance" })).unwrap();
+    assert_eq!(names(&by_tag), ["Wide Trance Pad"]);
+    assert_eq!(by_tag["items"][0]["item"], "stock:fm-synth/wide-trance-pad");
+    let info = run(&mut p, "library.info", json!({ "item": "stock:fm-synth/wide-trance-pad" })).unwrap();
+    assert_eq!((info["kind"].as_str(), info["device"].as_str()), (Some("preset"), Some("fm-synth")));
+    assert!(run(&mut p, "library.info", json!({ "item": "stock:fm-synth/nothing" })).is_err());
+    let instruments = run(&mut p, "library.search", json!({ "category": "instruments" })).unwrap();
+    assert!(!names(&instruments).iter().any(|name| name == "Warm FM Bass"));
     let _ = std::fs::remove_dir_all(&settings);
 }
 
@@ -189,7 +196,7 @@ fn a_plugins_view_is_kept_and_plug_ins_are_pinned_and_tagged_like_files() {
     let mut p = projects(&settings);
     // The view choice: a real one is set and kept; junk is an error, not a change.
     assert!(run(&mut p, "library.setPluginsView", json!({ "view": "nope" })).is_err());
-    run(&mut p, "library.setPluginsView", json!({ "view": "flat" })).unwrap();
+    run(&mut p, "library.setPluginsView", json!({ "view": "effects" })).unwrap();
     // Pins and tags work on a plug-in's key like on a file's.
     run(&mut p, "library.pin", json!({ "item": verb })).unwrap();
     run(&mut p, "library.setTag", json!({ "name": "Go-to", "color": "#336699" })).unwrap();
@@ -204,7 +211,7 @@ fn a_plugins_view_is_kept_and_plug_ins_are_pinned_and_tagged_like_files() {
     // The view survives a restart (it is kept in browser.json), and the flat search lists the
     // plug-ins with their details.
     let mut view = Library::new(Some(settings.to_path_buf()));
-    assert_eq!(view.plugins_view(), suhina_library::store::PluginsView::Flat);
+    assert_eq!(view.plugins_view(), suhina_library::store::PluginsView::Effects);
     let all = run(&mut again, "library.search", json!({ "category": "plugins" })).unwrap();
     let mut all_names = names(&all);
     all_names.sort();
@@ -220,10 +227,78 @@ fn library_commands_are_listed_and_need_no_project() {
     let mut p = Projects::default();
     p.set_file_library(Library::new(Some(settings.clone())));
     assert!(run(&mut p, "library.folders", json!({})).is_ok(), "no project is open");
-    let all = run(&mut p, "commands.list", json!({})).unwrap();
+    let all = run(&mut p, "command.list", json!({})).unwrap();
     let ids: Vec<&str> = all.as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
     for id in ["library.search", "library.addFolder", "track.add", "clip.addFiles", "preview.play"] {
         assert!(ids.contains(&id), "{id}");
     }
     let _ = std::fs::remove_dir_all(&settings);
+}
+
+#[test]
+fn move_to_moves_files_numbering_taken_names_and_carries_their_tags_and_pins() {
+    let settings = temp("move-settings");
+    let samples = temp("move-samples");
+    let out = temp("move-out");
+    wav(&samples.join("Kick.wav"));
+    wav(&samples.join("Snare.wav"));
+    std::fs::write(out.join("Kick.wav"), b"mine").unwrap();
+    let mut p = projects(&settings);
+    let kick = samples.join("Kick.wav").display().to_string();
+    run(&mut p, "library.pin", json!({ "item": kick })).unwrap();
+    run(&mut p, "library.tag", json!({ "item": kick, "tag": "Red", "on": true })).unwrap();
+    let gone = samples.join("Gone.wav").display().to_string();
+    let snare = samples.join("Snare.wav").display().to_string();
+    let items = json!([kick, snare, gone]);
+    let done = run(&mut p, "library.moveTo", json!({ "items": items, "folder": out.display().to_string() })).unwrap();
+    assert_eq!(done["moved"].as_array().unwrap().len(), 2, "{done}");
+    assert_eq!(done["missing"], json!([gone]));
+    // The originals are gone; the name taken there got a number and the file there is left alone.
+    assert!(!samples.join("Kick.wav").exists() && !samples.join("Snare.wav").exists());
+    assert_eq!(std::fs::read(out.join("Kick.wav")).unwrap(), b"mine");
+    assert!(out.join("Kick 2.wav").is_file() && out.join("Snare.wav").is_file());
+    // The pin and the tag went with the file.
+    let moved = out.join("Kick 2.wav").display().to_string();
+    let library = p.file_library_mut();
+    assert_eq!(library.pinned(), std::slice::from_ref(&moved));
+    assert_eq!(library.item_tags(&moved), ["Red"]);
+    assert!(library.item_tags(&kick).is_empty());
+    // A file already in the folder stays.
+    let again = json!({ "items": [moved], "folder": out.display().to_string() });
+    let done = run(&mut p, "library.moveTo", again).unwrap();
+    assert_eq!(done["kept"].as_array().unwrap().len(), 1, "{done}");
+    assert!(out.join("Kick 2.wav").is_file());
+}
+
+#[test]
+fn copy_to_copies_files_into_a_folder_numbering_taken_names_and_lists_the_missing() {
+    let settings = temp("copy-settings");
+    let samples = temp("copy-samples");
+    let out = temp("copy-out");
+    wav(&samples.join("Kick.wav"));
+    wav(&samples.join("Snare.wav"));
+    std::fs::write(out.join("Kick.wav"), b"mine").unwrap();
+    let mut p = projects(&settings);
+    let gone = samples.join("Gone.wav");
+    let items: Vec<String> = [samples.join("Kick.wav"), samples.join("Snare.wav"), gone.clone()]
+        .iter()
+        .map(|f| f.display().to_string())
+        .collect();
+    let done = run(&mut p, "library.copyTo", json!({ "items": items, "folder": out.display().to_string() })).unwrap();
+    // The name taken there gets a number; the file that was there is left alone.
+    assert_eq!(std::fs::read(out.join("Kick.wav")).unwrap(), b"mine");
+    assert_eq!(std::fs::read(out.join("Kick 2.wav")).unwrap(), std::fs::read(samples.join("Kick.wav")).unwrap());
+    assert!(out.join("Snare.wav").is_file());
+    assert_eq!(done["copied"].as_array().unwrap().len(), 2, "{done}");
+    assert_eq!(done["missing"], json!([gone.display().to_string()]));
+    // The originals stay where they are.
+    assert!(samples.join("Kick.wav").is_file() && samples.join("Snare.wav").is_file());
+    // A second copy takes the next number.
+    let again =
+        json!({ "items": [samples.join("Kick.wav").display().to_string()], "folder": out.display().to_string() });
+    let done = run(&mut p, "library.copyTo", again).unwrap();
+    assert!(done["copied"][0]["to"].as_str().unwrap().ends_with("Kick 3.wav"), "{done}");
+    assert!(run(&mut p, "library.copyTo", json!({ "items": [], "folder": out.display().to_string() })).is_err());
+    let nowhere = out.join("no such folder").display().to_string();
+    assert!(run(&mut p, "library.copyTo", json!({ "items": items, "folder": nowhere })).is_err());
 }

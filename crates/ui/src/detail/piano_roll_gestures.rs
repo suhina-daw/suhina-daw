@@ -7,6 +7,7 @@
 //! its velocity, a line drawn in the velocity lane, the lane's top edge and the audition. A child
 //! module of [`super`], so it shares the piano roll's private state and layout.
 
+use crate::kit::surface::Backgrounds as _;
 use std::time::Duration;
 
 use egui::{Align2, CursorIcon, Id, Pos2, Rect, Sense, Ui, Vec2};
@@ -14,9 +15,10 @@ use serde_json::json;
 use suhina_engine::model::Note;
 
 use super::{
-    EDGE, EPSILON, Effect, LEAST_KEY_ROWS, Layout, MAX_NOTES_PER_COMMAND, MIN_LENGTH, NoteGrid, PianoClip,
-    PianoRollState, velocity_at,
+    EDGE, EPSILON, Effect, LEAST_KEY_ROWS, Layout, MAX_NOTES_PER_COMMAND, MIN_LENGTH, PianoClip, PianoRollState,
+    velocity_at,
 };
+use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme;
 use crate::kit::widgets::{self, Action};
 
@@ -24,6 +26,9 @@ use crate::kit::widgets::{self, Action};
 const VELOCITY_PER_POINT: f64 = 1.0;
 /// How long an auditioned note sounds before the window lets it go, in seconds.
 pub(super) const AUDITION_SECONDS: f64 = 0.3;
+/// How long a note the selecting rectangle reaches sounds, in seconds: a quick sweep is a quick run
+/// of short notes.
+const SWEEP_SECONDS: f64 = 0.12;
 /// The most keys one audition sounds together.
 const MAX_AUDITION_KEYS: usize = 16;
 /// How far either side of the velocity lane's top edge the pointer grabs it, in points.
@@ -58,14 +63,14 @@ impl Part {
 /// How far a drag of the grabbed note's left edge by `raw` beats moves the selection's starts,
 /// their ends kept: the start on the grid unless `free` (onto or past its end, the last line
 /// before it), no start before beat 0 and no note shorter than a hundredth of a beat.
-pub fn start_by(raw: f64, grabbed: &Note, moved: &[Note], grid: NoteGrid, free: bool) -> f64 {
+pub fn start_by(raw: f64, grabbed: &Note, moved: &[Note], grid: TimelineGrid, free: bool) -> f64 {
     if !raw.is_finite() {
         return 0.0;
     }
     let end = grabbed.time + grabbed.duration;
     let mut start = grid.place(grabbed.time + raw, free, false);
     if grid.snaps && !free && start >= end - EPSILON {
-        start = ((end / grid.step - EPSILON).ceil() - 1.0) * grid.step;
+        start = grid.previous_line(end);
     }
     let shortest = moved.iter().map(|n| n.duration).fold(f64::INFINITY, f64::min);
     let earliest = moved.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
@@ -127,8 +132,8 @@ pub(super) fn lane_edge(ui: &Ui, layout: &Layout, room: f32, state: &mut PianoRo
         Pos2::new(lane.left(), lane.top() - LANE_EDGE),
         Pos2::new(lane.right(), lane.top() + LANE_EDGE),
     );
-    let response = ui.interact(rect, Id::new("piano-roll-lane-edge"), Sense::drag());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Velocity lane top edge"));
+    let response = ui.interact(rect, Id::unique("piano-roll-lane-edge"), Sense::drag());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Velocity lane top edge"));
     if response.hovered() || response.dragged() {
         ui.ctx().set_cursor_icon(CursorIcon::ResizeVertical);
     }
@@ -149,7 +154,7 @@ pub(super) fn draw_velocity_label(ui: &Ui, layout: &Layout, clip: &PianoClip, gr
     let rect = layout.note_rect(note);
     let label = Rect::from_min_size(Pos2::new(rect.left(), rect.top() - 15.0), Vec2::new(76.0, 14.0));
     let painter = ui.painter_at(layout.grid);
-    painter.rect_filled(label, 2.0, theme::control_background());
+    painter.fill_background(label, 2.0, theme::control_background());
     let text = format!("Velocity {midi}");
     widgets::text_in(
         &painter,
@@ -159,13 +164,14 @@ pub(super) fn draw_velocity_label(ui: &Ui, layout: &Layout, clip: &PianoClip, gr
         theme::mono_font(theme::TEXT_TINY),
         theme::text_primary(),
     );
-    let response = ui.interact(label.intersect(layout.grid), Id::new("piano-roll-velocity-value"), Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &text));
+    let response = ui.interact(label.intersect(layout.grid), Id::unique("piano-roll-velocity-value"), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &text));
 }
 
 impl PianoRollState {
     /// The keys an audition sounds at the end of this frame, when the toolbar's Audition is on:
-    /// those of notes just drawn, moved or transposed. Each key once, at most a handful.
+    /// those of notes pressed, selected, drawn, moved or transposed. Each key once, at most a
+    /// handful.
     pub(super) fn audition_keys(&mut self, keys: impl IntoIterator<Item = u8>) {
         if !self.audition {
             return;
@@ -194,6 +200,24 @@ impl PianoRollState {
     /// `track`. The window counts the time; nothing waits on the audio thread.
     pub(super) fn audition_frame(&mut self, ui: &Ui, track: Option<u64>, actions: &mut Vec<Action>) {
         let now = ui.input(|i| i.time);
+        // A press holds what it sounds: the same keys asked for again, while the press lasts or as
+        // it ends, go on sounding, and so a drag sounds a new note only at a new pitch.
+        let held = self.audition_press;
+        self.audition_press = held && ui.input(|i| i.pointer.primary_down());
+        if held && self.audition_off.is_some() {
+            let same = {
+                let (mut asked, mut sounding) = (self.audition_pending.clone(), self.audition_sounding.clone());
+                asked.sort_unstable();
+                sounding.sort_unstable();
+                asked == sounding
+            };
+            if same {
+                self.audition_pending.clear();
+            }
+            if let Some((_, until)) = &mut self.audition_off {
+                *until = now + AUDITION_SECONDS;
+            }
+        }
         if let Some((sounding, until)) = self.audition_off
             && (now >= until || !self.audition_pending.is_empty())
         {
@@ -214,7 +238,8 @@ impl PianoRollState {
                 "preview.noteOn",
                 json!({ "track": track, "keys": keys, "velocity": self.last_velocity }),
             ));
-            self.audition_off = Some((track, now + AUDITION_SECONDS));
+            let sweeping = matches!(self.gesture, Some(super::Gesture::Select { .. }));
+            self.audition_off = Some((track, now + if sweeping { SWEEP_SECONDS } else { AUDITION_SECONDS }));
             self.audition_sounding = keys;
         }
         if let Some((_, until)) = self.audition_off {
@@ -265,7 +290,7 @@ mod tests {
 
     #[test]
     fn the_left_edge_snaps_and_stops_before_the_end_and_at_beat_0() {
-        let grid = NoteGrid::new(0.25, 40.0);
+        let grid = TimelineGrid::new(0.25, 40.0, 4.0, 6.0);
         let grabbed = note(1.0, 1.0, 60);
         assert_eq!(start_by(0.3, &grabbed, &[grabbed], grid, false), 0.25);
         assert!((start_by(0.3, &grabbed, &[grabbed], grid, true) - 0.3).abs() < 1e-12);

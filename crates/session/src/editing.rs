@@ -11,7 +11,7 @@ use suhina_model::{
     AudioRegion, Clip, ClipContent, ContentId, ContentLane, LaneData, Note, Project, StretchMode, TrackId,
 };
 
-use crate::commands::{content_at, make_room, number, track_id};
+use crate::commands::{Args, content_at, make_room, track_id};
 use crate::{CommandError, Session};
 
 /// How close to a clip's edge, in beats, a cut may be; closer would leave a part with no length.
@@ -25,7 +25,7 @@ pub(crate) const CONSOLIDATED_FOLDER: &str = "Consolidated";
 
 /// `clip.split {track, index, at}`: cuts a clip in two at song position `at`.
 pub(crate) fn split_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let at = number(params, "at")?;
+    let at = Args::new(params).f64("at")?;
     let (lane, index) = crate::commands::lane_and_index(&session.project, params)?;
     let p = &mut session.project;
     let clip = p.arrangement.lanes.get(lane).and_then(|l| l.clips.get(index)).cloned().ok_or("the clip is missing")?;
@@ -34,22 +34,40 @@ pub(crate) fn split_clip(session: &mut Session, params: &Value) -> Result<Value,
         return Err(format!("at must be inside the clip, between beats {} and {end}, got {at}", clip.start).into());
     }
     let rate = content_rate(p, &clip);
-    let (first, second) = split(&clip, at, rate);
+    let (first, mut second) = split(&clip, at, rate);
+    // The first part is the clip, shortened; the second is a new clip.
+    second.id = p.new_clip_id()?;
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
     if let Some(slot) = lane.clips.get_mut(index) {
         *slot = first.clone();
     }
     lane.clips.push(second.clone());
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
-    let first = lane.clips.iter().position(|c| *c == first).unwrap_or_default();
-    let second = lane.clips.iter().position(|c| *c == second).unwrap_or_default();
-    Ok(json!({ "first": first, "second": second, "at": at }))
+    let (first_id, second_id) = (first.id, second.id);
+    let first = lane.clips.iter().position(|c| c.id == first_id).unwrap_or_default();
+    let track = lane.track;
+    // The track's take lanes are cut at the same beat, so they stay cut where the comp is (#989).
+    for take in p.arrangement.takes.iter_mut().filter(|t| Some(t.track) == track) {
+        if let Some(i) = take.clips.iter().position(|c| at > c.start + MIN_PART && at < c.start + c.length - MIN_PART)
+            && let Some(clip) = take.clips.get(i).cloned()
+        {
+            let (head, tail) = split(&clip, at, 1.0);
+            if let Some(slot) = take.clips.get_mut(i) {
+                *slot = head;
+            }
+            take.clips.insert(i + 1, tail);
+        }
+    }
+    let lane = p.arrangement.lanes.iter().find(|l| l.track == track && l.clips.iter().any(|c| c.id == first_id));
+    let first = lane.and_then(|l| l.clips.iter().position(|c| c.id == first_id)).unwrap_or(first);
+    let second = lane.and_then(|l| l.clips.iter().position(|c| c.id == second_id)).unwrap_or_default();
+    Ok(json!({ "first": first, "second": second, "first_clip": first_id.0, "second_clip": second_id.0, "at": at }))
 }
 
 /// The two parts of `clip` cut at song position `at` (inside it). The second part plays the
 /// content from where the clip was at the cut; the first keeps the fade-in, the second the
 /// fade-out, and the fades at the cut are none.
-fn split(clip: &Clip, at: f64, rate: f64) -> (Clip, Clip) {
+pub(crate) fn split(clip: &Clip, at: f64, rate: f64) -> (Clip, Clip) {
     let before = at - clip.start;
     let mut first = Clip { length: before, fade_out: 0.0, fade_out_curve: Default::default(), ..clip.clone() };
     first.fit_fades();
@@ -67,7 +85,7 @@ fn split(clip: &Clip, at: f64, rate: f64) -> (Clip, Clip) {
 
 /// Content beats a clip moves through per song beat: a transposed audio clip that is not warped
 /// plays faster or slower, as the engine plays it; everything else 1.
-fn content_rate(p: &Project, clip: &Clip) -> f64 {
+pub(crate) fn content_rate(p: &Project, clip: &Clip) -> f64 {
     let region = p.content(clip.content).and_then(|c| {
         c.lanes.iter().find_map(|l| match &l.data {
             LaneData::Audio(region) => Some(region),
@@ -83,10 +101,12 @@ fn content_rate(p: &Project, clip: &Clip) -> f64 {
     }
 }
 
-/// `clip.consolidate {track, start, end}`: the range on one track becomes one clip.
+/// `clip.consolidate {track, start, end, clips?}`: the range on one track becomes one clip. With
+/// `clips` (clip ids), only those clips are joined and cut away, the others (another row of a
+/// stack) left as they are.
 pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let start = number(params, "start")?;
-    let end = number(params, "end")?;
+    let start = Args::new(params).f64("start")?;
+    let end = Args::new(params).f64("end")?;
     if start < 0.0 || end > suhina_engine::MAX_START_BEAT {
         return Err(format!("start and end must be from 0 to {}", suhina_engine::MAX_START_BEAT).into());
     }
@@ -94,6 +114,17 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         return Err(format!("end must be after start, got start {start} and end {end}").into());
     }
     let track = track_id(&session.project, params)?;
+    let only: Option<Vec<u32>> = match Args::new(params).value("clips") {
+        None => None,
+        Some(v) => Some(
+            v.as_array()
+                .ok_or("clips must be a list of clip ids")?
+                .iter()
+                .map(|id| id.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("clips must be a list of clip ids"))
+                .collect::<Result<_, _>>()?,
+        ),
+    };
+    let chosen = |c: &Clip| only.as_ref().is_none_or(|ids| ids.contains(&c.id.0));
     let p = &session.project;
     let lane =
         p.arrangement.lanes.iter().position(|l| l.track == Some(track)).ok_or("the track has no arrangement lane")?;
@@ -101,7 +132,13 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         .arrangement
         .lanes
         .get(lane)
-        .map(|l| l.clips.iter().filter(|c| c.enabled && c.start < end && c.start + c.length > start).cloned().collect())
+        .map(|l| {
+            l.clips
+                .iter()
+                .filter(|c| c.enabled && c.start < end && c.start + c.length > start && chosen(c))
+                .cloned()
+                .collect()
+        })
         .unwrap_or_default();
     if clips.is_empty() {
         return Err(format!("track {:?} has no clips between beats {start} and {end}", track_name(p, track)).into());
@@ -126,7 +163,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
     let data = match (notes, audio) {
         (true, true) => return Err("the range holds both MIDI and audio clips".into()),
         (false, false) => return Err("the clips in the range play nothing".into()),
-        (true, false) => LaneData::Notes(joined_notes(p, &clips, start, end)),
+        (true, false) => LaneData::Notes(joined_notes(p, &clips, start, end).into()),
         (false, true) => LaneData::Audio(render_audio(session, track, &clips, start, end)?),
     };
     let file = match &data {
@@ -139,11 +176,12 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         id,
         name,
         length: end - start,
-        lanes: vec![ContentLane { target: None, data }],
+        lanes: vec![ContentLane { target: None, data }].into(),
         extensions: Default::default(),
         scale,
     });
     let clip = Clip {
+        id: p.new_clip_id()?,
         content: id,
         start,
         length: end - start,
@@ -156,14 +194,22 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         launch: Default::default(),
+        color: None,
+        ara: false,
         extensions: Default::default(),
     };
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
-    make_room(&mut lane.clips, start, end);
+    // Only the joined clips give way; others (another row of a stack) stay as they are.
+    let (mut joined, kept): (Vec<Clip>, Vec<Clip>) = std::mem::take(&mut lane.clips).into_iter().partition(chosen);
+    make_room(&mut joined, start, end);
+    lane.clips = kept;
+    lane.clips.extend(joined);
     lane.clips.push(clip.clone());
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
-    let index = lane.clips.iter().position(|c| *c == clip).unwrap_or_default();
-    Ok(json!({ "track": track.0, "index": index, "start": start, "length": end - start, "file": file }))
+    let index = lane.clips.iter().position(|c| c.id == clip.id).unwrap_or_default();
+    Ok(
+        json!({ "clip": clip.id.0, "track": track.0, "index": index, "start": start, "length": end - start, "file": file }),
+    )
 }
 
 /// The notes the clips play between `start` and `end`, as one content from `start`: each note
@@ -288,7 +334,7 @@ fn render_audio(
         duration_seconds: Some(seconds),
         warped: false,
         stretch: StretchMode::default(),
-        warp_markers: Vec::new(),
+        warp_markers: Default::default(),
         gain: 1.0,
         transpose: 0.0,
         stream: None,
@@ -301,7 +347,7 @@ fn bar_beats(p: &Project) -> f64 {
 }
 
 fn track_name(p: &Project, track: TrackId) -> String {
-    p.tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()).unwrap_or_default()
+    p.shown_track_name(track)
 }
 
 /// A track name made safe as part of a file name on every system.
@@ -324,18 +370,16 @@ fn free_path(folder: &Path, name: &str) -> Result<PathBuf, CommandError> {
     Err(format!("no free file name for {name:?} in {}", folder.display()).into())
 }
 
-/// Writes interleaved stereo as a 32-bit float WAV file.
+/// Writes interleaved stereo as a 32-bit float WAV file, through the one writer every export
+/// and preview writes with (`media::write`). A bounce rewrites whatever it wrote before, by
+/// its own new name each time.
 fn write_wav(path: &Path, rate: u32, samples: &[f32]) -> Result<(), CommandError> {
-    let spec = hound::WavSpec {
-        channels: 2,
-        sample_rate: rate,
-        bits_per_sample: 32,
-        sample_format: hound::SampleFormat::Float,
-    };
-    let fail = |e: hound::Error| CommandError(format!("could not write {}: {e}", path.display()));
-    let mut writer = hound::WavWriter::create(path, spec).map_err(fail)?;
-    for sample in samples {
-        writer.write_sample(*sample).map_err(fail)?;
-    }
-    writer.finalize().map_err(fail)
+    use suhina_media::write::WriteMode;
+    suhina_media::write::write_audio_file(
+        path,
+        samples,
+        &suhina_media::write::AudioFileSpec::float_wav(rate),
+        WriteMode::Replace,
+    )
+    .map_err(|e| CommandError(format!("could not write {e}")))
 }

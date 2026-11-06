@@ -7,12 +7,13 @@
 use serde_json::{Value, json};
 use suhina_model::{Channel, ChannelId, ChannelRole, ContentKinds, Project, Send, Track, TrackId};
 
+use crate::commands::Args;
 use crate::commands::{channel_param, remove_track, track_at};
 use crate::files::MAX_TRACKS;
 use crate::{CommandError, Session};
 
-/// The loudest a send can be, in dB (as a track's volume).
-const MAX_SEND_DB: f64 = 6.0;
+/// The loudest a send can be, in dB: all of the track's signal, never more of it.
+const MAX_SEND_DB: f64 = 0.0;
 
 /// The return track in `params[key]` and its channel; an error for any other track.
 fn return_at(p: &Project, params: &Value, key: &str) -> Result<(TrackId, ChannelId), CommandError> {
@@ -22,7 +23,7 @@ fn return_at(p: &Project, params: &Value, key: &str) -> Result<(TrackId, Channel
         .iter()
         .find(|t| t.id == track)
         .and_then(|t| t.channel)
-        .and_then(|id| p.channels.iter().find(|c| c.id == id))
+        .and_then(|id| p.channel(id))
         .filter(|c| c.role == ChannelRole::Effect)
         .ok_or_else(|| format!("{key} must be a return track; project.tracks lists them"))?;
     Ok((track, channel.id))
@@ -36,7 +37,7 @@ fn plays_into(p: &Project, from: ChannelId, to: ChannelId) -> bool {
         if id == to {
             return true;
         }
-        if let Some(c) = p.channels.iter().find(|c| c.id == id) {
+        if let Some(c) = p.channel(id) {
             for next in c.output.into_iter().chain(c.sends.iter().map(|s| s.target)) {
                 if !seen.contains(&next) {
                     seen.push(next);
@@ -55,11 +56,11 @@ fn send_param<'a>(session: &'a mut Session, params: &Value) -> Result<(&'a mut S
     let (ret, target) = return_at(p, params, "return")?;
     let from = channel_param(session, params)?.id;
     let p = &session.project;
-    let name = p.tracks.iter().find(|t| t.id == ret).map(|t| t.name.clone()).unwrap_or_default();
+    let name = p.track(ret).map(|t| t.name.clone()).unwrap_or_default();
     if from == target {
         return Err("a return cannot send to itself".into());
     }
-    let exists = p.channels.iter().find(|c| c.id == from).is_some_and(|c| c.sends.iter().any(|s| s.target == target));
+    let exists = p.channel(from).is_some_and(|c| c.sends.iter().any(|s| s.target == target));
     if !exists && plays_into(p, target, from) {
         return Err(format!("a send to {name:?} would make a loop: it plays back into this track").into());
     }
@@ -72,23 +73,42 @@ fn send_param<'a>(session: &'a mut Session, params: &Value) -> Result<(&'a mut S
 }
 
 pub(crate) fn set_send(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let db = match params.get("level") {
+    let db = match Args::new(params).value("level") {
         Some(Value::String(s)) if s == "-inf" => f64::NEG_INFINITY,
         Some(v) => v.as_f64().filter(|n| n.is_finite()).ok_or("level must be a number in dB or \"-inf\"")?,
         None => return Err("level must be a number in dB or \"-inf\"".into()),
     };
     if db > MAX_SEND_DB {
-        return Err(format!("level must be at most +{MAX_SEND_DB} dB, got {db}").into());
+        return Err(format!("level must be at most {MAX_SEND_DB} dB, got {db}").into());
     }
     let gain = if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) };
+    let (ret, _) = return_at(&session.project, params, "return")?;
+    let from = channel_param(session, params)?.id;
+    let track = session.project.tracks.iter().find(|t| t.channel == Some(from)).map(|t| t.id);
+    let heard_before = track.is_some_and(|t| suhina_engine::send_heard(&session.project, t, ret));
     let (send, name) = send_param(session, params)?;
+    let was = send.level;
     send.level = gain;
+    // A send that plays neither before nor after (a muted track's, one at silence): nothing the
+    // engine plays changes, so no new graph (each step of a muted track's knob built one).
+    if !heard_before && !track.is_some_and(|t| suhina_engine::send_heard(&session.project, t, ret)) {
+        session.sync.unheard = true;
+    }
+    // A turn of a send that plays: a playing engine takes it as a message, smoothed, instead of
+    // a new graph (one a step held the window up 60 to 80 ms in a large project). One that
+    // starts from silence is not in the graph yet and takes a new one.
+    if was > 0.0
+        && let Some(track) = track
+    {
+        session.sync.mixer_edits =
+            vec![crate::ParamEdit { track, device: suhina_engine::MIXER_SEND, param: ret.0 as usize, value: gain }];
+    }
     let level = (gain > 0.0).then(|| (20.0 * gain.log10() * 100.0).round() / 100.0);
     Ok(json!({ "return": name, "level_db": level }))
 }
 
 pub(crate) fn set_send_mode(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let pre_fader = match params.get("mode").and_then(Value::as_str) {
+    let pre_fader = match Args::new(params).raw_str("mode") {
         Some(mode) if mode.eq_ignore_ascii_case("pre") => true,
         Some(mode) if mode.eq_ignore_ascii_case("post") => false,
         _ => return Err("mode must be \"pre\" (before the track's volume and pan) or \"post\"".into()),
@@ -114,8 +134,8 @@ pub(crate) fn add_return(session: &mut Session, params: &Value) -> Result<Value,
     if p.tracks.len() >= MAX_TRACKS {
         return Err(format!("a project holds at most {MAX_TRACKS} tracks").into());
     }
-    let name = match params.get("name") {
-        None | Some(Value::Null) => next_name(p),
+    let name = match Args::new(params).value("name") {
+        None => next_name(p),
         Some(v) => v.as_str().map(str::trim).filter(|n| !n.is_empty()).ok_or("name must be a text, not empty")?.into(),
     };
     let id = TrackId(p.tracks.iter().map(|t| t.id.0).max().unwrap_or(0).checked_add(1).ok_or("too many tracks")?);
@@ -160,14 +180,14 @@ pub(crate) fn remove_return(session: &mut Session, params: &Value) -> Result<Val
 }
 
 pub(crate) fn rename_return(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let name = params.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty());
+    let name = Args::new(params).raw_str("name").map(str::trim).filter(|n| !n.is_empty());
     let name = name.ok_or("name must be a text, not empty")?.to_string();
     let (track, channel) = return_at(&session.project, params, "return")?;
     let p = &mut session.project;
-    if let Some(t) = p.tracks.iter_mut().find(|t| t.id == track) {
+    if let Some(t) = p.track_mut(track) {
         t.name.clone_from(&name);
     }
-    if let Some(c) = p.channels.iter_mut().find(|c| c.id == channel) {
+    if let Some(c) = p.channel_mut(channel) {
         c.name.clone_from(&name);
     }
     Ok(json!({ "name": name }))

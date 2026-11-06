@@ -14,8 +14,10 @@ pub mod sample_map_panel;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 
+use suhina_device_api::Role;
 use suhina_engine::AudioData;
 use suhina_library::{FileKind, Group, Item, Listing};
 use suhina_media::info::{Tempo, TempoSource};
@@ -28,7 +30,8 @@ use crate::kit::waveform::{Peaks, peaks};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Place {
     Pinned,
-    Recent(Group),
+    /// The recent items: of one group, or of every group (`None`, #711).
+    Recent(Option<Group>),
     Folder(PathBuf),
 }
 
@@ -37,8 +40,26 @@ impl Place {
     pub fn param(&self) -> String {
         match self {
             Self::Pinned => "pinned".into(),
-            Self::Recent(group) => format!("recent:{}", group.name()),
+            Self::Recent(Some(group)) => format!("recent:{}", group.name()),
+            Self::Recent(None) => "recent:all".into(),
             Self::Folder(path) => path.display().to_string(),
+        }
+    }
+}
+
+impl Place {
+    /// The category a recent group's place belongs to: choosing the place chooses it, so the
+    /// category never hides everything the place lists. `None` for the places that hold any
+    /// kind (the pins, a folder, the recent projects).
+    pub fn category(&self) -> Option<Category> {
+        match self {
+            Self::Recent(Some(Group::Samples)) => Some(Category::Samples),
+            Self::Recent(Some(Group::Midi)) => Some(Category::Midi),
+            Self::Recent(Some(Group::Instruments)) => Some(Category::Instruments),
+            Self::Recent(Some(Group::Effects)) => Some(Category::Effects),
+            Self::Recent(Some(Group::Plugins)) => Some(Category::Plugins),
+            Self::Recent(Some(Group::Presets)) => Some(Category::Presets),
+            Self::Recent(Some(Group::Projects) | None) | Self::Pinned | Self::Folder(_) => None,
         }
     }
 }
@@ -49,7 +70,8 @@ pub enum ResultsMode {
     /// The list or tree of rows.
     #[default]
     List,
-    /// Another view, drawn by `browser_view::Context::other_results`.
+    /// Another view, drawn by `browser_view::Context::other_results`: the sample map, chosen
+    /// with its own button in the category row.
     Other,
 }
 
@@ -65,19 +87,52 @@ pub struct Row {
     pub context: Option<String>,
     /// The columns the plug-ins' flat list shows, for a plug-in row there.
     pub columns: Option<PluginColumns>,
+    /// Where it is in the tree, when that is not its key alone: what opens and closes it and
+    /// tells it from another row of the same item. A library folder inside another library
+    /// folder is listed twice, at the top and inside the other one, and each opens on its own
+    /// (#869). `None` for a row listed once (a heading, a top-level folder, a search's row).
+    pub node: Option<String>,
 }
 
-/// The columns of one row of the plug-ins' flat list
-/// ([the plug-in browsing spec](../../docs/spec/plugin-browsing.md) › The three views).
+impl Row {
+    /// What opens and closes this row ([`BrowserState::toggle`]) and identifies it on screen.
+    pub fn node(&self) -> &str {
+        self.node.as_deref().unwrap_or(&self.item.key)
+    }
+}
+
+/// The node of `key` listed inside the folder whose node is `parent` (see [`Row::node`]).
+fn child_node(parent: &str, key: &str) -> String {
+    format!("{parent}\u{1}{key}")
+}
+
+/// The stock presets of the device `id`.
+fn stock_of(id: &str) -> impl Iterator<Item = &'static suhina_device_registry::StockPreset> + use<'_> {
+    suhina_device_registry::stock_presets().iter().filter(move |stock| stock.preset.device == id)
+}
+
+/// Adds a row per stock preset of the device `id`, inside the node `parent`: a preset is listed under
+/// its device and among the presets, and each row has a node of its own.
+fn stock_rows_of(id: &str, parent: &str, depth: usize, rows: &mut Vec<Row>) {
+    for stock in stock_of(id) {
+        let item = BrowserItem {
+            key: format!("stock:{}", stock.key),
+            name: stock.preset.name.clone(),
+            kind: ItemKind::Preset,
+            plugin: false,
+        };
+        let node = child_node(parent, &item.key);
+        rows.push(Row { item, depth, opens: false, open: false, context: None, columns: None, node: Some(node) });
+    }
+}
+
+/// The columns of one row of the Plug-ins category's list besides the name
+/// ([the plug-in browsing spec](../../docs/spec/plugin-browsing.md) › Instruments and Effects).
+/// The vendor, version and file are the plug-in manager's (Settings › Plug-ins).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PluginColumns {
-    pub vendor: String,
-    /// `instrument` or `effect`.
-    pub kind: &'static str,
     /// `vst3`, `clap`, …
     pub format: &'static str,
-    /// When the scan read the plug-in's file, as seconds since 1970; `None` when unknown.
-    pub modified: Option<u64>,
 }
 
 /// What is known about a file, as it is read in the background.
@@ -177,7 +232,7 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
                     info.tempo = header.tempo;
                     info.key = header.key;
                 }
-                Err(e) => info.error = Some(e),
+                Err(e) => info.error = Some(e.into()),
             }
             if whole {
                 match suhina_media::decode_file(path) {
@@ -189,7 +244,7 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
                         info.data = Some(data);
                         info.error = None;
                     }
-                    Err(e) => info.error = Some(e),
+                    Err(e) => info.error = Some(e.into()),
                 }
             }
         }
@@ -203,11 +258,42 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
                 info.tempo = midi.tempo_bpm.map(|bpm| Tempo { bpm, source: TempoSource::Metadata });
                 info.notes = Some(Arc::new(notes));
             }
-            Err(e) => info.error = Some(e),
+            Err(e) => info.error = Some(e.into()),
         },
         _ => {}
     }
     info
+}
+
+/// The rows of a search's or a place's items.
+fn flat_rows(found: Vec<Found>) -> Vec<Row> {
+    found
+        .into_iter()
+        .map(|f| {
+            let context = f.folder.as_ref().and_then(|folder| {
+                let path = match &f.item {
+                    Item::File(p) => p.parent().map(Path::to_path_buf),
+                    _ => None,
+                }?;
+                let below = path.strip_prefix(folder.parent().unwrap_or(folder)).ok()?;
+                Some(below.display().to_string())
+            });
+            let context = context.or_else(|| f.detail.clone());
+            let item = BrowserItem { key: f.item.key(), name: f.name.clone(), kind: item_kind(&f), plugin: f.plugin };
+            Row { item, depth: 0, opens: false, open: false, context, columns: None, node: None }
+        })
+        .collect()
+}
+
+/// A search looking through more files than this runs on a thread of its own, so typing never
+/// waits for it; a smaller one takes less than a frame and answers at once.
+pub(crate) const SEARCH_ON_THE_WINDOW_THREAD: usize = 4096;
+
+/// A search running on its thread: its answer comes through `answer`, and `cancel` ends it when
+/// the search field has changed since.
+struct SearchJob {
+    cancel: Arc<AtomicBool>,
+    answer: Receiver<Vec<Found>>,
 }
 
 /// The browser panel's state. One for the window: it is the same whichever project shows.
@@ -229,23 +315,36 @@ pub struct BrowserState {
     pub(crate) tag_editor_confirm: Option<String>,
     /// How many items carry each tag, as last counted (the editor opened, or a tag changed).
     pub(crate) tag_counts: Option<HashMap<String, usize>>,
-    /// The plug-ins' flat list sorts by this column (0 name, 1 vendor, 2 type, 3 format,
-    /// 4 modified), `true` descending. The window's own, not kept between runs.
+    /// The Plug-ins category's list sorts by this column (0 name, 1 format), `true`
+    /// descending. The window's own, not kept between runs.
     pub plugin_sort: (u8, bool),
     /// Put the cursor in the search field on the next frame.
     pub focus_search: bool,
+    /// And select what it says, so typing replaces it (Ctrl+F).
+    pub select_search: bool,
     /// The search field had the keyboard last frame.
     pub search_focused: bool,
+    /// A row of the list was pressed last, not anything outside the browser: the arrow keys move
+    /// through the list.
+    pub list_focused: bool,
     /// Escape in the search field asked for the preview to stop.
     pub stop_preview: bool,
     /// The sidebar's field for a folder to add, while it shows.
     pub new_folder: Option<String>,
     /// Items being dragged into the project.
     pub drag: Option<Vec<BrowserItem>>,
+    /// The folder row under the pointer while samples are dragged, which a drop moves or
+    /// copies them into (#943); set as the rows are drawn.
+    pub drop_folder: Option<PathBuf>,
     /// The file previewing, by key.
     pub previewing: Option<String>,
     /// A sample waiting to be read whole before it previews.
     pending_preview: Option<(PathBuf, f64)>,
+    /// The preview voice has been seen playing since `previewing` was set: until then a voice
+    /// that is not playing yet has not started, not ended (#836).
+    preview_heard: bool,
+    /// How many previews the voice had started at the last look.
+    preview_seen: u64,
     /// The row a button press selected, so its release does not select it again.
     pub(crate) handled_press: Option<String>,
     /// Why the sample waiting to preview could not be read, to show once.
@@ -253,6 +352,10 @@ pub struct BrowserState {
     pub scroll: f32,
     rows: Vec<Row>,
     rows_key: Option<String>,
+    /// The search whose rows are still to come; the rows before it stay until they do.
+    search_job: Option<SearchJob>,
+    /// How many files a search looks through on the window's thread.
+    search_inline_files: usize,
     listings: HashMap<PathBuf, Arc<Vec<Listing>>>,
     voices: HashMap<PathBuf, Arc<Vec<(usize, String)>>>,
     info: HashMap<PathBuf, FileInfo>,
@@ -280,17 +383,24 @@ impl Default for BrowserState {
             tag_counts: None,
             plugin_sort: (0, false),
             focus_search: false,
+            select_search: false,
             search_focused: false,
+            list_focused: false,
             stop_preview: false,
             new_folder: None,
             drag: None,
+            drop_folder: None,
             previewing: None,
             pending_preview: None,
+            preview_heard: false,
+            preview_seen: 0,
             preview_error: None,
             handled_press: None,
             scroll: 0.0,
             rows: Vec::new(),
             rows_key: None,
+            search_job: None,
+            search_inline_files: SEARCH_ON_THE_WINDOW_THREAD,
             listings: HashMap::new(),
             voices: HashMap::new(),
             info: HashMap::new(),
@@ -311,6 +421,7 @@ fn item_kind(found: &Found) -> ItemKind {
         "instrument" => ItemKind::Instrument,
         "effect" => ItemKind::Effect,
         "audio_effect" => ItemKind::AudioEffect,
+        "midi_effect" => ItemKind::MidiEffect,
         _ => ItemKind::Heading,
     }
 }
@@ -385,13 +496,78 @@ impl BrowserState {
             self.plugin_sort
         );
         if self.rows_key.as_deref() == Some(key.as_str()) {
+            self.take_search_answer(false);
             return Ok(());
         }
         self.rows_key = Some(key);
+        if let Some(stale) = self.search_job.take() {
+            stale.cancel.store(true, Ordering::Relaxed);
+        }
         let flat = !self.search.trim().is_empty()
             || !self.tag_filter.is_empty()
             || matches!(self.place, Some(Place::Pinned | Place::Recent(_)));
-        self.rows = if flat { self.flat_rows(projects)? } else { self.tree_rows(projects) };
+        let rows = if flat {
+            let place = self.place.as_ref().map(Place::param);
+            let search = suhina_session::prepare_search(
+                projects,
+                &self.search,
+                self.category,
+                place.as_deref(),
+                &self.tag_filter,
+                0,
+            )
+            .map_err(String::from)?;
+            if search.files() > self.search_inline_files {
+                let started = self.start_search(search);
+                if started.is_err() {
+                    // The next frame tries again.
+                    self.rows_key = None;
+                }
+                return started;
+            }
+            flat_rows(search.run(&AtomicBool::new(false)))
+        } else {
+            self.tree_rows(projects)
+        };
+        self.set_rows(rows);
+        Ok(())
+    }
+
+    /// Whether a search is still looking, so the window looks again for its answer.
+    pub fn searching(&self) -> bool {
+        self.search_job.is_some()
+    }
+
+    /// Looks through a large library on a thread of its own; the rows come when it answers.
+    fn start_search(&mut self, search: suhina_session::PreparedSearch) -> Result<(), String> {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (send, answer) = std::sync::mpsc::channel();
+        let looking = Arc::clone(&cancel);
+        std::thread::Builder::new()
+            .name("browser search".into())
+            .spawn(move || {
+                let found = search.run(&looking);
+                if !looking.load(Ordering::Relaxed) {
+                    let _ = send.send(found);
+                }
+            })
+            .map_err(|e| format!("could not start the search: {e}"))?;
+        self.search_job = Some(SearchJob { cancel, answer });
+        Ok(())
+    }
+
+    /// Shows what the running search found once it has answered; with `wait`, waits for that.
+    fn take_search_answer(&mut self, wait: bool) {
+        let Some(job) = &self.search_job else { return };
+        let found = if wait { job.answer.recv().ok() } else { job.answer.try_recv().ok() };
+        if let Some(found) = found {
+            self.search_job = None;
+            self.set_rows(flat_rows(found));
+        }
+    }
+
+    fn set_rows(&mut self, rows: Vec<Row>) {
+        self.rows = rows;
         // What is no longer listed is no longer selected.
         let listed: HashSet<&str> = self.rows.iter().map(|r| r.item.key.as_str()).collect();
         let before = self.selected.len();
@@ -399,48 +575,34 @@ impl BrowserState {
         if before != self.selected.len() {
             self.selection_changed = true;
         }
-        Ok(())
-    }
-
-    fn flat_rows(&mut self, projects: &mut Projects) -> Result<Vec<Row>, String> {
-        let place = self.place.as_ref().map(Place::param);
-        let found =
-            suhina_session::search_items(projects, &self.search, self.category, place.as_deref(), &self.tag_filter, 0)
-                .map_err(|e| e.0)?;
-        Ok(found
-            .into_iter()
-            .map(|f| {
-                let context = f.folder.as_ref().and_then(|folder| {
-                    let path = match &f.item {
-                        Item::File(p) => p.parent().map(Path::to_path_buf),
-                        _ => None,
-                    }?;
-                    let below = path.strip_prefix(folder.parent().unwrap_or(folder)).ok()?;
-                    Some(below.display().to_string())
-                });
-                let context = context.or_else(|| f.detail.clone());
-                let item =
-                    BrowserItem { key: f.item.key(), name: f.name.clone(), kind: item_kind(&f), plugin: f.plugin };
-                Row { item, depth: 0, opens: false, open: false, context, columns: None }
-            })
-            .collect())
     }
 
     fn tree_rows(&mut self, projects: &mut Projects) -> Vec<Row> {
         let mut rows = Vec::new();
         let category = self.category;
         match self.place.clone() {
-            Some(Place::Folder(folder)) => self.folder_rows(projects, &folder, 0, &mut rows),
+            Some(Place::Folder(folder)) => {
+                let node = folder.display().to_string();
+                self.folder_rows(projects, &folder, &node, 0, &mut rows);
+            }
             _ => {
                 let devices = matches!(category, Category::All | Category::Instruments | Category::Effects);
                 if devices && category != Category::Effects {
-                    self.device_rows("group:instruments", "Instruments", true, &mut rows);
+                    self.device_rows("group:instruments", "Instruments", Role::Instrument, &mut rows);
                 }
                 if devices && category != Category::Instruments {
-                    self.device_rows("group:effects", "Effects", false, &mut rows);
+                    self.device_rows("group:effects", "Effects", Role::Effect, &mut rows);
+                    self.device_rows("group:midi-effects", "MIDI Effects", Role::MidiEffect, &mut rows);
                 }
-                if matches!(category, Category::All | Category::Instruments | Category::Effects | Category::Plugins) {
-                    self.plugin_rows(projects, &mut rows);
+                if matches!(category, Category::All | Category::Presets) {
+                    self.stock_rows(&mut rows);
+                }
+                // The Plug-ins category lists the instruments or the effects as one list; the
+                // other categories keep the plug-ins in the tree under their vendors.
+                if category == Category::Plugins {
+                    self.plugin_rows_listed(projects, &mut rows);
+                } else if matches!(category, Category::All | Category::Instruments | Category::Effects) {
+                    self.plugin_rows_grouped(projects, &mut rows);
                 }
                 if !category.file_kinds().is_empty() {
                     let folders: Vec<PathBuf> =
@@ -452,9 +614,9 @@ impl BrowserState {
                         let key = folder.display().to_string();
                         let open = self.open.contains(&key);
                         let item = BrowserItem { key: key.clone(), name, kind: ItemKind::Folder, plugin: false };
-                        rows.push(Row { item, depth: 0, opens: true, open, context: None, columns: None });
+                        rows.push(Row { item, depth: 0, opens: true, open, context: None, columns: None, node: None });
                         if open {
-                            self.folder_rows(projects, &folder, 1, &mut rows);
+                            self.folder_rows(projects, &folder, &key, 1, &mut rows);
                         }
                     }
                 }
@@ -463,56 +625,101 @@ impl BrowserState {
         rows
     }
 
-    fn device_rows(&self, node: &str, name: &str, instruments: bool, rows: &mut Vec<Row>) {
+    /// Adds the heading `name` for the built-in devices of `role` and, when it is open, a row per
+    /// device under it.
+    fn device_rows(&self, node: &str, name: &str, role: Role, rows: &mut Vec<Row>) {
         let open = self.open.contains(node);
-        rows.push(Row { item: heading(node, name), depth: 0, opens: true, open, context: None, columns: None });
+        rows.push(Row {
+            item: heading(node, name),
+            depth: 0,
+            opens: true,
+            open,
+            context: None,
+            columns: None,
+            node: None,
+        });
         if !open {
             return;
         }
-        for info in suhina_device_registry::DEVICES {
-            let is_instrument = info.role == suhina_device_api::Role::Instrument;
-            if is_instrument != instruments {
-                continue;
+        let kind = match role {
+            Role::Instrument => ItemKind::Instrument,
+            Role::Effect => ItemKind::Effect,
+            Role::MidiEffect => ItemKind::MidiEffect,
+        };
+        for info in suhina_device_registry::DEVICES.iter().filter(|info| info.role == role) {
+            let item =
+                BrowserItem { key: format!("device:{}", info.id), name: info.name.to_string(), kind, plugin: false };
+            // A device opens on its presets; the row itself stays the device at its defaults.
+            let has_presets = stock_of(&info.id).next().is_some();
+            let open = has_presets && self.open.contains(&item.key);
+            let parent = item.key.clone();
+            rows.push(Row { item, depth: 1, opens: has_presets, open, context: None, columns: None, node: None });
+            if open {
+                stock_rows_of(&info.id, &parent, 2, rows);
             }
-            let kind = if is_instrument { ItemKind::Instrument } else { ItemKind::Effect };
-            let item = BrowserItem { key: format!("device:{}", info.id), name: info.name.into(), kind, plugin: false };
-            rows.push(Row { item, depth: 1, opens: false, open: false, context: None, columns: None });
         }
     }
 
-    fn plugin_rows(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
-        match projects.file_library_mut().plugins_view() {
-            suhina_library::store::PluginsView::Grouped => self.plugin_rows_grouped(projects, rows),
-            suhina_library::store::PluginsView::Type => self.plugin_rows_type(projects, rows),
-            suhina_library::store::PluginsView::Flat => self.plugin_rows_flat(projects, rows),
+    /// Adds the heading for the presets that ship with Suhina and, when it is open, a heading per
+    /// device that has any and, under an open one, a row per preset.
+    fn stock_rows(&self, rows: &mut Vec<Row>) {
+        const NODE: &str = "group:stock-presets";
+        let open = self.open.contains(NODE);
+        rows.push(Row {
+            item: heading(NODE, "Stock presets"),
+            depth: 0,
+            opens: true,
+            open,
+            context: None,
+            columns: None,
+            node: None,
+        });
+        if !open {
+            return;
+        }
+        for info in suhina_device_registry::DEVICES.iter().filter(|info| stock_of(&info.id).next().is_some()) {
+            let node = child_node(NODE, &info.id);
+            let open = self.open.contains(&node);
+            rows.push(Row {
+                item: heading(&node, &info.name),
+                depth: 1,
+                opens: true,
+                open,
+                context: None,
+                columns: None,
+                node: None,
+            });
+            if open {
+                stock_rows_of(&info.id, &node, 2, rows);
+            }
         }
     }
 
-    /// The plug-ins the category asks for, with their type and when their file was read.
-    fn listed_plugins(&self, projects: &mut Projects) -> Vec<(suhina_plugins::scan::PluginInfo, bool, Option<u64>)> {
+    /// The plug-ins the category asks for (in the Plug-ins category, the instruments or the
+    /// effects its switch chose), with their type. Plug-ins switched off are not among them.
+    fn listed_plugins(&self, projects: &mut Projects) -> Vec<(suhina_plugins::scan::PluginInfo, bool)> {
+        let view = projects.file_library_mut().plugins_view();
         let env = projects.plugin_env();
         let wanted = |instrument: bool| match self.category {
             Category::Instruments => instrument,
             Category::Effects => !instrument,
+            Category::Plugins => instrument == (view == suhina_library::store::PluginsView::Instruments),
             _ => true,
         };
-        // When the scan read each plug-in's file, from the catalog's entries.
-        let modified: HashMap<&Path, u64> =
-            env.catalog.entries().iter().map(|e| (e.path.as_path(), e.modified)).collect();
         env.catalog
             .plugins()
             .filter(|p| wanted(suhina_session::is_instrument(p)))
-            .map(|p| (p.clone(), suhina_session::is_instrument(p), modified.get(p.path.as_path()).copied()))
+            .map(|p| (p.clone(), suhina_session::is_instrument(p)))
             .collect()
     }
 
     fn plugin_row(item: BrowserItem, depth: usize, columns: Option<PluginColumns>) -> Row {
-        Row { item, depth, opens: false, open: false, context: None, columns }
+        Row { item, depth, opens: false, open: false, context: None, columns, node: None }
     }
 
     fn plugin_rows_grouped(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
         let mut vendors: Vec<(String, Vec<BrowserItem>)> = Vec::new();
-        for (plugin, instrument, _) in self.listed_plugins(projects) {
+        for (plugin, instrument) in self.listed_plugins(projects) {
             let vendor = if plugin.vendor.trim().is_empty() {
                 "Unknown vendor".to_string()
             } else {
@@ -531,7 +738,15 @@ impl BrowserState {
         });
         let node = "group:plugins";
         let open = self.open.contains(node);
-        rows.push(Row { item: heading(node, "Plug-ins"), depth: 0, opens: true, open, context: None, columns: None });
+        rows.push(Row {
+            item: heading(node, "Plug-ins"),
+            depth: 0,
+            opens: true,
+            open,
+            context: None,
+            columns: None,
+            node: None,
+        });
         if !open {
             return;
         }
@@ -545,6 +760,7 @@ impl BrowserState {
                 open: vendor_open,
                 context: None,
                 columns: None,
+                node: None,
             });
             if vendor_open {
                 list.sort_by(|a, b| suhina_library::natural_cmp(&a.name, &b.name));
@@ -555,22 +771,13 @@ impl BrowserState {
         }
     }
 
-    fn plugin_rows_type(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
-        // The type's plug-ins under Suhina's groups, in the spec's order, Other last. A
-        // plug-in sits under the first of its groups.
-        for (instruments, title) in [(true, "Instruments"), (false, "Effects")] {
-            let node = if instruments { "group:plugins-instruments" } else { "group:plugins-effects" };
-            let open = self.open.contains(node);
-            rows.push(Row { item: heading(node, title), depth: 0, opens: true, open, context: None, columns: None });
-            if !open {
-                continue;
-            }
-            let mut groups: Vec<(&str, Vec<BrowserItem>)> = Vec::new();
-            for (plugin, instrument, _) in self.listed_plugins(projects) {
-                if instrument != instruments {
-                    continue;
-                }
-                let group = suhina_session::plugin_group(&plugin).unwrap_or("Other");
+    /// The Plug-ins category's list: one row per plug-in, no headings, sorted by the chosen
+    /// column (name in natural order, or format), the name breaking ties.
+    fn plugin_rows_listed(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
+        let mut list: Vec<(BrowserItem, PluginColumns)> = self
+            .listed_plugins(projects)
+            .into_iter()
+            .map(|(plugin, instrument)| {
                 let kind = if instrument { ItemKind::Instrument } else { ItemKind::Effect };
                 let item = BrowserItem {
                     key: format!("plugin:{}", plugin.spec()),
@@ -578,82 +785,13 @@ impl BrowserState {
                     kind,
                     plugin: true,
                 };
-                match groups.iter_mut().find(|(g, _)| *g == group) {
-                    Some((_, list)) => list.push(item),
-                    None => groups.push((group, vec![item])),
-                }
-            }
-            groups.sort_by_key(|(g, _)| {
-                let order = [
-                    "Synth",
-                    "Sampler",
-                    "Drums",
-                    "Reverb",
-                    "Delay",
-                    "EQ",
-                    "Filter",
-                    "Dynamics",
-                    "Distortion",
-                    "Modulation",
-                    "Analyzer",
-                    "Utility",
-                ];
-                order.iter().position(|o| o == g).unwrap_or(order.len())
-            });
-            for (group, mut list) in groups {
-                let key = format!("{node}:{group}");
-                let group_open = self.open.contains(&key);
-                rows.push(Row {
-                    item: heading(&key, group),
-                    depth: 1,
-                    opens: true,
-                    open: group_open,
-                    context: None,
-                    columns: None,
-                });
-                if group_open {
-                    list.sort_by(|a, b| suhina_library::natural_cmp(&a.name, &b.name));
-                    for item in list {
-                        rows.push(Self::plugin_row(item, 2, None));
-                    }
-                }
-            }
-        }
-    }
-
-    fn plugin_rows_flat(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
-        let mut list: Vec<(BrowserItem, PluginColumns)> = self
-            .listed_plugins(projects)
-            .into_iter()
-            .map(|(plugin, instrument, modified)| {
-                let kind = if instrument { ItemKind::Instrument } else { ItemKind::Effect };
-                (
-                    BrowserItem {
-                        key: format!("plugin:{}", plugin.spec()),
-                        name: plugin.name.clone(),
-                        kind,
-                        plugin: true,
-                    },
-                    PluginColumns {
-                        vendor: if plugin.vendor.trim().is_empty() {
-                            "Unknown vendor".into()
-                        } else {
-                            plugin.vendor.trim().to_string()
-                        },
-                        kind: if instrument { "instrument" } else { "effect" },
-                        format: plugin.format(),
-                        modified,
-                    },
-                )
+                (item, PluginColumns { format: plugin.format() })
             })
             .collect();
         let (column, descending) = self.plugin_sort;
         list.sort_by(|a, b| {
             let order = match column {
-                1 => a.1.vendor.to_lowercase().cmp(&b.1.vendor.to_lowercase()),
-                2 => (a.1.kind == "effect").cmp(&(b.1.kind == "effect")),
-                3 => a.1.format.to_lowercase().cmp(&b.1.format.to_lowercase()),
-                4 => a.1.modified.unwrap_or(0).cmp(&b.1.modified.unwrap_or(0)),
+                1 => a.1.format.cmp(b.1.format),
                 _ => suhina_library::natural_cmp(&a.0.name, &b.0.name),
             };
             order.then_with(|| suhina_library::natural_cmp(&a.0.name, &b.0.name)).then_with(|| a.0.key.cmp(&b.0.key))
@@ -666,14 +804,19 @@ impl BrowserState {
         }
     }
 
-    fn folder_rows(&mut self, projects: &mut Projects, folder: &Path, depth: usize, rows: &mut Vec<Row>) {
+    /// Lists `folder`, whose node in the tree is `parent` ([`Row::node`]), and the folders open
+    /// in it.
+    fn folder_rows(&mut self, projects: &mut Projects, folder: &Path, parent: &str, depth: usize, rows: &mut Vec<Row>) {
         if depth > suhina_library::index::MAX_DEPTH {
             return;
         }
         let listing = match self.listings.get(folder) {
             Some(listing) => Arc::clone(listing),
             None => {
-                let listing = Arc::new(projects.file_library_mut().list(folder).unwrap_or_default());
+                let listing = Arc::new(
+                    suhina_plugins::trace::timed("library folder listing", || projects.file_library_mut().list(folder))
+                        .unwrap_or_default(),
+                );
                 self.listings.insert(folder.to_path_buf(), Arc::clone(&listing));
                 listing
             }
@@ -681,6 +824,7 @@ impl BrowserState {
         let kinds = self.category.file_kinds();
         for entry in listing.iter() {
             let key = entry.path.display().to_string();
+            let node = child_node(parent, &key);
             match entry.kind {
                 None => {
                     // A folder the index shows holds nothing of the category is left out.
@@ -689,28 +833,44 @@ impl BrowserState {
                     {
                         continue;
                     }
-                    let open = self.open.contains(&key);
+                    let open = self.open.contains(&node);
                     let item = BrowserItem {
                         key: key.clone(),
                         name: entry.name.clone(),
                         kind: ItemKind::Folder,
                         plugin: false,
                     };
-                    rows.push(Row { item, depth, opens: true, open, context: None, columns: None });
+                    rows.push(Row {
+                        item,
+                        depth,
+                        opens: true,
+                        open,
+                        context: None,
+                        columns: None,
+                        node: Some(node.clone()),
+                    });
                     if open {
-                        self.folder_rows(projects, &entry.path, depth + 1, rows);
+                        self.folder_rows(projects, &entry.path, &node, depth + 1, rows);
                     }
                 }
                 Some(kind) if kinds.contains(&kind) => {
                     let bank = kind == FileKind::Preset && self.preset_voices(&entry.path).len() > 1;
-                    let open = bank && self.open.contains(&key);
+                    let open = bank && self.open.contains(&node);
                     let item = BrowserItem {
                         key: key.clone(),
                         name: entry.name.clone(),
                         kind: file_kind_item(kind),
                         plugin: false,
                     };
-                    rows.push(Row { item, depth, opens: bank, open, context: None, columns: None });
+                    rows.push(Row {
+                        item,
+                        depth,
+                        opens: bank,
+                        open,
+                        context: None,
+                        columns: None,
+                        node: Some(node.clone()),
+                    });
                     if open {
                         for (voice, name) in self.preset_voices(&entry.path).iter() {
                             let item = BrowserItem {
@@ -719,6 +879,7 @@ impl BrowserState {
                                 kind: ItemKind::Preset,
                                 plugin: false,
                             };
+                            let node = child_node(&node, &item.key);
                             rows.push(Row {
                                 item,
                                 depth: depth + 1,
@@ -726,6 +887,7 @@ impl BrowserState {
                                 open: false,
                                 context: None,
                                 columns: None,
+                                node: Some(node),
                             });
                         }
                     }
@@ -842,6 +1004,37 @@ impl BrowserState {
     pub fn cancel_preview(&mut self) {
         self.pending_preview = None;
         self.previewing = None;
+        self.preview_heard = false;
+    }
+
+    /// `key` was just sent to the preview voice to play.
+    pub fn preview_started(&mut self, key: String) {
+        self.previewing = Some(key);
+        self.preview_heard = false;
+    }
+
+    /// What the preview voice says this frame: once it has been heard playing, a voice that is
+    /// no longer playing has ended, and nothing previews. A voice not heard yet may still be
+    /// about to start, so the control keeps showing Stop for it.
+    /// `started` counts the previews the voice has begun: a new one since the last look means
+    /// it played, even when it started and ended between two looks.
+    pub fn observe_preview(&mut self, playing: bool, started: u64) {
+        let begun = started > self.preview_seen;
+        self.preview_seen = started;
+        if playing || begun {
+            self.preview_heard = self.previewing.is_some();
+        }
+        if !playing && self.preview_heard && !self.preview_pending() {
+            self.previewing = None;
+            self.preview_heard = false;
+        }
+    }
+
+    /// Whether `key` previews now or waits to be read before it does: its control shows Stop,
+    /// and a second click stops it rather than starting it again.
+    pub fn preview_active_for(&self, key: &str) -> bool {
+        self.previewing.as_deref() == Some(key)
+            || self.pending_preview.as_ref().is_some_and(|(path, _)| path.display().to_string() == key)
     }
 
     /// Whether a sample waits to be decoded before it previews.
@@ -867,102 +1060,5 @@ pub fn duration_text(seconds: f64) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn durations_read_as_minutes_and_seconds() {
-        assert_eq!(duration_text(4.2), "0:04.2");
-        assert_eq!(duration_text(0.06), "0:00.1");
-        assert_eq!(duration_text(201.7), "3:21");
-        assert_eq!(duration_text(59.94), "0:59.9");
-        assert_eq!(duration_text(59.97), "1:00", "rounded up to a minute, not 0:60.0");
-        assert_eq!(duration_text(60.0), "1:00");
-        assert_eq!(duration_text(f64::NAN), "");
-    }
-
-    /// A sample previewed without being selected (the sample map previews what the pointer is
-    /// over) keeps its decoded audio until it plays.
-    #[test]
-    fn an_unselected_sample_waiting_to_preview_keeps_its_audio() {
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
-        let dir = std::env::temp_dir().join(format!("suhina-browser-preview-{}-{nanos}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("hat.wav");
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: 8000,
-            bits_per_sample: 16,
-            sample_format: hound::SampleFormat::Int,
-        };
-        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-        for i in 0..800 {
-            writer.write_sample(((i % 50) * 400) as i16).unwrap();
-        }
-        writer.finalize().unwrap();
-
-        let mut state = BrowserState::default();
-        assert!(state.selected().is_empty());
-        let _ = state.info(&path, true);
-        state.want_preview(path.clone(), 0.0);
-        let mut ready = None;
-        for _ in 0..400 {
-            state.poll();
-            ready = state.take_ready_preview();
-            if ready.is_some() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        let (got, from, data) = ready.expect("the preview's audio arrives");
-        assert_eq!((got, from, data.frames()), (path, 0.0, 800));
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    /// A loop's audio arrives for its preview, and its tempo is detected and taken in too (it is
-    /// sent after the audio, so the preview does not wait for it).
-    #[test]
-    fn a_previewed_loop_gets_its_tempo_too() {
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
-        let dir = std::env::temp_dir().join(format!("suhina-browser-tempo-{}-{nanos}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("loop.wav");
-        let rate = 44_100u32;
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: rate,
-            bits_per_sample: 16,
-            sample_format: hound::SampleFormat::Int,
-        };
-        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-        // Four bars of clicks at 120 BPM: 8 seconds, a beat every half second.
-        for i in 0..(rate * 8) {
-            let since_beat = i % (rate / 2);
-            let s = if since_beat < 400 { ((since_beat as f32 * 0.3).sin() * 20_000.0) as i16 } else { 0 };
-            writer.write_sample(s).unwrap();
-        }
-        writer.finalize().unwrap();
-
-        let mut state = BrowserState::default();
-        let started = std::time::Instant::now();
-        let _ = state.info(&path, true);
-        state.want_preview(path.clone(), 0.0);
-        let mut ready_after = None;
-        for _ in 0..2000 {
-            state.poll();
-            if ready_after.is_none() && state.take_ready_preview().is_some() {
-                ready_after = Some(started.elapsed());
-            }
-            if ready_after.is_some() && state.info.get(&path).and_then(|i| i.tempo).is_some() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(2));
-        }
-        assert!(ready_after.is_some(), "the preview's audio arrives");
-        let detected = state.info.get(&path).and_then(|i| i.tempo).expect("the tempo follows");
-        assert!((detected.bpm - 120.0).abs() < 1.0, "{}", detected.bpm);
-        assert_eq!(detected.source, TempoSource::Detected);
-        println!("audio ready after {:?}, tempo after {:?}", ready_after.unwrap_or_default(), started.elapsed());
-        let _ = std::fs::remove_dir_all(dir);
-    }
-}
+#[path = "browser_tests.rs"]
+mod tests;

@@ -3,7 +3,7 @@ description: What is known of Native Instruments preset files (.nksf, .nksfx) an
 read_when: NKS, nksf, nksfx, Native Instruments presets, preset previews, .previews folder, NISI, NICA, PLID, PCHK, MessagePack, Komplete Kontrol presets, plug-in state chunk
 type: spec
 status: planned
-last_verified: 2026-10-12
+last_verified: 2026-11-02
 ---
 
 # NKS preset files
@@ -16,7 +16,7 @@ last_verified: 2026-10-12
   (see *To observe*).
 - **Used by:** the browser and the sample map ([`sample-map.md`](sample-map.md) › NKS presets).
 - **Naming:** in user-facing text "Native Instruments preset files (.nksf)"; never the NKS logo,
-  never "NKS-ready" or "NKS-compatible" as Suhina's own branding (AGENTS.md rule 8).
+  never "NKS-ready" or "NKS-compatible" as Suhina's own branding (AGENTS.md rule 9).
 
 ## Files
 
@@ -122,6 +122,6 @@ test files may be committed only when the plug-in's state in them is our own:
   `perivar/PresetConverter` (C#, MIT).
 - Native Instruments' public pages and community forum: where previews and user content live,
   that previews are OGG Vorbis, and which plug-ins migrate VST2 presets to VST3.
-
-These describe files, not the maker's programs: none comes from disassembling a program, so
-they fall within CONTRIBUTING.md › Clean-room. Code without a licence is not copied, ported or translated (CONTRIBUTING.md › Clean-room).
+- All of these describe files, not the maker's programs: none comes from disassembling a
+  program, so they fall within CONTRIBUTING.md › Clean-room. Code without a licence is not
+  copied, ported or translated.

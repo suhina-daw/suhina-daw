@@ -1,0 +1,13 @@
+{
+  "name": "Light",
+  "values": {
+    "--ground": "#F4F2EE",
+    "--surface": "#E9E6E0",
+    "--ink": "#1F1D1A",
+    "--tint": "#5A54D6",
+    "--highlight": "#C9A227",
+    "--recording": "#D93036",
+    "--meter-normal": "#3F9B4A",
+    "--meter-hot": "#C9A227"
+  }
+}

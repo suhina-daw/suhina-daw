@@ -1,0 +1,18 @@
+[package]
+name = "suhina-style"
+description = "Bounded native style sheets and source-preserving edits, independent of the UI toolkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cssparser = "0.38" # MPL-2.0; CSS syntax tokens, no browser engine
+taffy = { version = "0.15", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "block_layout"] } # MIT; native layout only
+
+[[bench]]
+name = "style_cache"
+harness = false
+
+[lints]
+workspace = true

@@ -1,0 +1,102 @@
+{
+  "ui": {
+    "size": [
+      260.0,
+      168.0
+    ],
+    "viewport_size": null,
+    "background": [
+      37,
+      36,
+      33,
+      255
+    ],
+    "assets": [],
+    "layers": [],
+    "controls": [
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Threshold",
+          "decimals": 1,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "threshold",
+        "name": "Threshold",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          0.0,
+          24.0,
+          85.666664,
+          120.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "threshold",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Ceiling",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "ceiling",
+        "name": "Ceiling",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          86.666664,
+          24.0,
+          85.666664,
+          120.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "ceiling",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Release",
+          "decimals": 3,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "release",
+        "name": "Release",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          173.33333,
+          24.0,
+          85.666664,
+          120.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "release",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      }
+    ],
+    "hidden_parameters": [
+      "threshold",
+      "ceiling",
+      "release"
+    ]
+  }
+}

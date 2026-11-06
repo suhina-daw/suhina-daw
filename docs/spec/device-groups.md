@@ -1,13 +1,18 @@
 ---
-description: Planned device groups - several devices on a track as one unit, with parallel branches, per-branch volume, pan, mute and solo, a mix, macros, group presets, latency compensation, the model and the commands
+description: Device groups - several devices on a track as one unit, with parallel branches, per-branch volume, pan, mute and solo, a mix, macros, group presets, latency compensation, the model and the commands
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
-status: planned
-last_verified: 2026-10-15
+status: current
+last_verified: 2026-11-05
 covers:
   - crates/model/src/lib.rs
+  - crates/model/src/groups.rs
+  - crates/project-file/src/lib.rs
   - crates/engine/src/chain.rs
+  - crates/engine/src/group.rs
   - crates/session/src/devices.rs
+  - crates/session/src/device_groups.rs
+  - crates/ui/src/detail/detail_view.rs
 ---
 
 # Device groups
@@ -17,10 +22,13 @@ covers:
   ([ADR 0004](../decisions/0004-built-in-devices.md) › 9 and 10), plug-in hosting
   ([ADR 0006](../decisions/0006-plug-in-hosting.md)) and the model
   ([ADR 0001](../decisions/0001-daw-neutral-model.md)). Nothing here is observed from another
-  program; nothing is implemented yet.
-- **Status:** planned. The split into issues is at the end (*Implementation plan*); the
-  questions the maintainer decides are in *Open questions*. Where this document had to choose,
-  it says so and why, so a different answer changes one place.
+  program.
+- **Status:** steps 1 to 6 of the *Implementation plan* are built (#147): the model and file,
+  groups in the engine with latency compensation, the commands, plug-ins inside groups and the
+  panel with Ctrl+G. Macros (7), group presets (8) and key ranges (9) are still planned; the model
+  already keeps the eight macros and their mappings. The questions the maintainer decides are in
+  *Open questions*, answered by the defaults this document chose. Where this document had to
+  choose, it says so and why, so a different answer changes one place.
 
 ## What it is
 
@@ -78,7 +86,7 @@ running at their state, as a switched-off device does today.
   state and sounds again at once when unmuted, and a reverb tail is cut rather than restarted.
 - While any branch of a group is soloed, only the soloed branches add to the sum. Solo is local
   to its group: it does not touch other groups, other branches outside the group or the track
-  solo. Mute wins over solo, as on tracks.
+  solo. Mute wins over solo on a branch (on a track, the track's own solo outranks its mute).
 - Muting every branch leaves only the dry part of the mix.
 
 ### Instruments in a group
@@ -93,6 +101,10 @@ A group is either an **effect group** or an **instrument group**; it is never bo
   `device.add` applies to an instrument today. Every branch gets the track's notes as events at
   their frames, so the instruments are layered. There is no dry signal in an instrument group, so
   `mix` is fixed at 1 and not shown.
+
+`device.duplicateMany`, `device.paste` and the group commands check these rules on the whole chain
+after the edit, and a refused edit changes nothing. A MIDI effect, built-in or `.sd`, leads the
+chain and goes only on a track that plays notes.
 
 Splitting notes between branches by key or velocity (a bass on the low keys, a pad on the high
 ones) is not in the first version: every branch hears every note. It is its own issue
@@ -149,9 +161,9 @@ Applying a macro:
   macro's value and the mapped parameters' resulting values, so a project opened without macro
   support still sounds the same.
 - **Plug-ins:** the session sends the computed value as `set_param` (ADR 0006 › 3), which reaches
-  the processor at the start of the next block. That is block-accurate, not sample-accurate, until
-  the engine automates plug-in parameters (ADR 0006 › Consequences, *Not built yet*); then a macro
-  becomes parameter events at their frames like any automation. Mapping a plug-in parameter needs
+  the processor at the start of the next block. That is block-accurate. Automation reaches a plug-in as
+  parameter events at their frames ([plug-in hosting](plugin-hosting.md) › Events in a block,
+  #109), and a macro can take the same path once it is built. Mapping a plug-in parameter needs
   the plug-in running (its parameter list comes from `get_params`); a mapping to a plug-in that is
   missing is kept and does nothing.
 
@@ -167,6 +179,11 @@ Nothing about a device changes when it moves into a group.
 
 - **Built-in devices** run in the engine as they do now (ADR 0004): made, prepared and given their
   parameters when the graph is built, real-time safe on the audio thread.
+  A device in a branch is built as one on a track is, by the same `SlotFactory`
+  (`crates/engine/src/slot_factory.rs`, #766, #764 › 4): a Sampler gets its decoded sample and its manual slices, a parameter that
+  follows an automation lane starts where the lane starts and follows it while playing (each
+  branch keeps the lanes of its devices, planned for every block with the chain's), and a device
+  that holds a file is known by a hash of its state, so a changed file is a new device.
 - **Plug-ins** still run out of process (ADR 0006, AGENTS.md rule 5). A group is not a process
   boundary and never runs a plug-in in the engine. A crashed or hung plug-in in a branch does what
   it does on a track: an effect passes its input, an instrument is silent, the branch and the rest
@@ -176,11 +193,10 @@ Nothing about a device changes when it moves into a group.
   on as its own plug-in answers, exactly as different tracks' chains do (#151). The first version
   may run branches one after another inside the chain and only later run them side by side; the
   sound is the same, only the deadline is used better.
-- **A plug-in's key** today is its channel, its plug-in and how many of the same plug-in come
-  before it on the channel (`plugin_devices`), which keeps a running plug-in when devices are
-  added or moved around it. With groups, "before it" counts depth-first through the whole tree of
-  the channel's devices, so moving a plug-in into or out of a group keeps its process and state,
-  as long as the order of identical plug-ins does not change.
+- **A plug-in's key** is its channel, its plug-in and its device id (`plugin_devices`, #763 › 1),
+  which keeps a running plug-in when devices are added, removed or moved around it, into or out
+  of a group, identical plug-ins included. A device moved to another track gets a new key, and a
+  new process from its saved state.
 - **State** is saved per device as today: a plug-in inside a group keeps its `state` in its own
   `Device`, read on save and every 30 s (ADR 0006 › 5).
 
@@ -195,7 +211,12 @@ The group shows in a track's device panel ([ADR 0009](../decisions/0009-ui-toolk
   and **S** buttons, and a **+** to add a branch;
 - the devices of the selected branch to the right of the list, laid out as on a track.
 
-Selecting devices and pressing **Ctrl+G** (Cmd+G on macOS) groups them; **Ctrl+Shift+G**
+A click on a device's panel picks it, inside a group too: Ctrl (Cmd) adds one or takes it out,
+Shift takes the run from the one picked last in the same chain or branch, and **Ctrl+A** picks
+every device of the chain or branch of the one clicked last. Copy, cut, duplicate, Delete, the
+on/off key and grouping act on the picks, by their paths through the groups.
+Selecting devices and pressing **Ctrl+G** (Cmd+G on macOS) groups them (those of one chain or
+branch, next to each other); **Ctrl+Shift+G**
 ungroups a group of one branch. The context menu of a device has **Group**, and of a group
 **Ungroup**, **Add branch**, **Save as preset…**. Dragging a device between branches or into and
 out of a group moves it. While a parameter is being mapped, right-clicking it offers **Map to
@@ -239,9 +260,11 @@ pub struct Macro {
 }
 
 pub struct MacroMapping {
-    /// The target device, as a path relative to the group: branch, index, then branch, index
-    /// again for each nested group ([2, 0] is branch 2's first device).
-    pub device: Vec<u32>,
+    /// The target device, by its id (#763 › 1): inside the group at any depth. It follows the
+    /// device when it moves inside the group; a mapping whose device is removed or leaves the
+    /// group goes. A copied group's mappings name the copy's devices.
+    pub device: MappedDevice, // Id(DeviceId), or Nth(n) while a copy's devices have no ids
+
     /// The parameter's stable id: a built-in parameter id (ADR 0004), a plug-in parameter id as
     /// text, or `macro.N` of a nested group.
     pub param: String,
@@ -278,16 +301,17 @@ with:
 
 ```json
 {
+  "id": 11,
   "name": "Parallel crush",
   "kind": {
     "type": "group",
     "branches": [
       { "name": "Dry", "volume": 1.0, "pan": 0.0, "mute": false, "solo": false, "devices": [] },
       { "name": "Crushed", "volume": 0.5, "pan": 0.0, "mute": false, "solo": false,
-        "devices": [ { "name": "Compressor", "kind": { "type": "builtin", "id": "compressor" }, "params": [] } ] }
+        "devices": [ { "id": 12, "name": "Compressor", "kind": { "type": "builtin", "id": "compressor" }, "params": [] } ] }
     ],
     "macros": [
-      { "name": "Crush", "mappings": [ { "device": [1, 0], "param": "threshold", "min": 0.8, "max": 0.2 } ] }
+      { "name": "Crush", "mappings": [ { "device": 12, "param": "threshold", "min": 0.8, "max": 0.2 } ] }
     ]
   },
   "enabled": true,
@@ -296,9 +320,9 @@ with:
 ```
 
 A reader of version 1 does not know `"type": "group"` and would refuse the file with a confusing
-message. Chosen: the file version becomes **2**, and the writer writes 2 only when the project
-holds a group, so a project without one still opens in a Suhina from before groups. The reader
-accepts 1 and 2. A device-kind `type` the reader does not know is refused with "this project uses
+message, so groups came with version **2**, written then only when the project held a group. Since
+version 3 every file is written as the newest version
+([suhina-format](suhina-format.md) › Versions); the reader accepts 1 to 3. A device-kind `type` the reader does not know is refused with "this project uses
 a device a newer Suhina knows", never ignored, as dropping a group would drop the devices in it.
 
 ### Presets
@@ -325,7 +349,10 @@ its own `format` name, holding the group's device exactly as the project file wr
 ## Commands
 
 Every behaviour above is a command (AGENTS.md rule 6, ADR 0002); each edit is one undo step and a
-playing engine hears it at once (ADR 0005).
+playing engine hears it at once (ADR 0005). A drag of a branch's volume or pan in the panel sends every frame, the
+first one starting an undo step and the rest continuing it, so the drag is heard as it moves and is
+one undo step; the playing graph takes it as a message, for a group inside another too
+(ADR 0005 › Amendment, #763 › 4).
 
 **Addressing devices inside groups.** Today `device` is a device's index on the track. It becomes a
 *device path*: an integer still means a top-level device, so every existing call keeps working;
@@ -343,16 +370,18 @@ is branch 1 of the group at 2, before its device 3. `track.devices` lists a grou
 | `device.addGroup` | edit | `track`; `position` (path, optional, default last); `name` (text, optional) | Adds an empty effect group with one empty branch (a passthrough). |
 | `device.move` | edit | `track`; `device` (path); `to` (path): the position to move it before | Moves a device within a track: along the chain, between branches, into or out of a group. Macro mappings follow the device; a mapping whose device leaves its group is removed. |
 | `device.duplicate` | edit | `track`; `device` (path) | Copies a device (a group with everything in it) next to itself. Plug-in copies start with the state the original has now. |
+| `device.duplicateMany` | edit | `track`; `devices` (paths) | Copies several devices, in their order, after the last of them. Refused, changing nothing, when the chain's rules would not hold for the result (a second instrument, a MIDI effect after the instrument or an effect, an instrument or a MIDI effect on a track that plays no notes, a MIDI effect in a group). |
+| `device.paste` | edit | `track`; `position` (path, optional, default last) | Puts the devices `device.copy` took into a chain. Refused, changing nothing, on the same rules as `device.duplicateMany`. |
 | `branch.add` | edit | `track`; `device` (path): a group; `position` (integer, optional, default last); `name` (text, optional) | Adds an empty branch. |
 | `branch.remove` | edit | `track`; `device`; `branch` (integer) | Removes a branch with its devices and their mappings. The last branch cannot be removed. |
 | `branch.duplicate` | edit | `track`; `device`; `branch` | Copies a branch next to itself. |
 | `branch.rename` | edit | `track`; `device`; `branch`; `name` (text) | Renames a branch. |
-| `branch.setVolume` | edit | `track`; `device`; `branch`; `db` (number) | As `track.setVolume`, in decibels. |
-| `branch.setPan` | edit | `track`; `device`; `branch`; `pan` (number, −1 … 1) | As `track.setPan`. |
+| `branch.setVolume` | edit | `track`; `device`; `branch`; `db` (number); `gesture` (optional) | As `track.setVolume`, in decibels; a drag's frames name one `gesture`, one undo step. |
+| `branch.setPan` | edit | `track`; `device`; `branch`; `pan` (number, −1 … 1); `gesture` (optional) | As `track.setPan`. |
 | `branch.setMute` | edit | `track`; `device`; `branch`; `mute` (bool) | Mutes a branch; its devices keep running. |
 | `branch.setSolo` | edit | `track`; `device`; `branch`; `solo` (bool) | Solos a branch within its group. |
 | `macro.rename` | edit | `track`; `device` (group); `macro` (integer 1 … 8); `name` (text) | Renames a macro. |
-| `macro.map` | edit | `track`; `device` (group); `macro`; `target` (path relative to the group); `param` (text); `min`, `max` (numbers 0 … 1, default 0 and 1) | Maps a parameter to a macro. Refused when the parameter is mapped already, or the device is not inside the group. |
+| `macro.map` | edit | `track`; `device` (group); `macro`; `target` (a device inside the group: its path relative to the group or `{"id": N}`); `param` (text); `min`, `max` (numbers 0 … 1, default 0 and 1) | Maps a parameter to a macro. Refused when the parameter is mapped already, or the device is not inside the group. |
 | `macro.unmap` | edit | `track`; `device` (group); `macro`; `target`; `param` | Removes one mapping; the parameter keeps its current value. |
 | `macro.list` | read | `track`; `device` (group) | Each macro's name, value and mappings, with the targets' names and current values. |
 | `device.savePreset` | read | `track`; `device` (path); `name` (text); `tags` (list of text, optional); `path` (text, optional: default the user's presets folder) | Writes the device (a group, or later a single device, ADR 0014) as a preset file. Plug-ins' state is read from them first, as `project.save` does. It changes nothing in the project, so it is a `read` command like `project.save` and not an undo step. |
@@ -363,7 +392,7 @@ uses device paths when these commands land; the command list itself is generated
 
 ## Engine
 
-- A chain's slots (`Slot`, `crates/engine/src/chain.rs`) gain `Slot::Group`: its branches, each a
+- A chain's slots (`DeviceSlot`, `crates/engine/src/chain.rs`) gain `DeviceSlot::Group`: its branches, each a
   list of slots with its own buffer of `MAX_BLOCK` frames, the dry buffer, the delay lines and the
   smoothed gains, all made when the graph is built. Running a group copies the input into each
   branch buffer, runs the branches, delays, scales and sums them; nothing allocates, locks or
@@ -394,8 +423,8 @@ For the maintainer; each has the choice this spec made, so work can start withou
 6. **Choosing a branch by a parameter** (a selector that plays one branch at a time and crossfades
    between them) is left out; it would be one more group parameter and a per-branch range.
 7. **Project file version 2 only when a group is present**, so older Suhina opens projects without
-   groups. Alternatively always write 2 once groups land, which is simpler and drops that
-   compatibility.
+   groups. Answered 2026-10-24: every file is written as the newest version
+   ([ADR 0010](../decisions/0010-project-files.md) › Amendment: format versions).
 8. **Group presets up to 16 MiB** with plug-in state inside. Alternatively group presets hold
    built-in devices and plug-in references only, with the plug-in state left out.
 9. **Return and master channels** (ADR 0004, *Not decided yet*): groups follow wherever chains
@@ -410,8 +439,10 @@ For the maintainer; each has the choice this spec made, so work can start withou
     role is the first thing that would need one. It is a third kind with its own placement rules (MIDI
     effects only, on a track that plays notes); nothing here forecloses it, and it is not planned until
     MIDI effects exist.
-11. **Importing other formats' grouped devices** onto device groups: a section of
-    [device import](device-import.md) once the model lands, from our own test files.
+12. **Importing other formats' grouped devices** onto device groups: done for Live's Audio
+    Effect Rack and Instrument Rack ([`als-format.md`](als-format.md) › Audio Effect Rack and
+    Instrument Rack), observed in the user's own sets; macro mappings wait for a set that shows
+    where Live stores them, and an Instrument Rack's zones for key ranges (9).
 
 ## Implementation plan
 
@@ -421,10 +452,10 @@ it.
 
 1. **Model and project file.** `DeviceKind::Group`, `DeviceGroup`, `Branch`, `Macro`,
    `MacroMapping`; `Project::validate` with every check above and a malformed-input test for
-   each; `.suhina` version 2 written only with a group, round-trip tests; the depth-first plug-in
+   each; `.suhina` version 2 (written then only with a group), round-trip tests; the depth-first plug-in
    key in `plugin_devices`. ADR 0001 gets an amendment. *Nothing audible yet: the engine passes a
    group through.*
-2. **Engine: groups in the chain.** `Slot::Group` with branches, volume, pan, mute, solo, mix and
+2. **Engine: groups in the chain.** `DeviceSlot::Group` with branches, volume, pan, mute, solo, mix and
    gain; built-in devices only; golden renders (two branches, one muted, one soloed, mix at 0, 0.5,
    1), passthrough exactness for a group of one empty branch, block-size independence and the
    real-time rules. ADR 0004 gets a decision.
@@ -447,5 +478,4 @@ it.
    reported, the browser listing them; ADR 0014 amended for the group format.
 9. **Key and velocity ranges for branches** of instrument groups (open question 5).
 
-ROADMAP gets a line under *Built-in effects and instruments* when item 2 lands, and the parity
-coverage (`scripts/parity/score.py`) changes then, not with this spec.
+ROADMAP gets a line under *Built-in effects and instruments* when item 2 lands, not with this spec.

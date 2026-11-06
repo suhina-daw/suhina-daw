@@ -2,8 +2,9 @@
 description: A project becomes a folder holding a document, a manifest of each asset's path and BLAKE3 hash, and only when collected its audio; the shareable package is a zip with its own extension; derived analysis stays out of the project; the .locr compatibility path is removed
 read_when: project folder, manifest, asset hash, BLAKE3, collect, packaged project, zip, sharing a project, analysis sidecar, asd, hand-set kind, .locr, old extension, git and audio, git-lfs, project package
 type: decision
-status: draft
-last_verified: 2026-10-15
+status: proposed
+built: partly
+last_verified: 2026-11-02
 covers:
   - crates/project-file/src/lib.rs
   - crates/session/src/lib.rs
@@ -12,7 +13,6 @@ covers:
 
 # 0026: The project folder, the manifest and the package
 
-- **Status:** proposed
 - **Date:** 2026-10-15
 - **Task:** the collaboration and project-version work
   ([ADR 0023](0023-collaboration-and-project-versions.md)) needs a project that can be shipped,
@@ -72,7 +72,7 @@ The observations above were taken from a file the project's own authors made, wh
 rule 1 permits; they belong in [`docs/spec/als-format.md`](../spec/als-format.md) and
 [`docs/spec/als-corpus.md`](../spec/als-corpus.md) before anything is built on them. The same spec
 already lists this open item to observe:
-[`docs/spec/als-format.md:299`](../spec/als-format.md) — "what **Collect All and Save** does".
+[`docs/spec/als-format.md`](../spec/als-format.md#open-questions-next-corpus-files) › Open questions — "what **Collect All and Save** does".
 
 ## Decision (proposed)
 
@@ -90,7 +90,7 @@ already lists this open item to observe:
    Suhina's own command for it is *collecting* (`project.collect`-style, AGENTS.md rule 6), never
    another product's name for its feature. Its behaviour is written down in a spec **from
    observation** before it is implemented, per the open item at
-   [`docs/spec/als-format.md:299`](../spec/als-format.md).
+   [`docs/spec/als-format.md`](../spec/als-format.md#open-questions-next-corpus-files) › Open questions.
 4. **The package is a zip**, as ADR 0010 decision 6 already anticipated ("a self-contained package
    (a zip with the audio) is a separate format for sharing"). `zip` is already a workspace dependency
    — themes back themselves up and export templates with it — so the package adds no new dependency.
@@ -132,7 +132,7 @@ already lists this open item to observe:
    **No `.suhina` or `.locr` file exists anywhere in the tree**, so the path has no users.
    Removing it *before* the format version bump avoids one reader having to support three format
    names. This is a decision, not a silent deletion (AGENTS.md: docs are part of the change), and it
-   is recorded again as ADR 0010 decision 11. The same change updates: the recent-files list, the CLI
+   is recorded again as ADR 0010 decision 12. The same change updates: the recent-files list, the CLI
    and app help text, the MCP tool description, the project dialog, `media::info`'s
    `FileKind::Project` test, and the tests in `crates/project-file/src/tests.rs`,
    `crates/session/tests/save.rs`, `crates/session/tests/relink.rs` and
@@ -145,16 +145,17 @@ already lists this open item to observe:
    document is ambiguous asks rather than guesses. Refusing outright would fight a convention users
    already have (the measured folder held sets from two songs); guessing would open the wrong song
    silently.
-10. **The document format gains a version, and this is where that is decided.** ADR 0010 decision 3
-    already fixes the rules: a reader refuses a version newer than it knows, and a later version
-    keeps reading the earlier ones. **Version 2 carries explicitly what version 1 could only imply:
-    the object ids of [ADR 0025](0025-object-identity.md).** A version 1 file is still read, with
-    those ids **derived in document order**; version 2 writes them, so a later reader never has to
-    derive them and an id survives the object being moved. This is the bump that ADR 0025's steps C
-    and D wait for, and it is the only change to the document's layout this ADR makes. Everything
-    that reads or writes the model gets its line here and in the round-trip test (ADR 0010), and the
-    existing test that asserts a version-2 document is refused
-    (`crates/project-file/src/tests.rs`) moves up one.
+10. **The document format gains a version for ids.** [ADR 0010](0010-project-files.md) decision 3
+    fixes the rules: one version, written in every file, that rises with every change to what a
+    file holds; a reader refuses a newer version and reads every older one. **The next version
+    carries explicitly what earlier versions could only imply: the object ids of
+    [ADR 0025](0025-object-identity.md).** Version 2 already means "may hold a device group" and
+    version 3 is the first written always, so ids take the next number free when they land. A file
+    of an earlier version is still read, with those ids **derived in document order**; the new
+    version writes them, so a later reader never has to derive them and an id survives the object
+    being moved. This is the bump that ADR 0025's steps C and D wait for, and it is the only change
+    to the document's layout this ADR makes. Everything that reads or writes the model gets its
+    line here, in the round-trip test and in the version test's project (ADR 0010).
 
 ## Consequences
 

@@ -1,0 +1,1599 @@
+{
+  "ui": {
+    "size": [
+      260.0,
+      168.0
+    ],
+    "viewport_size": null,
+    "background": [
+      37,
+      36,
+      33,
+      255
+    ],
+    "assets": [],
+    "layers": [],
+    "controls": [
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Sync L",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "syncLeft",
+        "name": "Sync L",
+        "tooltip": "syncLeft: Sync L",
+        "bounds": [
+          4.0,
+          0.0,
+          78.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "syncLeft",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Left",
+          "decimals": 3,
+          "format": "number"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncLeft",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 0.0
+        },
+        "id": "timeLeft",
+        "name": "Left",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          0.0,
+          22.0,
+          86.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "timeLeft",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Left"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncLeft",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "caption_l",
+        "name": "Left",
+        "tooltip": "",
+        "bounds": [
+          4.0,
+          26.0,
+          78.0,
+          16.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncLeft",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "sixteenthsLeft",
+        "name": "sixteenthsLeft",
+        "tooltip": "",
+        "bounds": [
+          4.0,
+          46.0,
+          78.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "sixteenthsLeft",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Sync R",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "syncRight",
+        "name": "Sync R",
+        "tooltip": "syncRight: Sync R",
+        "bounds": [
+          90.0,
+          0.0,
+          78.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "syncRight",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Right",
+          "decimals": 3,
+          "format": "number"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncRight",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 0.0
+        },
+        "id": "timeRight",
+        "name": "Right",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          86.0,
+          22.0,
+          86.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "timeRight",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Right"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncRight",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "caption_r",
+        "name": "Right",
+        "tooltip": "",
+        "bounds": [
+          90.0,
+          26.0,
+          78.0,
+          16.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncRight",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "sixteenthsRight",
+        "name": "sixteenthsRight",
+        "tooltip": "",
+        "bounds": [
+          90.0,
+          46.0,
+          78.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "sixteenthsRight",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Link",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "link",
+        "name": "Link",
+        "tooltip": "link: Link",
+        "bounds": [
+          176.0,
+          0.0,
+          80.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "link",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Feedback",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "feedback",
+        "name": "Feedback",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          172.0,
+          22.0,
+          88.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "feedback",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "filter_band",
+          "min_hz": 50.0,
+          "max_hz": 18000.0
+        },
+        "visible_when": null,
+        "id": "filter_band",
+        "name": "Filter frequency and width",
+        "tooltip": "Drag horizontally for frequency, vertically for width",
+        "bounds": [
+          4.0,
+          90.0,
+          124.0,
+          74.0
+        ],
+        "gesture": "position",
+        "x": {
+          "parameter": "filterFrequency",
+          "logarithmic": true,
+          "drag_scale": 1.0
+        },
+        "y": {
+          "parameter": "filterWidth",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Freeze",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "freeze",
+        "name": "Freeze",
+        "tooltip": "freeze: Freeze",
+        "bounds": [
+          132.0,
+          90.0,
+          62.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "freeze",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Ping Pong",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "pingPong",
+        "name": "Ping Pong",
+        "tooltip": "pingPong: Ping Pong",
+        "bounds": [
+          196.0,
+          90.0,
+          62.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "pingPong",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Dry/Wet",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "mix",
+        "name": "Dry/Wet",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          132.0,
+          112.0,
+          128.0,
+          56.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "mix",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      }
+    ],
+    "hidden_parameters": [
+      "link",
+      "syncLeft",
+      "syncRight",
+      "sixteenthsLeft",
+      "sixteenthsRight",
+      "timeLeft",
+      "timeRight",
+      "offsetLeft",
+      "offsetRight",
+      "feedback",
+      "freeze",
+      "pingPong",
+      "transition",
+      "filter",
+      "filterFrequency",
+      "filterWidth",
+      "lfoMode",
+      "lfoRate",
+      "lfoTime",
+      "lfoSynced",
+      "lfoSixteenths",
+      "lfoShape",
+      "lfoMorph",
+      "lfoToTime",
+      "lfoToFilter",
+      "mix",
+      "equalLoudness"
+    ]
+  },
+  "expanded": {
+    "size": [
+      980.0,
+      260.0
+    ],
+    "viewport_size": null,
+    "background": [
+      37,
+      36,
+      33,
+      255
+    ],
+    "assets": [],
+    "layers": [],
+    "controls": [
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "Time"
+        },
+        "visible_when": null,
+        "id": "section_time",
+        "name": "Time",
+        "tooltip": "",
+        "bounds": [
+          0.0,
+          0.0,
+          240.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Link",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "link_x",
+        "name": "Link",
+        "tooltip": "link: Link",
+        "bounds": [
+          6.0,
+          26.0,
+          72.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "link",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Sync L",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "syncLeft_x",
+        "name": "Sync L",
+        "tooltip": "syncLeft: Sync L",
+        "bounds": [
+          82.0,
+          26.0,
+          74.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "syncLeft",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Sync R",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "syncRight_x",
+        "name": "Sync R",
+        "tooltip": "syncRight: Sync R",
+        "bounds": [
+          160.0,
+          26.0,
+          74.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "syncRight",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Left",
+          "decimals": 3,
+          "format": "number"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncLeft",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 0.0
+        },
+        "id": "timeLeft_x",
+        "name": "Left",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          52.0,
+          114.0,
+          80.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "timeLeft",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Left"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncLeft",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "sixteenthsLeft_caption",
+        "name": "Left",
+        "tooltip": "",
+        "bounds": [
+          18.0,
+          60.0,
+          90.0,
+          16.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncLeft",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "sixteenthsLeft_x",
+        "name": "sixteenthsLeft",
+        "tooltip": "",
+        "bounds": [
+          18.0,
+          82.0,
+          90.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "sixteenthsLeft",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Offset",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "offsetLeft",
+        "name": "Offset",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          140.0,
+          114.0,
+          80.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "offsetLeft",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Right",
+          "decimals": 3,
+          "format": "number"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncRight",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 0.0
+        },
+        "id": "timeRight_x",
+        "name": "Right",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          120.0,
+          52.0,
+          114.0,
+          80.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "timeRight",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Right"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncRight",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "sixteenthsRight_caption",
+        "name": "Right",
+        "tooltip": "",
+        "bounds": [
+          132.0,
+          60.0,
+          90.0,
+          16.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "syncRight",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "sixteenthsRight_x",
+        "name": "sixteenthsRight",
+        "tooltip": "",
+        "bounds": [
+          132.0,
+          82.0,
+          90.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "sixteenthsRight",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Offset",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "offsetRight",
+        "name": "Offset",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          120.0,
+          140.0,
+          114.0,
+          80.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "offsetRight",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "Feedback"
+        },
+        "visible_when": null,
+        "id": "section_feedback",
+        "name": "Feedback",
+        "tooltip": "",
+        "bounds": [
+          240.0,
+          0.0,
+          150.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Freeze",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "freeze_x",
+        "name": "Freeze",
+        "tooltip": "freeze: Freeze",
+        "bounds": [
+          246.0,
+          26.0,
+          68.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "freeze",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Ping Pong",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "pingPong_x",
+        "name": "Ping Pong",
+        "tooltip": "pingPong: Ping Pong",
+        "bounds": [
+          318.0,
+          26.0,
+          66.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "pingPong",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Transition"
+        },
+        "visible_when": null,
+        "id": "transition_caption",
+        "name": "Transition",
+        "tooltip": "",
+        "bounds": [
+          246.0,
+          52.0,
+          68.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "transition_x",
+        "name": "transition",
+        "tooltip": "",
+        "bounds": [
+          318.0,
+          52.0,
+          66.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "transition",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Feedback",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "feedback_x",
+        "name": "Feedback",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          246.0,
+          80.0,
+          138.0,
+          100.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "feedback",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "Filter"
+        },
+        "visible_when": null,
+        "id": "section_filter",
+        "name": "Filter",
+        "tooltip": "",
+        "bounds": [
+          390.0,
+          0.0,
+          170.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Filter",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "filter",
+        "name": "Filter",
+        "tooltip": "filter: Filter",
+        "bounds": [
+          396.0,
+          26.0,
+          80.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "filter",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "filter_band",
+          "min_hz": 50.0,
+          "max_hz": 18000.0
+        },
+        "visible_when": null,
+        "id": "filter_band_x",
+        "name": "Filter frequency and width",
+        "tooltip": "Drag horizontally for frequency, vertically for width",
+        "bounds": [
+          396.0,
+          52.0,
+          158.0,
+          120.0
+        ],
+        "gesture": "position",
+        "x": {
+          "parameter": "filterFrequency",
+          "logarithmic": true,
+          "drag_scale": 1.0
+        },
+        "y": {
+          "parameter": "filterWidth",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "LFO"
+        },
+        "visible_when": null,
+        "id": "section_lfo",
+        "name": "LFO",
+        "tooltip": "",
+        "bounds": [
+          560.0,
+          0.0,
+          300.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Mode"
+        },
+        "visible_when": null,
+        "id": "lfoMode_caption",
+        "name": "Mode",
+        "tooltip": "",
+        "bounds": [
+          566.0,
+          26.0,
+          44.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "lfoMode_x",
+        "name": "lfoMode",
+        "tooltip": "",
+        "bounds": [
+          612.0,
+          26.0,
+          96.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "lfoMode",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Shape"
+        },
+        "visible_when": null,
+        "id": "lfoShape_caption",
+        "name": "Shape",
+        "tooltip": "",
+        "bounds": [
+          712.0,
+          26.0,
+          44.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "lfoShape_x",
+        "name": "lfoShape",
+        "tooltip": "",
+        "bounds": [
+          758.0,
+          26.0,
+          96.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "lfoShape",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Rate",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "lfoMode",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 0.0
+        },
+        "id": "lfoRate",
+        "name": "Rate",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          566.0,
+          56.0,
+          72.0,
+          80.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lfoRate",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Time",
+          "decimals": 1,
+          "format": "number"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "lfoMode",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "lfoTime",
+        "name": "Time",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          566.0,
+          56.0,
+          72.0,
+          80.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lfoTime",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Rate"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "lfoMode",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 2.0
+        },
+        "id": "lfoSynced_caption_2",
+        "name": "Rate",
+        "tooltip": "",
+        "bounds": [
+          570.0,
+          60.0,
+          64.0,
+          16.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "lfoMode",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 2.0
+        },
+        "id": "lfoSynced_2",
+        "name": "lfoSynced",
+        "tooltip": "",
+        "bounds": [
+          570.0,
+          82.0,
+          64.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "lfoSynced",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Rate"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "lfoMode",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 3.0
+        },
+        "id": "lfoSynced_caption_3",
+        "name": "Rate",
+        "tooltip": "",
+        "bounds": [
+          570.0,
+          60.0,
+          64.0,
+          16.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "lfoMode",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 3.0
+        },
+        "id": "lfoSynced_3",
+        "name": "lfoSynced",
+        "tooltip": "",
+        "bounds": [
+          570.0,
+          82.0,
+          64.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "lfoSynced",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Rate"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "lfoMode",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 4.0
+        },
+        "id": "lfoSynced_caption_4",
+        "name": "Rate",
+        "tooltip": "",
+        "bounds": [
+          570.0,
+          60.0,
+          64.0,
+          16.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "lfoMode",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 4.0
+        },
+        "id": "lfoSynced_4",
+        "name": "lfoSynced",
+        "tooltip": "",
+        "bounds": [
+          570.0,
+          82.0,
+          64.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "lfoSynced",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "16ths",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "lfoMode",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 5.0
+        },
+        "id": "lfoSixteenths",
+        "name": "16ths",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          566.0,
+          56.0,
+          72.0,
+          80.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lfoSixteenths",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Morph",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "lfoMorph",
+        "name": "Morph",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          638.0,
+          56.0,
+          72.0,
+          80.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lfoMorph",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "To Time",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "lfoToTime",
+        "name": "To Time",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          710.0,
+          56.0,
+          72.0,
+          80.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lfoToTime",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "To Filter",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "lfoToFilter",
+        "name": "To Filter",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          782.0,
+          56.0,
+          72.0,
+          80.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lfoToFilter",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "Output"
+        },
+        "visible_when": null,
+        "id": "section_output",
+        "name": "Output",
+        "tooltip": "",
+        "bounds": [
+          860.0,
+          0.0,
+          120.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Dry/Wet",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "mix_x",
+        "name": "Dry/Wet",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          866.0,
+          26.0,
+          108.0,
+          100.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "mix",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Equal-Loudness",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "equalLoudness",
+        "name": "Equal-Loudness",
+        "tooltip": "equalLoudness: Equal-Loudness",
+        "bounds": [
+          866.0,
+          134.0,
+          108.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "equalLoudness",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      }
+    ],
+    "hidden_parameters": [
+      "link",
+      "syncLeft",
+      "syncRight",
+      "sixteenthsLeft",
+      "sixteenthsRight",
+      "timeLeft",
+      "timeRight",
+      "offsetLeft",
+      "offsetRight",
+      "feedback",
+      "freeze",
+      "pingPong",
+      "transition",
+      "filter",
+      "filterFrequency",
+      "filterWidth",
+      "lfoMode",
+      "lfoRate",
+      "lfoTime",
+      "lfoSynced",
+      "lfoSixteenths",
+      "lfoShape",
+      "lfoMorph",
+      "lfoToTime",
+      "lfoToFilter",
+      "mix",
+      "equalLoudness"
+    ]
+  }
+}

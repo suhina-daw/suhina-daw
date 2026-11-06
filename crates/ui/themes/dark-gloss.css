@@ -1,0 +1,68 @@
+/* Copyright (C) 2026 The Suhina contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Original Suhina dark gloss example. Paint only: native geometry is preserved.
+ */
+@layer suhina-gloss {
+  :root {
+    --gloss-ink: #dce3dd;
+    --gloss-brass: #e5ad58;
+    --gloss-edge: #536268;
+    --gloss-dark: #10191d;
+  }
+  .window { background-color: var(--gloss-dark); }
+  .toolbar, .application-bar, .menu-bar, .project-tabs, .status-bar {
+    color: var(--gloss-ink);
+    background-color: #19262c;
+    border-color: var(--gloss-edge);
+  }
+  .session, .arrangement {
+    background-color: #0c1519;
+    background-image: radial-gradient(ellipse at 65% 45%, #29424280, transparent 70%),
+                linear-gradient(145deg, #17252c, #0c1519);
+  }
+  .browser, .detail, .device-panel {
+    background-color: #121e24;
+    background-image: linear-gradient(110deg, #253239, #121e24);
+    border-color: var(--gloss-edge);
+  }
+  .track-header {
+    background-image: linear-gradient(#ffffff33, #00000055);
+    box-shadow: inset 0 1px 0 #fff4;
+  }
+  .track-name { background-image: linear-gradient(#ffffff26, #00000033); }
+  .mixer {
+    background-color: #101d22;
+    background-image: linear-gradient(100deg, #1c2d32, #101d22 75%, #0b1419);
+    box-shadow: inset 1px 0 0 #c5d7dc22, inset -1px 0 0 #0008;
+  }
+  .button {
+    color: var(--gloss-ink);
+    background-color: #1b282e;
+    background-image: linear-gradient(#435258, #1b282e 52%, #121c20);
+    border-color: var(--gloss-edge);
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 #ffffff26, 0 1px 2px #0008;
+    text-shadow: 0 1px 1px #000a;
+  }
+  .button:hover {
+    color: #fff1cc;
+    background-color: #3b352a;
+    background-image: linear-gradient(#6c614b, #3b352a 55%, #26231e);
+    border-color: var(--gloss-brass);
+  }
+  #control-play { color: #b9eb7b; box-shadow: inset 0 1px 0 #fff3, 0 0 3px #8bd74666; }
+  #control-record { color: #f18d75; }
+  .knob { color: #c4d5d8; background-color: #28383f; }
+  .meter { color: #7ed66c; background-color: #081014; }
+  .meter-level { box-shadow: 0 0 4px #7ed66c88; }
+  .meter-vertical .meter-level {
+    background: linear-gradient(to top, #64d96b, #b9dc50 76%, #efd048 88%, #ed6845);
+  }
+  .meter-horizontal .meter-level {
+    background: linear-gradient(to right, #64d96b, #b9dc50 76%, #efd048 88%, #ed6845);
+  }
+  .fader-cap { box-shadow: 0 0 4px #b3cfd655; }
+  .knob { box-shadow: 0 0 3px #b3cfd633; }
+  .track-header .value { color: #829a9d; background-color: #17252a; }
+  #tempo, #position { color: #dfdcae; text-shadow: 0 0 2px #d0bb5733; }
+}

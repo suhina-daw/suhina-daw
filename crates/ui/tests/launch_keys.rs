@@ -3,7 +3,7 @@
 
 //! Launch keys in the window (`docs/spec/ui-session-view.md` › Launch keys): the mapping mode
 //! maps a key to the picked slot, scene or stop button, and the key then launches it while the
-//! Session view is shown, ahead of a shortcut on the same key.
+//! Launcher view is shown, ahead of a shortcut on the same key.
 
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
 
@@ -20,13 +20,15 @@ use suhina_ui::{App, Status, View, kit::theme};
 /// launch is taken and says so. The renderer is kept so the engine's queue stays open.
 fn window() -> (Harness<'static, App>, Renderer) {
     let project = demo_project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     let mut app = App::new();
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size((1280.0, 800.0))
         .with_step_dt(0.25)
         .with_max_steps(4)
@@ -81,7 +83,7 @@ fn the_mapping_mode_maps_a_key_that_then_launches_the_slot() {
 #[test]
 fn a_mapped_key_wins_over_a_shortcut_only_in_the_session_view() {
     let (mut harness, _renderer) = window();
-    // Tab switches the views; mapped to scene 2, it launches the scene in the Session view.
+    // Tab switches the views; mapped to scene 2, it launches the scene in the Launcher view.
     harness.get_by_label("Map keys to slots and scenes").click();
     harness.run();
     harness.get_by_label("Launch scene 2 Groove").click();

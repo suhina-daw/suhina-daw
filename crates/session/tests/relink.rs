@@ -11,6 +11,9 @@ use serde_json::{Value, json};
 use suhina_library::Library;
 use suhina_session::{Projects, Session, blank_project};
 
+use crate::support::run;
+use suhina_test_support::{WavFormat, write_wav};
+
 fn temp(name: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
     let dir = std::env::temp_dir().join(format!("suhina-relink-{name}-{}-{nanos}", std::process::id()));
@@ -19,18 +22,8 @@ fn temp(name: &str) -> PathBuf {
 }
 
 fn wav(path: &Path) {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let spec =
-        hound::WavSpec { channels: 1, sample_rate: 8000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
-    let mut writer = hound::WavWriter::create(path, spec).unwrap();
-    for i in 0..4000 {
-        writer.write_sample(((i % 100) * 100) as i16).unwrap();
-    }
-    writer.finalize().unwrap();
-}
-
-fn run(projects: &mut Projects, id: &str, params: Value) -> Result<Value, String> {
-    projects.execute(id, &params).map_err(|e| e.0)
+    let ramp: Vec<f32> = (0..4000).map(|i| ((i % 100) * 100) as f32 / 32767.0).collect();
+    write_wav(path, 8000, 1, WavFormat::Int16, &ramp);
 }
 
 #[test]
@@ -137,7 +130,7 @@ fn candidates_from_the_index_and_the_project_folder_are_capped_together() {
         wav(&library_folder.join(format!("pack{i:02}")).join("kick.wav"));
         wav(&project_folder.join(format!("take{i:02}")).join("kick.wav"));
     }
-    let song = project_folder.join("song.locr");
+    let song = project_folder.join("song.suhina");
     Session::new(blank_project()).save(&song, false).unwrap();
     let (session, _) = Session::open(&song).unwrap();
 
@@ -153,6 +146,75 @@ fn candidates_from_the_index_and_the_project_folder_are_capped_together() {
     let unique: std::collections::BTreeSet<&str> = paths.iter().copied().collect();
     assert_eq!(unique.len(), paths.len(), "no candidate twice");
     for dir in [&settings, &library_folder, &project_folder] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[test]
+fn external_project_sources_require_explicit_relink_after_reopening() {
+    let folder = temp("external-project");
+    let outside = temp("external-source");
+    let audio = outside.join("tone.wav");
+    wav(&audio);
+    let mut session = Session::new(blank_project());
+    session.execute("clip.addFiles", &json!({"paths":[audio],"start":0.})).unwrap();
+    assert!(session.missing_files().is_empty());
+    let song = folder.join("song.suhina");
+    session.save(&song, false).unwrap();
+    let (mut reopened, _) = Session::open(&song).unwrap();
+    assert!(reopened.audio().files.is_empty());
+    let missing = reopened.missing_files();
+    assert_eq!(missing.len(), 1);
+    reopened.execute("project.relinkFiles", &json!({"files":[missing[0].file],"to":[audio]})).unwrap();
+    assert!(reopened.missing_files().is_empty());
+    assert!(!reopened.audio().files.is_empty());
+    let _ = std::fs::remove_dir_all(folder);
+    let _ = std::fs::remove_dir_all(outside);
+}
+
+/// A file relinked from outside the project's folder and saved is trusted: the project opens
+/// with it again, not missing (`docs/spec/missing-files.md` › Relinking).
+#[test]
+fn a_file_relinked_from_outside_and_saved_opens_with_the_project_again() {
+    let settings = temp("relink-save-settings");
+    let folder = temp("relink-save-project");
+    let outside = temp("relink-save-source");
+    let moved = temp("relink-save-moved");
+    let audio = outside.join("tone.wav");
+    wav(&audio);
+    let song = folder.join("song.suhina");
+    let mut session = Session::new(blank_project());
+    session.execute("clip.addFiles", &json!({ "paths": [audio], "start": 0.0 })).unwrap();
+    session.save(&song, false).unwrap();
+    // The file moves, to a folder neither the project nor the library knows.
+    let relinked = moved.join("tone.wav");
+    std::fs::rename(&audio, &relinked).unwrap();
+
+    let plugins = suhina_plugins::library::Library::new(Some(settings.join("plugins")), settings.join("no-host"));
+    let mut p = Projects::with_library(plugins);
+    p.set_file_library(Library::new(Some(settings.clone())));
+    let (reopened, _) = Session::open(&song).unwrap();
+    let id = p.add(reopened, None).unwrap();
+    let missing = p.get(id).unwrap().missing_files();
+    assert_eq!(missing.len(), 1);
+    run(&mut p, "project.relinkFiles", json!({ "files": [missing[0].file], "to": [relinked] })).unwrap();
+    assert!(!p.file_library_mut().trusted_audio().contains(&relinked), "trusted by the save, not the relink");
+    run(&mut p, "project.save", json!({})).unwrap();
+    assert!(p.file_library_mut().trusted_audio().contains(&relinked));
+
+    // Opened again, in a new run with the same settings: found as trusted and decoded.
+    let plugins = suhina_plugins::library::Library::new(Some(settings.join("plugins")), settings.join("no-host"));
+    let mut again = Projects::with_library(plugins);
+    again.set_file_library(Library::new(Some(settings.clone())));
+    let (reopened, _) = Session::open(&song).unwrap();
+    let id = again.add(reopened, None).unwrap();
+    let session = again.get(id).unwrap();
+    assert!(session.missing_files().is_empty());
+    let folder_of = session.audio_folder().unwrap().to_path_buf();
+    let (pool, warnings) = suhina_media::load_project_audio_trusted(session.project(), &folder_of, session.trusted());
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(pool.files.len(), 1);
+    for dir in [settings, folder, outside, moved] {
         let _ = std::fs::remove_dir_all(dir);
     }
 }

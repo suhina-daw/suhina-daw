@@ -1,9 +1,9 @@
 ---
-description: How the cue output works: a second output pair on the same audio device for headphones, where browser previews and tracks whose cue (C) is on are heard apart from the main mix; the cue volume, Same as main, offline renders of the cue, and the commands
-read_when: cue, cue output, headphones, pre-listen, solo in place, preview output, cue volume, cue pair, outputs 3/4, track.setCue, output.setCuePair, output.setCueVolume, C button, render --cue, multi-channel device
+description: How the cue output works: a second output pair on the same audio device for headphones, where browser previews and tracks whose cue (the headphones button) is on are heard apart from the main mix; the cue volume, Same as main, offline renders of the cue, and the commands
+read_when: cue, cue output, headphones, pre-listen, solo in place, preview output, cue volume, cue pair, outputs 3/4, track.setCue, output.setCuePair, output.setCueVolume, headphones button, cue button, render --cue, multi-channel device
 type: spec
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/cue.rs
   - crates/engine/src/cue_tests.rs
@@ -28,7 +28,7 @@ outputs (1 and 2, the speakers) go on unchanged.
 
 - **Browser previews**: samples previewed from the browser and the sample map, and MIDI files
   previewed through the fallback instrument (ADR 0011).
-- **Tracks whose cue is on** (the **C** button on a track header, `track.setCue`): the track as
+- **Tracks whose cue is on** (the headphones button on a track header, `track.setCue`): the track as
   the mix has it after its own devices, volume and pan, before any group and the main channel.
   Turning the main volume down does not change it. A muted track, or one a solo leaves out, is
   silent on the cue too: the cue listens to what the track plays, it does not override the mix.
@@ -50,7 +50,7 @@ the other audio settings.
 - **A pair of its own:** the main outputs carry the project only; previews are no longer heard
   there. Cued tracks are heard on both: in the mix, as always, and on the cue pair.
 - **Same as main:** the cue has no outputs of its own. Previews play on the main outputs at the
-  cue volume, as they did before the cue existed; a track's C button changes nothing audible
+  cue volume, as they did before the cue existed; a track's headphones button changes nothing audible
   (the track is in the main mix anyway). Settings says so for a device with only two outputs.
 - **A pair the device does not have** (another device was chosen, or one with fewer outputs
   plays in its place): the cue plays as with Same as main, and a notice says the device has no
@@ -119,4 +119,5 @@ file is the same with or without `--cue`, and the same whether tracks are cued o
 - A cue on a second, different device (a separate headphone dongle): two devices mean two
   clocks to keep in step.
 - A crossfader between cue and main, or splitting cue and main into the two ears of one pair.
-- Level meters for the cue (they come with the mixer's meters).
+- Level meters for the cue output: the mixer's meters do not measure it yet
+  ([level meters](level-meters.md) › Limits).

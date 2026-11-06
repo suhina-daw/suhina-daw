@@ -16,7 +16,7 @@ const PULSE_PERIOD: f64 = 0.8;
 const EGUI_ANIMATION_TIME: f32 = 0.083;
 
 fn key() -> Id {
-    Id::new("suhina-animations")
+    Id::unique("suhina-animations")
 }
 
 /// Turns animations on or off, ours and egui's own.
@@ -59,7 +59,7 @@ pub fn pulse(ctx: &Context) -> f32 {
 pub fn mix(from: Color32, to: Color32, t: f32) -> Color32 {
     let t = t.clamp(0.0, 1.0);
     let channel = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8;
-    Color32::from_rgba_unmultiplied(
+    Color32::from_rgba_premultiplied(
         channel(from.r(), to.r()),
         channel(from.g(), to.g()),
         channel(from.b(), to.b()),
@@ -70,6 +70,14 @@ pub fn mix(from: Color32, to: Color32, t: f32) -> Color32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn translucent_colours_are_not_premultiplied_twice() {
+        let a = Color32::from_rgba_unmultiplied(80, 140, 200, 128);
+        assert_eq!(mix(a, a, 0.5), a);
+        assert_eq!(mix(a, Color32::TRANSPARENT, 0.0), a);
+        assert_eq!(mix(a, Color32::TRANSPARENT, 1.0), Color32::TRANSPARENT);
+    }
 
     #[test]
     fn colours_blend_from_one_end_to_the_other() {
@@ -84,8 +92,8 @@ mod tests {
         let ctx = Context::default();
         set_enabled(&ctx, false);
         assert!(!enabled(&ctx));
-        assert_eq!(toward(&ctx, Id::new("a"), true, 1.0), 1.0);
-        assert_eq!(value(&ctx, Id::new("b"), 0.3, 1.0), 0.3);
+        assert_eq!(toward(&ctx, Id::unique("a"), true, 1.0), 1.0);
+        assert_eq!(value(&ctx, Id::unique("b"), 0.3, 1.0), 0.3);
         assert_eq!(pulse(&ctx), 1.0);
     }
 }

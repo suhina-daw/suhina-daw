@@ -77,7 +77,7 @@ fn live_set() -> String {
       </AudioTrack>
       <ReturnTrack Id="2">
         <Name><EffectiveName Value="A-Reverb"/></Name><TrackGroupId Value="-1"/>
-        <DeviceChain>{mixer_return}<DeviceChain><Devices><Reverb Id="0"/></Devices></DeviceChain></DeviceChain>
+        <DeviceChain>{mixer_return}<DeviceChain><Devices><AutoFilter Id="0"/></Devices></DeviceChain></DeviceChain>
       </ReturnTrack>
     </Tracks>
     <MainTrack>
@@ -162,6 +162,79 @@ fn a_deactivated_note_is_read_as_muted() {
     assert_eq!((notes[1].time, notes[1].duration, notes[1].key), (1.0, 1.0, 60));
 }
 
+/// One MIDI track with `devices` and an arrangement clip holding D3 (key 62) for a beat, with
+/// the scale elements a Live 12 clip stores (`docs/spec/als-format.md` › MIDI clips › Scale).
+fn scaled_clip_set(in_key: &str, root: &str, name: &str, devices: &str) -> String {
+    let scale = format!(
+        r#"<IsInKey Value="{in_key}"/><ScaleInformation><Root Value="{root}"/><Name Value="{name}"/></ScaleInformation>"#
+    );
+    let note = r#"<MidiNoteEvent Time="0" Duration="1" Velocity="100" OffVelocity="64" NoteId="1"/>"#;
+    let clip = midi_clip("0", "0", "2", "false", "2", &key_track(62, note))
+        .replace("</MidiClip>", &format!("{scale}</MidiClip>"));
+    format!(
+        r#"<Ableton><LiveSet><Tracks><MidiTrack Id="1"><Name><EffectiveName Value="Keys"/></Name>
+           <DeviceChain><DeviceChain><Devices>{devices}</Devices></DeviceChain>
+             <MainSequencer><ClipTimeable><ArrangerAutomation><Events>{clip}</Events></ArrangerAutomation></ClipTimeable></MainSequencer>
+           </DeviceChain></MidiTrack></Tracks></LiveSet></Ableton>"#
+    )
+}
+
+/// A clip's Scale Mode, root and scale become the content's scale; a scale Suhina cannot hold,
+/// or a stored number out of range, imports as no scale with a warning.
+#[test]
+fn reads_a_clips_scale() {
+    use suhina_model::{Scale, ScaleMode};
+    let scale_of = |in_key: &str, root: &str, name: &str| {
+        let import = read_xml(&scaled_clip_set(in_key, root, name, "")).unwrap();
+        let scale = import.project.contents.first().expect("the clip's content").scale;
+        let warned = import.warnings.iter().any(|w| w.contains("without a scale"));
+        (scale, warned)
+    };
+    assert_eq!(scale_of("true", "0", "0"), (Scale::new(0, ScaleMode::Major), false), "C Major");
+    assert_eq!(scale_of("true", "2", "2"), (Scale::new(2, ScaleMode::Dorian), false), "D Dorian");
+    assert_eq!(scale_of("true", "9", "11"), (Scale::new(9, ScaleMode::MinorPentatonic), false), "A minor pentatonic");
+    assert_eq!(scale_of("false", "2", "2"), (None, false), "Scale Mode off");
+    assert_eq!(scale_of("true", "2", "35"), (None, true), "Name past the end of the list");
+    assert_eq!(scale_of("true", "2", "-1"), (None, true), "negative Name");
+    assert_eq!(scale_of("true", "12", "0"), (None, true), "Root past B");
+    assert_eq!(scale_of("true", "0", "7"), (None, true), "Whole Tone, which Suhina has no mode for");
+}
+
+/// An imported Pitch with Use Current Scale on moves the notes by degrees of the clip's imported
+/// scale: two degrees up from D in D Dorian is F, three semitones, not the two it would be
+/// without the scale.
+#[test]
+fn imported_pitch_follows_the_imported_clip_scale() {
+    let manual = |name: &str, value: &str| format!(r#"<{name}><Manual Value="{value}"/></{name}>"#);
+    let pitch = format!(
+        r#"<MidiPitcher Id="0">{}{}{}<UserName Value=""/></MidiPitcher>"#,
+        manual("On", "true"),
+        manual("UseCurrentScale", "true"),
+        manual("PitchScaleDegrees", "2")
+    );
+    let imported = read_xml(&scaled_clip_set("true", "2", "2", &pitch)).unwrap().project;
+    let render = |p: &suhina_model::Project| {
+        suhina_engine::render_offline(p, 48_000, 512, suhina_device_registry::factory()).unwrap()
+    };
+    let out = render(&imported);
+    assert!(out.iter().any(|s| s.abs() > 0.05), "the note plays");
+
+    // The same set with Pitch moving three semitones on its own, and no scale.
+    let semitones = |by: f64| {
+        let mut p = imported.clone();
+        p.contents[0].scale = None;
+        let channel = p.channels.iter_mut().find(|c| c.name == "Keys").unwrap();
+        let params = &mut channel.devices[0].params;
+        params.retain(|param| param.id != "followScale" && param.id != "pitch");
+        params.push(suhina_model::DeviceParam::new("followScale", 0.0));
+        params.push(suhina_model::DeviceParam::new("pitch", by));
+        render(&p)
+    };
+    let max_diff = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0f32, f32::max);
+    assert!(max_diff(&out, &semitones(3.0)) < 1e-6, "{}", max_diff(&out, &semitones(3.0)));
+    assert!(max_diff(&out, &semitones(2.0)) > 0.05, "without the scale the degrees would count as semitones");
+}
+
 #[test]
 fn reads_scenes_and_session_slots() {
     let p = read_xml(&live_set()).unwrap().project;
@@ -186,7 +259,7 @@ fn reads_scenes_and_session_slots() {
 fn unsupported_content_becomes_warnings() {
     let import = read_xml(&live_set()).unwrap();
     assert!(import.warnings.iter().any(|w| w.contains("has no file")), "{:?}", import.warnings);
-    assert!(import.warnings.iter().any(|w| w.contains("Reverb")), "{:?}", import.warnings);
+    assert!(import.warnings.iter().any(|w| w.contains("AutoFilter")), "{:?}", import.warnings);
     assert!(import.project.launcher.columns[1].slots[0].clip.is_none());
 }
 
@@ -249,14 +322,14 @@ fn reads_plugins_and_placeholders() {
             <Uid><Fields.0 Value="1448301683"/><Fields.1 Value="-1"/><Fields.2 Value="0"/><Fields.3 Value="16"/></Uid>
           </Vst3PluginInfo></PluginDesc>
         </PluginDevice>
-        <Eq8 Id="2"><On><Manual Value="false"/></On><UserName Value=""/></Eq8>"#;
+        <AutoFilter Id="2"><On><Manual Value="false"/></On><UserName Value=""/></AutoFilter>"#;
     let xml = format!(
         r#"<Ableton><LiveSet><Tracks><MidiTrack Id="1"><Name><EffectiveName Value="M"/></Name>
            <DeviceChain><DeviceChain><Devices>{devices}</Devices></DeviceChain></DeviceChain></MidiTrack></Tracks></LiveSet></Ableton>"#
     );
     let import = read_xml(&xml).unwrap();
     let channel = import.project.channels.iter().find(|c| c.name == "M").unwrap();
-    let [vst2, odd, vst3, eq] = channel.devices.as_slice() else {
+    let [vst2, odd, vst3, filter] = channel.devices.as_slice() else {
         panic!("expected four devices: {:?}", channel.devices)
     };
 
@@ -281,8 +354,69 @@ fn reads_plugins_and_placeholders() {
     assert_eq!(vst3.state.as_deref(), Some(&[1, 2][..]));
     assert!(import.warnings.iter().any(|w| w.contains("ControllerState is not valid hex")));
 
-    assert_eq!(eq.kind, DeviceKind::Foreign { format: "als".into(), id: "Eq8".into() });
-    assert!(!eq.enabled);
+    assert_eq!(filter.kind, DeviceKind::Foreign { format: "als".into(), id: "AutoFilter".into() });
+    assert!(!filter.enabled);
+}
+
+/// MIDI effects come before the instrument and keep that order: Pitch becomes Suhina's pitch, a
+/// MIDI effect without a Suhina device a placeholder (`docs/spec/als-format.md` › MIDI effects).
+#[test]
+fn midi_effects_keep_their_place_before_the_instrument() {
+    use suhina_model::DeviceKind;
+    let manual = |name: &str, value: &str| format!(r#"<{name}><Manual Value="{value}"/></{name}>"#);
+    let pitch: String = [
+        ("On", "true"),
+        ("Pitch", "-5.6"),
+        ("PitchScaleDegrees", "2"),
+        ("Lowest", "48"),
+        ("Range", "24"),
+        ("RangeMode", "1"),
+        ("UseCurrentScale", "false"),
+        ("StepWidth", "12"),
+    ]
+    .iter()
+    .map(|(name, value)| manual(name, value))
+    .collect();
+    let chord = format!(r#"{}{}<UserName Value="Stack"/>"#, manual("On", "false"), manual("Shift1", "7"));
+    let devices = format!(
+        r#"<MidiChord Id="0">{chord}</MidiChord>
+           <MidiPitcher Id="1">{pitch}<UserName Value=""/></MidiPitcher>
+           <OriginalSimpler Id="2">{}<UserName Value=""/></OriginalSimpler>"#,
+        manual("On", "true")
+    );
+    let xml = format!(
+        r#"<Ableton><LiveSet><Tracks><MidiTrack Id="1"><Name><EffectiveName Value="M"/></Name>
+           <DeviceChain><DeviceChain><Devices>{devices}</Devices></DeviceChain></DeviceChain></MidiTrack></Tracks></LiveSet></Ableton>"#
+    );
+    let import = read_xml(&xml).unwrap();
+    let channel = import.project.channels.iter().find(|c| c.name == "M").unwrap();
+    let [chord, pitch, simpler] = channel.devices.as_slice() else {
+        panic!("expected three devices: {:?}", channel.devices)
+    };
+
+    assert_eq!(chord.kind, DeviceKind::Foreign { format: "als".into(), id: "MidiChord".into() });
+    assert_eq!(chord.name, "Stack");
+    assert!(!chord.enabled);
+    assert!(chord.params.is_empty());
+
+    assert_eq!(pitch.kind, DeviceKind::Builtin("pitch".into()));
+    assert_eq!(pitch.name, "Pitch");
+    assert!(pitch.enabled);
+    let value = |id: &str| pitch.params.iter().find(|p| p.id == id).map(|p| p.value);
+    // The stored number goes in as it is; the device drops the fraction, as Live does.
+    assert_eq!(value("pitch"), Some(-5.6));
+    assert_eq!(value("pitchDegrees"), Some(2.0));
+    assert_eq!(value("followScale"), Some(0.0));
+    assert_eq!(value("lowest"), Some(48.0));
+    assert_eq!(value("range"), Some(24.0));
+    assert_eq!(value("mode"), Some(1.0));
+
+    // Simpler plays in Suhina's sampler (docs/spec/als-format.md › Simpler and Sampler).
+    assert_eq!(simpler.kind, DeviceKind::Builtin("sampler".into()));
+    assert_eq!(simpler.name, "Simpler");
+    let placeholders: Vec<_> = import.warnings.iter().filter(|w| w.contains("placeholder")).collect();
+    assert_eq!(placeholders.len(), 1, "{:?}", import.warnings);
+    assert!(placeholders.iter().any(|w| w.contains("MidiChord")), "{placeholders:?}");
 }
 
 /// Locators become arrangement markers in beat order; one without a usable time is skipped with
@@ -399,7 +533,7 @@ fn reads_groups_inside_groups() {
     let id = |name: &str| p.tracks.iter().find(|t| t.name == name).unwrap().id;
     let output = |name: &str| {
         let channel = p.tracks.iter().find(|t| t.name == name).unwrap().channel.unwrap();
-        let out = p.channels.iter().find(|c| c.id == channel).unwrap().output?;
+        let out = p.channel(channel).unwrap().output?;
         p.tracks.iter().find(|t| t.channel == Some(out)).map(|t| t.name.clone())
     };
     assert_eq!(p.ancestors(id("Kick")), [id("Drums"), id("Band")]);
@@ -449,6 +583,27 @@ fn groups_that_contain_each_other_or_nest_too_deep_still_open() {
 }
 
 #[test]
+fn leaves_out_time_signatures_past_a_sixteenth() {
+    // 3/16 from bar 2 (code 99 × 4 + 2), then 4/32 at beat 4.75, the next bar line (code 99 × 5 + 3),
+    // which Suhina does not keep: the denominators stop at 16.
+    let xml = with_envelopes(
+        r#"<FloatEvent Id="3" Time="0" Value="120"/>"#,
+        r#"<EnumEvent Id="7" Time="4" Value="398"/><EnumEvent Id="8" Time="4.75" Value="498"/>"#,
+    );
+    let import = read_xml(&xml).unwrap();
+    let ts = |numerator, denominator| TimeSignature { numerator, denominator };
+    assert_eq!(
+        import.project.transport.time_signature_changes,
+        [TimeSignatureChange { bar: 1, time_signature: ts(3, 16) }]
+    );
+    assert!(
+        import.warnings.iter().any(|w| w.contains("code 498") && w.contains("not understood")),
+        "{:?}",
+        import.warnings
+    );
+}
+
+#[test]
 fn reads_tempo_and_time_signature_changes() {
     // 120 at bar 1, a glide to 140 at bar 3, a jump to 90 at bar 5; 3/4 from bar 2, 7/8 from
     // beat 10 (bar 4 in 3/4).
@@ -460,8 +615,9 @@ fn reads_tempo_and_time_signature_changes() {
     let import = read_xml(&xml).unwrap();
     let t = &import.project.transport;
     assert_eq!(t.tempo_bpm, 120.0);
+    // Compared without the ids the project gave them.
     assert_eq!(
-        t.tempo_changes,
+        t.tempo_changes.iter().map(|p| TempoPoint { ..*p }).collect::<Vec<_>>(),
         [
             TempoPoint { beat: 8.0, bpm: 140.0, ramp: true },
             TempoPoint { beat: 16.0, bpm: 140.0, ramp: true },
@@ -495,9 +651,138 @@ fn malformed_tempo_and_time_signature_events_are_left_out() {
     let import = read_xml(&xml).unwrap();
     let t = &import.project.transport;
     // The one good tempo point is a step: nothing before it is a breakpoint to glide from.
-    assert_eq!(t.tempo_changes, [TempoPoint { beat: 12.0, bpm: 100.0, ramp: false }]);
+    assert_eq!(
+        t.tempo_changes.iter().map(|p| TempoPoint { ..*p }).collect::<Vec<_>>(),
+        [TempoPoint { beat: 12.0, bpm: 100.0, ramp: false }]
+    );
     assert_eq!(t.time_signature_changes.len(), 1);
     assert_eq!(t.time_signature_changes[0].bar, 4);
     assert!(import.warnings.iter().any(|w| w.contains("not on a bar line")), "{:?}", import.warnings);
     assert!(import.warnings.iter().any(|w| w.contains("out of range")), "{:?}", import.warnings);
+}
+
+/// A set with one audio track whose chain is `devices` (Live's XML).
+fn audio_track_set(devices: &str) -> String {
+    format!(
+        r#"<Ableton><LiveSet><Tracks><AudioTrack Id="1"><Name><EffectiveName Value="Vox"/></Name>
+           <DeviceChain><DeviceChain><Devices>{devices}</Devices></DeviceChain></DeviceChain></AudioTrack></Tracks></LiveSet></Ableton>"#
+    )
+}
+
+/// A rack chain (`AudioEffectBranch` or `InstrumentBranch`) as Live stores it.
+fn rack_chain(tag: &str, name: &str, volume: &str, pan: &str, speaker: &str, solo: &str, devices: &str) -> String {
+    let inner = if tag == "InstrumentBranch" { "MidiToAudioDeviceChain" } else { "AudioToAudioDeviceChain" };
+    format!(
+        r#"<{tag} Id="0"><Name><EffectiveName Value="{name}"/><UserName Value=""/></Name>
+           <DeviceChain><{inner} Id="0"><Devices>{devices}</Devices></{inner}></DeviceChain>
+           <MixerDevice><Speaker><Manual Value="{speaker}"/></Speaker><Volume><Manual Value="{volume}"/></Volume>
+           <Panorama><Manual Value="{pan}"/></Panorama></MixerDevice><IsSoloed Value="{solo}"/></{tag}>"#
+    )
+}
+
+fn effect_rack(chains: &str, extra: &str) -> String {
+    format!(
+        r#"<AudioEffectGroupDevice Id="0"><On><Manual Value="true"/></On><UserName Value=""/>
+           <Branches>{chains}</Branches>{extra}</AudioEffectGroupDevice>"#
+    )
+}
+
+/// The UK Garage set's vocal rack: one chain of five plug-ins in a row.
+#[test]
+fn an_effect_rack_of_plug_ins_becomes_a_group_that_keeps_them() {
+    use suhina_model::DeviceKind;
+    let plugin = |name: &str| {
+        format!(
+            r#"<PluginDevice Id="0"><On><Manual Value="true"/></On><UserName Value=""/><PluginDesc><Vst3PluginInfo Id="0">
+               <Name Value="{name}"/><Uid><Fields.0 Value="1"/><Fields.1 Value="2"/><Fields.2 Value="3"/><Fields.3 Value="4"/></Uid>
+               </Vst3PluginInfo></PluginDesc></PluginDevice>"#
+        )
+    };
+    let plugins: String =
+        ["Saturn 2", "OTT", "Auto-Tune Pro", "ValhallaVintageVerb", "ShaperBox 3"].map(plugin).concat();
+    let chain = rack_chain("AudioEffectBranch", "Saturn 2 | OTT", "1", "0", "true", "false", &plugins);
+    let import = read_xml(&audio_track_set(&effect_rack(&chain, ""))).unwrap();
+    let channel = import.project.channels.iter().find(|c| c.name == "Vox").unwrap();
+    let [rack] = channel.devices.as_slice() else { panic!("one device: {:?}", channel.devices) };
+    assert_eq!(rack.name, "Audio Effect Rack");
+    let group = rack.as_group().unwrap_or_else(|| panic!("a group: {:?}", rack.kind));
+    let [branch] = group.branches.as_slice() else { panic!("one branch") };
+    assert_eq!(branch.name, "Saturn 2 | OTT");
+    assert_eq!((branch.volume, branch.pan, branch.mute, branch.solo), (1.0, 0.0, false, false));
+    assert_eq!(branch.devices.len(), 5);
+    assert!(branch.devices.iter().all(|d| matches!(d.kind, DeviceKind::Vst3 { .. })), "{:?}", branch.devices);
+    assert!(!import.warnings.iter().any(|w| w.contains("placeholder")), "{:?}", import.warnings);
+}
+
+#[test]
+fn rack_chains_keep_their_volume_pan_mute_and_solo() {
+    let chains = [
+        rack_chain("AudioEffectBranch", "Dry", "0.5011872053", "-0.390625", "true", "true", ""),
+        rack_chain("AudioEffectBranch", "Wet", "0.2511886358", "2", "false", "false", ""),
+    ]
+    .concat();
+    let macros = r#"<MacroControls.0><Manual Value="63.5"/></MacroControls.0><MacroDisplayNames.0 Value="PUNCH"/>
+                    <MacroControls.9><Manual Value="70"/></MacroControls.9>"#;
+    let import = read_xml(&audio_track_set(&effect_rack(&chains, macros))).unwrap();
+    let rack = &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0];
+    let group = rack.as_group().unwrap();
+    let [dry, wet] = group.branches.as_slice() else { panic!("two branches") };
+    assert_eq!((dry.volume, dry.pan, dry.mute, dry.solo), (0.5011872053, -0.390625, false, true));
+    assert_eq!((wet.volume, wet.pan, wet.mute, wet.solo), (0.2511886358, 1.0, true, false), "pan clamped to 1");
+    assert_eq!(group.macros[0].name, "PUNCH");
+    let macro_1 = rack.params.iter().find(|p| p.id == "macro.1").map(|p| p.value);
+    assert_eq!(macro_1, Some(0.5));
+    assert!(import.warnings.iter().any(|w| w.contains("past the eighth")), "{:?}", import.warnings);
+}
+
+#[test]
+fn racks_nested_past_the_limit_stay_placeholders() {
+    use suhina_model::DeviceKind;
+    // Five racks, each in the one before: the fifth is one too deep.
+    let mut rack = String::new();
+    for _ in 0..5 {
+        rack = effect_rack(&rack_chain("AudioEffectBranch", "", "1", "0", "true", "false", &rack), "");
+    }
+    let import = read_xml(&audio_track_set(&rack)).unwrap();
+    let mut device = &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0];
+    for _ in 0..3 {
+        device = &device.as_group().unwrap().branches[0].devices[0];
+    }
+    let innermost = &device.as_group().unwrap().branches[0].devices[0];
+    assert_eq!(innermost.kind, DeviceKind::Foreign { format: "als".into(), id: "AudioEffectGroupDevice".into() });
+    assert!(import.warnings.iter().any(|w| w.contains("nested deeper")), "{:?}", import.warnings);
+}
+
+#[test]
+fn an_instrument_rack_with_zones_plays_every_chain_and_says_so() {
+    let zones = r#"<ZoneSettings><KeyRange><Min Value="0"/><Max Value="59"/></KeyRange>
+                   <VelocityRange><Min Value="1"/><Max Value="127"/></VelocityRange></ZoneSettings>"#;
+    let chain = rack_chain("InstrumentBranch", "Low", "1", "0", "true", "false", r#"<OriginalSimpler Id="0"/>"#)
+        .replace("<IsSoloed", &format!("{zones}<IsSoloed"));
+    let rack = format!(
+        r#"<InstrumentGroupDevice Id="0"><On><Manual Value="false"/></On><UserName Value="Keys"/>
+           <Branches>{chain}</Branches></InstrumentGroupDevice>"#
+    );
+    let xml = audio_track_set(&rack).replace("AudioTrack", "MidiTrack");
+    let import = read_xml(&xml).unwrap();
+    let rack = &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0];
+    assert_eq!(rack.name, "Keys");
+    assert!(!rack.enabled);
+    let branch = &rack.as_group().unwrap().branches[0];
+    assert_eq!(branch.devices[0].kind, suhina_model::DeviceKind::Builtin("sampler".into()));
+    assert!(import.warnings.iter().any(|w| w.contains("zones")), "{:?}", import.warnings);
+}
+
+#[test]
+fn a_rack_without_chains_or_values_is_an_empty_group() {
+    let import = read_xml(&audio_track_set("<AudioEffectGroupDevice Id=\"0\"/>")).unwrap();
+    let rack = &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0];
+    let group = rack.as_group().unwrap();
+    assert_eq!(group.branches.len(), 1);
+    assert!(group.branches[0].devices.is_empty());
+    let chains = rack_chain("AudioEffectBranch", "Broken", "-3", "nan", "maybe", "no", "");
+    let import = read_xml(&audio_track_set(&effect_rack(&chains, ""))).unwrap();
+    let branch =
+        &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0].as_group().unwrap().branches[0];
+    assert_eq!((branch.volume, branch.pan, branch.mute, branch.solo), (1.0, 0.0, false, false));
 }

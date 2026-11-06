@@ -8,9 +8,11 @@
 use std::sync::Arc;
 use suhina_engine::LauncherMonitor;
 
-use suhina_engine::model::{ChannelRole, Clip, ClipContent, FadeCurve, LaneData, Meter, Project, Rgb, TrackId};
+use suhina_engine::model::{
+    ChannelRole, Clip, ClipContent, ClipId, FadeCurve, LaneData, LoopRange, Meter, Project, Rgb, TrackId,
+};
 
-use crate::interaction::grid::{ColumnKind, default_track_colour, gain_to_db};
+use crate::interaction::grid::{ColumnKind, gain_to_db, track_colour};
 use crate::interaction::nesting::depth;
 use crate::kit::waveform::Waveforms;
 
@@ -66,7 +68,10 @@ impl AudioView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipBox {
-    /// Index on the track, as `clip.move` and `project.clips` count it.
+    /// Which clip it is: commands name it by this id, so a selection or a drag keeps naming the
+    /// same clip when others move (ADR 0025).
+    pub id: ClipId,
+    /// Where it is on the track now, in start order, as `project.clips` counts it.
     pub index: usize,
     pub start: f64,
     pub length: f64,
@@ -82,10 +87,32 @@ pub struct ClipBox {
     /// For an audio clip, how to draw its waveform.
     pub audio_view: Option<AudioView>,
     pub notes: Vec<NoteMark>,
+    /// Where a looping clip starts another pass through its loop, in beats from its start: the
+    /// clip marks each with a continuous vertical line and a small top notch (#700).
+    pub seams: Vec<f64>,
+    /// Loop source timing, retained for right-edge previews beyond the committed length.
+    pub loop_range: Option<LoopRange>,
+    pub offset: f64,
     /// The sub-row the clip is drawn in, and how many the lane has: more than one where clips
     /// overlap (stacked), so each stays visible.
     pub row: usize,
     pub rows: usize,
+    /// How early the clip's left edge can go: where its content starts (the song's start for a
+    /// looping clip), as `clip.trim` allows.
+    pub earliest_start: f64,
+    /// How late its right edge can go: where its audio ends, for an audio clip that does not
+    /// loop; `None` when it can go on (a MIDI or looping clip).
+    pub latest_end: Option<f64>,
+    /// The colour it shows: its own, or its track's.
+    pub color: Rgb,
+    /// What the clip is known by from one build to the next (its content and its start), so a
+    /// stacked clip keeps its sub-row when another goes.
+    pub stack_key: (u32, u64),
+    /// The number on its track (from 1) of the take it was comped from, for a part of a comp: it
+    /// is named and coloured after that take (#989).
+    pub take: Option<usize>,
+    /// It plays through its channel's ARA plug-in (#990).
+    pub ara: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -117,6 +144,9 @@ pub struct Lane {
     pub audio_input: suhina_engine::model::AudioInput,
     pub volume_db: f64,
     pub pan: f64,
+    /// The track's sends, one per return track in track order (none on a return), as the
+    /// Launcher view's strip has them.
+    pub sends: Vec<crate::interaction::grid::SendKnob>,
     /// The group track this track plays into; `None` is the main output.
     pub output: Option<TrackId>,
     /// The track's column in the launcher, for the engine's per-track state.
@@ -144,10 +174,20 @@ pub struct LoopBrace {
     pub enabled: bool,
 }
 
+/// The sub-row each stacked clip was put in, by track and [`ClipBox::stack_key`], with the span
+/// it had: the next build keeps it there, and a new clip inside that span (a split's parts) takes
+/// that row.
+pub type StackRows = std::collections::HashMap<(TrackId, (u32, u64)), (usize, f64, f64)>;
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Timeline {
+    /// Current recording spans supplied by the session, not committed editable clips.
+    pub recording_spans: Vec<(TrackId, f64, f64)>,
     /// Tracks in project order, then return tracks.
     pub lanes: Vec<Lane>,
+    /// The sub-row each stacked clip was put in, by track and [`ClipBox::stack_key`]: the next
+    /// build keeps them there, so deleting one clip of a stack leaves the others where they are.
+    pub stack_rows: StackRows,
     /// The MIDI input ports there are, for the tracks' MIDI inputs; set by the app.
     pub midi_ports: Vec<String>,
     /// The channels of the audio input device open now (0 when none is); set by the app.
@@ -167,6 +207,8 @@ pub struct Timeline {
     pub beat: f64,
     /// The play start marker: where the transport starts, in beats.
     pub start_beat: f64,
+    /// Where a seek from the ruler goes while it waits for its launch boundary (#657).
+    pub pending_jump: Option<f64>,
     /// The arrangement's markers, in beat order.
     pub markers: Vec<MarkerFlag>,
     /// The loop region, when the project has one (on or off).
@@ -176,9 +218,81 @@ pub struct Timeline {
     pub overrides: bool,
     /// Waveforms of the project's audio files, set by the app once they are decoded.
     pub waveforms: Arc<Waveforms>,
+    /// The notes ARA plug-ins found in audio clips, by clip, set by the app every frame (#720).
+    pub ara_notes: std::collections::HashMap<ClipId, suhina_session::ClipNotes>,
+    /// What an ARA plug-in is doing with a track's audio clips, by track: its name, and how far
+    /// its analysis has come (`None` while it loads).
+    pub ara_activity: std::collections::HashMap<TrackId, (String, Option<f32>)>,
+    /// The project's tempo map in seconds, to place those notes, which come in seconds.
+    pub tempo: Option<suhina_engine::model::TempoMap>,
     /// The parameters each track's automation lanes can show, with their points.
     pub automation: crate::arrangement::automation_lanes::Params,
+    /// The take lanes under tracks that recorded into the arrangement (`docs/spec/recording.md` ›
+    /// Take lanes), in the order they were recorded.
+    pub takes: Vec<TakeRow>,
+    /// The takes recording into the arrangement now, set by the app every frame (#909).
+    pub live_takes: Vec<suhina_session::LiveTake>,
+    /// The cuts between parts of two takes, drawn with their crossfades.
+    pub comp_cuts: Vec<CompCut>,
 }
+
+/// A cut between parts of two takes on a track.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompCut {
+    pub track: TrackId,
+    /// The part before the cut.
+    pub left: ClipId,
+    /// The part after the cut.
+    pub right: ClipId,
+    pub beat: f64,
+    /// The crossfade's whole length, in beats.
+    pub length: f64,
+    /// How both its fades are bent, -1 to 1.
+    pub curve: f64,
+    /// The longest it can be beside the parts' other fades, in beats.
+    pub room: f64,
+    /// Beats a minute, to say its length in milliseconds.
+    pub bpm: f64,
+}
+
+/// A take lane under a track.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TakeRow {
+    pub track: TrackId,
+    pub number: usize,
+    pub name: String,
+    pub clips: Vec<ClipBox>,
+    /// Its colour: its own, or the palette's in turn ([`take_colour`]).
+    pub color: Rgb,
+    /// The spans of it that are on the track (start, end in beats): drawn lit, the rest dimmed
+    /// (#989).
+    pub used: Vec<(f64, f64)>,
+}
+
+/// The colour of a track's take `number` (from 1) while it has none of its own: the palette's
+/// colours in turn, three apart so neighbouring takes differ (#953).
+pub fn take_colour(number: usize) -> Rgb {
+    let swatches = crate::interaction::colour_picker::swatches();
+    swatches[number.saturating_mul(3) % swatches.len()]
+}
+
+/// A take as it is shown: its track's name and its own, "Bass Take 2" (#989), so a renamed
+/// track's takes follow it.
+fn take_name(project: &Project, take: &suhina_engine::model::TakeLane) -> String {
+    format!("{} {}", project.shown_track_name(take.track), take.name)
+}
+
+/// The number on its track (from 1), name and colour of piece `piece` of take `index` of
+/// `arrangement.takes`: the piece's own colour, else the take's, else the palette's in turn.
+fn take_of(project: &Project, index: usize, piece: usize) -> Option<(usize, String, Rgb)> {
+    let take = project.arrangement.takes.get(index)?;
+    let number = project.arrangement.takes.iter().take(index + 1).filter(|t| t.track == take.track).count();
+    let colour = take.clips.get(piece).and_then(|c| c.color).or(take.color).unwrap_or_else(|| take_colour(number));
+    Some((number, take_name(project, take), colour))
+}
+
+/// How many take lanes a track needs before they are shown.
+pub const TAKES_SHOWN_FROM: usize = 1;
 
 impl Lane {
     /// Where the track sits in the track list.
@@ -231,6 +345,12 @@ fn ruler_marks(project: &Project, meter: &Meter) -> Vec<RulerMark> {
 
 impl Timeline {
     pub fn build(project: &Project, monitor: Option<&LauncherMonitor>) -> Self {
+        Self::build_after(project, monitor, &std::collections::HashMap::new())
+    }
+
+    /// [`Timeline::build`], with the sub-rows the previous build gave stacked clips kept.
+    pub fn build_after(project: &Project, monitor: Option<&LauncherMonitor>, rows_before: &StackRows) -> Self {
+        let mut stack_rows = std::collections::HashMap::new();
         let ts = project.transport.time_signature;
         let bar_beats =
             if ts.denominator == 0 { 4.0 } else { f64::from(ts.numerator.max(1)) * 4.0 / f64::from(ts.denominator) };
@@ -238,14 +358,27 @@ impl Timeline {
         let marks = ruler_marks(project, &meter);
         let mut lanes = Vec::new();
         let mut returns = Vec::new();
+        let return_tracks: Vec<&suhina_engine::model::Track> = project
+            .tracks
+            .iter()
+            .filter(|t| {
+                let channel = t.channel.and_then(|id| project.channel(id));
+                channel.is_some_and(|c| c.role == ChannelRole::Effect)
+            })
+            .collect();
+        let mut number = 0;
         for (position, track) in project.tracks.iter().enumerate() {
-            let channel = track.channel.and_then(|id| project.channels.iter().find(|c| c.id == id));
+            let channel = track.channel.and_then(|id| project.channel(id));
             let kind = match channel.map(|c| c.role) {
                 Some(ChannelRole::Master) => continue,
                 Some(ChannelRole::Effect) => ColumnKind::Return,
                 Some(ChannelRole::Submix) => ColumnKind::Group,
                 _ => ColumnKind::Track,
             };
+            if kind != ColumnKind::Return {
+                number += 1;
+            }
+            let track_color = track_colour(track, position);
             let clips = project
                 .arrangement
                 .lanes
@@ -256,33 +389,30 @@ impl Timeline {
                         .iter()
                         .enumerate()
                         .map(|(index, clip)| {
-                            let content = project.content(clip.content);
-                            ClipBox {
-                                index,
-                                start: clip.start,
-                                length: clip.length,
-                                name: content.map(|c| c.name.clone()).unwrap_or_default(),
-                                enabled: clip.enabled,
-                                fade_in: clip.fade_in,
-                                fade_out: clip.fade_out,
-                                fade_in_curve: clip.fade_in_curve,
-                                fade_out_curve: clip.fade_out_curve,
-                                audio: content
-                                    .is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_)))),
-                                audio_view: content.and_then(|c| audio_view(c, clip, project.transport.tempo_bpm)),
-                                notes: content.map(|c| note_marks(c, clip)).unwrap_or_default(),
-                                row: 0,
-                                rows: 1,
+                            let mut shown = clip_box(project, clip, index, track_color);
+                            // A part of a comp: named and coloured after its take (#989).
+                            if let Some((number, name, color)) =
+                                project.comp_piece(track.id, clip).and_then(|(i, piece)| take_of(project, i, piece))
+                            {
+                                shown.take = Some(number);
+                                shown.name = name;
+                                shown.color = clip.color.unwrap_or(color);
                             }
+                            shown
                         })
                         .collect()
                 })
                 .unwrap_or_default();
-            let clips = sub_rows(clips);
+            let clips = sub_rows(clips, track.id, rows_before, &mut stack_rows);
             let lane = Lane {
                 track: track.id,
-                name: track.name.clone(),
-                color: track.color.unwrap_or_else(|| default_track_colour(position)),
+                // Its `#` read as its number (#946).
+                name: if kind == ColumnKind::Return {
+                    track.name.clone()
+                } else {
+                    suhina_engine::model::names::shown_with_number(&track.name, number)
+                },
+                color: track_colour(track, position),
                 kind,
                 notes: kind == ColumnKind::Track && track.content.notes,
                 depth: depth(project, track.parent),
@@ -299,6 +429,21 @@ impl Timeline {
                 audio_input: track.audio_input,
                 volume_db: channel.map_or(0.0, |c| gain_to_db(c.volume)),
                 pan: channel.map_or(0.0, |c| c.pan),
+                sends: match (kind, channel) {
+                    (ColumnKind::Return, _) | (_, None) => Vec::new(),
+                    (_, Some(channel)) => return_tracks
+                        .iter()
+                        .map(|r| {
+                            let send = channel.sends.iter().find(|s| Some(s.target) == r.channel);
+                            crate::interaction::grid::SendKnob {
+                                target: r.id,
+                                name: r.name.clone(),
+                                level_db: send.map_or(f64::NEG_INFINITY, |s| gain_to_db(s.level)),
+                                pre_fader: send.is_some_and(|s| s.pre_fader),
+                            }
+                        })
+                        .collect(),
+                },
                 output: channel
                     .and_then(|c| c.output)
                     .and_then(|id| project.tracks.iter().find(|t| t.channel == Some(id)))
@@ -334,7 +479,14 @@ impl Timeline {
             .fold(0.0, f64::max);
         let main_volume_db =
             project.channels.iter().find(|c| c.role == ChannelRole::Master).map(|c| gain_to_db(c.volume));
+        let takes = take_rows(project);
+        let comp_cuts = comp_cuts(project);
         let mut timeline = Self {
+            recording_spans: Vec::new(),
+            stack_rows,
+            ara_notes: std::collections::HashMap::new(),
+            ara_activity: std::collections::HashMap::new(),
+            tempo: Some(project.transport.tempo_map(1.0)),
             midi_ports: Vec::new(),
             input_channels: 0,
             lanes,
@@ -346,11 +498,15 @@ impl Timeline {
             running: false,
             beat: 0.0,
             start_beat: 0.0,
+            pending_jump: None,
             markers,
             loop_brace,
             overrides: false,
             waveforms: Arc::default(),
             automation: crate::arrangement::automation_lanes::Params::build(project),
+            takes,
+            live_takes: Vec::new(),
+            comp_cuts,
         };
         timeline.follow(monitor);
         timeline
@@ -358,12 +514,57 @@ impl Timeline {
 
     /// Takes the transport, playhead and play start marker from the engine, leaving the rest as
     /// it was built.
+    /// The headers show what automation plays at the playhead, running or stopped, the project's
+    /// values where nothing is automated: volume and pan, on returns and Main too (#706, #811).
+    /// Called every frame, after [`Timeline::follow`].
+    pub fn follow_automation(&mut self, project: &Project) {
+        let channel_of = |track: TrackId| {
+            let id = project.track(track)?.channel?;
+            project.channel(id)
+        };
+        for lane in &mut self.lanes {
+            let Some(channel) = channel_of(lane.track) else { continue };
+            let (volume, pan) = crate::interaction::grid::played_mixer(channel, self.beat);
+            lane.volume_db = volume.unwrap_or_else(|| gain_to_db(channel.volume));
+            lane.pan = pan.unwrap_or(channel.pan);
+        }
+        if let Some(main) = project.channels.iter().find(|c| c.role == ChannelRole::Master) {
+            let played = crate::interaction::grid::played_mixer(main, self.beat).0;
+            self.main_volume_db = Some(played.unwrap_or_else(|| gain_to_db(main.volume)));
+        }
+    }
+
+    /// While a volume or pan lane is dragged, its header shows what the line as it is dragged
+    /// plays at the playhead, before the command is in; while a range is painted on it, the line's
+    /// value at the range's moving edge (#811). Called after
+    /// [`Timeline::follow_automation`].
+    pub fn follow_drag(&mut self, dragged: Option<&crate::arrangement::automation_lanes::Dragged>) {
+        use suhina_engine::model::automation::{PAN, Plain, VOLUME, VolumeTaper, value_at};
+        let Some(dragged) = dragged.filter(|d| d.key.device.is_none()) else { return };
+        let beat = dragged.at.unwrap_or(self.beat);
+        if dragged.key.param == VOLUME {
+            let Some(db) = value_at(&dragged.points, beat, false, &VolumeTaper).map(gain_to_db) else { return };
+            if dragged.track == TrackId::MAIN {
+                if self.main_volume_db.is_some() {
+                    self.main_volume_db = Some(db);
+                }
+            } else {
+                self.lanes.iter_mut().filter(|l| l.track == dragged.track).for_each(|l| l.volume_db = db);
+            }
+        } else if dragged.key.param == PAN
+            && let Some(pan) = value_at(&dragged.points, beat, false, &Plain)
+        {
+            self.lanes.iter_mut().filter(|l| l.track == dragged.track).for_each(|l| l.pan = pan);
+        }
+    }
+
     pub fn follow(&mut self, monitor: Option<&LauncherMonitor>) {
         let (running, beat, start) = monitor.map_or((false, 0.0, 0.0), |m| (m.running(), m.beat(), m.start_beat()));
         let beats = |b: f64| if b.is_finite() { b.max(0.0) } else { 0.0 };
         self.running = running;
         self.beat = beats(beat);
         self.start_beat = beats(start);
+        self.pending_jump = monitor.and_then(LauncherMonitor::pending_jump).filter(|_| running);
         // Which tracks play launched clips instead of their arrangement clips: their lanes
         // dim, and the arrangement shows Back to arrangement while any does.
         for lane in &mut self.lanes {
@@ -409,7 +610,7 @@ impl Folds {
         }
     }
 
-    /// The folded groups as a set, for the views that share them (the Session view's columns,
+    /// The folded groups as a set, for the views that share them (the Launcher view's columns,
     /// the track list's drop targets).
     pub fn groups(&self) -> std::collections::BTreeSet<TrackId> {
         self.folded.iter().copied().collect()
@@ -456,7 +657,7 @@ fn first_inside(project: &Project, group: TrackId) -> Option<TrackId> {
 /// Whether `track` is inside `group`: one of its own tracks, or of a group inside it. A broken
 /// parent chain stops the walk.
 fn holds(project: &Project, group: TrackId, track: TrackId) -> bool {
-    let mut parent = project.tracks.iter().find(|t| t.id == track).and_then(|t| t.parent);
+    let mut parent = project.track(track).and_then(|t| t.parent);
     let mut hops = 0;
     while let Some(id) = parent {
         if id == group {
@@ -466,7 +667,7 @@ fn holds(project: &Project, group: TrackId, track: TrackId) -> bool {
         if hops > project.tracks.len() {
             break;
         }
-        parent = project.tracks.iter().find(|t| t.id == id).and_then(|t| t.parent);
+        parent = project.track(id).and_then(|t| t.parent);
     }
     false
 }
@@ -476,6 +677,122 @@ fn holds(project: &Project, group: TrackId, track: TrackId) -> bool {
 pub(crate) fn inside_lanes<T: std::borrow::Borrow<Lane>>(lanes: &[T], index: usize) -> usize {
     let depth = lanes.get(index).map_or(0, |l| l.borrow().depth);
     lanes.iter().skip(index.saturating_add(1)).take_while(|l| l.borrow().depth > depth).count()
+}
+
+/// The cuts where audio parts of two takes meet on a track, which crossfade (#1078).
+fn comp_cuts(project: &Project) -> Vec<CompCut> {
+    let bpm = project.transport.tempo_bpm;
+    let mut cuts = Vec::new();
+    for lane in &project.arrangement.lanes {
+        let Some(track) = lane.track else { continue };
+        if !project.arrangement.takes.iter().any(|t| t.track == track) {
+            continue;
+        }
+        for left in &lane.clips {
+            let beat = left.start + left.length;
+            let Some(right) = lane.clips.iter().find(|c| c.id != left.id && (c.start - beat).abs() < 1e-6) else {
+                continue;
+            };
+            let (from, to) = (project.comp_source(track, left), project.comp_source(track, right));
+            // Notes do not fade, so only audio parts show one.
+            let audio = project
+                .content(left.content)
+                .is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))));
+            if audio && from.is_some() && to.is_some() && from != to && !left.ara && !right.ara {
+                cuts.push(CompCut {
+                    track,
+                    left: left.id,
+                    right: right.id,
+                    beat,
+                    length: Project::comp_crossfade_beats(left, right, bpm),
+                    curve: Project::comp_crossfade_curve(left).curve,
+                    room: (left.length - left.fade_in).min(right.length - right.fade_out),
+                    bpm,
+                });
+            }
+        }
+    }
+    cuts
+}
+
+/// The take lanes of tracks with at least [`TAKES_SHOWN_FROM`] takes, numbered per track.
+fn take_rows(project: &Project) -> Vec<TakeRow> {
+    let mut rows = Vec::new();
+    for track in &project.tracks {
+        let takes: Vec<&suhina_engine::model::TakeLane> =
+            project.arrangement.takes.iter().filter(|t| t.track == track.id).collect();
+        if takes.len() < TAKES_SHOWN_FROM {
+            continue;
+        }
+        let indices: Vec<usize> = (0..project.arrangement.takes.len())
+            .filter(|&i| project.arrangement.takes.get(i).is_some_and(|t| t.track == track.id))
+            .collect();
+        rows.extend(takes.into_iter().zip(indices).enumerate().map(|(i, (take, index))| {
+            TakeRow {
+                track: track.id,
+                // The number the take commands know it by, which stays its own when another goes.
+                number: project.take_number(index).unwrap_or(i + 1),
+                name: take_name(project, take),
+                // Each piece in its own colour or the take's, named after the take.
+                clips: take
+                    .clips
+                    .iter()
+                    .enumerate()
+                    .map(|(piece, clip)| {
+                        let own = take.color.unwrap_or_else(|| take_colour(i + 1));
+                        let shown = clip_box(project, clip, piece, clip.color.unwrap_or(own));
+                        // A MIDI pass ends where its content does, as an audio pass's recording does:
+                        // its edges stop there (`take.trimPiece`).
+                        let content = project.content(clip.content).map_or(f64::INFINITY, |c| c.length);
+                        ClipBox {
+                            name: take_name(project, take),
+                            take: Some(i + 1),
+                            earliest_start: (clip.start - clip.offset).max(0.0),
+                            latest_end: shown.latest_end.or(Some(clip.start - clip.offset + content)),
+                            ..shown
+                        }
+                    })
+                    .collect(),
+                color: take.color.unwrap_or_else(|| take_colour(i + 1)),
+                used: project.comp_used(index),
+            }
+        }));
+    }
+    rows
+}
+
+/// How the view draws `clip`, the `index`th of its lane, on a track coloured `track_color`.
+fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> ClipBox {
+    let content = project.content(clip.content);
+    let looped = clip.loop_range.is_some();
+    let audio = content.is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))));
+    ClipBox {
+        id: clip.id,
+        color: clip.color.unwrap_or(track_color),
+        stack_key: (clip.content.0, clip.start.to_bits()),
+        // A MIDI clip goes on before its notes (#832); an audio clip's audio starts where it does.
+        earliest_start: if looped || !audio { 0.0 } else { (clip.start - clip.offset).max(0.0) },
+        latest_end: content.filter(|_| audio && !looped).map(|c| clip.start - clip.offset + c.length),
+        index,
+        start: clip.start,
+        length: clip.length,
+        name: content.map(|c| c.name.clone()).unwrap_or_default(),
+        enabled: clip.enabled,
+        fade_in: clip.fade_in,
+        fade_out: clip.fade_out,
+        fade_in_curve: clip.fade_in_curve,
+        fade_out_curve: clip.fade_out_curve,
+        audio: content.is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_)))),
+        audio_view: content.and_then(|c| audio_view(c, clip, project.transport.tempo_bpm)),
+        notes: content.map(|c| note_marks(c, clip)).unwrap_or_default(),
+        seams: loop_seams(clip),
+        loop_range: clip.loop_range,
+        offset: clip.offset,
+        row: 0,
+        rows: 1,
+        take: None,
+        ara: clip.ara,
+    }
 }
 
 /// What an audio clip needs to draw its waveform: the engine's mapping from beats to the file.
@@ -504,37 +821,132 @@ fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<Audi
     })
 }
 
-/// Puts each clip in the first sub-row free where it starts; every clip learns the lane's count.
-fn sub_rows(mut clips: Vec<ClipBox>) -> Vec<ClipBox> {
-    let mut ends: Vec<f64> = Vec::new();
+/// Puts overlapping clips in sub-rows: each clip in the row it had in the build before (`before`)
+/// while that row is free where it plays, the others in the first row free where they start;
+/// every clip learns the lane's count, and `after` what each got. A row left empty between others
+/// stays, so the clips under it do not move up.
+fn sub_rows(mut clips: Vec<ClipBox>, track: TrackId, before: &StackRows, after: &mut StackRows) -> Vec<ClipBox> {
+    let mut rows: Vec<Vec<(f64, f64)>> = Vec::new();
+    let free = |rows: &Vec<Vec<(f64, f64)>>, row: usize, from: f64, to: f64| {
+        rows.get(row).is_none_or(|spans| spans.iter().all(|(s, e)| to <= *s + 1e-9 || from >= *e - 1e-9))
+    };
     let mut order: Vec<usize> = (0..clips.len()).collect();
     let start = |i: &usize| clips.get(*i).map_or(0.0, |c| c.start);
     order.sort_by(|a, b| start(a).total_cmp(&start(b)));
-    for i in order {
+    let mut placed = vec![false; clips.len()];
+    // Where they were, first.
+    for &i in &order {
         let Some(clip) = clips.get_mut(i) else { continue };
-        let end = clip.start + clip.length;
-        match ends.iter().position(|e| *e <= clip.start + 1e-9) {
-            Some(row) => {
-                clip.row = row;
-                if let Some(e) = ends.get_mut(row) {
-                    *e = end;
-                }
+        let (from, to) = (clip.start, clip.start + clip.length);
+        if let Some(&(row, _, _)) = before.get(&(track, clip.stack_key))
+            && free(&rows, row, from, to)
+        {
+            if rows.len() <= row {
+                rows.resize(row + 1, Vec::new());
             }
-            None => {
-                clip.row = ends.len();
-                ends.push(end);
+            rows[row].push((from, to));
+            clip.row = row;
+            placed[i] = true;
+        }
+    }
+    // The rest in the first row free.
+    for &i in &order {
+        if placed[i] {
+            continue;
+        }
+        let Some(clip) = clips.get_mut(i) else { continue };
+        let (from, to) = (clip.start, clip.start + clip.length);
+        // A new clip inside where one was on this track (a split's parts, #703) takes that
+        // clip's row, when it is free; else the first row free.
+        let inherited = before
+            .iter()
+            .filter(|((t, _), (_, start, end))| *t == track && *start <= from + 1e-9 && *end >= to - 1e-9)
+            .map(|(_, (row, start, end))| (*row, end - start))
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(row, _)| row)
+            .filter(|&row| free(&rows, row, from, to));
+        let row =
+            inherited.unwrap_or_else(|| (0..=rows.len()).find(|&r| free(&rows, r, from, to)).unwrap_or(rows.len()));
+        if rows.len() <= row {
+            rows.resize(row + 1, Vec::new());
+        }
+        rows[row].push((from, to));
+        clip.row = row;
+    }
+    // Rows only where clips overlap (#697): the clips that overlap one another, directly or
+    // through others, share the lane in as many rows as they use (a row between them left empty
+    // stays); a clip that overlaps none fills the lane.
+    let mut order: Vec<usize> = (0..clips.len()).collect();
+    let starts: Vec<f64> = clips.iter().map(|c| c.start).collect();
+    let at = |i: &usize| starts.get(*i).copied().unwrap_or(0.0);
+    order.sort_by(|a, b| at(a).total_cmp(&at(b)));
+    let mut group: Vec<usize> = Vec::new();
+    let mut group_end = f64::NEG_INFINITY;
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for &i in &order {
+        let Some(clip) = clips.get(i) else { continue };
+        if !group.is_empty() && clip.start >= group_end - 1e-9 {
+            groups.push(std::mem::take(&mut group));
+            group_end = f64::NEG_INFINITY;
+        }
+        group_end = group_end.max(clip.start + clip.length);
+        group.push(i);
+    }
+    if !group.is_empty() {
+        groups.push(group);
+    }
+    for members in &groups {
+        if let [only] = members.as_slice() {
+            if let Some(clip) = clips.get_mut(*only) {
+                clip.row = 0;
+                clip.rows = 1;
+            }
+            continue;
+        }
+        let count = members.iter().filter_map(|i| clips.get(*i)).map(|c| c.row + 1).max().unwrap_or(1);
+        for i in members {
+            if let Some(clip) = clips.get_mut(*i) {
+                clip.rows = count;
             }
         }
     }
-    let rows = ends.len().max(1);
-    for clip in &mut clips {
-        clip.rows = rows;
+    for clip in &clips {
+        after.insert((track, clip.stack_key), (clip.row, clip.start, clip.start + clip.length));
     }
     clips
 }
 
 /// The notes a clip plays, from its start: the content from `offset`, then its loop again and
 /// again until the clip ends.
+/// Where `clip` starts another pass through its loop, in beats from its start, as the engine
+/// plays it: the first pass runs from its offset (or the loop's start, for an offset past the
+/// loop) to the loop's end, each after it through the whole loop. None when it does not loop.
+pub fn loop_seams(clip: &Clip) -> Vec<f64> {
+    loop_seams_for_span(clip.loop_range, clip.offset, clip.length)
+}
+
+/// Loop marks for a visible span, including a resize that has not been committed yet.
+pub fn loop_seams_for_span(range: Option<LoopRange>, offset: f64, length: f64) -> Vec<f64> {
+    if !offset.is_finite() || !length.is_finite() || length <= 0.0 {
+        return Vec::new();
+    }
+    let Some(range) = range.filter(|r| r.start.is_finite() && r.end.is_finite() && r.end > r.start) else {
+        return Vec::new();
+    };
+    let pass = range.end - range.start;
+    let mut at = if offset >= range.end { pass } else { range.end - offset };
+    let mut seams = Vec::new();
+    while at < length - 1e-9 && seams.len() < MAX_MARKS {
+        seams.push(at);
+        at += pass;
+    }
+    seams
+}
+
+/// How far past a looping clip's end its note marks go, in beats: the passes a drag of its right
+/// edge shows before the clip is built again at its new length.
+const LOOP_DRAG_ROOM: f64 = 64.0;
+
 pub fn note_marks(content: &ClipContent, clip: &Clip) -> Vec<NoteMark> {
     let notes: Vec<_> = content
         .lanes
@@ -556,12 +968,15 @@ pub fn note_marks(content: &ClipContent, clip: &Clip) -> Vec<NoteMark> {
     };
     let mut segment = (clip.offset, first_end);
     let mut at = 0.0;
-    while at < clip.length && marks.len() < MAX_MARKS {
+    // A looping clip's marks go on past its end, so the passes its right edge is dragged out to
+    // show their notes while it is dragged; the view draws the clip's own span only.
+    let span = if repeat.is_some() { clip.length + LOOP_DRAG_ROOM } else { clip.length };
+    while at < span && marks.len() < MAX_MARKS {
         let (from, to) = segment;
         for note in notes.iter().filter(|n| n.time >= from && n.time < to) {
             let start = at + note.time - from;
-            if start < clip.length && marks.len() < MAX_MARKS {
-                let length = note.duration.min(to - note.time).min(clip.length - start).max(0.0);
+            if start < span && marks.len() < MAX_MARKS {
+                let length = note.duration.min(to - note.time).min(span - start).max(0.0);
                 marks.push(NoteMark { start, length, key: note.key });
             }
         }
@@ -575,149 +990,5 @@ pub fn note_marks(content: &ClipContent, clip: &Clip) -> Vec<NoteMark> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::demo::demo_project;
-
-    #[test]
-    fn the_ruler_marks_tempo_and_time_signature_changes() {
-        use suhina_engine::model::{TempoPoint, TimeSignature, TimeSignatureChange};
-        let mut project = demo_project();
-        project.transport.tempo_changes =
-            vec![TempoPoint { beat: 16.0, bpm: 140.0, ramp: false }, TempoPoint { beat: 32.0, bpm: 97.5, ramp: true }];
-        project.transport.time_signature_changes =
-            vec![TimeSignatureChange { bar: 4, time_signature: TimeSignature { numerator: 7, denominator: 8 } }];
-        let timeline = Timeline::build(&project, None);
-        let marks: Vec<(f64, &str)> = timeline.marks.iter().map(|m| (m.beat, m.text.as_str())).collect();
-        // Bar 5 (counted from 1) starts on beat 16, where the tempo changes too.
-        assert_eq!(marks, [(16.0, "140 bpm  7/8"), (32.0, "→ 97.5 bpm")]);
-        assert_eq!(timeline.meter.bar_start(5), 19.5);
-        assert!(Timeline::build(&demo_project(), None).marks.is_empty());
-    }
-
-    #[test]
-    fn lanes_follow_the_tracks_with_returns_last() {
-        let timeline = Timeline::build(&demo_project(), None);
-        let names: Vec<&str> = timeline.lanes.iter().map(|l| l.name.as_str()).collect();
-        assert_eq!(names, ["Drums", "Bass", "Keys", "Vox", "A Reverb", "B Delay"]);
-        assert_eq!(timeline.end, 192.0);
-        assert_eq!(timeline.main_volume_db, Some(0.0));
-        assert_eq!(timeline.lanes[0].clips[1].index, 1);
-        assert_eq!(timeline.lanes[0].clips[1].name, "Beat B");
-    }
-
-    #[test]
-    fn audio_clips_map_beats_to_file_seconds_like_the_engine() {
-        let linear = AudioView {
-            file: "a.wav".into(),
-            offset: 1.0,
-            loop_range: Some((0.0, 4.0)),
-            markers: Vec::new(),
-            seconds_per_beat: 0.5,
-            rate: 1.0,
-            gain_db: 0.0,
-        };
-        assert_eq!(linear.seconds(0.0), 0.5);
-        assert_eq!(linear.seconds(2.0), 1.5);
-        // Past the loop end it starts the loop again.
-        assert_eq!(linear.seconds(3.5), 0.25);
-        let warped = AudioView { markers: vec![(0.0, 0.0), (4.0, 1.0)], loop_range: None, offset: 0.0, ..linear };
-        assert_eq!(warped.seconds(2.0), 0.5);
-        // Beyond the last marker the last segment carries on.
-        assert_eq!(warped.seconds(8.0), 2.0);
-    }
-
-    #[test]
-    fn overlapping_clips_get_sub_rows() {
-        let mut project = demo_project();
-        let lane = &mut project.arrangement.lanes[0];
-        lane.clips[1].start = 32.0; // over the first clip (0..64)
-        let timeline = Timeline::build(&project, None);
-        let rows: Vec<(usize, usize)> = timeline.lanes[0].clips.iter().map(|c| (c.row, c.rows)).collect();
-        assert_eq!(rows[0], (0, 2));
-        assert_eq!(rows[1], (1, 2));
-        assert!(Timeline::build(&demo_project(), None).lanes.iter().flat_map(|l| &l.clips).all(|c| c.rows == 1));
-    }
-
-    #[test]
-    fn a_looping_clip_repeats_its_notes() {
-        let project = demo_project();
-        let clip = &project.arrangement.lanes[0].clips[0];
-        let content = project.content(clip.content).unwrap();
-        let marks = note_marks(content, clip);
-        // Four notes a bar, sixteen bars.
-        assert_eq!(marks.len(), 64);
-        assert_eq!(marks[4].start, 4.0);
-        assert!(marks.iter().all(|m| m.start < clip.length));
-    }
-
-    #[test]
-    fn a_clip_without_a_loop_shows_its_window_of_the_content() {
-        let project = demo_project();
-        let mut clip = project.arrangement.lanes[0].clips[0].clone();
-        clip.loop_range = None;
-        clip.offset = 1.0;
-        clip.length = 2.0;
-        let content = project.content(clip.content).unwrap();
-        let starts: Vec<f64> = note_marks(content, &clip).iter().map(|m| m.start).collect();
-        assert_eq!(starts, [0.0, 1.0]);
-    }
-
-    /// The demo project with Drums and Bass inside a group, "Group", in front of them, as
-    /// `track.group` leaves them.
-    fn grouped_project() -> Project {
-        crate::demo::grouped_project()
-    }
-
-    #[test]
-    fn a_folded_group_shows_its_first_track_and_follows_the_one_being_worked_on() {
-        let project = grouped_project();
-        let group = TrackId(50);
-        let (drums, bass) = (TrackId(1), TrackId(2));
-        let mut folds = Folds::default();
-        assert!(!folds.is_folded(group));
-        assert_eq!(folds.shown(group), None);
-
-        folds.toggle(group);
-        folds.reconcile(&project, None);
-        assert!(folds.is_folded(group));
-        assert_eq!(folds.shown(group), Some(drums), "the first track inside the group");
-
-        // Working on a track of the group's own: the row follows it.
-        folds.reconcile(&project, Some(bass));
-        assert_eq!(folds.shown(group), Some(bass));
-        // A track outside it leaves the row on the first one, and a click opens the group again.
-        folds.reconcile(&project, Some(TrackId(3)));
-        assert_eq!(folds.shown(group), Some(drums));
-        folds.toggle(group);
-        folds.reconcile(&project, None);
-        assert!(!folds.is_folded(group));
-        assert_eq!(folds.shown(group), None);
-    }
-
-    #[test]
-    fn a_fold_forgets_groups_the_project_no_longer_has() {
-        let mut project = grouped_project();
-        let group = TrackId(50);
-        let mut folds = Folds::default();
-        folds.fold(group);
-        folds.reconcile(&project, None);
-        assert!(folds.is_folded(group));
-        // The group's tracks are gone: the fold goes with them.
-        project.tracks.retain(|t| t.parent != Some(group));
-        folds.reconcile(&project, None);
-        assert!(!folds.is_folded(group));
-        assert_eq!(folds.shown(group), None);
-    }
-
-    #[test]
-    fn inside_lanes_counts_the_tracks_a_group_holds() {
-        let timeline = Timeline::build(&grouped_project(), None);
-        let lanes: Vec<&Lane> = timeline.lanes.iter().collect();
-        let group = lanes.iter().position(|l| l.track == TrackId(50)).unwrap();
-        assert_eq!(inside_lanes(&lanes, group), 2);
-        // A track holds nothing, and the last lane has nothing after it.
-        assert_eq!(inside_lanes(&lanes, group + 1), 0);
-        assert_eq!(inside_lanes(&lanes, lanes.len() + 5), 0);
-    }
-}
+#[path = "timeline_tests.rs"]
+mod tests;

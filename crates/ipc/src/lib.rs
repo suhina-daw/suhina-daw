@@ -23,15 +23,36 @@
 //!
 //! This crate is one of the two allowed to use `unsafe` (ADR 0006): memory shared with another
 //! process and waiting on it need it. Everything it exports is safe to use.
+//!
+//! In detail: Audio blocks between the engine and a plug-in host process (ADR 0006): a
+//! shared-memory region with each block's notes and controllers (`Event`, up to 1024 a block) and
+//! the instances of the host process that run the block after the link's own (up to 63,
+//! `Link::send_joint`), one block in flight, a doorbell per direction (a futex on Linux, events
+//! with a high-resolution timer on Windows, yielding elsewhere for now) and a deadline; a crashed
+//! or hung host costs missed blocks, never a stall. `AudioSource`: a file's decoded samples in a
+//! region of their own, written once and mapped read only by the host, for an ARA plug-in to read
+//! (ADR 0033). Both are memory the operating system frees when the last process holding it ends,
+//! however it ends (`shm`): a page-file mapping named `Local\suhina-…` on Windows, a `memfd` opened
+//! through `/proc/<pid>/fd/<n>` on Linux, and on macOS a file in the temporary folder whose name
+//! goes once the host has opened a link or the engine drops a source; the first one a process makes
+//! removes the macOS files of processes that crashed before that, and earlier versions' leftover
+//! files on every system (`sweep`, ADR 0006 › The boundary). One of the two crates allowed
+//! `unsafe`. Linked into the engine's process through `plugins`.
 
 mod doorbell;
 mod events;
+mod keyboard;
 mod region;
+mod shm;
+mod source;
+mod sweep;
 
 pub use events::{Event, EventKind, MAX_EVENTS};
+pub use keyboard::{keys_to_engine, pointer_on_screen, set_keys_to_engine, take_keyboard_back};
+pub use source::{AudioSource, MAX_SOURCE_FRAMES};
+pub use sweep::sweep_leftovers;
 
 use std::fmt;
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use doorbell::Doorbell;
@@ -111,7 +132,15 @@ impl Link {
 
     /// What the host process needs to open this link; pass it on its command line.
     pub fn address(&self) -> String {
-        self.region.path().display().to_string()
+        self.region.address().to_string()
+    }
+
+    /// The host has opened the link (it answered the load that named it), so the address is not
+    /// needed again: where the memory is a named file (macOS), its name goes now and a crash
+    /// leaves nothing behind. Elsewhere it has no name to remove. Not real-time safe (it may
+    /// remove a file); call it where the link is made.
+    pub fn host_opened(&mut self) {
+        self.region.unlink();
     }
 
     pub fn channels(&self) -> u32 {
@@ -241,7 +270,7 @@ pub struct Served {
 impl Served {
     /// Opens the link at `address` ([`Link::address`]).
     pub fn open(address: &str) -> Result<Self, IpcError> {
-        let region = Region::open(Path::new(address))?;
+        let region = Region::open(address)?;
         let to_host = Doorbell::open(region.name(), "host")?;
         let to_engine = Doorbell::open(region.name(), "engine")?;
         let seen = region.response();

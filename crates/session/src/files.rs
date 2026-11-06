@@ -12,12 +12,12 @@ use suhina_device_api::Role;
 use suhina_engine::AudioData;
 use suhina_media::info::{FileKind, Tempo, TempoSource, kind_of};
 use suhina_model::{
-    ArrangementLane, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipContent, ContentId, ContentKinds,
-    ContentLane, LaneData, LauncherColumn, LoopRange, Note, Project, Scene, Slot, StretchMode, Track, TrackId,
-    WarpMarker,
+    ArrangementLane, AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipContent, ContentId,
+    ContentKinds, ContentLane, InputChannels, LaneData, LauncherColumn, LoopRange, Note, Project, Scene, Slot,
+    StretchMode, Track, TrackId, WarpMarker,
 };
 
-use crate::commands::{make_room, number, track_at};
+use crate::commands::{Args, make_room, opt_scene_at, scene_id, track_at};
 use crate::{CommandError, Session};
 
 /// Files one command places at most.
@@ -71,19 +71,19 @@ impl TrackKind {
 /// Where new tracks go when no track is named: after the last track that is neither a return
 /// nor in a group (before the returns).
 fn end_of_regular_tracks(p: &Project) -> usize {
-    let is_return = |t: &Track| {
-        t.channel.and_then(|c| p.channels.iter().find(|ch| ch.id == c)).is_some_and(|c| c.role == ChannelRole::Effect)
-    };
+    let is_return = |t: &Track| t.channel.and_then(|c| p.channel(c)).is_some_and(|c| c.role == ChannelRole::Effect);
     p.tracks.iter().rposition(|t| !is_return(t)).map_or(0, |i| i + 1)
 }
 
 /// Adds a track of `kind` named `name` with its channel, clip slots for every scene and an
-/// arrangement lane, right after `after` (in its group) or at the end of the regular tracks.
+/// arrangement lane, right after `after` (in its group) or at the end of the regular tracks. An
+/// audio track hears `input` ([`Session::default_input`]); a MIDI track hears no audio input.
 pub(crate) fn insert_track(
     p: &mut Project,
     kind: TrackKind,
     name: &str,
     after: Option<TrackId>,
+    input: Option<InputChannels>,
 ) -> Result<TrackId, CommandError> {
     if p.tracks.len() >= MAX_TRACKS {
         return Err(format!("a project holds at most {MAX_TRACKS} tracks").into());
@@ -91,27 +91,11 @@ pub(crate) fn insert_track(
     let id = TrackId(p.tracks.iter().map(|t| t.id.0).max().unwrap_or(0).checked_add(1).ok_or("too many tracks")?);
     let channel =
         ChannelId(p.channels.iter().map(|c| c.id.0).max().unwrap_or(0).checked_add(1).ok_or("too many channels")?);
-    let (at, parent) = match after {
-        Some(after) => {
-            let index = p.tracks.iter().position(|t| t.id == after).ok_or("the track to add after is missing")?;
-            let parent = p.tracks.get(index).and_then(|t| t.parent);
-            // After the track and anything in it (a group's tracks).
-            let mut end = index + 1;
-            while let Some(next) = p.tracks.get(end) {
-                if within(p, next.id, after) {
-                    end += 1;
-                } else {
-                    break;
-                }
-            }
-            (end, parent)
-        }
-        None => (end_of_regular_tracks(p), None),
-    };
+    let (at, parent) = insert_position(p, after)?;
     // Into its group, or into the main channel like the other tracks.
     let main = p.channels.iter().find(|c| c.role == ChannelRole::Master).map(|c| c.id);
     let output = match parent {
-        Some(group) => p.tracks.iter().find(|t| t.id == group).and_then(|t| t.channel),
+        Some(group) => p.track(group).and_then(|t| t.channel),
         None => main,
     };
     p.channels.push(Channel {
@@ -137,20 +121,47 @@ pub(crate) fn insert_track(
         channel: Some(channel),
         parent,
         midi_input: Default::default(),
-        audio_input: Default::default(),
+        audio_input: AudioInput {
+            channels: input.filter(|_| kind == TrackKind::Audio).unwrap_or_default(),
+            ..AudioInput::default()
+        },
         extensions: Default::default(),
     };
     let at = at.min(p.tracks.len());
     p.tracks.insert(at, track);
     let slots = p.launcher.scenes.len();
     p.launcher.columns.push(LauncherColumn { track: id, slots: vec![Slot { clip: None, has_stop: true }; slots] });
-    p.arrangement.lanes.push(ArrangementLane { name: name.to_string(), track: Some(id), clips: Vec::new() });
+    let lane_id = p.new_lane_id()?;
+    p.arrangement.lanes.push(ArrangementLane {
+        id: lane_id,
+        name: name.to_string(),
+        track: Some(id),
+        clips: Vec::new(),
+    });
     Ok(id)
 }
 
+/// Where a track added after `after` goes in `p.tracks`, and the group it goes into: right after
+/// `after` and anything in it (a group's tracks), in `after`'s group; or, with no track named, at
+/// the end of the regular tracks, in no group.
+pub(crate) fn insert_position(p: &Project, after: Option<TrackId>) -> Result<(usize, Option<TrackId>), CommandError> {
+    let Some(after) = after else { return Ok((end_of_regular_tracks(p), None)) };
+    let index = p.tracks.iter().position(|t| t.id == after).ok_or("the track to add after is missing")?;
+    let parent = p.tracks.get(index).and_then(|t| t.parent);
+    let mut end = index + 1;
+    while let Some(next) = p.tracks.get(end) {
+        if within(p, next.id, after) {
+            end += 1;
+        } else {
+            break;
+        }
+    }
+    Ok((end, parent))
+}
+
 /// Whether `track` is inside the group `group` (at any depth).
-fn within(p: &Project, track: TrackId, group: TrackId) -> bool {
-    let mut current = p.tracks.iter().find(|t| t.id == track).and_then(|t| t.parent);
+pub(crate) fn within(p: &Project, track: TrackId, group: TrackId) -> bool {
+    let mut current = p.track(track).and_then(|t| t.parent);
     let mut steps = 0;
     while let Some(parent) = current {
         if parent == group {
@@ -160,48 +171,40 @@ fn within(p: &Project, track: TrackId, group: TrackId) -> bool {
         if steps > p.tracks.len() {
             return false;
         }
-        current = p.tracks.iter().find(|t| t.id == parent).and_then(|t| t.parent);
+        current = p.track(parent).and_then(|t| t.parent);
     }
     false
 }
 
-/// "Audio 3": the next number among tracks of that kind.
-fn numbered_name(p: &Project, kind: TrackKind) -> String {
-    let count = p.tracks.iter().filter(|t| TrackKind::of(t) == Some(kind)).count();
-    // Counting on from the number of tracks, the first name no track has: after a track is
-    // deleted the count can land on a name still in use.
-    let taken = |name: &str| p.tracks.iter().any(|t| t.name.eq_ignore_ascii_case(name));
-    (count + 1..)
-        .map(|n| format!("{} {n}", kind.default_name()))
-        .take(p.tracks.len() + 1)
-        .find(|name| !taken(name))
-        .unwrap_or_else(|| format!("{} {}", kind.default_name(), count + 1))
-}
-
-fn text<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => Ok(Some(
-            v.as_str().map(str::trim).filter(|t| !t.is_empty()).ok_or_else(|| format!("{name} must be a text"))?,
-        )),
-    }
-}
-
-fn flag(params: &Value, name: &str) -> Result<bool, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(false),
-        Some(v) => v.as_bool().ok_or_else(|| format!("{name} must be true or false").into()),
-    }
+/// "# Audio": the name a new track takes, its `#` read as the track's number (#946).
+fn numbered_name(kind: TrackKind) -> String {
+    suhina_model::names::new_track_name(kind.default_name())
 }
 
 /// `track.add`: a new audio or MIDI track, with a device when one is named.
 pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let device = text(params, "device")?;
-    let preset = text(params, "preset")?;
-    let sd = text(params, "sd")?;
+    let device = Args::new(params).opt_text("device")?;
+    let preset = Args::new(params).opt_text("preset")?;
+    let sd = Args::new(params).opt_text("sd")?;
+    let stock = Args::new(params).opt_text("stock")?;
+    // A preset's own values, for what it is for and, in a file that names it, what it is called.
+    let preset_values = match (preset, stock) {
+        (Some(_), Some(_)) => return Err("name a preset file or a stock preset, not both".into()),
+        (Some(path), None) => Some(crate::devices::read_preset(Path::new(path), 1)?),
+        (None, Some(key)) => Some(
+            suhina_device_registry::stock_preset(key)
+                .ok_or_else(|| format!("no stock preset {key:?}; library.search lists them"))?
+                .preset
+                .clone(),
+        ),
+        (None, None) => None,
+    };
     // What the device is decides the kind when none is given.
     let device_role = match (device, preset, sd) {
-        (_, Some(_), _) => Some(Role::Instrument),
+        _ if preset_values.is_some() => {
+            preset_values.as_ref().and_then(|p| suhina_device_registry::info(p.device)).map(|info| info.role)
+        }
+        (_, Some(_), None) => None,
         (_, _, Some(path)) => {
             let graph = suhina_device_sdk::DeviceGraph::read_file(Path::new(path)).map_err(|e| e.to_string())?;
             Some(match graph.role {
@@ -221,7 +224,7 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
                         .ok_or_else(|| format!("no built-in effect, instrument or plug-in {id:?}"))?;
                     let plugin =
                     env.catalog.find(id).or_else(|| env.catalog.plugins().find(|p| p.spec() == id)).ok_or_else(
-                        || format!("no built-in effect, instrument or plug-in {id:?}; devices.list and plugins.list list them"),
+                        || format!("no built-in effect, instrument or plug-in {id:?}; device.list and plugin.list list them"),
                     )?;
                     Some(if crate::is_instrument(plugin) { Role::Instrument } else { Role::Effect })
                 }
@@ -229,10 +232,10 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         }
         (None, None, None) => None,
     };
-    let kind = match text(params, "kind")? {
+    let kind = match Args::new(params).opt_text("kind")? {
         Some(k) => TrackKind::parse(k).ok_or("kind must be audio or midi")?,
         None => match device_role {
-            Some(Role::Instrument) => TrackKind::Midi,
+            Some(Role::Instrument | Role::MidiEffect) => TrackKind::Midi,
             Some(Role::Effect) => TrackKind::Audio,
             None => return Err("kind must be audio or midi (or name a device)".into()),
         },
@@ -240,34 +243,85 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     if kind == TrackKind::Audio && device_role == Some(Role::Instrument) {
         return Err("an instrument goes on a MIDI track".into());
     }
-    let after = match params.get("after") {
-        None | Some(Value::Null) => None,
+    if kind == TrackKind::Audio && device_role == Some(Role::MidiEffect) {
+        return Err("a MIDI effect goes on a MIDI track".into());
+    }
+    let after = match Args::new(params).value("after") {
+        None => None,
         Some(_) => Some(track_at(&session.project, params, "after")?),
     };
-    let name = match text(params, "name")? {
+    let name = match Args::new(params).opt_text("name")? {
         Some(n) => n.to_string(),
         None => match (device, preset, sd) {
+            _ if stock.is_some() || preset.is_some_and(|path| suhina_model::is_preset_file(Path::new(path))) => {
+                preset_values.as_ref().map_or_else(String::new, |p| p.name.clone())
+            }
             (_, Some(path), _) | (_, _, Some(path)) => file_stem(Path::new(path)),
             (Some(id), None, None) => suhina_device_registry::info(id).map_or_else(
-                || session.plugins.env().and_then(|e| e.catalog.find(id).map(|p| p.name.clone())).unwrap_or_default(),
+                // By its id, its name or its spec, as the kind was found above: a plug-in from the
+                // browser or the quick-add palette is named by its spec.
+                || {
+                    session
+                        .plugins
+                        .env()
+                        .and_then(|e| e.catalog.find(id).or_else(|| e.catalog.plugins().find(|p| p.spec() == id)))
+                        .map(|p| p.name.clone())
+                        .unwrap_or_default()
+                },
                 |i| i.name.to_string(),
             ),
-            (None, None, None) => numbered_name(&session.project, kind),
+            (None, None, None) => numbered_name(kind),
         },
     };
-    let name = if name.trim().is_empty() { numbered_name(&session.project, kind) } else { name };
-    let track = insert_track(&mut session.project, kind, &name, after)?;
+    let name = if name.trim().is_empty() { numbered_name(kind) } else { name };
+    // Several empty tracks at once, one after another, in one undo step (Insert multiple, #947).
+    let count = match Args::new(params).value("count") {
+        None => 1,
+        Some(v) => v
+            .as_u64()
+            .filter(|n| (1..=MAX_INSERT).contains(n))
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or_else(|| format!("count must be a whole number from 1 to {MAX_INSERT}"))?,
+    };
+    if count > 1 {
+        if device.is_some() || preset_values.is_some() || sd.is_some() {
+            return Err("count adds empty tracks; leave out device, preset, stock and sd".into());
+        }
+        let input = session.default_input();
+        let mut tracks = Vec::with_capacity(count);
+        let mut after = after;
+        for _ in 0..count {
+            let track = insert_track(&mut session.project, kind, &name, after, input)?;
+            tracks.push(track.0);
+            after = Some(track);
+        }
+        let kind = match kind {
+            TrackKind::Audio => "audio",
+            TrackKind::Midi => "midi",
+        };
+        return Ok(json!({ "track": tracks.first(), "tracks": tracks, "name": name, "kind": kind }));
+    }
+    let input = session.default_input();
+    let track = insert_track(&mut session.project, kind, &name, after, input)?;
     let mut added = Value::Null;
-    if device.is_some() || preset.is_some() || sd.is_some() {
+    if device.is_some() || preset_values.is_some() || sd.is_some() {
         let mut device_params = json!({ "track": track.0 });
         if let Some(path) = preset {
             device_params["preset"] = json!(path);
-            if let Some(voice) = params.get("voice") {
+            if let Some(voice) = Args::new(params).value("voice") {
                 device_params["voice"] = voice.clone();
             }
         }
+        if let Some(key) = stock {
+            device_params["stock"] = json!(key);
+        }
         if let Some(path) = sd {
             device_params["path"] = json!(path);
+        }
+        if sd.is_some()
+            && let Some(sample) = Args::new(params).opt_text("sample")?
+        {
+            device_params["sample"] = json!(sample);
         }
         added = match (device, sd) {
             (_, Some(_)) => crate::devices::add_sd(session, &device_params)?,
@@ -286,6 +340,9 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         json!({ "track": track.0, "name": name, "kind": match kind { TrackKind::Audio => "audio", TrackKind::Midi => "midi" }, "device": added }),
     )
 }
+
+/// Most tracks one `track.add` adds with `count`.
+const MAX_INSERT: u64 = 64;
 
 /// A file's name without its extension.
 fn file_stem(path: &Path) -> String {
@@ -315,19 +372,11 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
     if paths.is_empty() {
         return Err("paths is empty".into());
     }
-    let start = match params.get("start") {
-        None | Some(Value::Null) => None,
-        Some(_) => Some(number(params, "start")?),
+    let start = match Args::new(params).value("start") {
+        None => None,
+        Some(_) => Some(Args::new(params).f64("start")?),
     };
-    let scene = match params.get("scene") {
-        None | Some(Value::Null) => None,
-        Some(v) => Some(
-            v.as_u64()
-                .and_then(|n| usize::try_from(n).ok())
-                .and_then(|n| n.checked_sub(1))
-                .ok_or("scene must be a whole number from 1")?,
-        ),
-    };
+    let scene = opt_scene_at(&session.project, params, "scene")?;
     match (start, scene) {
         (Some(_), Some(_)) | (None, None) => {
             return Err("give either start (a beat in the arrangement) or scene (a row of clip slots)".into());
@@ -338,16 +387,16 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
         (None, Some(s)) if s >= MAX_SCENES => return Err(format!("scene must be at most {MAX_SCENES}").into()),
         _ => {}
     }
-    let separate = flag(params, "separate")?;
-    let stack = flag(params, "stack")?;
-    let stretch = match text(params, "warp")? {
+    let separate = Args::new(params).flag("separate")?;
+    let stack = Args::new(params).flag("stack")?;
+    let stretch = match Args::new(params).opt_text("warp")? {
         None => StretchMode::Rhythmic,
         Some(mode) => {
             stretch_mode(mode).ok_or("warp must be repitch, rhythmic, tonal, texture, smooth or high-quality")?
         }
     };
-    let target = match params.get("track") {
-        None | Some(Value::Null) => None,
+    let target = match Args::new(params).value("track") {
+        None => None,
         Some(_) => Some(track_at(&session.project, params, "track")?),
     };
     // A Stems file may be dropped on a group (its tracks go into it); other files need a track
@@ -355,7 +404,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
     let stems_target = target;
     let (target, target_kind) = match target {
         Some(t) => {
-            let track = session.project.tracks.iter().find(|x| x.id == t).ok_or("the track is missing")?;
+            let track = session.project.track(t).ok_or("the track is missing")?;
             match TrackKind::of(track) {
                 Some(kind) => (Some(t), Some(kind)),
                 None if is_group(&session.project, t) => (None, None),
@@ -363,6 +412,14 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
             }
         }
         None => (None, None),
+    };
+    // Where new tracks go when no track is given: after this one, or at the end.
+    let after = match params.get("after") {
+        None | Some(Value::Null) => None,
+        Some(_) if stems_target.is_some() => {
+            return Err("give either track (to place them on) or after (new tracks after it), not both".into());
+        }
+        Some(_) => Some(track_at(&session.project, params, "after")?),
     };
 
     // Read every file; the ones that cannot be read are skipped with a reason.
@@ -392,11 +449,21 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
         return Err(format!("nothing could be placed ({})", reasons.join("; ")).into());
     }
 
+    // An empty target of the other kind takes the kind of the first file (#945).
+    let mut target_kind = target_kind;
+    if let (Some(t), Some(kind), Some(first)) = (target, target_kind, sources.first())
+        && kind != first.kind
+        && crate::track_kind::fit_empty(session, t, first.kind == TrackKind::Midi, first.kind == TrackKind::Audio)?
+    {
+        target_kind = Some(first.kind);
+    }
     // Which track each clip goes on.
+    let input = session.default_input();
     let p = &mut session.project;
     let mut new_tracks: Vec<TrackId> = Vec::new();
     let mut groups: Vec<(TrackId, Vec<Source>)> = Vec::new();
-    let mut last = target;
+    let mut last = target.or(after);
+    let follows = last.is_some();
     let (fits, rest): (Vec<Source>, Vec<Source>) =
         sources.into_iter().partition(|s| target_kind.is_some_and(|k| k == s.kind));
     if let Some(target) = target
@@ -408,7 +475,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
                 groups.push((target, vec![first]));
             }
             for source in iter {
-                let id = insert_track(p, source.kind, &source.name, last)?;
+                let id = insert_track(p, source.kind, &source.name, last, input)?;
                 new_tracks.push(id);
                 last = Some(id);
                 groups.push((id, vec![source]));
@@ -420,9 +487,9 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
     // The rest go on new tracks: one per kind, or one each.
     if separate {
         for source in rest {
-            let id = insert_track(p, source.kind, &source.name, last)?;
+            let id = insert_track(p, source.kind, &source.name, last, input)?;
             new_tracks.push(id);
-            if target.is_some() {
+            if follows {
                 last = Some(id);
             }
             groups.push((id, vec![source]));
@@ -435,11 +502,11 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
             }
             let name = match of_kind.as_slice() {
                 [one] => one.name.clone(),
-                _ => numbered_name(p, kind),
+                _ => numbered_name(kind),
             };
-            let id = insert_track(p, kind, &name, last)?;
+            let id = insert_track(p, kind, &name, last, input)?;
             new_tracks.push(id);
-            if target.is_some() {
+            if follows {
                 last = Some(id);
             }
             groups.push((id, of_kind));
@@ -485,44 +552,78 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
     Ok(json!({ "clips": placed, "tracks": tracks, "groups": stem_groups, "skipped": skipped }))
 }
 
-/// The name of a clip made empty with `clip.create`.
+/// The name of a clip made empty with `clip.create`, by kind.
+/// The name an empty MIDI clip takes until it is renamed.
 pub const EMPTY_CLIP_NAME: &str = "MIDI clip";
 
-/// `clip.create`: an empty MIDI clip on a track that plays notes, in an empty clip slot or at a
-/// beat in the arrangement, one bar long unless `length` says otherwise.
+/// The name an empty audio clip takes until it is renamed: it has no file yet, so it plays
+/// silence until a sample is dropped on its slot or lane.
+pub const EMPTY_AUDIO_CLIP_NAME: &str = "Audio clip";
+
+/// `clip.create`: an empty clip on a track that holds clips — MIDI on a notes track, audio with
+/// no file yet on an audio track — in an empty clip slot or at a beat in the arrangement, one bar
+/// long unless `length` says otherwise.
 pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &session.project;
     let track = track_at(p, params, "track")?;
-    let target = p.tracks.iter().find(|t| t.id == track).ok_or("the track is missing")?;
-    if !target.content.notes {
-        return Err(format!("track {:?} does not play notes; a MIDI clip needs a MIDI track", target.name).into());
-    }
-    let start = match params.get("start") {
-        None | Some(Value::Null) => None,
-        Some(_) => Some(number(params, "start")?),
+    let target = p.track(track).ok_or("the track is missing")?;
+    // The clip's kind follows the track, notes first: a track that takes both got a MIDI clip
+    // before, so it still does; audio tracks are the ones that play audio and not notes.
+    let kind = if target.content.notes {
+        TrackKind::Midi
+    } else if target.content.audio {
+        TrackKind::Audio
+    } else {
+        return Err(format!("track {:?} holds no clips (a group or a return)", target.name).into());
     };
-    let scene = match params.get("scene") {
-        None | Some(Value::Null) => None,
-        Some(v) => Some(
-            v.as_u64()
-                .and_then(|n| usize::try_from(n).ok())
-                .and_then(|n| n.checked_sub(1))
-                .ok_or("scene must be a whole number from 1")?,
-        ),
+    let start = match Args::new(params).value("start") {
+        None => None,
+        Some(_) => Some(Args::new(params).f64("start")?),
     };
-    let length = match params.get("length") {
+    let length = match Args::new(params).value("length") {
         // An arrangement clip is one bar of the signature where it starts, as a recorded take
         // is; a slot has no place in the song, so it takes the start signature's bar.
-        None | Some(Value::Null) => match start {
+        None => match start {
             Some(beat) if beat.is_finite() => p.transport.meter().position(beat.max(0.0)).bar_beats,
             _ => bar_beats(p),
         },
-        Some(_) => number(params, "length")?,
+        Some(_) => Args::new(params).f64("length")?,
     };
     if !(length > 0.0 && length <= suhina_engine::MAX_START_BEAT) {
         return Err(format!("length must be more than 0 and at most {} beats", suhina_engine::MAX_START_BEAT).into());
     }
-    let stack = flag(params, "stack")?;
+    let source = match kind {
+        TrackKind::Midi => Source {
+            kind: TrackKind::Midi,
+            name: EMPTY_CLIP_NAME.into(),
+            length,
+            lane: LaneData::Notes(Default::default()),
+            loops: true,
+        },
+        TrackKind::Audio => Source {
+            kind: TrackKind::Audio,
+            name: EMPTY_AUDIO_CLIP_NAME.into(),
+            length,
+            // No file yet, so nothing to play: a sample dropped on the slot takes the clip's
+            // place.
+            lane: LaneData::Audio(AudioRegion {
+                file: String::new(),
+                absolute_file: None,
+                sample_rate: None,
+                channels: None,
+                duration_seconds: None,
+                warped: false,
+                stretch: StretchMode::default(),
+                warp_markers: Default::default(),
+                gain: 1.0,
+                transpose: 0.0,
+                stream: None,
+            }),
+            loops: true,
+        },
+    };
+    let scene = opt_scene_at(&session.project, params, "scene")?;
+    let stack = Args::new(params).flag("stack")?;
     match (start, scene) {
         (Some(_), Some(_)) | (None, None) => {
             return Err("give either start (a beat in the arrangement) or scene (a row of clip slots)".into());
@@ -534,9 +635,11 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
             let scenes = p.launcher.scenes.len();
             let column = p.launcher.columns.iter().find(|c| c.track == track).ok_or("the track has no clip slots")?;
             match column.slots.get(row) {
-                _ if row >= scenes => return Err(format!("scene must be from 1 to {scenes}").into()),
+                _ if row >= scenes => {
+                    return Err(format!("scene must be from 0 to {}", scenes.saturating_sub(1)).into());
+                }
                 Some(slot) if slot.clip.is_some() => {
-                    return Err(format!("scene {} of track {:?} already has a clip", row + 1, target.name).into());
+                    return Err(format!("scene {} of track {:?} already has a clip", row, target.name).into());
                 }
                 Some(_) => {}
                 None => return Err("the slot is missing".into()),
@@ -544,26 +647,20 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
         }
         _ => {}
     }
-    let source = Source {
-        kind: TrackKind::Midi,
-        name: EMPTY_CLIP_NAME.into(),
-        length,
-        lane: LaneData::Notes(Vec::new()),
-        loops: true,
-    };
     let at = start.unwrap_or(0.0);
     let mut done = place_clip(&mut session.project, track, source, scene, at, stack)?;
-    // An arrangement clip is found again by its index on the track, as project.clips gives it.
+    // The result names the clip by its id; an arrangement clip also by where it is on the track.
+    let id = done["clip"].as_u64().and_then(|n| u32::try_from(n).ok()).map(suhina_model::ClipId);
     if scene.is_none()
-        && let Some(lane) = session.project.arrangement.lanes.iter().find(|l| l.track == Some(track))
-        && let Some(index) = lane.clips.iter().rposition(|c| c.start == at && c.length == length)
+        && let Some(place) = id.and_then(|id| session.project.clip_place(id))
+        && let suhina_model::ClipPlace::Lane { index, .. } = place
     {
         done["index"] = json!(index);
     }
     Ok(done)
 }
 
-/// Puts one source as a clip on `track`: in slot `row` of the Session, or at beat `at` in the
+/// Puts one source as a clip on `track`: in slot `row` of the Launcher, or at beat `at` in the
 /// Arrangement (replacing what it covers unless `stack`).
 pub(crate) fn place_clip(
     p: &mut Project,
@@ -581,11 +678,13 @@ pub(crate) fn place_clip(
         id,
         name: source.name.clone(),
         length,
-        lanes: vec![ContentLane { target: None, data: source.lane }],
+        lanes: vec![ContentLane { target: None, data: source.lane }].into(),
         extensions: Default::default(),
         scale,
     });
+    let clip_id = p.new_clip_id()?;
     let mut clip = Clip {
+        id: clip_id,
         content: id,
         start: 0.0,
         length,
@@ -598,12 +697,15 @@ pub(crate) fn place_clip(
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         launch: Default::default(),
+        color: None,
+        ara: false,
         extensions: Default::default(),
     };
     match row {
         Some(row) => {
             while p.launcher.scenes.len() <= row {
-                p.launcher.scenes.push(Scene::default());
+                let scene_id = p.new_scene_id()?;
+                p.launcher.scenes.push(Scene { id: scene_id, ..Scene::default() });
                 for column in &mut p.launcher.columns {
                     column.slots.push(Slot { clip: None, has_stop: true });
                 }
@@ -615,25 +717,40 @@ pub(crate) fn place_clip(
                 p.launcher.columns.iter_mut().find(|c| c.track == track).ok_or("the track has no clip slots")?;
             let slot = column.slots.get_mut(row).ok_or("the slot is missing")?;
             slot.clip = Some(clip);
-            Ok(json!({ "track": track.0, "scene": row + 1, "name": source.name, "length": length }))
+            let scene_id = scene_id(p, row);
+            Ok(json!({
+                "clip": clip_id.0,
+                "track": track.0,
+                "scene": row,
+                "scene_id": scene_id,
+                "name": source.name,
+                "length": length,
+            }))
         }
         None => {
             clip.start = at;
             let lane = match p.arrangement.lanes.iter().position(|l| l.track == Some(track)) {
                 Some(lane) => lane,
                 None => {
-                    let name = p.tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()).unwrap_or_default();
-                    p.arrangement.lanes.push(ArrangementLane { name, track: Some(track), clips: Vec::new() });
+                    let name = p.track(track).map(|t| t.name.clone()).unwrap_or_default();
+                    let lane_id = p.new_lane_id()?;
+                    p.arrangement.lanes.push(ArrangementLane {
+                        id: lane_id,
+                        name,
+                        track: Some(track),
+                        clips: Vec::new(),
+                    });
                     p.arrangement.lanes.len() - 1
                 }
             };
+            let stack = stack && !p.takes_cover(track, at, at + length);
             let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
             if !stack {
                 make_room(&mut lane.clips, at, at + length);
             }
             lane.clips.push(clip);
             lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
-            Ok(json!({ "track": track.0, "start": at, "name": source.name, "length": length }))
+            Ok(json!({ "clip": clip_id.0, "track": track.0, "start": at, "name": source.name, "length": length }))
         }
     }
 }
@@ -733,7 +850,13 @@ fn read_sources(
                         None => name.clone(),
                     };
                     let notes: Vec<Note> = track.notes;
-                    Source { kind: TrackKind::Midi, name: clip_name, length, lane: LaneData::Notes(notes), loops: true }
+                    Source {
+                        kind: TrackKind::Midi,
+                        name: clip_name,
+                        length,
+                        lane: LaneData::Notes(notes.into()),
+                        loops: true,
+                    }
                 })
                 .collect())
         }
@@ -762,7 +885,7 @@ fn is_group(p: &Project, track: TrackId) -> bool {
         .iter()
         .find(|t| t.id == track)
         .and_then(|t| t.channel)
-        .and_then(|c| p.channels.iter().find(|ch| ch.id == c))
+        .and_then(|c| p.channel(c))
         .is_some_and(|c| c.role == ChannelRole::Submix)
 }
 
@@ -853,6 +976,7 @@ fn place_stems(
     }
 
     // The tracks, after the target or at the end of a target group.
+    let input = session.default_input();
     let p = &mut session.project;
     let into = target.filter(|&t| is_group(p, t));
     let mut after = match into {
@@ -861,10 +985,10 @@ fn place_stems(
     };
     let mut tracks = Vec::with_capacity(sources.len());
     for (track_name, color, _) in &sources {
-        let id = insert_track(p, TrackKind::Audio, track_name, after)?;
+        let id = insert_track(p, TrackKind::Audio, track_name, after, input)?;
         if let Some(group) = into {
-            let group_channel = p.tracks.iter().find(|t| t.id == group).and_then(|t| t.channel);
-            let channel = p.tracks.iter_mut().find(|t| t.id == id).and_then(|t| {
+            let group_channel = p.track(group).and_then(|t| t.channel);
+            let channel = p.track_mut(id).and_then(|t| {
                 t.parent = Some(group);
                 t.channel
             });
@@ -872,15 +996,15 @@ fn place_stems(
                 c.output = group_channel;
             }
         }
-        if let Some(track) = p.tracks.iter_mut().find(|t| t.id == id) {
+        if let Some(track) = p.track_mut(id) {
             track.color = *color;
         }
         tracks.push(id);
         after = Some(id);
     }
     // The master is there to compare with and to play whole; muted, so nothing sounds twice.
-    if let Some(channel) = tracks.first().and_then(|&m| p.tracks.iter().find(|t| t.id == m)).and_then(|t| t.channel)
-        && let Some(c) = p.channels.iter_mut().find(|c| c.id == channel)
+    if let Some(channel) = tracks.first().and_then(|&m| p.track(m)).and_then(|t| t.channel)
+        && let Some(c) = p.channel_mut(channel)
     {
         c.mute = true;
     }
@@ -890,17 +1014,19 @@ fn place_stems(
     )?;
     let group = TrackId(grouped["track"].as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("the group was not made")?);
     let p = &mut session.project;
-    let group_channel = p.tracks.iter().find(|t| t.id == group).and_then(|t| t.channel);
+    let group_channel = p.track(group).and_then(|t| t.channel);
     if let Some(c) = p.channels.iter_mut().find(|c| Some(c.id) == group_channel) {
         for setting in suhina_media::stems::mastering_devices(&info) {
             let Some(device) = suhina_device_registry::info(setting.id) else { continue };
             c.devices.push(suhina_model::Device {
+                id: suhina_model::DeviceId::NONE,
                 name: device.name.to_string(),
                 kind: suhina_model::DeviceKind::Builtin(setting.id.to_string()),
                 enabled: setting.enabled,
                 state: None,
                 params: setting.params.iter().map(|(id, v)| suhina_model::DeviceParam::new(*id, *v)).collect(),
                 automation: Vec::new(),
+                clip_host: false,
                 extensions: Default::default(),
             });
         }

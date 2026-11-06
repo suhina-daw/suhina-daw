@@ -1,18 +1,20 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The user's plug-in library: the folders they added, the catalog of what the last scan
-//! found, and how each plug-in is hosted. All are kept as JSON in Suhina's settings folder,
-//! so a scan survives a restart and the next one reads only what changed.
+//! The user's plug-in library: the folders they added (each for one format, or for every
+//! format Suhina hosts) and the folders switched off, the catalog of what the last scan found,
+//! the plug-ins switched off, and how each plug-in is hosted. All are kept as JSON in Suhina's
+//! settings folder, so a scan survives a restart and the next one reads only what changed.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::{OsStr, OsString};
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 
-use crate::scan::{Catalog, PluginInfo, Report, standard_folders};
+use crate::scan::{Catalog, FolderFormat, PluginInfo, Report, standard_folders};
 
 /// How long loading one plug-in file may take before it counts as hung (shells get longer).
 pub const SCAN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -21,12 +23,44 @@ const MAX_FOLDERS: usize = 256;
 const FOLDERS_FILE: &str = "plugin-folders.json";
 const CATALOG_FILE: &str = "plugin-catalog.json";
 const HOSTING_FILE: &str = "plugin-hosting.json";
+const DISABLED_FILE: &str = "plugin-disabled.json";
 /// Plug-ins whose hosting may be set apart from the default.
 const MAX_HOSTING: usize = 4096;
 /// Longest hosting file read; a longer one is not Suhina's and is ignored.
 const MAX_HOSTING_BYTES: u64 = 1 << 20;
 /// Longest plug-in name (its spec) a hosting choice is kept for.
 const MAX_SPEC: usize = 4096;
+
+/// A folder scans look in, as the Settings page and `plugin.folders` list it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Folder {
+    pub path: PathBuf,
+    /// The format of the plug-ins taken from it.
+    pub format: FolderFormat,
+    /// Scans look in it. A folder switched off stays listed; its plug-ins leave the catalog with
+    /// the next scan.
+    pub enabled: bool,
+    /// One of the system's standard folders: it can be switched off, not removed.
+    pub standard: bool,
+}
+
+/// The format a standard folder holds, from its name (`…/VST3`, `…/CLAP`, `~/.clap`, the VST2
+/// conventions `standard_folders` names).
+fn standard_format(path: &Path) -> FolderFormat {
+    let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    match name.trim_start_matches('.') {
+        "vst3" => FolderFormat::Vst3,
+        "clap" => FolderFormat::Clap,
+        "vst" | "vst2" | "vstplugins" | "shared" => FolderFormat::Vst2,
+        _ => FolderFormat::Any,
+    }
+}
+
+/// The format of the standard folder at `path`. A folder `CLAP_PATH` names is the user's choice
+/// of place, so its name says nothing: it is taken for every format, and its `.clap` files found.
+fn folder_format(path: &Path, clap_path: &[PathBuf]) -> FolderFormat {
+    if clap_path.iter().any(|folder| folder == path) { FolderFormat::Any } else { standard_format(path) }
+}
 
 /// Which host process a plug-in's instances run in (ADR 0006, decision 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -71,6 +105,10 @@ pub fn group_for(hosting: Hosting, plugin: &PluginInfo) -> Option<String> {
         Hosting::Binary => Some(file()),
         Hosting::Vendor if plugin.vendor.trim().is_empty() => Some(file()),
         Hosting::Vendor => Some(format!("vendor:{}", plugin.vendor.trim())),
+        // An ARA plug-in's instances and the document they edit live in one process
+        // (ADR 0033 decision 2), so a choice saved before the plug-in was known to support ARA
+        // gives way to the default.
+        Hosting::Instance if plugin.ara => Some(file()),
         Hosting::Instance => None,
     }
 }
@@ -152,22 +190,49 @@ fn copy_folder(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The `suhina-plugin-host` executable next to the running one.
+/// The `suhina-plugin-host` executable next to the running one, past a link to it (on macOS the
+/// package's `suhina-cli` links to the one inside `Suhina.app`).
 pub fn host_next_to_this_program() -> PathBuf {
     let name = format!("suhina-plugin-host{}", std::env::consts::EXE_SUFFIX);
     std::env::current_exe()
         .ok()
+        .map(|exe| exe.canonicalize().unwrap_or(exe))
         .and_then(|exe| exe.parent().map(|dir| dir.join(&name)))
         .unwrap_or_else(|| PathBuf::from(name))
 }
 
 /// `path` without Windows' `\\?\` prefix where it is an ordinary drive path, as people write it.
-fn plain(path: PathBuf) -> PathBuf {
+pub fn plain(path: PathBuf) -> PathBuf {
     let rest = {
         let text = path.to_string_lossy();
         text.strip_prefix(r"\\?\").filter(|rest| rest.as_bytes().get(1) == Some(&b':')).map(PathBuf::from)
     };
     rest.unwrap_or(path)
+}
+
+/// A leading `~` alone or before a separator becomes `home`, so a folder typed with one is the
+/// folder it names. `~name` (another user's home) stays as typed; without a home folder, too.
+fn expand_home(folder: &Path, home: Option<&OsStr>) -> PathBuf {
+    let Some(home) = home else { return folder.to_path_buf() };
+    match folder.strip_prefix("~") {
+        Ok(rest) if rest.as_os_str().is_empty() => PathBuf::from(home),
+        // `~name` is another user's home: not ours to expand.
+        Ok(rest) if !rest.is_absolute() => Path::new(home).join(rest),
+        _ => folder.to_path_buf(),
+    }
+}
+
+/// The home folder a typed `~` becomes: `HOME`, and on Windows also `USERPROFILE`, which Windows
+/// sets where `HOME` is often absent (only shells set `HOME` there).
+fn user_home() -> Option<OsString> {
+    home_folder(std::env::var_os("HOME"), std::env::var_os("USERPROFILE"))
+}
+
+/// `home`, or where it is missing on Windows, `profile`; on other systems only `HOME` counts, as
+/// before. An empty value counts as missing: it would turn `~/x` into the relative `x`.
+fn home_folder(home: Option<OsString>, profile: Option<OsString>) -> Option<OsString> {
+    let home = home.filter(|value| !value.is_empty());
+    if cfg!(windows) { home.or(profile.filter(|value| !value.is_empty())) } else { home }
 }
 
 /// The folders the user added and the catalog, loaded from the settings folder on first use.
@@ -176,8 +241,13 @@ pub struct Library {
     folder: Option<PathBuf>,
     host: PathBuf,
     loaded: bool,
-    custom: Vec<PathBuf>,
+    /// The folders the user added, with the format of each.
+    custom: Vec<(PathBuf, FolderFormat)>,
+    /// Folders (standard or added) scans do not look in.
+    off: Vec<PathBuf>,
     catalog: Catalog,
+    /// Plug-ins (by spec) the user switched off: not offered, not loaded.
+    disabled: BTreeSet<String>,
     /// Whether scans look in the system's standard folders as well as the added ones.
     standard: bool,
     /// Plug-ins (by spec) hosted other than the default way.
@@ -199,7 +269,9 @@ impl Library {
             host,
             loaded: false,
             custom: Vec::new(),
+            off: Vec::new(),
             catalog: Catalog::new(),
+            disabled: BTreeSet::new(),
             standard: true,
             hosting: BTreeMap::new(),
         }
@@ -222,16 +294,17 @@ impl Library {
         }
         self.loaded = true;
         let Some(folder) = &self.folder else { return };
-        if let Ok(text) = std::fs::read_to_string(folder.join(FOLDERS_FILE))
-            && let Ok(Value::Array(list)) = serde_json::from_str::<Value>(&text)
-        {
-            self.custom = list.iter().filter_map(Value::as_str).map(PathBuf::from).take(MAX_FOLDERS).collect();
+        if let Ok(text) = std::fs::read_to_string(folder.join(FOLDERS_FILE)) {
+            (self.custom, self.off) = parse_folders(&text);
         }
         if let Ok(text) = std::fs::read_to_string(folder.join(CATALOG_FILE)) {
             self.catalog = Catalog::from_json(&text);
         }
         if let Some(text) = read_bounded(&folder.join(HOSTING_FILE), MAX_HOSTING_BYTES) {
             self.hosting = parse_hosting(&text);
+        }
+        if let Some(text) = read_bounded(&folder.join(DISABLED_FILE), MAX_HOSTING_BYTES) {
+            self.disabled = parse_disabled(&text);
         }
     }
 
@@ -243,36 +316,64 @@ impl Library {
     }
 
     /// The folders the user added, in the order added.
-    pub fn custom_folders(&mut self) -> &[PathBuf] {
+    pub fn custom_folders(&mut self) -> Vec<PathBuf> {
         self.load();
-        &self.custom
+        self.custom.iter().map(|(path, _)| path.clone()).collect()
     }
 
-    /// Every folder a scan looks in: the system's standard ones, then the user's.
-    pub fn folders(&mut self) -> Vec<PathBuf> {
-        let mut folders = if self.standard { standard_folders() } else { Vec::new() };
-        for folder in self.custom_folders() {
-            if !folders.contains(folder) {
-                folders.push(folder.clone());
+    /// Every folder scans may look in: the system's standard ones, then the user's, each with
+    /// its format and whether it is switched on.
+    pub fn folder_list(&mut self) -> Vec<Folder> {
+        self.load();
+        let mut list: Vec<Folder> = Vec::new();
+        let standard = if self.standard { standard_folders() } else { Vec::new() };
+        let clap_path = crate::scan::clap_path_folders();
+        for path in standard {
+            let format = folder_format(&path, &clap_path);
+            list.push(Folder { enabled: !self.off.contains(&path), path, format, standard: true });
+        }
+        for (path, format) in &self.custom {
+            if !list.iter().any(|f| f.path == *path) {
+                let enabled = !self.off.contains(path);
+                list.push(Folder { path: path.clone(), format: *format, enabled, standard: false });
             }
         }
-        folders
+        list
     }
 
-    /// Adds a folder to look in; returns false if it was there already.
+    /// The folders a scan looks in now (switched on), with their formats.
+    pub fn folders(&mut self) -> Vec<(PathBuf, FolderFormat)> {
+        self.folder_list().into_iter().filter(|f| f.enabled).map(|f| (f.path, f.format)).collect()
+    }
+
+    /// Adds a folder to look in for every format Suhina hosts; returns false if it was there
+    /// already.
     pub fn add_folder(&mut self, folder: &Path) -> Result<bool, String> {
+        self.add_folder_as(folder, FolderFormat::Any)
+    }
+
+    /// Adds a folder to look in for `format`'s plug-ins; returns false if it was there already
+    /// with that format (with another one, the format changes). A folder typed with a leading
+    /// `~` works as typed: the home folder takes its place.
+    pub fn add_folder_as(&mut self, folder: &Path, format: FolderFormat) -> Result<bool, String> {
         self.load();
+        let folder = expand_home(folder, user_home().as_deref());
         if !folder.is_dir() {
             return Err(format!("{} is not a folder", folder.display()));
         }
         let folder = folder.canonicalize().map(plain).unwrap_or_else(|_| folder.to_path_buf());
-        if self.custom.contains(&folder) {
-            return Ok(false);
+        if let Some(slot) = self.custom.iter_mut().find(|(path, _)| *path == folder) {
+            if slot.1 == format {
+                return Ok(false);
+            }
+            slot.1 = format;
+            self.save_folders()?;
+            return Ok(true);
         }
         if self.custom.len() >= MAX_FOLDERS {
             return Err(format!("at most {MAX_FOLDERS} folders can be added"));
         }
-        self.custom.push(folder);
+        self.custom.push((folder, format));
         self.save_folders()?;
         Ok(true)
     }
@@ -280,19 +381,97 @@ impl Library {
     /// Stops looking in a folder the user added; returns false if it was not one of them.
     pub fn remove_folder(&mut self, folder: &Path) -> Result<bool, String> {
         self.load();
+        // The path as listed first: an entry may really begin with `~`.
+        let expanded = expand_home(folder, user_home().as_deref());
+        let folder = if self.custom.iter().any(|(f, _)| f == folder) { folder } else { expanded.as_path() };
         let canonical = folder.canonicalize().ok().map(plain);
+        let matches = |f: &PathBuf| f == folder || Some(f) == canonical.as_ref();
         let before = self.custom.len();
-        self.custom.retain(|f| f != folder && Some(f) != canonical.as_ref());
+        self.custom.retain(|(f, _)| !matches(f));
         if self.custom.len() == before {
             return Ok(false);
+        }
+        self.off.retain(|f| !matches(f));
+        self.save_folders()?;
+        Ok(true)
+    }
+
+    /// Switches a folder (a standard one or an added one) on or off for scans; returns false
+    /// when it already was so.
+    pub fn set_folder_enabled(&mut self, folder: &Path, enabled: bool) -> Result<bool, String> {
+        let listed = self.folder_list();
+        let expanded = expand_home(folder, user_home().as_deref());
+        let folder = if listed.iter().any(|f| f.path == folder) { folder } else { expanded.as_path() };
+        let canonical = folder.canonicalize().ok().map(plain);
+        let path = listed
+            .iter()
+            .find(|f| f.path == folder || Some(&f.path) == canonical.as_ref())
+            .map(|f| f.path.clone())
+            .ok_or_else(|| format!("{} is not one of the plug-in folders", folder.display()))?;
+        let was = !self.off.contains(&path);
+        if was == enabled {
+            return Ok(false);
+        }
+        if enabled {
+            self.off.retain(|f| *f != path);
+        } else {
+            self.off.push(path);
         }
         self.save_folders()?;
         Ok(true)
     }
 
     fn save_folders(&self) -> Result<(), String> {
-        let list: Vec<String> = self.custom.iter().map(|f| f.display().to_string()).collect();
-        self.save(FOLDERS_FILE, &json!(list).to_string())
+        let added: Vec<Value> = self
+            .custom
+            .iter()
+            .map(|(path, format)| json!({ "path": path.display().to_string(), "format": format.name() }))
+            .collect();
+        let off: Vec<String> = self.off.iter().map(|f| f.display().to_string()).collect();
+        self.save(FOLDERS_FILE, &json!({ "added": added, "off": off }).to_string())
+    }
+
+    /// Whether the plug-in `plugin_spec` ([`PluginInfo::spec`]) is switched on (the default).
+    pub fn is_enabled(&mut self, plugin_spec: &str) -> bool {
+        self.load();
+        !self.disabled.contains(plugin_spec)
+    }
+
+    /// Switches the plug-in `plugin_spec` on or off, and saves it. One switched off is not
+    /// offered in the browser or found by name, and a project that uses it finds it missing.
+    pub fn set_enabled(&mut self, plugin_spec: &str, enabled: bool) -> Result<(), String> {
+        self.load();
+        if plugin_spec.is_empty() || plugin_spec.len() > MAX_SPEC {
+            return Err("not a plug-in name".into());
+        }
+        if enabled {
+            self.disabled.remove(plugin_spec);
+        } else {
+            if !self.disabled.contains(plugin_spec) && self.disabled.len() >= MAX_HOSTING {
+                return Err(format!("at most {MAX_HOSTING} plug-ins can be switched off"));
+            }
+            self.disabled.insert(plugin_spec.to_string());
+        }
+        let list: Vec<&String> = self.disabled.iter().collect();
+        self.save(DISABLED_FILE, &json!(list).to_string())
+    }
+
+    /// The catalog without the plug-ins switched off: what sessions offer and load.
+    pub fn enabled_catalog(&mut self) -> Catalog {
+        self.load();
+        let disabled = &self.disabled;
+        self.catalog.without(|p| disabled.contains(&p.spec()))
+    }
+
+    /// Reads one file of the catalog again now, and saves the catalog.
+    pub fn scan_file_again(&mut self, file: &Path) -> Result<Report, String> {
+        self.load();
+        if !self.host.exists() {
+            return Err(format!("the plug-in host {} is missing; it ships next to Suhina", self.host.display()));
+        }
+        let report = self.catalog.scan_file_again(&self.host, file, SCAN_TIMEOUT)?;
+        self.save(CATALOG_FILE, &self.catalog.to_json())?;
+        Ok(report)
     }
 
     /// Scans every folder and saves the catalog. With `all`, forgets what earlier scans learned
@@ -306,9 +485,20 @@ impl Library {
             self.catalog = Catalog::new();
         }
         let folders = self.folders();
-        let report = self.catalog.scan(&self.host, &folders, SCAN_TIMEOUT);
+        let report = self.catalog.scan_folders(&self.host, &folders, SCAN_TIMEOUT);
         self.save(CATALOG_FILE, &self.catalog.to_json())?;
         Ok(report)
+    }
+
+    /// Remembers that the plug-in `spec` edits clips over ARA ([`Catalog::mark_ara`]) and saves
+    /// the catalog. Returns whether the catalog changed.
+    pub fn mark_ara(&mut self, spec: &str) -> Result<bool, String> {
+        self.load();
+        if !self.catalog.mark_ara(spec) {
+            return Ok(false);
+        }
+        self.save(CATALOG_FILE, &self.catalog.to_json())?;
+        Ok(true)
     }
 
     /// What the last scan found.
@@ -352,6 +542,51 @@ fn read_bounded(path: &Path, limit: u64) -> Option<String> {
     (text.len() as u64 <= limit).then_some(text)
 }
 
+/// The added folders and the folders switched off in a `plugin-folders.json` text: an object
+/// `{ "added": [{ "path", "format" }], "off": [path] }`, or the earlier form, a list of paths
+/// (each for every format). Entries that are not that are skipped.
+fn parse_folders(text: &str) -> (Vec<(PathBuf, FolderFormat)>, Vec<PathBuf>) {
+    let paths = |list: Option<&Value>| -> Vec<PathBuf> {
+        list.and_then(Value::as_array)
+            .map(|l| l.iter().filter_map(Value::as_str).map(PathBuf::from).take(MAX_FOLDERS).collect())
+            .unwrap_or_default()
+    };
+    match serde_json::from_str::<Value>(text) {
+        Ok(list @ Value::Array(_)) => {
+            (paths(Some(&list)).into_iter().map(|p| (p, FolderFormat::Any)).collect(), Vec::new())
+        }
+        Ok(Value::Object(folders)) => {
+            let added = folders
+                .get("added")
+                .and_then(Value::as_array)
+                .map(|list| {
+                    list.iter()
+                        .filter_map(|f| {
+                            let path = PathBuf::from(f.get("path")?.as_str()?);
+                            let format = f.get("format").and_then(Value::as_str).and_then(FolderFormat::parse);
+                            Some((path, format.unwrap_or_default()))
+                        })
+                        .take(MAX_FOLDERS)
+                        .collect()
+                })
+                .unwrap_or_default();
+            (added, paths(folders.get("off")))
+        }
+        _ => (Vec::new(), Vec::new()),
+    }
+}
+
+/// The plug-ins switched off in a `plugin-disabled.json` text: a list of specs.
+fn parse_disabled(text: &str) -> BTreeSet<String> {
+    let Ok(Value::Array(list)) = serde_json::from_str::<Value>(text) else { return BTreeSet::new() };
+    list.iter()
+        .filter_map(Value::as_str)
+        .filter(|spec| !spec.is_empty() && spec.len() <= MAX_SPEC)
+        .take(MAX_HOSTING)
+        .map(str::to_string)
+        .collect()
+}
+
 /// The hosting choices in a `plugin-hosting.json` text: an object from plug-in spec to hosting
 /// name. Entries that are not that are skipped, and so are the default ones.
 fn parse_hosting(text: &str) -> BTreeMap<String, Hosting> {
@@ -368,118 +603,5 @@ fn parse_hosting(text: &str) -> BTreeMap<String, Hosting> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn scratch(name: &str) -> PathBuf {
-        let folder = std::env::temp_dir().join(format!("suhina-library-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&folder);
-        folder
-    }
-
-    #[test]
-    fn the_old_settings_folder_is_copied_to_the_new_name_once() {
-        let base = scratch("adopt");
-        let (old, new) = (base.join("old"), base.join("deeper").join("new"));
-        assert_eq!(adopt_old_folder(Some(old.clone()), Some(new.clone())), None, "no old folder: nothing to do");
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join("plugins.json"), "{}").unwrap();
-        std::fs::create_dir_all(old.join("data")).unwrap();
-        std::fs::write(old.join("data").join("app.ron"), "()").unwrap();
-        assert_eq!(adopt_old_folder(Some(old.clone()), Some(new.clone())), None);
-        assert_eq!(std::fs::read_to_string(new.join("plugins.json")).unwrap(), "{}");
-        assert_eq!(std::fs::read_to_string(new.join("data").join("app.ron")).unwrap(), "()");
-        assert!(old.join("plugins.json").exists(), "the old folder stays for builds from before the rename");
-        assert!(!new.with_extension("partial").exists());
-        // A new folder that already exists is never replaced.
-        std::fs::write(old.join("plugins.json"), "changed").unwrap();
-        assert_eq!(adopt_old_folder(Some(old.clone()), Some(new.clone())), None);
-        assert_eq!(std::fs::read_to_string(new.join("plugins.json")).unwrap(), "{}");
-        assert_eq!(adopt_old_folder(None, Some(new.clone())), None);
-        // Settings are read from the old folder only while the new one is missing.
-        assert_eq!(prefer_new(Some(new.clone()), Some(old.clone())), Some(new.clone()));
-        let missing = base.join("missing");
-        assert_eq!(prefer_new(Some(missing.clone()), Some(old.clone())), Some(old.clone()));
-        assert_eq!(prefer_new(Some(missing.clone()), Some(base.join("gone"))), Some(missing));
-        let _ = std::fs::remove_dir_all(&base);
-    }
-
-    fn info(path: &str, vendor: &str) -> PluginInfo {
-        PluginInfo {
-            path: PathBuf::from(path),
-            id: "com.example.thing".into(),
-            name: "Thing".into(),
-            vendor: vendor.into(),
-            version: String::new(),
-            features: Vec::new(),
-            replaces: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn hosting_names_round_trip() {
-        for hosting in [Hosting::Binary, Hosting::Instance, Hosting::Vendor] {
-            assert_eq!(Hosting::parse(hosting.name()), Some(hosting));
-        }
-        assert_eq!(Hosting::parse("Binary"), None);
-        assert_eq!(Hosting::parse(""), None);
-        assert_eq!(Hosting::default(), Hosting::Binary);
-    }
-
-    #[test]
-    fn hosting_is_saved_and_read_back() {
-        let folder = scratch("hosting");
-        let mut library = Library::new(Some(folder.clone()), PathBuf::from("host"));
-        assert_eq!(library.hosting("clap:a.clap#x"), Hosting::Binary);
-        library.set_hosting("clap:a.clap#x", Hosting::Instance).unwrap();
-        library.set_hosting("vst3:b.vst3#00", Hosting::Vendor).unwrap();
-        library.set_hosting("vst3:c.vst3#11", Hosting::Vendor).unwrap();
-        library.set_hosting("vst3:c.vst3#11", Hosting::Binary).unwrap();
-        assert!(library.set_hosting("", Hosting::Vendor).is_err());
-
-        let mut again = Library::new(Some(folder.clone()), PathBuf::from("host"));
-        assert_eq!(again.hosting("clap:a.clap#x"), Hosting::Instance);
-        assert_eq!(again.hosting("vst3:b.vst3#00"), Hosting::Vendor);
-        assert_eq!(again.hosting("vst3:c.vst3#11"), Hosting::Binary);
-        assert_eq!(again.hosting("unknown"), Hosting::Binary);
-        let _ = std::fs::remove_dir_all(&folder);
-    }
-
-    #[test]
-    fn a_malformed_hosting_file_is_ignored() {
-        for text in [
-            "",
-            "not json",
-            "[]",
-            r#"{"a":5,"b":"nonsense","c":null,"":"vendor","d":"vendor"}"#,
-            &format!("{{\"e\":\"{}\"}}", "x".repeat(2 << 20)),
-        ] {
-            let folder = scratch("malformed");
-            std::fs::create_dir_all(&folder).unwrap();
-            std::fs::write(folder.join(HOSTING_FILE), text).unwrap();
-            let mut library = Library::new(Some(folder.clone()), PathBuf::from("host"));
-            for spec in ["a", "b", "c", "", "e"] {
-                assert_eq!(library.hosting(spec), Hosting::Binary, "{spec} in {:.40}", text);
-            }
-            let expected = if text.contains("\"d\"") { Hosting::Vendor } else { Hosting::Binary };
-            assert_eq!(library.hosting("d"), expected);
-            let _ = std::fs::remove_dir_all(&folder);
-        }
-        let many: Map<String, Value> =
-            (0..MAX_HOSTING + 10).map(|n| (format!("p{n}"), Value::from("vendor"))).collect();
-        assert_eq!(parse_hosting(&Value::Object(many).to_string()).len(), MAX_HOSTING);
-    }
-
-    #[test]
-    fn groups_follow_the_hosting() {
-        let plugin = info("C:/Plugins/Thing.vst3", "Example Audio");
-        assert_eq!(group_for(Hosting::Binary, &plugin).as_deref(), Some("file:C:/Plugins/Thing.vst3"));
-        assert_eq!(group_for(Hosting::Vendor, &plugin).as_deref(), Some("vendor:Example Audio"));
-        assert_eq!(group_for(Hosting::Instance, &plugin), None);
-        let unknown = info("C:/Plugins/Other.clap", " ");
-        assert_eq!(group_for(Hosting::Vendor, &unknown).as_deref(), Some("file:C:/Plugins/Other.clap"));
-        // Two plug-ins in one file share its process.
-        let sibling = PluginInfo { id: "com.example.other".into(), ..plugin.clone() };
-        assert_eq!(group_for(Hosting::Binary, &sibling), group_for(Hosting::Binary, &plugin));
-    }
-}
+#[path = "library_tests.rs"]
+mod tests;

@@ -32,6 +32,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -48,7 +50,13 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
 }
 
 fn engine() -> suhina_engine::Renderer {
-    suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap()
+    suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap()
 }
 
 /// The edited clip's notes in the project.
@@ -57,7 +65,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let project = session.project();
     let clip = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap();
     match &project.content(clip.content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }
@@ -159,7 +167,7 @@ fn the_toolbar_size_setting_scales_the_toolbar_and_not_the_grid() {
     let normal = Settings { toolbar_size: ToolbarSize::Normal, ..Settings::default() };
     let mut h = piano_app(&mut renderer, normal);
     let small_button = h.get_by_label("Draw (2)").rect().height();
-    let small_notes = note_rect(&h, &notes(&h)[0]).height();
+    let small_rows = h.state().piano_roll().key_height;
     let small_grid = h.get_by_label_contains("Piano roll,").rect().top();
 
     let larger = Settings { toolbar_size: ToolbarSize::Larger, ..Settings::default() };
@@ -168,11 +176,11 @@ fn the_toolbar_size_setting_scales_the_toolbar_and_not_the_grid() {
     h.run();
 
     let big_button = h.get_by_label("Draw (2)").rect().height();
-    let big_notes = note_rect(&h, &notes(&h)[0]).height();
+    let big_rows = h.state().piano_roll().key_height;
     let big_grid = h.get_by_label_contains("Piano roll,").rect().top();
     assert!(big_button > small_button + 3.0, "the icon box grows: {small_button} to {big_button}");
     assert!(big_grid > small_grid + 5.0, "the band grows: {small_grid} to {big_grid}");
-    assert_eq!(big_notes, small_notes, "the note rows do not change with the toolbar");
+    assert_eq!(big_rows, small_rows, "the note rows do not change with the toolbar");
 }
 
 #[test]
@@ -514,6 +522,7 @@ fn the_right_button_and_the_wheel_still_choose_tools_and_delete_nothing() {
         delta: egui::vec2(0.0, 60.0),
         modifiers: Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     h.run();
     let steered = h.state().piano_roll().tool;

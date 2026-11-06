@@ -3,15 +3,17 @@ description: Author data-only effects, MIDI effects and instruments in Rust or w
 read_when: make an effect, MIDI effect or instrument, SDK tutorial, .sd example, node discovery
 type: howto
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-11-02
 covers:
+  - crates/device-sdk/src/author.rs
   - crates/device-sdk/src/ui/widgets.rs
   - crates/device-sdk/examples/stereo_utility.rs
-  - crates/device-sdk/examples/auto_pan.rs
+  - crates/device-sdk/examples/lfo_pan.rs
   - crates/device-sdk/examples/filter.rs
   - crates/device-sdk/examples/distortion.rs
   - crates/device-sdk/examples/delay.rs
   - crates/device-sdk/examples/compressor.rs
+  - crates/device-sdk/examples/sampler_composition.rs
   - crates/device-sdk/examples/catalog.rs
   - crates/device-sdk/examples/validate.rs
   - crates/device-sdk/examples/ui_controls.rs
@@ -25,6 +27,67 @@ covers:
 
 # Author a data-only SDK device
 
+## Checked Rust authoring
+
+`author::GraphBuilder` is an additive, off-thread alternative to editing the graph's vectors.
+It owns append-only node storage. Node handles belong to exactly one builder; copying a handle
+shares the same node, and passing a handle from another builder returns an error. Port names use
+the existing node catalog. `connect` rejects missing ports and occupied inputs immediately.
+`op` inserts a node with named inputs; `binary` wires `a` and `b`. A failed `op` or
+`parameter_signal` leaves no partial nodes, connections or parameters behind.
+
+```rust
+use suhina_device_sdk::{author::GraphBuilder, DeviceRole, FilterMode, NodeKind, Parameter,
+    ParameterControl};
+
+fn example() -> Result<(), Box<dyn std::error::Error>> {
+let mut graph = GraphBuilder::new("org.example.filter", "Filter", DeviceRole::Effect);
+let input = graph.node("in", NodeKind::AudioInput)?;
+let output = graph.node("out", NodeKind::AudioOutput)?;
+let cutoff = graph.parameter_signal(
+    Parameter::new("cutoff", "Cutoff", (20., 20000.), 1000.)
+        .unit("Hz").control(ParameterControl::LogKnob),
+)?;
+let filter = graph.op("filter", NodeKind::Filter { mode: FilterMode::Lowpass }, &[
+    ("in", input.out()), ("frequency", cutoff.out()),
+])?;
+graph.connect(filter.out(), output.input("in"))?;
+let graph = graph.finish()?;
+graph.write_file(std::path::Path::new("filter.sd"))?;
+Ok(())
+}
+```
+
+Declare UI-only parameters with `parameter`; it consumes no DSP node. `parameter_signal`
+declares both the parameter and its source node, using the same explicit id. Parameter setters
+`unit`, `control`, `smoothing_ms`, `options` and `linked(peer, enabled_by)` configure data before
+insertion; they do not bypass validation or infer a range from choice labels.
+
+For feedback, declare the summing node first, construct the delayed branch and then `connect`
+the return to the free input. Do not invent a forward string reference. Normal Rust functions
+can add reusable fragments with explicit scoped ids and return node handles. `finish` runs the
+existing full graph validation, including roles, required ports, cycles and resource budgets.
+It consumes the builder and returns an ordinary `DeviceGraph`; set panel, editor and revision
+metadata on that graph and validate again when saving or compiling. Builder handles cannot be
+used to edit the finished graph. Existing low-level authoring remains supported.
+
+The filter, LFO pan and Delay examples use this API. Their ids, parameter contracts, panel data
+and sound are regression-tested against pre-migration `.sd` fixtures. The Delay graph is more
+explicit about its node references; the main reduction in repetition is in its panel construction.
+No new file format, runtime or executable extension is introduced.
+
+UI authors can configure numeric `format`/`decimals` and button labels before insertion,
+inherit parameter names, mapping and numeric formatting with `parameter_metadata`, and place
+controls relative to a shared `ControlGroup` origin. These are Rust authoring conveniences;
+the saved panel remains flat. See [control constructors and groups](spec/sdk-custom-ui.md#rust-control-constructors).
+
+Native sample instruments can also use `sampler::Sampler` from the SDK and author
+their panel with `ui::DeviceUi`; `devices/sampler` is the built-in example. This
+route uses the native Device contract, not a serialized sample DSP node. The host
+installs decoded source audio during graph preparation. `Widget::SampleWaveform`
+provides the host waveform, region handles, slice editing and zoom/pan; `Widget::SampleRecording` places
+input selection and recording actions independently for that instrument.
+
 The deliverable is one `.sd` file. It can be added to a track and is embedded in the project.
 
 Version 4 separates the `.sd` file schema version from `device.version`, the revision of the
@@ -37,7 +100,8 @@ Version 4 also preserves visual connection authoring through `graph.editor`:
 routes referencing existing `Connection` endpoints. Optional anchors are node-local pixel
 offsets; bend points are graph coordinates. See the [format contract](spec/sd-device-format.md#visual-connection-layout).
 This stores a future editor's layout; the current app still shows the read-only node list.
-File versions 1 through 3 remain readable, and serialization writes version 4. Older device files
+File versions 1 through 4 remain readable, and serialization writes version 5
+([format contract](spec/sd-device-format.md#versions)). Older device files
 without `device.version` load as revision 1.
 
 ```sh
@@ -46,7 +110,7 @@ cargo run -p suhina-device-sdk --example validate -- target/sdk-examples/wire-la
 ```
 An author writes Rust that assembles a graph from supported nodes; Suhina runs the graph as data.
 Use [the format specification](spec/sd-device-format.md) and [node reference](spec/sdk-nodes.md).
-Audio effects, MIDI effects and monophonic instruments execute. Parameters, nodes and device ids
+Audio effects, MIDI effects, monophonic MIDI-value instruments and polyphonic sampler and voice graphs execute. Parameters, nodes and device ids
 are stable saved identifiers.
 
 Generate the MIDI examples with:
@@ -66,7 +130,7 @@ Generate six independent examples:
 
 ```sh
 cargo run -p suhina-device-sdk --example stereo_utility -- target/sdk-examples/stereo-utility.sd
-cargo run -p suhina-device-sdk --example auto_pan -- target/sdk-examples/auto-pan.sd
+cargo run -p suhina-device-sdk --example lfo_pan -- target/sdk-examples/lfo-pan.sd
 cargo run -p suhina-device-sdk --example filter -- target/sdk-examples/filter.sd
 cargo run -p suhina-device-sdk --example distortion -- target/sdk-examples/distortion.sd
 cargo run -p suhina-device-sdk --example delay -- target/sdk-examples/delay.sd
@@ -76,7 +140,7 @@ cargo run -p suhina-device-sdk --example validate -- target/sdk-examples/delay.s
 
 Each example includes its own graph-building and control-layout helpers; no shared example module is required.
 
-Read the individual files under `crates/device-sdk/examples/` for complete graphs: stereo width, auto-pan,
+Read the individual files under `crates/device-sdk/examples/` for complete graphs: stereo width, LFO pan,
 low-pass filter, distortion with wet/dry, filtered/modulated delay and a stereo-linked compressor.
 The compressor is a hard-knee example, the distortion is not oversampled and oscillators are
 not band-limited; these examples demonstrate composition rather than production mastering.
@@ -113,16 +177,16 @@ this never removes their processing. The examples expose only their main process
 ## Workflow for AI agents
 
 1. Read the format and node reference. Obtain the current catalog with the read command
-   `devices.sdNodes {}` via MCP `command_run`.
+   `device.sdNodes {}` via MCP `command_run`.
    Offline, `cargo run -p suhina-device-sdk --example catalog` prints the same node records as JSON.
    Each record gives its kind, Rust variant, ports, units, optional defaults, processing rules
    and a minimal JSON node-kind example. Waveform/filter choices and graph limits are returned
-   by `devices.sdNodes` alongside the records. Do not invent unsupported node kinds or ports.
+   by `device.sdNodes` alongside the records. Do not invent unsupported node kinds or ports.
 2. Assemble an effect graph. Give every node and parameter a unique stable id. Declare a
    parameter for each user control. Prefer an existing example with similar signal flow.
    Every node must reach the output, including the audio input. For an unconnected optional
    input the catalog default applies; a required input must have exactly one connection.
-3. Save with `write_file` or author equivalent version 4 JSON. Call `validate` or run the
+3. Save with `write_file` or author equivalent version 5 JSON. Call `validate` or run the
    validation example before adding the effect. Errors identify missing ids/ports, undelayed
    cycles and memory requests; fix those directly. A minimal catalog example describes
    `NodeKind`; wrap it with `id` when placing it in the JSON nodes array.
@@ -171,7 +235,7 @@ use the existing control behaviour, including keyboard edits and default reset. 
 local to a parameter and do not modify the global theme. The `ui_controls` example generates
 a single-column canvas with styled controls sized for a narrow device panel. Existing project devices embed their graph; import
 the new file as a new device to use its changed layout. Agents can obtain defaults and enum
-choices from `devices.sdNodes`.
+choices from `device.sdNodes`.
 
 `background` colours widget bodies; `panel_color` colours the entire cell independently.
 
@@ -228,7 +292,7 @@ normal parameter command, smoothing and undo; a two-axis gesture has one undo en
 ### Information for agents
 
 Read [the complete custom UI contract](spec/sdk-custom-ui.md), then the example source and public
-Rust types in `crates/device-sdk/src/ui.rs`. `devices.sdNodes` includes primitive/gesture names,
+Rust types in `crates/device-sdk/src/ui.rs`. `device.sdNodes` includes primitive/gesture names,
 default canvas values and image budgets. Create artwork yourself or use user-supplied licensed assets.
 Do not attach external paths or executable code to the device. Keep parameter ids stable, validate
 with the `validate` example, and rebuild the `.sd` after editing the Rust authoring source.
@@ -302,3 +366,72 @@ and Y width bindings (logarithmic X, linear Y). WaveformMenu uses seven choices
 in order: sine, triangle, rising ramp, falling ramp, square, sample-and-hold and wander. Number supports precision, number/frequency/choice formatting,
 colour, alignment, border, prefix and suffix. The widget contains no device-specific
 parameter names. Custom drawings remain available for artwork and specialised controls.
+
+## Layouts for built-in devices
+
+A built-in device (`devices/<name>`) is native Rust, not a `.sd` graph. Its panel uses this
+SDK's UI part only: `suhina_device_sdk::builtin::Layout` holds a compact canvas (`ui`), an
+optional expanded one and how each parameter is presented, by parameter id. Parameters come
+from the device's `DeviceInfo`; a layout cannot declare one. A device crate gives its layout in
+Rust (the Sampler's `layout()`) or as `devices/<name>/panel.json`, named in the device's row of
+`suhina_device_registry::ENTRIES`; `suhina_device_registry::panel(id)` loads it by id, and
+a test fails when it names a parameter its device lacks. A device without a layout gets the
+generated list. See [sdk-custom-ui.md](spec/sdk-custom-ui.md) › Layouts for built-in devices.
+
+Use `Widget::Panel { label }` for themed, non-interactive groups behind controls.
+`UiGesture::Tab(value)` on a Button selects a positive value in a zero-based
+parameter; pressing the active tab returns to zero. Sampler uses this to switch
+between its normal controls, envelopes and LFO without changing audio parameters.
+
+`Widget::Envelope` provides a theme-aware point editor for cumulative ADSR or bipolar Attack/Decay envelopes; the sampler demonstrates both, with separate numeric readouts.
+
+## Compose a sample source
+
+Run `cargo run -p suhina-device-sdk --example sample_source` from the repository
+root. The example constructs a Sampler source, multiplies its stereo output by
+a graph parameter, binds a generated one-second sine sample off the audio thread,
+and renders timestamped note events. It prints 48000 frames and a nonzero peak.
+See [Sampler](spec/sampler.md#composable-sample-source-first-stage) for the
+source-binding contract. The built-in Sampler remains native code with an SDK panel.
+
+## Trusted native graph effects
+
+Use `NodeKind::NativeEffect { effect }` to wire a trusted host effect into a graph.
+Connect audio to `in`; the four optional `control1` through `control4` inputs carry
+additional stereo signals and default to zero. Prepare with `compile_with_native_at`
+and a host resolver that returns a fresh `NativeNode` prepared for the supplied sample rate.
+The kernel receives five read-only interleaved stereo input buffers and a separate output
+buffer of equal length. It must overwrite output without allocating, locking or doing I/O.
+This host API does not load third-party plug-ins, and ordinary `compile_at` rejects
+unresolved effects. MIDI events and reset use the same lifecycle as native sources.
+
+Registered built-in audio effects resolve automatically when a `.sd` graph is added and
+when track or group chains are prepared. The registry adapter supplies the `in` audio
+signal at the effect defaults; additional control connections are rejected by this
+adapter; named `Node::bind(parent, target)` parameter bindings are supported. Custom Rust hosts can still supply their own input-aware kernels. Unknown ids,
+non-effect devices and effects reporting nonzero latency are rejected before insertion;
+latency compensation between graph paths is not implemented. This never loads plug-in code.
+
+
+## Compose editable samplers
+
+Run from the repository root:
+
+```sh
+cargo run -p suhina-device-sdk --example sampler_composition -- target/sampler-composition
+```
+
+The example writes five `.sd` files and five audible `.wav` renders: loops, reverse, slices,
+granular and tempo. Each definition round-trips and runs with the same deterministic source bound
+as `sample`. `sampler_template` and `granular_template` return editable DeviceGraph values with
+standard parameter panels; their private voices use the same public node catalogue. To use real
+samples, decode them off-thread in your host, make SampleAsset values, insert stable binding names
+into PreparedSamples, and call `compile_with_samples_at`. For registered/custom native effects,
+use `compile_with_samples_and_native_at` with a trusted resolver. A missing binding is an error;
+a prepared graph retains its original resource after replacing the host map. Retire it off-thread.
+The desktop `device.addSd` path does not yet provide a resource-map editor for these compositions.
+
+`NodeInfo::output_type` and the JSON catalogue's `output_types` describe event/resource/signal
+ports identically to validation. Named outputs include per-voice gate/trigger/release, envelope
+completion, read positions and grain overflow. Components store their name, version, child graph,
+parameters and optional panel as data, with independent state for every prepared instance.

@@ -3,7 +3,7 @@ description: Scope comparison between plugdata's documented object ecosystem and
 read_when: plugdata, Pure Data parity, device SDK node coverage, patch devices
 type: system
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-10-22
 covers:
   - crates/device-sdk/src/nodes.rs
   - crates/device-sdk/src/runtime.rs
@@ -64,7 +64,9 @@ the catalog's own categories, including non-DSP facilities so they are not mista
 effect nodes. It does not claim that each of the 1,653 records was individually ported or has a
 semantically equivalent Suhina node. The SDK already covers a useful compositional subset for self-contained effects and simple
 instruments: signal math, modulation, filtering, bounded delay, stereo utilities, parameters and
-basic MIDI note handling. Missing breadth is primarily the Pd execution model and ecosystem:
+basic MIDI note handling. A polyphonic `sampler` source can feed these signal nodes with
+PCM bound by Rust authors off the audio thread; typed sample-resource ports and smaller
+playback/granular building blocks are supported within the bounded native graph runtime. Missing breadth is primarily the Pd execution model and ecosystem:
 message/list semantics, arbitrary objects and externals, patch editing, and host-specific
 objects. Adding a similarly named node alone would not establish compatibility; each addition
 needs a clean-room behavior spec, explicit port and timing rules, validation, and runtime tests.

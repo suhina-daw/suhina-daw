@@ -2,8 +2,9 @@
 description: How a sample added while the project plays reaches the engine, and how the browser and the piano roll's key column preview sound through the engine without locks or allocation on the audio thread
 read_when: preview, audition, preview voice, add a sample while playing, AudioPool, set_audio, clip.addFiles, preview.play, preview.noteOn, preview.noteOff, held preview note, key column, MIDI preview, browser sound
 type: decision
-status: current
-last_verified: 2026-10-15
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/preview.rs
   - crates/engine/src/swap.rs
@@ -16,7 +17,6 @@ covers:
 
 # 0011: Previewing, and audio added to a playing project
 
-- **Status:** accepted
 - **Date:** 2026-10-12
 
 ## Context
@@ -45,7 +45,8 @@ run the same code.
    the same `Arc<AudioData>`s plus the new ones, so nothing is copied), and the graph the edit
    builds is built with it (ADR 0005). The audio thread sees only a new graph, as for any edit.
    The pool's key for a dropped file is its absolute path; saving rewrites it relative to the
-   project file (ADR 0010).
+   project file (ADR 0010). An empty audio clip (`clip.create` on an audio track) names no
+   file: nothing is decoded for it until a sample lands on its slot or lane.
 3. **Undo leaves the decoded file in the pool.** It costs memory until the project closes and
    means redo needs no decoding.
 4. **Previewing is a voice of its own in the engine, after the main channel.** The renderer has
@@ -86,12 +87,21 @@ run the same code.
    they fail when no player is attached, like `transport.play`. The window decodes a preview
    on a thread and passes it with `Session::provide_audio` first, so the command finds it
    decoded.
-9. **Previews with no project open** (#234): `Projects` keeps an empty session of the previews'
+10. **Previews with no project open** (#234): `Projects` keeps an empty session of the previews'
    own while no project is open (`Projects::preview_session_mut`), and `preview.play` and
    `preview.stop` run on it. Its player opens on the chosen output at the first preview
    (`preview.stop` opens nothing); it is closed before a project opens its output
    (`Projects::close_preview_output`, which the desktop app calls first and `Projects::add`
    calls too) and when another output is chosen, so there is still one stream at a time.
+11. **Opening a project reads only the audio the person chose.** Clip and Sampler references
+    resolve inside the project's folder without following symlinks or junctions. Outside it,
+    the desktop app reads files on a local disk, and the CLI and the MCP server read only trusted
+    paths, library folders and the folders the project's audio came from; anything else is
+    reported as missing and is relinked by hand ([missing files](../spec/missing-files.md) ›
+    Project file boundaries). Loading a sample and the relink commands decode the paths chosen.
+    Shared decoders refuse rates outside 1000..384000 Hz and 1..32 channels before creating a
+    decoder, and cap decoded PCM at 1 GiB per file, checked before each packet is copied (all
+    streams combined for Stems).
 
 ## Consequences
 

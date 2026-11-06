@@ -11,7 +11,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{FromSample, Sample, SizedSample};
 use suhina_engine::MAX_INPUT_CHANNELS;
 use suhina_session::InputChoice;
@@ -49,19 +49,23 @@ pub(crate) fn open(
         .ok_or_else(|| format!("the audio host {host_name} is gone"))?;
     let host = cpal::host_from_id(host_id).map_err(|e| e.to_string())?;
     let device = match choice {
-        InputChoice::Named(name) => host
-            .input_devices()
-            .map_err(|e| e.to_string())?
-            .find(|d| devices::same_name(&d.to_string(), name))
+        InputChoice::Named(name) => devices::input_devices(&host)?
+            .into_iter()
+            .find(|d| devices::named(d, name))
             .ok_or_else(|| format!("the audio input {name} is not there"))?,
-        _ => host.default_input_device().ok_or("there is no audio input device")?,
+        _ => devices::default_input(&host).ok_or("there is no audio input device")?,
     };
-    let name = device.to_string();
+    let name = devices::name_of(&device).ok_or("the audio input was just disconnected")?;
+    // A sound server offers every channel count: what the device has is in its default config.
+    let own = devices::server_converts(host_name)
+        .then(|| device.default_input_config().ok().map(|config| config.channels()))
+        .flatten();
     // The device's own format at the output's rate: the engine takes no resampled input.
     let supported = device
         .supported_input_configs()
         .map_err(|e| format!("audio input {name}: {e}"))?
         .filter(|c| (c.min_sample_rate()..=c.max_sample_rate()).contains(&sample_rate))
+        .filter(|c| own.is_none_or(|channels| c.channels() == channels))
         .max_by_key(|c| (c.channels(), c.sample_format() == cpal::SampleFormat::F32))
         .and_then(|c| c.try_with_sample_rate(sample_rate))
         .ok_or_else(|| format!("audio input {name} does not record at {sample_rate} Hz, the output's rate"))?;

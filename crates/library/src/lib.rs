@@ -14,6 +14,7 @@ mod worker;
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -34,13 +35,14 @@ const INDEX_FOLDER: &str = "library";
 
 /// What a browser item is, from its key (`docs/spec/browser.md` › Terms): a file by its
 /// absolute path, a voice of a preset bank as `<path>#<n>`, a built-in effect or instrument as
-/// `device:<id>`, a plug-in as `plugin:<spec>`.
+/// `device:<id>`, a plug-in as `plugin:<spec>`, a preset that ships with Suhina as `stock:<key>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Item {
     File(PathBuf),
     Voice(PathBuf, usize),
     Device(String),
     Plugin(String),
+    Stock(String),
 }
 
 impl Item {
@@ -53,6 +55,9 @@ impl Item {
         }
         if let Some(spec) = key.strip_prefix("plugin:") {
             return (!spec.is_empty()).then(|| Self::Plugin(spec.to_string()));
+        }
+        if let Some(stock) = key.strip_prefix("stock:") {
+            return (!stock.is_empty()).then(|| Self::Stock(stock.to_string()));
         }
         if let Some((path, voice)) = key.rsplit_once('#')
             && suhina_media::info::kind_of(Path::new(path)) == Some(FileKind::Preset)
@@ -69,6 +74,7 @@ impl Item {
             Self::Voice(path, voice) => format!("{}#{voice}", path.display()),
             Self::Device(id) => format!("device:{id}"),
             Self::Plugin(spec) => format!("plugin:{spec}"),
+            Self::Stock(key) => format!("stock:{key}"),
         }
     }
 
@@ -106,6 +112,23 @@ pub struct IndexedFile {
     pub modified: u64,
 }
 
+/// Every file of `kind` (or of every kind) in an [`Library::index_snapshot`].
+pub fn files_in(
+    snapshot: &[(PathBuf, Arc<FolderIndex>)],
+    kind: Option<FileKind>,
+) -> impl Iterator<Item = IndexedFile> + '_ {
+    snapshot.iter().flat_map(move |(folder, index)| {
+        index.files.iter().filter(move |(_, e)| kind.is_none_or(|k| k == e.kind)).map(move |(rel, e)| IndexedFile {
+            folder: folder.clone(),
+            path: index::path_of(folder, rel),
+            rel: rel.clone(),
+            kind: e.kind,
+            size: e.size,
+            modified: e.modified,
+        })
+    })
+}
+
 impl IndexedFile {
     /// The file's name.
     pub fn name(&self) -> &str {
@@ -134,6 +157,79 @@ pub struct Query {
     /// Only items carrying any of these tags.
     pub tags: Vec<String>,
     pub limit: usize,
+}
+
+/// A search taken from a [`Library`] as it is now, to run away from it: the window's thread must
+/// not walk a large library at every key (`docs/spec/browser.md` › Results).
+pub struct FileSearch {
+    folders: Vec<(PathBuf, Arc<index::FolderIndex>)>,
+    tagged: std::collections::BTreeMap<String, Vec<String>>,
+    query: Query,
+}
+
+impl FileSearch {
+    /// How many files it looks through, whatever matches.
+    pub fn files(&self) -> usize {
+        self.folders.iter().map(|(_, index)| index.files.len()).sum()
+    }
+
+    /// The files matching the query, best first; nothing once `cancel` is set, which it looks at
+    /// as it goes, so a search the next key made stale ends soon.
+    pub fn run(&self, cancel: &AtomicBool) -> Vec<IndexedFile> {
+        let query = &self.query;
+        let words = words(&query.text);
+        let limit = if query.limit == 0 { MAX_RESULTS } else { query.limit.min(MAX_RESULTS) };
+        let tagged = |key: &str| {
+            query.tags.is_empty()
+                || self.tagged.get(key).is_some_and(|names| names.iter().any(|n| query.tags.contains(n)))
+        };
+        let mut hits: Vec<(u8, usize, IndexedFile)> = Vec::new();
+        for (folder, index) in &self.folders {
+            for (seen, (rel, entry)) in index.files.iter().enumerate() {
+                if seen % 1024 == 0 && cancel.load(AtomicOrdering::Relaxed) {
+                    return Vec::new();
+                }
+                if !query.kinds.is_empty() && !query.kinds.contains(&entry.kind) {
+                    continue;
+                }
+                let name = rel.rsplit('/').next().unwrap_or(rel);
+                let Some(rank) = rank(&words, name, rel) else { continue };
+                let path = index::path_of(folder, rel);
+                if query.within.as_ref().is_some_and(|w| !path.starts_with(w)) {
+                    continue;
+                }
+                if !tagged(&path.display().to_string()) {
+                    continue;
+                }
+                hits.push((
+                    rank,
+                    hits.len(),
+                    IndexedFile {
+                        folder: folder.clone(),
+                        path,
+                        rel: rel.clone(),
+                        kind: entry.kind,
+                        size: entry.size,
+                        modified: entry.modified,
+                    },
+                ));
+            }
+        }
+        // Last by where it was found, so the same name in two folders keeps the folders' order.
+        let order = |a: &(u8, usize, IndexedFile), b: &(u8, usize, IndexedFile)| {
+            a.0.cmp(&b.0)
+                .then(a.2.name().len().cmp(&b.2.name().len()))
+                .then(natural_cmp(a.2.name(), b.2.name()))
+                .then(a.1.cmp(&b.1))
+        };
+        // Only what is shown needs its order: a short word matches most of a large library.
+        if limit > 0 && hits.len() > limit {
+            hits.select_nth_unstable_by(limit - 1, order);
+            hits.truncate(limit);
+        }
+        hits.sort_by(order);
+        hits.into_iter().map(|(_, _, f)| f).collect()
+    }
 }
 
 struct Folder {
@@ -423,6 +519,13 @@ impl Library {
         Ok(())
     }
 
+    /// Each folder with its index as it is now, shared: to list its files on another thread
+    /// ([`files_in`]) without copying them here.
+    pub fn index_snapshot(&mut self) -> Vec<(PathBuf, Arc<FolderIndex>)> {
+        self.load();
+        self.folders.iter().map(|f| (f.path.clone(), Arc::clone(&f.index))).collect()
+    }
+
     /// Every indexed file, of `kind` or of every kind.
     pub fn files(&mut self, kind: Option<FileKind>) -> impl Iterator<Item = IndexedFile> + '_ {
         self.load();
@@ -463,46 +566,15 @@ impl Library {
 
     /// The files matching `query`, best first (`docs/spec/browser.md` › Results).
     pub fn search(&mut self, query: &Query) -> Vec<IndexedFile> {
+        self.prepare_search(query).run(&AtomicBool::new(false))
+    }
+
+    /// The search for `query` over the index as it is now, for a thread of its own.
+    pub fn prepare_search(&mut self, query: &Query) -> FileSearch {
         self.load();
-        let words = words(&query.text);
-        let limit = if query.limit == 0 { MAX_RESULTS } else { query.limit.min(MAX_RESULTS) };
-        let tagged = |key: &str| {
-            query.tags.is_empty()
-                || self.store.tagged.get(key).is_some_and(|names| names.iter().any(|n| query.tags.contains(n)))
-        };
-        let mut hits: Vec<(u8, IndexedFile)> = Vec::new();
-        for folder in &self.folders {
-            for (rel, entry) in &folder.index.files {
-                if !query.kinds.is_empty() && !query.kinds.contains(&entry.kind) {
-                    continue;
-                }
-                let path = index::path_of(&folder.path, rel);
-                if query.within.as_ref().is_some_and(|w| !path.starts_with(w)) {
-                    continue;
-                }
-                let name = rel.rsplit('/').next().unwrap_or(rel);
-                let Some(rank) = rank(&words, name, rel) else { continue };
-                if !tagged(&path.display().to_string()) {
-                    continue;
-                }
-                hits.push((
-                    rank,
-                    IndexedFile {
-                        folder: folder.path.clone(),
-                        path,
-                        rel: rel.clone(),
-                        kind: entry.kind,
-                        size: entry.size,
-                        modified: entry.modified,
-                    },
-                ));
-            }
-        }
-        hits.sort_by(|a, b| {
-            a.0.cmp(&b.0).then(a.1.name().len().cmp(&b.1.name().len())).then(natural_cmp(a.1.name(), b.1.name()))
-        });
-        hits.truncate(limit);
-        hits.into_iter().map(|(_, f)| f).collect()
+        let folders = self.folders.iter().map(|f| (f.path.clone(), Arc::clone(&f.index))).collect();
+        let tagged = if query.tags.is_empty() { Default::default() } else { self.store.tagged.clone() };
+        FileSearch { folders, tagged, query: query.clone() }
     }
 
     /// What is directly in the folder `path` on disk: sub-folders first, then files of the
@@ -532,6 +604,62 @@ impl Library {
         Ok(out)
     }
 
+    /// The audio files outside projects' folders that opening a project may read.
+    pub fn trusted_audio(&mut self) -> Vec<PathBuf> {
+        self.load();
+        self.store.trusted_audio.clone()
+    }
+
+    /// Keeps `files` (absolute paths) as trusted audio, newest first, and saves when that
+    /// changed anything. Returns whether it did.
+    pub fn trust_audio(&mut self, files: Vec<PathBuf>) -> Result<bool, String> {
+        self.load();
+        let trusted = &mut self.store.trusted_audio;
+        let before = trusted.clone();
+        for file in files.into_iter().filter(|f| f.is_absolute()) {
+            trusted.retain(|t| *t != file);
+            trusted.insert(0, file);
+        }
+        trusted.truncate(store::MAX_TRUSTED_AUDIO);
+        if *trusted == before {
+            return Ok(false);
+        }
+        self.save()?;
+        Ok(true)
+    }
+
+    /// The folders outside `project` (its project file) that its audio was loaded from.
+    pub fn project_folders(&mut self, project: &Path) -> Vec<PathBuf> {
+        self.load();
+        self.store.project_folders.get(&project.display().to_string()).cloned().unwrap_or_default()
+    }
+
+    /// Adds `folders` (absolute paths) to `project`'s source folders, newest first, and saves
+    /// when that changed anything. Returns whether it did.
+    pub fn add_project_folders(&mut self, project: &Path, folders: Vec<PathBuf>) -> Result<bool, String> {
+        self.load();
+        let key = project.display().to_string();
+        let mut list = self.store.project_folders.get(&key).cloned().unwrap_or_default();
+        let before = list.clone();
+        for folder in folders.into_iter().filter(|f| f.is_absolute()) {
+            list.retain(|f| *f != folder);
+            list.insert(0, folder);
+        }
+        list.truncate(store::MAX_PROJECT_FOLDERS);
+        if list == before {
+            return Ok(false);
+        }
+        if !self.store.project_folders.contains_key(&key)
+            && self.store.project_folders.len() >= store::MAX_PROJECTS_WITH_FOLDERS
+            && let Some(oldest) = self.store.project_folders.keys().next().cloned()
+        {
+            self.store.project_folders.remove(&oldest);
+        }
+        self.store.project_folders.insert(key, list);
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn pinned(&mut self) -> Vec<String> {
         self.load();
         self.store.pins.clone()
@@ -553,6 +681,25 @@ impl Library {
             self.save()?;
         }
         Ok(changed)
+    }
+
+    /// A file moved from `from` to `to` (#943): its pin, recent places and tags go with it, and
+    /// the folders that held it and hold it now are read again, so the index follows.
+    pub fn relocate(&mut self, from: &Path, to: &Path) -> Result<(), String> {
+        self.load();
+        if self.store.relocate(&Item::File(from.to_path_buf()).key(), &Item::File(to.to_path_buf()).key()) {
+            self.save()?;
+        }
+        let roots: Vec<PathBuf> = self
+            .folders
+            .iter()
+            .filter(|f| from.starts_with(&f.path) || to.starts_with(&f.path))
+            .map(|f| f.path.clone())
+            .collect();
+        for root in roots {
+            self.refresh(Some(&root))?;
+        }
+        Ok(())
     }
 
     pub fn recent(&mut self, group: Group) -> Vec<String> {

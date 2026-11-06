@@ -84,7 +84,7 @@ pub fn build() -> Result<DeviceGraph, Box<dyn std::error::Error>> {
         tooltip: "X: logarithmic cutoff. Y: stereo balance. Arrow keys adjust each axis.".into(),
         bounds: [24.0, 72.0, 390.0, 148.0],
         gesture: UiGesture::Position,
-        x: Some(UiBinding { parameter: "cutoff".into(), logarithmic: true }),
+        x: Some(UiBinding { parameter: "cutoff".into(), logarithmic: true, drag_scale: 1. }),
         y: Some(UiBinding::new("balance")),
         drawing: vec![
             Draw::Rect { rect: [0.0, 0.0, 390.0, 148.0].map(Into::into), color: [9, 17, 27, 240], radius: 8.0 },

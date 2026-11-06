@@ -4,6 +4,7 @@
 //! The preview voice (ADR 0011): samples and notes previewed through the renderer, with the
 //! transport stopped or running, and audio added to the graphs after the renderer was built.
 
+use crate::{RenderInputs, RenderOptions};
 use std::sync::Arc;
 
 use suhina_model::*;
@@ -18,7 +19,7 @@ fn steady() -> Arc<AudioData> {
 }
 
 fn stopped(project: &Project) -> Renderer {
-    Renderer::stopped(project, &AudioPool::new(), SR).unwrap()
+    Renderer::stopped(project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap()
 }
 
 #[test]
@@ -104,7 +105,13 @@ fn the_level_of_a_playing_preview_changes_smoothly_and_it_keeps_playing() {
 fn the_preview_is_heard_with_the_transport_running_and_a_track_muted() {
     let mut muted = project(vec![note(0.0, 4.0, 60)], 4.0, Vec::new());
     muted.channels[0].mute = true;
-    let mut renderer = Renderer::with_audio(&muted, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::build(
+        &muted,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     controller.preview_sample(steady(), 0.0, 0.5).unwrap();
     let out = blocks(&mut renderer, 2, 1024);
@@ -177,8 +184,14 @@ fn audio_set_on_the_controller_is_heard_from_the_next_graph() {
     };
     let mut audio_project = project(Vec::new(), 2.0, Vec::new());
     audio_project.tracks[0].content = ContentKinds { notes: false, audio: true };
-    audio_project.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(region) }];
-    let mut renderer = Renderer::with_audio(&audio_project, &AudioPool::new(), SR).unwrap();
+    audio_project.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(region) }].into();
+    let mut renderer = Renderer::build(
+        &audio_project,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     assert_eq!(peak(&blocks(&mut renderer, 4, 1024)), 0.0, "the file is not in the pool yet");
 
@@ -250,4 +263,34 @@ fn hostile_preview_values_are_made_safe() {
     assert_eq!(notes.notes[0].key, 127);
     controller.preview_notes(notes, 1.0).unwrap();
     assert!(blocks(&mut renderer, 4, 1024).iter().all(|s| s.is_finite()));
+}
+
+/// Going from one held key to the next through the fallback makes no click: the last note fades
+/// out instead of stopping dead, with or without the two commands arriving together.
+#[test]
+fn changing_the_held_key_through_the_fallback_does_not_click() {
+    let mut renderer = stopped(&empty_project());
+    let mut controller = renderer.controller();
+    let hold = |controller: &mut crate::Controller, key: u8| {
+        let fallback = controller.preview_instrument();
+        let notes = preview_notes([(0.0, 0.0, key, 0.8)], 120.0, SR, None, fallback);
+        controller.preview_note_on(notes, 1.0).unwrap();
+    };
+    hold(&mut controller, 64);
+    let before = blocks(&mut renderer, 20, 1024);
+    let loudest = peak(&before);
+    assert!(loudest > 0.01, "the fallback plays it");
+    let jump = |samples: &[f32]| {
+        samples.iter().step_by(2).zip(samples.iter().step_by(2).skip(1)).map(|(a, b)| (b - a).abs()).fold(0.0, f32::max)
+    };
+    controller.preview_note_off(Some(64)).unwrap();
+    hold(&mut controller, 67);
+    let mut across = before[before.len() - 2..].to_vec();
+    across.extend(blocks(&mut renderer, 4, 1024));
+    assert!(jump(&across) < loudest * 0.5, "a jump of {} at a level of {loudest}", jump(&across));
+    // A note let go with nothing after it fades as well.
+    controller.preview_note_off(Some(67)).unwrap();
+    let mut across = across[across.len() - 2..].to_vec();
+    across.extend(blocks(&mut renderer, 4, 1024));
+    assert!(jump(&across) < loudest * 0.5, "a jump of {} at a level of {loudest}", jump(&across));
 }

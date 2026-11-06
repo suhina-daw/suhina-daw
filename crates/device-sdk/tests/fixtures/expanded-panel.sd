@@ -1,0 +1,176 @@
+{
+  "format": "suhina-device",
+  "version": 5,
+  "device": {
+    "expanded": {
+      "size": [
+        600.0,
+        300.0
+      ],
+      "viewport_size": null,
+      "background": [
+        37,
+        36,
+        33,
+        255
+      ],
+      "assets": [],
+      "layers": [],
+      "controls": [
+        {
+          "visible_when": null,
+          "id": "power",
+          "name": "Big power switch",
+          "tooltip": "Power",
+          "bounds": [
+            20.0,
+            20.0,
+            200.0,
+            60.0
+          ],
+          "gesture": "toggle",
+          "x": {
+            "parameter": "power",
+            "logarithmic": false,
+            "drag_scale": 1.0
+          },
+          "y": null,
+          "drawing": [
+            {
+              "kind": "rect",
+              "rect": [
+                0.0,
+                0.0,
+                200.0,
+                60.0
+              ],
+              "color": [
+                166,
+                163,
+                255,
+                255
+              ],
+              "radius": 6.0
+            },
+            {
+              "kind": "text",
+              "align": "left",
+              "format": "number",
+              "position": [
+                12.0,
+                22.0
+              ],
+              "text": "Power",
+              "color": [
+                20,
+                20,
+                20,
+                255
+              ],
+              "size": 16.0,
+              "parameter": "power",
+              "decimals": 0
+            }
+          ]
+        }
+      ],
+      "hidden_parameters": []
+    },
+    "id": "org.example.big-gain",
+    "version": 1,
+    "migrations": [],
+    "name": "Big Gain",
+    "role": "effect",
+    "parameters": [
+      {
+        "id": "gain",
+        "name": "Gain",
+        "min": 0.0,
+        "max": 2.0,
+        "default": 1.0,
+        "control": "slider",
+        "unit": "",
+        "ui": {
+          "link": null,
+          "tooltip": "",
+          "group": "",
+          "options": [],
+          "step": 0.0,
+          "decimals": 3,
+          "size": null,
+          "position": null,
+          "accent": null,
+          "background": null,
+          "panel_color": null,
+          "text_color": null,
+          "font_size": 12.0,
+          "monospace": false,
+          "corner_radius": 4.0,
+          "shape": "rounded",
+          "label_position": "left",
+          "show_value": true
+        },
+        "smoothing_ms": 20.0
+      },
+      {
+        "id": "power",
+        "name": "Power",
+        "min": 0.0,
+        "max": 1.0,
+        "default": 0.0,
+        "control": "toggle",
+        "unit": "",
+        "ui": {
+          "link": null,
+          "tooltip": "",
+          "group": "",
+          "options": [],
+          "step": 0.0,
+          "decimals": 3,
+          "size": null,
+          "position": null,
+          "accent": null,
+          "background": null,
+          "panel_color": null,
+          "text_color": null,
+          "font_size": 12.0,
+          "monospace": false,
+          "corner_radius": 4.0,
+          "shape": "rounded",
+          "label_position": "left",
+          "show_value": true
+        },
+        "smoothing_ms": 20.0
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "kind": "audio_input"
+    },
+    {
+      "id": "g",
+      "kind": "gain",
+      "parameter": "gain"
+    },
+    {
+      "id": "out",
+      "kind": "audio_output"
+    }
+  ],
+  "connections": [
+    {
+      "from": "in",
+      "to": "g",
+      "from_port": "out",
+      "to_port": "in"
+    },
+    {
+      "from": "g",
+      "to": "out",
+      "from_port": "out",
+      "to_port": "in"
+    }
+  ]
+}

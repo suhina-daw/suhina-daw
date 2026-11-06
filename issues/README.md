@@ -55,7 +55,7 @@ The order is a dependency order, not a priority order. Property 1 can start toda
 waits for what is above it.
 
 ```text
- 1 musical time ────────────────┐   (independent; can start today)
+ 1 musical time ────────────────┐   (done: #402, ADR 0024 accepted; no issue to create)
                                 │
  2 object identity ─────────────┼──┐   (independent; can start today — and it
                                 │  │    is what the version diff needs)
@@ -66,7 +66,7 @@ waits for what is above it.
  6 merge driver and git ◄── 5
  7 version browser ◄── 3, 6
  8 musical diff ◄── 2, 7
- 9 remove .locr  (independent, small, can start today)
+ 9 remove .locr  (being done in #565; no issue to create)
 15 author identity  (small; issues 5, 7 and 10 want what it provides, so it is
                     worth landing before them)
 

@@ -6,6 +6,7 @@
 //! `docs/design/components.md` › Follow action). Every control changes it through
 //! `clip.setFollowAction`, one undo step per change; it never changes the project itself.
 
+use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Pos2, Rect, Response, Ui, Vec2};
 use serde_json::{Value, json};
 use suhina_engine::model::{FollowAction, FollowKind, Project, TrackId};
@@ -63,7 +64,7 @@ impl FollowInfo {
 
     /// `clip.setFollowAction` for this clip, changing what `change` holds.
     fn action(&self, change: Value) -> Action {
-        let mut params = json!({ "track": self.track.0, "scene": self.scene + 1 });
+        let mut params = json!({ "track": self.track.0, "scene": self.scene });
         if let (Some(params), Value::Object(change)) = (params.as_object_mut(), change) {
             params.extend(change);
         }
@@ -113,9 +114,9 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
     }
     .intersect(area);
     let painter = ui.painter_at(column);
-    painter.rect_filled(column, 0.0, theme::panel_background());
+    painter.fill_background(column, 0.0, theme::panel_background());
     let f = &info.follow;
-    let id = Id::new(("follow", info.track.0, info.scene));
+    let id = Id::unique(("follow", info.track.0, info.scene));
 
     // The title, and the switch that turns the follow action on or off.
     let title = Rect::from_min_size(column.min, Vec2::new(column.width(), ROW)).shrink2(Vec2::new(PAD, 0.0));
@@ -189,11 +190,11 @@ fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, id: Id, label: &str, on:
     let (fill, text) = if accent {
         let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
         let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        (motion::mix(off, theme::accent(), lit), motion::mix(theme::text_secondary(), theme::window_background(), lit))
+        (motion::mix(off, theme::accent(), lit), motion::mix(theme::text_secondary(), theme::text_inverse(), lit))
     } else {
         widgets::toggle_colors(ui, &response, on)
     };
-    painter.rect_filled(rect, 0.0, fill);
+    painter.fill_background(rect, 0.0, fill);
     let word = if on { "On" } else { "Off" };
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, word, theme::ui_font(theme::TEXT_SMALL), text);
     response.clicked()
@@ -214,10 +215,10 @@ fn value_look(
     } else {
         motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response))
     };
-    painter.rect_filled(rect, 0.0, fill);
+    painter.fill_background(rect, 0.0, fill);
     if let Some(share) = share {
         let width = rect.width() * share.clamp(0.0, 1.0) as f32;
-        painter.rect_filled(
+        painter.fill_background(
             Rect::from_min_size(rect.min, Vec2::new(width, rect.height())),
             0.0,
             theme::control_playing(),
@@ -244,7 +245,9 @@ fn time_field(ui: &Ui, painter: &egui::Painter, rect: Rect, id: Id, info: &Follo
     let range = (TIME_STEP, FollowAction::MAX_TIME);
     let done =
         match widgets::drag_value(ui, &response, &mut preview, f.time, TIME_PER_POINT, 1.0, range, info.bar_beats) {
-            Drag::Done(value) => Some(((value / TIME_STEP).round() * TIME_STEP).clamp(range.0, range.1)),
+            Drag::Done(value) | Drag::Set(value) => {
+                Some(((value / TIME_STEP).round() * TIME_STEP).clamp(range.0, range.1))
+            }
             Drag::None | Drag::Moving(_) => None,
         };
     ui.data_mut(|d| d.insert_temp(id, preview));
@@ -278,7 +281,7 @@ fn chance_field(
         (0.0, max),
         f64::from(default),
     ) {
-        Drag::Done(v) => Some(v.round().clamp(0.0, max) as u32),
+        Drag::Done(v) | Drag::Set(v) => Some(v.round().clamp(0.0, max) as u32),
         Drag::None | Drag::Moving(_) => None,
     };
     ui.data_mut(|d| d.insert_temp(id, preview));
@@ -342,7 +345,7 @@ mod tests {
         let info = FollowInfo::build(&demo_project(), TrackId(2), 1).expect("the clip");
         let action = info.action(json!({ "chanceA": 40 }));
         assert_eq!(action.id, "clip.setFollowAction");
-        assert_eq!(action.params, json!({ "track": 2, "scene": 2, "chanceA": 40 }));
+        assert_eq!(action.params, json!({ "track": 2, "scene": 1, "chanceA": 40 }));
     }
 
     #[test]

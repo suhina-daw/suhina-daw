@@ -1,0 +1,1003 @@
+// Copyright (C) 2026 The Suhina contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! The `track.*` commands, and what runs them here.
+
+use super::*;
+
+pub(super) static COMMANDS: &[CommandSpec] = &[
+    CommandSpec {
+        id: "track.setVolume",
+        label: "Set the volume of each named track",
+        params: &[
+            TRACKS,
+            param("db", ParamType::Decibels, "level in dB, at most +6; \"-inf\" or below -150 is silence"),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: set_volume,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.adjustVolume",
+        label: "Move the volume of each named track by the same number of decibels, keeping their differences",
+        params: &[TRACKS, param("db", ParamType::Number, "how far to move it, in dB; positive is louder")],
+        kind: CommandKind::EDIT,
+        run: adjust_volume,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setPan",
+        label: "Set the pan of each named track",
+        params: &[TRACKS, param("pan", ParamType::Number, "-1 is full left, 0 centre, 1 full right"), GESTURE],
+        kind: CommandKind::EDIT,
+        run: set_pan,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.adjustPan",
+        label: "Move the pan of each named track by the same amount, keeping their differences",
+        params: &[TRACKS, param("pan", ParamType::Number, "how far to move it, -1 … +1; positive is right")],
+        kind: CommandKind::EDIT,
+        run: adjust_pan,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setMute",
+        label: "Mute or unmute each named track",
+        params: &[TRACKS, param("mute", ParamType::Bool, "true mutes the tracks")],
+        kind: CommandKind::EDIT,
+        run: set_mute,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.group",
+        label: "Put tracks into a new group track, which plays into where they played",
+        params: &[
+            param("tracks", ParamType::Tracks, "the tracks to group (ids or names), all in the same group or none"),
+            optional("name", ParamType::Text, "the group's name (\"Group\" if left out)"),
+        ],
+        kind: CommandKind::EDIT,
+        run: group_tracks,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setGroup",
+        label: "Move a track (a group with its tracks) into a group track, or out of every group, and play into it",
+        params: &[
+            TRACK,
+            param("group", ParamType::Track, "a group track (id or name) to move into, or \"none\" for the top level"),
+            optional(
+                "index",
+                ParamType::Integer,
+                "its place among the tracks directly in that group (or at the top level), from 0; the end if left out",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: set_group,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.ungroup",
+        label: "Dissolve a group track: its tracks stay, playing into where the group played",
+        params: &[TRACK],
+        kind: CommandKind::EDIT,
+        run: ungroup_track,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.move",
+        label: "Move a track (a group with its tracks) to another place in the track order",
+        params: &[TRACK, param("to", ParamType::Integer, "its new position, from 0, in project.tracks order")],
+        kind: CommandKind::EDIT,
+        run: move_track,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.rename",
+        label: "Rename a track",
+        params: &[TRACK, param("name", ParamType::Text, "the new name, not empty")],
+        kind: CommandKind::EDIT,
+        run: rename_track,
+        policy: Policy::UNHEARD,
+    },
+    CommandSpec {
+        id: "track.setColor",
+        label: "Set a track's colour",
+        params: &[TRACK, param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for the default")],
+        kind: CommandKind::EDIT,
+        run: set_color,
+        policy: Policy::UNHEARD,
+    },
+    CommandSpec {
+        id: "track.colorGroup",
+        label: "Give every track inside a group, at any depth, the group's colour, and with clips their clips too, as one undo step",
+        params: &[
+            TRACK,
+            optional(
+                "color",
+                ParamType::Text,
+                "\"#rrggbb\": the colour the group shows, for a group given none of its own (the default: the group's own)",
+            ),
+            optional(
+                "clips",
+                ParamType::Bool,
+                "true: the clips of the group and of every track inside it show their track's colour again",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: color_group,
+        policy: Policy::UNHEARD,
+    },
+    CommandSpec {
+        id: "track.delete",
+        label: "Delete a track with its clips; a deleted group's tracks stay",
+        params: &[TRACK],
+        kind: CommandKind::EDIT,
+        run: delete_track,
+        policy: Policy::CRITICAL,
+    },
+    CommandSpec {
+        id: "track.copy",
+        label: "Copy whole tracks for track.paste: each with its channel, devices, automation, clips, take lanes and slots, a group with its tracks",
+        params: &[param("tracks", ParamType::Tracks, "the tracks to copy (ids or names), in project order")],
+        kind: CommandKind::READ,
+        run: copy_tracks,
+        policy: Policy { after: After::Copies, ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "track.cut",
+        label: "Copy whole tracks for track.paste and delete them, as one undo step",
+        params: &[param("tracks", ParamType::Tracks, "the tracks to cut (ids or names)")],
+        kind: CommandKind::EDIT,
+        run: cut_tracks,
+        policy: Policy { after: After::Copies, ..Policy::CRITICAL },
+    },
+    CommandSpec {
+        id: "track.paste",
+        label: "Add the tracks track.copy or track.cut copied, with new clips of their own, after a track or at the end of the regular tracks",
+        params: &[
+            optional(
+                "after",
+                ParamType::Track,
+                "put them after this track, in its group (default: after the last regular track)",
+            ),
+            optional("suffix", ParamType::Text, COPY_SUFFIX),
+        ],
+        kind: CommandKind::EDIT,
+        run: paste_tracks,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setKind",
+        label: "Make an empty track a MIDI or an audio track; a MIDI track that becomes an audio track loses its instrument and MIDI effects",
+        params: &[TRACK, param("kind", ParamType::Text, "midi or audio")],
+        kind: CommandKind::EDIT,
+        run: crate::track_kind::set_kind,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.duplicate",
+        label: "Copy the named tracks, with new clips of their own, as one block after the last of them; a group with its tracks",
+        params: &[
+            param("tracks", ParamType::Tracks, "the tracks to duplicate (ids or names)"),
+            optional("suffix", ParamType::Text, COPY_SUFFIX),
+        ],
+        kind: CommandKind::EDIT,
+        run: duplicate_tracks,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.renameClips",
+        label: "Name every clip of a track, in the arrangement and in its slots, after the track",
+        params: &[TRACK],
+        kind: CommandKind::EDIT,
+        run: crate::clip_color::rename_clips,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setOutput",
+        label: "Route a track's audio to the main output or into a group track",
+        params: &[TRACK, param("to", ParamType::Track, "\"main\", or a group track (id or name) to play into")],
+        kind: CommandKind::EDIT,
+        run: set_output,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setSolo",
+        label: "Solo the named tracks or end their solo: while any track is soloed, only soloed tracks, the groups they play into and return tracks are heard",
+        params: &[
+            TRACKS,
+            param("solo", ParamType::Bool, "true solos the tracks"),
+            optional("exclusive", ParamType::Bool, "true also ends every other solo (false by default)"),
+        ],
+        kind: CommandKind::EDIT,
+        run: set_solo,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setCue",
+        label: "Turn a track's cue on or off: a cued track is also heard on the cue output (headphones, output.setCuePair), after its own volume and pan, while the main mix stays as it is",
+        params: &[TRACK, param("cue", ParamType::Bool, "true cues the track")],
+        kind: CommandKind::EDIT,
+        run: set_cue,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setMidiInput",
+        label: "Choose a track's MIDI input port, channel and monitoring: auto (while armed), in (always) or off (recording only); saved with the project",
+        params: &[
+            TRACK,
+            optional(
+                "port",
+                ParamType::Text,
+                "\"all\" (the default), \"none\", or a port's name; left out keeps the port",
+            ),
+            optional("channel", ParamType::Integer, "1 to 16, or 0 for every channel; left out keeps the channel"),
+            optional("monitor", ParamType::Text, "auto, in or off; left out keeps the mode"),
+        ],
+        kind: CommandKind::EDIT,
+        run: set_midi_input,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setAudioInput",
+        label: "Choose which channels of the audio input device a track hears (none, one channel, or a stereo pair) and when it is heard through the track: auto (while armed), in (always) or off; saved with the project",
+        params: &[
+            TRACK,
+            optional(
+                "input",
+                ParamType::Text,
+                "\"none\", a channel from 1 (\"3\"), or a pair (\"1/2\"); left out keeps it",
+            ),
+            optional("monitor", ParamType::Text, "auto (the default), in or off; left out keeps it"),
+        ],
+        kind: CommandKind::EDIT,
+        run: set_audio_input,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setArm",
+        label: "Arm a track for recording or disarm it. Auto input monitoring follows arm; In and Off are independent. Arming is not an edit: it is not undone and not saved",
+        params: &[
+            TRACK,
+            param("armed", ParamType::Bool, "true arms the track"),
+            optional("exclusive", ParamType::Bool, "true also disarms every other track (false by default)"),
+        ],
+        kind: CommandKind::TRANSPORT,
+        run: set_arm,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.stop",
+        label: "Stop the clip a track is playing, at the next quantisation boundary",
+        params: &[TRACK],
+        kind: CommandKind::TRANSPORT,
+        run: stop_track,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.devices",
+        label: "List the devices on a track in order, with each built-in and .sd device's role and parameter values",
+        params: &[TRACK],
+        kind: CommandKind::READ,
+        run: devices::track_devices,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.add",
+        label: "Add an audio or MIDI track with its mixer channel, clip slots and arrangement lane, optionally with a device (an instrument or MIDI effect makes a MIDI track, an effect an audio track)",
+        params: &[
+            optional("kind", ParamType::Text, "audio or midi (default: from the device)"),
+            optional(
+                "name",
+                ParamType::Text,
+                "the track's name (default: the device's, or # Audio / # MIDI, # reading as the track's number)",
+            ),
+            optional(
+                "count",
+                ParamType::Integer,
+                "how many empty tracks to add, one after another (1 to 64, default 1)",
+            ),
+            optional(
+                "after",
+                ParamType::Track,
+                "put it after this track, in its group (default: after the last regular track)",
+            ),
+            optional(
+                "device",
+                ParamType::Text,
+                "the id of a built-in effect or instrument, from device.list, or a plug-in from plugin.list",
+            ),
+            optional(
+                "preset",
+                ParamType::Path(PathKind::File),
+                "a preset file for the device (a device preset, or DX7 voice data for the FM synth)",
+            ),
+            optional(
+                "stock",
+                ParamType::Text,
+                "a preset that ships with Suhina, by its key: what follows stock: in library.search",
+            ),
+            optional(
+                "sd",
+                ParamType::Path(PathKind::File),
+                "a data-only .sd AudioEffect graph to add to the new audio track",
+            ),
+            optional("sample", ParamType::Path(PathKind::File), "audio file for the SDK graph resource named sample"),
+            optional("voice", ParamType::Integer, "which voice of a preset bank, from 1"),
+        ],
+        kind: CommandKind::EDIT,
+        run: files::add_track,
+        policy: Policy { after: After::Recent(Recent::Device), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "track.setSend",
+        label: "Set how much of a track goes to a return track (its send); the return runs its devices over what it is sent",
+        params: &[
+            TRACK,
+            RETURN,
+            param("level", ParamType::Decibels, "send level in dB, at most 0; \"-inf\" or below -150 is silence"),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::sends::set_send,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setMixerValues",
+        label: "Set the volume, the pan or the send to one return of several tracks, each to its own value, as one undo step",
+        params: &[
+            TRACKS,
+            param("control", ParamType::Text, "\"volume\", \"pan\" or \"send\""),
+            param(
+                "values",
+                ParamType::Numbers,
+                "one per track: dB, at most +6 for a volume and 0 for a send (below -150 is silence), -1 to 1 for a pan",
+            ),
+            optional("return", ParamType::Track, "with control send: the return track they send to"),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: set_mixer_values,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setSendMode",
+        label: "Take a track's send to a return before its volume and pan (pre) or after them (post, the default)",
+        params: &[TRACK, RETURN, param("mode", ParamType::Text, "\"pre\" or \"post\"")],
+        kind: CommandKind::EDIT,
+        run: crate::sends::set_send_mode,
+        policy: Policy::DEFAULT,
+    },
+];
+
+fn set_volume(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let db = Args::new(params).f64_or_neg_infinity("db")?;
+    if db > MAX_VOLUME_DB {
+        return Err(format!("db must be at most +{MAX_VOLUME_DB}, got {db}").into());
+    }
+    let channels = channel_ids(&session.project, params)?;
+    let gain = gain_of_db(db);
+    let mut off = false;
+    for (_, id) in &channels {
+        if let Some(channel) = session.project.channel_mut(*id) {
+            channel.volume = gain;
+            off |= crate::automation::override_lane(&mut channel.automation, |l| {
+                l.param == suhina_model::automation::VOLUME
+            });
+        }
+    }
+    // A fader move, nothing else: a playing engine takes it as a message where it can (a lane
+    // turned off changes more than the volume). Tracks not heard (muted, outside a solo) play
+    // nothing it changes.
+    if !off && channels.iter().all(|(track, _)| !suhina_engine::track_heard(&session.project, *track)) {
+        session.sync.unheard = true;
+    } else if !off {
+        session.sync.mixer_edits = channels
+            .iter()
+            .map(|(track, _)| crate::ParamEdit {
+                track: *track,
+                device: suhina_engine::MIXER_VOLUME,
+                param: 0,
+                value: gain,
+            })
+            .collect();
+    }
+    Ok(with_override(json!({ "tracks": track_ids(&channels), "volume_db": vec![to_db(gain); channels.len()] }), off))
+}
+
+/// `track.setMixerValues`: each track's own value, for a selection that moves together while a
+/// fader or a send of it is dragged. Heard the way one track's edit is: as messages while all of
+/// them can be, otherwise with one new graph.
+fn set_mixer_values(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let tracks = track_list(&session.project, params)?;
+    let values =
+        Args::new(params).value("values").and_then(Value::as_array).ok_or("values must be a list of numbers")?;
+    if values.len() != tracks.len() {
+        return Err(format!("values must hold one number per track: {} for {}", values.len(), tracks.len()).into());
+    }
+    let control = Args::new(params).raw_str("control").unwrap_or_default();
+    let mut edits = Vec::new();
+    let mut new_graph = false;
+    for (track, value) in tracks.iter().zip(values) {
+        let value = value.as_f64().filter(|v| v.is_finite()).ok_or("values must be a list of numbers")?;
+        match control {
+            "volume" => set_volume(session, &json!({ "tracks": [track.0], "db": value }))?,
+            "pan" => set_pan(session, &json!({ "tracks": [track.0], "pan": value }))?,
+            "send" => {
+                let target = Args::new(params).value("return").ok_or("control send needs return, the return track")?;
+                crate::sends::set_send(session, &json!({ "track": track.0, "return": target, "level": value }))?
+            }
+            _ => return Err("control must be \"volume\", \"pan\" or \"send\"".into()),
+        };
+        let unheard = std::mem::take(&mut session.sync.unheard);
+        let moved = std::mem::take(&mut session.sync.mixer_edits);
+        new_graph |= !unheard && moved.is_empty();
+        edits.extend(moved);
+    }
+    if !new_graph {
+        session.sync.unheard = edits.is_empty();
+        session.sync.mixer_edits = edits;
+    }
+    Ok(json!({ "tracks": tracks.iter().map(|t| t.0).collect::<Vec<_>>() }))
+}
+
+fn adjust_volume(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let db = Args::new(params).f64("db")?;
+    let channels = channel_ids(&session.project, params)?;
+    let mut volumes = Vec::with_capacity(channels.len());
+    let mut off = false;
+    for (_, id) in &channels {
+        let Some(channel) = session.project.channel_mut(*id) else { continue };
+        let now = to_db(channel.volume).unwrap_or(f64::NEG_INFINITY);
+        let next = (now + db).clamp(MIN_VOLUME_DB, MAX_VOLUME_DB);
+        channel.volume = gain_of_db(next);
+        off |=
+            crate::automation::override_lane(&mut channel.automation, |l| l.param == suhina_model::automation::VOLUME);
+        volumes.push(to_db(channel.volume));
+    }
+    // As a fader's move, a message to a playing engine where it can take it (#763 › 4).
+    if !off {
+        session.sync.mixer_edits = channels
+            .iter()
+            .filter_map(|(track, id)| {
+                let value = session.project.channel(*id)?.volume;
+                Some(crate::ParamEdit { track: *track, device: suhina_engine::MIXER_VOLUME, param: 0, value })
+            })
+            .collect();
+    }
+    Ok(with_override(json!({ "tracks": track_ids(&channels), "volume_db": volumes }), off))
+}
+
+fn set_pan(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let pan = Args::new(params).f64("pan")?;
+    if !(-1.0..=1.0).contains(&pan) {
+        return Err(format!("pan must be between -1 and 1, got {pan}").into());
+    }
+    let channels = channel_ids(&session.project, params)?;
+    let mut off = false;
+    for (_, id) in &channels {
+        if let Some(channel) = session.project.channel_mut(*id) {
+            channel.pan = pan;
+            off |=
+                crate::automation::override_lane(&mut channel.automation, |l| l.param == suhina_model::automation::PAN);
+        }
+    }
+    // A pan knob's turn, nothing else: a playing engine takes it as a message where it can.
+    if !off && channels.iter().all(|(track, _)| !suhina_engine::track_heard(&session.project, *track)) {
+        session.sync.unheard = true;
+    } else if !off {
+        session.sync.mixer_edits = channels
+            .iter()
+            .map(|(track, _)| crate::ParamEdit {
+                track: *track,
+                device: suhina_engine::MIXER_PAN,
+                param: 0,
+                value: pan,
+            })
+            .collect();
+    }
+    Ok(with_override(json!({ "tracks": track_ids(&channels), "pan": vec![pan; channels.len()] }), off))
+}
+
+fn adjust_pan(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let pan = Args::new(params).f64("pan")?;
+    if !(-1.0..=1.0).contains(&pan) {
+        return Err(format!("pan must be between -1 and 1, got {pan}").into());
+    }
+    let channels = channel_ids(&session.project, params)?;
+    let mut pans = Vec::with_capacity(channels.len());
+    let mut off = false;
+    for (_, id) in &channels {
+        let Some(channel) = session.project.channel_mut(*id) else { continue };
+        channel.pan = (channel.pan + pan).clamp(-1.0, 1.0);
+        off |= crate::automation::override_lane(&mut channel.automation, |l| l.param == suhina_model::automation::PAN);
+        pans.push(channel.pan);
+    }
+    if !off {
+        session.sync.mixer_edits = channels
+            .iter()
+            .zip(&pans)
+            .map(|((track, _), pan)| crate::ParamEdit {
+                track: *track,
+                device: suhina_engine::MIXER_PAN,
+                param: 0,
+                value: *pan,
+            })
+            .collect();
+    }
+    Ok(with_override(json!({ "tracks": track_ids(&channels), "pan": pans }), off))
+}
+
+fn set_mute(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let mute = Args::new(params).bool("mute")?;
+    let channels = channel_ids(&session.project, params)?;
+    let mut off = false;
+    for (_, id) in &channels {
+        if let Some(channel) = session.project.channel_mut(*id) {
+            channel.mute = mute;
+            off |= crate::automation::override_lane(&mut channel.automation, |l| {
+                l.param == suhina_model::automation::MUTE
+            });
+        }
+    }
+    Ok(with_override(json!({ "tracks": track_ids(&channels), "mute": mute }), off))
+}
+
+/// The mixer channel of every track `params.tracks` names, in that order, checked.
+fn channel_ids(p: &Project, params: &Value) -> Result<Vec<(TrackId, ChannelId)>, CommandError> {
+    let mut out = Vec::new();
+    for track in track_list(p, params)? {
+        let found = p.track(track).ok_or("the track is missing")?;
+        let channel = found.channel.ok_or_else(|| format!("track {:?} has no mixer channel", found.name))?;
+        out.push((track, channel));
+    }
+    Ok(out)
+}
+
+/// The track ids of [`channel_ids`], for a command's result.
+fn track_ids(channels: &[(TrackId, ChannelId)]) -> Vec<u32> {
+    channels.iter().map(|(track, _)| track.0).collect()
+}
+
+fn ungroup_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = &mut session.project;
+    let group = track_id(p, params)?;
+    let channel = channel_id_of(p, group).and_then(|id| p.channel(id));
+    let Some(channel) = channel.filter(|c| c.role == ChannelRole::Submix) else {
+        return Err("only a group track can be ungrouped".into());
+    };
+    let (group_channel, output) = (channel.id, channel.output);
+    let parent = p.track(group).and_then(|t| t.parent);
+    for track in p.tracks.iter_mut().filter(|t| t.parent == Some(group)) {
+        track.parent = parent;
+    }
+    for c in p.channels.iter_mut().filter(|c| c.output == Some(group_channel)) {
+        c.output = output;
+    }
+    remove_track(p, group, group_channel);
+    Ok(json!({ "ungrouped": group.0 }))
+}
+
+/// Moves a track, with everything inside it, into a group or to the top level: it becomes the
+/// group's track at `index` among the group's own tracks, and its channel plays into the group.
+fn set_group(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = &mut session.project;
+    let track = track_id(p, params)?;
+    let role_of = |p: &Project, t: TrackId| channel_id_of(p, t).and_then(|id| p.channel(id)).map(|c| c.role);
+    if matches!(role_of(p, track), Some(ChannelRole::Effect | ChannelRole::Master)) {
+        return Err("a return track cannot go into a group".into());
+    }
+    let group = match Args::new(params).value("group") {
+        Some(Value::String(none)) if none.eq_ignore_ascii_case("none") => None,
+        Some(_) => Some(track_at(p, params, "group")?),
+        None => return Err("group must be a group track or \"none\"".into()),
+    };
+    let index = match Args::new(params).value("index") {
+        None => None,
+        Some(v) => Some(v.as_u64().ok_or("index must be a whole number from 0")?),
+    };
+    let family = p.with_descendants(track);
+    let output = match group {
+        None => None,
+        Some(g) => {
+            let name = p.track(g).map(|t| t.name.clone()).unwrap_or_default();
+            if role_of(p, g) != Some(ChannelRole::Submix) {
+                return Err(format!("{name:?} is not a group track").into());
+            }
+            if family.contains(&g) {
+                return Err(format!("{name:?} is inside the track being moved, or is that track").into());
+            }
+            let depth = p.group_depth(g).unwrap_or(0) + 1 + p.nesting_below(track);
+            if depth > MAX_GROUP_DEPTH {
+                return Err(format!(
+                    "groups nest at most {MAX_GROUP_DEPTH} deep; moving into {name:?} would go deeper"
+                )
+                .into());
+            }
+            channel_id_of(p, g)
+        }
+    };
+
+    let block: Vec<Track> = p.tracks.iter().filter(|t| family.contains(&t.id)).cloned().collect();
+    p.tracks.retain(|t| !family.contains(&t.id));
+    // The group's own tracks, top-level returns aside, and where the block goes among them.
+    let is_return =
+        |p: &Project, t: &Track| t.channel.and_then(|id| p.channel(id)).is_some_and(|c| c.role == ChannelRole::Effect);
+    let siblings: Vec<TrackId> =
+        p.tracks.iter().filter(|t| t.parent == group && !is_return(p, t)).map(|t| t.id).collect();
+    let index = index.map_or(siblings.len(), |i| usize::try_from(i).unwrap_or(usize::MAX).min(siblings.len()));
+    let position_of = |p: &Project, id: TrackId| p.tracks.iter().position(|t| t.id == id);
+    let at = match (siblings.get(index), index.checked_sub(1).and_then(|i| siblings.get(i)), group) {
+        (Some(&next), _, _) => position_of(p, next),
+        // After the last sibling and everything inside it.
+        (None, Some(&last), _) => p.with_descendants(last).last().and_then(|&t| position_of(p, t)).map(|i| i + 1),
+        (None, None, Some(g)) => position_of(p, g).map(|i| i + 1),
+        (None, None, None) => None,
+    }
+    .unwrap_or(p.tracks.len())
+    .min(p.tracks.len());
+    p.tracks.splice(at..at, block);
+    if let Some(t) = p.track_mut(track) {
+        t.parent = group;
+    }
+    if let Some(channel) = channel_id_of(p, track)
+        && let Some(c) = p.channel_mut(channel)
+    {
+        c.output = output;
+    }
+    Ok(json!({ "track": track.0, "group": group.map(|g| g.0), "position": at }))
+}
+
+fn move_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = &mut session.project;
+    let track = track_id(p, params)?;
+    let to = Args::new(params).value("to").and_then(Value::as_u64).ok_or("to must be a whole number from 0")?;
+    let family = p.with_descendants(track);
+    let block: Vec<Track> = p.tracks.iter().filter(|t| family.contains(&t.id)).cloned().collect();
+    p.tracks.retain(|t| !family.contains(&t.id));
+    let at = usize::try_from(to).unwrap_or(usize::MAX).min(p.tracks.len());
+    p.tracks.splice(at..at, block);
+    Ok(json!({ "track": track.0, "position": at }))
+}
+
+fn rename_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let name = Args::new(params).raw_str("name").map(str::trim).filter(|n| !n.is_empty());
+    let name = name.ok_or("name must be a text, not empty")?.to_string();
+    let track = track_id(&session.project, params)?;
+    if let Some(t) = session.project.track_mut(track) {
+        t.name.clone_from(&name);
+    }
+    if let Some(channel) = channel_id_of(&session.project, track)
+        && let Some(c) = session.project.channel_mut(channel)
+    {
+        c.name.clone_from(&name);
+    }
+    Ok(json!({ "name": name }))
+}
+
+/// `track.colorGroup`: the tracks inside the group `track`, at any depth, take its colour.
+fn color_group(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let group = track_id(&session.project, params)?;
+    let p = &mut session.project;
+    let own = p.track(group).map(|t| t.color).ok_or("the track is missing")?;
+    let colour = match Args::new(params).value("color") {
+        None => own,
+        Some(_) => crate::clip_color::parse_color(params, "color")?.or(own),
+    };
+    let parent_of =
+        |id: TrackId, tracks: &[suhina_model::Track]| tracks.iter().find(|t| t.id == id).and_then(|t| t.parent);
+    let inside: Vec<TrackId> = p
+        .tracks
+        .iter()
+        .filter(|t| {
+            let mut parent = t.parent;
+            let mut hops = 0;
+            while let Some(id) = parent {
+                if id == group {
+                    return true;
+                }
+                hops += 1;
+                if hops > 64 {
+                    return false;
+                }
+                parent = parent_of(id, &p.tracks);
+            }
+            false
+        })
+        .map(|t| t.id)
+        .collect();
+    if inside.is_empty() {
+        return Err("the track holds no tracks".into());
+    }
+    for track in p.tracks.iter_mut().filter(|t| inside.contains(&t.id)) {
+        track.color = colour;
+    }
+    // Their clips follow the tracks' colour again, the group's own too.
+    let mut clips = 0usize;
+    if Args::new(params).value("clips").and_then(Value::as_bool) == Some(true) {
+        let held = |track: Option<TrackId>| track.is_some_and(|t| t == group || inside.contains(&t));
+        for lane in p.arrangement.lanes.iter_mut().filter(|l| held(l.track)) {
+            for clip in &mut lane.clips {
+                clip.color = None;
+                clips += 1;
+            }
+        }
+        for column in p.launcher.columns.iter_mut().filter(|c| held(Some(c.track))) {
+            for clip in column.slots.iter_mut().filter_map(|s| s.clip.as_mut()) {
+                clip.color = None;
+                clips += 1;
+            }
+        }
+    }
+    Ok(json!({ "tracks": inside.iter().map(|t| t.0).collect::<Vec<_>>(), "clips": clips }))
+}
+
+fn set_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let text = Args::new(params).raw_str("color").ok_or("color must be \"#rrggbb\" or \"none\"")?;
+    let color = if text.eq_ignore_ascii_case("none") {
+        None
+    } else {
+        let hex = text.strip_prefix('#').filter(|h| h.len() == 6).ok_or("color must be \"#rrggbb\" or \"none\"")?;
+        let part = |i: usize| hex.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok());
+        match (part(0), part(2), part(4)) {
+            (Some(r), Some(g), Some(b)) => Some(suhina_model::Rgb(r, g, b)),
+            _ => return Err("color must be \"#rrggbb\" or \"none\"".into()),
+        }
+    };
+    let track = track_id(&session.project, params)?;
+    if let Some(t) = session.project.track_mut(track) {
+        t.color = color;
+    }
+    Ok(json!({ "color": text }))
+}
+
+fn copy_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let tracks = track_list(&session.project, params)?;
+    // A running plug-in's copy holds its state as it is now, not as it was last saved.
+    let copied = crate::track_copy::copy(&session.project_as_heard_on(&tracks), &tracks)?;
+    let names = copied.first_names();
+    let count = copied.len();
+    session.clipboards.whole_tracks = copied;
+    Ok(json!({ "copied": count, "tracks": names }))
+}
+
+fn cut_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let tracks = track_list(&session.project, params)?;
+    let copied = crate::track_copy::copy(&session.project_as_heard_on(&tracks), &tracks)?;
+    let names = copied.first_names();
+    let count = copied.len();
+    // The tracks in groups first, so deleting a group leaves none of them behind.
+    let mut gone = crate::track_copy::with_their_tracks(&session.project, &tracks);
+    gone.reverse();
+    for track in gone {
+        delete_track(session, &json!({ "track": track.0 }))?;
+    }
+    session.clipboards.whole_tracks = copied;
+    Ok(json!({ "cut": count, "tracks": names }))
+}
+
+/// The `suffix` parameter's description, shared by `track.paste` and `track.duplicate`.
+const COPY_SUFFIX: &str = "how a copy of a taken name reads: wrapped (\"Bass (2)\", default) or hash (\"Bass #2\"); a name with # (the track's number) stays as it is";
+
+fn paste_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let after = match Args::new(params).value("after") {
+        None => None,
+        Some(_) => Some(track_at(&session.project, params, "after")?),
+    };
+    let clipboard = session.clipboards.whole_tracks.clone();
+    let added = crate::track_copy::paste(&mut session.project, &clipboard, after, suffix(params)?)?;
+    Ok(json!({ "tracks": added.iter().map(|t| t.0).collect::<Vec<_>>() }))
+}
+
+fn duplicate_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let tracks = track_list(&session.project, params)?;
+    let suffix = suffix(params)?;
+    // A running plug-in's copy starts with its state as it is now, not as it was last saved.
+    let heard = session.project_as_heard_on(&tracks);
+    let added = crate::track_copy::duplicate(&mut session.project, &heard, &tracks, suffix)?;
+    Ok(json!({ "tracks": added.iter().map(|t| t.0).collect::<Vec<_>>() }))
+}
+
+/// The `suffix` parameter of `track.paste` and `track.duplicate`: how a taken name says it is a
+/// copy ("wrapped": "Bass (2)", "hash": "Bass #2"); wrapped when it is left out.
+fn suffix(params: &Value) -> Result<crate::track_copy::Suffix, CommandError> {
+    match Args::new(params).raw_str("suffix") {
+        None => Ok(crate::track_copy::Suffix::default()),
+        Some(name) => crate::track_copy::Suffix::parse(name)
+            .ok_or_else(|| format!("suffix is \"wrapped\" or \"hash\", not {name:?}").into()),
+    }
+}
+
+fn delete_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let track = track_id(&session.project, params)?;
+    let p = &session.project;
+    let is_group = channel_id_of(p, track).and_then(|id| p.channel(id)).is_some_and(|c| c.role == ChannelRole::Submix);
+    if is_group {
+        ungroup_track(session, params)?;
+        return Ok(json!({ "deleted": track.0 }));
+    }
+    let channel = channel_id_of(&session.project, track);
+    let p = &mut session.project;
+    match channel {
+        Some(channel) => remove_track(p, track, channel),
+        None => {
+            p.tracks.retain(|t| t.id != track);
+            p.arrangement.lanes.retain(|l| l.track != Some(track));
+            p.arrangement.takes.retain(|t| t.track != track);
+            p.launcher.columns.retain(|c| c.track != track);
+        }
+    }
+    Ok(json!({ "deleted": track.0 }))
+}
+
+fn set_output(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let from = channel_param(session, params)?.id;
+    let p = &session.project;
+    let to = match Args::new(params).value("to") {
+        Some(Value::String(main)) if main.eq_ignore_ascii_case("main") => None,
+        Some(_) => {
+            let track = track_at(p, params, "to")?;
+            let target = p
+                .tracks
+                .iter()
+                .find(|t| t.id == track)
+                .and_then(|t| t.channel)
+                .and_then(|id| p.channel(id))
+                .ok_or("the target track has no mixer channel")?;
+            if target.role != ChannelRole::Submix {
+                return Err(format!("{:?} is not a group track; route to \"main\" or a group", target.name).into());
+            }
+            // The group must not play, directly or through other groups, into the track itself.
+            let mut next = Some(target.id);
+            for _ in 0..=p.channels.len() {
+                match next {
+                    Some(id) if id == from => {
+                        return Err(format!("routing into {:?} would make a loop", target.name).into());
+                    }
+                    Some(id) => next = p.channel(id).and_then(|c| c.output),
+                    None => break,
+                }
+            }
+            Some(target.id)
+        }
+        None => return Err("to must be \"main\" or a group track".into()),
+    };
+    let channel = channel_param(session, params)?;
+    channel.output = to;
+    let name = to
+        .and_then(|id| session.project.tracks.iter().find(|t| t.channel == Some(id)))
+        .map_or_else(|| "main".to_string(), |t| t.name.clone());
+    Ok(json!({ "to": name }))
+}
+
+fn set_solo(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let solo = Args::new(params).bool("solo")?;
+    let exclusive = match Args::new(params).value("exclusive") {
+        None => false,
+        Some(v) => v.as_bool().ok_or("exclusive must be true or false")?,
+    };
+    let channels = channel_ids(&session.project, params)?;
+    let ids: Vec<ChannelId> = channels.iter().map(|(_, id)| *id).collect();
+    for channel in &mut session.project.channels {
+        if ids.contains(&channel.id) {
+            channel.solo = solo;
+        } else if exclusive {
+            channel.solo = false;
+        }
+    }
+    Ok(json!({ "tracks": track_ids(&channels), "solo": solo }))
+}
+
+fn set_cue(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let cue = Args::new(params).bool("cue")?;
+    channel_param(session, params)?.cue = cue;
+    Ok(json!({ "cue": cue }))
+}
+
+fn set_midi_input(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let id = track_id(&session.project, params)?;
+    let port = match Args::new(params).value("port") {
+        None => None,
+        Some(Value::String(s)) => Some(match s.trim() {
+            "" => return Err("port must be \"all\", \"none\" or a port's name".into()),
+            "all" => MidiPort::All,
+            "none" => MidiPort::Nothing,
+            name => MidiPort::Named(name.to_string()),
+        }),
+        Some(_) => return Err("port must be a text".into()),
+    };
+    let channel = match Args::new(params).value("channel") {
+        None => None,
+        Some(v) => match v.as_u64() {
+            Some(0) => Some(None),
+            Some(c @ 1..=16) => Some(u8::try_from(c).ok()),
+            _ => return Err("channel must be 0 (every channel) or 1 to 16".into()),
+        },
+    };
+    let monitor = match Args::new(params).value("monitor") {
+        None => None,
+        Some(v) => Some(match v.as_str() {
+            Some("auto") => suhina_model::Monitor::Auto,
+            Some("in") => suhina_model::Monitor::In,
+            Some("off") => suhina_model::Monitor::Off,
+            _ => return Err("monitor must be auto, in or off".into()),
+        }),
+    };
+    let track = session.project.track_mut(id).ok_or("the track is missing")?;
+    if let Some(port) = port {
+        track.midi_input.port = port;
+    }
+    if let Some(channel) = channel {
+        track.midi_input.channel = channel;
+    }
+    if let Some(monitor) = monitor {
+        track.midi_input.monitor = monitor;
+    }
+    Ok(json!({ "midi_input": midi_input_json(&track.midi_input) }))
+}
+
+/// The input channels `text` names, as `track.setAudioInput` and `audio.setTrackInput` take
+/// them: "none", a channel from 1 ("3") or a pair of neighbouring channels ("1/2").
+pub(crate) fn parse_input_channels(value: &Value) -> Result<suhina_model::InputChannels, CommandError> {
+    use suhina_model::{InputChannels, MAX_INPUT_CHANNEL};
+    let bad = || {
+        CommandError(format!("input must be \"none\", a channel from 1 to {MAX_INPUT_CHANNEL} or a pair like \"1/2\""))
+    };
+    let channel = |text: &str| text.trim().parse::<u16>().ok().filter(|c| (1..=MAX_INPUT_CHANNEL).contains(c));
+    let text = value.as_str().ok_or_else(bad)?;
+    Ok(match text.trim() {
+        "none" => InputChannels::None,
+        pair if pair.contains('/') => {
+            let (left, right) = pair.split_once('/').ok_or_else(bad)?;
+            let (left, right) = (channel(left).ok_or_else(bad)?, channel(right).ok_or_else(bad)?);
+            if left.checked_add(1) != Some(right) {
+                return Err("a stereo pair is two neighbouring channels, like \"1/2\" or \"3/4\"".into());
+            }
+            InputChannels::Stereo(left)
+        }
+        one => InputChannels::Mono(channel(one).ok_or_else(bad)?),
+    })
+}
+
+fn set_audio_input(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    use suhina_model::Monitor;
+    let id = track_id(&session.project, params)?;
+    let channels = Args::new(params).value("input").map(parse_input_channels).transpose()?;
+    let monitor = match Args::new(params).value("monitor") {
+        None => None,
+        Some(v) => Some(match v.as_str() {
+            Some("auto") => Monitor::Auto,
+            Some("in") => Monitor::In,
+            Some("off") => Monitor::Off,
+            _ => return Err("monitor must be auto, in or off".into()),
+        }),
+    };
+    let track = session.project.track_mut(id).ok_or("the track is missing")?;
+    if let Some(channels) = channels {
+        track.audio_input.channels = channels;
+    }
+    if let Some(monitor) = monitor {
+        track.audio_input.monitor = monitor;
+    }
+    Ok(json!({ "audio_input": audio_input_json(&track.audio_input) }))
+}
+
+fn set_arm(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let armed = Args::new(params).bool("armed")?;
+    let exclusive = match Args::new(params).value("exclusive") {
+        None => false,
+        Some(v) => v.as_bool().ok_or("exclusive must be true or false")?,
+    };
+    let track = track_id(&session.project, params)?;
+    session.set_armed(track, armed, exclusive);
+    let tracks: Vec<u32> = session.armed().iter().map(|t| t.0).collect();
+    Ok(json!({ "armed": armed, "armed_tracks": tracks, "playing": session.player().is_some() }))
+}
+
+fn stop_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let column = column_index(session.project(), params)?;
+    send(session, LaunchCommand::StopColumn { column })?;
+    Ok(json!({ "queued": "stop" }))
+}

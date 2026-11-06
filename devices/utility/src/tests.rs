@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use suhina_device_api::conformance::{self, test_signal};
+use suhina_device_api::conformance::test_signal;
 
 use super::*;
 
@@ -39,11 +39,7 @@ fn peaks(signal: &[f32]) -> (f32, f32) {
     (amplitude(l), amplitude(r))
 }
 
-#[test]
-fn passes_the_device_conformance_checks() {
-    let failures = conformance::check(&|| Box::new(Utility::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-}
+suhina_device_api::conformance_test!(Utility::new());
 
 #[test]
 fn defaults_pass_the_signal_through_exactly() {
@@ -200,4 +196,40 @@ fn bass_mono_listen_plays_only_the_lows() {
     run(&mut utility(&[listen.as_slice(), &[(param::BASS_MONO, 1.0)]].concat()), &mut s);
     let (l, r) = peaks(&s);
     assert!((l - 0.5).abs() < 0.01 && (r - 0.5).abs() < 0.01, "{l} {r}");
+}
+
+#[test]
+fn the_gain_knob_is_even_in_db_over_its_top_three_quarters_and_falls_to_silence() {
+    let gain = &PARAMS[param::GAIN];
+    for (position, db) in [(1.0, 35.0), (0.75, 17.5), (0.5, 0.0), (0.25, -17.5)] {
+        assert!((gain.from_normalized(position) - db).abs() < 1e-9, "{position}");
+        assert!((gain.to_normalized(db) - position).abs() < 1e-9, "{db}");
+    }
+    // Below a quarter the gain is a power of the travel: -29.6 dB at an eighth.
+    assert!((gain.from_normalized(0.125) + 29.6).abs() < 0.1, "{}", gain.from_normalized(0.125));
+    assert_eq!(gain.from_normalized(0.0), f64::from(SILENCE_DB));
+    assert_eq!(gain.to_normalized(f64::from(SILENCE_DB)), 0.0);
+    for position in [0.02, 0.1, 0.2, 0.249, 0.3, 0.9] {
+        assert!((gain.to_normalized(gain.from_normalized(position)) - position).abs() < 1e-9, "{position}");
+    }
+}
+
+#[test]
+fn a_jump_in_gain_glides_along_the_knob_in_a_few_milliseconds() {
+    let gain = &PARAMS[param::GAIN];
+    let mut u = utility(&[(param::GAIN, -54.0)]);
+    u.set_param(param::GAIN, 8.0);
+    // A steady 1 on both sides: the output is the gain.
+    let mut ones = vec![1.0f32; 2 * 1_000];
+    run(&mut u, &mut ones);
+    let position: Vec<f64> =
+        ones.iter().step_by(2).map(|&g| gain.to_normalized(20.0 * f64::from(g).max(1e-12).log10())).collect();
+    let (from, to) = (gain.to_normalized(-54.0), gain.to_normalized(8.0));
+    let share = |n: usize| (position[n] - from) / (to - from);
+    // An S along the knob: it starts slowly, is half-way after 1.1 ms and there by 8 ms.
+    assert!(share(2) < 0.01, "{}", share(2));
+    let half = (0..1_000).find(|&n| share(n) >= 0.5).unwrap_or(0);
+    assert!((50..=58).contains(&half), "{half}");
+    assert!(position.windows(2).all(|w| w[1] >= w[0] - 1e-12));
+    assert!((f64::from(ones[2 * 400]) - 10f64.powf(8.0 / 20.0)).abs() < 1e-3, "{}", ones[2 * 400]);
 }

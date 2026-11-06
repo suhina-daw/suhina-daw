@@ -8,17 +8,17 @@
 #![allow(clippy::unwrap_used, clippy::panic)] // test helpers outside #[test] functions
 
 use std::path::{Path, PathBuf};
+use suhina_engine::{RenderInputs, RenderOptions};
 
 use serde_json::{Value, json};
 use suhina_engine::{AudioPool, Renderer};
 use suhina_model::*;
 use suhina_session::{Player, Session, blank_project};
 
-const SR: u32 = 48_000;
+use crate::support::run;
+use suhina_test_support::{WavFormat, write_wav};
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
+const SR: u32 = 48_000;
 
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("suhina-files-{name}-{}", std::process::id()));
@@ -30,13 +30,7 @@ fn temp_dir(name: &str) -> PathBuf {
 /// A mono WAV file of `seconds` at a steady `level`.
 fn wav(dir: &Path, name: &str, seconds: f64, level: f32) -> PathBuf {
     let path = dir.join(name);
-    let spec =
-        hound::WavSpec { channels: 1, sample_rate: SR, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
-    let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-    for _ in 0..(seconds * f64::from(SR)) as usize {
-        writer.write_sample(level).unwrap();
-    }
-    writer.finalize().unwrap();
+    write_wav(&path, SR, 1, WavFormat::Float32, &vec![level; (seconds * f64::from(SR)) as usize]);
     path
 }
 
@@ -86,7 +80,7 @@ fn midi(dir: &Path, name: &str, tracks: &[TrackNotes<'_>]) -> PathBuf {
 }
 
 fn names(p: &Project) -> Vec<String> {
-    p.tracks.iter().map(|t| t.name.clone()).collect()
+    p.tracks.iter().map(|t| p.shown_track_name(t.id)).collect()
 }
 
 fn text(path: &Path) -> String {
@@ -129,8 +123,8 @@ fn a_track_is_added_before_the_returns_with_its_channel_slots_and_lane() {
     let added = run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
     let id = TrackId(added["track"].as_u64().unwrap() as u32);
     let p = session.project();
-    assert_eq!(names(p), ["1 MIDI", "2 MIDI", "3 Audio", "4 Audio", "Audio 3", "A Return", "B Return"]);
-    let track = p.tracks.iter().find(|t| t.id == id).unwrap();
+    assert_eq!(names(p), ["1 MIDI", "2 MIDI", "3 Audio", "4 Audio", "5 Audio", "A Return", "B Return"]);
+    let track = p.track(id).unwrap();
     assert_eq!(track.content, ContentKinds { notes: false, audio: true });
     let channel = p.channels.iter().find(|c| Some(c.id) == track.channel).unwrap();
     assert_eq!((channel.role, channel.output), (ChannelRole::Regular, Some(ChannelId(100))));
@@ -145,19 +139,8 @@ fn a_track_is_added_before_the_returns_with_its_channel_slots_and_lane() {
     // One undo step each.
     run(&mut session, "edit.undo", json!({})).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &blank_project());
-}
-
-#[test]
-fn a_new_track_never_takes_the_name_of_one_still_there() {
-    let mut session = Session::new(blank_project());
-    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
-    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
-    run(&mut session, "track.delete", json!({ "track": "Audio 3" })).unwrap();
-    // Four audio tracks counted the next one "Audio 4", the name of a track still there.
-    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
-    assert_eq!(names(session.project())[4..6], ["Audio 4", "Audio 5"]);
-    assert!(run(&mut session, "track.setMute", json!({ "tracks": ["Audio 4"], "mute": true })).is_ok());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..blank_project() });
 }
 
 #[test]
@@ -226,9 +209,22 @@ fn samples_go_one_after_another_on_a_track_at_their_length() {
     assert!(session.audio().files.contains_key(&region.file), "decoded into the session's pool");
 
     // The offline render plays them: the oracle for what was placed.
-    let renderer = Renderer::with_audio(session.project(), session.audio(), SR).unwrap();
+    let renderer = Renderer::build(
+        session.project(),
+        RenderInputs::from_audio(session.audio(), suhina_session::devices()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     drop(renderer);
-    let out = suhina_engine::render_offline_with_audio(session.project(), session.audio(), SR, 512).unwrap();
+    let out = suhina_engine::render_offline_from(
+        session.project(),
+        RenderInputs::from_audio(session.audio(), suhina_session::devices()),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
     let at = |beat: f64| out[((beat * 0.5 + 0.05) * f64::from(SR)) as usize * 2].abs();
     assert!(at(4.0) > 0.1 && at(5.0) > 0.05, "{} {}", at(4.0), at(5.0));
     assert!(at(2.0) < 1e-6, "nothing before the clips");
@@ -252,6 +248,31 @@ fn a_sample_with_a_tempo_in_its_name_is_warped_to_the_project() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A loop of known tempo stretched with warp off, then warped again, is back at its own tempo:
+/// warp on sets it to the file's tempo, not to the stretch.
+#[test]
+fn warp_on_sets_a_loop_of_known_tempo_back_to_its_own_tempo() {
+    let dir = temp_dir("warp-back");
+    let looped = wav(&dir, "loop 60bpm.wav", 2.0, 0.5);
+    let mut session = Session::new(blank_project());
+    run(&mut session, "clip.addFiles", json!({ "paths": [text(&looped)], "track": 3, "start": 0.0 })).unwrap();
+    let clip = |s: &Session| {
+        let p = s.project();
+        p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(3))).unwrap().clips[0].clone()
+    };
+    let id = clip(&session).id.0;
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
+    run(&mut session, "clip.stretch", json!({ "clip": id, "end": 3.0 })).unwrap();
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": true })).unwrap();
+    let c = clip(&session);
+    let p = session.project();
+    let LaneData::Audio(region) = &p.content(c.content).unwrap().lanes[0].data else { panic!() };
+    assert!(region.warped);
+    assert_eq!(region.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)), "60 BPM again");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The slot clip in `scene` (from 1) of `track`.
 fn slot_clip(p: &Project, track: u32, scene: usize) -> &Clip {
     let column = p.launcher.columns.iter().find(|c| c.track == TrackId(track)).unwrap();
@@ -265,7 +286,7 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     // 0.75 s at 120 BPM is a beat and a half: not a whole bar, and no tempo to find in it.
     let hit = wav(&dir, "hit.wav", 0.75, 0.5);
     let mut session = Session::new(blank_project());
-    run(&mut session, "clip.addFiles", json!({ "paths": [text(&hit)], "track": "3 Audio", "scene": 1 })).unwrap();
+    run(&mut session, "clip.addFiles", json!({ "paths": [text(&hit)], "track": "3 Audio", "scene": 0 })).unwrap();
     let clip = slot_clip(session.project(), 3, 1);
     assert_eq!((clip.length, clip.loop_range), (1.5, Some(LoopRange { start: 0.0, end: 1.5 })));
     let LaneData::Audio(region) = &session.project().content(clip.content).unwrap().lanes[0].data else {
@@ -277,21 +298,23 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     let column = session.project().launcher.columns.iter().position(|c| c.track == TrackId(3)).unwrap();
     let launch = [(0.0, suhina_engine::LaunchCommand::LaunchClip { column, slot: 0 })];
     let render = |session: &Session| {
-        suhina_engine::render_launches(session.project(), session.audio(), SR, &launch, 2.0).unwrap()
+        suhina_engine::render_launches(session.project(), session.audio(), SR, &launch, 2.0, suhina_session::devices())
+            .unwrap()
     };
     let at = |out: &[f32], seconds: f64| out[(seconds * f64::from(SR)) as usize * 2].abs();
     let out = render(&session);
     assert!(at(&out, 0.3) > 0.1 && at(&out, 1.0) > 0.1 && at(&out, 1.8) > 0.1);
 
     // clip.setLoop off makes it a one-shot: it plays once and the slot falls silent.
-    let done = run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": false })).unwrap();
-    assert_eq!(done, json!({ "scene": 1, "loop": false }));
+    let done = run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": false })).unwrap();
+    let (clip, scene_id) = (slot_clip(session.project(), 3, 1).id.0, session.project().launcher.scenes[0].id.0);
+    assert_eq!(done, json!({ "clip": clip, "scene": 0, "scene_id": scene_id, "loop": false }));
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, None);
     let out = render(&session);
     assert!(at(&out, 0.3) > 0.1 && at(&out, 1.0) < 1e-6 && at(&out, 1.8) < 1e-6);
 
     // On again loops the whole clip; one undo step each.
-    run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": true })).unwrap();
+    run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": true })).unwrap();
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, Some(LoopRange { start: 0.0, end: 1.5 }));
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, None);
@@ -299,9 +322,9 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     assert!(slot_clip(session.project(), 3, 1).loop_range.is_some());
 
     // An empty slot, a missing scene and a value that is not true or false are errors.
-    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 2, "loop": true })).is_err());
-    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 99, "loop": true })).is_err());
-    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": "yes" })).is_err());
+    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": true })).is_err());
+    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 98, "loop": true })).is_err());
+    assert!(run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": "yes" })).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -326,7 +349,7 @@ fn files_go_down_the_slots_from_a_scene_and_add_scenes_when_needed() {
         column.slots.truncate(2);
     }
     let mut session = Session::new(project);
-    run(&mut session, "clip.addFiles", json!({ "paths": paths, "track": "4 Audio", "scene": 2 })).unwrap();
+    run(&mut session, "clip.addFiles", json!({ "paths": paths, "track": "4 Audio", "scene": 1 })).unwrap();
     let p = session.project();
     assert_eq!(p.launcher.scenes.len(), 4, "two scenes added");
     assert!(p.launcher.columns.iter().all(|c| c.slots.len() == 4));
@@ -351,7 +374,7 @@ fn separate_puts_each_file_on_a_track_of_its_own() {
     .unwrap();
     assert_eq!(out["tracks"].as_array().map(Vec::len), Some(2));
     let p = session.project();
-    assert_eq!(names(p)[2..6], ["3 Audio", "snare", "hat", "4 Audio"]);
+    assert_eq!(names(p)[2..6], ["3 Audio", "snare", "hat", "6 Audio"]);
     for lane in p.arrangement.lanes.iter().filter(|l| l.clips.len() == 1) {
         assert_eq!(lane.clips[0].start, 8.0, "side by side, at the same beat");
     }
@@ -366,10 +389,10 @@ fn mixed_files_on_empty_space_make_an_audio_and_a_midi_track() {
     let m = midi(&dir, "groove.mid", &[("", &[(0, 96, 60), (192, 96, 64)])]);
     let mut session = Session::new(blank_project());
     let out =
-        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m), text(&b)], "scene": 1 })).unwrap();
+        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m), text(&b)], "scene": 0 })).unwrap();
     assert_eq!(out["tracks"].as_array().map(Vec::len), Some(2));
     let p = session.project();
-    assert_eq!(names(p)[4..6], ["Audio 3", "groove"]);
+    assert_eq!(names(p)[4..6], ["5 Audio", "groove"]);
     let midi_track = p.tracks.iter().find(|t| t.name == "groove").unwrap();
     assert_eq!(midi_track.content, ContentKinds { notes: true, audio: false });
     // The MIDI clip is a bar long (its notes end at beat 3) and loops in its slot.
@@ -399,7 +422,46 @@ fn files_a_track_cannot_hold_go_on_a_new_track_after_it() {
     run(&mut session, "clip.addFiles", json!({ "paths": [text(&m), text(&a)], "track": "1 MIDI", "start": 0.0 }))
         .unwrap();
     let p = session.project();
-    assert_eq!(names(p)[..3], ["1 MIDI", "vox", "2 MIDI"]);
+    assert_eq!(names(p)[..3], ["1 MIDI", "vox", "3 MIDI"]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn after_puts_the_new_tracks_after_a_track() {
+    let dir = temp_dir("after");
+    let a = wav(&dir, "pad.wav", 0.5, 0.5);
+    let m = midi(&dir, "riff.mid", &[("", &[(0, 96, 60)])]);
+    let mut session = Session::new(blank_project());
+    let out =
+        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m)], "after": "1 MIDI", "start": 4.0 }))
+            .unwrap();
+    assert_eq!(out["tracks"].as_array().map(Vec::len), Some(2));
+    assert_eq!(names(session.project())[..4], ["1 MIDI", "pad", "riff", "4 MIDI"]);
+
+    // One each with separate, in the order given, still after the track.
+    let b = wav(&dir, "stab.wav", 0.5, 0.5);
+    let mut session = Session::new(blank_project());
+    run(
+        &mut session,
+        "clip.addFiles",
+        json!({ "paths": [text(&a), text(&b)], "after": "1 MIDI", "start": 0.0, "separate": true }),
+    )
+    .unwrap();
+    assert_eq!(names(session.project())[..4], ["1 MIDI", "pad", "stab", "4 MIDI"]);
+
+    // With a track to place them on, after has nothing to say.
+    let mut session = Session::new(blank_project());
+    let err = run(
+        &mut session,
+        "clip.addFiles",
+        json!({ "paths": [text(&a)], "track": "3 Audio", "after": "1 MIDI", "start": 0.0 }),
+    )
+    .unwrap_err();
+    assert!(err.contains("not both"), "{err}");
+    // A track that is not there.
+    let err =
+        run(&mut session, "clip.addFiles", json!({ "paths": [text(&a)], "after": "Nope", "start": 0.0 })).unwrap_err();
+    assert!(!err.is_empty());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -426,10 +488,11 @@ fn a_drop_is_one_undo_step() {
     let a = wav(&dir, "a.wav", 0.5, 0.5);
     let m = midi(&dir, "b.mid", &[("", &[(0, 96, 60)])]);
     let mut session = Session::new(blank_project());
-    run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m)], "scene": 3, "separate": true })).unwrap();
+    run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m)], "scene": 2, "separate": true })).unwrap();
     assert_eq!(session.project().tracks.len(), 8);
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &blank_project());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..blank_project() });
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -464,10 +527,10 @@ fn unreadable_files_are_skipped_and_reported() {
         json!({ "paths": [] , "start": 0.0 }),
         json!({ "paths": "a.wav", "start": 0.0 }),
         json!({ "paths": [text(&good)] }),
-        json!({ "paths": [text(&good)], "start": 0.0, "scene": 1 }),
+        json!({ "paths": [text(&good)], "start": 0.0, "scene": 99 }),
         json!({ "paths": [text(&good)], "start": -1.0 }),
         json!({ "paths": [text(&good)], "start": 1e12 }),
-        json!({ "paths": [text(&good)], "scene": 0 }),
+        json!({ "paths": [text(&good)], "scene": -1 }),
         json!({ "paths": [text(&good)], "scene": 1_000_000 }),
         json!({ "paths": [text(&good)], "start": 0.0, "track": "A Return" }),
         json!({ "paths": [text(&good)], "start": 0.0, "warp": "elastic" }),
@@ -490,7 +553,7 @@ fn a_sample_added_while_playing_reaches_the_engine() {
     let dir = temp_dir("playing");
     let sample = wav(&dir, "late.wav", 2.0, 0.5);
     let project = blank_project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "clip.addFiles", json!({ "paths": [text(&sample)], "track": 3, "start": 0.0 })).unwrap();
@@ -532,7 +595,7 @@ fn a_preset_adds_the_fm_synth_with_its_voice() {
     let mut session = Session::new(blank_project());
     let out = run(&mut session, "device.add", json!({ "track": 1, "preset": text(&bank), "voice": 32 })).unwrap();
     assert_eq!(out["preset"], "TUBULAR");
-    let channel = session.project().channels.iter().find(|c| c.id == ChannelId(1)).unwrap();
+    let channel = session.project().channel(ChannelId(1)).unwrap();
     let device = &channel.devices[0];
     assert_eq!(device.kind, DeviceKind::Builtin("fm-synth".into()));
     assert!(!device.params.is_empty());
@@ -555,6 +618,58 @@ fn a_preset_adds_the_fm_synth_with_its_voice() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// An instrument added with a preset names its track after the preset, as a new track with the
+/// preset is named; a name the user chose stays (#946).
+#[test]
+fn an_instrument_preset_names_its_track_after_the_preset() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "device.add", json!({ "track": 1, "stock": "fm-synth/warm-fm-bass" })).unwrap();
+    assert_eq!(names(session.project())[0], "1 Warm FM Bass");
+    // Undo puts the name back with the device, one step.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(names(session.project())[0], "1 MIDI");
+    // The same instrument without a preset names the track after the device.
+    run(&mut session, "device.add", json!({ "track": 1, "id": "fm-synth" })).unwrap();
+    assert_eq!(names(session.project())[0], "1 FM Synth");
+    // A name the user chose stays.
+    run(&mut session, "track.rename", json!({ "track": 2, "name": "Lead" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 2, "stock": "fm-synth/warm-fm-bass" })).unwrap();
+    assert_eq!(names(session.project())[1], "Lead");
+}
+
+#[test]
+fn a_stock_preset_and_a_preset_file_add_their_device_with_their_values() {
+    let dir = temp_dir("stock-preset");
+    let mut session = Session::new(blank_project());
+    let out = run(&mut session, "device.add", json!({ "track": 1, "stock": "fm-synth/warm-fm-bass" })).unwrap();
+    assert_eq!((out["id"].as_str(), out["preset"].as_str()), (Some("fm-synth"), Some("Warm FM Bass")));
+    let device = &session.project().channel(ChannelId(1)).unwrap().devices[0];
+    assert!(device.params.contains(&suhina_model::DeviceParam::new("op2.level", 86.0)));
+
+    let added = run(&mut session, "track.add", json!({ "stock": "fm-synth/struck-fm-keys" })).unwrap();
+    assert_eq!((added["kind"].as_str(), added["name"].as_str()), (Some("midi"), Some("Struck FM Keys")));
+
+    let file = dir.join("Mine.fm-synth.preset.suhina");
+    std::fs::write(
+        &file,
+        r#"{ "format": "suhina-preset", "version": 1, "device": "fm-synth", "role": "instrument", "name": "Mine", "params": { "volume": -3.0 } }"#,
+    )
+    .unwrap();
+    let added = run(&mut session, "track.add", json!({ "preset": text(&file) })).unwrap();
+    assert_eq!(added["name"], "Mine");
+
+    for bad in [
+        json!({ "track": 1, "stock": "fm-synth/nothing" }),
+        json!({ "track": 1, "stock": 3 }),
+        json!({ "track": 1, "stock": "fm-synth/warm-fm-bass", "preset": text(&file) }),
+        json!({ "track": 1, "stock": "fm-synth/warm-fm-bass", "id": "overdrive" }),
+    ] {
+        assert!(run(&mut session, "device.add", bad.clone()).is_err(), "{bad}");
+    }
+    assert!(run(&mut session, "track.add", json!({ "stock": "fm-synth/nothing" })).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn previews_need_a_player_and_show_in_the_launcher_state() {
     let dir = temp_dir("preview");
@@ -563,7 +678,7 @@ fn previews_need_a_player_and_show_in_the_launcher_state() {
     let project = blank_project();
     let mut session = Session::new(project.clone());
     assert!(run(&mut session, "preview.play", json!({ "path": text(&sample) })).is_err(), "no engine");
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     session.attach_player(Player::new(renderer.controller(), None));
     let out = run(&mut session, "preview.play", json!({ "path": text(&sample), "gain": 0.0 })).unwrap();
     assert_eq!(out["seconds"], 1.0);

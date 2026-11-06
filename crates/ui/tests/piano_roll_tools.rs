@@ -16,6 +16,7 @@ use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::{Tool, key_name};
 use suhina_ui::kit::widgets::Action;
+use suhina_ui::settings::keymap::shown;
 use suhina_ui::settings::keymap::{Keymap, Preset};
 use suhina_ui::settings::{PianoRollTop, Settings};
 use suhina_ui::{App, kit::theme};
@@ -34,6 +35,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -50,7 +53,13 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
 }
 
 fn engine() -> suhina_engine::Renderer {
-    suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap()
+    suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap()
 }
 
 /// The edited clip's notes in the project.
@@ -59,7 +68,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let project = session.project();
     let clip = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap();
     match &project.content(clip.content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }
@@ -211,6 +220,7 @@ fn alt_and_the_wheel_zoom_key_rows() {
         delta: vec2(0.0, 60.0),
         modifiers: Modifiers::ALT,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
     });
     h.run();
     h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
@@ -312,13 +322,17 @@ fn the_erase_tool_deletes_what_it_passes_over_in_one_undo_step() {
 }
 
 #[test]
-fn the_piano_roll_keeps_its_own_grid_unless_settings_link_it_to_the_control_bar() {
+fn the_control_bars_quantize_box_leaves_the_piano_rolls_grid_and_snap_alone() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    // The control bar's grid value sets the Arrangement view's only.
+    // The control bar's Quantize value is the launch quantisation and sets nothing in the piano
+    // roll: not its grid lines, not what its notes snap to.
     h.state_mut().run(&Action::new("launcher.setQuantization", json!({ "value": "1/4" })));
     h.run();
     assert!(h.query_by_label("Grid value 1/16").is_some(), "the piano roll's own grid shows");
+    h.state_mut().run(&Action::new("launcher.setQuantization", json!({ "value": "none" })));
+    h.run();
+    assert!(h.query_by_label("Grid value 1/16").is_some(), "and still, with Quantize at none");
     tool(&mut h, "Draw");
     let key = empty_key(&h);
     let first = notes(&h)[0].time;
@@ -326,12 +340,17 @@ fn the_piano_roll_keeps_its_own_grid_unless_settings_link_it_to_the_control_bar(
     click(&mut h, p0);
     assert_eq!(notes(&h).last().unwrap().duration, 0.25);
 
-    // Following the control bar, its value is the piano roll's.
-    let settings = Settings { piano_grid_follows: true, ..Settings::default() };
-    let ctx = h.ctx.clone();
-    h.state_mut().set_settings(&ctx, settings);
+    // The other way too: picking a grid or turning snap off in the piano roll leaves the launch
+    // quantisation as it was.
+    h.state_mut().run(&Action::new("launcher.setQuantization", json!({ "value": "1/4" })));
     h.run();
-    assert!(h.query_by_label("Grid value 1/4").is_some());
+    let quantization = h.state().session().unwrap().quantization();
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num2);
+    h.run();
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num4);
+    h.run();
+    assert!(h.query_by_label("Grid value 1/8 off").is_some(), "the piano roll's grid changed");
+    assert_eq!(h.state().session().unwrap().quantization(), quantization, "the launch quantisation did not");
 }
 
 #[test]
@@ -375,7 +394,7 @@ fn a_new_note_takes_the_length_of_the_note_last_clicked() {
 }
 
 #[test]
-fn settings_clip_editor_has_both_piano_roll_settings_and_they_change_the_settings() {
+fn settings_clip_editor_has_the_piano_roll_settings_and_they_change_the_settings() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
@@ -383,17 +402,12 @@ fn settings_clip_editor_has_both_piano_roll_settings_and_they_change_the_setting
     assert!(h.state().settings_open());
     h.get_by_label("Settings page: Clip editor").click();
     h.run();
-    // Both rows fit on the page, inside the window.
-    for name in ["Pulled to the top: Whole window", "Piano roll grid: Control bar"] {
-        let rect = h.get_by_label(name).rect();
-        assert!(rect.bottom() < SIZE.1, "{name} at {rect:?}");
-    }
-    h.get_by_label("Pulled to the top: Whole window").click();
-    h.run();
-    h.get_by_label("Piano roll grid: Control bar").click();
+    // The row fits on the page, inside the window.
+    let rect = h.get_by_label("Full-height piano roll covers: Whole window").rect();
+    assert!(rect.bottom() < SIZE.1, "at {rect:?}");
+    h.get_by_label("Full-height piano roll covers: Whole window").click();
     h.run();
     assert_eq!(h.state().settings().piano_roll_top, PianoRollTop::Window);
-    assert!(h.state().settings().piano_grid_follows);
 }
 
 /// The number keys choose the tools, the way the toolbar's icons do (after a click in the piano
@@ -512,6 +526,7 @@ fn the_right_button_and_the_wheel_choose_the_tools() {
             delta: vec2(0.0, delta),
             modifiers: Modifiers::NONE,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.step();
     };
@@ -578,7 +593,7 @@ fn shift_and_draw_repeats_the_last_notes_length() {
 }
 
 /// Clicks one of the toolbar's note clipboard buttons by name; their label is the name and the
-/// key they have ("Copy (Ctrl+C)"), so a button whose key the keymap has moved is still found.
+/// key they have ("Copy (Ctrl+C)", "Copy (⌘C)" on macOS), so a button whose key the keymap has moved is still found.
 fn clipboard(h: &mut Harness<'static, App>, name: &str) {
     let action = match name {
         "Cut" => "selection.cut",
@@ -599,8 +614,8 @@ fn the_toolbar_cuts_copies_pastes_and_duplicates_the_selection() {
     let mut h = piano_app(&mut renderer, Settings::default());
     let start = notes(&h).len();
     // The buttons show the key they run.
-    assert!(h.query_by_label("Copy (Ctrl+C)").is_some(), "Copy names its key");
-    assert!(h.query_by_label("Cut (Ctrl+X)").is_some(), "Cut names its key");
+    assert!(h.query_by_label(&format!("Copy ({})", shown("Ctrl+C"))).is_some(), "Copy names its key");
+    assert!(h.query_by_label(&format!("Cut ({})", shown("Ctrl+X"))).is_some(), "Cut names its key");
     // Nothing selected: the clipboard buttons are greyed out, so a click does nothing.
     clipboard(&mut h, "Copy");
     assert_eq!(notes(&h).len(), start, "nothing to copy");
@@ -620,7 +635,7 @@ fn the_toolbar_cuts_copies_pastes_and_duplicates_the_selection() {
     assert!(notes(&h).len() < before_cut, "the toolbar's Cut deleted the selection");
 }
 
-/// The Settings › Shortcuts presets: Draw-first makes Ctrl+B duplicate notes and a right-click in
+/// The Settings › Keys presets: Draw-first makes Ctrl+B duplicate notes and a right-click in
 /// Draw delete one; Select-first, the default, keeps Ctrl+D and does nothing on a right-click.
 #[test]
 fn the_shortcuts_presets_set_their_keys_and_the_right_click() {
@@ -638,12 +653,12 @@ fn the_shortcuts_presets_set_their_keys_and_the_right_click() {
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     h.run();
     assert!(h.state().settings_open());
-    h.get_by_label("Settings page: Shortcuts").click();
+    h.get_by_label("Settings page: Keys").click();
     h.run();
     h.get_by_label("Preset: Draw-first").click();
     h.run();
     assert_eq!(h.state().keymap().preset(), Preset::DrawFirst);
-    assert_eq!(h.state().keymap().label("selection.duplicate").as_deref(), Some("Ctrl+B"));
+    assert_eq!(h.state().keymap().binding_text("selection.duplicate").as_deref(), Some("Ctrl+B"));
     // The choice is saved with the keymap.
     let saved = h.state_mut().take_changed_keymap().unwrap_or_else(|| panic!("the keymap changed"));
     assert!(saved.to_json().contains("\"preset\": \"Draw-first\""));
@@ -713,7 +728,7 @@ fn the_key_column_plays_and_ctrl_click_selects_a_pitch() {
     let mut h = piano_app(&mut renderer, Settings::default());
     let before = notes(&h);
     let grid = h.get_by_label_contains("Piano roll,").rect();
-    // The row of the first note: the key column is the 36 points left of the grid.
+    // The row of the first note, in the key column left of the grid.
     let row = note_rect(&h, &before[0]).center().y;
     let at = egui::pos2(grid.left() - 28.0, row);
     h.input_mut().events.push(egui::Event::PointerButton {
@@ -782,4 +797,222 @@ fn a_paint_stroke_that_starts_on_a_note_paints_and_leaves_that_note_alone() {
     let painted: Vec<&Note> = after.iter().skip(before.len()).collect();
     assert!(!painted.is_empty(), "the stroke painted");
     assert!(painted.iter().all(|n| n.key == start.key && n.time > start.time), "{painted:?}");
+}
+
+/// A press at `from` in the piano roll, a move to `to` and the release, with `modifiers` held.
+fn drag_keys(h: &mut Harness<'static, App>, from: egui::Pos2, to: egui::Pos2, modifiers: Modifiers) {
+    h.input_mut().events.push(egui::Event::ModifiersChanged(modifiers));
+    h.input_mut().events.push(egui::Event::PointerMoved(from));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers,
+    });
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerMoved(to));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers,
+    });
+    h.run();
+    h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
+}
+
+/// A drag in the key column selects the keys from the press to the pointer, and Shift adds another
+/// range, leaving the keys between them out.
+#[test]
+fn dragging_the_keys_selects_ranges_and_shift_adds_one() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let before = notes(&h);
+    let grid = h.get_by_label_contains("Piano roll,").rect();
+    let high = before.iter().map(|n| n.key).max().unwrap();
+    let low = before.iter().map(|n| n.key).min().unwrap();
+    assert!(high > low, "the clip has notes on two keys");
+    let row = |h: &Harness<'static, App>, key: u8| {
+        let note = before.iter().find(|n| n.key == key).unwrap();
+        egui::pos2(grid.left() - 28.0, note_rect(h, note).center().y)
+    };
+    let of =
+        |key: u8| -> Vec<usize> { before.iter().enumerate().filter(|(_, n)| n.key == key).map(|(i, _)| i).collect() };
+    let (top, bottom) = (row(&h, high), row(&h, low));
+    drag_keys(&mut h, top, top, Modifiers::NONE);
+    assert_eq!(h.state().piano_roll().selected.iter().copied().collect::<Vec<_>>(), of(high));
+    drag_keys(&mut h, bottom, bottom, Modifiers::SHIFT);
+    let mut both = of(high);
+    both.extend(of(low));
+    both.sort_unstable();
+    assert_eq!(h.state().piano_roll().selected.iter().copied().collect::<Vec<_>>(), both);
+    // A drag across them all, without Shift, is one range with everything in it.
+    drag_keys(&mut h, top, bottom, Modifiers::NONE);
+    let every: Vec<usize> =
+        before.iter().enumerate().filter(|(_, n)| (low..=high).contains(&n.key)).map(|(i, _)| i).collect();
+    assert_eq!(h.state().piano_roll().selected.iter().copied().collect::<Vec<_>>(), every);
+    assert_eq!(notes(&h), before, "selection only");
+}
+
+/// A drag sideways in the scale strip changes the row height and the row under it stays where it
+/// is; a drag up or down scrolls the rows with the pointer.
+#[test]
+fn dragging_the_scale_strip_zooms_sideways_and_scrolls_up_and_down() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let first = notes(&h)[0];
+    let strip = h.get_by_label("Row height strip").rect();
+    let height = h.state().piano_roll().key_height;
+    let at = egui::pos2(strip.center().x, note_rect(&h, &first).center().y);
+    let before = note_rect(&h, &first).center().y;
+    drag_keys(&mut h, at, at + egui::vec2(40.0, 0.0), Modifiers::NONE);
+    let taller = h.state().piano_roll().key_height;
+    assert!(taller > height, "to the right makes the rows taller");
+    assert!((note_rect(&h, &first).center().y - before).abs() < 2.0, "the row stays");
+    assert_eq!(notes(&h)[0], first, "the view only");
+
+    // Scrolled up a little first, there is room to follow the pointer down.
+    let scroll = h.state().piano_roll().scroll.y;
+    drag_keys(&mut h, at, at + egui::vec2(0.0, -10.0), Modifiers::NONE);
+    assert_eq!(h.state().piano_roll().key_height, taller, "up and down leave the height");
+    assert!(h.state().piano_roll().scroll.y != scroll, "the rows move with the pointer");
+}
+
+/// The corner's menu keeps its choices in the settings.
+#[test]
+fn the_corner_menu_chooses_the_keys_and_stacking() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    assert_eq!(h.state().piano_roll().key_style, suhina_ui::settings::PianoKeyStyle::Bone);
+    for label in ["Key style: Stone", "Key names: All keys", "Allow stacked notes"] {
+        h.get_by_label("Piano roll view").click();
+        h.run();
+        h.get_by_label(label).click();
+        h.run();
+    }
+    let state = h.state().piano_roll();
+    assert_eq!(state.key_style, suhina_ui::settings::PianoKeyStyle::Stone);
+    assert_eq!(state.key_names, suhina_ui::settings::PianoKeyNames::All);
+    assert!(!state.notes_replace, "stacked notes allowed");
+}
+
+/// While the piano roll has the keyboard, an edit key with no note selected does nothing: it does
+/// not reach the clip behind.
+#[test]
+fn an_edit_key_with_no_notes_selected_stays_in_the_piano_roll() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let before = notes(&h);
+    let at = note_rect(&h, &before[0]).center();
+    click(&mut h, at);
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.state().piano_roll().selected.is_empty());
+    assert!(h.state().piano_roll().focused);
+    h.key_press(egui::Key::Delete);
+    h.run();
+    assert_eq!(notes(&h), before);
+    assert!(h.query_by_label_contains("Piano roll,").is_some(), "the clip is still there");
+    assert!(h.state().piano_roll().focused, "and the keyboard is still the piano roll's");
+}
+
+/// A rectangle over no note selects in time: nothing is selected and the bar says what is; a rectangle
+/// over a note selects the note, and the bar its extent. A click leaves the insert mark.
+#[test]
+fn a_rectangle_over_no_note_selects_in_time_and_a_click_leaves_a_mark() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let grid = h.get_by_label_contains("Piano roll,").rect();
+    let first = notes(&h)[0];
+    let row = note_rect(&h, &first);
+    // A height clear of every note, and of the row the rectangle reaches.
+    let rects: Vec<egui::Rect> = notes(&h).iter().map(|n| note_rect(&h, n)).collect();
+    let top = (0..)
+        .map(|i| grid.top() + 2.0 + i as f32 * 2.0)
+        .take_while(|y| *y < grid.bottom() - 4.0)
+        .find(|y| rects.iter().all(|r| r.bottom() < *y - 1.0 || r.top() > *y + 3.0))
+        .expect("the fixture leaves a row free");
+    drag_keys(&mut h, egui::pos2(row.left() + 1.0, top), egui::pos2(row.right() + 1.0, top + 2.0), Modifiers::NONE);
+    assert!(h.state().piano_roll().selected.is_empty());
+    assert!(h.query_by_label_contains("Selected in time").is_some());
+
+    let spot = egui::pos2(row.right() + 40.0, top);
+    drag_keys(&mut h, spot, spot, Modifiers::NONE);
+    assert!(h.query_by_label_contains("Selected in time").is_none());
+    assert!(h.query_by_label_contains("Insert mark at beat").is_some());
+}
+
+/// Rows and time zoom far closer than the default, and the velocity lane stays.
+#[test]
+fn the_rows_zoom_in_a_long_way() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let strip = h.get_by_label("Row height strip").rect();
+    let at = strip.center();
+    drag_keys(&mut h, at, at + egui::vec2(300.0, 0.0), Modifiers::NONE);
+    let height = h.state().piano_roll().key_height;
+    assert!(height > 100.0, "{height}");
+}
+
+/// A rectangle that reaches a note and goes on past it keeps the empty part selected in time.
+#[test]
+fn a_rectangle_over_a_note_keeps_its_whole_stretch() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let first = notes(&h)[0];
+    let row = note_rect(&h, &first);
+    let to = egui::pos2(row.right() + 60.0, row.center().y + 1.0);
+    drag_keys(&mut h, row.left_top() - egui::vec2(-1.0, 1.0), to, Modifiers::NONE);
+    assert!(!h.state().piano_roll().selected.is_empty());
+    let bar = h.get_by_label_contains("Selected in time").rect();
+    assert!(bar.right() >= to.x - 1.0, "{bar:?} reaches {to:?}");
+}
+
+/// A rectangle that touches a little of a note selects in time all of the note.
+#[test]
+fn a_rectangle_over_a_little_of_a_note_covers_all_of_it() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let first = notes(&h)[0];
+    let row = note_rect(&h, &first);
+    let at = egui::pos2(row.center().x, row.top() - 2.0);
+    drag_keys(&mut h, at, at + egui::vec2(2.0, 6.0), Modifiers::NONE);
+    assert!(h.state().piano_roll().selected.len() == 1, "{:?}", h.state().piano_roll().selected);
+    let bar = h.get_by_label_contains("Selected in time").rect();
+    assert!(bar.left() <= row.left() + 1.0 && bar.right() >= row.right() - 1.0, "{bar:?} covers {row:?}");
+}
+
+/// While a drag in the strip zooms there is no pointer, and the strip names no row.
+#[test]
+fn a_drag_in_the_strip_names_no_row() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let at = h.get_by_label("Row height strip").rect().center();
+    let to = at + egui::vec2(30.0, 0.0);
+    // Over the grid the strip names the row: what the drag then leaves out.
+    h.input_mut().events.push(egui::Event::PointerMoved(at + egui::vec2(160.0, 0.0)));
+    h.step();
+    h.step();
+    assert!(h.query_by_label_contains("Row under the pointer").is_some());
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerMoved(to));
+    h.step();
+    assert!(h.query_by_label_contains("Row under the pointer").is_none());
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.run();
 }

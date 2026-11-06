@@ -3,7 +3,7 @@ description: How to write a pull request's "How to check it" section, steps a ne
 read_when: how to check it, test steps, QA steps, how to test, pull request description, manual testing, reviewer steps, check a change
 type: howto
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-11-04
 covers:
   - .github/pull_request_template.md
   - .claude/skills/how-to-check/SKILL.md
@@ -11,7 +11,7 @@ covers:
 
 # How to check it
 
-[AGENTS.md › Before you finish a task](../AGENTS.md#4-before-you-finish-a-task) has the rule;
+[workflow.md › How to check it](workflow.md#how-to-check-it) has the rule;
 this is how to write the section, for a person or any agent. The reader has downloaded the test
 build from the pull request's *Test build* comment, has never used Suhina or any other music
 program, and should be done in a few minutes.
@@ -23,13 +23,6 @@ writes, a `suhina-cli` command, an MCP tool, a setting. An engine change counts 
 hear or measure it (a render that sounds different, a file that now loads). No only for refactors,
 tests, CI and documentation: then the section is one line, "Nothing a user can notice changes:
 <what changed instead>."
-
-The same pull requests update the parity measurement in the same change: the coverage they move in
-`scripts/parity/score.py` (and `scripts/parity/devices.json` for a built-in effect or instrument);
-the report's numbers are regenerated on `main` after the merge. One that moves no coverage writes `Parity: no
-change` and the reason in its description, next to this section. [AGENTS.md › Before you finish a
-task](../AGENTS.md#4-before-you-finish-a-task) has the rule, and the *Parity notice* check warns when
-a change to `crates/`, `devices/` or `apps/` does neither.
 
 ## 2. Collect the facts first, never invent them
 
@@ -57,7 +50,8 @@ the change could break next to it.
 Platform: all (or: Windows only, because …)
 
 **Set up**
-1. Unzip the test build and open `suhina` (`suhina.exe` on Windows). An empty project opens.
+1. Unpack the test build: unzip it, and on macOS and Linux extract the `.tar.gz` inside it too. Open `suhina`
+   (`suhina.exe` on Windows, `Suhina.app` on macOS). An empty project opens.
 2. <make what the check needs, from the menus: the project, track, clip or file>
 
 **Check**
@@ -121,12 +115,12 @@ Explain a term like this the first time the steps use it:
 | Term | Plain words |
 |---|---|
 | project | the whole song, saved as one `.suhina` file |
-| track | one column (Session view) or row (Arrangement view) holding one instrument or one kind of sound |
+| track | one column (Launcher view) or row (Arrangement view) holding one instrument or one kind of sound |
 | slot | one box in a track's column; it holds one clip or is empty |
 | clip | a block of sound or notes in a slot or on the timeline |
 | scene | a row of slots across all tracks; launching it starts every clip in that row |
 | launch | start a clip or scene playing; it starts on the next beat or bar, not at once |
-| Session view | the grid of tracks and slots for starting clips live (Tab switches views) |
+| Launcher view | the grid of tracks and slots for starting clips live (Tab switches views) |
 | Arrangement view | the timeline, left to right, where clips are laid out as a song |
 | browser | the panel listing sounds and files (Ctrl+B shows or hides it) |
 | sample | a recorded sound in an audio file |
@@ -146,8 +140,8 @@ Good:
 Platform: all
 
 **Set up**
-1. Unzip the test build and open `suhina` (`suhina.exe` on Windows). Suhina opens with nothing
-   loaded.
+1. Unpack the test build: unzip it, and on macOS and Linux extract the `.tar.gz` inside it too. Open `suhina`
+   (`suhina.exe` on Windows, `Suhina.app` on macOS). Suhina opens with nothing loaded.
 2. Click **File › New or open…** (Ctrl+T) and then **New blank project**. You should see: a grid
    of 4 tracks (columns) with empty slots (boxes that hold clips).
 

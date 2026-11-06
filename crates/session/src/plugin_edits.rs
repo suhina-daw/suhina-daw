@@ -22,6 +22,10 @@ struct Watched {
     baseline: Option<SavedState>,
     /// The last read, when it differed from the baseline; a second read the same counts.
     differing: Option<SavedState>,
+    /// This differing candidate was already counted after two agreeing reads.
+    confirmed: bool,
+    /// A confirmed value away from the baseline has not returned to it yet.
+    away: bool,
 }
 
 /// The plug-in devices' states as last saved, and whether one has changed since.
@@ -29,6 +33,7 @@ struct Watched {
 pub(crate) struct PluginEdits {
     watched: HashMap<u64, Watched>,
     changed: bool,
+    revision: u64,
 }
 
 impl PluginEdits {
@@ -40,11 +45,22 @@ impl PluginEdits {
             return;
         };
         if baseline == state {
+            if watched.away {
+                self.revision = self.revision.saturating_add(1);
+            }
+            watched.away = false;
+            watched.confirmed = false;
             watched.differing = None;
         } else if watched.differing.as_ref() == Some(state) {
+            if !watched.confirmed {
+                self.revision = self.revision.saturating_add(1);
+            }
+            watched.confirmed = true;
+            watched.away = true;
             self.changed = true;
         } else {
             watched.differing = Some(state.clone());
+            watched.confirmed = false;
         }
     }
 
@@ -52,12 +68,19 @@ impl PluginEdits {
     /// reads are compared with, and nothing has changed yet.
     pub(crate) fn saved(&mut self, states: &HashMap<u64, SavedState>) {
         for (key, state) in states {
-            self.watched.insert(*key, Watched { baseline: Some(state.clone()), differing: None });
+            self.watched.insert(*key, Watched { baseline: Some(state.clone()), ..Watched::default() });
         }
         for watched in self.watched.values_mut() {
             watched.differing = None;
+            watched.confirmed = false;
+            watched.away = false;
         }
         self.changed = false;
+    }
+
+    /// Confirmed state changes since start, including changes after an earlier backup.
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// Whether a plug-in's state has changed since the project was last saved or opened.
@@ -84,6 +107,28 @@ mod tests {
     }
 
     #[test]
+    fn revisions_count_later_confirmed_changes_but_not_repeated_identical_reads() {
+        let mut edits = PluginEdits::default();
+        edits.read(1, &state(0));
+        edits.read(1, &state(1));
+        assert_eq!(edits.revision(), 0);
+        edits.read(1, &state(1));
+        edits.read(1, &state(1));
+        assert_eq!(edits.revision(), 1);
+        edits.read(1, &state(2));
+        edits.read(1, &state(2));
+        assert_eq!(edits.revision(), 2);
+        edits.read(1, &state(3));
+        edits.read(1, &state(0));
+        edits.read(1, &state(0));
+        assert_eq!(edits.revision(), 3, "returning to the baseline also changes the backup");
+        edits.saved(&HashMap::from([(1, state(0))]));
+        edits.read(1, &state(0));
+        assert_eq!(edits.revision(), 3);
+        assert!(!edits.changed());
+    }
+
+    #[test]
     fn two_reads_in_a_row_that_agree_and_differ_are_a_change() {
         let mut edits = PluginEdits::default();
         edits.read(1, &state(1));
@@ -103,6 +148,7 @@ mod tests {
             edits.read(1, &state(n));
         }
         assert!(!edits.changed());
+        assert_eq!(edits.revision(), 0);
     }
 
     #[test]

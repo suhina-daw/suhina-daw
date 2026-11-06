@@ -14,9 +14,11 @@
 //! jumps in phase do not click.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::lfo::{Shape, wave};
+use suhina_dsp::sync::LfoClock;
 use suhina_dsp::{OnePole, Smoother};
 
 /// Ramp for changes of the amount.
@@ -69,7 +71,7 @@ const SYNCED_RATE_NAMES: [&str; 15] = {
 const DEFAULT_SYNCED_RATE: usize = 7;
 const SHAPE_NAMES: [&str; 6] = ["Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Random"];
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("amount", "Amount", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear),
     ParamInfo::toggle("sync", "Sync", false),
     ParamInfo::continuous("rate", "Rate", (0.01, 40.0), 1.0, Unit::Hertz, Scale::Logarithmic),
@@ -84,17 +86,14 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::toggle("invert", "Invert", false),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "auto-pan", name: "Auto Pan", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("auto-pan", "Auto Pan", Role::Effect, &PARAMS);
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
-/// Tempo used when the host gives none that makes sense.
-const FALLBACK_TEMPO: f64 = 120.0;
 /// How much shaping at 1.0 steepens the waveform before it is clipped.
 const MAX_SHAPING_GAIN: f64 = 8.0;
 
 pub struct AutoPan {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     amount: Smoother,
     edges: [OnePole; 2],
     /// Whether the edge filters still have to start at the first gain after a reset.
@@ -113,11 +112,12 @@ impl Default for AutoPan {
 impl AutoPan {
     pub fn new() -> Self {
         let sr = DEFAULT_SAMPLE_RATE;
-        let values = PARAMS.map(|p| p.default);
+        let params = ParamBank::new(&PARAMS);
+        let amount = Smoother::new(params.get(param::AMOUNT) as f32, Smoother::ramp_frames(RAMP_SECONDS, sr));
         let mut pan = Self {
             sample_rate: sr,
-            values,
-            amount: Smoother::new(values[param::AMOUNT] as f32, Smoother::ramp_frames(RAMP_SECONDS, sr)),
+            params,
+            amount,
             edges: [OnePole::new(EDGE_SECONDS, sr); 2],
             fresh: true,
             free_cycles: 0,
@@ -128,7 +128,7 @@ impl AutoPan {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     fn shape(&self) -> Shape {
@@ -152,7 +152,7 @@ impl AutoPan {
 }
 
 impl Device for AutoPan {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 
@@ -173,37 +173,30 @@ impl Device for AutoPan {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        let Some(value) = self.params.set(index, value) else { return };
         if index == param::AMOUNT {
-            self.amount.set_target(*slot as f32);
+            self.amount.set_target(value as f32);
         }
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
-        let tempo = if context.tempo.is_finite() && context.tempo > 0.0 {
-            context.tempo.clamp(1.0, 1_000.0)
-        } else {
-            FALLBACK_TEMPO
-        };
-        let beats_per_frame = tempo / 60.0 / self.sample_rate;
         let synced = self.value(param::SYNC) >= 0.5;
-        let follows_song = synced && context.playing && context.beat.is_finite();
-        let cycles_per_frame =
-            if synced { beats_per_frame / self.synced_beats() } else { self.value(param::RATE) / self.sample_rate };
+        let clock = LfoClock::new(
+            context.tempo_or_default(),
+            self.sample_rate,
+            synced.then(|| self.synced_beats()),
+            self.value(param::RATE),
+        )
+        .following(context.playing, context.beat);
+        let cycles_per_frame = clock.cycles_per_frame();
         let (shape, offset, phase) = (self.shape(), self.value(param::OFFSET), self.value(param::PHASE));
 
         for (n, [left, right]) in buffer.as_chunks_mut::<2>().0.iter_mut().enumerate() {
-            let position = if follows_song {
-                (context.beat + n as f64 * beats_per_frame) / self.synced_beats()
-            } else {
-                self.free_cycles as f64 + self.free_phase
-            };
+            let position = clock.song_cycles(n).unwrap_or(self.free_cycles as f64 + self.free_phase);
             let amount = f64::from(self.amount.next_value());
             let targets = [
                 1.0 - amount * self.depth(shape, position + offset),
@@ -219,7 +212,7 @@ impl Device for AutoPan {
             *left *= edge_left.process(targets[0]) as f32;
             *right *= edge_right.process(targets[1]) as f32;
 
-            if !follows_song {
+            if !clock.follows_song() {
                 self.free_phase += cycles_per_frame;
                 if self.free_phase >= 1.0 {
                     self.free_cycles = self.free_cycles.wrapping_add(self.free_phase as u64) % (1 << 32);

@@ -4,6 +4,10 @@
 # Stems test files (crates/media/tests/data).
 *.mp4 binary
 *.m4a binary
+# Device files compared byte for byte with what `to_sd` writes: LF on every platform.
+*.sd text eol=lf
+# A copy of the app's core theme sheet, compared byte for byte with what the app writes: LF everywhere.
+crates/theme-package/src/core.css text eol=lf
 
 # Generated on main after every merge (.github/workflows/docs-generated.yml); collapsed in diffs.
 docs/INDEX.md linguist-generated=true

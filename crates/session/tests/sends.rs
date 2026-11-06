@@ -4,67 +4,40 @@
 //! Sends and returns: `track.setSend`, `track.setSendMode`, `return.add`, `return.remove`,
 //! `return.rename`.
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::Session;
+
+use crate::support::run;
+use suhina_test_support::ProjectBuilder;
 
 /// Bass (notes, one clip) and Lead, Group (a group Lead plays into) and two returns, all into
 /// Main.
 fn project() -> Project {
-    let track = |id: u32, name: &str, notes: bool| Track {
-        content: ContentKinds { notes, audio: false },
-        channel: Some(ChannelId(id)),
-        ..Track::new(TrackId(id), name)
-    };
-    let channel = |id: u32, role: ChannelRole, output: Option<u32>| Channel {
-        role,
-        output: output.map(ChannelId),
-        ..Channel::new(ChannelId(id), format!("C{id}"))
-    };
-    let mut lead = track(2, "Lead", true);
-    lead.parent = Some(TrackId(5));
-    Project {
-        tracks: vec![
-            track(1, "Bass", true),
-            track(5, "Group", false),
-            lead,
-            track(3, "A Return", false),
-            track(4, "B Return", false),
-        ],
-        channels: vec![
-            channel(1, ChannelRole::Regular, Some(100)),
-            channel(2, ChannelRole::Regular, Some(5)),
-            channel(5, ChannelRole::Submix, Some(100)),
-            channel(3, ChannelRole::Effect, Some(100)),
-            channel(4, ChannelRole::Effect, Some(100)),
-            channel(100, ChannelRole::Master, None),
-        ],
-        contents: vec![ClipContent {
-            id: ContentId(1),
-            name: "Riff".into(),
-            length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, 69, 1.0)]) }],
-            extensions: Extensions::default(),
-            scale: None,
-        }],
-        arrangement: Arrangement {
-            lanes: vec![ArrangementLane {
-                name: "Bass".into(),
-                track: Some(TrackId(1)),
-                clips: vec![Clip::new(ContentId(1), 0.0, 1.0)],
-            }],
-            markers: Vec::new(),
-        },
-        ..Project::default()
-    }
+    suhina_test_support::with_ids(project_built())
 }
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
+fn project_built() -> Project {
+    ProjectBuilder::new()
+        .midi_track(1, "Bass")
+        .bus_track(5, "Group", ChannelRole::Submix)
+        .midi_track(2, "Lead")
+        .bus_track(3, "A Return", ChannelRole::Effect)
+        .bus_track(4, "B Return", ChannelRole::Effect)
+        .channel(Channel { role: ChannelRole::Master, ..Channel::new(ChannelId(100), "C100") })
+        .parent(2, 5)
+        .output(1, 100)
+        .output(2, 5)
+        .output(5, 100)
+        .output(3, 100)
+        .output(4, 100)
+        .notes(1, "Riff", 1.0, vec![Note::new(0.0, 1.0, 69, 1.0)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 1.0))
+        .build_without_ids()
 }
 
 fn sends(session: &Session, channel: u32) -> Vec<Send> {
-    session.project().channels.iter().find(|c| c.id == ChannelId(channel)).map(|c| c.sends.clone()).unwrap_or_default()
+    session.project().channel(ChannelId(channel)).map(|c| c.sends.clone()).unwrap_or_default()
 }
 
 #[test]
@@ -137,7 +110,7 @@ fn bad_send_parameters_change_nothing() {
     let cases = [
         ("track.setSend", json!({ "track": "Bass", "return": "Lead", "level": 0 })),
         ("track.setSend", json!({ "track": "Bass", "return": "nope", "level": 0 })),
-        ("track.setSend", json!({ "track": "Bass", "return": "A Return", "level": 7 })),
+        ("track.setSend", json!({ "track": "Bass", "return": "A Return", "level": 0.5 })),
         ("track.setSend", json!({ "track": "Bass", "return": "A Return", "level": "loud" })),
         ("track.setSend", json!({ "track": "Bass", "return": "A Return" })),
         ("track.setSend", json!({ "track": 99, "return": "A Return", "level": 0 })),
@@ -195,8 +168,12 @@ fn returns_are_added_renamed_and_removed_with_their_sends() {
 
 #[test]
 fn a_send_set_by_command_is_heard_through_the_return() {
-    let peak =
-        |p: &Project| suhina_engine::render_offline(p, 48_000, 512).unwrap().iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let peak = |p: &Project| {
+        suhina_engine::render_offline(p, 48_000, 512, suhina_session::devices())
+            .unwrap()
+            .iter()
+            .fold(0.0f32, |m, s| m.max(s.abs()))
+    };
     let mut session = Session::new(project());
     run(&mut session, "track.setVolume", json!({ "tracks": ["Bass"], "db": "-inf" })).unwrap();
     assert!(peak(session.project()) < 1e-6);
@@ -207,4 +184,96 @@ fn a_send_set_by_command_is_heard_through_the_return() {
     assert!(peak(session.project()) > 0.1);
     run(&mut session, "track.setMute", json!({ "tracks": ["A Return"], "mute": true })).unwrap();
     assert!(peak(session.project()) < 1e-6);
+}
+
+#[test]
+fn a_send_dragged_is_one_undo_step() {
+    let mut session = Session::new(project_built());
+    let before = session.project().clone();
+    for level in [-30.0, -20.0, -10.0, -6.0] {
+        run(
+            &mut session,
+            "track.setSend",
+            json!({ "track": "Bass", "return": "A Return", "level": level, "gesture": "send" }),
+        )
+        .unwrap();
+    }
+    assert!(sends(&session, 1).iter().any(|s| (20.0 * s.level.log10() + 6.0).abs() < 0.01));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before, "the drag is undone at once");
+}
+
+#[test]
+fn several_tracks_take_their_own_values_in_one_undo_step() {
+    let mut session = Session::new(project());
+    let send = |session: &Session, channel: u32| sends(session, channel).first().map(|s| s.level);
+    for values in [[-6.0, -12.0], [-3.0, -200.0]] {
+        run(
+            &mut session,
+            "track.setMixerValues",
+            json!({ "tracks": ["Bass", "Lead"], "control": "send", "return": "A Return", "values": values, "gesture": "sends" }),
+        )
+        .unwrap();
+    }
+    assert!((send(&session, 1).unwrap() - 10f64.powf(-3.0 / 20.0)).abs() < 1e-9);
+    assert_eq!(send(&session, 2), Some(0.0), "below -150 is silence");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(send(&session, 1), None, "the drag's two calls were one step");
+    assert_eq!(send(&session, 2), None);
+
+    let channel = |session: &Session, id: u32| session.project().channel(ChannelId(id)).cloned().unwrap();
+    run(
+        &mut session,
+        "track.setMixerValues",
+        json!({ "tracks": ["Bass", "Lead"], "control": "volume", "values": [-6.0, 0.0] }),
+    )
+    .unwrap();
+    assert!((channel(&session, 1).volume - 10f64.powf(-6.0 / 20.0)).abs() < 1e-9);
+    assert_eq!(channel(&session, 2).volume, 1.0);
+    run(
+        &mut session,
+        "track.setMixerValues",
+        json!({ "tracks": ["Bass", "Lead"], "control": "pan", "values": [-0.5, 0.25] }),
+    )
+    .unwrap();
+    assert_eq!((channel(&session, 1).pan, channel(&session, 2).pan), (-0.5, 0.25));
+
+    for bad in [
+        json!({ "tracks": ["Bass", "Lead"], "control": "pan", "values": [0.0] }),
+        json!({ "tracks": ["Bass"], "control": "width", "values": [0.0] }),
+        json!({ "tracks": ["Bass"], "control": "send", "values": [0.0] }),
+        json!({ "tracks": ["Bass"], "control": "volume", "values": [12.0] }),
+        json!({ "tracks": ["Bass"], "control": "send", "return": "A Return", "values": [0.5] }),
+    ] {
+        assert!(run(&mut session, "track.setMixerValues", bad.clone()).is_err(), "{bad}");
+    }
+}
+
+/// A send turned up from silence is not in the playing graph: its first move builds one, and the
+/// rest of the drag reaches the engine as messages (#763 › 4).
+#[test]
+fn a_send_turned_up_from_silence_takes_one_graph_then_messages() {
+    let project = project();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
+    let mut session = Session::new(project);
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    // No gesture: a move that needed a new graph would fail here, not catch up later.
+    let level = |db: f64| json!({ "track": "Bass", "return": "A Return", "level": db });
+    run(&mut session, "track.setSend", level(-30.0)).unwrap();
+    // Every later graph waits: the engine's queue of new graphs fills.
+    let mut full = false;
+    for i in 0..64 {
+        if run(&mut session, "track.setMute", json!({ "tracks": ["Lead"], "mute": i % 2 == 0 })).is_err() {
+            full = true;
+            break;
+        }
+    }
+    assert!(full, "the queue of new graphs is full");
+    for db in [-24.0, -18.0, -12.0] {
+        run(&mut session, "track.setSend", level(db)).unwrap();
+    }
+    let mut out = vec![0.0f32; 960];
+    renderer.process(&mut out);
 }

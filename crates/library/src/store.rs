@@ -19,6 +19,11 @@ pub const MAX_FOLDERS: usize = 256;
 pub const MAX_PINS: usize = 1000;
 /// Recent items kept per group.
 pub const MAX_RECENT: usize = 50;
+/// Audio files outside projects' folders kept as trusted; the oldest go first.
+pub const MAX_TRUSTED_AUDIO: usize = 20_000;
+/// Projects whose source folders are kept, and folders kept for each.
+pub const MAX_PROJECTS_WITH_FOLDERS: usize = 2000;
+pub const MAX_PROJECT_FOLDERS: usize = 64;
 /// Tags there may be by default, and at most.
 pub const DEFAULT_TAG_LIMIT: usize = 64;
 pub const MAX_TAG_LIMIT: usize = 1024;
@@ -82,25 +87,30 @@ pub struct Tag {
     pub color: String,
 }
 
-/// How the browser shows the installed plug-ins
-/// ([the plug-in browsing spec](../spec/plugin-browsing.md) › The three views).
+/// Which plug-ins the browser lists when the Plug-ins category is chosen
+/// ([the plug-in browsing spec](../spec/plugin-browsing.md) › Instruments and Effects).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PluginsView {
-    /// The tree: a Plug-ins heading, the vendors under it, the plug-ins under each vendor.
+    /// The plug-in instruments, as one list sortable by column.
     #[default]
-    Grouped,
-    /// The tree by type: Instruments and Effects headings, Suhina's groups under them.
-    Type,
-    /// One flat list, sortable by column.
-    Flat,
+    Instruments,
+    /// The plug-in effects, likewise.
+    Effects,
 }
 
 impl PluginsView {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Grouped => "grouped",
-            Self::Type => "type",
-            Self::Flat => "flat",
+            Self::Instruments => "instruments",
+            Self::Effects => "effects",
+        }
+    }
+
+    /// The name on its button.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Instruments => "Instruments",
+            Self::Effects => "Effects",
         }
     }
 
@@ -109,7 +119,10 @@ impl PluginsView {
         Self::ALL.iter().copied().find(|v| v.name() == text)
     }
 
-    pub const ALL: [PluginsView; 3] = [Self::Grouped, Self::Type, Self::Flat];
+    pub const ALL: [PluginsView; 2] = [Self::Instruments, Self::Effects];
+
+    /// The views kept by earlier versions (by vendor, by type, one list): read as the default.
+    const EARLIER: [&'static str; 3] = ["grouped", "type", "flat"];
 }
 
 /// The seven tags a new library starts with.
@@ -146,6 +159,14 @@ pub struct Store {
     pub tag_limit: usize,
     /// How the browser shows plug-ins.
     pub plugins_view: PluginsView,
+    /// Audio files outside a project's folder that the person loaded into a project and saved
+    /// it with, which opening a project may read (`docs/spec/missing-files.md` › Project file
+    /// boundaries). Newest first.
+    pub trusted_audio: Vec<PathBuf>,
+    /// For each project file (its absolute path), the folders outside it that its audio was
+    /// loaded from: opening it reads them and the missing files panel searches them. Kept on
+    /// this machine, never in the project file, so a project cannot name folders to read.
+    pub project_folders: BTreeMap<String, Vec<PathBuf>>,
 }
 
 impl Default for Store {
@@ -157,7 +178,9 @@ impl Default for Store {
             tags: default_tags(),
             tagged: BTreeMap::new(),
             tag_limit: DEFAULT_TAG_LIMIT,
-            plugins_view: PluginsView::Grouped,
+            plugins_view: PluginsView::Instruments,
+            trusted_audio: Vec::new(),
+            project_folders: BTreeMap::new(),
         }
     }
 }
@@ -218,7 +241,30 @@ impl Store {
         let folders =
             texts(map.get("folders"), MAX_FOLDERS, "folders", warnings).into_iter().map(PathBuf::from).collect();
         let pins = texts(map.get("pinned"), MAX_PINS, "pinned", warnings);
-        let mut store = Self { folders, pins, ..Self::default() };
+        let trusted_audio = texts(map.get("trusted_audio"), MAX_TRUSTED_AUDIO, "trusted_audio", warnings)
+            .into_iter()
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .collect();
+        let mut store = Self { folders, pins, trusted_audio, ..Self::default() };
+        if let Some(projects) = map.get("project_folders") {
+            match projects.as_object() {
+                Some(projects) => {
+                    for (project, folders) in projects.iter().take(MAX_PROJECTS_WITH_FOLDERS) {
+                        let what = format!("project_folders of {project}");
+                        let folders: Vec<PathBuf> = texts(Some(folders), MAX_PROJECT_FOLDERS, &what, warnings)
+                            .into_iter()
+                            .map(PathBuf::from)
+                            .filter(|p| p.is_absolute())
+                            .collect();
+                        if !folders.is_empty() && project.len() <= MAX_KEY {
+                            store.project_folders.insert(project.clone(), folders);
+                        }
+                    }
+                }
+                None => warnings.push("browser.json: project_folders is not an object; ignored".into()),
+            }
+        }
         if let Some(recent) = map.get("recent") {
             match recent.as_object() {
                 Some(groups) => {
@@ -270,9 +316,9 @@ impl Store {
         if let Some(view) = map.get("plugins_view") {
             match view.as_str().and_then(PluginsView::parse) {
                 Some(view) => store.plugins_view = view,
-                None => {
-                    warnings.push("browser.json: plugins_view is not grouped, type or flat; the default is used".into())
-                }
+                None if view.as_str().is_some_and(|v| PluginsView::EARLIER.contains(&v)) => {}
+                None => warnings
+                    .push("browser.json: plugins_view is not instruments or effects; the default is used".into()),
             }
         }
         if let Some(tagged) = map.get("tagged").and_then(Value::as_object) {
@@ -307,18 +353,19 @@ impl Store {
             "tagged": self.tagged,
             "tag_limit": self.tag_limit,
             "plugins_view": self.plugins_view.name(),
+            "trusted_audio": self.trusted_audio.iter().map(|f| f.display().to_string()).collect::<Vec<_>>(),
+            "project_folders": self
+                .project_folders
+                .iter()
+                .map(|(p, folders)| (p.clone(), json!(folders.iter().map(|f| f.display().to_string()).collect::<Vec<_>>())))
+                .collect::<Map<String, Value>>(),
         })
     }
 
     /// Writes the store to `file`, through a file beside it that is moved over it.
     pub fn save(&self, file: &Path) -> std::io::Result<()> {
-        if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let temp = file.with_extension("json.part");
         let text = serde_json::to_string_pretty(&self.to_json()).map_err(std::io::Error::other)?;
-        std::fs::write(&temp, text)?;
-        std::fs::rename(&temp, file)
+        suhina_fs::write_atomic(file, text)
     }
 
     /// Puts `item` first in `group`.
@@ -341,6 +388,33 @@ impl Store {
         }
         self.pins.push(item.to_string());
         true
+    }
+
+    /// What an item carries goes with it when its file moves to `to` (#943): its pin, its
+    /// places among the recent items and its tags.
+    pub fn relocate(&mut self, from: &str, to: &str) -> bool {
+        if from == to || to.is_empty() || to.len() > MAX_KEY {
+            return false;
+        }
+        let mut changed = false;
+        for pin in self.pins.iter_mut().filter(|p| *p == from) {
+            *pin = to.to_string();
+            changed = true;
+        }
+        for list in self.recent.values_mut() {
+            if list.iter().any(|i| i == from) {
+                list.retain(|i| i != to);
+                for item in list.iter_mut().filter(|i| *i == from) {
+                    *item = to.to_string();
+                }
+                changed = true;
+            }
+        }
+        if let Some(tags) = self.tagged.remove(from) {
+            self.tagged.insert(to.to_string(), tags);
+            changed = true;
+        }
+        changed
     }
 
     pub fn unpin(&mut self, item: &str) -> bool {
@@ -491,28 +565,34 @@ mod tests {
         store.record(Group::Samples, "/samples/a.wav");
         store.set_tag("Drums", Some("#112233"), None).unwrap();
         store.tag("/samples/kick.wav", "Drums", true).unwrap();
-        store.plugins_view = PluginsView::Flat;
+        store.plugins_view = PluginsView::Effects;
         store.save(&file).unwrap();
         let (loaded, warnings) = Store::load(&file);
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(loaded, store);
-        assert_eq!(loaded.plugins_view, PluginsView::Flat);
+        assert_eq!(loaded.plugins_view, PluginsView::Effects);
         assert_eq!(loaded.recent[&Group::Samples], ["/samples/a.wav", "/samples/b.wav"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn a_plugins_view_that_is_not_one_falls_back_to_grouped() {
+    fn a_plugins_view_that_is_not_one_falls_back_to_instruments() {
         let dir = temp("view");
         let file = dir.join("browser.json");
         for junk in ["all", "7", "{", ""] {
             std::fs::write(&file, format!("{{ \"plugins_view\": \"{junk}\" }}")).unwrap();
             let (store, warnings) = Store::load(&file);
-            assert_eq!(store.plugins_view, PluginsView::Grouped, "{junk}");
+            assert_eq!(store.plugins_view, PluginsView::Instruments, "{junk}");
             assert_eq!(warnings.len(), 1, "{junk}");
         }
+        // A view an earlier version kept is read as the default, quietly.
+        for earlier in ["grouped", "type", "flat"] {
+            std::fs::write(&file, format!("{{ \"plugins_view\": \"{earlier}\" }}")).unwrap();
+            let (store, warnings) = Store::load(&file);
+            assert_eq!((store.plugins_view, warnings.len()), (PluginsView::Instruments, 0), "{earlier}");
+        }
         std::fs::write(&file, r#"{}"#).unwrap();
-        assert_eq!(Store::load(&file).0.plugins_view, PluginsView::Grouped, "missing is the default, quietly");
+        assert_eq!(Store::load(&file).0.plugins_view, PluginsView::Instruments, "missing is the default, quietly");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -582,5 +662,19 @@ mod tests {
         }
         assert_eq!(store.recent[&Group::Midi].len(), MAX_RECENT);
         assert_eq!(store.recent[&Group::Midi][0], "/m79");
+    }
+
+    #[test]
+    fn a_moved_files_pin_recent_place_and_tags_go_with_it() {
+        let mut store = Store::default();
+        store.pin("/a/kick.wav");
+        store.record(Group::Samples, "/a/kick.wav");
+        store.tagged.insert("/a/kick.wav".into(), vec!["Red".into()]);
+        assert!(store.relocate("/a/kick.wav", "/b/kick.wav"));
+        assert_eq!(store.pins, ["/b/kick.wav"]);
+        assert_eq!(store.recent.get(&Group::Samples).cloned().unwrap_or_default(), ["/b/kick.wav"]);
+        assert_eq!(store.tagged.get("/b/kick.wav").cloned().unwrap_or_default(), ["Red"]);
+        assert!(!store.tagged.contains_key("/a/kick.wav"));
+        assert!(!store.relocate("/a/kick.wav", "/c/kick.wav"), "nothing left to move");
     }
 }

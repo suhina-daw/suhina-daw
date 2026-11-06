@@ -9,27 +9,33 @@
 
 use serde_json::{Value, json};
 use suhina_engine::{MAX_START_BEAT, param_id};
-use suhina_model::automation::{MAX_POINTS, MAX_VOLUME, MUTE, VOLUME, mixer_range};
-use suhina_model::{AutomationLane, AutomationPoint, DeviceKind, TrackId};
+use suhina_model::automation::{
+    CONTROL_MAX, CONTROL_MIN, Curve, MAX_POINTS, MAX_VOLUME, MUTE, Taper, VOLUME, VolumeTaper, mixer_range,
+};
+use suhina_model::{AutomationLane, AutomationPoint, DeviceKind, Entry, IdList, PointId, TrackId};
 
-use crate::commands::{channel_param, number, to_db, track_id};
+use crate::commands::{Args, device_channel, to_db, track_or_main_id};
 use crate::devices::{device_index, is_plugin, plugin_param_id, plugin_value, sd_graph};
+use crate::named::{Miss, Named, find_one};
 use crate::{CommandError, Session};
 
 /// Below this many decibels a volume point is silence, as for `track.setVolume`.
 const SILENCE_DB: f64 = -150.0;
+/// The bottom of a volume lane as the arrangement shows it: points moved together leave silence
+/// from here, and a level moved down to it or below is silent.
+const LANE_FLOOR_DB: f64 = -70.0;
 
 /// The parameter a command names, checked.
-struct Target {
+pub(crate) struct Target {
     track: TrackId,
     /// The device's index on the track; `None` for the track's mixer.
     device: Option<usize>,
     /// The parameter's id as lanes store it.
-    param: String,
+    pub(crate) param: String,
     kind: Kind,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Kind {
     /// The mixer's volume: decibels in commands, a linear gain in the lane.
     Volume,
@@ -38,17 +44,17 @@ enum Kind {
     /// A built-in device parameter, limited and rounded as the device takes it.
     Builtin(&'static suhina_device_api::ParamInfo),
     /// A data-only device parameter's range and discrete behavior.
-    Sd { min: f64, max: f64, control: suhina_device_sdk::ParameterControl },
+    Sd(Box<suhina_device_sdk::Parameter>),
     /// A plug-in parameter by its id.
     Plugin(u32),
 }
 
-fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
-    let param = params.get("param").and_then(Value::as_str).ok_or("param must be a parameter id")?;
-    let track = track_id(&session.project, params)?;
+pub(crate) fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
+    let param = Args::new(params).raw_str("param").ok_or("param must be a parameter id")?;
+    let track = track_or_main_id(&session.project, params)?;
     let channel = channel_of(session, track)?;
-    match params.get("device") {
-        None | Some(Value::Null) => {
+    match Args::new(params).value("device") {
+        None => {
             if mixer_range(param).is_none() {
                 return Err(format!(
                     "{param:?} is not a mixer parameter: volume, pan or mute (give device for a device's parameter)"
@@ -72,17 +78,17 @@ fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
                     let spec = info
                         .param_index(param)
                         .and_then(|i| info.params.get(i))
-                        .ok_or_else(|| format!("{} has no parameter {param:?}; devices.list lists them", info.name))?;
+                        .ok_or_else(|| format!("{} has no parameter {param:?}; device.list lists them", info.name))?;
                     Kind::Builtin(spec)
                 }
                 DeviceKind::Sd => {
                     let graph = sd_graph(device)?;
                     let spec = graph
                         .parameters
-                        .iter()
+                        .into_iter()
                         .find(|p| p.id == param)
                         .ok_or_else(|| format!("{} has no parameter {param:?}", graph.name))?;
-                    Kind::Sd { min: spec.min, max: spec.max, control: spec.control }
+                    Kind::Sd(Box::new(spec))
                 }
                 _ => {
                     return Err("this device has no parameters Suhina can automate (it is from another program)".into());
@@ -94,15 +100,13 @@ fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
 }
 
 fn channel_of(session: &Session, track: TrackId) -> Result<&suhina_model::Channel, CommandError> {
-    let id = session.project.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel);
-    id.and_then(|id| session.project.channels.iter().find(|c| c.id == id))
-        .ok_or_else(|| "the track has no mixer channel".into())
+    session.project.channel_of_track(track).ok_or_else(|| "the track has no mixer channel".into())
 }
 
 impl Target {
     /// `value` from a command as the lane keeps it.
     fn store(&self, session: &Session, value: f64) -> Result<f64, CommandError> {
-        match self.kind {
+        match &self.kind {
             Kind::Volume => {
                 if value > 6.0 {
                     return Err(format!("a volume must be at most +6 dB, got {value}").into());
@@ -117,35 +121,95 @@ impl Target {
                 Ok(if self.param == MUTE { value.round() } else { value })
             }
             Kind::Builtin(spec) => Ok(spec.clamp(value)),
-            Kind::Sd { min, max, control } => {
-                let value =
-                    if value.is_finite() { value.clamp(min, max) } else { return Err("value must be finite".into()) };
-                Ok(if control.is_stepped() { value.round().clamp(min, max) } else { value })
+            Kind::Sd(parameter) if value.is_finite() => Ok(parameter.clamp(value)),
+            Kind::Sd(_) => Err("value must be finite".into()),
+            Kind::Plugin(id) => plugin_value(session, self.track, &[self.device.unwrap_or(0)], *id, value),
+        }
+    }
+
+    /// Whether the lane holds each value up to the next point (on/off and choices), as the
+    /// lanes draw it.
+    pub(crate) fn stepped(&self) -> bool {
+        match &self.kind {
+            Kind::Plain => self.param == MUTE,
+            Kind::Builtin(spec) => {
+                matches!(spec.kind, suhina_device_api::ParamKind::Toggle | suhina_device_api::ParamKind::Choice(_))
             }
-            Kind::Plugin(id) => plugin_value(session, self.track, self.device.unwrap_or(0), id, value),
+            Kind::Sd(parameter) => parameter.control.is_stepped(),
+            Kind::Volume | Kind::Plugin(_) => false,
+        }
+    }
+
+    /// A plug-in parameter's range, when its host has said it.
+    fn plugin_range(&self, session: &Session, id: u32) -> Option<(f64, f64)> {
+        let key = crate::plugin_key_at_path(&session.project, self.track, &[self.device?])?;
+        session.plugins.param_range(key, id).flatten().filter(|(min, max)| max > min)
+    }
+
+    /// Where a lane's `value` sits on the lane, 0 at the bottom to 1 at the top, as the lanes
+    /// draw it.
+    pub(crate) fn position(&self, session: &Session, value: f64) -> f64 {
+        let position = match &self.kind {
+            Kind::Volume => suhina_model::automation::Taper::position(&suhina_model::automation::VolumeTaper, value),
+            Kind::Plain => match mixer_range(&self.param) {
+                Some((min, max)) if max > min => (value - min) / (max - min),
+                _ => value,
+            },
+            Kind::Builtin(spec) => spec.to_normalized(value),
+            Kind::Sd(parameter) => parameter.lane_position(value),
+            Kind::Plugin(id) => match self.plugin_range(session, *id) {
+                Some((min, max)) => (value - min) / (max - min),
+                None => value,
+            },
+        };
+        if position.is_finite() { position.clamp(0.0, 1.0) } else { 0.0 }
+    }
+
+    /// The lane's value at `position` (0 … 1): the inverse of [`Target::position`], as the
+    /// parameter takes it.
+    pub(crate) fn value_at_position(&self, session: &Session, position: f64) -> f64 {
+        let position = if position.is_finite() { position.clamp(0.0, 1.0) } else { 0.0 };
+        match &self.kind {
+            Kind::Volume => suhina_model::automation::Taper::value(&suhina_model::automation::VolumeTaper, position),
+            Kind::Plain => {
+                let (min, max) = mixer_range(&self.param).unwrap_or((0.0, 1.0));
+                let value = min + position * (max - min);
+                if self.param == MUTE { value.round() } else { value }
+            }
+            // A whole-number parameter moves along the line and the device rounds, as the
+            // engine plays it.
+            Kind::Builtin(spec) if matches!(spec.kind, suhina_device_api::ParamKind::Integer) => {
+                spec.min + position * (spec.max - spec.min)
+            }
+            Kind::Builtin(spec) => spec.clamp(spec.from_normalized(position)),
+            Kind::Sd(parameter) => parameter.lane_value(position),
+            Kind::Plugin(id) => match self.plugin_range(session, *id) {
+                Some((min, max)) => min + position * (max - min),
+                None => position,
+            },
         }
     }
 
     /// A lane's value as commands show it.
     fn show(&self, value: f64) -> Value {
-        match self.kind {
+        match &self.kind {
             Kind::Volume => to_db(value).map_or(json!("-inf"), |db| json!(db)),
             _ => json!(value),
         }
     }
 
     /// The lanes the parameter's lane is among.
-    fn lanes<'a>(&self, session: &'a mut Session) -> Result<&'a mut Vec<AutomationLane>, CommandError> {
-        let channel = channel_param(session, &json!({ "track": self.track.0 }))?;
+    pub(crate) fn lanes<'a>(&self, session: &'a mut Session) -> Result<&'a mut Vec<AutomationLane>, CommandError> {
+        let channel = device_channel(session, &json!({ "track": self.track.0 }))?;
         match self.device {
             None => Ok(&mut channel.automation),
             Some(index) => Ok(&mut channel.devices.get_mut(index).ok_or("the device is missing")?.automation),
         }
     }
 
-    fn matches(&self, lane: &AutomationLane) -> bool {
-        match self.kind {
-            Kind::Plugin(id) => param_id(&lane.param) == Some(id),
+    pub(crate) fn matches(&self, lane: &AutomationLane) -> bool {
+        match &self.kind {
+            Kind::Plugin(id) => param_id(&lane.param) == Some(*id),
             _ => lane.param == self.param,
         }
     }
@@ -160,22 +224,79 @@ impl Target {
 }
 
 fn beat(params: &Value) -> Result<f64, CommandError> {
-    let beat = number(params, "beat")?;
+    let beat = Args::new(params).f64("beat")?;
     if !(0.0..=MAX_START_BEAT).contains(&beat) {
         return Err(format!("beat must be from 0 to {MAX_START_BEAT}, got {beat}").into());
     }
     Ok(beat)
 }
 
-fn curve(params: &Value) -> Result<Option<f64>, CommandError> {
-    match params.get("curve") {
-        None | Some(Value::Null) => Ok(None),
+/// `params["curve"]`: four numbers (the two control points), each from -0.5 to 1.5 as a split can
+/// give ([`CONTROL_MIN`], [`CONTROL_MAX`]), or one bend from -1 to 1 for the mirrored curve.
+fn curve(params: &Value) -> Result<Option<Curve>, CommandError> {
+    let bad = || {
+        format!("curve must be [x1, y1, x2, y2], each from {CONTROL_MIN} to {CONTROL_MAX}, or a bend from -1 to 1")
+            .into()
+    };
+    match Args::new(params).value("curve") {
+        None => Ok(None),
+        Some(Value::Array(list)) => {
+            let values: Option<Vec<f64>> = list.iter().map(Value::as_f64).collect();
+            let values: [f64; 4] = values.and_then(|v| v.try_into().ok()).ok_or_else(bad)?;
+            Curve::from_array(values).map(Some).ok_or_else(bad)
+        }
         Some(_) => {
-            let curve = number(params, "curve")?;
-            if !(-1.0..=1.0).contains(&curve) {
-                return Err(format!("curve must be from -1 to 1, got {curve}").into());
+            let bend = Args::new(params).f64("curve")?;
+            if !(-1.0..=1.0).contains(&bend) {
+                return Err(bad());
             }
-            Ok(Some(curve))
+            Ok(Some(Curve::bend(bend)))
+        }
+    }
+}
+
+/// A segment moves evenly along the parameter's control, as the engine plays it
+/// (`docs/spec/automation.md` › Lanes and points).
+impl Taper for Kind {
+    fn position(&self, value: f64) -> f64 {
+        match self {
+            Kind::Volume => VolumeTaper.position(value),
+            Kind::Builtin(info) => info.to_normalized(value),
+            Kind::Sd(p) if log_control(p) => (value.clamp(p.min, p.max) / p.min).ln() / (p.max / p.min).ln(),
+            _ => value,
+        }
+    }
+    fn value(&self, position: f64) -> f64 {
+        match self {
+            Kind::Volume => VolumeTaper.value(position),
+            // A whole-number parameter moves along the line, through values between its numbers;
+            // the engine cuts the fraction off as it plays (`ParamInfo::played`).
+            Kind::Builtin(info) if matches!(info.kind, suhina_device_api::ParamKind::Integer) => {
+                info.min + position.clamp(0.0, 1.0) * (info.max - info.min)
+            }
+            Kind::Builtin(info) => info.from_normalized(position),
+            Kind::Sd(p) if log_control(p) => p.min * (p.max / p.min).powf(position.clamp(0.0, 1.0)),
+            _ => position,
+        }
+    }
+}
+
+/// Whether a data-only parameter moves on a logarithmic control.
+fn log_control(p: &suhina_device_sdk::Parameter) -> bool {
+    use suhina_device_sdk::ParameterControl::{LogKnob, LogSlider};
+    matches!(p.control, LogKnob | LogSlider) && p.min > 0.0 && p.max > p.min
+}
+
+impl Kind {
+    /// Whether each point's value holds until the next (on/off and choices, the mute).
+    fn stepped(&self, param: &str) -> bool {
+        match self {
+            Kind::Plain => param == MUTE,
+            Kind::Builtin(info) => {
+                matches!(info.kind, suhina_device_api::ParamKind::Toggle | suhina_device_api::ParamKind::Choice(_))
+            }
+            Kind::Sd(p) => p.control.is_stepped(),
+            Kind::Volume | Kind::Plugin(_) => false,
         }
     }
 }
@@ -183,33 +304,47 @@ fn curve(params: &Value) -> Result<Option<f64>, CommandError> {
 /// A value from `params[name]`: a number, or for the volume also "-inf"; for the mute also
 /// true or false.
 fn value(params: &Value, name: &str) -> Result<f64, CommandError> {
-    match params.get(name) {
+    match Args::new(params).value(name) {
         Some(Value::String(s)) if s == "-inf" => Ok(f64::NEG_INFINITY),
         Some(Value::Bool(b)) => Ok(if *b { 1.0 } else { 0.0 }),
-        _ => number(params, name),
+        _ => Args::new(params).f64(name),
     }
 }
 
-fn point_index(params: &Value, count: usize) -> Result<usize, CommandError> {
-    let index = params
-        .get("point")
-        .and_then(Value::as_u64)
-        .and_then(|n| usize::try_from(n).ok())
-        .ok_or("point must be a point index, from 0, as in automation.list")?;
-    if index >= count {
-        return Err(format!("the lane has no point {index}; it has {count}").into());
+/// A lane's points, each with its id (#763 › 1).
+pub(crate) type Points = IdList<PointId, AutomationPoint>;
+
+/// The point `item` names on a lane of `points`: its index (from 0, in beat order), or
+/// `{"id": n}` with its id, found where it is now (#763 › 1).
+pub(crate) fn point_at(item: &Value, points: &Points) -> Result<usize, CommandError> {
+    find_one(points, PointId, item).map_err(point_miss)
+}
+
+/// What a point that was not found says.
+fn point_miss(miss: Miss) -> CommandError {
+    match miss {
+        Miss::Id(id) => format!("the lane has no point with id {id}").into(),
+        Miss::NotANumber => "a point is its index, from 0, as in automation.list, or {\"id\": n}".into(),
+        Miss::Range { index, count } => format!("the lane has no point {index}; it has {count}").into(),
     }
-    Ok(index)
+}
+
+fn point_index(params: &Value, points: &Points) -> Result<usize, CommandError> {
+    point_at(params.get("point").ok_or("point must name a point, as in automation.list")?, points)
 }
 
 pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     let beat = beat(params)?;
-    let value = target.store(session, value(params, "value")?)?;
-    let curve = curve(params)?.unwrap_or(0.0);
+    let given = match Args::new(params).value("value") {
+        None => None,
+        Some(_) => Some(target.store(session, value(params, "value")?)?),
+    };
+    let curve = curve(params)?;
     let lanes = target.lanes(session)?;
     let lane = match lanes.iter().position(|l| target.matches(l)) {
         Some(index) => lanes.get_mut(index).ok_or("the lane is missing")?,
+        None if given.is_none() => return Err("the lane has no envelope yet; give a value".into()),
         None => {
             lanes.push(AutomationLane::new(target.param.clone()));
             lanes.last_mut().ok_or("the lane is missing")?
@@ -218,15 +353,59 @@ pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, 
     if lane.points.len() >= MAX_POINTS {
         return Err(format!("a lane holds at most {MAX_POINTS} points").into());
     }
-    let index = lane.insert(AutomationPoint { beat, value, curve });
-    Ok(json!({ "param": target.param, "point": index, "points": lane.points.len(), "enabled": lane.enabled }))
+    let point = match given {
+        Some(value) => AutomationPoint { beat, value, curve: curve.unwrap_or_default() },
+        None => {
+            let mut point = on_envelope(lane, beat, &target)?;
+            point.curve = curve.unwrap_or(point.curve);
+            point
+        }
+    };
+    let index = lane.insert(point);
+    let enabled = lane.enabled;
+    if let Some(shape) = Args::new(params).raw_str("shape") {
+        if crate::automation_range::shape_points(shape).is_none() {
+            return Err(format!("no shape {shape:?}; automation.insertShape lists them").into());
+        }
+        crate::automation_range::shape_new_segment(session, &target, index, shape)?;
+    }
+    // The new point's id, for the commands that name it next (#763 › 1).
+    let lane = target.lanes(session)?.iter().find(|l| target.matches(l));
+    let (points, id) = lane.map_or((0, None), |l| (l.points.len(), l.points.id(index).map(|p| p.0)));
+    Ok(json!({ "param": target.param, "point": index, "id": id, "points": points, "enabled": enabled }))
+}
+
+/// A point at `beat` on `lane`'s envelope, so it plays as before: the envelope's value there, and
+/// on a bent segment the curve's second half, the segment's first point taking the first half
+/// (`docs/spec/automation.md` › Splitting a segment).
+fn on_envelope(lane: &mut AutomationLane, beat: f64, target: &Target) -> Result<AutomationPoint, CommandError> {
+    let stepped = target.kind.stepped(&target.param);
+    let value = lane.value_at(beat, stepped, &target.kind).ok_or("the lane has no envelope yet; give a value")?;
+    let index = lane.points.partition_point(|p| p.beat <= beat).checked_sub(1);
+    let segment = index.and_then(|i| Some((i, *lane.points.get(i)?, *lane.points.get(i + 1)?)));
+    let Some((i, a, b)) = segment.filter(|(_, a, b)| !stepped && b.beat > a.beat && a.value != b.value) else {
+        return Ok(AutomationPoint::new(beat, value));
+    };
+    // At the segment's first point's beat the new point starts the segment, so it takes its curve.
+    let fraction = (beat - a.beat) / (b.beat - a.beat);
+    let Some(cut) = a.curve.split(fraction) else {
+        if fraction > 0.0 && fraction < 1.0 {
+            return Err("the segment's curve overshoots its points, so a point cannot be added on it without changing it; give a value".into());
+        }
+        return Ok(AutomationPoint { beat, value, curve: a.curve });
+    };
+    let (from, to) = (target.kind.position(a.value), target.kind.position(b.value));
+    if let Some(first) = lane.points.get_mut(i) {
+        first.curve = cut.before;
+    }
+    Ok(AutomationPoint { beat, value: target.kind.value(from + (to - from) * cut.share), curve: cut.after })
 }
 
 pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
-    let new_beat = if params.get("beat").is_some_and(|v| !v.is_null()) { Some(beat(params)?) } else { None };
-    let new_value = match params.get("value") {
-        None | Some(Value::Null) => None,
+    let new_beat = if Args::new(params).has("beat") { Some(beat(params)?) } else { None };
+    let new_value = match Args::new(params).value("value") {
+        None => None,
         Some(_) => Some(target.store(session, value(params, "value")?)?),
     };
     let new_curve = curve(params)?;
@@ -234,21 +413,24 @@ pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value,
         return Err("give a new beat, value or curve".into());
     }
     let lane = target.lane(session)?;
-    let index = point_index(params, lane.points.len())?;
-    let mut point = lane.points.remove(index);
+    let index = point_index(params, &lane.points)?;
+    // Taken out and put back with its id: a moved point stays the same point.
+    let mut taken = lane.points.take(index);
+    let point = &mut taken.value;
     point.beat = new_beat.unwrap_or(point.beat);
     point.value = new_value.unwrap_or(point.value);
     point.curve = new_curve.unwrap_or(point.curve);
-    let index = lane.insert(point);
+    let point = *point;
+    let index = lane.put_near(taken, index);
     Ok(
-        json!({ "param": target.param, "point": index, "beat": point.beat, "value": target.show(point.value), "curve": point.curve }),
+        json!({ "param": target.param, "point": index, "beat": point.beat, "value": target.show(point.value), "curve": point.curve.to_array() }),
     )
 }
 
 pub(crate) fn delete_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     let lane = target.lane(session)?;
-    let index = point_index(params, lane.points.len())?;
+    let index = point_index(params, &lane.points)?;
     lane.points.remove(index);
     let left = lane.points.len();
     // A lane without points is gone.
@@ -258,21 +440,16 @@ pub(crate) fn delete_point(session: &mut Session, params: &Value) -> Result<Valu
     Ok(json!({ "param": target.param, "points": left }))
 }
 
-/// The point indices `params["points"]` names: each once, each on a lane of `count` points.
-fn point_list(params: &Value, count: usize) -> Result<Vec<usize>, CommandError> {
-    let list = params.get("points").and_then(Value::as_array).ok_or("points must be a list of point indices")?;
+/// The point indices `params["points"]` names, by index or id: each once, each on the lane.
+fn point_list(params: &Value, points: &Points) -> Result<Vec<usize>, CommandError> {
+    let list = Args::new(params).value("points").and_then(Value::as_array).ok_or("points must be a list of points")?;
     if list.is_empty() {
         return Err("points must name at least one point".into());
     }
-    let mut indices = Vec::with_capacity(list.len().min(count));
+    let mut indices = Vec::with_capacity(list.len().min(points.len()));
+    let mut named = Named::new(points, PointId);
     for item in list {
-        let index = item
-            .as_u64()
-            .and_then(|n| usize::try_from(n).ok())
-            .ok_or("points must be point indices, from 0, as in automation.list")?;
-        if index >= count {
-            return Err(format!("the lane has no point {index}; it has {count}").into());
-        }
+        let index = named.at(item).map_err(point_miss)?;
         if indices.contains(&index) {
             return Err(format!("point {index} is named twice").into());
         }
@@ -281,28 +458,21 @@ fn point_list(params: &Value, count: usize) -> Result<Vec<usize>, CommandError> 
     Ok(indices)
 }
 
-/// An optional number in `params[name]`.
-fn optional_number(params: &Value, name: &str) -> Result<Option<f64>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(_) => number(params, name).map(Some),
-    }
-}
-
 impl Target {
     /// A lane value moved by `delta` in the unit of the parameter's set command, kept in range.
     fn shift(&self, session: &Session, value: f64, delta: f64) -> Result<f64, CommandError> {
-        match self.kind {
-            // Silence stays silent; a level never goes past the fader's top.
-            Kind::Volume => match to_db(value) {
-                None => Ok(0.0),
-                Some(db) => self.store(session, (db + delta).min(6.0)),
-            },
+        match &self.kind {
+            // Silence moves from the lane's bottom, so points picked at the bottom rise with the
+            // rest; a level moved down to the bottom is silent, and none goes past the fader's top.
+            Kind::Volume => {
+                let db = to_db(value).unwrap_or(LANE_FLOOR_DB).max(LANE_FLOOR_DB) + delta;
+                if db <= LANE_FLOOR_DB { Ok(0.0) } else { self.store(session, db.min(6.0)) }
+            }
             Kind::Plain => {
                 let (min, max) = mixer_range(&self.param).unwrap_or((value, value));
                 self.store(session, (value + delta).clamp(min, max))
             }
-            Kind::Builtin(_) | Kind::Sd { .. } | Kind::Plugin(_) => self.store(session, value + delta),
+            Kind::Builtin(_) | Kind::Sd(_) | Kind::Plugin(_) => self.store(session, value + delta),
         }
     }
 }
@@ -312,14 +482,14 @@ impl Target {
 /// must stay inside the arrangement.
 pub(crate) fn move_points(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
-    let beats = optional_number(params, "beats")?.unwrap_or(0.0);
-    let delta = optional_number(params, "value")?.unwrap_or(0.0);
+    let beats = Args::new(params).opt_f64("beats")?.unwrap_or(0.0);
+    let delta = Args::new(params).opt_f64("value")?.unwrap_or(0.0);
     let curve = curve(params)?;
     if beats == 0.0 && delta == 0.0 && curve.is_none() {
         return Err("give beats or value to move the points by, or a curve".into());
     }
     let mut points = target.lane(session)?.points.clone();
-    let indices = point_list(params, points.len())?;
+    let indices = point_list(params, &points)?;
     let mut moved = Vec::with_capacity(indices.len());
     for &index in &indices {
         let mut point = *points.get(index).ok_or("the point is missing")?;
@@ -335,17 +505,48 @@ pub(crate) fn move_points(session: &mut Session, params: &Value) -> Result<Value
         point.curve = curve.unwrap_or(point.curve);
         moved.push(point);
     }
-    // The points left in place, then the moved ones in the order given, each after any point
-    // already at its beat; `None` marks a point that stayed.
-    let mut sorted = indices.clone();
-    sorted.sort_unstable();
-    for index in sorted.into_iter().rev() {
-        points.remove(index);
+    // The points left in place, then the moved ones in their order in the lane, so points that
+    // shared a beat keep their order (the jump between them). Moved later, they go before the
+    // points that stayed at their beat (they come from before them); moved earlier, after them;
+    // moved only in value, each stays where it was. A tag is the point's place in the request,
+    // `None` a point that stayed.
+    if beats == 0.0 {
+        let lane = target.lane(session)?;
+        for (&index, point) in indices.iter().zip(moved) {
+            if let Some(slot) = lane.points.get_mut(index) {
+                *slot = point;
+            }
+        }
+        return Ok(json!({ "param": target.param, "points": indices }));
     }
-    let mut tagged: Vec<(AutomationPoint, Option<usize>)> = points.into_iter().map(|p| (p, None)).collect();
-    for (order, point) in moved.into_iter().enumerate() {
-        let at = tagged.partition_point(|(p, _)| p.beat <= point.beat);
-        tagged.insert(at, (point, Some(order)));
+    // The moved points are taken out with their ids, given their new values and put back, so
+    // each stays the same point (#763 › 1).
+    let mut sorted: Vec<(usize, usize)> = indices.iter().copied().enumerate().map(|(order, i)| (i, order)).collect();
+    sorted.sort_unstable();
+    let mut taken: Vec<Option<Entry<PointId, AutomationPoint>>> = (0..indices.len()).map(|_| None).collect();
+    for (index, order) in sorted.into_iter().rev() {
+        let mut entry = points.take(index);
+        if let Some(point) = moved.get(order) {
+            entry.value = *point;
+        }
+        if let Some(slot) = taken.get_mut(order) {
+            *slot = Some(entry);
+        }
+    }
+    let mut tagged: Vec<(Entry<PointId, AutomationPoint>, Option<usize>)> =
+        points.take_range(0..points.len()).into_iter().map(|p| (p, None)).collect();
+    let mut in_lane: Vec<(usize, Entry<PointId, AutomationPoint>)> =
+        taken.into_iter().enumerate().filter_map(|(order, e)| e.map(|e| (order, e))).collect();
+    in_lane.sort_by_key(|(order, _)| indices.get(*order).copied().unwrap_or(usize::MAX));
+    for (order, entry) in in_lane {
+        let point = entry.value;
+        let at = if beats > 0.0 {
+            tagged
+                .partition_point(|(p, tag)| p.value.beat < point.beat || (p.value.beat == point.beat && tag.is_some()))
+        } else {
+            tagged.partition_point(|(p, _)| p.value.beat <= point.beat)
+        };
+        tagged.insert(at, (entry, Some(order)));
     }
     let mut now = vec![0; indices.len()];
     for (index, (_, tag)) in tagged.iter().enumerate() {
@@ -353,7 +554,7 @@ pub(crate) fn move_points(session: &mut Session, params: &Value) -> Result<Value
             *slot = index;
         }
     }
-    target.lane(session)?.points = tagged.into_iter().map(|(p, _)| p).collect();
+    target.lane(session)?.points = IdList::from_entries(tagged.into_iter().map(|(p, _)| p).collect());
     Ok(json!({ "param": target.param, "points": now }))
 }
 
@@ -361,7 +562,7 @@ pub(crate) fn move_points(session: &mut Session, params: &Value) -> Result<Value
 pub(crate) fn delete_points(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     let lane = target.lane(session)?;
-    let mut indices = point_list(params, lane.points.len())?;
+    let mut indices = point_list(params, &lane.points)?;
     indices.sort_unstable();
     for index in indices.into_iter().rev() {
         lane.points.remove(index);
@@ -374,7 +575,7 @@ pub(crate) fn delete_points(session: &mut Session, params: &Value) -> Result<Val
 }
 
 pub(crate) fn clear(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let has_param = params.get("param").is_some_and(|v| !v.is_null());
+    let has_param = Args::new(params).has("param");
     if has_param {
         let target = target(session, params)?;
         let lanes = target.lanes(session)?;
@@ -383,12 +584,12 @@ pub(crate) fn clear(session: &mut Session, params: &Value) -> Result<Value, Comm
         return Ok(json!({ "cleared": before - lanes.len() }));
     }
     // Every lane of the mixer, or of the device.
-    let track = track_id(&session.project, params)?;
-    let device = match params.get("device") {
-        None | Some(Value::Null) => None,
+    let track = track_or_main_id(&session.project, params)?;
+    let device = match Args::new(params).value("device") {
+        None => None,
         Some(_) => Some(device_index(channel_of(session, track)?.devices.len(), params)?),
     };
-    let channel = channel_param(session, params)?;
+    let channel = device_channel(session, params)?;
     let lanes = match device {
         None => &mut channel.automation,
         Some(index) => &mut channel.devices.get_mut(index).ok_or("the device is missing")?.automation,
@@ -399,7 +600,7 @@ pub(crate) fn clear(session: &mut Session, params: &Value) -> Result<Value, Comm
 }
 
 pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let enabled = Args::new(params).bool("enabled")?;
     let target = target(session, params)?;
     let lane = target.lane(session)?;
     lane.enabled = enabled;
@@ -408,7 +609,7 @@ pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value
 
 /// Every lane of a track: its mixer's, then each device's.
 pub(crate) fn list(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let track = track_id(&session.project, params)?;
+    let track = track_or_main_id(&session.project, params)?;
     let channel = channel_of(session, track)?;
     let lanes = |lanes: &[AutomationLane], volume_db: bool| -> Vec<Value> {
         lanes
@@ -420,7 +621,7 @@ pub(crate) fn list(session: &mut Session, params: &Value) -> Result<Value, Comma
                 json!({
                     "param": lane.param,
                     "enabled": lane.enabled,
-                    "points": lane.points.iter().map(|p| json!({ "beat": p.beat, "value": show(p.value), "curve": p.curve })).collect::<Vec<_>>(),
+                    "points": lane.points.entries().map(|(id, p)| json!({ "id": id.0, "beat": p.beat, "value": show(p.value), "curve": p.curve.to_array() })).collect::<Vec<_>>(),
                 })
             })
             .collect()

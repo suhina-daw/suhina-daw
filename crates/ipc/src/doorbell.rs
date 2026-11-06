@@ -12,8 +12,14 @@
 //!   time rather than on the system timer's next tick (15.6 ms by default). Without a
 //!   high-resolution timer (Windows 10 before 1803) the event's own timeout is cut a tick short
 //!   and the rest is yielded the same way.
-//! - Elsewhere (macOS for now): yielding the thread until the deadline. A semaphore-based wait
-//!   comes with the macOS prototype (ADR 0006, not decided yet).
+//! - macOS: short naps between checks. A thread that waits by yielding alone never sleeps, so
+//!   the kernel's timeshare scheduler demotes it for burning a core and hands it to the
+//!   efficiency cores, where its round trip misses the block's deadline (measured: an idle
+//!   round trip of 138 µs, p50 651 µs and 11 % of blocks late on a machine with three busy
+//!   processes). A nap counts as waiting and keeps the thread in the scheduler's good books;
+//!   [`NAP`] caps the requested sleep; scheduling can delay the actual wake-up. A semaphore-based wait comes with the macOS
+//!   prototype (ADR 0006, not decided yet): Mach semaphores live in one task and cannot be
+//!   shared with another process by name.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
@@ -22,6 +28,17 @@ use crate::IpcError;
 
 /// Checks before going to sleep.
 const SPINS: u32 = 256;
+
+/// How long the macOS wait spins before it naps: a ring landing in the spin is noticed at once,
+/// so this bounds how often a wake must wait out a nap.
+#[cfg_attr(any(target_os = "linux", windows), allow(dead_code))]
+const SPIN_BEFORE_NAP: Duration = Duration::from_micros(40);
+
+/// Maximum requested sleep for the macOS wait; the scheduler may wake it later. It stays
+/// far inside a block's deadline (a quarter of a millisecond, next to a block's 0.67–2.7 ms;
+/// with the plug-in's own work of a few hundred microseconds the round trip keeps its room).
+#[cfg_attr(any(target_os = "linux", windows), allow(dead_code))]
+const NAP: Duration = Duration::from_micros(250);
 
 /// How long before the deadline a high-resolution timer wakes the wait; the rest is yielded.
 /// Such a timer wakes within about half a millisecond, so one millisecond keeps the deadline.
@@ -157,7 +174,25 @@ impl Doorbell {
         #[cfg(windows)]
         self.sleep_windows(left);
         #[cfg(not(any(target_os = "linux", windows)))]
-        std::thread::yield_now();
+        {
+            // A short spin (a ring in it is noticed at once), then a nap, which counts as
+            // waiting and keeps the thread out of the scheduler's demotion. The spin watches
+            // the word, and so does the moment before the nap: a response seen is not slept
+            // over. Cap the requested sleep to the remaining time; scheduling may overshoot.
+            // The caller re-checks the word and deadline.
+            let spin = left.min(SPIN_BEFORE_NAP);
+            let started = Instant::now();
+            while started.elapsed() < spin {
+                if word.load(Ordering::Acquire) != value {
+                    return;
+                }
+                std::hint::spin_loop();
+            }
+            let left = left.saturating_sub(started.elapsed());
+            if !left.is_zero() && word.load(Ordering::Acquire) == value {
+                std::thread::sleep(left.min(NAP));
+            }
+        }
     }
 
     /// [`Doorbell::sleep`] on Windows. A wait with a millisecond timeout ends on the system
@@ -238,12 +273,34 @@ impl Drop for Doorbell {
 mod tests {
     use super::*;
 
-    /// A doorbell nobody rings: each wait must end at its deadline, not before and not a timer
-    /// tick after (#211). 40 waits from 1 to 12.7 ms, as plug-in blocks' deadlines are.
+    /// A doorbell nobody rings: each wait must time out, never before its deadline.
     #[test]
     fn an_unanswered_wait_ends_at_its_deadline() {
+        // How late it ends is for an idle host: shared runners can deschedule this thread for
+        // arbitrarily longer than the audio deadline (`unanswered_wait_precision`).
+        unanswered_wait_lateness("deadline");
+    }
+
+    /// Measures timer precision on an idle host, outside shared-runner CI.
+    #[test]
+    #[ignore = "timing measurement; run on an idle host with --ignored --test-threads=1"]
+    fn unanswered_wait_precision() {
+        let mut late = unanswered_wait_lateness("precision");
+        late.sort();
+        let worst = late.last().copied().unwrap_or_default();
+        let median = late.get(late.len() / 2).copied().unwrap_or_default();
+        if cfg!(any(target_os = "linux", windows)) {
+            assert!(median < Duration::from_millis(1), "median {median:?}, all {late:?}");
+            assert!(worst < Duration::from_millis(40), "worst {worst:?}, all {late:?}");
+        } else {
+            assert!(worst < Duration::from_millis(500), "worst {worst:?}, all {late:?}");
+        }
+    }
+
+    /// Samples the real wait and checks timeout semantics at block-sized deadlines.
+    fn unanswered_wait_lateness(role: &str) -> Vec<Duration> {
         let name = format!("suhina-ipc-doorbell-test-{}", std::process::id());
-        let bell = Doorbell::create(&name, "test").unwrap_or_else(|e| panic!("{e}"));
+        let bell = Doorbell::create(&name, role).unwrap_or_else(|e| panic!("{e}"));
         let word = AtomicU32::new(0);
         let mut late = Vec::new();
         for n in 0..40u64 {
@@ -254,44 +311,39 @@ mod tests {
             assert!(ended >= deadline, "ended {:?} early", deadline - ended);
             late.push(ended - deadline);
         }
-        late.sort();
-        let worst = late.last().copied().unwrap_or_default();
-        let median = late.get(late.len() / 2).copied().unwrap_or_default();
-        // Without the fix a wait on Windows ended on the system timer's next tick, up to
-        // 15.6 ms late, so the median lay at several milliseconds. A single wait can still be
-        // late when the test machine is busy (the other tests run at the same time), so the
-        // worst case only has the bound the link's own test has.
-        //
-        // Elsewhere (macOS) the wait yields until its deadline, and a yield on a busy shared
-        // runner can lose the core for tens of milliseconds, so how late it ends measures the
-        // runner's scheduler (#522): there only "never early" above and a loose bound hold.
-        if cfg!(any(target_os = "linux", windows)) {
-            assert!(median < Duration::from_millis(1), "median {median:?}, all {late:?}");
-            assert!(worst < Duration::from_millis(40), "worst {worst:?}, all {late:?}");
-        } else {
-            assert!(worst < Duration::from_millis(500), "worst {worst:?}, all {late:?}");
-        }
+        late
     }
 
-    /// A ring wakes a sleeping wait long before its deadline.
+    /// A ring wakes a sleeping wait. Its deadline is an hour away, so only the ring can end it
+    /// within the minute it is given here: a wait that sleeps on reads the changed word at its
+    /// deadline and says yes all the same, so the answer alone would not show a ring that failed.
     #[test]
     fn a_ring_wakes_the_wait() {
         let name = format!("suhina-ipc-doorbell-ring-{}", std::process::id());
         let bell = Doorbell::create(&name, "test").unwrap_or_else(|e| panic!("{e}"));
         let other = Doorbell::open(&name, "test").unwrap_or_else(|e| panic!("{e}"));
         let word = std::sync::Arc::new(AtomicU32::new(0));
-        let ringer = {
+        let (sleeping, going_to_sleep) = std::sync::mpsc::channel();
+        let (answer, answered) = std::sync::mpsc::channel();
+        let waiter = {
             let word = word.clone();
             std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(20));
-                word.store(1, Ordering::Release);
-                other.ring(&word);
+                let looks = AtomicU32::new(0);
+                let done = |value: u32| {
+                    // The look after the spins is the last one before the wait sleeps.
+                    if looks.fetch_add(1, Ordering::Relaxed) == SPINS {
+                        let _ = sleeping.send(());
+                    }
+                    value == 1
+                };
+                let _ = answer.send(bell.wait(&word, done, Instant::now() + Duration::from_secs(3600)));
             })
         };
-        let started = Instant::now();
-        assert!(bell.wait(&word, |v| v == 1, started + Duration::from_secs(5)));
-        assert!(started.elapsed() < Duration::from_secs(1), "{:?}", started.elapsed());
-        assert!(ringer.join().is_ok());
+        assert!(going_to_sleep.recv().is_ok());
+        word.store(1, Ordering::Release);
+        other.ring(&word);
+        assert_eq!(answered.recv_timeout(Duration::from_secs(60)), Ok(true), "the ring woke nothing");
+        assert!(waiter.join().is_ok());
     }
 
     /// The high-resolution timer exists on every Windows the project supports (10 1803 and

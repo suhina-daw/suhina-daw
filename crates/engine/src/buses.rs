@@ -18,20 +18,26 @@ use crate::plugin::{Delay, Plugins};
 use crate::sends::{self, SendOut};
 use crate::{MAX_LATENCY_SECONDS, track_gains};
 
-/// A send of a chain: the return chain's index, the return track and the send's gains.
-type SendTarget = (usize, TrackId, (f32, f32));
+/// A send of a chain: the return chain's index, the return track, the send's gains with the
+/// level they are for, and whether it is after the fader.
+type SendTarget = (usize, TrackId, (((f32, f32), f64), f64), bool);
 
 /// The most channels a route is followed through, so a routing cycle cannot loop forever.
 const MAX_HOPS: usize = 64;
 
 /// The chains of `project`'s tracks, ordered so every bus comes after the chains that feed it,
 /// with their targets, gains and latency compensation set; and the latency every path is
-/// brought up to. Allocates: call it off the audio thread.
+/// brought up to. With `source`, a source render: the node has a chain even without devices
+/// and every track that plays into it targets it, so the render can read the sum at the node.
+/// Allocates: call it off the audio thread.
 pub(crate) fn build(
     project: &Project,
+    audio: &crate::AudioPool,
     sample_rate: u32,
     plugins: &mut Plugins,
     column_of: impl Fn(TrackId) -> u32,
+    assets: (&crate::DeviceAssets, &dyn suhina_device_sdk::DeviceFactory),
+    source: Option<TrackId>,
 ) -> (Vec<Chain>, u32) {
     // Every track with devices has a chain, a silent one too (muted, or not soloed): its
     // devices keep running at a gain of zero, so a plug-in keeps its state and its process,
@@ -40,13 +46,30 @@ pub(crate) fn build(
     let mut chains: Vec<Chain> = project
         .tracks
         .iter()
-        .filter_map(|track| Chain::build(project, track.id, column_of(track.id), (0.0, 0.0), sample_rate, plugins))
+        .filter_map(|track| {
+            Chain::build(project, audio, track.id, column_of(track.id), (0.0, 0.0), sample_rate, plugins, assets)
+        })
         .collect();
     // A track whose mixer follows lanes applies its gains after a chain, one without devices
     // when it has none (#395); a group's chain makes it a bus.
     for track in &project.tracks {
         if chains.iter().all(|c| c.track != track.id) && automation::mixer_automated(project, track.id) {
-            chains.push(Chain::passthrough(track.id, column_of(track.id)));
+            chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
+        }
+    }
+
+    // Every other heard track that no channel plays into has a chain too, a passthrough when it
+    // has no devices: its volume then applies after the chain, where a fader move reaches it as
+    // a message rather than a new graph ([`Chain::set_live_volume`]), as a fader is a control
+    // the audio thread reads in OSS hosts too.
+    let fed_channel =
+        |channel: ChannelId| project.channels.iter().any(|c| c.id != channel && c.output == Some(channel));
+    for track in &project.tracks {
+        if chains.iter().all(|c| c.track != track.id)
+            && track.channel.is_some_and(|ch| !fed_channel(ch))
+            && track_gains(project, track.id).is_some()
+        {
+            chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
         }
     }
 
@@ -57,7 +80,7 @@ pub(crate) fn build(
         if chains.iter().all(|c| c.track != track.id)
             && planned.iter().any(|p| p.source == track.id || p.target == track.id)
         {
-            chains.push(Chain::passthrough(track.id, column_of(track.id)));
+            chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
         }
     }
 
@@ -68,32 +91,28 @@ pub(crate) fn build(
             && chains.iter().all(|c| c.track != track.id)
             && track_gains(project, track.id).is_some()
         {
-            chains.push(Chain::passthrough(track.id, column_of(track.id)));
+            chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
         }
     }
 
+    // A source render makes the node a bus for its subtree: it has a chain even when it holds
+    // no devices, so everything that plays into it sums into it and the render reads the sum
+    // there.
+    if let Some(source) = source
+        && chains.iter().all(|c| c.track != source)
+    {
+        chains.push(Chain::passthrough(source, column_of(source), sample_rate));
+    }
+
     // A bus: a track with a chain that some other channel plays into.
-    let channel_of = |track: TrackId| project.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel);
+    let channel_of = |track: TrackId| project.track(track).and_then(|t| t.channel);
     let feeds = |channel: ChannelId| project.channels.iter().any(|c| c.id != channel && c.output == Some(channel));
     let buses: Vec<(TrackId, ChannelId)> =
         chains.iter().filter_map(|c| channel_of(c.track).filter(|&ch| feeds(ch)).map(|ch| (c.track, ch))).collect();
     // The buses a track's sound passes through after its own channel, nearest first.
     let buses_after = |track: TrackId| -> Vec<(TrackId, ChannelId)> {
-        let mut out = Vec::new();
-        let mut visited = Vec::new();
-        let mut next =
-            channel_of(track).and_then(|ch| project.channels.iter().find(|c| c.id == ch)).and_then(|c| c.output);
-        while let Some(id) = next.take() {
-            if visited.len() > MAX_HOPS || visited.contains(&id) {
-                break;
-            }
-            visited.push(id);
-            if let Some(&bus) = buses.iter().find(|(_, ch)| *ch == id) {
-                out.push(bus);
-            }
-            next = project.channels.iter().find(|c| c.id == id).and_then(|c| c.output);
-        }
-        out
+        let Some(own) = channel_of(track) else { return Vec::new() };
+        project.output_chain(own).filter_map(|id| buses.iter().find(|(_, ch)| *ch == id).copied()).collect()
     };
 
     if !buses.is_empty() {
@@ -102,7 +121,7 @@ pub(crate) fn build(
                 && !buses_after(track.id).is_empty()
                 && track_gains(project, track.id).is_some()
             {
-                chains.push(Chain::passthrough(track.id, column_of(track.id)));
+                chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
             }
         }
     }
@@ -130,24 +149,52 @@ pub(crate) fn build(
             planned
                 .iter()
                 .filter(|p| p.source == c.track)
-                .filter_map(|p| Some((chains.iter().position(|o| o.track == p.target)?, p.target, p.gains)))
+                .filter_map(|p| {
+                    Some((
+                        chains.iter().position(|o| o.track == p.target)?,
+                        p.target,
+                        ((p.gains, p.level), p.pan),
+                        p.post_fader,
+                    ))
+                })
                 .collect()
         })
         .collect();
     for (chain, target) in chains.iter_mut().zip(&targets) {
         let is_bus = buses.iter().any(|(t, _)| *t == chain.track);
-        // A group's pan does not apply (as for a group without devices); a track's does.
-        let post = gains_until(project, chain.track, target.map(|(_, ch)| ch), !is_bus).unwrap_or((0.0, 0.0));
+        let frames_per_beat = crate::tempo::frames_per_beat(project.transport.tempo_bpm, f64::from(sample_rate));
+        chain.mix = automation::channel_of(project, chain.track)
+            .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus, f64::from(sample_rate)));
+        // A track's pan applies live (its gains centred, the pan as factors a knob's turn moves),
+        // unless a lane carries it, also beside a volume or mute lane (#763 › 4); a group's pan
+        // does not apply (as for a group without devices).
+        let live_pan = automation::channel_of(project, chain.track)
+            .filter(|_| !is_bus && !chain.mix.as_ref().is_some_and(MixLanes::has_pan))
+            .map(|c| if c.pan.is_finite() { c.pan.clamp(-1.0, 1.0) } else { 0.0 });
+        let post = gains_until(project, chain.track, target.map(|(_, ch)| ch), !is_bus && live_pan.is_none())
+            .unwrap_or((0.0, 0.0));
         chain.set_post(post);
         chain.target = target.map(|(index, _)| index);
-        chain.set_cue(if cued(project, chain.track) { cue_gains(project, chain.track, !is_bus) } else { None });
-        let frames_per_beat = 60.0 / project.transport.tempo_bpm * f64::from(sample_rate);
-        chain.mix = automation::channel_of(project, chain.track)
-            .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus));
+        // A live pan reaches the cue as it does the main output: its gains are centred too.
+        chain.set_cue(if cued(project, chain.track) {
+            cue_gains(project, chain.track, !is_bus && live_pan.is_none())
+        } else {
+            None
+        });
+        // The volume the gains were built at, which a live volume is taken relative to; none for
+        // a bus (its volume scales what plays into it too) or a volume on a lane.
+        chain.built_volume = automation::channel_of(project, chain.track)
+            .filter(|c| !is_bus && !c.automated(suhina_model::automation::VOLUME))
+            .map(|c| c.volume)
+            .filter(|v| v.is_finite() && *v > 0.0);
+        match live_pan {
+            Some(pan) => chain.set_built_pan(pan),
+            None => chain.built_pan = None,
+        }
     }
     for index in 0..chains.len() {
         let fed = targets.iter().any(|t| t.is_some_and(|(target, _)| target == index))
-            || send_targets.iter().flatten().any(|(target, _, _)| *target == index);
+            || send_targets.iter().flatten().any(|(target, _, _, _)| *target == index);
         if let Some(chain) = chains.get_mut(index) {
             chain.is_bus = fed;
         }
@@ -166,7 +213,7 @@ pub(crate) fn build(
             *slot = at;
         }
         let fed = targets.get(i).copied().flatten().map(|(target, _)| target).into_iter();
-        let sent = send_targets.get(i).into_iter().flatten().map(|(target, _, _)| *target);
+        let sent = send_targets.get(i).into_iter().flatten().map(|(target, _, _, _)| *target);
         for target in fed.chain(sent) {
             if let Some(slot) = input.get_mut(target) {
                 *slot = (*slot).max(at);
@@ -180,9 +227,17 @@ pub(crate) fn build(
         .unwrap_or(0);
     for (i, chain) in chains.iter_mut().enumerate() {
         let arrived = arrive.get(i).copied().unwrap_or(0);
-        let to = match targets.get(i) {
-            Some(Some((target, _))) => input.get(*target).copied().unwrap_or(0),
-            _ => latency,
+        // A node render's captured chain lands where the whole mix lands: the devices between
+        // its parent and the master delay its sound in the whole mix, and their effects and
+        // mixer settings stay out of the render, so their latency rides the chain's own delay
+        // instead. Every other chain aligns to its target's input as it always did.
+        let to = if Some(chain.track) == source {
+            latency
+        } else {
+            match targets.get(i) {
+                Some(Some((target, _))) => input.get(*target).copied().unwrap_or(0),
+                _ => latency,
+            }
         };
         chain.delay = Delay::new(to.saturating_sub(arrived) as usize);
         if let Some(mix) = chain.mix.as_mut() {
@@ -192,19 +247,90 @@ pub(crate) fn build(
             .get(i)
             .into_iter()
             .flatten()
-            .map(|&(target, track, gains)| {
+            .map(|&(target, track, ((gains, level), pan), post_fader)| {
                 let delay = input.get(target).copied().unwrap_or(0).saturating_sub(arrived);
-                SendOut::new(target, track, gains, delay as usize)
+                // A post-fader send's gains are centred: the chain's live pan applies to them as
+                // it plays; without one, the pan goes into them now.
+                let gains = if post_fader && chain.built_pan.is_none() {
+                    let (left, right) = crate::chain::pan_factors(pan);
+                    (gains.0 * left, gains.1 * right)
+                } else {
+                    gains
+                };
+                SendOut::new(target, track, (gains, level), post_fader, delay as usize)
             })
             .collect();
         chain.set_sends(sends);
     }
+    // The main channel's chain comes last, after everything that plays into the main output; a
+    // node render stops below it.
+    if source.is_none()
+        && let Some(main) = main_chain(project, audio, sample_rate, plugins, assets)
+    {
+        chains.push(main);
+    }
     (chains, latency)
+}
+
+/// Whether the main channel runs a chain of its own (#687): it holds devices, or its volume,
+/// pan or mute follows a lane. Then its volume and mute apply after that chain, over the whole
+/// mix, rather than scaling every track as they otherwise do.
+pub(crate) fn main_runs_chain(project: &Project) -> bool {
+    project.main_channel().is_some_and(|main| {
+        !main.devices.is_empty() || suhina_model::automation::MIXER_PARAMS.iter().any(|p| main.automated(p))
+    })
+}
+
+/// The main channel's chain: its devices over the mix that reaches the main output (sources,
+/// tracks, groups and returns), then its volume, mute and lanes; `None` when it needs none
+/// ([`main_runs_chain`]). Allocates.
+fn main_chain(
+    project: &Project,
+    audio: &crate::AudioPool,
+    sample_rate: u32,
+    plugins: &mut Plugins,
+    assets: (&crate::DeviceAssets, &dyn suhina_device_sdk::DeviceFactory),
+) -> Option<Chain> {
+    if !main_runs_chain(project) {
+        return None;
+    }
+    let main = project.main_channel()?;
+    let mut chain = Chain::build(project, audio, TrackId::MAIN, u32::MAX, (1.0, 1.0), sample_rate, plugins, assets)
+        .unwrap_or_else(|| Chain::passthrough(TrackId::MAIN, u32::MAX, sample_rate));
+    let frames_per_beat = crate::tempo::frames_per_beat(project.transport.tempo_bpm, f64::from(sample_rate));
+    chain.mix = MixLanes::new(main, frames_per_beat, true, f64::from(sample_rate));
+    let volume = if main.mute || !main.volume.is_finite() { 0.0 } else { main.volume.max(0.0) };
+    chain.set_main_post(volume as f32);
+    // A fader move takes the chain's live factor, unless a lane carries the volume.
+    chain.built_volume = (!main.mute && !main.automated(suhina_model::automation::VOLUME))
+        .then_some(main.volume)
+        .filter(|v| v.is_finite() && *v > 0.0);
+    chain.is_bus = true;
+    Some(chain)
+}
+
+/// Whether `track` plays into `source`'s channel through the channel tree — the source node's
+/// subtree. The source's own track is (its channel is the source's, or the group track's is);
+/// a return channel that plays into the node's bus is not, its role says so, because a node
+/// render leaves the returns out.
+pub(crate) fn in_source(project: &Project, track: TrackId, source_channel: ChannelId) -> bool {
+    let Some(channel) = project.track(track).and_then(|t| t.channel) else {
+        return false;
+    };
+    let role_of = |id: ChannelId| project.channel(id).map(|c| c.role);
+    // A return is not inside a node's subtree even when it plays into the node's bus.
+    if role_of(channel) == Some(ChannelRole::Effect) && channel != source_channel {
+        return false;
+    }
+    if channel == source_channel {
+        return true;
+    }
+    project.output_chain(channel).any(|id| id == source_channel)
 }
 
 /// Whether `track`'s channel has its cue on.
 fn cued(project: &Project, track: TrackId) -> bool {
-    let channel = project.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel);
+    let channel = project.track(track).and_then(|t| t.channel);
     project.channels.iter().any(|c| Some(c.id) == channel && c.cue)
 }
 
@@ -214,13 +340,13 @@ fn cued(project: &Project, track: TrackId) -> bool {
 /// Scaled like `track_gains`.
 pub(crate) fn cue_gains(project: &Project, track: TrackId, pan: bool) -> Option<(f32, f32)> {
     track_gains(project, track)?;
-    let channel_id = project.tracks.iter().find(|t| t.id == track)?.channel?;
-    let channel = project.channels.iter().find(|c| c.id == channel_id)?;
+    let channel_id = project.track(track)?.channel?;
+    let channel = project.channel(channel_id)?;
     let volume = if channel.volume.is_finite() { channel.volume.max(0.0) } else { 0.0 };
     let pan = if pan && channel.pan.is_finite() { channel.pan.clamp(-1.0, 1.0) } else { 0.0 };
-    let angle = (pan + 1.0) * std::f64::consts::FRAC_PI_4;
+    let (left, right) = suhina_dsp::pan::gains(pan);
     let scale = volume * std::f64::consts::SQRT_2 * 0.25;
-    Some(((angle.cos() * scale) as f32, (angle.sin() * scale) as f32))
+    Some(((left * scale) as f32, (right * scale) as f32))
 }
 
 /// A track's equal-power pan (when `pan`) and the volume of every channel from its own up to,
@@ -233,28 +359,35 @@ pub(crate) fn gains_until(
     pan: bool,
 ) -> Option<(f32, f32)> {
     track_gains(project, track)?;
-    let channel_id = project.tracks.iter().find(|t| t.id == track)?.channel?;
-    let channel = project.channels.iter().find(|c| c.id == channel_id)?;
+    let channel_id = project.track(track)?.channel?;
+    let channel = project.channel(channel_id)?;
     let gain = |c: &suhina_model::Channel| if c.volume.is_finite() { c.volume.max(0.0) } else { 0.0 };
     let mut volume = 1.0;
     let mut visited = Vec::new();
     let mut next = Some(channel);
+    // A main channel with a chain applies its volume after it (#687).
+    let main_chain = main_runs_chain(project);
     while let Some(c) = next.take() {
-        if Some(c.id) == until || visited.len() > MAX_HOPS || visited.contains(&c.id) {
+        if Some(c.id) == until
+            || visited.len() > MAX_HOPS
+            || visited.contains(&c.id)
+            || (main_chain && c.role == ChannelRole::Master)
+        {
             break;
         }
         visited.push(c.id);
         volume *= gain(c);
-        next = c.output.and_then(|id| project.channels.iter().find(|o| o.id == id));
+        next = c.output.and_then(|id| project.channel(id));
     }
     if until.is_none()
+        && !main_runs_chain(project)
         && let Some(master) =
             project.channels.iter().find(|c| c.role == ChannelRole::Master && !visited.contains(&c.id))
     {
         volume *= gain(master);
     }
     let pan = if pan && channel.pan.is_finite() { channel.pan.clamp(-1.0, 1.0) } else { 0.0 };
-    let angle = (pan + 1.0) * std::f64::consts::FRAC_PI_4;
+    let (left, right) = suhina_dsp::pan::gains(pan);
     let scale = volume * std::f64::consts::SQRT_2 * 0.25;
-    Some(((angle.cos() * scale) as f32, (angle.sin() * scale) as f32))
+    Some(((left * scale) as f32, (right * scale) as f32))
 }

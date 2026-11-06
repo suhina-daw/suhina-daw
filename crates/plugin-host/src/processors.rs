@@ -22,10 +22,15 @@
 //!   takes `µs` microseconds (at most one second, sleeping) over a block that brings notes or
 //!   controllers, like a synthesizer that starts or resets its voices when playback
 //!   starts or stops (#506).
+//! - `test:ring`: passes audio through, and tells the `test:await-ring` plug-ins of its host
+//!   process that it has had a block.
+//! - `test:await-ring`: passes audio through, answering its block `n` (counting from 0) only once
+//!   the host process's `test:ring` plug-in has had `n + 1` blocks, however long that takes: put
+//!   in one group, the two show that one plug-in was given its block while the other's was out.
 
 use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::Duration;
 
 /// Something that processes blocks. Shared between the control thread (state) and the audio
@@ -58,6 +63,8 @@ pub(crate) fn create(plugin: &str) -> Result<std::sync::Arc<dyn Processor>, Stri
     let after = |prefix: &str| plugin.strip_prefix(prefix).and_then(|n| n.parse::<u32>().ok());
     if plugin == "test:gain" {
         Ok(std::sync::Arc::new(Gain(AtomicU32::new(0.5f32.to_bits()))))
+    } else if plugin == "test:transport-cut" {
+        Ok(std::sync::Arc::new(TransportCut(AtomicU32::new(0))))
     } else if let Some(n) = after("test:crash-after:") {
         Ok(std::sync::Arc::new(Failing { after: n, blocks: AtomicU32::new(0), hang: false }))
     } else if let Some(ms) = after("test:slow-load:") {
@@ -75,6 +82,10 @@ pub(crate) fn create(plugin: &str) -> Result<std::sync::Arc<dyn Processor>, Stri
         Ok(std::sync::Arc::new(Busy(Duration::from_micros(u64::from(micros.min(1_000_000))))))
     } else if let Some(micros) = after("test:burst:") {
         Ok(std::sync::Arc::new(Burst(Duration::from_micros(u64::from(micros.min(1_000_000))))))
+    } else if plugin == "test:ring" {
+        Ok(std::sync::Arc::new(Ring))
+    } else if plugin == "test:await-ring" {
+        Ok(std::sync::Arc::new(AwaitRing(AtomicU32::new(0))))
     } else if let Some(n) = after("test:hang-after:") {
         Ok(std::sync::Arc::new(Failing { after: n, blocks: AtomicU32::new(0), hang: true }))
     } else {
@@ -83,6 +94,45 @@ pub(crate) fn create(plugin: &str) -> Result<std::sync::Arc<dyn Processor>, Stri
 }
 
 struct Gain(AtomicU32);
+
+/// A low-frequency instrument that resets its output instantly when transport stops.
+/// This models the discontinuity observed in an installed instrument without its preset.
+struct TransportCut(AtomicU32);
+
+impl Processor for TransportCut {
+    fn process(&self, input: &[f32], output: &mut [f32]) {
+        self.process_events(input, &[], output);
+    }
+    fn process_events(&self, _input: &[f32], events: &[suhina_ipc::Event], output: &mut [f32]) {
+        let playing =
+            events.iter().any(|event| matches!(event.kind, suhina_ipc::EventKind::Transport { playing: true, .. }));
+        let previous = self.0.load(Ordering::Relaxed);
+        let mut phase = previous >> 2;
+        let mut live = previous & 2 != 0;
+        if previous & 1 != 0 && !playing {
+            live = false;
+        }
+        for event in events {
+            match event.kind {
+                suhina_ipc::EventKind::NoteOn { .. } => live = true,
+                suhina_ipc::EventKind::NoteOff { .. } => live = false,
+                _ => {}
+            }
+        }
+        for pair in output.as_chunks_mut::<2>().0 {
+            let sample = if playing || live { (phase as f32 * std::f32::consts::TAU / 960.0).sin() * 0.5 } else { 0.0 };
+            pair.fill(sample);
+            phase = (phase + 1) % 960;
+        }
+        self.0.store((phase << 2) | u32::from(playing) | (u32::from(live) << 1), Ordering::Relaxed);
+    }
+    fn state(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    fn set_state(&self, _data: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+}
 
 impl Processor for Gain {
     fn process(&self, input: &[f32], output: &mut [f32]) {
@@ -131,6 +181,57 @@ impl Processor for Busy {
     }
 }
 
+/// The blocks the `test:ring` plug-in of this process has had, and the signal that it had another.
+static RUNG: Mutex<u32> = Mutex::new(0);
+static RINGING: Condvar = Condvar::new();
+/// Where a `test:await-ring` plug-in says it is going into its wait, sent while it holds `RUNG`, so
+/// a test that has heard it knows the ring cannot pass the block before the plug-in is waiting.
+static WAIT_SIGNAL: Mutex<Option<std::sync::mpsc::Sender<bool>>> = Mutex::new(None);
+
+/// A `test:ring` plug-in.
+struct Ring;
+
+impl Processor for Ring {
+    fn process(&self, input: &[f32], output: &mut [f32]) {
+        output.copy_from_slice(input);
+        *RUNG.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        RINGING.notify_all();
+    }
+
+    fn state(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn set_state(&self, _data: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// A `test:await-ring` plug-in: the blocks it has had.
+struct AwaitRing(AtomicU32);
+
+impl Processor for AwaitRing {
+    fn process(&self, input: &[f32], output: &mut [f32]) {
+        let block = self.0.fetch_add(1, Ordering::Relaxed);
+        let mut rung = RUNG.lock().unwrap_or_else(PoisonError::into_inner);
+        while *rung <= block {
+            if let Some(signal) = &*WAIT_SIGNAL.lock().unwrap_or_else(PoisonError::into_inner) {
+                let _ = signal.send(true);
+            }
+            rung = RINGING.wait(rung).unwrap_or_else(PoisonError::into_inner);
+        }
+        output.copy_from_slice(input);
+    }
+
+    fn state(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn set_state(&self, _data: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 /// What a `test:burst` plug-in adds to every sample, so a block it did not answer in time is
 /// heard (and seen) as silence.
 pub(crate) const BURST_LEVEL: f32 = 0.25;
@@ -148,7 +249,19 @@ impl Processor for Burst {
         // It sleeps rather than spins: the host's audio thread may run at real-time priority,
         // and spinning there could take the engine's core on a small machine, which would
         // measure the scheduler rather than the engine.
-        if !events.is_empty() {
+        // Notes and controllers start or reset voices; the song's place, which comes with every
+        // block, does not.
+        use suhina_ipc::EventKind;
+        let voices = events.iter().any(|e| {
+            matches!(
+                e.kind,
+                EventKind::NoteOn { .. }
+                    | EventKind::NoteOff { .. }
+                    | EventKind::Controller { .. }
+                    | EventKind::PitchBend { .. }
+            )
+        });
+        if voices {
             std::thread::sleep(self.0);
         }
         for (o, i) in output.iter_mut().zip(input) {
@@ -301,15 +414,40 @@ mod tests {
 
     #[test]
     fn a_burst_plug_in_sounds_and_takes_its_time_only_over_events() {
-        let burst = create("test:burst:5000").unwrap();
         let mut output = [0.0f32; 4];
-        let started = std::time::Instant::now();
-        burst.process_events(&[1.0, 0.0, 0.0, 0.0], &[], &mut output);
-        assert!(started.elapsed() < Duration::from_millis(5));
+        // With no events a burst takes no time: one an hour long would not come back otherwise.
+        Burst(Duration::from_secs(3600)).process_events(&[1.0, 0.0, 0.0, 0.0], &[], &mut output);
         assert_eq!(output, [1.25, 0.25, 0.25, 0.25]);
+        let burst = create("test:burst:5000").unwrap();
         let started = std::time::Instant::now();
         burst.process_events(&[0.0; 4], &[suhina_ipc::Event::note_on(0, 0, 60, 1.0)], &mut output);
         assert!(started.elapsed() >= Duration::from_millis(5));
         assert!(create("test:burst:x").is_err());
+    }
+
+    #[test]
+    fn an_awaiting_plug_in_answers_each_block_once_the_ring_has_had_it() {
+        let ring = create("test:ring").unwrap();
+        let awaiting = create("test:await-ring").unwrap();
+        let mut output = [0.0f32; 2];
+        ring.process(&[1.0, 2.0], &mut output);
+        assert_eq!(output, [1.0, 2.0]);
+        let mut output = [0.0f32; 2];
+        awaiting.process(&[3.0, 4.0], &mut output);
+        assert_eq!(output, [3.0, 4.0]);
+        // Its next block waits for the ring's next one, on a thread of its own as in a host.
+        let (signal, heard) = std::sync::mpsc::channel();
+        *WAIT_SIGNAL.lock().unwrap() = Some(signal.clone());
+        let waiting = std::thread::spawn(move || {
+            let mut output = [0.0f32; 2];
+            awaiting.process(&[5.0, 6.0], &mut output);
+            let _ = signal.send(false);
+            output
+        });
+        // It says it is waiting (true) before it answers (false); one that never waits answers first.
+        assert!(heard.recv().unwrap(), "the plug-in answered without waiting for the ring");
+        ring.process(&[1.0, 2.0], &mut [0.0f32; 2]);
+        assert_eq!(waiting.join().unwrap(), [5.0, 6.0]);
+        *WAIT_SIGNAL.lock().unwrap() = None;
     }
 }

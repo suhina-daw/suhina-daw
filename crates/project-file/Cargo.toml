@@ -1,15 +1,19 @@
 [package]
 name = "suhina-project-file"
-description = "Reads and writes Suhina's own project files (.suhina, versioned JSON; .locr from before still read)"
+description = "Reads and writes Suhina's own project files (.suhina, versioned JSON)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+suhina-fs.workspace = true
 suhina-model.workspace = true
 serde_json.workspace = true
 base64.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+suhina-test-support.workspace = true

@@ -10,13 +10,10 @@
 use egui::{Key, Modifiers, Pos2, Rect, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use serde_json::json;
 use suhina_engine::model::{LaneData, Note};
 use suhina_session::{Session, midi_velocity};
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
-use suhina_ui::kit::widgets::Action;
-use suhina_ui::settings::Settings;
 use suhina_ui::{App, kit::theme};
 
 const SIZE: (f32, f32) = (1280.0, 800.0);
@@ -33,16 +30,15 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     let mut app = App::new();
     app.set_browser_open(false);
     app.set_session(session, &[]);
-    app.run(&Action::new("launcher.setQuantization", json!({ "value": "1/8" })));
+    app.set_piano_grid(suhina_ui::detail::piano_roll_grid::PianoGrid::from_value("1/8"));
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
-    let settings = Settings { piano_grid_follows: true, ..Settings::default() };
-    let ctx = harness.ctx.clone();
-    harness.state_mut().set_settings(&ctx, settings);
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
@@ -52,7 +48,13 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
 }
 
 fn engine() -> suhina_engine::Renderer {
-    suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap()
+    suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap()
 }
 
 fn notes(h: &Harness<'static, App>) -> Vec<Note> {
@@ -60,7 +62,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let project = session.project();
     let clip = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap();
     match &project.content(clip.content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }
@@ -283,9 +285,9 @@ fn the_lane_top_edge_makes_the_lane_taller_or_shorter_within_limits() {
     let before = notes(&h);
     let height = lane(&h).height();
     let edge = h.get_by_label("Velocity lane top edge").rect().center();
-    drag(&mut h, edge, edge - vec2(0.0, 40.0), Modifiers::NONE);
+    drag(&mut h, edge, edge - vec2(0.0, 20.0), Modifiers::NONE);
     let taller = lane(&h).height();
-    assert!((taller - height - 40.0).abs() < 2.0, "{height} -> {taller}");
+    assert!((taller - height - 20.0).abs() < 2.0, "{height} -> {taller}");
     assert!(h.state().piano_roll().lane_height().is_some());
     // Down a long way: no shorter than 24 points.
     let edge = h.get_by_label("Velocity lane top edge").rect().center();
@@ -366,4 +368,78 @@ fn audition_sounds_a_note_drawn_with_the_draw_tool() {
     let after = notes(&h);
     assert_eq!(after.len(), before.len() + 1, "the click drew a note");
     assert_eq!(h.state().piano_roll().auditioning(), [before[2].key], "and it sounds");
+}
+
+/// With the audition on, a press on a note sounds it at once, and dragging it sounds each new
+/// pitch while the button is still down (#939).
+#[test]
+fn audition_sounds_a_note_on_the_press_and_at_each_pitch_of_a_drag() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    h.state_mut().piano_roll_mut().audition = true;
+    h.run();
+    let first = notes(&h)[0];
+    let rect = note_rect(&h, &first);
+    let at = rect.center();
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    assert_eq!(h.state().piano_roll().auditioning(), [first.key], "on the press");
+    let up = at + egui::vec2(0.0, -2.0 * rect.height());
+    h.input_mut().events.push(egui::Event::PointerMoved(up));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerMoved(up + egui::vec2(0.0, -0.5)));
+    h.step();
+    assert_ne!(h.state().piano_roll().auditioning(), [first.key], "a new pitch while it is held");
+    assert!(!h.state().piano_roll().auditioning().is_empty());
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: up,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+}
+
+/// With the audition on, the selecting rectangle sounds each note as it reaches it, not when it is
+/// let go.
+#[test]
+fn audition_sounds_notes_as_the_selecting_rectangle_reaches_them() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    h.state_mut().piano_roll_mut().audition = true;
+    h.run();
+    let first = notes(&h)[0];
+    let rect = note_rect(&h, &first);
+    // From an empty spot above the note, down onto it.
+    let from = rect.left_top() + egui::vec2(-rect.width().min(4.0), -3.0 * rect.height());
+    let grid = h.get_by_label_contains("Piano roll,").rect();
+    let from = egui::pos2(from.x.max(grid.left() + 1.0), from.y);
+    h.input_mut().events.push(egui::Event::PointerMoved(from));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerMoved(rect.center()));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerMoved(rect.center() + egui::vec2(0.5, 0.0)));
+    h.step();
+    assert!(h.state().piano_roll().auditioning().contains(&first.key), "while the drag lasts");
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: rect.center(),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
 }

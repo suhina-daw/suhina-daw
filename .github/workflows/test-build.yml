@@ -5,7 +5,8 @@ name: Test build
 # links it from the pull request. See docs/releasing.md › Test builds.
 #
 # Who gets one: a pull request opened and pushed by a maintainer is built on every push. Any other
-# pull request is built only when a maintainer adds the `test-build` label after reading the diff,
+# pull request is built when a maintainer adds `test-build`, or the bot adds it for an authorized
+# trusted contributor's /test-build request after reading the diff,
 # and the build is of the commit the label was added on; a later push takes the label off
 # (test-build-links.yml), so new code is never built unreviewed. Running the workflow by hand with
 # a list of pull request numbers merges them onto main and builds the result.
@@ -23,6 +24,20 @@ on:
     types: [opened, synchronize, reopened, labeled]
     # Only a pull request that changes what goes into the binaries is built; one that changes
     # only documentation, scripts, other workflows or agent files has no new binary to try.
+    paths:
+      - "apps/**"
+      - "crates/**"
+      - "devices/**"
+      - "presets/**"
+      - "third_party/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - ".github/workflows/test-build.yml"
+  # main builds nothing to try: `cache` compiles the same binaries to save the Rust cache that pull
+  # requests restore. The same paths, so the generated-docs commit after a merge does not run it.
+  push:
+    branches: [main]
     paths:
       - "apps/**"
       - "crates/**"
@@ -55,39 +70,100 @@ jobs:
   # test-build-links.yml does not count it as one.
   decide:
     name: what to build
-    # A maintainer's own pull request on every push, any pull request when a maintainer labels it,
+    # A maintainer's own pull request on every push; labelled requests are authorized below,
     # and a run by hand (only people who can write to the repository can start one). The
-    # maintainers are listed here and in test-build-links.yml.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (contains(fromJSON('["juhamikael"]'), github.triggering_actor) &&
-        ((github.event.action != 'labeled' &&
-          contains(fromJSON('["juhamikael"]'), github.event.pull_request.user.login)) ||
-         (github.event.action == 'labeled' && github.event.label.name == 'test-build')))
+    # maintainers come from the repository variable MAINTAINERS. A push to main only fills the
+    # cache (`cache` below).
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       # To find the previous head's run of this workflow.
       actions: read
+      issues: read
+      pull-requests: read
     outputs:
       build: ${{ steps.decide.outputs.build }}
+      matrix: ${{ steps.decide.outputs.matrix }}
     steps:
+      - name: Authorize the labelled commit
+        id: authorize
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          MAINTAINERS: ${{ vars.MAINTAINERS }}
+        with:
+          script: |
+            const trusted = [...String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean), ...String(process.env.TRUSTED_CONTRIBUTORS || '')
+              .split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase())];
+            const authorizedBuild = async (actor, number, sha, at, checkMembership = true) => {
+              if (String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean).includes(String(actor).toLowerCase())) return true;
+              if (actor !== 'suhina-bot[bot]') return false;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo, issue_number: number, per_page: 100,
+              });
+              for (const c of comments) {
+                if (c.user?.login !== 'suhina-bot[bot]' || c.user?.type !== 'Bot') continue;
+                const proof = String(c.body || '').match(/<!-- trusted-build ([a-f0-9]{40}) ([a-zA-Z0-9-]+) ([0-9]+) -->$/);
+                if (!proof || proof[1] !== sha || (checkMembership && !trusted.includes(proof[2].toLowerCase())) ||
+                    Date.parse(c.created_at) > Date.parse(at)) continue;
+                try {
+                  const { data: source } = await github.rest.issues.getComment({ ...context.repo, comment_id: Number(proof[3]) });
+                  if (source.user?.type === 'User' && source.user.login.toLowerCase() === proof[2].toLowerCase() &&
+                      source.body.trim() === '/test-build' &&
+                      source.issue_url === 'https://api.github.com/repos/' + context.repo.owner + '/' + context.repo.repo + '/issues/' + number &&
+                      Date.parse(source.updated_at) <= Date.parse(c.created_at)) return true;
+                } catch (error) { if (error.status !== 404) throw error; }
+              }
+              return false;
+            };
+            const maintainers = String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean);
+            const member = login => maintainers.includes(String(login || '').toLowerCase());
+            if (context.eventName === 'workflow_dispatch') {
+              core.setOutput('allowed', member(context.actor));
+              return;
+            }
+            if (context.payload.action !== 'labeled') {
+              core.setOutput('allowed', member(context.actor) && member(context.payload.pull_request.user.login));
+              return;
+            }
+            if (context.payload.label?.name !== 'test-build') return;
+            const pr = context.payload.pull_request;
+            // Fork pull_request runs may not receive repository variables. Trust the App's
+            // commit-bound proof here; the default-branch gateway and linker check membership.
+            if (!(await authorizedBuild(context.actor, pr.number, pr.head.sha, new Date().toISOString(), false))) {
+              throw new Error('No authorized test-build request for this commit. Use /test-build on fork PRs.');
+            }
+            core.setOutput('allowed', true);
       # Every branch and the pull request's merge commit, whose second parent is its head; no
       # code is built or run but scripts/branch_update.py.
-      - uses: actions/checkout@v4
-        if: github.event.action == 'synchronize'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.authorize.outputs.allowed == 'true' && github.event.action == 'synchronize'
         with:
           fetch-depth: 0
           persist-credentials: false
       # Skipped only when the push merged main and nothing else into a head whose run succeeded
       # (built, or skipped the same way): a failed or cancelled build is never left as the last one.
       - id: decide
+        if: steps.authorize.outputs.allowed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           ACTION: ${{ github.event.action }}
           BEFORE: ${{ github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # A pull request labelled `test-build-windows` is built for Windows only, to keep the
+          # shared runners free when only that platform is being tried.
+          WINDOWS_ONLY: ${{ contains(github.event.pull_request.labels.*.name, 'test-build-windows') }}
         run: |
+          # As release.yml: the oldest supported Ubuntu, so the binary runs on older glibc too;
+          # macOS builds both architectures, joined into one universal binary with lipo.
+          linux='{"name":"linux-x86_64","os":"ubuntu-22.04","targets":"x86_64-unknown-linux-gnu"}'
+          windows='{"name":"windows-x86_64","os":"windows-latest","targets":"x86_64-pc-windows-msvc"}'
+          macos='{"name":"macos-universal","os":"macos-latest","targets":"aarch64-apple-darwin,x86_64-apple-darwin"}'
+          if [ "$WINDOWS_ONLY" = true ]; then
+            echo "matrix={\"include\":[$windows]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"include\":[$linux,$windows,$macos]}" >> "$GITHUB_OUTPUT"
+          fi
           build=true
           if [ "$ACTION" = "synchronize" ] && [ -n "$BEFORE" ]; then
             if python3 scripts/branch_update.py "$BEFORE" "$HEAD_SHA" origin/main; then
@@ -112,19 +188,8 @@ jobs:
     if: needs.decide.outputs.build == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # As release.yml: the oldest supported Ubuntu, so the binary runs on older glibc too.
-          - name: linux-x86_64
-            os: ubuntu-22.04
-            targets: x86_64-unknown-linux-gnu
-          - name: windows-x86_64
-            os: windows-latest
-            targets: x86_64-pc-windows-msvc
-          # Both architectures, joined into one universal binary with lipo.
-          - name: macos-universal
-            os: macos-latest
-            targets: aarch64-apple-darwin,x86_64-apple-darwin
+      # Linux, Windows and macOS, or Windows alone (`decide`).
+      matrix: ${{ fromJSON(needs.decide.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
@@ -136,7 +201,7 @@ jobs:
     steps:
       # The merge of the pull request's head into main as it was when the event happened
       # (github.sha), so a push after the label is not what gets built.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'pull_request'
         with:
           fetch-depth: 2
@@ -154,7 +219,7 @@ jobs:
             *) echo "::error::the merge commit is not of the pull request's head $HEAD_SHA"; exit 1 ;;
           esac
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'workflow_dispatch'
         with:
           ref: main
@@ -219,12 +284,16 @@ jobs:
       - name: Install ALSA headers (cpal)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.targets }}
-      - uses: Swatinem/rust-cache@v2
+      # Restores main's cache (the `cache` job) and saves none: a cache saved here only this pull
+      # request could restore, and at 0.6 to 0.8 GB per system these filled the repository's
+      # 10 GB and evicted main's caches, ci.yml's among them.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          key: test-build-${{ matrix.name }}
+          shared-key: test-build-${{ matrix.name }}
+          save-if: false
 
       # As release.yml does for the nightly: the version in [workspace.package], and so in every
       # crate and Cargo.lock; nothing is committed.
@@ -246,8 +315,13 @@ jobs:
           RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
           TARGETS: ${{ matrix.targets }}
         run: |
+          features=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
+            features=(--features suhina/asio,suhina-cli/asio)
+          fi
           for target in ${TARGETS//,/ }; do
-            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target"
+            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target" "${features[@]}"
           done
 
       - name: Collect and smoke-test the package
@@ -265,10 +339,16 @@ jobs:
               *) cp "target/x86_64-unknown-linux-gnu/release/$bin" "dist/$PACKAGE/" ;;
             esac
           done
+          # Suhina.app on macOS, as release.yml makes it.
+          if [ "$RUNNER_OS" = "macOS" ]; then scripts/macos_app.sh "dist/$PACKAGE" "$VERSION"; fi
           cp LICENSE NOTICE README.md ATTRIBUTION.md "dist/$PACKAGE/"
           cp devices/fm-synth/LICENSE-APACHE crates/stretch/LICENSE-signalsmith.txt "dist/$PACKAGE/"
           exe="dist/$PACKAGE/suhina-cli"
           if [ "$RUNNER_OS" = "Windows" ]; then exe="$exe.exe"; fi
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            "$exe" audio devices > audio-devices.json
+            jq -e '.hosts | any(.name == "ASIO")' audio-devices.json
+          fi
           output=$("$exe" --version)
           echo "$output"
           if [ "$output" != "suhina-cli $VERSION" ]; then
@@ -285,7 +365,7 @@ jobs:
           fi
 
       # The artifact is a zip: of the package folder on Windows, of its .tar.gz elsewhere.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         id: upload
         with:
           name: ${{ steps.name.outputs.package }}
@@ -305,3 +385,60 @@ jobs:
             echo
             echo "[Download $PACKAGE]($URL) (kept for 7 days)"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # On main: the test build's binaries for each system, built only to save the Rust cache that the
+  # pull requests' builds restore. Nothing is packaged or uploaded. The systems, the toolchain
+  # targets, MACOSX_DEPLOYMENT_TARGET and RUSTFLAGS must match `build`, or what is restored does
+  # not match what a pull request compiles.
+  cache:
+    name: cache (${{ matrix.name }})
+    if: github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-22.04
+            targets: x86_64-unknown-linux-gnu
+          - name: windows-x86_64
+            os: windows-latest
+            targets: x86_64-pc-windows-msvc
+          - name: macos-universal
+            os: macos-latest
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    # One run per system at a time; a merge while one runs waits for it instead of cancelling it,
+    # since a cancelled run saves nothing. A later merge replaces a waiting one.
+    concurrency:
+      group: test-build-cache-${{ matrix.name }}
+      cancel-in-progress: false
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install ALSA headers (cpal)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: test-build-${{ matrix.name }}
+      - name: Build
+        shell: bash
+        env:
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
+          TARGETS: ${{ matrix.targets }}
+        run: |
+          features=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
+            features=(--features suhina/asio,suhina-cli/asio)
+          fi
+          for target in ${TARGETS//,/ }; do
+            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target" "${features[@]}"
+          done

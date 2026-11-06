@@ -4,14 +4,18 @@
 //! DJ EQ: three bands split by Linkwitz-Riley crossovers, each with a gain and a kill switch.
 //!
 //! Each side is split at the low frequency into low and the rest, and the rest at the high
-//! frequency into mid and high. The low band also goes through the high crossover's all-pass,
-//! so with every gain at 0 dB the three bands add back up to a flat magnitude response (the
-//! phase turns as with any crossover). A kill takes its band to silence; a gain at its minimum
-//! does the same. Gains, kills and crossover frequencies are all smoothed, so they can be
-//! turned and automated while playing. The high frequency never goes below the low one.
+//! frequency into mid and high. The low band is the low crossover's low-pass alone: no all-pass
+//! is added anywhere, so with every gain at 0 dB the three bands keep a small dip at the low
+//! crossover (−0.75 dB at most in the 24 dB setting, −2.14 dB in the 48 dB one, measured with
+//! crossovers at 500 Hz and 2 kHz) instead of summing flat. A kill takes its band to silence; a
+//! gain at its minimum does the same. Gains run from silence up to +6 dB. Gains, kills and
+//! crossover frequencies are all smoothed, so they can be turned and automated while playing.
+//! The crossovers are independent: a low frequency above the high one leaves the mid band
+//! almost empty and the sum flat, as measured.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::gain::{SILENCE_DB, db_to_gain_or_silence};
 use suhina_dsp::{LinkwitzRiley, Slope, Smoother};
@@ -37,9 +41,10 @@ pub mod param {
     pub(crate) const COUNT: usize = 9;
 }
 
-const GAIN_RANGE: (f64, f64) = (SILENCE_DB as f64, 12.0);
+/// Band gains run from silence up to +6 dB.
+pub const GAIN_RANGE: (f64, f64) = (SILENCE_DB as f64, 6.0);
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("low", "Low", GAIN_RANGE, 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("mid", "Mid", GAIN_RANGE, 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("high", "High", GAIN_RANGE, 0.0, Unit::Decibels, Scale::Linear),
@@ -58,17 +63,13 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::choice("slope", "Slope", &["24 dB/oct", "48 dB/oct"], 0),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "dj-eq", name: "DJ EQ", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("dj-eq", "DJ EQ", Role::Effect, &PARAMS);
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
-
-/// The three filters of one side.
+/// The two filters of one side.
 #[derive(Clone, Copy)]
 struct Side {
     low_split: LinkwitzRiley,
     high_split: LinkwitzRiley,
-    /// The high crossover's all-pass, for the low band.
-    low_allpass: LinkwitzRiley,
 }
 
 impl Side {
@@ -76,32 +77,31 @@ impl Side {
         Self {
             low_split: LinkwitzRiley::with_slope(sample_rate, low, slope),
             high_split: LinkwitzRiley::with_slope(sample_rate, high, slope),
-            low_allpass: LinkwitzRiley::with_slope(sample_rate, high, slope),
         }
     }
 
-    fn filters(&mut self) -> [&mut LinkwitzRiley; 3] {
-        [&mut self.low_split, &mut self.high_split, &mut self.low_allpass]
+    fn filters(&mut self) -> [&mut LinkwitzRiley; 2] {
+        [&mut self.low_split, &mut self.high_split]
     }
 
     fn tune(&mut self, sample_rate: f64, low: f64, high: f64) {
         self.low_split.set_frequency(sample_rate, low);
         self.high_split.set_frequency(sample_rate, high);
-        self.low_allpass.set_frequency(sample_rate, high);
     }
 
-    /// The (low, mid, high) bands of `x`.
+    /// The (low, mid, high) bands of `x`: the low band is the low crossover's low-pass alone,
+    /// the mid and high bands carry its high-pass.
     #[inline]
     fn bands(&mut self, x: f64) -> (f64, f64, f64) {
         let (low, rest) = self.low_split.split(x);
         let (mid, high) = self.high_split.split(rest);
-        (self.low_allpass.allpass(low), mid, high)
+        (low, mid, high)
     }
 }
 
 pub struct DjEq {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     gains: [Smoother; 3],
     /// Crossover frequencies, smoothed as log2 of hertz so a sweep sounds even.
     frequencies: [Smoother; 2],
@@ -120,7 +120,7 @@ impl DjEq {
     pub fn new() -> Self {
         let mut eq = Self {
             sample_rate: DEFAULT_SAMPLE_RATE,
-            values: PARAMS.map(|p| p.default),
+            params: ParamBank::new(&PARAMS),
             gains: [Smoother::new(1.0, 1); 3],
             frequencies: [Smoother::new(0.0, 1); 2],
             sides: [Side::new(DEFAULT_SAMPLE_RATE, 250.0, 2_500.0, Slope::Db24); 2],
@@ -131,17 +131,17 @@ impl DjEq {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     fn slope(&self) -> Slope {
         if self.value(param::SLOPE) >= 0.5 { Slope::Db48 } else { Slope::Db24 }
     }
 
-    /// Crossover targets in log2 hertz; the high one is never below the low one.
+    /// Crossover targets in log2 hertz.
     fn frequency_targets(&self) -> [f32; 2] {
         let low = self.value(param::LOW_FREQUENCY);
-        let high = self.value(param::HIGH_FREQUENCY).max(low);
+        let high = self.value(param::HIGH_FREQUENCY);
         [low.log2() as f32, high.log2() as f32]
     }
 
@@ -179,7 +179,7 @@ impl DjEq {
 }
 
 impl Device for DjEq {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 
@@ -194,9 +194,9 @@ impl Device for DjEq {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         match index {
             param::LOW_FREQUENCY | param::HIGH_FREQUENCY => {
                 let targets = self.frequency_targets();
@@ -220,7 +220,7 @@ impl Device for DjEq {
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn process(&mut self, _context: &ProcessContext, buffer: &mut [f32]) {

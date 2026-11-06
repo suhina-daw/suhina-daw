@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use suhina_plugins::scan::{Catalog, Scanned, find_files, hung_message, scan_file, standard_folders};
+use suhina_plugins::scan::{
+    Catalog, FolderFormat, HANG_RETRY, Scanned, find_files, find_files_of, hung_message, scan_file, standard_folders,
+};
 
 /// The timeout of a scan that is not meant to hang. It returns as soon as the host exits, so
 /// this costs nothing; it is long so that a slow process start (on a busy Windows machine the
@@ -105,8 +107,53 @@ fn finds_plugin_files_in_folders() {
     assert!(standard_folders().iter().all(|f| f.is_dir()));
 }
 
+/// A VST2 folder's files are found for its format: a `.vst` bundle on macOS, a `.dll` on Windows,
+/// a `.so` on Linux, and nothing else of the folder's. A folder for every format takes the
+/// bundle, which is nothing else, and no plain library, which can be anything.
+#[cfg(feature = "vst2")]
 #[test]
-fn a_scan_reads_only_new_and_changed_files() {
+fn a_vst2_folder_s_files_are_found() {
+    let dir = folder("find-vst2");
+    let (shape, other) = if cfg!(target_os = "macos") {
+        ("Gain.vst", "Gain.vst3")
+    } else if cfg!(windows) {
+        ("Gain.dll", "Gain.vst3")
+    } else {
+        ("Gain.so", "Gain.vst3")
+    };
+    write(&dir.join(shape), "x");
+    write(&dir.join(other), "x");
+    write(&dir.join("readme.txt"), "x");
+    let found = find_files_of(&[(dir.clone(), FolderFormat::Vst2)]);
+    assert_eq!(found, vec![dir.join(shape)], "only the format's files");
+    let any = find_files(std::slice::from_ref(&dir));
+    assert_eq!(any.contains(&dir.join(shape)), cfg!(target_os = "macos"), "Any takes no plain library");
+    // The vst folders of this system are standard, whether or not anything is in them.
+    let _ = standard_folders();
+}
+
+/// Seconds since 1970, now.
+fn now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+}
+
+/// A saved catalog (format 3) with one entry for `file` as it is on disk now: `what` is the
+/// JSON of what reading it gave (`"plugins": […]` or `"failed": "…"`).
+fn saved_entry(file: &Path, what: &str, tried: u64) -> Catalog {
+    let meta = std::fs::metadata(file).unwrap();
+    let modified = meta.modified().unwrap().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let path = serde_json::to_string(&file.display().to_string()).unwrap();
+    let json = format!(
+        r#"{{"version":3,"entries":[{{"path":{path},"modified":{modified},"size":{},"tried":{tried},{what}}}]}}"#,
+        meta.len()
+    );
+    let catalog = Catalog::from_json(&json);
+    assert_eq!(catalog.entries().len(), 1, "{json}");
+    catalog
+}
+
+#[test]
+fn a_scan_reads_new_and_changed_files_and_tries_failed_ones_again() {
     let dir = folder("catalog");
     let (a, b) = (dir.join("a.clap"), dir.join("b.clap"));
     write(&a, "not a plug-in");
@@ -114,13 +161,17 @@ fn a_scan_reads_only_new_and_changed_files() {
     let folders = [dir.clone()];
     let mut catalog = Catalog::new();
 
+    // Both fail, and are read once more, one at a time, before the scan gives up on them.
     let first = catalog.scan(&host(), &folders, PATIENT);
     assert_eq!((first.read.len(), first.failed.len(), first.unchanged), (2, 2, 0));
+    assert_eq!(first.retried, [a.clone(), b.clone()]);
     assert_eq!(catalog.entries().len(), 2);
     assert_eq!(catalog.plugins().count(), 0);
+    assert_eq!(catalog.failed().count(), 2);
 
+    // A failure may be passing, so a plain scan tries the unchanged files again.
     let second = catalog.scan(&host(), &folders, PATIENT);
-    assert_eq!((second.read.len(), second.unchanged), (0, 2));
+    assert_eq!((second.read.len(), second.failed.len(), second.unchanged), (2, 2, 0));
 
     write(&a, "not a plug-in, and longer now");
     std::fs::remove_file(&b).unwrap();
@@ -131,6 +182,131 @@ fn a_scan_reads_only_new_and_changed_files() {
 
     let saved = Catalog::from_json(&catalog.to_json());
     assert_eq!(saved, catalog);
+}
+
+#[test]
+fn a_file_that_holds_no_plugins_is_settled_until_it_changes() {
+    let dir = folder("settled");
+    let empty = dir.join("Empty.clap");
+    write(&empty, "");
+    let mut catalog = saved_entry(&empty, r#""plugins":[]"#, 0);
+    assert_eq!(catalog.ignored().collect::<Vec<_>>(), [empty.as_path()]);
+    assert_eq!((catalog.failed().count(), catalog.plugins().count()), (0, 0));
+
+    let unchanged = catalog.scan(&host(), std::slice::from_ref(&dir), PATIENT);
+    assert_eq!((unchanged.read.len(), unchanged.unchanged), (0, 1));
+    assert!(unchanged.failed.is_empty() && unchanged.ignored.is_empty());
+    assert_eq!(Catalog::from_json(&catalog.to_json()), catalog);
+
+    // Changed, it is read again (and, not being a plug-in, fails to load).
+    write(&empty, "something now");
+    let changed = catalog.scan(&host(), std::slice::from_ref(&dir), PATIENT);
+    assert_eq!(changed.read, std::slice::from_ref(&empty));
+    assert_eq!(catalog.ignored().count(), 0);
+}
+
+#[test]
+fn a_folder_gives_only_its_formats_files() {
+    let dir = folder("formats");
+    write(&dir.join("clap/a.clap"), "x");
+    write(&dir.join("clap/b.vst3"), "x");
+    write(&dir.join("vst3/c.vst3"), "x");
+    // The VST2 shape of this system, which its folder now gives up, and a library file of
+    // another system's, which is nothing here.
+    let (vst2_file, foreign) = if cfg!(target_os = "macos") {
+        ("e.vst", "d.dll")
+    } else if cfg!(windows) {
+        ("e.dll", "d.so")
+    } else {
+        ("e.so", "d.dll")
+    };
+    write(&dir.join("vst2").join(vst2_file), "x");
+    write(&dir.join("vst2").join(foreign), "x");
+    let name = |found: Vec<PathBuf>| -> Vec<String> {
+        found.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect()
+    };
+    let folders = [
+        (dir.join("clap"), FolderFormat::Clap),
+        (dir.join("vst3"), FolderFormat::Vst3),
+        (dir.join("vst2"), FolderFormat::Vst2),
+    ];
+    // The found list sorts by its paths, and the folders' names decide that: clap/, then
+    // vst2/, then vst3/.
+    assert_eq!(name(find_files_of(&folders)), ["a.clap", vst2_file, "c.vst3"]);
+    assert_eq!(name(find_files_of(&[(dir.join("clap"), FolderFormat::Any)])), ["a.clap", "b.vst3"]);
+    // For every format: the `.vst` bundle, and no library of any system.
+    let any: Vec<String> = if cfg!(target_os = "macos") { vec![vst2_file.to_string()] } else { Vec::new() };
+    assert_eq!(name(find_files_of(&[(dir.join("vst2"), FolderFormat::Any)])), any);
+}
+
+#[test]
+fn a_file_built_for_another_processor_is_settled_without_loading_it() {
+    use suhina_plugins::arch::Arch;
+    // A universal Mach-O header that lists only the processor this test does not run on.
+    let Some(here) = Arch::this_program().filter(|a| matches!(a, Arch::X86_64 | Arch::Arm64)) else { return };
+    let other: u32 = if here == Arch::Arm64 { 0x0100_0007 } else { 0x0100_000C };
+    let mut header = 0xCAFE_BABE_u32.to_be_bytes().to_vec();
+    header.extend(1_u32.to_be_bytes());
+    header.extend(other.to_be_bytes());
+    header.extend([0; 16]);
+    let dir = folder("foreign");
+    let file = dir.join("Old.clap");
+    std::fs::write(&file, &header).unwrap();
+    let mut catalog = Catalog::new();
+    let first = catalog.scan(&host(), std::slice::from_ref(&dir), PATIENT);
+    assert_eq!(first.incompatible.len(), 1, "{first:?}");
+    assert!(first.failed.is_empty() && first.retried.is_empty(), "not loaded, so not failed: {first:?}");
+    let (path, why) = &first.incompatible[0];
+    assert_eq!(path, &file);
+    assert!(why.contains(here.name()), "{why}");
+    assert_eq!(catalog.incompatible().count(), 1);
+    assert_eq!(catalog.failed().count(), 0);
+    // Settled: the next scan does not read it again while it is unchanged.
+    let second = catalog.scan(&host(), std::slice::from_ref(&dir), PATIENT);
+    assert_eq!((second.read.len(), second.unchanged), (0, 1));
+    assert_eq!(Catalog::from_json(&catalog.to_json()), catalog);
+}
+
+#[test]
+fn a_file_that_hung_is_tried_again_once_a_day() {
+    let dir = folder("hung");
+    let file = dir.join("slow.clap");
+    write(&file, "not a plug-in");
+    let hung = format!(r#""failed":{}"#, serde_json::to_string(&hung_message(Duration::from_secs(30))).unwrap());
+
+    let mut recent = saved_entry(&file, &hung, now());
+    let scan = recent.scan(&host(), std::slice::from_ref(&dir), PATIENT);
+    assert_eq!((scan.read.len(), scan.unchanged), (0, 1));
+    // Still listed as failed, so the user can scan again.
+    assert_eq!(recent.failed().count(), 1);
+
+    let mut old = saved_entry(&file, &hung, now() - HANG_RETRY.as_secs());
+    let scan = old.scan(&host(), std::slice::from_ref(&dir), PATIENT);
+    assert_eq!((scan.read.len(), scan.unchanged), (1, 0));
+    assert!(old.entries()[0].tried + 60 >= now());
+
+    // Any other failure is tried again by every scan.
+    let mut crashed = saved_entry(&file, r#""failed":"crashed while loading""#, now());
+    assert_eq!(crashed.scan(&host(), std::slice::from_ref(&dir), PATIENT).read.len(), 1);
+}
+
+#[test]
+fn a_load_that_fails_once_is_found_by_the_same_scan() {
+    use suhina_plugins::scan_pool::{scan_files, scan_files_retrying};
+    let dir = folder("flaky");
+    let marker = dir.join("loaded-once");
+    let flaky = format!("test:flaky:{}", marker.display());
+    let files: Vec<String> = vec![flaky.clone(), "test:clap".into(), "test:crash".into()];
+    let (results, retried) = scan_files_retrying(&host(), &files, 2, &|_| PATIENT);
+    assert_eq!(retried, [0, 2]);
+    let Scanned::Plugins(plugins) = &results[0] else { panic!("{results:?}") };
+    assert_eq!(plugins[0].name, "Suhina Test Gain");
+    assert!(matches!(&results[1], Scanned::Plugins(_)), "{results:?}");
+    assert!(matches!(&results[2], Scanned::Failed(why) if why.contains("crashed")), "{results:?}");
+    // Without the second try, its first load fails, as a passing failure does.
+    std::fs::remove_file(&marker).unwrap();
+    let first = scan_files(&host(), &[flaky], 1, &|_| PATIENT);
+    assert_eq!(first, [Scanned::Failed("the plug-in has no factory".into())]);
 }
 
 #[test]
@@ -150,8 +326,11 @@ fn a_saved_catalog_finds_plugins_by_id_or_name() {
     assert_eq!(catalog.find("room").map(|p| p.id.as_str()), Some("com.example.verb"));
     assert!(catalog.find("nothing").is_none());
     assert_eq!(Catalog::from_json(&catalog.to_json()), catalog);
-    // A catalog saved in the earlier format is dropped, so the next scan reads everything.
+    // A catalog saved in format 1 is dropped, so the next scan reads everything; one in format
+    // 2 is read, and its "holds no plug-ins" failures are settled.
     assert_eq!(Catalog::from_json(&json.replace(r#""version":2"#, r#""version":1"#)).entries().len(), 0);
+    let empty = Catalog::from_json(&json.replace("crashed while loading", "the file holds no plug-ins"));
+    assert_eq!((empty.ignored().count(), empty.failed().count()), (1, 0));
 
     for garbage in ["", "{", r#"{"version":2,"entries":[]}"#, r#"{"version":1}"#] {
         assert_eq!(Catalog::from_json(garbage), Catalog::new(), "{garbage}");
@@ -168,10 +347,11 @@ fn the_library_scans_its_folders_and_remembers_across_starts() {
     let first = library.scan(false).unwrap();
     assert_eq!((first.read.len(), first.failed.len()), (1, 1));
 
-    // A new start loads the saved catalog: nothing to read again, unless asked to.
+    // A new start loads the saved catalog.
     let mut later = Library::new(Some(dir.join("settings")), host()).without_standard_folders();
     assert_eq!(later.catalog().entries().len(), 1);
-    assert_eq!(later.scan(false).unwrap().unchanged, 1);
+    // Its file failed, so a plain scan tries it again.
+    assert_eq!(later.scan(false).unwrap().read.len(), 1);
     assert_eq!(later.scan(true).unwrap().read.len(), 1);
 }
 
@@ -180,14 +360,18 @@ fn worker_processes_read_many_files_and_survive_crashes_and_hangs() {
     use suhina_plugins::scan_pool::scan_files;
     let files: Vec<String> =
         ["test:clap", "test:crash", "test:vst3", "test:hang", "test:clap", "test:vst3"].map(String::from).to_vec();
-    let started = Instant::now();
-    let results = scan_files(&host(), &files, 2, &|_| Duration::from_secs(3));
+    // Only the file meant to hang has a short timeout: a slow process start is not mistaken for
+    // a hang, and a hang that cost another file its own timeout would show as that file failing.
+    let timeout = |file: &str| if file == "test:hang" { Duration::from_secs(3) } else { PATIENT };
+    let results = scan_files(&host(), &files, 2, &timeout);
     assert_eq!(results.len(), files.len());
     let names: Vec<String> = results
         .iter()
         .map(|r| match r {
             Scanned::Plugins(p) => p.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(","),
             Scanned::Failed(why) => format!("failed: {}", why.split(':').next().unwrap_or_default()),
+            Scanned::NoPlugins => "no plug-ins".into(),
+            Scanned::Incompatible(why) => format!("incompatible: {why}"),
         })
         .collect();
     assert_eq!(names[0], "Suhina Test Gain");
@@ -201,7 +385,19 @@ fn worker_processes_read_many_files_and_survive_crashes_and_hangs() {
     // What its compatibility class says it replaces: a VST2 plug-in, by its derived class id.
     assert_eq!(vst3[0].replaces, ["5653544761696E6761696E0000000000"]);
     assert_eq!(vst3[0].replaces[0], suhina_plugins::matching::vst2_class_id(0x4761_696E, "Gain"));
-    // One hang costs its timeout once, not per file. The room is for slow process starts: on
-    // a loaded Windows machine each start can take seconds while the antivirus checks it.
-    assert!(started.elapsed() < Duration::from_secs(60), "{:?}", started.elapsed());
+    // Its module declares no ARA factory class, so the scan does not mark it as ARA.
+    assert!(!vst3[0].ara);
+}
+
+/// One hang costs its timeout once, not per file. One worker reads the four files in turn, so a
+/// timeout per file would take four of them; the room over one is for the process starts. Run with
+/// `cargo test -p suhina-plugin-host --release --test scan one_hang -- --ignored`.
+#[test]
+#[ignore = "bounds on elapsed time, for an idle machine"]
+fn one_hang_costs_a_scan_its_timeout_once() {
+    const TIMEOUT: Duration = Duration::from_secs(3);
+    let files: Vec<String> = ["test:hang", "test:clap", "test:vst3", "test:clap"].map(String::from).to_vec();
+    let started = Instant::now();
+    suhina_plugins::scan_pool::scan_files(&host(), &files, 1, &|_| TIMEOUT);
+    assert!(started.elapsed() < TIMEOUT * 2, "{:?}", started.elapsed());
 }

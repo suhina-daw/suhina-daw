@@ -1,9 +1,9 @@
 ---
 description: How Suhina uses an optional component it does not ship — the manifest and the licence it must carry, adding and listing one, what the user sees, and what happens when an extension is missing, crashes or hangs
-read_when: extension, add-on, optional component, extension manifest, extension.json, model weights, licence shown to the user, extensions.add, extensions.list, missing extension, inference runtime
+read_when: extension, add-on, optional component, extension manifest, extension.json, model weights, licence shown to the user, extensions.add, extensions.list, missing extension, inference runtime, surface script, Lua runner
 type: spec
 status: planned
-last_verified: 2026-10-13
+last_verified: 2026-11-05
 ---
 
 # Extensions
@@ -40,13 +40,15 @@ behaves.
 | `id` | machine name: `[a-z0-9]` then `[a-z0-9._-]`, at most 64 characters; also the folder's name under `<settings>/extensions/` |
 | `name` | display name, at most 128 characters |
 | `version` | the extension's own version |
-| `provides` | what it offers: for each, an id, a label, and the command namespace it serves (`separation`) |
+| `provides` | what it offers: for each, an id, a label, and the command namespace it serves (`separation`); a `surface` entry carries no namespace, and marks a surface program ([ADR 0019](../decisions/0019-midi-controllers-and-mapping.md)) |
 | `license` | an SPDX id, or `{ "name": …, "text_file": … }` with the rights holder's exact string and a file in the folder holding it |
 | `license_source` | the URL the licence was read from |
 | `license_checked` | the date it was checked, `YYYY-MM-DD` |
 | `source` | where the component comes from: a project URL, or `user-provided` |
 | `protocol` | the host protocol version it speaks |
-| `programs` | each program: a relative path inside the folder, and its SHA-256 |
+| `programs` | each program: a relative path inside the folder, and its SHA-256 (with `runner` set, the script file; see *Running one*) |
+| `ports` | on a surface program: the port name patterns it claims, matched as a controller profile's are (`*` wildcards, case ignored) ([ADR 0019](../decisions/0019-midi-controllers-and-mapping.md)) |
+| `runner` | when set (today `"lua"`): the extension is a surface program's script; the `programs` entry is the script file, never started as a process, and Suhina starts the shipped runner of that name with it (see *Running one*) |
 | `permissions` | what it may do: `project.read`, `project.write`, `files.write:<folder>`, `audio.read` |
 | `credit` | the attribution the rights holder requires, at most 512 characters |
 
@@ -59,9 +61,12 @@ Checked when the manifest is read, with everything capped:
   and whether it is missing or changed.
 - `protocol` newer than Suhina speaks → `refused`; older → it runs when the protocol says the older
   version stays compatible.
+- A `runner` value Suhina does not ship → `refused`, naming the value and the runners Suhina ships
+  (`lua` today).
 - Caps, because a manifest is input like any other: at most 32 programs, at most 16 `provides`
-  entries, an id at most 64 characters, a name at most 128, `credit` at most 512, and no path that
-  leaves the extension's folder. A manifest that breaks a cap is refused with the reason.
+  entries, at most 64 `ports` patterns, an id at most 64 characters, a name at most 128,
+  `credit` at most 512, and no path that leaves the extension's folder. A manifest that breaks
+  a cap is refused with the reason.
 
 ## Adding, listing, removing
 
@@ -96,6 +101,14 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
 
 - Suhina starts the program as a child process and speaks the host protocol to it; the extension is
   never loaded into Suhina's process ([ADR 0006](../decisions/0006-plug-in-hosting.md)).
+- A manifest with `runner` set is a **surface program's script**
+  ([ADR 0019](../decisions/0019-midi-controllers-and-mapping.md)). The `programs` entry is the
+  script's file, and it is never started as a process: the child process is the runner the name
+  `runner` gives, the one Suhina ships, built from this tree and carrying no manifest of its own.
+  The runner is a program Suhina ships, not an extension and not a surface program; the script's
+  folder is both. The extension's state, its health and its restart
+  are the runner process's, and the script's ports fall back to their profiles while that process
+  is down.
 - Suhina does the parts it owns: decoding the audio, the resampling and the DSP chain around the
   model, placing the result in the project, and the undo step. The extension does the part Suhina may
   not ship.
@@ -116,3 +129,5 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
   rather than through commands.
 - Commands of an extension's own outside the namespace its manifest declares.
 - Extensions that Suhina ships itself: what ships stays built from this tree and GPL-compatible.
+  No extension is shipped yet: the runner a surface script names is a shipped program, not an
+  extension (see *Running one*).

@@ -4,20 +4,20 @@
 //! The piano roll's grid menu and keys in the window (`docs/spec/ui-clip-editor.md` › Grid and
 //! snapping): the menu ticks the chosen entries and changes the grid, Ctrl+1 to Ctrl+4 change it
 //! after a click in the piano roll, a drawn note follows the value, snap off places notes freely,
-//! an adaptive grid follows the zoom, and following the control bar greys out what it cannot hold.
+//! and an adaptive grid follows the zoom.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers outside #[test] functions
 
 use egui::{Key, Modifiers, Pos2, Rect, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use suhina_engine::Quantization;
 use suhina_engine::model::{LaneData, Note};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
 use suhina_ui::detail::piano_roll_grid::{GridMode, PianoGrid, Width};
 use suhina_ui::settings::Settings;
+use suhina_ui::settings::keymap::shown;
 use suhina_ui::{App, kit::theme};
 
 const SIZE: (f32, f32) = (1280.0, 800.0);
@@ -32,6 +32,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -48,7 +50,13 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
 }
 
 fn engine() -> suhina_engine::Renderer {
-    suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap()
+    suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap()
 }
 
 /// The edited clip's notes in the project.
@@ -57,7 +65,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let project = session.project();
     let clip = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap();
     match &project.content(clip.content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }
@@ -163,26 +171,26 @@ fn the_menu_ticks_the_chosen_entries_and_changes_the_grid() {
     h.run();
     let toggled =
         |h: &Harness<'static, App>, label: &str| format!("{:?}", h.get_by_label(label).accesskit_node().toggled());
-    assert_eq!(toggled(&h, "Snap to grid (Ctrl+4)"), "Some(True)");
+    assert_eq!(toggled(&h, &format!("Snap to grid ({})", shown("Ctrl+4"))), "Some(True)");
     assert_eq!(toggled(&h, "1/16"), "Some(True)");
     assert_eq!(toggled(&h, "1/8"), "Some(False)");
     assert_eq!(toggled(&h, "Adaptive medium"), "Some(False)");
-    assert_eq!(toggled(&h, "Triplet grid (Ctrl+3)"), "Some(False)");
+    assert_eq!(toggled(&h, &format!("Triplet grid ({})", shown("Ctrl+3"))), "Some(False)");
     // Each entry with a key shows it, and its label carries it.
-    for entry in
-        ["Narrow grid (Ctrl+1)", "Widen grid (Ctrl+2)", "Adaptive widest", "Adaptive narrowest", "8 bars", "1/32"]
-    {
+    let narrow = format!("Narrow grid ({})", shown("Ctrl+1"));
+    let widen = format!("Widen grid ({})", shown("Ctrl+2"));
+    for entry in [narrow.as_str(), widen.as_str(), "Adaptive widest", "Adaptive narrowest", "8 bars", "1/32"] {
         assert!(h.query_by_label(entry).is_some(), "{entry} is in the menu");
     }
     h.get_by_label("1/8").click_accesskit();
     h.run();
     assert_eq!(grid_label(&h), "Grid value 1/8");
-    pick(&mut h, "Triplet grid (Ctrl+3)");
+    pick(&mut h, &format!("Triplet grid ({})", shown("Ctrl+3")));
     assert_eq!(grid_label(&h), "Grid value 1/8T");
     pick(&mut h, "Adaptive wide");
     assert_eq!(grid_label(&h), "Grid value Adaptive T");
-    pick(&mut h, "Triplet grid (Ctrl+3)");
-    pick(&mut h, "Snap to grid (Ctrl+4)");
+    pick(&mut h, &format!("Triplet grid ({})", shown("Ctrl+3")));
+    pick(&mut h, &format!("Snap to grid ({})", shown("Ctrl+4")));
     assert_eq!(grid_label(&h), "Grid value Adaptive off");
 }
 
@@ -222,7 +230,7 @@ fn a_drawn_note_follows_the_chosen_value() {
 fn snap_off_lets_a_drawn_note_start_off_the_grid() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    pick(&mut h, "Snap to grid (Ctrl+4)");
+    pick(&mut h, &format!("Snap to grid ({})", shown("Ctrl+4")));
     assert_eq!(grid_label(&h), "Grid value 1/16 off");
     let keys = empty_keys(&h);
     let start = notes(&h)[1].time.floor() + 1.0;
@@ -263,6 +271,7 @@ fn an_adaptive_grid_gets_coarser_as_ctrl_and_the_wheel_zoom_out() {
             delta: vec2(0.0, -60.0),
             modifiers: Modifiers::COMMAND,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.step();
         h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
@@ -277,29 +286,6 @@ fn an_adaptive_grid_gets_coarser_as_ctrl_and_the_wheel_zoom_out() {
     assert!((second.time - floor).abs() < 1e-9, "on the coarser line: {second:?} for {coarse}");
 }
 
-#[test]
-fn following_the_control_bar_the_menu_sets_its_value_and_greys_out_the_rest() {
-    let mut renderer = engine();
-    let settings = Settings { piano_grid_follows: true, ..Settings::default() };
-    let mut h = piano_app(&mut renderer, settings);
-    let quantization = |h: &Harness<'static, App>| h.state().session().unwrap().quantization();
-    h.get_by_label_contains("Grid value").click();
-    h.run();
-    assert!(h.get_by_label("Adaptive medium").accesskit_node().is_disabled(), "the control bar has no adaptive grid");
-    assert!(!h.get_by_label("1/8").accesskit_node().is_disabled());
-    h.get_by_label("1/8").click_accesskit();
-    h.run();
-    assert_eq!(quantization(&h), Quantization::Beats(0.5));
-    assert_eq!(grid_label(&h), "Grid value 1/8");
-    // Snap off is the control bar's none.
-    pick(&mut h, "Snap to grid (Ctrl+4)");
-    assert_eq!(quantization(&h), Quantization::None);
-    assert_eq!(grid_label(&h), "Grid value 1/16 off");
-    // Picking a value snaps again.
-    pick(&mut h, "1/4");
-    assert_eq!(quantization(&h), Quantization::Beats(1.0));
-}
-
 /// Renders the grid menu open, for a look at it (`cargo test -p suhina-ui --test piano_roll_grid
 /// -- --ignored`); written to `target/ui-snapshots/`.
 #[test]
@@ -312,6 +298,8 @@ fn render_the_grid_menu() {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut h = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(40)

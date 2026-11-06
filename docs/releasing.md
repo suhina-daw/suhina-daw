@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
 type: howto
 status: current
-last_verified: 2026-10-17
+last_verified: 2026-11-06
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -11,18 +11,34 @@ covers:
   - .github/workflows/test-build.yml
   - .github/workflows/test-build-links.yml
   - .github/workflows/ready-to-merge.yml
+  - scripts/build_reuse.py
+  - scripts/release_packages_check.sh
+  - scripts/test_build_reuse.py
+  - scripts/test_merge_approval.py
   - scripts/branch_update.py
+  - scripts/macos_app.sh
+  - assets/brand/suhina-icon.png
   - scripts/release_notes.py
   - scripts/discord_post.py
   - scripts/discord_merged.py
   - scripts/discord_test_build.py
   - scripts/discord_test_build_backfill.py
   - scripts/discord_api.py
+  - apps/suhina/build.rs
+  - apps/suhina-cli/build.rs
+  - crates/plugin-host/build.rs
 ---
 
 # Releasing
 
 Releases are built by [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+
+Windows release, nightly and test packages enable `suhina/asio,suhina-cli/asio`, using
+the runner's LLVM installation for libclang and the vendored ASIO SDK. Both the desktop
+app and CLI can use installed ASIO drivers alongside WASAPI; no driver is bundled.
+Local builds need the same features explicitly (README › ASIO on Windows).
+The Windows package smoke test checks that `suhina-cli audio devices` reports the ASIO
+host even when the runner has no ASIO drivers installed.
 
 ## Versions
 
@@ -56,7 +72,19 @@ becomes the latest.
 5. For the next candidate, or the final release, repeat from step 1 with `0.1.0-rc.2` or `0.1.0`.
 
 Running the workflow by hand (Actions › Release › Run workflow) builds the same packages as
-workflow artifacts without creating a release, to test the pipeline.
+workflow artifacts without creating a release, to test the pipeline. Every run's artifacts are
+kept for 7 days; a nightly or a release keeps its packages on its release page. A release or a
+nightly is published only with all three platforms' packages
+(`scripts/release_packages_check.sh`): when one build failed, re-run the whole workflow, since a
+build re-run after the others' artifacts expired brings only its own.
+
+On Windows the three executables carry version information, which the file's Properties ›
+Details and Task Manager show: the product name Suhina, what each program is (Suhina, Suhina
+command line, Suhina plug-in host), the workspace version and the copyright. Their build scripts
+(`build.rs` in `apps/suhina`, `apps/suhina-cli` and `crates/plugin-host`) write it with
+`winresource`, so every build has it, nightlies and test builds too. Code signing checks the
+product name and version later ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)); the
+binaries are not signed yet.
 
 ## Nightly
 
@@ -116,7 +144,11 @@ request there, and is grouped by its head repository and branch instead.
 | Pull request | Built |
 |---|---|
 | opened and pushed by a maintainer | on every push; a newer push cancels a build still running |
-| anyone else's, from a fork or a branch | when a maintainer adds the `test-build` label, of the commit the label was added on |
+| anyone else's, from a fork or a branch | when a maintainer adds `test-build`, or a trusted contributor comments `/test-build`, for the authorized commit |
+
+A pull request with the `test-build-windows` label is built for Windows only, which keeps the
+shared runners free while only that platform is being tried; its comment lists the other two as
+not built.
 
 Only a pull request that changes what goes into the binaries is built: `apps/`, `crates/`,
 `devices/`, `presets/`, `third_party/`, `Cargo.toml`, `Cargo.lock`, `.cargo/` or `test-build.yml`
@@ -125,7 +157,8 @@ binary to try.
 
 The build is of the pull request's head merged with `main`, as the event saw it, so a push after
 the label is not what gets built. A push by anyone but a maintainer takes the label off, and the
-new commits are built when a maintainer has read them and adds the label again; the comment on such
+new commits are built when a maintainer adds the label again or a trusted contributor posts a new
+`/test-build` after reading the diff; the comment on such
 a build says it is a contributor's. A first-time contributor's run also waits for a maintainer's
 *Approve and run*.
 
@@ -133,12 +166,23 @@ The version says which pull request and commit it is: `0.0.1-pr.302+abc1234` in 
 bug reports. Test builds use the release profile without LTO and with 16 codegen units, so they
 build faster and run slightly slower than the nightly.
 
+**Repeated build requests reuse available work.** `/test-build` first checks the current head
+and up to ten preceding main-only updates using `scripts/build_reuse.py` from the default branch.
+It reuses a current-head run already building the requested platforms, or a successful run with
+all requested, nonempty, unexpired artifacts. Failed, cancelled, skipped or incomplete builds
+are not reused. Windows-only packages satisfy a Windows-only request, but not an all-platform
+request. Reuse replies link the existing run without changing the `test-build` label. Build lookup
+errors stop the request instead of assuming that no build exists. Main-only reuse is conservative:
+a changed patch or a resolved conflict requires a new build. PR files are never checked out or
+executed during this lookup; only git objects are fetched for comparison.
+
 **A branch update is not built.** A push that only merges `main` into the pull request, as
 *Update branch* does, leaves the pull request's own changes as they were, so the build already
 linked from it is still the one to try. A small first job, *what to build*, asks
 [`scripts/branch_update.py`](../scripts/branch_update.py) whether the new head is a merge commit
 whose first parent is the previous head, whose second parent is on `main`, and whose own diff is
-the same patch as the previous head's (a resolved conflict, or `main` changing lines next to the
+the same patch as the previous head's, ignoring only line numbers and blob hashes, never whitespace
+or file modes (a resolved conflict, or `main` changing lines next to the
 pull request's own, makes it a new patch). It also checks that the previous head's run succeeded,
 so a failed or cancelled build is never kept as the last one. When all hold, the platforms are
 skipped, and `test-build-links.yml`, finding nothing built, leaves the comment linking the last
@@ -152,7 +196,25 @@ merge cleanly fails the run and is named in the error.
 
 The build has a read-only token and no secrets, and for a fork GitHub runs `test-build.yml` as the
 fork has it; so `test-build-links.yml`, which runs from `main` and never runs pull request code,
-links only runs a maintainer started. The maintainers are listed in both workflows.
+links only runs a maintainer started or a `suhina-bot[bot]` run with a bot-authored authorization
+for that exact commit, written before the run started. It rechecks the original human comment
+and current `TRUSTED_CONTRIBUTORS` membership. The build checks the App's proof without relying
+on repository variables, which may be unavailable in fork PR runs; the default-branch gateway
+and linker check membership. A rerun retains the original run actor's authorization, not the
+rerunner's. Both workflows verify the commit-bound proof;
+a forged or stale proof, removed trusted user, edited/deleted request or another PR's comment
+cannot authorize a link. All role checks read the repository variable `MAINTAINERS`, using
+comma/whitespace-separated logins, optional `@` prefixes and case-insensitive exact matching.
+An empty list grants no maintainer authority. Set it at repository level, not as an environment
+override. For fork PRs, maintainers also use `/test-build`: the build may not receive repository
+variables, so direct maintainer labels cannot reliably be authorized there. Automatic builds
+of maintainer PRs continue for branches in this repository.
+
+Trusted contributors use `/test-build` on an open PR, as described in
+[Trusted bot requests](claim-bot.md#trusted-bot-requests). The bot attributes the request, records
+the head SHA and applies `test-build` using its App token. No extra GitHub label permissions are
+needed. A new push requires a new request; merge approval remains maintainer-only. The first
+fork-run approval required by GitHub is still a separate maintainer action.
 
 Each linked build is also posted to the pull request's thread in the Discord testing forum
 (see [Discord](#discord)).
@@ -176,45 +238,87 @@ branch* by hand. The test build never runs on the queue.
 `changes` job skips fmt, clippy and the tests when every changed file is documentation (`docs/`,
 any `.md`, `LICENSE`, `NOTICE`), a script under `scripts/` or a file under `.github/`: no Rust
 build or test reads them. A change to `ci.yml` itself still runs every job. The `docs` job runs on
-every change, so the script tests and the tests of the claim bot and the Depends on check still run; in the Actions tab the
-skipped jobs show as skipped and `ci` passes.
+every change, so the script tests and the tests of the claim bot and the Depends on check still run,
+and so do the Depends on check itself and the settings guide export; `cargo deny` skips with the
+build jobs, since only a Rust change can change a dependency. In the Actions tab the skipped jobs
+show as skipped and `ci` passes.
+
+**The build cache.** Only `main` saves `ci.yml`'s Rust cache; pull requests and the merge queue
+restore `main`'s. The repository's caches share GitHub's 10 GB, and when every pull request push
+saved its own (about 0.8 GB per system), `main`'s were evicted and about half the runs compiled
+every dependency again: 11 to 12 minutes of compiling on Linux instead of 3½ to 4½. Each push to
+`main` runs CI to the end in a concurrency group of its own: the generated-docs commit that
+follows every merge used to cancel it, and as a cancelled run saves no cache, Windows (the slowest)
+never saved one and every pull request compiled every dependency there, 23 to 29 minutes instead of
+about 10.
+
+The test build follows the same rule: its `cache` job builds the test build's binaries on every
+push to `main` that changes them, only to save the cache, and pull requests' test builds restore it
+and save none. Their own caches, 0.6 to 0.8 GB per system on every build, had filled the 10 GB and
+evicted the others.
+
+**What the tests compile.** `cargo test` builds all of the workspace's crates in every run, with
+the `test` profile, and about 90% of that time is LLVM at `opt-level = 1`; linking is 1 to 3% on
+each system, so a faster linker has nothing to win. The crates that process no sound are built at
+`opt-level = 0` in that profile (`[profile.test.package]` in `Cargo.toml`). Measured on one machine,
+that takes the compile from 236 to 114 seconds on Linux, 600 to 300 on Windows and 380 to 183 on
+macOS, and the tests' run from 108 to 147, 138 to 203 and 148 to 192, about three quarters of it in
+the window tests (`crates/ui/tests/main.rs`). The crates that process sound stay at 1: with them
+at 0, `suhina-engine`'s tests take 93 seconds instead of 7. A new crate starts at 1, and joins the
+list if it processes no sound and takes long to compile.
 
 The queue is a setting, not code: Settings › Rules (or Branches) › the rule for `main` › **Require
 merge queue**, with the merge method used today, a group size of about 5 and *Only merge
 non-failing pull requests*. With a queue, *Require branches to be up to date before merging* is not
 needed. Every check the rule requires must come from a workflow that runs on `merge_group`; today
-those are `ci` and `Depends on` ([`claim-bot.md`](claim-bot.md) › The Depends on check), and a check
-required from another workflow would keep the queue waiting.
+that is `ci` alone, and a check required from another workflow would keep the queue waiting. The
+checks that have workflows of their own (`cargo deny`, the Depends on check,
+[`claim-bot.md`](claim-bot.md) › The Depends on check, and the settings guide export) are called
+from `ci.yml` as its jobs, so `ci` goes red with them: a check main does not require can fail
+without stopping a merge, and the `ready to merge` label queues a pull request on `ci` alone.
 
 Without a queue, turn off *Require branches to be up to date before merging* and merge each green
 pull request without updating it; CI on `main`, which runs on every push, catches the rare
 conflict in meaning between two of them.
 
 **The `ready to merge` label.** A maintainer who has read a pull request adds the label instead of
-coming back to press *Merge when ready* once CI is green.
-[`ready-to-merge.yml`](../.github/workflows/ready-to-merge.yml) (`pull_request_target`, never
-checking out or running the pull request's code) then:
+coming back to press *Merge when ready* once CI is green. That label is their approval of the
+current head, given with a finished test build of it: nothing merges without one, but a build that
+already exists is reused, so a stale review never forces a new packaging run.
+[`ready-to-merge.yml`](../.github/workflows/ready-to-merge.yml) (`pull_request_target`, checking out
+only `main`'s automation for the build lookup, never running the pull request's code) then:
 
 | Event | What happens |
 |---|---|
-| a maintainer adds the label | the app approves the head commit as the event saw it (the rule for `main` needs one approval, and a maintainer cannot approve their own pull request) and turns on auto-merge with that commit as the expected head; the queue takes the pull request once `ci` is green and every review thread is resolved |
-| the label on a contributor's pull request without `test-build` | the label comes off, with a comment: a maintainer tries the build of the commit they read first |
-| the label on a Dependabot Cargo update (branch `dependabot/cargo/…`) | as for a maintainer's own pull request: no `test-build` needed, the queue's build and tests check the new crate; an update of the Actions still needs `test-build`, since `ci` runs no Rust jobs for a change under `.github/` |
+| a maintainer adds the label and a finished test build of the head exists | the app approves the head commit as the event saw it (the rule for `main` needs one approval, and a maintainer cannot approve their own pull request) and turns on auto-merge with that commit as the expected head; the queue takes the pull request once `ci` is green and every review thread is resolved |
+| a maintainer adds the label and no finished test build of the head exists | the label comes off with a comment asking for `/test-build`; nothing is approved or queued. A build counts when it is a successful, authorized `test build` run of the head, or of an earlier head the branch only merged `main` into, with every requested package still available (`scripts/build_reuse.py`); a build still running does not count yet. This applies to every author, maintainers and dependency updates included. A pull request that changes nothing `test-build.yml` builds (only documentation, scripts or other workflows) needs no build |
 | anyone else adds the label | it comes off |
-| a push by a maintainer | the label stays; the app approves the new head and turns auto-merge on for it |
+| a push by a maintainer | the label stays and the new head goes through the same check: with a finished test build of it (a push that only merged `main` reuses the earlier one) the app approves it and turns auto-merge on for it; without one the label comes off with the same comment |
 | a push by anyone else | the label comes off, so the new commits wait to be read (the rule for `main` dismisses the older approval) |
 | the label comes off | auto-merge off, out of the queue, and the app's approvals dismissed; a call that fails fails the run. When the label was added again meanwhile, the run fails and asks for the label to be taken off and added again, so the pull request waits rather than merging |
 
-The merge method is the queue's (squash). Agents never add the label (`AGENTS.md` › Tasks).
+The merge method is the queue's (squash). Agents never add the label (`docs/workflow.md` › Tasks).
 
 It acts with a short-lived token of the GitHub App that also pushes the generated docs
 (`docs-generated.yml`), not with `GITHUB_TOKEN`: GitHub starts no workflows for a merge made through
 `GITHUB_TOKEN`, and those on `main` must run after every merge. Setup, once: the app has Repository
-permissions › **Contents** and **Pull requests**: Read and write; its `DOCS_BOT_APP_ID` and
-`DOCS_BOT_PRIVATE_KEY` are in the `docs-bot` environment, which `pull_request_target` may use
+permissions › **Contents**, **Pull requests** and **Issues**: Read and write (the queue merges as the
+app, and GitHub closes the issues a description closes, `Closes #N`, as the one who merged: without
+Issues they stay open, and nothing reports it). A permission added to the app reaches its token only
+once the installation accepts it: Organization settings › GitHub Apps › suhina-docs-bot ›
+**Configure**, then **Review request** › **Accept new permissions**. Its public Client ID is the
+`DOCS_BOT_CLIENT_ID` variable and its private key the `DOCS_BOT_PRIVATE_KEY` secret in the
+`docs-bot` environment, which `pull_request_target` may use
 because it runs on `main`; and Settings › General › **Allow auto-merge** is on. Without that setting the
-*approve and queue* job fails, and nothing merges. The maintainers are listed in the workflow as in
-the test build's.
+*approve and queue* job fails, and nothing merges. Maintain the shared `MAINTAINERS` repository
+variable in Settings → Secrets and variables → Actions → Variables. Changing that list controls
+who may authorize a merge; there is no maintainer name embedded in the workflows.
+
+Use the Client ID from the app's GitHub settings (or the public `GET /apps/{app_slug}` response),
+not its numeric App ID. `actions/create-github-app-token` v3 deprecates the `app-id` input.
+The issue and PR-comment bot uses the `SUHINA_BOT_CLIENT_ID` variable and the existing
+`SUHINA_BOT_PRIVATE_KEY` secret in the `suhina-bot` environment. Both bots still create tokens
+for this repository only. Client IDs are public; private keys remain environment secrets.
 
 **One build of several pull requests.** To try a batch before merging it, run Actions › Test build
 › Run workflow with their numbers (`302 303 304`), as described under [Test builds](#test-builds):
@@ -223,26 +327,41 @@ one build of `main` with all of them merged on, in that order.
 ## Release notes
 
 [`scripts/release_notes.py`](../scripts/release_notes.py) writes the notes from git alone (no
-network, no AI service). A change is one commit on `main`'s first-parent line, so one squash-merged
-pull request, listed by its title with a link to the pull request. Changes that touch only
-documentation, CI, scripts and tests are counted, not listed. Pull request titles are the release
-notes, so they say what changed for a user: "Clip fades: shapes and an adjustable curve".
+network, no AI service). A change is one commit on `main`'s first-parent line, so one merged pull
+request, listed by its title with a link to the pull request: a squash merge's subject, or for a
+merge commit ("Merge pull request #N from …") the first line of its message, which is the pull
+request's title. Changes that touch only documentation, CI, scripts and tests are counted, not
+listed, and so are changes whose title's area word says they are code structure, tests,
+dependencies or repository work ("Architecture: …", "Code structure: …", "Tests: …", "Deps: …",
+"CI: …", "Docs: …", "Refactor: …"), which touch the programs without a user noticing. Pull
+request titles are the release notes, so they say what changed for a user: "Clip fades: shapes
+and an adjustable curve".
 
 - **Nightly:** the changes since the previous nightly, on its release page and in the Discord post.
 - **Draft of a tagged release:** first *New and changed*, the bullets of ROADMAP.md › What works now
   that are new or reworded since the previous release, by milestone, then *All changes*. A
   release candidate counts from the tag before it, a release from the previous release, the first
   from the beginning. Edit the draft before publishing: the ROADMAP bullets describe what works,
-  not what changed, and a reworded bullet may be a fix of its text.
+  not what changed, and a reworded bullet may be a fix of its text. A pull request writes a new
+  bullet as a file under `docs/works-now/`, which `docs-generated.yml` folds into ROADMAP.md on
+  `main` right after the merge ([`works-now/README.md`](works-now/README.md)), so the draft sees it
+  like any other.
 
 Its tests run in CI: `python3 -m unittest discover -s scripts -p 'test_*.py'`.
 
 ## Discord
 
 Three channels get posts from GitHub Actions, each through a webhook (Discord: channel settings ›
-Integrations › Webhooks) whose URL is a repository secret (GitHub: Settings › Secrets and
-variables › Actions). A channel without its secret gets nothing, and a failed post fails nothing
+Integrations › Webhooks) whose URL is a secret in the environment **`discord`** (GitHub: Settings ›
+Environments › `discord`). A channel without its secret gets nothing, and a failed post fails nothing
 else. No mention in a post pings anyone.
+
+The Discord secrets, `DISCORD_BOT_TOKEN` among them, are environment secrets rather than repository
+secrets, so a workflow pushed to another branch cannot read them. The environment's *Deployment
+branches and tags* allow `main` and tags matching `v*`: `discord.yml` runs on its tag for a release
+event, the other jobs run on `main`. Only maintainers may create `v*` tags (the `release tags`
+ruleset restricts their creation), so no one else can make a ref that reaches them. The jobs say
+`deployment: false`, so the environment adds no deployment to a pull request's timeline.
 
 | Channel | Secret | Posts |
 |---|---|---|
@@ -312,12 +431,30 @@ plan is suhina-daw/suhina-bot#1. The scripts above keep using the bot token for 
 |---|---|---|
 | `suhina-<version>-linux-x86_64.tar.gz` | Ubuntu 22.04 (glibc 2.35) | `suhina`, `suhina-cli`, `suhina-plugin-host`; needs `libasound2` |
 | `suhina-<version>-windows-x86_64.zip` | Windows, MSVC, static C runtime | `suhina.exe`, `suhina-cli.exe`, `suhina-plugin-host.exe`; no Visual C++ redistributable needed |
-| `suhina-<version>-macos-universal.tar.gz` | macOS, arm64 + x86_64 joined with `lipo` | `suhina`, `suhina-cli`, `suhina-plugin-host`; macOS 11 or later |
+| `suhina-<version>-macos-universal.tar.gz` | macOS, arm64 + x86_64 joined with `lipo` | `Suhina.app` (with `suhina`, `suhina-cli` and `suhina-plugin-host` in `Contents/MacOS`) and a `suhina-cli` link into it; macOS 11 or later |
 
 The nightly's packages are named `suhina-nightly-<platform>` instead. `suhina` is the desktop app,
 `suhina-cli` the command-line tool. `suhina-plugin-host` is the process plug-ins run in
-([ADR 0006](decisions/0006-plug-in-hosting.md)); both look for it in their own folder, so the
-three stay side by side. The smoke test runs the VST3 test plug-in built into the host through the
+([ADR 0006](decisions/0006-plug-in-hosting.md)); both look for it in their own folder (past a
+link), so the three stay side by side.
+
+On macOS the desktop app is an app bundle, `Suhina.app`, which Finder opens with a double-click
+and which can be dragged to Applications. [`scripts/macos_app.sh`](../scripts/macos_app.sh), run by
+both `release.yml` and `test-build.yml`, moves the three binaries into `Suhina.app/Contents/MacOS`,
+writes its `Info.plist` (the bundle id `io.github.suhina-daw.suhina`, the version without its
+suffix, macOS 11, the copyright and licence line, and the text macOS shows when Suhina first asks
+for the microphone, for the tracks' audio inputs) and `Credits.html`, which puts the whole version
+and the licence into Suhina › About Suhina, macOS's own panel ([spec](spec/about.md#on-macos)), signs the bundle ad hoc, and puts a `suhina-cli` link in the package
+folder, so `./suhina-cli` still works from it. The app's icon, `Suhina.icns`, is made from
+[`assets/brand/suhina-icon.png`](../assets/brand/suhina-icon.png) with `sips` and `iconutil`. While
+the app runs, eframe would put its own icon in the Dock over it, so on macOS the desktop app tells
+eframe to leave the Dock alone (`apps/suhina/src/main.rs`, `app_icon`): the Dock keeps the bundle's
+icon, which macOS draws with rounded corners, where an image set at run time is drawn square. Run
+from outside a bundle (`cargo run`), and on the other platforms, the app gives its window the same
+PNG, so the Dock and the About panel still show Suhina's icon. The ad hoc signature names no developer; it is
+there because Apple silicon runs only signed code and because macOS calls an unsigned downloaded
+bundle damaged rather than offering to open it. The icon of the Windows executable file,
+the Linux desktop entry and the `.suhina` file type are still to come ([#607](https://github.com/suhina-daw/suhina-daw/issues/607)). The smoke test runs the VST3 test plug-in built into the host through the
 packaged CLI; the desktop app needs a window, so only its libraries are checked. Each archive also holds
 `LICENSE`, `NOTICE`, `README.md`, `ATTRIBUTION.md` and the licences of the ported code,
 `LICENSE-APACHE` (the FM synth) and `LICENSE-signalsmith.txt` (the time stretcher).
@@ -328,11 +465,12 @@ Secrets that expire, so a release checks them before they stop a bot in the midd
 
 | Secret | Used by | Expires | Renew |
 |---|---|---|---|
-| `PROJECT_TOKEN` | the claim bot and Project sync ([`claim-bot.md`](claim-bot.md)) | fill in | [`claim-bot.md`](claim-bot.md) › Setting it up |
+| `PROJECT_TOKEN` (environment `project-board`) | the claim bot and Project sync ([`claim-bot.md`](claim-bot.md)) | fill in | [`claim-bot.md`](claim-bot.md) › Setting it up |
 
 ## Not yet
 
-The binaries are not signed: macOS Gatekeeper and Windows SmartScreen warn about them. The
-desktop app is a bare executable, not an installer or a macOS app bundle. Installers (AppImage,
-deb, rpm, Flatpak, MSI), a macOS `.app`, code signing and notarisation, and Linux aarch64 and
-Windows arm64 builds come with M8 (ROADMAP).
+The binaries are not signed with a developer identity: macOS Gatekeeper and Windows SmartScreen
+warn about them. On Windows and Linux the desktop app is a bare executable, not an installer, and
+on macOS `Suhina.app` comes in a `.tar.gz`, not a disk image. Installers (AppImage, deb, rpm,
+Flatpak, MSI, a macOS disk image), code signing and notarisation, and Linux aarch64 and Windows
+arm64 builds come with M8 (ROADMAP).

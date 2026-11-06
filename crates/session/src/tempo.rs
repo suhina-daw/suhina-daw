@@ -6,21 +6,24 @@
 //! 1 in beat order; bars from 1, as shown.
 
 use serde_json::{Value, json};
-use suhina_model::{MAX_CHANGE_BEAT, TempoPoint, TimeSignature, TimeSignatureChange, Transport};
+use suhina_model::{
+    Entry, IdList, MAX_CHANGE_BEAT, TempoPoint, TempoPointId, TimeSignature, TimeSignatureChange, Transport,
+};
 
-use crate::commands::number;
+use crate::commands::Args;
+use crate::named::{Miss, find_one};
 use crate::{CommandError, Session};
 
 /// Tempos the commands take, as `transport.setTempo` does.
 const BPM: std::ops::RangeInclusive<f64> = 20.0..=999.0;
 
-/// The start tempo and every change, numbered.
+/// The start tempo and every change, numbered from 0, with its id (#763 › 1).
 fn tempo_list(t: &Transport) -> Value {
     let points: Vec<Value> = t
         .tempo_changes
-        .iter()
+        .entries()
         .enumerate()
-        .map(|(i, p)| json!({ "point": i + 1, "beat": p.beat, "bpm": p.bpm, "ramp": p.ramp }))
+        .map(|(i, (id, p))| json!({ "point": i, "id": id.0, "beat": p.beat, "bpm": p.bpm, "ramp": p.ramp }))
         .collect();
     json!({ "start_bpm": t.tempo_bpm, "points": points })
 }
@@ -42,7 +45,7 @@ pub(crate) fn points(session: &mut Session, _: &Value) -> Result<Value, CommandE
 }
 
 fn beat_param(params: &Value) -> Result<f64, CommandError> {
-    let beat = number(params, "beat")?;
+    let beat = Args::new(params).f64("beat")?;
     if !(beat > 0.0 && beat <= MAX_CHANGE_BEAT) {
         return Err(format!("beat must be after 0 and at most {MAX_CHANGE_BEAT}, got {beat}").into());
     }
@@ -50,69 +53,72 @@ fn beat_param(params: &Value) -> Result<f64, CommandError> {
 }
 
 fn bpm_param(params: &Value) -> Result<f64, CommandError> {
-    let bpm = number(params, "bpm")?;
+    let bpm = Args::new(params).f64("bpm")?;
     if !BPM.contains(&bpm) {
         return Err(format!("bpm must be between 20 and 999, got {bpm}").into());
     }
     Ok(bpm)
 }
 
-fn optional_flag(params: &Value, name: &str) -> Result<Option<bool>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => v.as_bool().map(Some).ok_or_else(|| format!("{name} must be true or false").into()),
-    }
-}
-
-fn present(params: &Value, name: &str) -> bool {
-    params.get(name).is_some_and(|v| !v.is_null())
-}
-
-/// Puts `point` among the changes in beat order; one already on its beat is replaced.
-fn insert_point(changes: &mut Vec<TempoPoint>, point: TempoPoint) -> Result<(), CommandError> {
-    changes.retain(|p| p.beat != point.beat);
+/// Puts `point` among the changes in beat order. A beat holds at most a ramp and a step, the
+/// ramp first: the tempo glides to the ramp's tempo and then jumps to the step's. A point of the
+/// same kind already on its beat is replaced. `point` keeps its id: a new change has a new one, a
+/// moved one the one it had. Answers the id.
+fn insert_point(
+    changes: &mut IdList<TempoPointId, TempoPoint>,
+    point: Entry<TempoPointId, TempoPoint>,
+) -> Result<TempoPointId, CommandError> {
+    let (id, value) = (point.id(), point.value);
+    changes.retain(|p| p.beat != value.beat || p.ramp != value.ramp);
     if changes.len() >= suhina_model::MAX_TEMPO_CHANGES {
         return Err("the project has as many tempo changes as it can hold".into());
     }
-    let at = changes.partition_point(|p| p.beat < point.beat);
-    changes.insert(at, point);
-    Ok(())
+    let at = changes.partition_point(|p| p.beat < value.beat || (p.beat == value.beat && p.ramp && !value.ramp));
+    changes.put(at, point);
+    Ok(changes.id(at).unwrap_or(id))
 }
 
 pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let point = TempoPoint {
         beat: beat_param(params)?,
         bpm: bpm_param(params)?,
-        ramp: optional_flag(params, "ramp")?.unwrap_or(false),
+        ramp: Args::new(params).opt_bool("ramp")?.unwrap_or(false),
     };
     let transport = &mut session.project.transport;
-    insert_point(&mut transport.tempo_changes, point)?;
-    Ok(tempo_list(transport))
+    // The new change's id, for the commands that name it next.
+    let id = insert_point(&mut transport.tempo_changes, Entry::new(point))?;
+    let mut out = tempo_list(&session.project.transport);
+    out["id"] = json!(id.0);
+    Ok(out)
 }
 
-/// The index of `params.point` (from 1) among the changes.
+/// The index of `params.point` among the changes: its number, from 0, or `{"id": n}` with its id
+/// (#763 › 1).
 fn point_index(t: &Transport, params: &Value) -> Result<usize, CommandError> {
-    let count = t.tempo_changes.len();
-    let number = params.get("point").and_then(Value::as_u64).ok_or("point must be a whole number from 1")?;
-    usize::try_from(number)
-        .ok()
-        .and_then(|n| n.checked_sub(1))
-        .filter(|i| *i < count)
-        .ok_or_else(|| format!("tempo point {number} does not exist; the project has {count}").into())
+    let item = Args::new(params).value("point").ok_or("point must name a tempo change, as in tempo.points")?;
+    find_one(&t.tempo_changes, TempoPointId, item).map_err(|miss| match miss {
+        Miss::Id(id) => format!("no tempo change has id {id}").into(),
+        Miss::NotANumber => "point must be a whole number from 0, or {\"id\": n}".into(),
+        Miss::Range { index, count } => format!("tempo point {index} does not exist; the project has {count}").into(),
+    })
 }
 
 pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let index = point_index(&session.project.transport, params)?;
-    let beat = if present(params, "beat") { Some(beat_param(params)?) } else { None };
-    let bpm = if present(params, "bpm") { Some(bpm_param(params)?) } else { None };
-    let ramp = optional_flag(params, "ramp")?;
+    let beat = if Args::new(params).has("beat") { Some(beat_param(params)?) } else { None };
+    let bpm = if Args::new(params).has("bpm") { Some(bpm_param(params)?) } else { None };
+    let ramp = Args::new(params).opt_bool("ramp")?;
     if beat.is_none() && bpm.is_none() && ramp.is_none() {
         return Err("give at least one of beat, bpm and ramp".into());
     }
     let changes = &mut session.project.transport.tempo_changes;
-    let Some(old) = changes.get(index).copied() else { return Err("the tempo point is missing".into()) };
-    changes.remove(index);
-    let point =
+    if index >= changes.len() {
+        return Err("the tempo point is missing".into());
+    }
+    // Taken out and put back with its id: a moved change stays the same change.
+    let mut point = changes.take(index);
+    let old = point.value;
+    point.value =
         TempoPoint { beat: beat.unwrap_or(old.beat), bpm: bpm.unwrap_or(old.bpm), ramp: ramp.unwrap_or(old.ramp) };
     insert_point(changes, point)?;
     Ok(tempo_list(&session.project.transport))
@@ -126,7 +132,10 @@ pub(crate) fn delete_point(session: &mut Session, params: &Value) -> Result<Valu
 
 /// `params.<name>` as a bar shown from 1, after the first bar; returned counted from 0.
 fn bar_param(params: &Value, name: &str) -> Result<u32, CommandError> {
-    let bar = params.get(name).and_then(Value::as_u64).ok_or_else(|| format!("{name} must be a whole number"))?;
+    let bar = Args::new(params)
+        .value(name)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| format!("{name} must be a whole number"))?;
     u32::try_from(bar)
         .ok()
         .filter(|b| *b >= 2)
@@ -135,8 +144,8 @@ fn bar_param(params: &Value, name: &str) -> Result<u32, CommandError> {
 }
 
 fn signature_part(params: &Value, name: &str) -> Result<Option<u8>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value(name) {
+        None => Ok(None),
         Some(v) => v
             .as_u64()
             .and_then(|n| u8::try_from(n).ok())
@@ -150,7 +159,7 @@ fn valid(ts: TimeSignature) -> Result<TimeSignature, CommandError> {
         Ok(ts)
     } else {
         Err(format!(
-            "{}/{} is not a time signature: the numerator is 1 to 99, the denominator 1, 2, 4, 8, 16, 32 or 64",
+            "{}/{} is not a time signature: the numerator is 1 to 99, the denominator 1, 2, 4, 8 or 16",
             ts.numerator, ts.denominator
         )
         .into())
@@ -189,7 +198,7 @@ fn change_index(t: &Transport, params: &Value) -> Result<usize, CommandError> {
 
 pub(crate) fn move_signature(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let index = change_index(&session.project.transport, params)?;
-    let to = if present(params, "to") { Some(bar_param(params, "to")?) } else { None };
+    let to = if Args::new(params).has("to") { Some(bar_param(params, "to")?) } else { None };
     let numerator = signature_part(params, "numerator")?;
     let denominator = signature_part(params, "denominator")?;
     if to.is_none() && numerator.is_none() && denominator.is_none() {

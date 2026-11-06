@@ -1,9 +1,10 @@
 ---
-description: Suhina's own project file (.suhina; .locr from before October 2026 still read): versioned JSON of the model, written by its own crate; saving, templates and new projects
+description: Suhina's own project file (.suhina): versioned JSON of the model, written by its own crate; saving, templates and new projects
 read_when: project file, save, open, backup, autosave, recovery, .suhina, .locr, file extension, native format, project.save, templates, new project, blank project, unsaved changes, recent projects
 type: decision
-status: current
-last_verified: 2026-10-15
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - crates/project-file
   - crates/session/src/lib.rs
@@ -14,8 +15,8 @@ covers:
 
 # 0010: Suhina's own project files (.suhina)
 
-- **Status:** accepted
-- **Date:** 2026-10-12; extension changed 2026-10-13 (decision 10); backups 2026-10-15 (decision 11)
+- **Date:** 2026-10-12; extension changed 2026-10-13 (decision 10); backups 2026-10-15 (decision 11);
+  the old extension no longer read 2026-10-17 (decision 12); format versions 2026-10-24 (decision 3)
 
 ## Context
 
@@ -25,12 +26,13 @@ itself and reads back with nothing lost. `docs/architecture.md` had it planned a
 format written and read by its own crate.
 
 The first extension, `.locr`, stood for the product's earlier name. When the product became
-Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-13, and the
-`.locr` files saved before still open (decision 10).
+Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-13. The
+`.locr` files saved before still opened for a few days (decision 10) and are no longer read
+(decision 12).
 
 ## Decision
 
-1. **The file is JSON**, extension `.suhina`: `{ "format": "suhina", "version": 1, "project": … }`.
+1. **The file is JSON**, extension `.suhina`: `{ "format": "suhina", "version": 3, "project": … }`.
    JSON over XML or a binary format because people and agents can read and diff it, the
    workspace already uses `serde_json` (keymap, themes, MCP), and the model is plain data.
    The layout is in [the spec](../spec/suhina-format.md).
@@ -38,16 +40,19 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
    by hand, as the importers do; the model keeps no serialisation code or dependency
    ([ADR 0001](0001-daw-neutral-model.md)). Everything in the model is written, extensions
    included, so a project saved and opened again is equal to the one saved (round-trip tests).
-3. **Versioned.** `version` is 1. A reader refuses a newer version instead of guessing; a later
-   version that changes the layout keeps reading the older ones.
+3. **Versioned.** `version` is one whole number, written in every file, that rises with every
+   change to what a file holds, additions included. A reader refuses a newer version instead of
+   guessing, and reads every older one. *Amended 2026-10-24, see Amendment: format versions.*
 4. **Hostile input is an error, never a crash** (AGENTS.md rule 2): every value is checked
    (types, ranges, ids that fit), the file is at most 512 MiB, and the project must validate as
    an imported one must.
 5. **Binary data is base64**: plug-in state, embedded UTF-8 .sd graph data, and format extensions.
 6. **Audio is referred to, not copied.** Each region keeps its path relative to the project file
    and an absolute path for when that does not resolve. Saving somewhere else rewrites both from
-   where the file is found now. A self-contained package (a zip with the audio) is a separate
-   format for sharing, not decided here.
+   where the file is found now; a region with no path yet — an empty audio clip — is left as it
+   is, so nothing invents one. A self-contained package (a zip with the audio) is a separate
+   format for sharing, not decided here. Which of those paths opening a project reads is
+   [ADR 0011](0011-preview-and-added-audio.md) › 11.
 7. **Saving is a command**, `project.save { path?, copy? }` (AGENTS.md rule 6). Without a path it
    writes the project file the project came from. It writes the running plug-ins' state as it is now:
    each host process is asked on a thread of its own and the save waits at most a second for
@@ -70,10 +75,10 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
 8. **New projects.** A blank project is two note tracks, two audio tracks, two returns, the main
    channel and eight scenes (`suhina_session::blank_project`); `track.add` adds more. A
    project from a template is any project file opened untitled; its audio is still
-   found next to the template.
+   found next to the template. *Amended 2026-10-24, see Amendment: new projects without returns.*
 9. **The window** offers New or open (Ctrl+T): a new blank project, one from a template in the
    templates folder, or a project to open from a typed path or the recent list (kept in
-   `recent.txt`). Started without a project given, it opens what Settings › General › At start
+   `recent.txt`). Started without a project given, it opens what Settings › Projects and backups › Startup project
    says (`at_start` in `settings.txt`, #234): the start panel (the default, `panel`; #318),
    a new blank project, a new one from the start template (`start_template`: a name in the
    templates folder or a path), or the project opened last (the newest in `recent.txt`); a
@@ -87,45 +92,93 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
    dialog (#319): the window only asks for one, and the desktop app shows it with `rfd` (MIT;
    on Linux through the desktop portal, with no GTK), so the window and its tests need none. Closing a project,
    opening another in its place or quitting while a project has unsaved changes asks first (it
-   reads the running plug-ins' states first, so a change made a moment ago in an editor counts):
+   reads every running plug-in's state twice, including changes made by processing or MIDI
+   without an editor or dirty notification. The reads run on control workers and share one
+   one-second deadline across both rounds; the window advances these checks each frame for
+   all projects together, and a busy host gives its last known state):
    Save, Don't save or Cancel; quitting asks about each such project in turn, and Save on one
    that has no file yet asks for a name before the app closes.
-10. **`.suhina`, and `.locr` still read** (2026-10-13). New projects, templates and every name the
-    window or `project.save` makes end in `.suhina`, and the file names the format `"suhina"`.
+10. **`.suhina`, and `.locr` still read** (2026-10-13; superseded by decision 12). New projects,
+    templates and every name the window or `project.save` makes end in `.suhina`, and the file
+    names the format `"suhina"`.
     A `.locr` file, with `"format": "locr"`, is the same format: it opens, lists among the
     templates and in the browser, and is saved back to the same `.locr` path (Ctrl+S,
     `project.save` without a path, or a path that ends in `.locr`), so no file is renamed
     behind the user's back. Save as offers `.suhina`; the file saved then names the format
     `"suhina"`, which a Suhina from before the change does not read.
-11. **Backups** (2026-10-15, [#202](https://github.com/suhina-daw/suhina-daw/issues/202)): a
+11. **Backup interval** (2026-10-15, [#202](https://github.com/suhina-daw/suhina-daw/issues/202)): a
     setting writes a backup of each project with unsaved changes before every critical operation,
     every 1, 5 (the default), 10, 15, 30 or 60 minutes, every 4 hours, or never; a timed backup is
     written only when the project changed since the last one. Backups go to `.backup/` beside the
     project file, one file each named with the project's name and the local date and time; a
-    project never saved backs up to the settings folder until it is saved. They are taken as
-    `project.save` takes the project (the one-second wait for plug-ins of decision 7) and written
-    on a background thread to a temporary file that is then renamed. A clean-up setting (on by
+    project never saved backs up to the settings folder until it is saved. A backup takes the
+    project with the last completed plug-in states without asking or waiting for hosts; confirmed
+    plug-in changes can require a new backup independently of project commands. The copy is
+    written on a background thread to a temporary file that is then renamed. A clean-up setting (on by
     default) keeps the newest 20 backups of each project. A journal in the settings folder names
     each open project's newest backup; on start, a backup it still lists that is newer than its
     project file is offered: open it as an unsaved project tied to the original file, show the
     folder, or ignore. `project.autosave` writes and reports backups. The list of critical
     operations, the clean-up rule and the journal are in [the spec](../spec/backups.md).
+12. **Only `.suhina` is read** (2026-10-17, [#565](https://github.com/suhina-daw/suhina-daw/issues/565)).
+    The `.locr` extension and `"format": "locr"` are no longer read: a `.locr` file is not a
+    project file (not listed, not opened when dropped, not offered by the file dialog), and a
+    document naming `"locr"` is refused like any other format, with a message that names it. The
+    reasons: no file of that kind is known to exist, the extension stands for a name the project
+    no longer uses, and the project folder and its version bump
+    ([ADR 0026](0026-project-folder-and-package.md)) should have one name to deal with, not two.
+    A file of that kind is opened by renaming it to `.suhina` and changing its `format` to
+    `"suhina"`; nothing else in it differs.
+
+## Amendment: format versions (2026-10-24)
+
+Until now the version rose only when a file used a feature an older reader could not skip: 2 for
+a device group, 1 otherwise, and ids, markers, automation, follow actions and launch mappings came
+with no rise. A reader skips a key it does not know, so an older Suhina opened such a file and
+dropped that data on its next save, without a word. Decided ([#763](https://github.com/suhina-daw/suhina-daw/issues/763) › 2):
+
+- **One number, always written, rising with every change** to what a file holds. Version 3 is the
+  first written this way; files of versions 1 and 2 are still read.
+- **A newer file is refused**, with a message that names both versions, so nothing is lost.
+- **A file of every version is kept** (`crates/project-file/tests/versions/`) and read in a test,
+  and what the writer writes is compared with the current version's file, so a change to it fails
+  until the version rises. A shipped version's file is never rewritten.
+- **Before 1.0 the format changes freely**: the number may rise often. Files saved by a pull
+  request's test build are disposable; main may refuse or misread them.
+- `.sd` device files follow the same rule ([spec](../spec/sd-device-format.md) › Versions).
 
 ## Consequences
 
+### Sampler source corrections (2026-10-27, issue #1026)
+
+Project version 5 stores sampler source corrections in the versioned
+`suhina/sample_edits` extension, described in [the sampler spec](../spec/sampler.md#source-correction-storage).
+Only user-authored pins and suppressed candidate identities persist; transient
+analysis is derived from the source. Both lists have a 4096-entry limit. The old
+source reference and manual map remain readable. Loading a replacement source
+clears its source-specific corrections in the same undoable command. Preparation
+decodes immutable correction resources before graph adoption, so audio processing
+does not parse files or allocate their storage.
+
 - Edits can be kept; templates and new projects work.
 - `.suhina` files can be read and written by agents and scripts without Suhina.
-- Readers keep accepting `.locr` and `"format": "locr"` (`suhina_project_file::is_project_file`,
-  tested); a `.locr` file saved again keeps its name but names the new format inside.
-- Every new field in the model needs its line in `suhina-project-file` and in the round-trip test; a
-  field that changes meaning needs a new version. A new field that older files lack is read as
-  empty and written only when it holds something, so the version stays (the transport's
-  `tempo_changes` and `time_signature_changes`, [tempo map](../spec/tempo-map.md)).
+- Readers accept `.suhina` and `"format": "suhina"` only (`suhina_project_file::is_project_file`,
+  tested, decision 12).
+- Every new field in the model needs its line in `suhina-project-file`, in the round-trip test and
+  in the project the version test writes, and a new version (Amendment: format versions).
 - Large note-heavy projects are bigger than a binary format would make them.
 - A crash loses at most the work since the last backup (decision 11). A project's `.backup`
   folder grows by one file per backup; with clean-up on it holds at most 20 per project.
 
+## Amendment: new projects without returns (2026-10-24, #898)
+
+A blank project need not have returns. With Settings › Arrangement › Returns in new projects on
+None (`new_project_returns = none`) it has none, so no track shows sends until a return is
+inserted (`suhina_session::blank_project_with`); New or open offers the other kind for one
+project too. A project that has returns always shows them, whatever the setting.
+
 ## Not decided yet
 
-- A packaged format that carries its audio, and "collect and save".
-- A system file dialog for Open and Save as.
+- A packaged format that carries its audio ([ADR 0026](0026-project-folder-and-package.md),
+  proposed). Collect and save is built ([missing files](../spec/missing-files.md) › Collect and
+  save), and Open and Save as use the system's file dialog (9).

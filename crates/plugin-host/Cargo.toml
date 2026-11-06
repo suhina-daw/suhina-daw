@@ -9,6 +9,13 @@ rust-version.workspace = true
 name = "suhina-plugin-host"
 path = "src/main.rs"
 
+# The VST2 interface layer (ADR 0022, amended 2026-10-31: VST2-enabled builds may be
+# distributed): on by default, so every build of the host runs VST2 plug-ins. The feature stays
+# declared, so a build can opt out with `--no-default-features`.
+[features]
+default = ["vst2"]
+vst2 = []
+
 [dependencies]
 suhina-ipc.workspace = true
 suhina-plugins.workspace = true
@@ -19,28 +26,34 @@ clack-plugin = "0.2"  # MIT OR Apache-2.0
 clack-extensions = { version = "0.2", features = ["clack-host", "clack-plugin", "audio-ports", "gui", "latency", "log", "params", "posix-fd", "state", "timer"] }  # MIT OR Apache-2.0
 vst3 = "0.3"  # MIT OR Apache-2.0; bindings generated from the VST 3 SDK (MIT)
 libloading = "0.9"  # ISC
+# The host's own RAM, reported to the control bar once a second.
+memory-stats.workspace = true
 # Real-time priority for the audio threads.
 suhina-realtime.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # The window a plug-in's editor is attached to.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_System_Ole", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }  # MIT OR Apache-2.0
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Media", "Win32_System_LibraryLoader", "Win32_System_Ole", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }  # MIT OR Apache-2.0
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # The window a plug-in's editor is attached to (X11), and polling the descriptors plug-ins wait on.
-x11rb = "0.13"  # MIT OR Apache-2.0
+x11rb = "0.14"  # MIT OR Apache-2.0
 libc = "0.2"  # MIT OR Apache-2.0
+
+[build-dependencies]
+winresource.workspace = true
 
 [dev-dependencies]
 # Plug-ins in the engine's track chains, run through a session (tests/engine.rs).
 suhina-engine.workspace = true
+suhina-media.workspace = true
 suhina-model.workspace = true
 suhina-session.workspace = true
 serde_json.workspace = true
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 # Closing an editor's window from a test, as a user would.
-x11rb = "0.13"  # MIT OR Apache-2.0
+x11rb = "0.14"  # MIT OR Apache-2.0
 
 [target.'cfg(windows)'.dev-dependencies]
 # Closing an editor's window from a test, as a user would.
@@ -50,7 +63,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 # The editors' windows (AppKit): one NSWindow per open editor, its content view the plug-in's
 # view attaches into; the host's main loop pumps the application's events.
 objc2 = "0.6"  # MIT OR Apache-2.0 OR Zlib
-objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSEvent", "NSGraphics", "NSResponder", "NSRunningApplication", "NSView", "NSWindow"] }  # MIT OR Apache-2.0 OR Zlib
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSEvent", "NSGraphics", "NSResponder", "NSRunningApplication", "NSText", "NSView", "NSWindow", "NSWorkspace"] }  # MIT OR Apache-2.0 OR Zlib
 objc2-foundation = { version = "0.3", features = ["NSDate", "NSRunLoop", "NSString"] }  # MIT OR Apache-2.0 OR Zlib
 
 # The workspace lints, except that this crate may use `unsafe` to load plug-ins (ADR 0006). It

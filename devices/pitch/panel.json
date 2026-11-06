@@ -1,0 +1,218 @@
+{
+  "ui": {
+    "size": [
+      260.0,
+      168.0
+    ],
+    "viewport_size": null,
+    "background": [
+      37,
+      36,
+      33,
+      255
+    ],
+    "assets": [],
+    "layers": [],
+    "controls": [
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Pitch",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "followScale",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 0.0
+        },
+        "id": "pitch",
+        "name": "Pitch",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          0.0,
+          0.0,
+          124.0,
+          128.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitch",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Scale Degrees",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "followScale",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "pitchDegrees",
+        "name": "Scale Degrees",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          0.0,
+          0.0,
+          124.0,
+          128.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchDegrees",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Follow Scale",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "followScale",
+        "name": "Follow Scale",
+        "tooltip": "followScale: Follow Scale",
+        "bounds": [
+          6.0,
+          136.0,
+          112.0,
+          24.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "followScale",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Lowest",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "lowest",
+        "name": "Lowest",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          128.0,
+          0.0,
+          66.0,
+          92.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lowest",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Range",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "range",
+        "name": "Range",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          194.0,
+          0.0,
+          66.0,
+          92.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "range",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Mode"
+        },
+        "visible_when": null,
+        "id": "mode_caption",
+        "name": "Mode",
+        "tooltip": "",
+        "bounds": [
+          132.0,
+          104.0,
+          56.0,
+          22.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "mode",
+        "name": "mode",
+        "tooltip": "",
+        "bounds": [
+          190.0,
+          104.0,
+          66.0,
+          22.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "mode",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      }
+    ],
+    "hidden_parameters": [
+      "pitch",
+      "pitchDegrees",
+      "followScale",
+      "lowest",
+      "range",
+      "mode"
+    ]
+  }
+}

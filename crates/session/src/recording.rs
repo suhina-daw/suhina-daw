@@ -16,12 +16,16 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use suhina_engine::{LaunchCommand, RecordedNote};
-use suhina_model::{AudioRegion, InputChannels, LaneData, LoopRange, Note, Project, StretchMode, TrackId};
+use suhina_engine::{LaunchCommand, RecordedJump, RecordedNote};
+use suhina_model::{
+    AudioRegion, Clip, ClipContent, ContentId, ContentLane, InputChannels, LaneData, LoopRange, Note, Project,
+    StretchMode, TakeLane, TrackId,
+};
 
 use crate::files::TrackKind;
 
-use crate::commands::{column_index, scene_index, track_id};
+use crate::commands::Args;
+use crate::commands::{column_index, scene_id, scene_index, track_id};
 use crate::record_writer::{Order, RecordThread, Report};
 use crate::{CommandError, Session};
 
@@ -40,6 +44,7 @@ const MIN_NOTE: f64 = 1.0 / 128.0;
 /// Where a take goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Target {
+    Sampler { device: usize },
     Slot { scene: usize },
     Arrangement,
 }
@@ -63,6 +68,39 @@ struct Take {
     written: u64,
     end_sent: bool,
     finished: Option<(u64, u16, Option<String>)>,
+    /// Where the arrangement's playhead jumped while it recorded (the loop wrapping, a click on
+    /// the ruler): each jump begins a new pass, kept as a take of its own (#909).
+    jumps: Vec<RecordedJump>,
+    /// The renderer frame an audio take's first frame lines up with, once it is written.
+    began: Option<u64>,
+    /// An audio take's waveform so far: the peak of every [`crate::record_writer::PEAK_FRAMES`]
+    /// frames written, for the window to draw while it records.
+    peaks: Vec<f32>,
+}
+
+/// The most jumps one take keeps, and the most peaks of its waveform (about six hours at 48 kHz).
+const MAX_JUMPS: usize = 4096;
+const MAX_PEAKS: usize = 1 << 21;
+
+/// A take as the window draws it while it records into the arrangement (#909): where it is,
+/// its notes or waveform so far.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LiveTake {
+    pub track: TrackId,
+    /// The beats the pass covers on the arrangement: from where it started (or the playhead
+    /// jumped to) to the playhead, or to where the next pass began.
+    pub start: f64,
+    pub end: f64,
+    /// The pass's notes: start and length in beats from `start`, key. A held key reaches `end`.
+    pub notes: Vec<(f64, f64, u8)>,
+    /// An audio take's waveform in this pass: peaks from 0 to 1, evenly over `start` to where
+    /// the file has got to (`peaks_end`).
+    pub audio: bool,
+    pub peaks: Vec<f32>,
+    pub peaks_end: f64,
+    /// A pass the loop or a jump already ended while the take goes on: drawn as a take lane
+    /// under the track, not on it (#909).
+    pub finished: bool,
 }
 
 /// The session's recording state; arming stays with the session.
@@ -107,7 +145,7 @@ impl Recording {
 
 /// What an armed track records: audio when it has an audio input, notes when it plays notes.
 fn kind_of(p: &Project, track: TrackId) -> Option<bool> {
-    let t = p.tracks.iter().find(|t| t.id == track)?;
+    let t = p.track(track)?;
     if t.audio_input.channels != InputChannels::None {
         Some(true)
     } else if t.content.notes {
@@ -118,25 +156,74 @@ fn kind_of(p: &Project, track: TrackId) -> Option<bool> {
 }
 
 fn track_name(p: &Project, track: TrackId) -> String {
-    p.tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()).unwrap_or_default()
+    p.shown_track_name(track)
 }
 
 impl Session {
+    pub fn recording_sampler(&self, track: TrackId, device: usize) -> bool {
+        self.live
+            .recording
+            .takes
+            .iter()
+            .any(|t| t.track == track && t.target == Target::Sampler { device } && t.end.is_none())
+    }
     /// The count-in recording waits for when it starts the transport, in bars (0 for none).
+    /// The metronome as `transport.setMetronome` left it: on, its level in dB and its sound.
+    pub fn metronome(&self) -> (bool, f64, suhina_engine::ClickSound) {
+        (self.live.metronome.0, self.live.metronome.1, self.live.metronome.2)
+    }
+
     pub fn count_in_bars(&self) -> u8 {
-        self.recording.count_in_bars
+        self.live.recording.count_in_bars
+    }
+
+    /// Whether `track` holds no clip, on its lane, take lanes or slots: such a track takes the
+    /// kind of what is dropped on it (#945).
+    pub fn track_is_empty(&self, track: TrackId) -> bool {
+        crate::track_kind::is_empty(&self.project, track)
+    }
+
+    /// Counts the project's changes, edits and kept takes alike: a view built from the project
+    /// is out of date when it moved (a take kept while polling, #909).
+    pub fn change_count(&self) -> u64 {
+        self.history.changes
+    }
+
+    /// Whether a take is being recorded now, into the arrangement or a slot: what auto-arm
+    /// (#834) leaves the arm alone for, so a take is not cut off. A take asked to end counts
+    /// until it is a clip: a slot's records on to its launch boundary, and either waits a
+    /// moment after for the notes on their way.
+    pub fn is_recording(&self) -> bool {
+        !self.live.recording.takes.is_empty()
     }
 
     /// Whether the arrangement records (`transport.record`).
     pub fn records_arrangement(&self) -> bool {
-        self.recording.arrangement
+        self.live.recording.arrangement
+    }
+
+    /// Live arrangement take spans, read on the UI thread without editing the project.
+    /// A stopped take remains visible until its writer commits it.
+    pub fn arrangement_recording_spans(&self) -> Vec<(TrackId, f64, f64)> {
+        let beat = self.player().map_or(0.0, |player| player.monitor().beat());
+        self.live
+            .recording
+            .takes
+            .iter()
+            .filter(|take| take.target == Target::Arrangement)
+            .filter_map(|take| {
+                let end = take.end.unwrap_or(beat);
+                (end.is_finite() && take.start.is_finite() && end >= take.start)
+                    .then_some((take.track, take.start, end))
+            })
+            .collect()
     }
 
     /// The slot `track` records into (its scene index), while a take there has not ended.
     pub fn recording_slot(&self, track: TrackId) -> Option<usize> {
-        self.recording.takes.iter().find(|t| t.track == track && t.end.is_none()).and_then(|t| match t.target {
+        self.live.recording.takes.iter().find(|t| t.track == track && t.end.is_none()).and_then(|t| match t.target {
             Target::Slot { scene } => Some(scene),
-            Target::Arrangement => None,
+            Target::Arrangement | Target::Sampler { .. } => None,
         })
     }
 
@@ -164,7 +251,7 @@ impl Session {
         for n in 1..=crate::editing::MAX_NAME_TRIES {
             let file = if n == 1 { format!("{name}.wav") } else { format!("{name} {n}.wav") };
             let path = folder.join(file);
-            let taken = self.recording.takes.iter().any(|t| t.file.as_ref() == Some(&path))
+            let taken = self.live.recording.takes.iter().any(|t| t.file.as_ref() == Some(&path))
                 || starting.iter().any(|f| f.as_ref() == Some(&path));
             if !path.exists() && !taken {
                 return Ok(path);
@@ -194,6 +281,7 @@ impl Session {
             files.push(file);
         }
         let thread = self
+            .live
             .recording
             .threads
             .last()
@@ -204,21 +292,24 @@ impl Session {
                     track,
                     path: path.clone(),
                     start,
-                    by_clock: target != Target::Arrangement,
+                    by_clock: matches!(target, Target::Slot { .. }),
                 })?;
             }
         }
-        let player =
-            self.player.as_mut().ok_or("no audio engine is attached; open the project in the app or with --audio")?;
+        let player = self
+            .sync
+            .player
+            .as_mut()
+            .ok_or("no audio engine is attached; open the project in the app or with --audio")?;
         player.send(LaunchCommand::SetRecording { on: true })?;
-        self.recording.engine_on = true;
+        self.live.recording.engine_on = true;
         if !running {
-            let bars = f64::from(self.recording.count_in_bars);
+            let bars = f64::from(self.live.recording.count_in_bars);
             let bar_beats = self.project.transport.meter().position(start.max(0.0)).bar_beats;
             player.send(LaunchCommand::CountIn { beats: bars * bar_beats, bar_beats })?;
         }
         for (&track, file) in tracks.iter().zip(files) {
-            self.recording.takes.push(Take {
+            self.live.recording.takes.push(Take {
                 track,
                 target,
                 file,
@@ -230,6 +321,9 @@ impl Session {
                 written: 0,
                 end_sent: false,
                 finished: None,
+                jumps: Vec::new(),
+                began: None,
+                peaks: Vec::new(),
             });
         }
         Ok(())
@@ -239,21 +333,21 @@ impl Session {
     /// the engine is replaced.
     pub(crate) fn end_takes_now(&mut self) {
         let Some((_, clock, _, _, _)) = self.clock() else {
-            for take in &mut self.recording.takes {
+            for take in &mut self.live.recording.takes {
                 take.end.get_or_insert(take.start);
                 take.asked.get_or_insert_with(Instant::now);
             }
-            self.recording.arrangement = false;
+            self.live.recording.arrangement = false;
             self.send_ends();
             return;
         };
-        for take in &mut self.recording.takes {
+        for take in &mut self.live.recording.takes {
             let now = if take.end.is_some_and(|end| end < clock) { take.end } else { Some(clock) };
             take.end = now;
             take.asked = Some(Instant::now());
             take.play = false;
         }
-        self.recording.arrangement = false;
+        self.live.recording.arrangement = false;
         self.send_ends();
     }
 
@@ -263,6 +357,7 @@ impl Session {
         let track = self.project.launcher.columns.get(column)?.track;
         let boundary = self.clock().map(|(_, _, launch, _, _)| launch);
         let take = self
+            .live
             .recording
             .takes
             .iter_mut()
@@ -272,7 +367,9 @@ impl Session {
         take.asked = Some(Instant::now());
         take.play = true;
         self.send_ends();
-        Some(json!({ "scene": scene + 1, "queued": "end recording", "end_beat": end }))
+        Some(
+            json!({ "scene": scene, "scene_id": scene_id(&self.project, scene), "queued": "end recording", "end_beat": end }),
+        )
     }
 
     /// Takes in what the recording thread has, finishes the takes that are done (one undo step
@@ -280,22 +377,72 @@ impl Session {
     /// clip should play to play. Call it often: the window does every frame, through
     /// [`crate::Projects::poll_plugins`]. Returns what the user should hear about.
     pub fn poll_recording(&mut self) -> Vec<String> {
-        for thread in &self.recording.threads {
+        self.poll_recording_after(SETTLE)
+    }
+
+    /// Waits for the recording threads to take in what the engine has recorded so far, then polls
+    /// as [`Session::poll_recording`] does, without the settling time: the notes and frames
+    /// "on their way" are all here. For offline renders and tests, which render a fixed number of
+    /// frames and need the same result however the threads are scheduled. With `finish`, no more
+    /// audio is coming either, so a take that was ended is finished now.
+    pub fn sync_recording(&mut self, finish: bool) -> Vec<String> {
+        let settle = if finish { Duration::ZERO } else { SETTLE };
+        // The first poll tells the threads where takes end; the second reads what they made of it.
+        let mut notices = self.poll_recording_after(settle);
+        for thread in &self.live.recording.threads {
+            thread.sync(finish);
+        }
+        notices.extend(self.poll_recording_after(settle));
+        notices
+    }
+
+    fn poll_recording_after(&mut self, settle: Duration) -> Vec<String> {
+        for thread in &self.live.recording.threads {
             while let Some(report) = thread.report() {
                 match report {
                     Report::Note(note) => {
-                        if let Some(take) = self.recording.takes.iter_mut().find(|t| t.track == note.track) {
+                        if let Some(take) = self.live.recording.takes.iter_mut().find(|t| t.track == note.track) {
                             take.notes.push(note);
                         }
                     }
-                    Report::Written { track, frames } => {
-                        if let Some(take) = self.recording.takes.iter_mut().find(|t| t.track == track) {
+                    Report::Written { track, frames, peaks } => {
+                        if let Some(take) = self.live.recording.takes.iter_mut().find(|t| t.track == track) {
                             take.written = frames;
+                            let room = MAX_PEAKS.saturating_sub(take.peaks.len());
+                            take.peaks.extend(peaks.into_iter().take(room));
+                        }
+                    }
+                    Report::Jump(jump) => {
+                        // Every arrangement take not yet kept begins a new pass there. The engine
+                        // reports jumps only while recording, so one that reaches us after Stop
+                        // still belongs to the take Stop ended; a take that began after it does
+                        // not get it.
+                        for take in self.live.recording.takes.iter_mut().filter(|t| {
+                            t.target == Target::Arrangement
+                                && t.jumps.len() < MAX_JUMPS
+                                && t.began.is_none_or(|began| jump.position >= began)
+                        }) {
+                            take.jumps.push(jump);
+                        }
+                    }
+                    Report::Began { track, path, position } => {
+                        if let Some(take) = self
+                            .live
+                            .recording
+                            .takes
+                            .iter_mut()
+                            .find(|t| t.track == track && t.file.as_ref() == Some(&path))
+                        {
+                            take.began = Some(position);
                         }
                     }
                     Report::Finished { track, path, frames, channels, error } => {
-                        if let Some(take) =
-                            self.recording.takes.iter_mut().find(|t| t.track == track && t.file.as_ref() == Some(&path))
+                        if let Some(take) = self
+                            .live
+                            .recording
+                            .takes
+                            .iter_mut()
+                            .find(|t| t.track == track && t.file.as_ref() == Some(&path))
                         {
                             take.written = frames;
                             take.finished = Some((frames, channels, error));
@@ -311,7 +458,7 @@ impl Session {
         // A slot take is past its end once the clock is; an arrangement take ends where the
         // transport is when asked. Either then waits a moment for notes on their way.
         let mut done = Vec::new();
-        for (index, take) in self.recording.takes.iter_mut().enumerate() {
+        for (index, take) in self.live.recording.takes.iter_mut().enumerate() {
             let (Some(end), Some(asked)) = (take.end, take.asked) else { continue };
             let past_end = match take.target {
                 // The clock adds up a step per frame: a boundary is reached within rounding.
@@ -322,7 +469,7 @@ impl Session {
                 take.asked = Some(Instant::now());
                 continue;
             }
-            if asked.elapsed() < SETTLE {
+            if asked.elapsed() < settle {
                 continue;
             }
             if take.file.is_some() && take.finished.is_none() {
@@ -331,26 +478,26 @@ impl Session {
             done.push(index);
         }
         for index in done.into_iter().rev() {
-            let take = self.recording.takes.remove(index);
+            let take = self.live.recording.takes.remove(index);
             if let Err(e) = self.commit_take(take, now_clock) {
-                self.recording.notices.push(e.0);
+                self.live.recording.notices.push(e.0);
             }
         }
-        if self.recording.takes.is_empty() && self.recording.engine_on {
-            if let Some(player) = self.player.as_mut() {
+        if self.live.recording.takes.is_empty() && self.live.recording.engine_on {
+            if let Some(player) = self.sync.player.as_mut() {
                 let _ = player.send(LaunchCommand::SetRecording { on: false });
             }
-            self.recording.engine_on = false;
+            self.live.recording.engine_on = false;
         }
         self.resume_slots(now_clock);
-        std::mem::take(&mut self.recording.notices)
+        std::mem::take(&mut self.live.recording.notices)
     }
 
     /// Tells the recording thread where each audio take ends, as soon as that is known, so it
     /// writes nothing past it.
     fn send_ends(&mut self) {
-        let threads = &self.recording.threads;
-        for take in self.recording.takes.iter_mut().filter(|t| t.file.is_some() && !t.end_sent) {
+        let threads = &self.live.recording.threads;
+        for take in self.live.recording.takes.iter_mut().filter(|t| t.file.is_some() && !t.end_sent) {
             let Some(end) = take.end else { continue };
             take.end_sent = true;
             // Every thread hears it; only the one writing the take acts on it.
@@ -363,8 +510,8 @@ impl Session {
     /// Asks the engine to play each slot whose take just became a clip, as if launched at its
     /// beat, until it does.
     fn resume_slots(&mut self, now_clock: f64) {
-        let resumes = std::mem::take(&mut self.recording.resumes);
-        let Some(player) = self.player.as_mut() else { return };
+        let resumes = std::mem::take(&mut self.live.recording.resumes);
+        let Some(player) = self.sync.player.as_mut() else { return };
         for (column, slot, at, until) in resumes {
             let monitor = player.monitor();
             let playing = monitor.column(column).and_then(|c| c.playing) == Some(slot);
@@ -373,13 +520,27 @@ impl Session {
             }
             let elapsed = (now_clock - at).max(0.0);
             if player.send(LaunchCommand::ResumeColumn { column, slot: Some(slot), elapsed_beats: elapsed }).is_ok() {
-                self.recording.resumes.push((column, slot, at, until));
+                self.live.recording.resumes.push((column, slot, at, until));
             }
         }
     }
 
     /// Makes `take` a clip: one undo step.
     fn commit_take(&mut self, take: Take, now_clock: f64) -> Result<(), CommandError> {
+        if let Target::Sampler { device } = take.target {
+            let path = take.file.as_ref().ok_or("sampler recording has no audio file")?;
+            if take.finished.as_ref().is_none_or(|(frames, _, _)| *frames < 2) {
+                return Err(format!("sample recording was empty: {}", path.display()).into());
+            }
+            self.execute(
+                "device.loadSample",
+                &json!({"track": take.track.0, "device": device, "path": path.display().to_string()}),
+            )?;
+            return Ok(());
+        }
+        if take.target == Target::Arrangement {
+            return self.commit_arrangement_take(&take);
+        }
         let end = take.end.unwrap_or(take.start);
         let tempo = self.clock().map_or(self.project.transport.tempo_bpm, |c| c.4);
         let (lane, length) = match &take.file {
@@ -394,15 +555,16 @@ impl Session {
                 if !(length > 0.0 && length.is_finite()) {
                     return Ok(());
                 }
-                (LaneData::Notes(notes_of(&take, length)), length)
+                (LaneData::Notes(notes_of(&take, length).into()), length)
             }
             Some(path) => {
                 let (frames, channels, error) = take.finished.clone().unwrap_or((0, 1, None));
                 if let Some(error) = error {
-                    self.recording.notices.push(error);
+                    self.live.recording.notices.push(error);
                 }
                 if frames == 0 {
-                    self.recording
+                    self.live
+                        .recording
                         .notices
                         .push(format!("nothing was recorded on {}", track_name(&self.project, take.track)));
                     let _ = std::fs::remove_file(path);
@@ -423,7 +585,7 @@ impl Session {
                     duration_seconds: Some(seconds),
                     warped: false,
                     stretch: StretchMode::default(),
-                    warp_markers: Vec::new(),
+                    warp_markers: Default::default(),
                     gain: 1.0,
                     transpose: 0.0,
                     stream: None,
@@ -463,34 +625,341 @@ impl Session {
                     }
                     placed_slot = Some((column, row));
                 }
+                Target::Sampler { .. } => return Err("sampler take must be committed as a source".into()),
                 Target::Arrangement => {
                     crate::files::place_clip(p, take.track, source, None, take.start.max(0.0), false)?;
                 }
             }
+            // The take's clip, and the second part of a clip it split, get their ids (ADR 0025).
+            p.assign_ids()?;
             p.validate().map_err(|errors| CommandError(format!("the take would leave an invalid project: {errors:?}")))
         })();
         if let Err(e) = result {
             self.project = before;
             return Err(e);
         }
-        self.changes = self.changes.wrapping_add(1);
+        self.colour_new_clips(&before);
+        self.history.changes = self.history.changes.wrapping_add(1);
         self.push_undo(before);
         self.update_player(None)?;
         self.send_armed();
         if let (Some((column, row)), true) = (placed_slot, take.play) {
             let at = end;
             if now_clock >= at - 1e-6 {
-                self.recording.resumes.push((column, row, at, Instant::now() + RESUME_FOR));
+                self.live.recording.resumes.push((column, row, at, Instant::now() + RESUME_FOR));
             }
         }
         Ok(())
     }
 }
 
+/// One pass of an arrangement take over the beats: where it starts on the arrangement and how
+/// long it is, the renderer frames it begins and ends at (`None` for the take's own start and
+/// end), and beats per frame in it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Pass {
+    start: f64,
+    length: f64,
+    from: Option<u64>,
+    until: Option<u64>,
+    beats_per_frame: f64,
+}
+
+/// The shortest pass kept, in beats: a jump right after another leaves nothing to keep.
+const MIN_PASS: f64 = 1.0 / 64.0;
+
+/// The passes of an arrangement take: one, or one more after each jump of the playhead, the
+/// last ending at `end`.
+fn passes_of(start: f64, end: f64, jumps: &[RecordedJump]) -> Vec<Pass> {
+    let mut passes = Vec::new();
+    let mut pass = Pass { start, length: 0.0, from: None, until: None, beats_per_frame: 0.0 };
+    for jump in jumps {
+        passes.push(Pass { length: jump.from - pass.start, until: Some(jump.position), ..pass });
+        pass = Pass {
+            start: jump.beat,
+            length: 0.0,
+            from: Some(jump.position),
+            until: None,
+            beats_per_frame: jump.beats_per_frame,
+        };
+    }
+    passes.push(Pass { length: end - pass.start, ..pass });
+    passes
+}
+
+/// Whether `note` was played in `pass`, and where then, in beats from the pass's start.
+fn in_pass(note: &RecordedNote, pass: &Pass, take_start: f64) -> Option<f64> {
+    if pass.from.is_some_and(|from| note.position < from) || pass.until.is_some_and(|until| note.position >= until) {
+        return None;
+    }
+    Some(match pass.from {
+        None => note.beat - take_start,
+        Some(from) => (note.position - from) as f64 * pass.beats_per_frame,
+    })
+}
+
+impl Session {
+    /// The takes recording into the arrangement now, as the window draws them (#909).
+    pub fn live_takes(&self) -> Vec<LiveTake> {
+        let Some((_, beat, _, _, tempo)) = self.clock() else { return Vec::new() };
+        let rate = f64::from(self.live.recording.sample_rate.max(1));
+        self.live
+            .recording
+            .takes
+            .iter()
+            .filter(|t| t.target == Target::Arrangement)
+            .flat_map(|take| {
+                let end = take.end.unwrap_or(beat);
+                let passes = passes_of(take.start, end, &take.jumps);
+                let last = passes.len().saturating_sub(1);
+                // Every pass of the take: the ones the loop or a jump already ended show as take
+                // lanes while the take goes on, the last on the track (#909).
+                passes.into_iter().enumerate().map(move |(index, pass)| {
+                    let length = pass.length.max(0.0);
+                    let played = take.notes.iter().filter_map(|n| in_pass(n, &pass, take.start).map(|at| (n, at)));
+                    let notes = notes_in(played, length).into_iter().map(|n| (n.time, n.duration, n.key)).collect();
+                    // The peaks of this pass: from the frame it began at to the one it ended at.
+                    let peak_frames = crate::record_writer::PEAK_FRAMES;
+                    let beats_per_peak = peak_frames as f64 / rate * tempo / 60.0;
+                    let peak_at = |frame: Option<u64>| match (frame, take.began) {
+                        (Some(frame), Some(began)) => {
+                            usize::try_from(frame.saturating_sub(began) / peak_frames).unwrap_or(usize::MAX)
+                        }
+                        _ => 0,
+                    };
+                    let first = peak_at(pass.from).min(take.peaks.len());
+                    let until =
+                        pass.until.map_or(take.peaks.len(), |u| peak_at(Some(u))).clamp(first, take.peaks.len());
+                    let peaks = take.peaks.get(first..until).unwrap_or_default().to_vec();
+                    LiveTake {
+                        track: take.track,
+                        start: pass.start,
+                        end: pass.start + length,
+                        notes,
+                        audio: take.file.is_some(),
+                        peaks_end: pass.start + peaks.len() as f64 * beats_per_peak,
+                        peaks,
+                        finished: index < last,
+                    }
+                })
+            })
+            .collect()
+    }
+
+    /// Makes an arrangement take clips, one per pass over the beats: each on its track, the
+    /// later passes over the earlier ones so the latest plays, and each kept as a take lane under
+    /// the track (comping, #909). One undo step.
+    fn commit_arrangement_take(&mut self, take: &Take) -> Result<(), CommandError> {
+        let end = take.end.unwrap_or(take.start);
+        let tempo = self.clock().map_or(self.project.transport.tempo_bpm, |c| c.4);
+        let mut passes = passes_of(take.start, end, &take.jumps);
+        suhina_plugins::trace!(
+            "take on track {}: beats {:.3} to {end:.3}, {} jumps, {} passes {:?}",
+            take.track.0,
+            take.start,
+            take.jumps.len(),
+            passes.len(),
+            passes.iter().map(|p| (p.start, p.length, p.from, p.until)).collect::<Vec<_>>()
+        );
+        let bar = self.project.transport.meter().position(take.start.max(0.0)).bar_beats;
+        if let Some(last) = passes.last_mut()
+            && take.file.is_none()
+            && last.length.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
+        {
+            // The playhead ended before the pass began: it spans what was played in it.
+            let in_last = take.notes.iter().filter_map(|n| in_pass(n, last, take.start));
+            last.length = in_last.fold(0.0, f64::max).ceil().max(bar);
+        }
+        passes.retain(|p| p.length.is_finite() && p.length >= MIN_PASS && p.start.is_finite() && p.start >= 0.0);
+        let name = track_name(&self.project, take.track);
+        // An audio take is one file; its passes are clips of that file from where each began.
+        let audio = match &take.file {
+            None => None,
+            Some(path) => {
+                let (frames, channels, error) = take.finished.clone().unwrap_or((0, 1, None));
+                if let Some(error) = error {
+                    self.live.recording.notices.push(error);
+                }
+                if frames == 0 {
+                    self.live.recording.notices.push(format!("nothing was recorded on {name}"));
+                    let _ = std::fs::remove_file(path);
+                    return Ok(());
+                }
+                let data = self
+                    .decoded_audio(path)
+                    .map_err(|e| format!("the recording {} could not be read back: {e}", path.display()))?;
+                let rate = data.sample_rate.max(1);
+                let seconds = frames as f64 / f64::from(rate);
+                let key = crate::files::absolute(path).display().to_string();
+                let region = AudioRegion {
+                    file: key.clone(),
+                    absolute_file: Some(key),
+                    sample_rate: Some(rate),
+                    channels: Some(channels),
+                    duration_seconds: Some(seconds),
+                    warped: false,
+                    stretch: StretchMode::default(),
+                    warp_markers: Default::default(),
+                    gain: 1.0,
+                    transpose: 0.0,
+                    stream: None,
+                };
+                Some((region, frames, f64::from(rate)))
+            }
+        };
+        if passes.is_empty() {
+            return Ok(());
+        }
+        let before = self.project.clone();
+        let result = (|| -> Result<(), CommandError> {
+            let p = &mut self.project;
+            let beats_per_second = tempo / 60.0;
+            let audio_content = match &audio {
+                Some((region, frames, rate)) => {
+                    let length = *frames as f64 / rate * beats_per_second;
+                    Some(add_content(p, &name, length, LaneData::Audio(region.clone()))?)
+                }
+                None => None,
+            };
+            suhina_plugins::trace!(
+                "take on track {}: file began at renderer frame {:?}, {:?} frames written",
+                take.track.0,
+                take.began,
+                audio.as_ref().map(|(_, frames, _)| *frames)
+            );
+            // New takes go on from the highest number the track's takes show, so a name is never
+            // used twice after a take was deleted.
+            let mut taken = p
+                .arrangement
+                .takes
+                .iter()
+                .filter(|t| t.track == take.track)
+                .filter_map(suhina_model::TakeLane::name_number)
+                .max()
+                .unwrap_or(0);
+            for pass in &passes {
+                let (content, offset, length) = match (&audio, audio_content) {
+                    (Some((_, frames, rate)), Some(content)) => {
+                        let began = take.began.unwrap_or(0);
+                        let first = pass.from.map_or(0, |from| from.saturating_sub(began)).min(*frames);
+                        let last = pass.until.map_or(*frames, |until| until.saturating_sub(began)).min(*frames);
+                        let offset = first as f64 / rate * beats_per_second;
+                        let length = pass.length.min(last.saturating_sub(first) as f64 / rate * beats_per_second);
+                        (content, offset, length)
+                    }
+                    _ => {
+                        let played = take.notes.iter().filter_map(|n| in_pass(n, pass, take.start).map(|at| (n, at)));
+                        let notes = notes_in(played, pass.length);
+                        (add_content(p, &name, pass.length, LaneData::Notes(notes.into()))?, 0.0, pass.length)
+                    }
+                };
+                suhina_plugins::trace!(
+                    "take on track {}: pass at beat {:.3} for {:.3} beats, file from {offset:.3} for {length:.3}{}",
+                    take.track.0,
+                    pass.start,
+                    pass.length,
+                    if length < MIN_PASS { ", dropped: nothing of it in the file" } else { "" }
+                );
+                if length < MIN_PASS {
+                    continue;
+                }
+                let clip = put_clip(p, take.track, content, pass.start, offset, length)?;
+                taken += 1;
+                p.arrangement.takes.push(TakeLane {
+                    track: take.track,
+                    name: format!("Take {taken}"),
+                    clips: vec![Clip { id: suhina_model::ClipId::NONE, ..clip }],
+                    color: None,
+                });
+            }
+            // The takes' clips, and the second parts of clips they split, get their ids (ADR 0025).
+            p.assign_ids()?;
+            p.validate().map_err(|errors| CommandError(format!("the take would leave an invalid project: {errors:?}")))
+        })();
+        if let Err(e) = result {
+            self.project = before;
+            return Err(e);
+        }
+        // The clip the take put on the track takes the track type's colour, as a new clip does.
+        self.colour_new_clips(&before);
+        self.history.changes = self.history.changes.wrapping_add(1);
+        self.push_undo(before);
+        self.update_player(None)?;
+        self.send_armed();
+        Ok(())
+    }
+}
+
+/// Adds a content of `length` beats holding `data` and returns its id.
+fn add_content(p: &mut Project, name: &str, length: f64, data: LaneData) -> Result<ContentId, CommandError> {
+    let id = ContentId(p.contents.iter().map(|c| c.id.0).max().unwrap_or(0).checked_add(1).ok_or("too many clips")?);
+    // A new MIDI clip takes the project's default scale (ADR 0001 › Amendment: clip scales).
+    let scale = if matches!(data, LaneData::Notes(_)) { p.default_scale } else { None };
+    p.contents.push(ClipContent {
+        id,
+        name: name.to_string(),
+        length,
+        lanes: vec![ContentLane { target: None, data }].into(),
+        extensions: Default::default(),
+        scale,
+    });
+    Ok(id)
+}
+
+/// Puts a clip of `content` from `offset` beats into it on `track`'s arrangement lane at `start`,
+/// `length` beats long, replacing what it covers; returns the clip.
+fn put_clip(
+    p: &mut Project,
+    track: TrackId,
+    content: ContentId,
+    start: f64,
+    offset: f64,
+    length: f64,
+) -> Result<Clip, CommandError> {
+    let clip = Clip {
+        id: p.new_clip_id()?,
+        content,
+        start,
+        length,
+        offset,
+        loop_range: None,
+        enabled: true,
+        fade_in: 0.0,
+        fade_out: 0.0,
+        fade_in_curve: Default::default(),
+        fade_out_curve: Default::default(),
+        follow_action: Default::default(),
+        launch: Default::default(),
+        color: None,
+        ara: false,
+        extensions: Default::default(),
+    };
+    let lane = match p.arrangement.lanes.iter().position(|l| l.track == Some(track)) {
+        Some(lane) => lane,
+        None => {
+            let name = track_name(p, track);
+            let id = p.new_lane_id()?;
+            p.arrangement.lanes.push(suhina_model::ArrangementLane { id, name, track: Some(track), clips: Vec::new() });
+            p.arrangement.lanes.len() - 1
+        }
+    };
+    let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
+    crate::commands::make_room(&mut lane.clips, start, start + length);
+    lane.clips.push(clip.clone());
+    lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+    Ok(clip)
+}
+
 /// The notes of a MIDI take, in beats from its start, cut at `length`.
 fn notes_of(take: &Take, length: f64) -> Vec<Note> {
     let by_clock = take.target != Target::Arrangement;
     let at = |n: &RecordedNote| if by_clock { n.clock } else { n.beat } - take.start;
+    notes_in(take.notes.iter().map(|n| (n, at(n))), length)
+}
+
+/// Notes from keys played and let go, each with where it was in beats from the start, cut at
+/// `length`.
+fn notes_in<'a>(played: impl IntoIterator<Item = (&'a RecordedNote, f64)>, length: f64) -> Vec<Note> {
     let mut open: [Option<(f64, f32)>; 128] = [None; 128];
     let mut notes = Vec::new();
     let close = |notes: &mut Vec<Note>, key: u8, (start, velocity): (f64, f32), end: f64| {
@@ -506,9 +975,8 @@ fn notes_of(take: &Take, length: f64) -> Vec<Note> {
             });
         }
     };
-    for note in &take.notes {
+    for (note, beat) in played {
         let Some(slot) = open.get_mut(usize::from(note.key)) else { continue };
-        let beat = at(note);
         if !beat.is_finite() {
             continue;
         }
@@ -548,7 +1016,7 @@ pub(crate) fn record_clip(session: &mut Session, params: &Value) -> Result<Value
     if !session.is_armed(track) {
         return Err(format!("arm track {:?} first (track.setArm)", track_name(p, track)).into());
     }
-    if session.recording.take_on(track).is_some() {
+    if session.live.recording.take_on(track).is_some() {
         return Err(format!("track {:?} is recording already", track_name(p, track)).into());
     }
     let (running, _, launch, start_marker, _) =
@@ -557,23 +1025,73 @@ pub(crate) fn record_clip(session: &mut Session, params: &Value) -> Result<Value
     session.begin_takes(&[track], Target::Slot { scene }, start, running)?;
     Ok(json!({
         "track": track.0,
-        "scene": scene + 1,
+        "scene": scene,
+        "scene_id": scene_id(session.project(), scene),
         "start_beat": start,
-        "count_in_bars": if running { 0 } else { session.recording.count_in_bars },
+        "count_in_bars": if running { 0 } else { session.live.recording.count_in_bars },
     }))
+}
+
+/// Record the track's selected audio input directly into its sampler source.
+pub(crate) fn record_sample(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    session.player_mut()?;
+    let track = track_id(session.project(), params)?;
+    let device = params
+        .get("device")
+        .and_then(Value::as_u64)
+        .and_then(|v| usize::try_from(v).ok())
+        .ok_or("device must be an index")?;
+    let on = Args::new(params).value("on").and_then(Value::as_bool).ok_or("on must be a boolean")?;
+    let (running, clock, launch, start_marker, _) =
+        session.clock().ok_or("open an audio output before recording a sample")?;
+    if !on {
+        let take = session
+            .live
+            .recording
+            .takes
+            .iter_mut()
+            .find(|t| t.track == track && t.target == Target::Sampler { device } && t.end.is_none())
+            .ok_or("this sampler is not recording")?;
+        take.end = Some(clock.max(take.start));
+        take.asked = Some(Instant::now());
+        session.send_ends();
+        return Ok(json!({"recording": false}));
+    }
+    let t = session.project.track(track).ok_or("track is missing")?;
+    let stored = t
+        .channel
+        .and_then(|id| session.project.channel(id))
+        .and_then(|c| c.devices.get(device))
+        .ok_or("device is missing")?;
+    if !matches!(&stored.kind, suhina_model::DeviceKind::Builtin(id) if id == "sampler") {
+        return Err("recordSample needs a Sampler instrument".into());
+    }
+    if kind_of(&session.project, track) != Some(true) {
+        return Err("select an audio input on this track before recording a sample".into());
+    }
+    if !session.is_armed(track) {
+        return Err("arm this track before recording a sample".into());
+    }
+    if session.live.recording.take_on(track).is_some() {
+        return Err("this track already has a recording in progress".into());
+    }
+    let _ = launch;
+    session.begin_takes(&[track], Target::Sampler { device }, if running { clock } else { start_marker }, running)?;
+    Ok(json!({"recording": true}))
 }
 
 /// `transport.record`: records every armed track into the arrangement, or ends every take.
 pub(crate) fn record_arrangement(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     session.player_mut()?;
-    let on = params.get("on").and_then(Value::as_bool).ok_or("on must be true or false")?;
+    let on = Args::new(params).bool("on")?;
     let (running, clock, launch, start_marker, _) =
         session.clock().ok_or("no audio engine is attached; open the project in the app or with --audio")?;
     if !on {
         let mut ended = 0;
-        for take in session.recording.takes.iter_mut().filter(|t| t.end.is_none()) {
+        for take in session.live.recording.takes.iter_mut().filter(|t| t.end.is_none()) {
             take.end = Some(match take.target {
                 Target::Arrangement => clock,
+                Target::Sampler { .. } => clock.max(take.start),
                 Target::Slot { .. } if running => launch.max(take.start),
                 Target::Slot { .. } => take.start,
             });
@@ -581,29 +1099,37 @@ pub(crate) fn record_arrangement(session: &mut Session, params: &Value) -> Resul
             take.play = matches!(take.target, Target::Slot { .. }) && running;
             ended += 1;
         }
-        session.recording.arrangement = false;
+        session.live.recording.arrangement = false;
         session.send_ends();
         return Ok(json!({ "recording": false, "ended": ended }));
     }
-    if session.recording.arrangement {
+    if session.live.recording.arrangement {
         return Ok(json!({ "recording": true }));
     }
-    let tracks: Vec<TrackId> =
-        session.armed().into_iter().filter(|t| kind_of(session.project(), *t).is_some()).collect();
+    let armed = session.armed();
+    let tracks: Vec<TrackId> = armed.iter().copied().filter(|t| kind_of(session.project(), *t).is_some()).collect();
     if tracks.is_empty() {
+        // Armed, but hearing no input: say which, so the input can be chosen (#682).
+        if let Some(track) = armed.first() {
+            return Err(format!(
+                "track {:?} hears no audio input: choose one for it (track.setAudioInput), then record",
+                track_name(session.project(), *track)
+            )
+            .into());
+        }
         return Err("arm a track that has an audio input or plays notes first (track.setArm)".into());
     }
-    if let Some(busy) = tracks.iter().find(|t| session.recording.take_on(**t).is_some()) {
+    if let Some(busy) = tracks.iter().find(|t| session.live.recording.take_on(**t).is_some()) {
         return Err(format!("track {:?} is recording into a slot already", track_name(session.project(), *busy)).into());
     }
     let start = if running { clock } else { start_marker };
     session.begin_takes(&tracks, Target::Arrangement, start, running)?;
-    session.recording.arrangement = true;
+    session.live.recording.arrangement = true;
     Ok(json!({
         "recording": true,
         "start_beat": start,
         "tracks": tracks.iter().map(|t| t.0).collect::<Vec<_>>(),
-        "count_in_bars": if running { 0 } else { session.recording.count_in_bars },
+        "count_in_bars": if running { 0 } else { session.live.recording.count_in_bars },
     }))
 }
 
@@ -615,7 +1141,7 @@ pub(crate) fn set_count_in(session: &mut Session, params: &Value) -> Result<Valu
         .and_then(|b| u8::try_from(b).ok())
         .filter(|b| COUNT_IN_BARS.contains(b))
         .ok_or("bars must be 0, 1, 2 or 4")?;
-    session.recording.count_in_bars = bars;
+    session.live.recording.count_in_bars = bars;
     Ok(json!({ "count_in_bars": bars }))
 }
 
@@ -625,14 +1151,14 @@ pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, Co
     let count_in = session.player().map_or(0.0, |p| p.monitor().count_in_beats());
     let p = session.project();
     let takes: Vec<Value> = session
-        .recording
+        .live.recording
         .takes
         .iter()
         .map(|t| {
             json!({
                 "track": t.track.0,
                 "track_name": track_name(p, t.track),
-                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene + 1 }), Target::Arrangement => json!("arrangement") },
+                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene, "scene_id": scene_id(p, scene) }), Target::Arrangement => json!("arrangement"), Target::Sampler { device } => json!({"device": device}) },
                 "kind": if t.file.is_some() { "audio" } else { "midi" },
                 "start_beat": t.start,
                 "end_beat": t.end,
@@ -643,9 +1169,9 @@ pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, Co
         })
         .collect();
     Ok(json!({
-        "arrangement": session.recording.arrangement,
+        "arrangement": session.live.recording.arrangement,
         "takes": takes,
-        "count_in_bars": session.recording.count_in_bars,
+        "count_in_bars": session.live.recording.count_in_bars,
         "count_in_left": (count_in * 1000.0).round() / 1000.0,
         "notices": notices,
     }))

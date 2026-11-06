@@ -10,25 +10,66 @@
 use std::collections::HashSet;
 use std::fmt;
 
+mod audio_data;
 pub mod automation;
 mod build;
+mod comping;
+mod groups;
+mod id_list;
+mod ids;
+pub mod names;
 mod tempo;
 
 pub use tempo::{
-    BarPosition, MAX_BPM, MAX_CHANGE_BEAT, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, MIN_BPM, Meter, TempoMap,
-    TempoPoint, TimeSignatureChange, valid_bpm,
+    BarPosition, MAX_BPM, MAX_CHANGE_BEAT, MAX_DENOMINATOR, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, MIN_BPM,
+    Meter, TempoMap, TempoPoint, TimeSignatureChange, valid_bpm,
 };
+
+pub use audio_data::{AudioData, AudioPool};
+pub use groups::{
+    Branch, DeviceGroup, MACROS, MAX_BRANCHES, MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_MACRO_MAPPINGS, Macro,
+    MacroMapping, MappedDevice, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups,
+    walk_devices,
+};
+
+/// The extension of a Suhina project file, without the dot.
+pub const PROJECT_EXTENSION: &str = "suhina";
+
+/// Whether `path` names a project file by its extension, `.suhina` in either case. A device preset
+/// ends the same way and is not one.
+pub fn is_project_file(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(PROJECT_EXTENSION)) && !is_preset_file(path)
+}
+
+/// Whether `path` names a device preset by its ending, `.preset.suhina` in either case, as in
+/// `Warm FM Bass.fm-synth.preset.suhina` ([ADR 0014](docs/decisions/0014-stock-presets.md)).
+pub fn is_preset_file(path: &std::path::Path) -> bool {
+    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(".preset.suhina"))
+}
+pub use id_list::{Entry, IdList, ListId};
+pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, NoteId, PointId, SceneId, TempoPointId};
 
 mod launch;
 mod mapping;
+mod overlap;
 mod scale;
+mod shared;
 pub use launch::{LaunchMode, LaunchQuantization, LaunchSettings};
 pub use mapping::{KEY_NAME_MAX, LaunchMapping, MappingSource, MappingTarget};
+pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, TOUCH_TOLERANCE};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
+pub use shared::{Bytes, Shared};
 
 /// Identifies a [`Track`] within a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TrackId(pub u32);
+
+impl TrackId {
+    /// The main channel, which has no track of its own: commands, the engine and the views name
+    /// it by this id where they name a track ([`Project::channel_of_track`], #687). No track has
+    /// it; the largest id is never handed out to one.
+    pub const MAIN: Self = Self(u32::MAX);
+}
 
 /// Identifies a [`Channel`] within a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -57,6 +98,11 @@ pub struct Project {
     /// The scale a new MIDI clip takes, if any; clips made before it was set keep theirs
     /// ([ADR 0001](../../docs/decisions/0001-daw-neutral-model.md) › Amendment: clip scales).
     pub default_scale: Option<Scale>,
+    /// The next id a clip, an arrangement lane or a scene gets: the three kinds share this
+    /// counter, and a value is never handed out twice, deleted objects' included
+    /// ([ADR 0025](../../docs/decisions/0025-object-identity.md)). Allocate with
+    /// [`Project::new_clip_id`] and its neighbours; 0 means nothing was handed out yet.
+    pub next_id: u32,
 }
 
 /// The song's tempo and time signature: `tempo_bpm` and `time_signature` hold from the start,
@@ -72,7 +118,8 @@ pub struct Transport {
     /// Whether playback repeats the loop region.
     pub loop_enabled: bool,
     /// Tempo changes after beat 0, in order of beat.
-    pub tempo_changes: Vec<TempoPoint>,
+    /// In beat order, each with its id (#763 › 1).
+    pub tempo_changes: IdList<TempoPointId, TempoPoint>,
     /// Time-signature changes after bar 0, in order of bar.
     pub time_signature_changes: Vec<TimeSignatureChange>,
 }
@@ -84,7 +131,7 @@ impl Default for Transport {
             time_signature: TimeSignature { numerator: 4, denominator: 4 },
             loop_range: None,
             loop_enabled: false,
-            tempo_changes: Vec::new(),
+            tempo_changes: IdList::new(),
             time_signature_changes: Vec::new(),
         }
     }
@@ -148,7 +195,7 @@ pub enum InputChannels {
     Stereo(u16),
 }
 
-/// When a track's audio input is heard through it.
+/// When a track's live input is heard through it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Monitor {
     /// While the track is armed.
@@ -163,13 +210,14 @@ pub enum Monitor {
 /// The highest audio input channel a track can name.
 pub const MAX_INPUT_CHANNEL: u16 = 256;
 
-/// Which MIDI controllers a track hears while it is armed: a port, or every one, or none, and
-/// one channel or every one.
+/// Which MIDI controllers a track records and monitors: a port, or every one, or none,
+/// one channel or every one, and when the live input is heard.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MidiInput {
     pub port: MidiPort,
     /// 1 to 16, or `None` for every channel.
     pub channel: Option<u8>,
+    pub monitor: Monitor,
 }
 
 /// The MIDI input port a track hears.
@@ -253,10 +301,16 @@ pub enum DeviceKind {
         format: String,
         id: String,
     },
+    /// Devices of Suhina's own that hold other devices in parallel branches
+    /// (`docs/spec/device-groups.md`).
+    Group(Box<DeviceGroup>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Device {
+    /// Which device this is; [`DeviceId::NONE`] until the project gives it one
+    /// ([`Project::assign_ids`]). A copy of a device is a new device and gets a new id.
+    pub id: DeviceId,
     pub name: String,
     pub kind: DeviceKind,
     pub enabled: bool,
@@ -264,7 +318,7 @@ pub struct Device {
     /// validated `.sd` graph JSON. For VST2 it is the standard VST2
     /// bank (an `.fxb` file's contents), which also a VST3 version standing in for the plug-in
     /// reads; for VST3 it is the component's state.
-    pub state: Option<Vec<u8>>,
+    pub state: Option<Bytes>,
     /// Parameter values set on the device. A built-in effect or instrument's
     /// (`DeviceKind::Builtin`) go by the parameter's stable id; a plug-in's by its parameter id
     /// (the number the plug-in gives it, written in decimal) in the plug-in's own range, and are
@@ -274,7 +328,101 @@ pub struct Device {
     /// The device's parameters over the arrangement, one lane per parameter (by the same id as
     /// in `params`), for plug-ins and built-in effects and instruments alike.
     pub automation: Vec<AutomationLane>,
+    /// The channel's ARA plug-in that edits its clips (ADR 0033 › 2, #990): always its first
+    /// device, not shown in its device list.
+    pub clip_host: bool,
     pub extensions: Extensions,
+}
+
+/// Maximum persisted manual slice boundaries per source.
+pub const MAX_SAMPLE_SLICES: usize = 4096;
+
+impl Device {
+    /// Versioned source corrections; interpreted by the device API, not the project model.
+    pub fn sample_edit_data(&self) -> Option<&[u8]> {
+        let bytes = &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_edits")?.data;
+        (bytes.len() <= 8 + MAX_SAMPLE_SLICES * 17).then_some(bytes.as_slice())
+    }
+
+    pub fn set_sample_edit_data(&mut self, bytes: Vec<u8>) -> Result<(), &'static str> {
+        if bytes.len() > 8 + MAX_SAMPLE_SLICES * 17 {
+            return Err("sample corrections exceed the memory budget");
+        }
+        self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "sample_edits"));
+        self.extensions.0.push(Extension { format: "suhina".into(), key: "sample_edits".into(), data: bytes });
+        Ok(())
+    }
+
+    pub fn clear_sample_edits(&mut self) {
+        self.extensions
+            .0
+            .retain(|e| !(e.format == "suhina" && matches!(e.key.as_str(), "sample_edits" | "sample_slices")));
+    }
+    /// Manual source boundaries; None reads legacy fixed slice parameters.
+    pub fn sample_slices(&self) -> Option<Vec<f64>> {
+        let data = &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_slices")?.data;
+        if !data.len().is_multiple_of(8) || data.len() > MAX_SAMPLE_SLICES * 8 {
+            return None;
+        }
+        let mut points = Vec::with_capacity(data.len() / 8);
+        for bytes in data.as_chunks::<8>().0 {
+            let value = f64::from_le_bytes(*bytes);
+            if !value.is_finite() || value <= 0. || value >= 1. {
+                return None;
+            }
+            points.push(value);
+        }
+        points.sort_unstable_by(f64::total_cmp);
+        points.dedup();
+        Some(points)
+    }
+    pub fn set_sample_slices(&mut self, points: &[f64]) -> Result<(), &'static str> {
+        if points.len() > MAX_SAMPLE_SLICES || points.iter().any(|p| !p.is_finite() || *p <= 0. || *p >= 1.) {
+            return Err("slice map needs at most 4096 finite points strictly between 0 and 1");
+        }
+        self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "sample_slices"));
+        self.extensions.0.push(Extension {
+            format: "suhina".into(),
+            key: "sample_slices".into(),
+            data: points.iter().flat_map(|v| v.to_le_bytes()).collect(),
+        });
+        Ok(())
+    }
+    /// A sampler's source path, versioned independently of parameter values.
+    pub fn sample_file(&self) -> Option<&str> {
+        let bytes = if self.kind == DeviceKind::Sd {
+            &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_reference")?.data
+        } else if matches!(&self.kind, DeviceKind::Builtin(id) if id == "sampler") {
+            self.state.as_deref()?
+        } else {
+            return None;
+        };
+        std::str::from_utf8(bytes).ok()?.strip_prefix("suhina-sample-v1\n")?.split('\0').next()
+    }
+
+    pub fn set_sample_file(&mut self, path: &str) {
+        self.set_sample_reference(path, path);
+    }
+
+    pub fn sample_absolute_file(&self) -> Option<&str> {
+        self.sample_file()?;
+        let bytes = if self.kind == DeviceKind::Sd {
+            &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_reference")?.data
+        } else {
+            self.state.as_deref()?
+        };
+        std::str::from_utf8(bytes).ok()?.split_once('\0').map(|(_, absolute)| absolute)
+    }
+
+    pub fn set_sample_reference(&mut self, file: &str, absolute: &str) {
+        let data = format!("suhina-sample-v1\n{file}\0{absolute}").into_bytes();
+        if self.kind == DeviceKind::Sd {
+            self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "sample_reference"));
+            self.extensions.0.push(Extension { format: "suhina".into(), key: "sample_reference".into(), data });
+        } else {
+            self.state = Some(data.into());
+        }
+    }
 }
 
 /// A parameter's value over the arrangement (an envelope): points in beat order, the value
@@ -285,21 +433,22 @@ pub struct AutomationLane {
     /// The parameter, by the id `Device::params` uses, or a mixer parameter of a channel
     /// (`volume`, `pan`, `mute`).
     pub param: String,
-    pub points: Vec<AutomationPoint>,
+    /// In beat order, each with its id (#763 › 1).
+    pub points: IdList<PointId, AutomationPoint>,
     /// Whether the lane plays. A manual change to the parameter turns it off, so the value set
     /// by hand holds until the lane is turned on again.
     pub enabled: bool,
 }
 
-/// A value at an arrangement beat, in the parameter's own unit or range.
+/// A value at an arrangement beat, in the parameter's own unit or range. Which point it is, its
+/// id, is held by its lane ([`AutomationLane::points`]), not by the value.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AutomationPoint {
     pub beat: f64,
     pub value: f64,
-    /// The shape of the segment from this point to the next, -1 to 1: 0 is a straight line,
-    /// above 0 it moves fast first and slow later, below 0 slow first (see
-    /// [`automation::shape`]).
-    pub curve: f64,
+    /// The shape of the segment from this point to the next: two control points of a cubic
+    /// Bezier ([`automation::Curve`]), straight by default.
+    pub curve: automation::Curve,
 }
 
 /// One parameter value of a built-in effect or instrument, by the parameter's stable id (ADR 0004). The value
@@ -325,7 +474,8 @@ pub struct ClipContent {
     pub name: String,
     /// Length in beats.
     pub length: f64,
-    pub lanes: Vec<ContentLane>,
+    /// Shared between copies of the project until one of them changes a lane (#763 › 3).
+    pub lanes: Shared<Vec<ContentLane>>,
     pub extensions: Extensions,
     /// The scale the notes are written in, if any: the piano roll marks its keys
     /// ([ADR 0001](../../docs/decisions/0001-daw-neutral-model.md) › Amendment: clip scales).
@@ -343,9 +493,16 @@ pub struct ContentLane {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LaneData {
-    Notes(Vec<Note>),
+    /// The notes, each with an id while the project is open (#1182): [`Notes`].
+    Notes(Notes),
     Audio(AudioRegion),
 }
+
+/// A content's notes, each with its id (#1182). The id belongs to the list, not the [`Note`]: a
+/// copied note is a new one, a moved note keeps its id, and the file holds none
+/// ([`IdList`], ADR 0025 › Decided since). A content copied whole keeps its notes' ids, which is
+/// no clash, since a note is always named with its clip.
+pub type Notes = IdList<NoteId, Note>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Note {
@@ -443,6 +600,9 @@ pub struct WarpMarker {
 /// Places a clip content on the arrangement or in a launcher slot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Clip {
+    /// Which clip this is; [`ClipId::NONE`] until the project gives it one
+    /// ([`Project::assign_ids`]). A copy of a clip is a new clip and gets a new id.
+    pub id: ClipId,
     pub content: ContentId,
     /// Start in beats on the arrangement; 0.0 in a launcher slot.
     pub start: f64,
@@ -465,6 +625,12 @@ pub struct Clip {
     pub follow_action: FollowAction,
     /// How the clip launches from a launcher slot: mode, legato and its own quantisation.
     pub launch: LaunchSettings,
+    /// The clip's own colour; `None` shows its track's, so a new clip takes the track's colour
+    /// and follows it. A clip moved to another track keeps the colour it had.
+    pub color: Option<Rgb>,
+    /// The clip plays through its channel's ARA plug-in, the clip host (ADR 0033 › 2, #990): its
+    /// raw audio is edited there, then its gain and fades follow. Arrangement audio clips only.
+    pub ara: bool,
     pub extensions: Extensions,
 }
 
@@ -729,7 +895,25 @@ impl FollowKind {
 pub struct Arrangement {
     pub lanes: Vec<ArrangementLane>,
     /// Named positions on the timeline, sorted by beat ([`Arrangement::sort_markers`]).
-    pub markers: Vec<Marker>,
+    /// In beat order, each with its id (#763 › 1).
+    pub markers: IdList<MarkerId, Marker>,
+    /// Recorded passes kept under their tracks (take lanes), oldest first: what a recording
+    /// into the arrangement played, pass by pass, so parts of each can be put together on the
+    /// track (comping, ADR 0001 › Amendment: take lanes). They do not play.
+    pub takes: Vec<TakeLane>,
+}
+
+/// One recorded pass of a track: its clips, on the arrangement's beats. Their clips have no ids
+/// ([`ClipId::NONE`]): commands name a take by its track and its number, and comping copies a
+/// part of one onto the track as a new clip.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TakeLane {
+    pub track: TrackId,
+    /// Its name, as the window shows it ("Take 3").
+    pub name: String,
+    pub clips: Vec<Clip>,
+    /// Its colour, set from its menu (Recolor lane, #989); `None` takes the palette's in turn.
+    pub color: Option<Rgb>,
 }
 
 impl Arrangement {
@@ -742,6 +926,14 @@ impl Arrangement {
     pub fn insert_marker(&mut self, marker: Marker) -> usize {
         let at = self.markers.partition_point(|m| m.beat <= marker.beat);
         self.markers.insert(at, marker);
+        at
+    }
+
+    /// Puts back a marker taken out of the markers ([`IdList::take`]), keeping its id, after any
+    /// at its beat, and returns its index.
+    pub fn put_marker(&mut self, marker: Entry<MarkerId, Marker>) -> usize {
+        let at = self.markers.partition_point(|m| m.beat <= marker.value.beat);
+        self.markers.put(at, marker);
         at
     }
 }
@@ -769,6 +961,8 @@ impl Marker {
 /// carry their own targets).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ArrangementLane {
+    /// Which lane this is; [`LaneId::NONE`] until the project gives it one.
+    pub id: LaneId,
     pub name: String,
     pub track: Option<TrackId>,
     pub clips: Vec<Clip>,
@@ -786,6 +980,8 @@ pub struct Launcher {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Scene {
+    /// Which scene this is; [`SceneId::NONE`] until the project gives it one.
+    pub id: SceneId,
     pub name: String,
     /// Tempo the scene switches to when launched, if any.
     pub tempo_bpm: Option<f64>,
@@ -830,11 +1026,24 @@ pub enum ValidationError {
     MissingTrack(TrackId),
     MissingChannel(ChannelId),
     MissingContent(ContentId),
-    /// The clip at this index on the arrangement lane at this index has fades that are negative,
-    /// not finite, or together longer than the clip, or a fade curve outside −1 … +1.
+    /// Two clips have this id.
+    DuplicateClip(ClipId),
+    /// Two arrangement lanes have this id.
+    DuplicateLane(LaneId),
+    /// Two scenes have this id.
+    DuplicateScene(SceneId),
+    DuplicateDevice(DeviceId),
+    /// Objects of two kinds (a clip, a lane, a scene) have this id; the kinds share one counter,
+    /// so a value names at most one object.
+    SharedId(u32),
+    /// An object has an id the project's counter has not handed out yet: the next new object
+    /// would get it too.
+    IdAhead(u32),
+    /// This clip on this arrangement lane has fades that are negative, not finite, or together
+    /// longer than the clip, or a fade curve outside −1 … +1.
     BadFades {
-        lane: usize,
-        clip: usize,
+        lane: LaneId,
+        clip: ClipId,
     },
     /// The arrangement marker at this index has a beat that is negative or not finite.
     BadMarker(usize),
@@ -848,6 +1057,42 @@ pub enum ValidationError {
     BadMidiInput(TrackId),
     /// The track's audio input names a channel outside 1 … 256.
     BadAudioInput(TrackId),
+    /// The channel holds more than [`MAX_DEVICES`] devices, counting every device at every depth.
+    TooManyDevices(ChannelId),
+    /// The device group at this path on the channel has no branch or more than [`MAX_BRANCHES`].
+    GroupBranches {
+        channel: ChannelId,
+        device: Vec<usize>,
+    },
+    /// The device group at this path does not have [`MACROS`] macros, or a macro has more than
+    /// [`MAX_MACRO_MAPPINGS`] mappings.
+    GroupMacros {
+        channel: ChannelId,
+        device: Vec<usize>,
+    },
+    /// The device group at this path is inside more than [`MAX_DEVICE_GROUP_DEPTH`] levels of groups,
+    /// itself counted.
+    DeviceGroupTooDeep {
+        channel: ChannelId,
+        device: Vec<usize>,
+    },
+    /// A branch of the device group at this path has a volume that is negative or not finite, or a
+    /// pan outside -1 … 1.
+    BadBranch {
+        channel: ChannelId,
+        device: Vec<usize>,
+    },
+    /// A macro of the device group at this path maps a device that is not in the group, or has a
+    /// range outside 0 … 1.
+    BadMacroMapping {
+        channel: ChannelId,
+        device: Vec<usize>,
+    },
+    /// A macro of the device group at this path maps a parameter another macro maps already.
+    MappedTwice {
+        channel: ChannelId,
+        device: Vec<usize>,
+    },
 }
 
 impl fmt::Display for ValidationError {
@@ -859,6 +1104,12 @@ impl fmt::Display for ValidationError {
             Self::MissingTrack(id) => write!(f, "track {} does not exist", id.0),
             Self::MissingChannel(id) => write!(f, "channel {} does not exist", id.0),
             Self::MissingContent(id) => write!(f, "clip content {} does not exist", id.0),
+            Self::DuplicateClip(id) => write!(f, "clip id {id} is used twice"),
+            Self::DuplicateLane(id) => write!(f, "arrangement lane id {id} is used twice"),
+            Self::DuplicateScene(id) => write!(f, "scene id {id} is used twice"),
+            Self::DuplicateDevice(id) => write!(f, "device id {id} is used twice"),
+            Self::SharedId(id) => write!(f, "object id {id} is used by a clip, a lane or a scene at once"),
+            Self::IdAhead(id) => write!(f, "object id {id} is not below the project's next id"),
             Self::GroupCycle(id) => write!(f, "track {} is inside itself through its groups", id.0),
             Self::GroupTooDeep(id) => {
                 write!(f, "track {} is inside more than {MAX_GROUP_DEPTH} nested groups", id.0)
@@ -878,11 +1129,52 @@ impl fmt::Display for ValidationError {
             }
             Self::BadMarker(index) => write!(f, "arrangement marker {index} is not at a beat from 0 on"),
             Self::BadLoop => write!(f, "the loop region does not start at a beat from 0 on and end after it starts"),
+            Self::TooManyDevices(id) => write!(f, "channel {} holds more than {MAX_DEVICES} devices", id.0),
+            Self::GroupBranches { channel, device } => {
+                write!(
+                    f,
+                    "device group {} on channel {} does not have 1 to {MAX_BRANCHES} branches",
+                    path(device),
+                    channel.0
+                )
+            }
+            Self::GroupMacros { channel, device } => write!(
+                f,
+                "device group {} on channel {} does not have {MACROS} macros of at most {MAX_MACRO_MAPPINGS} mappings",
+                path(device),
+                channel.0
+            ),
+            Self::DeviceGroupTooDeep { channel, device } => write!(
+                f,
+                "device group {} on channel {} is inside more than {MAX_DEVICE_GROUP_DEPTH} levels of groups",
+                path(device),
+                channel.0
+            ),
+            Self::BadBranch { channel, device } => write!(
+                f,
+                "device group {} on channel {} has a branch with a negative volume or a pan outside -1 to 1",
+                path(device),
+                channel.0
+            ),
+            Self::BadMacroMapping { channel, device } => write!(
+                f,
+                "device group {} on channel {} maps a device that is not in it, or a range outside 0 to 1",
+                path(device),
+                channel.0
+            ),
+            Self::MappedTwice { channel, device } => {
+                write!(f, "device group {} on channel {} maps a parameter twice", path(device), channel.0)
+            }
         }
     }
 }
 
 impl std::error::Error for ValidationError {}
+
+/// A device path as the commands write it: `2/1/0`.
+fn path(device: &[usize]) -> String {
+    device.iter().map(ToString::to_string).collect::<Vec<_>>().join("/")
+}
 
 impl Project {
     /// Checks that ids are unique and every reference resolves. Importers call this so a
@@ -893,6 +1185,32 @@ impl Project {
         let tracks = unique(self.tracks.iter().map(|t| t.id), ValidationError::DuplicateTrack, &mut errors);
         let channels = unique(self.channels.iter().map(|c| c.id), ValidationError::DuplicateChannel, &mut errors);
         let contents = unique(self.contents.iter().map(|c| c.id), ValidationError::DuplicateContent, &mut errors);
+        // Objects without an id yet (0) are not duplicates of each other.
+        let clip_ids = self.all_clips().map(|c| c.id).filter(|id| id.is_some());
+        let clip_ids = unique(clip_ids, ValidationError::DuplicateClip, &mut errors);
+        let lane_ids = self.arrangement.lanes.iter().map(|l| l.id).filter(|id| id.is_some());
+        let lane_ids = unique(lane_ids, ValidationError::DuplicateLane, &mut errors);
+        let scene_ids = self.launcher.scenes.iter().map(|s| s.id).filter(|id| id.is_some());
+        let scene_ids = unique(scene_ids, ValidationError::DuplicateScene, &mut errors);
+        let device_ids = self.all_devices().map(|d| d.id).filter(|id| id.is_some());
+        let device_ids = unique(device_ids, ValidationError::DuplicateDevice, &mut errors);
+        // The kinds the file holds share one counter, so a value names at most one object of any
+        // of them (ADR 0025 › 2): a lane and a clip with the same value are refused as well.
+        let mut kinds: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
+        let values = clip_ids
+            .iter()
+            .map(|c| c.0)
+            .chain(lane_ids.iter().map(|l| l.0))
+            .chain(scene_ids.iter().map(|s| s.0))
+            .chain(device_ids.iter().map(|d| d.0));
+        for value in values {
+            *kinds.entry(value).or_default() += 1;
+        }
+        errors.extend(kinds.into_iter().filter(|&(_, n)| n > 1).map(|(value, _)| ValidationError::SharedId(value)));
+        let highest = self.max_object_id();
+        if highest != 0 && highest >= self.next_id {
+            errors.push(ValidationError::IdAhead(highest));
+        }
 
         let track_ref = |id: TrackId, errors: &mut Vec<ValidationError>| {
             if !tracks.contains(&id) {
@@ -942,6 +1260,7 @@ impl Project {
             for send in &channel.sends {
                 channel_ref(send.target, &mut errors);
             }
+            groups::validate_devices(channel.id, &channel.devices, &mut errors);
         }
         for content in &self.contents {
             for lane in &content.lanes {
@@ -950,15 +1269,21 @@ impl Project {
                 }
             }
         }
-        for (lane_index, lane) in self.arrangement.lanes.iter().enumerate() {
+        for lane in &self.arrangement.lanes {
             if let Some(track) = lane.track {
                 track_ref(track, &mut errors);
             }
-            for (clip_index, clip) in lane.clips.iter().enumerate() {
+            for clip in &lane.clips {
                 content_ref(clip.content, &mut errors);
                 if !clip.fades_valid() {
-                    errors.push(ValidationError::BadFades { lane: lane_index, clip: clip_index });
+                    errors.push(ValidationError::BadFades { lane: lane.id, clip: clip.id });
                 }
+            }
+        }
+        for take in &self.arrangement.takes {
+            track_ref(take.track, &mut errors);
+            for clip in &take.clips {
+                content_ref(clip.content, &mut errors);
             }
         }
         for (index, marker) in self.arrangement.markers.iter().enumerate() {
@@ -984,13 +1309,13 @@ impl Project {
     /// left out), so it always ends.
     pub fn ancestors(&self, track: TrackId) -> Vec<TrackId> {
         let mut out = Vec::new();
-        let mut next = self.tracks.iter().find(|t| t.id == track).and_then(|t| t.parent);
+        let mut next = self.track(track).and_then(|t| t.parent);
         while let Some(id) = next {
             if id == track || out.contains(&id) || out.len() > self.tracks.len() {
                 break;
             }
             out.push(id);
-            next = self.tracks.iter().find(|t| t.id == id).and_then(|t| t.parent);
+            next = self.track(id).and_then(|t| t.parent);
         }
         out
     }
@@ -999,13 +1324,13 @@ impl Project {
     /// back to a track already passed, a cycle a valid project never has.
     pub fn group_depth(&self, track: TrackId) -> Option<usize> {
         let mut seen = vec![track];
-        let mut next = self.tracks.iter().find(|t| t.id == track).and_then(|t| t.parent);
+        let mut next = self.track(track).and_then(|t| t.parent);
         while let Some(id) = next {
             if seen.contains(&id) {
                 return None;
             }
             seen.push(id);
-            next = self.tracks.iter().find(|t| t.id == id).and_then(|t| t.parent);
+            next = self.track(id).and_then(|t| t.parent);
         }
         Some(seen.len() - 1)
     }
@@ -1046,9 +1371,7 @@ impl Project {
 
     /// Every clip, on the arrangement or in a launcher slot, that plays the content `id`.
     pub fn clips_of(&self, id: ContentId) -> impl Iterator<Item = &Clip> {
-        let arranged = self.arrangement.lanes.iter().flat_map(|l| &l.clips);
-        let launched = self.launcher.columns.iter().flat_map(|c| &c.slots).filter_map(|s| s.clip.as_ref());
-        arranged.chain(launched).filter(move |c| c.content == id)
+        self.all_clips().filter(move |c| c.content == id)
     }
 }
 
@@ -1067,353 +1390,5 @@ fn unique<T: Copy + Eq + std::hash::Hash>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn note(time: f64, key: u8) -> Note {
-        Note::new(time, 0.25, key, 0.8)
-    }
-
-    fn track(id: u32, channel: u32) -> Track {
-        Track {
-            content: ContentKinds { notes: true, audio: false },
-            channel: Some(ChannelId(channel)),
-            ..Track::new(TrackId(id), format!("Track {id}"))
-        }
-    }
-
-    fn channel(id: u32) -> Channel {
-        Channel::new(ChannelId(id), format!("Channel {id}"))
-    }
-
-    fn clip(content: u32, start: f64) -> Clip {
-        Clip::new(ContentId(content), start, 4.0)
-    }
-
-    #[test]
-    fn follow_kinds_read_back_their_names() {
-        for kind in FollowKind::NAMED.into_iter().chain([FollowKind::Jump(0), FollowKind::Jump(41)]) {
-            assert_eq!(FollowKind::from_name(&kind.name()), Some(kind));
-        }
-        assert_eq!(FollowKind::Jump(2).name(), "jump 3");
-        assert_eq!(FollowKind::from_name(" Jump  12 "), Some(FollowKind::Jump(11)));
-        for bad in ["", "jump", "jump 0", "jump -1", "jump 1.5", "jump 99999999999", "nextt", "stop 2"] {
-            assert_eq!(FollowKind::from_name(bad), None, "{bad}");
-        }
-    }
-
-    #[test]
-    fn a_follow_action_needs_a_time_and_chances_in_range() {
-        assert!(FollowAction::default().is_valid());
-        for time in [0.0, -1.0, f64::NAN, f64::INFINITY, FollowAction::MAX_TIME * 2.0] {
-            assert!(!FollowAction { time, ..FollowAction::default() }.is_valid(), "{time}");
-        }
-        assert!(!FollowAction { chance_a: 101, ..FollowAction::default() }.is_valid());
-        assert!(!FollowAction { chance_b: 101, ..FollowAction::default() }.is_valid());
-    }
-
-    #[test]
-    fn default_transport_is_120_bpm_in_four_four() {
-        let t = Project::default().transport;
-        assert_eq!(t.tempo_bpm, 120.0);
-        assert_eq!(t.time_signature, TimeSignature { numerator: 4, denominator: 4 });
-    }
-
-    /// Per-track clips: each clip has its own content with one untargeted lane, arrangement
-    /// lanes are bound to tracks, and the same track has a launcher column.
-    #[test]
-    fn per_track_clip_project_validates() {
-        let project = Project {
-            tracks: vec![track(1, 1)],
-            channels: vec![channel(1)],
-            contents: vec![
-                ClipContent {
-                    id: ContentId(1),
-                    name: "Bass A".into(),
-                    length: 4.0,
-                    lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 36)]) }],
-                    extensions: Extensions::default(),
-                    scale: None,
-                },
-                ClipContent {
-                    id: ContentId(2),
-                    name: "Bass B".into(),
-                    length: 4.0,
-                    lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(1.0, 38)]) }],
-                    extensions: Extensions::default(),
-                    scale: None,
-                },
-            ],
-            arrangement: Arrangement {
-                lanes: vec![ArrangementLane {
-                    name: "Bass".into(),
-                    track: Some(TrackId(1)),
-                    clips: vec![clip(1, 0.0)],
-                }],
-                markers: Vec::new(),
-            },
-            launcher: Launcher {
-                mappings: Vec::new(),
-                scenes: vec![Scene::default(), Scene::default()],
-                columns: vec![LauncherColumn {
-                    track: TrackId(1),
-                    slots: vec![
-                        Slot { clip: Some(clip(1, 0.0)), has_stop: true },
-                        Slot { clip: Some(clip(2, 0.0)), has_stop: true },
-                    ],
-                }],
-            },
-            ..Project::default()
-        };
-        assert_eq!(project.validate(), Ok(()));
-    }
-
-    /// Shared pattern: one content drives two tracks and is placed twice on a free arrangement
-    /// lane; both placements share the same content.
-    #[test]
-    fn shared_pattern_project_validates_and_shares_content() {
-        let pattern = ClipContent {
-            id: ContentId(1),
-            name: "Pattern 1".into(),
-            length: 4.0,
-            lanes: vec![
-                ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 36), note(2.0, 36)]) },
-                ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(1.0, 38), note(3.0, 38)]) },
-            ],
-            extensions: Extensions::default(),
-            scale: None,
-        };
-        let project = Project {
-            tracks: vec![track(1, 1), track(2, 2)],
-            channels: vec![channel(1), channel(2)],
-            contents: vec![pattern],
-            arrangement: Arrangement {
-                lanes: vec![ArrangementLane {
-                    name: "Track 1".into(),
-                    track: None,
-                    clips: vec![clip(1, 0.0), clip(1, 4.0)],
-                }],
-                markers: Vec::new(),
-            },
-            ..Project::default()
-        };
-        assert_eq!(project.validate(), Ok(()));
-
-        let placements = &project.arrangement.lanes[0].clips;
-        assert_eq!(placements[0].content, placements[1].content);
-        assert_eq!(project.content(ContentId(1)).map(|c| c.lanes.len()), Some(2));
-    }
-
-    #[test]
-    fn dangling_references_are_reported() {
-        let mut ch = channel(1);
-        ch.output = Some(ChannelId(9));
-        ch.sends.push(Send { target: ChannelId(8), level: 0.5, pre_fader: false });
-        let project = Project {
-            tracks: vec![track(1, 7)],
-            channels: vec![ch],
-            arrangement: Arrangement {
-                lanes: vec![ArrangementLane {
-                    name: String::new(),
-                    track: Some(TrackId(5)),
-                    clips: vec![clip(3, 0.0)],
-                }],
-                markers: Vec::new(),
-            },
-            ..Project::default()
-        };
-        let errors = project.validate().unwrap_err();
-        assert!(errors.contains(&ValidationError::MissingChannel(ChannelId(7))));
-        assert!(errors.contains(&ValidationError::MissingChannel(ChannelId(9))));
-        assert!(errors.contains(&ValidationError::MissingChannel(ChannelId(8))));
-        assert!(errors.contains(&ValidationError::MissingTrack(TrackId(5))));
-        assert!(errors.contains(&ValidationError::MissingContent(ContentId(3))));
-    }
-
-    /// Each shape's gain at the ends and half-way, as the spec's table gives it, and how the
-    /// curve bends it (`docs/spec/arrangement-editing.md` › Fades).
-    #[test]
-    fn fade_shapes_and_curves_follow_the_spec() {
-        let half = [
-            (FadeShape::Linear, 0.5),
-            (FadeShape::EqualPower, std::f64::consts::FRAC_1_SQRT_2),
-            (FadeShape::Fast, 0.75),
-            (FadeShape::Slow, 0.25),
-            (FadeShape::SCurve, 0.5),
-        ];
-        for (shape, at_half) in half {
-            for curve in [-1.0, -0.5, 0.0, 0.5, 1.0] {
-                let fade = FadeCurve { shape, curve };
-                let expected = at_half.powf(4f64.powf(-curve));
-                assert!((fade.gain(0.5) - expected).abs() < 1e-12, "{shape:?} {curve}: {}", fade.gain(0.5));
-                assert_eq!((fade.gain(0.0), fade.gain(1.0)), (0.0, 1.0), "{shape:?} {curve}");
-                // It rises the whole way.
-                let gains: Vec<f64> = (0..=100).map(|i| fade.gain(f64::from(i) / 100.0)).collect();
-                assert!(gains.windows(2).all(|w| w[1] >= w[0]), "{shape:?} {curve}");
-            }
-            assert_eq!(FadeShape::from_name(shape.name()), Some(shape));
-        }
-        // +1 starts faster than the shape, −1 slower.
-        let linear = |curve| FadeCurve { shape: FadeShape::Linear, curve };
-        assert!((linear(1.0).gain(0.5) - 0.5f64.powf(0.25)).abs() < 1e-12);
-        assert!((linear(-1.0).gain(0.5) - 0.0625).abs() < 1e-12);
-        // Hostile input stays within 0 … 1.
-        assert_eq!(linear(0.0).gain(f64::NAN), 0.0);
-        assert_eq!(linear(0.0).gain(7.0), 1.0);
-        assert_eq!(linear(f64::NAN).gain(0.5), 0.5);
-        assert_eq!(FadeShape::from_name("wobbly"), None);
-        // The curve that puts the half-way gain at a height gives back that height.
-        for shape in FadeShape::ALL {
-            for curve in [-0.9, -0.3, 0.0, 0.4, 0.95] {
-                let gain = FadeCurve { shape, curve }.gain(0.5);
-                assert!((FadeCurve::through(shape, gain) - curve).abs() < 1e-9, "{shape:?} {curve}");
-            }
-            assert_eq!((FadeCurve::through(shape, 0.0), FadeCurve::through(shape, 1.0)), (-1.0, 1.0));
-            assert_eq!(FadeCurve::through(shape, f64::NAN), 0.0);
-        }
-    }
-
-    #[test]
-    fn fades_must_be_non_negative_and_fit_the_clip() {
-        let with = |fade_in: f64, fade_out: f64| Clip { fade_in, fade_out, ..clip(1, 0.0) };
-        assert!(with(0.0, 0.0).fades_valid());
-        assert!(with(1.5, 2.5).fades_valid(), "together exactly the clip's length");
-        assert!(!with(-0.1, 0.0).fades_valid());
-        assert!(!with(0.0, f64::NAN).fades_valid());
-        assert!(!with(f64::INFINITY, 0.0).fades_valid());
-        assert!(!with(3.0, 1.5).fades_valid(), "4.5 beats of fades on a 4-beat clip");
-        let bent = |curve: f64| Clip { fade_out_curve: FadeCurve { shape: FadeShape::Slow, curve }, ..with(1.0, 1.0) };
-        assert!(bent(1.0).fades_valid() && bent(-1.0).fades_valid());
-        assert!(!bent(1.5).fades_valid() && !bent(f64::NAN).fades_valid(), "a curve outside -1 … +1");
-
-        let content = ClipContent {
-            id: ContentId(1),
-            name: String::new(),
-            length: 4.0,
-            lanes: Vec::new(),
-            extensions: Extensions::default(),
-            scale: None,
-        };
-        let project = Project {
-            contents: vec![content],
-            arrangement: Arrangement {
-                lanes: vec![ArrangementLane {
-                    name: String::new(),
-                    track: None,
-                    clips: vec![with(1.0, 1.0), with(3.0, 3.0)],
-                }],
-                markers: Vec::new(),
-            },
-            ..Project::default()
-        };
-        assert_eq!(project.validate(), Err(vec![ValidationError::BadFades { lane: 0, clip: 1 }]));
-    }
-
-    #[test]
-    fn fitting_fades_keeps_them_inside_the_clip() {
-        let mut c = Clip { fade_in: 3.0, fade_out: 1.0, length: 2.0, ..clip(1, 0.0) };
-        c.fit_fades();
-        assert_eq!((c.fade_in, c.fade_out), (1.5, 0.5), "both shrink in proportion");
-        let mut c = Clip { fade_in: -1.0, fade_out: f64::NAN, ..clip(1, 0.0) };
-        c.fit_fades();
-        assert_eq!((c.fade_in, c.fade_out), (0.0, 0.0));
-        let mut c = Clip { fade_in: 1.0, fade_out: 0.5, ..clip(1, 0.0) };
-        c.fit_fades();
-        assert_eq!((c.fade_in, c.fade_out), (1.0, 0.5), "fades that fit are kept");
-    }
-
-    #[test]
-    fn the_loop_region_repeats_only_while_on_and_must_end_after_it_starts() {
-        let mut transport = Transport { loop_range: Some(LoopRange { start: 4.0, end: 8.0 }), ..Transport::default() };
-        assert_eq!(transport.looping(), None, "off: kept, not repeated");
-        transport.loop_enabled = true;
-        assert_eq!(transport.looping(), Some(LoopRange { start: 4.0, end: 8.0 }));
-
-        for bad in [(4.0, 4.0), (8.0, 4.0), (-1.0, 4.0), (0.0, f64::INFINITY), (f64::NAN, 1.0)] {
-            let project = Project {
-                transport: Transport {
-                    loop_range: Some(LoopRange { start: bad.0, end: bad.1 }),
-                    ..Transport::default()
-                },
-                ..Project::default()
-            };
-            assert_eq!(project.validate(), Err(vec![ValidationError::BadLoop]), "{bad:?}");
-            assert_eq!(Transport { loop_enabled: true, ..project.transport }.looping(), None);
-        }
-    }
-
-    #[test]
-    fn markers_stay_in_beat_order_and_must_be_at_a_beat_from_0() {
-        let mut arrangement = Arrangement::default();
-        assert_eq!(arrangement.insert_marker(Marker::new(8.0, "Chorus")), 0);
-        assert_eq!(arrangement.insert_marker(Marker::new(0.0, "Intro")), 0);
-        assert_eq!(arrangement.insert_marker(Marker::new(8.0, "Drop")), 2, "after the one already on beat 8");
-        let names: Vec<&str> = arrangement.markers.iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["Intro", "Chorus", "Drop"]);
-        arrangement.markers[0].beat = 12.0;
-        arrangement.sort_markers();
-        let names: Vec<&str> = arrangement.markers.iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["Chorus", "Drop", "Intro"]);
-
-        let project = Project {
-            arrangement: Arrangement {
-                lanes: Vec::new(),
-                markers: vec![Marker::new(0.0, "ok"), Marker::new(-1.0, "before"), Marker::new(f64::NAN, "nan")],
-            },
-            ..Project::default()
-        };
-        assert_eq!(project.validate(), Err(vec![ValidationError::BadMarker(1), ValidationError::BadMarker(2)]));
-    }
-
-    #[test]
-    fn duplicate_ids_are_reported() {
-        let project =
-            Project { tracks: vec![track(1, 1), track(1, 1)], channels: vec![channel(1)], ..Project::default() };
-        assert_eq!(project.validate(), Err(vec![ValidationError::DuplicateTrack(TrackId(1))]));
-    }
-    /// Tracks 1..=n, each inside the one before it.
-    fn chain_of_groups(n: u32) -> Project {
-        let tracks = (1..=n).map(|id| Track { parent: (id > 1).then(|| TrackId(id - 1)), ..track(id, id) }).collect();
-        Project { tracks, channels: (1..=n).map(channel).collect(), ..Project::default() }
-    }
-
-    #[test]
-    fn nested_groups_report_their_ancestors_depth_and_descendants() {
-        let project = chain_of_groups(4);
-        assert_eq!(project.ancestors(TrackId(4)), vec![TrackId(3), TrackId(2), TrackId(1)]);
-        assert_eq!(project.group_depth(TrackId(4)), Some(3));
-        assert_eq!(project.group_depth(TrackId(1)), Some(0));
-        assert_eq!(project.with_descendants(TrackId(2)), vec![TrackId(2), TrackId(3), TrackId(4)]);
-        assert_eq!(project.nesting_below(TrackId(2)), 2);
-        assert_eq!(project.nesting_below(TrackId(4)), 0);
-        assert_eq!(project.validate(), Ok(()));
-        // A track that does not exist is at the top level and holds nothing.
-        assert_eq!(project.ancestors(TrackId(9)), Vec::<TrackId>::new());
-        assert_eq!(project.with_descendants(TrackId(9)), vec![]);
-    }
-
-    #[test]
-    fn groups_may_nest_up_to_the_cap_and_no_deeper() {
-        let deepest = u32::try_from(MAX_GROUP_DEPTH).unwrap() + 1;
-        assert_eq!(chain_of_groups(deepest).validate(), Ok(()));
-        let too_deep = chain_of_groups(deepest + 1);
-        assert_eq!(too_deep.validate(), Err(vec![ValidationError::GroupTooDeep(TrackId(deepest + 1))]));
-    }
-
-    #[test]
-    fn a_group_cycle_is_reported_and_walking_it_ends() {
-        let mut project = chain_of_groups(3);
-        project.tracks[0].parent = Some(TrackId(3));
-        assert_eq!(project.group_depth(TrackId(2)), None);
-        assert_eq!(project.ancestors(TrackId(2)), vec![TrackId(1), TrackId(3)]);
-        assert_eq!(project.with_descendants(TrackId(1)).len(), 3);
-        let errors = project.validate().unwrap_err();
-        assert_eq!(errors.len(), 3, "{errors:?}");
-        assert!(errors.iter().all(|e| matches!(e, ValidationError::GroupCycle(_))));
-        // A track that is its own parent too.
-        let mut own = chain_of_groups(1);
-        own.tracks[0].parent = Some(TrackId(1));
-        assert_eq!(own.validate(), Err(vec![ValidationError::GroupCycle(TrackId(1))]));
-        assert_eq!(own.ancestors(TrackId(1)), vec![]);
-    }
-}
+#[path = "lib_tests.rs"]
+mod tests;

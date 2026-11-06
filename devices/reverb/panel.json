@@ -1,0 +1,1295 @@
+{
+  "ui": {
+    "size": [
+      260.0,
+      168.0
+    ],
+    "viewport_size": null,
+    "background": [
+      37,
+      36,
+      33,
+      255
+    ],
+    "assets": [],
+    "layers": [],
+    "controls": [
+      {
+        "widget": {
+          "kind": "filter_band",
+          "min_hz": 50.0,
+          "max_hz": 18000.0
+        },
+        "visible_when": null,
+        "id": "band",
+        "name": "Input band frequency and width",
+        "tooltip": "Drag horizontally for frequency, vertically for width",
+        "bounds": [
+          4.0,
+          4.0,
+          124.0,
+          110.0
+        ],
+        "gesture": "position",
+        "x": {
+          "parameter": "inputFrequency",
+          "logarithmic": true,
+          "drag_scale": 1.0
+        },
+        "y": {
+          "parameter": "inputWidth",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Low Cut",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "lowCut",
+        "name": "Low Cut",
+        "tooltip": "lowCut: Low Cut",
+        "bounds": [
+          4.0,
+          118.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "lowCut",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "High Cut",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "highCut",
+        "name": "High Cut",
+        "tooltip": "highCut: High Cut",
+        "bounds": [
+          68.0,
+          118.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "highCut",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Freeze",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "freeze",
+        "name": "Freeze",
+        "tooltip": "freeze: Freeze",
+        "bounds": [
+          4.0,
+          142.0,
+          124.0,
+          22.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "freeze",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Predelay",
+          "decimals": 3,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "predelay",
+        "name": "Predelay",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          132.0,
+          0.0,
+          64.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "predelay",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Size",
+          "decimals": 1,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "size",
+        "name": "Size",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          196.0,
+          0.0,
+          64.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "size",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Decay",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "decay",
+        "name": "Decay",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          132.0,
+          84.0,
+          64.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "decay",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Dry/Wet",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "mix",
+        "name": "Dry/Wet",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          196.0,
+          84.0,
+          64.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "mix",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      }
+    ],
+    "hidden_parameters": [
+      "predelay",
+      "lowCut",
+      "highCut",
+      "inputFrequency",
+      "inputWidth",
+      "spin",
+      "spinRate",
+      "spinAmount",
+      "shape",
+      "highDamping",
+      "highDampingType",
+      "highDampingFrequency",
+      "highDampingGain",
+      "lowDamping",
+      "lowDampingFrequency",
+      "lowDampingGain",
+      "diffusion",
+      "scale",
+      "chorus",
+      "chorusRate",
+      "chorusAmount",
+      "size",
+      "smooth",
+      "decay",
+      "freeze",
+      "flat",
+      "cut",
+      "stereo",
+      "density",
+      "reflect",
+      "diffuse",
+      "mix"
+    ]
+  },
+  "expanded": {
+    "size": [
+      940.0,
+      260.0
+    ],
+    "viewport_size": null,
+    "background": [
+      37,
+      36,
+      33,
+      255
+    ],
+    "assets": [],
+    "layers": [],
+    "controls": [
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "Input"
+        },
+        "visible_when": null,
+        "id": "section_input",
+        "name": "Input",
+        "tooltip": "",
+        "bounds": [
+          0.0,
+          0.0,
+          150.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "filter_band",
+          "min_hz": 50.0,
+          "max_hz": 18000.0
+        },
+        "visible_when": null,
+        "id": "input_band",
+        "name": "Input band frequency and width",
+        "tooltip": "Drag horizontally for frequency, vertically for width",
+        "bounds": [
+          6.0,
+          26.0,
+          138.0,
+          86.0
+        ],
+        "gesture": "position",
+        "x": {
+          "parameter": "inputFrequency",
+          "logarithmic": true,
+          "drag_scale": 1.0
+        },
+        "y": {
+          "parameter": "inputWidth",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Low Cut",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "lowCut_x",
+        "name": "Low Cut",
+        "tooltip": "lowCut: Low Cut",
+        "bounds": [
+          6.0,
+          118.0,
+          67.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "lowCut",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "High Cut",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "highCut_x",
+        "name": "High Cut",
+        "tooltip": "highCut: High Cut",
+        "bounds": [
+          75.0,
+          118.0,
+          67.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "highCut",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Predelay",
+          "decimals": 3,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "predelay",
+        "name": "Predelay",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          142.0,
+          69.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "predelay",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "Early Reflections"
+        },
+        "visible_when": null,
+        "id": "section_early_reflections",
+        "name": "Early Reflections",
+        "tooltip": "",
+        "bounds": [
+          150.0,
+          0.0,
+          150.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Spin",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "spin_x",
+        "name": "Spin",
+        "tooltip": "spin: Spin",
+        "bounds": [
+          156.0,
+          26.0,
+          67.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "spin",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Rate",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "spinRate",
+        "name": "Rate",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          156.0,
+          50.0,
+          69.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "spinRate",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Amount",
+          "decimals": 1,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "spinAmount",
+        "name": "Amount",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          225.0,
+          50.0,
+          69.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "spinAmount",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Shape",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "shape",
+        "name": "Shape",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          156.0,
+          116.0,
+          69.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "shape",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "Damping"
+        },
+        "visible_when": null,
+        "id": "section_damping",
+        "name": "Damping",
+        "tooltip": "",
+        "bounds": [
+          300.0,
+          0.0,
+          180.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "High",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "highDamping_x",
+        "name": "High",
+        "tooltip": "highDamping: High",
+        "bounds": [
+          306.0,
+          26.0,
+          82.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "highDamping",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Low",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "lowDamping_x",
+        "name": "Low",
+        "tooltip": "lowDamping: Low",
+        "bounds": [
+          390.0,
+          26.0,
+          82.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "lowDamping",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "High Type"
+        },
+        "visible_when": null,
+        "id": "highDampingType_caption",
+        "name": "High Type",
+        "tooltip": "",
+        "bounds": [
+          306.0,
+          50.0,
+          82.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "highDampingType_x",
+        "name": "highDampingType",
+        "tooltip": "",
+        "bounds": [
+          390.0,
+          50.0,
+          82.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "highDampingType",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "High Freq",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "highDampingFrequency",
+        "name": "High Freq",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          306.0,
+          74.0,
+          84.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "highDampingFrequency",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "High Gain",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "highDampingGain",
+        "name": "High Gain",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          390.0,
+          74.0,
+          84.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "highDampingGain",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Low Freq",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "lowDampingFrequency",
+        "name": "Low Freq",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          306.0,
+          140.0,
+          84.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lowDampingFrequency",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Low Gain",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "lowDampingGain",
+        "name": "Low Gain",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          390.0,
+          140.0,
+          84.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lowDampingGain",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "Diffusion"
+        },
+        "visible_when": null,
+        "id": "section_diffusion",
+        "name": "Diffusion",
+        "tooltip": "",
+        "bounds": [
+          480.0,
+          0.0,
+          150.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Chorus",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "chorus_x",
+        "name": "Chorus",
+        "tooltip": "chorus: Chorus",
+        "bounds": [
+          486.0,
+          26.0,
+          67.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "chorus",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Diffusion",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "diffusion",
+        "name": "Diffusion",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          486.0,
+          50.0,
+          69.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "diffusion",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Scale",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "scale",
+        "name": "Scale",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          555.0,
+          50.0,
+          69.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "scale",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Rate",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "chorusRate",
+        "name": "Rate",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          486.0,
+          116.0,
+          69.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "chorusRate",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Amount",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "chorusAmount",
+        "name": "Amount",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          555.0,
+          116.0,
+          69.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "chorusAmount",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "Decay"
+        },
+        "visible_when": null,
+        "id": "section_decay",
+        "name": "Decay",
+        "tooltip": "",
+        "bounds": [
+          630.0,
+          0.0,
+          150.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Freeze",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "freeze_x",
+        "name": "Freeze",
+        "tooltip": "freeze: Freeze",
+        "bounds": [
+          636.0,
+          26.0,
+          67.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "freeze",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Flat",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "flat_x",
+        "name": "Flat",
+        "tooltip": "flat: Flat",
+        "bounds": [
+          705.0,
+          26.0,
+          67.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "flat",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Cut",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "cut_x",
+        "name": "Cut",
+        "tooltip": "cut: Cut",
+        "bounds": [
+          636.0,
+          50.0,
+          67.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "cut",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Smooth"
+        },
+        "visible_when": null,
+        "id": "smooth_caption",
+        "name": "Smooth",
+        "tooltip": "",
+        "bounds": [
+          636.0,
+          74.0,
+          67.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "smooth_x",
+        "name": "smooth",
+        "tooltip": "",
+        "bounds": [
+          705.0,
+          74.0,
+          67.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "smooth",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Size",
+          "decimals": 1,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "size",
+        "name": "Size",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          636.0,
+          98.0,
+          69.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "size",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Decay",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "decay",
+        "name": "Decay",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          705.0,
+          98.0,
+          69.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "decay",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "panel",
+          "label": "Output"
+        },
+        "visible_when": null,
+        "id": "section_output",
+        "name": "Output",
+        "tooltip": "",
+        "bounds": [
+          780.0,
+          0.0,
+          160.0,
+          260.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Density"
+        },
+        "visible_when": null,
+        "id": "density_caption",
+        "name": "Density",
+        "tooltip": "",
+        "bounds": [
+          786.0,
+          26.0,
+          72.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "density_x",
+        "name": "density",
+        "tooltip": "",
+        "bounds": [
+          860.0,
+          26.0,
+          72.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "density",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Stereo",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "stereo",
+        "name": "Stereo",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          786.0,
+          50.0,
+          74.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "stereo",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Reflect",
+          "decimals": 1,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "reflect",
+        "name": "Reflect",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          860.0,
+          50.0,
+          74.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "reflect",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Diffuse",
+          "decimals": 1,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "diffuse",
+        "name": "Diffuse",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          786.0,
+          116.0,
+          74.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "diffuse",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Dry/Wet",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "mix",
+        "name": "Dry/Wet",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          860.0,
+          116.0,
+          74.0,
+          64.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "mix",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      }
+    ],
+    "hidden_parameters": [
+      "predelay",
+      "lowCut",
+      "highCut",
+      "inputFrequency",
+      "inputWidth",
+      "spin",
+      "spinRate",
+      "spinAmount",
+      "shape",
+      "highDamping",
+      "highDampingType",
+      "highDampingFrequency",
+      "highDampingGain",
+      "lowDamping",
+      "lowDampingFrequency",
+      "lowDampingGain",
+      "diffusion",
+      "scale",
+      "chorus",
+      "chorusRate",
+      "chorusAmount",
+      "size",
+      "smooth",
+      "decay",
+      "freeze",
+      "flat",
+      "cut",
+      "stereo",
+      "density",
+      "reflect",
+      "diffuse",
+      "mix"
+    ]
+  }
+}

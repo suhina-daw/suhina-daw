@@ -2,8 +2,9 @@
 description: Why the UI is built with egui, and how close it may get to Live: same structure and behaviour, Suhina's own look
 read_when: UI toolkit, egui, look and feel, trade dress, design rights, screenshots, how close to Ableton
 type: decision
-status: current
-last_verified: 2026-10-14
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - apps/suhina/Cargo.toml
   - crates/ui/Cargo.toml
@@ -12,7 +13,6 @@ covers:
 
 # 0009: egui for the UI; familiar workflow, Suhina's own look
 
-- **Status:** accepted
 - **Date:** 2026-10-11
 
 ## Context
@@ -72,7 +72,8 @@ What the law protects decides how close the UI may get (summary, not legal advic
    theme file the user picks and edits ([brief](../design/brief.md) › Themes).
 
 7. **One main window.** Views open in place in the main window, not in windows of their own.
-   Two exceptions have a window of their own: plug-in editors (ADR 0006), and the sample map when
+   Three exceptions have a window of their own: plug-in editors (ADR 0006), Settings when
+   explicitly detached, and the sample map when
    the user asks for it (View › Sample map in a window), so it can sit on a second screen. The
    map's window is an eframe viewport drawn in the same frame as the main window (an immediate
    viewport), so it shares the window's state: the browser, the previews and drags into the main
@@ -80,6 +81,14 @@ What the law protects decides how close the UI may get (summary, not legal advic
 
 `AudioEffect` controls and visible node-flow views are also drawn with egui and the same theme tokens
 ([ADR 0021](0021-device-graph-files.md)).
+
+Appearance materials remain inside the native renderer: user-owned PNG backgrounds are decoded
+with the GPL-compatible `image` crate on a bounded background worker. While a private image is
+displayed, surface alpha blends over that image. Without one, alpha-capable GPU hosts can expose
+the desktop through theme backgrounds, with system blur where available; OpenGL and unsupported
+compositors keep opaque rendering. The renderer does not capture desktop pixels.
+Windows uses an egui application identity bar with configurable project information and native
+move/resize commands; other platforms retain their native decorations.
 
 ## Consequences
 

@@ -4,6 +4,7 @@
 //! Missing files (`docs/spec/missing-files.md`): the bar that says a project's audio files are
 //! missing, and the panel that finds them by name and relinks them.
 
+use crate::kit::surface::Backgrounds as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -81,6 +82,10 @@ pub enum Outcome {
 pub struct MissingFiles {
     /// The project and revision the rows were made for.
     checked: Option<(ProjectId, u64)>,
+    /// What the project's audio files were when they were last looked for on disk
+    /// ([`audio_files_key`]): an edit that leaves them as they were (a solo, a mute) does not
+    /// look again, which took a large project 300 ms or more each time.
+    files_key: Option<u64>,
     pub rows: Vec<Row>,
     /// The bar was dismissed with Later for this project.
     pub bar_hidden: bool,
@@ -114,6 +119,11 @@ impl MissingFiles {
         }
         self.checked = Some((active, revision));
         let Some(session) = projects.get(active) else { return };
+        let key = audio_files_key(session.project());
+        if !new_project && self.files_key == Some(key) {
+            return;
+        }
+        self.files_key = Some(key);
         let missing = session.missing_files();
         let project_folder = session.audio_folder().map(Path::to_path_buf);
         // Keep what was found or chosen for files still missing.
@@ -211,7 +221,7 @@ impl MissingFiles {
     /// Draws the bar that says files are missing in `rect`, while it should show.
     pub fn bar(&mut self, ui: &mut Ui, rect: Rect) {
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, theme::panel_background());
+        painter.fill_background(rect, 0.0, theme::panel_background());
         let count = self.rows.len();
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(PAD, 6.0))), |ui| {
             ui.horizontal_centered(|ui| {
@@ -240,7 +250,7 @@ impl MissingFiles {
         if self.poll() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
-        egui::Area::new(Id::new("missing-files"))
+        egui::Area::new(Id::unique("missing-files"))
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
             .show(ui.ctx(), |ui| {
@@ -251,17 +261,18 @@ impl MissingFiles {
     }
 
     fn draw(&mut self, ui: &mut Ui, area: Rect, project: &str) -> Option<Outcome> {
-        let behind = ui.interact(area, Id::new("missing-files-behind"), Sense::click_and_drag());
+        let behind = ui.interact(area, Id::unique("missing-files-behind"), Sense::click_and_drag());
         let _swallowed = behind.clicked();
         let painter = ui.painter_at(area);
         painter.rect_filled(area, 0.0, theme::window_background().gamma_multiply(0.6));
         let height = ROW + PAD * 4.0 + LINE * 3.0 + self.rows.len() as f32 * ROW_HEIGHT + BUTTON.y;
         let size = Vec2::new(WIDTH.min(area.width() - 2.0 * PAD), height.min(area.height() - 2.0 * PAD));
         let rect = Rect::from_center_size(area.center(), size);
-        painter.rect_filled(rect, 0.0, theme::panel_background());
+        crate::kit::liquid::backdrop(&painter, rect);
+        painter.fill_background(rect, 0.0, theme::panel_background());
         painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
         let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-        painter.rect_filled(bar, 0.0, theme::control_background());
+        painter.fill_background(bar, 0.0, theme::control_background());
         widgets::text_in(
             &painter,
             bar.shrink2(Vec2::new(PAD, 0.0)),
@@ -282,13 +293,14 @@ impl MissingFiles {
                     self.checked = None;
                 }
                 ui.label(egui::RichText::new("or a folder:").color(theme::text_secondary()).font(small.clone()));
-                let field = ui.add(
+                let field = crate::kit::widgets::text_input(
+                    ui,
                     egui::TextEdit::singleline(&mut self.folder)
                         .font(small.clone())
                         .hint_text("A folder path")
                         .desired_width(220.0),
                 );
-                field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Folder to search"));
+                field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Folder to search"));
                 let entered = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
                 match &self.walk {
                     Some(walk) => {
@@ -374,14 +386,15 @@ fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId) {
         let clips = format!("{} clip{}", row.clips, if row.clips == 1 { "" } else { "s" });
         ui.label(egui::RichText::new(clips).color(theme::text_hint()).font(small.clone()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let field = ui.add(
+            let field = crate::kit::widgets::text_input(
+                ui,
                 egui::TextEdit::singleline(&mut row.locate)
                     .font(small.clone())
                     .hint_text("Locate: a file path")
                     .desired_width(170.0),
             );
             field.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, format!("Locate {}", row.name()))
+                egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Locate {}", row.name()))
             });
             if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                 let path = PathBuf::from(row.locate.trim());
@@ -406,10 +419,12 @@ fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId) {
         ui.add_space(14.0);
         ui.label(egui::RichText::new("→").color(theme::text_hint()).font(small.clone()));
         let shown = row.chosen.as_ref().map_or_else(|| "not found".to_string(), |p| p.display().to_string());
-        egui::ComboBox::from_id_salt(("missing-candidate", index))
-            .selected_text(egui::RichText::new(shown).font(small.clone()))
-            .width(440.0)
-            .show_ui(ui, |ui| {
+        crate::kit::widgets::combo_box(
+            ui,
+            egui::ComboBox::from_id_salt(("missing-candidate", index))
+                .selected_text(egui::RichText::new(shown).font(small.clone()))
+                .width(440.0),
+            |ui| {
                 for candidate in row.candidates.clone() {
                     let label = candidate.display().to_string();
                     if ui.selectable_label(row.chosen.as_ref() == Some(&candidate), label).clicked() {
@@ -421,7 +436,8 @@ fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId) {
                     row.chosen = None;
                     row.by_hand = true;
                 }
-            });
+            },
+        );
     });
     ui.add_space(4.0);
 }
@@ -466,6 +482,22 @@ mod tests {
         assert!(missing.bar_shows());
         missing.bar_hidden = true;
         assert!(!missing.bar_shows());
+    }
+
+    /// A sampler inside a device group names its file as one on the track does: changing it
+    /// changes the key the list is rebuilt by.
+    #[test]
+    fn a_grouped_sampler_s_file_is_in_the_key() {
+        use suhina_engine::model::{Branch, Device, DeviceGroup, DeviceKind};
+        let mut project = crate::demo::demo_project();
+        let sampler = Device::new("Sampler", DeviceKind::Builtin("sampler".into()));
+        let mut branch = Branch::new("Branch 1");
+        branch.devices.push(sampler);
+        project.channels[0].devices.push(Device::group("Group", DeviceGroup::with_branches(vec![branch])));
+        let before = super::audio_files_key(&project);
+        let group = project.channels[0].devices.last_mut().and_then(Device::as_group_mut).unwrap();
+        group.branches[0].devices[0].set_sample_file("samples/Kick.wav");
+        assert_ne!(super::audio_files_key(&project), before);
     }
 
     #[test]
@@ -527,7 +559,7 @@ mod look {
             locate: String::new(),
         };
         let state = MissingFiles { rows: vec![found, one, lost], open: true, ..MissingFiles::default() };
-        let mut harness = Harness::builder().with_size(egui::vec2(820.0, 520.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(820.0, 520.0)).build_ui_state(
             |ui, state: &mut MissingFiles| {
                 crate::kit::theme::install(ui.ctx());
                 let area = ui.max_rect();
@@ -542,4 +574,25 @@ mod look {
         harness.run();
         harness.render().unwrap().save("../../target/missing-files.png").unwrap();
     }
+}
+
+/// A fingerprint of the audio files `project` names, clip by clip and device by device: it
+/// changes when a clip or sampler gets, loses or changes a file, not with other edits.
+fn audio_files_key(project: &suhina_engine::model::Project) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    // Inside device groups too: a grouped sampler's file is one the project names.
+    for (_, device) in project.channels.iter().flat_map(|c| suhina_engine::model::walk_devices(&c.devices)) {
+        device.sample_file().hash(&mut hasher);
+        device.sample_absolute_file().hash(&mut hasher);
+    }
+    for content in &project.contents {
+        for lane in &content.lanes {
+            if let suhina_engine::model::LaneData::Audio(region) = &lane.data {
+                region.file.hash(&mut hasher);
+                region.absolute_file.hash(&mut hasher);
+            }
+        }
+    }
+    hasher.finish()
 }

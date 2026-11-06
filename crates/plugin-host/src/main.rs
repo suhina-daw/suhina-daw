@@ -14,25 +14,61 @@
 //!
 //! What it can load: CLAP plug-ins ([`clap`]), the CLAP test plug-ins built in for tests
 //! ([`test_clap`], [`test_clap_delay`], [`test_clap_ports`]), and simple test processors
-//! ([`processors`]) that crash or hang on purpose.
+//! ([`processors`]) that crash or hang on purpose. With the `vst2` feature (ADR 0022) it
+//! gains the VST2 interface layer (`vst2`, under the feature, so no link here): the ported VeSTige definitions, the mock
+//! plug-in `test:vst2` and the `--vst2-probe` tool.
 //!
 //! A plug-in may report another latency while it runs. Between messages the main thread asks
 //! each instance whether it did (restarting its processing first where the format asks for
 //! that) and tells the engine unasked (`latency_changed`).
+//!
+//! In detail: The `suhina-plugin-host` executable: answers control messages and serves plug-ins'
+//! main-thread callbacks on its main thread, and runs several instances, each with its own link and
+//! audio thread; a block may name other instances of the process to run after the link's own, which
+//! that audio thread runs in turn before it answers (`audio`, each instance's processing behind a
+//! lock of its own). Loads CLAP plug-ins (`clap:<file>[#<id>]`, through `clack-host`) and VST3
+//! plug-ins (`vst3:<bundle>[#<class id>]`, through the `vst3` bindings), every audio port a CLAP
+//! plug-in declares with its channels (the link's stereo on the main ports), stereo in and out for
+//! VST3 (no input for an instrument), notes and controllers, parameters, editors in a window of
+//! their own or embedded as a child in the engine's window where the engine says (Windows, X11 on
+//! Linux), with state and latency, and test plug-ins (`test:clap`, `test:clap-ports`,
+//! `test:clap-delay`, `test:vst3`, `test:gain`, `test:crash-after:<n>`, `test:hang-after:<n>`,
+//! `test:slow-load:<ms>`, `test:delay-after:<n>:<frames>`, `test:busy:<µs>`, `test:ring`,
+//! `test:await-ring`). A plug-in that reports another latency while it runs is restarted as its format asks and the engine is told
+//! unasked (`latency_changed`). `--scan <file>` and `--scan-worker` describe plug-in files for the
+//! scanner. ARA (ADR 0033): a VST3 instance loaded with a document is bound to a document
+//! controller the host builds from it (`ara`, over bindings generated from the vendored ARA
+//! headers, `ara_sys`), reads the sources' shared memory and keeps the plug-in's edits in its
+//! state. The second crate allowed `unsafe`: opening plug-in files and the VST3 COM calls, each
+//! block documented.
 
+mod ara;
+#[allow(
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals,
+    dead_code,
+    unsafe_op_in_unsafe_fn,
+    clippy::all,
+    clippy::pedantic
+)]
+// The ARA headers pack structs to 1 byte on x86 and to 8 on ARM: each CPU has bindings of its own.
+#[cfg_attr(target_arch = "aarch64", path = "ara_sys/arm.rs")]
+#[cfg_attr(not(target_arch = "aarch64"), path = "ara_sys/x86.rs")]
+mod ara_sys;
 mod audio;
 mod clap;
+mod hosted;
+mod param_notes;
 mod processors;
 mod run_loop;
 mod test_clap;
 mod test_clap_delay;
 mod test_clap_ports;
 mod test_vst3;
+#[cfg(feature = "vst2")]
+mod vst2;
 mod vst3;
-mod vst3_editor;
-mod vst3_events;
-mod vst3_message;
-mod vst3_params;
 mod window;
 
 use std::collections::BTreeMap;
@@ -43,10 +79,9 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use hosted::{Loaded, TestPlugin};
 use interprocess::TryClone;
-use processors::Processor;
 use suhina_ipc::Served;
-use suhina_plugins::ParamInfo;
 use suhina_plugins::protocol::{Message, VERSION};
 
 /// How long loading waits for a new instance's audio thread to serve, so that blocks naming it
@@ -61,6 +96,38 @@ const EDITOR_TICK: Duration = Duration::from_millis(1);
 /// How long unloading waits for an instance's audio thread to stop; one still running then is
 /// stuck in the plug-in, and the instance is left behind rather than taking the process with it.
 pub(crate) const UNLOAD_WAIT: Duration = Duration::from_secs(1);
+/// How long a VST3 plug-in has to settle after it loads before it is released: one let go of
+/// sooner (loaded again at once as ARA, say) is kept, stopped and silent, until then.
+const SETTLE: Duration = Duration::from_secs(5);
+
+thread_local! {
+    /// VST3 plug-ins unloaded, stopped and out of their document, and when each is released
+    /// with its editor. Released from the main loop ([`release_settled`]) after the engine has
+    /// its answer, so an editor embedded in the engine's window is taken down while the engine
+    /// answers that window's messages. Some plug-ins also finish starting up through the main
+    /// thread's messages after they load, and releasing one before that waits for it on this
+    /// very thread: Melodyne, let go of a tenth of a second after it loaded, held the host until
+    /// the engine gave up on it; one is kept until [`SETTLE`] after it loaded.
+    static SETTLING: std::cell::RefCell<Vec<(Instant, vst3::Vst3Plugin)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Releases the plug-ins in [`SETTLING`] whose time has come.
+fn release_settled() {
+    let due: Vec<vst3::Vst3Plugin> = SETTLING.with(|settling| {
+        let Ok(mut settling) = settling.try_borrow_mut() else { return Vec::new() };
+        let now = Instant::now();
+        let (due, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut *settling).into_iter().partition(|(at, _)| *at <= now);
+        *settling = keep;
+        due.into_iter().map(|(_, plugin)| plugin).collect()
+    });
+    for plugin in due {
+        suhina_plugins::trace!("vst3: releasing an unloaded plug-in and its editor");
+        drop(plugin);
+    }
+}
+/// How often the process reports its RAM to the engine's control bar.
+const MEMORY_EVERY: Duration = Duration::from_secs(1);
 /// Most instances one process runs.
 const MAX_INSTANCES: usize = 1024;
 
@@ -110,7 +177,15 @@ fn main() {
         (Some("--control"), Some(address)) => address,
         (Some("--scan"), Some(file)) => scan(file),
         (Some("--scan-worker"), None) => scan_worker(),
+        #[cfg(feature = "vst2")]
+        (Some("--vst2-probe"), Some(name)) => vst2_probe(name),
         _ => {
+            #[cfg(feature = "vst2")]
+            eprintln!(
+                "usage: suhina-plugin-host --control <address> | --scan <file> | --scan-worker | \
+                 --vst2-probe <plug-in>"
+            );
+            #[cfg(not(feature = "vst2"))]
             eprintln!("usage: suhina-plugin-host --control <address> | --scan <file> | --scan-worker");
             std::process::exit(2);
         }
@@ -121,12 +196,31 @@ fn main() {
     }
 }
 
+/// `--vst2-probe <plug-in>`: prints the report of the probe over the VST2 plug-in the name
+/// gives (a VST2 file, or `test:vst2` for the built-in mock) and exits. A tool of the `vst2`
+/// feature (ADR 0022): what the probe learns settles the interface's *assumed* facts, and
+/// this process is disposable, as a scanner's is.
+#[cfg(feature = "vst2")]
+fn vst2_probe(name: &str) -> ! {
+    match vst2::probe::run_tool(name) {
+        Ok(report) => {
+            println!("{report}");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("suhina-plugin-host: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 /// `--scan <file>`: prints the plug-ins the file holds on one line after
 /// [`suhina_plugins::scan::SCAN_MARKER`] and exits. A plug-in that crashes or hangs while
 /// loading takes this process with it, and the scanner in the engine notices.
 ///
 /// For tests, `test:clap` describes the built-in test plug-in, `test:crash` exits without an
-/// answer and `test:hang` never answers.
+/// answer, `test:hang` never answers and, in debug builds, `test:flaky:<file>` fails the first time (while
+/// `<file>` does not exist; it then makes it) and describes the test plug-in after that.
 fn scan(file: &str) -> ! {
     use suhina_plugins::scan::{SCAN_MARKER, scan_error_json, scan_json};
     let result = describe(file);
@@ -146,11 +240,43 @@ fn describe(file: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String>
         "test:hang" => loop {
             thread::sleep(Duration::from_secs(60));
         },
-        "test:clap" | "test:clap-delay" | "test:clap-ports" => clap::describe(file),
-        "test:vst3" => vst3::describe(file),
+        "test:clap" | "test:clap-mix" | "test:clap-delay" | "test:clap-ports" => clap::describe(file),
+        "test:vst3" | "test:vst3-mix" => vst3::describe(file),
+        #[cfg(feature = "vst2")]
+        "test:vst2" => vst2::host::describe(file),
+        #[cfg(debug_assertions)]
+        _ if file.starts_with(FLAKY) => flaky(file),
+        // A VST2 plug-in: a `.vst` bundle, a `.dll` or a `.so`, behind the `vst2` feature
+        // (ADR 0022); a build without it lists the file as failed.
+        _ if suhina_plugins::scan::is_vst2(std::path::Path::new(file)) => {
+            #[cfg(feature = "vst2")]
+            {
+                vst2::host::describe(file)
+            }
+            #[cfg(not(feature = "vst2"))]
+            Err("VST2 plug-ins are not hosted in this build (ADR 0022)".into())
+        }
         _ if file.to_ascii_lowercase().ends_with(".vst3") => vst3::describe(&format!("vst3:{file}")),
         _ => clap::describe(&format!("clap:{file}")),
     }
+}
+
+/// The `test:` name of a file that fails to load once ([`flaky`]). Debug builds only: it writes
+/// the file it is given, which a release host has no use for.
+#[cfg(debug_assertions)]
+const FLAKY: &str = "test:flaky:";
+
+/// `test:flaky:<file>`: a plug-in whose first load fails as a passing failure does (no factory)
+/// and whose later ones work. Whether it was loaded before is `<file>`'s existence, so it holds
+/// across scan processes.
+#[cfg(debug_assertions)]
+fn flaky(file: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String> {
+    let marker = std::path::Path::new(file.strip_prefix(FLAKY).unwrap_or_default());
+    if marker.exists() {
+        return clap::describe("test:clap");
+    }
+    std::fs::write(marker, b"loaded once").map_err(|e| format!("could not mark the first load: {e}"))?;
+    Err("the plug-in has no factory".into())
 }
 
 /// `--scan-worker`: reads one file name per line from standard input and prints each answer on
@@ -174,174 +300,47 @@ fn scan_worker() -> ! {
     std::process::exit(0);
 }
 
-/// What is loaded.
-enum Loaded {
-    Clap(clap::ClapPlugin),
-    Vst3(vst3::Vst3Plugin),
-    /// `reported` is the latency the engine was last told.
-    Test {
-        processor: Arc<dyn Processor>,
-        stop: Arc<AtomicBool>,
-        audio: thread::JoinHandle<()>,
-        reported: u32,
-    },
-}
-
-impl Loaded {
-    fn latency(&self) -> u32 {
-        match self {
-            Self::Clap(plugin) => plugin.latency(),
-            Self::Vst3(plugin) => plugin.latency(),
-            Self::Test { processor, .. } => processor.latency(),
-        }
-    }
-
-    /// A latency the plug-in reported since this was last asked, after restarting its
-    /// processing where its format asks for that: the engine is to be told.
-    fn latency_changed(&mut self) -> Option<u32> {
-        match self {
-            Self::Clap(plugin) => plugin.latency_changed(),
-            Self::Vst3(plugin) => plugin.latency_changed(),
-            Self::Test { processor, reported, .. } => {
-                let now = processor.latency();
-                (now != *reported).then(|| {
-                    *reported = now;
-                    now
-                })
-            }
-        }
-    }
-
-    fn open_editor(&mut self, mode: window::Mode) -> Result<window::Size, String> {
-        match self {
-            Self::Clap(plugin) => plugin.open_editor(mode),
-            Self::Vst3(plugin) => plugin.open_editor(mode),
-            Self::Test { .. } => Err("the plug-in has no editor".into()),
-        }
-    }
-
-    /// Puts an embedded editor where the engine says.
-    fn place_editor(&self, placement: window::Placement) {
-        match self {
-            Self::Clap(plugin) => plugin.place_editor(placement),
-            Self::Vst3(plugin) => plugin.place_editor(placement),
-            Self::Test { .. } => {}
-        }
-    }
-
-    /// A size the open editor got since this was last asked, to tell the engine.
-    fn editor_resized(&mut self) -> Option<window::Size> {
-        match self {
-            Self::Clap(plugin) => plugin.editor_resized(),
-            Self::Vst3(plugin) => plugin.editor_resized(),
-            Self::Test { .. } => None,
-        }
-    }
-
-    fn close_editor(&mut self) {
-        match self {
-            Self::Clap(plugin) => plugin.close_editor(),
-            Self::Vst3(plugin) => plugin.close_editor(),
-            Self::Test { .. } => {}
-        }
-    }
-
-    /// Keeps an open editor in step with its window; whether the user closed it.
-    fn editor_tick(&mut self) -> bool {
-        match self {
-            Self::Clap(plugin) => plugin.editor_tick(),
-            Self::Vst3(plugin) => plugin.editor_tick(),
-            Self::Test { .. } => false,
-        }
-    }
-
-    fn params(&mut self) -> Result<Vec<ParamInfo>, String> {
-        match self {
-            Self::Clap(plugin) => Ok(plugin.params()),
-            Self::Vst3(plugin) => Ok(plugin.params()),
-            Self::Test { .. } => Ok(Vec::new()),
-        }
-    }
-
-    fn set_param(&mut self, id: u32, value: f64) -> Result<ParamInfo, String> {
-        match self {
-            Self::Clap(plugin) => plugin.set_param(id, value),
-            Self::Vst3(plugin) => plugin.set_param(id, value),
-            Self::Test { .. } => Err(format!("no parameter {id}")),
-        }
-    }
-
-    /// The component's state and, for VST3, the controller's.
-    fn state(&mut self) -> Result<(Vec<u8>, Option<Vec<u8>>), String> {
-        match self {
-            Self::Clap(plugin) => Ok((plugin.state()?, None)),
-            Self::Vst3(plugin) => Ok((plugin.state()?, plugin.controller_state())),
-            Self::Test { processor, .. } => Ok((processor.state(), None)),
-        }
-    }
-
-    fn set_state(&mut self, data: &[u8], controller: Option<&[u8]>) -> Result<(), String> {
-        match self {
-            Self::Clap(plugin) => plugin.set_state(data),
-            Self::Vst3(plugin) => plugin.set_state(data, controller),
-            Self::Test { processor, .. } => processor.set_state(data),
-        }
-    }
-
-    fn tick(&mut self) {
-        if let Self::Clap(plugin) = self {
-            plugin.tick();
-        }
-    }
-
-    /// Closes the editor, stops the audio thread and lets go of the plug-in. An audio thread
-    /// that does not stop is stuck in the plug-in's code: the plug-in is then left as it is
-    /// (never deactivated or freed under it), so the other instances go on.
-    fn unload(self) {
-        match self {
-            Self::Clap(mut plugin) => {
-                plugin.close_editor();
-                if plugin.stop_audio(UNLOAD_WAIT) {
-                    drop(plugin);
-                } else {
-                    std::mem::forget(plugin);
-                }
-            }
-            Self::Vst3(mut plugin) => {
-                plugin.close_editor();
-                if plugin.stop_audio(UNLOAD_WAIT) {
-                    drop(plugin);
-                } else {
-                    std::mem::forget(plugin);
-                }
-            }
-            Self::Test { stop, audio, .. } => {
-                if audio_stopped(&stop, Some(&audio), UNLOAD_WAIT) {
-                    let _ = audio.join();
-                }
-            }
-        }
-    }
-}
-
-fn load(instance: u32, plugin: &str, link: &str, sample_rate: f64) -> Result<Loaded, String> {
-    let loaded = start(instance, plugin, link, sample_rate)?;
+fn load(
+    instance: u32,
+    plugin: &str,
+    link: &str,
+    sample_rate: f64,
+    ara: Option<suhina_plugins::protocol::AraDocument>,
+) -> Result<Loaded, String> {
+    let loaded = start(instance, plugin, link, sample_rate, ara)?;
     // Its thread starts serving at once; a plug-in whose processing would not start never does.
     audio::wait_serving(instance, SERVING_WAIT);
     Ok(loaded)
 }
 
-fn start(instance: u32, plugin: &str, link: &str, sample_rate: f64) -> Result<Loaded, String> {
+fn start(
+    instance: u32,
+    plugin: &str,
+    link: &str,
+    sample_rate: f64,
+    ara: Option<suhina_plugins::protocol::AraDocument>,
+) -> Result<Loaded, String> {
     let served = Served::open(link).map_err(|e| e.to_string())?;
     if plugin.starts_with("clap:")
         || plugin == "test:clap"
+        || plugin == "test:clap-mix"
         || plugin == "test:clap-delay"
         || plugin == "test:clap-ports"
     {
-        return clap::ClapPlugin::load(plugin, instance, served, sample_rate).map(Loaded::Clap);
+        return clap::ClapPlugin::load(plugin, instance, served, sample_rate).map(|p| Box::new(p) as Loaded);
     }
-    if plugin.starts_with("vst3:") || plugin == "test:vst3" {
-        return vst3::Vst3Plugin::load(plugin, instance, served, sample_rate).map(Loaded::Vst3);
+    if plugin.starts_with("vst3:") || plugin == "test:vst3" || plugin == "test:vst3-mix" {
+        return vst3::Vst3Plugin::load(plugin, instance, served, sample_rate, ara).map(|p| Box::new(p) as Loaded);
+    }
+    #[cfg(feature = "vst2")]
+    if plugin.starts_with("vst2:") || plugin == "test:vst2" {
+        if ara.is_some() {
+            return Err("only a VST3 plug-in can be bound to an ARA document".into());
+        }
+        return vst2::host::Vst2Plugin::load(plugin, instance, served, sample_rate).map(|p| Box::new(p) as Loaded);
+    }
+    if ara.is_some() {
+        return Err("only a VST3 plug-in can be bound to an ARA document".into());
     }
     let processor = processors::create(plugin)?;
     let stop = Arc::new(AtomicBool::new(false));
@@ -354,11 +353,111 @@ fn start(instance: u32, plugin: &str, link: &str, sample_rate: f64) -> Result<Lo
         })
         .map_err(|e| e.to_string())?;
     let reported = processor.latency();
-    Ok(Loaded::Test { processor, stop, audio, reported })
+    Ok(Box::new(TestPlugin { processor, stop, audio, reported }))
 }
 
 /// Writes one message to the engine.
+/// The engine's end of the connection, shared: the main loop and a plug-in's transport request,
+/// sent the moment it is made, each write whole lines to it, one at a time.
+struct Shared<W>(Arc<std::sync::Mutex<W>>);
+
+impl<W> Clone for Shared<W> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<W: Write> Write for Shared<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).write(buf)
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).write_all(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).flush()
+    }
+}
+
+/// Where [`send_now`] writes: the connection, once the host is connected.
+static NOW: std::sync::Mutex<Option<Box<dyn Write + Send>>> = std::sync::Mutex::new(None);
+
+/// Sends `message` at once, from whichever thread, rather than at the main loop's next turn:
+/// an ARA plug-in's transport request, which waited for its own click to be handled before
+/// (100 ms or more, so its playhead went to the new place late). Returns whether it was sent.
+pub(crate) fn send_now(message: &Message) -> bool {
+    let mut now = NOW.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    now.as_mut().is_some_and(|writer| send(writer, message).is_ok())
+}
+
+/// A message as the trace writes it: a list of numbers (a plug-in's state, an archive) as its
+/// length, and cut to `most` characters.
+fn traced(message: &Message, most: usize) -> String {
+    // A state or an archive can be megabytes: formatted whole it took longer than the read.
+    let bytes = |data: &[u8]| format!("<{} bytes>", data.len());
+    let text = match message {
+        Message::State { instance, data, controller } | Message::SetState { instance, data, controller } => {
+            let kind = if matches!(message, Message::State { .. }) { "State" } else { "SetState" };
+            format!(
+                "{kind} {{ instance: {instance}, data: {}, controller: {:?} }}",
+                bytes(data),
+                controller.as_deref().map(bytes)
+            )
+        }
+        Message::AraExported { instance, archive_id, data } => {
+            format!("AraExported {{ instance: {instance}, archive_id: {archive_id:?}, data: {} }}", bytes(data))
+        }
+        Message::AraImport { instance, archive_id, data, from, to, source } => format!(
+            "AraImport {{ instance: {instance}, archive_id: {archive_id:?}, data: {}, from: {from:?}, to: {to:?}, source: {source:?} }}",
+            bytes(data)
+        ),
+        _ => format!("{message:?}"),
+    };
+    let mut out = String::with_capacity(text.len().min(most + 16));
+    let mut rest = text.as_str();
+    while let Some(open) = rest.find('[') {
+        let (before, list) = rest.split_at(open);
+        out.push_str(before);
+        let Some(close) = list.find(']') else {
+            rest = list;
+            break;
+        };
+        let inside = &list[1..close];
+        if inside.len() > 24 && inside.bytes().all(|b| b.is_ascii_digit() || b == b',' || b == b' ' || b == b'-') {
+            out.push_str(&format!("<{} numbers>", inside.split(',').count()));
+        } else {
+            out.push_str(&list[..=close]);
+        }
+        rest = &list[close + 1..];
+    }
+    out.push_str(rest);
+    let cut = out.char_indices().nth(most).map_or(out.len(), |(i, _)| i);
+    out.truncate(cut);
+    out
+}
+
+/// Whether a memory report goes into the trace: one a minute, or when it moved by a tenth since
+/// the last one traced. Every other message does.
+fn memory_worth_tracing(message: &Message) -> bool {
+    static LAST: std::sync::Mutex<Option<(u64, Instant)>> = std::sync::Mutex::new(None);
+    let Message::Memory { bytes } = message else { return true };
+    let mut last = LAST.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let due = match *last {
+        Some((was, at)) => at.elapsed() >= Duration::from_secs(60) || bytes.abs_diff(was) > was / 10,
+        None => true,
+    };
+    if due {
+        *last = Some((*bytes, Instant::now()));
+    }
+    due
+}
+
 fn send(writer: &mut impl Write, message: &Message) -> std::io::Result<()> {
+    if suhina_plugins::trace::on() && !matches!(message, Message::AraNotes { .. }) && memory_worth_tracing(message) {
+        suhina_plugins::trace!("host sends {}", traced(message, 300));
+    }
     let mut out = message.encode();
     out.push('\n');
     writer.write_all(out.as_bytes())?;
@@ -416,15 +515,50 @@ fn next_message(messages: &std::sync::mpsc::Receiver<Message>) -> Result<Message
 type Instances = BTreeMap<u32, Loaded>;
 
 fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
+    suhina_plugins::trace!("host up, connecting");
     let stream = suhina_plugins::connect(address)?;
-    let mut writer = stream.try_clone()?;
+    suhina_plugins::trace!("host connected");
+    let mut writer = Shared(Arc::new(std::sync::Mutex::new(stream.try_clone()?)));
+    *NOW.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Box::new(writer.clone()));
     let messages = wakeful(suhina_plugins::read_lines(stream));
     let mut instances = Instances::new();
+    let mut last_memory = Instant::now();
+    // Messages read while placements and sizes were gathered, to answer next, in order.
+    let mut held: std::collections::VecDeque<Message> = std::collections::VecDeque::new();
     loop {
         // Between messages: the plug-ins' main-thread callbacks and their editors' windows.
         window::pump();
+        release_settled();
+        // Space in an editor window plays or stops the engine, as it does in Suhina's own.
+        for _ in 0..window::take_transport_keys() {
+            send(&mut writer, &Message::TransportKey)?;
+        }
+        // The computer keyboard's note keys pressed in an editor window, while it plays (#944).
+        for (key, pressed) in window::take_typed_keys() {
+            send(&mut writer, &Message::TypedKey { key, pressed })?;
+        }
+        // What ARA plug-ins asked of the transport (their play buttons, their timeline).
+        for request in ara::take_playback_requests() {
+            send(&mut writer, &Message::AraPlayback(request))?;
+        }
+        // The engine's control bar adds this process's RAM to the program's; report it without
+        // being asked, off the control thread, once a second.
+        if last_memory.elapsed() >= MEMORY_EVERY {
+            if let Some(stats) = memory_stats::memory_stats() {
+                send(&mut writer, &Message::Memory { bytes: stats.physical_mem as u64 })?;
+            }
+            last_memory = Instant::now();
+        }
         for (instance, loaded) in &mut instances {
-            loaded.tick();
+            for (id, value) in loaded.tick() {
+                send(&mut writer, &Message::ParamChanged { instance: *instance, id, value })?;
+            }
+            for (region, notes, truncated) in loaded.take_ara_notes() {
+                send(&mut writer, &Message::AraNotes { instance: *instance, region, notes, truncated })?;
+            }
+            if let Some(progress) = loaded.take_ara_analysis() {
+                send(&mut writer, &Message::AraAnalysis { instance: *instance, progress })?;
+            }
             if let Some(latency) = loaded.latency_changed() {
                 send(&mut writer, &Message::LatencyChanged { instance: *instance, latency })?;
             }
@@ -437,27 +571,72 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
                 )?;
             }
         }
-        let message = match next_message(&messages) {
+        let message = match held.pop_front().map_or_else(|| next_message(&messages), Ok) {
             Ok(message) => message,
             Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => break,
         };
+        // Placements and sizes of an editor queued while the host was busy (a splitter dragged:
+        // one of each a frame): only the newest of each counts, so the editor goes straight to
+        // where and how big the window wants it now rather than laying itself out again for
+        // every step on the way, which a heavy editor (Melodyne) took longer to do than a frame.
+        let message = match message {
+            Message::PlaceEditor { instance, .. } | Message::FitEditor { instance, .. } if held.is_empty() => {
+                let (mut place, mut fit) = (None, None);
+                let mut keep = |message: Message| match message {
+                    Message::PlaceEditor { instance: same, .. } | Message::FitEditor { instance: same, .. }
+                        if same != instance =>
+                    {
+                        Some(message)
+                    }
+                    Message::PlaceEditor { .. } => {
+                        place = Some(message);
+                        None
+                    }
+                    Message::FitEditor { .. } => {
+                        fit = Some(message);
+                        None
+                    }
+                    other => Some(other),
+                };
+                let mut rest = keep(message);
+                while rest.is_none() {
+                    let Ok(next) = messages.try_recv() else { break };
+                    rest = keep(next);
+                }
+                held.extend(fit);
+                held.extend(rest);
+                match place {
+                    Some(place) => place,
+                    None => match held.pop_front() {
+                        Some(first) => first,
+                        None => continue,
+                    },
+                }
+            }
+            other => other,
+        };
         if message == Message::Quit {
             break;
         }
-        if let Some(reply) = answer(&mut instances, message) {
+        if suhina_plugins::trace::on() {
+            suhina_plugins::trace!("host gets {}", traced(&message, 400));
+        }
+        if let Some(reply) = answer(&mut instances, &writer, message) {
             send(&mut writer, &reply)?;
         }
     }
     for (_, loaded) in std::mem::take(&mut instances) {
         loaded.unload();
     }
+    // The process ends: what has not settled is left to it rather than waited for.
+    SETTLING.with(|settling| std::mem::forget(settling.take()));
     Ok(())
 }
 
 /// The reply to one message from the engine (anything but `quit`); `None` for a message that
-/// takes no reply (`place_editor`).
-fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
+/// takes no reply (`place_editor`). `writer` is the connection the unasked messages go out on.
+fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Message) -> Option<Message> {
     let failed = |instance: u32, message: String| Message::Error { instance: Some(instance), message };
     let missing = |instance: u32| Message::Error { instance: Some(instance), message: "no such instance".into() };
     Some(match message {
@@ -469,21 +648,44 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
         Message::Load { instance, .. } if instances.len() >= MAX_INSTANCES => {
             failed(instance, format!("at most {MAX_INSTANCES} plug-ins run in one process"))
         }
-        Message::Load { instance, plugin, link, sample_rate } => match load(instance, &plugin, &link, sample_rate) {
-            Ok(fresh) => {
-                let latency = fresh.latency();
-                instances.insert(instance, fresh);
-                Message::Loaded { instance, latency }
+        Message::Load { instance, plugin, link, sample_rate, ara } => {
+            match load(instance, &plugin, &link, sample_rate, ara) {
+                Ok(fresh) => {
+                    let (latency, edits_clips) = (fresh.latency(), fresh.edits_clips());
+                    instances.insert(instance, fresh);
+                    Message::Loaded { instance, latency, edits_clips }
+                }
+                Err(message) => failed(instance, message),
             }
-            Err(message) => failed(instance, message),
-        },
+        }
+        Message::Reconfigure { instance, sample_rate } => {
+            let result = match instances.get_mut(&instance) {
+                Some(plugin) => plugin.reconfigure(sample_rate),
+                None => return Some(missing(instance)),
+            };
+            match result {
+                Ok(latency) => Message::Reconfigured { instance, latency },
+                Err(why) => failed(instance, why),
+            }
+        }
         Message::Unload { instance } => {
-            if let Some(loaded) = instances.remove(&instance) {
+            if let Some(mut loaded) = instances.remove(&instance) {
+                let began = std::time::Instant::now();
+                suhina_plugins::trace!("host unloads {instance}");
+                // What its audio thread took in but the session has not heard of yet goes out
+                // first, so an edit made just before the unload is not lost with the plug-in.
+                // A write that fails here is the connection ending; the loop's next send says
+                // so.
+                let mut writer = writer.clone();
+                for (id, value) in loaded.tick() {
+                    let _ = send(&mut writer, &Message::ParamChanged { instance, id, value });
+                }
                 loaded.unload();
+                suhina_plugins::trace!("host unloaded {instance} in {:?}", began.elapsed());
             }
             Message::Unloaded { instance }
         }
-        Message::OpenEditor { instance, owner, embedded } => {
+        Message::OpenEditor { instance, owner, embedded, title } => {
             let mode = match (embedded, owner) {
                 (true, Some(parent)) => window::Mode::Embedded { parent },
                 (true, None) => return Some(failed(instance, "no window to embed the editor in".into())),
@@ -492,7 +694,7 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
                     window::Mode::Floating
                 }
             };
-            match instances.get_mut(&instance).map(|loaded| loaded.open_editor(mode)) {
+            match instances.get_mut(&instance).map(|loaded| loaded.open_editor(mode, title.as_deref())) {
                 Some(Ok(size)) => Message::EditorOpened { instance, width: size.width, height: size.height },
                 Some(Err(message)) => failed(instance, message),
                 None => missing(instance),
@@ -504,13 +706,52 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
             }
             return None;
         }
+        Message::EditorTitle { instance, title } => {
+            if let Some(loaded) = instances.get(&instance) {
+                loaded.set_editor_title(&title);
+            }
+            return None;
+        }
+        Message::AraUpdate { instance, document } => {
+            match instances.get_mut(&instance).map(|l| l.ara_update(&document)) {
+                Some(Ok(())) => Message::AraUpdated { instance },
+                Some(Err(message)) => failed(instance, message),
+                None => missing(instance),
+            }
+        }
+        Message::AraExport { instance, modification, source } => {
+            match instances.get(&instance).map(|l| l.ara_export(&modification, &source)) {
+                Some(Ok((archive_id, data))) => Message::AraExported { instance, archive_id, data },
+                Some(Err(message)) => failed(instance, message),
+                None => missing(instance),
+            }
+        }
+        Message::AraImport { instance, archive_id, data, from, to, source } => {
+            match instances.get(&instance).map(|l| l.ara_import(&archive_id, &data, &from, &to, &source)) {
+                Some(Ok(())) => Message::AraImported { instance },
+                Some(Err(message)) => failed(instance, message),
+                None => missing(instance),
+            }
+        }
+        Message::FitEditor { instance, width, height } => {
+            if let Some(plugin) = instances.get_mut(&instance) {
+                plugin.fit_editor(window::Size { width, height });
+            }
+            return None;
+        }
+        Message::AraSelect { instance, region } => {
+            if let Some(loaded) = instances.get(&instance) {
+                loaded.ara_select(region.as_deref());
+            }
+            return None;
+        }
         Message::CloseEditor { instance } => {
             if let Some(loaded) = instances.get_mut(&instance) {
                 loaded.close_editor();
             }
             Message::EditorClosed { instance }
         }
-        Message::GetParams { instance } => match instances.get_mut(&instance).map(Loaded::params) {
+        Message::GetParams { instance } => match instances.get_mut(&instance).map(|p| p.params()) {
             Some(Ok(params)) => Message::Params { instance, params },
             Some(Err(message)) => failed(instance, message),
             None => missing(instance),
@@ -522,7 +763,7 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
                 None => missing(instance),
             }
         }
-        Message::GetState { instance } => match instances.get_mut(&instance).map(Loaded::state) {
+        Message::GetState { instance } => match instances.get_mut(&instance).map(|p| p.state()) {
             Some(Ok((data, controller))) => Message::State { instance, data, controller },
             Some(Err(message)) => failed(instance, message),
             None => missing(instance),

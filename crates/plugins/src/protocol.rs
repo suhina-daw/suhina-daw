@@ -4,14 +4,18 @@
 //! The control messages between the engine and a plug-in host process (ADR 0006): one JSON
 //! object per line over a local socket. Audio does not go here; it goes through `suhina-ipc`.
 //!
-//! Every message has an `op`. Engine to host: `hello`, `load`, `unload`, `ping`, `get_state`,
+//! Every message has an `op`. Engine to host: `hello`, `load`, `reconfigure`, `unload`, `ping`, `get_state`,
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
-//! `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
-//! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `error`. Every
-//! message is answered, except `place_editor` and `quit` (so the engine never waits on them).
+//! `fit_editor`, `editor_title`, `ara_select`, `ara_update`, `ara_export`, `ara_import`, `quit`. Host to engine: `hello`, `loaded`, `reconfigured`, `unloaded`, `pong`, `state`, `params`, `param`,
+//! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `ara_exported`, `ara_imported`, `memory`,
+//! `transport_key`, `ara_playback`, `ara_notes`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
+//! `editor_title`, `ara_select` and `quit` (so the engine never waits on them).
 //! `editor_closed` also comes unasked, when the user closes an editor's window; `editor_resized`
-//! only comes unasked, when a plug-in gives its editor a new size, and `latency_changed` only
-//! comes unasked, when a running plug-in reports another latency.
+//! only comes unasked, when a plug-in gives its editor a new size, `latency_changed` only
+//! comes unasked, when a running plug-in reports another latency, `memory` only comes unasked,
+//! once a second, `transport_key` only comes unasked, when Space is pressed in a plug-in's
+//! window, `ara_playback` only comes unasked, when an ARA plug-in asks the transport to play,
+//! stop or move, and `ara_notes` only comes unasked, when the notes it found in a region change.
 //!
 //! One host process runs several plug-in instances. The engine names each with an `instance`
 //! number when it loads it; every message about one instance, and its reply, carries that
@@ -21,7 +25,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 8;
+pub const VERSION: u64 = 15;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -118,8 +122,240 @@ impl Placement {
     }
 }
 
+/// Most audio sources, and playback regions, one ARA document describes.
+pub const MAX_ARA_OBJECTS: usize = 4096;
+/// Longest name or id in an ARA document, in bytes.
+pub const MAX_ARA_TEXT: usize = 1024;
+/// Most notes one `ara_notes` message carries for a region; more are cut, and the message says so.
+pub const MAX_ARA_NOTES: usize = 16_384;
+
+/// A note an ARA plug-in found in a clip (#720): `start` seconds after the region starts,
+/// lasting `length` seconds, at MIDI pitch `pitch`, as loud as `volume` (0 to 1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AraNote {
+    pub start: f64,
+    pub length: f64,
+    pub pitch: u8,
+    pub volume: f32,
+}
+
+impl AraNote {
+    fn to_json(self) -> Value {
+        json!([self.start, self.length, self.pitch, self.volume])
+    }
+
+    fn from_json(value: &Value) -> Option<Self> {
+        let list = value.as_array().filter(|l| l.len() == 4)?;
+        let number = |i: usize| list.get(i).and_then(Value::as_f64).filter(|v| v.is_finite());
+        let (start, length) = (number(0)?, number(1)?);
+        let pitch = u8::try_from(list.get(2)?.as_u64()?).ok().filter(|p| *p <= 127)?;
+        let volume = number(3)?;
+        if length < 0.0 || !(0.0..=1.0).contains(&volume) {
+            return None;
+        }
+        #[allow(clippy::cast_possible_truncation, reason = "a volume from 0 to 1")]
+        Some(Self { start, length, pitch, volume: volume as f32 })
+    }
+}
+
+/// The ARA document a plug-in instance is bound to as it loads ([ADR 0033]): the audio sources
+/// it may read and the playback regions it renders and edits, on one region sequence (the
+/// track) at one tempo. Ids are persistent: built from the project's stable ids, never from
+/// positions.
+///
+/// [ADR 0033]: https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0033-ara-hosting.md
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AraDocument {
+    pub name: String,
+    /// The document this track belongs to: the instances of one plug-in in one host process
+    /// with the same key share one document, each track a region sequence of it, so the
+    /// plug-in sees every track (ADR 0033 decision 2). Empty: a document of its own.
+    pub document: String,
+    /// The region sequence's name: the track's.
+    pub sequence: String,
+    /// The track's place among the project's tracks (the sequence's order).
+    pub order: u32,
+    pub tempo_bpm: f64,
+    /// The song's tempo map as ARA's tempo entries: (seconds, quarter notes), in order, at least
+    /// two; between two entries the tempo is even. Empty: an even `tempo_bpm` from the start.
+    pub tempo: Vec<(f64, f64)>,
+    /// The song's time signatures as ARA's bar signatures: (numerator, denominator, the quarter
+    /// note the bar starts at), in order. Empty: 4/4 from the start.
+    pub bars: Vec<(u32, u32, f64)>,
+    pub sources: Vec<AraSource>,
+    pub regions: Vec<AraRegion>,
+}
+
+impl AraDocument {
+    /// The tempo entries the plug-in is told: `tempo`, or an even `tempo_bpm` from the start.
+    pub fn tempo_entries(&self) -> Vec<(f64, f64)> {
+        if self.tempo.len() >= 2 {
+            return self.tempo.clone();
+        }
+        let bpm = if self.tempo_bpm.is_finite() && self.tempo_bpm > 0.0 { self.tempo_bpm } else { 120.0 };
+        vec![(0.0, 0.0), (60.0 / bpm, 1.0)]
+    }
+
+    /// The bar signatures the plug-in is told: `bars`, or 4/4 from the start.
+    pub fn bar_signatures(&self) -> Vec<(u32, u32, f64)> {
+        if self.bars.is_empty() { vec![(4, 4, 0.0)] } else { self.bars.clone() }
+    }
+}
+
+/// An audio file's decoded samples, in a region the host maps read only
+/// ([`suhina_ipc::AudioSource`]); its channels, length and rate are in the region's header.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AraSource {
+    pub id: String,
+    pub name: String,
+    pub address: String,
+}
+
+/// A clip as an ARA playback region: it plays `duration` seconds of source `source` (an index
+/// into [`AraDocument::sources`]) from `offset` seconds into it, at `start` seconds of the song,
+/// through the audio modification `modification` (shared by clips that share their content).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AraRegion {
+    pub id: String,
+    pub name: String,
+    pub source: usize,
+    pub modification: String,
+    pub start: f64,
+    pub duration: f64,
+    pub offset: f64,
+    /// For a modification the plug-in does not have yet: the one it is a copy of, so it starts
+    /// with that one's edits (`cloneAudioModification`) rather than none. A pasted, split or
+    /// otherwise copied clip gets its own content, and with this its edits (#722).
+    pub clone_of: Option<String>,
+}
+
+impl AraDocument {
+    fn to_json(&self) -> Value {
+        json!({
+            "name": self.name, "document": self.document, "sequence": self.sequence, "order": self.order,
+            "tempo_bpm": self.tempo_bpm,
+            "tempo": self.tempo.iter().map(|(s, q)| json!([s, q])).collect::<Vec<_>>(),
+            "bars": self.bars.iter().map(|(n, d, q)| json!([n, d, q])).collect::<Vec<_>>(),
+            "sources": self.sources.iter().map(|s| json!({ "id": s.id, "name": s.name, "address": s.address }))
+                .collect::<Vec<_>>(),
+            "regions": self.regions.iter().map(|r| json!({
+                "id": r.id, "name": r.name, "source": r.source, "modification": r.modification,
+                "start": r.start, "duration": r.duration, "offset": r.offset, "clone_of": r.clone_of,
+            })).collect::<Vec<_>>(),
+        })
+    }
+
+    /// Reads a document, refusing one with more objects or longer texts than the limits, a
+    /// region whose source is not in the list, or times that are not finite and in order.
+    fn from_json(value: &Value) -> Option<Self> {
+        let text = |v: &Value, key: &str| {
+            v.get(key).and_then(Value::as_str).filter(|t| t.len() <= MAX_ARA_TEXT).map(str::to_string)
+        };
+        let time = |v: &Value, key: &str| v.get(key).and_then(Value::as_f64).filter(|t| t.is_finite());
+        let list = |key: &str| value.get(key).and_then(Value::as_array).filter(|l| l.len() <= MAX_ARA_OBJECTS);
+        let sources = list("sources")?
+            .iter()
+            .map(|s| Some(AraSource { id: text(s, "id")?, name: text(s, "name")?, address: text(s, "address")? }))
+            .collect::<Option<Vec<_>>>()?;
+        let regions = list("regions")?
+            .iter()
+            .map(|r| {
+                let source = usize::try_from(r.get("source")?.as_u64()?).ok().filter(|&i| i < sources.len())?;
+                let (start, duration, offset) = (time(r, "start")?, time(r, "duration")?, time(r, "offset")?);
+                if start < 0.0 || duration <= 0.0 || offset < 0.0 {
+                    return None;
+                }
+                Some(AraRegion {
+                    id: text(r, "id")?,
+                    name: text(r, "name")?,
+                    source,
+                    modification: text(r, "modification")?,
+                    start,
+                    duration,
+                    offset,
+                    clone_of: match r.get("clone_of") {
+                        None | Some(Value::Null) => None,
+                        Some(_) => Some(text(r, "clone_of")?),
+                    },
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let tempo_bpm = time(value, "tempo_bpm").filter(|t| *t > 0.0)?;
+        // Tempo entries and bar signatures, in order; a document without them (an older engine)
+        // has an even tempo in 4/4.
+        let number = |v: &Value| v.as_f64().filter(|n| n.is_finite());
+        let tempo = match value.get("tempo") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(v) => v
+                .as_array()
+                .filter(|l| l.len() <= MAX_ARA_OBJECTS)?
+                .iter()
+                .map(|e| Some((number(e.get(0)?)?, number(e.get(1)?)?)))
+                .collect::<Option<Vec<_>>>()?,
+        };
+        if tempo.windows(2).any(|w| !(w[1].0 > w[0].0 && w[1].1 > w[0].1)) {
+            return None;
+        }
+        let bars = match value.get("bars") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(v) => v
+                .as_array()
+                .filter(|l| l.len() <= MAX_ARA_OBJECTS)?
+                .iter()
+                .map(|e| {
+                    // A project's numerators are 1 to 99 (`TimeSignature` in the model).
+                    let n = u32::try_from(e.get(0)?.as_u64()?).ok().filter(|n| (1..=99).contains(n))?;
+                    let d = u32::try_from(e.get(1)?.as_u64()?).ok().filter(|d| (1..=64).contains(d))?;
+                    Some((n, d, number(e.get(2)?)?))
+                })
+                .collect::<Option<Vec<_>>>()?,
+        };
+        if bars.windows(2).any(|w| w[1].2 <= w[0].2) {
+            return None;
+        }
+        Some(Self {
+            name: text(value, "name")?,
+            // An older engine's document is one of its own.
+            document: match value.get("document") {
+                None | Some(Value::Null) => String::new(),
+                Some(_) => text(value, "document")?,
+            },
+            sequence: text(value, "sequence")?,
+            order: value.get("order").and_then(Value::as_u64).and_then(|o| u32::try_from(o).ok()).unwrap_or(0),
+            tempo_bpm,
+            tempo,
+            bars,
+            sources,
+            regions,
+        })
+    }
+}
+
+/// What an ARA plug-in asked of the host's transport (ARA's playback controller).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AraPlayback {
+    Start,
+    Stop,
+    /// Move the play position to this many seconds of song time.
+    Position(f64),
+    /// Make the loop (cycle) this span: its start and its length, in seconds of song time.
+    Cycle(f64, f64),
+    /// Turn the loop on or off.
+    CycleOn(bool),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
+    /// Reconfigure a quiescent instance without destroying it. The shared audio link's
+    /// maximum block capacity stays unchanged. Answered only after reactivation.
+    Reconfigure {
+        instance: u32,
+        sample_rate: f64,
+    },
+    Reconfigured {
+        instance: u32,
+        latency: u32,
+    },
     Hello {
         version: u64,
     },
@@ -130,10 +366,15 @@ pub enum Message {
         plugin: String,
         link: String,
         sample_rate: f64,
+        /// For an ARA plug-in (ADR 0033): the document to bind it to before it is activated.
+        ara: Option<AraDocument>,
     },
+    /// `edits_clips`: the plug-in supports ARA (a VST3 component that answers
+    /// `IPlugInEntryPoint`), whether or not it was loaded with a document.
     Loaded {
         instance: u32,
         latency: u32,
+        edits_clips: bool,
     },
     /// Stop and let go of `instance`; the other instances in the process go on.
     Unload {
@@ -180,6 +421,14 @@ pub enum Message {
         instance: u32,
         param: ParamInfo,
     },
+    /// Set by the user in the plug-in's own editor: the host reports it so the session keeps
+    /// the project's values in step (decision 6). Comes unasked; `value` is what the plug-in
+    /// now runs with.
+    ParamChanged {
+        instance: u32,
+        id: u32,
+        value: f64,
+    },
     /// Open the plug-in's editor; answered with `EditorOpened` and the size of its inside.
     /// `owner` is the engine's window (a Win32 `HWND`, an X11 window id). Not `embedded`: the
     /// editor gets a window of its own that `owner` owns: it stays above it, has no taskbar
@@ -190,6 +439,8 @@ pub enum Message {
         instance: u32,
         owner: Option<u64>,
         embedded: bool,
+        /// What the title bar of its own window says from the start; the plug-in's name without.
+        title: Option<String>,
     },
     EditorOpened {
         instance: u32,
@@ -202,6 +453,69 @@ pub enum Message {
         instance: u32,
         placement: Placement,
     },
+    /// What the title bar of an editor in a window of its own says: its track's name and the
+    /// plug-in's. Not answered; sent again when the track is renamed or moved.
+    EditorTitle {
+        instance: u32,
+        title: String,
+    },
+    /// Ask an embedded editor to take the size of the room the engine has for it, in pixels,
+    /// when its plug-in lets its editor be resized (it may keep within its own limits). Not
+    /// answered; the new size comes back as `EditorResized`.
+    FitEditor {
+        instance: u32,
+        width: u32,
+        height: u32,
+    },
+    /// Tell a plug-in bound to an ARA document (ADR 0033) which playback region the host has
+    /// selected, by its persistent id (`clip-<id>`), so its editor shows it; `None` selects
+    /// nothing. Not answered; a plug-in without a document ignores it.
+    AraSelect {
+        instance: u32,
+        region: Option<String>,
+    },
+    /// Bring the ARA document of a plug-in loaded with one (ADR 0033) in line with `document`,
+    /// its track's clips as they are now: moved or trimmed clips are updated in place, new
+    /// ones added, gone ones taken out, matched by their persistent ids. Answered with
+    /// `AraUpdated`, or an error after which the document is as it was or partly changed (the
+    /// engine then loads the plug-in again).
+    AraUpdate {
+        instance: u32,
+        document: AraDocument,
+    },
+    AraUpdated {
+        instance: u32,
+    },
+    /// The edits of one audio modification of a plug-in loaded with an ARA document (ADR 0033),
+    /// by its persistent id (`content-<id>`), with its audio source's (`source`, the pool key):
+    /// stored on their own (a partial archive), to give another track's plug-in. Answered with
+    /// `AraExported`, or an error when the plug-in cannot store them.
+    AraExport {
+        instance: u32,
+        modification: String,
+        source: String,
+    },
+    AraExported {
+        instance: u32,
+        /// The plug-in's document archive id the edits are stored for.
+        archive_id: String,
+        data: Vec<u8>,
+    },
+    /// Gives a plug-in loaded with an ARA document the edits `AraExport` stored in another
+    /// track's, for its modification `to` (they were `from` there) of the same source: a clip
+    /// moved or copied to this track with its edits kept. Answered with `AraImported`, or an
+    /// error (no modification `to` in the document yet, or a plug-in that cannot restore).
+    AraImport {
+        instance: u32,
+        archive_id: String,
+        data: Vec<u8>,
+        from: String,
+        to: String,
+        source: String,
+    },
+    AraImported {
+        instance: u32,
+    },
     /// The plug-in gave its editor a new size (unasked, in both modes).
     EditorResized {
         instance: u32,
@@ -213,6 +527,39 @@ pub enum Message {
     LatencyChanged {
         instance: u32,
         latency: u32,
+    },
+    /// The host reports its process's resident memory, in bytes, once a second (unasked): the
+    /// control bar adds every host's to the program's own RAM.
+    Memory {
+        bytes: u64,
+    },
+    /// Space was pressed in one of the host's editor windows (unasked): the engine plays or
+    /// stops as Space does in its own window, since the key never reaches it there.
+    TransportKey,
+    /// A key the app's computer keyboard plays, pressed or let go in an editor window while
+    /// that keyboard plays notes: its Windows virtual-key code.
+    TypedKey {
+        key: u8,
+        pressed: bool,
+    },
+    /// An ARA plug-in asked the host's transport to play, stop or move (unasked): its own
+    /// transport buttons and a click in its editor's timeline (#717).
+    AraPlayback(AraPlayback),
+    /// The notes an ARA plug-in found in one of the instance's regions, all of them, oldest
+    /// first (unasked): sent when they change, and empty when it has none (any more) (#720).
+    /// `truncated` when there were more than [`MAX_ARA_NOTES`].
+    AraNotes {
+        instance: u32,
+        region: String,
+        notes: Vec<AraNote>,
+        truncated: bool,
+    },
+    /// How far an ARA plug-in's analysis of the instance's track has come, 0 to 1 (the least
+    /// done of its sources), or `None` once nothing is being analysed (unasked): sent when it
+    /// moves by a percent, so its clips can say so.
+    AraAnalysis {
+        instance: u32,
+        progress: Option<f32>,
     },
     CloseEditor {
         instance: u32,
@@ -233,6 +580,8 @@ impl Message {
     pub fn instance(&self) -> Option<u32> {
         match self {
             Self::Load { instance, .. }
+            | Self::Reconfigure { instance, .. }
+            | Self::Reconfigured { instance, .. }
             | Self::Loaded { instance, .. }
             | Self::Unload { instance }
             | Self::Unloaded { instance }
@@ -243,15 +592,34 @@ impl Message {
             | Self::Params { instance, .. }
             | Self::SetParam { instance, .. }
             | Self::Param { instance, .. }
+            | Self::ParamChanged { instance, .. }
             | Self::OpenEditor { instance, .. }
             | Self::EditorOpened { instance, .. }
             | Self::PlaceEditor { instance, .. }
+            | Self::EditorTitle { instance, .. }
+            | Self::AraSelect { instance, .. }
+            | Self::FitEditor { instance, .. }
+            | Self::AraUpdate { instance, .. }
+            | Self::AraUpdated { instance }
+            | Self::AraExport { instance, .. }
+            | Self::AraExported { instance, .. }
+            | Self::AraImport { instance, .. }
+            | Self::AraImported { instance }
             | Self::EditorResized { instance, .. }
             | Self::LatencyChanged { instance, .. }
+            | Self::AraNotes { instance, .. }
+            | Self::AraAnalysis { instance, .. }
             | Self::CloseEditor { instance }
             | Self::EditorClosed { instance } => Some(*instance),
             Self::Error { instance, .. } => *instance,
-            Self::Hello { .. } | Self::Ping { .. } | Self::Pong { .. } | Self::Quit => None,
+            Self::Hello { .. }
+            | Self::Ping { .. }
+            | Self::Pong { .. }
+            | Self::Memory { .. }
+            | Self::TransportKey
+            | Self::TypedKey { .. }
+            | Self::AraPlayback(_)
+            | Self::Quit => None,
         }
     }
 
@@ -259,10 +627,24 @@ impl Message {
     pub fn encode(&self) -> String {
         let value = match self {
             Self::Hello { version } => json!({ "op": "hello", "version": version }),
-            Self::Load { instance, plugin, link, sample_rate } => json!({
-                "op": "load", "instance": instance, "plugin": plugin, "link": link, "sample_rate": sample_rate,
-            }),
-            Self::Loaded { instance, latency } => json!({ "op": "loaded", "instance": instance, "latency": latency }),
+            Self::Load { instance, plugin, link, sample_rate, ara } => {
+                let mut value = json!({
+                    "op": "load", "instance": instance, "plugin": plugin, "link": link, "sample_rate": sample_rate,
+                });
+                if let Some(document) = ara {
+                    value["ara"] = document.to_json();
+                }
+                value
+            }
+            Self::Loaded { instance, latency, edits_clips } => {
+                json!({ "op": "loaded", "instance": instance, "latency": latency, "edits_clips": edits_clips })
+            }
+            Self::Reconfigure { instance, sample_rate } => {
+                json!({ "op": "reconfigure", "instance": instance, "sample_rate": sample_rate })
+            }
+            Self::Reconfigured { instance, latency } => {
+                json!({ "op": "reconfigured", "instance": instance, "latency": latency })
+            }
             Self::Unload { instance } => json!({ "op": "unload", "instance": instance }),
             Self::Unloaded { instance } => json!({ "op": "unloaded", "instance": instance }),
             Self::Ping { id } => json!({ "op": "ping", "id": id }),
@@ -283,8 +665,11 @@ impl Message {
                 json!({ "op": "set_param", "instance": instance, "id": id, "value": value })
             }
             Self::Param { instance, param } => json!({ "op": "param", "instance": instance, "param": param.to_json() }),
-            Self::OpenEditor { instance, owner, embedded } => {
-                json!({ "op": "open_editor", "instance": instance, "owner": owner, "embedded": embedded })
+            Self::ParamChanged { instance, id, value } => {
+                json!({ "op": "param_changed", "instance": instance, "id": id, "value": value })
+            }
+            Self::OpenEditor { instance, owner, embedded, title } => {
+                json!({ "op": "open_editor", "instance": instance, "owner": owner, "embedded": embedded, "title": title })
             }
             Self::EditorOpened { instance, width, height } => {
                 json!({ "op": "editor_opened", "instance": instance, "width": width, "height": height })
@@ -292,11 +677,56 @@ impl Message {
             Self::PlaceEditor { instance, placement } => {
                 json!({ "op": "place_editor", "instance": instance, "placement": placement.to_json() })
             }
+            Self::EditorTitle { instance, title } => {
+                json!({ "op": "editor_title", "instance": instance, "title": title })
+            }
+            Self::FitEditor { instance, width, height } => {
+                json!({ "op": "fit_editor", "instance": instance, "width": width, "height": height })
+            }
+            Self::AraUpdate { instance, document } => {
+                json!({ "op": "ara_update", "instance": instance, "document": document.to_json() })
+            }
+            Self::AraUpdated { instance } => json!({ "op": "ara_updated", "instance": instance }),
+            Self::AraExport { instance, modification, source } => {
+                json!({ "op": "ara_export", "instance": instance, "modification": modification, "source": source })
+            }
+            Self::AraExported { instance, archive_id, data } => {
+                json!({ "op": "ara_exported", "instance": instance, "archive_id": archive_id, "data": hex(data) })
+            }
+            Self::AraImport { instance, archive_id, data, from, to, source } => json!({
+                "op": "ara_import", "instance": instance, "archive_id": archive_id, "data": hex(data),
+                "from": from, "to": to, "source": source,
+            }),
+            Self::AraImported { instance } => json!({ "op": "ara_imported", "instance": instance }),
+            Self::AraNotes { instance, region, notes, truncated } => json!({
+                "op": "ara_notes", "instance": instance, "region": region, "truncated": truncated,
+                "notes": notes.iter().map(|n| n.to_json()).collect::<Vec<_>>(),
+            }),
+            Self::AraAnalysis { instance, progress } => {
+                json!({ "op": "ara_analysis", "instance": instance, "progress": progress })
+            }
+            Self::AraSelect { instance, region } => {
+                json!({ "op": "ara_select", "instance": instance, "region": region })
+            }
             Self::EditorResized { instance, width, height } => {
                 json!({ "op": "editor_resized", "instance": instance, "width": width, "height": height })
             }
             Self::LatencyChanged { instance, latency } => {
                 json!({ "op": "latency_changed", "instance": instance, "latency": latency })
+            }
+            Self::Memory { bytes } => json!({ "op": "memory", "bytes": bytes }),
+            Self::TransportKey => json!({ "op": "transport_key" }),
+            Self::TypedKey { key, pressed } => json!({ "op": "typed_key", "key": key, "pressed": pressed }),
+            Self::AraPlayback(AraPlayback::Start) => json!({ "op": "ara_playback", "request": "start" }),
+            Self::AraPlayback(AraPlayback::Stop) => json!({ "op": "ara_playback", "request": "stop" }),
+            Self::AraPlayback(AraPlayback::Position(seconds)) => {
+                json!({ "op": "ara_playback", "request": "position", "seconds": seconds })
+            }
+            Self::AraPlayback(AraPlayback::Cycle(start, length)) => {
+                json!({ "op": "ara_playback", "request": "cycle", "seconds": start, "length": length })
+            }
+            Self::AraPlayback(AraPlayback::CycleOn(on)) => {
+                json!({ "op": "ara_playback", "request": "cycle_on", "on": on })
             }
             Self::CloseEditor { instance } => json!({ "op": "close_editor", "instance": instance }),
             Self::EditorClosed { instance } => json!({ "op": "editor_closed", "instance": instance }),
@@ -323,13 +753,32 @@ impl Message {
         let instance = || small("instance");
         Some(match value.get("op")?.as_str()? {
             "hello" => Self::Hello { version: number("version")? },
+            "reconfigure" => Self::Reconfigure {
+                instance: instance()?,
+                sample_rate: value
+                    .get("sample_rate")
+                    .and_then(Value::as_f64)
+                    .filter(|r| r.is_finite() && *r > 0.0 && *r <= 768_000.0)?,
+            },
+            "reconfigured" => Self::Reconfigured { instance: instance()?, latency: small("latency")? },
             "load" => Self::Load {
                 instance: instance()?,
                 plugin: text("plugin")?,
                 link: text("link")?,
                 sample_rate: value.get("sample_rate").and_then(Value::as_f64).filter(|r| r.is_finite() && *r > 0.0)?,
+                ara: match value.get("ara") {
+                    None | Some(Value::Null) => None,
+                    Some(document) => Some(AraDocument::from_json(document)?),
+                },
             },
-            "loaded" => Self::Loaded { instance: instance()?, latency: small("latency")? },
+            "loaded" => Self::Loaded {
+                instance: instance()?,
+                latency: small("latency")?,
+                edits_clips: match value.get("edits_clips") {
+                    None => false,
+                    Some(v) => v.as_bool()?,
+                },
+            },
             "unload" => Self::Unload { instance: instance()? },
             "unloaded" => Self::Unloaded { instance: instance()? },
             "ping" => Self::Ping { id: number("id")? },
@@ -368,6 +817,11 @@ impl Message {
                 value: value.get("value").and_then(Value::as_f64).filter(|v| v.is_finite())?,
             },
             "param" => Self::Param { instance: instance()?, param: ParamInfo::from_json(value.get("param")?)? },
+            "param_changed" => Self::ParamChanged {
+                instance: instance()?,
+                id: small("id")?,
+                value: value.get("value").and_then(Value::as_f64).filter(|v| v.is_finite())?,
+            },
             "open_editor" => Self::OpenEditor {
                 instance: instance()?,
                 owner: match value.get("owner") {
@@ -375,6 +829,10 @@ impl Message {
                     Some(v) => Some(v.as_u64()?),
                 },
                 embedded: value.get("embedded")?.as_bool()?,
+                title: match value.get("title") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(v.as_str()?.to_string()),
+                },
             },
             "editor_opened" => {
                 Self::EditorOpened { instance: instance()?, width: small("width")?, height: small("height")? }
@@ -382,10 +840,82 @@ impl Message {
             "place_editor" => {
                 Self::PlaceEditor { instance: instance()?, placement: Placement::from_json(value.get("placement")?)? }
             }
+            "editor_title" => {
+                Self::EditorTitle { instance: instance()?, title: value.get("title")?.as_str()?.to_string() }
+            }
+            "fit_editor" => Self::FitEditor { instance: instance()?, width: small("width")?, height: small("height")? },
+            "ara_update" => {
+                Self::AraUpdate { instance: instance()?, document: AraDocument::from_json(value.get("document")?)? }
+            }
+            "ara_updated" => Self::AraUpdated { instance: instance()? },
+            "ara_export" => Self::AraExport {
+                instance: instance()?,
+                modification: text("modification").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+                source: text("source").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+            },
+            "ara_exported" => Self::AraExported {
+                instance: instance()?,
+                archive_id: text("archive_id").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+                data: bytes("data")?,
+            },
+            "ara_import" => Self::AraImport {
+                instance: instance()?,
+                archive_id: text("archive_id").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+                data: bytes("data")?,
+                from: text("from").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+                to: text("to").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+                source: text("source").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+            },
+            "ara_imported" => Self::AraImported { instance: instance()? },
+            "ara_notes" => Self::AraNotes {
+                instance: instance()?,
+                region: value.get("region")?.as_str().filter(|t| t.len() <= MAX_ARA_TEXT)?.to_string(),
+                notes: value
+                    .get("notes")?
+                    .as_array()
+                    .filter(|l| l.len() <= MAX_ARA_NOTES)?
+                    .iter()
+                    .map(AraNote::from_json)
+                    .collect::<Option<Vec<_>>>()?,
+                truncated: value.get("truncated")?.as_bool()?,
+            },
+            "ara_analysis" => Self::AraAnalysis {
+                instance: instance()?,
+                progress: match value.get("progress") {
+                    None | Some(Value::Null) => None,
+                    Some(p) => Some((p.as_f64().filter(|p| p.is_finite())? as f32).clamp(0.0, 1.0)),
+                },
+            },
+            "ara_select" => Self::AraSelect {
+                instance: instance()?,
+                region: match value.get("region") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(v.as_str().filter(|t| t.len() <= MAX_ARA_TEXT)?.to_string()),
+                },
+            },
             "editor_resized" => {
                 Self::EditorResized { instance: instance()?, width: small("width")?, height: small("height")? }
             }
             "latency_changed" => Self::LatencyChanged { instance: instance()?, latency: small("latency")? },
+            "memory" => Self::Memory { bytes: number("bytes")? },
+            "transport_key" => Self::TransportKey,
+            "typed_key" => Self::TypedKey {
+                key: value.get("key").and_then(Value::as_u64).and_then(|k| u8::try_from(k).ok())?,
+                pressed: value.get("pressed").and_then(Value::as_bool)?,
+            },
+            "ara_playback" => Self::AraPlayback(match text("request")?.as_str() {
+                "start" => AraPlayback::Start,
+                "stop" => AraPlayback::Stop,
+                "position" => AraPlayback::Position(
+                    value.get("seconds").and_then(Value::as_f64).filter(|s| s.is_finite() && *s >= 0.0)?,
+                ),
+                "cycle" => AraPlayback::Cycle(
+                    value.get("seconds").and_then(Value::as_f64).filter(|s| s.is_finite() && *s >= 0.0)?,
+                    value.get("length").and_then(Value::as_f64).filter(|s| s.is_finite() && *s > 0.0)?,
+                ),
+                "cycle_on" => AraPlayback::CycleOn(value.get("on").and_then(Value::as_bool)?),
+                _ => return None,
+            }),
             "close_editor" => Self::CloseEditor { instance: instance()? },
             "editor_closed" => Self::EditorClosed { instance: instance()? },
             "quit" => Self::Quit,
@@ -408,134 +938,5 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn gain() -> ParamInfo {
-        ParamInfo {
-            id: 0,
-            name: "Gain".into(),
-            group: "Main".into(),
-            min: 0.0,
-            max: 1.0,
-            default: 0.5,
-            value: 0.25,
-            text: "-12.0 dB".into(),
-            steps: 0,
-            automatable: true,
-            read_only: false,
-            hidden: false,
-        }
-    }
-
-    #[test]
-    fn every_message_round_trips() {
-        assert_eq!(VERSION, 8);
-        let messages = [
-            Message::Hello { version: VERSION },
-            Message::Load { instance: 3, plugin: "test:gain".into(), link: "/dev/shm/x".into(), sample_rate: 44_100.0 },
-            Message::Loaded { instance: u32::MAX, latency: 64 },
-            Message::Unload { instance: 0 },
-            Message::Unloaded { instance: 7 },
-            Message::Ping { id: u64::MAX },
-            Message::Pong { id: 7 },
-            Message::GetState { instance: 1 },
-            Message::SetState { instance: 1, data: vec![0, 1, 0xab, 0xff], controller: None },
-            Message::SetState { instance: 2, data: vec![1], controller: Some(vec![2, 3]) },
-            Message::State { instance: 1, data: Vec::new(), controller: None },
-            Message::State { instance: 9, data: vec![4], controller: Some(Vec::new()) },
-            Message::GetParams { instance: 4 },
-            Message::Params {
-                instance: 4,
-                params: vec![gain(), ParamInfo { id: u32::MAX, steps: 1, hidden: true, ..gain() }],
-            },
-            Message::Params { instance: 4, params: Vec::new() },
-            Message::SetParam { instance: 5, id: 7, value: -0.5 },
-            Message::Param { instance: 5, param: gain() },
-            Message::OpenEditor { instance: 6, owner: None, embedded: false },
-            Message::OpenEditor { instance: 6, owner: Some(0x0012_0F3A), embedded: true },
-            Message::EditorOpened { instance: 6, width: 800, height: 600 },
-            Message::PlaceEditor {
-                instance: 6,
-                placement: Placement { x: -40, y: 620, clip_x: 0, clip_y: 600, clip_width: 1280, clip_height: 0 },
-            },
-            Message::EditorResized { instance: 6, width: 1, height: 16_384 },
-            Message::LatencyChanged { instance: 6, latency: 0 },
-            Message::LatencyChanged { instance: u32::MAX, latency: u32::MAX },
-            Message::CloseEditor { instance: 6 },
-            Message::EditorClosed { instance: 6 },
-            Message::Error { instance: None, message: "no such plug-in: \"x\"\n".into() },
-            Message::Error { instance: Some(8), message: "the plug-in has no editor".into() },
-            Message::Quit,
-        ];
-        for message in messages {
-            let line = message.encode();
-            assert!(!line.contains('\n'), "{line}");
-            assert_eq!(Message::decode(&line), Some(message), "{line}");
-        }
-    }
-
-    #[test]
-    fn messages_name_their_instance() {
-        assert_eq!(Message::Unload { instance: 4 }.instance(), Some(4));
-        assert_eq!(Message::EditorClosed { instance: 2 }.instance(), Some(2));
-        assert_eq!(Message::LatencyChanged { instance: 3, latency: 64 }.instance(), Some(3));
-        assert_eq!(Message::Error { instance: Some(1), message: String::new() }.instance(), Some(1));
-        assert_eq!(Message::Error { instance: None, message: String::new() }.instance(), None);
-        assert_eq!(Message::Ping { id: 1 }.instance(), None);
-        assert_eq!(Message::Quit.instance(), None);
-    }
-
-    #[test]
-    fn malformed_lines_are_refused() {
-        for line in [
-            "",
-            "{",
-            "[]",
-            r#"{"op":"nope"}"#,
-            r#"{"op":"ping"}"#,
-            r#"{"op":"ping","id":-1}"#,
-            r#"{"op":"loaded","instance":1,"latency":5000000000}"#,
-            r#"{"op":"loaded","latency":5}"#,
-            r#"{"op":"state","instance":1,"data":"abc"}"#,
-            r#"{"op":"state","instance":1,"data":"zz"}"#,
-            r#"{"op":"state","instance":1,"data":"","controller":5}"#,
-            r#"{"op":"state","data":""}"#,
-            r#"{"op":"set_state","instance":1,"data":"","controller":"z"}"#,
-            r#"{"op":"load","instance":1,"plugin":"x","link":"y","sample_rate":0}"#,
-            r#"{"op":"load","instance":1,"plugin":"x","link":"y"}"#,
-            r#"{"op":"load","plugin":"x","link":"y","sample_rate":48000}"#,
-            r#"{"op":"load","instance":-1,"plugin":"x","link":"y","sample_rate":48000}"#,
-            r#"{"op":"load","instance":5000000000,"plugin":"x","link":"y","sample_rate":48000}"#,
-            r#"{"op":42}"#,
-            r#"{"op":"set_param","instance":1,"id":1}"#,
-            r#"{"op":"set_param","instance":1,"id":-1,"value":0.5}"#,
-            r#"{"op":"set_param","id":1,"value":0.5}"#,
-            r#"{"op":"params","instance":1,"params":[{"id":1}]}"#,
-            r#"{"op":"param","instance":1}"#,
-            r#"{"op":"editor_opened","instance":1,"width":800}"#,
-            r#"{"op":"get_state"}"#,
-            r#"{"op":"get_params"}"#,
-            r#"{"op":"open_editor"}"#,
-            r#"{"op":"open_editor","instance":1}"#,
-            r#"{"op":"open_editor","instance":1,"embedded":"yes"}"#,
-            r#"{"op":"place_editor","instance":1}"#,
-            r#"{"op":"place_editor","instance":1,"placement":{"x":0,"y":0,"clip_x":0,"clip_y":0,"clip_width":-1,"clip_height":0}}"#,
-            r#"{"op":"place_editor","instance":1,"placement":{"x":3000000000,"y":0,"clip_x":0,"clip_y":0,"clip_width":1,"clip_height":1}}"#,
-            r#"{"op":"editor_resized","instance":1,"height":2}"#,
-            r#"{"op":"close_editor","instance":"1"}"#,
-            r#"{"op":"latency_changed","instance":1}"#,
-            r#"{"op":"latency_changed","latency":64}"#,
-            r#"{"op":"latency_changed","instance":1,"latency":-1}"#,
-            r#"{"op":"latency_changed","instance":1,"latency":5000000000}"#,
-            r#"{"op":"editor_closed"}"#,
-            r#"{"op":"unload"}"#,
-            r#"{"op":"unloaded","instance":1.5}"#,
-            r#"{"op":"error","instance":"x","message":"m"}"#,
-            r#"{"op":"error","instance":-3,"message":"m"}"#,
-            r#"{"op":"error","instance":1}"#,
-        ] {
-            assert_eq!(Message::decode(line), None, "{line}");
-        }
-    }
-}
+#[path = "protocol_tests.rs"]
+mod tests;

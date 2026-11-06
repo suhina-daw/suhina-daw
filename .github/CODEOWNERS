@@ -1,2 +1,18 @@
-# Every change needs the maintainer's review: the main ruleset requires a code owner's approval.
-* @juhamikael
+# Code that runs with the repository's secrets and app keys needs the repository owner's own
+# approval: the workflows, and the scripts the workflows on main run with them. The main ruleset
+# requires a code owner's review, so `ready to merge` alone (an approval by suhina-docs-bot) does not
+# merge a change here. Everything else follows the usual review and `ready to merge`.
+/.github/ @juhamikael
+/scripts/ @juhamikael
+
+# What `cargo deny` allows (AGENTS.md rule 10): a pull request that adds a dependency must not be
+# the one that permits its licence.
+/deny.toml @juhamikael
+
+# The updater installs and runs what it downloads, so where it looks needs the same approval
+# (docs/spec/updates.md › Where builds come from). Keep in step with WATCHED in
+# scripts/updater_source.py.
+/crates/update/ @juhamikael
+/crates/ui/src/app/updates.rs @juhamikael
+/crates/ui/src/settings/update_settings.rs @juhamikael
+

@@ -1,9 +1,9 @@
 ---
 description: How the browser behaves: places, categories, search, the tree, previewing, dragging samples, MIDI files, devices, presets and plug-ins into the project, pins, recent items and colour tags
-read_when: browser, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
+read_when: browser, quick add, quick-add palette, Ctrl+P, add by name, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
-last_verified: 2026-10-16
+last_verified: 2026-11-06
 covers:
   - crates/library/**
   - crates/media/src/midi.rs
@@ -15,6 +15,7 @@ covers:
   - crates/engine/src/preview.rs
   - crates/ui/src/browser.rs
   - crates/ui/src/browser/browser_view.rs
+  - crates/ui/src/app/quick_add.rs
   - crates/ui/src/interaction/drop.rs
   - crates/ui/src/session/session_view.rs
 ---
@@ -37,7 +38,8 @@ project.
 - **Item:** anything the browser lists. A *file* (sample, MIDI file, preset, project, .sd AudioEffect), a *built-in
   device* (an instrument or an effect) or an installed *plug-in*. An item is named by a key: a
   file by its absolute path, a voice in a preset bank by `<path>#<n>` (1–32), a built-in effect or instrument
-  by `device:<id>`, a plug-in by `plugin:<spec>` (the spec `plugins.list` gives).
+  by `device:<id>`, a plug-in by `plugin:<spec>` (the spec `plugin.list` gives), a preset that
+  ships with Suhina by `stock:<device id>/<name>`.
 - **Folder:** a folder the user added to the browser. Only added folders are listed; there are
   none at first.
 - **Place:** what the sidebar offers: Pinned, the Recent groups and the folders.
@@ -51,8 +53,8 @@ project.
 | Sample | `.wav` `.aif` `.aiff` `.flac` `.mp3` `.ogg` `.oga` | Samples |
 | Stems file | `.stem.mp4` `.stem.m4a` (a master and its stems, [spec](stems-format.md)) | Samples |
 | MIDI file | `.mid` `.midi` | MIDI |
-| Preset | `.syx` (DX7 voice data: one voice, or a bank of 32; [spec](dx7-voice-format.md)) | Presets |
-| Project | `.suhina`, `.locr` (saved before October 2026), `.als` | All only |
+| Preset | `.preset.suhina` (one device's values, [ADR 0014](../decisions/0014-stock-presets.md)); `.syx` (DX7 voice data: one voice, or a bank of 32; [spec](dx7-voice-format.md)) | Presets |
+| Project | `.suhina` other than a preset, `.als` | All only |
 | Device effect | `.sd` (data-only Suhina graph) | All, Effects |
 
 Other files are not listed. Extensions are matched without regard to case.
@@ -62,17 +64,24 @@ Other files are not listed. Extensions are matched without regard to case.
 From top to bottom (sizes in components.md › Browser):
 
 1. **Search** with the shortcut hint (Ctrl+F).
-2. **Category filters**, a wrapping row of buttons: All, Samples, MIDI, Instruments, Effects,
-   Presets, Plug-ins. One is selected; All at first.
-3. **Sidebar** (left part) and **results** (right part). Above the results a **List | Map**
-   switch shows them as the list or as the sample map ([`sample-map.md`](sample-map.md)).
+2. **Chips over the list**, only where they belong: while Samples is chosen, **List** and
+   **Sample map** ([`sample-map.md`](sample-map.md)); while Recent is chosen and Settings ›
+   Browser › Recent's kinds is Chips, All and Recent's kinds. The sidebar alone chooses what the
+   list shows (#711): there is no second row of categories to contradict it.
+3. **Sidebar** (left part) and **results** (right part).
 4. **Preview strip** for the selected sample or MIDI file.
 5. **Footer:** the tags (dots that filter) and the count ("312 items", "3 selected").
 
 The panel is on the left of the main view, or on the right (Settings › Browser ›
 Side). Its width is dragged at its inner edge (from 200 px to half the window, default 300) and kept. Ctrl+B and
 View › Show browser show and hide it; hidden, it takes no space. Ctrl+F shows it if hidden and
-puts the cursor in the search field.
+puts the cursor in the search field, and it always searches everything: it chooses All (and no
+place) and selects what the field says, so typing replaces it. To search one kind, choose it in
+the sidebar and click the field: a kind chosen keeps the search and narrows it to that kind.
+
+**A search of a large library:** one that looks through more than 4096 files runs on a thread of
+its own, so typing does not wait for the scan, and the previous results stay until it answers; the
+next key ends a search that has gone stale.
 
 **Keyboard focus:** only the search field (and the fields for a folder's path or a tag's name,
 while they show) takes the keyboard. Clicking a row, a filter or a
@@ -82,32 +91,39 @@ place does not, so Space, Tab and the other shortcuts keep working (`app.rs::key
 
 Three sections, each title in small hint text:
 
-- **Pinned:** one entry. Selecting it lists the pinned items.
-- **Recent:** one entry per group: Projects, Samples, MIDI, Instruments, Effects, Plug-ins,
-  Presets. Each lists the last 50 of its kind, newest first. A project counts when it is
-  opened or saved; anything else when it is added to a project (dropped, or added with Enter or
-  a double-click). Previewing does not count.
+- **Pinned:** the entries **Pinned** (the pinned items) and **Recent**: every kind's recent
+  items together, each kind the last 50 newest first. A project counts when it is opened or
+  saved; anything else when it is added to a project (dropped, or added with Enter or a
+  double-click). Previewing does not count. Recent's kinds (Projects, Samples, MIDI,
+  Instruments, Effects, Plug-ins, Presets) are entries indented under it, or with Settings ›
+  Browser › Recent's kinds set to Chips, chips over the list while Recent is chosen.
+- **Library:** All, Samples, MIDI, Instruments, Effects, Presets, Plug-ins: each shows the whole
+  of its kind, never only the recent ones (Plug-ins lists every plug-in).
 - **Folders:** the added folders by name, each with a mark when it is not plain (`…` while
   scanning, `poll` when it is polled, `gone` when missing), then **+ Add folder**: a field where a path is typed (Enter adds it), with a **Browse…** button
   at its end that picks the folder in the system's folder dialog instead.
   A folder dragged from the system onto the window is added too (and the browser shows). A folder's right-click menu
   has Refresh, Pin and Remove from the browser.
 
-At most one place is selected. Clicking the selected place again clears it.
+One entry is selected at a time. Clicking it again keeps it; a **×** at the right of a selected
+place lets go of it (All shows again). A recent kind shows only its kind; Pinned, Recent and the
+folders hold any kind.
 
 ## Results
 
 **No search text:** a tree. With no place selected its top level is:
 
-- *Instruments* (built-in instruments), *Effects* (built-in effects), *Plug-ins* (installed
-  plug-ins in a folder per vendor, *Unknown vendor* last), then each added folder.
+- *Instruments* (built-in instruments), *Effects* (built-in effects), *MIDI Effects* (built-in
+  MIDI effects, such as [the pitch effect](pitch.md)), *Plug-ins* (installed plug-ins in a folder
+  per vendor, *Unknown vendor* last), then each added folder.
 
 With a place selected the tree is that place: the folder's contents, the pinned items or the
 recent group's items (a flat list).
 
 **The category filter** narrows what the tree shows: Samples, MIDI and Presets show files of
 that kind and the folders that hold any (by the index; a folder not indexed yet is shown);
-Instruments and Effects show only those built-in effects and instruments, `.sd` AudioEffects, and plug-ins with that role
+Instruments and Effects show only those built-in effects and instruments (Effects with the
+built-in MIDI effects), `.sd` AudioEffects, and plug-ins with that role
 (a plug-in with the *instrument* feature counts as an instrument); Plug-ins shows only
 plug-ins. All shows everything.
 
@@ -122,10 +138,13 @@ then by name. Each row shows the folder it is in after the name.
 on the right the duration of a sample (`0:04.2`, read when the row is first shown) or the kind
 of a device ("instrument", "effect", the plug-in's format). A folder or a heading opens and
 closes with a click on its chevron (every click toggles; the second click of a rapid pair is a
-double and is absorbed, so a double-click on the chevron opens it once). A heading
+double and is absorbed, so a double-click on the chevron opens it once). A folder or a heading
 (*Instruments*, *Effects*, *Plug-ins*, a vendor) also opens and closes with a click on its
-name, by the same rule. A folder also opens with a double-click on the row itself; a click
-elsewhere on it only selects it. A folder's contents are read from disk when it opens, sorted
+name, by the same rule, and the click selects it too; a double-click there leaves it open. A
+preset bank opens with its chevron or a double-click on its row, as a click on it selects and
+previews it. A library folder inside another library folder is listed twice, at the top and
+inside the other, and each copy opens and closes on its own: what is open is kept by the row's
+place in the tree, not by its path alone. A folder's contents are read from disk when it opens, sorted
 folders first then by name (natural order: "Kick 2" before "Kick 10"). A preset bank opens
 into its 32 voices.
 
@@ -137,9 +156,10 @@ selected or under the pointer; clicking it previews the sample (a second click s
 
 **Double-click or Enter** (in the search field) on an item adds it to the selected track (see
 *Adding without dragging*); on a project file it opens the project as a project dropped on the
-window does (Settings › General › When opening a project).
+window does (Settings › Projects and backups › Open projects in).
 
-**Right-click menu:** Pin or Unpin; Tag ▸ (each tag, ticked when set; a *New tag…* field that
+**Right-click menu:** Pin or Unpin; Tag ▸ (each tag as a painted checkbox, ticked when set, its colour's swatch and its name; a
+click anywhere on the entry sets or clears it; a *New tag…* field that
 makes a tag in the next default colour and sets it at once — clicks inside the menu, in the
 field included, do not close it; a click outside does, and every button closes it by its
 action); Show in folder (a file: selects its folder
@@ -151,13 +171,18 @@ While the search field has the cursor: Up and Down move the selection in the res
 adds the selected item(s) to the selected track; Escape clears the search, a second Escape
 gives the keyboard back to the window.
 
+After a click on a row of the list (and until a click outside the browser), the arrow keys move
+through it before the window's shortcuts see them: Up and Down select the row above or below
+(previewing it as a click does), Right opens a closed folder or heading and goes into an open one,
+Left closes an open one or goes up to the folder or heading the row is in.
+
 ## Preview
 
 The preview strip shows the selected sample or MIDI file: a play button, the name, duration,
 tempo (BPM) and key when known, and a waveform (a sample) or a strip of the notes (a MIDI file),
 with the part played so far brighter and a playhead.
 
-- **Auto-play** (Settings › Browser › Auto-play, on by default): selecting a sample
+- **Preview selected file** (Settings › Browser › Preview selected file, on by default): selecting a sample
   or MIDI file previews it. Off, previewing takes the play button or a click on the waveform.
 - **Clicking the waveform** previews from there. The waveform is drawn as
   [waveforms](waveforms.md) says: the whole file across the strip, both channels when there is
@@ -169,15 +194,21 @@ with the part played so far brighter and a playhead.
 - Selecting something else, Escape in the search field, the play button again, or dropping
   items from the browser into the project stops it. Dragging does not: a press held still
   counts as the start of a drag, and the preview it started goes on.
+- **The play button follows what plays (#836).** It shows Stop from the click that starts a
+  preview, while the sample is still being read, until the sample has played to its end, and
+  whenever any preview sounds, even one started from another item: a sounding preview always has
+  a Stop to end it. A second click on a row's play button while its sample is still being read
+  stops it rather than starting it again. Stop silences whatever the preview voice plays, even a
+  preview the browser no longer knows it started.
 - **A MIDI file** previews through the selected track's instrument, a built-in one or a
   plug-in, when that track has one; otherwise through the FM synth with its first voice. All
   of the file's MIDI tracks sound together, at 120 BPM or the file's first tempo.
 - A file that cannot be read shows "Cannot preview: <reason>" in the strip and nothing plays.
   The status bar says so too, and says why when nothing can preview at all: there is no audio
   output here, or the active project has no audio output.
-- **With no project open** the browser works as with one: browsing, searching, the sample map
-  and previews. Previews then play through an output of their own, opened on the chosen device
-  at the first preview and closed before a project opens its output, so only one is ever open
+- **With no project open** the start panel stands alone and the browser is hidden; it shows
+  again once a project is open (#632). The engine can still preview with no project, through an
+  output of its own opened at the first preview and closed before a project opens its output
   ([ADR 0011](../decisions/0011-preview-and-added-audio.md) › Previews with no project open).
   Adding to a track needs a project.
 
@@ -217,37 +248,49 @@ A sample becomes an audio clip; a MIDI file becomes one note clip per MIDI track
 notes (in the file's order; a type 0 file gives one clip). The clip is named after the file (and
 the MIDI track's name, when it has one: "groove – Hats").
 
+A single sample dropped on a Sampler's waveform replaces that instrument's source
+(`device.loadSample`) and creates no clip or track, from the browser or from the operating
+system; the waveform takes no MIDI file and no several files at once. Dropped on the devices of
+a MIDI track that has none (the detail area showing its chain), a sample adds a Sampler that
+plays it; dropped on that track's lane, header or slot it is a clip, as on any track, and the
+empty MIDI track becomes an audio track for it (#945). A sample still being dropped when another
+project becomes active is cancelled.
+
 **Several files** (and a MIDI file's several clips) go onto **one track**, one after another:
-in the Arrangement each starts where the one before ends; in the Session they go down the
+in the Arrangement each starts where the one before ends; in the Launcher they go down the
 track's slots from the slot they were dropped on. With **Ctrl** held when releasing, they go
 onto **one track each**, side by side: in the Arrangement all at the dropped beat, in the
-Session all in the dropped scene, the first on the track it was dropped on and the others on
-new tracks after it. Settings › General › Dropping files › Several files flips this (one track each
-without Ctrl).
+Launcher all in the dropped scene, the first on the track it was dropped on and the others on
+new tracks after it. Settings › Importing › Dropping files › Several files flips this (one track each
+without Ctrl). While they hover, the label says which (`Add 3 clips, one track each: Bass and 2 new
+tracks`) and, in the Arrangement, the empty space below the tracks is outlined from the dropped
+beat, where the new tracks come. Files dragged in from the system (Explorer, Finder) show the same
+label and outline and land where the pointer is, as files from the browser do: on Windows, which
+sends the window no pointer moves during such a drag, the pointer is read from the screen.
 
 | Dropped on | Result |
 |---|---|
-| An Arrangement lane | Clips from the beat under the pointer, on the grid the control bar's value sets at that zoom ([arrangement editing](arrangement-editing.md) › The grid; Alt or `none`: no snap). The clips replace what they cover, unless the stacking settings allow it ([arrangement editing](arrangement-editing.md)). |
-| A Session slot (empty or not) | Clips into that slot and the ones below it; a clip already there is replaced. Scenes are added at the bottom when there are more clips than slots. |
+| An Arrangement lane | Clips from the beat under the pointer, on the Arrangement's grid at that zoom ([arrangement editing](arrangement-editing.md) › The grid; Alt or snap off: no snap). The clips replace what they cover, unless the stacking settings allow it ([arrangement editing](arrangement-editing.md)). |
+| A Launcher slot (empty or not) | Clips into that slot and the ones below it; a clip already there is replaced. Scenes are added at the bottom when there are more clips than slots. |
 | The empty area | New tracks, see below. |
 
 **A track takes the files it can play:** samples go to an audio track, MIDI files to a note
 track. Files the dropped-on track cannot take go onto a new track of their kind inserted after
 it (one track for all of them, or one each with Ctrl).
 
-**The empty area** is the space right of the last track in the Session (above the scenes, or
+**The empty area** is the space right of the last track in the Launcher (above the scenes, or
 in the scene row dropped on) and the space under the last lane in the Arrangement (at the
 dropped beat). Dropping there makes new tracks at the end of the regular tracks (before the
 returns): one audio track for the samples and one note track for the MIDI files, or with Ctrl
 one track per clip. A new track made for one file is named after it; otherwise "Audio <n>" or
-"MIDI <n>", `n` counting on from the number of tracks of its kind to the first name no track has.
+"MIDI <n>".
 
 **The empty area shows two buttons**, **+ MIDI track** and **+ Audio track** (at its top in the
-Session, at its left in the Arrangement), which add an empty track of that kind. A drop on
+Launcher, at its left in the Arrangement), which add an empty track of that kind. A drop on
 either works like a drop on the empty area.
 
 **Warping.** A sample whose tempo is known (see *Tempo and key*) is warped: it plays at the
-project's tempo, stretched with the stretch mode in Settings › General › Warp mode (Rhythmic by
+project's tempo, stretched with the stretch mode in Settings › Importing › Warp mode (Rhythmic by
 default, the `rhythmic` stretch mode), and its length in beats comes from its own tempo. A
 sample without a known tempo is not warped: it plays at its own speed, and its length in beats
 is its duration at the project's tempo when it is dropped.
@@ -301,21 +344,122 @@ is added. Other files are an error in the status bar.
 
 ### Built-in effects and instruments, presets and plug-ins
 
+Built-in instrument, effect and MIDI effect entries come from the device registry, under the
+key `device:<id>`; they are not `.sd` files, and nothing beside the executable is needed for
+them. Their panels are loaded by id ([ADR 0021](../decisions/0021-device-graph-files.md) ›
+Amendment: device panels for built-in devices).
+
 | Dropped on | Result |
 |---|---|
-| A track (its header, an Arrangement lane, a Session slot, the detail area showing its chain) | The device is added to that track's chain: an instrument first, an effect last. An instrument on an audio track, or a second instrument on a track, is refused with a message. |
+| A track (its header, an Arrangement lane, a Launcher slot, the detail area showing its chain) | The device is added to that track's chain: an instrument first, an effect last. An instrument on an audio track is refused with a message. A track plays one instrument: an instrument added to a track that has one takes its place (effects after it stay), as one undo step. |
 | The empty area | A new track with the device: a note track for an instrument, an audio track for an effect, named after the device. |
 
 A **preset** is its device with the preset's values: a DX7 voice is the FM synth playing that
-voice (a bank adds its first voice; a voice row inside the bank adds that voice). Several
-devices dropped together are added in the order they were selected.
+voice (a bank adds its first voice; a voice row inside the bank adds that voice). A
+`.preset.suhina` file is the device it names. The ones that ship with Suhina are listed under their
+device twice: a built-in device with presets opens on them with its chevron, and *Stock presets* in
+All and Presets holds a heading per device (search finds them by name and tag). The device's own
+row, dragged or double-clicked, adds it at its defaults, and a preset's row adds it with that
+preset. Several devices dropped together are added in the order they were selected.
+
+### Copying samples out
+
+Samples can be copied out of Suhina into a folder of one's own, for a collection of picked
+sounds (#865). The originals stay where they are; nothing is ever moved or overwritten.
+
+- **Copy to folder…** in a sample row's right-click menu (and a point's on the
+  [sample map](sample-map.md)) copies that sample, or every selected sample when the row is one
+  of them, into a folder the system's folder dialog picks (`library.copyTo`). A name taken in
+  that folder gets a number (`Kick 2.wav`, `Kick 3.wav`); a file that is gone is left out and the
+  status line says how many were not found.
+- **Dragging out:** samples dragged from the list or the map out of every Suhina window (not
+  over the main window, nor the map's own window) become a drag of files. Dropped on a folder in
+  the file manager, or on the desktop, they are copied there. The drag offers a copy only, so the
+  file manager's move key (Shift on Windows) still copies. A drag that stays in Suhina lands on
+  tracks, slots and devices as before. Windows and macOS; on Linux, where the window toolkit has
+  no drag of files out yet, the status line points to Copy to folder… instead.
+
+### Moving and copying samples between folders
+
+Samples dragged in the list and dropped on one of the browser's folders (an added folder or a
+folder inside one) go into that folder (#943). The folder row under the pointer lights up while
+it is a place to drop, and the status line says what a drop there does.
+
+- **Move or copy:** with Settings › Browser › *Dropping on a folder* at Ask (the default),
+  a question asks Move, Copy or Cancel. Its *Remember my choice* box sets the setting to the
+  answer, so the next drop does it without asking. The setting can also be Move or Copy. Ctrl
+  held at the drop always copies, Shift always moves, whatever the setting says.
+- **A name already taken:** when the folder has a file named as one of the samples, a warning
+  says so before anything moves: *Keep both* goes on, the new file getting a number; *Skip*
+  leaves out the samples whose name is taken; *Cancel* moves or copies nothing.
+- **Copy** is `library.copyTo`, as Copy to folder… does. **Move** is `library.moveTo`: each file
+  is renamed into the folder when both are on one drive, or copied and the original removed once
+  the copy is whole. A name taken in the folder gets a number (`Kick 2.wav`); nothing is
+  overwritten. The file's pin, its places among the recent items and its colour tags go with it,
+  and the folders that held it and hold it now are read again, so the list shows it in its new
+  place.
+- A file already in that folder, one that is gone, and one an open project plays (its audio
+  decoded from that path) is left where it is; the status line says how many.
 
 ### Adding without dragging
 
 Enter in the search field or a double-click on an item adds it to the selected track:
 a device to its chain; samples and MIDI files in the Arrangement at the play start marker, in
-the Session from the first empty slot down. With no track selected, a new track is made as for
+the Launcher from the first empty slot down. With no track selected, a new track is made as for
 the empty area.
+
+### Quick add
+
+A shortcut (`view.quickAdd`, Ctrl+P by default, rebindable as every other key) opens the
+quick-add palette in the middle of the window, placed as the project switcher (Ctrl+Tab) is:
+a search field over one list of what `library.search` finds, with a small header above it naming
+where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no track selected.
+
+- **The list:** the built-in instruments, effects and MIDI effects, the installed plug-ins, the
+  samples and MIDI files in the browser's folders, and presets, best matches first, at most 200
+  of each kind; each row shows the name and what it is (Instrument, Effect, MIDI effect, Plug-in
+  instrument, Plug-in effect, Sample, MIDI file, Preset), and a plug-in's format (VST2, VST3,
+  CLAP) at its right edge, so one plug-in installed in two formats reads as two rows told
+  apart. The list is twelve rows tall whatever the search finds, so the palette keeps its size
+  while typing; more rows scroll. Projects, device graphs and Stems files are added from the
+  browser. A search through more than 4096 files runs on a thread of its own, as the browser's
+  does, so typing never waits; meanwhile the last results stay listed and the header says
+  *Searching…* at its right end, so nothing moves.
+- **Kind buttons** along the bottom, one row: Instruments, Effects (MIDI effects among them),
+  Samples (MIDI files among them) and Presets. Each turns on or off; with none on, every kind is
+  listed, with some on, only those, in the buttons' order. What they are set to stays for the
+  next palette while the window is open.
+- **Format buttons** under the field, while Instruments or Effects is on: VST2, VST3, CLAP. With
+  none on every format is listed; with some on, only plug-ins of those formats, the built-in
+  devices still among them. The formats are one list in the code (`PluginFormat`), so a new one
+  is one more button.
+- **On a track that plays no notes** (an audio track, a group, a return) no instrument or MIDI
+  effect is listed. **Effects go on the selected track only:** with no track selected, no effect
+  or MIDI effect is listed, and the header says `select a track for effects`. If one is chosen
+  anyway, the status line says why and nothing is added.
+- **The search is kept:** closed without adding (Escape, a click outside, to select a track,
+  say), the palette opens again with what its field said; adding something clears it.
+- **Keys:** Up and Down move the lit row, wrapping round; Enter adds the lit item and closes;
+  a click on a row adds it and closes; Escape or a click outside closes without changing
+  anything. Letting go of a modifier does not close it.
+- **What a choice runs**, each one command and one undo step, so agents and the CLI do the same:
+  a device on the selected track is `device.add` (built-in) or `device.addPlugin` (plug-in), and
+  the detail area shows that track's devices; for an instrument with no track selected it is
+  `track.add` with `device` (a MIDI track named after the instrument), and the new track becomes
+  the selected one, so the next add goes there too. Tracks are named as when dragging from the
+  browser ([arrangement editing](arrangement-editing.md) › Names): an instrument names the
+  track, an instrument's preset gives it the preset's name, an effect leaves it as it is. A
+  preset is
+  `device.add` with `preset` (and `voice` for one voice of a bank, or `stock` for a stock preset) on the selected track, or
+  `track.add` with them on a new one; a track that cannot take the preset's device says so in
+  the status line. A sample or MIDI file
+  is `clip.addFiles` on the selected track, as a drop on its lane: the clip starts at the
+  palette's place on that track when it holds the file (a sample on an audio track, a MIDI file
+  on a MIDI track, an empty track taking the file's kind, #945); a track that cannot hold it
+  gets a new track right after it. With no track selected, a new track after the last regular
+  track. A sample is read on another thread first, as a drop is.
+- **The palette's place:** with the pointer over the Arrangement's lanes when the shortcut is
+  pressed, the beat under it, snapped to the grid; anywhere else, the play start marker.
 
 ## Colour tags
 
@@ -360,7 +504,7 @@ are in `settings.txt`.
 The browser's state and everything a drop does are commands (AGENTS.md rule 6), so agents and
 the CLI can do the same.
 
-**Library** (on the open projects, like `plugins.*`; none touches a project):
+**Library** (on the open projects, like `plugin.*`; none touches a project):
 
 | Command | Params | Does |
 |---|---|---|
@@ -369,7 +513,7 @@ the CLI can do the same.
 | `library.removeFolder` | `folder` | removes it and its part of the index |
 | `library.refresh` | `folder?` | reads a folder (or every folder) again |
 | `library.list` | `folder` | what is directly in a folder: sub-folders and files of the kinds above, with kind and size |
-| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500) |
+| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
 | `library.info` | `item` | a file's kind, size, duration, sample rate, channels, tempo (and where it came from) and key; a Stems file's stems and mastering; a MIDI file's tracks with their notes; a preset's voices; a built-in device's or plug-in's role (and a plug-in's vendor, format and version); the item's tags |
 | `library.pinned` | | the pinned items |
 | `library.pin`, `library.unpin` | `item` | pins or unpins an item |
@@ -378,15 +522,17 @@ the CLI can do the same.
 | `library.setTag` | `name?`, `color?`, `rename?`, `limit?` | adds a tag, or changes one's colour or name; `limit` sets the most tags there may be |
 | `library.removeTag` | `name` | removes a tag from the list and every item |
 | `library.tag` | `item`, `tag`, `on` | sets or clears a tag on an item |
-| `library.setPluginsView` | `view` | how the browser shows the installed plug-ins: `grouped` (default), `type` or `flat` ([plug-in browsing](plugin-browsing.md)) |
+| `library.setPluginsView` | `view` | which plug-ins the Plug-ins category lists: `instruments` (default) or `effects` ([plug-in browsing](plugin-browsing.md)) |
+| `library.moveTo` | `items`, `folder` | moves files (at most 4096) into a folder that exists, named as `library.copyTo` names copies; their pins, recent places and tags go with them and the folders are read again; returns what was `moved` (from, to), what is `missing`, what was `kept` (in that folder already, or played by an open project) and what `failed`; not to an agent attached to the app (#943) |
+| `library.copyTo` | `items`, `folder` | copies files (at most 4096) into a folder that exists, under their own names or the first numbered one free (`Kick 2.wav`); never overwrites; returns what was `copied` (from, to), what is `missing` and what `failed` (#865) |
 | `library.findFiles` | `names`, `folder?` | finds files by name for missing files: in the folders' index and the active project's folder, or by walking `folder` ([missing files](missing-files.md)) |
 
 **Project** (on the active project, one undo step each):
 
 | Command | Params | Does |
 |---|---|---|
-| `track.add` | `kind?` (`audio`, `midi`), `name?`, `after?`, `device?`, `sd?`, `preset?`, `voice?` | adds a track with its mixer channel, clip slots for every scene and an Arrangement lane, after track `after` or at the end of the regular tracks; with `device` (a built-in id or a plug-in from `plugins.list`), `sd` or `preset`, the device too, and `kind` follows from it; `.sd` instruments and MIDI effects create MIDI tracks |
-| `clip.addFiles` | `paths`, `track?`, `start?`, `scene?`, `separate?`, `stack?`, `warp?` | places samples, MIDI files and Stems files as in *Files*: on `track` (or new tracks when it is missing; a Stems file's group goes into `track` when it is a group), from beat `start` in the Arrangement or from `scene` (1-based) in the Session (exactly one of the two); `separate` gives each clip a track; `warp` is the stretch mode for samples with a known tempo (`rhythmic` by default); returns the clips, the new tracks, the Stems groups (`groups`) and what was `skipped` |
+| `track.add` | `kind?` (`audio`, `midi`), `name?`, `after?`, `device?`, `sd?`, `preset?`, `stock?`, `voice?` | adds a track with its mixer channel, clip slots for every scene and an Arrangement lane, after track `after` or at the end of the regular tracks; with `device` (a built-in id or a plug-in from `plugin.list`), `sd`, `preset` or `stock` (a stock preset's key), the device too, and `kind` follows from it; `.sd` and built-in instruments and MIDI effects create MIDI tracks |
+| `clip.addFiles` | `paths`, `track?`, `after?`, `start?`, `scene?`, `separate?`, `stack?`, `warp?` | places samples, MIDI files and Stems files as in *Files*: on `track` (or new tracks when it is missing; a Stems file's group goes into `track` when it is a group); with no `track`, `after` puts the new tracks (not a Stems file's group) right after that track, in its group, instead of after the last regular track; from beat `start` in the Arrangement or from `scene` (from 0) in the Launcher (exactly one of the two); `separate` gives each clip a track; `warp` is the stretch mode for samples with a known tempo (`rhythmic` by default); returns the clips, the new tracks, the Stems groups (`groups`) and what was `skipped` |
 | `device.add` | adds `preset?` and `voice?` (1–32) | the built-in effect or instrument with a preset's values |
 
 **Preview** (Transport kind, on the active project's player): `preview.play {path, from?, track?, gain?}`
@@ -395,7 +541,8 @@ when it has none); `preview.stop`. `launcher.state` reports `preview` (`playing`
 
 Over MCP, every path a command reads (`paths`, `path`, `preset`, `folder`, a file `item`) must
 be inside the server's read root, and `library.addFolder` and `library.removeFolder` are refused:
-the user chooses the browser's folders ([`mcp.md`](../mcp.md)).
+the user chooses the browser's folders ([`mcp.md`](../mcp.md)). `library.copyTo` reads its
+`items` below the read root and writes only into a `folder` below the write root.
 
 ## Limits
 
@@ -419,11 +566,11 @@ the user chooses the browser's folders ([`mcp.md`](../mcp.md)).
 
 ## Not decided yet
 
-- Loading the shared JSON preset format for built-in and `.sd` devices, and saving user presets;
-  the format and `.sd` compatibility rules are decided in [ADR 0014](../decisions/0014-stock-presets.md),
-  but the loader and browser entries are not implemented. An `.sd` preset applies to an existing
-  device with a matching id and role; it does not install or create the graph.
+- Saving user presets, and presets of `.sd` devices; the format and `.sd` compatibility rules are
+  decided in [ADR 0014](../decisions/0014-stock-presets.md), but only built-in devices' presets
+  load. An `.sd` preset applies to an existing device with a matching id and role; it does not
+  install or create the graph.
 - Presets of plug-ins (CLAP preset discovery, VST3 presets).
 - Previewing in time with the project, and hot-swapping a device or sample by double-click.
 - Key detection by analysis.
-- A system file dialog for adding a folder (today a path is typed or a folder dropped).
+

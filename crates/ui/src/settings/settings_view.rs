@@ -5,7 +5,8 @@
 //! left under a search field; each setting is a row: a label, a short note and its control. What
 //! is on which page is the table in `settings_rows.rs` (`docs/spec/ui-settings.md`).
 
-use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
+use crate::kit::surface::Backgrounds as _;
+use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2, pos2};
 
 use crate::interaction::pick::PickField;
 use crate::kit::motion;
@@ -13,7 +14,7 @@ use crate::kit::theme::{self, PAD, Palette};
 use crate::kit::widgets;
 use crate::settings::keymap::{Keymap, Preset, Shortcut, actions};
 use crate::settings::workflow::Setting;
-use crate::settings::{Graphics, Settings};
+use crate::settings::{Descriptions, Graphics, Settings};
 
 const PAGE_WIDTH: f32 = 560.0;
 /// The list of pages on the left, and the gap between it and the page.
@@ -23,14 +24,20 @@ const SIDEBAR_ROW: f32 = 20.0;
 /// The search field over the list of pages.
 const SEARCH_FIELD: f32 = 18.0;
 const LABEL_WIDTH: f32 = 180.0;
+/// The width a row's note has: the page's width less the name column, one line of small text
+/// (a test guard measures the notes against it; a smaller window cuts a note).
+#[cfg(test)]
+pub(crate) const NOTE_WIDTH: f32 = PAGE_WIDTH - LABEL_WIDTH;
 const SETTING_ROW: f32 = 34.0;
+/// Where every setting's control starts: names in one column and controls in the next, lined
+/// up down the page, so the eye runs straight down either.
+const CONTROL_COLUMN: f32 = 240.0;
+/// A setting's row when it is its name and its control alone; its description is the name's
+/// tooltip.
+const LINE_ROW: f32 = 24.0;
 const SEGMENT: f32 = 15.0;
-/// A folder field on the right of its row; empty shows the default folder.
-const FOLDER_FIELD: f32 = 300.0;
 /// The Browse… button at the end of a path field.
 const BROWSE_WIDTH: f32 = 60.0;
-/// Themes shown before their list scrolls.
-const THEME_ROWS: usize = 8;
 /// A dropdown on the right of its row (Settings › Audio).
 const DROPDOWN_FIELD: f32 = 260.0;
 /// Room right of the page for its scroll bar.
@@ -59,8 +66,17 @@ pub struct About {
     /// empty.
     pub projects_default: String,
     pub templates_default: String,
-    /// The active project's newest backup, as Settings › General shows it: when and where.
+    /// The themes folder used while Themes folder is empty.
+    pub themes_default: String,
+    /// Suhina's default data folder, used while Settings folder is empty.
+    pub data_default: String,
+    /// The NAM devices' folders ([docs/spec/nam-amp-and-cab.md]) the same way.
+    pub nam_models_default: String,
+    pub irs_default: String,
+    /// The active project's newest backup, as Settings › Projects and backups shows it: when and where.
     pub last_backup: String,
+    /// The active project's implicit MCP write folder, displayed alongside explicit grants.
+    pub mcp_project_folder: Option<String>,
 }
 
 impl Default for About {
@@ -73,7 +89,12 @@ impl Default for About {
             editors_embeddable: false,
             projects_default: String::new(),
             templates_default: String::new(),
+            themes_default: String::new(),
+            data_default: String::new(),
+            nam_models_default: String::new(),
+            irs_default: String::new(),
             last_backup: Default::default(),
+            mcp_project_folder: None,
         }
     }
 }
@@ -88,64 +109,159 @@ pub struct MidiPort {
     pub error: Option<String>,
 }
 
-/// The plug-in library as the page shows it, read through the `plugins.*` commands.
+/// The plug-in library as the page and the plug-in manager show it, read through the
+/// `plugin.*` commands.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PluginsView {
-    /// The system's standard folders, and the ones the user added.
-    pub standard: Vec<String>,
-    pub added: Vec<String>,
-    /// Name, vendor, format and version of each plug-in found.
-    pub found: Vec<[String; 4]>,
+    /// The folders scans may look in: the system's standard ones, then the ones added.
+    pub folders: Vec<FolderRow>,
+    /// Each plug-in found.
+    pub found: Vec<PluginRow>,
     /// Files that failed to load, and why.
     pub failed: Vec<(String, String)>,
+    /// Files built for another processor, and why they do not load here.
+    pub incompatible: Vec<(String, String)>,
     /// A scan is running in the background.
     pub scanning: bool,
-    /// The folder typed into the add field.
+    /// The folder typed into the add field, and the format chosen for it.
     pub new_folder: String,
+    pub new_format: suhina_plugins::scan::FolderFormat,
+    /// The plug-in manager: whether it shows, its search and sort.
+    pub manager: crate::settings::plugin_manager::ManagerState,
 }
 
-/// What the page asks the app to do with the plug-in library.
+/// A plug-in folder as the page lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderRow {
+    pub path: String,
+    /// `any`, `vst3`, `clap` or `vst2`.
+    pub format: String,
+    pub enabled: bool,
+    /// One of the system's: it can be switched off, not removed.
+    pub standard: bool,
+}
+
+/// A plug-in as the manager lists it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PluginRow {
+    pub name: String,
+    pub vendor: String,
+    /// `instrument` or `effect`.
+    pub kind: String,
+    pub format: String,
+    pub version: String,
+    pub file: String,
+    /// How the commands name it (`plugin.setEnabled`).
+    pub spec: String,
+    pub enabled: bool,
+}
+
+/// What the page or the plug-in manager asks the app to do with the plug-in library.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginRequest {
     /// Scan new and changed files, or every file again.
     Scan {
         all: bool,
     },
-    AddFolder(String),
+    AddFolder(String, suhina_plugins::scan::FolderFormat),
+    /// The add row with nothing typed: the app shows the system's folder picker.
+    PickFolder,
     RemoveFolder(String),
+    /// Switch a folder on or off for scans.
+    SetFolderEnabled(String, bool),
+    /// Switch a plug-in (by spec) on or off.
+    SetEnabled(String, bool),
+    /// Switch several plug-ins (by spec) on or off together (#725).
+    SetEnabledMany(Vec<String>, bool),
+    /// Read one file again now.
+    ScanFile(String),
 }
 
 /// The themes as the page shows them.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ThemesView {
+    pub skin: crate::kit::skin::Skin,
+    pub transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
     /// Each theme's id, name and whether it comes with Suhina: the user's own first.
     pub list: Vec<(String, String, bool)>,
+    /// Each theme's and variant's swatch colour, by id (`theme_vars::swatch`).
+    pub swatches: Vec<(String, egui::Color32)>,
+    /// Each theme's and variant's thumbnail with its values substituted, by id; a theme without
+    /// one shows a card filled with its swatch colour.
+    pub pictures: Vec<(String, std::sync::Arc<str>)>,
+    /// Each theme's default variant's name, by the theme's id (`theme.json`).
+    pub default_variants: Vec<(String, String)>,
     /// The id of the theme in use, whether it comes with Suhina, its name and its colours.
     pub current: String,
     pub built_in: bool,
     pub name: String,
     pub colors: Palette,
+    pub liquid: Option<crate::kit::liquid::Options>,
+    pub global_liquid: crate::kit::liquid::Options,
+    pub gradients: crate::kit::gradient::Gradients,
     /// The folder theme files are kept in, if there is one.
     pub folder: Option<String>,
+    /// Every theme variant: its entry's id (`<theme>@<variant>`) and its name.
+    pub variants: Vec<(String, String)>,
+    /// Themes left in an earlier file format, by id, and why they were not converted.
+    pub kept: Vec<(String, String)>,
+    /// The name of the variant in use, when one is.
+    pub variant: Option<String>,
+    /// The settings the theme in use declares itself (`@property` with a label), in its order.
+    pub declared: Vec<suhina_style::registered::Registered>,
+    /// The value of every custom property of the theme in use, with its variant's.
+    pub values: std::collections::BTreeMap<String, String>,
 }
 
 /// What the page asks the app to do with the themes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ThemeRequest {
-    /// Use the theme with this id.
+    /// Use the theme with this id (`<theme>@<variant>` for a variant).
     Use(String),
+    /// Set one of the theme's declared settings, in the variant in use (made when there is none).
+    EditValue {
+        name: String,
+        value: String,
+    },
+    /// A new variant of the theme in use, with its values, named.
+    NewVariant(String),
     /// Use these colours; a built-in theme is copied first, since it does not change.
     Edit(Palette),
-    /// Give the theme in use this name (and its file a name made from it).
+    EditRgba {
+        colors: Palette,
+        transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
+    },
+    EditLiquid(Option<crate::kit::liquid::Options>),
+    EditGradients(crate::kit::gradient::Gradients),
+    EditSkin(crate::kit::skin::Skin),
+    EditCss(String),
+    ResetEdits {
+        skin: Box<crate::kit::skin::Skin>,
+        transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
+        colors: Palette,
+        liquid: Option<crate::kit::liquid::Options>,
+        gradients: crate::kit::gradient::Gradients,
+        /// The theme's own settings, by property.
+        values: std::collections::BTreeMap<String, String>,
+    },
+    /// Give the theme in use this name (and its folder a name made from it); for a variant, the
+    /// variant's name.
     Rename(String),
     /// A copy of the theme in use, to change.
     Duplicate,
+    /// Optionally save a new copy, then activate an unchanged built-in palette.
+    RestoreBuiltIn {
+        id: String,
+        save_copy: bool,
+    },
     /// Read the theme files again.
     Reload,
     /// Show the themes folder in the file manager.
     OpenFolder,
     /// Write every theme file into one zip.
     Backup,
+    /// Write the theme in use as a theme package to share (`.theme.suhina`).
+    ExportPackage,
     /// Write a theme template and a README on the format into a zip.
     ExportTemplate,
 }
@@ -155,35 +271,40 @@ pub enum ThemeRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Page {
     #[default]
-    General,
+    Projects,
     Audio,
     Midi,
     Plugins,
+    Devices,
+    Importing,
     Arrangement,
     Session,
     ClipEditor,
-    Transport,
-    DetailArea,
     Browser,
+    Keys,
     Appearance,
-    Shortcuts,
+    /// Appearance › Themes, a page of its own under Appearance in the list.
+    Theme,
+    Agents,
 }
 
 impl Page {
     /// Every page with its name.
-    pub const ALL: [(Page, &'static str); 12] = [
-        (Page::General, "General"),
+    pub const ALL: [(Page, &'static str); 14] = [
+        (Page::Projects, "Projects and backups"),
         (Page::Audio, "Audio"),
         (Page::Midi, "MIDI"),
         (Page::Plugins, "Plug-ins"),
+        (Page::Devices, "Devices"),
+        (Page::Importing, "Importing"),
         (Page::Arrangement, "Arrangement"),
-        (Page::Session, "Session and mixer"),
+        (Page::Session, "Launcher and mixer"),
         (Page::ClipEditor, "Clip editor"),
-        (Page::Transport, "Transport"),
-        (Page::DetailArea, "Detail area"),
         (Page::Browser, "Browser"),
+        (Page::Keys, "Keys"),
         (Page::Appearance, "Appearance"),
-        (Page::Shortcuts, "Shortcuts"),
+        (Page::Theme, "Themes"),
+        (Page::Agents, "Agents and updates"),
     ];
 
     /// The page's name, as the list shows it.
@@ -194,16 +315,35 @@ impl Page {
 
 /// What the Settings page keeps between frames: the page shown, and the action whose keys are
 /// being set (the next key pressed becomes its key).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PageState {
     pub page: Page,
+    /// Settings lives in a separate native viewport until Dock is chosen.
+    pub window: bool,
     pub capture: Option<String>,
     /// The name being typed for a theme, with the theme's id.
-    pub theme_name: Option<(String, String)>,
-    /// The theme the list was last scrolled to, so it shows the one in use when that changes.
-    pub theme_shown: Option<String>,
+    /// The theme id, the name it had on disk, and the text being edited.
+    pub theme_name: Option<(String, String, String)>,
+    /// The colour editor is a child view of Themes, not another sidebar page.
+    pub theme_editor: bool,
+    pub theme_restore: Option<(String, String)>,
+    pub theme_original_skin: Option<crate::kit::skin::Skin>,
+    pub skin_editor: super::skin_editor::State,
+    pub theme_original_liquid: Option<Option<crate::kit::liquid::Options>>,
+    pub theme_original_gradients: Option<crate::kit::gradient::Gradients>,
+    pub theme_original: Option<Palette>,
+    pub theme_original_rgb: Option<std::collections::BTreeMap<String, [u8; 3]>>,
+    /// The theme's own settings when the editor opened, for Reset changes.
+    pub theme_original_values: Option<std::collections::BTreeMap<String, String>>,
+    pub theme_rename_focus: bool,
+    /// What the theme list is filtered by: part of a theme's or a variant's name, or its id.
+    pub theme_search: String,
+    /// A colour picker is open while its primary pointer button is held.
+    pub theme_colour_held: bool,
     /// The audio devices were listed since the Audio page was opened.
     pub audio_listed: Option<bool>,
+    /// A driver picked in the form, applied only once its device is chosen.
+    pub audio_pending: Option<suhina_session::OutputChoice>,
     /// What is typed in the search field: while it has text, the settings that match it are shown
     /// in place of a page.
     pub search: String,
@@ -211,6 +351,12 @@ pub struct PageState {
     pub scrolled: Option<(Page, String)>,
     /// The control with the keyboard focus when it was last scrolled into view.
     pub focused: Option<Id>,
+    /// What is typed in the Shortcuts page's own filter: only the actions it matches are listed.
+    pub key_filter: String,
+    /// The pages whose Advanced group is unfolded.
+    pub advanced: Vec<Page>,
+    /// The Help dialog over the window is open: how the settings are explained.
+    pub help_open: bool,
 }
 
 impl PageState {
@@ -233,6 +379,10 @@ impl PageState {
 #[derive(Debug, Default, PartialEq)]
 pub struct Outcome {
     pub changed: bool,
+    /// A value control is being held or dragged, even if its value did not move this frame.
+    pub adjusting: bool,
+    /// Move the embedded panel by this frame's title drag; native windows use OS chrome.
+    pub move_by: Vec2,
     pub close: bool,
     pub plugins: Option<PluginRequest>,
     pub themes: Option<ThemeRequest>,
@@ -244,10 +394,14 @@ pub struct Outcome {
     pub audio_output: Option<suhina_session::OutputChoice>,
     /// The audio devices should be listed again.
     pub audio_refresh: bool,
+    /// Ask the active output's owner to open its native ASIO panel.
+    pub audio_control_panel: bool,
     /// A MIDI input port was turned on or off: the app runs `midi.setInput`.
     pub midi_input: Option<(String, bool)>,
     /// A field's Browse… was clicked: the app shows the system's dialog for it.
     pub pick: Option<PickField>,
+    /// A folder that moves its files asked to go back to its default (Reset).
+    pub folder_reset: Option<PickField>,
 }
 
 /// What the page shows and changes besides the settings.
@@ -275,7 +429,23 @@ pub struct Entry {
     pub draw: Draw,
     /// Whether it is shown with these settings (most are always).
     pub shown: fn(&Settings) -> bool,
+    /// Whether it is a setting, a status readout or a row of commands.
+    pub role: Role,
 }
+
+/// What an entry is. Only settings sit among the settings; a status or a row of commands is set
+/// off at the top of its page (`docs/spec/ui-settings.md` › Adding a setting).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Setting,
+    /// Something the program reports; drawn in a panel.
+    Status,
+    /// Buttons that do something once.
+    Actions,
+}
+
+/// The heading of a page's folded group of rarely changed settings.
+pub const ADVANCED: &str = "Advanced";
 
 /// How an entry draws itself.
 #[derive(Clone, Copy)]
@@ -299,7 +469,7 @@ pub(crate) const fn row(
     keys: &'static [&'static str],
     draw: fn(&mut Cx<'_>, Rect),
 ) -> Entry {
-    Entry { page, section, name, note, keys, draw: Draw::Row(draw), shown: always }
+    Entry { page, section, name, note, keys, draw: Draw::Row(draw), shown: always, role: Role::Setting }
 }
 
 /// A setting drawn as several rows or a list.
@@ -311,7 +481,7 @@ pub(crate) const fn block(
     keys: &'static [&'static str],
     draw: fn(&mut Cx<'_>, &mut f32),
 ) -> Entry {
-    Entry { page, section, name, note, keys, draw: Draw::Block(draw), shown: always }
+    Entry { page, section, name, note, keys, draw: Draw::Block(draw), shown: always, role: Role::Setting }
 }
 
 impl Entry {
@@ -320,10 +490,27 @@ impl Entry {
         Self { shown, ..self }
     }
 
-    /// Every word is in its name, note, section or page.
+    /// A readout of what is happening, not a setting.
+    pub(crate) const fn status(self) -> Self {
+        Self { role: Role::Status, ..self }
+    }
+
+    /// A row of commands, not a setting.
+    pub(crate) const fn actions(self) -> Self {
+        Self { role: Role::Actions, ..self }
+    }
+
+    /// Every word is in its name, note, section or page; for the shortcuts, in an action's too.
+    #[cfg(test)]
+    pub(crate) fn matches_words(&self, words: &[String]) -> bool {
+        self.matches(words)
+    }
+
     fn matches(&self, words: &[String]) -> bool {
         let text = format!("{} {} {} {}", self.name, self.note, self.section, self.page.name()).to_lowercase();
         words.iter().all(|word| text.contains(word.as_str()))
+            || (self.page == Page::Keys
+                && actions().iter().any(|a| action_matches(&a.label, &a.id, a.group, "", words)))
     }
 }
 
@@ -357,6 +544,39 @@ pub struct Cx<'a> {
 }
 
 impl Cx<'_> {
+    /// The person's explicit MCP write grants; each includes all its subfolders.
+    pub fn mcp_write_folders(&mut self, y: &mut f32) {
+        let row = setting_row(self.page, y);
+        label(self.painter, row, "More agent write folders", "Each allowed folder includes its subfolders");
+        let mut remove = None;
+        for (index, folder) in self.settings.mcp_write_folders.iter().enumerate() {
+            let row = setting_row(self.page, y);
+            let button =
+                Rect::from_min_size(Pos2::new(row.right() - BROWSE_WIDTH, row.top()), Vec2::new(BROWSE_WIDTH, SEGMENT));
+            let text = Rect::from_min_max(row.min, Pos2::new(button.left() - PAD, button.bottom()));
+            widgets::text_in(
+                self.painter,
+                text,
+                Align2::LEFT_CENTER,
+                folder,
+                theme::ui_font(theme::TEXT_SMALL),
+                theme::text_primary(),
+            );
+            if widgets::button(self.ui, self.painter, button, "Remove", &format!("Remove MCP write folder {folder}")) {
+                remove = Some(index);
+            }
+        }
+        if let Some(index) = remove {
+            self.settings.mcp_write_folders.remove(index);
+            self.outcome.changed = true;
+        }
+        let row = setting_row(self.page, y);
+        let button = Rect::from_min_size(row.min, Vec2::new(100.0, SEGMENT));
+        if widgets::button(self.ui, self.painter, button, "Add folder…", "Add MCP write folder") {
+            self.outcome.pick = Some(PickField::McpWriteFolder);
+        }
+    }
+
     /// Shows `note` under the name in place of the entry's own note.
     pub fn note(&mut self, note: impl Into<String>) {
         self.note = Some(note.into());
@@ -371,16 +591,142 @@ impl Cx<'_> {
         field: impl FnOnce(&mut Settings) -> &mut T,
     ) {
         let value = field(self.settings);
-        let rect = control_rect(row, options.len());
+        // Option buttons for up to five choices that exclude each other, a drop-down beyond that.
+        if options.len() > MAX_BUTTONS {
+            let listed: Vec<(String, T)> = options.iter().map(|(text, v)| (text.to_string(), *v)).collect();
+            if let Some(picked) = choice_dropdown(self.ui, self.painter, row, self.name, &listed, value) {
+                *value = picked;
+                self.outcome.changed = true;
+            }
+            return;
+        }
+        let rect = options_rect(self.ui, row, options);
         if let Some(picked) = segmented(self.ui, self.painter, rect, self.name, options, *value) {
             *value = picked;
             self.outcome.changed = true;
         }
     }
 
-    /// On and Off for the setting `field` gives.
+    /// A percentage applied live to its colour surface.
+    pub fn colour_strength(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut u8) {
+        let value = field(self.settings);
+        let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
+        let response = self.ui.put(rect, egui::Slider::new(value, 0..=100).suffix(" %"));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, self.name));
+        self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
+        self.outcome.changed |= response.changed();
+    }
+
+    pub fn background_blur(&mut self, row: Rect) {
+        let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
+        let response =
+            self.ui.put(rect, egui::Slider::new(&mut self.settings.view.background_blur, 0..=40).suffix(" px"));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, self.name));
+        self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
+        self.outcome.changed |= response.changed();
+    }
+
+    /// Per-surface material strength; saved even without a GPU provider.
+    pub fn liquid_strength(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut u8) {
+        let inherited = self.themes.liquid.is_none();
+        if !inherited {
+            self.note("Theme override active. Themes > Edit current theme > Use global liquid settings");
+        }
+        let value = field(self.settings);
+        let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
+        let response =
+            self.ui.add_enabled_ui(inherited, |ui| ui.put(rect, egui::Slider::new(value, 0..=100).suffix(" %"))).inner;
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, inherited, self.name));
+        if !crate::kit::liquid::available(self.ui.ctx()) {
+            response.clone().on_hover_text("Saved for later. To see liquid, select GPU in Appearance › Advanced › Graphics renderer, enable Animations and restart Suhina.");
+        }
+        self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
+        self.outcome.changed |= response.changed();
+    }
+
+    /// The custom waveform and note ink, with the picker's RGB/hex controls.
+    pub fn waveform_colour(&mut self, row: Rect) {
+        let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
+        let mut colour = self.settings.view.waveform.custom;
+        let mut held = false;
+        self.ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            ui.horizontal(|ui| {
+                let popup = ui.auto_id_with("popup");
+                let response =
+                    egui::color_picker::color_edit_button_srgba(ui, &mut colour, egui::color_picker::Alpha::Opaque);
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, self.name));
+                held = egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
+                ui.label(
+                    egui::RichText::new(theme::hex(colour))
+                        .font(theme::mono_font(theme::TEXT_SMALL))
+                        .color(theme::text_primary()),
+                );
+            });
+        });
+        self.outcome.adjusting |= held;
+        if colour != self.settings.view.waveform.custom {
+            self.settings.view.waveform.custom = colour;
+            self.outcome.changed = true;
+        }
+    }
+
+    /// Tune a named size; numbers and units are reserved for Advanced mode.
+    pub fn track_size_height(&mut self, row: Rect, size: crate::settings::track_sizes::TrackSize) {
+        let sizes = self.settings.view.track_sizes;
+        let (lower, upper) = sizes.bounds(size);
+        let mut value = sizes.height(size);
+        let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
+        let response = if sizes.advanced {
+            crate::kit::widgets::number_input_at(
+                self.ui,
+                rect,
+                egui::DragValue::new(&mut value).range(lower..=upper).speed(1).suffix(" px"),
+            )
+        } else {
+            self.ui.put(rect, egui::Slider::new(&mut value, lower..=upper).show_value(false))
+        };
+        let kind = if sizes.advanced { egui::Role::SpinButton } else { egui::Role::Slider };
+        response.widget_info(|| egui::WidgetInfo::labeled(kind, true, self.name));
+        self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
+        if response.changed() {
+            self.settings.view.track_sizes.set_height(size, value);
+            self.outcome.changed = true;
+        }
+    }
+
+    /// The custom length of a take crossfade, in milliseconds.
+    pub fn take_crossfade_custom(&mut self, row: Rect) {
+        let mut value = self.settings.view.take_crossfade_custom;
+        let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
+        let response = crate::kit::widgets::number_input_at(
+            self.ui,
+            rect,
+            egui::DragValue::new(&mut value).range(1..=500).speed(1).suffix(" ms"),
+        );
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, self.name));
+        self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
+        if response.changed() {
+            self.settings.view.take_crossfade_custom = value;
+            self.outcome.changed = true;
+        }
+    }
+
+    /// A switch for the yes/no setting `field` gives.
     pub fn on_off(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut bool) {
-        self.choose(row, &[("On", true), ("Off", false)], field);
+        let value = field(self.settings);
+        if let Some(on) = switch(self.ui, self.painter, row, self.name, *value) {
+            *value = on;
+            self.outcome.changed = true;
+        }
+    }
+
+    /// A switch that shows the yes/no setting `field` gives the other way round: on when it is no.
+    pub fn off_on(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut bool) {
+        let value = field(self.settings);
+        if let Some(on) = switch(self.ui, self.painter, row, self.name, !*value) {
+            *value = !on;
+            self.outcome.changed = true;
+        }
     }
 
     /// A dropdown on the right of `row` for the setting `field` gives.
@@ -401,9 +747,8 @@ impl Cx<'_> {
     /// in a Browse… button that asks the app for the system's dialog.
     pub fn folder(&mut self, row: Rect, hint: &str, pick: PickField, field: impl FnOnce(&mut Settings) -> &mut String) {
         let name = self.name;
-        // The note is cut where the field starts.
-        self.label =
-            Some(Rect::from_min_size(row.min, Vec2::new(row.width() - FOLDER_FIELD - 8.0 + LABEL_WIDTH, row.height())));
+        // The name is cut where the field starts.
+        self.label = Some(Rect::from_min_size(row.min, Vec2::new(CONTROL_COLUMN - 8.0, row.height())));
         let browse = Rect::from_min_size(
             Pos2::new(row.right() - BROWSE_WIDTH, row.top() + 1.0),
             Vec2::new(BROWSE_WIDTH, SEGMENT),
@@ -412,22 +757,74 @@ impl Cx<'_> {
             self.outcome.pick = Some(pick);
         }
         let rect = Rect::from_min_size(
-            Pos2::new(row.right() - FOLDER_FIELD, row.top()),
-            Vec2::new(FOLDER_FIELD - BROWSE_WIDTH - 4.0, SEGMENT + 2.0),
+            Pos2::new(control_x(row), row.top()),
+            Vec2::new((row.right() - BROWSE_WIDTH - 4.0 - control_x(row)).max(40.0), SEGMENT + 2.0),
         );
         let value = field(self.settings);
-        let edit = self
-            .ui
-            .put(rect, egui::TextEdit::singleline(value).hint_text(hint).font(theme::ui_font(theme::TEXT_SMALL)));
-        edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, name));
+        let edit = self.ui.put(
+            rect,
+            egui::TextEdit::singleline(value)
+                .frame(widgets::input_frame())
+                .hint_text(hint)
+                .font(theme::ui_font(theme::TEXT_SMALL)),
+        );
+        edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, name));
+        widgets::input_line(self.ui, &edit);
         if edit.changed() {
             self.outcome.changed = true;
         }
     }
 
+    /// A folder whose files move with it (the settings and the themes): shown, not typed into, so
+    /// it changes only through Browse or Reset, each asking first.
+    pub fn moved_folder(&mut self, row: Rect, hint: &str, pick: PickField, value: &str) {
+        let name = self.name;
+        // The name is cut where the field starts.
+        self.label = Some(Rect::from_min_size(row.min, Vec2::new(CONTROL_COLUMN - 8.0, row.height())));
+        let browse = Rect::from_min_size(
+            Pos2::new(row.right() - BROWSE_WIDTH, row.top() + 1.0),
+            Vec2::new(BROWSE_WIDTH, SEGMENT),
+        );
+        if crate::kit::widgets::button(self.ui, self.painter, browse, "Browse…", &format!("Browse for {name}")) {
+            self.outcome.pick = Some(pick);
+        }
+        let reset_width = if value.is_empty() { 0.0 } else { BROWSE_WIDTH };
+        let reset = Rect::from_min_size(
+            Pos2::new(browse.left() - 4.0 - reset_width, browse.top()),
+            Vec2::new(reset_width, SEGMENT),
+        );
+        if !value.is_empty()
+            && crate::kit::widgets::button(
+                self.ui,
+                self.painter,
+                reset,
+                "Reset",
+                &format!("Reset {name} to its default"),
+            )
+        {
+            self.outcome.folder_reset = Some(pick);
+        }
+        let rect = Rect::from_min_max(
+            Pos2::new(control_x(row), row.top()),
+            Pos2::new((reset.left() - 4.0).max(control_x(row) + 40.0), row.top() + SEGMENT + 2.0),
+        );
+        let (text, color) = if value.is_empty() { (hint, theme::text_hint()) } else { (value, theme::text_value()) };
+        self.painter.rect_stroke(rect, 2.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+        crate::kit::widgets::text_in(
+            self.painter,
+            rect.shrink2(Vec2::new(6.0, 0.0)),
+            Align2::LEFT_CENTER,
+            text,
+            theme::ui_font(theme::TEXT_SMALL),
+            color,
+        );
+        let shown = self.ui.interact(rect, Id::unique(("moved-folder", name)), Sense::hover());
+        shown.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{name}: {text}")));
+    }
+
     /// The most colour tags the browser may have, kept by the library rather than the settings.
     pub fn tag_limit(&mut self, row: Rect, options: &[(&str, usize)]) {
-        let rect = control_rect(row, options.len());
+        let rect = options_rect(self.ui, row, options);
         if let Some(limit) = segmented(self.ui, self.painter, rect, self.name, options, self.tag_limit) {
             self.outcome.tag_limit = Some(limit);
         }
@@ -437,7 +834,7 @@ impl Cx<'_> {
     pub fn zoom(&mut self, row: Rect) {
         let actual = format!("{} %", self.settings.zoom);
         let options = [("-", Some(-1)), (actual.as_str(), Some(0)), ("+", Some(1))];
-        match segmented(self.ui, self.painter, control_rect(row, 3), self.name, &options, None) {
+        match segmented(self.ui, self.painter, options_rect(self.ui, row, &options), self.name, &options, None) {
             Some(Some(0)) if self.settings.zoom != crate::settings::ZOOM => {
                 self.settings.zoom = crate::settings::ZOOM;
                 self.outcome.changed = true;
@@ -448,13 +845,27 @@ impl Cx<'_> {
     }
 }
 
+/// Form inputs share the surrounding material; individual fields draw their underline.
+pub(crate) fn input_style(ui: &mut Ui) {
+    let visuals = &mut ui.style_mut().visuals;
+    visuals.text_edit_bg_color = Some(egui::Color32::TRANSPARENT);
+}
+
 /// Draws the page into the space left in `ui`.
 pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &mut PageState) -> Outcome {
+    let _style_class = crate::kit::style_class::enter("settings");
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     let mut outcome = Outcome::default();
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::window_background());
+    let panel_base = crate::kit::liquid::panel_base(ui.ctx());
+    painter.fill_background(area, 0.0, panel_base);
+    if !state.window {
+        crate::kit::liquid::paint(&painter, area, panel_base, crate::kit::liquid::Surface::Panel);
+    }
+    input_style(ui);
 
     let width = SIDEBAR + SIDEBAR_GAP + PAGE_WIDTH;
     let whole = Rect::from_min_max(
@@ -466,6 +877,13 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
 
     // Title and close.
     let title = Rect::from_min_size(Pos2::new(whole.left(), y), Vec2::new(whole.width(), theme::ROW));
+    if !state.window {
+        let grip = Rect::from_min_max(title.min, pos2(title.right() - 180.0, title.bottom()));
+        let drag =
+            ui.interact(grip, Id::unique("settings-title-drag"), Sense::drag()).on_hover_cursor(egui::CursorIcon::Grab);
+        drag.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Move Settings"));
+        outcome.move_by = drag.drag_delta();
+    }
     widgets::text_in(
         &painter,
         title,
@@ -475,9 +893,18 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         theme::text_primary(),
     );
     let close = Rect::from_min_max(Pos2::new(title.right() - 52.0, title.top()), title.max);
-    let response = widgets::button_area(ui, close, Id::new("settings-close"), "Close settings");
+    // Help, beside Close: how each setting's description is shown.
+    let help = Rect::from_min_size(Pos2::new(close.left() - 58.0, close.top()), Vec2::new(52.0, close.height()));
+    let help_response = widgets::button_area(ui, help, Id::unique("settings-help"), "Settings help");
+    let help_hover = widgets::hover(ui, &help_response);
+    painter.rect_filled(help, 0.0, motion::mix(theme::control_background(), theme::control_hover(), help_hover));
+    widgets::text_in(&painter, help, Align2::CENTER_CENTER, "Help", theme::ui_font(theme::TEXT), theme::text_primary());
+    if help_response.clicked() {
+        state.help_open = true;
+    }
+    let response = widgets::button_area(ui, close, Id::unique("settings-close"), "Close settings");
     let hover = widgets::hover(ui, &response);
-    painter.rect_filled(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+    painter.fill_background(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
     widgets::text_in(
         &painter,
         close,
@@ -486,6 +913,12 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         theme::ui_font(theme::TEXT),
         theme::text_primary(),
     );
+    // Undock or dock, left of Help.
+    let toggle = Rect::from_min_max(pos2(help.left() - 116.0, title.top()), pos2(help.left() - 6.0, title.bottom()));
+    let label = if state.window { "Dock" } else { "Open in window" };
+    if ui.put(toggle, egui::Button::new(label)).clicked() {
+        state.window = !state.window;
+    }
     let top = title.bottom() + 16.0;
 
     // The search field over the list of pages: Escape in it empties it.
@@ -493,18 +926,26 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     let edit = ui.put(
         field,
         egui::TextEdit::singleline(&mut state.search)
+            .frame(widgets::input_frame())
             .hint_text("Search settings")
             .font(theme::ui_font(theme::TEXT_SMALL)),
     );
-    edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Search settings"));
+    edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Search settings"));
+    widgets::input_line(ui, &edit);
     let escaped = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
     if escaped {
         state.search.clear();
     }
     let searching = !state.search.trim().is_empty();
-    // Escape closes the page, unless it is cancelling a key being set or a search.
-    if response.clicked() || (!escaped && state.capture.is_none() && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
+    // Escape closes the page, unless it is cancelling a key being set or a search, or closing Help.
+    let escape =
+        !escaped && state.capture.is_none() && !state.help_open && ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if response.clicked() || escape {
         outcome.close = true;
+        state.audio_pending = None;
+    }
+    if state.help_open {
+        help_dialog(ui, settings, state, &mut outcome);
     }
 
     // The pages down the left, the one shown beside them; none is lit while searching.
@@ -514,10 +955,17 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     );
     if let Some(picked) = page_list(ui, &painter, sidebar, (!searching).then_some(state.page)) {
         state.page = picked;
+        state.theme_editor = false;
+        state.theme_original = None;
+        state.theme_original_rgb = None;
+        state.theme_original_values = None;
+        state.theme_original_liquid = None;
+        state.theme_original_gradients = None;
+        state.theme_original_skin = None;
+        state.theme_restore = None;
         state.search.clear();
         state.capture = None;
         state.audio_listed = None;
-        state.theme_shown = None;
     }
 
     // The page shown, beside the list: it scrolls (wheel, scroll bar, a control given the focus)
@@ -543,6 +991,40 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         });
     });
     outcome
+}
+
+/// The ways a setting's description can be shown, as the Help dialog offers them.
+const DESCRIPTION_CHOICES: [(Descriptions, &str); 3] = [
+    (Descriptions::Tooltip, "Tooltip: point at a setting's name to read what it does"),
+    (Descriptions::Icon, "? icon: point at the ? next to a setting to read what it does"),
+    (Descriptions::Shown, "Below the name: each setting's description is always shown"),
+];
+
+/// Help over the Settings window: what the names and descriptions are, and how a description is
+/// shown, one choice per line. Escape or Close closes it.
+fn help_dialog(ui: &Ui, settings: &mut Settings, state: &mut PageState, outcome: &mut Outcome) {
+    let modal = egui::Modal::new(Id::unique("settings-help-dialog")).show(ui.ctx(), |ui| {
+        ui.set_width(360.0);
+        ui.label(egui::RichText::new("Help").font(theme::ui_font(theme::TEXT + 2.0)).color(theme::text_primary()));
+        ui.add_space(6.0);
+        let text = "Each setting's name says what it does. Choose how to see the longer description of each setting:";
+        ui.label(egui::RichText::new(text).font(theme::ui_font(theme::TEXT_SMALL)).color(theme::text_secondary()));
+        ui.add_space(6.0);
+        for (choice, label) in DESCRIPTION_CHOICES {
+            let text = egui::RichText::new(label).font(theme::ui_font(theme::TEXT_SMALL));
+            if ui.radio(settings.setting_descriptions == choice, text).clicked()
+                && settings.setting_descriptions != choice
+            {
+                settings.setting_descriptions = choice;
+                outcome.changed = true;
+            }
+        }
+        ui.add_space(8.0);
+        ui.button(egui::RichText::new("Close").font(theme::ui_font(theme::TEXT))).clicked()
+    });
+    if modal.inner || modal.should_close() {
+        state.help_open = false;
+    }
 }
 
 /// A control that takes the keyboard focus (Tab) is scrolled into view.
@@ -591,9 +1073,21 @@ fn page_body(
     };
     let mut y = page.top();
     let mut heading: Option<(Page, &str)> = None;
+    // Size defaults, tuning and the exact-heights switch under Advanced form one interdependent
+    // group in search results.
+    let sizes = |e: &Entry| {
+        e.page == Page::Arrangement && (e.section == "Track sizes" || e.keys == ["arrangement_sizes_advanced"])
+    };
+    let sizes_match = !words.is_empty() && entries().iter().any(|e| sizes(e) && e.matches(&words));
     for entry in entries() {
-        let listed = if words.is_empty() { entry.page == shown } else { entry.matches(&words) };
+        let listed =
+            if words.is_empty() { entry.page == shown } else { entry.matches(&words) || (sizes_match && sizes(entry)) };
         if !listed || !(entry.shown)(cx.settings) {
+            continue;
+        }
+        let advanced = entry.section == ADVANCED && words.is_empty();
+        let unfolded = cx.state.advanced.contains(&entry.page);
+        if advanced && !unfolded && heading == Some((entry.page, ADVANCED)) {
             continue;
         }
         // A section title over a hairline where the section changes; the first sits level with
@@ -607,8 +1101,31 @@ fn page_body(
             } else {
                 format!("{} › {}", entry.page.name(), entry.section)
             };
-            section_title(&painter, page, &mut y, &title);
+            if advanced {
+                // The group is folded until its heading is clicked.
+                let rect = Rect::from_min_size(Pos2::new(page.left(), y), Vec2::new(page.width(), SIDEBAR_ROW));
+                let text = if unfolded { "Hide advanced settings" } else { "Show advanced settings" };
+                let response =
+                    widgets::button_area(cx.ui, rect, Id::unique(("settings-advanced", entry.page.name())), text);
+                let marker = if unfolded { "v  Advanced" } else { ">  Advanced" };
+                let color = motion::mix(theme::text_hint(), theme::text_secondary(), widgets::hover(cx.ui, &response));
+                widgets::text_in(&painter, rect, Align2::LEFT_CENTER, marker, theme::ui_font(theme::TEXT_SMALL), color);
+                painter.hline(page.x_range(), rect.bottom() + 3.5, theme::hairline(theme::border()));
+                y = rect.bottom() + 8.0;
+                if response.clicked() {
+                    if unfolded {
+                        cx.state.advanced.retain(|p| *p != entry.page);
+                    } else {
+                        cx.state.advanced.push(entry.page);
+                    }
+                }
+            } else {
+                section_title(&painter, page, &mut y, &title);
+            }
             heading = Some((entry.page, entry.section));
+            if advanced && !unfolded {
+                continue;
+            }
         }
         cx.name = entry.name;
         cx.note = None;
@@ -617,8 +1134,30 @@ fn page_body(
             Draw::Row(draw) => {
                 let r = setting_row(page, &mut y);
                 draw(&mut cx, r);
-                let note = cx.note.take();
-                label(&painter, cx.label.take().unwrap_or(r), entry.name, note.as_deref().unwrap_or(entry.note));
+                let status = cx.note.take();
+                let name_rect = cx.label.take().unwrap_or(r);
+                let how = cx.settings.setting_descriptions;
+                // Shown under the name, the description is the row's second line, with what the
+                // setting reports now (the last backup) after it.
+                let second = match (how, status) {
+                    (Descriptions::Shown, Some(status)) => Some(format!("{}: {status}", entry.note)),
+                    (Descriptions::Shown, None) => Some(entry.note.to_string()),
+                    (_, status) => status,
+                };
+                let height = wrapped_label(&painter, r, name_rect, entry.name, second.as_deref());
+                describe(cx.ui, &painter, r, entry.name, entry.note, how);
+                y = r.top() + height;
+            }
+            Draw::Block(draw) if entry.role == Role::Status => {
+                // A readout in a panel of its own, set off from the settings below.
+                let backdrop = painter.add(egui::Shape::Noop);
+                let top = y;
+                y += 6.0;
+                draw(&mut cx, &mut y);
+                y += 6.0;
+                let panel = Rect::from_min_max(Pos2::new(page.left() - 6.0, top), Pos2::new(page.right(), y));
+                painter.set(backdrop, egui::Shape::rect_filled(panel, 0.0, theme::panel_background()));
+                y += 4.0;
             }
             Draw::Block(draw) => draw(&mut cx, &mut y),
         }
@@ -639,24 +1178,37 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
             Vec2::new(rect.width(), SIDEBAR_ROW),
         );
         let response =
-            widgets::button_area(ui, row, Id::new(("settings-page", index)), format!("Settings page: {name}"));
+            widgets::button_area(ui, row, Id::unique(("settings-page", index)), format!("Settings page: {name}"));
         if response.clicked() && Some(page) != shown {
             picked = Some(page);
         }
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), Some(page) == shown, motion::VALUE);
-        let idle = motion::mix(theme::window_background(), theme::panel_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(row, 0.0, motion::mix(idle, theme::control_background(), selected));
-        let text = Rect::from_min_max(Pos2::new(row.left() + PAD, row.top()), row.max);
-        let color = motion::mix(theme::text_secondary(), theme::text_primary(), selected);
+        let hover = widgets::hover(ui, &response);
+        // `.settings-nav`, one row per page: `:hover`, and `:checked` for the page shown.
+        let _nav = crate::kit::style_class::enter_response("settings-nav", &response);
+        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, Some(page) == shown);
+        let own = crate::kit::style_class::computed().filter(|c| c.authored.background);
+        if let Some(own) = &own {
+            painter.rect_filled(row, own.radius, own.background);
+        } else {
+            painter.rect_filled(row, 0.0, theme::panel_hover().gamma_multiply(0.25 * hover));
+            painter.rect_filled(row, 0.0, theme::control_background().gamma_multiply(0.8 * selected));
+        }
+        // A page under another (Themes under Appearance) is stepped in.
+        let indent = if page == Page::Theme { PAD * 2.0 } else { 0.0 };
+        let text = Rect::from_min_max(Pos2::new(row.left() + PAD + indent, row.top()), row.max);
+        let color =
+            crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_primary(), selected));
         widgets::text_in(painter, text, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), color);
     }
     picked
 }
 
-/// Appearance › Theme: the themes, the theme in use and its colours.
+/// Appearance › Themes: the themes, the theme in use and its colours.
 pub(crate) fn theme_block(cx: &mut Cx<'_>, y: &mut f32) {
     let bottom = cx.page.bottom();
     cx.outcome.themes = theme_page(cx.ui, cx.painter, cx.page, y, bottom, cx.themes, cx.state);
+    cx.outcome.adjusting |= cx.state.theme_colour_held;
 }
 
 /// Shortcuts › Keys: every action's keys and the preset.
@@ -668,7 +1220,16 @@ pub(crate) fn shortcuts_block(cx: &mut Cx<'_>, y: &mut f32) {
 /// Plug-ins › Library: folders, scanning and what was found.
 pub(crate) fn plugin_library(cx: &mut Cx<'_>, y: &mut f32) {
     let bottom = cx.page.bottom();
-    cx.outcome.plugins = plugin_section(cx.ui, cx.painter, cx.page, y, bottom, cx.plugins);
+    if let Some(request) = plugin_folders(cx.ui, cx.painter, cx.page, y, bottom, cx.plugins) {
+        cx.outcome.plugins = Some(request);
+    }
+}
+
+/// Plug-ins › Actions: scanning and the plug-in manager.
+pub(crate) fn plugin_buttons(cx: &mut Cx<'_>, y: &mut f32) {
+    if let Some(request) = plugin_actions(cx.ui, cx.painter, cx.page, y, cx.plugins) {
+        cx.outcome.plugins = Some(request);
+    }
 }
 
 /// Clip editor › Workflow: the workflow settings (the Mouse-first switches among them), their own
@@ -676,25 +1237,25 @@ pub(crate) fn plugin_library(cx: &mut Cx<'_>, y: &mut f32) {
 pub(crate) fn mouse_switches(cx: &mut Cx<'_>, y: &mut f32) {
     for setting in Setting::ALL {
         let r = setting_row(cx.page, y);
-        label(cx.painter, r, setting.name(), setting.note());
         let options: Vec<(&str, usize)> = setting.short_choices().iter().enumerate().map(|(i, c)| (*c, i)).collect();
         let current = cx.keymap.workflow().get(setting);
-        let rect = control_rect(r, options.len());
+        let rect = options_rect(cx.ui, r, &options);
         if let Some(index) = segmented(cx.ui, cx.painter, rect, setting.name(), &options, current) {
             cx.keymap.set_workflow(setting, index);
             cx.outcome.keymap_changed = true;
         }
+        let how = cx.settings.setting_descriptions;
+        let second = (how == Descriptions::Shown).then(|| setting.note());
+        let height = wrapped_label(cx.painter, r, r, setting.name(), second);
+        describe(cx.ui, cx.painter, r, setting.name(), setting.note(), how);
+        *y = r.top() + height;
     }
-    let note = Rect::from_min_size(Pos2::new(cx.page.left(), *y), Vec2::new(cx.page.width(), 14.0));
-    widgets::text_in(
-        cx.painter,
-        note,
-        Align2::LEFT_CENTER,
-        "Kept in keymap.json with the keys; changing one makes the workflow Custom",
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_secondary(),
-    );
-    *y = note.bottom();
+    let color = theme::text_secondary();
+    let text = "Kept in keymap.json with the keys. Changing any of these makes the workflow Custom.";
+    let galley = cx.painter.layout(text.to_string(), theme::ui_font(theme::TEXT_SMALL), color, cx.page.width() - 8.0);
+    let height = galley.size().y;
+    cx.painter.galley(Pos2::new(cx.page.left(), *y), galley, color);
+    *y += height + 8.0;
 }
 
 /// MIDI › MIDI inputs: each port with On and Off.
@@ -704,152 +1265,564 @@ pub(crate) fn midi_inputs(cx: &mut Cx<'_>, y: &mut f32) {
     }
 }
 
-/// Appearance › Theme: the themes to pick from, what can be done with them, and the colours of the
-/// one in use. Returns what the user asked for.
+/// Themes is a gallery; editing the current palette is a separate child view.
 fn theme_page(
     ui: &mut Ui,
-    painter: &egui::Painter,
+    _painter: &egui::Painter,
     page: Rect,
     at: &mut f32,
-    bottom: f32,
+    _bottom: f32,
     themes: &ThemesView,
     state: &mut PageState,
 ) -> Option<ThemeRequest> {
-    let mut y = *at;
+    state.theme_colour_held = false;
     let mut request = None;
-    let small = theme::ui_font(theme::TEXT_SMALL);
-
-    // The themes, in a list that scrolls once it is taller than eight rows: a click uses one.
-    let rows = themes.list.len().clamp(1, THEME_ROWS) as f32;
-    let list = Rect::from_min_size(Pos2::new(page.left(), y), Vec2::new(page.width(), rows * theme::ROW));
-    y = list.bottom() + 8.0;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(list), |ui| {
-        egui::ScrollArea::vertical().id_salt("themes").auto_shrink([false, false]).show(ui, |ui| {
+    ui.scope_builder(egui::UiBuilder::new().max_rect(Rect::from_min_max(pos2(page.left(), *at), page.max)), |ui| {
+        ui.set_width(page.width());
+        ui.menu_button("Restore built-in…", |ui| {
             for (id, name, built_in) in &themes.list {
-                let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), theme::ROW), Sense::hover());
-                let response = widgets::button_area(ui, r, Id::new(("theme", id)), format!("Theme: {name}"));
-                let current = *id == themes.current;
-                let selected = motion::toward(ui.ctx(), response.id.with("selected"), current, motion::VALUE);
-                let idle = motion::mix(theme::window_background(), theme::panel_hover(), widgets::hover(ui, &response));
-                let painter = ui.painter();
-                painter.rect_filled(r, 0.0, motion::mix(idle, theme::control_background(), selected));
-                let inner = r.shrink2(Vec2::new(PAD, 0.0));
-                let color = motion::mix(theme::text_secondary(), theme::text_primary(), selected);
-                widgets::text_in(painter, inner, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), color);
-                let file = if *built_in { "built-in".to_string() } else { format!("{id}.json") };
-                widgets::text_in(painter, inner, Align2::RIGHT_CENTER, &file, small.clone(), theme::text_hint());
-                if response.clicked() && !current {
-                    request = Some(ThemeRequest::Use(id.clone()));
-                }
-                if current && state.theme_shown.as_ref() != Some(id) {
-                    response.scroll_to_me(None);
-                    state.theme_shown = Some(id.clone());
+                if *built_in && ui.button(format!("Restore {name}")).clicked() {
+                    state.theme_restore = Some((id.clone(), name.clone()));
+                    ui.close();
                 }
             }
         });
-    });
-
-    // The theme in use: its name, typed over and kept on Enter or leaving the field (a built-in
-    // theme's name does not change).
-    let r = Rect::from_min_size(Pos2::new(page.left(), y), Vec2::new(page.width(), SETTING_ROW));
-    y += SETTING_ROW;
-    let note = match &themes.folder {
-        Some(folder) => format!("Kept in {folder}; drop a theme file or a zip of them on the window to add it"),
-        None => "There is no folder to keep theme files in".to_string(),
-    };
-    if themes.built_in {
-        label(painter, r, &format!("{} (built-in; changing a colour makes a copy)", themes.name), &note);
-    } else {
-        if state.theme_name.as_ref().is_none_or(|(id, _)| *id != themes.current) {
-            state.theme_name = Some((themes.current.clone(), themes.name.clone()));
-        }
-        if let Some((_, name)) = state.theme_name.as_mut() {
-            let field = Rect::from_min_size(r.min, Vec2::new(r.width() / 2.0, 16.0));
-            let edit = ui.put(field, egui::TextEdit::singleline(name).font(theme::ui_font(theme::TEXT)));
-            edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Theme name"));
-            if edit.lost_focus() && name.trim() != themes.name && !name.trim().is_empty() {
-                request = Some(ThemeRequest::Rename(name.trim().to_string()));
-            }
-        }
-        let line = Rect::from_min_size(Pos2::new(r.left(), r.top() + 18.0), Vec2::new(r.width(), 14.0));
-        widgets::text_in(painter, line, Align2::LEFT_CENTER, &note, small.clone(), theme::text_secondary());
-    }
-
-    // What can be done with the themes.
-    let actions = [
-        ("Duplicate", "Duplicate theme", ThemeRequest::Duplicate),
-        ("Reload", "Reload themes", ThemeRequest::Reload),
-        ("Open folder", "Open the themes folder", ThemeRequest::OpenFolder),
-        ("Back up", "Back up themes", ThemeRequest::Backup),
-        ("Export template", "Export the theme template", ThemeRequest::ExportTemplate),
-    ];
-    let mut x = page.left();
-    for (index, (text, name, asked)) in actions.into_iter().enumerate() {
-        let width = widgets::text_width(ui, text, small.clone()) + 2.0 * PAD + 8.0;
-        let cell = Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, SEGMENT + 2.0));
-        x = cell.right() + 1.0;
-        let response = widgets::button_area(ui, cell, Id::new(("theme-action", index)), name);
-        let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(cell, 0.0, fill);
-        widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, small.clone(), theme::text_primary());
-        if response.clicked() {
-            request = Some(asked);
-        }
-    }
-    y += SEGMENT + 2.0 + 12.0;
-
-    // Its colours, in the space left.
-    let r = Rect::from_min_size(Pos2::new(page.left(), y), Vec2::new(page.width(), 16.0));
-    widgets::text_in(painter, r, Align2::LEFT_CENTER, "Colours", small.clone(), theme::text_hint());
-    painter.hline(page.x_range(), r.bottom() + 2.5, theme::hairline(theme::border()));
-    y = r.bottom() + 6.0;
-    let list =
-        Rect::from_min_max(Pos2::new(page.left(), y), Pos2::new(page.right(), (bottom - 12.0).max(y + LIST_LEAST)));
-    *at = list.bottom();
-    let colors = themes.colors;
-    let mut edited = colors;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(list), |ui| {
-        egui::ScrollArea::vertical().id_salt("colours").auto_shrink([false, false]).show(ui, |ui| {
-            let left = egui::Layout::left_to_right(egui::Align::Center);
-            for (key, purpose, color) in colors.tokens() {
-                ui.horizontal(|ui| {
-                    let mut picked = color;
-                    let swatch =
-                        egui::color_picker::color_edit_button_srgba(ui, &mut picked, egui::color_picker::Alpha::Opaque);
-                    // An outline, so a swatch the colour of the page still shows where it is.
-                    ui.painter().rect_stroke(
-                        swatch.rect,
-                        0.0,
-                        theme::hairline(theme::border_strong()),
-                        egui::StrokeKind::Inside,
-                    );
-                    let name = format!("Colour {key}");
-                    swatch.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ColorButton, true, &name));
-                    if picked != color
-                        && let Some(slot) = edited.token_mut(key)
-                    {
-                        *slot = picked;
+        if let Some((id, name)) = state.theme_restore.clone() {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.label(egui::RichText::new(format!("Save a copy before restoring {name}?")).strong());
+                ui.label("Your current theme is already saved and will stay in the library.");
+                ui.horizontal_wrapped(|ui| {
+                    for (label, save_copy) in [("Save a copy & restore", true), ("Restore without a copy", false)] {
+                        if ui.button(label).clicked() {
+                            request = Some(ThemeRequest::RestoreBuiltIn { id: id.clone(), save_copy });
+                            state.theme_restore = None;
+                            state.theme_editor = false;
+                            state.theme_original = None;
+                            state.theme_original_rgb = None;
+                            state.theme_original_values = None;
+                            state.scrolled = None;
+                        }
                     }
-                    ui.allocate_ui_with_layout(Vec2::new(64.0, 18.0), left, |ui| {
-                        ui.set_min_width(64.0);
-                        let text = egui::RichText::new(theme::hex(picked))
-                            .font(theme::mono_font(theme::TEXT_SMALL))
-                            .color(theme::text_value());
-                        ui.label(text);
-                    });
-                    ui.allocate_ui_with_layout(Vec2::new(170.0, 18.0), left, |ui| {
-                        ui.set_min_width(170.0);
-                        let text = egui::RichText::new(key).font(theme::mono_font(theme::TEXT_SMALL));
-                        ui.label(text.color(theme::text_primary()));
-                    });
-                    let text = egui::RichText::new(purpose).font(small.clone()).color(theme::text_hint());
-                    ui.add(egui::Label::new(text).truncate());
+                    if ui.button("Cancel restore").clicked() {
+                        state.theme_restore = None;
+                    }
                 });
+            });
+            *at = ui.min_rect().bottom();
+            return;
+        }
+        if state.theme_editor {
+            request = theme_editor(ui, themes, state);
+        } else {
+            ui.horizontal(|ui| {
+                ui.label(format!("Current theme: {}", themes.name));
+                if ui.button("Edit current theme…").clicked() {
+                    state.theme_editor = true;
+                    state.theme_original = Some(themes.colors);
+                    state.theme_original_rgb = Some(themes.transparent_rgb.clone());
+                    state.theme_original_values = Some(declared_values(themes));
+                    state.theme_original_liquid = Some(themes.liquid);
+                    state.theme_original_gradients = Some(themes.gradients.clone());
+                    state.theme_original_skin = Some(themes.skin.clone());
+                    state.scrolled = None;
+                }
+                ui.menu_button("More", |ui| {
+                    for (label, action) in [
+                        ("New variant", ThemeRequest::NewVariant("Variant".into())),
+                        ("Duplicate theme", ThemeRequest::Duplicate),
+                        ("Reload themes", ThemeRequest::Reload),
+                        ("Open the themes folder", ThemeRequest::OpenFolder),
+                        ("Export theme…", ThemeRequest::ExportPackage),
+                        ("Back up themes", ThemeRequest::Backup),
+                        ("Export the theme template", ThemeRequest::ExportTemplate),
+                    ] {
+                        if ui.button(label).clicked() {
+                            request = Some(action);
+                            ui.close();
+                        }
+                    }
+                });
+            });
+            ui.label("Existing tracks and clips keep their colours.");
+            ui.add_space(10.0);
+            let gap = 10.0;
+            let width = ((page.width() - gap) / 2.0).max(80.0);
+            let current = crate::kit::theme_vars::split_id(&themes.current).0;
+            if let Some((_, name, built_in)) = themes.list.iter().find(|(id, _, _)| id == current) {
+                let (active, chosen) = theme_card(ui, themes, &themes.current, name, *built_in, page.width(), true);
+                state.theme_colour_held |=
+                    active.is_pointer_button_down_on() && ui.input(|input| input.pointer.primary_down());
+                if let Some(id) = chosen {
+                    request = Some(ThemeRequest::Use(id));
+                }
+                ui.add_space(gap);
             }
-        });
+            ui.horizontal(|ui| {
+                ui.label("Other themes");
+                let search = ui.add(
+                    egui::TextEdit::singleline(&mut state.theme_search)
+                        .hint_text("Search themes")
+                        .frame(widgets::input_frame())
+                        .desired_width(200.0),
+                );
+                search.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Search themes"));
+                widgets::input_line(ui, &search);
+            });
+            let query = state.theme_search.trim().to_lowercase();
+            // Every theme stays in the list, the one in use too (marked), so choosing one leaves
+            // the list as it is and the page where it was; a search shows only what matches.
+            let mut others =
+                themes.list.iter().filter(|(id, name, _)| theme_matches(&query, id, name, &themes.variants)).peekable();
+            if others.peek().is_none() && !query.is_empty() {
+                ui.label(egui::RichText::new("No themes match").color(theme::text_hint()));
+            }
+            while let Some(first) = others.next() {
+                let second = others.next();
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    for (id, name, built_in) in std::iter::once(first).chain(second) {
+                        let (card, chosen) = theme_card(ui, themes, id, name, *built_in, width, false);
+                        if let Some(id) = chosen {
+                            request = Some(ThemeRequest::Use(id));
+                        } else if card.clicked() {
+                            request = Some(ThemeRequest::Use(id.clone()));
+                        }
+                    }
+                });
+                ui.add_space(gap);
+            }
+        }
+        *at = ui.min_rect().bottom();
     });
-    if edited != colors {
-        request = Some(ThemeRequest::Edit(edited));
+    request
+}
+
+/// A variant's swatch on the large card and on a card of the grid, the space between swatches,
+/// and the margin around their row.
+const THEME_SWATCH_LARGE: Vec2 = Vec2::new(72.0, 36.0);
+const THEME_SWATCH_SMALL: Vec2 = Vec2::new(40.0, 22.0);
+const THEME_SWATCH_GAP: f32 = 6.0;
+const THEME_SWATCH_MARGIN: f32 = 8.0;
+
+/// Whether a theme shows for `query` (lower case): an empty query, or part of its name, its id or
+/// the name of one of its variants.
+fn theme_matches(query: &str, id: &str, name: &str, variants: &[(String, String)]) -> bool {
+    query.is_empty()
+        || name.to_lowercase().contains(query)
+        || id.to_lowercase().contains(query)
+        || variants.iter().any(|(entry, variant)| {
+            crate::kit::theme_vars::split_id(entry).0 == id && variant.to_lowercase().contains(query)
+        })
+}
+
+/// The current palette is featured once; every other palette stays in the compact grid. A theme
+/// with variants has a row of swatches under its name, one per variant (the theme's own values
+/// first); clicking one uses that variant. A card keeps the row's room without variants, so all
+/// the cards of the grid are one height. Returns the card's response and the variant clicked.
+fn theme_card(
+    ui: &mut Ui,
+    themes: &ThemesView,
+    id: &str,
+    name: &str,
+    built_in: bool,
+    width: f32,
+    active: bool,
+) -> (egui::Response, Option<String>) {
+    let base = crate::kit::theme_vars::split_id(id).0;
+    let own = themes.default_variants.iter().find(|(theme, _)| theme == base).map_or("Default", |(_, name)| name);
+    let variants: Vec<(&str, &str)> = std::iter::once((base, own))
+        .chain(
+            themes
+                .variants
+                .iter()
+                .filter(|(variant, _)| crate::kit::theme_vars::split_id(variant).0 == base)
+                .map(|(variant, label)| (variant.as_str(), label.as_str())),
+        )
+        .collect();
+    let swatch_size = if active { THEME_SWATCH_LARGE } else { THEME_SWATCH_SMALL };
+    let swatches = swatch_size.y + THEME_SWATCH_MARGIN;
+    // A thumbnail is 16:9 on every card and at most 170 points high, so the cards of a wide page
+    // are not taller than the one in use.
+    let preview_width = (width - 10.0).max(16.0);
+    let preview_height = (preview_width * 9.0 / 16.0).min(170.0);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, preview_height + 50.0 + swatches), Sense::hover());
+    let card = Rect::from_min_size(rect.min, Vec2::new(width, preview_height + 50.0));
+    let response = ui.interact(
+        card,
+        Id::unique(("theme", base, active)),
+        if active { Sense::click_and_drag() } else { Sense::click() },
+    );
+    // The one in use shows twice: large at the top, and in its place in the list.
+    let label = if active { format!("Theme in use: {name}") } else { format!("Theme: {name}") };
+    let in_use = base == crate::kit::theme_vars::split_id(&themes.current).0;
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, in_use, label.clone()));
+    let mut chosen = None;
+    let kept = themes.kept.iter().find(|(kept, _)| kept == base).map(|(_, why)| why.as_str());
+    // Two themes with one name: the folder tells them apart.
+    let twin = themes.list.iter().any(|(other, other_name, _)| other != base && other_name.eq_ignore_ascii_case(name));
+    let name = if twin { format!("{name} ({base})") } else { name.to_string() };
+    let label = match themes.variants.iter().find(|(variant, _)| variant == id) {
+        Some((_, variant)) if active => format!("{name} · {variant}"),
+        _ => name.clone(),
+    };
+    if ui.is_rect_visible(rect) {
+        // The theme in use stands out, on the large card and in its place in the list.
+        if in_use {
+            ui.painter().rect_filled(rect, 3.0, theme::accent().gamma_multiply(0.14));
+        }
+        let swatch = swatch_of(themes, id);
+        let preview = Rect::from_min_size(
+            rect.min + Vec2::new((width - preview_height * 16.0 / 9.0) / 2.0, 5.0),
+            Vec2::new(preview_height * 16.0 / 9.0, preview_height),
+        );
+        let picture = themes.pictures.iter().find(|(key, _)| key == id).map(|(_, svg)| svg);
+        if !picture.is_some_and(|svg| crate::kit::skin::paint_svg(ui.painter(), preview, svg, 2.0)) {
+            // A theme without a thumbnail: a blank card in its swatch colour.
+            ui.painter().rect_filled(preview, 2.0, swatch);
+        }
+        let border = if in_use {
+            egui::Stroke::new(2.0, theme::accent())
+        } else if response.hovered() {
+            theme::hairline(theme::border_strong())
+        } else {
+            theme::hairline(theme::border())
+        };
+        ui.painter().rect_stroke(rect, 3.0, border, egui::StrokeKind::Inside);
+        let name_rect = Rect::from_min_size(
+            pos2(rect.left() + 8.0, rect.top() + preview_height + 9.0),
+            Vec2::new(width - 16.0, 18.0),
+        );
+        widgets::text_in(
+            ui.painter(),
+            name_rect,
+            Align2::LEFT_CENTER,
+            &label,
+            theme::ui_font(theme::TEXT),
+            theme::text_primary(),
+        );
+        widgets::text_in(
+            ui.painter(),
+            name_rect.translate(Vec2::new(0.0, 18.0)),
+            Align2::LEFT_CENTER,
+            if active {
+                "Active"
+            } else if built_in {
+                "Built-in"
+            } else if kept.is_some() {
+                "Not converted"
+            } else {
+                "Custom"
+            },
+            theme::ui_font(theme::TEXT_SMALL),
+            if active { theme::accent() } else { theme::text_secondary() },
+        );
+    }
+    let response = match kept {
+        Some(why) => response.on_hover_text(why),
+        None => response,
+    };
+    if variants.len() > 1 {
+        // All the swatches stay on the row: when they do not fit, they and the spaces between
+        // them narrow together.
+        let count = variants.len() as f32;
+        let wanted = count * swatch_size.x + (count - 1.0) * THEME_SWATCH_GAP;
+        let scale = ((width - 2.0 * THEME_SWATCH_MARGIN).max(0.0) / wanted).min(1.0);
+        let size = Vec2::new(swatch_size.x * scale, swatch_size.y);
+        let gap = THEME_SWATCH_GAP * scale;
+        for (index, (variant, variant_name)) in variants.iter().enumerate() {
+            let left = rect.left() + THEME_SWATCH_MARGIN + index as f32 * (size.x + gap);
+            let area = Rect::from_min_size(pos2(left, rect.top() + preview_height + 50.0), size);
+            // The theme in use shows its swatches twice (its large card and its card in the
+            // list), so each card's swatch has an id of its own.
+            let swatch = ui.interact(area, Id::unique(("theme-variant", *variant, active)), Sense::click());
+            swatch.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Variant: {variant_name}"))
+            });
+            let swatch = swatch.on_hover_text(*variant_name);
+            if swatch.clicked() {
+                chosen = Some((*variant).to_string());
+            }
+            if ui.is_rect_visible(area) {
+                let painter = ui.painter();
+                let radius = paint_swatch(painter, area, swatch_of(themes, variant));
+                let selected = *variant == themes.current;
+                let ring = if selected {
+                    theme::accent()
+                } else if swatch.hovered() {
+                    theme::border_strong()
+                } else {
+                    theme::border()
+                };
+                painter.rect_stroke(
+                    area,
+                    radius,
+                    egui::Stroke::new(if selected { 2.0 } else { 1.0 }, ring),
+                    egui::StrokeKind::Inside,
+                );
+            }
+        }
+    }
+    (response, chosen)
+}
+
+/// The swatch colour of the theme or variant `id`, or the panels' colour when it has none.
+fn swatch_of(themes: &ThemesView, id: &str) -> egui::Color32 {
+    themes.swatches.iter().find(|(key, _)| key == id).map_or(themes.colors.panel_background, |(_, color)| *color)
+}
+
+/// A swatch of `color`: a `theme-swatch` element with that `color` attribute, as the theme in use
+/// styles it, or a rounded rectangle of the colour without a theme sheet. Returns its corner
+/// radius.
+fn paint_swatch(painter: &egui::Painter, rect: Rect, color: egui::Color32) -> f32 {
+    let radius = |r: f32| r.clamp(0.0, rect.width().min(rect.height()) / 2.0);
+    match crate::kit::native_css::theme_swatch(color) {
+        Some(style) => {
+            let corner = radius(style.radius);
+            painter.rect_filled(rect, corner, style.background);
+            if style.border_width > 0.0 {
+                let stroke = egui::Stroke::new(style.border_width, style.border);
+                painter.rect_stroke(rect, corner, stroke, egui::StrokeKind::Inside);
+            }
+            corner
+        }
+        None => {
+            let corner = radius(6.0);
+            painter.rect_filled(rect, corner, color);
+            corner
+        }
+    }
+}
+
+/// Each colour appears in exactly one understandable group; the token name stays visible.
+fn colour_group(key: &str) -> &'static str {
+    if key.starts_with("browser.") {
+        "Browser text"
+    } else if key.starts_with("text.") {
+        "Text"
+    } else if key.starts_with("kind.") {
+        "Sample map"
+    } else if key.starts_with("track.") || key.starts_with("clip.") {
+        "Tracks & clips"
+    } else if key.starts_with("meter.") {
+        "Meters"
+    } else if key.starts_with("control.") || matches!(key, "accent" | "recording" | "playhead" | "selection") {
+        "Controls"
+    } else {
+        "Surfaces"
+    }
+}
+
+/// The values of the settings the theme in use declares.
+fn declared_values(themes: &ThemesView) -> std::collections::BTreeMap<String, String> {
+    themes
+        .declared
+        .iter()
+        .filter_map(|property| Some((property.name.clone(), themes.values.get(&property.name)?.clone())))
+        .collect()
+}
+
+fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Option<ThemeRequest> {
+    let mut request = None;
+    if ui.button("Back to themes").clicked() {
+        state.theme_editor = false;
+        state.scrolled = None;
+        return None;
+    }
+    ui.label(egui::RichText::new("Edit current theme").strong());
+    ui.label(match &themes.variant {
+        Some(variant) => format!("{} · {variant}", themes.name),
+        None => themes.name.clone(),
+    });
+    ui.label(
+        egui::RichText::new(
+            "Changes apply and save immediately. Colours and other settings are saved in a variant of the \
+             theme (a new one, Custom, the first time); the theme's own file never changes. Moving \
+             controls or changing artwork of a built-in theme makes a custom copy.",
+        )
+        .small()
+        .color(theme::text_secondary()),
+    );
+    // With a variant in use, the name is the variant's, and a built-in theme's variant has one too.
+    let (shown, renamable, label) = match &themes.variant {
+        Some(variant) => (variant.clone(), true, "Variant name"),
+        None => (themes.name.clone(), !themes.built_in, "Theme name"),
+    };
+    // A name changed on disk (the theme's own sheet, reloaded) replaces the field's text too.
+    if state.theme_name.as_ref().is_none_or(|(id, source, _)| *id != themes.current || *source != shown) {
+        state.theme_name = Some((themes.current.clone(), shown.clone(), shown.clone()));
+    }
+    if let Some((_, _, name)) = state.theme_name.as_mut() {
+        let edit = ui.add_enabled(
+            renamable,
+            egui::TextEdit::singleline(name).frame(widgets::input_frame()).desired_width(260.0),
+        );
+        edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, renamable, label));
+        widgets::input_line(ui, &edit);
+        if state.theme_rename_focus {
+            edit.request_focus();
+            state.theme_rename_focus = false;
+        }
+        if renamable && edit.lost_focus() && !name.trim().is_empty() && name.trim() != shown {
+            request = Some(ThemeRequest::Rename(name.trim().to_string()));
+        }
+    }
+    ui.horizontal(|ui| {
+        if ui.button("Save as new theme…").clicked() {
+            request = Some(ThemeRequest::Duplicate);
+            state.theme_rename_focus = true;
+        }
+        let original = *state.theme_original.get_or_insert(themes.colors);
+        let original_rgb = state.theme_original_rgb.get_or_insert_with(|| themes.transparent_rgb.clone()).clone();
+        let original_liquid = *state.theme_original_liquid.get_or_insert(themes.liquid);
+        let original_gradients = state.theme_original_gradients.get_or_insert_with(|| themes.gradients.clone()).clone();
+        let original_skin = state.theme_original_skin.get_or_insert_with(|| themes.skin.clone()).clone();
+        let original_values = state.theme_original_values.get_or_insert_with(|| declared_values(themes)).clone();
+        if ui
+            .add_enabled(
+                original_skin != themes.skin
+                    || original != themes.colors
+                    || original_rgb != themes.transparent_rgb
+                    || original_liquid != themes.liquid
+                    || original_gradients != themes.gradients
+                    || original_values != declared_values(themes),
+                egui::Button::new("Reset changes"),
+            )
+            .clicked()
+        {
+            request = Some(ThemeRequest::ResetEdits {
+                skin: Box::new(original_skin),
+                transparent_rgb: original_rgb,
+                colors: original,
+                liquid: original_liquid,
+                gradients: original_gradients,
+                values: original_values,
+            });
+            state.skin_editor.forget_drafts();
+        }
+    });
+    ui.add_space(8.0);
+    if let Some(edit) = super::skin_editor::declared(ui, themes, &mut state.skin_editor, &mut state.theme_colour_held) {
+        request = Some(edit);
+    }
+    if let Some(edit) = super::skin_editor::show(ui, themes, &mut state.skin_editor) {
+        request = Some(edit);
+    }
+    ui.label(egui::RichText::new("Liquid (experimental)").strong());
+    let mut inherit = themes.liquid.is_none();
+    if ui.checkbox(&mut inherit, "Use global liquid settings").changed() {
+        request = Some(ThemeRequest::EditLiquid(if inherit { None } else { Some(themes.global_liquid) }));
+    }
+    let mut options = themes.liquid.unwrap_or(themes.global_liquid);
+    let original_options = options;
+    let available = crate::kit::liquid::available(ui.ctx());
+    ui.add_enabled_ui(!inherit, |ui| {
+        for (name, value) in [
+            ("Theme panel liquid", &mut options.panels),
+            ("Theme track liquid", &mut options.tracks),
+            ("Theme clip liquid", &mut options.clips),
+        ] {
+            let response = ui.add(egui::Slider::new(value, 0..=100).suffix(" %").text(name));
+            state.theme_colour_held |= response.dragged() || response.is_pointer_button_down_on();
+        }
+    });
+    if options != original_options {
+        request = Some(ThemeRequest::EditLiquid(Some(options)));
+    }
+    if !available {
+        ui.add(egui::Label::new("Liquid preview is unavailable. Values can be saved. Select GPU in Appearance > Renderer, enable Animations and restart Suhina to see the effect.").wrap());
+    }
+    ui.add(egui::Label::new(egui::RichText::new("Turn off inheritance to save independent panel, track and clip strengths with this theme. Requires the GPU renderer; reduced effects and high contrast still apply.").small().color(theme::text_secondary())).wrap());
+    if let Some(change) = super::gradient_editor::show(ui, themes, state) {
+        request = Some(change);
+    }
+    let mut edited = themes.colors;
+    let mut transparent_rgb = themes.transparent_rgb.clone();
+    let tokens = themes.colors.tokens();
+    for group in ["Surfaces", "Text", "Browser text", "Tracks & clips", "Controls", "Meters", "Sample map"] {
+        ui.add_space(8.0);
+        ui.label(egui::RichText::new(group).strong());
+        ui.separator();
+        for &(key, purpose, color) in tokens.iter().filter(|(key, _, _)| {
+            colour_group(key) == group && !key.strip_prefix("track.").is_some_and(|suffix| suffix.parse::<u8>().is_ok())
+        }) {
+            ui.push_id(("theme-colour", key), |ui| {
+                let mut rgba = color.to_srgba_unmultiplied();
+                if color.a() == 0
+                    && let Some(rgb) = transparent_rgb.get(key)
+                {
+                    rgba[..3].copy_from_slice(rgb);
+                }
+                let rgb_default = matches!(key, "clip.midiDefault" | "clip.audioDefault");
+                ui.horizontal(|ui| {
+                    let popup = ui.auto_id_with("popup");
+                    let swatch = edit_rgba(
+                        ui,
+                        &mut rgba,
+                        if matches!(key, "clip.midiDefault" | "clip.audioDefault") {
+                            egui::color_picker::Alpha::Opaque
+                        } else {
+                            egui::color_picker::Alpha::OnlyBlend
+                        },
+                    );
+                    swatch.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::Role::ColorWell, true, format!("Colour {key}"))
+                    });
+                    state.theme_colour_held |=
+                        egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(82.0, 18.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.set_min_width(82.0);
+                            ui.label(
+                                egui::RichText::new(theme::hex_rgba(rgba))
+                                    .font(theme::mono_font(theme::TEXT_SMALL))
+                                    .color(theme::text_value()),
+                            );
+                        },
+                    );
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(match key {
+                                "clip.midiDefault" => "Default MIDI clip",
+                                "clip.audioDefault" => "Default audio clip",
+                                _ => key,
+                            })
+                            .font(theme::mono_font(theme::TEXT_SMALL))
+                            .color(theme::text_primary()),
+                        )
+                        .wrap(),
+                    );
+                });
+                if !rgb_default {
+                    let mut opacity = (f32::from(rgba[3]) * 100.0 / 255.0).round() as u8;
+                    let response = ui.add(egui::Slider::new(&mut opacity, 0..=100).suffix(" %").text("Opacity"));
+                    response
+                        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Opacity {key}")));
+                    state.theme_colour_held |= response.dragged() || response.is_pointer_button_down_on();
+                    if response.changed() {
+                        rgba[3] = (f32::from(opacity) * 2.55).round() as u8;
+                    }
+                }
+                let [r, g, b, a] = rgba;
+                let picked = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
+                if a == 0 && [r, g, b] != [0, 0, 0] {
+                    transparent_rgb.insert(key.to_string(), [r, g, b]);
+                } else {
+                    transparent_rgb.remove(key);
+                }
+                if picked != color
+                    && let Some(slot) = edited.token_mut(key)
+                {
+                    *slot = picked;
+                }
+                ui.add(egui::Label::new(egui::RichText::new(purpose).small().color(theme::text_secondary())).wrap());
+                ui.add_space(6.0);
+            });
+        }
+    }
+    if edited != themes.colors || transparent_rgb != themes.transparent_rgb {
+        request = Some(ThemeRequest::EditRgba { colors: edited, transparent_rgb });
     }
     request
 }
@@ -901,13 +1874,33 @@ fn shortcuts_page(
 
     let head = Rect::from_min_size(Pos2::new(page.left(), *at), Vec2::new(page.width(), SETTING_ROW));
     label(painter, head, "Shortcuts", "Change, then press the keys; Escape cancels. Kept in keymap.json.");
+    // The page's own filter, left of Reset all: by action, group or key ("zoom", "ctrl+alt").
+    let filter = Rect::from_min_max(
+        Pos2::new(head.right() - 80.0 - 8.0 - 180.0, head.top() + 1.0),
+        Pos2::new(head.right() - 80.0 - 8.0, head.top() + 1.0 + SEGMENT),
+    );
+    let edit = ui.put(
+        filter,
+        egui::TextEdit::singleline(&mut state.key_filter)
+            .frame(widgets::input_frame())
+            .hint_text("Filter shortcuts")
+            .font(theme::ui_font(theme::TEXT_SMALL)),
+    );
+    edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Filter shortcuts"));
+    widgets::input_line(ui, &edit);
+    if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        state.key_filter.clear();
+    }
+    // The settings search narrows the list too, so a search shows the actions it found.
+    let words: Vec<String> =
+        state.key_filter.split_whitespace().chain(state.search.split_whitespace()).map(str::to_lowercase).collect();
     let reset = Rect::from_min_max(
         Pos2::new(head.right() - 80.0, head.top() + 1.0),
         Pos2::new(head.right(), head.top() + 1.0 + SEGMENT),
     );
-    let response = widgets::button_area(ui, reset, Id::new("reset-keys"), "Reset all keys");
+    let response = widgets::button_area(ui, reset, Id::unique("reset-keys"), "Reset all keys");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.rect_filled(reset, 0.0, fill);
+    painter.fill_background(reset, 0.0, fill);
     widgets::text_in(painter, reset, Align2::CENTER_CENTER, "Reset all", small.clone(), theme::text_primary());
     if response.clicked() {
         *keymap = Keymap::default();
@@ -949,7 +1942,7 @@ fn shortcuts_page(
     top += 30.0;
     for (key, ids) in keymap.conflicts() {
         let r = Rect::from_min_size(Pos2::new(page.left(), top), Vec2::new(page.width(), 16.0));
-        let text = format!("{} runs {} at once", key.text(), ids.join(" and "));
+        let text = format!("{} runs {} at once", key.display(), ids.join(" and "));
         widgets::text_in(painter, r, Align2::LEFT_CENTER, &text, small.clone(), theme::recording());
         top += 16.0;
     }
@@ -962,14 +1955,22 @@ fn shortcuts_page(
     ui.scope_builder(egui::UiBuilder::new().max_rect(list), |ui| {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let mut group = "";
+            let mut listed = 0;
             for action in actions() {
+                // As shown and as written ("⌘⌥↑" and "Ctrl+Alt+Up" on macOS), so either finds it.
+                let keys_text: Vec<String> =
+                    keymap.keys(&action.id).iter().map(|s| format!("{} {}", s.display(), s.text())).collect();
+                if !action_matches(&action.label, &action.id, action.group, &keys_text.join(" "), &words) {
+                    continue;
+                }
+                listed += 1;
                 if action.group != group {
                     group = action.group;
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new(group).font(small.clone()).color(theme::text_hint()));
                 }
                 ui.horizontal(|ui| {
-                    let keys: Vec<String> = keymap.keys(&action.id).iter().map(Shortcut::text).collect();
+                    let keys: Vec<String> = keymap.keys(&action.id).iter().map(Shortcut::display).collect();
                     let capturing = state.capture.as_deref() == Some(action.id.as_str());
                     let left = egui::Layout::left_to_right(egui::Align::Center);
                     ui.allocate_ui_with_layout(Vec2::new(300.0, 18.0), left, |ui| {
@@ -992,31 +1993,181 @@ fn shortcuts_page(
                     });
                     let change = ui.add(egui::Button::new(egui::RichText::new("Change").font(small.clone())));
                     let label = format!("Change keys of {}", action.id);
-                    change.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+                    change.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
                     if change.clicked() {
                         state.capture = Some(action.id.clone());
                     }
                     let clear = ui.add(egui::Button::new(egui::RichText::new("Clear").font(small.clone())));
                     let label = format!("Clear keys of {}", action.id);
-                    clear.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+                    clear.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
                     if clear.clicked() && !keys.is_empty() {
                         keymap.set(&action.id, Vec::new());
                         changed = true;
                     }
                 });
             }
+            if listed == 0 {
+                ui.label(
+                    egui::RichText::new("No action matches the filter").font(small.clone()).color(theme::text_hint()),
+                );
+            }
         });
     });
     changed
 }
 
-/// Folders, scanning and what was found. Returns what the user asked for.
-fn plugin_section(
+/// Every word is in the action's label, id, group or keys (as shown and as written, "Ctrl+Alt+Up").
+fn action_matches(label: &str, id: &str, group: &str, keys: &str, words: &[String]) -> bool {
+    let text = format!("{label} {id} {group} {keys}").to_lowercase();
+    words.iter().all(|word| text.contains(word.as_str()))
+}
+
+/// The plug-in folders, each on or off, and a field to add one. Returns what the user asked for.
+fn plugin_folders(
     ui: &mut Ui,
     painter: &egui::Painter,
     page: Rect,
     y: &mut f32,
-    bottom: f32,
+    _bottom: f32,
+    plugins: &mut PluginsView,
+) -> Option<PluginRequest> {
+    use suhina_plugins::scan::FolderFormat;
+    let mut request = None;
+    let small = theme::ui_font(theme::TEXT_SMALL);
+    let line = |y: &mut f32, height: f32| {
+        let rect = Rect::from_min_size(Pos2::new(page.left(), *y), Vec2::new(page.width(), height));
+        *y += height;
+        rect
+    };
+    let format_name = |format: &str| match format {
+        "vst3" => "VST3",
+        "clap" => "CLAP",
+        "vst2" => "VST2",
+        "any" if cfg!(target_os = "macos") => "CLAP, VST3 and VST2",
+        _ => "CLAP and VST3",
+    };
+
+    // Folders: each on or off for scans, with the format taken from it; the added ones can be
+    // removed.
+    let r = line(y, 18.0);
+    widgets::text_in(painter, r, Align2::LEFT_CENTER, "Folders", theme::ui_font(theme::TEXT), theme::text_primary());
+    for folder in &plugins.folders {
+        let r = line(y, 18.0);
+        let check = Rect::from_min_size(Pos2::new(r.left(), r.top() + 1.0), Vec2::splat(16.0));
+        let mut enabled = folder.enabled;
+        // Off while a scan runs: its result replaces the library, switches too.
+        let response = ui.put(check, |ui: &mut egui::Ui| {
+            ui.add_enabled(!plugins.scanning, egui::Checkbox::without_text(&mut enabled))
+        });
+        let label = format!("Scan {}", folder.path);
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, folder.enabled, &label));
+        if response.changed() {
+            request = Some(PluginRequest::SetFolderEnabled(folder.path.clone(), enabled));
+        }
+        let right = if folder.standard { r.right() } else { r.right() - 68.0 };
+        let text = Rect::from_min_max(Pos2::new(check.right() + 6.0, r.top()), Pos2::new(right - 96.0, r.bottom()));
+        let color = if folder.enabled { theme::text_secondary() } else { theme::text_hint() };
+        let shown = if folder.standard { format!("{}  (standard)", folder.path) } else { folder.path.clone() };
+        widgets::text_in(painter, text, Align2::LEFT_CENTER, &shown, small.clone(), color);
+        let format = Rect::from_min_max(Pos2::new(right - 92.0, r.top()), Pos2::new(right - 4.0, r.bottom()));
+        widgets::text_in(
+            painter,
+            format,
+            Align2::RIGHT_CENTER,
+            format_name(&folder.format),
+            small.clone(),
+            theme::text_hint(),
+        );
+        if !folder.standard {
+            let remove =
+                Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top() + 1.0), Pos2::new(r.right(), r.bottom() - 1.0));
+            let response = widgets::button_area(
+                ui,
+                remove,
+                Id::unique(("remove-folder", &folder.path)),
+                format!("Remove {}", folder.path),
+            );
+            let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+            painter.fill_background(remove, 0.0, fill);
+            widgets::text_in(painter, remove, Align2::CENTER_CENTER, "Remove", small.clone(), theme::text_secondary());
+            if response.clicked() {
+                request = Some(PluginRequest::RemoveFolder(folder.path.clone()));
+            }
+        }
+    }
+    // A folder to add, and the format it holds. Add with
+    // nothing typed asks for the system's folder picker instead.
+    *y += 4.0;
+    let r = line(y, 20.0);
+    let add = Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top()), r.max);
+    let formats = Rect::from_min_max(
+        Pos2::new(add.left() - 4.0 - 4.0 * 52.0, r.top() + 2.0),
+        Pos2::new(add.left() - 4.0, r.bottom() - 2.0),
+    );
+    let field = Rect::from_min_max(r.min, Pos2::new(formats.left() - 4.0, r.bottom()));
+    let edit = ui.put(
+        field,
+        egui::TextEdit::singleline(&mut plugins.new_folder)
+            .frame(widgets::input_frame())
+            .hint_text("A folder to look in as well")
+            .font(small.clone()),
+    );
+    edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Plug-in folder to add"));
+    widgets::input_line(ui, &edit);
+    let width = formats.width() / 4.0;
+    for (index, (format, title)) in [
+        (FolderFormat::Any, "All"),
+        (FolderFormat::Vst3, "VST3"),
+        (FolderFormat::Clap, "CLAP"),
+        (FolderFormat::Vst2, "VST2"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let cell = Rect::from_min_size(
+            Pos2::new(formats.left() + index as f32 * width, formats.top()),
+            Vec2::new(width - 1.0, formats.height()),
+        );
+        let response = widgets::button_area(
+            ui,
+            cell,
+            Id::unique(("folder-format", index)),
+            format!("Folder format: {}", format_name(format.name())),
+        );
+        let chosen = plugins.new_format == format;
+        if response.clicked() {
+            plugins.new_format = format;
+        }
+        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+        painter.fill_background(cell, 0.0, if chosen { theme::control_selected() } else { idle });
+        let color = if chosen { theme::text_inverse() } else { theme::text_secondary() };
+        widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
+    }
+    let response = widgets::button_area(ui, add, Id::unique("add-folder"), "Add plug-in folder");
+    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+    painter.fill_background(add, 0.0, fill);
+    widgets::text_in(painter, add, Align2::CENTER_CENTER, "Add", small.clone(), theme::text_primary());
+    let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+    if response.clicked() || entered {
+        // Nothing typed: the system's folder picker, so Add always does something.
+        let folder = plugins.new_folder.trim();
+        request = if folder.is_empty() {
+            Some(PluginRequest::PickFolder)
+        } else {
+            Some(PluginRequest::AddFolder(folder.to_string(), plugins.new_format))
+        };
+    }
+    *y += 8.0;
+    request
+}
+
+/// Scan, Rescan all, and the button that opens the plug-in manager, which lists it all. Returns
+/// what the user asked for.
+fn plugin_actions(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    page: Rect,
+    y: &mut f32,
     plugins: &mut PluginsView,
 ) -> Option<PluginRequest> {
     let mut request = None;
@@ -1026,55 +2177,21 @@ fn plugin_section(
         *y += height;
         rect
     };
-
-    // Folders: the standard ones, then the added ones with a way to remove each.
-    let r = line(y, 18.0);
-    widgets::text_in(painter, r, Align2::LEFT_CENTER, "Folders", theme::ui_font(theme::TEXT), theme::text_primary());
-    for folder in &plugins.standard {
-        let r = line(y, 16.0);
-        let text = format!("{folder}  (standard)");
-        widgets::text_in(painter, r, Align2::LEFT_CENTER, &text, small.clone(), theme::text_hint());
-    }
-    for folder in &plugins.added {
-        let r = line(y, 18.0);
-        let remove =
-            Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top() + 1.0), Pos2::new(r.right(), r.bottom() - 1.0));
-        widgets::text_in(painter, r, Align2::LEFT_CENTER, folder, small.clone(), theme::text_secondary());
-        let response = widgets::button_area(ui, remove, Id::new(("remove-folder", folder)), format!("Remove {folder}"));
-        let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(remove, 0.0, fill);
-        widgets::text_in(painter, remove, Align2::CENTER_CENTER, "Remove", small.clone(), theme::text_secondary());
-        if response.clicked() {
-            request = Some(PluginRequest::RemoveFolder(folder.clone()));
-        }
-    }
-    *y += 4.0;
-    let r = line(y, 20.0);
-    let add = Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top()), r.max);
-    let field = Rect::from_min_max(r.min, Pos2::new(add.left() - 4.0, r.bottom()));
-    let edit = ui.put(
-        field,
-        egui::TextEdit::singleline(&mut plugins.new_folder)
-            .hint_text("A folder to look in as well")
-            .font(small.clone()),
-    );
-    edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Plug-in folder to add"));
-    let response = widgets::button_area(ui, add, Id::new("add-folder"), "Add plug-in folder");
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.rect_filled(add, 0.0, fill);
-    widgets::text_in(painter, add, Align2::CENTER_CENTER, "Add", small.clone(), theme::text_primary());
-    let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    if (response.clicked() || entered) && !plugins.new_folder.trim().is_empty() {
-        request = Some(PluginRequest::AddFolder(plugins.new_folder.trim().to_string()));
-    }
-    *y += 8.0;
-
     // Scanning.
     let r = line(y, SETTING_ROW);
     let summary = if plugins.scanning {
         "Scanning: each file is loaded in a separate process, so a plug-in that crashes is only reported".to_string()
     } else {
-        format!("{} plug-ins found, {} files failed to load", plugins.found.len(), plugins.failed.len())
+        let off = plugins.found.iter().filter(|p| !p.enabled).count();
+        let mut summary = format!("{} plug-ins found", plugins.found.len());
+        if off > 0 {
+            summary.push_str(&format!(" ({off} switched off)"));
+        }
+        summary.push_str(&format!(", {} files failed to load", plugins.failed.len()));
+        if !plugins.incompatible.is_empty() {
+            summary.push_str(&format!(", {} built for another processor", plugins.incompatible.len()));
+        }
+        summary
     };
     label(painter, r, "Scan", &summary);
     let buttons = control_rect(r, 2);
@@ -1084,14 +2201,14 @@ fn plugin_section(
             Pos2::new(buttons.left() + index as f32 * (half + 1.0), buttons.top()),
             Vec2::new(half, buttons.height()),
         );
-        let response = widgets::button_area(ui, cell, Id::new(("scan", index)), text);
+        let response = widgets::button_area(ui, cell, Id::unique(("scan", index)), text);
         let base = if plugins.scanning { theme::panel_background() } else { theme::control_background() };
         let fill = motion::mix(
             base,
             theme::control_hover(),
             if plugins.scanning { 0.0 } else { widgets::hover(ui, &response) },
         );
-        painter.rect_filled(cell, 0.0, fill);
+        painter.fill_background(cell, 0.0, fill);
         let color = if plugins.scanning { theme::text_hint() } else { theme::text_primary() };
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !plugins.scanning {
@@ -1099,29 +2216,17 @@ fn plugin_section(
         }
     }
 
-    // What was found, in the space left.
-    let list = Rect::from_min_max(
-        Pos2::new(page.left(), *y + 4.0),
-        Pos2::new(page.right(), (bottom - 12.0).max(*y + 4.0 + LIST_LEAST)),
-    );
-    *y = list.bottom();
-    ui.scope_builder(egui::UiBuilder::new().max_rect(list), |ui| {
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            for [name, vendor, format, version] in &plugins.found {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(name).font(small.clone()).color(theme::text_primary()));
-                    ui.label(
-                        egui::RichText::new(format!("{vendor} · {format} {version}"))
-                            .font(small.clone())
-                            .color(theme::text_hint()),
-                    );
-                });
-            }
-            for (file, why) in &plugins.failed {
-                ui.label(egui::RichText::new(format!("{file}: {why}")).font(small.clone()).color(theme::recording()));
-            }
-        });
-    });
+    // The plug-in manager: every plug-in and every file that gave none, in one table.
+    let r = line(y, SETTING_ROW);
+    label(painter, r, "Plug-in manager", "Every plug-in found, switched on or off, and why files failed");
+    let open = control_rect(r, 2);
+    let response = widgets::button_area(ui, open, Id::unique("open-plugin-manager"), "Open the plug-in manager");
+    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+    painter.fill_background(open, 0.0, fill);
+    widgets::text_in(painter, open, Align2::CENTER_CENTER, "Manage plug-ins", small, theme::text_primary());
+    if response.clicked() {
+        plugins.manager.open = true;
+    }
     request
 }
 
@@ -1134,7 +2239,10 @@ struct Chosen<'a> {
 }
 
 fn chosen<'a>(settings: &Settings, about: &'a About) -> Chosen<'a> {
-    let choice = settings.output_choice();
+    chosen_output(settings.output_choice(), about)
+}
+
+fn chosen_output(choice: suhina_session::OutputChoice, about: &About) -> Chosen<'_> {
     let default_host = about.audio_hosts.iter().find(|h| h.default).or(about.audio_hosts.first());
     let host = match &choice.host {
         Some(name) => about.audio_hosts.iter().find(|h| h.name.eq_ignore_ascii_case(name)),
@@ -1163,8 +2271,79 @@ pub(crate) fn audio_output(cx: &mut Cx<'_>, y: &mut f32) {
         cx.outcome.audio_refresh = true;
         cx.state.audio_listed = Some(true);
     }
-    let picked = output_rows(cx.ui, cx.painter, cx.page, y, cx.settings, cx.about);
-    use_output(cx, picked);
+    let active = cx.settings.output_choice();
+    let shown = cx.state.audio_pending.as_ref().unwrap_or(&active);
+    let picked = output_rows(cx.ui, cx.painter, cx.page, y, shown, cx.about, cx.state.audio_pending.is_some());
+    if let Some(picked) = picked {
+        if matches!(picked, OutputPick::ControlPanel) {
+            cx.outcome.audio_control_panel = true;
+            return;
+        }
+        let picked = restore_driver(picked, cx.settings, cx.about);
+        let picked = restore_input(picked, &active, cx.settings);
+        let apply = select_output(&mut cx.state.audio_pending, &active, picked);
+        use_output(cx, apply);
+    }
+}
+
+/// Audio › Output › Default track input (#1191): none, or a channel or a stereo pair of the
+/// input device, listed from its channels. Each audio device (Device) keeps its own with its
+/// Input, so choosing another one brings both back; the app runs `audio.setTrackInput`.
+pub(crate) fn default_track_input(cx: &mut Cx<'_>, r: Rect) {
+    let choice = cx.settings.output_choice();
+    let channels = match &cx.about.audio_live {
+        Some(live) if live.input.is_some() => live.input_channels,
+        _ => {
+            let host = chosen(cx.settings, cx.about).host;
+            let inputs = host.map_or(&[][..], |h| h.inputs.as_slice());
+            match &choice.input {
+                suhina_session::InputChoice::Off => 0,
+                suhina_session::InputChoice::Default => inputs.iter().find(|i| i.default).map_or(0, |i| i.channels),
+                suhina_session::InputChoice::Named(name) => {
+                    inputs.iter().find(|i| i.name.eq_ignore_ascii_case(name)).map_or(0, |i| i.channels)
+                }
+            }
+        }
+    };
+    if choice.input == suhina_session::InputChoice::Off {
+        cx.note("Choose an input device under Input first: each audio device keeps its own default track input");
+        return;
+    }
+    let current = suhina_session::audio::input_channels_text(cx.settings.track_input());
+    let options = track_input_options(channels, &current);
+    cx.note("What a new audio track hears, and an armed track that hears nothing; each audio device keeps its own with its Input, tracks that are there keep theirs");
+    if let Some(picked) = choice_dropdown(cx.ui, cx.painter, r, cx.name, &options, &current)
+        && let Some(slot) = cx.settings.track_input_slot()
+    {
+        *slot = picked;
+        cx.outcome.changed = true;
+    }
+}
+
+/// The choices of Default track input for a device with `channels` inputs: None, each channel,
+/// then each stereo pair as the track's Audio From lists them (1/2, 3/4, …); and `current` when
+/// it is not among them: as it is when the device has its channels (a pair such as 2/3 set from
+/// MCP), marked when it does not.
+pub(crate) fn track_input_options(channels: u16, current: &str) -> Vec<(String, String)> {
+    use suhina_engine::model::InputChannels;
+    let channels = channels.min(suhina_engine::model::MAX_INPUT_CHANNEL);
+    let mut options = vec![("None".to_string(), "none".to_string())];
+    options.extend((1..=channels).map(|c| (format!("In {c}"), c.to_string())));
+    options.extend((1..channels).step_by(2).map(|c| (format!("In {c}/{}", c + 1), format!("{c}/{}", c + 1))));
+    if !options.iter().any(|(_, value)| value == current) {
+        let last = match suhina_session::audio::input_channels_from_text(current) {
+            Some(InputChannels::Mono(c)) => Some(c),
+            Some(InputChannels::Stereo(c)) => c.checked_add(1),
+            _ => None,
+        };
+        let label = if last.is_some_and(|last| last <= channels) {
+            format!("In {current}")
+        } else {
+            format!("In {current} (not on this device)")
+        };
+        options.push((label, current.to_string()));
+    }
+    options
 }
 
 /// Audio › Cue: the cue's output pair and volume.
@@ -1178,16 +2357,118 @@ pub(crate) fn audio_now(cx: &mut Cx<'_>, y: &mut f32) {
     cx.outcome.audio_refresh |= now_rows(cx.ui, cx.painter, cx.page, y, cx.settings, cx.about);
 }
 
+fn native_panel_visible(
+    pending: bool,
+    host: Option<&str>,
+    device: Option<&str>,
+    live: Option<&suhina_session::OutputInfo>,
+) -> bool {
+    !pending
+        && host == Some("ASIO")
+        && live.is_some_and(|live| live.host == "ASIO" && device == Some(live.device.as_str()))
+}
+
+/// The native panel belongs beside the device it configures.
+fn driver_panel_row(ui: &Ui, painter: &egui::Painter, r: Rect) -> bool {
+    label(painter, r, "Device settings", "Open the active driver's buffer and hardware settings");
+    let rect = Rect::from_min_size(Pos2::new(r.right() - 150.0, r.top() + 1.0), Vec2::new(150.0, SEGMENT));
+    let response =
+        widgets::button_area(ui, rect, Id::unique("asio-control-panel"), "Open the active ASIO driver's control panel");
+    let hover = widgets::hover(ui, &response);
+    painter.fill_background(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+    widgets::text_in(
+        painter,
+        rect,
+        Align2::CENTER_CENTER,
+        "Control panel…",
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_primary(),
+    );
+    response.clicked()
+}
+
+/// Selecting a driver only changes the form. The device commits the pair through
+/// the same audio.setOutput command as every other output change.
+enum OutputPick {
+    ControlPanel,
+    Driver(suhina_session::OutputChoice),
+    Device(suhina_session::OutputChoice),
+    Setting(suhina_session::OutputChoice),
+}
+
+/// A remembered, available pair can be committed atomically; an unknown or missing
+/// device still requires an explicit choice, never an intermediate default open.
+fn restore_driver(picked: OutputPick, settings: &Settings, about: &About) -> OutputPick {
+    let OutputPick::Driver(mut choice) = picked else { return picked };
+    if choice.host == settings.output_choice().host {
+        return OutputPick::Driver(choice);
+    }
+    let default = about.audio_hosts.iter().find(|h| h.default);
+    let host = choice
+        .host
+        .as_ref()
+        .and_then(|name| about.audio_hosts.iter().find(|h| h.name.eq_ignore_ascii_case(name)))
+        .or_else(|| choice.host.is_none().then_some(default).flatten());
+    let remembered = settings.remembered_device(choice.host.as_deref(), default.map(|h| h.name.as_str()));
+    if let (Some(host), Some(device)) = (host, remembered) {
+        let available = match &device {
+            Some(name) => host.devices.iter().any(|d| &d.name == name),
+            None => host.devices.iter().any(|d| d.default),
+        };
+        if available {
+            choice.device = device;
+            return OutputPick::Device(choice);
+        }
+    }
+    OutputPick::Driver(choice)
+}
+
+/// Another audio device brings back the input it was last chosen with, so its default track
+/// input comes back with it (#1191); a device not chosen before keeps the input there is.
+fn restore_input(picked: OutputPick, active: &suhina_session::OutputChoice, settings: &Settings) -> OutputPick {
+    let OutputPick::Device(mut choice) = picked else { return picked };
+    if choice.device_key() != active.device_key()
+        && let Some(input) = settings.remembered_input(&choice)
+    {
+        choice.input = input;
+    }
+    OutputPick::Device(choice)
+}
+
+fn select_output(
+    pending: &mut Option<suhina_session::OutputChoice>,
+    active: &suhina_session::OutputChoice,
+    picked: OutputPick,
+) -> Option<suhina_session::OutputChoice> {
+    match picked {
+        OutputPick::ControlPanel => None,
+        OutputPick::Driver(choice) => {
+            *pending = (choice.host != active.host).then_some(choice);
+            None
+        }
+        OutputPick::Device(choice) => {
+            *pending = None;
+            Some(choice)
+        }
+        OutputPick::Setting(choice) if pending.is_some() => {
+            *pending = Some(choice);
+            None
+        }
+        OutputPick::Setting(choice) => Some(choice),
+    }
+}
+
 /// The rows of Audio › Output; returns a new choice.
 fn output_rows(
     ui: &Ui,
     painter: &egui::Painter,
     page: Rect,
     y: &mut f32,
-    settings: &Settings,
+    choice: &suhina_session::OutputChoice,
     about: &About,
-) -> Option<suhina_session::OutputChoice> {
-    let Chosen { choice, default_host, host, device } = chosen(settings, about);
+    pending: bool,
+) -> Option<OutputPick> {
+    let Chosen { choice, default_host, host, device } = chosen_output(choice.clone(), about);
     let row = |y: &mut f32| setting_row(page, y);
     let mut picked: Option<suhina_session::OutputChoice> = None;
     // Host.
@@ -1197,13 +2478,20 @@ fn output_rows(
         vec![(format!("Default ({})", default_host.map_or("none", |h| h.name.as_str())), None)];
     options.extend(about.audio_hosts.iter().map(|h| (h.name.clone(), Some(h.name.clone()))));
     if let Some(host) = choice_dropdown(ui, painter, r, "Driver", &options, &choice.host) {
-        picked = choice.with_params(&serde_json::json!({ "host": host.unwrap_or_default() })).ok();
+        return choice
+            .with_params(&serde_json::json!({ "host": host.unwrap_or_default() }))
+            .ok()
+            .map(OutputPick::Driver);
     }
     // Device.
     let r = row(y);
-    let note = match (&choice.device, device) {
-        (Some(name), None) => format!("{name} is not there; the default output plays"),
-        _ => "The output device on that driver".to_string(),
+    let note = if pending {
+        "Choose a device to apply the driver change".to_string()
+    } else {
+        match (&choice.device, device) {
+            (Some(name), None) => format!("{name} is not there; the default output plays"),
+            _ => device_note(host, &about.audio_hosts),
+        }
     };
     label(painter, r, "Device", &note);
     let default_device = host.and_then(|h| h.devices.iter().find(|d| d.default)).map_or("none", |d| d.name.as_str());
@@ -1211,8 +2499,28 @@ fn output_rows(
     if let Some(host) = host {
         options.extend(host.devices.iter().map(|d| (d.name.clone(), Some(d.name.clone()))));
     }
-    if let Some(name) = choice_dropdown(ui, painter, r, "Device", &options, &choice.device) {
-        picked = choice.with_params(&serde_json::json!({ "device": name.unwrap_or_default() })).ok();
+    let mut device_options: Vec<_> = options.into_iter().map(|(label, value)| (label, Some(value))).collect();
+    let selected = if pending {
+        device_options.insert(0, ("Choose a device…".into(), None));
+        None
+    } else {
+        Some(choice.device.clone())
+    };
+    if let Some(Some(name)) = choice_dropdown(ui, painter, r, "Device", &device_options, &selected) {
+        return choice
+            .with_params(&serde_json::json!({ "device": name.unwrap_or_default() }))
+            .ok()
+            .map(OutputPick::Device);
+    }
+    // Only expose the panel for the device actually running, never a pending choice.
+    if native_panel_visible(
+        pending,
+        host.map(|h| h.name.as_str()),
+        device.map(|d| d.name.as_str()),
+        about.audio_live.as_ref(),
+    ) && driver_panel_row(ui, painter, row(y))
+    {
+        return Some(OutputPick::ControlPanel);
     }
     // Sample rate.
     let r = row(y);
@@ -1224,7 +2532,7 @@ fn output_rows(
         options.extend(device.sample_rates.iter().map(|r| (format!("{r} Hz"), Some(*r))));
     }
     if let Some(rate) = choice_dropdown(ui, painter, r, "Sample rate", &options, &choice.sample_rate) {
-        picked = choice.with_params(&serde_json::json!({ "sample_rate": rate.unwrap_or(0) })).ok();
+        picked = choice.with_params(&serde_json::json!({ "sampleRate": rate.unwrap_or(0) })).ok();
     }
     // The buffer row says what the number is, and it is the device's own buffer only where it is
     // asked of the driver: ASIO (when its driver declared a size the engine can render in) and
@@ -1251,9 +2559,9 @@ fn output_rows(
     } else if device_sets {
         let note = match declares {
             Some((min, max)) if min < max => {
-                format!("The device's own buffer, from its driver: {min} to {max} frames")
+                format!("Requested driver buffer: {min} to {max} frames")
             }
-            Some((min, _)) => format!("The device's own buffer; its driver allows {min} frames only"),
+            Some((min, _)) => format!("Requested driver buffer: {min} frames only"),
             None => "The device's own buffer; its driver sets the size".to_string(),
         };
         ("Buffer size", note)
@@ -1270,21 +2578,20 @@ fn output_rows(
     let mut options: Vec<(String, Option<u32>)> = vec![("Default (1024 frames)".to_string(), None)];
     options.extend(sizes.iter().map(|n| (format!("{n} frames ({:.1} ms)", f64::from(*n) * 1000.0 / rate), Some(*n))));
     if let Some(frames) = choice_dropdown(ui, painter, r, name, &options, &choice.buffer_frames) {
-        picked = choice.with_params(&serde_json::json!({ "buffer_frames": frames.unwrap_or(0) })).ok();
+        picked = choice.with_params(&serde_json::json!({ "bufferFrames": frames.unwrap_or(0) })).ok();
     }
-    // Exclusive mode, WASAPI only.
-    let r = row(y);
-    let note = if !wasapi {
-        "WASAPI only; ASIO always has the device to itself"
-    } else if device.is_some_and(|d| !d.exclusive) {
-        "This device does not allow it; it plays shared"
-    } else {
-        "The device plays only Suhina, with less delay; other programs are not heard on it"
-    };
-    label(painter, r, "Exclusive mode", note);
-    let on_off = [("On", true), ("Off", false)];
-    if let Some(on) = segmented(ui, painter, control_rect(r, 2), "Exclusive mode", &on_off, choice.exclusive) {
-        picked = choice.with_params(&serde_json::json!({ "exclusive": on })).ok();
+    // Exclusive mode belongs to WASAPI, not to the ASIO driver panel.
+    if wasapi {
+        let r = row(y);
+        let note = if device.is_some_and(|d| !d.exclusive) {
+            "This device does not allow it; it plays shared"
+        } else {
+            "The device plays only Suhina; other programs are not heard on it"
+        };
+        label(painter, r, "Exclusive mode", note);
+        if let Some(on) = switch(ui, painter, r, "Exclusive mode", choice.exclusive) {
+            picked = choice.with_params(&serde_json::json!({ "exclusive": on })).ok();
+        }
     }
 
     // Input device (ADR 0017): off until chosen, so nothing opens a microphone unasked.
@@ -1312,7 +2619,25 @@ fn output_rows(
         picked = choice.with_params(&serde_json::json!({ "input": input.as_text() })).ok();
     }
 
-    picked
+    picked.map(OutputPick::Setting)
+}
+
+/// What the Device row says about the driver chosen: why it lists nothing, and where a driver's
+/// list leaves out the outputs people look for first.
+fn device_note(host: Option<&suhina_session::audio::HostInfo>, hosts: &[suhina_session::audio::HostInfo]) -> String {
+    let beside = |name: &str| hosts.iter().any(|h| h.name == name);
+    match host {
+        Some(host) if host.error.is_some() => {
+            format!("{} cannot list its devices: {}", host.name, host.error.as_deref().unwrap_or_default())
+        }
+        Some(host) if host.name == "ASIO" && beside("WASAPI") => {
+            "Interfaces with an ASIO driver; Bluetooth headphones are under WASAPI".to_string()
+        }
+        Some(host) if host.name == "ALSA" && beside("PulseAudio") => {
+            "The sound cards; Bluetooth headphones are under PulseAudio".to_string()
+        }
+        _ => "The output device on that driver".to_string(),
+    }
 }
 
 /// The rows of Audio › Cue; returns a new choice.
@@ -1380,13 +2705,13 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
                 if info.failed { "; the device reported an error" } else { "" }
             ),
         ),
-        None => ("None: no project is playing".to_string(), "-".to_string()),
+        None => ("No project is playing".to_string(), "Not playing".to_string()),
     };
-    label(painter, r, "Output", &output);
+    label(painter, r, "Playing on", &output);
     let refresh = Rect::from_min_size(Pos2::new(r.right() - 120.0, r.top() + 1.0), Vec2::new(120.0, SEGMENT));
-    let response = widgets::button_area(ui, refresh, Id::new("audio-refresh"), "List the audio devices again");
+    let response = widgets::button_area(ui, refresh, Id::unique("audio-refresh"), "List the audio devices again");
     let hover = widgets::hover(ui, &response);
-    painter.rect_filled(refresh, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+    painter.fill_background(refresh, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
     widgets::text_in(
         painter,
         refresh,
@@ -1396,7 +2721,13 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
         theme::text_primary(),
     );
     let r = row(y);
-    label(painter, r, "Latency", &format!("Engine to speaker, measured: {latency}"));
+    label(painter, r, "Delay to the speakers", &format!("Measured from the engine to the speakers: {latency}"));
+    let r = row(y);
+    let buffers = about.audio_live.as_ref().map_or_else(
+        || "No active output".to_string(),
+        |info| format!("Engine: {} frames · Driver callback: {} frames", info.engine_block, info.buffer_frames),
+    );
+    label(painter, r, "Active buffers", &buffers);
     // A key on a MIDI controller (ADR 0017): the engine keeps less ahead while a track is armed.
     let r = row(y);
     let key = match &about.audio_live {
@@ -1407,9 +2738,9 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
             "Up to {:.1} ms now; arming a track keeps one block ahead, so less. Smaller buffers are quicker",
             info.live_latency_ms
         ),
-        None => "-".to_string(),
+        None => "Not playing".to_string(),
     };
-    label(painter, r, "Key to sound", &key);
+    label(painter, r, "Delay when you play a key", &key);
     let r = row(y);
     let input = match &about.audio_live {
         Some(info) => match &info.input {
@@ -1422,9 +2753,9 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
             ),
             None => "None: no input device is open".to_string(),
         },
-        None => "-".to_string(),
+        None => "Not playing".to_string(),
     };
-    label(painter, r, "Input now", &input);
+    label(painter, r, "Recording input", &input);
     response.clicked()
 }
 
@@ -1445,9 +2776,10 @@ fn preset_segmented(
         let x = rect.left() + index as f32 * (part + 1.0);
         let segment = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(part, rect.height()));
         let chosen = *value == current;
-        let response = widgets::button_area(ui, segment, Id::new(("keymap-preset", *text)), format!("Preset: {text}"));
+        let response =
+            widgets::button_area(ui, segment, Id::unique(("keymap-preset", *text)), format!("Preset: {text}"));
         let fill = if chosen { theme::control_active() } else { theme::control_background() };
-        painter.rect_filled(segment, 0.0, motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response)));
+        painter.fill_background(segment, 0.0, motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response)));
         let color = if chosen { theme::text_primary() } else { theme::text_secondary() };
         widgets::text_in(painter, segment, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !chosen {
@@ -1474,7 +2806,7 @@ fn midi_section(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, about
     let ports = match &about.midi_inputs {
         Ok(ports) if ports.is_empty() => {
             let r = setting_row(page, y);
-            label(painter, r, "None", "No MIDI controller is connected; one plugged in is found within seconds");
+            label(painter, r, "No MIDI controller found", "Plug one in and it appears here within a few seconds");
             return None;
         }
         Ok(ports) => ports,
@@ -1493,9 +2825,8 @@ fn midi_section(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, about
             (_, false, _) => "Off".to_string(),
         };
         label(painter, r, &port.name, &note);
-        let on_off = [("On", true), ("Off", false)];
         let name = format!("MIDI input {}", port.name);
-        if let Some(on) = segmented(ui, painter, control_rect(r, 2), &name, &on_off, port.enabled) {
+        if let Some(on) = switch(ui, painter, r, &name, port.enabled) {
             picked = Some((port.name.clone(), on));
         }
     }
@@ -1527,13 +2858,11 @@ fn choice_dropdown<T: Clone + PartialEq>(
     options: &[(String, T)],
     current: &T,
 ) -> Option<T> {
-    let field = Rect::from_min_size(
-        Pos2::new(row.right() - DROPDOWN_FIELD, row.top() + 1.0),
-        Vec2::new(DROPDOWN_FIELD, SEGMENT + 2.0),
-    );
+    let left = control_x(row).min(row.right() - DROPDOWN_FIELD);
+    let field = Rect::from_min_size(Pos2::new(left, row.top() + 1.0), Vec2::new(row.right() - left, SEGMENT + 2.0));
     let shown = options.iter().find(|(_, v)| v == current).map_or("-", |(text, _)| text.as_str());
-    let response = widgets::button_area(ui, field, Id::new(("audio-setting", name)), format!("{name}: {shown}"));
-    widgets::dropdown(ui, painter, field, &response, shown);
+    let response = widgets::button_area(ui, field, Id::unique(("audio-setting", name)), format!("{name}: {shown}"));
+    widgets::form_dropdown(ui, painter, field, &response, shown);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
         let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
@@ -1544,6 +2873,51 @@ fn choice_dropdown<T: Clone + PartialEq>(
         }
     });
     picked
+}
+
+/// A setting's name in the first column of `row`, cut to `name_rect`, and under it `status` when
+/// the setting reports one (the last backup, a folder that is missing). Returns the height the
+/// row needs. The setting's description is its name's tooltip (`describe`), not a line of its own.
+fn wrapped_label(painter: &egui::Painter, row: Rect, name_rect: Rect, name: &str, status: Option<&str>) -> f32 {
+    let width = name_rect.width().min(CONTROL_COLUMN - 8.0);
+    let top = Rect::from_min_size(name_rect.min, Vec2::new(width, 16.0));
+    widgets::text_in(painter, top, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), theme::text_primary());
+    let Some(status) = status.filter(|s| !s.is_empty()) else { return LINE_ROW };
+    let color = theme::text_secondary();
+    let galley =
+        painter.layout(status.to_string(), theme::ui_font(theme::TEXT_SMALL), color, (row.width() - 8.0).max(40.0));
+    let height = galley.size().y;
+    painter.galley(Pos2::new(row.left(), row.top() + 18.0), galley, color);
+    LINE_ROW.max(18.0 + height + 6.0)
+}
+
+/// The description of the setting named `name`, as Settings › Help
+/// asks: a tooltip on its name, or on a ? drawn after the name. (Shown under the name, it is the
+/// row's second line instead, drawn by [`wrapped_label`].)
+fn describe(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, description: &str, how: Descriptions) {
+    let font = theme::ui_font(theme::TEXT);
+    let name_width = widgets::text_width(ui, name, font).min(CONTROL_COLUMN - 26.0);
+    let area = match how {
+        Descriptions::Tooltip => Rect::from_min_size(row.min, Vec2::new(CONTROL_COLUMN - 8.0, LINE_ROW)),
+        Descriptions::Icon => {
+            let icon =
+                Rect::from_center_size(Pos2::new(row.left() + name_width + 12.0, row.top() + 8.0), Vec2::splat(12.0));
+            painter.circle_stroke(icon.center(), 5.5, egui::Stroke::new(1.0, theme::text_hint()));
+            widgets::text_in(
+                painter,
+                icon,
+                Align2::CENTER_CENTER,
+                "?",
+                theme::ui_font(theme::TEXT_TINY),
+                theme::text_secondary(),
+            );
+            icon.expand(3.0)
+        }
+        Descriptions::Shown => return,
+    };
+    let response = ui.interact(area, Id::unique(("setting-description", name)), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, description));
+    response.on_hover_text(description);
 }
 
 /// A setting's name and a note under it, on the left of its row.
@@ -1561,10 +2935,47 @@ fn label(painter: &egui::Painter, row: Rect, name: &str, note: &str) {
     );
 }
 
+/// The most choices shown as option buttons; more are a drop-down.
+const MAX_BUTTONS: usize = 5;
+/// The width of a switch.
+const SWITCH_WIDTH: f32 = 34.0;
+
+/// A switch on the right of `row` for a yes/no setting: one control, labelled with the setting's
+/// name. Returns the new value when it is clicked.
+fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> Option<bool> {
+    let track = Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(SWITCH_WIDTH, SEGMENT));
+    let response = ui.interact(track, Id::unique(("setting-switch", name)), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, name));
+    let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
+    let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+    painter.rect_filled(track, 0.0, motion::mix(idle, theme::text_value(), lit));
+    let knob_width = SEGMENT - 4.0;
+    let x = track.left() + 2.0 + lit * (track.width() - 4.0 - knob_width);
+    let knob = Rect::from_min_size(Pos2::new(x, track.top() + 2.0), Vec2::new(knob_width, SEGMENT - 4.0));
+    painter.rect_filled(knob, 0.0, motion::mix(theme::text_secondary(), theme::window_background(), lit));
+    response.clicked().then_some(!on)
+}
+
+/// Where a segmented control for `options` sits on the right of a row: every part wide enough
+/// for the longest text, so none is cut off.
+fn options_rect<T>(ui: &Ui, row: Rect, options: &[(&str, T)]) -> Rect {
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let widest = options.iter().map(|(text, _)| widgets::text_width(ui, text, font.clone())).fold(0.0_f32, f32::max);
+    let part = (widest + 16.0).max(48.0).ceil();
+    let count = options.len().max(1) as f32;
+    let width = part * count + (count - 1.0);
+    Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(width, SEGMENT))
+}
+
+/// Where a setting's control starts in `row`: the second column.
+fn control_x(row: Rect) -> f32 {
+    row.left() + CONTROL_COLUMN
+}
+
 /// Where a segmented control with `parts` parts sits on the right of a row.
 fn control_rect(row: Rect, parts: usize) -> Rect {
     let width = 64.0 * parts as f32;
-    Rect::from_min_size(Pos2::new(row.right() - width, row.top() + 1.0), Vec2::new(width, SEGMENT))
+    Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(width, SEGMENT))
 }
 
 /// A segmented control (components › Dropdown and segmented control). Returns the option
@@ -1583,38 +2994,64 @@ fn segmented<T: Copy + PartialEq>(
     for (index, (text, value)) in options.iter().enumerate() {
         let x = rect.left() + index as f32 * (part + 1.0);
         let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(part, rect.height()));
-        let response = widgets::button_area(ui, cell, Id::new(("setting", name, index)), format!("{name}: {text}"));
+        let response = widgets::button_area(ui, cell, Id::unique(("setting", name, index)), format!("{name}: {text}"));
         if response.clicked() && *value != current {
             picked = Some(*value);
         }
+        // A part is a `.button` (`:checked` when chosen), as the sheet's generic rules say.
+        let _style = crate::kit::style_class::enter_response("button", &response);
+        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, *value == current);
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), *value == current, motion::VALUE);
         let hover = widgets::hover(ui, &response);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), hover);
-        painter.rect_filled(cell, 0.0, motion::mix(idle, theme::text_value(), selected));
-        let color = motion::mix(theme::text_secondary(), theme::window_background(), selected);
+        crate::kit::native_css::surface(painter, cell, 0.0, motion::mix(idle, theme::control_selected(), selected));
+        let color =
+            crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), selected));
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_output_now_says_which_chosen_device_it_waits_for() {
-        let info = suhina_session::OutputInfo {
-            host: "WASAPI".into(),
-            device: "Speakers".into(),
-            sample_rate: 48_000,
-            engine_block: 512,
-            ..Default::default()
-        };
-        let usb = suhina_session::OutputChoice { device: Some("USB Audio".into()), ..Default::default() };
-        assert_eq!(now_playing(&info, &usb), "Speakers (WASAPI, 48000 Hz, 512 frames)");
-        let waiting = suhina_session::OutputInfo { fallback: true, ..info };
-        assert_eq!(now_playing(&waiting, &usb), "Speakers (WASAPI, 48000 Hz, 512 frames), until USB Audio is back");
-        let asio = suhina_session::OutputChoice { host: Some("ASIO".into()), ..Default::default() };
-        assert!(now_playing(&waiting, &asio).ends_with("until ASIO is back"));
+/// Keep unmultiplied colour channels even at zero alpha.
+pub(super) fn edit_rgba(ui: &mut Ui, rgba: &mut [u8; 4], alpha: egui::color_picker::Alpha) -> egui::Response {
+    let mut hsva = egui::ecolor::Hsva::from_srgba_unmultiplied(*rgba);
+    let popup_id = ui.auto_id_with("popup");
+    let (rect, mut response) = ui.allocate_exact_size(Vec2::new(40.0, 18.0), Sense::click());
+    let swatch = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
+    for column in 0..8 {
+        for row in 0..4 {
+            let tile =
+                Rect::from_min_size(rect.min + Vec2::new(column as f32 * 5.0, row as f32 * 5.0), Vec2::splat(5.0))
+                    .intersect(rect);
+            ui.painter().rect_filled(
+                tile,
+                0.0,
+                egui::Color32::from_gray(if (column + row) % 2 == 0 { 180 } else { 100 }),
+            );
+        }
     }
+    ui.painter().rect_filled(rect, 0.0, swatch);
+    ui.painter().rect_stroke(rect, 0.0, theme::hairline(theme::text_secondary()), egui::StrokeKind::Inside);
+    let background = theme::panel_background().to_opaque();
+    // Popup Areas resolve their own style; setting the parent Ui's fill does not set their frame.
+    egui::Popup::menu(&response)
+        .id(popup_id)
+        .frame(egui::Frame::popup(ui.style()).fill(background))
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.spacing_mut().slider_width = 275.0;
+            ui.visuals_mut().override_text_color = Some(theme::text_on(background));
+            ui.visuals_mut().text_edit_bg_color = Some(background);
+            if egui::color_picker::color_picker_hsva_2d(ui, &mut hsva, alpha) {
+                response.mark_changed();
+            }
+        });
+    if response.changed() {
+        *rgba = hsva.to_srgba_unmultiplied();
+    }
+    response
 }
+
+#[cfg(test)]
+#[path = "settings_view_tests.rs"]
+mod tests;

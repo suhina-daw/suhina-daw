@@ -2,48 +2,51 @@
 description: Why clips, arrangement lanes and scenes gain an id, what an id is, why ids need not be globally unique, and the four steps that make every command address objects by id instead of by position
 read_when: object id, ClipId, clip identity, positional addressing, clip.move, duplicated clips, make unique, project file version, ParamType::Clip, merge, version diff
 type: decision
-status: draft
-last_verified: 2026-10-15
+status: accepted
+built: yes
+last_verified: 2026-11-05
 covers:
   - crates/model/src/lib.rs
+  - crates/model/src/ids.rs
+  - crates/model/src/id_list.rs
   - crates/session/src/commands.rs
+  - crates/session/src/lib.rs
   - crates/project-file/src/lib.rs
+  - crates/als/src/lib.rs
 ---
 
 # 0025: Object identity in the model
 
-- **Status:** proposed
-- **Date:** 2026-10-15
+- **Date:** 2026-10-15; accepted 2026-10-17, built in [#568](https://github.com/suhina-daw/suhina-daw/issues/568)
 
 ## Context
 
-Three of the model's objects have an id and the rest do not. `TrackId(pub u32)` (`crates/model/src/lib.rs:12`),
-`ChannelId(pub u32)` (`:16`) and `ContentId(pub u32)` (`:20`) name their objects; a `Clip` (`:285`),
-an `ArrangementLane` (`:453`) and a `Scene` (`:467`) are identified by **where they sit in a `Vec`**.
-`Clip`'s fields are `content`, `start`, `length`, `offset`, `loop_range`, `enabled`, `fade_in`,
-`fade_out`, `fade_in_curve`, `fade_out_curve` and `extensions` — there is no field that says which
-clip it is. `ArrangementLane` is a `name`, an optional `track` and `clips: Vec<Clip>`; a `Scene` is
-a `name` and an optional tempo. Even the model's own error type reports positions:
-`ValidationError::BadFades { lane: usize, clip: usize }` (`:512`, raised at `:596`).
+When this was written, three of the model's objects had an id and the rest did not. `TrackId`,
+`ChannelId` and `ContentId` (`u32` newtypes in `suhina_model`) named their objects; a `Clip`, an
+`ArrangementLane` and a `Scene` were identified by **where they sat in a `Vec`**. `Clip`'s fields
+were `content`, `start`, `length`, `offset`, `loop_range`, `enabled`, `fade_in`, `fade_out`,
+`fade_in_curve`, `fade_out_curve` and `extensions`: no field said which clip it was.
+`ArrangementLane` was a `name`, an optional `track` and `clips: Vec<Clip>`; a `Scene` was a `name`
+and an optional tempo. Even the model's own error type reported positions:
+`ValidationError::BadFades { lane: usize, clip: usize }`.
 
 Position is a fine identity for one program reading one file, and it stops being one as soon as two
 copies of a project exist:
 
-- **"Move the third clip" does not mean the same thing to two machines.** The command is
-  `clip.move { track, index, start, to_track?, stack? }` (`crates/session/src/commands.rs:395–411`),
-  and `index` is "clip index on the track, from `project.clips`". Two objects that changed
+- **"Move the third clip" does not mean the same thing to two machines.** The command was
+  `clip.move { track, index, start, to_track?, stack? }` (`suhina_session::commands`), and `index`
+  was "clip index on the track, from `project.clips`". Two objects that changed
   independently both answer to "the third clip".
 - **A readable diff is impossible.** Moving one clip makes **everything after it on the lane** look
   changed; splitting a clip makes **half the lane** look changed; copying a clip looks like several
   edits. A version comparison that reports noise instead of "these three clips moved" is not a
   version comparison.
 
-And the identity that is already there is per-project and allocated as `max + 1`:
-`TrackId` at `crates/session/src/commands.rs:926`, `ContentId` at `:1243`, and in
-`crates/session/src/files.rs:88` and `:470` (which at least use `checked_add`). A blank project
-starts from literal values — `ChannelId(100)`, `ChannelId(90)`, `ChannelId(91)` and
-`TrackId(10 + offset)` (`crates/session/src/blank.rs:14–15`, `:49`) — so two machines do not merely
-risk colliding, they **start collided**.
+And the identity that was already there was per-project and allocated as `max + 1`: `TrackId` and
+`ContentId` in `suhina_session::commands`, and twice in `suhina_session::files` (which at least used
+`checked_add`). A blank project started from literal values (`ChannelId(100)`, `ChannelId(90)`,
+`ChannelId(91)` and `TrackId(10 + offset)`, in `suhina_session::blank`), so two machines did not
+merely risk colliding, they **started collided**.
 
 This is worth doing with no collaboration anywhere in sight, and this is the strongest argument for
 it:
@@ -62,9 +65,8 @@ it:
 ### Two facts that decide the cost
 
 **The engine never sorts by id**, so the audio path does not notice this change. Its only sorts are
-by start time (`crates/engine/src/lib.rs:796`), chain depth (`crates/engine/src/buses.rs:72`), note
-time (`crates/engine/src/launcher.rs:618`), marker time (`crates/engine/src/audio.rs:95`) and an
-internal graph sequence (`crates/engine/src/swap.rs:259`). **The golden renders therefore do not
+by start time (`engine/src/lib.rs`), chain depth (`buses.rs`), note time (`launcher.rs`), marker
+time (`audio.rs`) and an internal graph sequence (`swap.rs`). **The golden renders therefore do not
 break on an id change** — `crates/engine/tests/golden/`, `devices/fm-synth/tests/golden/` and
 `crates/ui/tests/golden/` are untouched. That single fact is what makes this affordable rather than
 a DSP regression hunt.
@@ -77,12 +79,20 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
 ## Decision
 
 1. **Clips, arrangement lanes and scenes gain an id: `ClipId`, `LaneId`, `SceneId`.** They join
-   `TrackId`, `ChannelId` and `ContentId` as `u32` newtypes. A `Slot` (`crates/model/src/lib.rs:481`)
+   `TrackId`, `ChannelId` and `ContentId` as `u32` newtypes. A `Slot` (`suhina_model::Slot`)
    does not gain one: it is a cell of a grid, addressed as (column, scene id), not an object that
    moves between parents.
 
 2. **An id is a monotonic counter stored in the project, and a value is never reused.** The project
-   keeps the next value to hand out; deleting an object does not return its id to the pool. A
+   keeps the next value to hand out (`Project::next_id`, written as `next_id` in the file); deleting
+   an object does not return its id to the pool, and neither does an undo: a session keeps the
+   counter where it got to when it steps back through its history, so an object added after an
+   undo never gets the id of the one the undo took away. **Clips, lanes and scenes share the one
+   counter**, so a value names at most one object of the three kinds; that is cheaper than a type
+   tag and leaves one block of values to reserve (decision 3). The values run from 1 to
+   `u32::MAX − 1`: 0 is "no id yet" (an object built in code, a file written before ids), and the
+   largest value is never handed out, so the counter can always name the next one; a project that
+   reaches it can still be opened and edited, only not given new objects. A
    deleted-then-recreated object must not inherit an identity, because an id that can be resurrected
    silently aliases two different objects — which is exactly the failure that makes a diff
    untrustworthy. This also keeps ids short, ordered and readable in a file and in `project.clips`,
@@ -99,7 +109,18 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
    > ([ADR 0007](0007-several-open-projects.md) › Not decided yet).
 
    Collisions are therefore confined to objects that have no ancestor in common, and those are
-   precisely the objects that must be given fresh ids anyway. **Peer-scoped or globally unique ids
+   precisely the objects that must be given fresh ids anyway.
+
+   **Repeated merges with the same guest: id blocks.** Renumbering on import needs a mapping per
+   guest per merge, or a clip the guest made in version 3 looks new again in version 5. The host
+   avoids it by **reserving a block of its counter for the guest** when it invites one or exports a
+   package (a million values, say): the host moves its own `next_id` past the block, and the guest
+   starts its counter at the block's first value. The objects the guest makes then keep their ids
+   when they come back, no mapping is needed, and the ids stay short and readable. Renumbering
+   stays the fallback for two folders that meet with no common origin. One shared counter
+   (decision 2) is what makes a single block enough. The block is a counter value and a length,
+   nothing in the model changes; the invitation and the package that carry it are
+   [ADR 0023](0023-collaboration-and-project-versions.md)'s and [ADR 0026](0026-project-folder-and-package.md)'s. **Peer-scoped or globally unique ids
    are not needed for asynchronous merge across a package or a repository**, and they are deferred
    until — and only if — simultaneous multi-writer editing of one project is ever wanted, which the
    host-authoritative session model deliberately avoids ([ADR 0023](0023-collaboration-and-project-versions.md)).
@@ -112,18 +133,37 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
      copy/paste and the sub-row layout. Still no command or file change.
    - **C.** Command parameters take an id, and **`index` is still accepted during a deprecation
      window**, documented in each command's own description so it reaches the CLI help, the MCP tool
-     list and the generated `docs/commands.md` without a second place to remember.
+     list and the generated `docs/commands.md` without a second place to remember. **The window
+     ends with the project format's next version** (ADR 0026's bump): the change that makes ids
+     required in the file removes `index` (and `track` where it only served `index`) from the clip
+     commands, so the two meanings are never both live for longer than one format version.
    - **D.** The file format gains a version and keeps reading v1. **The version bump itself is
      [ADR 0026](0026-project-folder-and-package.md)'s decision**, not this one.
 
+   **As implemented** (one pull request, [#568](https://github.com/suhina-daw/suhina-daw/issues/568),
+   steps A to C; of step D, the reading side, while the version bump waits for ADR 0026): ids live in `crates/model/src/ids.rs`; `Project::assign_ids` gives every object
+   without one the next ids in document order (each arrangement lane and then its clips, then the
+   scenes, then the slots' clips column by column), which is how a file without ids, the `.als`
+   reader and a session opening any project get them, and how a command that adds an object
+   without allocating its id gets one. A command that must report the new id allocates it itself
+   (`Project::new_clip_id` and its neighbours). A copy (paste, duplicate, a duplicated scene, the
+   second part of a split, the part of a covered clip after one placed over it) is a new clip with a
+   new id; a moved, trimmed or edited clip keeps its id. For step D, the file stays **version 1**:
+   `id` and `next_id` are optional fields that a reader without them ignores, and a reader with them
+   derives what is missing ([`docs/spec/suhina-format.md`](../spec/suhina-format.md)). The
+   commands resolve a `clip` id (or a name only one clip has) to the clip's place in the project as
+   it is when the command runs, in one place before any command sees its parameters
+   (`commands::resolve_clip_ids`), so every command that names a clip by `track` with `index` or
+   `scene` takes `clip` too, the `note.*` commands and `transport.play` included.
+
 5. **The parameter type is `ParamType::Clip`, and it is not new machinery.** `ParamType::Track`
-   already exists (`crates/session/src/commands.rs:106`, `const TRACK`) and its JSON Schema is
-   already `json!(["integer", "string"])` — "track id or name" (`:139`). The registry generates the
+   already exists (`ParamType::Track` in `suhina_session::commands`) and its JSON Schema is
+   already `json!(["integer", "string"])`, "track id or name". The registry generates the
    agent-facing schema from that, so a `Clip` variant is the same shape applied to clips, and the
    `id or name` convention is already the house style.
 
 6. **Addressed by id, reported by id.** The read commands stop reporting clips by position:
-   `clip_json(p, name, track, index: usize, clip)` (`crates/session/src/commands.rs:812`) reports
+   `clip_json(p, name, track, index: usize, clip)` (`suhina_session::commands`) reports
    the id instead. A read API that names objects by index would keep the ambiguity in the agent
    interface after the commands were fixed.
 
@@ -178,18 +218,15 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
   deprecation window and its tests are the mitigation, and this is the one place in the change where
   a green test suite is not evidence.
 - **The agent-facing interface is a breaking change and is treated as one.** Positional addressing
-  reaches **seven `clip.*` commands** — `clip.delete` (`:297`), `clip.setGain` (`:306`),
-  `clip.setFades` (`:317`), `clip.copy` (`:339`), `clip.cut` (`:346`), `clip.duplicate` (`:366`),
-  `clip.move` (`:399`) — and beyond clips, `track.move`'s `to` (`:269`), `device` (`:107`) and
-  `scene` (`:108`). [ADR 0002](0002-commands.md): *"Command ids are part of the public interface for
+  reaches **seven `clip.*` commands** (`clip.delete`, `clip.setGain`, `clip.setFades`,
+  `clip.copy`, `clip.cut`, `clip.duplicate`, `clip.move`) and beyond clips, `track.move`'s `to`
+  and the `device` and `scene` parameter types. [ADR 0002](0002-commands.md): *"Command ids are part of the public interface for
   agents; renaming one is a breaking change."* A parameter that keeps its name but changes its
   meaning is worse than a rename, so the deprecation window is part of the change, not a courtesy.
-- The UI's `(TrackId, usize)` disappears: `selected_clip() -> Option<(TrackId, usize)>`
-  (`crates/ui/src/arrangement/arrangement_view.rs:201`), `clip_menu(ui, track, index, …)`
-  (`crates/ui/src/interaction/menus.rs:95`), copy/cut/paste from `(track, index)`
-  (`crates/ui/src/app.rs:1674`), and `ClipBox`'s `index`/`row`/`rows`
-  (`crates/ui/src/arrangement/timeline.rs:66`, `:83–84`) with `sub_rows` (`:247`) computing the stacking layout
-  from positions.
+- The UI's `(TrackId, usize)` disappears: `selected_clip() -> Option<(TrackId, usize)>` in the
+  arrangement view, `clip_menu(ui, track, index, …)` in `interaction/menus.rs`, copy, cut and paste
+  from `(track, index)` in `app.rs`, and `ClipBox`'s `index`, `row` and `rows` in
+  `arrangement/timeline.rs`, with `sub_rows` computing the stacking layout from positions.
 - `crates/project-file` gains a v1 reader that **derives ids in document order**, and the writer
   emits them; the round-trip test and every model field's line in the spec move with it
   ([ADR 0010](0010-project-files.md) › Consequences). `docs/spec/suhina-format.md` is updated in the
@@ -205,6 +242,10 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
 
 ## Not decided yet
 
+- **Tracks, channels and contents still allocate `max + 1`.** Their ids are as old as the model and
+  are left as they are here; moving them to the same never-reused counter is the next step when a
+  merge needs it (issue 05 of the collaboration plan), and the literal ids of a blank project
+  (`crates/session/src/blank.rs`) go with it.
 - **Whether content becomes content-addressed.** A `ClipContent` is already shared through the pool,
   so a content hash is a natural identity for it — but that is a statement about assets, packages
   and blobs, and it belongs to [ADR 0026](0026-project-folder-and-package.md).
@@ -212,11 +253,72 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
   Today all of them are `u32` newtypes, and a `ClipId` cannot be passed where a `TrackId` is wanted
   — which may be enough, and the question is whether a wire format or a command parameter needs the
   same guarantee in a place the compiler cannot check.
-- **How ids appear in an imported `.als`.** Its own id space is separate and its object-id counter
-  is not ours to reinterpret; the importer allocates fresh ids and keeps whatever it read in
-  `Extensions`, as it does for everything it cannot map ([ADR 0001](0001-daw-neutral-model.md) › 2).
 - **Whether the derived-in-document-order rule is the v1 read path forever**, or only until a v2 file
-  carries ids explicitly.
+  carries ids explicitly. Decided as far as it goes: a file without ids keeps opening; ADR 0026's
+  version decides whether a newer file may leave them out.
+
+Decided since: **devices take their ids from the same counter** (#763 › 1, `.suhina` version 6).
+A `DeviceId` names a device on a channel, inside a device group too, and stays with it when it
+moves along the chain, between branches or to another track; a copy (duplicate, paste, a copied
+track) is a new device and gets a new id, and should a copy keep one, `assign_ids` gives the later
+device in document order a new id. A file before version 6 gives its devices ids in document order
+after the other objects'. Commands name a device by it as `"device": {"id": 7}`, and report it as
+`device_id`, since a device's `id` already says what it is (a built-in's or a plug-in's).
+
+Decided since: **markers, automation points and tempo changes too, but only while the project is
+open** (#763 › 1). A command that takes a marker's `index`, a lane's `point` or `points`, or a
+tempo change's `point` takes `{"id": n}` in its place, found where it is now; `project.markers`,
+`automation.list` and `tempo.points` list each one's `id`, and the commands that add one return it.
+A copy is a new object: `assign_ids` gives the later of two with one id a new one. Two points are
+equal without their ids, so a range tool that draws a line again as it was changes nothing.
+
+Decided since: **notes too, in the same way** (#1182). A content's notes are an
+`IdList<NoteId, Note>` (`suhina_model::Notes`), and every `note.*` command that names notes takes
+`{"id": n}` for one in place of its index; `note.list` gives each note's `id` beside its index, and
+the commands that make notes (`note.add`, `note.paste`, `note.duplicate`, `note.split`) return the
+new ones as `ids`. A note changed or moved in place keeps its id; a note an edit makes is a new one
+(a split's first half keeps the note's id, its second half is new). A content copied whole (a clip
+given its own copy, a duplicated clip) keeps its notes' ids, which is no clash, since a note is
+always named with its clip. Note ids are not written to the file either, so `.suhina` stays at
+version 8: per-note expression puts its curves on the note itself and an ARA archive names clips
+and contents, not notes. A version merge ([ADR 0023](0023-collaboration-and-project-versions.md),
+[ADR 0027](0027-merge-and-versions.md)) is the one thing that would need saved note ids, and that
+waits for the merge decision; the proposal for then is ids counted per content, saved in the file.
+The piano roll keeps its selection on its notes by id, so another writer's edit between two frames
+does not move it to other notes.
+
+Their ids are **not written to the file**. The rule: **an id is saved when something refers to its
+object across a save** — another part of the file (a clip's `content`, a macro mapping's
+`device`), a plug-in's saved state (an ARA archive names its regions `clip-<id>` and modifications
+`content-<id>`), or a later version of the project being merged. Nothing refers to a marker, a
+point or a tempo change that way: a version merge matches tempo changes by beat
+([ADR 0024](0024-musical-time-and-tempo.md) › 5), and automation merges by lane or time range, since
+a point is a sample of a curve rather than an object with an identity in the music. What the ids
+are for — a command from an earlier read not hitting the wrong object — lasts as long as the
+project is open. Saving them later, if a merge comes to need it, is a format version like any other.
+
+**The id is held by the list, not by the value** (`suhina_model::IdList`). A marker, a point, a
+tempo change or a note is its beat, value and so on; which one it is belongs to the list it is in
+(the arrangement's markers, a lane's points, the tempo map's changes, a content's notes). A value can be copied freely —
+paste, duplicate and the range tools copy them all the time — and copying it copies no id. The
+only ways into a list give a new id (adding a value), or keep the id of an entry taken out of that
+list (a move: `take`, then `put`), and an entry cannot be copied; an entry whose id the list
+already has gets a new one. So **an id is never in a list twice, by construction**: there is no
+pass after an edit that looks for duplicates, and no counter in the project. Ids come from one
+counter for the whole program that only goes up, so undo and redo, which put back an older
+project, can never make an id handed out before be handed out again. A command names one within
+the list it names, so a list copied whole (a duplicated track's lanes) keeping its ids is no clash.
+Two lists are equal when their values are, so a range tool that draws a line again as it was
+changes nothing.
+
+Considered and rejected: the id as a field of the value, given by a pass after every edit that
+gives one to each object without one and a new one to the later of two that share one. Copies keep
+the field, so uniqueness then rests on that pass running after every change, and it walks every
+object of the project each time, which notes (up to 100 000 a clip, #1182) would make too slow.
+
+Decided since: **an imported `.als` gets fresh ids.** Its own id space is separate and its object-id
+counter is not ours to reinterpret; the importer gives every lane, clip and scene a new id in
+document order and keeps nothing of the set's ids.
 
 ## Note on independent evidence
 

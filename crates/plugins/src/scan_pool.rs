@@ -12,7 +12,7 @@
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
@@ -20,7 +20,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::scan::{PluginInfo, SCAN_MARKER, Scanned, apply_compatibility, parse_scan};
+use crate::scan::{
+    ARA_FACTORY_CLASS, PluginInfo, SCAN_MARKER, Scanned, apply_compatibility, hung_message, pair_ara, parse_scan,
+};
 
 /// How long a file a shell may take: one file that carries many plug-ins (a vendor's shell
 /// file) loads each of them, which takes minutes in any host.
@@ -53,9 +55,13 @@ pub fn module_info(bundle: &Path) -> Option<Vec<PluginInfo>> {
     let value: Value = json5::from_str(&text).ok()?;
     let factory_vendor = value.pointer("/Factory Info/Vendor").and_then(Value::as_str).unwrap_or_default();
     let text_of = |v: &Value, key: &str| v.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
-    let mut plugins: Vec<PluginInfo> = value
-        .get("Classes")?
-        .as_array()?
+    let classes = value.get("Classes")?.as_array()?;
+    let ara_classes: Vec<String> = classes
+        .iter()
+        .filter(|c| c.get("Category").and_then(Value::as_str) == Some(ARA_FACTORY_CLASS))
+        .map(|c| text_of(c, "Name"))
+        .collect();
+    let mut plugins: Vec<PluginInfo> = classes
         .iter()
         .filter(|c| c.get("Category").and_then(Value::as_str) == Some("Audio Module Class"))
         .filter_map(|c| {
@@ -77,12 +83,14 @@ pub fn module_info(bundle: &Path) -> Option<Vec<PluginInfo>> {
                     .map(|s| s.iter().filter_map(Value::as_str).map(str::to_string).collect())
                     .unwrap_or_default(),
                 replaces: Vec::new(),
+                ara: false,
             })
         })
         .collect();
     if let Some(list) = value.get("Compatibility") {
         apply_compatibility(&mut plugins, list);
     }
+    pair_ara(&mut plugins, &ara_classes);
     if plugins.is_empty() { None } else { Some(plugins) }
 }
 
@@ -95,8 +103,13 @@ struct Worker {
 
 impl Worker {
     fn start(host: &Path) -> Result<Self, String> {
-        let mut child = crate::host_command(host)
-            .arg("--scan-worker")
+        let mut command = crate::host_command(host);
+        command.arg("--scan-worker");
+        Self::spawn(command)
+    }
+
+    fn spawn(mut command: Command) -> Result<Self, String> {
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -142,7 +155,7 @@ impl Worker {
                 Err(RecvTimeoutError::Timeout) => {
                     let _ = self.child.kill();
                     let _ = self.child.wait();
-                    return Err(format!("hung: no answer within {} s", timeout.as_secs()));
+                    return Err(hung_message(timeout));
                 }
                 Err(RecvTimeoutError::Disconnected) => return Err(self.ended("crashed while loading")),
             }
@@ -166,14 +179,9 @@ impl Worker {
 
 impl Drop for Worker {
     fn drop(&mut self) {
-        // Closing its input tells a worker to finish; one that does not is ended.
-        let deadline = Instant::now() + Duration::from_millis(500);
-        while Instant::now() < deadline {
-            if !matches!(self.child.try_wait(), Ok(None)) {
-                return;
-            }
-            thread::sleep(Duration::from_millis(5));
-        }
+        // Ended at once rather than asked to finish: it has answered all it was asked and has
+        // nothing to save, and a normal exit would run the exit code of every plug-in it has
+        // loaded (they stay loaded for its life), all of them at once, which nothing here needs.
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -231,6 +239,31 @@ pub fn scan_files(
         .collect()
 }
 
+/// [`scan_files`], then the files that failed read once more, one at a time, by a single
+/// worker: a failure can be passing (a plug-in that waits for a lock another process of its
+/// vendor holds gives no factory or hangs), and side-by-side loads make that more likely. The
+/// second result is the one kept. Also returns the indices of the files read twice.
+pub fn scan_files_retrying(
+    host: &Path,
+    files: &[String],
+    workers: usize,
+    timeout: &(dyn Fn(&str) -> Duration + Sync),
+) -> (Vec<Scanned>, Vec<usize>) {
+    let mut results = scan_files(host, files, workers, timeout);
+    let failed: Vec<usize> =
+        results.iter().enumerate().filter(|(_, r)| matches!(r, Scanned::Failed(_))).map(|(i, _)| i).collect();
+    if failed.is_empty() {
+        return (results, failed);
+    }
+    let again: Vec<String> = failed.iter().filter_map(|&i| files.get(i).cloned()).collect();
+    for (&index, scanned) in failed.iter().zip(scan_files(host, &again, 1, timeout)) {
+        if let Some(slot) = results.get_mut(index) {
+            *slot = scanned;
+        }
+    }
+    (results, failed)
+}
+
 /// `normal`, or [`SHELL_TIMEOUT`] for a shell.
 pub fn timeout_for(path: &str, normal: Duration) -> Duration {
     if is_shell(Path::new(path)) { SHELL_TIMEOUT } else { normal }
@@ -239,6 +272,14 @@ pub fn timeout_for(path: &str, normal: Duration) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `sort`, on every system, reads until its input ends, as a worker does, and the input is
+    /// still open while `drop` runs: only ending the process lets `drop` come back.
+    #[test]
+    fn dropping_a_worker_ends_it() {
+        let worker = Worker::spawn(Command::new("sort")).unwrap_or_else(|e| panic!("{e}"));
+        drop(worker);
+    }
 
     #[test]
     fn shells_are_recognised() {
@@ -271,6 +312,18 @@ mod tests {
         assert_eq!((thing.name.as_str(), thing.vendor.as_str(), thing.version.as_str()), ("Thing", "Maker", "1.2.3"));
         assert_eq!(thing.features, ["Fx", "Delay"]);
         assert_eq!(thing.path, bundle);
+
+        assert!(!thing.ara);
+
+        // An ARA factory class named after the audio class marks it (ARAVST3.h).
+        let ara = info.replace(
+            r#"{ "CID": "not hex","#,
+            r#"{ "CID": "ABCDEF011234ABCD49746D78426E6478", "Category": "ARA Main Factory Class", "Name": "Thing", },
+            { "CID": "not hex","#,
+        );
+        let _ = std::fs::write(resources.join("moduleinfo.json"), ara);
+        let plugins = module_info(&bundle).unwrap_or_default();
+        assert_eq!(plugins.iter().map(|p| p.ara).collect::<Vec<_>>(), [true]);
 
         let _ = std::fs::write(resources.join("moduleinfo.json"), "{ broken");
         assert!(module_info(&bundle).is_none());

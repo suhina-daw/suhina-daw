@@ -3,17 +3,150 @@ description: Self-contained device canvases, image assets, drawing expressions a
 read_when: custom SDK control, device background, icon, photo, texture, XY pad, drawing API, image asset
 type: spec
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-11-05
 covers:
+  - crates/device-sdk/src/builtin.rs
+  - crates/device-registry/src/lib.rs
+  - crates/session/src/rack.rs
+  - crates/ui/src/app.rs
+  - crates/device-sdk/src/ui/author.rs
   - crates/device-sdk/src/ui/widgets.rs
   - crates/device-sdk/src/ui.rs
   - crates/ui/src/detail/device_canvas.rs
+  - crates/ui/src/detail/device_widgets.rs
   - crates/ui/src/detail/detail_view.rs
   - crates/device-sdk/examples/custom_panel.rs
   - crates/device-sdk/examples/orbit_filter.rs
 ---
 
 # Custom device panels
+
+## Compact and expanded panels
+
+Every device has a compact panel in the device chain, at most 168 px high (the detail area's
+default 200 px less the 20 px header and 6 px padding above and below). Its width is the
+author's, 260 px by default. A device without a canvas shows its generated parameter list,
+in columns 260 px wide and up to 168 px tall: a list longer than two columns shows those two,
+with a line between columns, and a chevron beside the header's switch opens the rest (Settings ›
+Devices › Long parameter lists: further columns to the right, or scrolling down in the two). Stock controls a canvas leaves shown sit in the
+same columns to the canvas's right. In a row a device is as wide as its canvas and columns plus
+12 px (220 px at least, 272 px for one column); the stacked column is 272 px wide by default. A
+smaller detail area or column scrolls the panel. A panel a theme sizes with `.device { width }`
+and no canvas keeps one column that follows that width and scrolls.
+
+A device may also have an expanded panel: one larger fixed-size canvas (`device.expanded` in a
+`.sd` file, `expanded` in a built-in's layout), with the same fields and limits as the compact one.
+A device with one has a button beside the X in its header, labelled **Expand** *name* (and
+**Close** *name*'s **expanded panel** while it is open). The panel opens over the main area with
+the device's name and a close button (**Close expanded panel**) along its top; its canvas is
+centred, and scrolls when the main area is smaller. An expanded canvas with `"strip": true` opens
+instead as a strip at the bottom of the main area, over the device row, its canvas scaled to the
+strip on each axis, up or down, as a strip has no scroll bar (drawings, controls and pointer input alike; text and line widths by the smaller
+axis). The strip starts as tall as the canvas at the strip's width; dragging its header up or down
+changes its height (80 points to the whole main area, kept per device while the app runs) and a
+double click on the header fits it again. A canvas with `"accent_on": true` fills a
+button that is on with the theme's accent rather than the control's active colour. The close button, Escape or a second click on
+the header button closes it, and it closes by itself when its device is no longer shown (another
+track selected, the device removed). Its controls send the same `device.setParam` as the compact
+panel's, so undo, automation and presets do not depend on which is open. No zoom: canvases
+scroll and never scale.
+
+## Layouts for built-in devices
+
+A built-in effect, instrument or MIDI effect has no `.sd` file. Its panel comes from
+`suhina_device_registry::panel(id)`: its parameters from the device's `DeviceInfo`, in order,
+and its layout (`suhina_device_sdk::builtin::Layout`) when it has one. A layout holds only:
+
+- `ui`: the compact canvas (`null` keeps the generated list in the chain);
+- `expanded`: the expanded canvas;
+- `parameters`: by parameter id, how each is presented: `control` and the `.sd` parameter `ui`
+  fields. A choice keeps the device's labels unless the layout gives its own.
+
+It never declares a parameter: name, range, unit, scale and default are the device's. A layout
+is refused when it names a parameter its device lacks, gives one a control its range does not allow
+(a logarithmic slider below zero, a toggle outside 0..1), or draws a canvas the rules here refuse;
+the registry then shows the generated list. The registry's tests fail on such a layout, so a
+shipped one cannot drift from its device. A device crate gives its layout in Rust (the Sampler's
+`layout()`) or as `devices/<name>/panel.json`, named in its row of `suhina_device_registry::ENTRIES`:
+
+```json
+{
+  "ui": { "size": [260, 168], "controls": [ ... ] },
+  "parameters": { "gain": { "control": "knob", "ui": { "decimals": 1 } } }
+}
+```
+
+The generated list gives a continuous parameter a slider (logarithmic on a logarithmic scale), a
+toggle a check box, a whole number a stepped slider and a choice a menu of its labels. A plug-in
+gets the same list from the parameters its host lists, under its editor button while its editor is
+not inside the panel: hidden and read-only parameters are left out, a switch is a check box and a
+stepped parameter moves in its steps; the value shows as the plug-in writes it until it is changed
+here. The list is read again every two seconds while the panel shows, in the background, so a
+change in the plug-in's own editor reaches it.
+
+## Rust control constructors
+
+`CustomControl` provides `number`, `dial`, `toggle`, `set_button`, `menu`, `value_menu`,
+`label` and `separator` constructors. They construct the existing serialized controls, with
+standard defaults for gestures, bindings and drawings; the host interaction and theme paths
+are unchanged. `widget` is the lower-level passive-widget constructor for custom composition.
+Number/dial controls bind the vertical axis; toggle, set-button and menu controls bind X.
+Number/dial defaults include the standard precision/reset tooltip and a default accessible
+name, which authors should override when the parameter id is not a meaningful label.
+
+Configure a control before inserting it; no operation implicitly edits the panel's last control:
+
+```rust
+let control = CustomControl::number("time_left", [64., 48., 50., 24.])
+    .name("Left delay time")
+    .logarithmic(true)
+    .visible_when(UiValue::parameter("sync_left", false).equals(0.));
+ui.controls.push(control);
+```
+
+Chainable `bounds`, `id`, `name`, `tooltip`, `visible_when` and `logarithmic` setters retain ordinary
+`CustomControl` fields for custom X/Y bindings. Fallible `format`, `decimals`, `prefix` and
+`off_label` setters configure supported widgets and return an error on an incompatible widget;
+precision must be within 0..8. For example, `.format(TextFormat::Number)?.decimals(2)?`
+overrides inherited formatting. `UiBinding` also provides `logarithmic`.
+`UiValue::equals` constructs the existing bounded equality expression.
+
+`parameter_metadata(&parameter)` reuses the name and the declared linear/logarithmic control
+mapping for matching bindings, leaving other parameter bindings unchanged. Numeric widgets also
+inherit `parameter.ui.decimals`; Choice/Radio controls use choice text, a declared `Hz` unit
+selects frequency text, and other declarations use number formatting. This never infers the
+signal scale from the unit.
+Explicit setters applied afterwards override these defaults. Units and choice
+labels continue to resolve from parameter metadata in the host. It never guesses a scale from
+the id/unit, changes a control id, hides stock parameter rows, or edits a parameter declaration.
+Several controls may bind one parameter, but must have distinct control ids; use `.id(...)`
+when the default parameter-based identity would collide. Label/separator ids are supplied explicitly.
+Set-buttons default to `<parameter>_<value>`; toggles, numbers, dials and menus default to the
+parameter id. Bounds, expressions, parameter references and widget contracts still pass through
+the existing device UI validator when the graph is saved or compiled. Keyboard operation,
+accessibility and gesture-based command/undo behavior are shared with manually built controls.
+
+### Groups with local coordinates
+
+`ControlGroup::new([x, y])?` defines an authoring-only origin. Pass controls with local bounds
+through `group.place(control)?` before inserting them. Changing that origin and rebuilding moves
+all controls placed through the group, including its captions; local drawing coordinates,
+bindings, ids and insertion order remain unchanged. Origins and local bounds must be finite and
+nonnegative, with controls at least 8 pixels wide/high and final bounds within 8192 pixels.
+The normal graph validator also checks placement against the actual canvas size.
+
+```rust
+let tone = ControlGroup::new([384., 0.])?;
+ui.controls.push(tone.place(
+    CustomControl::number("cutoff", [60., 36., 56., 18.])
+        .parameter_metadata(cutoff_parameter)
+        .decimals(0)?,
+)?);
+```
+
+Placement flattens to existing absolute `.sd` bounds. There is no serialized group, runtime
+layout engine, automatic resizing or extra renderer path. Delay uses shared origins for TIME,
+FEEDBACK, MIX, TONE and MOTION; compatibility tests keep the complete saved panel unchanged.
 
 The `custom_panel` example writes `custom-panel.sd`, whose `device.name` is **Velvet Volume**.
 It demonstrates that the file name and the inserted device's name may differ, using a standard
@@ -37,7 +170,7 @@ Everything is stored in the single JSON `.sd` and then embedded in the project. 
 without a canvas use their existing controls. Built-in SDK widgets and stock parameter controls
 read the active Suhina theme at render time; authored drawing colours remain explicit. No external
 paths or executable UI code are read from a device file. Rust authors program panels by constructing the SDK's drawing expressions
-and input bindings. Normalized expressions can select logarithmic mapping explicitly. Standard controls remain available below the canvas.
+and input bindings. Normalized expressions can select logarithmic mapping explicitly. Standard controls remain available beside the canvas.
 
 Canvas `size: [width, height]` defaults to `[640, 240]`. Optional
 `viewport_size: [width, height]` sets the preferred scrollable device body independently of the
@@ -45,19 +178,31 @@ canvas, including node rows and stock controls. Both dimensions use logical pixe
 The host adds a 20-pixel header and 6-pixel padding on each side. Available host space clips the
 viewport; oversized contents scroll without scaling. This works in row and stacked layouts.
 Omitted or null `viewport_size` preserves automatic sizing: row width is at least 220 or canvas
-width plus 12, row height fills the detail area; stacked width fills the column (normally 260),
+width plus 12, row height fills the detail area; stacked width fills the column (normally 272),
 and height fits node rows, canvas and stock controls. Setting `size` does not scale artwork.
+
+A built-in device's layout ships with Suhina and may hold 2048 controls and 32768 drawing commands;
+a `.sd` file keeps the limits below. A button with the gesture `"randomize"` and no binding runs
+`device.randomize` on its device. A button with `{"expand": 6}` sets its X parameter to 6 and opens the
+device's expanded panel. A control with `{"draw": 22}` and a Y binding is one column of a drawing: a press
+on it and a drag over its neighbours set each one's Y parameter to the pointer's height, the way between
+two frames included, as one undo step; its X binding, if it has one, is set to 22 as well.
 
 Canvas size is 24..8192 logical pixels per axis. Up to 128 custom controls and 1024 total drawing
 commands are accepted. Each control has a unique id, accessible name, tooltip, bounds, drawings,
 a gesture and optional X/Y parameter bindings. Bounds stay inside the canvas. Drawing positions
 are local to the canvas or the control. Layer order is array order; controls draw after layers.
 
-Drawing commands: rectangle, circle, line, path, arc, text, image and four-corner gradient.
+Drawing commands: rectangle, circle, line, path, arc, text, image, four-corner gradient and plot.
 Paths have at most 256 points; filled paths must be convex. Arc tessellation is bounded. Colours are RGBA byte quadruples.
+A plot is a curve from one expression: `samples` points (2..512) from `from` to `to` along x, each at the height `y`
+gives while the parameter `#x` reads its share of the way, 0 to 1; a part beyond `top` or `bottom` is not drawn, so the line ends at the edge rather than running along it. One expression
+read many times keeps a large response curve small in the file, and each parameter is looked up once per plot.
+`#time` reads the host's clock in seconds, and while a canvas's `animate_when` (a value expression) is above zero
+the host keeps drawing it, about 30 frames a second, so a drawing can move by itself.
 Text can append a parameter's current value with bounded decimal precision. Numeric drawing
-values can be literals or bounded expressions (parameter, normalized parameter, add, multiply,
-sine, cosine, exponential, natural logarithm and equality). Expression depth is at most 16, with 32768 expression nodes per canvas;
+values can be literals or bounded expressions (parameter, normalized parameter, add, multiply, min, max,
+sine, cosine, exponential, natural logarithm, equality and oscillator waveforms). Expression depth is at most 16, with 32768 expression nodes per canvas;
 non-finite results become zero, finite values are bounded before drawing. This supports moving
 markers, response drawings, circular handles, segmented displays and meters driven by parameters.
 No DSP outputs or audio-thread buffers are read by the UI.
@@ -72,12 +217,45 @@ cover, with UV crop, RGBA tint and optional tile size. Repetition uses texture w
 unbounded loop of drawing operations. Vector icons are paths/lines/circles, raster icons can
 use PNG transparency. Photos and patterns are original assets supplied by the author.
 
-Gestures: drag (relative X/Y), position (absolute pointer position, Y upward), toggle, momentary.
+Gestures: drag (relative X/Y), position (Y upward: a click sets the value at the pointer; a drag
+starts at the press and moves the value as far as the pointer moves, Shift for precision, with
+the pointer hidden and held still as a slider's handle does, and back on the value's place on
+release), toggle, momentary.
 Bindings map normalized coordinates to parameter units with optional logarithmic mapping.
 Keyboard arrows edit axes, Shift provides fine adjustment, double click resets defaults;
 Space/Enter activate buttons. A gesture `{"set": 3}` sets the X parameter to the literal integer 3; its value must be inside the declared range. The control name and values are exposed to accessibility.
+A `{"tab": 2}` gesture selects value 2, or returns to zero when already selected. A segmented `set` or `tab` button is drawn on while its parameter holds that value.
+A `graphic` widget (`{"kind": "graphic", "drawing": [...]}`) draws its own drawings and takes no
+input or binding (a display or a curve that must not catch drags). Drawings of a control without a
+widget are not resolved against the theme as widgets' are; they name the theme's palette as
+`[3, 1, 1]` text, `[3, 1, 2]` panel, `[3, 1, 3]` control, `[3, 1, 4]` border and `[3, 1, 5]`
+accent (any alpha). A drawing coloured `[3, 0, 1]` … `[3, 0, 6]` (any alpha) takes a theme token: `--device-display`
+(a display's dark ground, default `#0a1117`), `--device-series-1` … `3` (a device's series, such as
+its bands; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`) `--device-highlight` (`#ffcf7a`) and `--device-spectrum` (`#3fc4e4`), from
+the theme's CSS custom property of that name or the default, with the drawing's alpha. A handle's optional `offset` moves its bounds along its travel, in canvas units, for a value that starts where another ends. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture A clicked handle takes the focus, and the arrow keys along its travel then move it 1 % of the way (0.1 % with Shift).
+`position`) draws a line where its parameter is, across its bounds (an X binding: a
+vertical line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 7 points
+of it: dragging sets the value from the pointer as `position` does, a double click resets it, and a
+drag is one undo step. `span` (optional value expressions, canvas units) limits the line and where
+it is grabbed across the other axis. With both an X and a Y binding it is a point: a dot at both
+values, dragged on both axes as one undo step, with the arrow keys along each. `"dot": true` draws a
+one-axis handle as a dot in the middle of its line, and `"hollow": true` as a smaller ring, for a dot that shapes something rather than placing it. `"relative": true` moves the value by how far the pointer moves (its bounds for the whole range) rather than to where it is, for a dot whose `offset` follows its own value, such as one that stays on a curve it bends. A binding's negative `drag_scale` runs a handle's
+travel the other way along that axis (a rate: further along is slower). A `value` drawing (`{"kind": "value", "position": [x, y],
+"value": expression, "prefix", "suffix", "decimals", "color", "size", "align"}`) writes a number an
+expression computes. A `{"preset": 0}` gesture applies the canvas's quick preset 0: a button with no bindings that sets
+every value the preset holds (`"presets": [{"name": "OTT", "values": {"amount": 0.7}}]`, at most
+32 presets of 256 values, each id a declared parameter and each value in its range) as one undo
+step; parameters the preset leaves out keep their values.
+Tabs bind only X to a linear parameter whose minimum is zero; the positive tab
+value must be in range. Button widgets show exact-value selection for tabs.
+Click and Space/Enter share the same command and undo path.
 Edits dispatch `device.setParam` with a shared gesture id so a two-axis drag is one undo gesture.
-All bindings reference declared parameter ids, and values use their range/discrete clamping.
+A parameter id cannot start with `#`, which names the host's values. All bindings reference declared parameter ids, and values use their range/discrete clamping.
+A control's widget id belongs to its canvas, so a compact panel and an expanded one drawn together can
+both have a control of the same id. While a `drag` control moves a discrete parameter (integer, choice,
+toggle), the host keeps the unrounded drag position until the button is released, so a slow drag adds up
+across frames instead of being rounded back to the old value. The pointer is hidden while a `drag`
+control or a knob is dragged. A value that rounds to zero shows no minus sign (`0`, not `-0`).
 
 A canvas may hide stock parameter rows with `hidden_parameters`; this only changes presentation.
 All hidden values remain available through commands and project state. UI resources do not run
@@ -98,13 +276,14 @@ accepts `UiValue` numbers or expression objects. Colours are `[r,g,b,a]` in 0..2
 | `text` | `position`, `text`, `color`, `size` | `parameter` (none), `decimals` (0) |
 | `image` | `asset`, `rect` | `uv` ([0,0,1,1]), `tint` (white), `tile_size` (none), `fit` (`stretch`) |
 | `gradient` | `rect`, `colors` | Colours ordered top-left, top-right, bottom-right, bottom-left |
+| `plot` | `from`, `to`, `top`, `bottom`, `samples`, `y`, `color` | `width` (1); `y` reads `#x` |
 
 Stroke widths and rectangle corner radii are 0..128; text size is 8..48. Image `fit` also accepts
 `contain` and `cover`. `tile_size` overrides fit with repetition. `text.parameter` appends the
 current value and unit to the prefix `text`. `decimals` is 0..8. Unknown fields are rejected.
 
 A value expression uses `op`: `parameter` has `parameter` (id), `normalized` (false), `logarithmic`
-(false); `add` and `multiply` have `a` and `b`; `sin` and `cos` have `value` (radians).
+(false); `add`, `multiply`, `min` and `max` have `a` and `b`; `readout` has `index` (0 – 34) and reads the device's live value of that index ([ADR 0032](../decisions/0032-device-readouts.md)), 0 while it hands none; drawings and `visible_when` may also name `#r0` … `#r34` and `#expanded` (1 while the device's expanded panel is open) as parameters, bindings never; `sin` and `cos` have `value` (radians).
 The `equal` expression has `a` and `b` and returns 1 when their difference is less than 0.0001, otherwise 0; use it for selected segment highlights.
 The parameter expression returns raw units unless `normalized` is true. Use the same
 `logarithmic` flag on bindings and normalized drawings.
@@ -134,7 +313,7 @@ A serialized control referencing a declared continuous `cutoff` parameter:
 A custom control can set `visible_when` to a numeric expression. Values <=0 hide both the
 drawing and interaction; an omitted condition keeps the control visible. Conditions use the
 same bounded validation as drawing expressions. Control width and height are at least 8 pixels.
-Text supports `align: left|center` (default left) and `format: number|frequency|choice` (default number).
+Text supports `align: left|center` (default left) and `format: number|frequency|choice|tempo` (default number).
 Frequency formatting uses two decimal kHz at >=1000 Hz and the declared numeric precision below.
 The Delay example uses these fields for mutually exclusive tempo-step and millisecond controls.
 
@@ -164,34 +343,48 @@ Values are unique integers inside the bound parameter range; 1..128 entries with
 nonempty labels of at most 128 bytes are accepted. It can bind a numeric parameter
 without Choice options. Selecting an entry writes its value, not its array index.
 Menus scroll when needed, using a fixed-width solid scrollbar that does not expand
-on hover. Delay uses this node to expose actual note divisions,
+on hover. The Delay ([delay](delay.md) › Panel layout) uses this node to expose actual note divisions,
 triplet/dotted suffixes and sixteenth-note step counts while retaining saved values.
 
-## Delay example layout
-
-Delay uses independent SDK UI nodes throughout its 944 by 168 logical-pixel panel.
-Including the host header and padding, it fits a 200-pixel device slot.
-Time and Feedback occupy the left; Tone and Motion follow, with Mix at the far right. The only graph is Tone's filter response. All sections stay visible.
-
-Left and Right timing columns flank the link icon in Time; the link button shares the
-vertical center of the timing menus. Beats/ms buttons switch between
-explicit note-length menus and millisecond fields. Link mirrors timing edits; each column has a synchronized offset field. Freeze sits
-below Feedback and Ping Pong below Mix. Repitch/Fade/Jump remain in Time. Tone exposes filter enable,
-centre frequency and octave width; Motion exposes rate mode/value, waveform,
-delay/filter depth and morph. Speed appears once: a number in Hz/Time modes and
-a ValueMenu in synchronized modes. The obsolete `lfo_expanded` parameter remains hidden for
-saved-parameter compatibility and no longer affects presentation.
-
-The host resolves widget text, surfaces, borders and accents from the active Suhina
-theme at render time. No authored purple accent or device header is required.
-
 ## Reusable functional widgets
+
+Dial also accepts optional `decimals` (default 0) and `format` (default `number`).
+Format `tempo` displays BPM, or Auto for zero (a device may use that value to request tempo detection).
+Formats `seconds`, `percent`, `decibels` and `balance` display milliseconds/seconds,
+fractional percentages, dB and centre/L/R respectively. Existing Dial definitions
+keep their previous readouts. The sampler uses these formats without changing
+the saved parameter units.
+
+`SampleWaveform` is a host-backed source view for the native sampler. It has no
+parameter axis bindings. The host supplies decoded audio; start/end and loop
+handles dispatch `device.setParam`. `SampleRecording` independently places the
+input selector and Record/Stop actions (`device.recordSample`) beside other controls.
+It registers a sample drop target for both browser and system file drops; the drop
+runs `device.loadSample`. It renders an empty-source prompt when no audio is loaded.
+This does not add a sample DSP node to serialized `.sd` graphs.
+
+`DeviceSwitch` places a device's own on/off as a control in its body: the header's
+square, bigger, lit while the device runs. The host draws it from the device's state
+and a click runs `device.setEnabled`; it has no parameter of its own. `DeviceFiles`
+places one piece of a file-backing device's pack row or its file row, by `part` —
+`pack`/`previous_pack`/`next_pack` or `file`/`previous_file`/`next_file` — and `what`
+names the device's file family ("model", "cab") the host checks as it draws. The
+dropdown lists the folder's packs (the current one shown), or the current pack's
+files by their shown names; its steppers step through, wrapping. Choosing a pack
+loads its first file; every choice and step runs `device.setNamFile`, one undo
+step, only when the file it asks for differs from the device's current. A `what`
+the host has no words for draws nothing, so a layout places the rows only where its
+device takes files. `DeviceNote` places the one-line note under the controls when
+the device's file does not run: the fault the load gave, or that the file moved;
+nothing while the file runs, and nothing with no file — the rows' empty texts say
+that. The labels derive from the device's shown name ("Amp Modeler: pack"),
+as the compact panels' tests find them.
 
 A control may specify a typed `widget` instead of a custom `drawing`. Widgets are
 independent UI nodes; interactive nodes bind to a declared parameter (or two parameters
 for the filter band display). They are not DSP nodes. The SDK supplies buttons,
 number fields, knobs, ringed dials, steppers, disclosure toggles, choice menus,
-waveform menus and filter band displays. Non-interactive Label and Separator widgets
+waveform menus and filter band displays. Non-interactive Label, Panel and Separator widgets
 use no parameter bindings and cannot receive focus. Dial follows the available
 control size; its caption reserves two lines so knob centres stay aligned across
 single-line and two-line labels; Stepper arrows adjust by one integer or the declared decimal precision,
@@ -200,3 +393,69 @@ exists. The host uses the same gestures, commands, keyboard handling, undo and
 persistence as custom controls. Knobs use Suhina's small circular face, pointer and value;
 the widget palette follows the active theme. Legacy drawing colours remain literal and legacy
 drawing controls remain readable. A widget and a nonempty custom drawing are mutually exclusive.
+
+### Host theme CSS and SVG controls
+
+The host exposes a named `.device-panel` scope for the track/device address and a named
+`.device-control` scope for each authored control id (`data-object`). Typed widgets have
+their semantic child role: `.knob` (Knob/Dial), `.button`, `.value`, `.dropdown`, `.label`,
+`.device-section`, `.separator`, `.envelope`, `.waveform` or `.xy-control`.
+Interactive drawing roles take hover/active/disabled/focus from the existing native
+response. SDK bounds, parameter normalization, keyboard gestures, accessible names and
+`device.setParam` dispatch are unchanged.
+
+Typed widget colours are resolved against the scoped palette at render time. SVG
+button backgrounds and corner radii compose with authored CSS: body artwork is
+painted once, followed by CSS gradient/shadow layers, then native foreground labels.
+The body uses control/active colours rather than the foreground text colour.
+CSS foreground/font rules reach vector text, and background/radius/effect rules reach
+rectangle surfaces. Without CSS overrides, authored vector colours stay literal.
+The theme's SVG `knob.body` / `knob.pointer` and `button` roles also style typed SDK
+Knob, Dial and Button faces. Native labels/readouts remain visible; pointers keep the
+SDK's parameter-derived angle. Missing artwork keeps the corresponding native drawing.
+Opaque and translucent palette colours are passed as unmultiplied RGBA. This affects
+presentation only and does not add executable code to an SDK device file.
+
+`Panel { label }` provides a passive themed section surface, border and optional
+small heading. An empty label gives a backdrop without a heading. Panel controls
+have no parameter bindings and the host skips input interaction for them, so
+numeric fields, menus and graph handles can be placed above a section surface.
+
+Vertical/horizontal `drag` controls traverse the normalized parameter range over
+400 logical pixels, independently of their rectangle's height/width. Shift keeps
+the precision multiplier. Stock SDK numeric fields and knobs use the same device
+parameter drag calibration. Position controls (envelope handles and XY pads) stay
+mapped directly to their canvas positions.
+
+`UiBinding.drag_scale` defaults to 1 and multiplies drag sensitivity only; it must
+be finite and within 0.01..100 either way. A negative scale drags and steps the other way (a ratio
+knob over a slope: up is more ratio). Position mapping is unaffected. While a knob or slider is
+dragged the cursor is hidden and held where the drag began, the value following the mouse's raw
+motion, and it reappears there when the drag ends.
+Double-click resets every parameter input, including menus and segmented buttons,
+to its definition default. Passive widgets and host recording actions are excluded.
+`WaveformMenu` accepts six standard shapes, optionally a seventh Wander shape;
+its popup shows labelled icons. `wave { shape, cycles }` evaluates the shared SDK
+waveform for previews (0 sine, 1 triangle, 2 saw up, 3 saw down, 4 square,
+5 held random, 6 wander), with the normal expression validation limits.
+
+Historical canvases without `SampleRecording` retain the inline recording strip in
+`SampleWaveform`, so embedded definitions keep their input and recording actions.
+
+`Envelope { attack, decay, level, release }` is a host-rendered interactive graph
+with named parameter references and no X/Y bindings. Attack, Decay and optional
+Release reference distinct time parameters starting at zero, with maxima at most
+60 seconds. With Release, Level is 0..1 sustain; without Release, Level straddles
+zero and controls a bipolar Attack/Decay peak. Missing/duplicate references and
+incompatible ranges are rejected. Bounds must be at least 40 by 32 pixels.
+The host draws the graph on the panel background with a thin theme-border zero-level
+guide and no separate fill, with 8-pixel padding,
+9-pixel editable points and 22-pixel hit areas. A cumulative logarithmic time axis
+uses a 10 ms base and the sum of stage maxima; the ADSR note-hold segment occupies
+one quarter of the plot. Zero-length stages meet at the same x position.
+Point drags use displacement from the original press, not absolute hit-rectangle
+coordinates, and emit shared parameter commands grouped for undo. Points support
+Shift precision, keyboard arrows and double-click default reset. Readouts remain
+separate widgets, so the graph's surface does not darken surrounding fields.
+
+`WaveformPreview { shape }` draws a theme-aware oscillator preview. Its X binding controls rate (linear or logarithmic), and `shape` references a zero-based waveform parameter (0..5 or 0..6). It uses a Position gesture with no Y binding. The SDK owns the drawing; device authors only supply the widget and bindings.

@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use suhina_device_api::NoteEvent;
-use suhina_model::{ChannelId, DeviceKind, Project, TrackId};
+use suhina_model::{ChannelId, DeviceId, DeviceKind, Project, TrackId, walk_devices};
 
 use crate::plugin_params::{ParamEvent, SlotParams};
 
@@ -69,9 +69,57 @@ pub enum Followed {
     Refused,
 }
 
+/// Where the song is as a block starts, as plug-ins are told it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SongPosition {
+    /// The transport runs.
+    pub playing: bool,
+    /// The arrangement position of the block's first frame, in frames.
+    pub position: u64,
+    /// The tempo, in beats per minute.
+    pub tempo: f64,
+    /// The position in beats (quarter notes), through the tempo map.
+    pub beat: f64,
+    /// The bar it is in: its number from 0, the beat it starts at, its time signature.
+    pub bar: u32,
+    pub bar_start: f64,
+    pub numerator: u8,
+    pub denominator: u8,
+    /// The arrangement loop, in beats, while it is on.
+    pub cycle: Option<(f64, f64)>,
+    /// The same loop in seconds through the tempo map.
+    pub cycle_seconds: Option<(f64, f64)>,
+}
+
+impl Default for SongPosition {
+    fn default() -> Self {
+        Self {
+            playing: false,
+            position: 0,
+            tempo: 120.0,
+            beat: 0.0,
+            bar: 0,
+            bar_start: 0.0,
+            numerator: 4,
+            denominator: 4,
+            cycle: None,
+            cycle_seconds: None,
+        }
+    }
+}
+
 /// The audio half of a running plug-in, as the engine sees it. Implemented outside the engine
 /// (the session, over `suhina-plugins`); test doubles implement it too.
 pub trait PluginProcessor: Send {
+    /// The instrument softens its own transport stop before handing audio to effects.
+    fn smooth_transport_stop(&self) -> bool {
+        false
+    }
+    /// Reconfigures a retained processor between renderers, with audio fully stopped.
+    /// This control operation is NOT real-time safe. Returns its new latency in frames.
+    fn reconfigure(&mut self, _sample_rate: u32, _timeout: Duration) -> Result<u32, String> {
+        Err("this processor does not support audio reconfiguration".into())
+    }
     /// Runs `buffer`, interleaved stereo (the chain's sound so far), through the plug-in in
     /// place, with `events` at frames counted from the start of `buffer`, waiting at most
     /// `timeout`. Returns false when the plug-in did not answer in time or is gone; `buffer` is
@@ -132,6 +180,13 @@ pub trait PluginProcessor: Send {
         let _ = params;
     }
 
+    /// Where the song is as the next block starts ([`SongPosition`]). The engine calls it before
+    /// every block; a hosted plug-in is told with the block, so its tempo-synced parts and an
+    /// ARA renderer (ADR 0033) follow the song. Never allocates.
+    fn transport(&mut self, song: &SongPosition) {
+        let _ = song;
+    }
+
     /// Where the plug-in runs while it can take part in a joint round trip now; `None` (the
     /// default) when it cannot, and it runs on its own.
     fn joint(&self) -> Option<Joint> {
@@ -174,21 +229,30 @@ pub struct PluginSlotInfo {
 pub struct PluginDevice {
     pub key: u64,
     pub channel: ChannelId,
-    /// The device's index among the channel's devices.
+    /// The device's index among the channel's devices; for a device inside a device group, the
+    /// index of the outermost group.
     pub position: usize,
+    /// The device's path on the channel: its index, then branch and index for each device group
+    /// it is in (`suhina_model::device_at`).
+    pub path: Vec<usize>,
     /// The track whose channel it is on, if any.
     pub track: Option<TrackId>,
 }
 
-/// The key of the `nth` plug-in device of `kind` (counting from 0) on `channel`: it stays the
-/// same while devices are added, removed or moved around it, so a running plug-in keeps its
-/// slot through edits. `None` for devices that are not plug-ins.
-pub fn plugin_key(channel: ChannelId, kind: &DeviceKind, nth: u32) -> Option<u64> {
+/// The key of the plug-in device `device` of `kind` on `channel`, from its id (#763 › 1): it stays
+/// the same while devices are added, removed or moved around it on the channel, identical
+/// plug-ins included, so a running plug-in keeps its process and its state through edits. A
+/// device moved to another channel gets a new key, and a new process from its saved state.
+///
+/// A device without an id yet (a project the session has not given ids, as some tests build) is
+/// keyed by `nth`, how many plug-ins of `kind` come before it on the channel (counting from 0).
+/// `None` for devices that are not plug-ins.
+pub fn plugin_key(channel: ChannelId, kind: &DeviceKind, device: DeviceId, nth: u32) -> Option<u64> {
     let (format, id): (u8, String) = match kind {
         DeviceKind::Clap { id } => (1, id.clone()),
         DeviceKind::Vst3 { id } => (2, id.clone()),
         DeviceKind::Vst2 { id } => (3, id.to_string()),
-        DeviceKind::Builtin(_) | DeviceKind::Sd | DeviceKind::Foreign { .. } => return None,
+        DeviceKind::Builtin(_) | DeviceKind::Sd | DeviceKind::Foreign { .. } | DeviceKind::Group(_) => return None,
     };
     // FNV-1a: stable across runs and builds, unlike the standard library's hasher.
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
@@ -201,19 +265,31 @@ pub fn plugin_key(channel: ChannelId, kind: &DeviceKind, nth: u32) -> Option<u64
     eat(&channel.0.to_le_bytes());
     eat(&[format]);
     eat(id.as_bytes());
-    eat(&[0]);
-    eat(&nth.to_le_bytes());
+    if device.is_some() {
+        eat(&[0, 1]);
+        eat(&device.0.to_le_bytes());
+    } else {
+        eat(&[0]);
+        eat(&nth.to_le_bytes());
+    }
     Some(hash)
 }
 
-/// Every plug-in device in `project`, channel by channel, in order.
+/// Every plug-in device in `project`, channel by channel, in order, depth-first through device
+/// groups, each with its key ([`plugin_key`]): moving a plug-in into or out of a group keeps it.
 pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
     let mut list = Vec::new();
     for channel in &project.channels {
-        let track = project.tracks.iter().find(|t| t.channel == Some(channel.id)).map(|t| t.id);
+        let track = project
+            .tracks
+            .iter()
+            .find(|t| t.channel == Some(channel.id))
+            .map(|t| t.id)
+            .or_else(|| (channel.role == suhina_model::ChannelRole::Master).then_some(suhina_model::TrackId::MAIN));
         let mut seen: Vec<(u64, u32)> = Vec::new();
-        for (position, device) in channel.devices.iter().enumerate() {
-            let Some(first) = plugin_key(channel.id, &device.kind, 0) else { continue };
+        for (path, device) in walk_devices(&channel.devices) {
+            let position = path.first().copied().unwrap_or(0);
+            let Some(first) = plugin_key(channel.id, &device.kind, DeviceId::NONE, 0) else { continue };
             let nth = match seen.iter_mut().find(|(k, _)| *k == first) {
                 Some((_, count)) => {
                     *count += 1;
@@ -224,8 +300,8 @@ pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
                     0
                 }
             };
-            if let Some(key) = plugin_key(channel.id, &device.kind, nth) {
-                list.push(PluginDevice { key, channel: channel.id, position, track });
+            if let Some(key) = plugin_key(channel.id, &device.kind, device.id, nth) {
+                list.push(PluginDevice { key, channel: channel.id, position, path, track });
             }
         }
     }
@@ -239,9 +315,31 @@ pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
 pub struct Plugins {
     pub(crate) info: HashMap<u64, PluginSlotInfo>,
     pub(crate) processors: HashMap<u64, Box<dyn PluginProcessor>>,
+    /// Processors retained from a closed renderer can still hold its sounding notes.
+    pub(crate) carried: bool,
 }
 
 impl Plugins {
+    /// Reconfigures all retained processors before building a renderer at a new rate.
+    /// Never called from rendering. Failure aborts opening the new renderer: mixing
+    /// processors configured at different rates would produce incorrect sound.
+    pub fn reconfigure(&mut self, sample_rate: u32, timeout: Duration) -> Result<(), crate::ControlError> {
+        let deadline = Instant::now() + timeout;
+        for (key, processor) in &mut self.processors {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(crate::ControlError::Plugin("plug-in audio reconfiguration timed out".into()));
+            }
+            let latency = processor
+                .reconfigure(sample_rate, left)
+                .map_err(|why| crate::ControlError::Plugin(format!("plug-in {key}: {why}")))?;
+            if let Some(info) = self.info.get_mut(key) {
+                info.latency = latency;
+            }
+        }
+        Ok(())
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -272,11 +370,32 @@ pub(crate) struct PluginSlot {
     pub(crate) enabled: bool,
     /// Round trips it did not answer in time or refused; tests read it.
     pub(crate) missed: u64,
+    /// Blocks the host refused outright (still busy with an earlier one), of `missed`.
+    pub(crate) busy: u64,
+    /// The longest trip it answered within a real-time deadline, in microseconds; for the
+    /// trace's health line.
+    pub(crate) longest_us: u32,
+    /// When the block out was sent, for [`PluginSlot::longest_us`].
+    pub(crate) sent_at: Option<Instant>,
     /// The parameter values it sends: set ones and automation.
     pub(crate) params: SlotParams,
 }
 
 impl PluginSlot {
+    /// Takes the settings of `fresh`, the slot built for the same plug-in after an edit, and its
+    /// processor when one reached it (a restart), which then gets the set values again. Never
+    /// allocates.
+    pub(crate) fn adopt(&mut self, fresh: &mut PluginSlot) {
+        self.enabled = fresh.enabled;
+        self.instrument = fresh.instrument;
+        self.latency = fresh.latency;
+        self.params.adopt(&mut fresh.params);
+        if fresh.processor.is_some() {
+            std::mem::swap(&mut self.processor, &mut fresh.processor);
+            self.params.restart();
+        }
+    }
+
     /// Hands the processor the parameter events of the block's frames `from..to`, the span it
     /// runs next; whether there are any. Never allocates.
     pub(crate) fn automate(&mut self, from: usize, to: usize) -> bool {
@@ -296,11 +415,16 @@ impl PluginSlot {
         if !self.enabled || span.is_empty() {
             return;
         }
-        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(Instant::now()));
+        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(crate::clock::now()));
+        let started = crate::clock::now();
         let answered = match self.processor.as_mut() {
             Some(processor) => processor.process(span, events, timeout),
             None => false,
         };
+        if deadline.is_some() && answered {
+            self.longest_us = self.longest_us.max(u32::try_from(started.elapsed().as_micros()).unwrap_or(u32::MAX));
+        }
+        self.sent_at = None;
         if !answered {
             if self.processor.is_some() {
                 self.missed += 1;
@@ -324,6 +448,16 @@ impl PluginSlot {
         let Some(processor) = self.processor.as_mut() else { return Sent::Unsupported };
         let patience = if deadline.is_some() { Duration::ZERO } else { OFFLINE_TIMEOUT };
         let sent = processor.send(span, events, patience);
+        if deadline.is_some() {
+            self.sent_at = match sent {
+                Sent::Out => Some(crate::clock::now()),
+                Sent::Refused => {
+                    self.busy += 1;
+                    None
+                }
+                Sent::Unsupported => None,
+            };
+        }
         if sent == Sent::Refused {
             self.missed += 1;
             if self.instrument {
@@ -337,8 +471,14 @@ impl PluginSlot {
     /// result in `span`; a miss passes the sound through, or is silent for an instrument.
     /// Returns whether it was answered.
     pub(crate) fn finish(&mut self, span: &mut [f32], deadline: Option<Instant>) -> bool {
-        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(Instant::now()));
+        let sent_at = deadline.is_some().then(|| self.sent_at.take()).flatten();
+        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(crate::clock::now()));
         let answered = self.processor.as_mut().is_some_and(|processor| processor.wait(span, timeout));
+        if let Some(sent_at) = sent_at
+            && answered
+        {
+            self.longest_us = self.longest_us.max(u32::try_from(sent_at.elapsed().as_micros()).unwrap_or(u32::MAX));
+        }
         if !answered {
             if self.processor.is_some() {
                 self.missed += 1;
@@ -394,6 +534,18 @@ impl PluginSlot {
         let Some(processor) = self.processor.as_mut() else { return Sent::Unsupported };
         let patience = if deadline.is_some() { Duration::ZERO } else { OFFLINE_TIMEOUT };
         let sent = processor.send_joint(span, events, followers, patience);
+        // The lead slot's round trip is recorded as a plain one's is: the wait that follows is
+        // timed (`finish`), and a refused one counts as busy.
+        if deadline.is_some() {
+            self.sent_at = match sent {
+                Sent::Out => Some(crate::clock::now()),
+                Sent::Refused => {
+                    self.busy += 1;
+                    None
+                }
+                Sent::Unsupported => None,
+            };
+        }
         if sent == Sent::Refused {
             self.missed += 1;
             if self.instrument {
@@ -471,29 +623,60 @@ mod tests {
     #[test]
     fn keys_follow_the_plug_in_not_its_position() {
         let vst3 = DeviceKind::Vst3 { id: "ABC".into() };
-        let a = plugin_key(ChannelId(1), &vst3, 0);
+        let key = |channel: u32, kind: &DeviceKind, id: u32, nth: u32| {
+            plugin_key(ChannelId(channel), kind, suhina_model::DeviceId(id), nth)
+        };
+        let a = key(1, &vst3, 5, 0);
         assert!(a.is_some());
-        assert_eq!(a, plugin_key(ChannelId(1), &vst3, 0));
-        assert_ne!(a, plugin_key(ChannelId(1), &vst3, 1));
-        assert_ne!(a, plugin_key(ChannelId(2), &vst3, 0));
-        assert_ne!(a, plugin_key(ChannelId(1), &DeviceKind::Clap { id: "ABC".into() }, 0));
-        assert_eq!(plugin_key(ChannelId(1), &DeviceKind::Builtin("utility".into()), 0), None);
+        assert_eq!(a, key(1, &vst3, 5, 3), "an id makes the place irrelevant");
+        assert_ne!(a, key(1, &vst3, 6, 0));
+        assert_ne!(a, key(2, &vst3, 5, 0));
+        assert_ne!(a, key(1, &DeviceKind::Clap { id: "ABC".into() }, 5, 0));
+        assert_ne!(key(1, &vst3, 0, 0), key(1, &vst3, 0, 1), "without an id, by place");
+        assert_ne!(key(1, &vst3, 0, 1), key(1, &vst3, 1, 0), "an id is never taken for a place");
+        assert_eq!(key(1, &DeviceKind::Builtin("utility".into()), 5, 0), None);
 
         let mut project = crate::chain_tests::empty_project();
+        let with_id = |kind: DeviceKind, id: u32| Device { id: suhina_model::DeviceId(id), ..plug(kind) };
         project.channels[0].devices = vec![
-            plug(vst3.clone()),
-            plug(DeviceKind::Builtin("utility".into())),
-            plug(vst3.clone()),
-            plug(DeviceKind::Vst2 { id: 7 }),
+            with_id(vst3.clone(), 1),
+            with_id(DeviceKind::Builtin("utility".into()), 2),
+            with_id(vst3.clone(), 3),
+            with_id(DeviceKind::Vst2 { id: 7 }, 4),
         ];
         let found = plugin_devices(&project);
         assert_eq!(found.iter().map(|d| d.position).collect::<Vec<_>>(), [0, 2, 3]);
-        assert_eq!(found[0].key, a.unwrap_or_default());
-        assert_eq!(Some(found[1].key), plugin_key(ChannelId(1), &vst3, 1));
+        assert_eq!(Some(found[1].key), key(1, &vst3, 3, 0));
         // A device added in front of them changes no key.
-        project.channels[0].devices.insert(0, plug(DeviceKind::Builtin("utility".into())));
+        project.channels[0].devices.insert(0, with_id(DeviceKind::Builtin("utility".into()), 5));
         let after: Vec<u64> = plugin_devices(&project).iter().map(|d| d.key).collect();
         assert_eq!(after, found.iter().map(|d| d.key).collect::<Vec<_>>());
+        // The first of the two identical plug-ins is removed: the second keeps its own key, so
+        // its own process, not the removed one's.
+        project.channels[0].devices.remove(1);
+        let after: Vec<u64> = plugin_devices(&project).iter().map(|d| d.key).collect();
+        assert_eq!(after, [found[1].key, found[2].key]);
+    }
+
+    #[test]
+    fn a_plug_in_keeps_its_key_when_it_moves_into_a_device_group() {
+        use suhina_model::{Branch, DeviceGroup};
+        let vst3 = DeviceKind::Vst3 { id: "ABC".into() };
+        let mut project = crate::chain_tests::empty_project();
+        project.channels[0].devices =
+            vec![plug(vst3.clone()), plug(vst3.clone()), plug(DeviceKind::Clap { id: "c".into() })];
+        let before: Vec<u64> = plugin_devices(&project).iter().map(|d| d.key).collect();
+        // The second VST3 and the CLAP go into a group of two branches after the first VST3.
+        let (first, second, clap) = (plug(vst3.clone()), plug(vst3), plug(DeviceKind::Clap { id: "c".into() }));
+        let branches = vec![
+            Branch { devices: vec![second], ..Branch::new("A") },
+            Branch { devices: vec![clap], ..Branch::new("B") },
+        ];
+        project.channels[0].devices = vec![first, Device::group("G", DeviceGroup::with_branches(branches))];
+        let found = plugin_devices(&project);
+        assert_eq!(found.iter().map(|d| d.key).collect::<Vec<_>>(), before);
+        assert_eq!(found.iter().map(|d| d.path.clone()).collect::<Vec<_>>(), [vec![0], vec![1, 0, 0], vec![1, 1, 0]]);
+        assert_eq!(found.iter().map(|d| d.position).collect::<Vec<_>>(), [0, 1, 1]);
     }
 
     #[test]

@@ -7,19 +7,20 @@
 
 An open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live.
 
-Suhina was called Loopwerk until October 2026; settings kept under the old name carry over on the first start. <!-- rename_suhina: keep -->
-
-<a href="docs/research/parity-live-12-by-area.png">
-  <img width="700" alt="Parity by area: the share of each area of a reference DAW's manual that Suhina covers today" src="docs/research/parity-live-12-by-area.png">
+<a href="https://github.com/suhina-daw/suhina-status">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/suhina-daw/suhina-status/main/status-dark.svg">
+    <img width="680" alt="Suhina by area: how many features are done, in progress and planned, with the open bugs" src="https://raw.githubusercontent.com/suhina-daw/suhina-status/main/status.svg">
+  </picture>
 </a>
 
-> How much of that workflow exists today, measured chapter by chapter against a reference DAW's
-> manual: [the report](docs/research/parity-live-12.md), [the order the gap gets closed in](docs/decisions/0016-parity-target.md).
-> Rebuilt on `main` whenever the numbers change.
+> How much of each area of Suhina works today. A box's size is its number of features, its fill the share done; the red number is the area's open bugs. The maintainers count it from their feature list and a bot redraws it every day ([suhina-status](https://github.com/suhina-daw/suhina-status)).
+
+> What comes next, and in what order: [`ROADMAP.md`](ROADMAP.md) and [ADR 0016](docs/decisions/0016-scope.md).
 
 > **Status:** pre-alpha. Suhina opens Live Sets, plays and renders them (audio clips with
 > real-time time-stretching, MIDI through the built-in FM synth, sandboxed CLAP and VST3 plug-ins,
-> or sine tones), and lets agents edit them over MCP. The desktop app has the Session and
+> or sine tones), and lets agents edit them over MCP. The desktop app has the Launcher and
 > Arrangement views, a browser with a sample map, and settings. See [`ROADMAP.md`](ROADMAP.md) for what works and what comes next.
 
 Suhina is an independent clean-room project. It is not affiliated with, sponsored by or
@@ -30,6 +31,11 @@ owners. They are named only to describe file compatibility and comparable workfl
 products; see [`CONTRIBUTING.md`](CONTRIBUTING.md) › Clean-room.
 
 ## Goals
+
+Sampler provides single-source sample and granular playback with an SDK panel,
+editable waveform and sample loading by drag and drop.
+Manual slice maps support double-click add/remove and draggable boundaries; the
+waveform supports anchored zoom and horizontal navigation.
 
 - A real-time audio engine that never glitches, with offline rendering on the same code path.
 - Session-style clip launching with quantisation, plus a linear arrangement.
@@ -45,7 +51,8 @@ release, so expect unfinished parts and bugs
 ([nightly downloads](https://github.com/suhina-daw/suhina-daw/releases/tag/nightly)).
 It and tagged versions hold the desktop app `suhina`, the command-line tool `suhina-cli` and the
 plug-in host `suhina-plugin-host`, for Linux (x86_64), Windows (x64) and macOS (universal). The
-host is the process plug-ins run in: keep the three in one folder. Tell us what works and what breaks
+host is the process plug-ins run in: keep the three in one folder. On macOS the package holds
+`Suhina.app`, which you can drag to Applications; the other two are inside it. Tell us what works and what breaks
 on [Discord](https://discord.com/invite/e5JAZYMU) or in the
 [issues](https://github.com/suhina-daw/suhina-daw/issues). The binaries are not signed yet,
 so macOS and Windows warn before running them. On Linux they need the ALSA library (`libasound2`).
@@ -106,7 +113,8 @@ With `--launcher` the set starts stopped and Suhina reads one command per line:
 ## Building
 
 Linux builds talk to the sound card through ALSA, so its development files and `pkg-config`
-must be installed before building:
+must be installed before building (a running PulseAudio or PipeWire server is reached over its own
+protocol, which needs nothing more):
 
 | Distribution family | Packages |
 |---|---|
@@ -122,9 +130,27 @@ cargo build --release
 cargo test --workspace
 ```
 
+### When a build cannot write files (Windows)
+
+Every build is a new, unsigned program, and security software that judges programs by reputation
+may stop it from writing: Suhina then says "writing was denied" when it saves its settings, and
+tests fail with "Access is denied" (os error 5) in `%APPDATA%` or `%TEMP%`. Exclude the `target`
+folder (or Cargo's `target-dir`) from scanning in the security software, or allow the programs in
+it. In Windows Security that is *Virus & threat protection › Manage settings › Exclusions*, and
+*Ransomware protection › Allow an app through Controlled folder access* when that is on.
+
+When only programs started from one folder are denied, look at that folder's integrity label:
+`icacls <folder>` lists `Mandatory Label\Low Mandatory Level` when another tool's sandbox left
+one, and every program built inside it then runs at low integrity and cannot write to the user's
+folders. Build into a folder without the label (Cargo's `build.target-dir` outside it).
+
 ### ASIO on Windows
 
-A default Windows build plays through WASAPI (shared, or exclusive when chosen in Settings ›
+Windows release, nightly and test packages include ASIO: in Settings › Audio, choose **ASIO**
+under **Driver**, then an installed driver under **Device**. WASAPI remains available.
+ASIO drivers are installed separately; the package does not install a driver.
+
+A default local Windows build plays through WASAPI (shared, or exclusive when chosen in Settings ›
 Audio). ASIO, which talks to an audio interface's own driver, is a Cargo feature, because
 building it compiles the Steinberg ASIO SDK with the C++ compiler and generates its bindings with
 bindgen, which needs libclang:
@@ -151,14 +177,14 @@ Everything that is planned or being worked on is on the board,
 is an [issue](https://github.com/suhina-daw/suhina-daw/issues) in this repository. To start:
 
 1. **Read the rules once:** [`CONTRIBUTING.md`](CONTRIBUTING.md) (clean-room, licences, sign-off)
-   and [`AGENTS.md`](AGENTS.md) (golden rules, crate map, what to run before you finish). They
+   and [`AGENTS.md`](AGENTS.md) (golden rules, what to run before you finish, where to read more). They
    apply to people and to AI agents alike.
 2. **Pick an issue** on the board in *Backlog* or *Ready* with no open pull request for it; the
    [`good first issue`](https://github.com/suhina-daw/suhina-daw/labels/good%20first%20issue) and
    [`help wanted`](https://github.com/suhina-daw/suhina-daw/labels/help%20wanted) labels mark good
    places to begin. Say in the issue that you take it, with a short plan.
-3. **Find the documents for it** in [`docs/INDEX.md`](docs/INDEX.md), by what you are about to do
-   or by the code you change, and read [`docs/architecture.md`](docs/architecture.md) to see where
+3. **Find the documents for it** with `python scripts/docs.py find WORDS` (by what you are about
+   to do) or `python scripts/docs.py covers PATH` (by the code you change), and read [`docs/architecture.md`](docs/architecture.md) to see where
    the code goes.
 4. **Build and test** as [Building](#building) shows; before the pull request run `cargo fmt --all`,
    `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` and
@@ -180,7 +206,7 @@ port anchors and wire routes for a future visual editor. See the [authoring guid
 | [`docs/INDEX.md`](docs/INDEX.md) | Every document, what it is for, and the code it describes |
 | [`docs/commands.md`](docs/commands.md) | Every command the CLI, MCP server and UI run, with its parameters |
 | [`ROADMAP.md`](ROADMAP.md) | Milestones, what works now, what is next |
-| [`AGENTS.md`](AGENTS.md) | Rules for contributors and agents, and the crate map |
+| [`AGENTS.md`](AGENTS.md) | Rules for contributors and agents, and where to read more |
 | [`docs/architecture.md`](docs/architecture.md) | How the parts fit: layers, data flow, threads, commands, where new code goes |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Clean-room rules, licences, sign-off (DCO), AI-assisted contributions |
 | [`IP.md`](IP.md) | Reporting a rights or clean-room problem, and how material is removed |
@@ -195,6 +221,15 @@ port anchors and wire routes for a future visual editor. See the [authoring guid
 Suhina is free software, licensed under the [GNU General Public License v3.0 or later](LICENSE).
 Contributions are licensed the same way.
 
+Rust authors can use checked graph handles and standard panel-control constructors to reduce
+manual wiring and repeated UI setup ([SDK authoring guide](docs/device-sdk.md#checked-rust-authoring)).
+
 SDK effect panels can include custom vector controls, XY pads, gradients and embedded PNG/JPEG
 icons, photos and repeating backgrounds. Artwork and bindings travel inside the single `.sd`;
 see the [custom panel guide](docs/device-sdk.md#custom-panels-images-and-controls).
+
+
+The Rust SDK also offers prepared sample resources, private polyphonic voice/grain graphs,
+slicing, native stretch and editable sampler/granular templates. Run the
+[`sampler_composition` example](crates/device-sdk/examples/sampler_composition.rs) to save and
+render loop, reverse, slice, granular and tempo graphs using one shared resident sample.

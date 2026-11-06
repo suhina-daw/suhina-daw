@@ -7,6 +7,9 @@ use std::collections::HashSet;
 
 impl DeviceGraph {
     pub(crate) fn validate_nodes(&self) -> Result<(), DeviceSdkError> {
+        if self.nodes.iter().map(|node| node.bindings.len()).sum::<usize>() > crate::MAX_CONNECTIONS {
+            return Err(DeviceSdkError("too many graph parameter bindings".into()));
+        }
         let mut ids = HashSet::new();
         let mut inputs = 0;
         let mut outputs = 0;
@@ -25,11 +28,44 @@ impl DeviceGraph {
                         | NodeKind::MidiOutput
                         | NodeKind::MidiTranspose { .. }
                         | NodeKind::MidiTransposeParameter { .. }
+                        | NodeKind::KeyRange { .. }
+                        | NodeKind::VelocityRange { .. }
+                        | NodeKind::Sustain
                 )
             {
                 return Err(fail(
-                    "only midi_input, MIDI transpose nodes and midi_output are supported in midi_effect graphs",
+                    "only MIDI inputs, outputs, transposes, ranges and sustain are supported in midi_effect graphs",
                 ));
+            }
+            if let NodeKind::VoiceGroup { graph, voices } = &node.kind
+                && (graph.len() > crate::MAX_FILE_BYTES || *voices == 0 || *voices > 32)
+            {
+                return Err(fail("voice groups need a bounded graph and 1..32 voices"));
+            }
+            if let NodeKind::GrainPool { graph, grains } = &node.kind
+                && (graph.len() > crate::MAX_FILE_BYTES || *grains == 0 || *grains > 128)
+            {
+                return Err(fail("grain pools need a bounded graph and 1..128 grains"));
+            }
+            if let NodeKind::GranularPlayer { voices, grains, .. } = &node.kind
+                && (*voices == 0
+                    || *voices > 32
+                    || *grains == 0
+                    || *grains > 128
+                    || usize::from(*voices) * usize::from(*grains) > crate::nodes::factory::MAX_GRAINS_IN_ALL)
+            {
+                // Each voice holds its own grains, so preparing it would refuse more than this in all.
+                return Err(fail("granular players need 1..32 voices, 1..128 grains and at most 256 grains in all"));
+            }
+            if node.kind.is_instrument_event_node()
+                && !instrument
+                && !(midi
+                    && matches!(
+                        node.kind,
+                        NodeKind::KeyRange { .. } | NodeKind::VelocityRange { .. } | NodeKind::Sustain
+                    ))
+            {
+                return Err(fail("voice/event nodes require an instrument graph"));
             }
             if instrument && matches!(node.kind, NodeKind::MidiKey | NodeKind::MidiVelocity | NodeKind::MidiGate) {
                 midi_sources += 1;
@@ -38,7 +74,90 @@ impl DeviceGraph {
             {
                 return Err(fail("MIDI value nodes are only valid in instrument graphs"));
             }
+            if node.bindings.len() > crate::MAX_PARAMETERS {
+                return Err(fail("too many parameter bindings"));
+            }
+            let mut targets = HashSet::new();
+            for binding in &node.bindings {
+                if binding.target.is_empty()
+                    || binding.target.len() > 128
+                    || !targets.insert(&binding.target)
+                    || !self.parameters.iter().any(|p| p.id == binding.parameter)
+                {
+                    return Err(fail("invalid parent/target parameter binding"));
+                }
+            }
+            if node.kind.auxiliary_count() > 8 {
+                return Err(fail("too many named outputs"));
+            }
             match &node.kind {
+                NodeKind::SamplerAsset { sample }
+                | NodeKind::SampleAsset { sample }
+                | NodeKind::SliceMap { sample, .. }
+                | NodeKind::SlicePlayback { sample, .. }
+                | NodeKind::TimeStretchPlayer { sample }
+                | NodeKind::GranularPlayer { sample, .. }
+                    if sample.is_empty() || sample.len() > MAX_TEXT_BYTES =>
+                {
+                    return Err(fail("sample binding must be 1..128 bytes"));
+                }
+                NodeKind::SliceMap { boundaries, .. }
+                    if boundaries.len() < 2
+                        || boundaries.len() > 4096
+                        || boundaries.windows(2).any(|p| p[0] >= p[1]) =>
+                {
+                    return Err(fail("slice maps need 2..4096 strictly increasing frame boundaries"));
+                }
+                NodeKind::KeyRange { min, max } if min > max || *max > 127 => {
+                    return Err(fail("key range must be ordered within 0..127"));
+                }
+                NodeKind::VelocityRange { min, max }
+                    if !min.is_finite() || !max.is_finite() || *min < 0. || *max > 1. || min > max =>
+                {
+                    return Err(fail("velocity range must be finite, ordered and within 0..1"));
+                }
+                NodeKind::VoiceInput { controller } | NodeKind::MidiController { number: controller }
+                    if *controller > 127 =>
+                {
+                    return Err(fail("controller must be 0..127"));
+                }
+                NodeKind::GrainRead
+                | NodeKind::TimeStretchPlayer { .. }
+                | NodeKind::GranularPlayer { .. }
+                | NodeKind::SlicePlayback { .. }
+                | NodeKind::VoiceInput { .. }
+                | NodeKind::VoiceGroup { .. }
+                | NodeKind::MidiController { .. }
+                | NodeKind::PitchBend
+                | NodeKind::Pressure
+                    if instrument =>
+                {
+                    midi_sources += 1
+                }
+                NodeKind::VoiceGroup { graph, voices }
+                    if graph.len() > crate::MAX_FILE_BYTES || *voices == 0 || *voices > 32 =>
+                {
+                    return Err(fail("voice groups need a bounded graph and 1..32 voices"));
+                }
+                NodeKind::Component { name, version, graph }
+                    if name.is_empty() || name.len() > 128 || *version == 0 || graph.len() > crate::MAX_FILE_BYTES =>
+                {
+                    return Err(fail("component name, version or graph is invalid"));
+                }
+                NodeKind::ComponentInput { index } if *index > 4 => {
+                    return Err(fail("component input index must be 0..4"));
+                }
+                NodeKind::MidiInput if instrument => midi_sources += 1,
+                NodeKind::MidiTranspose { .. } if instrument => {}
+                NodeKind::Sampler | NodeKind::SamplerAsset { .. } if instrument => midi_sources += 1,
+                NodeKind::Sampler | NodeKind::SamplerAsset { .. } => {
+                    return Err(fail("sampler is only valid in instrument graphs"));
+                }
+                NodeKind::NativeEffect { effect } => {
+                    if effect.is_empty() || effect.len() > MAX_TEXT_BYTES {
+                        return Err(fail("native effect id must be 1..128 bytes"));
+                    }
+                }
                 NodeKind::AudioInput if !instrument => inputs += 1,
                 NodeKind::AudioInput => return Err(fail("instrument graphs have no audio_input")),
                 NodeKind::AudioOutput => outputs += 1,
@@ -128,6 +247,16 @@ impl DeviceGraph {
             }
             if !dest.kind.info().inputs.iter().any(|p| p.name == edge.to_port) {
                 return Err(error(format!("node {:?}: unknown input port {:?}", dest.id, edge.to_port)));
+            }
+            let target_resource = dest
+                .kind
+                .info()
+                .inputs
+                .iter()
+                .find(|p| p.name == edge.to_port)
+                .and_then(|p| matches!(p.unit, "sample" | "region" | "slice_map" | "midi").then_some(p.unit));
+            if source.kind.output_resource(&edge.from_port) != target_resource {
+                return Err(error(format!("incompatible resource ports from {:?} to {:?}", source.id, dest.id)));
             }
             if !used.insert((to, edge.to_port.as_str())) {
                 return Err(error(format!(

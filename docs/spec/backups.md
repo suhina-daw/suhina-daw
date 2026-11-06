@@ -3,7 +3,7 @@ description: Backups (autosave) of open projects - when they are written (an int
 read_when: backup, backups, autosave, auto save, recovery, crash, lost work, .backup folder, project.autosave, critical operation, clean-up, power cut
 type: spec
 status: draft
-last_verified: 2026-10-15
+last_verified: 2026-10-25
 covers:
   - crates/session/src/backup.rs
   - crates/ui/src/app/project_dialog.rs
@@ -25,14 +25,14 @@ last save. The next time Suhina starts it offers the copy back.
 
 - **Backup:** a `.suhina` file holding the project as it was at one moment, with the plug-ins'
   state, written beside the project and never in place of it. The project keeps its own file.
-- **Project file:** the `.suhina` (or `.locr`) file the project was opened from or last saved to.
+- **Project file:** the `.suhina` file the project was opened from or last saved to.
   A project made new or from a template has none until it is saved.
 - **Critical operation:** an action after which the edits before it are hard to get back, listed
   below.
 
 ## When a backup is written
 
-A setting, **Backups** in Settings › General, says when:
+A setting, **Backup interval** in Settings › Projects and backups, says when:
 
 | Choice | Settings file (`backup =`) | A backup is written |
 |---|---|---|
@@ -45,7 +45,9 @@ A setting, **Backups** in Settings › General, says when:
 
 - A backup is written only when the project has **changes since its last backup and since it was
   last saved** (`project.info`'s `unsaved_changes`). A project that is saved, or unchanged since
-  the last backup, is not written again; an untouched project never gets one.
+  the last backup, is not written again; an untouched project never gets one. Confirmed plug-in
+  state changes have their own revision, so a change from processing or MIDI can require a
+  first or later backup without a project command.
 - Every open project is backed up, not only the active tab.
 - With an interval, the clock runs from when the project was opened or last backed up; a project
   that has been changed is written when the interval has passed since then. Changes after that
@@ -57,7 +59,7 @@ A setting, **Backups** in Settings › General, says when:
 
 With *Before critical operations*, a backup of the project is written just before:
 
-1. **Closing the project** (its tab's close button, `projects.close`), or **opening another
+1. **Closing the project** (its tab's close button, `project.close`), or **opening another
    project in its place**; with unsaved changes this is before the Save, Don't save or Cancel
    question, so *Don't save* still leaves a backup.
 2. **Quitting Suhina** with unsaved changes (each such project).
@@ -68,8 +70,9 @@ With *Before critical operations*, a backup of the project is written just befor
    loads is the case backups are most for.
 6. **Deleting a track** (`track.delete`).
 
-The command list is `suhina_session::backup::CRITICAL_COMMANDS`; a new command that is hard to
-undo or risky is added there and to this list.
+A command is critical when its spec says so (`policy: Policy::CRITICAL`, or `critical: true`;
+`suhina_session::policy`); a new command that is hard to undo or risky sets it and is added to
+this list.
 
 ## Where backups go
 
@@ -88,9 +91,15 @@ undo or risky is added there and to this list.
 
 ## How a backup is written
 
-- The project is copied, with the plug-ins' state taken as `project.save` takes it: each running
-  host is asked and the backup waits at most one second; a plug-in that has not answered is backed
-  up with the state it last gave, rather than holding the window.
+- The project is copied with each plug-in's state as it was last read, without asking the
+  plug-ins again: asking waited up to a second for a busy plug-in on the window's thread at every
+  backup. Every running plug-in is read on background control workers every 30 seconds,
+  including one whose editor has never opened: processing or MIDI may change state without a
+  dirty notification. Two matching changed reads establish an unsaved change (ADR 0010). An ARA
+  plug-in (Melodyne) is not read while its editor is open, since storing its edits held the editor
+  up for seconds: its edits reach backups once the editor closes or the project is saved. A save
+  still asks every running plug-in. The last completed state remains available while a control
+  worker is reading a newer one, so a concurrent backup does not fall back to the opened state.
 - The copy is turned into JSON and written on a background thread (`suhina-backup`), never on
   the window's thread or the audio thread. It is written to a temporary file beside the backup
   (`… .suhina.saving`) that is then renamed to the backup's name, so a crash while writing leaves
@@ -98,12 +107,12 @@ undo or risky is added there and to this list.
 - A backup that cannot be written (a read-only folder, a full disk) is reported in the status bar
   and changes nothing else; the next one is tried at the next interval or critical operation.
 - The status bar's right end says when the active project was last backed up ("backed up
-  14:05"), and Settings › General shows the last backup's time and file under the setting.
+  14:05"), and Settings › Projects and backups shows the last backup's time and file under the setting.
   `project.autosave` reports them too.
 
 ## Clean-up
 
-A setting, **Clean up backups** in Settings › General (`backup_clean_up = on|off`, on by default),
+A setting, **Delete old backups** in Settings › Projects and backups (`backup_clean_up = on|off`, on by default),
 deletes old backups:
 
 - After each backup is written, the newest **20** backups of that project in that folder are kept
@@ -165,7 +174,7 @@ An entry whose backup is gone or older than its project file is taken out withou
 |---|---|---|
 | `now` | bool | `true` writes a backup of the active project now, if it has unsaved changes, and waits up to ten seconds for it |
 | `interval` | text | sets when backups are written for this run: `critical`, `1m`, `5m`, `10m`, `15m`, `30m`, `60m`, `4h`, `never` |
-| `clean_up` | bool | sets clean-up for this run |
+| `cleanUp` | bool | sets clean-up for this run |
 
 It returns `interval`, `clean_up`, the active project's `folder` (where its backups go, `null`
 when there is none: an untitled project where no settings folder is known), `last_backup`

@@ -2,8 +2,9 @@
 description: How the sample map analyses samples (features), lays them out (PCA and t-SNE, grid assignment), finds similar ones (a linear scan), caches the results, and which crates it uses
 read_when: sample map, soundmap crate, audio features, MFCC, spectral centroid, band energy, onset, pitch glide, t-SNE, bhtsne, PCA, UMAP, grid layout, RasterFairy, nearest neighbours, feature cache, kinds, classifier, kind set by hand
 type: decision
-status: current
-last_verified: 2026-10-15
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs
@@ -11,7 +12,6 @@ covers:
 
 # 0013: The sample map: features, layout and cache
 
-- **Status:** accepted
 - **Date:** 2026-10-12
 
 ## Context
@@ -135,6 +135,12 @@ t-SNE or UMAP. What remains is choosing the features, the methods and the crates
    the length limit, so changing the limit needs no new analysis. An entry whose size or time no longer
    matches the library's index is analysed again. Written to a file beside it and moved over
    it, as the index is. A file that does not parse is ignored and the folder analysed again.
+   *Amended 2026-10-19:* new and removed entries are appended to a journal beside it
+   (`features-<hash>.log`) and the file is written whole only when the journal passes a quarter
+   of its entries; every write runs on a thread of its own, never the window's (a 63 MiB cache
+   written and synced there froze the window for 700 ms). Loading reads the file, then the
+   journal up to a torn last record, and cuts the journal there, so the records appended after
+   a crash follow a whole one and are read at the next start.
 9. **Threads:** analysis runs on a pool of half the cores (at least one), started by
    `Library::start`'s caller as indexing is, so tests and the CLI never analyse a user's
    folders unasked. A file larger than 256 MiB is not decoded. Caches are written after every

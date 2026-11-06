@@ -9,9 +9,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use suhina_engine::{RenderInputs, render_offline_from};
 
 use serde_json::json;
-use suhina_engine::{AudioPool, Renderer, render_offline, render_offline_with_plugins};
+use suhina_engine::{AudioPool, Renderer, render_offline};
 use suhina_model::*;
 use suhina_plugins::scan::{Catalog, PluginInfo};
 use suhina_session::{Player, PluginEnv, Session, start_offline};
@@ -33,6 +34,7 @@ fn env() -> Arc<PluginEnv> {
         version: "1".into(),
         features: vec!["audio-effect".into()],
         replaces: Vec::new(),
+        ara: false,
     };
     let mut catalog = Catalog::new();
     catalog.insert(path, vec![info]);
@@ -62,12 +64,14 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                id: Default::default(),
                 name: "Test vst3".into(),
                 // The catalog lists the built-in test plug-ins as CLAP (their file is not a `.vst3`).
                 kind: DeviceKind::Clap { id: "vst3".into() },
                 enabled: true,
                 state: None,
                 params: Vec::new(),
+                clip_host: false,
                 extensions: Extensions::default(),
                 automation: Vec::new(),
             }],
@@ -78,17 +82,19 @@ fn project() -> Project {
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note].into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "l".into(),
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, 1.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }
@@ -99,10 +105,17 @@ fn project() -> Project {
 /// with: the render's peak over the peak without the plug-in.
 fn render(project: &Project) -> f32 {
     let peak = |samples: &[f32]| samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
-    let started = start_offline(project, &env(), SR);
+    let started = start_offline(project, &AudioPool::new(), &env(), SR);
     assert_eq!(started.running(), 1, "{:?}", started.notices);
-    let wet = render_offline_with_plugins(project, &AudioPool::new(), SR, 256, started.plugins).unwrap();
-    let dry = render_offline(project, SR, 256).unwrap();
+    let wet = render_offline_from(
+        project,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(started.plugins),
+        SR,
+        256,
+        None,
+    )
+    .unwrap();
+    let dry = render_offline(project, SR, 256, suhina_session::devices()).unwrap();
     assert!(peak(&dry) > 0.1);
     peak(&wet) / peak(&dry)
 }
@@ -130,11 +143,13 @@ fn until(session: &mut Session, renderer: &mut Renderer, what: &str, mut done: i
 
 #[test]
 fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
-    let opened = project();
-    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
+    // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
+    let mut opened = project();
+    assert_eq!(opened.assign_ids(), Ok(()));
+    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": 0 });
     until(&mut session, &mut renderer, "starting", |s| {
         s.execute("device.plugin", &device).unwrap()["status"] == "running"
@@ -169,6 +184,55 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
     // project is as it was. The change made in the editor is unsaved all the same (issue #362).
     assert!(!session.can_undo());
     assert_eq!(session.project(), &opened);
-    session.check_plugin_edits();
+    session.rack_mut().check_edits();
     assert!(session.has_unsaved_changes());
+}
+
+#[test]
+fn a_duplicated_track_starts_its_plug_in_with_the_state_it_has_now() {
+    let mut opened = project();
+    assert_eq!(opened.assign_ids(), Ok(()));
+    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
+    let mut session = Session::new(opened);
+    session.attach_player(Player::new(renderer.controller(), None));
+    session.rack_mut().set_env(env());
+    let device = json!({ "track": 1, "device": 0 });
+    until(&mut session, &mut renderer, "starting", |s| {
+        s.execute("device.plugin", &device).unwrap()["status"] == "running"
+    });
+    let copied_gain = |s: &Session| {
+        let state = s.project().channels.last()?.devices.first()?.state.as_deref()?;
+        Some(f32::from_le_bytes(state.try_into().ok()?))
+    };
+    // The project holds no state for it yet: the copy has what the plug-in says it has.
+    assert_eq!(gain(session.project()), None);
+    session.execute("track.duplicate", &json!({ "tracks": [1] })).unwrap();
+    assert_eq!(copied_gain(&session), Some(DEFAULT_GAIN));
+    assert_eq!(gain(session.project()), None, "the original is as it was");
+    session.execute("edit.undo", &json!({})).unwrap();
+
+    // Copy and paste, the same.
+    session.execute("track.copy", &json!({ "tracks": [1] })).unwrap();
+    session.execute("track.paste", &json!({ "after": 1 })).unwrap();
+    assert_eq!(copied_gain(&session), Some(DEFAULT_GAIN));
+
+    // Editors open on Windows, and on Linux with an X server.
+    let editors =
+        cfg!(windows) || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty()));
+    if !editors {
+        eprintln!("no display for editors; the edit part is skipped");
+        return;
+    }
+    // A change made in the plug-in's editor goes with both kinds of copy.
+    session.execute("device.openEditor", &device).unwrap();
+    until(&mut session, &mut renderer, "the edit reaching the plug-in", |s| {
+        gain(&s.project_as_heard()) == Some(EDITOR_GAIN)
+    });
+    session.execute("device.closeEditor", &device).unwrap();
+    session.execute("track.duplicate", &json!({ "tracks": [1] })).unwrap();
+    assert_eq!(copied_gain(&session), Some(EDITOR_GAIN));
+    session.execute("edit.undo", &json!({})).unwrap();
+    session.execute("track.copy", &json!({ "tracks": [1] })).unwrap();
+    session.execute("track.paste", &json!({ "after": 1 })).unwrap();
+    assert_eq!(copied_gain(&session), Some(EDITOR_GAIN));
 }

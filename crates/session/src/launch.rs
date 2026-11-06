@@ -8,7 +8,8 @@ use serde_json::{Value, json};
 use suhina_engine::LaunchCommand;
 use suhina_model::{Clip, LaunchMode, LaunchQuantization, Project};
 
-use crate::commands::{column_index, scene_index};
+use crate::commands::Args;
+use crate::commands::{column_index, scene_id, scene_index};
 use crate::{CommandError, Session};
 
 /// The clip in the slot `params.track`, `params.scene`.
@@ -24,7 +25,7 @@ fn slot_clip<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Clip, Com
 }
 
 fn text<'a>(params: &'a Value, name: &str, what: &str) -> Result<&'a str, CommandError> {
-    params.get(name).and_then(Value::as_str).ok_or_else(|| format!("{name} must be {what}").into())
+    Args::new(params).raw_str(name).ok_or_else(|| format!("{name} must be {what}").into())
 }
 
 pub(crate) fn set_launch_mode(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -37,7 +38,7 @@ pub(crate) fn set_launch_mode(session: &mut Session, params: &Value) -> Result<V
 }
 
 pub(crate) fn set_legato(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let on = params.get("on").and_then(Value::as_bool).ok_or("on must be true or false")?;
+    let on = Args::new(params).bool("on")?;
     slot_clip(&mut session.project, params)?.launch.legato = on;
     Ok(json!({ "legato": on }))
 }
@@ -57,5 +58,5 @@ pub(crate) fn release_clip(session: &mut Session, params: &Value) -> Result<Valu
     let column = column_index(session.project(), params)?;
     let scene = scene_index(session.project(), params)?;
     session.player_mut()?.send(LaunchCommand::ReleaseClip { column, slot: scene })?;
-    Ok(json!({ "scene": scene + 1, "released": true }))
+    Ok(json!({ "scene": scene, "scene_id": scene_id(session.project(), scene), "released": true }))
 }

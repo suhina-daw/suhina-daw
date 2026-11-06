@@ -1,6 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use suhina_device_api::SampleSource as _;
 use suhina_device_sdk::{
     Connection as C, DeviceGraph, DeviceRole, NODE_CATALOG, Node as N, NodeKind as K, Parameter, ParameterControl,
     ProcessContext, Waveform,
@@ -20,7 +21,7 @@ fn graph(kind: K) -> DeviceGraph {
         g.connections = vec![C::new("in", "node"), C::new("node", "out")];
         return g;
     }
-    if matches!(kind, K::MidiKey | K::MidiVelocity | K::MidiGate) {
+    if matches!(kind, K::MidiKey | K::MidiVelocity | K::MidiGate | K::Sampler) {
         let mut g = DeviceGraph::new("org.test.graph", "Graph", DeviceRole::Instrument);
         g.nodes = vec![N::new("node", kind), N::audio_output("out")];
         g.connections = vec![C::new("node", "out")];
@@ -71,6 +72,11 @@ fn every_catalog_node_round_trips_resets_and_ignores_host_block_size() {
     let mut kinds = NODE_CATALOG
         .iter()
         .filter(|info| !matches!(info.kind, "audio_input" | "audio_output" | "midi_input" | "midi_output"))
+        // Resource nodes need typed asset/region wires; resource_nodes.rs covers them together.
+        .filter(|info| {
+            let kind = serde_json::from_str::<K>(info.example).unwrap();
+            !kind.requires_samples() && !kind.is_instrument_event_node()
+        })
         .map(|info| serde_json::from_str::<K>(info.example).unwrap())
         .collect::<Vec<_>>();
     kinds.extend([
@@ -95,7 +101,7 @@ fn every_catalog_node_round_trips_resets_and_ignores_host_block_size() {
             continue;
         }
         for sr in [8000.0, 44100.0, 48000.0, 96000.0, 384000.0] {
-            let mut effect = g.compile_at(sr).unwrap();
+            let mut effect = g.compile_with_native_at(sr, |_, _| Ok(Box::new(CatalogNative))).unwrap();
             let input = (0..2048).flat_map(|n| [(n as f32 * 0.03).sin(), -(n as f32 * 0.05).cos()]).collect::<Vec<_>>();
             let mut expected = input.clone();
             effect.process(&mut expected);
@@ -219,10 +225,7 @@ fn version_one_gain_example_remains_readable_and_new_nodes_require_version_two()
     let mut out = [1.0, -1.0];
     g.compile().unwrap().process(&mut out);
     assert_eq!(out, [1.0, -1.0]);
-    let text = graph(K::Tanh)
-        .to_sd()
-        .unwrap()
-        .replace(&format!("\"version\": {}", suhina_device_sdk::VERSION), "\"version\": 1");
+    let text = graph(K::Tanh).to_sd().unwrap().replace("\"version\": 6", "\"version\": 1");
     assert!(DeviceGraph::from_sd(&text).is_err());
     assert!(g.compile_at(f64::NAN).is_err());
     assert!(g.compile_at(1e9).is_err());
@@ -264,7 +267,7 @@ fn synced_lfo_follows_transport_position() {
 
 #[test]
 fn six_authoring_examples_save_restore_and_have_the_expected_sound() {
-    for name in ["stereo-utility", "auto-pan", "filter", "distortion", "delay", "compressor"] {
+    for name in ["stereo-utility", "lfo-pan", "filter", "distortion", "delay", "compressor"] {
         let g = examples::build(name).unwrap();
         assert_eq!(DeviceGraph::from_sd(&g.to_sd().unwrap()).unwrap(), g);
         let mut effect = g.compile().unwrap();
@@ -273,7 +276,7 @@ fn six_authoring_examples_save_restore_and_have_the_expected_sound() {
         assert!(out.iter().all(|v| v.is_finite()));
         match name {
             "stereo-utility" => assert_eq!(out, vec![0.5; 48000]),
-            "auto-pan" => {
+            "lfo-pan" => {
                 assert!((out[24000] - 0.0).abs() < 1e-5);
                 assert!((out[24001] - 0.5).abs() < 1e-5);
             }
@@ -535,7 +538,7 @@ fn lfo_disclosure_round_trips_without_changing_audio() {
 fn effect_examples_use_circular_knobs_and_square_value_controls() {
     use suhina_device_sdk::ControlShape;
 
-    for name in ["auto-pan", "compressor", "delay", "distortion", "filter", "stereo-utility"] {
+    for name in ["lfo-pan", "compressor", "delay", "distortion", "filter", "stereo-utility"] {
         let graph = examples::build(name).unwrap();
         for parameter in &graph.parameters {
             let expected = if matches!(parameter.control, ParameterControl::Knob | ParameterControl::LogKnob) {
@@ -728,15 +731,33 @@ fn midi_repress_and_zero_velocity_release_previous_mapping() {
             assert_eq!(effect.process(&[(7, NoteEvent::On { key: 60, velocity: 0.0 })], &mut output), 1);
             assert_eq!(output[0], (7, NoteEvent::Off { key: 72, velocity: 0.0 }));
         } else {
-            assert_eq!(effect.process(&on, &mut output[..1]), 0);
-            assert_eq!(effect.process(&on, &mut output), 2);
+            // No room for both: the sounding note ends and the press is dropped.
+            assert_eq!(effect.process(&on, &mut output[..1]), 1);
             assert_eq!(output[0], (3, NoteEvent::Off { key: 72, velocity: 0.0 }));
+            assert_eq!(effect.process(&on, &mut output), 1);
+            assert_eq!(output[0], on[0]);
+            assert_eq!(effect.process(&on, &mut output), 2);
+            assert_eq!(output[0], (3, NoteEvent::Off { key: 60, velocity: 0.0 }));
             assert_eq!(output[1], on[0]);
             assert_eq!(effect.process(&[(7, NoteEvent::Off { key: 60, velocity: 0.0 })], &mut output), 1);
             assert_eq!(output[0], (7, NoteEvent::Off { key: 60, velocity: 0.0 }));
         }
         assert_eq!(effect.process(&[(8, NoteEvent::Off { key: 60, velocity: 0.0 })], &mut output), 0);
     }
+}
+
+#[test]
+fn midi_release_of_a_note_from_before_the_effect_is_transposed() {
+    use suhina_device_api::NoteEvent;
+    let mut effect = graph(K::MidiTransposeParameter { parameter: "amount".into() }).compile_midi().unwrap();
+    let mut output = [(0, NoteEvent::AllNotesOff); 2];
+    // The chain was rebuilt while the key was down: the release still reaches the note.
+    assert_eq!(effect.process(&[(4, NoteEvent::Off { key: 60, velocity: 0.5 })], &mut output), 1);
+    assert_eq!(output[0], (4, NoteEvent::Off { key: 72, velocity: 0.5 }));
+    // A key released once has nothing more to end.
+    assert_eq!(effect.process(&[(5, NoteEvent::On { key: 61, velocity: 0.5 })], &mut output), 1);
+    assert_eq!(effect.process(&[(6, NoteEvent::Off { key: 61, velocity: 0.5 })], &mut output), 1);
+    assert_eq!(effect.process(&[(7, NoteEvent::Off { key: 61, velocity: 0.5 })], &mut output), 0);
 }
 
 #[test]
@@ -749,4 +770,168 @@ fn parameter_controls_share_discrete_semantics() {
         parameter.control = control;
         assert_eq!(parameter.clamp(0.7), if stepped { 1.0 } else { 0.7 });
     }
+}
+
+#[test]
+fn sampler_source_composes_and_preserves_timestamped_polyphony() {
+    use std::sync::Arc;
+    use suhina_device_api::{Device, NoteEvent};
+    let mut g = DeviceGraph::new("org.test.sampler", "Sampler graph", DeviceRole::Instrument);
+    g.nodes = vec![
+        N::new("source", K::Sampler),
+        N::new("half", K::Constant { value: 0.5 }),
+        N::new("scale", K::Multiply),
+        N::audio_output("out"),
+    ];
+    g.connections =
+        vec![C::ports("source", "out", "scale", "a"), C::ports("half", "out", "scale", "b"), C::new("scale", "out")];
+    let encoded = g.to_sd().expect("serialize");
+    let g = DeviceGraph::from_sd(&encoded).expect("round trip");
+    let mut prepared = g.compile_instrument_at(48000.).expect("compile");
+    assert!(prepared.sampler_mut("missing").is_none());
+    let source = prepared.sampler_mut("source").expect("source binding");
+    source.load_sample(48000, 1, Arc::from(vec![0.25; 4800]));
+    source.set_param(11, 0.);
+    source.set_param(12, 0.);
+    source.set_param(13, 1.);
+    let events = [(8, NoteEvent::On { key: 60, velocity: 1. }), (16, NoteEvent::On { key: 64, velocity: 1. })];
+    let mut audio = [0.; 128];
+    prepared.process_instrument_context(&ProcessContext::default(), &events, &mut audio);
+    assert!(audio[..16].iter().all(|v| *v == 0.));
+    assert!(audio[16..32].iter().any(|v| *v > 0.));
+    assert!(audio[32..].iter().any(|v| *v > audio[30]));
+    prepared.reset();
+    let mut silent = [1.; 128];
+    prepared.process_instrument_context(&ProcessContext::default(), &[], &mut silent);
+    assert!(silent.iter().all(|v| *v == 0.));
+    let mut invalid = g;
+    invalid.role = DeviceRole::Effect;
+    assert!(invalid.validate().is_err());
+}
+
+#[test]
+fn sampler_graph_matches_two_independent_kernels_across_blocks() {
+    use suhina_device_api::{Device, NoteEvent};
+    use suhina_device_sdk::sample_instrument::Sampler;
+    for mode in [0., 1.] {
+        let mut graph = DeviceGraph::new("org.test.two-samples", "Two samples", DeviceRole::Instrument);
+        graph.nodes =
+            vec![N::new("a", K::Sampler), N::new("b", K::Sampler), N::new("sum", K::Add), N::audio_output("out")];
+        graph.connections =
+            vec![C::ports("a", "out", "sum", "a"), C::ports("b", "out", "sum", "b"), C::new("sum", "out")];
+        let mut prepared = graph.compile_instrument_at(48000.).expect("compile");
+        let mut kernels = [Sampler::new(), Sampler::new()];
+        for (index, kernel) in kernels.iter_mut().enumerate() {
+            let source: std::sync::Arc<[f32]> =
+                (0..8192).map(|i| ((i as f32 * (0.03 + index as f32 * 0.02)).sin()) * 0.2).collect::<Vec<_>>().into();
+            for sampler in [prepared.sampler_mut(if index == 0 { "a" } else { "b" }).expect("source"), kernel] {
+                sampler.load_sample(48000, 1, source.clone());
+                for (parameter, value) in
+                    [(0, mode), (7, 32.), (8, 2.), (11, 0.001), (12, 0.002), (13, 0.8), (14, 0.03)]
+                {
+                    sampler.set_param(parameter, value);
+                }
+            }
+        }
+        for block in 0..24 {
+            let events = match block {
+                0 => (60..76).enumerate().map(|(i, key)| (7 + i * 5, NoteEvent::On { key, velocity: 0.8 })).collect(),
+                3 => vec![(53, NoteEvent::PitchBend(0.7))],
+                9 => vec![(31, NoteEvent::Off { key: 60, velocity: 0. })],
+                16 => vec![(103, NoteEvent::AllNotesOff)],
+                _ => vec![],
+            };
+            let context = ProcessContext::default();
+            let mut actual = [0.; 512];
+            prepared.process_instrument_context(&context, &events, &mut actual);
+            let mut expected = [0.; 512];
+            for kernel in &mut kernels {
+                let mut rendered = [0.; 512];
+                let mut offset = 0;
+                for &(at, event) in &events {
+                    kernel.process(&context, &mut rendered[offset * 2..at * 2]);
+                    kernel.event(event);
+                    offset = at;
+                }
+                kernel.process(&context, &mut rendered[offset * 2..]);
+                for (sum, value) in expected.iter_mut().zip(rendered) {
+                    *sum += value;
+                }
+            }
+            for (frame, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+                assert!(
+                    (actual - expected).abs() < 1e-6,
+                    "mode {mode}, block {block}, sample {frame}: {actual} != {expected}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "manual release callback timing"]
+fn sampler_graph_max_polyphony_callback_timing() {
+    use suhina_device_api::{Device, NoteEvent};
+    use suhina_device_sdk::sample_instrument::Sampler;
+    let mut graph = DeviceGraph::new("org.test.sample-timing", "Timing", DeviceRole::Instrument);
+    graph.nodes = vec![N::new("sample", K::Sampler), N::audio_output("out")];
+    graph.connections = vec![C::new("sample", "out")];
+    let mut prepared = graph.compile_instrument_at(48000.).expect("compile");
+    let mut native = Sampler::new();
+    for sampler in [prepared.sampler_mut("sample").expect("source"), &mut native] {
+        sampler.load_sample(48000, 1, vec![0.1; 48000].into());
+        for (parameter, value) in [(0, 1.), (7, 32.), (8, 2.), (22, 500.), (23, 100.)] {
+            sampler.set_param(parameter, value);
+        }
+        for key in 48..80 {
+            sampler.event(NoteEvent::On { key, velocity: 1. });
+        }
+    }
+    let context = ProcessContext::default();
+    let mut buffer = [0.; 512];
+    for _ in 0..200 {
+        native.process(&context, &mut buffer);
+        prepared.process_context(&context, &mut buffer);
+    }
+    for (name, graph_mode) in [("native", false), ("graph", true)] {
+        let start = std::time::Instant::now();
+        let mut worst = std::time::Duration::ZERO;
+        for _ in 0..1000 {
+            let callback = std::time::Instant::now();
+            if graph_mode {
+                prepared.process_context(&context, &mut buffer);
+            } else {
+                native.process(&context, &mut buffer);
+            }
+            std::hint::black_box(&buffer);
+            worst = worst.max(callback.elapsed());
+        }
+        eprintln!("{name}: mean {:?}, worst {:?}; 256-frame deadline 5.333 ms", start.elapsed() / 1000, worst);
+    }
+}
+
+struct CatalogNative;
+impl suhina_device_sdk::native_node::NativeNode for CatalogNative {
+    fn prepare_block(&mut self, _: &ProcessContext) {}
+    fn process(&mut self, inputs: [&[f32]; 5], output: &mut [f32]) {
+        output.copy_from_slice(inputs[0]);
+    }
+    fn event(&mut self, _: suhina_device_api::NoteEvent) {}
+    fn reset(&mut self) {}
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// The fixture a pull request's check steps add to a track: version 5 with an expanded panel
+/// whose control turns the Power toggle.
+#[test]
+fn the_expanded_panel_fixture_reads_and_round_trips() {
+    let text = include_str!("fixtures/expanded-panel.sd");
+    let g = DeviceGraph::from_sd(text).unwrap();
+    let expanded = g.expanded.as_ref().unwrap();
+    assert_eq!(expanded.controls[0].name, "Big power switch");
+    assert!(g.ui.is_none());
+    // A Windows checkout may have turned the fixture's line ends into CRLF; `to_sd` writes LF.
+    assert_eq!(g.to_sd().unwrap(), text.replace("\r\n", "\n").replacen("\"version\": 5", "\"version\": 6", 1));
 }

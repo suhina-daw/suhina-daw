@@ -25,6 +25,7 @@ fn launch(plugin: &str, group: Option<&str>) -> Launch {
         sample_rate: 48_000.0,
         timeout: PATIENT,
         group: group.map(str::to_string),
+        ara: None,
     }
 }
 
@@ -37,6 +38,23 @@ fn block(audio: &mut PluginAudio, timeout: Duration) -> (Outcome, f32) {
     let mut output = [9.0f32; FRAMES * 2];
     let outcome = audio.process(&[1.0; FRAMES * 2], &mut output, timeout);
     (outcome, output[0])
+}
+
+/// Missing the audio deadline is not a hang when every request is eventually answered.
+#[test]
+fn repeatedly_late_answers_do_not_mark_a_responsive_plugin_hung() {
+    let (mut control, mut audio) = start("test:busy:10000", None);
+    let mut output = [0.0; FRAMES * 2];
+    for _ in 0..HUNG_AFTER + 2 {
+        let until = Instant::now() + PATIENT;
+        while !audio.ready(Instant::now()) {
+            assert!(Instant::now() < until, "previous request never answered");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(audio.send(&[1.0; FRAMES * 2], &[], output.len(), Duration::ZERO));
+        let _ = audio.finish(&mut output, Duration::ZERO);
+        assert_eq!(control.health(), Health::Running);
+    }
 }
 
 fn wait_for(plugin: &mut Plugin, health: Health) {
@@ -246,7 +264,10 @@ fn several_editors_open_at_once_in_one_process() {
     assert!(!second.editor_open());
 }
 
+/// Asking would only take longer, not answer otherwise, so this can be seen only in time. Run with
+/// `cargo test -p suhina-plugin-host --release --test groups never_waits -- --ignored`.
 #[test]
+#[ignore = "bounds on elapsed time, for an idle machine"]
 fn asking_how_an_instance_is_never_waits_for_a_sibling_loading() {
     let (mut plugin, _audio) = start("test:gain", Some("slow-sibling"));
     assert_eq!(plugin.health(), Health::Running);

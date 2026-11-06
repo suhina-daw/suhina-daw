@@ -14,7 +14,8 @@ built; 2 when git could not answer (a commit that was not fetched), which the wo
 
 HEAD only merges main when it is a merge commit whose first parent is BEFORE, whose second parent is
 on main, and whose own diff equals BEFORE's: the diff from the second parent to HEAD is the same
-patch (git patch-id, which ignores line numbers) as the diff from where BEFORE left main to BEFORE.
+patch (ignoring line numbers and blob hashes, but preserving whitespace) as the diff from where
+BEFORE left main to BEFORE.
 A conflict resolved by hand, or main changing lines next to the pull request's own, changes that
 patch, and the pull request is built again. Standard library only.
 """
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import re
 
 
 class GitError(Exception):
@@ -42,16 +44,18 @@ def commit(rev: str, cwd: str | None = None) -> str:
     return git("rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}", cwd=cwd).decode().strip()
 
 
-def patch_id(diff: bytes, cwd: str | None = None) -> str:
-    """The stable patch id of a diff; empty for an empty diff."""
-    if not diff.strip():
-        return ""
-    out = git("patch-id", "--stable", cwd=cwd, stdin=diff).decode().split()
-    return out[0] if out else ""
+def normalized_patch(diff: bytes) -> bytes:
+    """Ignore location and blob identities, never whitespace, file modes or binary data.
+
+    patch-id ignores whitespace even inside source strings, so it cannot establish that
+    a previously built binary represents the same changes after a merge.
+    """
+    diff = re.sub(rb"^index [0-9a-f]+\.\.[0-9a-f]+", b"index", diff, flags=re.M)
+    return re.sub(rb"^@@ -[0-9]+(?:,[0-9]+)? \+[0-9]+(?:,[0-9]+)? @@", b"@@", diff, flags=re.M)
 
 
 def own_diff(base: str, tip: str, cwd: str | None = None) -> bytes:
-    return git("diff", "--binary", "--no-renames", base, tip, cwd=cwd)
+    return git("diff", "--binary", "--no-renames", "--no-ext-diff", "--no-textconv", base, tip, cwd=cwd)
 
 
 def only_merges_main(before: str, head: str, main: str, cwd: str | None = None) -> tuple[bool, str]:
@@ -73,8 +77,8 @@ def only_merges_main(before: str, head: str, main: str, cwd: str | None = None) 
     if on_main.returncode != 0:
         raise GitError(on_main.stderr.decode(errors="replace").strip())
     fork = git("merge-base", second, before, cwd=cwd).decode().strip()
-    old = patch_id(own_diff(fork, before, cwd), cwd)
-    new = patch_id(own_diff(second, head, cwd), cwd)
+    old = normalized_patch(own_diff(fork, before, cwd))
+    new = normalized_patch(own_diff(second, head, cwd))
     if old != new:
         return False, f"{head[:7]} changes the pull request's own diff (a resolved conflict, or main changed lines next to it)"
     return True, f"{head[:7]} only merges main ({second[:7]}) into {before[:7]}"

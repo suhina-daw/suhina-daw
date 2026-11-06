@@ -75,7 +75,7 @@ fn number(ui: &mut DeviceUi, id: &str, b: [f32; 4], decimals: usize, log: bool, 
         visible_when: None,
         gesture: UiGesture::Drag,
         x: None,
-        y: Some(UiBinding { parameter: id.into(), logarithmic: log }),
+        y: Some(UiBinding { parameter: id.into(), logarithmic: log, drag_scale: 1. }),
         drawing: vec![readout(id, if center { b[2] / 2. } else { 4. }, 0., decimals, color, center)],
     });
 }
@@ -96,7 +96,7 @@ fn knob(ui: &mut DeviceUi, id: &str, label: &str, b: [f32; 4], log: bool) {
         visible_when: None,
         gesture: UiGesture::Drag,
         x: None,
-        y: Some(UiBinding { parameter: id.into(), logarithmic: log }),
+        y: Some(UiBinding { parameter: id.into(), logarithmic: log, drag_scale: 1. }),
         drawing: vec![
             text(cx, 0., label, TEXT, true),
             Draw::Circle { center: [cx.into(), center_y.into()], radius: radius.into(), color: RIM },
@@ -123,6 +123,17 @@ fn knob(ui: &mut DeviceUi, id: &str, label: &str, b: [f32; 4], log: bool) {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Widget {
+    /// Host-provided sample waveform with editable region/loop markers and recording actions.
+    SampleWaveform,
+    /// Host-backed sample input and recording controls, independent of the waveform.
+    SampleRecording,
+    /// Cumulative ADSR; omitting release makes a bipolar Attack/Decay envelope.
+    Envelope {
+        attack: String,
+        decay: String,
+        level: String,
+        release: Option<String>,
+    },
     Button {
         label: String,
         #[serde(default)]
@@ -148,12 +159,21 @@ pub enum Widget {
     /// Ringed dial whose diameter follows the available control area.
     Dial {
         label: String,
+        #[serde(default)]
+        decimals: usize,
+        #[serde(default)]
+        format: TextFormat,
     },
     Stepper {
         decimals: usize,
     },
     /// Non-interactive, theme-aware section caption.
     Label {
+        label: String,
+    },
+    /// Passive, theme-aware section background and optional heading.
+    Panel {
+        #[serde(default)]
         label: String,
     },
     /// Non-interactive vertical section divider.
@@ -167,10 +187,85 @@ pub enum Widget {
         choices: Vec<(u16, String)>,
     },
     WaveformMenu,
+    /// Theme-aware oscillator preview; X binds its rate, shape names its waveform parameter.
+    WaveformPreview {
+        shape: String,
+    },
     FilterBand {
         min_hz: f32,
         max_hz: f32,
     },
+    /// A drawing that takes no input (a display, a curve): its own drawings, no binding.
+    Graphic {
+        drawing: Vec<Draw>,
+    },
+    /// A line across the control that moves with its binding and is dragged directly: an X binding
+    /// gives a vertical line moved sideways, a Y binding a horizontal one moved up and down. The
+    /// value maps to the control's bounds as `position` does, the other way along an axis whose
+    /// binding has a negative `drag_scale`. `span` limits the line (and where it is grabbed)
+    /// across the other axis, in canvas units; the whole bounds without it. `offset` moves the
+    /// bounds along its travel (sideways with an X binding), in canvas units, for a value that
+    /// starts where another ends. With both bindings it is a point: a dot at both values, dragged
+    /// on both axes as one undo step. `dot` draws a one-axis handle the same way, in the middle
+    /// of its line. `relative` moves the value by how far the pointer moves, a full bounds for
+    /// its whole range, rather than to where the pointer is: for a handle whose `offset` follows
+    /// its own value (a dot that stays on a curve it bends), which would otherwise run away.
+    /// `hollow` draws its dot smaller, as a ring, for a handle that shapes something rather than
+    /// placing it.
+    Handle {
+        color: [u8; 4],
+        #[serde(default)]
+        span: Option<[crate::ui::UiValue; 2]>,
+        #[serde(default)]
+        offset: Option<crate::ui::UiValue>,
+        #[serde(default)]
+        dot: bool,
+        #[serde(default)]
+        relative: bool,
+        #[serde(default)]
+        hollow: bool,
+    },
+    /// The device's on/off as a control in its own body: the header's square, bigger,
+    /// running `device.setEnabled`. The host reads the state and draws it; it has no
+    /// parameter of its own.
+    DeviceSwitch,
+    /// A file-backing device's pack row or file row: one piece per control, so its bounds,
+    /// accessible name and popup bounds belong to one dropdown or stepper. `part` places it;
+    /// `what` names the device's file ("model", "cab") whose folders' lists the host feeds.
+    DeviceFiles {
+        part: FileRowPart,
+        what: String,
+    },
+    /// The one-line note a file-backing device's panel shows under the controls when its
+    /// file does not run (the fault, or that the file moved); nothing when it does.
+    DeviceNote,
+    /// Host-drawn response display of the eight-band EQ: the grid, the curve of each band
+    /// group in use and a draggable dot per band, with the selected band's Frequency, Gain
+    /// and Q strips, the bands' type menus and numbered selectors, and the Edit switch beside
+    /// them. The host finds the band parameters by their ids (`a1Frequency` … `b8Q`); which
+    /// band is selected is panel state, never a parameter (docs/spec/eq.md › The panel).
+    EqCurve,
+}
+
+/// What a [`Widget::DeviceFiles`] control places: the pack row's or file row's dropdown on
+/// its own control, or one of the row's steppers, so its bounds and accessible name belong
+/// to one button or dropdown. The dropdown and its steppers talk to the same current pack
+/// and file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileRowPart {
+    /// The pack row's dropdown: the device file's pack, the folder's packs under it.
+    Pack,
+    /// The pack row's previous pack stepper.
+    PreviousPack,
+    /// The pack row's next pack stepper.
+    NextPack,
+    /// The file row's dropdown: the file's own name, the current pack's files under it.
+    File,
+    /// The file row's previous file stepper.
+    PreviousFile,
+    /// The file row's next file stepper.
+    NextFile,
 }
 impl CustomControl {
     /// Legacy custom drawings and typed widgets share the host's interaction path.
@@ -209,8 +304,11 @@ fn resolve_widget_draw(draw: &mut Draw, palette: &WidgetPalette) {
         };
     };
     match draw {
-        Draw::Rect { color, .. } | Draw::Circle { color, .. } | Draw::Text { color, .. } => resolve(color),
-        Draw::Line { color, .. } | Draw::Arc { color, .. } => resolve(color),
+        Draw::Rect { color, .. }
+        | Draw::Circle { color, .. }
+        | Draw::Text { color, .. }
+        | Draw::Value { color, .. } => resolve(color),
+        Draw::Line { color, .. } | Draw::Arc { color, .. } | Draw::Plot { color, .. } => resolve(color),
         Draw::Path { color, fill, .. } => {
             resolve(color);
             if let Some(fill) = fill {
@@ -232,6 +330,20 @@ impl Widget {
             }
             return vec![caption];
         }
+        if let Self::Panel { label } = self {
+            let mut drawing = vec![
+                rect(0., 0., w.into(), height, RIM),
+                rect(1., 1., (w - 2.).into(), height - 2., if label.is_empty() { DARK } else { [46, 45, 42, 255] }),
+            ];
+            if !label.is_empty() {
+                let mut heading = text(4., 2., label, TEXT, false);
+                if let Draw::Text { size, .. } = &mut heading {
+                    *size = 9.;
+                }
+                drawing.push(heading);
+            }
+            return drawing;
+        }
         if matches!(self, Self::Separator) {
             return vec![Draw::Line {
                 from: [(w / 2.).into(), 0.0.into()],
@@ -240,13 +352,22 @@ impl Widget {
                 width: 1.,
             }];
         }
+        if let Self::Graphic { drawing } = self {
+            return drawing.clone();
+        }
+        if let (Self::Button { label, .. }, UiGesture::Preset(_) | UiGesture::Randomize | UiGesture::Expand(_)) =
+            (self, control.gesture)
+        {
+            // A quick preset's button has no parameter of its own: a plain face and its name.
+            return vec![rect(0., 0., w.into(), height, [46, 45, 42, 255]), text(w / 2., 0., label, TEXT, true)];
+        }
         let Some(binding) = control.x.as_ref().or(control.y.as_ref()) else {
             return vec![];
         };
         let id = binding.parameter.as_str();
         match self {
             Self::Button { label, off_label, indicator } => {
-                let value = if let UiGesture::Set(v) = control.gesture { Some(v) } else { None };
+                let value = if let UiGesture::Set(v) | UiGesture::Tab(v) = control.gesture { Some(v) } else { None };
                 button(&mut ui, id, value, label, [0., 0., w, height]);
                 if let Some(c) = ui.controls.last_mut() {
                     if *indicator {
@@ -258,9 +379,9 @@ impl Widget {
                     } else if let Some(off) = off_label {
                         let active = UiValue::normalized(id, false);
                         c.drawing = vec![
-                            rect(0., 0., w.into(), height, ACCENT),
+                            rect(0., 0., w.into(), height, DARK),
                             rect(0., 0., active.clone() * w.into(), height, ACCENT),
-                            conditional_text(w / 2., 0., off, INK, UiValue::from(1.) + active.clone() * (-1.).into()),
+                            conditional_text(w / 2., 0., off, TEXT, UiValue::from(1.) + active.clone() * (-1.).into()),
                             conditional_text(w / 2., 0., label, INK, active),
                         ];
                     }
@@ -285,7 +406,9 @@ impl Widget {
                     }
                 }
             }
-            Self::Label { .. } | Self::Separator => return vec![],
+            Self::Label { .. } | Self::Panel { .. } | Self::Separator | Self::Handle { .. } | Self::Graphic { .. } => {
+                return vec![];
+            }
             Self::Stepper { decimals } => {
                 let mut value = readout(id, 3., (height - 10.) / 2., *decimals, ACCENT, false);
                 if let Draw::Text { size, .. } = &mut value {
@@ -308,7 +431,7 @@ impl Widget {
                 }
                 return out;
             }
-            Self::Dial { label } => {
+            Self::Dial { label, decimals, format } => {
                 let label_height = if label.is_empty() { 0. } else { 24. };
                 let r = ((height - label_height - 18.) / 2.).min(w / 2. - 2.).max(1.);
                 let cx = w / 2.;
@@ -318,6 +441,10 @@ impl Widget {
                     text(cx, if label.contains('\n') { 0. } else { label_height / 4. }, label, TEXT, true);
                 if let Draw::Text { size, .. } = &mut caption {
                     *size = 9.;
+                }
+                let mut value = readout(id, cx, height - 16., *decimals, TEXT, true);
+                if let Draw::Text { format: f, .. } = &mut value {
+                    *f = *format;
                 }
                 return vec![
                     caption,
@@ -347,9 +474,12 @@ impl Widget {
                         color: ACCENT,
                         width: if r > 20. { 2. } else { 1.5 },
                     },
-                    readout(id, cx, height - 16., 0, TEXT, true),
+                    value,
                 ];
             }
+            Self::SampleWaveform | Self::SampleRecording | Self::Envelope { .. } | Self::EqCurve => {}
+            // Host-rendered: the host draws them from its own state.
+            Self::DeviceSwitch | Self::DeviceFiles { .. } | Self::DeviceNote => {}
             Self::Knob { label } => {
                 let label_height = if label.is_empty() { 0. } else { 12. };
                 knob(&mut ui, id, label, [0., label_height, w, height - label_height], binding.logarithmic);
@@ -372,6 +502,21 @@ impl Widget {
 
                 return disclosure;
             }
+            Self::WaveformPreview { shape } => {
+                let points = (0..129)
+                    .map(|i| {
+                        let t = i as f32 / 128.;
+                        let cycles = UiValue::from(t)
+                            * (UiValue::from(0.25) + UiValue::normalized(id, binding.logarithmic) * 3.75.into());
+                        let wave = UiValue::Expression(Box::new(UiExpression::Wave {
+                            shape: UiValue::parameter(shape, false),
+                            cycles,
+                        }));
+                        [UiValue::from(t * w), UiValue::from(height / 2. - 1.) + wave * (-(height / 2. - 3.)).into()]
+                    })
+                    .collect();
+                return vec![Draw::Path { points, color: ACCENT, width: 1.2, closed: false, fill: None }];
+            }
             Self::WaveformMenu => {
                 let mut wave = vec![rect(0., 0., w.into(), height, [46, 45, 42, 255])];
                 for shape in 0..7 {
@@ -379,21 +524,7 @@ impl Widget {
                     let mut pts = Vec::new();
                     for i in 0..17 {
                         let t = i as f32 / 16.;
-                        let y = match shape {
-                            0 => (t * std::f32::consts::TAU).sin(),
-                            1 => 1. - 4. * (t - 0.5).abs(),
-                            2 => t * 2. - 1.,
-                            3 => 1. - t * 2.,
-                            4 => {
-                                if t < 0.5 {
-                                    1.
-                                } else {
-                                    -1.
-                                }
-                            }
-                            5 => ((t * 4.).floor() * 5.).sin(),
-                            _ => (t * 8.).sin() * 0.6 + (t * 3.).cos() * 0.4,
-                        };
+                        let y = waveform(shape as usize, f64::from(t) * if shape == 5 { 3. } else { 1. }) as f32;
                         pts.push([UiValue::from(4. + t * (w - 22.)) + shift.clone(), (height / 2. - y * 3.).into()]);
                     }
                     wave.push(Draw::Path { points: pts, color: ACCENT, width: 1., closed: false, fill: None });
@@ -517,155 +648,5 @@ impl Widget {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn widgets_work_with_unrelated_parameter_names() {
-        let mut amount = Parameter::new("amount", "Amount", (1., 64.), 4.);
-        amount.control = crate::ParameterControl::Choice;
-        amount.ui.options = (1..=64).map(|i| i.to_string()).collect();
-        let spread = Parameter::new("spread", "Spread", (0.5, 9.), 2.);
-        let widgets = [
-            (Widget::Button { label: "Enable".into(), off_label: None, indicator: false }, UiGesture::Toggle),
-            (
-                Widget::Number {
-                    decimals: 2,
-                    format: TextFormat::Number,
-                    color: ACCENT,
-                    center: false,
-                    bordered: false,
-                    prefix: String::new(),
-                    suffix: String::new(),
-                },
-                UiGesture::Drag,
-            ),
-            (Widget::Knob { label: "Amount".into() }, UiGesture::Drag),
-            (Widget::Dial { label: "Amount".into() }, UiGesture::Drag),
-            (Widget::Stepper { decimals: 1 }, UiGesture::Drag),
-            (Widget::Disclosure { label: "Details".into() }, UiGesture::Toggle),
-            (Widget::Menu, UiGesture::Menu),
-            (Widget::WaveformMenu, UiGesture::Menu),
-            (Widget::FilterBand { min_hz: 1., max_hz: 64. }, UiGesture::Position),
-        ];
-        for (widget, gesture) in widgets {
-            let mut bound_amount = amount.clone();
-            if matches!(widget, Widget::WaveformMenu) {
-                bound_amount.min = 0.;
-                bound_amount.max = 6.;
-                bound_amount.ui.options.truncate(7);
-            }
-            let position = gesture == UiGesture::Position;
-            let drag = gesture == UiGesture::Drag;
-            let control = CustomControl {
-                widget: Some(widget),
-                id: "reused".into(),
-                name: "Reused".into(),
-                tooltip: String::new(),
-                bounds: [0., 0., 100., 100.],
-                visible_when: None,
-                gesture,
-                x: (!drag).then(|| UiBinding { parameter: "amount".into(), logarithmic: position }),
-                y: if drag {
-                    Some(UiBinding::new("amount"))
-                } else if position {
-                    Some(UiBinding::new("spread"))
-                } else {
-                    None
-                },
-                drawing: vec![],
-            };
-            assert!(!control.drawings().is_empty());
-            let ui = DeviceUi { controls: vec![control], ..DeviceUi::default() };
-            ui.validate(&[bound_amount, spread.clone()]).unwrap();
-        }
-    }
-
-    #[test]
-    fn widget_drawings_resolve_the_host_palette() {
-        let control = CustomControl {
-            widget: Some(Widget::Button { label: "Enable".into(), off_label: None, indicator: false }),
-            id: "enable".into(),
-            name: "Enable".into(),
-            tooltip: String::new(),
-            bounds: [0.0, 0.0, 40.0, 12.0],
-            visible_when: None,
-            gesture: UiGesture::Toggle,
-            x: Some(UiBinding::new("enabled")),
-            y: None,
-            drawing: Vec::new(),
-        };
-        let palette = WidgetPalette {
-            text: [1, 2, 3, 255],
-            panel: [4, 5, 6, 255],
-            control: [7, 8, 9, 255],
-            border: [10, 11, 12, 255],
-            accent: [13, 14, 15, 255],
-            accent_text: [16, 17, 18, 255],
-        };
-        let draws = control.drawings_with_palette(&palette);
-        assert!(matches!(&draws[0], Draw::Rect { color, .. } if *color == palette.control));
-        assert!(matches!(&draws[1], Draw::Rect { color, .. } if *color == palette.accent));
-        assert!(draws.iter().any(|draw| matches!(draw, Draw::Text { color, .. } if *color == palette.text)));
-
-        let knob = CustomControl {
-            widget: Some(Widget::Knob { label: "Amount".into() }),
-            id: "amount".into(),
-            name: "Amount".into(),
-            tooltip: String::new(),
-            bounds: [0.0, 0.0, 40.0, 40.0],
-            visible_when: None,
-            gesture: UiGesture::Drag,
-            x: None,
-            y: Some(UiBinding::new("amount")),
-            drawing: Vec::new(),
-        };
-        let draws = knob.drawings_with_palette(&palette);
-        assert!(draws.iter().any(|draw| matches!(draw, Draw::Circle { color, .. } if *color == palette.border)));
-        assert!(draws.iter().any(|draw| matches!(draw, Draw::Line { color, .. } if *color == palette.accent)));
-        assert!(!draws.iter().any(|draw| matches!(draw, Draw::Arc { .. })));
-
-        let authored = CustomControl {
-            widget: None,
-            id: "authored".into(),
-            name: "Authored".into(),
-            tooltip: String::new(),
-            bounds: [0.0, 0.0, 40.0, 12.0],
-            visible_when: None,
-            gesture: UiGesture::Toggle,
-            x: Some(UiBinding::new("enabled")),
-            y: None,
-            drawing: vec![Draw::Rect {
-                rect: [0.0.into(), 0.0.into(), 40.0.into(), 12.0.into()],
-                color: [166, 163, 255, 255],
-                radius: 0.0,
-            }],
-        };
-        assert!(
-            matches!(&authored.drawings_with_palette(&palette)[0], Draw::Rect { color, .. } if *color == [166, 163, 255, 255])
-        );
-
-        let number = CustomControl {
-            widget: Some(Widget::Number {
-                decimals: 0,
-                format: TextFormat::Number,
-                color: TEXT,
-                center: true,
-                bordered: true,
-                prefix: String::new(),
-                suffix: String::new(),
-            }),
-            id: "value".into(),
-            name: "Value".into(),
-            tooltip: String::new(),
-            bounds: [0.0, 0.0, 40.0, 12.0],
-            visible_when: None,
-            gesture: UiGesture::Drag,
-            x: None,
-            y: Some(UiBinding::new("value")),
-            drawing: Vec::new(),
-        };
-        let draws = number.drawings_with_palette(&palette);
-        assert!(matches!(&draws[0], Draw::Rect { color, .. } if *color == palette.border));
-        assert!(matches!(&draws[1], Draw::Rect { color, .. } if *color == palette.control));
-    }
-}
+#[path = "widgets_tests.rs"]
+mod tests;

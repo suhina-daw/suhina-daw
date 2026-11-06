@@ -1,9 +1,9 @@
 ---
 description: How a device stored in a Live Set is brought into Suhina: the three import levels, how each Suhina device is learnt and mapped, and which Live device maps to which Suhina device
-read_when: device import, importing devices, device mapping, placeholder device, Operator, Live device to Suhina device, which device imports into what, golden renders of imported sets
+read_when: device import, importing devices, importing MIDI effects, device mapping, placeholder device, Operator, Live device to Suhina device, which device imports into what, golden renders of imported sets
 type: spec
 status: current
-last_verified: 2026-10-13
+last_verified: 2026-11-02
 covers:
   - crates/als/src/devices.rs
 ---
@@ -22,7 +22,10 @@ used.
 - **Observed with:** Live 12.4.6, as in [`als-format.md`](als-format.md).
 - **Test files:** the device series of the corpus ([`als-corpus.md`](als-corpus.md)): series 3
   (devices, plug-ins) and series 6 (Utility, Auto Pan-Tremolo, EQ Three, Vinyl Distortion,
-  Overdrive). Only the Utility files are imported and checked so far.
+  Overdrive). The Utility files are imported and checked; the Delay and Reverb are checked
+  against the behaviour-run sets of the device notes (their specs, Known differences). The MIDI
+  effects were learnt from a parameter dump, a saved set and a calibration set instead
+  ([`als-format.md`](als-format.md) › MIDI effects).
 
 The Suhina devices themselves, what they do and how far they are, are in
 [`ROADMAP.md`](../../ROADMAP.md) › Built-in effects and instruments. This document is the format side: which
@@ -58,7 +61,7 @@ A Suhina device that takes a Live device's parameters is built this way:
   filters and LFOs from our own `dsp` crate.
 - Import: a corpus series of Operator patches we make ourselves (one per algorithm, envelope
   shapes, ratios, feedback), each saved as a set and bounced, so the mapping is tested against
-  real sound. Until the device exists, Operator comes in as a placeholder that keeps its type,
+  real sound. Until those sets exist, Operator comes in as a placeholder that keeps its type,
   name and on/off state; its parameters are not kept yet (planned).
 
 ## Which device imports into what
@@ -70,21 +73,29 @@ comes in as it (otherwise as a placeholder):
 | Imports from Live | Suhina device | DSP from | Status |
 |---|---|---|---|
 | Utility, Auto Pan | utility, auto-pan | own | DSP done; import done for Utility, planned for Auto Pan |
-| EQ Three | three-band DJ EQ with kills | own crossovers (Linkwitz-Riley) | DSP done; import planned |
+| Pitch (MIDI effect) | pitch ([spec](pitch.md)) | own | done; import done (the step widths wait for the step buttons) |
+| Arpeggiator, CC Control, Chord, Note Length, Random, Scale, Velocity (MIDI effects) | not yet | | placeholder: notes pass on to the instrument unchanged. How each is stored is written down ([`als-format.md`](als-format.md) › MIDI effects), so each import can be written as its device lands |
+| EQ Three | dj-eq ([spec](dj-eq.md)) | own crossovers (Linkwitz-Riley) | DSP done; import done |
 | Vinyl Distortion | vinyl distortion | own, oversampled | DSP done; import planned |
 | Overdrive | overdrive | own, oversampled | DSP done; import planned |
 | Compressor | compressor: stereo-linked, soft knee, side-chain high-pass, dry/wet | own | DSP done; import planned |
 | Glue Compressor | bus compressor | own, Airwindows (MIT) for reference | planned |
 | Limiter | limiter: brickwall, 1.5 ms lookahead | own | DSP done; import planned |
-| Multiband Dynamics | multiband dynamics, upward and downward | own crossovers and detectors | planned |
-| Delay, Echo | delays | own delay lines | planned |
-| Reverb, Hybrid Reverb | algorithmic and convolution reverb | Dragonfly Reverb (GPL-3.0), own convolution | planned |
-| Saturator, Roar | multi-stage saturation | own, oversampled | planned |
-| EQ Eight, Auto Filter | EQ, filter | own (`dsp` filters) | planned |
-| Operator | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine done; Operator's algorithms, waveforms and filter, and import, planned |
+| Multiband Dynamics | multiband: three bands, above and below stages ([spec](multiband.md)) | own crossovers and level followers | done; side-chain planned |
+| Delay | delay ([spec](delay.md)) | own delay lines | DSP done; import done |
+| Echo | modulation delay | own delay lines | planned |
+| Reverb | reverb ([spec](reverb.md)) | own | DSP done; import done |
+| Hybrid Reverb | convolution and algorithmic reverb | own convolution, the reverb | planned |
+| Saturator | saturator ([spec](saturator.md)) | own, oversampled | DSP done; import done |
+| Roar | multi-stage saturation | own, oversampled | planned |
+| EQ Eight | EQ ([spec](eq.md)) | own (`dsp` state-variable filters) | DSP done; import done (no analyser, Audition or oversampling yet) |
+| Auto Filter | filter | own (`dsp` filters) | planned |
+| Operator | FM synth | MSFA (Apache-2.0) via Dexed | DSP done ([spec](fm-synth.md)): time envelopes, waveforms, filter and shaper, LFO, matrix, its algorithms; import planned, waits for authored sets |
 | Wavetable | wavetable synth | Vital (GPL-3.0), under its own name | planned |
 | Drift, Analog | subtractive synth | own, Surge XT (GPL-3.0) for reference | planned |
-| Simpler, Sampler, Drum Rack | sampler, drum sampler | own | planned |
+| Simpler, Sampler | sampler ([spec](sampler.md)) | own | DSP done; import done for Simpler and a Sampler with one sample ([`als-format.md`](als-format.md) › Simpler and Sampler); several samples wait for zones (#739) |
+| Audio Effect Rack, Instrument Rack | device group ([spec](device-groups.md)) | | import done: chains as branches with volume, pan, mute and solo, their devices read like a track's, macro names and positions ([`als-format.md`](als-format.md) › Audio Effect Rack and Instrument Rack); macro mappings and an Instrument Rack's key and velocity zones not yet |
+| Drum Rack | drum sampler | own | planned |
 | Collision, Tension, Electric | physical-modelling synth | Mutable Instruments Rings and Elements (MIT) | planned |
 
 ## Devices Suhina cannot run

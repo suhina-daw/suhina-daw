@@ -5,6 +5,7 @@
 //! strip, for `clip.consolidate` (`docs/spec/arrangement-editing.md` › Consolidating). The same
 //! renderer as playback and offline renders.
 
+use crate::{RenderInputs, RenderOptions};
 use suhina_model::{
     Arrangement, Channel, ChannelId, ChannelRole, ClipContent, Extensions, Project, Track, TrackId, Transport,
 };
@@ -31,7 +32,12 @@ pub fn render_track(
     }
     let alone = alone(project, track);
     let (left, right) = track_gains(&alone, track).unwrap_or((0.0, 0.0));
-    let mut renderer = Renderer::with_audio(&alone, audio, sample_rate)?;
+    let mut renderer = Renderer::build(
+        &alone,
+        RenderInputs::from_audio(audio, std::sync::Arc::new(NoDevices)),
+        sample_rate,
+        RenderOptions::PLAYING,
+    )?;
     renderer.set_offline(true);
     let mut out = vec![0.0f32; frames.saturating_mul(2)];
     for block in out.chunks_mut(BLOCK_FRAMES * 2) {
@@ -51,8 +57,10 @@ pub fn render_track(
 /// through a unity channel.
 fn alone(project: &Project, track: TrackId) -> Project {
     let channel = ChannelId(0);
-    let source = project.tracks.iter().find(|t| t.id == track);
+    let source = project.track(track);
     Project {
+        // The clips keep their ids, so the counter stays past them.
+        next_id: project.next_id,
         // The range is rendered straight through: the arrangement's loop region does not wrap it.
         transport: Transport { loop_enabled: false, ..project.transport.clone() },
         tracks: vec![Track {
@@ -92,11 +100,42 @@ fn alone(project: &Project, track: TrackId) -> Project {
             .collect(),
         arrangement: Arrangement {
             lanes: project.arrangement.lanes.iter().filter(|l| l.track == Some(track)).cloned().collect(),
-            markers: Vec::new(),
+            markers: Default::default(),
+            takes: Vec::new(),
         },
         launcher: Default::default(),
         extensions: Extensions::default(),
         default_scale: None,
+    }
+}
+
+/// The factory of a render with no devices: [`alone`] keeps none, so this is never asked for one.
+struct NoDevices;
+
+impl suhina_device_sdk::DeviceFactory for NoDevices {
+    fn create(
+        &self,
+        _id: &str,
+        _asset: Option<&suhina_device_sdk::DeviceAsset>,
+    ) -> Option<Box<dyn suhina_device_api::Device>> {
+        None
+    }
+
+    fn graph_device(
+        &self,
+        _graph: &suhina_device_sdk::DeviceGraph,
+        _rate: f64,
+        _samples: suhina_device_sdk::sample_resource::PreparedSamples,
+    ) -> Result<suhina_device_sdk::GraphDevice, suhina_device_sdk::DeviceSdkError> {
+        Err(suhina_device_sdk::DeviceSdkError("a lane renders with no devices".into()))
+    }
+
+    fn runs_a_file(&self, _id: &str) -> bool {
+        false
+    }
+
+    fn preview_instrument(&self) -> Option<Box<dyn suhina_device_api::Device>> {
+        None
     }
 }
 
@@ -107,7 +146,8 @@ mod tests {
     use suhina_model::{AudioRegion, ContentId, ContentLane, LaneData};
 
     use super::*;
-    use crate::{AudioData, render_offline_with_audio};
+    use crate::AudioData;
+    use crate::render_offline_from;
 
     fn region(file: &str) -> AudioRegion {
         AudioRegion {
@@ -135,12 +175,13 @@ mod tests {
                 id: ContentId(1),
                 name: "a".into(),
                 length: 2.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Audio(region("a.wav")) }],
+                lanes: vec![ContentLane { target: None, data: LaneData::Audio(region("a.wav")) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             }],
             arrangement: Arrangement {
                 lanes: vec![suhina_model::ArrangementLane {
+                    id: Default::default(),
                     name: "Audio".into(),
                     track: Some(track),
                     clips: vec![suhina_model::Clip {
@@ -149,7 +190,8 @@ mod tests {
                         ..suhina_model::Clip::new(ContentId(1), 0.5, 1.0)
                     }],
                 }],
-                markers: Vec::new(),
+                markers: Default::default(),
+                takes: Vec::new(),
             },
             ..Default::default()
         };
@@ -163,7 +205,14 @@ mod tests {
         let alone = render_track(&project, &audio, TrackId(3), 48_000, frames).unwrap_or_default();
         assert_eq!(alone.len(), frames * 2);
         // The mix renders the same clip through its channel: scaled by its gains and headroom.
-        let mixed = render_offline_with_audio(&project, &audio, 48_000, 512).unwrap_or_default();
+        let mixed = render_offline_from(
+            &project,
+            RenderInputs::from_audio(&audio, suhina_device_registry::factory()),
+            48_000,
+            512,
+            None,
+        )
+        .unwrap_or_default();
         let (l, r) = track_gains(&project, TrackId(3)).unwrap_or((0.0, 0.0));
         let peak = alone.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         assert!(peak > 0.3, "the clip is heard at its own level, peak {peak}");

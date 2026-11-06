@@ -156,7 +156,7 @@ pub(crate) fn depth(project: &Project, mut parent: Option<TrackId>) -> usize {
         if depth > project.tracks.len() {
             break;
         }
-        parent = project.tracks.iter().find(|t| t.id == id).and_then(|t| t.parent);
+        parent = project.track(id).and_then(|t| t.parent);
     }
     depth
 }

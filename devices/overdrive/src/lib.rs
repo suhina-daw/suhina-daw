@@ -12,7 +12,8 @@
 //! [`LATENCY`] frames, and with the mix at 0 the output is the input delayed exactly.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
 use suhina_dsp::gain::db_to_gain;
@@ -54,7 +55,7 @@ pub mod param {
     pub(crate) const COUNT: usize = 7;
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("drive", "Drive", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear),
     ParamInfo::continuous("tone", "Tone", (0.0, 1.0), 0.5, Unit::Percent, Scale::Linear),
     ParamInfo::continuous("bandFrequency", "Band Frequency", (50.0, 18_000.0), 800.0, Unit::Hertz, Scale::Logarithmic),
@@ -64,9 +65,8 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("output", "Output", (-24.0, 12.0), 0.0, Unit::Decibels, Scale::Linear),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "overdrive", name: "Overdrive", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("overdrive", "Overdrive", Role::Effect, &PARAMS);
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
 const DELAY: usize = LATENCY as usize;
 
 /// The driven path of one side.
@@ -107,7 +107,7 @@ impl Path {
 
 pub struct Overdrive {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     /// Drive as a linear gain into the curve.
     drive: Smoother,
     dynamics: Smoother,
@@ -129,7 +129,7 @@ impl Overdrive {
         let sr = DEFAULT_SAMPLE_RATE;
         let mut overdrive = Self {
             sample_rate: sr,
-            values: PARAMS.map(|p| p.default),
+            params: ParamBank::new(&PARAMS),
             drive: Smoother::new(1.0, 1),
             dynamics: Smoother::new(0.0, 1),
             mix: Smoother::new(1.0, 1),
@@ -143,7 +143,7 @@ impl Overdrive {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     fn targets(&self) -> [f32; 4] {
@@ -192,7 +192,7 @@ impl Overdrive {
 }
 
 impl Device for Overdrive {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 
@@ -207,9 +207,9 @@ impl Device for Overdrive {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         let targets = self.targets();
         for (smoother, target) in self.smoothers().into_iter().zip(targets) {
             smoother.set_target(target);
@@ -220,7 +220,7 @@ impl Device for Overdrive {
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn latency(&self) -> u32 {

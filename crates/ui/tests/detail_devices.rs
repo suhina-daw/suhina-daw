@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The detail area's Clip / Devices switch and the double-click on a track that shows its devices
-//! (`docs/spec/ui-clip-editor.md` › Where it opens): from an Arrangement header, a Session column's
+//! (`docs/spec/ui-clip-editor.md` › Where it opens): from an Arrangement header, a Launcher column's
 //! name and its channel strip, opening a hidden detail area, and never changing the project.
 
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
@@ -10,24 +10,26 @@
 use egui::{Key, Modifiers, Pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use suhina_engine::model::{Device, DeviceKind, Extensions, Project, TrackId};
+use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions, Project, TrackId};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::{App, kit::theme};
 
 const SIZE: (f32, f32) = (1280.0, 900.0);
-/// A MIDI clip on Drums in the Arrangement view, and one in a Session slot.
+/// A MIDI clip on Drums in the Arrangement view, and one in a Launcher slot.
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
 const SLOT: &str = "Select Beat B on Drums (scene 3)";
 
 fn device(name: &str) -> Device {
     Device {
+        id: Default::default(),
         name: name.into(),
         kind: DeviceKind::Builtin(name.to_lowercase()),
         enabled: true,
         state: None,
         params: Vec::new(),
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     }
 }
@@ -40,12 +42,14 @@ fn project() -> Project {
     project
 }
 
-/// The window with the project in the Session view, frames close enough for a double-click.
+/// The window with the project in the Launcher view, frames close enough for a double-click.
 fn window() -> Harness<'static, App> {
     let mut app = App::new();
     app.set_browser_open(false);
     app.set_session(Session::new(project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -107,6 +111,27 @@ fn hide_detail_area(harness: &mut Harness<'static, App>) {
     harness.key_press_modifiers(Modifiers::SHIFT, Key::Tab);
     harness.run();
     assert!(harness.query_by_label("Show Clip").is_none() && !piano(harness), "the detail area is hidden");
+}
+
+/// The device chain in the detail area shows a MIDI effect first, then the instrument, then the
+/// audio effects.
+#[test]
+fn a_midi_effect_shows_before_the_instrument_in_the_chain() {
+    let mut project = project();
+    let synth = Device { name: "FM Synth".into(), kind: DeviceKind::Builtin("fm-synth".into()), ..device("Pitch") };
+    project.channels[0].devices = vec![device("Pitch"), synth, device("Utility")];
+    let mut harness = arrangement();
+    harness.state_mut().set_session(Session::new(project), &[]);
+    harness.run();
+    harness.get_by_label(CLIP).click();
+    harness.run();
+    harness.get_by_label("Show Devices").click();
+    harness.run();
+    // A device past the area's right edge is not drawn: a wide panel can push the last one out.
+    let x =
+        |name: &str| harness.query_by_label(&format!("Device {name}")).map_or(f32::INFINITY, |n| n.rect().center().x);
+    assert!(x("Pitch") < x("FM Synth") && x("FM Synth") < x("Utility"), "MIDI effect, instrument, effect");
+    assert!(x("FM Synth").is_finite(), "the instrument is shown");
 }
 
 #[test]
@@ -252,4 +277,388 @@ fn a_double_click_on_a_strip_control_is_the_controls_own() {
     hide_detail_area(&mut harness);
     double_click_at(&mut harness, fader);
     assert!(!shows_device(&harness, "Utility"), "the fader's double-click resets it, nothing more");
+}
+
+/// The demo project's Drums track with the two NAM devices on its channel, each with its
+/// default parameters, as `device.add` leaves them.
+fn nam_project() -> Project {
+    let mut project = demo_project();
+    for (name, id) in [("NAM Amp Modeler", "nam-amp-modeler"), ("NAM Cab Loader", "nam-cab-loader")] {
+        let params = suhina_device_registry::info(id)
+            .map(|info| info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect())
+            .unwrap_or_default();
+        let device = Device { name: name.into(), kind: DeviceKind::Builtin(id.into()), params, ..device("nam") };
+        project.channels[0].devices.push(device);
+    }
+    project
+}
+
+/// A NAM device's panel in the detail area: the knobs, the toggles and the file row's labels are
+/// there, and the device is the header's ([docs/spec/nam-amp-and-cab.md] › The panels).
+#[test]
+fn a_nam_devices_panel_shows_its_controls_and_files() {
+    let dir = std::env::temp_dir().join(format!("suhina-ui-nam-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("NAM models"), dir.join("IRs"));
+    std::fs::create_dir_all(&models).unwrap();
+    std::fs::create_dir_all(&irs).unwrap();
+    // The packs: a NAM folder keeps one amp's captures in a subfolder of it; loose files form
+    // the "(entered directly)" pack.
+    let pack = models.join("Test amp");
+    std::fs::create_dir_all(&pack).unwrap();
+    let model_path = pack.join("test amp.nam");
+    std::fs::write(&model_path, r#"{"version":"0.5.4","architecture":"WaveNet","config":{"layers":[{"input_size":1,"condition_size":1,"channels":1,"head_size":1,"kernel_size":1,"dilations":[1],"activation":"ReLU","gated":false,"head_bias":false}],"head":null,"head_scale":1.0},"weights":[1.0,2.0,0.0,0.0,1.0,0.0,1.0,1.0],"metadata":{"name":"Test amp"}}"#).unwrap();
+    let ir_path = irs.join("cab.wav");
+    std::fs::write(&ir_path, b"RIFF").unwrap();
+
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(nam_project()), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
+        .with_size(SIZE)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Launcher view").click();
+    // The column name's double-click shows the track's devices directly.
+    let name = harness.get_by_label("Track Drums").rect().center();
+    double_click_at(&mut harness, name);
+    assert!(shows_device(&harness, "NAM Amp Modeler"), "the amp's panel header is there");
+    for label in [
+        "Amp Modeler: gain",
+        "Amp Modeler: bass",
+        "Amp Modeler: mid",
+        "Amp Modeler: treble",
+        "Amp Modeler: volume",
+        "Amp Modeler: mid freq",
+        "Amp Modeler: delay",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label}");
+    }
+    assert!(harness.query_by_label("Amp Modeler: device on").is_some(), "the power button, not a bypass");
+    for label in ["Amp Modeler: eq", "Amp Modeler: hq"] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
+    }
+    // At the width the panel gets, no control is drawn over another (PR #727, a tester's
+    // screenshot: Delay over Mid, HQ beside Treble).
+    let controls: Vec<(&str, egui::Rect)> = [
+        "Amp Modeler: device on",
+        "Amp Modeler: gain",
+        "Amp Modeler: bass",
+        "Amp Modeler: mid",
+        "Amp Modeler: treble",
+        "Amp Modeler: volume",
+        "Amp Modeler: mid freq",
+        "Amp Modeler: delay",
+        "Amp Modeler: eq",
+        "Amp Modeler: hq",
+    ]
+    .into_iter()
+    .map(|label| (label, harness.get_by_label(label).rect()))
+    .collect();
+    for (i, (a, ra)) in controls.iter().enumerate() {
+        for (b, rb) in &controls[i + 1..] {
+            assert!(!ra.shrink(1.0).intersects(rb.shrink(1.0)), "{a} {ra:?} is drawn over {b} {rb:?}");
+        }
+    }
+    // The file row's name is cut short beside its steppers, never under them.
+    let file = harness.get_by_label("Amp Modeler: model file").rect();
+    let stepper = harness.get_by_label("Amp Modeler: previous file").rect();
+    assert!(file.right() <= stepper.left() + 1.0, "the file row {file:?} runs under its stepper {stepper:?}");
+    // The pack row with its steppers and the file row with its own; the pack is listed.
+    for label in [
+        "Amp Modeler: pack",
+        "Amp Modeler: previous pack",
+        "Amp Modeler: next pack",
+        "Amp Modeler: model file",
+        "Amp Modeler: previous file",
+        "Amp Modeler: next file",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label}");
+    }
+
+    assert!(shows_device(&harness, "NAM Cab Loader"), "the cab's panel header is there");
+    for label in [
+        "Cab Loader: bass",
+        "Cab Loader: mid",
+        "Cab Loader: treble",
+        "Cab Loader: mid freq",
+        "Cab Loader: delay",
+        "Cab Loader: volume",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label}");
+    }
+    // The cab is switched off from its header, as other devices are; it has no bypass of its own.
+    assert!(harness.query_by_label("Cab Loader: bypass").is_none(), "no bypass toggle");
+    for label in ["Cab Loader: phase", "Cab Loader: hp"] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
+    }
+    let controls: Vec<(&str, egui::Rect)> = [
+        "Cab Loader: phase",
+        "Cab Loader: hp",
+        "Cab Loader: bass",
+        "Cab Loader: mid",
+        "Cab Loader: treble",
+        "Cab Loader: mid freq",
+        "Cab Loader: delay",
+        "Cab Loader: volume",
+    ]
+    .into_iter()
+    .map(|label| (label, harness.get_by_label(label).rect()))
+    .collect();
+    for (i, (a, ra)) in controls.iter().enumerate() {
+        for (b, rb) in &controls[i + 1..] {
+            assert!(!ra.shrink(1.0).intersects(rb.shrink(1.0)), "{a} {ra:?} is drawn over {b} {rb:?}");
+        }
+    }
+    // A knob is a control one can see and turn: its cell is a dial's movements wide — the ring
+    // 42, its label and its value bands clear of it — and high, not the squeezed ring the
+    // first panels drew (a tester's screenshot). The amp's Mid Freq is a line of its own
+    // shape, and the buttons and the Volume slider their own — they get no floor.
+    let knobs: Vec<(&str, egui::Rect)> = [
+        "Amp Modeler: gain",
+        "Amp Modeler: bass",
+        "Amp Modeler: mid",
+        "Amp Modeler: treble",
+        "Amp Modeler: delay",
+        "Amp Modeler: volume",
+        "Cab Loader: bass",
+        "Cab Loader: mid",
+        "Cab Loader: treble",
+        "Cab Loader: mid freq",
+        "Cab Loader: delay",
+    ]
+    .into_iter()
+    .map(|label| (label, harness.get_by_label(label).rect()))
+    .collect();
+    for (label, rect) in knobs {
+        // 84 high: the label (24), the ring (42) and the value band (16) one under another;
+        // the note's fault line stays out of the cells under the row.
+        assert!(rect.width() >= 60.0 && rect.height() >= 80.0, "{label} {rect:?} is too small to read");
+    }
+    // The rows they sit on: Mid Freq shares the buttons' row, and each panel's knobs one row.
+    let top = |label: &str| harness.get_by_label(label).rect().top();
+    assert_eq!(top("Amp Modeler: mid freq"), top("Amp Modeler: eq"), "Mid Freq is not on the buttons' row");
+    let row = top("Cab Loader: bass");
+    for label in ["Cab Loader: mid", "Cab Loader: treble", "Cab Loader: mid freq", "Cab Loader: delay"] {
+        assert_eq!(top(label), row, "{label} is not on the cab's knob row");
+    }
+    for label in [
+        "Cab Loader: pack",
+        "Cab Loader: previous pack",
+        "Cab Loader: next pack",
+        "Cab Loader: cab file",
+        "Cab Loader: previous file",
+        "Cab Loader: next file",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label}");
+    }
+
+    // One click on the power button switches the device off (device.setEnabled), and another on.
+    harness.get_by_label("Amp Modeler: device on").click();
+    harness.run();
+    assert!(!project_now(&harness).channels[0].devices[0].enabled, "the power click switched it off");
+    harness.get_by_label("Amp Modeler: device off").click();
+    harness.run();
+    assert!(project_now(&harness).channels[0].devices[0].enabled, "and on again from the same button");
+    // One click on the EQ's button turns it on through device.setParam.
+    harness.get_by_label("Amp Modeler: eq").click();
+    harness.run();
+    let project = project_now(&harness);
+    let driver = project.channels[0].devices[0].params.iter().find(|p| p.id == "eqOn").unwrap();
+    assert_eq!(driver.value, 0.0, "the eq click turned it off (it is on by default)");
+    // The pack row's dropdown lists the folder's packs; picking one loads its first file.
+    harness.get_by_label("Amp Modeler: pack").click();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains("Amp Modeler: pack: Test amp").is_some(),
+        "the open pack row lists the folder's pack"
+    );
+    harness.get_by_label("Amp Modeler: pack: Test amp").click();
+    harness.run();
+    assert_eq!(channel_device_state(&harness, 0), model_path.display().to_string());
+    // The pack steppers step through the packs (one here: from none, into it).
+    harness.get_by_label("Amp Modeler: next pack").click();
+    harness.run();
+    assert_eq!(channel_device_state(&harness, 0), model_path.display().to_string());
+    // One undo takes the file choice back (the Edit › Undo key, Ctrl+Z).
+    harness.key_combination_modifiers(Modifiers::COMMAND, &[Key::Z]);
+    harness.run();
+    assert_eq!(channel_device_state(&harness, 0), "");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Renders the two NAM panels to `target/ui-snapshots/nam-panels.png`, for looking at:
+/// `cargo test -p suhina-ui --test main -- --ignored a_nam_panels_render_for_the_hand_check`.
+#[test]
+#[ignore = "needs a GPU adapter; run with --ignored"]
+fn a_nam_panels_render_for_the_hand_check() {
+    let dir = std::env::temp_dir().join(format!("suhina-ui-nam-snap-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("NAM models"), dir.join("IRs"));
+    std::fs::create_dir_all(&models).unwrap();
+    std::fs::create_dir_all(&irs).unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(nam_project()), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(SIZE)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .wgpu()
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Launcher view").click();
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
+    std::fs::create_dir_all(&out).unwrap_or_else(|e| panic!("{e}"));
+    image.save(out.join("nam-panels.png")).unwrap_or_else(|e| panic!("{e}"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A channel device's state as the project holds it, by its index.
+fn channel_device_state(harness: &Harness<'static, App>, index: usize) -> String {
+    harness.state().session().unwrap().project().channels[0]
+        .devices
+        .get(index)
+        .and_then(|d| d.state.as_deref().map(|state| String::from_utf8_lossy(state).into_owned()))
+        .unwrap_or_default()
+}
+
+/// A built-in effect and a MIDI effect show their parameters as controls a click changes, each
+/// change one `device.setParam` that undo takes back (#679).
+#[test]
+fn a_built_in_devices_generated_panel_edits_its_parameters() {
+    let mut project = project();
+    project.channels[0].devices = vec![device("Pitch"), device("Utility")];
+    let mut harness = arrangement();
+    harness.state_mut().set_session(Session::new(project), &[]);
+    harness.run();
+    harness.get_by_label(CLIP).click();
+    harness.run();
+    harness.get_by_label("Show Devices").click();
+    harness.run();
+    let value = |harness: &Harness<'static, App>, device: usize, id: &str| {
+        project_now(harness).channels[0].devices[device].params.iter().find(|p| p.id == id).map(|p| p.value)
+    };
+    for (device, label, id) in [(0, "Follow Scale", "followScale"), (1, "Mono", "mono")] {
+        assert_eq!(value(&harness, device, id), None, "{id} starts at its default");
+        harness.get_by_label(label).click();
+        harness.run();
+        assert_eq!(value(&harness, device, id), Some(1.0), "{label} turned on");
+    }
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_ne!(value(&harness, 1, "mono"), Some(1.0), "undo takes the last change back");
+    assert_eq!(value(&harness, 0, "followScale"), Some(1.0));
+}
+
+/// An `.sd` effect with an expanded panel: a gain node, its Power toggle in both panels.
+fn expanded_device() -> Device {
+    use suhina_device_sdk::ui::{CustomControl, DeviceUi, UiBinding, UiGesture};
+    use suhina_device_sdk::{Connection, DeviceGraph, DeviceRole, Node, Parameter, ParameterControl};
+    let mut graph = DeviceGraph::new("org.example.big", "Big Gain", DeviceRole::Effect);
+    graph.parameters = vec![
+        Parameter::new("gain", "Gain", (0.0, 2.0), 1.0),
+        Parameter::new("power", "Power", (0.0, 1.0), 0.0).control(ParameterControl::Toggle),
+    ];
+    graph.nodes = vec![Node::audio_input("in"), Node::gain("g", "gain"), Node::audio_output("out")];
+    graph.connections = vec![Connection::new("in", "g"), Connection::new("g", "out")];
+    let mut big = DeviceUi { size: [600.0, 300.0], ..DeviceUi::default() };
+    big.controls.push(CustomControl {
+        widget: None,
+        visible_when: None,
+        id: "power".into(),
+        name: "Big power switch".into(),
+        tooltip: String::new(),
+        bounds: [20.0, 20.0, 80.0, 40.0],
+        gesture: UiGesture::Toggle,
+        x: Some(UiBinding::new("power")),
+        y: None,
+        drawing: vec![],
+    });
+    graph.expanded = Some(big);
+    Device { state: Some(graph.to_sd().unwrap().into_bytes().into()), ..Device::new("Big Gain", DeviceKind::Sd) }
+}
+
+/// A device with an expanded panel has a button in its header that opens it over the main area;
+/// a control in it is the same `device.setParam` as in the compact panel, and the close button
+/// and Escape close it (#679).
+#[test]
+fn an_expanded_panel_opens_from_the_header_and_edits_the_same_parameters() {
+    let mut project = project();
+    project.channels[0].devices = vec![device("Utility"), expanded_device()];
+    let mut harness = arrangement();
+    harness.state_mut().set_session(Session::new(project), &[]);
+    harness.run();
+    harness.get_by_label(CLIP).click();
+    harness.run();
+    harness.get_by_label("Show Devices").click();
+    harness.run();
+    assert!(harness.query_by_label("Expand Utility").is_none(), "a device without one has no button");
+    assert!(harness.query_by_label("Big power switch").is_none());
+    harness.get_by_label("Expand Big Gain").click();
+    harness.run();
+    let switch = harness.get_by_label("Big power switch").rect();
+    assert!(switch.top() < harness.get_by_label("Device Big Gain").rect().top(), "over the main area, above the chain");
+    harness.get_by_label("Big power switch").click();
+    harness.run();
+    let power = |harness: &Harness<'static, App>| {
+        project_now(harness).channels[0].devices[1].params.iter().find(|p| p.id == "power").map(|p| p.value)
+    };
+    assert_eq!(power(&harness), Some(1.0));
+    harness.get_by_label("Close expanded panel").click();
+    harness.run();
+    assert!(harness.query_by_label("Big power switch").is_none(), "the close button closes it");
+    harness.get_by_label("Expand Big Gain").click();
+    harness.run();
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(harness.query_by_label("Big power switch").is_none(), "Escape closes it");
+    // A panel whose device goes away closes with it.
+    harness.get_by_label("Expand Big Gain").click();
+    harness.run();
+    harness.get_by_label("Remove Big Gain").click();
+    harness.run();
+    assert!(harness.query_by_label("Close expanded panel").is_none());
+}
+
+/// The compact panel stays drawn under an expanded one, and both have a Level dial per operator:
+/// the expanded one must still drag.
+#[test]
+fn a_dial_in_the_expanded_panel_drags_though_the_compact_panel_has_one_of_the_same_id() {
+    let mut project = project();
+    let synth = Device { name: "FM Synth".into(), kind: DeviceKind::Builtin("fm-synth".into()), ..device("Pitch") };
+    project.channels[0].devices = vec![synth];
+    let mut harness = arrangement();
+    harness.state_mut().set_session(Session::new(project), &[]);
+    harness.run();
+    harness.get_by_label(CLIP).click();
+    harness.run();
+    harness.get_by_label("Show Devices").click();
+    harness.run();
+    harness.get_by_label("Expand FM Synth").click();
+    harness.run();
+    let level = harness.get_all_by_label("Level").next().unwrap().rect().center();
+    harness.hover_at(level);
+    harness.run();
+    harness.drag_at(level);
+    harness.step();
+    for i in 1..=40 {
+        harness.hover_at(level + vec2(0.0, i as f32));
+        harness.step();
+    }
+    harness.drop_at(level + vec2(0.0, 40.0));
+    harness.run();
+    let value =
+        project_now(&harness).channels[0].devices[0].params.iter().find(|p| p.id == "op1.level").map(|p| p.value);
+    assert!(value.is_some_and(|v| v < 99.0), "dragging Level down lowers it, got {value:?}");
 }

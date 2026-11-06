@@ -10,6 +10,7 @@
 //! cargo test --release -p suhina-engine fade_cost -- --ignored --nocapture --test-threads=1
 //! ```
 
+use crate::{RenderInputs, RenderOptions};
 use std::hint::black_box;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -63,19 +64,21 @@ fn project(fades: Option<(FadeShape, f64)>) -> Project {
             id: ContentId(1),
             name: "noise".into(),
             length: CLIP_BEATS,
-            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
         arrangement: Arrangement {
             lanes: (1..=TRACKS)
                 .map(|t| ArrangementLane {
+                    id: Default::default(),
                     name: format!("Audio {t}"),
                     track: Some(TrackId(t)),
                     clips: (0..CLIPS).map(clip).collect(),
                 })
                 .collect(),
-            markers: Vec::new(),
+            markers: Default::default(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }
@@ -107,7 +110,12 @@ struct Timings {
 fn time_blocks(project: &Project, pool: &AudioPool) -> Timings {
     let mut best: Option<Timings> = None;
     for _ in 0..ROUNDS {
-        let Ok(mut renderer) = Renderer::with_audio(project, pool, SR) else {
+        let Ok(mut renderer) = Renderer::build(
+            project,
+            RenderInputs::from_audio(pool, suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        ) else {
             panic!("the project renders");
         };
         let blocks = renderer.length().div_ceil(BLOCK as u64) as usize;

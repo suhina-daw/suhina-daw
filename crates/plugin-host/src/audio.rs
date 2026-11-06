@@ -35,6 +35,39 @@ pub(crate) trait Block: Send {
     fn process(&mut self, input: &[f32], events: &[Event], output: &mut [f32]);
 }
 
+/// How the link's channels meet a plug-in's main buses, the same in every format (#767): a
+/// plug-in channel the link has no channel for repeats the link's last one, so a mono source
+/// reaches both sides of a stereo input; a link channel the plug-in has no output channel for
+/// repeats the output's last, so a mono output reaches both sides of the link.
+///
+/// `input` is the link's interleaved block of `link_channels` channels; the main input bus's
+/// channels `bus` get its first `frames` frames. Does nothing without link channels.
+pub(crate) fn feed_main<B: AsMut<[f32]>>(input: &[f32], link_channels: usize, frames: usize, bus: &mut [B]) {
+    if link_channels == 0 {
+        return;
+    }
+    for (index, channel) in bus.iter_mut().enumerate() {
+        let source = index.min(link_channels - 1);
+        for (frame, sample) in channel.as_mut().iter_mut().take(frames).enumerate() {
+            *sample = input.get(frame * link_channels + source).copied().unwrap_or(0.0);
+        }
+    }
+}
+
+/// The main output bus's channels `bus` into the link's interleaved `output` of `link_channels`
+/// channels, `frames` frames (see [`feed_main`]). An empty bus leaves `output` as it is.
+pub(crate) fn collect_main<B: AsRef<[f32]>>(bus: &[B], link_channels: usize, frames: usize, output: &mut [f32]) {
+    let Some(last) = bus.len().checked_sub(1) else { return };
+    for channel in 0..link_channels {
+        let Some(source) = bus.get(channel.min(last)) else { continue };
+        for (frame, sample) in source.as_ref().iter().take(frames).enumerate() {
+            if let Some(out) = output.get_mut(frame * link_channels + channel) {
+                *out = *sample;
+            }
+        }
+    }
+}
+
 /// An instance's block behind its lock, as the other audio threads see it.
 trait Member: Send + Sync {
     /// Runs `input` through the instance into `output`; one that is no longer running passes
@@ -156,6 +189,56 @@ mod tests {
         let thread = std::thread::spawn(move || serve(instance, block, &mut served, &thread_stop).is_some());
         assert!(wait_serving(instance, Duration::from_secs(5)));
         (link, stop, blocks, thread)
+    }
+
+    #[test]
+    fn a_mono_link_reaches_every_channel_of_a_stereo_input() {
+        let mono = [1.0f32, 2.0, 3.0];
+        let mut bus = vec![vec![9.0f32; 4]; 2];
+        feed_main(&mono, 1, 3, &mut bus);
+        assert_eq!(bus[0][..3], [1.0, 2.0, 3.0]);
+        assert_eq!(bus[1][..3], [1.0, 2.0, 3.0], "the right input repeats the link's last channel");
+        assert_eq!(bus[1][3], 9.0, "past the block nothing changes");
+    }
+
+    #[test]
+    fn a_stereo_link_feeds_each_channel_and_repeats_its_last_into_the_rest() {
+        let stereo = [1.0f32, -1.0, 2.0, -2.0];
+        let mut bus = vec![vec![0.0f32; 2]; 4];
+        feed_main(&stereo, 2, 2, &mut bus);
+        assert_eq!(bus, vec![vec![1.0, 2.0], vec![-1.0, -2.0], vec![-1.0, -2.0], vec![-1.0, -2.0]]);
+        // Fewer plug-in channels than the link's: the first ones.
+        let mut mono = vec![vec![0.0f32; 2]];
+        feed_main(&stereo, 2, 2, &mut mono);
+        assert_eq!(mono, vec![vec![1.0, 2.0]]);
+        // No link channels, no input bus, nothing to read: nothing happens, and nothing panics.
+        feed_main(&stereo, 0, 2, &mut mono);
+        feed_main::<Vec<f32>>(&stereo, 2, 2, &mut []);
+        feed_main(&[], 2, 2, &mut mono);
+        assert_eq!(mono, vec![vec![0.0, 0.0]]);
+    }
+
+    #[test]
+    fn a_mono_output_reaches_both_sides_of_a_stereo_link() {
+        let mut output = vec![0.0f32; 6];
+        collect_main(&[vec![1.0f32, 2.0, 3.0]], 2, 3, &mut output);
+        assert_eq!(output, [1.0, 1.0, 2.0, 2.0, 3.0, 3.0]);
+    }
+
+    #[test]
+    fn a_wider_output_gives_the_link_its_first_channels_and_a_stereo_one_each_its_own() {
+        let bus = vec![vec![1.0f32, 2.0], vec![-1.0, -2.0], vec![5.0, 6.0]];
+        let mut stereo = vec![0.0f32; 4];
+        collect_main(&bus, 2, 2, &mut stereo);
+        assert_eq!(stereo, [1.0, -1.0, 2.0, -2.0]);
+        // A link with more channels than the output repeats the output's last.
+        let mut wide = vec![0.0f32; 8];
+        collect_main(&bus[..2], 4, 2, &mut wide);
+        assert_eq!(wide, [1.0, -1.0, -1.0, -1.0, 2.0, -2.0, -2.0, -2.0]);
+        // No output bus leaves the link's block as it was.
+        let mut kept = vec![7.0f32; 4];
+        collect_main::<Vec<f32>>(&[], 2, 2, &mut kept);
+        assert_eq!(kept, [7.0; 4]);
     }
 
     #[test]

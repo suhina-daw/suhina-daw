@@ -1,6 +1,8 @@
 ## What and why
 
-<!-- A few lines. Link the issue it closes: "Closes #123". One pull request per issue: when the
+<!-- A few lines. Link the issue it closes: "Closes #123"; a bug or small change without an issue
+     says what it fixes. A small fix found along the way in the same code goes under "Also fixed".
+     One pull request per issue: when the
      issue already has an open one, push to it or offer your change there instead
      (CONTRIBUTING.md › Working on an issue). When it builds on another open pull request that it
      cannot be stacked on, add a line "Depends on #123": a check keeps it from merging first. -->
@@ -59,8 +61,5 @@
 
 **Documented**
 - [ ] The documents that describe what changed are updated (`python scripts/docs.py impact`).
-- [ ] The parity measurement is current: the coverage this change moves is updated in
-      `scripts/parity/score.py` (and `scripts/parity/devices.json` for a built-in effect or
-      instrument), or the description says `Parity: no change` and why. The report's numbers and
-      the `last_verified` dates are written on `main` after the merge; leave them alone
-      ([AGENTS.md › Before you finish a task](https://github.com/suhina-daw/suhina-daw/blob/main/AGENTS.md#4-before-you-finish-a-task)).
+- [ ] Generated files are left alone: the `last_verified` dates, `docs/INDEX.md` and
+      `docs/commands.md` are written on `main` after the merge.

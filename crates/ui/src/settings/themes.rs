@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The themes the user can pick from: those that come with Suhina and those read from theme
-//! files, and what Settings › Appearance › Theme does with them. The app reads and writes the
+//! files, and what Settings › Appearance › Themes does with them. The app reads and writes the
 //! files; this keeps the list, says what to do with the files, and picks the colours to draw with.
 
 use std::path::PathBuf;
@@ -10,7 +10,8 @@ use std::path::PathBuf;
 use crate::kit::theme::{self, BUILT_IN, Palette, Theme};
 use crate::settings::settings_view::{ThemeRequest, ThemesView};
 
-/// A theme and its id: a built-in id, or the name of its file without `.json`.
+/// A theme and its id: a built-in id or the name of its folder for the theme's own values, and
+/// `<theme>@<variant>` for one of its variants (`theme_vars::split_id`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThemeEntry {
     pub id: String,
@@ -20,8 +21,9 @@ pub struct ThemeEntry {
 /// What the app is asked to do with the theme files, in order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileAction {
-    /// Write the theme to `<id>.json`.
-    Save { id: String, theme: Theme },
+    /// Write the theme: for `<theme>@<variant>` the variant's file, and the theme's own files when
+    /// they change (`theme.json`, artwork, and the editors' rules in `theme.css`).
+    Save { id: String, theme: Box<Theme> },
     /// Rename `<from>.json` to `<to>.json`, before it is saved under its new name.
     Rename { from: String, to: String },
     /// Read every theme file again.
@@ -32,8 +34,14 @@ pub enum FileAction {
     ExportTemplate,
     /// Write every theme file into one zip.
     Backup,
-    /// Bring in a theme file or a zip of them dropped on the window.
+    /// Write the theme `id` as a theme package (`.theme.suhina`).
+    ExportPackage { id: String, theme: Box<Theme> },
+    /// Bring in a theme file or a zip of them dropped on the window. A package whose theme is
+    /// here already is not written: the app asks whether to replace it or bring in a copy.
     Import(PathBuf),
+    /// Bring in a theme package whose theme is here already: in place of it (`replace`), or as
+    /// a copy under a new id.
+    ImportAgain { path: PathBuf, replace: bool },
 }
 
 #[derive(Debug, Clone)]
@@ -42,8 +50,13 @@ pub struct Themes {
     entries: Vec<ThemeEntry>,
     built_in: usize,
     folder: Option<String>,
+    /// Something to say once in the status bar about what a request did.
+    notice: Option<String>,
     /// File actions not taken by the app yet.
     actions: Vec<Pending>,
+    /// Folders in the themes folder that no theme here has (not themes, or not read): their names
+    /// are not free for a new theme.
+    reserved: Vec<String>,
 }
 
 /// A file action as it waits: a theme to save is looked up when the app takes it, so a theme
@@ -57,23 +70,35 @@ enum Pending {
 
 impl Default for Themes {
     fn default() -> Self {
-        let entries: Vec<ThemeEntry> =
-            theme::built_in_themes().into_iter().map(|(id, theme)| ThemeEntry { id: id.to_string(), theme }).collect();
-        Self { built_in: entries.len(), entries, folder: None, actions: Vec::new() }
+        let entries: Vec<ThemeEntry> = theme::built_in_themes()
+            .into_iter()
+            .map(|(id, theme)| (id.to_string(), theme))
+            .chain(theme::built_in_variants())
+            .map(|(id, theme)| ThemeEntry { id, theme })
+            .collect();
+        Self { built_in: entries.len(), entries, folder: None, actions: Vec::new(), notice: None, reserved: Vec::new() }
     }
 }
 
 impl Themes {
     /// Uses the themes read from `folder`'s files. A file named like a built-in theme is left
-    /// out, since the built-in one comes first.
+    /// out, since the built-in one comes first; a variant's file takes the place of the built-in
+    /// variant of its id, which is where editing that variant saves it.
     pub fn set(&mut self, files: Vec<ThemeEntry>, folder: Option<String>) {
-        self.entries.truncate(self.built_in);
+        self.entries = Self::default().entries;
         for entry in files {
-            if !self.entries.iter().any(|e| same_id(&e.id, &entry.id)) {
-                self.entries.push(entry);
+            match self.entries.iter_mut().find(|e| same_id(&e.id, &entry.id)) {
+                Some(old) if entry.id.contains('@') => *old = entry,
+                Some(_) => {}
+                None => self.entries.push(entry),
             }
         }
         self.folder = folder;
+    }
+
+    /// The names of the folders in the themes folder; a new theme takes none of them.
+    pub fn reserve(&mut self, names: Vec<String>) {
+        self.reserved = names;
     }
 
     /// One theme file read again, added if it is new. Returns whether anything changed.
@@ -98,7 +123,7 @@ impl Themes {
         self.entries.iter().find(|e| same_id(&e.id, id)).map(|e| &e.theme)
     }
 
-    /// The colours of the theme `id`, or Suhina Dark's when there is no such theme.
+    /// The colours of the theme `id`, or Suhina Studio's when there is no such theme.
     pub fn palette(&self, id: &str) -> Palette {
         self.get(id).map_or(Palette::DARK, |t| t.colors)
     }
@@ -107,72 +132,312 @@ impl Themes {
     pub fn view(&self, current: &str) -> ThemesView {
         let shown = self.entries.iter().find(|e| same_id(&e.id, current)).map_or(BUILT_IN, |e| e.id.as_str());
         let theme = self.get(shown).cloned().unwrap_or_default();
+        let own = |e: &&ThemeEntry| !e.id.contains('@');
         ThemesView {
-            // The user's own themes first, then those that come with Suhina.
+            declared: theme.vars.declared.iter().filter(|p| p.label.is_some()).cloned().collect(),
+            values: {
+                let mut values = (*theme.vars.base).clone();
+                values.extend(theme.vars.values.clone());
+                values
+            },
+            variant: theme.vars.variant_name.clone(),
+            kept: self
+                .entries
+                .iter()
+                .filter_map(|e| e.theme.vars.kept.as_ref().map(|why| (e.id.clone(), why.to_string())))
+                .collect(),
+            variants: self
+                .entries
+                .iter()
+                .filter(|e| e.id.contains('@'))
+                .map(|e| (e.id.clone(), e.theme.vars.variant_name.clone().unwrap_or_default()))
+                .collect(),
+            skin: theme.skin,
+            transparent_rgb: theme.transparent_rgb,
+            // The user's own themes first, then those that come with Suhina; variants are by their
+            // theme's card.
             list: self.entries[self.built_in..]
                 .iter()
+                .filter(own)
                 .map(|e| (e.id.clone(), e.theme.name.clone(), false))
-                .chain(self.entries[..self.built_in].iter().map(|e| (e.id.clone(), e.theme.name.clone(), true)))
+                .chain(
+                    self.entries[..self.built_in]
+                        .iter()
+                        .filter(own)
+                        .map(|e| (e.id.clone(), e.theme.name.clone(), true)),
+                )
                 .collect(),
             current: shown.to_string(),
-            built_in: theme::is_built_in(shown),
+            swatches: self.entries.iter().filter_map(|entry| Some((entry.id.clone(), entry.theme.swatch?))).collect(),
+            pictures: self
+                .entries
+                .iter()
+                .filter_map(|entry| Some((entry.id.clone(), entry.theme.picture.clone()?)))
+                .collect(),
+            default_variants: self
+                .entries
+                .iter()
+                .filter(own)
+                .map(|entry| (entry.id.clone(), entry.theme.meta.default_variant().to_owned()))
+                .collect(),
+            built_in: theme::is_built_in(crate::kit::theme_vars::split_id(shown).0),
             name: theme.name,
             colors: theme.colors,
+            liquid: theme.liquid,
+            gradients: theme.gradients,
+            global_liquid: Default::default(),
             folder: self.folder.clone(),
         }
     }
 
     /// Does what the page asked while `current` is in use. Returns the id of the theme to use
     /// from now on, when that changes.
+    ///
+    /// A setting edits the variant in use; on a theme's own values it makes a variant, *Custom*,
+    /// first, so a theme's sheet is never rewritten (a built-in theme's variant needs no copy of
+    /// it). A change of layout or artwork edits the theme itself; a built-in theme, which does not
+    /// change, is copied first.
     pub fn request(&mut self, current: &str, request: ThemeRequest) -> Option<String> {
-        let editable = self.get(current).is_some() && !theme::is_built_in(current);
         match request {
             ThemeRequest::Use(id) => self.get(&id).is_some().then_some(id),
-            ThemeRequest::Edit(colors) => {
-                let (id, copied) = if editable {
-                    (self.real_id(current), false)
+            ThemeRequest::ResetEdits { colors, liquid, gradients, transparent_rgb, skin, values } => {
+                // The theme's own settings first: the colours below are then compared with what
+                // the sheet gives for them, so those that follow a setting keep following it.
+                let declared = !values.is_empty();
+                let switched = if declared {
+                    self.edit(current, false, true, |theme| {
+                        for (name, value) in values {
+                            if theme.vars.base.get(&name) == Some(&value) {
+                                theme.vars.values.remove(&name);
+                            } else {
+                                theme.vars.values.insert(name, value);
+                            }
+                        }
+                        theme.vars.values.retain(|name, _| !crate::kit::theme_vars::is_core(name));
+                        crate::kit::theme_vars::resolve(theme);
+                    })
                 } else {
-                    let name = format!("{} (custom)", self.get(current).map_or("Suhina Dark", |t| &t.name));
-                    (self.copy(current, &name), true)
+                    None
                 };
-                if let Some(entry) = self.entries.iter_mut().find(|e| e.id == id) {
-                    entry.theme.colors = colors;
+                let id = switched.as_deref().unwrap_or(current).to_string();
+                let switched = self.request(&id, ThemeRequest::EditRgba { colors, transparent_rgb }).or(switched);
+                let id = switched.as_deref().unwrap_or(current).to_string();
+                let switched = self.request(&id, ThemeRequest::EditLiquid(liquid)).or(switched);
+                let id = switched.as_deref().unwrap_or(current).to_string();
+                let switched = self.request(&id, ThemeRequest::EditGradients(gradients)).or(switched);
+                let id = switched.as_deref().unwrap_or(current).to_string();
+                let switched = self.request(&id, ThemeRequest::EditSkin(*skin)).or(switched);
+                if declared {
+                    // The swatch and thumbnail are worked out again from the values now set.
+                    let id = switched.as_deref().unwrap_or(current).to_string();
+                    return self
+                        .edit(&id, false, true, |theme| {
+                            crate::kit::theme_vars::resolve(theme);
+                        })
+                        .or(switched);
                 }
+                switched
+            }
+            ThemeRequest::EditRgba { colors, transparent_rgb } => self.edit(current, false, true, |theme| {
+                theme.colors = colors;
+                theme.transparent_rgb = transparent_rgb;
+            }),
+            ThemeRequest::Edit(colors) => self.edit(current, false, true, |theme| theme.colors = colors),
+            ThemeRequest::EditLiquid(options) => self.edit(current, false, true, |theme| theme.liquid = options),
+            ThemeRequest::EditGradients(gradients) => {
+                self.edit(current, false, true, |theme| theme.gradients = gradients)
+            }
+            ThemeRequest::EditValue { name, value } => {
+                let theme = self.get(current)?;
+                let accepted = crate::kit::theme_vars::registered(theme, &name).is_some_and(|p| p.accepts(&value));
+                if !accepted {
+                    return None;
+                }
+                self.edit(current, false, true, |theme| {
+                    theme.vars.values.insert(name, value);
+                    crate::kit::theme_vars::resolve(theme);
+                })
+            }
+            ThemeRequest::EditCss(css) => {
+                let mut theme = self.get(current).cloned().unwrap_or_default();
+                if !crate::kit::theme_css::apply(&mut theme, &css).is_empty() {
+                    return None;
+                }
+                let switched = self.request(
+                    current,
+                    ThemeRequest::EditRgba { colors: theme.colors, transparent_rgb: theme.transparent_rgb },
+                );
+                let id = switched.as_deref().unwrap_or(current).to_string();
+                self.request(&id, ThemeRequest::EditSkin(theme.skin)).or(switched)
+            }
+            ThemeRequest::EditSkin(skin) => {
+                let before = self.get(current)?.clone();
+                let structure = structure(&before.skin) != structure(&skin);
+                let mut after = before.clone();
+                after.skin = skin;
+                let settings =
+                    crate::kit::theme_vars::core_values(&after) != crate::kit::theme_vars::core_values(&before);
+                if !structure && !settings {
+                    return None;
+                }
+                let skin = after.skin;
+                self.edit(current, structure, settings, |theme| {
+                    let (css, variant) = (theme.skin.css.clone(), theme.skin.variant.clone());
+                    theme.skin = skin;
+                    theme.skin.css = css;
+                    theme.skin.variant = variant;
+                })
+            }
+            ThemeRequest::NewVariant(name) => {
+                let name = name.trim().to_string();
+                let original = self.get(current)?.clone();
+                let base = crate::kit::theme_vars::split_id(&self.real_id(current)).0.to_string();
+                let id = self.free_variant(&base, &name);
+                let mut theme = original;
+                theme.vars.variant = crate::kit::theme_vars::split_id(&id).1.map(str::to_owned);
+                theme.vars.variant_name = Some(if name.is_empty() { "Custom".into() } else { name });
+                self.entries.push(ThemeEntry { id: id.clone(), theme });
                 self.actions.push(Pending::Save(id.clone()));
-                copied.then_some(id)
+                Some(id)
             }
             ThemeRequest::Rename(name) => {
                 let name = name.trim().to_string();
-                if !editable || name.is_empty() {
+                let old = self.real_id(current);
+                if name.is_empty() || self.get(&old).is_none() {
                     return None;
                 }
-                let old = self.real_id(current);
-                let new = if same_id(&slug(&name), &old) { old.clone() } else { self.free_id(&name) };
-                let entry = self.entries.iter_mut().find(|e| e.id == old)?;
-                entry.theme.name = name;
-                entry.id = new.clone();
-                if new != old {
-                    self.actions.push(Pending::Other(Box::new(FileAction::Rename { from: old, to: new.clone() })));
+                let (base, variant) = crate::kit::theme_vars::split_id(&old);
+                if variant.is_some() {
+                    // A variant keeps its file; only its name changes.
+                    let entry = self.entries.iter_mut().find(|e| e.id == old)?;
+                    entry.theme.vars.variant_name = Some(name);
+                    self.actions.push(Pending::Save(old));
+                    return None;
                 }
-                self.actions.push(Pending::Save(new.clone()));
-                (!same_id(&new, current)).then_some(new)
+                if theme::is_built_in(base) {
+                    return None;
+                }
+                // The folder keeps its name: it is the theme's id, which the settings and its
+                // variants refer to, and another folder may already have the name's id.
+                for entry in self.entries.iter_mut().filter(|e| crate::kit::theme_vars::split_id(&e.id).0 == old) {
+                    entry.theme.name = name.clone();
+                }
+                self.actions.push(Pending::Save(old));
+                None
             }
             ThemeRequest::Duplicate => {
-                let name = format!("{} copy", self.get(current).map_or("Suhina Dark", |t| t.name.as_str()));
+                let name = format!("{} copy", self.get(current).map_or("Suhina Studio", |t| t.name.as_str()));
                 let id = self.copy(current, &name);
+                // The copy keeps the controls placed in the theme it came from: say so, as they
+                // can look out of place in a theme made from it.
+                let placed = self.get(&id).map_or(0, |t| t.skin.controls.len());
+                if placed > 0 {
+                    let controls = if placed == 1 { "control" } else { "controls" };
+                    self.notice = Some(format!(
+                        "{name} keeps the {placed} placed {controls} of the theme it copies, in its theme.css"
+                    ));
+                }
                 self.actions.push(Pending::Save(id.clone()));
+                Some(id)
+            }
+            ThemeRequest::RestoreBuiltIn { id, save_copy } => {
+                if !theme::is_built_in(&id) || self.get(&id).is_none() {
+                    return None;
+                }
+                if save_copy {
+                    let name = format!("{} copy", self.get(current).map_or("Theme", |t| t.name.as_str()));
+                    let copy = self.copy(current, &name);
+                    self.actions.push(Pending::Save(copy));
+                }
                 Some(id)
             }
             ThemeRequest::Reload => self.file_action(FileAction::Reload),
             ThemeRequest::OpenFolder => self.file_action(FileAction::OpenFolder),
             ThemeRequest::ExportTemplate => self.file_action(FileAction::ExportTemplate),
             ThemeRequest::Backup => self.file_action(FileAction::Backup),
+            ThemeRequest::ExportPackage => {
+                let id = crate::kit::theme_vars::split_id(&self.real_id(current)).0.to_owned();
+                let theme = self.get(&id)?.clone();
+                self.file_action(FileAction::ExportPackage { id, theme: Box::new(theme) })
+            }
         }
+    }
+
+    /// Applies `change` to the entry an edit of `current` goes to, keeps the variant's values in
+    /// step with it and saves it. A change of `structure` (layout, artwork) to a built-in theme
+    /// copies the theme; a change of `settings` to a theme's own values makes a variant, *Custom*.
+    /// Returns the id to use from now on, when that changes.
+    fn edit(
+        &mut self,
+        current: &str,
+        structure: bool,
+        settings: bool,
+        change: impl FnOnce(&mut Theme),
+    ) -> Option<String> {
+        let mut change = Some(change);
+        let real = self.real_id(current);
+        self.get(&real)?;
+        let (base, variant) = crate::kit::theme_vars::split_id(&real);
+        let (id, switched) = if structure && theme::is_built_in(base) {
+            let name = format!("{} (custom)", self.get(current).map_or("Suhina Studio", |t| &t.name));
+            (self.copy(current, &name), true)
+        } else if variant.is_some() || !settings {
+            (real.clone(), false)
+        } else {
+            let base = base.to_string();
+            let id = self.free_variant(&base, "Custom");
+            let mut theme = self.get(&real)?.clone();
+            theme.vars.variant = crate::kit::theme_vars::split_id(&id).1.map(str::to_owned);
+            theme.vars.variant_name = Some("Custom".into());
+            // A change that changes nothing (a reset of what was not edited) makes no variant.
+            let mut changed = theme.clone();
+            if let Some(change) = change.take() {
+                change(&mut changed);
+            }
+            if changed == theme {
+                return None;
+            }
+            self.entries.push(ThemeEntry { id: id.clone(), theme: changed });
+            (id, true)
+        };
+        let entry = self.entries.iter_mut().find(|e| e.id == id)?;
+        if let Some(change) = change.take() {
+            change(&mut entry.theme);
+        }
+        // A theme read from a sheet keeps its edited settings as values over the sheet's.
+        if !entry.theme.vars.base.is_empty() {
+            crate::kit::theme_vars::sync(&mut entry.theme);
+            crate::kit::theme_vars::refresh_view(&mut entry.theme);
+        }
+        self.actions.push(Pending::Save(id.clone()));
+        switched.then_some(id)
+    }
+
+    /// `<base>@<id>` for a new variant named `name`, under an id no variant of `base` has.
+    fn free_variant(&self, base: &str, name: &str) -> String {
+        let stem = slug(name);
+        let mut id = format!("{base}@{stem}");
+        let mut number = 2;
+        while self.get(&id).is_some() {
+            id = format!("{base}@{stem}-{number}");
+            number += 1;
+        }
+        id
     }
 
     /// A theme file or zip dropped on the window, for the app to bring in.
     pub fn import(&mut self, path: PathBuf) {
         self.actions.push(Pending::Other(Box::new(FileAction::Import(path))));
+    }
+
+    /// The answer to a package whose theme is here already: replace it, or bring in a copy.
+    pub fn import_again(&mut self, path: PathBuf, replace: bool) {
+        self.actions.push(Pending::Other(Box::new(FileAction::ImportAgain { path, replace })));
+    }
+
+    /// Something to say once in the status bar about the last request.
+    pub fn take_notice(&mut self) -> Option<String> {
+        self.notice.take()
     }
 
     /// What the app should do with the theme files, in order, once.
@@ -182,7 +447,7 @@ impl Themes {
         for item in pending {
             let action = match item {
                 Pending::Save(id) => match self.get(&id) {
-                    Some(theme) => FileAction::Save { id, theme: theme.clone() },
+                    Some(theme) => FileAction::Save { id, theme: Box::new(theme.clone()) },
                     None => continue,
                 },
                 Pending::Other(action) => *action,
@@ -206,9 +471,13 @@ impl Themes {
 
     /// Adds a copy of the theme `from` named `name`, under a new id. Returns the id.
     fn copy(&mut self, from: &str, name: &str) -> String {
-        let colors = self.palette(from);
+        let mut original = self.get(from).cloned().unwrap_or_default();
+        // The copy is a theme of its own: its variant's values become part of its sheet.
+        original.vars.variant = None;
+        original.vars.variant_name = None;
+        original.skin.css = original.skin.css.or_else(|| original.vars.sheet.take());
         let id = self.free_id(name);
-        self.entries.push(ThemeEntry { id: id.clone(), theme: Theme { name: name.to_string(), colors } });
+        self.entries.push(ThemeEntry { id: id.clone(), theme: Theme { name: name.to_string(), ..original } });
         id
     }
 
@@ -217,7 +486,10 @@ impl Themes {
         let base = slug(name);
         let mut id = base.clone();
         let mut number = 2;
-        while self.get(&id).is_some() || theme::is_built_in(&id) {
+        while self.get(&id).is_some()
+            || theme::is_built_in(&id)
+            || self.reserved.iter().any(|r| r.eq_ignore_ascii_case(&id))
+        {
             id = format!("{base}-{number}");
             number += 1;
         }
@@ -239,134 +511,24 @@ pub fn slug(name: &str) -> String {
     if id.is_empty() { "theme".into() } else { id.to_string() }
 }
 
+/// What of a skin is its structure rather than settings: artwork, the toolbar, placements and
+/// styles, and the background image itself.
+fn structure(skin: &crate::kit::skin::Skin) -> impl PartialEq + use<> {
+    (
+        skin.assets.clone(),
+        skin.toolbar.clone(),
+        skin.toolbar_offsets.clone(),
+        skin.controls.clone(),
+        skin.styles.clone(),
+        skin.background.clone(),
+    )
+}
+
 /// Ids name files, and file names do not differ by case on every system.
 fn same_id(a: &str, b: &str) -> bool {
     a.eq_ignore_ascii_case(b)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn night() -> ThemeEntry {
-        let mut colors = Palette::DARK;
-        colors.accent = egui::Color32::from_rgb(1, 2, 3);
-        ThemeEntry { id: "night".into(), theme: Theme { name: "Night".into(), colors } }
-    }
-
-    fn saved(themes: &mut Themes) -> Vec<(String, String)> {
-        themes
-            .take_actions()
-            .into_iter()
-            .filter_map(|a| match a {
-                FileAction::Save { id, theme } => Some((id, theme.name)),
-                _ => None,
-            })
-            .collect()
-    }
-
-    #[test]
-    fn the_built_in_themes_come_first_and_stay() {
-        let mut themes = Themes::default();
-        let fake = ThemeEntry { id: "Suhina-Dark".into(), theme: night().theme };
-        themes.set(vec![night(), fake.clone(), night()], Some("themes".into()));
-        let view = themes.view("night");
-        assert_eq!(view.list.first(), Some(&("night".into(), "Night".into(), false)));
-        assert_eq!(view.list.get(1), Some(&(BUILT_IN.into(), "Suhina Dark".into(), true)));
-        assert!(view.list.iter().any(|(id, _, built_in)| id == "nord" && *built_in));
-        assert_eq!(view.list.len(), theme::built_in_themes().len() + 1);
-        assert_eq!(view.colors, night().theme.colors);
-        assert!(!view.built_in);
-        assert!(!themes.put(fake));
-        assert_eq!(themes.palette(BUILT_IN), Palette::DARK);
-        assert!(themes.view("nord").built_in);
-    }
-
-    #[test]
-    fn a_missing_theme_draws_with_suhina_dark() {
-        let themes = Themes::default();
-        assert_eq!(themes.palette("gone"), Palette::DARK);
-        assert_eq!(themes.view("gone").current, BUILT_IN);
-    }
-
-    #[test]
-    fn editing_a_built_in_theme_makes_a_copy() {
-        let mut themes = Themes::default();
-        let mut colors = themes.palette("nord");
-        colors.border = egui::Color32::from_rgb(9, 9, 9);
-        assert_eq!(themes.request("nord", ThemeRequest::Edit(colors)), Some("nord-custom".into()));
-        assert_ne!(themes.palette("nord"), colors);
-        assert_eq!(themes.palette("nord-custom"), colors);
-        // A second edit changes the copy, not another one.
-        colors.border = egui::Color32::from_rgb(8, 8, 8);
-        assert_eq!(themes.request("nord-custom", ThemeRequest::Edit(colors)), None);
-        assert_eq!(saved(&mut themes), [("nord-custom".into(), "Nord (custom)".into())]);
-        assert_eq!(themes.palette("nord-custom"), colors);
-        assert!(themes.take_actions().is_empty());
-    }
-
-    #[test]
-    fn duplicates_get_their_own_ids() {
-        let mut themes = Themes::default();
-        themes.set(vec![night()], None);
-        assert_eq!(themes.request("night", ThemeRequest::Duplicate), Some("night-copy".into()));
-        assert_eq!(themes.request("night", ThemeRequest::Duplicate), Some("night-copy-2".into()));
-        assert_eq!(themes.get("night-copy-2").map(|t| t.colors), Some(night().theme.colors));
-        assert_eq!(saved(&mut themes).len(), 2);
-    }
-
-    #[test]
-    fn renaming_a_theme_renames_its_file() {
-        let mut themes = Themes::default();
-        themes.set(vec![night()], None);
-        assert_eq!(themes.request(BUILT_IN, ThemeRequest::Rename("Mine".into())), None);
-        assert!(themes.take_actions().is_empty());
-        assert_eq!(themes.request("night", ThemeRequest::Rename(" Deep Sea ".into())), Some("deep-sea".into()));
-        assert_eq!(
-            themes.take_actions(),
-            [
-                FileAction::Rename { from: "night".into(), to: "deep-sea".into() },
-                FileAction::Save {
-                    id: "deep-sea".into(),
-                    theme: Theme { name: "Deep Sea".into(), colors: night().theme.colors }
-                },
-            ]
-        );
-        // A name that makes the same id keeps the file.
-        assert_eq!(themes.request("deep-sea", ThemeRequest::Rename("Deep  sea!".into())), None);
-        assert_eq!(saved(&mut themes), [("deep-sea".into(), "Deep  sea!".into())]);
-        // A built-in theme's id is not taken.
-        assert_eq!(themes.request("deep-sea", ThemeRequest::Rename("Nord".into())), Some("nord-2".into()));
-    }
-
-    #[test]
-    fn using_and_file_actions() {
-        let mut themes = Themes::default();
-        themes.set(vec![night()], None);
-        assert_eq!(themes.request(BUILT_IN, ThemeRequest::Use("night".into())), Some("night".into()));
-        assert_eq!(themes.request(BUILT_IN, ThemeRequest::Use("nothing".into())), None);
-        for request in [ThemeRequest::Reload, ThemeRequest::Backup, ThemeRequest::Backup, ThemeRequest::ExportTemplate]
-        {
-            assert_eq!(themes.request(BUILT_IN, request), None);
-        }
-        themes.import("night.json".into());
-        assert_eq!(
-            themes.take_actions(),
-            [
-                FileAction::Reload,
-                FileAction::Backup,
-                FileAction::ExportTemplate,
-                FileAction::Import("night.json".into())
-            ]
-        );
-    }
-
-    #[test]
-    fn ids_are_made_from_names() {
-        let themes = Themes::default();
-        assert_eq!(themes.free_id("  Night Blue!! "), "night-blue");
-        assert_eq!(themes.free_id("../.."), "theme");
-        assert_eq!(themes.free_id("Suhina Dark"), "suhina-dark-2");
-        assert_eq!(slug("Café Thème"), "café-thème");
-    }
-}
+#[path = "themes_tests.rs"]
+mod tests;

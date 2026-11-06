@@ -5,6 +5,7 @@
 //! a plug-in that misses its deadline or is gone, latency compensation, processors arriving
 //! while playing and carried through edits.
 
+use crate::{RenderInputs, RenderOptions, render_offline_from};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -14,8 +15,8 @@ use suhina_model::*;
 
 use crate::chain_tests::{BEAT, SR, blocks, device, left, max_diff, note, peak, project};
 use crate::{
-    AudioPool, OFFLINE_TIMEOUT, PluginProcessor, PluginSlotInfo, Plugins, Renderer, Sent, plugin_devices,
-    render_offline, render_offline_with_plugins,
+    AudioPool, OFFLINE_TIMEOUT, PluginProcessor, PluginSlotInfo, Plugins, Renderer, Sent, SongPosition, plugin_devices,
+    render_offline,
 };
 
 /// What a stand-in plug-in does with a block.
@@ -29,6 +30,9 @@ enum Behaviour {
     Delay(usize),
     /// Never answers.
     Gone,
+    /// Plays 1.0 on both sides for its first this many frames, then silence, whatever comes in:
+    /// an ARA renderer playing its regions (#990).
+    Render(usize),
 }
 
 struct Stand {
@@ -42,6 +46,8 @@ struct Stand {
     /// Set false to make it stop answering.
     answering: Arc<AtomicBool>,
     dropped: Arc<AtomicUsize>,
+    /// The song's place it was told of with each block.
+    songs: Arc<std::sync::Mutex<Vec<SongPosition>>>,
 }
 
 impl Stand {
@@ -54,6 +60,7 @@ impl Stand {
             frames: 0,
             answering: Arc::new(AtomicBool::new(true)),
             dropped: Arc::default(),
+            songs: Arc::default(),
         }
     }
 }
@@ -65,6 +72,12 @@ impl Drop for Stand {
 }
 
 impl PluginProcessor for Stand {
+    fn transport(&mut self, song: &SongPosition) {
+        if let Ok(mut songs) = self.songs.lock() {
+            songs.push(*song);
+        }
+    }
+
     fn process(&mut self, buffer: &mut [f32], events: &[(usize, NoteEvent)], _timeout: Duration) -> bool {
         if !self.answering.load(Ordering::SeqCst) {
             return false;
@@ -101,6 +114,12 @@ impl PluginProcessor for Stand {
                 }
             }
             Behaviour::Gone => return false,
+            Behaviour::Render(until) => {
+                for (frame, pair) in buffer.chunks_mut(2).enumerate() {
+                    let value = if self.frames + frame < until { 1.0 } else { 0.0 };
+                    pair.iter_mut().for_each(|s| *s = value);
+                }
+            }
         }
         self.frames += frames;
         true
@@ -129,17 +148,46 @@ fn plugins(project: &Project, stands: Vec<(Stand, PluginSlotInfo)>) -> Plugins {
 const EFFECT: PluginSlotInfo = PluginSlotInfo { instrument: false, latency: 0 };
 const INSTRUMENT: PluginSlotInfo = PluginSlotInfo { instrument: true, latency: 0 };
 
+/// An EQ after a VST3 instrument rings what the EQ output: its defaults are flat, so its
+/// output is the plug-in's (docs/spec/eq.md › The panel › The analyser).
+#[test]
+fn an_eq_after_a_plug_in_rings_its_output() {
+    let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![plug(vst3()), device("eq", &[])]);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    monitor.spectrum().watch(1, TrackId(1), 1);
+    let out = blocks(&mut renderer, 4, 480);
+    assert!(peak(&out) > 0.4, "the plug-in instrument plays 0.5");
+    let (samples, valid) = monitor.spectrum().samples(TrackId(1), 1).expect("the EQ's ring has output");
+    assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
+    assert!(
+        samples.iter().any(|&s| s.abs() > 0.25),
+        "the EQ's output is in its ring, peak {}",
+        samples.iter().fold(0.0f32, |m, s| m.max(s.abs()))
+    );
+}
+
 #[test]
 fn a_plug_in_effect_processes_the_tracks_sound() {
     let notes = vec![note(0.0, 2.0, 69)];
     let p = project(notes.clone(), 2.0, vec![plug(vst3())]);
-    let dry = render_offline(&project(notes, 2.0, vec![device("utility", &[])]), SR, 512).unwrap();
-    let wet = render_offline_with_plugins(
+    let dry =
+        render_offline(&project(notes, 2.0, vec![device("utility", &[])]), SR, 512, suhina_device_registry::factory())
+            .unwrap();
+    let wet = render_offline_from(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)])),
         SR,
         512,
-        plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)]),
+        None,
     )
     .unwrap();
     assert_eq!(wet.len(), dry.len());
@@ -148,16 +196,97 @@ fn a_plug_in_effect_processes_the_tracks_sound() {
 
     // A plug-in with built-in effects and instruments around it: one after the other.
     let p = project(vec![note(0.0, 2.0, 69)], 2.0, vec![device("utility", &[("gain", -6.0206)]), plug(vst3())]);
-    let both = render_offline_with_plugins(
+    let both = render_offline_from(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)])),
         SR,
         333,
-        plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)]),
+        None,
     )
     .unwrap();
     let quarter: Vec<f32> = dry.iter().map(|s| s * 0.25).collect();
     assert!(max_diff(&both, &quarter) < 1e-4, "{}", max_diff(&both, &quarter));
+}
+
+#[test]
+fn a_plug_in_is_told_the_loop_in_beats_and_in_seconds_through_the_tempo_map() {
+    // 120 BPM to beat 4, then 60: the loop from beat 2 to 8 is 1 s to 2 s + 4 s.
+    let mut p = project(vec![note(0.0, 1.0, 60)], 8.0, vec![plug(vst3())]);
+    p.transport.tempo_changes = vec![TempoPoint { beat: 4.0, bpm: 60.0, ramp: false }].into();
+    p.transport.loop_range = Some(LoopRange { start: 2.0, end: 8.0 });
+    p.transport.loop_enabled = true;
+    let stand = Stand::new(Behaviour::Gain(1.0));
+    let songs = Arc::clone(&stand.songs);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, EFFECT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    blocks(&mut renderer, 1, 512);
+    let song = *songs.lock().unwrap().first().expect("told of the song");
+    assert_eq!(song.cycle, Some((2.0, 8.0)));
+    let (start, end) = song.cycle_seconds.expect("in seconds too");
+    assert!((start - 1.0).abs() < 1e-3 && (end - 6.0).abs() < 1e-3, "{start} to {end}");
+}
+
+#[test]
+fn an_offline_render_plays_through_the_loop_and_tells_plug_ins_of_no_cycle() {
+    // A render does not repeat the loop (#873): the plug-ins see a song that plays straight on.
+    let mut p = project(vec![note(0.0, 1.0, 60)], 8.0, vec![plug(vst3())]);
+    p.transport.loop_range = Some(LoopRange { start: 2.0, end: 8.0 });
+    p.transport.loop_enabled = true;
+    let stand = Stand::new(Behaviour::Gain(1.0));
+    let songs = Arc::clone(&stand.songs);
+    render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, EFFECT)])),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    let songs = songs.lock().unwrap();
+    assert!(!songs.is_empty(), "told of the song");
+    assert!(songs.iter().all(|song| song.cycle.is_none() && song.cycle_seconds.is_none()));
+}
+
+/// The user's case: live MIDI into the armed track, the VST3 instrument playing, and the EQ
+/// after it — with the transport stopped, as monitoring plays. The EQ's defaults are flat, so
+/// its output is the plug-in's (docs/spec/eq.md › The panel › The analyser).
+#[test]
+fn an_eq_hears_live_notes_after_a_plug_in_with_the_transport_stopped() {
+    use crate::{LaunchCommand, LiveEvent};
+    let p = project(Vec::new(), 1.0, vec![plug(vst3()), device("eq", &[])]);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)])),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let monitor = controller.meter_monitor_arc();
+    let spectrum = monitor.spectrum();
+    spectrum.watch(1, TrackId(1), 1);
+    controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
+    blocks(&mut renderer, 1, 256);
+    let mut live = controller.take_live_input().unwrap();
+    live.send(LiveEvent::NoteOn { key: 60, velocity: 1.0 });
+    let out = blocks(&mut renderer, 4, 256);
+    assert!(peak(&out) > 0.4, "the live note plays through the plug-in");
+    let (samples, valid) = spectrum.samples(TrackId(1), 1).expect("the EQ's ring has output");
+    assert!(valid > 0);
+    assert!(
+        samples.iter().any(|&s| s.abs() > 0.25),
+        "the EQ's output is in its ring, peak {}",
+        samples.iter().fold(0.0f32, |m, s| m.max(s.abs()))
+    );
 }
 
 #[test]
@@ -167,8 +296,15 @@ fn a_plug_in_instrument_gets_the_notes_at_their_frames() {
     for block in [64, 512, 1_000] {
         let mut stand = Stand::new(Behaviour::Instrument);
         stand.seen = Arc::clone(&seen);
-        let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, block, plugins(&p, vec![(stand, INSTRUMENT)]))
-            .unwrap();
+        let out = render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+                .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+            SR,
+            block,
+            None,
+        )
+        .unwrap();
         let out = left(&out);
         let second = BEAT * 3 / 2;
         // No sine voices: the plug-in plays the notes, at the track's unity gain.
@@ -181,6 +317,97 @@ fn a_plug_in_instrument_gets_the_notes_at_their_frames() {
         let ons: Vec<usize> =
             events.iter().filter(|(_, e)| matches!(e, NoteEvent::On { .. })).map(|(at, _)| *at).collect();
         assert_eq!(ons, [0, second], "block {block}");
+    }
+}
+
+/// A plug-in instrument on an armed track gets what a MIDI controller plays besides notes: its
+/// controllers, pitch bend and channel pressure (#812).
+#[test]
+fn a_plug_in_instrument_on_an_armed_track_gets_live_controllers() {
+    use crate::{LaunchCommand, LiveEvent};
+    let p = project(Vec::new(), 1.0, vec![plug(vst3())]);
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let mut live = controller.take_live_input().unwrap();
+    controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
+    blocks(&mut renderer, 1, 256);
+    live.send(LiveEvent::NoteOn { key: 60, velocity: 1.0 });
+    live.send(LiveEvent::PitchBend(0.5));
+    live.send(LiveEvent::Controller { number: 1, value: 1.0 });
+    live.send(LiveEvent::Pressure(0.25));
+    blocks(&mut renderer, 4, 256);
+    let got: Vec<NoteEvent> = seen.lock().unwrap().iter().map(|(_, e)| *e).collect();
+    for wanted in [
+        NoteEvent::On { key: 60, velocity: 1.0 },
+        NoteEvent::PitchBend(0.5),
+        NoteEvent::Controller { number: 1, value: 1.0 },
+        NoteEvent::Pressure(0.25),
+    ] {
+        assert!(got.contains(&wanted), "{wanted:?} missing from {got:?}");
+    }
+}
+
+/// A track that stops hearing a controller, disarmed or its port closed, has the pitch bend
+/// and pressure it was given set back, so its instrument is not left bent or pressed (#812); a
+/// source that never moved them sends nothing.
+#[test]
+fn letting_go_of_a_controller_sets_its_pitch_bend_and_pressure_back() {
+    use crate::{LaunchCommand, LiveEvent};
+    let bent_after = |let_go: &dyn Fn(&mut crate::Controller, &mut crate::LiveSender), moved: bool| {
+        let p = project(Vec::new(), 1.0, vec![plug(vst3())]);
+        let stand = Stand::new(Behaviour::Instrument);
+        let seen = Arc::clone(&stand.seen);
+        let mut renderer = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+                .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+            SR,
+            RenderOptions::STOPPED,
+        )
+        .unwrap();
+        let mut controller = renderer.controller();
+        let mut live = controller.take_live_input().unwrap();
+        controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
+        blocks(&mut renderer, 1, 256);
+        live.send(LiveEvent::NoteOn { key: 60, velocity: 1.0 });
+        if moved {
+            live.send(LiveEvent::PitchBend(0.5));
+            live.send(LiveEvent::Pressure(0.25));
+        }
+        blocks(&mut renderer, 2, 256);
+        seen.lock().unwrap().clear();
+        let_go(&mut controller, &mut live);
+        blocks(&mut renderer, 2, 256);
+        let got: Vec<NoteEvent> = seen.lock().unwrap().iter().map(|(_, e)| *e).collect();
+        got
+    };
+    let disarm = |controller: &mut crate::Controller, _: &mut crate::LiveSender| {
+        controller
+            .send(LaunchCommand::SetArmed { track: TrackId(1), armed: false, input: Default::default() })
+            .unwrap();
+    };
+    let close = |_: &mut crate::Controller, live: &mut crate::LiveSender| {
+        live.send(LiveEvent::AllNotesOff);
+    };
+    for (what, let_go) in [("disarmed", &disarm as &dyn Fn(&mut _, &mut _)), ("port closed", &close)] {
+        let got = bent_after(let_go, true);
+        for wanted in [NoteEvent::PitchBend(0.0), NoteEvent::Pressure(0.0)] {
+            assert!(got.contains(&wanted), "{what}: {wanted:?} missing from {got:?}");
+        }
+        let got = bent_after(let_go, false);
+        assert!(
+            !got.iter().any(|e| matches!(e, NoteEvent::PitchBend(_) | NoteEvent::Pressure(_))),
+            "{what}, never moved: {got:?}"
+        );
     }
 }
 
@@ -223,7 +450,13 @@ impl PluginProcessor for Busy {
 fn a_block_a_plug_in_refuses_is_one_miss_and_is_not_run_again() {
     let notes = vec![note(0.0, 4.0, 69)];
     let dry_project = project(notes.clone(), 4.0, vec![device("utility", &[])]);
-    let mut dry = Renderer::with_audio(&dry_project, &AudioPool::new(), SR).unwrap();
+    let mut dry = Renderer::build(
+        &dry_project,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let dry = blocks(&mut dry, 20, 480);
     let p = project(notes, 4.0, vec![plug(vst3())]);
     let busy = Busy::new(false);
@@ -231,13 +464,20 @@ fn a_block_a_plug_in_refuses_is_one_miss_and_is_not_run_again() {
         (Arc::clone(&busy.sends), Arc::clone(&busy.processes), Arc::clone(&busy.patience));
     let mut plugins = Plugins::new();
     plugins.insert(plugin_devices(&p)[0].key, EFFECT, Box::new(busy));
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let out = blocks(&mut renderer, 20, 480);
     assert_eq!(sends.load(Ordering::SeqCst), 20, "one hand-over a block");
     assert!(patience.lock().unwrap().iter().all(|p| p.is_zero()), "in real time nothing waits for a busy host");
     assert_eq!(processes.load(Ordering::SeqCst), 0, "a refused block is not run again");
     // Each block here is one round trip, so one miss a block.
     assert_eq!(renderer.graph.chains[0].missed(), 20, "one miss a round trip");
+    assert_eq!(renderer.controller().plugin_time(), (20, 0), "refused blocks publish busy, not completed trips");
     // The effect is skipped: the dry sound.
     assert!(max_diff(&out, &dry) < 1e-6);
 }
@@ -249,7 +489,13 @@ fn an_instrument_that_refuses_a_block_is_silent_for_it() {
     let busy = Busy::new(true);
     let mut plugins = Plugins::new();
     plugins.insert(plugin_devices(&p)[0].key, INSTRUMENT, Box::new(busy));
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let out = blocks(&mut renderer, 10, 480);
     assert_eq!(peak(&out), 0.0, "no sine voice, no plug-in sound: silence");
     assert_eq!(renderer.graph.chains[0].missed(), 10);
@@ -267,7 +513,14 @@ fn an_offline_render_waits_for_a_busy_plug_in_and_loses_no_block() {
         let (processes, patience) = (Arc::clone(&busy.processes), Arc::clone(&busy.patience));
         let mut plugins = Plugins::new();
         plugins.insert(plugin_devices(&p)[0].key, info, Box::new(busy));
-        let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, 480, plugins).unwrap();
+        let out = render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+            SR,
+            480,
+            None,
+        )
+        .unwrap();
         let patience = patience.lock().unwrap().clone();
         assert!(!patience.is_empty());
         assert!(patience.iter().all(|p| *p == OFFLINE_TIMEOUT), "offline every block may wait");
@@ -300,7 +553,13 @@ fn a_processor_that_cannot_split_blocks_runs_them_whole() {
     let processes = Arc::new(AtomicUsize::new(0));
     let mut plugins = Plugins::new();
     plugins.insert(plugin_devices(&p)[0].key, EFFECT, Box::new(Whole { processes: Arc::clone(&processes) }));
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let out = blocks(&mut renderer, 10, 480);
     assert_eq!(processes.load(Ordering::SeqCst), 10, "one process a block");
     assert_eq!(peak(&out), 0.0);
@@ -309,7 +568,14 @@ fn a_processor_that_cannot_split_blocks_runs_them_whole() {
     let processes = Arc::new(AtomicUsize::new(0));
     let mut plugins = Plugins::new();
     plugins.insert(plugin_devices(&p)[0].key, EFFECT, Box::new(Whole { processes: Arc::clone(&processes) }));
-    let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, 480, plugins).unwrap();
+    let out = render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        480,
+        None,
+    )
+    .unwrap();
     assert!(processes.load(Ordering::SeqCst) > 0);
     assert_eq!(peak(&out), 0.0);
 }
@@ -318,13 +584,26 @@ fn a_processor_that_cannot_split_blocks_runs_them_whole() {
 fn a_plug_in_that_misses_passes_the_sound_or_stays_silent_and_the_engine_plays_on() {
     let notes = vec![note(0.0, 4.0, 69)];
     let dry_project = project(notes.clone(), 4.0, vec![device("utility", &[])]);
-    let mut dry = Renderer::with_audio(&dry_project, &AudioPool::new(), SR).unwrap();
+    let mut dry = Renderer::build(
+        &dry_project,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let dry = blocks(&mut dry, 40, 480);
 
     let p = project(notes.clone(), 4.0, vec![plug(vst3())]);
     let effect = Stand::new(Behaviour::Gain(0.5));
     let answering = Arc::clone(&effect.answering);
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(effect, EFFECT)])).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(effect, EFFECT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut out = blocks(&mut renderer, 20, 480);
     answering.store(false, Ordering::SeqCst);
     out.extend(blocks(&mut renderer, 20, 480));
@@ -337,31 +616,43 @@ fn a_plug_in_that_misses_passes_the_sound_or_stays_silent_and_the_engine_plays_o
 
     // An instrument that is gone is silent; a track without one still plays.
     let p = project(notes, 4.0, vec![plug(vst3())]);
-    let mut renderer =
-        Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(Stand::new(Behaviour::Gone), INSTRUMENT)]))
-            .unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gone), INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert_eq!(peak(&blocks(&mut renderer, 20, 480)), 0.0);
 }
 
 #[test]
 fn a_disabled_or_missing_plug_in_passes_the_sound_through() {
     let notes = vec![note(0.0, 1.0, 60)];
-    let plain = render_offline(&project(notes.clone(), 1.0, vec![device("utility", &[])]), SR, 512).unwrap();
+    let plain = render_offline(
+        &project(notes.clone(), 1.0, vec![device("utility", &[])]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
     let mut off = plug(vst3());
     off.enabled = false;
     let p = project(notes.clone(), 1.0, vec![off]);
-    let out = render_offline_with_plugins(
+    let out = render_offline_from(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.0)), EFFECT)])),
         SR,
         512,
-        plugins(&p, vec![(Stand::new(Behaviour::Gain(0.0)), EFFECT)]),
+        None,
     )
     .unwrap();
     assert!(max_diff(&out, &plain) < 1e-6);
     // Missing: no slot at all, the track plays as if it were not there.
     let p = project(notes, 1.0, vec![plug(vst3())]);
-    let bare = render_offline(&p, SR, 512).unwrap();
+    let bare = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
     assert!(peak(&bare) > 0.1);
 }
 
@@ -387,30 +678,39 @@ fn two_tracks(notes: Vec<Note>, devices: Vec<Device>) -> Project {
 fn latency_compensation_lines_every_track_up_with_the_slowest() {
     const LATENCY: usize = 300;
     let p = two_tracks(vec![note(0.0, 1.0, 69)], vec![plug(vst3())]);
-    let out = render_offline_with_plugins(
+    let out = render_offline_from(
         &p,
-        &AudioPool::new(),
-        SR,
-        256,
-        plugins(
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
             &p,
             vec![(Stand::new(Behaviour::Delay(LATENCY)), PluginSlotInfo { latency: LATENCY as u32, ..EFFECT })],
-        ),
+        )),
+        SR,
+        256,
+        None,
     )
     .unwrap();
     // Both tracks play the same note: lined up, the sum is twice one track, delayed by the
     // latency.
-    let one = render_offline(&project(vec![note(0.0, 1.0, 69)], 2.0, vec![device("utility", &[])]), SR, 256).unwrap();
+    let one = render_offline(
+        &project(vec![note(0.0, 1.0, 69)], 2.0, vec![device("utility", &[])]),
+        SR,
+        256,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
     let out = left(&out);
     let one = left(&one);
     assert!(peak(&out[..LATENCY]) == 0.0, "everything waits for the slowest track");
     let doubled: Vec<f32> = one[..BEAT].iter().map(|s| s * 2.0).collect();
     assert!(max_diff(&out[LATENCY..LATENCY + BEAT], &doubled) < 1e-5);
-    let renderer = Renderer::with_plugins(
+    let renderer = Renderer::build(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
+            &p,
+            vec![(Stand::new(Behaviour::Gone), PluginSlotInfo { latency: LATENCY as u32, ..EFFECT })],
+        )),
         SR,
-        plugins(&p, vec![(Stand::new(Behaviour::Gone), PluginSlotInfo { latency: LATENCY as u32, ..EFFECT })]),
+        RenderOptions::PLAYING,
     )
     .unwrap();
     assert_eq!(renderer.latency(), LATENCY as u32);
@@ -421,7 +721,13 @@ fn a_plug_in_arrives_while_playing_and_stays_through_edits_and_restarts() {
     let notes = vec![note(0.0, 8.0, 69)];
     let p = project(notes.clone(), 8.0, vec![plug(vst3())]);
     let key = plugin_devices(&p)[0].key;
-    let mut renderer = Renderer::with_audio(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let mut info = std::collections::HashMap::new();
     info.insert(key, EFFECT);
@@ -480,8 +786,14 @@ fn a_plug_in_on_a_muted_track_keeps_running_and_sounds_again() {
     let key = plugin_devices(&p)[0].key;
     let stand = Stand::new(Behaviour::Instrument);
     let dropped = Arc::clone(&stand.dropped);
-    let mut renderer =
-        Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(stand, INSTRUMENT)])).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     assert!(peak(&blocks(&mut renderer, 5, 480)) > 0.1);
     let mut muted = p.clone();
@@ -505,8 +817,14 @@ fn a_stopped_preview_releases_its_note_on_the_frame_the_stop_applies() {
         let p = project(Vec::new(), 8.0, vec![plug(vst3())]);
         let stand = Stand::new(Behaviour::Instrument);
         let seen = Arc::clone(&stand.seen);
-        let mut renderer =
-            Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(stand, INSTRUMENT)])).unwrap();
+        let mut renderer = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+                .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
         let mut controller = renderer.controller();
         let notes = crate::preview_notes([(0.0, 64.0, 60, 1.0)], 120.0, SR, Some(TrackId(1)), None);
         controller.preview_notes(notes, 1.0).unwrap();
@@ -524,8 +842,14 @@ fn a_plug_in_instrument_is_released_when_the_transport_stops() {
     let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![plug(vst3())]);
     let stand = Stand::new(Behaviour::Instrument);
     let seen = Arc::clone(&stand.seen);
-    let mut renderer =
-        Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(stand, INSTRUMENT)])).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert!(peak(&blocks(&mut renderer, 10, 480)) > 0.1);
     renderer.handle(crate::LaunchCommand::Stop);
     assert_eq!(peak(&blocks(&mut renderer, 10, 480)[960..]), 0.0);
@@ -547,13 +871,26 @@ fn a_renderer_hands_its_plug_ins_to_the_next_one() {
     let key = plugin_devices(&p)[0].key;
     let first = Stand::new(Behaviour::Gain(0.0));
     let dropped = Arc::clone(&first.dropped);
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(first, EFFECT)])).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(first, EFFECT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert_eq!(peak(&blocks(&mut renderer, 4, 480)), 0.0, "the plug-in silences the track");
 
     let plugins = renderer.into_plugins();
     assert_eq!(dropped.load(Ordering::SeqCst), 0, "handed over, not dropped");
     assert_eq!(plugins.info().get(&key), Some(&EFFECT));
-    let mut next = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins).unwrap();
+    let mut next = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert_eq!(peak(&blocks(&mut next, 4, 256)), 0.0, "the same plug-in plays in the new renderer");
 
     // One sent but not placed yet comes back too.
@@ -564,7 +901,13 @@ fn a_renderer_hands_its_plug_ins_to_the_next_one() {
     let back = next.into_plugins();
     assert_eq!(queued_dropped.load(Ordering::SeqCst), 0);
     assert_eq!(dropped.load(Ordering::SeqCst), 1, "the queued one, newer, replaced it");
-    let mut third = Renderer::with_plugins(&p, &AudioPool::new(), SR, back).unwrap();
+    let mut third = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(back),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert!(peak(&blocks(&mut third, 4, 256)) > 0.1, "the queued plug-in plays");
 }
 
@@ -574,7 +917,13 @@ fn a_renderer_hands_its_plug_ins_to_the_next_one() {
 fn a_plug_in_that_arrived_while_playing_is_handed_over_with_its_slot() {
     let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3())]);
     let key = plugin_devices(&p)[0].key;
-    let mut renderer = Renderer::with_audio(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let mut info = std::collections::HashMap::new();
     let latency = PluginSlotInfo { instrument: false, latency: 32 };
@@ -591,7 +940,13 @@ fn a_plug_in_that_arrived_while_playing_is_handed_over_with_its_slot() {
     let plugins = renderer.into_plugins();
     assert_eq!(dropped.load(Ordering::SeqCst), 0);
     assert_eq!(plugins.info().get(&key), Some(&latency));
-    let mut next = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins).unwrap();
+    let mut next = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert_eq!(peak(&blocks(&mut next, 40, 256)), 0.0, "and plays on in the next renderer");
     drop(controller);
 }
@@ -704,7 +1059,14 @@ fn consecutive_plug_ins_of_one_process_share_a_round_trip_and_sound_the_same() {
             followed.push(Arc::clone(&member.followed));
             plugins.insert(found.key, EFFECT, Box::new(member));
         }
-        let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, plugins).unwrap();
+        let out = render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+            SR,
+            512,
+            None,
+        )
+        .unwrap();
         let hows: Vec<Vec<crate::Followed>> = followed.iter().map(|f| f.lock().unwrap().clone()).collect();
         (out, trips.load(Ordering::SeqCst), hows)
     };
@@ -743,7 +1105,14 @@ fn a_joint_block_that_misses_is_a_miss_for_every_plug_in_in_it() {
     plugins.insert(found[0].key, EFFECT, Box::new(first));
     // The second is an instrument: a miss leaves it silent, as when it misses on its own.
     plugins.insert(found[1].key, INSTRUMENT, Box::new(second));
-    let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, plugins).unwrap();
+    let out = render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
     assert_eq!(peak(&out), 0.0);
     let hows = followed.lock().unwrap();
     assert!(!hows.is_empty());
@@ -766,11 +1135,459 @@ fn a_plug_in_with_parameter_events_runs_on_its_own_and_gets_them() {
     let mut plugins = Plugins::new();
     plugins.insert(found[0].key, EFFECT, Box::new(first));
     plugins.insert(found[1].key, EFFECT, Box::new(second));
-    render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, plugins).unwrap();
+    render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
     assert_eq!(*automated.lock().unwrap(), [7], "the value reached b, once");
     // The first block runs a and b in a round trip each, as the joint block's events are a's;
     // every later block runs them in one.
     let joint = followed.lock().unwrap().len();
     assert!(joint > 0);
     assert_eq!(trips.load(Ordering::SeqCst), joint + 2);
+}
+
+fn grouped(branches: Vec<Vec<Device>>) -> Device {
+    let branches = branches.into_iter().map(|devices| Branch { devices, ..Branch::new("B") }).collect();
+    Device::group("G", DeviceGroup::with_branches(branches))
+}
+
+#[test]
+fn a_plug_in_runs_in_a_group_branch_beside_a_dry_one() {
+    let notes = vec![note(0.0, 2.0, 69)];
+    let dry = render_offline(
+        &project(notes.clone(), 2.0, vec![device("utility", &[])]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
+    let p = project(notes, 2.0, vec![device("utility", &[]), grouped(vec![vec![plug(vst3())], vec![]])]);
+    let out = render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)])),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    let len = dry.len().min(out.len());
+    let one_and_a_half: Vec<f32> = dry[..len].iter().map(|s| s * 1.5).collect();
+    assert!(max_diff(&out[..len], &one_and_a_half) < 1e-5, "{}", max_diff(&out[..len], &one_and_a_half));
+}
+
+#[test]
+fn a_plug_ins_latency_is_compensated_inside_its_group() {
+    let notes = vec![note(0.0, 2.0, 69)];
+    let delayed = PluginSlotInfo { instrument: false, latency: 64 };
+    let single = project(notes.clone(), 2.0, vec![device("utility", &[]), plug(vst3())]);
+    let reference = render_offline_from(
+        &single,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&single, vec![(Stand::new(Behaviour::Delay(64)), delayed)])),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    let p = project(notes, 2.0, vec![device("utility", &[]), grouped(vec![vec![plug(vst3())], vec![]])]);
+    let out = render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Delay(64)), delayed)])),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    let len = reference.len().min(out.len());
+    let doubled: Vec<f32> = reference[..len].iter().map(|s| s * 2.0).collect();
+    assert!(peak(&reference) > 0.1);
+    assert!(max_diff(&out[..len], &doubled) < 1e-5, "{}", max_diff(&out[..len], &doubled));
+}
+
+#[test]
+fn plug_in_instruments_in_a_group_are_layered_and_a_gone_one_is_silent() {
+    let notes = vec![note(0.0, 1.0, 60)];
+    let p = project(notes, 2.0, vec![grouped(vec![vec![plug(vst3())], vec![plug(vst3())]])]);
+    let out = render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
+            &p,
+            vec![(Stand::new(Behaviour::Instrument), INSTRUMENT), (Stand::new(Behaviour::Instrument), INSTRUMENT)],
+        )),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    // Each plays 0.5 while the note sounds; the track's gains scale the sum the same for both.
+    let one = render_offline_from(
+        &project(vec![note(0.0, 1.0, 60)], 2.0, vec![plug(vst3())]),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
+            &project(vec![note(0.0, 1.0, 60)], 2.0, vec![plug(vst3())]),
+            vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)],
+        )),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    let len = one.len().min(out.len());
+    let doubled: Vec<f32> = one[..len].iter().map(|s| s * 2.0).collect();
+    assert!(peak(&one) > 0.1);
+    assert!(max_diff(&out[..len], &doubled) < 1e-5);
+    // One of them gone: the other plays alone, the gone one is silent and the render goes on.
+    let half = render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
+            &p,
+            vec![(Stand::new(Behaviour::Instrument), INSTRUMENT), (Stand::new(Behaviour::Gone), INSTRUMENT)],
+        )),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    assert!(max_diff(&half[..len], &one[..len]) < 1e-5, "{}", max_diff(&half[..len], &one[..len]));
+}
+
+#[test]
+fn a_plug_in_keeps_running_when_it_moves_into_a_group() {
+    let notes = vec![note(0.0, 8.0, 69)];
+    let p = project(notes, 8.0, vec![plug(vst3())]);
+    let key = plugin_devices(&p)[0].key;
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let mut info = std::collections::HashMap::new();
+    info.insert(key, EFFECT);
+    controller.set_plugin_info(info);
+    let stand = Stand::new(Behaviour::Gain(0.0));
+    let dropped = Arc::clone(&stand.dropped);
+    controller.send_plugin(key, Box::new(stand)).unwrap();
+    blocks(&mut renderer, 2, 480);
+    controller.update(&p).unwrap();
+    blocks(&mut renderer, 2, 480);
+    assert_eq!(peak(&blocks(&mut renderer, 5, 480)), 0.0, "the plug-in silences the track");
+
+    // Into a group of one branch: the same key, the same process, still silencing.
+    let mut edited = p.clone();
+    let moved = edited.channels[0].devices.remove(0);
+    edited.channels[0].devices.push(grouped(vec![vec![moved]]));
+    assert_eq!(plugin_devices(&edited)[0].key, key);
+    controller.update(&edited).unwrap();
+    assert_eq!(peak(&blocks(&mut renderer, 10, 480)), 0.0);
+    controller.collect();
+    assert_eq!(dropped.load(Ordering::SeqCst), 0, "the plug-in carried over into the group");
+
+    // A restart reaches it inside the group.
+    controller.send_plugin(key, Box::new(Stand::new(Behaviour::Gain(1.0)))).unwrap();
+    assert!(peak(&blocks(&mut renderer, 5, 480)) > 0.1);
+}
+
+/// An audio track playing a 0.5 file (or `level`) in two one-beat clips, the first marked for
+/// the clip host, with `devices` on its channel.
+fn hosted_project(level: f32, devices: Vec<Device>, first_ara: bool, second: bool) -> (Project, AudioPool) {
+    let mut p = project(Vec::new(), 2.0, devices);
+    p.tracks[0].content = ContentKinds { notes: false, audio: true };
+    p.launcher.columns.clear();
+    p.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("dc.wav")) }].into();
+    let clip = |start: f64, ara: bool| Clip { ara, ..Clip::new(ContentId(1), start, 1.0) };
+    p.arrangement.lanes[0].clips =
+        if second { vec![clip(0.0, first_ara), clip(1.0, false)] } else { vec![clip(0.0, first_ara)] };
+    let mut pool = AudioPool::new();
+    let data = crate::AudioData { sample_rate: SR, channels: 1, samples: vec![level; BEAT * 2] };
+    pool.files.insert("dc.wav".into(), Arc::new(data));
+    (p, pool)
+}
+
+/// The channel's clip host plays the ARA clips at their gains and fades, the other clips go past
+/// it; disabled, every clip plays as it is (#990).
+#[test]
+fn a_clip_host_plays_its_clips_at_their_gains_and_the_others_go_past_it() {
+    let mut host = plug(vst3());
+    host.clip_host = true;
+    let (p, pool) = hosted_project(0.5, vec![host.clone()], true, true);
+    let stand = Stand::new(Behaviour::Render(BEAT));
+    let out = render_offline_from(
+        &p,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, EFFECT)])),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    let out = left(&out);
+    // The first beat: the host's 1.0, at the gains a 1.0 file plays the clip at.
+    let (reference, ref_pool) = hosted_project(1.0, Vec::new(), false, false);
+    let full = left(
+        &render_offline_from(
+            &reference,
+            RenderInputs::from_audio(&ref_pool, suhina_device_registry::factory()),
+            SR,
+            512,
+            None,
+        )
+        .unwrap(),
+    );
+    let middle = BEAT / 2;
+    assert!(full[middle] > 0.0);
+    assert!((out[middle] - full[middle]).abs() < 1e-5, "{} vs {}", out[middle], full[middle]);
+    // The click guard at the clip's start scales the host's output too.
+    assert!(out[0].abs() < 1e-6, "{}", out[0]);
+    // The second beat: the plain clip, past the host (which is silent there).
+    let (plain, plain_pool) = hosted_project(0.5, Vec::new(), false, true);
+    let raw = left(
+        &render_offline_from(
+            &plain,
+            RenderInputs::from_audio(&plain_pool, suhina_device_registry::factory()),
+            SR,
+            512,
+            None,
+        )
+        .unwrap(),
+    );
+    let later = BEAT + BEAT / 2;
+    assert!((out[later] - raw[later]).abs() < 1e-5, "{} vs {}", out[later], raw[later]);
+
+    // A disabled host: every clip plays as it is.
+    host.enabled = false;
+    let (p, pool) = hosted_project(0.5, vec![host], true, true);
+    let stand = Stand::new(Behaviour::Render(BEAT));
+    let off = left(
+        &render_offline_from(
+            &p,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory())
+                .with_plugins(plugins(&p, vec![(stand, EFFECT)])),
+            SR,
+            512,
+            None,
+        )
+        .unwrap(),
+    );
+    assert!((off[middle] - raw[middle]).abs() < 1e-5, "{} vs {}", off[middle], raw[middle]);
+}
+
+#[test]
+fn a_carried_instrument_releases_old_notes_before_the_new_engine_chases_them() {
+    let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3())]);
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut current = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    blocks(&mut current, 1, 1024);
+    for size in [1024, 2048, 1024, 2048] {
+        seen.lock().unwrap().clear();
+        let carried = current.into_plugins();
+        current = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(carried),
+            SR,
+            RenderOptions::STOPPED,
+        )
+        .unwrap();
+        current.handle(crate::LaunchCommand::SetPosition { beat: 1.0 });
+        current.handle(crate::LaunchCommand::Play);
+        blocks(&mut current, 1, size);
+        let events = seen.lock().unwrap();
+        let off = events.iter().position(|(_, e)| matches!(e, NoteEvent::Off { key: 69, .. }));
+        let on = events.iter().position(|(_, e)| matches!(e, NoteEvent::On { .. }));
+        assert!(off.zip(on).is_some_and(|(off, on)| off < on), "old voices must be released before chase: {events:?}");
+    }
+}
+
+#[test]
+fn play_chases_a_plugin_note_without_a_step_from_silence() {
+    let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3())]);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)])),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    let before = blocks(&mut renderer, 1, 128);
+    assert_eq!(peak(&before), 0.0);
+    renderer.handle(crate::LaunchCommand::SetPosition { beat: 2.0 });
+    renderer.handle(crate::LaunchCommand::Play);
+    let after = blocks(&mut renderer, 4, 32);
+    assert_eq!(after[0], 0.0, "Play must begin continuously from the previous output sample");
+    assert!(after[after.len() - 2] > 0.4, "the guard must not mute the note");
+    let largest_step = left(&after).windows(2).map(|s| (s[1] - s[0]).abs()).fold(0.0, f32::max);
+    assert!(largest_step < 0.01, "the attack must be short and smooth: {largest_step}");
+}
+
+#[test]
+fn play_guard_reaches_a_plugin_note_after_reported_processing_latency() {
+    for beat in [0.0, 2.0] {
+        let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3()), plug(vst3())]);
+        let mut renderer = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
+                &p,
+                vec![
+                    (Stand::new(Behaviour::Instrument), INSTRUMENT),
+                    (Stand::new(Behaviour::Delay(512)), PluginSlotInfo { latency: 512, ..EFFECT }),
+                ],
+            )),
+            SR,
+            RenderOptions::STOPPED,
+        )
+        .unwrap();
+        blocks(&mut renderer, 1, 128);
+        renderer.handle(crate::LaunchCommand::SetPosition { beat });
+        renderer.handle(crate::LaunchCommand::Play);
+        let after = blocks(&mut renderer, 24, 32);
+        assert!(peak(&after) > 0.4);
+        let largest_step = left(&after).windows(2).map(|s| (s[1] - s[0]).abs()).fold(0.0, f32::max);
+        assert!(largest_step < 0.01, "delayed onset at beat {beat} has step {largest_step}");
+    }
+}
+
+#[test]
+fn pitch_releases_the_transposed_plugin_note_on_repeated_transport_starts() {
+    let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![device("pitch", &[("pitch", 12.0)]), plug(vst3())]);
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    for beat in [0.0, 2.0, 2.0, 0.0] {
+        seen.lock().unwrap().clear();
+        renderer.handle(crate::LaunchCommand::SetPosition { beat });
+        renderer.handle(crate::LaunchCommand::Play);
+        blocks(&mut renderer, 1, 256);
+        renderer.handle(crate::LaunchCommand::Stop);
+        blocks(&mut renderer, 1, 256);
+        let events = seen.lock().unwrap();
+        let notes: Vec<_> = events
+            .iter()
+            .filter_map(|(_, e)| match e {
+                NoteEvent::On { key, .. } => Some((true, *key)),
+                NoteEvent::Off { key, .. } => Some((false, *key)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(notes, vec![(true, 81), (false, 81)], "beat {beat}");
+    }
+}
+
+#[test]
+fn stopping_a_plugin_note_joins_the_delayed_release_without_a_step() {
+    for latency in [0, 512] {
+        for stop in [crate::LaunchCommand::Stop, crate::LaunchCommand::StopHere] {
+            let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3()), plug(vst3())]);
+            let mut renderer = Renderer::build(
+                &p,
+                RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
+                    &p,
+                    vec![
+                        (Stand::new(Behaviour::Instrument), INSTRUMENT),
+                        (Stand::new(Behaviour::Delay(latency)), PluginSlotInfo { latency: latency as u32, ..EFFECT }),
+                    ],
+                )),
+                SR,
+                RenderOptions::STOPPED,
+            )
+            .unwrap();
+            renderer.handle(crate::LaunchCommand::SetPosition { beat: 2.0 });
+            renderer.handle(crate::LaunchCommand::Play);
+            let before = blocks(&mut renderer, 32, 32);
+            assert!(before.last().copied().unwrap() > 0.4);
+            renderer.handle(stop);
+            let after = blocks(&mut renderer, 32, 32);
+            let mut joined = vec![*before.last().unwrap()];
+            joined.extend(left(&after));
+            let largest_step = joined.windows(2).map(|s| (s[1] - s[0]).abs()).fold(0.0, f32::max);
+            assert!(largest_step < 0.01, "stop with latency {latency} has step {largest_step}");
+            assert_eq!(*after.last().unwrap(), 0.0);
+        }
+    }
+}
+
+fn diagnostic_slot(processor: Box<dyn PluginProcessor>) -> crate::plugin::PluginSlot {
+    crate::plugin::PluginSlot {
+        key: 1,
+        processor: Some(processor),
+        instrument: false,
+        latency: 0,
+        enabled: true,
+        missed: 0,
+        busy: 0,
+        longest_us: 0,
+        sent_at: None,
+        params: crate::plugin_params::SlotParams::new(&plug(vst3()), BEAT as f64),
+    }
+}
+
+#[test]
+fn unanswered_trips_do_not_replace_the_longest_answered_trip() {
+    use std::time::Instant;
+    let mut slot = diagnostic_slot(Box::new(Stand::new(Behaviour::Gone)));
+    slot.longest_us = 7;
+    let deadline = Some(Instant::now() + Duration::from_secs(1));
+    let mut samples = [0.0; 16];
+    slot.run(&mut samples, &[], deadline);
+    assert_eq!(slot.longest_us, 7);
+    slot.sent_at = Instant::now().checked_sub(Duration::from_millis(10));
+    assert!(!slot.finish(&mut samples, deadline));
+    assert_eq!(slot.longest_us, 7);
+    assert!(slot.sent_at.is_none());
+}
+
+#[test]
+fn joint_sends_record_busy_and_successful_trip_timing() {
+    use std::time::Instant;
+    struct JointProbe(bool);
+    impl PluginProcessor for JointProbe {
+        fn process(&mut self, _: &mut [f32], _: &[(usize, NoteEvent)], _: Duration) -> bool {
+            false
+        }
+        fn send_joint(&mut self, _: &[f32], _: &[(usize, NoteEvent)], _: &[u32], _: Duration) -> Sent {
+            if self.0 { Sent::Out } else { Sent::Refused }
+        }
+        fn wait(&mut self, _: &mut [f32], _: Duration) -> bool {
+            self.0
+        }
+    }
+    let deadline = Some(Instant::now() + Duration::from_secs(1));
+    let mut samples = [0.0; 16];
+    let mut slot = diagnostic_slot(Box::new(JointProbe(false)));
+    assert_eq!(slot.send_joint(&mut samples, &[], &[2], deadline), Sent::Refused);
+    assert_eq!((slot.busy, slot.missed), (1, 1));
+    assert!(slot.sent_at.is_none());
+    slot.processor = Some(Box::new(JointProbe(true)));
+    assert_eq!(slot.send_joint(&mut samples, &[], &[2], deadline), Sent::Out);
+    assert!(slot.sent_at.is_some());
+    slot.sent_at = Instant::now().checked_sub(Duration::from_millis(10));
+    assert!(slot.finish(&mut samples, deadline));
+    assert!(slot.longest_us >= 10_000);
+    let longest = slot.longest_us;
+    assert_eq!(slot.send_joint(&mut samples, &[], &[2], None), Sent::Out);
+    assert!(slot.finish(&mut samples, None));
+    assert_eq!(slot.longest_us, longest, "offline work does not pollute real-time diagnostics");
 }

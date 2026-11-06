@@ -16,7 +16,7 @@ use suhina_engine::model::{Clip, LaneData, Note, Project, TrackId};
 
 use crate::detail::detail_view::ClipRef;
 use crate::detail::piano_roll::{Placement, key_name};
-use crate::interaction::grid::default_track_colour;
+use crate::interaction::grid::track_colour;
 use crate::kit::theme;
 
 /// The most ghost notes one clip shows, so a big project never draws without end.
@@ -73,6 +73,8 @@ pub struct GhostNote {
     pub color: Color32,
     /// Its track's name, as an index into [`Ghosts::sources`].
     pub source: usize,
+    /// The clip it comes from.
+    pub clip: ClipRef,
 }
 
 impl GhostNote {
@@ -86,6 +88,42 @@ impl GhostNote {
             release_velocity: 0.0,
             channel: 0,
             muted: false,
+        }
+    }
+}
+
+/// A clip of several picked, as the strip over the piano roll shows it, in the edited clip's content
+/// beats.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PickedBar {
+    pub clip: ClipRef,
+    pub start: f64,
+    pub length: f64,
+    pub name: String,
+    pub color: Color32,
+    /// Whether it is the clip being edited.
+    pub edited: bool,
+    /// Its row of the strip, from the top: clips at the same time lie one above the other.
+    pub row: usize,
+}
+
+/// How many rows the strip of picked clips has at most; further clips at the same time share the last.
+pub const MAX_STRIP_ROWS: usize = 4;
+
+/// Gives each bar the first row free where it starts, the earliest bars first.
+fn lay_out_bars(bars: &mut [PickedBar]) {
+    let mut order: Vec<usize> = (0..bars.len()).collect();
+    order.sort_by(|a, b| {
+        let start = |i: &usize| bars.get(*i).map_or(0.0, |bar| bar.start);
+        start(a).total_cmp(&start(b))
+    });
+    let mut ends = [f64::NEG_INFINITY; MAX_STRIP_ROWS];
+    for index in order {
+        let Some(bar) = bars.get_mut(index) else { continue };
+        let row = ends.iter().position(|end| *end <= bar.start + 1e-9).unwrap_or(MAX_STRIP_ROWS - 1);
+        bar.row = row;
+        if let Some(end) = ends.get_mut(row) {
+            *end = end.max(bar.start + bar.length);
         }
     }
 }
@@ -104,6 +142,20 @@ pub struct Ghosts {
     /// The names of the tracks the ghost notes come from.
     pub sources: Vec<String>,
     pub choices: Vec<GhostChoice>,
+    /// With several MIDI clips picked, each of them.
+    pub picked: Vec<PickedBar>,
+}
+
+impl Ghosts {
+    /// How many rows the strip of picked clips takes.
+    pub fn strip_rows(&self) -> usize {
+        self.picked.iter().map(|bar| bar.row + 1).max().unwrap_or(0)
+    }
+
+    /// Whether `clip` is one of the clips picked together with the edited one.
+    pub fn is_picked(&self, clip: ClipRef) -> bool {
+        self.picked.iter().any(|bar| bar.clip == clip)
+    }
 }
 
 /// The ghost notes `source` gives the edited clip `edited`, and the clips the menu offers.
@@ -117,7 +169,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         return ghosts;
     };
     // The clips shown, each with the time it is laid out in.
-    let mut shown: Vec<(TrackId, &Clip, Placement)> = Vec::new();
+    let mut shown: Vec<(ClipRef, &Clip, Placement)> = Vec::new();
     let mut add = |clip: ClipRef, rebase: bool| {
         if clip == edited {
             return;
@@ -127,7 +179,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
             if rebase {
                 at.start = mine.start;
             }
-            shown.push((clip.track(), other, at));
+            shown.push((clip, other, at));
         }
     };
     match (source, edited) {
@@ -135,9 +187,9 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         (GhostSource::Together, ClipRef::Arrangement(..)) => {
             for lane in &project.arrangement.lanes {
                 let Some(track) = lane.track else { continue };
-                for (index, clip) in lane.clips.iter().enumerate() {
+                for clip in &lane.clips {
                     if clip.enabled && overlaps(clip, window) {
-                        add(ClipRef::Arrangement(track, index), false);
+                        add(ClipRef::Arrangement(track, clip.id), false);
                     }
                 }
             }
@@ -151,8 +203,8 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         }
         (GhostSource::Track, ClipRef::Arrangement(track, _)) => {
             let lane = project.arrangement.lanes.iter().find(|l| l.track == Some(track));
-            for index in 0..lane.map_or(0, |l| l.clips.len()) {
-                add(ClipRef::Arrangement(track, index), true);
+            for clip in lane.map_or(&[][..], |l| &l.clips) {
+                add(ClipRef::Arrangement(track, clip.id), true);
             }
         }
         (GhostSource::Track, ClipRef::Slot(track, _)) => {
@@ -163,14 +215,19 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         }
         (GhostSource::Clip(clip), _) => add(clip, true),
     }
-    for (track, clip, at) in shown {
+    for (from, clip, at) in shown {
         if ghosts.notes.len() >= MAX_GHOSTS {
             break;
         }
+        let track = from.track();
         let Some(notes) = notes_of(project, track, clip) else { continue };
         let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
-        let name = project.tracks.get(position).map_or_else(String::new, |t| t.name.clone());
-        let rgb = project.tracks.get(position).and_then(|t| t.color).unwrap_or_else(|| default_track_colour(position));
+        let name = project.tracks.get(position).map_or_else(String::new, |t| project.shown_track_name(t.id));
+        let rgb = project
+            .tracks
+            .get(position)
+            .map(|track| track_colour(track, position))
+            .unwrap_or_else(|| crate::interaction::grid::to_rgb(theme::midi_clip_default()));
         let color = Color32::from_rgb(rgb.0, rgb.1, rgb.2);
         let source = ghosts.sources.iter().position(|s| *s == name).unwrap_or(ghosts.sources.len());
         let before = ghosts.notes.len();
@@ -180,6 +237,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
             key,
             color,
             source,
+            clip: from,
         });
         // A track is named only when it gave a ghost note.
         if source == ghosts.sources.len() && ghosts.notes.len() > before {
@@ -187,6 +245,82 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         }
     }
     ghosts
+}
+
+/// The notes of the other MIDI clips picked with the edited one (`picked`, arrangement clips),
+/// faint where they play in arrangement time, for editing several clips in one piano roll
+/// (#1054): the edited clip's time runs on past its end and over all of them, from where it
+/// starts. Added to `ghosts` (each picked clip once, beside what its source gave).
+pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts: &mut Ghosts) {
+    let Some(edited_clip) = clip_at(project, edited) else { return };
+    let mine = placement(edited, edited_clip);
+    let Some(first) = first_pass(&mine) else { return };
+    let end = picked
+        .iter()
+        .filter_map(|c| clip_at(project, *c).map(|clip| placement(*c, clip)))
+        .map(|p| p.start + p.length)
+        .fold(first.end, f64::max);
+    let window = Window { end, ..first };
+    for clip in picked.iter().copied() {
+        let Some(other) = clip_at(project, clip) else { continue };
+        let track = clip.track();
+        if notes_of(project, track, other).is_none() {
+            continue;
+        }
+        let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
+        let rgb = project
+            .tracks
+            .get(position)
+            .map(|track| track_colour(track, position))
+            .unwrap_or_else(|| crate::interaction::grid::to_rgb(theme::midi_clip_default()));
+        let at = placement(clip, other);
+        let content = project.content(other.content).map_or("", |c| c.name.as_str());
+        ghosts.picked.push(PickedBar {
+            clip,
+            start: at.start - first.start + first.content,
+            length: at.length,
+            name: format!("{} - {}", project.shown_track_name(track), content),
+            color: Color32::from_rgb(rgb.0, rgb.1, rgb.2),
+            edited: clip == edited,
+            row: 0,
+        });
+    }
+    lay_out_bars(&mut ghosts.picked);
+    for clip in picked.iter().copied().filter(|c| *c != edited) {
+        if ghosts.notes.len() >= MAX_GHOSTS {
+            break;
+        }
+        let Some(other) = clip_at(project, clip) else { continue };
+        let track = clip.track();
+        let Some(notes) = notes_of(project, track, other) else { continue };
+        let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
+        let name = project.tracks.get(position).map_or_else(String::new, |t| project.shown_track_name(t.id));
+        let rgb = project
+            .tracks
+            .get(position)
+            .map(|track| track_colour(track, position))
+            .unwrap_or_else(|| crate::interaction::grid::to_rgb(theme::midi_clip_default()));
+        let color = Color32::from_rgb(rgb.0, rgb.1, rgb.2);
+        let source = ghosts.sources.iter().position(|s| *s == name).unwrap_or(ghosts.sources.len());
+        let before = ghosts.notes.len();
+        // A clip the source already showed (playing together) is not drawn twice.
+        let at = placement(clip, other);
+        let already = |n: &GhostNote| n.source == source;
+        if ghosts.notes.iter().any(already) && at.start < first.end {
+            continue;
+        }
+        map_notes(&at, notes, window, &mut ghosts.notes, |start, length, key| GhostNote {
+            start,
+            length,
+            key,
+            color,
+            source,
+            clip,
+        });
+        if source == ghosts.sources.len() && ghosts.notes.len() > before {
+            ghosts.sources.push(name);
+        }
+    }
 }
 
 /// The part of the edited clip's time its ghost notes are mapped into: from `start` to `end` in
@@ -312,8 +446,8 @@ fn overlaps(clip: &Clip, window: Window) -> bool {
 
 fn clip_at(project: &Project, at: ClipRef) -> Option<&Clip> {
     match at {
-        ClipRef::Arrangement(track, index) => {
-            project.arrangement.lanes.iter().find(|l| l.track == Some(track))?.clips.get(index)
+        ClipRef::Arrangement(track, id) => {
+            project.arrangement.lanes.iter().find(|l| l.track == Some(track))?.clips.iter().find(|c| c.id == id)
         }
         ClipRef::Slot(track, scene) => {
             project.launcher.columns.iter().find(|c| c.track == track)?.slots.get(scene)?.clip.as_ref()
@@ -328,7 +462,7 @@ fn notes_of<'a>(project: &'a Project, track: TrackId, clip: &Clip) -> Option<&'a
         return None;
     }
     content.lanes.iter().filter(|l| l.target.is_none_or(|t| t == track)).find_map(|l| match &l.data {
-        LaneData::Notes(notes) => Some(notes.as_slice()),
+        LaneData::Notes(notes) => Some(&notes[..]),
         LaneData::Audio(_) => None,
     })
 }
@@ -338,7 +472,7 @@ fn notes_of<'a>(project: &'a Project, track: TrackId, clip: &Clip) -> Option<&'a
 fn choices(project: &Project, edited: ClipRef) -> Vec<GhostChoice> {
     let ts = project.transport.time_signature;
     let bar = if ts.denominator == 0 { 4.0 } else { f64::from(ts.numerator.max(1)) * 4.0 / f64::from(ts.denominator) };
-    let track_name = |track: TrackId| project.tracks.iter().find(|t| t.id == track).map_or("", |t| t.name.as_str());
+    let track_name = |track: TrackId| project.shown_track_name(track);
     let content_name = |track: TrackId, clip: &Clip| -> Option<String> {
         notes_of(project, track, clip)?;
         let name = project.content(clip.content).map_or("", |c| c.name.as_str());
@@ -347,8 +481,8 @@ fn choices(project: &Project, edited: ClipRef) -> Vec<GhostChoice> {
     let mut out = Vec::new();
     for lane in &project.arrangement.lanes {
         let Some(track) = lane.track else { continue };
-        for (index, clip) in lane.clips.iter().enumerate() {
-            let at = ClipRef::Arrangement(track, index);
+        for clip in &lane.clips {
+            let at = ClipRef::Arrangement(track, clip.id);
             if at == edited || out.len() >= MAX_CHOICES {
                 continue;
             }
@@ -377,6 +511,11 @@ fn choices(project: &Project, edited: ClipRef) -> Vec<GhostChoice> {
 
 /// Paints the ghost notes on `painter` (the grid's), each at the rectangle `rect_of` gives it:
 /// a fill in its track's colour at [`GHOST_ALPHA`], no name, no edge and no velocity stem.
+/// The clip of the ghost note at `pos`, the one drawn last when several are there.
+pub(crate) fn ghost_at(ghosts: &Ghosts, pos: egui::Pos2, rect_of: impl Fn(&GhostNote) -> Rect) -> Option<ClipRef> {
+    ghosts.notes.iter().rev().find(|g| rect_of(g).contains(pos)).map(|g| g.clip)
+}
+
 pub(crate) fn paint(painter: &Painter, ghosts: &Ghosts, visible: Rect, rect_of: impl Fn(&GhostNote) -> Rect) {
     for ghost in &ghosts.notes {
         let rect = rect_of(ghost);
@@ -401,8 +540,8 @@ pub(crate) fn for_readers(ui: &Ui, ghosts: &Ghosts, visible: Rect, rect_of: impl
         labelled += 1;
         let from = ghosts.sources.get(ghost.source).map_or("", String::as_str);
         let label = format!("Ghost note {} at beat {} from {from}", key_name(ghost.key), round(ghost.start));
-        let response = ui.interact(rect, Id::new(("piano-roll-ghost", i)), Sense::hover());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+        let response = ui.interact(rect, Id::unique(("piano-roll-ghost", i)), Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
     }
 }
 
@@ -427,7 +566,7 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
             let mut entry = |ui: &mut Ui, choice: GhostSource, shown: &str, label: &str| {
                 let on = *source == choice;
                 let response = ui.selectable_label(on, egui::RichText::new(shown).font(font.clone()));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, label));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
                 if response.clicked() {
                     picked = Some(choice);
                     ui.close();
@@ -452,12 +591,12 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
                 });
             });
             clip_menu.response.widget_info(|| {
-                egui::WidgetInfo::selected(egui::WidgetType::Button, true, chosen, "Ghost notes: Clip\u{2026}")
+                egui::WidgetInfo::selected(egui::Role::Button, true, chosen, "Ghost notes: Clip\u{2026}")
             });
         });
         let label = format!("Ghost notes {}", source.name(ghosts));
         crate::detail::piano_roll::menu_arrow(ui, menu.response.rect, color);
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         shown = menu.response.rect;
         menu.response.on_hover_text(format!(
             "Ghost notes: {}. Notes of other clips drawn faintly behind this clip's notes",
@@ -471,156 +610,5 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::demo::demo_project;
-
-    fn note(time: f64, duration: f64, key: u8) -> Note {
-        Note { time, duration, key, velocity: 0.8, release_velocity: 0.5, channel: 0, muted: false }
-    }
-
-    fn at(start: f64, length: f64, offset: f64, loop_range: Option<(f64, f64)>) -> Placement {
-        Placement { start, length, offset, loop_range }
-    }
-
-    /// The ghosts of `notes` laid out at `other` in the first pass of `edited`: (start, length, key).
-    fn mapped(edited: Placement, other: Placement, notes: &[Note]) -> Vec<(f64, f64, u8)> {
-        let mut out = Vec::new();
-        if let Some(window) = first_pass(&edited) {
-            map_notes(&other, notes, window, &mut out, |s, l, k| (s, l, k));
-        }
-        out
-    }
-
-    #[test]
-    fn a_clip_at_the_same_place_maps_note_for_note() {
-        let notes = [note(0.0, 1.0, 40), note(2.5, 0.5, 43)];
-        let got = mapped(at(8.0, 4.0, 0.0, None), at(8.0, 4.0, 0.0, None), &notes);
-        assert_eq!(got, vec![(0.0, 1.0, 40), (2.5, 0.5, 43)]);
-    }
-
-    #[test]
-    fn a_clip_starting_before_shows_only_what_sounds_inside() {
-        // The other clip starts 2 beats earlier: its note at 1 sounds before, the one at 3 lands
-        // on the edited clip's beat 1, and a note held across the edited clip's start is cut there.
-        let notes = [note(1.0, 0.5, 40), note(3.0, 1.0, 41), note(1.5, 1.0, 42)];
-        let got = mapped(at(10.0, 4.0, 0.0, None), at(8.0, 8.0, 0.0, None), &notes);
-        assert_eq!(got, vec![(1.0, 1.0, 41), (0.0, 0.5, 42)]);
-    }
-
-    #[test]
-    fn a_clip_starting_after_lands_later_and_is_cut_at_the_end() {
-        let notes = [note(0.0, 1.0, 40), note(1.5, 2.0, 41), note(3.0, 1.0, 42)];
-        let got = mapped(at(0.0, 4.0, 0.0, None), at(2.0, 4.0, 0.0, None), &notes);
-        // 0 -> 2; 1.5 -> 3.5, cut to half a beat at the edited clip's end; 3 -> 5 is past it.
-        assert_eq!(got, vec![(2.0, 1.0, 40), (3.5, 0.5, 41)]);
-    }
-
-    #[test]
-    fn clips_that_do_not_overlap_show_nothing() {
-        let notes = [note(0.0, 1.0, 40)];
-        assert!(mapped(at(0.0, 4.0, 0.0, None), at(4.0, 4.0, 0.0, None), &notes).is_empty());
-        assert!(mapped(at(8.0, 4.0, 0.0, None), at(0.0, 4.0, 0.0, None), &notes).is_empty());
-    }
-
-    #[test]
-    fn an_offset_moves_the_content_on_both_sides() {
-        // The other clip starts playing its content at beat 2: its note at 2 sounds first. The
-        // edited clip's offset 1 puts its first beat in time at content beat 1.
-        let notes = [note(0.0, 1.0, 40), note(2.0, 1.0, 41), note(3.0, 1.0, 42)];
-        let got = mapped(at(0.0, 4.0, 1.0, None), at(0.0, 4.0, 2.0, None), &notes);
-        assert_eq!(got, vec![(1.0, 1.0, 41), (2.0, 1.0, 42)]);
-    }
-
-    #[test]
-    fn a_looping_clip_repeats_its_loop_through_the_window() {
-        // A one-beat loop of one note under an eight-beat edited clip: eight ghosts, a beat apart,
-        // each cut at the loop's end.
-        let notes = [note(0.0, 2.0, 40), note(1.5, 0.5, 41)];
-        let got = mapped(at(0.0, 8.0, 0.0, None), at(0.0, 16.0, 0.0, Some((0.0, 1.0))), &notes);
-        assert_eq!(got.len(), 8);
-        for (i, ghost) in got.iter().enumerate() {
-            assert_eq!(*ghost, (i as f64, 1.0, 40));
-        }
-    }
-
-    #[test]
-    fn a_looping_clip_with_an_offset_plays_its_first_part_once() {
-        // Content 0..4 loops from 2 to 4, played from offset 1: beats 1, 2, 3 once, then 2, 3 round.
-        let notes = [note(1.0, 0.5, 40), note(2.0, 0.5, 41), note(3.0, 0.5, 42)];
-        let got = mapped(at(0.0, 7.0, 0.0, None), at(0.0, 7.0, 1.0, Some((2.0, 4.0))), &notes);
-        let keys: Vec<(f64, u8)> = got.iter().map(|g| (g.0, g.2)).collect();
-        assert_eq!(keys, vec![(0.0, 40), (1.0, 41), (2.0, 42), (3.0, 41), (4.0, 42), (5.0, 41), (6.0, 42)]);
-    }
-
-    #[test]
-    fn a_looping_clip_far_before_skips_to_the_passes_inside() {
-        let notes = [note(0.5, 0.25, 40)];
-        let got = mapped(at(1000.0, 2.0, 0.0, None), at(0.0, 2000.0, 0.0, Some((0.0, 1.0))), &notes);
-        assert_eq!(got, vec![(0.5, 0.25, 40), (1.5, 0.25, 40)]);
-    }
-
-    #[test]
-    fn the_edited_clip_maps_its_first_pass_only() {
-        // The edited clip loops 0..4 for 16 beats: only its first 4 beats in time take ghosts.
-        let notes: Vec<Note> = (0..16).map(|b| note(f64::from(b), 0.5, 40 + b as u8)).collect();
-        let edited = at(0.0, 16.0, 0.0, Some((0.0, 4.0)));
-        assert_eq!(first_pass(&edited), Some(Window { start: 0.0, end: 4.0, content: 0.0 }));
-        let got = mapped(edited, at(0.0, 16.0, 0.0, None), &notes);
-        assert_eq!(got.iter().map(|g| g.2).collect::<Vec<_>>(), vec![40, 41, 42, 43]);
-        // Played from offset 3, its first pass is a single beat at content beat 3.
-        let edited = at(0.0, 16.0, 3.0, Some((0.0, 4.0)));
-        assert_eq!(first_pass(&edited), Some(Window { start: 0.0, end: 1.0, content: 3.0 }));
-        assert_eq!(mapped(edited, at(0.0, 16.0, 0.0, None), &notes), vec![(3.0, 0.5, 40)]);
-    }
-
-    #[test]
-    fn muted_notes_and_a_tiny_loop_never_run_away() {
-        let notes = [note(0.0, 1.0, 40), Note { muted: true, ..note(0.0, 1.0, 41) }];
-        let got = mapped(at(0.0, 1.0e6, 0.0, None), at(0.0, 1.0e6, 0.0, Some((0.0, 0.001))), &notes);
-        assert_eq!(got.len(), MAX_GHOSTS);
-        assert!(got.iter().all(|g| g.2 == 40));
-        assert!(mapped(at(0.0, f64::NAN, 0.0, None), at(0.0, 4.0, 0.0, None), &notes).is_empty());
-    }
-
-    /// The demo clip at bar 17 on Drums (index 1 on its lane).
-    const BEAT_B: ClipRef = ClipRef::Arrangement(TrackId(1), 1);
-
-    #[test]
-    fn playing_together_shows_the_overlapping_clips_of_other_tracks() {
-        let project = demo_project();
-        let got = ghosts(&project, BEAT_B, GhostSource::Together);
-        // Walk on Bass, Chords 1 on Keys (both at 64): a one-bar figure each in the first pass.
-        assert_eq!(got.sources, vec!["Bass".to_string(), "Keys".to_string()]);
-        let bass: Vec<(f64, u8)> = got.notes.iter().filter(|g| g.source == 0).map(|g| (g.start, g.key)).collect();
-        assert_eq!(bass, vec![(0.0, 40), (1.0, 47), (2.0, 43), (3.0, 45)]);
-        assert!(got.notes.iter().all(|g| g.length == 0.5));
-        assert!(!got.choices.iter().any(|c| c.clip == BEAT_B));
-        assert!(got.choices.iter().any(|c| c.name == "Walk on Bass at bar 17"));
-        assert!(got.choices.iter().any(|c| c.name == "Walk on Bass in scene 2"));
-    }
-
-    #[test]
-    fn none_this_track_and_one_clip() {
-        let project = demo_project();
-        assert!(ghosts(&project, BEAT_B, GhostSource::None).notes.is_empty());
-        // The other three clips on Drums, each from the edited clip's start.
-        let track = ghosts(&project, BEAT_B, GhostSource::Track);
-        assert_eq!(track.sources, vec!["Drums".to_string()]);
-        assert_eq!(track.notes.len(), 12);
-        let vox = ghosts(&project, BEAT_B, GhostSource::Clip(ClipRef::Slot(TrackId(4), 2)));
-        assert_eq!(vox.sources, vec!["Vox".to_string()]);
-        assert_eq!(vox.notes.iter().map(|g| g.key).collect::<Vec<_>>(), vec![67, 74, 70, 72]);
-        // The edited clip itself is never its own ghost.
-        assert!(ghosts(&project, BEAT_B, GhostSource::Clip(BEAT_B)).notes.is_empty());
-    }
-
-    #[test]
-    fn a_slot_clip_shows_the_other_slots_of_its_scene() {
-        let project = demo_project();
-        // Scene 3 (index 2): Beat B, Walk, Chords 2, Hook.
-        let got = ghosts(&project, ClipRef::Slot(TrackId(1), 2), GhostSource::Together);
-        assert_eq!(got.sources, vec!["Bass".to_string(), "Keys".to_string(), "Vox".to_string()]);
-        assert_eq!(got.notes.len(), 12);
-    }
-}
+#[path = "piano_roll_ghosts_tests.rs"]
+mod tests;

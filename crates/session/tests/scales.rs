@@ -7,9 +7,11 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers outside #[test] functions
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::Session;
+
+use crate::support::run;
 
 fn note(time: f64, key: u8) -> Note {
     Note { time, duration: 1.0, key, velocity: 100.0 / 127.0, release_velocity: 0.5, channel: 0, muted: false }
@@ -17,6 +19,7 @@ fn note(time: f64, key: u8) -> Note {
 
 fn clip(content: u32) -> Clip {
     Clip {
+        id: Default::default(),
         content: ContentId(content),
         start: 0.0,
         length: 4.0,
@@ -29,6 +32,8 @@ fn clip(content: u32) -> Clip {
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         launch: Default::default(),
+        color: None,
+        ara: false,
         extensions: Extensions::default(),
     }
 }
@@ -36,11 +41,15 @@ fn clip(content: u32) -> Clip {
 /// Track 1 "Keys": arrangement clips 0 and 1 both play content 1 (a duplicate), clip 2 is audio;
 /// scene 1's slot plays content 1 too, scene 2's slot is empty.
 fn project() -> Project {
+    suhina_test_support::with_ids(project_built())
+}
+
+fn project_built() -> Project {
     let content = |id: u32, data: LaneData| ClipContent {
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data }],
+        lanes: vec![ContentLane { target: None, data }].into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -52,7 +61,7 @@ fn project() -> Project {
         duration_seconds: None,
         warped: false,
         stretch: StretchMode::default(),
-        warp_markers: Vec::new(),
+        warp_markers: Default::default(),
         gain: 1.0,
         transpose: 0.0,
         stream: None,
@@ -70,16 +79,18 @@ fn project() -> Project {
             extensions: Extensions::default(),
         }],
         contents: vec![
-            content(1, LaneData::Notes(vec![note(0.0, 60), note(1.0, 61), note(2.0, 66)])),
+            content(1, LaneData::Notes(vec![note(0.0, 60), note(1.0, 61), note(2.0, 66)].into())),
             content(2, LaneData::Audio(audio)),
         ],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "Keys".into(),
                 track: Some(TrackId(1)),
                 clips: vec![clip(1), Clip { start: 4.0, ..clip(1) }, Clip { start: 8.0, ..clip(2) }],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
+            takes: Vec::new(),
         },
         launcher: Launcher {
             scenes: vec![Scene::default(), Scene::default()],
@@ -91,10 +102,6 @@ fn project() -> Project {
         },
         ..Project::default()
     }
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
 }
 
 /// The scale of the content arrangement clip `index` plays.
@@ -144,7 +151,7 @@ fn set_scale_sets_the_root_and_mode_and_undo_takes_it_back() {
 #[test]
 fn off_clears_the_scale_and_a_call_that_changes_nothing_is_no_undo_step() {
     let mut session = Session::new(project());
-    run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 1, "root": "C", "mode": "major" })).unwrap();
+    run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 0, "root": "C", "mode": "major" })).unwrap();
     let slot = |s: &Session| {
         let clip = s.project().launcher.columns[0].slots[0].clip.as_ref().unwrap();
         s.project().content(clip.content).and_then(|c| c.scale)
@@ -152,14 +159,14 @@ fn off_clears_the_scale_and_a_call_that_changes_nothing_is_no_undo_step() {
     assert_eq!(slot(&session), scale(0, ScaleMode::Major));
     // The same scale again changes nothing and leaves the undo history as it was.
     let steps = |s: &mut Session| run(s, "project.info", json!({})).unwrap()["can_undo"].clone();
-    let done = run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 1, "root": 0, "mode": "major" }));
+    let done = run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 0, "root": 0, "mode": "major" }));
     assert_eq!(done.unwrap()["changed"], json!(false));
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(slot(&session), None, "one undo took back the first call");
     assert_eq!(steps(&mut session), json!(false));
 
     run(&mut session, "edit.redo", json!({})).unwrap();
-    let done = run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 1, "off": true }));
+    let done = run(&mut session, "clip.setScale", json!({ "track": 1, "scene": 0, "off": true }));
     assert_eq!(done, Ok(json!({ "scale": null, "changed": true })));
     assert_eq!(slot(&session), None);
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -176,15 +183,15 @@ fn bad_input_is_refused_and_changes_nothing() {
         (json!({ "track": 1, "index": 0, "root": 12 }), "0 to 11"),
         (json!({ "track": 1, "index": 0, "root": -1 }), "0 to 11"),
         (json!({ "track": 1, "index": 0, "root": "" }), "key name"),
-        (json!({ "track": 1, "index": 0, "root": true }), "0 to 11"),
+        (json!({ "track": 1, "index": 0, "root": true }), "root must be a name or a number"),
         (json!({ "track": 1, "index": 0, "mode": "Major" }), "unknown mode"),
         (json!({ "track": 1, "index": 0, "mode": 3 }), "mode must be a text"),
         (json!({ "track": 1, "index": 0, "off": "yes" }), "off must be true or false"),
         (json!({ "track": 1, "index": 0, "off": true, "root": "C" }), "not both"),
         (json!({ "track": 1, "index": 2, "root": "C" }), "audio clip"),
         (json!({ "track": 1, "index": 9, "root": "C" }), "does not exist"),
-        (json!({ "track": 1, "scene": 2, "root": "C" }), "empty"),
-        (json!({ "track": 1, "index": 0, "scene": 1, "root": "C" }), "not both"),
+        (json!({ "track": 1, "scene": 1, "root": "C" }), "empty"),
+        (json!({ "track": 1, "index": 0, "scene": 0, "root": "C" }), "not both"),
         (json!({ "track": 7, "index": 0, "root": "C" }), "track"),
         (json!({ "track": 1, "index": 0, "root": "C", "colour": "red" }), "unknown parameter"),
     ] {
@@ -223,7 +230,7 @@ fn new_midi_clips_take_the_default_scale_and_existing_ones_keep_theirs() {
     assert_eq!(scale_at(&session, 0), None, "a clip that exists keeps no scale");
 
     // clip.create in an empty slot and in the arrangement: both take A minor.
-    run(&mut session, "clip.create", json!({ "track": 1, "scene": 2 })).unwrap();
+    run(&mut session, "clip.create", json!({ "track": 1, "scene": 1 })).unwrap();
     let made = session.project().launcher.columns[0].slots[1].clip.as_ref().unwrap().content;
     assert_eq!(session.project().content(made).and_then(|c| c.scale), scale(9, ScaleMode::Minor));
     let at = run(&mut session, "clip.create", json!({ "track": 1, "start": 16 })).unwrap();

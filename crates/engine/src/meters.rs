@@ -17,13 +17,14 @@
 //! the renderer's half: the meter ballistics and the monitor it publishes to.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use suhina_model::{ChannelId, ChannelRole, Project, TrackId};
 
 use crate::buses::gains_until;
 use crate::chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK};
 use crate::route;
+use crate::spectrum;
 
 /// Tracks that are metered; a project's tracks after these have no meter.
 pub const MAX_METERED_TRACKS: usize = 512;
@@ -37,6 +38,17 @@ pub const RMS_SECONDS: f64 = 0.3;
 const FLOOR: f32 = 1e-6;
 /// The track id of an unused row.
 const NO_TRACK: u32 = u32::MAX;
+/// Devices of one track, inside its groups too, whose live values reach their panels; the ones
+/// after these show none.
+pub const MAX_READOUT_DEVICES: usize = 8;
+/// Where a device's path starts ([`readout_step`]).
+pub(crate) const READOUT_PATH: u64 = 0xcbf2_9ce4_8422_2325;
+
+/// A device's path one step further, as a number that fits an atomic: FNV-1a over the steps, never
+/// 0, which marks an unused entry.
+pub(crate) fn readout_step(path: u64, step: usize) -> u64 {
+    ((path ^ step as u64).wrapping_mul(0x0100_0000_01b3)).max(1)
+}
 
 /// One meter's level as last published: per channel (left, right), linear (1.0 is 0 dBFS).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -49,12 +61,40 @@ pub struct Level {
     pub clipped: bool,
 }
 
+/// A device's live values as bits: an array this long has no `Default` of its own.
+#[derive(Debug)]
+struct Readouts([AtomicU32; suhina_device_api::MAX_READOUTS]);
+
+impl Default for Readouts {
+    fn default() -> Self {
+        Self(std::array::from_fn(|_| AtomicU32::new(0)))
+    }
+}
+
+impl std::ops::Deref for Readouts {
+    type Target = [AtomicU32; suhina_device_api::MAX_READOUTS];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// One device's live values, and whose they are.
+#[derive(Debug, Default)]
+struct DeviceReadouts {
+    /// The device's path ([`readout_step`]), 0 for none.
+    device: AtomicU64,
+    values: Readouts,
+}
+
 #[derive(Debug, Default)]
 struct Row {
     track: AtomicU32,
     peak: [AtomicU32; 2],
     rms: [AtomicU32; 2],
     clipped: AtomicBool,
+    sample: std::sync::atomic::AtomicU64,
+    voices: [AtomicU32; 32],
+    readouts: [DeviceReadouts; MAX_READOUT_DEVICES],
 }
 
 impl Row {
@@ -78,25 +118,66 @@ impl Row {
 }
 
 /// The levels of the main output and of every metered track, written by the audio thread
-/// and readable from any thread. Clip indicators are reset from any thread.
+/// and readable from any thread. Clip indicators are reset from any thread. It also carries
+/// the watched devices' output rings the EQ panel's analyser reads
+/// ([`spectrum::Spectrum`], docs/spec/eq.md › The panel › The analyser).
 #[derive(Debug)]
 pub struct MeterMonitor {
     main: Row,
     tracks: Box<[Row]>,
+    /// Shared with the graph's chains, which capture their watched devices' output into it on
+    /// every path that runs them.
+    pub(crate) spectrum: std::sync::Arc<spectrum::Spectrum>,
 }
 
 impl Default for MeterMonitor {
     fn default() -> Self {
         let tracks: Box<[Row]> =
             (0..MAX_METERED_TRACKS).map(|_| Row { track: AtomicU32::new(NO_TRACK), ..Row::default() }).collect();
-        Self { main: Row::default(), tracks }
+        Self { main: Row::default(), tracks, spectrum: std::sync::Arc::new(spectrum::Spectrum::new()) }
     }
 }
 
 impl MeterMonitor {
+    /// Active sample read head for a channel device.
+    pub fn sample_position(&self, track: TrackId, device: usize) -> Option<f32> {
+        let packed = self.row(track)?.sample.load(Ordering::Relaxed);
+        if packed >> 32 != u64::try_from(device).ok()?.checked_add(1)? {
+            return None;
+        }
+        Some(f32::from_bits(packed as u32))
+    }
+    /// Independent active read heads for the channel's sample instrument.
+    pub fn sample_positions(&self, track: TrackId, device: usize) -> [Option<f32>; 32] {
+        let Some(row) = self.row(track) else { return [None; 32] };
+        if row.sample.load(Ordering::Acquire) >> 32
+            != u64::try_from(device).ok().and_then(|v| v.checked_add(1)).unwrap_or(0)
+        {
+            return [None; 32];
+        }
+        std::array::from_fn(|i| {
+            let value = f32::from_bits(row.voices[i].load(Ordering::Relaxed));
+            (value >= 0.).then_some(value)
+        })
+    }
+    /// The live values the device at `path` on `track`'s channel (its index, or its path through
+    /// groups: position, branch, position) last handed its panel, or `None` when it hands none.
+    pub fn readouts(&self, track: TrackId, path: &[usize]) -> Option<[f32; suhina_device_api::MAX_READOUTS]> {
+        let row = self.row(track)?;
+        let key = path.iter().fold(READOUT_PATH, |key, &step| readout_step(key, step));
+        let entry = row.readouts.iter().find(|entry| entry.device.load(Ordering::Acquire) == key)?;
+        Some(std::array::from_fn(|i| f32::from_bits(entry.values[i].load(Ordering::Relaxed))))
+    }
+
     /// The main output's level.
     pub fn main(&self) -> Level {
         self.main.level()
+    }
+
+    /// The watched devices' output rings, the EQ panel's analyser's source
+    /// (docs/spec/eq.md › The panel › The analyser).
+    pub fn spectrum(&self) -> &spectrum::Spectrum {
+        &self.spectrum
     }
 
     /// The level of `track`, or `None` when the engine plays no such track or it has no meter.
@@ -178,8 +259,8 @@ impl Levels {
     pub(crate) fn build(project: &Project, chains: &[Chain]) -> Self {
         let tracks: Vec<TrackId> = project.tracks.iter().take(MAX_METERED_TRACKS).map(|t| t.id).collect();
         let channel_of = |track: TrackId| {
-            let id = project.tracks.iter().find(|t| t.id == track)?.channel?;
-            project.channels.iter().find(|c| c.id == id)
+            let id = project.track(track)?.channel?;
+            project.channel(id)
         };
         let master = project.channels.iter().find(|c| c.role == ChannelRole::Master).map(|c| c.id);
         let is_group =
@@ -214,7 +295,7 @@ impl Levels {
                 if is_bus(group_track) {
                     return None;
                 }
-                let volume = project.channels.iter().find(|c| c.id == output).map_or(0.0, |c| c.volume);
+                let volume = project.channel(output).map_or(0.0, |c| c.volume);
                 let volume = if volume.is_finite() { volume.max(0.0) as f32 } else { 0.0 };
                 Some((group, volume))
             })
@@ -273,6 +354,32 @@ impl Levels {
     pub(crate) fn finish(&mut self, chains: &[Chain], frames: usize, writer: &mut MeterWriter) {
         let frames = frames.min(MAX_BLOCK);
         for (chain, slot) in chains.iter().zip(&self.chain_slots) {
+            if let Some(row) = slot.and_then(|slot| writer.monitor.tracks.get(slot)) {
+                let heads = chain.sample_positions();
+                let positions = heads.as_ref().map_or([None; 32], |(_, positions)| *positions);
+                for (slot, value) in row.voices.iter().zip(positions) {
+                    slot.store(value.unwrap_or(-1.).to_bits(), Ordering::Relaxed);
+                }
+                let packed = heads
+                    .and_then(|(device, positions)| {
+                        let device = u32::try_from(device).ok()?.checked_add(1)?;
+                        let first = positions.into_iter().flatten().next()?;
+                        Some((u64::from(device) << 32) | u64::from(first.to_bits()))
+                    })
+                    .unwrap_or(0);
+                row.sample.store(packed, Ordering::Release);
+                let mut entries = row.readouts.iter();
+                chain.readouts(&mut |device, values| {
+                    let Some(entry) = entries.next() else { return };
+                    for (slot, value) in entry.values.iter().zip(values) {
+                        slot.store(value.to_bits(), Ordering::Relaxed);
+                    }
+                    entry.device.store(device, Ordering::Release);
+                });
+                entries.for_each(|entry| entry.device.store(0, Ordering::Release));
+            }
+        }
+        for (chain, slot) in chains.iter().zip(&self.chain_slots) {
             let Some(slot) = *slot else { continue };
             let Some(&(gain_left, gain_right)) = self.chained.get(slot) else { continue };
             let at = slot * MAX_BLOCK * 2;
@@ -304,12 +411,12 @@ impl Levels {
         for slot in 0..self.tracks.len() {
             let touched = self.touched.get_mut(slot).map(std::mem::take).unwrap_or(false);
             if !touched {
-                writer.measure(Meter::Track(slot), &[], frames);
+                writer.measure(MeterTarget::Track(slot), &[], frames);
                 continue;
             }
             let at = slot * MAX_BLOCK * 2;
             if let Some(block) = self.buffer.get_mut(at..at + frames * 2) {
-                writer.measure(Meter::Track(slot), block, frames);
+                writer.measure(MeterTarget::Track(slot), block, frames);
                 block.fill(0.0);
             }
         }
@@ -318,7 +425,7 @@ impl Levels {
 
 /// Which meter a block is measured for.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Meter {
+pub(crate) enum MeterTarget {
     Main,
     Track(usize),
 }
@@ -348,8 +455,10 @@ pub(crate) struct MeterWriter {
 impl MeterWriter {
     /// Allocates: call it off the audio thread.
     pub(crate) fn new(sample_rate: u32) -> Self {
+        let monitor = Arc::new(MeterMonitor::default());
+        monitor.spectrum.set_rate(sample_rate);
         Self {
-            monitor: Arc::new(MeterMonitor::default()),
+            monitor,
             sample_rate: f64::from(sample_rate.max(1)),
             main: Ballistics::default(),
             tracks: vec![Ballistics::default(); MAX_METERED_TRACKS],
@@ -360,9 +469,13 @@ impl MeterWriter {
     }
 
     /// Shows the tracks of a new graph, slot by slot. A slot that now meters another track
-    /// starts from silence with its clip indicator off. Never allocates.
+    /// starts from silence with its clip indicator off, and no device is watched any more:
+    /// the panels claim their rows again next frame. Never allocates.
     pub(crate) fn assign(&mut self, tracks: &[TrackId]) {
+        self.monitor.spectrum.clear();
         for (slot, row) in self.monitor.tracks.iter().enumerate() {
+            row.sample.store(0, Ordering::Relaxed);
+            row.readouts.iter().for_each(|entry| entry.device.store(0, Ordering::Relaxed));
             let id = tracks.get(slot).map_or(NO_TRACK, |t| t.0);
             if row.track.load(Ordering::Relaxed) == id {
                 continue;
@@ -378,7 +491,7 @@ impl MeterWriter {
 
     /// Measures `block` (interleaved stereo; empty for silence) of `frames` frames for `meter`
     /// and publishes the result. Never allocates.
-    pub(crate) fn measure(&mut self, meter: Meter, block: &[f32], frames: usize) {
+    pub(crate) fn measure(&mut self, meter: MeterTarget, block: &[f32], frames: usize) {
         if frames == 0 {
             return;
         }
@@ -400,8 +513,8 @@ impl MeterWriter {
             }
         }
         let (state, row) = match meter {
-            Meter::Main => (&mut self.main, &self.monitor.main),
-            Meter::Track(slot) => match (self.tracks.get_mut(slot), self.monitor.tracks.get(slot)) {
+            MeterTarget::Main => (&mut self.main, &self.monitor.main),
+            MeterTarget::Track(slot) => match (self.tracks.get_mut(slot), self.monitor.tracks.get(slot)) {
                 (Some(state), Some(row)) => (state, row),
                 _ => return,
             },
@@ -434,5 +547,58 @@ impl MeterWriter {
         if peak.iter().any(|&p| p > 1.0) {
             row.clipped.store(true, Ordering::Relaxed);
         }
+    }
+}
+
+#[cfg(test)]
+mod sample_position_tests {
+    use super::*;
+    #[test]
+    fn voice_positions_remain_independent_and_inactive_slots_are_absent() {
+        let mut writer = MeterWriter::new(48000);
+        writer.assign(&[TrackId(7)]);
+        let row = writer.monitor.row(TrackId(7)).unwrap();
+        for slot in &row.voices {
+            slot.store((-1f32).to_bits(), Ordering::Relaxed);
+        }
+        row.voices[0].store(0.25f32.to_bits(), Ordering::Relaxed);
+        row.voices[3].store(0.75f32.to_bits(), Ordering::Relaxed);
+        row.sample.store((3u64 << 32) | u64::from(0.25f32.to_bits()), Ordering::Release);
+        let positions = writer.monitor.sample_positions(TrackId(7), 2);
+        assert_eq!(positions[0], Some(0.25));
+        assert_eq!(positions[3], Some(0.75));
+        assert_eq!(positions.into_iter().flatten().count(), 2);
+        assert_eq!(writer.monitor.sample_positions(TrackId(7), 1), [None; 32]);
+        row.sample.store(0, Ordering::Release);
+        assert_eq!(writer.monitor.sample_positions(TrackId(7), 2), [None; 32]);
+    }
+
+    #[test]
+    fn read_head_is_scoped_to_track_and_device_and_cleared_on_graph_swap() {
+        let mut writer = MeterWriter::new(48000);
+        writer.assign(&[TrackId(7)]);
+        let row = writer.monitor.row(TrackId(7)).unwrap();
+        row.sample.store((3u64 << 32) | u64::from(0.25f32.to_bits()), Ordering::Relaxed);
+        assert_eq!(writer.monitor.sample_position(TrackId(7), 2), Some(0.25));
+        assert_eq!(writer.monitor.sample_position(TrackId(7), 1), None);
+        assert_eq!(writer.monitor.sample_position(TrackId(8), 2), None);
+        writer.assign(&[TrackId(7)]);
+        assert_eq!(writer.monitor.sample_position(TrackId(7), 2), None);
+    }
+
+    #[test]
+    fn readouts_belong_to_their_device_and_clear_on_graph_swap() {
+        let mut writer = MeterWriter::new(48000);
+        writer.assign(&[TrackId(7)]);
+        let row = writer.monitor.row(TrackId(7)).unwrap();
+        assert_eq!(writer.monitor.readouts(TrackId(7), &[0]), None);
+        row.readouts[0].values[1].store((-4.5f32).to_bits(), Ordering::Relaxed);
+        row.readouts[0].device.store(readout_step(READOUT_PATH, 2), Ordering::Release);
+        assert_eq!(writer.monitor.readouts(TrackId(7), &[2]).map(|r| r[1]), Some(-4.5));
+        assert_eq!(writer.monitor.readouts(TrackId(7), &[1]), None);
+        assert_eq!(writer.monitor.readouts(TrackId(7), &[2, 0, 0]), None);
+        assert_eq!(writer.monitor.readouts(TrackId(8), &[2]), None);
+        writer.assign(&[TrackId(7)]);
+        assert_eq!(writer.monitor.readouts(TrackId(7), &[2]), None);
     }
 }

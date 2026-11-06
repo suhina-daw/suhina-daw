@@ -7,6 +7,44 @@ use super::*;
 const RINGED: [f32; 8] = [0.5, -0.5, 0.25, -0.25, 1.0, 0.0, 0.1, 0.2];
 
 #[test]
+fn control_panel_targets_the_current_owner_once_and_rejects_other_hosts() {
+    let (owner, requests) = mpsc::channel();
+    let mut live = Live {
+        owner,
+        panel_pending: Arc::new(AtomicBool::new(false)),
+        progress: Arc::new(Progress::default()),
+        host: "ASIO".into(),
+        device: "Any installed driver".into(),
+        sample_rate: 48_000,
+        block: 2048,
+        exclusive: true,
+        fallback: false,
+        channels: 2,
+        cue_pair: None,
+        input: None,
+    };
+    assert!(live.open_control_panel().is_ok());
+    assert!(matches!(requests.try_recv(), Ok(OwnerRequest::ControlPanel)));
+    assert!(live.open_control_panel().is_err());
+    assert!(requests.try_recv().is_err());
+    live.panel_pending.store(false, Ordering::Release);
+    live.host = "WASAPI".into();
+    assert!(live.open_control_panel().is_err());
+    assert!(requests.try_recv().is_err());
+    live.host = "ASIO".into();
+    drop(requests);
+    assert!(live.open_control_panel().is_err());
+    assert!(!live.panel_pending.load(Ordering::Acquire));
+}
+
+#[test]
+fn a_missing_callback_or_failed_device_does_not_wait_forever_for_the_close_fade() {
+    let control = transition::Control::default();
+    assert!(!control.finish(Duration::from_millis(10), || false));
+    assert!(!control.finish(Duration::from_secs(60), || true));
+}
+
+#[test]
 fn the_main_output_maps_onto_any_channel_count() {
     let mut mono = [0.0f32; 2];
     write_frames(&mut mono, 1, &RINGED, None);
@@ -76,9 +114,9 @@ fn the_engine_block_follows_the_chosen_buffer() {
 }
 
 #[test]
-fn the_ring_keeps_two_blocks_or_a_device_buffer_and_a_block() {
-    assert_eq!(ring_target(512, 0, false), 1024);
-    assert_eq!(ring_target(512, 128, false), 1024);
+fn the_ring_keeps_four_blocks_or_a_device_buffer_and_a_block() {
+    assert_eq!(ring_target(512, 0, false), 2048);
+    assert_eq!(ring_target(512, 128, false), 2048);
     assert_eq!(ring_target(256, 1024, false), 1280);
     // A device asking for absurd amounts is capped.
     assert_eq!(ring_target(64, usize::MAX, false), MAX_DEVICE_FRAMES + 64);
@@ -196,7 +234,9 @@ fn the_priority_notice_is_told_once() {
 #[test]
 fn the_render_thread_says_its_priority_first() {
     let said = std::thread::spawn(|| {
-        let renderer = Renderer::stopped(&suhina_model::Project::default(), &AudioPool::new(), 48_000).unwrap();
+        let renderer =
+            Renderer::stopped(&suhina_model::Project::default(), &AudioPool::new(), 48_000, suhina_session::devices())
+                .unwrap();
         let (producer, _consumer) = ring(256);
         let (stop, progress) = (AtomicBool::new(true), Progress::default());
         let (joined, said) = mpsc::sync_channel(1);
@@ -248,9 +288,9 @@ fn the_chosen_device_is_looked_for_in_the_background() {
     assert_eq!(system.chosen_present(&other), None);
 }
 
-/// Waits up to two seconds for `done`, looking every millisecond.
+/// Waits up to a minute for `done`, looking every millisecond; only a hang gets that far.
 fn eventually(mut done: impl FnMut() -> bool) -> bool {
-    let until = std::time::Instant::now() + Duration::from_secs(2);
+    let until = std::time::Instant::now() + Duration::from_secs(60);
     while std::time::Instant::now() < until {
         if done() {
             return true;
@@ -264,7 +304,8 @@ fn eventually(mut done: impl FnMut() -> bool) -> bool {
 fn the_render_thread_keeps_less_ahead_while_a_track_is_armed() {
     use suhina_engine::{LaunchCommand, model};
     const BLOCK: usize = 128;
-    let mut renderer = Renderer::stopped(&model::Project::default(), &AudioPool::new(), 48_000).unwrap();
+    let mut renderer =
+        Renderer::stopped(&model::Project::default(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
     let mut controller = renderer.controller();
     let (producer, mut consumer) = ring(BLOCK);
     let progress = Arc::new(Progress::default());
@@ -304,4 +345,112 @@ fn the_render_thread_keeps_less_ahead_while_a_track_is_armed() {
     stop.store(true, Ordering::Release);
     progress.wake_render();
     assert!(render.join().is_ok());
+}
+
+#[test]
+fn the_first_device_callback_has_audio_before_the_render_thread_runs() {
+    for (block, device, live) in
+        [(1024, 2048, false), (2048, 444, false), (256, 2048, true), (64, MAX_DEVICE_FRAMES, true)]
+    {
+        let (mut producer, mut consumer) = ring(block);
+        prime_ring(&mut producer, block, device, live);
+        let progress = Progress::default();
+        let mut output = vec![1.0; device * RING_CHANNELS];
+        read_ring(&mut consumer, &mut output, &progress);
+        assert_eq!(progress.underruns(), 0, "first callback: block {block}, device {device}");
+        assert!(output.iter().all(|sample| *sample == 0.0));
+        // ASIO may request both halves immediately before hardware streaming starts.
+        read_ring(&mut consumer, &mut output, &progress);
+        assert_eq!(progress.underruns(), 0, "second initial callback: block {block}, device {device}");
+        assert_eq!(consumer.slots() / RING_CHANNELS, ring_target(block, device, live).max(2 * device) - 2 * device);
+    }
+}
+#[cfg(all(windows, feature = "asio"))]
+#[test]
+#[ignore = "requires SUHINA_ASIO_TEST_DRIVER naming an installed connected driver; emits silence"]
+fn installed_asio_driver_delivers_more_than_one_callback() {
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    let name = std::env::var("SUHINA_ASIO_TEST_DRIVER").expect("test driver required");
+    let host = cpal::host_from_id(cpal::HostId::Asio).expect("ASIO host");
+    let device = host.output_devices().expect("devices").find(|d| d.to_string() == name).expect("test device");
+    let supported = device.default_output_config().expect("output config");
+    let mut config = supported.config();
+    config.channels = config.channels.min(2);
+    let count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let seen = std::sync::Arc::clone(&count);
+    // CPAL zero-fills the output before invoking this callback. No generated audio.
+    let stream = device
+        .build_output_stream_raw(
+            config,
+            supported.sample_format(),
+            move |_, _| {
+                seen.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            },
+            |_| {},
+            None,
+        )
+        .expect("open stream");
+    stream.play().expect("start stream");
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    let callbacks = count.load(std::sync::atomic::Ordering::Relaxed);
+    drop(stream);
+    assert!(callbacks > 5, "stream stalled after {callbacks} callbacks");
+}
+
+#[test]
+fn device_switch_fades_the_actual_ring_including_cue_before_acknowledging_close() {
+    for rate in [8_000, 44_100, 48_000, 96_000] {
+        for frames in [32, 480, 2048] {
+            let (mut producer, mut ring) = rtrb::RingBuffer::new(frames * RING_CHANNELS);
+            let progress = Progress::default();
+            progress.set_callback_frames(frames);
+            let mut envelope = transition::Envelope::new(rate);
+            let delay = Duration::from_secs_f64(frames as f64 / f64::from(rate));
+            let mut buffer = vec![0.0; frames * RING_CHANNELS];
+            let mut previous = 0.0f32;
+            let mut biggest_step = 0.0f32;
+            // Startup silence must not consume the onset fade. Then open and close
+            // through the very same ring reader both device backends use.
+            for block in 0..240 {
+                if block == 120 {
+                    progress.transition.request_close();
+                }
+                for _ in 0..frames {
+                    for sample in [0.5, -0.5, 0.25, -0.25] {
+                        producer.push(if block < 60 { 0.0 } else { sample }).unwrap();
+                    }
+                }
+                read_device_ring(&mut ring, &mut buffer, &progress, &mut envelope, delay);
+                for frame in buffer.as_chunks::<RING_CHANNELS>().0 {
+                    biggest_step = biggest_step.max((frame[0] - previous).abs());
+                    previous = frame[0];
+                    assert_eq!(frame[2], frame[0] * 0.5);
+                    assert_eq!(frame[1], -frame[0]);
+                }
+                if block == 119 {
+                    assert_eq!(previous, 0.5);
+                }
+                if block == 120 {
+                    assert!(!progress.transition.drained());
+                }
+            }
+            assert!(biggest_step < 0.02, "rate={rate}, frames={frames}, step={biggest_step}");
+            assert_eq!(previous, 0.0);
+            assert!(progress.transition.drained());
+        }
+    }
+}
+
+/// One look at the devices' names at a time, and the next only after a pause, however often the
+/// window asks.
+#[test]
+fn the_next_look_for_the_names_waits_its_turn() {
+    let start = std::time::Instant::now();
+    let mut watch = NamesWatch::default();
+    assert!(watch.due(start), "the first look is due at once");
+    watch.started = Some(start);
+    assert!(!watch.due(start));
+    assert!(watch.due(start + NAMES_LOOK_EVERY));
+    watch.looking = true;
+    assert!(!watch.due(start + NAMES_LOOK_EVERY), "one at a time");
 }

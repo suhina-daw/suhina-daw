@@ -57,6 +57,19 @@ pub fn wave(shape: Shape, cycles: f64) -> f64 {
     }
 }
 
+/// A smoothly wandering random curve from -1.0 to 1.0 at `cycles`: a new random value at the
+/// start of every cycle (the same ones [`Shape::Random`] holds), reached from the one before by
+/// a cosine glide over the cycle, so it never jumps. Non-finite input gives 0.0.
+pub fn wander(cycles: f64) -> f64 {
+    if !cycles.is_finite() {
+        return 0.0;
+    }
+    let cycle = cycles.floor();
+    let glide = (1.0 - (std::f64::consts::PI * (cycles - cycle)).cos()) / 2.0;
+    let (from, to) = (random(cycle - 1.0), random(cycle));
+    from + (to - from) * glide
+}
+
 /// A repeatable pseudo-random value from -1.0 to 1.0 for cycle number `cycle` (splitmix64).
 fn random(cycle: f64) -> f64 {
     let mut x = (cycle as i64 as u64).wrapping_add(0x9e37_79b9_7f4a_7c15);
@@ -97,6 +110,20 @@ mod tests {
             assert_eq!(wave(shape, f64::NAN), 0.0);
             assert_eq!(wave(shape, f64::INFINITY), 0.0);
         }
+    }
+
+    #[test]
+    fn wander_glides_through_the_random_values() {
+        assert_eq!(wander(4.0), wave(Shape::Random, 3.0));
+        assert!((wander(5.0 - 1e-9) - wave(Shape::Random, 4.0)).abs() < 1e-6);
+        let mut last = wander(0.0);
+        for n in 1..10_000 {
+            let v = wander(n as f64 * 0.001);
+            assert!((-1.0..=1.0).contains(&v));
+            assert!((v - last).abs() < 0.01, "{n}: a jump from {last} to {v}");
+            last = v;
+        }
+        assert_eq!(wander(f64::NAN), 0.0);
     }
 
     #[test]

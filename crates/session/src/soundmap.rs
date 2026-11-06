@@ -9,79 +9,88 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use suhina_library::{FileKind, Group, Item};
+use suhina_library::{FileKind, Item};
 use suhina_soundmap::cache::Analysis;
 use suhina_soundmap::kinds::Kind;
 use suhina_soundmap::{DEFAULT_MAX_SECONDS, MAX_SECONDS_RANGE, MAX_SIMILAR, Map, SoundMap, SourceFile};
 
-use crate::commands::{CommandKind, CommandSpec, ParamType, optional, param};
-use crate::{CommandError, Projects};
+use crate::commands::{Args, CommandKind, CommandSpec, ParamType, optional, param};
+use crate::{Agents, CommandError, PathKind, Policy, Projects};
 
-const PLACE: &str = "pinned, recent:samples, or a folder (default: every folder)";
+const PLACE: &str = "pinned, recent:all, recent:samples, or a folder (default: every folder)";
 
 static SOUND_MAP_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
         id: "soundmap.status",
         label: "How far the sample map's analysis of the browser's samples is, per folder: analysed, queued, failed",
         params: &[],
-        kind: CommandKind::Library,
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Read),
         run: status,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "soundmap.analyse",
         label: "Analyse a folder's samples, or every folder's, again for the sample map, ignoring what was kept",
         params: &[optional(
             "folder",
-            ParamType::Text,
+            ParamType::Path(PathKind::Folder),
             "a folder, as library.folders lists them (default: every folder)",
         )],
-        kind: CommandKind::Library,
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
         run: analyse,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "soundmap.layout",
         label: "Lay out samples by how they sound and their kind: each analysed sample's position (0–1), kind (kick, snare, hat…, whether it was guessed from the sound and whether it was set by hand) and whether it matches the text and tags; and how many are not analysed yet, too long or unreadable",
         params: &[
-            optional("place", ParamType::Text, PLACE),
+            optional("place", ParamType::Path(PathKind::Place), PLACE),
             optional("text", ParamType::Text, "words a matching sample's name or path holds"),
             optional("tags", ParamType::Texts, "a matching sample carries any of these tags"),
             optional("grid", ParamType::Bool, "also give each sample's cell in a grid (column, row)"),
             optional("aspect", ParamType::Number, "the grid's width over its height, 0.1 to 10 (default 1, square)"),
             optional("maxSeconds", ParamType::Number, "leave out samples longer than this, 1 to 60 (default 10)"),
         ],
-        kind: CommandKind::Library,
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Read),
         run: layout,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "soundmap.similar",
         label: "The samples that sound most like a sample, nearest first, with their distance",
         params: &[
-            param("item", ParamType::Text, "a sample's path"),
+            param("item", ParamType::Path(PathKind::File), "a sample's path"),
             optional("count", ParamType::Integer, "how many, 1 to 100 (default 16)"),
-            optional("place", ParamType::Text, PLACE),
+            optional("place", ParamType::Path(PathKind::Place), PLACE),
         ],
-        kind: CommandKind::Library,
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Read),
         run: similar,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "soundmap.info",
         label: "What the sample map knows of a sample: its kind and where it comes from (set by hand, its name, or a guess from its sound), its length and its features",
-        params: &[param("item", ParamType::Text, "a sample's path")],
-        kind: CommandKind::Library,
+        params: &[param("item", ParamType::Path(PathKind::File), "a sample's path")],
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Read),
         run: info,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "soundmap.setKind",
         label: "Set a sample's kind by hand, over its name and its sound, or give it back to them (auto); kept with the library and through new analyses and layouts",
-        params: &[param("item", ParamType::Text, "a sample's path"), param("kind", ParamType::Text, KIND_PARAM)],
-        kind: CommandKind::Library,
+        params: &[
+            param("item", ParamType::Path(PathKind::File), "a sample's path"),
+            param("kind", ParamType::Text, KIND_PARAM),
+        ],
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
         run: set_kind,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
 ];
 
 const KIND_PARAM: &str = "kick, snare, clap, closedHat, openHat, hat, rim, tom, crash, ride, cymbal, percussion, bass, tonal, vocal, effect or other; auto to let the name and the sound decide again";
 
-/// The sample map commands, as `commands.list` shows them.
+/// The sample map commands, as `command.list` shows them.
 pub fn sound_map_commands() -> &'static [CommandSpec<Projects>] {
     SOUND_MAP_COMMANDS
 }
@@ -90,21 +99,23 @@ impl Projects {
     /// The sample map's analysis, kept beside the library's indexes.
     pub fn sound_map_mut(&mut self) -> &mut SoundMap {
         let folder = self.file_library_mut().data_folder();
-        self.sound_map.get_or_insert_with(|| SoundMap::new(folder, SoundMap::default_threads()))
+        self.browser.sound_map.get_or_insert_with(|| SoundMap::new(folder, SoundMap::default_threads()))
     }
 
     /// Starts analysing the library's samples in the background, and keeps doing so as files
     /// come and go. The desktop app and the MCP server start it, as they start the library;
     /// tests and the CLI never analyse a user's folders unasked.
     pub fn start_sound_map(&mut self) {
-        self.sound_map_started = true;
+        self.browser.sound_map_started = true;
+        // A large cache is read off the caller's thread (the window's).
+        self.sound_map_mut().read_in_background(true);
         self.poll_sound_map();
     }
 
     /// Waits until every queued sample is analysed (tests, the CLI).
     pub fn wait_sound_map(&mut self) {
         self.poll_sound_map();
-        if let Some(map) = &mut self.sound_map {
+        if let Some(map) = &mut self.browser.sound_map {
             map.wait();
         }
     }
@@ -114,19 +125,35 @@ impl Projects {
     /// anything changed.
     pub fn poll_sound_map(&mut self) -> bool {
         let mut changed = false;
-        if self.sound_map_started {
+        if self.browser.sound_map_started {
             let library = self.file_library_mut();
             library.poll();
             let revision = library.revision();
-            if self.sound_map_revision != Some(revision) {
-                let files = sample_files(self);
-                self.sound_map_mut().update(&files);
-                self.sound_map_revision = Some(revision);
+            // While the update before is worked out, the index is not copied for the next: that
+            // would be refused, and copied again every frame until it was not.
+            if self.browser.sound_map_revision != Some(revision) && !self.sound_map_mut().updating() {
+                if self.sound_map_mut().reads_in_background() {
+                    // Listed and compared on a thread of its own: a large library held the
+                    // window up for a second here.
+                    let snapshot = self.file_library_mut().index_snapshot();
+                    let started = self.sound_map_mut().update_in_background(move || {
+                        suhina_library::files_in(&snapshot, Some(FileKind::Sample))
+                            .map(|f| SourceFile { folder: f.folder, path: f.path, size: f.size, modified: f.modified })
+                            .collect()
+                    });
+                    if started {
+                        self.browser.sound_map_revision = Some(revision);
+                    }
+                } else {
+                    let files = sample_files(self);
+                    self.sound_map_mut().update(&files);
+                    self.browser.sound_map_revision = Some(revision);
+                }
                 changed = true;
             }
         }
-        if let Some(map) = &mut self.sound_map {
-            changed |= map.poll();
+        if let Some(map) = &mut self.browser.sound_map {
+            changed |= suhina_plugins::trace::timed("sound map: results", || map.poll());
         }
         changed
     }
@@ -140,18 +167,14 @@ fn sample_files(projects: &mut Projects) -> Vec<SourceFile> {
         .collect()
 }
 
-/// The samples of a place: `None` for every folder, `pinned`, `recent:samples`, or a folder.
+/// The samples of a place: `None` for every folder, `pinned`, `recent:all`, `recent:samples`,
+/// or a folder.
 pub fn scope_files(projects: &mut Projects, place: Option<&str>) -> Result<Vec<SourceFile>, CommandError> {
     let files = sample_files(projects);
-    let keys: Option<Vec<String>> = match place {
-        None => return Ok(files),
-        Some("pinned") => Some(projects.file_library_mut().pinned()),
-        Some(p) if p.starts_with("recent:") => {
-            let group = Group::parse(&p["recent:".len()..]).ok_or_else(|| format!("unknown recent group in {p:?}"))?;
-            Some(projects.file_library_mut().recent(group))
-        }
-        Some(_) => None,
-    };
+    if place.is_none() {
+        return Ok(files);
+    }
+    let keys = crate::library::listed_keys(projects, place)?;
     Ok(match (keys, place) {
         (Some(keys), _) => {
             let wanted: HashSet<PathBuf> = keys
@@ -171,26 +194,17 @@ pub fn scope_files(projects: &mut Projects, place: Option<&str>) -> Result<Vec<S
     })
 }
 
-fn text<'a>(params: &'a Value, name: &str) -> Result<&'a str, CommandError> {
-    params
-        .get(name)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .ok_or_else(|| CommandError(format!("{name} must be a text")))
-}
-
 fn optional_text<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(_) => text(params, name).map(Some),
+    match Args::new(params).value(name) {
+        None => Ok(None),
+        Some(_) => Args::new(params).text(name).map(Some),
     }
 }
 
 fn status(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
     projects.poll_sound_map();
     let files = sample_files(projects);
-    let started = projects.sound_map_started;
+    let started = projects.browser.sound_map_started;
     let folders: Vec<Value> = projects
         .sound_map_mut()
         .status(&files)
@@ -230,8 +244,8 @@ fn analyse(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
 }
 
 fn max_seconds(params: &Value) -> Result<f32, CommandError> {
-    match params.get("maxSeconds") {
-        None | Some(Value::Null) => Ok(DEFAULT_MAX_SECONDS),
+    match Args::new(params).value("maxSeconds") {
+        None => Ok(DEFAULT_MAX_SECONDS),
         Some(v) => v
             .as_f64()
             .map(|s| s as f32)
@@ -241,8 +255,8 @@ fn max_seconds(params: &Value) -> Result<f32, CommandError> {
 }
 
 fn tags(params: &Value) -> Result<Vec<String>, CommandError> {
-    match params.get("tags") {
-        None | Some(Value::Null) => Ok(Vec::new()),
+    match Args::new(params).value("tags") {
+        None => Ok(Vec::new()),
         Some(v) => v
             .as_array()
             .ok_or("tags must be a list of tag names")?
@@ -271,12 +285,12 @@ fn layout(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
     let place = optional_text(params, "place")?;
     let words = suhina_library::words(optional_text(params, "text")?.unwrap_or(""));
     let tags = tags(params)?;
-    let grid = match params.get("grid") {
-        None | Some(Value::Null) => false,
+    let grid = match Args::new(params).value("grid") {
+        None => false,
         Some(v) => v.as_bool().ok_or("grid must be true or false")?,
     };
-    let aspect = match params.get("aspect") {
-        None | Some(Value::Null) => 1.0,
+    let aspect = match Args::new(params).value("aspect") {
+        None => 1.0,
         Some(v) => {
             v.as_f64().filter(|a| (0.1..=10.0).contains(a)).ok_or("aspect must be a number from 0.1 to 10")? as f32
         }
@@ -315,9 +329,9 @@ fn layout(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
 }
 
 fn similar(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let item = PathBuf::from(text(params, "item")?);
-    let count = match params.get("count") {
-        None | Some(Value::Null) => 16,
+    let item = PathBuf::from(Args::new(params).text("item")?);
+    let count = match Args::new(params).value("count") {
+        None => 16,
         Some(v) => v
             .as_u64()
             .and_then(|n| usize::try_from(n).ok())
@@ -346,7 +360,7 @@ fn sample_file(projects: &mut Projects, path: &Path) -> Result<SourceFile, Comma
 }
 
 fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let path = PathBuf::from(text(params, "item")?);
+    let path = PathBuf::from(Args::new(params).text("item")?);
     projects.poll_sound_map();
     let file = sample_file(projects, &path)?;
     let hand = projects.sound_map_mut().kind_by_hand(&file.path);
@@ -395,8 +409,8 @@ fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
 }
 
 fn set_kind(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let path = PathBuf::from(text(params, "item")?);
-    let id = text(params, "kind")?;
+    let path = PathBuf::from(Args::new(params).text("item")?);
+    let id = Args::new(params).text("kind")?;
     let kind = match id {
         "auto" => None,
         id => Some(Kind::from_id(id).ok_or_else(|| format!("unknown kind {id:?}: {KIND_PARAM}"))?),

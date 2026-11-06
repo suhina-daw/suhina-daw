@@ -3,7 +3,7 @@ description: Stems files (.stem.mp4, .stem.m4a): an MP4 with the master and its 
 read_when: stems, stem file, .stem.mp4, .stem.m4a, Traktor stems, NI stems, master track, mastering_dsp, MP4 boxes, edit list, AAC priming, multitrack audio file, DJ, remix, folded group
 type: spec
 status: draft
-last_verified: 2026-10-15
+last_verified: 2026-10-19
 covers:
   - crates/media/src/stems.rs
   - crates/session/src/files.rs
@@ -124,3 +124,7 @@ metadata.
 - Writing Stems files (exporting a group's tracks as one).
 - Stems in Ogg and Matroska, as the IETF drafts describe them: the same model, read by another
   container reader.
+
+All decoded streams together have a 1 GiB PCM budget. Each stream accepts
+1000..384000 Hz and 1..32 channels; header and packet sizes are checked before
+growing output buffers, with fallible allocation.

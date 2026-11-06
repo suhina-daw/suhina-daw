@@ -4,6 +4,7 @@
 //! Device chains in the renderer: effects on a track, instruments playing its notes, launched
 //! clips, the transport, graph swaps.
 
+use crate::{RenderInputs, RenderOptions};
 use suhina_model::*;
 
 use crate::{LaunchCommand, Renderer, render_launches, render_offline};
@@ -41,13 +42,19 @@ pub(crate) fn project(notes: Vec<Note>, length: f64, devices: Vec<Device>) -> Pr
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
         arrangement: Arrangement {
-            lanes: vec![ArrangementLane { name: "l".into(), track: Some(TrackId(1)), clips: vec![clip(0.0, false)] }],
-            markers: Vec::new(),
+            lanes: vec![ArrangementLane {
+                id: Default::default(),
+                name: "l".into(),
+                track: Some(TrackId(1)),
+                clips: vec![clip(0.0, false)],
+            }],
+            markers: Default::default(),
+            takes: Vec::new(),
         },
         launcher: Launcher {
             mappings: Vec::new(),
@@ -94,10 +101,22 @@ pub(crate) fn blocks(renderer: &mut Renderer, count: usize, frames: usize) -> Ve
 #[test]
 fn an_effect_on_a_track_processes_its_sound_before_the_fader() {
     let notes = vec![note(0.0, 2.0, 69)];
-    let plain = render_offline(&project(notes.clone(), 2.0, vec![]), SR, 512).unwrap();
-    let half =
-        render_offline(&project(notes.clone(), 2.0, vec![device("utility", &[("gain", -6.0206)])]), SR, 512).unwrap();
-    let neutral = render_offline(&project(notes.clone(), 2.0, vec![device("utility", &[])]), SR, 512).unwrap();
+    let plain =
+        render_offline(&project(notes.clone(), 2.0, vec![]), SR, 512, suhina_device_registry::factory()).unwrap();
+    let half = render_offline(
+        &project(notes.clone(), 2.0, vec![device("utility", &[("gain", -6.0206)])]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
+    let neutral = render_offline(
+        &project(notes.clone(), 2.0, vec![device("utility", &[])]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
     // The chain adds a tail to the render.
     assert!(half.len() > plain.len());
     assert!(max_diff(&neutral[..plain.len()], &plain) < 1e-5, "{}", max_diff(&neutral[..plain.len()], &plain));
@@ -108,9 +127,79 @@ fn an_effect_on_a_track_processes_its_sound_before_the_fader() {
     // The fader comes after the chain: pan moves the processed sound.
     let mut panned = project(notes.clone(), 2.0, vec![device("utility", &[])]);
     panned.channels[0].pan = 1.0;
-    let panned = render_offline(&panned, SR, 512).unwrap();
+    let panned = render_offline(&panned, SR, 512, suhina_device_registry::factory()).unwrap();
     let (l, r): (Vec<f32>, Vec<f32>) = panned.as_chunks::<2>().0.iter().map(|[l, r]| (*l, *r)).unzip();
     assert!(peak(&l) < 1e-6 && peak(&r) > 0.1);
+}
+
+/// The sine tones a note track without an instrument plays, through the EQ: its bell at 1 kHz
+/// lifts the note it sits on (key 83 is B5, 987.8 Hz, inside the bell), and Scale at 0 % puts
+/// it back. The device's own tests cover the response; this checks the chain's wiring of it.
+#[test]
+fn an_eq_bell_lifts_its_note_in_the_track_chain() {
+    let notes = vec![note(0.0, 2.0, 83)];
+    let steady = |out: &[f32]| peak(&left(out)[BEAT..2 * BEAT]);
+    let plain = steady(
+        &render_offline(&project(notes.clone(), 2.0, vec![]), SR, 512, suhina_device_registry::factory()).unwrap(),
+    );
+    let lifted = steady(
+        &render_offline(
+            &project(notes.clone(), 2.0, vec![device("eq", &[("a3Gain", 12.0)])]),
+            SR,
+            512,
+            suhina_device_registry::factory(),
+        )
+        .unwrap(),
+    );
+    let in_db = 20.0 * f64::from(lifted / plain).log10();
+    assert!((in_db - 12.0).abs() < 0.5, "{in_db}");
+    let scaled = steady(
+        &render_offline(
+            &project(notes, 2.0, vec![device("eq", &[("a3Gain", 12.0), ("scale", 0.0)])]),
+            SR,
+            512,
+            suhina_device_registry::factory(),
+        )
+        .unwrap(),
+    );
+    assert!(20.0 * f64::from(scaled / plain).log10().abs() < 0.1, "{}", 20.0 * f64::from(scaled / plain).log10());
+}
+
+#[test]
+fn an_sd_effect_plays_its_stored_parameter_value() {
+    let mut graph =
+        suhina_device_sdk::DeviceGraph::new("test.gain", "Test Gain", suhina_device_sdk::DeviceRole::Effect);
+    graph.parameters.push(suhina_device_sdk::Parameter::new("gain", "Gain", (0.0, 2.0), 1.0));
+    graph.nodes = vec![
+        suhina_device_sdk::Node::audio_input("in"),
+        suhina_device_sdk::Node::gain("gain", "gain"),
+        suhina_device_sdk::Node::audio_output("out"),
+    ];
+    graph.connections =
+        vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
+    // Out of range values are limited as the parameter takes them: 3 plays as 2.
+    for (stored, gain) in [(0.5, 0.5_f32), (3.0, 2.0)] {
+        let mut effect = device("sd", &[("gain", stored)]);
+        effect.kind = DeviceKind::Sd;
+        effect.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
+        let notes = vec![note(0.0, 1.0, 69)];
+        let plain = render_offline(
+            &project(notes.clone(), 1.0, vec![device("fm-synth", &[])]),
+            SR,
+            512,
+            suhina_device_registry::factory(),
+        )
+        .unwrap();
+        let processed = render_offline(
+            &project(notes, 1.0, vec![device("fm-synth", &[]), effect]),
+            SR,
+            512,
+            suhina_device_registry::factory(),
+        )
+        .unwrap();
+        let expected: Vec<f32> = plain.iter().map(|sample| sample * gain).collect();
+        assert!(max_diff(&processed[..plain.len()], &expected) < 1e-5);
+    }
 }
 
 #[test]
@@ -129,15 +218,27 @@ fn an_sd_gain_graph_runs_in_the_offline_device_chain() {
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     let mut effect = device("sd", &[]);
     effect.kind = DeviceKind::Sd;
-    effect.state = graph.to_sd().ok().map(String::into_bytes);
+    effect.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     effect.automation = vec![AutomationLane {
         param: "gain".into(),
-        points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(0.5, 0.0)],
+        points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(0.5, 0.0)].into(),
         enabled: true,
     }];
     let notes = vec![note(0.0, 1.0, 69)];
-    let plain = render_offline(&project(notes.clone(), 1.0, vec![device("fm-synth", &[])]), SR, 512).unwrap();
-    let processed = render_offline(&project(notes, 1.0, vec![device("fm-synth", &[]), effect]), SR, 512).unwrap();
+    let plain = render_offline(
+        &project(notes.clone(), 1.0, vec![device("fm-synth", &[])]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
+    let processed = render_offline(
+        &project(notes, 1.0, vec![device("fm-synth", &[]), effect]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
     assert!(max_diff(&processed[..BEAT], &plain[..BEAT]) < 1e-5);
     assert!(processed[BEAT..].iter().all(|sample| sample.abs() < 1e-6));
 }
@@ -161,19 +262,32 @@ fn an_sd_midi_effect_transposes_notes_before_the_instrument() {
         vec![suhina_device_sdk::Connection::new("in", "up"), suhina_device_sdk::Connection::new("up", "out")];
     let mut transpose = device("sd", &[]);
     transpose.kind = DeviceKind::Sd;
-    transpose.state = graph.to_sd().ok().map(String::into_bytes);
+    transpose.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
     transpose.automation = vec![AutomationLane {
         param: "semitones".into(),
-        points: vec![AutomationPoint::new(0.0, 12.0), AutomationPoint::new(0.5, 0.0)],
+        points: vec![AutomationPoint::new(0.0, 12.0), AutomationPoint::new(0.5, 0.0)].into(),
         enabled: true,
     }];
     let notes = vec![note(0.0, 0.75, 48), note(0.8, 0.2, 48)];
-    let original = render_offline(&project(notes.clone(), 1.0, vec![device("fm-synth", &[])]), SR, 512).unwrap();
-    let shifted = render_offline(&project(notes, 1.0, vec![transpose, device("fm-synth", &[])]), SR, 512).unwrap();
+    let original = render_offline(
+        &project(notes.clone(), 1.0, vec![device("fm-synth", &[])]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
+    let shifted = render_offline(
+        &project(notes, 1.0, vec![transpose, device("fm-synth", &[])]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
     let expected = render_offline(
         &project(vec![note(0.0, 0.75, 60), note(0.8, 0.2, 48)], 1.0, vec![device("fm-synth", &[])]),
         SR,
         512,
+        suhina_device_registry::factory(),
     )
     .unwrap();
     assert!(peak(&shifted) > 1e-3);
@@ -203,8 +317,14 @@ fn an_sd_instrument_renders_from_timestamped_note_events() {
     ];
     let mut instrument = device("sd", &[]);
     instrument.kind = DeviceKind::Sd;
-    instrument.state = graph.to_sd().ok().map(String::into_bytes);
-    let audio = render_offline(&project(vec![note(0.0, 0.1, 60)], 1.0, vec![instrument]), SR, 512).unwrap();
+    instrument.state = graph.to_sd().ok().map(String::into_bytes).map(Into::into);
+    let audio = render_offline(
+        &project(vec![note(0.0, 0.1, 60)], 1.0, vec![instrument]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
     assert!(audio.iter().any(|sample| sample.abs() > 0.01));
     assert!(audio.iter().skip(BEAT / 10 * 2).all(|sample| sample.abs() < 1e-6));
 }
@@ -212,20 +332,26 @@ fn an_sd_instrument_renders_from_timestamped_note_events() {
 #[test]
 fn unknown_and_disabled_devices_pass_the_sound_through() {
     let notes = vec![note(0.0, 1.0, 60)];
-    let plain = render_offline(&project(notes.clone(), 1.0, vec![]), SR, 512).unwrap();
+    let plain =
+        render_offline(&project(notes.clone(), 1.0, vec![]), SR, 512, suhina_device_registry::factory()).unwrap();
     let mut off = device("utility", &[("gain", -40.0)]);
     off.enabled = false;
     let mut plugin = device("x", &[]);
     plugin.kind = DeviceKind::Clap { id: "com.example.reverb".into() };
     for devices in [vec![device("no-such-device", &[])], vec![off], vec![plugin]] {
-        assert_eq!(render_offline(&project(notes.clone(), 1.0, devices), SR, 512).unwrap(), plain);
+        assert_eq!(
+            render_offline(&project(notes.clone(), 1.0, devices), SR, 512, suhina_device_registry::factory()).unwrap(),
+            plain
+        );
     }
 }
 
 #[test]
 fn an_instrument_plays_the_tracks_notes() {
     let notes = vec![note(0.0, 1.0, 69), note(2.0, 1.0, 81)];
-    let out = render_offline(&project(notes, 4.0, vec![device("fm-synth", &[])]), SR, 512).unwrap();
+    let out =
+        render_offline(&project(notes, 4.0, vec![device("fm-synth", &[])]), SR, 512, suhina_device_registry::factory())
+            .unwrap();
     let out = left(&out);
     // Key 69 is 440 Hz, key 81 an octave up; the synth's sine, not the fallback voices.
     assert!((frequency(&out[2_400..BEAT - 2_400]) - 440.0).abs() < 1.0);
@@ -246,9 +372,9 @@ fn a_chain_sounds_the_same_in_any_block_size() {
         vec![device("auto-pan", &[]), device("utility", &[("width", 0.0)])],
     ] {
         let p = project(notes.clone(), 3.0, devices);
-        let reference = render_offline(&p, SR, 512).unwrap();
+        let reference = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
         for size in [1, 64, 333, 4_096] {
-            let other = render_offline(&p, SR, size).unwrap();
+            let other = render_offline(&p, SR, size, suhina_device_registry::factory()).unwrap();
             assert!(max_diff(&reference, &other) < 1e-6, "block {size}: {}", max_diff(&reference, &other));
         }
     }
@@ -262,7 +388,9 @@ fn launched_clips_play_on_the_instrument_and_stop() {
         (0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 }),
         (2.0, LaunchCommand::StopColumn { column: 0 }),
     ];
-    let out = left(&render_launches(&p, &crate::AudioPool::new(), SR, &commands, 3.0).unwrap());
+    let out = left(
+        &render_launches(&p, &crate::AudioPool::new(), SR, &commands, 3.0, suhina_device_registry::factory()).unwrap(),
+    );
     // The clip loops every beat (0.5 s): a note in each.
     for beat in 0..4 {
         let from = beat * BEAT + 1_000;
@@ -274,7 +402,13 @@ fn launched_clips_play_on_the_instrument_and_stop() {
 #[test]
 fn stopping_the_transport_releases_an_instruments_notes() {
     let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("fm-synth", &[])]);
-    let mut renderer = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let before = blocks(&mut renderer, 20, 480);
     assert!(peak(&before[9_600..]) > 0.05);
     renderer.handle(LaunchCommand::Stop);
@@ -282,17 +416,166 @@ fn stopping_the_transport_releases_an_instruments_notes() {
     assert!(peak(&after[24_000..]) < 1e-4, "{}", peak(&after[24_000..]));
 }
 
+/// A watched device's output lands in its spectrum ring, after the device's own controls, and
+/// only the watched device's ring has it (docs/spec/eq.md › The panel › The analyser).
+#[test]
+fn a_watched_devices_ring_holds_its_output() {
+    let loud = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[])]);
+    let mut renderer = Renderer::build(
+        &loud,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    let spectrum = monitor.spectrum();
+    spectrum.watch(0, TrackId(1), 0);
+    let out = blocks(&mut renderer, 4, 480);
+    assert!(peak(&out) > 0.05, "the tone plays");
+    let (samples, valid) = spectrum.samples(TrackId(1), 0).expect("the watched device has output");
+    assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
+    let loud_ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(loud_ring > 0.01, "the tone's output is in the ring, peak {loud_ring}");
+    assert!(
+        (loud_ring - peak(&out)).abs() < 0.02,
+        "the ring is the device's output, {loud_ring} against {}",
+        peak(&out)
+    );
+    assert!(spectrum.samples(TrackId(1), 1).is_none(), "another device's ring reads nothing");
+
+    // With the utility 12 dB down, the ring is 12 dB down with it: it is what the device
+    // made of the sound, not what went in.
+    let quiet = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[("gain", -12.0)])]);
+    let mut renderer = Renderer::build(
+        &quiet,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    monitor.spectrum().watch(0, TrackId(1), 0);
+    blocks(&mut renderer, 4, 480);
+    let (samples, _) = monitor.spectrum().samples(TrackId(1), 0).expect("the watched device has output");
+    let quiet_ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!((quiet_ring - loud_ring * 0.25).abs() < 0.02, "the ring heard the gain, {quiet_ring} against {loud_ring}");
+}
+
+#[test]
+fn a_skipped_device_keeps_the_watch_at_its_project_position() {
+    // A disabled utility first: `build` omits it, so the chain's slot 0 is the enabled one
+    // at project position 1. The watch is keyed by the position, so the second utility's own
+    // output lands in its row and the first's ghost slot does not hand it its input instead
+    // (the analyser's line shows the watched device, not its slot's neighbour).
+    let muted = {
+        let mut skipped = device("utility", &[]);
+        skipped.enabled = false;
+        skipped
+    };
+    let eager = project(vec![note(0.0, 8.0, 60)], 8.0, vec![muted, device("utility", &[])]);
+    let mut renderer = Renderer::build(
+        &eager,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let binding = renderer.controller().meter_monitor_arc();
+    let spectrum = binding.spectrum();
+    spectrum.watch(1, TrackId(1), 1);
+    blocks(&mut renderer, 4, 480);
+    let (samples, valid) = spectrum.samples(TrackId(1), 1).expect("the second device's ring holds its output");
+    assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
+    let ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(ring > 0.01, "the second utility's output is in its ring, peak {ring}");
+    assert!(
+        spectrum.samples(TrackId(1), 0).is_none(),
+        "the slot at position 0 was never run, so its ring reads nothing"
+    );
+}
+
+#[test]
+fn a_stopped_transport_keeps_the_watched_ring_empty() {
+    // The chain runs silent blocks while the transport is stopped; a device's output is then
+    // silence, and appending it would pull the analyser's held spectrum to silence. The spec
+    // asks the opposite: the line holds what it last read (docs/spec/eq.md › The analyser).
+    let loud = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[])]);
+    let mut stopped = Renderer::build(
+        &loud,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    let binding = stopped.controller().meter_monitor_arc();
+    let spectrum = binding.spectrum();
+    spectrum.watch(0, TrackId(1), 0);
+    blocks(&mut stopped, 4, 480);
+    assert!(spectrum.samples(TrackId(1), 0).is_none(), "the silent blocks left the ring empty");
+}
+
+#[test]
+fn a_held_note_ends_when_an_edit_takes_it_away_while_playing() {
+    // An 8-beat note sounds; at 0.5 s an edit deletes its clip, deletes the note, or shortens it
+    // to 1.5 beats (0.75 s): the instrument lets it go then, not at its old end (#916).
+    let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![device("fm-synth", &[])]);
+    let mut no_clip = p.clone();
+    no_clip.arrangement.lanes[0].clips.clear();
+    let mut no_note = p.clone();
+    let mut shorter = p.clone();
+    for (project, notes) in [(&mut no_note, vec![]), (&mut shorter, vec![note(0.0, 1.5, 69)])] {
+        project.contents[0].lanes =
+            vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(notes.into()) }].into();
+    }
+    for (name, edited, silent_from) in
+        [("clip deleted", &no_clip, 24_000), ("note deleted", &no_note, 24_000), ("note shortened", &shorter, 36_000)]
+    {
+        let mut renderer = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
+        let mut controller = renderer.controller();
+        let mut out = blocks(&mut renderer, 50, 480);
+        assert!(peak(&left(&out)[9_600..]) > 0.05, "{name}: sounding");
+        controller.update(edited).unwrap();
+        out.extend(blocks(&mut renderer, 150, 480));
+        let out = left(&out);
+        // The synth's release, then silence.
+        let after = silent_from + 9_600;
+        assert!(peak(&out[after..]) < 1e-4, "{name}: {}", peak(&out[after..]));
+        if silent_from > 24_000 {
+            assert!(peak(&out[24_000..silent_from]) > 0.05, "{name}: plays on until its new end");
+        }
+    }
+}
+
 #[test]
 fn an_edit_keeps_a_chain_playing_and_takes_its_new_values() {
     let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![device("fm-synth", &[]), device("utility", &[])]);
     let mut edited = p.clone();
     edited.channels[0].devices[1].params = vec![DeviceParam::new("gain", -6.0206)];
-    let mut renderer = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 50, 480);
     controller.update(&edited).unwrap();
     out.extend(blocks(&mut renderer, 100, 480));
-    let mut untouched = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap();
+    let mut untouched = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let reference = blocks(&mut untouched, 150, 480);
     // The note carries on through the swap (no new attack): after the utility's 20 ms ramp the
     // output is the untouched render at half the level.
@@ -314,7 +597,7 @@ fn hostile_notes_and_devices_do_not_break_a_render() {
         device("overdrive", &[("drive", -5.0)]),
         device("fm-synth", &[]),
     ];
-    let out = render_offline(&project(notes, 1.0, devices), SR, 300).unwrap();
+    let out = render_offline(&project(notes, 1.0, devices), SR, 300, suhina_device_registry::factory()).unwrap();
     assert!(out.iter().all(|s| s.is_finite() && s.abs() < 100.0));
 }
 
@@ -330,16 +613,16 @@ fn sdk_device(name: &str) -> Device {
     let graph = sdk_examples::build(name).unwrap();
     let mut stored = device("sd", &[]);
     stored.kind = DeviceKind::Sd;
-    stored.state = Some(graph.to_sd().unwrap().into_bytes());
+    stored.state = Some(graph.to_sd().unwrap().into_bytes().into());
     stored
 }
 
 #[test]
 fn sdk_effects_run_in_the_engine_independently_of_host_blocks() {
-    for name in ["stereo-utility", "auto-pan", "filter", "distortion", "delay", "compressor"] {
+    for name in ["stereo-utility", "lfo-pan", "filter", "distortion", "delay", "compressor"] {
         let p = project(vec![note(0.01, 0.2, 69)], 0.5, vec![device("fm-synth", &[]), sdk_device(name)]);
-        let reference = render_offline(&p, SR, 512).unwrap();
-        let odd = render_offline(&p, SR, 31).unwrap();
+        let reference = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
+        let odd = render_offline(&p, SR, 31, suhina_device_registry::factory()).unwrap();
         assert!(max_diff(&reference, &odd) < 1e-5, "{name}");
         assert!(reference.iter().all(|v| v.is_finite()));
         assert!(peak(&reference) > 1e-4, "{name} is silent");
@@ -348,17 +631,138 @@ fn sdk_effects_run_in_the_engine_independently_of_host_blocks() {
 
 #[test]
 fn sdk_delay_tail_and_oscillator_phase_carry_through_graph_swaps() {
-    for name in ["auto-pan", "delay"] {
+    for name in ["lfo-pan", "delay"] {
         let p = project(vec![note(0.0, 0.4, 69)], 2.0, vec![device("fm-synth", &[]), sdk_device(name)]);
         let mut edited = p.clone();
         edited.tracks[0].name = "Renamed".into();
-        let mut renderer = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap();
+        let mut renderer = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
         let mut controller = renderer.controller();
         let mut out = blocks(&mut renderer, 40, 480);
         controller.update(&edited).unwrap();
         out.extend(blocks(&mut renderer, 80, 480));
-        let mut untouched = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap();
+        let mut untouched = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
         let reference = blocks(&mut untouched, 120, 480);
         assert!(max_diff(&out, &reference) < 1e-5, "{name}: {}", max_diff(&out, &reference));
     }
+}
+
+/// A device inserted before a delay: the synth and the delay keep running by their ids
+/// (#763 › 1), so the echoes and the note carry on as if nothing changed, the new utility at
+/// unity passing them through. Without ids the whole chain starts again.
+#[test]
+fn running_devices_survive_an_insert_before_them_by_their_ids() {
+    let render = |ids: bool| {
+        let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), device("delay", &[])]);
+        if ids {
+            p.assign_ids().unwrap();
+        }
+        let mut edited = p.clone();
+        edited.channels[0].devices.insert(1, device("utility", &[]));
+        if ids {
+            edited.assign_ids().unwrap();
+        }
+        let inputs = || RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory());
+        let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+        let mut controller = renderer.controller();
+        // The edit lands while the delay still echoes the note.
+        let mut out = blocks(&mut renderer, 60, 480);
+        controller.update(&edited).unwrap();
+        out.extend(blocks(&mut renderer, 60, 480));
+        let mut untouched = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+        let reference = blocks(&mut untouched, 120, 480);
+        max_diff(&out, &reference)
+    };
+    let kept = render(true);
+    assert!(kept < 1e-4, "{kept}");
+    let restarted = render(false);
+    assert!(restarted > 1e-3, "without ids the delay starts empty: {restarted}");
+}
+
+/// Two devices of the same kind trading places: each keeps its running state by its id, not by
+/// its place. The echoing delay moves behind a dry one, so the track sounds as if nothing moved;
+/// kept by place, the echoes would stay in the first delay, now dry, and stop.
+#[test]
+fn identical_devices_that_trade_places_keep_their_own_running_state() {
+    let echoing = device("delay", &[("feedback", 0.9), ("mix", 0.5)]);
+    let dry = device("delay", &[("mix", 0.0)]);
+    let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), echoing, dry]);
+    p.assign_ids().unwrap();
+    let mut edited = p.clone();
+    edited.channels[0].devices.swap(1, 2);
+    let inputs = || RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory());
+    let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 60, 480);
+    controller.update(&edited).unwrap();
+    out.extend(blocks(&mut renderer, 60, 480));
+    let mut untouched = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+    let reference = blocks(&mut untouched, 120, 480);
+    let diff = max_diff(&out, &reference);
+    assert!(diff < 1e-4, "{diff}");
+}
+
+/// The same inside a device group: a group whose devices traded places starts again as a whole,
+/// as one whose devices changed does, instead of keeping each running device by its place under
+/// the other's settings. It sounds as a new group with the same devices would.
+#[test]
+fn a_group_whose_identical_devices_trade_places_starts_again() {
+    let echoing = device("delay", &[("feedback", 0.9), ("mix", 0.5)]);
+    let short = device("delay", &[("feedback", 0.0), ("mix", 0.5)]);
+    let group = DeviceGroup::with_branches(vec![Branch { devices: vec![echoing, short], ..Branch::new("") }]);
+    let mut p = project(vec![note(0.0, 0.25, 69)], 4.0, vec![device("fm-synth", &[]), Device::group("G", group)]);
+    p.assign_ids().unwrap();
+    let mut swapped = p.clone();
+    if let Some(g) = swapped.channels[0].devices[1].as_group_mut() {
+        g.branches[0].devices.swap(0, 1);
+    }
+    // The same group under an id the running one does not have: built new.
+    let mut fresh = swapped.clone();
+    fresh.channels[0].devices[1].id = DeviceId::NONE;
+    fresh.assign_ids().unwrap();
+    assert_ne!(fresh.channels[0].devices[1].id, p.channels[0].devices[1].id);
+    let render = |edited: &Project| {
+        let inputs = || RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory());
+        let mut renderer = Renderer::build(&p, inputs(), SR, RenderOptions::PLAYING).unwrap();
+        let mut controller = renderer.controller();
+        let mut out = blocks(&mut renderer, 60, 480);
+        controller.update(edited).unwrap();
+        out.extend(blocks(&mut renderer, 60, 480));
+        out
+    };
+    let diff = max_diff(&render(&swapped), &render(&fresh));
+    assert!(diff < 1e-6, "{diff}");
+}
+
+/// #911: with the loop on over bars 3 to 10 and playback starting before a MIDI clip at bar 5,
+/// the clip's first note sounds on its beat, not later.
+#[test]
+fn a_midi_clip_sounds_on_its_beat_after_play_with_the_loop_on() {
+    let mut p = project(vec![note(0.0, 1.0, 60)], 4.0, vec![device("fm-synth", &[])]);
+    if let Some(clip) = p.arrangement.lanes.get_mut(0).and_then(|l| l.clips.get_mut(0)) {
+        clip.start = 16.0;
+    }
+    p.transport.loop_range = Some(LoopRange { start: 8.0, end: 36.0 });
+    p.transport.loop_enabled = true;
+    let mut renderer = Renderer::stopped(&p, &crate::AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    controller.send(crate::LaunchCommand::SetPosition { beat: 4.0 }).unwrap();
+    blocks(&mut renderer, 2, 256);
+    controller.send(crate::LaunchCommand::Play).unwrap();
+    let out = blocks(&mut renderer, (14 * BEAT) / 256, 256);
+    let first = out.iter().position(|s| s.abs() > 1e-4).map(|i| i / 2).expect("the note sounds");
+    // Twelve beats from the start at beat 4 to the clip at beat 16, give or take a block.
+    let expected = 12 * BEAT;
+    assert!(first + 256 >= expected && first <= expected + 512, "first sound at frame {first}, expected {expected}");
 }

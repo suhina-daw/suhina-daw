@@ -10,9 +10,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use suhina_engine::{RenderInputs, render_offline_from};
 
 use serde_json::json;
-use suhina_engine::{AudioPool, Renderer, render_offline, render_offline_with_plugins};
+use suhina_engine::{AudioPool, Renderer, render_offline};
 use suhina_model::*;
 use suhina_plugins::scan::{Catalog, PluginInfo};
 use suhina_session::{Player, PluginEnv, Session};
@@ -34,6 +35,7 @@ fn env() -> Arc<PluginEnv> {
             version: "1".into(),
             features: vec!["audio-effect".into()],
             replaces: Vec::new(),
+            ara: false,
         };
         catalog.insert(path, vec![info]);
     }
@@ -45,7 +47,10 @@ fn gain(id: &str, points: &[(f64, f64)]) -> Device {
     Device {
         automation: vec![AutomationLane {
             param: "0".into(),
-            points: points.iter().map(|&(beat, value)| AutomationPoint { beat, value, curve: 0.0 }).collect(),
+            points: points
+                .iter()
+                .map(|&(beat, value)| AutomationPoint { beat, value, curve: Default::default() })
+                .collect(),
             enabled: true,
         }],
         ..Device::new(format!("Test {id}"), DeviceKind::Clap { id: id.into() })
@@ -66,17 +71,19 @@ fn project(length: f64, devices: Vec<Device>) -> Project {
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note].into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "l".into(),
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, length)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }
@@ -102,12 +109,19 @@ fn an_offline_render_plays_a_plug_ins_automation() {
             0.25
         }
     };
-    let dry = render_offline(&project(8.0, Vec::new()), SR, 512).unwrap();
+    let dry = render_offline(&project(8.0, Vec::new()), SR, 512, suhina_session::devices()).unwrap();
     for id in ["clap", "vst3"] {
         let p = project(8.0, vec![gain(id, &points)]);
-        let started = suhina_session::start_offline(&p, &env(), SR);
+        let started = suhina_session::start_offline(&p, &AudioPool::new(), &env(), SR);
         assert_eq!(started.running(), 1, "{id}: {:?}", started.notices);
-        let wet = render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, started.plugins).unwrap();
+        let wet = render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(started.plugins),
+            SR,
+            512,
+            None,
+        )
+        .unwrap();
         // A tenth of a beat at a time, away from the jump: the level follows the lane.
         let window = BEAT / 10;
         for start in (0..8 * BEAT - window).step_by(window) {
@@ -137,11 +151,11 @@ fn a_session_sets_and_automates_a_running_plug_ins_parameter() {
     let mut device = gain("clap", &[]);
     device.automation.clear();
     let p = project(512.0, vec![device]);
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     renderer.set_offline(true);
     let mut session = Session::new(p);
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     session.execute("transport.play", &json!({})).unwrap();
     let device = json!({ "track": 1, "device": 0 });
     let deadline = Instant::now() + PATIENT;
@@ -169,9 +183,9 @@ fn a_session_sets_and_automates_a_running_plug_ins_parameter() {
     let set = session.execute("device.setParam", &json!({ "track": 1, "device": 0, "param": "0", "value": 7.0 }));
     assert_eq!(set.unwrap()["value"], 1.0);
     let error = session.execute("device.setParam", &json!({ "track": 1, "device": 0, "param": "9", "value": 0.5 }));
-    assert!(error.unwrap_err().0.contains("no parameter 9"));
+    assert!(error.unwrap_err().message().to_owned().contains("no parameter 9"));
     let error = session.execute("device.setParam", &json!({ "track": 1, "device": 0, "param": "gain", "value": 0.5 }));
-    assert!(error.unwrap_err().0.contains("not a plug-in parameter id"));
+    assert!(error.unwrap_err().message().to_owned().contains("not a plug-in parameter id"));
 
     // A lane: the gain at 0 from here on, heard once the new graph plays.
     let automate = json!({ "track": 1, "device": 0, "param": "0", "points": [0, 0.0, 1000, 0.0] });
@@ -189,4 +203,63 @@ fn a_session_sets_and_automates_a_running_plug_ins_parameter() {
             session.execute("device.setAutomation", &json!({ "track": 1, "device": 0, "param": "0", "points": bad }));
         assert!(error.is_err(), "{bad}");
     }
+}
+
+/// The window has a shown plug-in list its parameters in the background for its generated
+/// panel (#679): the report carries the list once it answers, and commands meanwhile never find
+/// the plug-in busy.
+#[test]
+fn a_shown_plug_ins_parameters_are_listed_in_the_background_for_its_panel() {
+    let mut device = gain("clap", &[]);
+    device.automation.clear();
+    let p = project(512.0, vec![device]);
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
+    renderer.set_offline(true);
+    let mut session = Session::new(p);
+    session.attach_player(Player::new(renderer.controller(), None));
+    session.rack_mut().set_env(env());
+    session.execute("transport.play", &json!({})).unwrap();
+    let device = json!({ "track": 1, "device": 0 });
+    let deadline = Instant::now() + PATIENT;
+    while session.execute("device.plugin", &device).unwrap()["status"] != "running" {
+        session.sync_plugins();
+        play(&mut renderer, 2);
+        assert!(Instant::now() < deadline, "the plug-in did not start");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let track = suhina_model::TrackId(1);
+    assert_eq!(session.plugin_report_at(track, &[0]).unwrap().params, None, "nothing listed yet");
+    session.list_plugin_params_at(track, &[0]);
+    // While it lists, commands still answer.
+    assert!(
+        session.execute("device.setParam", &json!({ "track": 1, "device": 0, "param": "0", "value": 0.5 })).is_ok()
+    );
+    let listed = loop {
+        session.sync_plugins();
+        play(&mut renderer, 2);
+        if let Some(list) = session.plugin_report_at(track, &[0]).unwrap().params {
+            break list;
+        }
+        assert!(Instant::now() < deadline, "the list did not come");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!((listed[0].id, listed[0].min, listed[0].max), (0, 0.0, 1.0));
+    assert!(session.execute("device.pluginParams", &device).is_ok());
+    // Asked again at once, it is not listed again: the list is fresh for a couple of seconds.
+    session.list_plugin_params_at(track, &[0]);
+    assert!(session.execute("device.pluginParams", &device).is_ok());
+    // A restart forgets the old process's list: the panel waits for the new one's. Rendered in
+    // real time from here, a block does not wait the offline timeout on the stopped process, and
+    // the new one has its own deadline.
+    renderer.set_offline(false);
+    session.execute("device.restart", &device).unwrap();
+    assert_eq!(session.plugin_report_at(track, &[0]).unwrap().params, None, "a restarting plug-in lists nothing");
+    let deadline = Instant::now() + PATIENT;
+    while session.execute("device.plugin", &device).unwrap()["status"] != "running" {
+        session.sync_plugins();
+        play(&mut renderer, 2);
+        assert!(Instant::now() < deadline, "the plug-in did not start again");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(session.plugin_report_at(track, &[0]).unwrap().params, None, "the old list is gone");
 }

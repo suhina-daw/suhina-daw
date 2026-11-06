@@ -6,16 +6,15 @@
 #![allow(clippy::unwrap_used, clippy::panic)] // test helpers outside #[test] functions
 
 use std::path::{Path, PathBuf};
+use suhina_engine::RenderInputs;
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::{Session, blank_project};
 
-const SR: u32 = 48_000;
+use crate::support::run;
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
+const SR: u32 = 48_000;
 
 /// A copy of a test Stems file in a folder of its own.
 fn stems_file(test: &str, name: &str) -> PathBuf {
@@ -37,12 +36,17 @@ fn channel<'a>(p: &'a Project, t: &Track) -> &'a Channel {
 }
 
 fn render(session: &Session) -> Vec<f32> {
-    suhina_engine::render_offline_with_audio(session.project(), session.audio(), SR, 512).unwrap()
+    suhina_engine::render_offline_from(
+        session.project(),
+        RenderInputs::from_audio(session.audio(), suhina_session::devices()),
+        SR,
+        512,
+        None,
+    )
+    .unwrap()
 }
 
-fn peak(out: &[f32]) -> f32 {
-    out.iter().fold(0.0, |m, s| m.max(s.abs()))
-}
+use suhina_test_support::peak;
 
 #[test]
 fn a_stems_file_becomes_a_group_of_a_muted_master_and_its_stems() {
@@ -90,7 +94,8 @@ fn a_stems_file_becomes_a_group_of_a_muted_master_and_its_stems() {
 
     // One undo step.
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &blank_project());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..blank_project() });
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
 
@@ -138,7 +143,7 @@ fn a_stems_file_dropped_on_a_group_goes_into_it_and_into_a_scene() {
     let ids: Vec<u32> = session.project().tracks.iter().take(2).map(|t| t.id.0).collect();
     let outer = run(&mut session, "track.group", json!({ "tracks": ids, "name": "Set" })).unwrap();
     let outer = TrackId(outer["track"].as_u64().unwrap() as u32);
-    run(&mut session, "clip.addFiles", json!({ "paths": [path.display().to_string()], "track": outer.0, "scene": 2 }))
+    run(&mut session, "clip.addFiles", json!({ "paths": [path.display().to_string()], "track": outer.0, "scene": 1 }))
         .unwrap();
     let p = session.project();
     assert_eq!(p.validate(), Ok(()));
@@ -146,7 +151,7 @@ fn a_stems_file_dropped_on_a_group_goes_into_it_and_into_a_scene() {
     assert_eq!(group.parent, Some(outer));
     assert_eq!(channel(p, group).output, track(p, "Set").channel);
     // Inside the outer group, after its tracks.
-    let position = |name: &str| p.tracks.iter().position(|t| t.name == name).unwrap();
+    let position = |name: &str| p.tracks.iter().position(|t| p.shown_track_name(t.id) == name).unwrap();
     assert!(position("tones-alac") > position("2 MIDI"));
     let vox = track(p, "Vox");
     let column = p.launcher.columns.iter().find(|c| c.track == vox.id).unwrap();

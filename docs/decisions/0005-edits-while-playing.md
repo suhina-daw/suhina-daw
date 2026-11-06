@@ -2,8 +2,9 @@
 description: How edits reach an engine that is already playing — a new graph built off the audio thread and swapped in at an exact frame
 read_when: edit while playing, graph swap, renderer rebuild, Controller::update, live edits, volume change not heard, LOOP-26
 type: decision
-status: current
-last_verified: 2026-10-15
+status: accepted
+built: yes
+last_verified: 2026-11-05
 covers:
   - crates/engine/src/lib.rs
   - crates/engine/src/swap.rs
@@ -63,9 +64,10 @@ clip; devices (ADR 0004) will add many more parameters.
    edit (or its undo) inserted or removed one scene: the session finds that with
    `SceneShift::between` and sends it with the graph (`Controller::update_with_scenes`), so a
    playing or queued clip moves with its row and a removed row's clips stop. A time signature a
-   launched scene set stays across the swap, like its tempo, unless the project's own changed. A playing launched clip whose prepared
-   audio is unchanged keeps its stretch voice (moved from the old graph to the new); otherwise
-   the new voice is moved to the clip's position. Level meters keep their levels and clip
+   launched scene set stays across the swap, like its tempo, unless the project's own changed. A slot
+   whose stretched audio is unchanged keeps its built stretch voice (moved from the old graph to
+   the new, whether its clip plays or not; ADR 0003 › decision 7); any other playing clip's new
+   voice is moved to the clip's position. Level meters keep their levels and clip
    indicators while each meter slot plays the same track as before; a slot that now holds
    another track (tracks moved in the project's order) starts from silence
    ([level meters](../spec/level-meters.md)).
@@ -79,6 +81,8 @@ clip; devices (ADR 0004) will add many more parameters.
    never play out of time. That silence is the move's, so it is not counted as underruns.
 7. **The stretch worker thread serves every graph.** It owns a list of workers; a new graph's
    worker joins it before the graph is sent, and a worker leaves when its graph has been dropped.
+   The launcher's preparers (ADR 0003 › decision 7) join the same way and leave once their graph
+   has been swapped out.
 8. **The session notifies the player.** After an edit or undo/redo command changes the project,
    `Session::execute` calls `Player::update`, so the CLI, MCP and the window all get the same
    behaviour. The arrangement's loop region is part of the graph too, so a loop edit takes
@@ -98,13 +102,13 @@ which play notes, their latency) is set before the graph is built
 A renderer that ends because another audio output was chosen (`audio.setOutput`) gives its
 plug-ins back once it no longer runs (`Renderer::into_plugins`): from its graph, the graph not
 yet taken back, the ones parked or still queued, the newest for each device. The next renderer
-is built with them (`Renderer::with_plugins`) when the sample rate stays the same, so the
+is built with them (`Renderer::build` with `RenderInputs::with_plugins`) when the sample rate stays the same, so the
 plug-ins keep running and their state across the reopen.
 
 ## Amendment: edits in the next block (2026-10-12)
 
 In a DAW an edit should be heard at once; with a graph per edit taken one per audio block and
-0.15 s ahead, two edits in a row took two blocks, and a fader moved only the next note. As in
+0.08 s ahead (0.15 s until #916), two edits in a row took two blocks, and a fader moved only the next note. As in
 other real-time audio graphs (structural changes built off the audio thread and swapped
 atomically, parameter changes as lock-free messages applied at a block boundary, as Firewheel,
 klingt and JUCE's graph do), now:
@@ -112,7 +116,7 @@ klingt and JUCE's graph do), now:
 1. **Every graph due in a block is taken in that block,** at its frame, in order; the swap
    queue holds 16 graphs.
 2. **`SWAP_AHEAD_SECONDS` only when it is needed:** a graph with stretched arrangement clips still
-   takes over 0.15 s ahead, so their stretch voices are moved and their rings filled first; any
+   takes over 0.08 s ahead, so their stretch voices are moved and their rings filled first; any
    other graph takes over at the start of the next block.
 3. **Device parameters are messages, not graphs.** `Controller::set_device_param(track,
    device, param, value)` sends a numbered message through a lock-free queue; the renderer
@@ -130,14 +134,58 @@ klingt and JUCE's graph do), now:
    velocity; at a swap it takes the new graph's volume, pan and mute (and bus, if the track's
    chain changed) at once instead of keeping them until the note ends.
 
+## Amendment: notes an edit takes away (2026-10-28)
+
+A chain that carries over keeps its held notes, and a sine voice keeps sounding, until the end
+they were started with. An arrangement note deleted, shortened or moved while it sounded (or
+its clip deleted or moved away) therefore played on to its old end, until the transport stopped
+(#916). The engine now marks the notes the arrangement started, per chain key and per voice, and
+when a graph takes over while playing it looks each one up in the new graph's notes on the same
+bus and key that have started and not ended: found, the note ends where it now ends; not found,
+it is released at once. Notes from the launcher, the piano roll's keys and live input are not
+marked, so an edit leaves them alone. Audio clips needed nothing: the new graph's list of
+sounding clips is rebuilt from the edited project at the swap.
+
+## Amendment: devices kept by their ids (2026-11-02)
+
+A chain carried its running devices over only when the new graph held the same devices in the
+same order, so inserting, removing or moving one device restarted every other device on the
+track: tails cut, LFOs back to their start. Devices now have ids (#763 › 1). When the order
+changed, even only between two devices of the same kind, the new chain takes each device the old one runs under the same id and running the same
+thing (the same built-in with the same file or sample, the same graph, the same plug-in key),
+wherever it now is, and settles it with the new parameter values; the others start fresh. A
+device group whose devices changed or traded places still starts again as a whole. The match runs on the audio
+thread without allocating (a scan of at most 64 slots).
+
 ## Consequences
 
 - An edit is rendered from the next engine block after the command returns, plus the time to
-  build the graph (with stretched arrangement clips, 0.15 s after), and heard once that block
+  build the graph (with stretched arrangement clips, 0.08 s after), and heard once that block
   leaves the output's ring, which runs up to two blocks ahead of the device (`crates/output`). A
   device parameter is rendered from the next block without building anything.
-- Structural edits still rebuild the whole graph; volume, pan and other mix changes could get
-  the same message path as device parameters if building becomes too slow for fader drags.
+- Structural edits still rebuild the whole graph. Building did become too slow for knob drags in
+  a large project (60 to 80 ms a step on the window's thread), so a track's volume, pan and
+  sends take the device parameters' message path (`MIXER_VOLUME`, `MIXER_PAN`, `MIXER_SEND`):
+  the chain remembers the volume and send levels its gains were built at and scales them by the
+  new value's ratio; a track's pan is applied live over its whole range (its gains, and its
+  post-fader sends', are built centred and the pan's equal-power factors multiply them); each is
+  smoothed like a fader (a one-pole low pass at about 25 Hz). Where that cannot do it (a volume
+  or pan on its own lane, a group's volume, a send that starts from silence), the message is
+  refused and the edit builds a graph as before; for a send, only its first move does, and the
+  rest of the drag are messages. A knob of a track that is not heard (muted, outside a solo)
+  changes nothing played, and keeps the playing graph. A branch of a device group takes the same
+  path for its volume, pan, mute and solo (`MIXER_BRANCH`, #763 › 4): the running group keeps
+  each branch's values and moves its smoothed gains to the new ones; the message names the group
+  by its number among the channel's groups, counted depth first (`group_number`), so a group
+  inside another takes it too.
+- More of the mixer takes messages (#763 › 4, the rest). A track whose volume or mute is on a
+  lane pans live, its pan not being on one. The main fader is a message: with no chain on the
+  main channel, its volume is still built into every track's gains and a move scales the whole
+  mix by its ratio, the metronome's click left out of it (delayed for latency compensation on its
+  own while the fader moves); with a chain, the chain's fader takes it as a track's does.
+  Mute and solo of a track stay a new graph: a click is one graph, not one per frame, and as
+  messages they would keep a muted track's voices running, which changes which voices a full
+  voice pool steals.
 - Offline rendering stays the oracle (rule 4): tests swap graphs inside an offline render and
   compare against renders of the edited project.
 

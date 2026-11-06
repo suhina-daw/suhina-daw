@@ -7,12 +7,18 @@
 
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::Session;
 
+use crate::support::run;
+
 /// Bass (notes, one clip) into Main; two groups, Group and Outer, both into Main; and a return.
 fn project() -> Project {
+    suhina_test_support::with_ids(project_built())
+}
+
+fn project_built() -> Project {
     let track = |id: u32, name: &str, notes: bool| Track {
         id: TrackId(id),
         name: name.into(),
@@ -58,24 +64,30 @@ fn project() -> Project {
             length: 1.0,
             lanes: vec![ContentLane {
                 target: None,
-                data: LaneData::Notes(vec![Note {
-                    time: 0.0,
-                    duration: 1.0,
-                    key: 69,
-                    velocity: 1.0,
-                    release_velocity: 0.5,
-                    channel: 0,
-                    muted: false,
-                }]),
-            }],
+                data: LaneData::Notes(
+                    vec![Note {
+                        time: 0.0,
+                        duration: 1.0,
+                        key: 69,
+                        velocity: 1.0,
+                        release_velocity: 0.5,
+                        channel: 0,
+                        muted: false,
+                    }]
+                    .into(),
+                ),
+            }]
+            .into(),
             extensions: Extensions::default(),
             scale: None,
         }],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "Bass".into(),
                 track: Some(TrackId(1)),
                 clips: vec![Clip {
+                    id: Default::default(),
                     content: ContentId(1),
                     start: 0.0,
                     length: 1.0,
@@ -88,26 +100,25 @@ fn project() -> Project {
                     fade_out_curve: Default::default(),
                     follow_action: Default::default(),
                     launch: Default::default(),
+                    color: None,
+                    ara: false,
                     extensions: Extensions::default(),
                 }],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }
 }
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
-
 fn output(session: &Session, channel: u32) -> Option<ChannelId> {
-    session.project().channels.iter().find(|c| c.id == ChannelId(channel)).and_then(|c| c.output)
+    session.project().channel(ChannelId(channel)).and_then(|c| c.output)
 }
 
 /// The loudest sample of the left and of the right channel (both the same here: nothing is panned).
 fn peaks(project: &Project) -> (f32, f32) {
-    let samples = suhina_engine::render_offline(project, 48_000, 512).unwrap();
+    let samples = suhina_engine::render_offline(project, 48_000, 512, suhina_session::devices()).unwrap();
     samples.as_chunks::<2>().0.iter().fold((0.0f32, 0.0f32), |(l, r), [a, b]| (l.max(a.abs()), r.max(b.abs())))
 }
 

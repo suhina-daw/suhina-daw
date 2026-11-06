@@ -6,6 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+# The uniform partitioned FFT convolution (a port of HiFi-LoFi FFTConvolver).
+fft-convolver = "0.4"  # MIT
 
 [lints]
 workspace = true

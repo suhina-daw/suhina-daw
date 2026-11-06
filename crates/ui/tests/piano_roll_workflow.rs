@@ -15,6 +15,7 @@ use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
 use suhina_ui::settings::Settings;
+use suhina_ui::settings::keymap::shown;
 use suhina_ui::settings::keymap::{Keymap, Preset};
 use suhina_ui::settings::workflow::{Setting, Workflow};
 use suhina_ui::{App, kit::theme};
@@ -31,6 +32,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -47,7 +50,13 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
 }
 
 fn engine() -> suhina_engine::Renderer {
-    suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap()
+    suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap()
 }
 
 /// The demo project's piano roll with `preset`'s workflow.
@@ -66,7 +75,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let project = session.project();
     let clip = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap();
     match &project.content(clip.content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }
@@ -348,10 +357,10 @@ fn the_duplicate_setting_in_the_menu_moves_the_key() {
     h.run();
     let keymap = h.state().keymap();
     assert_eq!(keymap.preset(), Preset::Custom);
-    assert_eq!(keymap.label("selection.duplicate").as_deref(), Some("Ctrl+B"));
-    assert_eq!(keymap.label("view.browser").as_deref(), Some("Ctrl+Shift+B"));
+    assert_eq!(keymap.binding_text("selection.duplicate").as_deref(), Some("Ctrl+B"));
+    assert_eq!(keymap.binding_text("view.browser").as_deref(), Some("Ctrl+Shift+B"));
     // The toolbar's Duplicate button shows the key it has now.
-    assert!(h.query_by_label("Duplicate (Ctrl+B)").is_some());
+    assert!(h.query_by_label(&format!("Duplicate ({})", shown("Ctrl+B"))).is_some());
 }
 
 #[test]
@@ -360,9 +369,9 @@ fn settings_clip_editor_shows_the_workflow_rows() {
     let mut h = piano_app(&mut renderer);
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     h.run();
-    h.get_by_label("Settings page: Clip editor").click();
+    h.get_by_label("Settings page: Keys").click();
     h.run();
-    // The workflow rows are on the Clip editor page (scrolling a long page: settings_window.rs).
+    // The workflow rows are on the Keys page (scrolling a long page: settings_window.rs).
     let last = "Double-click on a note: Nothing";
     let rect = h.get_by_label(last).rect();
     assert!(rect.bottom() <= SIZE.1, "the last row is in view: {rect:?}");
@@ -385,6 +394,8 @@ fn render_the_workflow_menu_and_settings() {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut h = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(40)
@@ -398,7 +409,7 @@ fn render_the_workflow_menu_and_settings() {
     h.run();
     h.get_by_label("Workflow Select-first").click();
     h.run();
-    h.get_by_label_contains("Double-click on a note: Deletes it").hover();
+    h.get_by_label("Double-click on a note: Deletes it").hover();
     h.run();
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
     std::fs::create_dir_all(&out).unwrap();
@@ -407,7 +418,7 @@ fn render_the_workflow_menu_and_settings() {
     h.run();
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     h.run();
-    h.get_by_label("Settings page: Clip editor").click();
+    h.get_by_label("Settings page: Keys").click();
     h.run();
     h.render().unwrap().save(out.join("workflow-settings.png")).unwrap();
 }

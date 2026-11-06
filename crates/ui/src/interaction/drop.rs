@@ -26,6 +26,8 @@ pub enum ItemKind {
     Instrument,
     Effect,
     AudioEffect,
+    /// A built-in MIDI effect: it goes before a MIDI track's instrument.
+    MidiEffect,
     /// A heading in the tree (Instruments, Plug-ins, a vendor).
     Heading,
 }
@@ -38,8 +40,74 @@ impl ItemKind {
 
     /// Whether it becomes a device on a track.
     pub fn is_device(self) -> bool {
-        matches!(self, Self::Instrument | Self::Effect | Self::AudioEffect | Self::Preset)
+        matches!(self, Self::Instrument | Self::Effect | Self::AudioEffect | Self::MidiEffect | Self::Preset)
     }
+}
+
+/// Where a device carried from a chain or a strip's list started (#688): the panel or row puts
+/// its track and index here as the drag starts, and the window takes it from there.
+pub const DEVICE_CARRY: &str = "device-carry-start";
+
+/// Says that a drag of the top-level device `index` on `track` started this frame.
+pub fn start_device_carry(ctx: &egui::Context, track: suhina_engine::model::TrackId, index: usize) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(DEVICE_CARRY), (track, index)));
+}
+
+/// Where the shown chain's top-level devices are this frame: the track, the chain's area and
+/// each device's index and panel, left to right. A device carried and let go over it moves to
+/// the place under the pointer (`device.move`).
+pub const DEVICE_SLOTS: &str = "device-slots";
+
+/// The device being carried, set by the window every frame while it is, so the chain can show
+/// where it would go.
+pub const DEVICE_CARRYING: &str = "device-carrying";
+
+/// One shown list of a track's top-level devices: the detail area's chain (left to right) or a
+/// mixer strip's list (top to bottom), drawn in frame `pass`.
+#[derive(Debug, Clone)]
+pub struct DeviceSlots {
+    pub track: suhina_engine::model::TrackId,
+    pub area: egui::Rect,
+    pub slots: Vec<(usize, egui::Rect)>,
+    pub vertical: bool,
+    pub pass: u64,
+}
+
+impl DeviceSlots {
+    /// Where a device let go at `pointer` goes along this list ([`device_slot_at`]).
+    pub fn at(&self, pointer: egui::Pos2) -> Option<usize> {
+        device_slot_at(&self.slots, if self.vertical { pointer.y } else { pointer.x }, self.vertical)
+    }
+}
+
+/// Adds `list` to this frame's device lists (the lists of earlier frames go).
+pub fn note_device_slots(ctx: &egui::Context, list: DeviceSlots) {
+    ctx.data_mut(|d| {
+        let lists = d.get_temp_mut_or_default::<Vec<DeviceSlots>>(egui::Id::unique(DEVICE_SLOTS));
+        lists.retain(|l| l.pass == list.pass && !(l.track == list.track && l.vertical == list.vertical));
+        lists.push(list);
+    });
+}
+
+/// This frame's or the last frame's device list of `track` under `pointer`, if one is.
+pub fn device_slots_under(
+    ctx: &egui::Context,
+    track: suhina_engine::model::TrackId,
+    pointer: egui::Pos2,
+) -> Option<DeviceSlots> {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<Vec<DeviceSlots>>(egui::Id::unique(DEVICE_SLOTS)))?
+        .into_iter()
+        .find(|l| l.track == track && l.pass + 1 >= pass && l.area.contains(pointer))
+}
+
+/// Where in `slots` a device let go at `at` (x along a chain, y down a list) goes: the index of
+/// the device it lands before, as `device.move` takes it (the first whose middle is past `at`,
+/// or after the last).
+pub fn device_slot_at(slots: &[(usize, egui::Rect)], at: f32, vertical: bool) -> Option<usize> {
+    let last = slots.last()?;
+    let middle = |r: &egui::Rect| if vertical { r.center().y } else { r.center().x };
+    Some(slots.iter().find(|(_, r)| at < middle(r)).map_or(last.0 + 1, |(i, _)| *i))
 }
 
 /// An item in the browser's results, as it is dragged.
@@ -82,12 +150,17 @@ pub fn system_file(path: &Path) -> Option<BrowserItem> {
 /// Where a drag from the browser can land, as the view under the pointer says.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DropTarget {
+    /// Replace a sampler source, without creating a clip or a track.
+    Sampler { track: TrackId, device: usize },
     /// An arrangement lane, at a beat (already snapped).
     Lane { track: TrackId, beat: f64 },
     /// A clip slot (scene from 0).
     Slot { track: TrackId, scene: usize },
-    /// A track as a whole: its header, or the detail area showing its devices.
+    /// A track as a whole: its header.
     Track(TrackId),
+    /// The detail area showing a track's devices: a sample dropped there on a MIDI track with no
+    /// devices becomes a Sampler playing it; elsewhere it is a clip.
+    Chain(TrackId),
     /// The empty space after the tracks: new tracks, at a beat (Arrangement) or from a scene
     /// (Session).
     NewTracks { beat: Option<f64>, scene: Option<usize> },
@@ -107,9 +180,18 @@ pub struct DropProbe {
     pub target: Option<DropTarget>,
     /// The target's area, outlined while dragging.
     pub area: Option<egui::Rect>,
+    /// The files go onto one track each (Ctrl held, or the setting): the new tracks after the
+    /// first are shown too, below the tracks.
+    pub separate: bool,
 }
 
 impl DropProbe {
+    /// A device carried from a chain or a strip's list onto another track (#688): it lands on a
+    /// track as a dropped device does.
+    pub fn for_device(pointer: egui::Pos2) -> Self {
+        Self { pointer, files: false, devices: true, clip: false, target: None, area: None, separate: false }
+    }
+
     pub fn new(pointer: egui::Pos2, items: &[BrowserItem]) -> Self {
         Self {
             pointer,
@@ -118,12 +200,13 @@ impl DropProbe {
             clip: false,
             target: None,
             area: None,
+            separate: false,
         }
     }
 
     /// A probe for a clip carried between the views.
     pub fn for_clip(pointer: egui::Pos2) -> Self {
-        Self { pointer, files: true, devices: false, clip: true, target: None, area: None }
+        Self { pointer, files: true, devices: false, clip: true, target: None, area: None, separate: false }
     }
 
     /// Takes `target` when the pointer is in `area` and nothing took it yet.
@@ -148,6 +231,18 @@ pub struct DropPlan {
     pub label: String,
 }
 
+/// What a drop of `files` files on a track says: onto that track, or with `separate` (one track
+/// each) the first there and the others on as many new tracks after it.
+fn spread(count: &str, files: usize, separate: bool, track: &str) -> String {
+    match files {
+        2.. if separate => {
+            let more = files - 1;
+            format!("Add {count}, one track each: {track} and {more} new track{}", if more == 1 { "" } else { "s" })
+        }
+        _ => format!("Add {count} to {track}"),
+    }
+}
+
 /// The commands a drop of `items` on `target` runs. `separate` is Ctrl held, already flipped
 /// by the setting; `warp` the stretch mode for samples with a tempo; `stack` whether
 /// arrangement clips may stack. `None` when nothing can land there.
@@ -159,6 +254,21 @@ pub fn plan(
     stack: bool,
     track_name: &dyn Fn(TrackId) -> String,
 ) -> Option<DropPlan> {
+    if let DropTarget::Sampler { track, device } = target {
+        let [sample] = items else { return None };
+        if sample.kind != ItemKind::Sample {
+            return None;
+        }
+        let path = sample.path()?;
+        return Some(DropPlan {
+            commands: vec![(
+                "device.loadSample",
+                json!({"track": track.0, "device": device, "path": path.display().to_string()}),
+            )],
+            samples: vec![path],
+            label: "Replace sampler source".into(),
+        });
+    }
     let files: Vec<&BrowserItem> = items.iter().filter(|i| i.kind.is_file_clip()).collect();
     let devices: Vec<&BrowserItem> = items.iter().filter(|i| i.kind.is_device()).collect();
     if files.is_empty() && devices.is_empty() {
@@ -176,17 +286,17 @@ pub fn plan(
                 params["track"] = json!(track.0);
                 params["start"] = json!(beat);
                 params["stack"] = json!(stack);
-                label.push(format!("Add {count} to {}", track_name(track)));
+                label.push(spread(&count, files.len(), separate, &track_name(track)));
             }
             DropTarget::Slot { track, scene } => {
                 params["track"] = json!(track.0);
-                params["scene"] = json!(scene + 1);
-                label.push(format!("Add {count} to {}", track_name(track)));
+                params["scene"] = json!(scene);
+                label.push(spread(&count, files.len(), separate, &track_name(track)));
             }
-            DropTarget::Track(_) => return None,
+            DropTarget::Track(_) | DropTarget::Chain(_) | DropTarget::Sampler { .. } => return None,
             DropTarget::NewTracks { beat, scene } => {
                 match (beat, scene) {
-                    (_, Some(scene)) => params["scene"] = json!(scene + 1),
+                    (_, Some(scene)) => params["scene"] = json!(scene),
                     (beat, None) => params["start"] = json!(beat.unwrap_or(0.0)),
                 }
                 let kinds =
@@ -227,9 +337,17 @@ pub fn plan(
                 params["plugin"] = json!(spec);
                 "device.addPlugin"
             }
+            (Item::Stock(key), _) => {
+                params["stock"] = json!(key);
+                "device.add"
+            }
         };
         match target {
-            DropTarget::Lane { track, .. } | DropTarget::Slot { track, .. } | DropTarget::Track(track) => {
+            DropTarget::Lane { track, .. }
+            | DropTarget::Slot { track, .. }
+            | DropTarget::Track(track)
+            | DropTarget::Chain(track)
+            | DropTarget::Sampler { track, .. } => {
                 params["track"] = json!(track.0);
                 commands.push((id, params));
                 label.push(format!("Add {} to {}", device.name, track_name(track)));
@@ -244,6 +362,8 @@ pub fn plan(
                     if let Some(voice) = params.get("voice") {
                         add["voice"] = voice.clone();
                     }
+                } else if let Some(stock) = params.get("stock") {
+                    add["stock"] = stock.clone();
                 } else if let Some(id) = params.get("id").or_else(|| params.get("plugin")) {
                     add["device"] = id.clone();
                 }
@@ -258,110 +378,5 @@ pub fn plan(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn item(key: &str, kind: ItemKind) -> BrowserItem {
-        BrowserItem { key: key.into(), name: key.rsplit(['/', ':']).next().unwrap_or(key).into(), kind, plugin: false }
-    }
-
-    fn name(t: TrackId) -> String {
-        format!("T{}", t.0)
-    }
-
-    #[test]
-    fn files_on_a_lane_become_one_add_files_command() {
-        let items =
-            [item("/s/a.wav", ItemKind::Sample), item("/s/b.mid", ItemKind::Midi), item("/s/dir", ItemKind::Folder)];
-        let plan =
-            plan(&items, DropTarget::Lane { track: TrackId(3), beat: 8.0 }, false, "rhythmic", true, &name).unwrap();
-        assert_eq!(plan.commands.len(), 1);
-        let (id, params) = &plan.commands[0];
-        assert_eq!(*id, "clip.addFiles");
-        assert_eq!(params["paths"].as_array().map(Vec::len), Some(2));
-        assert_eq!(
-            (params["track"].as_u64(), params["start"].as_f64(), params["stack"].as_bool()),
-            (Some(3), Some(8.0), Some(true))
-        );
-        assert_eq!(plan.samples.len(), 1);
-        assert_eq!(plan.label, "Add 2 clips to T3");
-    }
-
-    #[test]
-    fn slots_and_empty_space_take_scenes_and_new_tracks() {
-        let items = [item("/s/a.wav", ItemKind::Sample)];
-        let slot =
-            plan(&items, DropTarget::Slot { track: TrackId(1), scene: 2 }, false, "rhythmic", false, &name).unwrap();
-        assert_eq!(slot.commands[0].1["scene"], 3);
-        let empty =
-            plan(&items, DropTarget::NewTracks { beat: None, scene: Some(0) }, true, "tonal", false, &name).unwrap();
-        assert!(empty.commands[0].1.get("track").is_none());
-        assert_eq!(
-            (empty.commands[0].1["scene"].as_u64(), empty.commands[0].1["warp"].as_str()),
-            (Some(1), Some("tonal"))
-        );
-        assert_eq!(empty.label, "New audio track");
-        assert!(
-            plan(&items, DropTarget::Track(TrackId(1)), false, "rhythmic", false, &name).is_none(),
-            "a file needs a place"
-        );
-    }
-
-    #[test]
-    fn system_files_that_become_clips_are_items_and_the_rest_are_not() {
-        let wav = system_file(Path::new("/s/Kick.WAV")).unwrap();
-        assert_eq!(
-            (wav.kind, wav.name.as_str(), wav.path()),
-            (ItemKind::Sample, "Kick.WAV", Some("/s/Kick.WAV".into()))
-        );
-        assert_eq!(system_file(Path::new("/s/groove.mid")).map(|i| i.kind), Some(ItemKind::Midi));
-        assert_eq!(system_file(Path::new("/s/song.stem.mp4")).map(|i| i.kind), Some(ItemKind::Sample));
-        for other in [
-            "/s/effect.sd",
-            "/s/song.suhina",
-            "/s/set.als",
-            "/s/theme.json",
-            "/s/bank.syx",
-            "/s/notes.txt",
-            "/s/noext",
-            "",
-        ] {
-            assert!(system_file(Path::new(other)).is_none(), "{other}");
-        }
-        // The same plan as a browser drag of that file.
-        let plan =
-            plan(&[wav], DropTarget::Slot { track: TrackId(1), scene: 0 }, false, "rhythmic", false, &name).unwrap();
-        assert_eq!(plan.commands[0].1["paths"], json!(["/s/Kick.WAV"]));
-    }
-
-    #[test]
-    fn devices_go_on_the_track_or_make_one() {
-        let synth = item("device:fm-synth", ItemKind::Instrument);
-        let mut plug = item("plugin:clap:/x.clap#id", ItemKind::Effect);
-        plug.plugin = true;
-        let bank = item("/p/bank.syx#5", ItemKind::Preset);
-        let on_track = plan(
-            &[synth.clone(), plug.clone(), bank.clone()],
-            DropTarget::Track(TrackId(2)),
-            false,
-            "rhythmic",
-            false,
-            &name,
-        )
-        .unwrap();
-        let ids: Vec<&str> = on_track.commands.iter().map(|(id, _)| *id).collect();
-        assert_eq!(ids, ["device.add", "device.addPlugin", "device.add"]);
-        assert_eq!(on_track.commands[2].1["voice"], 5);
-        let sd = item("C:/effects/gain.sd", ItemKind::AudioEffect);
-        let sd_plan = plan(&[sd], DropTarget::Track(TrackId(2)), false, "rhythmic", false, &name).unwrap();
-        assert_eq!(sd_plan.commands, vec![("device.addSd", json!({ "path": "C:/effects/gain.sd", "track": 2 }))]);
-        let new =
-            plan(&[synth], DropTarget::NewTracks { beat: Some(0.0), scene: None }, false, "rhythmic", false, &name)
-                .unwrap();
-        assert_eq!(new.commands, vec![("track.add", json!({ "device": "fm-synth" }))]);
-        assert!(
-            plan(&[item("/s/dir", ItemKind::Folder)], DropTarget::Track(TrackId(1)), false, "rhythmic", false, &name)
-                .is_none()
-        );
-    }
-}
+#[path = "drop_tests.rs"]
+mod tests;

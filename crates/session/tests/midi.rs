@@ -9,13 +9,13 @@
 
 use std::sync::{Arc, Mutex};
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_engine::{AudioPool, LiveEvent, Renderer};
 use suhina_model::Project;
 use suhina_session::audio::Opened;
-use suhina_session::{
-    AudioSystem, CommandKind, LiveInput, MidiSystem, OutputChoice, Player, Projects, Session, midi_commands,
-};
+use suhina_session::{AudioSystem, LiveInput, MidiSystem, OutputChoice, Player, Projects, Session, midi_commands};
+
+use crate::support::run;
 
 const SR: u32 = 48_000;
 
@@ -69,11 +69,12 @@ impl AudioSystem for Stand {
         &self,
         project: &Project,
         audio: &AudioPool,
+        _assets: &suhina_engine::DeviceAssets,
         _: &OutputChoice,
         previous: Option<Player>,
     ) -> Result<Opened, String> {
         drop(previous);
-        let mut renderer = Renderer::stopped(project, audio, SR).unwrap();
+        let mut renderer = Renderer::stopped(project, audio, SR, suhina_session::devices()).unwrap();
         let player = Player::new(renderer.controller(), None);
         self.renderers.lock().unwrap().push(renderer);
         Ok(Opened { player, notice: None, plugins_kept: true })
@@ -94,10 +95,6 @@ impl Stand {
         }
         peak
     }
-}
-
-fn run(projects: &mut Projects, id: &str, params: Value) -> Result<Value, String> {
-    projects.execute(id, &params).map_err(|e| e.0)
 }
 
 fn ports(names: &[&str], broken: Option<&str>) -> Arc<Ports> {
@@ -123,7 +120,7 @@ fn armed(projects: &mut Projects) -> Vec<bool> {
 fn midi_commands_are_listed_with_their_kind() {
     let ids: Vec<&str> = midi_commands().iter().map(|c| c.id).collect();
     assert_eq!(ids, ["midi.inputs", "midi.setInput"]);
-    assert!(midi_commands().iter().all(|c| c.kind == CommandKind::Audio));
+    assert!(midi_commands().iter().all(|c| c.kind.target == suhina_session::Target::Audio));
     let listed = suhina_session::all_commands();
     for id in ["midi.inputs", "midi.setInput", "track.setArm"] {
         assert!(listed.as_array().unwrap().iter().any(|c| c["id"] == id), "{id}");
@@ -271,7 +268,7 @@ fn a_note_from_a_port_plays_the_armed_tracks_instrument_also_on_a_new_output() {
     input.send(LiveEvent::NoteOff { key: 64 });
 
     // A new output is a new engine: the notes follow it, and it knows the armed track.
-    run(&mut projects, "audio.setOutput", json!({ "buffer_frames": 256 })).unwrap();
+    run(&mut projects, "audio.setOutput", json!({ "bufferFrames": 256 })).unwrap();
     projects.poll_plugins();
     assert!(input.is_connected());
     stand.run_latest();
@@ -285,15 +282,15 @@ fn a_tracks_midi_input_is_an_edit_that_undo_takes_back() {
     projects.add(Session::new(suhina_session::blank_project()), None).unwrap();
     let ids = track_ids(&mut projects);
     let tracks = run(&mut projects, "project.tracks", json!({})).unwrap();
-    assert_eq!(tracks[0]["midi_input"], json!({ "port": "all", "channel": null }));
+    assert_eq!(tracks[0]["midi_input"], json!({ "port": "all", "channel": null, "monitor": "auto" }));
 
     let set =
         run(&mut projects, "track.setMidiInput", json!({ "track": ids[0], "port": "Pads", "channel": 10 })).unwrap();
-    assert_eq!(set["midi_input"], json!({ "port": "Pads", "channel": 10 }));
+    assert_eq!(set["midi_input"], json!({ "port": "Pads", "channel": 10, "monitor": "auto" }));
     // A part left out stays.
     run(&mut projects, "track.setMidiInput", json!({ "track": ids[0], "channel": 0 })).unwrap();
     let tracks = run(&mut projects, "project.tracks", json!({})).unwrap();
-    assert_eq!(tracks[0]["midi_input"], json!({ "port": "Pads", "channel": null }));
+    assert_eq!(tracks[0]["midi_input"], json!({ "port": "Pads", "channel": null, "monitor": "auto" }));
     run(&mut projects, "track.setMidiInput", json!({ "track": ids[1], "port": "none" })).unwrap();
     let tracks = run(&mut projects, "project.tracks", json!({})).unwrap();
     assert_eq!(tracks[1]["midi_input"]["port"], json!("none"));
@@ -301,7 +298,7 @@ fn a_tracks_midi_input_is_an_edit_that_undo_takes_back() {
     run(&mut projects, "edit.undo", json!({})).unwrap();
     run(&mut projects, "edit.undo", json!({})).unwrap();
     let tracks = run(&mut projects, "project.tracks", json!({})).unwrap();
-    assert_eq!(tracks[0]["midi_input"], json!({ "port": "Pads", "channel": 10 }));
+    assert_eq!(tracks[0]["midi_input"], json!({ "port": "Pads", "channel": 10, "monitor": "auto" }));
     assert_eq!(tracks[1]["midi_input"]["port"], json!("all"));
 
     for bad in [
@@ -310,10 +307,50 @@ fn a_tracks_midi_input_is_an_edit_that_undo_takes_back() {
         json!({ "track": ids[0], "channel": 17 }),
         json!({ "track": ids[0], "channel": -1 }),
         json!({ "track": ids[0], "channel": "ten" }),
+        json!({ "track": ids[0], "monitor": "sometimes" }),
+        json!({ "track": ids[0], "monitor": true }),
         json!({ "track": 999, "port": "all" }),
     ] {
         assert!(run(&mut projects, "track.setMidiInput", bad.clone()).is_err(), "{bad}");
     }
+}
+
+#[test]
+fn midi_monitor_modes_reach_the_engine_without_changing_record_arm() {
+    let midi = ports(&["Keys"], None);
+    let stand = Arc::new(Stand::default());
+    let mut projects = Projects::new();
+    projects.set_audio_system(stand.clone());
+    projects.set_midi_system(midi);
+    projects.add(Session::new(suhina_session::blank_project()), None).unwrap();
+    let id = track_ids(&mut projects)[0];
+    run(&mut projects, "device.add", json!({"track": id, "id": "fm-synth"})).unwrap();
+    run(&mut projects, "track.setMidiInput", json!({"track": id, "monitor": "in"})).unwrap();
+    projects.open_output(None).unwrap();
+    projects.poll_plugins();
+    let input = projects.live_input();
+    let heard = || {
+        input.send(LiveEvent::NoteOn { key: 60, velocity: 1.0 });
+        let level = stand.run_latest();
+        input.send(LiveEvent::AllNotesOff);
+        for _ in 0..60 {
+            stand.run_latest();
+        }
+        level
+    };
+    assert!(!armed(&mut projects)[0]);
+    assert!(heard() > 0.0, "In works on a new player without arming");
+    run(&mut projects, "track.setMidiInput", json!({"track": id, "monitor": "off"})).unwrap();
+    run(&mut projects, "track.setArm", json!({"track": id, "armed": true})).unwrap();
+    assert_eq!(heard(), 0.0, "Off remains silent even while armed");
+    run(&mut projects, "edit.undo", json!({})).unwrap();
+    assert!(heard() > 0.0, "undo restores In");
+    run(&mut projects, "track.setArm", json!({"track": id, "armed": false})).unwrap();
+    assert!(heard() > 0.0, "disarming does not disable In");
+    run(&mut projects, "track.setMidiInput", json!({"track": id, "monitor": "auto"})).unwrap();
+    assert_eq!(heard(), 0.0, "Auto follows arm");
+    run(&mut projects, "track.setArm", json!({"track": id, "armed": true})).unwrap();
+    assert!(heard() > 0.0);
 }
 
 #[test]

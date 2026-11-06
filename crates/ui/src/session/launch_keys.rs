@@ -4,8 +4,8 @@
 //! Computer keys that launch slots, scenes and stop buttons, and the mapping mode that sets
 //! them (`docs/spec/ui-session-view.md` › Launch keys). A key down is the press and a key up the
 //! release, and both run the command the mouse would ([`suhina_session::mapped_command`]). A
-//! mapped key wins over a shortcut while the Session view is shown and no text field has the
-//! keyboard; the window decides that and calls [`handle`] only then.
+//! mapped key wins over a shortcut while the Launcher view is shown and no text field has the
+//! keyboard; the window decides that and calls [`LaunchKeys::handle`] only then.
 
 use egui::{Align2, Event, Key, Painter, Rect, StrokeKind};
 use serde_json::json;
@@ -29,7 +29,7 @@ pub struct LaunchKeys {
     held: Vec<MappingSource>,
 }
 
-/// One key event, as [`handle`] needs it.
+/// One key event, as [`LaunchKeys::handle`] needs it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyEvent {
     pub key: Key,
@@ -39,7 +39,7 @@ pub struct KeyEvent {
     pub modifiers: bool,
 }
 
-/// What [`handle`] did with an event.
+/// What [`LaunchKeys::handle`] did with an event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     /// Not a launch key: the shortcuts see it.
@@ -60,7 +60,7 @@ impl LaunchKeys {
         self.mode.selected = if self.mode.selected == Some(target) { None } else { Some(target) };
     }
 
-    /// Releases every held key: the window lost the keyboard or left the Session view, and no
+    /// Releases every held key: the window lost the keyboard or left the Launcher view, and no
     /// key up will come. A gate or repeat clip stops as if its key had come up.
     pub fn release_all(&mut self, project: &Project, actions: &mut Vec<Action>) {
         for source in std::mem::take(&mut self.held) {
@@ -70,7 +70,7 @@ impl LaunchKeys {
         }
     }
 
-    /// Handles one key event while the Session view has the keyboard. In the mapping mode a key
+    /// Handles one key event while the Launcher view has the keyboard. In the mapping mode a key
     /// down maps the key to the picked control (Delete and Backspace remove its mappings, Escape
     /// leaves the mode); otherwise a mapped key down runs its press and its key up its release.
     /// Repeats of a held key are taken and do nothing.
@@ -134,7 +134,7 @@ pub fn target_params(target: MappingTarget) -> serde_json::Value {
         params["track"] = json!(track.0);
     }
     if let Some(scene) = target.scene() {
-        params["scene"] = json!(scene + 1);
+        params["scene"] = json!(scene);
     }
     params
 }
@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(keys.handle(&project, &repeat, &mut actions), Outcome::Taken);
         assert_eq!(keys.handle(&project, &key(Key::Q, false), &mut actions), Outcome::Taken);
         assert_eq!(ids(&actions), ["clip.launch", "clip.release"]);
-        assert_eq!(actions[0].params, json!({ "track": 1, "scene": 1 }));
+        assert_eq!(actions[0].params, json!({ "track": 1, "scene": 0 }));
         // Unmapped keys and keys with a modifier are the shortcuts'.
         assert_eq!(keys.handle(&project, &key(Key::W, true), &mut actions), Outcome::Pass);
         let ctrl = KeyEvent { modifiers: true, ..key(Key::Q, true) };
@@ -253,8 +253,8 @@ mod tests {
         assert_eq!(keys.handle(&project, &key(Key::W, true), &mut actions), Outcome::Taken);
         assert_eq!(keys.handle(&project, &key(Key::Delete, true), &mut actions), Outcome::Taken);
         assert_eq!(ids(&actions), ["launcher.addMapping", "launcher.removeMapping"]);
-        assert_eq!(actions[0].params, json!({ "target": "scene", "scene": 1, "source": "key:W" }));
-        assert_eq!(actions[1].params, json!({ "target": "scene", "scene": 1 }));
+        assert_eq!(actions[0].params, json!({ "target": "scene", "scene": 0, "source": "key:W" }));
+        assert_eq!(actions[1].params, json!({ "target": "scene", "scene": 0 }));
         // Picking it again drops it; Escape leaves the mode.
         keys.pick(MappingTarget::Scene { scene: 0 });
         assert_eq!(keys.mode.selected, None);
@@ -267,7 +267,7 @@ mod tests {
     fn targets_give_the_commands_their_parameters() {
         assert_eq!(
             target_params(MappingTarget::Slot { track: TrackId(3), scene: 1 }),
-            json!({ "target": "slot", "track": 3, "scene": 2 })
+            json!({ "target": "slot", "track": 3, "scene": 1 })
         );
         assert_eq!(target_params(MappingTarget::Stop { track: TrackId(3) }), json!({ "target": "stop", "track": 3 }));
     }

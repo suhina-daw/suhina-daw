@@ -215,7 +215,8 @@ fn legato_audio_continues_from_the_replaced_clips_position() {
                 gain,
                 ..AudioRegion::new("ramp.wav")
             }),
-        }],
+        }]
+        .into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -224,7 +225,7 @@ fn legato_audio_continues_from_the_replaced_clips_position() {
         second.launch = LaunchSettings { legato, quantization: LaunchQuantization::None, ..LaunchSettings::default() };
         let p = project(vec![content(1, 1.0), content(2, 0.5)], vec![vec![with(clip(1, 2.0, true)), with(second)]]);
         let commands = [(0.0, PRESS), (0.3, LaunchCommand::LaunchClip { column: 0, slot: 1 })];
-        render_launches(&p, &audio, sr, &commands, 0.5).unwrap()
+        render_launches(&p, &audio, sr, &commands, 0.5, suhina_device_registry::factory()).unwrap()
     };
     let left = |out: &[f32], seconds: f64| out[2 * (seconds * f64::from(sr)) as usize];
     // At 0.4 s the second clip (at half the level) is 0.1 s into its file without legato, and

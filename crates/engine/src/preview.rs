@@ -91,11 +91,19 @@ pub struct PreviewMonitor {
     playing: AtomicBool,
     /// Seconds from the start of what plays (f64 bits).
     seconds: AtomicU64,
+    /// How many samples or MIDI files have started playing, so a preview that starts and ends
+    /// between two looks is still seen to have played.
+    started: AtomicU64,
 }
 
 impl PreviewMonitor {
     pub fn playing(&self) -> bool {
         self.playing.load(Ordering::Relaxed)
+    }
+
+    /// How many samples or MIDI files have started playing since the voice was made.
+    pub fn started(&self) -> u64 {
+        self.started.load(Ordering::Relaxed)
     }
 
     /// Seconds into the sample or MIDI file being previewed.
@@ -111,9 +119,9 @@ pub(crate) struct PreviewSender {
 }
 
 impl PreviewSender {
-    pub(crate) fn send(&mut self, command: PreviewCommand) -> Result<(), String> {
+    pub(crate) fn send(&mut self, command: PreviewCommand) -> Result<(), crate::ControlError> {
         self.collect();
-        self.commands.push(command).map_err(|_| "the audio engine has not taken the previous preview yet".to_string())
+        self.commands.push(command).map_err(|_| crate::ControlError::Full("preview"))
     }
 
     pub(crate) fn collect(&mut self) {
@@ -162,6 +170,19 @@ struct NotesPlay {
     released: bool,
 }
 
+/// A fallback instrument still sounding after its preview ended, fading out so it does not stop
+/// with a click.
+struct Tail {
+    notes: Box<PreviewNotes>,
+    /// Frames of the fade left, of `total`.
+    left: usize,
+    total: usize,
+    gain: f32,
+}
+
+/// How long a fallback instrument fades out for, in seconds.
+const TAIL_SECONDS: f64 = 0.015;
+
 /// The renderer's end.
 pub(crate) struct Preview {
     commands: Option<Consumer<PreviewCommand>>,
@@ -171,6 +192,8 @@ pub(crate) struct Preview {
     waiting: Option<PreviewCommand>,
     sample: Option<SamplePlay>,
     notes: Option<NotesPlay>,
+    /// The last fallback instrument, fading out.
+    tail: Option<Tail>,
     /// The fallback instrument's events in the current block, and its output.
     events: Vec<(usize, NoteEvent)>,
     buffer: Vec<f32>,
@@ -179,6 +202,9 @@ pub(crate) struct Preview {
     glide: f32,
     pub(crate) monitor: Arc<PreviewMonitor>,
 }
+
+/// The most a command, or a preview's end, sends back at once: a sample, notes and a tail.
+const RETIRED_AT_ONCE: usize = 3;
 
 /// About how long a change of level takes.
 const GLIDE_SECONDS: f64 = 0.01;
@@ -196,6 +222,7 @@ impl Preview {
             waiting: None,
             sample: None,
             notes: None,
+            tail: None,
             events: Vec::with_capacity(MAX_EVENTS),
             buffer: vec![0.0; MAX_BLOCK * 2],
             sample_rate,
@@ -218,10 +245,10 @@ impl Preview {
     }
 
     /// Applies the commands that have arrived. A command waits while the retired queue has no
-    /// room for the two things it may replace.
+    /// room for the things it may replace.
     pub(crate) fn receive(&mut self, chains: &mut [Chain]) {
         loop {
-            let room = self.retired.as_ref().is_some_and(|r| r.slots() >= 2);
+            let room = self.retired.as_ref().is_some_and(|r| r.slots() >= RETIRED_AT_ONCE);
             if !room {
                 return;
             }
@@ -248,9 +275,11 @@ impl Preview {
                     let position = (from.max(0.0) * rate).min(data.frames() as f64);
                     let step = rate / f64::from(self.sample_rate.max(1));
                     self.sample = Some(SamplePlay { data, position, step, played: 0, gain, target: gain });
+                    self.monitor.started.fetch_add(1, Ordering::Relaxed);
                 }
                 PreviewCommand::Notes { notes, gain } => {
                     self.stop(chains, 0);
+                    self.monitor.started.fetch_add(1, Ordering::Relaxed);
                     self.notes = Some(NotesPlay {
                         notes,
                         frame: 0,
@@ -324,7 +353,7 @@ impl Preview {
     }
 
     /// Stops whatever plays, releasing its held notes at `frame` of the block, and sends it
-    /// back. Only called when the retired queue has room for two.
+    /// back. Only called when the retired queue has room for [`RETIRED_AT_ONCE`].
     fn stop(&mut self, chains: &mut [Chain], frame: usize) {
         if let Some(sample) = self.sample.take()
             && let Some(retired) = self.retired.as_mut()
@@ -339,11 +368,24 @@ impl Preview {
                     }
                 }
             }
-            if let Some(device) = play.notes.fallback.as_mut() {
-                device.event(NoteEvent::AllNotesOff);
-            }
-            if let Some(retired) = self.retired.as_mut() {
-                let _full = retired.push(Retired::Notes(play.notes));
+            let sounding = play.chain.is_none() && play.frame > 0 && play.notes.fallback.is_some();
+            if sounding {
+                // It goes on a moment longer, fading, so stopping it makes no click; a tail still
+                // fading goes back now.
+                if let Some(old) = self.tail.take()
+                    && let Some(retired) = self.retired.as_mut()
+                {
+                    let _full = retired.push(Retired::Notes(old.notes));
+                }
+                let total = (TAIL_SECONDS * f64::from(self.sample_rate)).max(1.0) as usize;
+                self.tail = Some(Tail { notes: play.notes, left: total, total, gain: play.gain });
+            } else {
+                if let Some(device) = play.notes.fallback.as_mut() {
+                    device.event(NoteEvent::AllNotesOff);
+                }
+                if let Some(retired) = self.retired.as_mut() {
+                    let _full = retired.push(Retired::Notes(play.notes));
+                }
             }
         }
         self.monitor.playing.store(false, Ordering::Relaxed);
@@ -426,6 +468,7 @@ impl Preview {
 
     /// Adds the preview to a block of `frames` frames after the track chains have run.
     pub(crate) fn finish(&mut self, out: &mut [f32], frames: usize, chains: &mut [Chain]) {
+        self.finish_tail(out, frames);
         let mut ended = false;
         if let Some(play) = self.notes.as_mut() {
             if play.chain.is_none()
@@ -485,11 +528,39 @@ impl Preview {
             ended = ended || play.position >= frames_in_file;
         }
         if ended {
-            if self.retired.as_ref().is_some_and(|r| r.slots() >= 2) {
+            if self.retired.as_ref().is_some_and(|r| r.slots() >= RETIRED_AT_ONCE) {
                 self.stop(chains, frames.saturating_sub(1));
             }
         } else {
             self.monitor.playing.store(self.playing(), Ordering::Relaxed);
+        }
+    }
+}
+
+impl Preview {
+    /// Adds what is left of the last fallback instrument's fade, and sends it back at the end.
+    fn finish_tail(&mut self, out: &mut [f32], frames: usize) {
+        if let Some(tail) = self.tail.as_mut()
+            && let Some(device) = tail.notes.fallback.as_mut()
+            && let Some(buffer) = self.buffer.get_mut(..frames.min(MAX_BLOCK) * 2)
+        {
+            buffer.fill(0.0);
+            device.process(&ProcessContext::default(), buffer);
+            for ([l, r], [pl, pr]) in out.as_chunks_mut::<2>().0.iter_mut().zip(buffer.as_chunks::<2>().0) {
+                if tail.left == 0 {
+                    break;
+                }
+                let gain = tail.gain * tail.left as f32 / tail.total.max(1) as f32;
+                *l += pl * gain;
+                *r += pr * gain;
+                tail.left -= 1;
+            }
+        }
+        if self.tail.as_ref().is_some_and(|t| t.left == 0)
+            && let Some(retired) = self.retired.as_mut().filter(|r| r.slots() > 0)
+            && let Some(tail) = self.tail.take()
+        {
+            let _full = retired.push(Retired::Notes(tail.notes));
         }
     }
 }
@@ -504,7 +575,7 @@ pub fn preview_notes(
     fallback: Option<Box<dyn Device>>,
 ) -> PreviewNotes {
     let bpm = if bpm.is_finite() && bpm > 0.0 { bpm.clamp(1.0, 1000.0) } else { 120.0 };
-    let frames_per_beat = 60.0 / bpm * f64::from(sample_rate);
+    let frames_per_beat = crate::tempo::frames_per_beat(bpm, f64::from(sample_rate));
     let frames = |beats: f64| if beats.is_finite() { (beats.max(0.0) * frames_per_beat).round() as u64 } else { 0 };
     let mut list: Vec<PreviewNote> = notes
         .into_iter()

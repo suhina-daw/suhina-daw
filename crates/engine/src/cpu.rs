@@ -8,7 +8,7 @@
 //! flat out and is not measured at all.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// Wall time one measurement covers before it is folded into the smoothed load: long
@@ -24,9 +24,31 @@ const SMOOTHING: f64 = 0.25;
 #[derive(Debug, Default)]
 pub struct CpuMonitor {
     load: AtomicU32,
+    late_render_us: AtomicU64,
+    late_queued: AtomicU64,
+    late_period: AtomicU64,
+    late_frames: AtomicU64,
 }
 
 impl CpuMonitor {
+    /// Last render call with missed plug-in blocks: duration in microseconds, queued
+    /// frames, device period and render frames. Diagnostic samples, not a synchronized clock.
+    pub fn late_render(&self) -> (u64, u64, u64, u64) {
+        (
+            self.late_render_us.load(Ordering::Relaxed),
+            self.late_queued.load(Ordering::Relaxed),
+            self.late_period.load(Ordering::Relaxed),
+            self.late_frames.load(Ordering::Relaxed),
+        )
+    }
+
+    pub(crate) fn record_late_render(&self, elapsed: Duration, queued: usize, period: usize, frames: usize) {
+        self.late_render_us.store(elapsed.as_micros().min(u128::from(u64::MAX)) as u64, Ordering::Relaxed);
+        self.late_queued.store(queued as u64, Ordering::Relaxed);
+        self.late_period.store(period as u64, Ordering::Relaxed);
+        self.late_frames.store(frames as u64, Ordering::Relaxed);
+    }
+
     /// The smoothed load, in per mille: 123 is 12.3 %.
     pub fn load_milli(&self) -> u32 {
         self.load.load(Ordering::Relaxed)

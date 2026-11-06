@@ -5,7 +5,9 @@
 //! clip's properties and follow action, and the clip editor (the piano roll and its tools).
 
 pub mod detail_view;
-mod device_canvas;
+pub(crate) mod device_canvas;
+pub(crate) mod device_widgets;
+pub(crate) mod eq_curve;
 pub mod follow_view;
 pub mod midi_tools;
 pub mod piano_roll;

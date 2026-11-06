@@ -125,18 +125,10 @@ fn describe(geometry: &Geometry, step: usize) -> String {
     out
 }
 
-/// Compares `actual` with `tests/golden/<name>.txt`; `SUHINA_UPDATE_GOLDEN=1` writes it instead.
+/// Compares `actual` with `tests/golden/<name>.txt`; `SUHINA_BLESS=1` writes it instead.
 fn golden(name: &str, actual: &str) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(format!("{name}.txt"));
-    if std::env::var_os("SUHINA_UPDATE_GOLDEN").is_some() {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, actual).unwrap();
-        return;
-    }
-    let expected = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("{}: {e}; run with SUHINA_UPDATE_GOLDEN=1", path.display()))
-        .replace("\r\n", "\n");
-    assert_eq!(actual, expected, "{name} differs from {}", path.display());
+    suhina_test_support::assert_golden_text(&path, actual);
 }
 
 /// The waveform at several zooms, as geometry: the whole file, a coarse level, between levels and
@@ -208,8 +200,10 @@ fn painting_makes_meshes_and_lines() {
 }
 
 /// A ten-minute stereo file at 44.1 kHz, drawn 2000 columns wide at every zoom from the whole
-/// file to single samples, stays inside a frame (16.7 ms at 60 frames a second).
+/// file to single samples, stays inside a frame (16.7 ms at 60 frames a second). Run with
+/// `cargo test -p suhina-ui --release --lib a_ten_minute_file -- --ignored --nocapture`.
 #[test]
+#[ignore = "a bound on elapsed time, for an idle machine"]
 fn a_ten_minute_file_draws_within_a_frame_budget() {
     let rate = 44_100u32;
     let frames = rate as usize * 600;

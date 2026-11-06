@@ -339,16 +339,7 @@ fn the_test_backend_renders_like_its_golden_file() {
     let render: Vec<f32> = out.stems.iter().flat_map(Audio::interleaved).collect();
     assert_eq!(render.len(), 3 * 2 * 3000);
     let path = golden_dir().join("band-splitter.f32");
-    if std::env::var_os("SUHINA_BLESS").is_some() {
-        let bytes: Vec<u8> = render.iter().flat_map(|s| s.to_le_bytes()).collect();
-        std::fs::write(&path, bytes).unwrap();
-        return;
-    }
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}; run with SUHINA_BLESS=1", path.display()));
-    let golden: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
-    assert_eq!(golden.len(), render.len(), "length differs from the golden file");
-    let worst = max_diff(&golden, &render, 0..render.len());
-    assert!(worst < 1e-5, "differs from the golden file by {worst}");
+    suhina_test_support::assert_golden_f32(&path, &render, 1e-5);
 }
 
 // ---- progress and cancel ----

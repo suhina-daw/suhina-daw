@@ -5,6 +5,7 @@
 //! kind, as a cloud or a grid. The view draws and reports what the user did as [`MapEvent`]s;
 //! the browser turns them into its own selection, previews and drags.
 
+use crate::kit::surface::Backgrounds as _;
 use std::collections::HashSet;
 
 use egui::{Color32, CornerRadius, Key, PointerButton, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
@@ -93,6 +94,8 @@ pub enum MapEvent {
         on: bool,
     },
     ShowInFolder(usize),
+    /// Copy it, or every picked point when it is one of them, into a folder (#865).
+    CopyTo(usize),
     /// Set its kind by hand, or (`None`) give it back to its name and sound.
     SetKind {
         item: usize,
@@ -102,6 +105,8 @@ pub enum MapEvent {
     Layout(Layout),
     /// The point size was changed, in percent.
     DotSize(u32),
+    /// The cluster labels' size was changed, in percent; 0 hides them.
+    LabelSize(u32),
     /// The preview level was changed, in dB.
     Volume(i32),
     /// The large-view button.
@@ -132,6 +137,9 @@ pub struct MapView {
     /// The points' size as a share of their size at first (Size in the top bar). Positions do
     /// not change with it, so smaller points stand further apart.
     pub dot_size: f32,
+    /// The cluster labels' size as a share of their full size (Labels in the top bar); 0 hides
+    /// them.
+    pub label_size: f32,
     /// The preview level in dB (Volume in the top bar).
     pub volume: i32,
     /// Kinds the legend shows; the others are dimmed. Empty: all.
@@ -249,6 +257,7 @@ impl Default for MapView {
             pressed: None,
             dragging_items: false,
             dot_size: 1.0,
+            label_size: 1.0,
             volume: crate::settings::PREVIEW_VOLUME,
             legend: HashSet::new(),
             rubber_band: None,
@@ -495,6 +504,9 @@ pub fn show(
     tags: &[String],
     events: &mut Vec<MapEvent>,
 ) {
+    let _style_class = crate::kit::style_class::enter("sample-map");
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     let full = ui.available_rect_before_wrap();
     ui.allocate_rect(full, Sense::hover());
     let height = top_bar(ui, full, view, status, details, events);
@@ -545,7 +557,7 @@ fn busy_card(ui: &Ui, area: Rect, busy: &Busy) {
     }
     let card = Rect::from_center_size(area.center(), Vec2::new(width, HEIGHT));
     let painter = ui.painter().with_clip_rect(area);
-    painter.rect_filled(card, CornerRadius::ZERO, theme::panel_background());
+    painter.fill_background(card, CornerRadius::ZERO, theme::panel_background());
     painter.rect_stroke(card, CornerRadius::ZERO, Stroke::new(1.0, theme::border_strong()), StrokeKind::Inside);
     let inner = card.shrink(2.0 * theme::PAD);
     painter.text(
@@ -556,7 +568,7 @@ fn busy_card(ui: &Ui, area: Rect, busy: &Busy) {
         theme::text_primary(),
     );
     let bar = Rect::from_min_size(Pos2::new(inner.min.x, inner.center().y - BAR / 2.0), Vec2::new(inner.width(), BAR));
-    painter.rect_filled(bar, CornerRadius::ZERO, theme::control_background());
+    painter.fill_background(bar, CornerRadius::ZERO, theme::control_background());
     let done = Rect::from_min_size(bar.min, Vec2::new(bar.width() * busy.fraction.clamp(0.0, 1.0), BAR));
     painter.rect_filled(done, CornerRadius::ZERO, theme::accent());
     painter.text(
@@ -649,16 +661,36 @@ fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
         ui.label(egui::RichText::new("Size").color(theme::text_secondary()).size(theme::TEXT_SMALL));
         let mut percent = (view.dot_size * 100.0).round() as u32;
         let (low, high) = crate::settings::MAP_DOT_SIZES;
-        let size = ui
-            .add_sized(
-                Vec2::new(48.0, ui.spacing().interact_size.y),
-                egui::DragValue::new(&mut percent).range(low..=high).speed(2.0).suffix(" %"),
-            )
-            .on_hover_text("Point size: drag or type. The points stay where they are, so smaller ones stand apart");
+        let size = crate::kit::widgets::number_input(
+            ui,
+            Some(Vec2::new(48.0, ui.spacing().interact_size.y)),
+            egui::DragValue::new(&mut percent).range(low..=high).speed(2.0).suffix(" %"),
+        )
+        .on_hover_text("Point size: drag or type. The points stay where they are, so smaller ones stand apart");
         if size.changed() {
             view.dot_size = percent as f32 / 100.0;
             events.push(MapEvent::DotSize(percent));
         }
+    });
+    together(ui, 110.0, |ui| {
+        ui.label(egui::RichText::new("Labels").color(theme::text_secondary()).size(theme::TEXT_SMALL));
+        let percent = (view.label_size * 100.0).round() as u32;
+        let name = |p: u32| if p == 0 { "Off".to_string() } else { format!("{p} %") };
+        egui::ComboBox::from_id_salt("sample-map-labels")
+            .width(56.0)
+            .selected_text(name(percent))
+            .show_ui(ui, |ui| {
+                for size in crate::settings::MAP_LABEL_SIZES {
+                    if ui.selectable_label(percent == size, name(size)).clicked() && percent != size {
+                        view.label_size = size as f32 / 100.0;
+                        events.push(MapEvent::LabelSize(size));
+                    }
+                }
+            })
+            .response
+            .on_hover_text(
+                "The size of the groups' names on the map; Off hides them, the legend still names the kinds",
+            );
     });
     together(ui, 170.0, |ui| {
         ui.label(egui::RichText::new("Volume").color(theme::text_secondary()).size(theme::TEXT_SMALL));
@@ -687,10 +719,10 @@ struct Content<'a> {
 fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, events: &mut Vec<MapEvent>) {
     let Content { points, positions, grid, tags } = *content;
     view.area = rect;
-    let id = ui.id().with("sample-map");
+    let id = ui.scope_id().with("sample-map");
     let response = ui.interact(rect, id, Sense::click_and_drag());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, CornerRadius::ZERO, theme::window_background());
+    painter.fill_background(rect, CornerRadius::ZERO, theme::window_background());
 
     // Zoom and pan.
     if let Some(pointer) = response.hover_pos() {
@@ -813,6 +845,10 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
             }
             if ui.button("Show in folder").clicked() {
                 events.push(MapEvent::ShowInFolder(i));
+                ui.close();
+            }
+            if ui.button("Copy to folder…").clicked() {
+                events.push(MapEvent::CopyTo(i));
                 ui.close();
             }
         }
@@ -1057,11 +1093,17 @@ fn draw_points(
     }
 }
 
+/// A cluster label's text size: its size for the cluster's count, scaled by the Labels choice,
+/// so bigger clusters keep their larger labels at every size.
+fn label_font_size(label_size: f32, count_scale: f32) -> f32 {
+    theme::TEXT * 1.6 * count_scale * label_size.clamp(0.0, 1.0)
+}
+
 /// One label per cluster, sized by its count, placed largest first so none overlap
 /// (docs/spec/sample-map.md › Many items › Labels).
 fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
     let fade = ((LABEL_FADE_ZOOM - view.zoom) / 2.0).clamp(0.0, 1.0);
-    if fade <= 0.0 {
+    if fade <= 0.0 || view.label_size <= 0.0 {
         return;
     }
     let clusters: Vec<&Cluster> =
@@ -1070,7 +1112,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
     let galleys: Vec<_> = clusters
         .iter()
         .map(|c| {
-            let font = theme::ui_font(theme::TEXT * 1.6 * crowd::label_scale(c.count, smallest));
+            let font = theme::ui_font(label_font_size(view.label_size, crowd::label_scale(c.count, smallest)));
             // Light text: a label sits on its own kind's colour, so that colour would not read.
             painter.layout_no_wrap(c.kind.label().to_string(), font, theme::text_primary().gamma_multiply(fade))
         })
@@ -1088,7 +1130,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
 
 fn similar_strip(ui: &mut Ui, rect: Rect, view: &mut MapView, points: &[MapPoint], events: &mut Vec<MapEvent>) {
     let Some((of, items)) = view.similar.clone() else { return };
-    ui.painter().rect_filled(rect, CornerRadius::ZERO, theme::panel_background());
+    ui.painter().fill_background(rect, CornerRadius::ZERO, theme::panel_background());
     let mut child = ui.new_child(
         egui::UiBuilder::new().max_rect(rect.shrink(theme::PAD)).layout(egui::Layout::top_down(egui::Align::Min)),
     );
@@ -1157,405 +1199,8 @@ fn toggle_legend(legend: &mut HashSet<Kind>, kind: Kind, add: bool) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn point(x: f32, y: f32, kind: Kind) -> MapPoint {
-        MapPoint {
-            name: format!("{x},{y}"),
-            detail: String::new(),
-            position: [x, y],
-            kind,
-            guessed: false,
-            by_hand: false,
-            in_use: false,
-            selected: false,
-            matches: true,
-            preset: false,
-            pinned: false,
-            tags: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn the_density_waits_for_a_resize_to_settle_but_not_for_a_change_of_content() {
-        let key =
-            DensityKey { points: None, zoom: 1.0, centre: [0.5, 0.5], legend: Vec::new(), similar: None, spread: 1 };
-        let small = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 300.0));
-        let large = Rect::from_min_size(Pos2::ZERO, Vec2::new(500.0, 300.0));
-        assert_eq!(density_plan(None, &key, small, 0.0, 0.0), DensityPlan::Build, "nothing drawn yet");
-        assert_eq!(density_plan(Some((&key, small)), &key, small, 0.0, 9.0), DensityPlan::Keep);
-        assert_eq!(density_plan(Some((&key, small)), &key, large, 1.0, 1.1), DensityPlan::Scale, "being resized");
-        assert_eq!(density_plan(Some((&key, small)), &key, large, 1.0, 1.2), DensityPlan::Build, "settled");
-        let zoomed = DensityKey { zoom: 2.0, ..key.clone() };
-        assert_eq!(density_plan(Some((&key, small)), &zoomed, large, 1.0, 1.0), DensityPlan::Build, "zoomed");
-        let filtered = DensityKey { legend: vec![Kind::Kick], ..key.clone() };
-        assert_eq!(density_plan(Some((&key, small)), &filtered, small, 0.0, 0.0), DensityPlan::Build);
-    }
-
-    #[test]
-    fn a_scaled_raster_keeps_the_points_where_they_are_drawn_now() {
-        let view = MapView::default();
-        let before = view.transform(Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(400.0, 300.0)));
-        let after = view.transform(Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(800.0, 500.0)));
-        let raster = before.rect;
-        let moved = moved(raster, before, after);
-        for p in [[0.2, 0.3], [0.5, 0.5], [0.9, 0.1]] {
-            // Where a point sat in the old raster, as a fraction of it, is where it is drawn now.
-            let old = before.to_screen(p);
-            let fraction = (old - raster.min) / raster.size();
-            let now = moved.min + fraction * moved.size();
-            assert!((now - after.to_screen(p)).length() < 1e-3, "{p:?}: {now:?} against {:?}", after.to_screen(p));
-        }
-    }
-
-    #[test]
-    fn resizing_the_cloud_keeps_the_counts_and_clusters_but_the_grid_works_them_out_again() {
-        let points: Vec<MapPoint> = (0..50).map(|i| point(i as f32 / 50.0, 0.5, Kind::Kick)).collect();
-        let positions: Vec<[f32; 2]> = points.iter().map(|p| p.position).collect();
-        let mut view = MapView::default();
-        view.refresh(&points, &positions, 1.0);
-        let cloud = view.cache.key;
-        view.refresh(&points, &positions, 1.6);
-        assert_eq!(view.cache.key, cloud, "the cloud's positions do not follow the aspect");
-        view.layout = Layout::Grid;
-        view.refresh(&points, &positions, 1.0);
-        let grid = view.cache.key;
-        view.refresh(&points, &positions, 1.6);
-        assert_ne!(view.cache.key, grid, "the grid's positions follow the aspect");
-    }
-
-    #[test]
-    fn transform_round_trips_and_zoom_keeps_the_point_under_the_pointer() {
-        let rect = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(400.0, 300.0));
-        let mut view = MapView::default();
-        let t = view.transform(rect);
-        let p = [0.3, 0.8];
-        let back = t.to_map(t.to_screen(p));
-        assert!((back[0] - p[0]).abs() < 1e-5 && (back[1] - p[1]).abs() < 1e-5);
-        let pointer = Pos2::new(150.0, 100.0);
-        let before = view.transform(rect).to_map(pointer);
-        view.zoom_at(rect, pointer, 2.0);
-        let after = view.transform(rect).to_map(pointer);
-        assert!((before[0] - after[0]).abs() < 1e-4 && (before[1] - after[1]).abs() < 1e-4);
-        view.zoom_at(rect, pointer, 1e-6);
-        assert_eq!(view.zoom, MIN_ZOOM);
-        view.fit();
-        assert_eq!((view.zoom, view.centre), (1.0, [0.5, 0.5]));
-    }
-
-    #[test]
-    fn the_nearest_point_within_reach_is_hit() {
-        let screen = [Pos2::new(0.0, 0.0), Pos2::new(10.0, 0.0), Pos2::new(4.0, 0.0)];
-        assert_eq!(hit(&screen, Pos2::new(5.0, 1.0), 7.0), Some(2));
-        assert_eq!(hit(&screen, Pos2::new(50.0, 50.0), 7.0), None);
-        assert_eq!(hit(&[], Pos2::ZERO, 7.0), None);
-    }
-
-    #[test]
-    fn arrow_keys_step_to_the_nearest_point_that_way() {
-        let positions = [[0.5, 0.5], [0.6, 0.5], [0.9, 0.52], [0.5, 0.2], [0.4, 0.9]];
-        assert_eq!(step(&positions, 0, [1.0, 0.0]), Some(1));
-        assert_eq!(step(&positions, 1, [1.0, 0.0]), Some(2));
-        assert_eq!(step(&positions, 0, [0.0, -1.0]), Some(3));
-        assert_eq!(step(&positions, 0, [0.0, 1.0]), Some(4));
-        assert_eq!(step(&positions, 2, [1.0, 0.0]), None);
-        assert_eq!(step(&positions, 99, [1.0, 0.0]), None);
-    }
-
-    #[test]
-    fn the_legend_counts_and_the_clusters_follow_the_points() {
-        let mut points: Vec<MapPoint> = (0..10).map(|i| point(0.1 + i as f32 * 0.01, 0.1, Kind::Kick)).collect();
-        points.extend((0..3).map(|i| point(0.9, 0.9 + i as f32 * 0.01, Kind::Snare)));
-        let positions: Vec<[f32; 2]> = points.iter().map(|p| p.position).collect();
-        let mut view = MapView::default();
-        view.refresh(&points, &positions, 1.0);
-        assert!(view.cache.counts.contains(&(Kind::Kick, 10)) && view.cache.counts.contains(&(Kind::Snare, 3)));
-        // Only the kick cluster is large enough for a label.
-        assert_eq!(view.cache.clusters.iter().map(|c| c.kind).collect::<Vec<_>>(), vec![Kind::Kick]);
-        // Kept until the points change.
-        for p in &mut points {
-            p.matches = false;
-        }
-        view.refresh(&points, &positions, 1.0);
-        assert_eq!(view.cache.clusters.len(), 1);
-        view.points_changed();
-        view.refresh(&points, &positions, 1.0);
-        assert!(view.cache.clusters.is_empty());
-    }
-
-    #[test]
-    fn grid_positions_are_cell_centres() {
-        let points = vec![point(0.0, 0.0, Kind::Kick), point(1.0, 1.0, Kind::Kick)];
-        let grid = Grid { columns: 2, rows: 1, cells: vec![(0, 0), (1, 0)] };
-        // A 2 by 1 grid sits in the middle of a square view.
-        assert_eq!(positions(&points, Layout::Grid, Some(&grid), 1.0), vec![[0.25, 0.5], [0.75, 0.5]]);
-        assert_eq!(positions(&points, Layout::Cloud, Some(&grid), 1.0), vec![[0.0, 0.0], [1.0, 1.0]]);
-        // In a view twice as wide, a 4 by 2 grid spreads over the whole width.
-        let wide: Vec<MapPoint> = (0..8).map(|_| point(0.5, 0.5, Kind::Kick)).collect();
-        let grid = Grid { columns: 4, rows: 2, cells: (0..8).map(|i| (i % 4, i / 4)).collect() };
-        let placed = positions(&wide, Layout::Grid, Some(&grid), 2.0);
-        assert_eq!((placed[0], placed[7]), ([-0.25, 0.25], [1.25, 0.75]));
-        // A grid that does not match the points falls back to the cloud.
-        let wrong = Grid { columns: 1, rows: 1, cells: vec![(0, 0)] };
-        assert_eq!(positions(&points, Layout::Grid, Some(&wrong), 1.0), vec![[0.0, 0.0], [1.0, 1.0]]);
-    }
-
-    #[test]
-    fn the_legend_shows_one_kind_or_several() {
-        let mut legend = HashSet::new();
-        toggle_legend(&mut legend, Kind::Kick, false);
-        assert_eq!(legend, HashSet::from([Kind::Kick]));
-        toggle_legend(&mut legend, Kind::Snare, true);
-        assert_eq!(legend, HashSet::from([Kind::Kick, Kind::Snare]));
-        toggle_legend(&mut legend, Kind::Hat, false);
-        assert_eq!(legend, HashSet::from([Kind::Hat]));
-        toggle_legend(&mut legend, Kind::Hat, false);
-        assert!(legend.is_empty());
-    }
-
-    #[test]
-    fn every_kind_has_its_own_colour() {
-        let colours: HashSet<Color32> = Kind::ALL.iter().map(|k| kind_colour(*k)).collect();
-        assert_eq!(colours.len(), Kind::ALL.len());
-    }
-
-    #[test]
-    fn hovering_previews_and_clicking_selects() {
-        use egui_kittest::Harness;
-        let points: Vec<MapPoint> =
-            (0..20).map(|i| point((i % 5) as f32 / 4.0, (i / 5) as f32 / 3.0, Kind::Kick)).collect();
-        let state = (MapView::default(), Vec::<MapEvent>::new());
-        let mut harness = Harness::builder().with_size(egui::vec2(400.0, 340.0)).build_ui_state(
-            |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
-                show(ui, view, &points, None, "20 samples", &[], None, &[], events)
-            },
-            state,
-        );
-        harness.run();
-        // Point 0 at map (0, 0): find it on screen from the same transform the view uses.
-        let view = &harness.state().0;
-        let at = view.transform(view.area).to_screen([0.0, 0.0]);
-        harness.hover_at(at);
-        harness.run();
-        std::thread::sleep(std::time::Duration::from_millis(60));
-        harness.hover_at(at + Vec2::new(0.5, 0.0));
-        harness.run();
-        assert!(harness.state().1.contains(&MapEvent::Preview(0)), "{:?}", harness.state().1);
-        harness.state_mut().1.clear();
-        harness.drag_at(at);
-        harness.run();
-        harness.drop_at(at);
-        harness.run();
-        assert!(
-            harness.state().1.contains(&MapEvent::Select { items: vec![0], add: false }),
-            "{:?}",
-            harness.state().1
-        );
-    }
-
-    /// A drag carries the point the button went down on, even when the pointer is nearer
-    /// another point by the time the drag begins, and nothing is hovered or previewed on the way.
-    #[test]
-    fn a_drag_carries_the_pressed_point_not_the_one_under_the_pointer() {
-        use egui_kittest::Harness;
-        // A row of points 0.02 apart: a few pixels on screen, a dense cloud.
-        let points: Vec<MapPoint> = (0..40).map(|i| point(0.1 + i as f32 * 0.02, 0.5, Kind::Kick)).collect();
-        let state = (MapView::default(), Vec::<MapEvent>::new());
-        let mut harness = Harness::builder().with_size(egui::vec2(400.0, 340.0)).build_ui_state(
-            |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
-                show(ui, view, &points, None, "40 samples", &[], None, &[], events)
-            },
-            state,
-        );
-        harness.run();
-        let view = &harness.state().0;
-        let transform = view.transform(view.area);
-        let first = transform.to_screen([0.1, 0.5]);
-        let far = transform.to_screen([0.1 + 30.0 * 0.02, 0.5]);
-        harness.drag_at(first);
-        harness.run();
-        for step in 1..=10 {
-            harness.hover_at(first + (far - first) * (step as f32 / 10.0));
-            harness.run();
-        }
-        let events = &harness.state().1;
-        let drags: Vec<&MapEvent> = events.iter().filter(|e| matches!(e, MapEvent::StartDrag(_))).collect();
-        assert_eq!(drags, vec![&MapEvent::StartDrag(vec![0])], "{events:?}");
-        let after = events.iter().position(|e| matches!(e, MapEvent::StartDrag(_))).unwrap_or(0);
-        assert!(
-            !events[after..].iter().any(|e| matches!(e, MapEvent::Preview(_) | MapEvent::Select { .. })),
-            "{events:?}"
-        );
-        harness.drop_at(far);
-        harness.run();
-    }
-
-    /// However narrow the map, its controls never lie on top of each other: they wrap onto
-    /// more rows, and the map starts below them.
-    #[test]
-    fn the_controls_wrap_instead_of_overlapping_when_the_map_is_narrow() {
-        use egui_kittest::Harness;
-        use egui_kittest::kittest::Queryable;
-        let points: Vec<MapPoint> = (0..4).map(|i| point(i as f32 / 4.0, 0.5, Kind::Kick)).collect();
-        let status = "153534 samples, 25947 too long, 4955 could not be read";
-        let mut tops = Vec::new();
-        for width in [180.0, 320.0, 900.0] {
-            let mut harness = Harness::builder().with_size(egui::vec2(width, 400.0)).build_ui_state(
-                |ui, view: &mut MapView| show(ui, view, &points, None, status, &[], None, &[], &mut Vec::new()),
-                MapView::default(),
-            );
-            harness.run();
-            let rects: Vec<(String, Rect)> = ["Cloud", "Grid", "+", "−", "Fit", "Large", "Window", "Size", "Volume"]
-                .iter()
-                .map(|label| (label.to_string(), harness.get_by_label(label).rect()))
-                .collect();
-            for (i, (a, ra)) in rects.iter().enumerate() {
-                assert!(ra.right() <= width + 0.5, "{a} runs off a map {width} wide: {ra:?}");
-                for (b, rb) in rects.iter().skip(i + 1) {
-                    assert!(
-                        !ra.shrink(0.5).intersects(rb.shrink(0.5)),
-                        "{a} and {b} overlap at {width}: {ra:?} {rb:?}"
-                    );
-                }
-            }
-            let lowest = rects.iter().map(|(_, r)| r.bottom()).fold(0.0f32, f32::max);
-            assert!(harness.state().area.top() >= lowest, "the map starts below the controls at {width}");
-            tops.push(harness.state().area.top());
-        }
-        assert!(tops[0] > tops[2], "a narrow map has more rows of controls than a wide one: {tops:?}");
-    }
-
-    #[test]
-    fn the_volume_slider_reports_a_new_level() {
-        use egui_kittest::Harness;
-        use egui_kittest::kittest::Queryable;
-        let points: Vec<MapPoint> = (0..4).map(|i| point(i as f32 / 4.0, 0.5, Kind::Kick)).collect();
-        let state = (MapView::default(), Vec::<MapEvent>::new());
-        let mut harness = Harness::builder().with_size(egui::vec2(900.0, 400.0)).build_ui_state(
-            |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
-                show(ui, view, &points, None, "4 samples", &[], None, &[], events)
-            },
-            state,
-        );
-        harness.run();
-        let slider = harness.get_by_role(egui::accesskit::Role::Slider).rect();
-        // The right end of the slider is the loudest.
-        harness.drag_at(egui::pos2(slider.right() - 1.0, slider.center().y));
-        harness.run();
-        harness.drop_at(egui::pos2(slider.right() - 1.0, slider.center().y));
-        harness.run();
-        let (low, high) = crate::settings::PREVIEW_VOLUMES;
-        assert!(harness.state().1.contains(&MapEvent::Volume(high)), "{:?}", harness.state().1);
-        assert_eq!(harness.state().0.volume, high);
-        assert!(high > low);
-    }
-
-    /// Pointing at the status shows why samples are missing.
-    #[test]
-    fn the_status_tooltip_says_why_samples_are_missing() {
-        use egui_kittest::Harness;
-        use egui_kittest::kittest::Queryable;
-        let points: Vec<MapPoint> = (0..4).map(|i| point(i as f32 / 4.0, 0.5, Kind::Kick)).collect();
-        let details = vec![StatusPart {
-            heading: "2 could not be read".into(),
-            lines: vec!["2: unsupported codec: adpcm".into(), "    a.wav, b.wav".into()],
-        }];
-        let status = "4 samples, 2 could not be read";
-        let mut harness = Harness::builder().with_size(egui::vec2(600.0, 340.0)).build_ui_state(
-            |ui, view: &mut MapView| show(ui, view, &points, None, status, &details, None, &[], &mut Vec::new()),
-            MapView::default(),
-        );
-        harness.run();
-        assert!(harness.query_by_label("2: unsupported codec: adpcm").is_none());
-        let at = harness.get_by_label(status).rect().center();
-        harness.hover_at(at);
-        for _ in 0..30 {
-            harness.step();
-        }
-        std::thread::sleep(std::time::Duration::from_millis(600));
-        harness.run();
-        harness.get_by_label("2 could not be read");
-        harness.get_by_label("2: unsupported codec: adpcm");
-        harness.get_by_label("    a.wav, b.wav");
-    }
-
-    /// The card over the map while it is arranged is only painted: a point under it is still
-    /// previewed and selected.
-    #[test]
-    fn the_busy_card_does_not_block_the_map_under_it() {
-        use egui_kittest::Harness;
-        let points: Vec<MapPoint> = (0..20).map(|_| point(0.5, 0.5, Kind::Kick)).collect();
-        let busy = Busy { title: "Arranging the map".into(), detail: "42 %".into(), fraction: 0.42 };
-        let state = (MapView::default(), Vec::<MapEvent>::new());
-        let mut harness = Harness::builder().with_size(egui::vec2(400.0, 340.0)).build_ui_state(
-            |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
-                show(ui, view, &points, None, "20 samples", &[], Some(&busy), &[], events)
-            },
-            state,
-        );
-        harness.run();
-        // Every point is in the middle, under the card.
-        let view = &harness.state().0;
-        let at = view.transform(view.area).to_screen([0.5, 0.5]);
-        harness.drag_at(at);
-        harness.run();
-        harness.drop_at(at);
-        harness.run();
-        assert!(
-            harness.state().1.iter().any(|e| matches!(e, MapEvent::Select { items, .. } if !items.is_empty())),
-            "{:?}",
-            harness.state().1
-        );
-    }
-
-    /// The wheel and pinch zoom the map, but not through a dialog over it (#232).
-    #[test]
-    fn the_wheel_zooms_only_when_no_dialog_is_on_top() {
-        use egui_kittest::Harness;
-        let points: Vec<MapPoint> =
-            (0..20).map(|i| point((i % 5) as f32 / 4.0, (i / 5) as f32 / 3.0, Kind::Kick)).collect();
-        let size = egui::vec2(400.0, 340.0);
-        // The view, and whether a dialog covers it.
-        let state = (MapView::default(), false);
-        let mut harness = Harness::builder().with_size(size).build_ui_state(
-            |ui, (view, dialog): &mut (MapView, bool)| {
-                show(ui, view, &points, None, "20 samples", &[], None, &[], &mut Vec::new());
-                if *dialog {
-                    egui::Area::new(egui::Id::new("dialog")).order(egui::Order::Foreground).fixed_pos(Pos2::ZERO).show(
-                        ui.ctx(),
-                        |ui| {
-                            ui.set_min_size(size);
-                            let _ = ui.interact(Rect::from_min_size(Pos2::ZERO, size), ui.id(), Sense::click());
-                        },
-                    );
-                }
-            },
-            state,
-        );
-        harness.run();
-        let wheel = |harness: &mut Harness<'_, (MapView, bool)>| {
-            let at = harness.state().0.area.center();
-            harness.hover_at(at);
-            harness.run();
-            harness.input_mut().events.push(egui::Event::MouseWheel {
-                unit: egui::MouseWheelUnit::Point,
-                delta: Vec2::new(0.0, 120.0),
-                phase: egui::TouchPhase::Move,
-                modifiers: egui::Modifiers::NONE,
-            });
-            harness.input_mut().events.push(egui::Event::Zoom(1.5));
-            harness.run();
-            harness.state().0.zoom
-        };
-        harness.state_mut().1 = true;
-        harness.run();
-        assert_eq!(wheel(&mut harness), 1.0, "the dialog takes the wheel");
-        harness.state_mut().1 = false;
-        harness.run();
-        assert!(wheel(&mut harness) > 1.0, "without it the map zooms");
-    }
-}
+#[path = "sample_map_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 mod many {
@@ -1661,17 +1306,27 @@ mod many {
     #[test]
     fn resizing_a_map_of_200_000_points_does_not_draw_the_density_every_frame() {
         let points = points(200_000);
-        let (slowest, built) = resize(&points, 30, 0);
+        let (_, built) = resize(&points, 30, 0);
         assert_eq!(built, 0, "while the size keeps changing, the last raster is drawn scaled");
         let (_, built) = resize(&points, 30, 15);
         assert_eq!(built, 1, "once the size has settled, it is worked out once for it");
+    }
+
+    /// Run with `cargo test -p suhina-ui --release --lib takes_less_than_a_frame -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a bound on elapsed time, for an idle machine"]
+    fn resizing_a_map_of_200_000_points_takes_less_than_a_frame() {
+        let points = points(200_000);
+        let (slowest, _) = resize(&points, 30, 0);
         eprintln!("200 000 points: slowest resize frame {slowest:?}");
         // 30 frames a second in an optimised build; unoptimised test builds get more room.
         let budget = std::time::Duration::from_micros(if cfg!(debug_assertions) { 100_000 } else { 33_300 });
         assert!(slowest < budget, "slowest resize frame {slowest:?}");
     }
 
+    /// Run with `cargo test -p suhina-ui --release --lib draws_at_60_frames -- --ignored --nocapture`.
     #[test]
+    #[ignore = "a bound on elapsed time, for an idle machine"]
     fn a_map_of_200_000_points_draws_at_60_frames_a_second() {
         let points = points(200_000);
         let still = slowest_frame(&points, 10, false);
@@ -1721,7 +1376,7 @@ mod similar_keys {
         let points: Vec<MapPoint> = (0..6).map(|i| point(i as f32 / 5.0, 0.5)).collect();
         let mut view = MapView::default();
         view.show_similar(0, vec![4, 2]);
-        let mut harness = Harness::builder().with_size(egui::vec2(500.0, 340.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(500.0, 340.0)).build_ui_state(
             |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
                 show(ui, view, &points, None, "6 samples", &[], None, &[], events)
             },
@@ -1804,14 +1459,15 @@ mod look {
         let grid = suhina_soundmap::grid::snap(&positions, 1.0);
         for layout in [Layout::Cloud, Layout::Grid] {
             let view = MapView { layout, ..MapView::default() };
-            let mut harness = Harness::builder().with_size(egui::vec2(900.0, 640.0)).build_ui_state(
-                |ui, view: &mut MapView| {
-                    crate::kit::theme::install(ui.ctx());
-                    let mut events = Vec::new();
-                    show(ui, view, &points, Some(&grid), "1 200 samples", &[], None, &[], &mut events);
-                },
-                view,
-            );
+            let mut harness =
+                Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 640.0)).build_ui_state(
+                    |ui, view: &mut MapView| {
+                        crate::kit::theme::install(ui.ctx());
+                        let mut events = Vec::new();
+                        show(ui, view, &points, Some(&grid), "1 200 samples", &[], None, &[], &mut events);
+                    },
+                    view,
+                );
             harness.run();
             let image = harness.render().unwrap();
             let name = format!("../../target/sample-map-{layout:?}.png").to_lowercase();
@@ -1825,7 +1481,7 @@ mod look {
     fn render_a_crowded_map() {
         use egui_kittest::Harness;
         let points = super::many::points(200_000);
-        let mut harness = Harness::builder().with_size(egui::vec2(900.0, 640.0)).build_ui_state(
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 640.0)).build_ui_state(
             |ui, view: &mut MapView| {
                 crate::kit::theme::install(ui.ctx());
                 let mut events = Vec::new();

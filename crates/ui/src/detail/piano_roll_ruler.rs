@@ -8,17 +8,20 @@
 //! is dragged and made one command (`clip.setLoop`, `clip.setStart`, `clip.setLength`) when it is
 //! let go. Dragging anywhere else on the ruler zooms time (up and down) and scrolls it (sideways).
 
+use crate::kit::surface::Backgrounds as _;
 use egui::{Color32, CursorIcon, Id, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
 
-use crate::detail::piano_roll::{NoteGrid, PianoClip, PianoRollState, note_grid};
+use crate::detail::piano_roll::{PianoClip, PianoRollState, note_grid};
+use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme;
-use crate::kit::widgets::Action;
+use crate::kit::time_axis::{PIANO_ROLL_BEAT_WIDTHS, clamp_beat_width};
+use crate::kit::widgets::{self, Action};
 
 /// Height of the loop row at the top of the ruler, of the bar in it, and how far from a handle or
 /// a marker a press still grabs it, in points.
-pub(crate) const LOOP_ROW: f32 = 8.0;
-const LOOP_BAR: f32 = 4.0;
+pub(crate) const LOOP_ROW: f32 = 14.0;
+const LOOP_BAR: f32 = 6.0;
 /// Width of a loop handle, in points.
 const HANDLE: f32 = 2.0;
 const GRAB: f32 = 4.0;
@@ -28,8 +31,6 @@ const MIN_LENGTH: f64 = 0.01;
 const BEAT_LIMIT: f64 = 120_000.0;
 /// How much a point of vertical drag on the ruler zooms time: down zooms in.
 const ZOOM_PER_POINT: f32 = 0.01;
-/// The range of points per beat, as the wheel zooms it.
-const BEAT_WIDTH_RANGE: (f32, f32) = (4.0, 400.0);
 const EPSILON: f64 = 1e-9;
 
 /// A clip's start marker, length and loop, as the ruler shows and changes them.
@@ -103,8 +104,9 @@ impl Part {
 enum Drag {
     /// A handle, the bar or a marker: the content beat the press was at, and where it is now.
     Part { part: Part, from: f64, now: f64 },
-    /// Zooming (up and down) and scrolling (sideways) time.
-    Zoom,
+    /// Zooming (up and down) and scrolling (sideways) time, with the pointer hidden: `x` is where it
+    /// would be by now.
+    Zoom { x: f32 },
 }
 
 /// What the ruler keeps between frames.
@@ -114,21 +116,7 @@ pub struct RulerState {
 }
 
 /// The time axis: the x of beat 0 and the points per beat.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Axis {
-    pub origin: f32,
-    pub beat_width: f32,
-}
-
-impl Axis {
-    pub fn x_of(&self, beat: f64) -> f32 {
-        self.origin + beat as f32 * self.beat_width
-    }
-
-    pub fn beat_at(&self, x: f32) -> f64 {
-        f64::from((x - self.origin) / self.beat_width.max(f32::MIN_POSITIVE))
-    }
-}
+pub use crate::kit::time_axis::TimeViewport as Axis;
 
 /// What a press at `pos` in the `ruler` grabs: in the loop row a handle (the nearer one when both
 /// are in reach) or the bar between them; under it the start marker or the end marker. `None`
@@ -154,31 +142,38 @@ pub fn part_at(shape: &ClipShape, axis: &Axis, ruler: Rect, pos: Pos2) -> Option
     }
 }
 
-/// The shortest step a dragged loop or clip keeps: a grid step while it snaps, else a hundredth.
-fn least(grid: NoteGrid, free: bool) -> f64 {
-    if grid.snaps && !free { grid.step } else { MIN_LENGTH }
+/// How far a dragged loop or clip edge may come to the other edge `at`: to the drawn line before
+/// it (`after`: after it) while it snaps, else a hundredth of a beat.
+fn limit(grid: TimelineGrid, free: bool, at: f64, after: bool) -> f64 {
+    match (grid.snaps && !free, after) {
+        (true, false) => grid.previous_line(at),
+        (true, true) => grid.next_line(at),
+        (false, false) => at - MIN_LENGTH,
+        (false, true) => at + MIN_LENGTH,
+    }
 }
 
 /// The clip as a drag of `part` from content beat `from` to `now` leaves it: on the grid unless
 /// `free`, never before beat 0 or past the last beat, a loop or a clip never shorter than
-/// [`least`], and an arrangement clip never longer than its room. The commands take every shape
+/// [`limit`] (a drawn line), and an arrangement clip never longer than its room. The commands take every shape
 /// this gives, so a drag never fails.
-pub fn dragged(shape: &ClipShape, part: Part, from: f64, now: f64, grid: NoteGrid, free: bool) -> ClipShape {
+pub fn dragged(shape: &ClipShape, part: Part, from: f64, now: f64, grid: TimelineGrid, free: bool) -> ClipShape {
     let place = |beat: f64| grid.place(beat, free, false).clamp(0.0, BEAT_LIMIT);
-    let least = least(grid, free);
+    let before = |at: f64| limit(grid, free, at, false);
+    let after = |at: f64| limit(grid, free, at, true);
     let (start, end) = shape.bar();
     let mut out = *shape;
     match part {
         Part::LoopStart => {
             let at = place(now);
-            let at = if at > end - least + EPSILON { end - least } else { at };
+            let at = if at > before(end) + EPSILON { before(end) } else { at };
             if at >= 0.0 && at < end {
                 out.loop_range = Some((at, end));
             }
         }
         Part::LoopEnd => {
             let at = place(now);
-            let at = if at < start + least - EPSILON { start + least } else { at };
+            let at = if at < after(start) - EPSILON { after(start) } else { at };
             if at <= BEAT_LIMIT && at > start {
                 out.loop_range = Some((start, at));
             }
@@ -192,12 +187,12 @@ pub fn dragged(shape: &ClipShape, part: Part, from: f64, now: f64, grid: NoteGri
             let at = place(now);
             match shape.loop_range {
                 Some((_, end)) => {
-                    let at = if at > end - least + EPSILON { end - least } else { at };
+                    let at = if at > before(end) + EPSILON { before(end) } else { at };
                     out.offset = at.max(0.0);
                 }
                 None => {
                     let end = shape.offset + shape.length;
-                    let at = if at > end - least + EPSILON { end - least } else { at };
+                    let at = if at > before(end) + EPSILON { before(end) } else { at };
                     // Earlier makes the clip longer: never past its room.
                     let at = at.max(end - shape.max_length()).max(0.0);
                     if at < end {
@@ -210,7 +205,7 @@ pub fn dragged(shape: &ClipShape, part: Part, from: f64, now: f64, grid: NoteGri
         Part::EndMarker => {
             if shape.loop_range.is_none() {
                 let at = place(now);
-                let at = if at < shape.offset + least - EPSILON { shape.offset + least } else { at };
+                let at = if at < after(shape.offset) - EPSILON { after(shape.offset) } else { at };
                 out.length = (at - shape.offset).min(shape.max_length());
             }
         }
@@ -254,6 +249,7 @@ pub fn command(address: &Value, before: &ClipShape, after: &ClipShape, part: Par
 /// command is pushed when it is let go; a click on the bar turns the loop on or off; a drag
 /// anywhere else zooms time around the pointer (up and down) and scrolls it (sideways). Returns
 /// the clip as the drag in progress leaves it, to draw.
+#[allow(clippy::too_many_arguments)]
 pub fn interact(
     ui: &Ui,
     ruler: Rect,
@@ -261,23 +257,28 @@ pub fn interact(
     clip: &PianoClip,
     state: &mut PianoRollState,
     free: bool,
+    seeks: bool,
     actions: &mut Vec<Action>,
 ) -> Option<ClipShape> {
     let grid = note_grid(clip, state.beat_width);
     let axis = |state: &PianoRollState| Axis { origin: left - state.scroll.x, beat_width: state.beat_width };
-    let response = ui.interact(ruler, Id::new("piano-roll-ruler"), Sense::click_and_drag());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Piano roll ruler"));
+    let response = ui.interact(ruler, Id::unique("piano-roll-ruler"), Sense::click_and_drag());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Piano roll ruler"));
     let shape = clip.shape;
 
     if let Some(pos) = response.hover_pos() {
         let cursor = match state.ruler.drag {
             Some(Drag::Part { part: Part::Loop, .. }) => Some(CursorIcon::Grabbing),
             Some(Drag::Part { .. }) => Some(CursorIcon::ResizeHorizontal),
-            Some(Drag::Zoom) => Some(CursorIcon::ResizeVertical),
+            Some(Drag::Zoom { .. }) => None,
             None => match part_at(&shape, &axis(state), ruler, pos) {
                 Some(Part::Loop) => Some(CursorIcon::Grab),
                 Some(_) => Some(CursorIcon::ResizeHorizontal),
-                None => None,
+                // A drag here zooms.
+                None => {
+                    state.magnifier = true;
+                    None
+                }
             },
         };
         if let Some(cursor) = cursor {
@@ -291,7 +292,7 @@ pub fn interact(
         let at = axis(state).beat_at(origin.x);
         state.ruler.drag = Some(match part_at(&shape, &axis(state), ruler, origin) {
             Some(part) => Drag::Part { part, from: at, now: at },
-            None => Drag::Zoom,
+            None => Drag::Zoom { x: origin.x },
         });
     }
     let pointer = ui.input(|i| i.pointer.latest_pos()).or(response.interact_pointer_pos());
@@ -302,14 +303,17 @@ pub fn interact(
             Some(Drag::Part { part, from, .. }) => {
                 state.ruler.drag = Some(Drag::Part { part, from, now: axis(state).beat_at(pos.x) });
             }
-            Some(Drag::Zoom) => {
-                let delta = ui.input(|i| i.pointer.delta());
-                // The beat that was under the pointer stays under it: sideways it follows the
-                // pointer (a scroll), and up and down the time around it grows or shrinks.
-                let beat = axis(state).beat_at(pos.x - delta.x);
+            Some(Drag::Zoom { x }) => {
+                // The pointer hides as on a value control, and comes back where it was pressed.
+                let delta = widgets::value_drag_delta(ui, &response);
+                // The beat that was under the pointer stays where it would be: sideways it follows
+                // the drag (a scroll), and up and down the time around it grows or shrinks.
+                let beat = axis(state).beat_at(x);
+                let x = x + delta.x;
                 state.beat_width =
-                    (state.beat_width * (delta.y * ZOOM_PER_POINT).exp()).clamp(BEAT_WIDTH_RANGE.0, BEAT_WIDTH_RANGE.1);
-                state.scroll.x = (beat as f32 * state.beat_width - (pos.x - left)).max(0.0);
+                    clamp_beat_width(state.beat_width * (delta.y * ZOOM_PER_POINT).exp(), &PIANO_ROLL_BEAT_WIDTHS);
+                state.scroll.x = (beat as f32 * state.beat_width - (x - left)).max(0.0);
+                state.ruler.drag = Some(Drag::Zoom { x });
             }
             None => {}
         }
@@ -329,11 +333,24 @@ pub fn interact(
     }
     if response.clicked()
         && let Some(pos) = response.interact_pointer_pos()
-        && part_at(&shape, &axis(state), ruler, pos) == Some(Part::Loop)
     {
-        let mut params = clip.address.clone();
-        params["loop"] = json!(shape.loop_range.is_none());
-        actions.push(Action::new("clip.setLoop", params));
+        match part_at(&shape, &axis(state), ruler, pos) {
+            Some(Part::Loop) => {
+                let mut params = clip.address.clone();
+                params["loop"] = json!(shape.loop_range.is_none());
+                actions.push(Action::new("clip.setLoop", params));
+            }
+            // An arrangement clip's ruler sets where playback starts, on the grid (Alt: free), as
+            // the Arrangement's ruler does: stopped the next play starts there, playing it jumps
+            // on the launch grid (#951).
+            None if seeks => {
+                let beat = grid.place(axis(state).beat_at(pos.x), free, false);
+                let at = clip.placement.start + (beat - clip.placement.offset);
+                let at = at.clamp(clip.placement.start, clip.placement.start + clip.placement.length);
+                actions.push(Action::new("transport.jump", json!({ "beats": (at * 1000.0).round() / 1000.0 })));
+            }
+            _ => {}
+        }
     }
     preview.map(|(_, after)| after)
 }
@@ -344,7 +361,7 @@ pub fn interact(
 pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
     let painter = ui.painter_at(ruler);
     let row = Rect::from_min_max(ruler.min, Pos2::new(ruler.right(), ruler.top() + LOOP_ROW));
-    painter.rect_filled(row, 0.0, theme::window_background());
+    painter.fill_background(row, 0.0, theme::window_background());
     painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(theme::border()));
 
     // The loop bar: bright while the clip loops, dim where turning the loop on would put it.
@@ -360,7 +377,7 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
     } else {
         (theme::control_background(), theme::text_hint())
     };
-    painter.rect_filled(bar, 0.0, fill);
+    painter.fill_background(bar, 0.0, fill);
     painter.rect_stroke(bar, 0.0, theme::hairline(edge), StrokeKind::Inside);
     let handle_color = if looping { theme::text_primary() } else { theme::text_hint() };
     for x in [left, right] {
@@ -392,8 +409,8 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
             continue;
         }
         let label = format!("{} at beat {}", part.label(), round(beat));
-        let response = ui.interact(rect, Id::new(("piano-roll-ruler-part", part.label())), Sense::hover());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, part.label()));
+        let response = ui.interact(rect, Id::unique(("piano-roll-ruler-part", part.label())), Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, part.label()));
         response.on_hover_text(label);
     }
 }
@@ -415,14 +432,14 @@ fn marker(painter: &egui::Painter, numbers: Rect, x: f32, side: f32, color: Colo
 mod tests {
     use super::*;
 
-    fn grid(step: f64) -> NoteGrid {
-        NoteGrid { step, snaps: true }
+    fn grid(step: f64) -> TimelineGrid {
+        TimelineGrid { step, bar_beats: 4.0, snaps: true }
     }
 
     const AXIS: Axis = Axis { origin: 100.0, beat_width: 20.0 };
 
     fn ruler() -> Rect {
-        Rect::from_min_size(Pos2::new(100.0, 0.0), Vec2::new(400.0, 24.0))
+        Rect::from_min_size(Pos2::new(100.0, 0.0), Vec2::new(400.0, 36.0))
     }
 
     #[test]
@@ -444,6 +461,23 @@ mod tests {
         let tiny = ClipShape { loop_range: Some((1.0, 1.25)), ..looping };
         assert_eq!(part_at(&tiny, &AXIS, ruler(), Pos2::new(119.5, 3.0)), Some(Part::LoopStart));
         assert_eq!(part_at(&tiny, &AXIS, ruler(), Pos2::new(125.5, 3.0)), Some(Part::LoopEnd));
+    }
+
+    #[test]
+    fn loop_handles_stop_on_a_drawn_line_when_they_meet() {
+        // 3/4 with a two-beat grid: lines at 0, 2, 3, 5, 6. A loop from 3 to 6 keeps its start on
+        // the line at 5, and a loop from 0 to 3 keeps its end on the line at 2.
+        let grid = TimelineGrid { step: 2.0, bar_beats: 3.0, snaps: true };
+        let late = ClipShape { offset: 0.0, length: 8.0, loop_range: Some((3.0, 6.0)), room: None };
+        assert_eq!(dragged(&late, Part::LoopStart, 3.0, 7.0, grid, false).loop_range, Some((5.0, 6.0)));
+        let early = ClipShape { offset: 0.0, length: 8.0, loop_range: Some((0.0, 3.0)), room: None };
+        assert_eq!(dragged(&early, Part::LoopEnd, 3.0, -1.0, grid, false).loop_range, Some((0.0, 2.0)));
+        let ends = ClipShape { offset: 3.0, length: 3.0, loop_range: None, room: None };
+        assert_eq!(dragged(&ends, Part::EndMarker, 6.0, 0.0, grid, false).length, 2.0);
+        assert_eq!(dragged(&ends, Part::StartMarker, 3.0, 9.0, grid, false).offset, 5.0);
+        // Free, a hundredth of a beat.
+        let free = dragged(&late, Part::LoopStart, 3.0, 7.0, grid, true).loop_range;
+        assert!(free.is_some_and(|(start, _)| (start - (6.0 - MIN_LENGTH)).abs() < 1e-9));
     }
 
     #[test]

@@ -7,6 +7,7 @@
 //! their commands (`library.*`, `preview.*`); adding to the project is left to the window,
 //! which knows the selected track.
 
+use crate::kit::surface::Backgrounds as _;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -44,8 +45,14 @@ const DOT: f32 = 6.0;
 /// nearer one dot cannot answer with the next dot's tag.
 const DOT_HIT: f32 = DOT + 4.0;
 const PLAY: f32 = 22.0;
-/// The List | Map switch above the results.
+/// The strip above the results that holds the Plug-ins category's Instruments | Effects switch,
+/// and the strip of its columns' headings.
 const MODE_SWITCH: f32 = 22.0;
+/// The narrowest the name column of the plug-ins' list gets: below it, the columns to its right
+/// drop, the rightmost first, so the name always shows.
+const NAME_LEAST: f32 = 96.0;
+/// The name of the button that shows the sample map, after the categories.
+const SAMPLE_MAP: &str = "Sample map";
 /// A row of the tag editor.
 const EDITOR_ROW: f32 = 26.0;
 
@@ -65,6 +72,11 @@ pub struct BrowserOut {
     pub status: Option<Status>,
     /// Browse… beside the new folder's field: the system's folder dialog.
     pub pick_folder: bool,
+    /// The preview strip's Auto switch was clicked: turn the automatic preview on or off.
+    pub toggle_autoplay: bool,
+    /// Copy to folder… in a row's menu: these files, into a folder the system's dialog picks
+    /// (`library.copyTo`, #865).
+    pub copy_to: Vec<PathBuf>,
 }
 
 /// Draws the results area another way: the area, the browser's state and the projects.
@@ -85,11 +97,11 @@ pub struct Context<'a> {
 
 fn icon_color(kind: ItemKind) -> Color32 {
     match kind {
-        ItemKind::Midi => theme::track_color_2(),
+        ItemKind::Midi | ItemKind::MidiEffect => theme::track_color_2(),
         ItemKind::Sample => theme::track_color_3(),
         ItemKind::Instrument | ItemKind::Preset => theme::track_color_4(),
         ItemKind::Effect | ItemKind::AudioEffect => theme::track_color_1(),
-        ItemKind::Folder | ItemKind::Heading | ItemKind::Project => theme::text_secondary(),
+        ItemKind::Folder | ItemKind::Heading | ItemKind::Project => theme::browser_text_secondary(),
     }
 }
 
@@ -115,7 +127,7 @@ fn icon(painter: &egui::Painter, rect: Rect, kind: ItemKind, color: Color32) {
             painter.line_segment([c + Vec2::new(0.5, 2.5), c + Vec2::new(0.5, -4.5)], stroke);
             painter.line_segment([c + Vec2::new(0.5, -4.5), c + Vec2::new(3.5, -3.0)], stroke);
         }
-        ItemKind::Instrument | ItemKind::Effect | ItemKind::AudioEffect => {
+        ItemKind::Instrument | ItemKind::Effect | ItemKind::AudioEffect | ItemKind::MidiEffect => {
             let body = Rect::from_center_size(c, Vec2::splat(9.0));
             painter.rect_stroke(body, 0.0, stroke, egui::StrokeKind::Inside);
             painter.circle_stroke(c, 2.0, stroke);
@@ -137,17 +149,8 @@ fn icon(painter: &egui::Painter, rect: Rect, kind: ItemKind, color: Color32) {
     }
 }
 
-fn chevron(painter: &egui::Painter, center: Pos2, open: bool, color: Color32) {
-    let points = if open {
-        vec![center + Vec2::new(-3.0, -1.5), center + Vec2::new(0.0, 1.5), center + Vec2::new(3.0, -1.5)]
-    } else {
-        vec![center + Vec2::new(-1.5, -3.0), center + Vec2::new(1.5, 0.0), center + Vec2::new(-1.5, 3.0)]
-    };
-    painter.add(egui::Shape::line(points, Stroke::new(1.1, color)));
-}
-
 fn tag_color(text: &str) -> Color32 {
-    theme::parse_hex(text).unwrap_or_else(theme::text_hint)
+    theme::parse_hex(text).unwrap_or_else(theme::browser_text_hint)
 }
 
 /// Runs a library or preview command for the browser; an error goes to the status bar.
@@ -155,7 +158,7 @@ fn run(projects: &mut Projects, id: &str, params: serde_json::Value, out: &mut B
     match projects.execute(id, &params) {
         Ok(_) => true,
         Err(e) => {
-            out.status = Some(Status::Error(e.0));
+            out.status = Some(Status::Error(e.message().to_owned()));
             false
         }
     }
@@ -163,13 +166,18 @@ fn run(projects: &mut Projects, id: &str, params: serde_json::Value, out: &mut B
 
 /// Draws the browser in `area`.
 pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) -> BrowserOut {
+    let _style = crate::kit::style_class::enter("browser");
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
+
     let mut out = BrowserOut::default();
     let Context { projects, settings, selected_track, search_key, other_results } = cx;
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::panel_background());
+    painter.fill_background(area, 0.0, theme::panel_background());
+    crate::kit::native_css::background(&painter, area);
     state.poll();
-    projects.file_library_mut().poll();
+    suhina_plugins::trace::timed("library poll", || projects.file_library_mut().poll());
 
     // The search.
     let search = Rect::from_min_size(area.min, Vec2::new(area.width(), SEARCH));
@@ -178,34 +186,80 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         stop_preview(state, projects);
     }
 
-    // The category filters, wrapping.
+    // The sidebar alone chooses what the list shows (#711). Over the list: Recent's kinds as
+    // chips while Recent is chosen and the setting says chips, and the List / Map switch while
+    // Samples is.
     let mut y = search.bottom() + 4.0;
     let mut x = area.left() + PAD;
     let small = theme::ui_font(theme::TEXT_SMALL);
-    for category in Category::ALL {
-        let width = widgets::text_width(ui, category.title(), small.clone()) + FILTER_PAD * 2.0;
+    let map = other_results.is_some();
+    let recent = matches!(state.place, Some(Place::Recent(_)));
+    let samples = state.place.is_none() && state.category == Category::Samples;
+    let chips: Vec<(String, Chip)> = if recent && settings.view.recent_chips {
+        std::iter::once(("All".to_string(), Chip::Recent(None)))
+            .chain(Group::ALL.into_iter().map(|g| (g.title().to_string(), Chip::Recent(Some(g)))))
+            .collect()
+    } else if samples && map {
+        vec![("List".to_string(), Chip::List), (SAMPLE_MAP.to_string(), Chip::Map)]
+    } else {
+        Vec::new()
+    };
+    let showing_map = state.mode == crate::browser::ResultsMode::Other;
+    for (title, chip) in &chips {
+        let width = widgets::text_width(ui, title, small.clone()) + FILTER_PAD * 2.0;
         if x + width > area.right() - PAD && x > area.left() + PAD {
             x = area.left() + PAD;
             y += FILTER + FILTER_GAP;
         }
         let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, FILTER));
-        let response = widgets::button_area(
-            ui,
-            rect,
-            Id::new(("browser-filter", category.title())),
-            format!("Show {}", category.title()),
-        );
-        let chosen = state.category == category;
-        if response.clicked() && !chosen {
-            state.category = category;
+        let label = match chip {
+            Chip::Recent(_) => format!("Recent {title}"),
+            Chip::List => "Show the samples as a list".to_string(),
+            Chip::Map => "Show the samples laid out by how they sound".to_string(),
+        };
+        let response = widgets::button_area(ui, rect, Id::unique(("browser-filter", title.as_str())), label);
+        let _style = crate::kit::style_class::enter_response("button", &response);
+        let chosen = match chip {
+            Chip::Recent(group) => state.place == Some(Place::Recent(*group)),
+            Chip::List => !showing_map,
+            Chip::Map => showing_map,
+        };
+        if response.clicked() {
+            match chip {
+                Chip::Recent(group) => {
+                    state.place = Some(Place::Recent(*group));
+                    state.category = Place::Recent(*group).category().unwrap_or(Category::All);
+                    state.mode = crate::browser::ResultsMode::List;
+                }
+                Chip::List => state.mode = crate::browser::ResultsMode::List,
+                Chip::Map => state.mode = crate::browser::ResultsMode::Other,
+            }
             state.scroll = 0.0;
         }
         let lit = motion::toward(ui.ctx(), response.id.with("on"), chosen, motion::VALUE);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(rect, 0.0, motion::mix(idle, theme::text_value(), lit));
-        let text = motion::mix(theme::text_secondary(), theme::window_background(), lit);
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, category.title(), small.clone(), text);
+        widgets::button_surface(
+            &painter,
+            rect,
+            &response,
+            chosen,
+            motion::mix(idle, theme::control_selected(), lit),
+            0.0,
+        );
+        let text = crate::kit::style_class::foreground(motion::mix(
+            theme::browser_text_secondary(),
+            theme::text_inverse(),
+            lit,
+        ));
+        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, title, theme::ui_font(theme::TEXT_SMALL), text);
         x = rect.right() + FILTER_GAP;
+    }
+    // The map belongs to the samples: anywhere else the list shows.
+    if !samples && !recent {
+        state.mode = crate::browser::ResultsMode::List;
+    }
+    if chips.is_empty() {
+        y -= FILTER + 2.0;
     }
     y += FILTER + 6.0;
     painter.hline(area.x_range(), y - 0.5, theme::hairline(theme::border()));
@@ -214,20 +268,11 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     let sidebar = Rect::from_min_max(Pos2::new(area.left(), y), Pos2::new(area.left() + SIDEBAR, bottom));
     let results = Rect::from_min_max(Pos2::new(sidebar.right() + 1.0, y), Pos2::new(area.right(), bottom));
     painter.vline(sidebar.right() + 0.5, sidebar.y_range(), theme::hairline(theme::border()));
-    sidebar_view(ui, sidebar, state, projects, &mut out);
+    sidebar_view(ui, sidebar, state, projects, settings.view.recent_chips, &mut out);
 
-    if let Err(e) = state.refresh_rows(projects) {
+    if let Err(e) = suhina_plugins::trace::timed("browser rows", || state.refresh_rows(projects)) {
         out.status = Some(Status::Error(e));
     }
-    // With another view to offer, a List | Map switch above the results chooses.
-    let results = match &other_results {
-        Some(_) => {
-            let switch = Rect::from_min_size(results.min, Vec2::new(results.width(), MODE_SWITCH));
-            mode_switch(ui, switch, state);
-            Rect::from_min_max(Pos2::new(results.left(), switch.bottom()), results.max)
-        }
-        None => results,
-    };
     match (state.mode, other_results) {
         (crate::browser::ResultsMode::Other, Some(draw)) => draw(ui, results, state, projects),
         _ => results_view(ui, results, state, projects, settings, selected_track, &mut out),
@@ -278,13 +323,16 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         let provided = projects.preview_session_mut().map(|session| session.provide_audio(&path, data));
         let params = json!({ "path": path.display().to_string(), "from": from, "gain": settings.preview_volume });
         match provided.and_then(|()| projects.execute("preview.play", &params)) {
-            Ok(_) => state.previewing = Some(path.display().to_string()),
-            Err(e) => out.status = Some(Status::Error(format!("Cannot preview: {}", e.0))),
+            Ok(_) => state.preview_started(path.display().to_string()),
+            Err(e) => out.status = Some(Status::Error(format!("Cannot preview: {}", e.message().to_owned()))),
         }
     }
     if let Some(e) = state.take_preview_error() {
         out.status = Some(Status::Error(format!("Cannot preview: {e}")));
     }
+    // Whether the preview voice still plays, wherever the control for it is shown.
+    let (sounding, started) = preview_sounding(projects);
+    state.observe_preview(sounding, started);
     // While a sample is being read for its preview, every frame looks for it, so it plays the
     // moment it is ready.
     if state.preview_pending() {
@@ -292,23 +340,39 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     } else if state.previewing.is_some() {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(30));
     }
+    // A search on its own thread answers without an input to wake the window.
+    if state.searching() {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+    }
     out
 }
 
 fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, out: &mut BrowserOut) {
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, theme::window_background());
+    // `.browser-search` (or `.browser .text-input`): its background, border, radius and `color`.
+    let _search_style = crate::kit::style_class::enter_named("text-input", "browser-search");
+    paint_row(&painter, rect, theme::window_background());
+    if let Some(style) = crate::kit::style_class::computed().filter(|s| s.border_width > 0.0 && s.border.a() > 0) {
+        painter.rect_stroke(
+            rect,
+            style.radius,
+            Stroke::new(style.border_width, style.border),
+            egui::StrokeKind::Inside,
+        );
+    }
     let glass = Pos2::new(rect.left() + PAD + 5.0, rect.center().y);
-    painter.circle_stroke(glass + Vec2::new(-1.0, -1.0), 3.5, Stroke::new(1.1, theme::text_hint()));
-    painter
-        .line_segment([glass + Vec2::new(1.5, 1.5), glass + Vec2::new(4.5, 4.5)], Stroke::new(1.1, theme::text_hint()));
+    painter.circle_stroke(glass + Vec2::new(-1.0, -1.0), 3.5, Stroke::new(1.1, theme::browser_text_hint()));
+    painter.line_segment(
+        [glass + Vec2::new(1.5, 1.5), glass + Vec2::new(4.5, 4.5)],
+        Stroke::new(1.1, theme::browser_text_hint()),
+    );
     let hint = theme::mono_font(theme::TEXT_TINY);
     let key_width = widgets::text_width(ui, key, hint.clone());
     let field = Rect::from_min_max(
         Pos2::new(rect.left() + PAD + 14.0, rect.top() + 4.0),
         Pos2::new(rect.right() - PAD - key_width - 6.0, rect.bottom() - 4.0),
     );
-    let id = Id::new("browser-search");
+    let id = Id::unique("browser-search");
     // egui lets go of a field's focus on Escape before the field is drawn, so whether the
     // field had the keyboard is remembered from the frame before.
     let focused = ui.ctx().memory(|m| m.has_focus(id)) || state.search_focused;
@@ -343,12 +407,22 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
     let edit = egui::TextEdit::singleline(&mut state.search)
         .id(id)
         .frame(egui::Frame::NONE)
-        .hint_text(egui::RichText::new("Search").color(theme::text_hint()))
+        .hint_text(egui::RichText::new("Search").color(theme::browser_text_hint()))
         .font(theme::ui_font(theme::TEXT))
-        .text_color(theme::text_primary());
-    let response = ui.put(field, edit);
+        .text_color(crate::kit::style_class::foreground(theme::browser_text_primary()));
+    let response = crate::kit::widgets::text_input_at(ui, field, edit);
     if std::mem::take(&mut state.focus_search) {
         response.request_focus();
+    }
+    if std::mem::take(&mut state.select_search)
+        && let Some(mut text) = egui::TextEdit::load_state(ui.ctx(), id)
+    {
+        let all = egui::text::CCursorRange::two(
+            egui::text::CCursor::new(0),
+            egui::text::CCursor::new(state.search.chars().count()),
+        );
+        text.cursor.set_char_range(Some(all));
+        text.store(ui.ctx(), id);
     }
     state.search_focused = response.has_focus();
     if response.changed() {
@@ -360,11 +434,49 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
         Align2::RIGHT_CENTER,
         key,
         hint,
-        theme::text_hint(),
+        theme::browser_text_hint(),
     );
 }
 
 /// Moves the selection `step` rows (from the search field's arrow keys).
+/// The arrow keys while a row of the list was pressed last: up and down move the selection (and
+/// its preview), right opens a folder or goes into an open one, left closes one or goes up to
+/// the folder it is in. Taken before the window's shortcuts see them.
+pub fn list_keys(ui: &Ui, state: &mut BrowserState) {
+    if !state.list_focused || state.search_focused {
+        return;
+    }
+    let (down, up, left, right) = ui.input_mut(|i| {
+        (
+            i.consume_key(Modifiers::NONE, Key::ArrowDown),
+            i.consume_key(Modifiers::NONE, Key::ArrowUp),
+            i.consume_key(Modifiers::NONE, Key::ArrowLeft),
+            i.consume_key(Modifiers::NONE, Key::ArrowRight),
+        )
+    });
+    if down || up {
+        move_selection(state, if down { 1 } else { -1 });
+    }
+    if !(left || right) {
+        return;
+    }
+    let rows = state.rows();
+    let Some(current) = state.selected.last().and_then(|s| rows.iter().position(|r| r.item.key == s.key)) else {
+        return;
+    };
+    let Some(row) = rows.get(current) else { return };
+    let (opens, open, depth, node) = (row.opens, row.open, row.depth, row.node().to_string());
+    if right && opens && !open {
+        state.toggle(&node);
+    } else if right && open {
+        move_selection(state, 1);
+    } else if left && open {
+        state.toggle(&node);
+    } else if left && let Some(parent) = rows.get(..current).and_then(|r| r.iter().rposition(|r| r.depth < depth)) {
+        move_selection(state, parent as isize - current as isize);
+    }
+}
+
 fn move_selection(state: &mut BrowserState, step: isize) {
     let rows = state.rows();
     if rows.is_empty() {
@@ -383,7 +495,30 @@ fn move_selection(state: &mut BrowserState, step: isize) {
     }
 }
 
-fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut Projects, out: &mut BrowserOut) {
+/// What a chip over the list stands for (#711).
+#[derive(Clone, Copy)]
+enum Chip {
+    /// A kind of recent item, or all of them.
+    Recent(Option<Group>),
+    /// The samples as a list, or laid out by how they sound.
+    List,
+    Map,
+}
+
+/// What a sidebar item chooses: a place, or a kind of the library shown whole (#711).
+enum Target {
+    Place(Place),
+    Category(Category),
+}
+
+fn sidebar_view(
+    ui: &mut Ui,
+    area: Rect,
+    state: &mut BrowserState,
+    projects: &mut Projects,
+    recent_chips: bool,
+    out: &mut BrowserOut,
+) {
     let painter = ui.painter_at(area);
     let title_font = theme::ui_font(theme::TEXT_SMALL);
     let item_font = theme::ui_font(theme::TEXT_SMALL);
@@ -391,47 +526,116 @@ fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mu
     let title = |y: &mut f32, text: &str| {
         *y += 8.0;
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, *y), Vec2::new(area.width() - PAD, 12.0));
-        widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, title_font.clone(), theme::text_hint());
+        widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, title_font.clone(), theme::browser_text_hint());
         *y += 12.0;
     };
-    let mut entry = |ui: &mut Ui, y: &mut f32, place: Place, label: &str, note: Option<&str>| -> egui::Response {
+    let mut entry = |ui: &mut Ui, y: &mut f32, target: Target, label: &str, note: Option<&str>| -> egui::Response {
         let rect = Rect::from_min_size(Pos2::new(area.left(), *y), Vec2::new(area.width(), ROW));
         *y += ROW;
-        let response = ui.interact(rect.intersect(area), Id::new(("browser-place", place.param())), Sense::click());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Place {label}")));
-        let chosen = state.place.as_ref() == Some(&place);
+        let key = match &target {
+            Target::Place(place) => place.param(),
+            Target::Category(category) => format!("library:{}", category.title()),
+        };
+        let response = ui.interact(rect.intersect(area), Id::unique(("browser-place", key.as_str())), Sense::click());
+        // Screen readers and tests: "Show Samples" for the library's kinds, "Place Recent MIDI"
+        // for a recent kind, "Place Pinned" and the like for the rest.
+        let name = match &target {
+            Target::Category(category) => format!("Show {}", category.title()),
+            Target::Place(Place::Recent(Some(group))) => format!("Place Recent {}", group.title()),
+            Target::Place(_) => format!("Place {}", label.trim()),
+        };
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+        // A kind of the library is chosen while no place is: the whole of it shows.
+        let chosen = match &target {
+            Target::Place(place) => state.place.as_ref() == Some(place),
+            Target::Category(category) => state.place.is_none() && state.category == *category,
+        };
+        let place = match target {
+            Target::Place(place) => place,
+            Target::Category(category) => {
+                if response.clicked() && !chosen {
+                    state.place = None;
+                    state.category = category;
+                    state.scroll = 0.0;
+                }
+                if rect.intersects(area) {
+                    let _style = place_style(&response, chosen);
+                    let fill = if chosen {
+                        theme::control_active()
+                    } else {
+                        motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
+                    };
+                    paint_row(&painter, rect.intersect(area), fill);
+                    let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
+                    let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
+                    let color = crate::kit::style_class::foreground(color);
+                    widgets::text_in(&painter, text, Align2::LEFT_CENTER, label, item_font.clone(), color);
+                }
+                return response;
+            }
+        };
         let fill = if chosen {
             theme::control_active()
         } else {
             motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
         };
+        let _style = place_style(&response, chosen);
         if rect.intersects(area) {
-            painter.rect_filled(rect.intersect(area), 0.0, fill);
+            paint_row(&painter, rect.intersect(area), fill);
             let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
-            let color = if chosen { theme::text_primary() } else { theme::text_secondary() };
+            let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
+            let color = crate::kit::style_class::foreground(color);
             widgets::text_in(&painter, text, Align2::LEFT_CENTER, label, item_font.clone(), color);
-            if let Some(note) = note {
+            if let Some(note) = note.filter(|_| !chosen) {
                 widgets::text_in(
                     &painter,
                     text,
                     Align2::RIGHT_CENTER,
                     note,
                     theme::mono_font(theme::TEXT_TINY),
-                    theme::text_hint(),
+                    theme::browser_text_hint(),
                 );
             }
         }
-        if response.clicked() {
-            state.place = if chosen { None } else { Some(place) };
+        // The place chosen shows a × that clears it; a second click on the place keeps it.
+        if chosen && rect.intersects(area) {
+            let clear = Rect::from_min_size(Pos2::new(rect.right() - ROW, rect.top()), Vec2::splat(ROW));
+            let cleared = widgets::button_area(
+                ui,
+                clear.intersect(area),
+                Id::unique(("browser-place-clear", place.param())),
+                "Show everything",
+            );
+            let color =
+                motion::mix(theme::browser_text_hint(), theme::browser_text_primary(), widgets::hover(ui, &cleared));
+            widgets::text_in(&painter, clear, Align2::CENTER_CENTER, "×", item_font.clone(), color);
+            if cleared.clicked() {
+                state.place = None;
+                state.category = Category::All;
+                state.scroll = 0.0;
+                return response;
+            }
+        }
+        if response.clicked() && !chosen {
+            // A place lists any kind, or a recent group's own: the category follows it, so
+            // nothing the place lists is hidden (#711).
+            state.category = place.category().unwrap_or(Category::All);
+            state.place = Some(place);
             state.scroll = 0.0;
         }
         response
     };
     title(&mut y, "Pinned");
-    entry(ui, &mut y, Place::Pinned, "Pinned", None);
-    title(&mut y, "Recent");
-    for group in Group::ALL {
-        entry(ui, &mut y, Place::Recent(group), group.title(), None);
+    entry(ui, &mut y, Target::Place(Place::Pinned), "Pinned", None);
+    entry(ui, &mut y, Target::Place(Place::Recent(None)), "Recent", None);
+    if !recent_chips {
+        for group in Group::ALL {
+            entry(ui, &mut y, Target::Place(Place::Recent(Some(group))), &format!("    {}", group.title()), None);
+        }
+    }
+    title(&mut y, "Library");
+    for category in Category::ALL {
+        entry(ui, &mut y, Target::Category(category), category.title(), None);
     }
     title(&mut y, "Folders");
     let mut menus = Vec::new();
@@ -446,7 +650,7 @@ fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mu
             FolderState::Missing => Some("gone"),
             _ => None,
         };
-        let response = entry(ui, &mut y, Place::Folder(folder.path.clone()), &name, note);
+        let response = entry(ui, &mut y, Target::Place(Place::Folder(folder.path.clone())), &name, note);
         menus.push((response, folder.path));
     }
     for (response, folder) in menus {
@@ -476,8 +680,10 @@ fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mu
     let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW + 2.0));
     match state.new_folder.as_mut() {
         None => {
-            let response = widgets::button_area(ui, rect.intersect(area), Id::new("browser-add-folder"), "Add folder");
-            let color = motion::mix(theme::text_hint(), theme::text_primary(), widgets::hover(ui, &response));
+            let response =
+                widgets::button_area(ui, rect.intersect(area), Id::unique("browser-add-folder"), "Add folder");
+            let color =
+                motion::mix(theme::browser_text_hint(), theme::browser_text_primary(), widgets::hover(ui, &response));
             widgets::text_in(
                 &painter,
                 rect.shrink2(Vec2::new(PAD + 2.0, 0.0)),
@@ -491,12 +697,12 @@ fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mu
             }
         }
         Some(text) => {
-            let id = Id::new("browser-new-folder");
+            let id = Id::unique("browser-new-folder");
             let edit = egui::TextEdit::singleline(text)
                 .id(id)
                 .hint_text("A folder's path")
                 .font(item_font.clone())
-                .text_color(theme::text_primary());
+                .text_color(theme::browser_text_primary());
             let field = rect.shrink2(Vec2::new(4.0, 1.0));
             let browse =
                 Rect::from_min_size(Pos2::new(field.right() - 56.0, field.top()), Vec2::new(56.0, field.height()));
@@ -505,7 +711,8 @@ fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mu
                 state.new_folder = None;
                 return;
             }
-            let response = ui.put(
+            let response = crate::kit::widgets::text_input_at(
+                ui,
                 Rect::from_min_max(field.min, Pos2::new(browse.left() - 4.0, field.bottom())).intersect(area),
                 edit,
             );
@@ -537,18 +744,21 @@ fn results_view(
     out: &mut BrowserOut,
 ) {
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::panel_background());
-    // The plug-ins' view switch takes the results' top when the plug-ins are listed alone.
+    painter.fill_background(area, 0.0, theme::panel_background());
+    // The Plug-ins category's Instruments | Effects switch takes the results' top, then its
+    // list's column headings, unless a place or a search lists other rows.
     let plugins_view = projects.file_library_mut().plugins_view();
-    let flat = if state.mode == crate::browser::ResultsMode::List && state.category == Category::Plugins {
+    let listed = state.mode == crate::browser::ResultsMode::List
+        && state.category == Category::Plugins
+        && state.place.is_none()
+        && state.search.trim().is_empty()
+        && state.tag_filter.is_empty();
+    if listed {
         let strip = Rect::from_min_size(area.min, Vec2::new(area.width(), MODE_SWITCH));
         plugins_view_switch(ui, strip, projects, plugins_view, out);
         area = area.intersect(Rect::from_min_max(Pos2::new(area.left(), strip.bottom() + 2.0), area.max));
-        plugins_view == suhina_library::store::PluginsView::Flat
-    } else {
-        false
-    };
-    if flat {
+    }
+    if listed {
         // The columns' header row, its headings clickable to sort.
         let strip = Rect::from_min_size(area.min, Vec2::new(area.width(), MODE_SWITCH));
         columns_header(ui, strip, state);
@@ -568,7 +778,7 @@ fn results_view(
             Align2::CENTER_TOP,
             text,
             theme::ui_font(theme::TEXT_SMALL),
-            theme::text_hint(),
+            theme::browser_text_hint(),
         );
         return;
     }
@@ -590,6 +800,10 @@ fn results_view(
     let mut double: Option<usize> = None;
     let mut drag: Option<usize> = None;
     let mut play: Option<usize> = None;
+    // Samples dragged over a folder row go into that folder when dropped (#943).
+    let dragging_samples = state.drag.as_ref().is_some_and(|items| items.iter().any(|i| i.kind == ItemKind::Sample));
+    let pointer = ui.input(|i| i.pointer.latest_pos());
+    state.drop_folder = None;
     for index in first..(first + visible).min(rows.len()) {
         let Some(row) = rows.get(index) else { continue };
         let top = area.top() + index as f32 * ROW - state.scroll;
@@ -598,37 +812,46 @@ fn results_view(
         if shown.height() <= 0.0 {
             continue;
         }
-        let response = ui.interact(shown, Id::new(("browser-row", &row.item.key)), Sense::click_and_drag());
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Browser {}", row.item.name))
-        });
+        let response = ui.interact(shown, Id::unique(("browser-row", row.node())), Sense::click_and_drag());
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Browser {}", row.item.name)));
         let selected = state.selected.iter().any(|s| s.key == row.item.key);
-        let fill = if selected {
+        // `.browser-row`, with `:hover`, `:active` and `:selected`; its `color` is the name's.
+        let _row_style = crate::kit::style_class::enter_response("browser-row", &response);
+        crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
+        let drop_here = dragging_samples
+            && row.item.kind == ItemKind::Folder
+            && pointer.is_some_and(|p| shown.contains(p))
+            && row.item.path().is_some_and(|p| p.is_dir());
+        if drop_here {
+            state.drop_folder = row.item.path();
+        }
+        let fill = if drop_here {
+            theme::control_hover()
+        } else if selected {
             theme::control_active()
         } else {
             motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
         };
-        painter.rect_filled(shown, 0.0, fill);
+        paint_row(&painter, shown, fill);
         let mut x = rect.left() + 4.0 + row.depth as f32 * INDENT;
         let lead = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(10.0, ROW));
         let previewable = matches!(row.item.kind, ItemKind::Sample | ItemKind::Midi);
         if row.opens {
-            chevron(&painter, lead.center(), row.open, theme::text_hint());
+            widgets::chevron(&painter, lead.center(), row.open, theme::browser_text_hint());
         } else if previewable && (selected || response.hovered()) {
             let button = widgets::button_area(
                 ui,
                 lead,
-                Id::new(("browser-play", &row.item.key)),
+                Id::unique(("browser-play", row.node())),
                 format!("Preview {}", row.item.name),
             );
-            let playing = state.previewing.as_deref() == Some(row.item.key.as_str());
-            play_glyph(
-                &painter,
-                lead.center(),
-                playing,
-                if button.hovered() { theme::text_primary() } else { theme::text_secondary() },
-                7.0,
-            );
+            let playing = state.preview_active_for(&row.item.key);
+            // `.browser-play`, `:checked` while it plays, `color` its glyph.
+            let _play_style = crate::kit::style_class::enter_named_response("browser-play", "browser-play", &button);
+            crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, playing);
+            let ink = if button.hovered() { theme::browser_text_primary() } else { theme::browser_text_secondary() };
+            play_glyph(&painter, lead.center(), playing, crate::kit::style_class::foreground(ink), 7.0);
             if button.clicked() {
                 play = Some(index);
             }
@@ -637,33 +860,39 @@ fn results_view(
         let icon_rect = Rect::from_min_size(Pos2::new(x, rect.top() + 2.5), Vec2::splat(12.0));
         icon(&painter, icon_rect, row.item.kind, icon_color(row.item.kind));
         x = icon_rect.right() + 5.0;
-        // The flat list's columns, where they are drawn.
+        // The plug-ins' list's columns, those there is room for.
         if let Some(columns) = &row.columns {
             let small = theme::ui_font(theme::TEXT_TINY);
-            let modified = columns.modified.map(date).unwrap_or_default();
-            let texts = [(1, columns.vendor.as_str()), (2, columns.kind), (3, columns.format), (4, modified.as_str())];
-            for (index, text) in texts {
-                let (left, right) = column_span(area, index);
-                if right <= left || text.is_empty() {
-                    continue;
-                }
+            if let Some((left, right)) = column_span(area, 1) {
                 let span = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(right, rect.bottom()));
-                let align = if index == 1 { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER };
-                widgets::text_in(&painter, span, align, text, small.clone(), theme::text_hint());
+                widgets::text_in(
+                    &painter,
+                    span,
+                    Align2::RIGHT_CENTER,
+                    columns.format,
+                    small,
+                    theme::browser_text_hint(),
+                );
             }
         }
-        // On the right: a sample's length, a device's kind, where a search found it.
+        // On the right: a sample's length, a device's kind, where a search found it. The
+        // plug-ins' list says what each row is in its columns instead.
         let meta = match row.item.kind {
-            ItemKind::Sample | ItemKind::Midi if row.columns.is_none() => {
+            _ if row.columns.is_some() => None,
+            ItemKind::Sample | ItemKind::Midi => {
                 row.item.path().and_then(|p| state.info(&p, false).and_then(|i| i.seconds)).map(duration_text)
             }
             ItemKind::Instrument if row.item.plugin => Some("plug-in".into()),
             ItemKind::Effect if row.item.plugin => Some("plug-in".into()),
             ItemKind::AudioEffect => Some("AudioEffect".into()),
+            ItemKind::MidiEffect => Some("MIDI effect".into()),
             _ => None,
         }
         .unwrap_or_default();
-        let name_right = if row.columns.is_some() { column_span(area, 0).1 } else { rect.right() - PAD };
+        let name_right = match row.columns {
+            Some(_) => column_span(area, 0).map_or(rect.right() - PAD, |(_, right)| right),
+            None => rect.right() - PAD,
+        };
         let meta_width = if meta.is_empty() {
             0.0
         } else {
@@ -672,25 +901,36 @@ fn results_view(
         let name_space = (name_right - meta_width - x).max(0.0);
         let item_tags = projects.file_library_mut().item_tags(&row.item.key);
         let dots = item_tags.len() as f32 * DOT_HIT;
-        let color = if selected { theme::text_primary() } else { theme::text_value() };
+        let color = crate::kit::style_class::foreground(if selected {
+            theme::browser_text_primary()
+        } else {
+            theme::browser_text_value()
+        });
         let galley = widgets::fitted(&painter, &row.item.name, font.clone(), color, (name_space - dots).max(0.0));
         let name_pos = Pos2::new(x, rect.center().y - galley.size().y / 2.0);
         let name_end = name_pos.x + galley.size().x;
-        painter.galley(name_pos, galley, color);
+        widgets::paint_text(&painter, name_pos, galley, color);
         for (i, name) in item_tags.iter().enumerate() {
             if let Some(tag) = tags.iter().find(|t| t.name == *name) {
                 let center = tag_dot_center(name_end, i, rect.center().y);
-                painter.circle_filled(center, DOT / 2.0, tag_color(&tag.color));
+                // `.browser-tag-dot { opacity; border-color }`; its fill stays the tag's colour.
+                let _dot = crate::kit::style_class::enter("browser-tag-dot");
+                let style = crate::kit::style_class::computed();
+                let fill = tag_color(&tag.color).gamma_multiply(style.as_ref().map_or(1.0, |s| s.opacity));
+                painter.circle_filled(center, DOT / 2.0, fill);
+                if let Some(style) = style.filter(|s| s.border_width > 0.0) {
+                    painter.circle_stroke(center, DOT / 2.0, Stroke::new(style.border_width, style.border));
+                }
                 // The dot answers a hover with its tag's name: a tooltip, the status bar, and
                 // an accessible label.
                 let dot = ui
                     .interact(
                         Rect::from_center_size(center, Vec2::splat(DOT_HIT)),
-                        Id::new(("browser-tag-dot", &row.item.key, name.as_str())),
+                        Id::unique(("browser-tag-dot", row.node(), name.as_str())),
                         Sense::hover(),
                     )
                     .on_hover_text(format!("Tag {name}"));
-                dot.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Tagged {name}")));
+                dot.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Tagged {name}")));
                 if dot.hovered() {
                     out.status = Some(Status::Hint(format!("Tag {name}")));
                 }
@@ -699,7 +939,14 @@ fn results_view(
         if !meta.is_empty() {
             let meta_rect =
                 Rect::from_min_max(Pos2::new(rect.right() - meta_width, rect.top()), rect.max - Vec2::new(PAD, 0.0));
-            widgets::text_in(&painter, meta_rect, Align2::RIGHT_CENTER, &meta, mono.clone(), theme::text_hint());
+            widgets::text_in(
+                &painter,
+                meta_rect,
+                Align2::RIGHT_CENTER,
+                &meta,
+                mono.clone(),
+                theme::browser_text_hint(),
+            );
         }
         if response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
             pressed = Some((index, ui.input(|i| i.modifiers)));
@@ -732,6 +979,7 @@ fn results_view(
             click_row(state, &rows, index, modifiers);
             state.handled_press = Some(row.item.key.clone());
         }
+        state.list_focused = true;
     }
     if let Some((index, modifiers)) = clicked {
         let key = rows.get(index).map(|r| r.item.key.clone());
@@ -739,48 +987,52 @@ fn results_view(
         if state.handled_press.take() != key {
             click_row(state, &rows, index, modifiers);
         }
-        // A heading opens with a click on its name: the same rules as its chevron (right
-        // below), which takes the clicks in the chevron zone instead of this one.
+        // A heading or a folder opens with a click on its name: the same rules as its chevron
+        // (right below), which takes the clicks in the chevron zone instead of this one (#869).
         if let Some(row) = rows.get(index)
-            && row.item.kind == ItemKind::Heading
+            && opens_on_click(row)
             && !ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary))
             && !ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| p.x < chevron_zone(area.left(), row.depth))
         {
-            state.toggle(&row.item.key);
+            state.toggle(row.node());
         }
     }
     if let Some(index) = double
         && let Some(row) = rows.get(index)
     {
-        // A double-click on the row itself opens it — but not on its chevron: the gesture's
-        // two clicks are within egui's double-click window (0.3 s, 6 pt) and its first one
-        // toggled already, so the double would open and close the folder again (#293); and
-        // not on a heading, whose single clicks toggle above.
+        // A double-click on the row itself opens a preset bank — but not on its chevron: the
+        // gesture's two clicks are within egui's double-click window (0.3 s, 6 pt) and its
+        // first one toggled already, so the double would open and close it again (#293); and
+        // not on a heading or a folder, whose single clicks toggle above, so a double-click
+        // leaves it open. A device that opens on its presets is added, as any device is.
         let on_chevron = row.opens
             && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| p.x < chevron_zone(area.left(), row.depth));
-        if row.opens && !on_chevron && row.item.kind != ItemKind::Heading {
-            state.toggle(&row.item.key);
+        if on_chevron && row.item.kind != ItemKind::Preset {
+            // Its first click toggled it, and adding it as well would be a second action.
+        } else if row.opens && !on_chevron && row.item.kind == ItemKind::Preset {
+            state.toggle(row.node());
         } else if row.item.kind == ItemKind::Project {
             out.open_project = row.item.path();
         } else if row.item.kind != ItemKind::Heading && row.item.kind != ItemKind::Folder {
             out.add = vec![row.item.clone()];
         }
     }
-    // A click on a chevron opens; a click elsewhere on a folder only selects it. The second
-    // click of a rapid pair on the same chevron is a double and does not toggle: the first
-    // click of the gesture did, so the two together open the folder once (#293).
+    // A click on a chevron opens; a click elsewhere on a heading or a folder opens it too
+    // (above), on a preset bank only selects it. The second click of a rapid pair on the same
+    // chevron is a double and does not toggle: the first click of the gesture did, so the two
+    // together open the folder once (#293).
     if let Some((index, _)) = clicked
         && let Some(row) = rows.get(index)
         && row.opens
         && !ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary))
         && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| p.x < chevron_zone(area.left(), row.depth))
     {
-        state.toggle(&row.item.key);
+        state.toggle(row.node());
     }
     if let Some(index) = play
         && let Some(row) = rows.get(index)
     {
-        if state.previewing.as_deref() == Some(row.item.key.as_str()) {
+        if state.preview_active_for(&row.item.key) {
             stop_preview(state, projects);
         } else {
             start_preview(state, projects, settings, selected_track, &row.item.clone(), 0.0, out);
@@ -802,15 +1054,15 @@ fn results_view(
             state.start_drag(items);
         }
     }
-    if rows.len() as f32 * ROW > area.height() {
-        // A thin bar shows where the list is.
-        let share = area.height() / content;
-        let bar = Rect::from_min_size(
-            Pos2::new(area.right() - 3.0, area.top() + state.scroll * share),
-            Vec2::new(2.0, (area.height() * share).max(12.0)),
-        );
-        painter.rect_filled(bar, 0.0, theme::border_strong());
-    }
+    // The scroll bar every scroll area has, dragged and clicked like a device panel's; after
+    // the rows, so it takes the pointer over them (#867).
+    crate::kit::scroll::vertical_bar(ui, area, "browser-results-scroll", content, &mut state.scroll);
+}
+
+/// A heading or a folder opens and closes with a click anywhere on it; a preset bank only with
+/// its chevron or a double-click, as a click on it previews it (#869).
+fn opens_on_click(row: &Row) -> bool {
+    row.opens && matches!(row.item.kind, ItemKind::Heading | ItemKind::Folder)
 }
 
 fn click_row(state: &mut BrowserState, rows: &[Row], index: usize, modifiers: Modifiers) {
@@ -872,8 +1124,7 @@ fn row_menu(
     ui.menu_button("Tag", |ui| {
         for tag in tags {
             let on = carried.contains(&tag.name);
-            let label = format!("{} {}", if on { "✓" } else { "  " }, tag.name);
-            if ui.button(label).clicked() {
+            if tag_entry(ui, tag, on).clicked() {
                 run(projects, "library.tag", json!({ "item": item.key, "tag": tag.name, "on": !on }), out);
                 state.relist();
                 ui.close();
@@ -881,9 +1132,12 @@ fn row_menu(
         }
         ui.separator();
         // A new tag, set on the item at once.
-        let id = Id::new("browser-new-tag");
+        let id = Id::unique("browser-new-tag");
         let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
-        let response = ui.add(egui::TextEdit::singleline(&mut name).hint_text("New tag…").desired_width(120.0));
+        let response = crate::kit::widgets::text_input(
+            ui,
+            egui::TextEdit::singleline(&mut name).hint_text("New tag…").desired_width(120.0),
+        );
         ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
         if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !name.trim().is_empty() {
             let palette = suhina_library::store::default_tags();
@@ -907,10 +1161,70 @@ fn row_menu(
         state.place = Some(Place::Folder(parent.to_path_buf()));
         ui.close();
     }
+    // The row's file, or every selected file when the row is one of them, copied into a
+    // folder; the originals stay (#865).
+    let files = copy_files(item, state.selected());
+    if !files.is_empty() && ui.button("Copy to folder…").clicked() {
+        out.copy_to = files;
+        ui.close();
+    }
     if item.kind == ItemKind::Folder && ui.button("Refresh").clicked() {
         state.relist();
         ui.close();
     }
+}
+
+/// The files Copy to folder… copies from `item`'s menu: every selected sample when `item` is one
+/// of the selection, else `item` alone, when it is a sample.
+pub fn copy_files(item: &BrowserItem, selected: &[BrowserItem]) -> Vec<PathBuf> {
+    let sample = |i: &BrowserItem| (i.kind == ItemKind::Sample).then(|| i.path()).flatten();
+    // Only a sample's menu copies: a MIDI file's would otherwise copy the samples picked with it.
+    if item.kind != ItemKind::Sample {
+        return Vec::new();
+    }
+    if selected.iter().any(|s| s.key == item.key) {
+        selected.iter().filter_map(sample).collect()
+    } else {
+        sample(item).into_iter().collect()
+    }
+}
+
+/// One entry of an item's Tag menu: a box, ticked while the item carries the tag, a swatch in
+/// the tag's colour and its name. The box and the swatch are painted, not text, so no font
+/// has to hold a check mark (#853). A click anywhere on the row toggles the tag.
+fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response {
+    const BOX: f32 = 12.0;
+    const SWATCH: f32 = 8.0;
+    let font = theme::ui_font(theme::TEXT);
+    let text_left = 6.0 + BOX + 6.0 + SWATCH + 6.0;
+    // As wide as its name needs while the menu measures itself, then as wide as the menu, so
+    // the hover fills the row.
+    let needed = text_left + widgets::text_width(ui, &tag.name, font.clone()) + 8.0;
+    let width = if ui.is_sizing_pass() { needed } else { needed.max(ui.available_width()) };
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, ui.spacing().interact_size.y), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &tag.name));
+    let painter = ui.painter();
+    let hover = widgets::hover(ui, &response);
+    if hover > 0.0 {
+        painter.rect_filled(rect, 3.0, theme::panel_hover().gamma_multiply(hover));
+    }
+    let box_rect = Rect::from_min_size(Pos2::new(rect.left() + 6.0, rect.center().y - BOX / 2.0), Vec2::splat(BOX));
+    painter.rect_filled(box_rect, 3.0, if on { theme::text_value() } else { theme::control_background() });
+    if on {
+        let r = box_rect.shrink(2.5);
+        let tick = [
+            Pos2::new(r.left(), r.center().y),
+            Pos2::new(r.left() + r.width() * 0.4, r.bottom()),
+            Pos2::new(r.right(), r.top()),
+        ];
+        painter.add(egui::Shape::line(tick.to_vec(), Stroke::new(1.5, theme::window_background())));
+    }
+    let swatch = Pos2::new(box_rect.right() + 6.0 + SWATCH / 2.0, rect.center().y);
+    painter.circle_filled(swatch, SWATCH / 2.0, tag_color(&tag.color));
+    let text_rect = Rect::from_min_max(Pos2::new(rect.left() + text_left, rect.top()), rect.right_bottom());
+    let color = motion::mix(theme::text_value(), theme::text_primary(), hover);
+    widgets::text_in(painter, text_rect, Align2::LEFT_CENTER, &tag.name, font, color);
+    response
 }
 
 fn start_preview(
@@ -937,42 +1251,15 @@ fn start_preview(
                 params["track"] = json!(track.0);
             }
             if run(projects, "preview.play", params, out) {
-                state.previewing = Some(item.key.clone());
+                state.preview_started(item.key.clone());
             }
         }
         _ => {}
     }
 }
 
-/// The List | Map switch.
-fn mode_switch(ui: &mut Ui, area: Rect, state: &mut BrowserState) {
-    use crate::browser::ResultsMode;
-    let painter = ui.painter_at(area);
-    painter.hline(area.x_range(), area.bottom() - 0.5, theme::hairline(theme::border()));
-    let small = theme::ui_font(theme::TEXT_SMALL);
-    let mut x = area.left() + PAD;
-    for (mode, name, hint) in [
-        (ResultsMode::List, "List", "Show the results as a list"),
-        (ResultsMode::Other, "Map", "Show the samples laid out by how they sound"),
-    ] {
-        let width = widgets::text_width(ui, name, small.clone()) + FILTER_PAD * 2.0;
-        let rect = Rect::from_min_size(Pos2::new(x, area.top() + 2.0), Vec2::new(width, FILTER));
-        let response = widgets::button_area(ui, rect, Id::new(("browser-mode", name)), hint.to_string());
-        let chosen = state.mode == mode;
-        if response.clicked() && !chosen {
-            state.mode = mode;
-        }
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(rect, 0.0, if chosen { theme::text_value() } else { idle });
-        let text = if chosen { theme::window_background() } else { theme::text_secondary() };
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, small.clone(), text);
-        x = rect.right() + FILTER_GAP;
-    }
-}
-
-/// The Grouped | By type | All switch above the results, when the plug-ins are listed alone;
-/// the choice is a library command, kept for the next start
-/// ([the plug-in browsing spec](../../docs/spec/plugin-browsing.md)).
+/// The Instruments | Effects switch above the Plug-ins category's list; the choice is a library
+/// command, kept for the next start ([the plug-in browsing spec](../../docs/spec/plugin-browsing.md)).
 fn plugins_view_switch(
     ui: &mut Ui,
     area: Rect,
@@ -985,82 +1272,105 @@ fn plugins_view_switch(
     let small = theme::ui_font(theme::TEXT_SMALL);
     let mut x = area.left() + PAD;
     for view in suhina_library::store::PluginsView::ALL {
-        let name = match view {
-            suhina_library::store::PluginsView::Grouped => "Grouped",
-            suhina_library::store::PluginsView::Type => "By type",
-            suhina_library::store::PluginsView::Flat => "All",
-        };
+        let name = view.title();
         let width = widgets::text_width(ui, name, small.clone()) + FILTER_PAD * 2.0;
         let rect = Rect::from_min_size(Pos2::new(x, area.top() + 2.0), Vec2::new(width, FILTER));
         let response = widgets::button_area(
             ui,
             rect,
-            Id::new(("browser-plugins-view", view.name())),
-            format!("Show plug-ins {name}"),
+            Id::unique(("browser-plugins-view", view.name())),
+            format!("Show plug-in {}", name.to_lowercase()),
         );
         if response.clicked() && chosen != view {
             run(projects, "library.setPluginsView", json!({ "view": view.name() }), out);
         }
+        let _style = crate::kit::style_class::enter_response("button", &response);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(rect, 0.0, if chosen == view { theme::text_value() } else { idle });
-        let text = if chosen == view { theme::window_background() } else { theme::text_secondary() };
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, small.clone(), text);
+        widgets::button_surface(
+            &painter,
+            rect,
+            &response,
+            chosen == view,
+            if chosen == view { theme::control_selected() } else { idle },
+            0.0,
+        );
+        let text = crate::kit::style_class::foreground(if chosen == view {
+            theme::text_inverse()
+        } else {
+            theme::browser_text_secondary()
+        });
+        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, theme::ui_font(theme::TEXT_SMALL), text);
         x = rect.right() + FILTER_GAP;
     }
 }
 
-/// The flat list's columns' widths, by column index: the name (0) takes what is left, then
-/// vendor, type, format and modified, all from the right edge. A narrow panel squeezes the
-/// name; below the columns' total the header and the rows show the name alone.
-const COLUMN_WIDTHS: [f32; 5] = [0.0, 160.0, 70.0, 52.0, 74.0];
+/// The plug-ins' list's columns: the name (0), which takes what is left, then the others from
+/// the right edge, with these widths.
+const COLUMN_WIDTHS: [f32; 2] = [0.0, 52.0];
+/// The columns' headings, by index.
+const COLUMN_NAMES: [&str; 2] = ["Name", "Format"];
 
-/// The left and right edge of the flat list's column `index` (0 name … 4 modified).
-fn column_span(area: Rect, index: usize) -> (f32, f32) {
-    let right = area.right() - PAD - COLUMN_WIDTHS[index + 1..].iter().sum::<f32>();
+/// How many columns besides the name fit in `area`: those that leave the name at least
+/// [`NAME_LEAST`], counted from the left, so the rightmost drop first as the panel narrows
+/// (whichever side the panel is on).
+fn columns_shown(area: Rect) -> usize {
+    let room = area.width() - 2.0 * PAD;
+    let mut shown = COLUMN_WIDTHS.len() - 1;
+    while shown > 0 && room - COLUMN_WIDTHS[1..=shown].iter().sum::<f32>() < NAME_LEAST {
+        shown -= 1;
+    }
+    shown
+}
+
+/// The left and right edge of the list's column `index` (0 name, 1 format), or `None` when it
+/// has dropped for want of room.
+fn column_span(area: Rect, index: usize) -> Option<(f32, f32)> {
+    let shown = columns_shown(area);
+    if index > shown {
+        return None;
+    }
+    let right = area.right() - PAD - COLUMN_WIDTHS.get(index + 1..=shown).map_or(0.0, |w| w.iter().sum::<f32>());
     match index {
-        0 => (area.left() + PAD, right),
-        _ => (right - COLUMN_WIDTHS[index], right),
+        0 => Some((area.left() + PAD, area.right() - PAD - COLUMN_WIDTHS[1..=shown].iter().sum::<f32>())),
+        _ => Some((right - COLUMN_WIDTHS.get(index).copied().unwrap_or(0.0), right)),
     }
 }
 
-/// The flat list's column headings; clicking one sorts by it, again for the other direction.
+/// The list's column headings; clicking one sorts by it, again for the other direction.
 fn columns_header(ui: &mut Ui, area: Rect, state: &mut BrowserState) {
     let painter = ui.painter_at(area);
     painter.hline(area.x_range(), area.bottom() - 0.5, theme::hairline(theme::border()));
     let small = theme::ui_font(theme::TEXT_SMALL);
     let (sorted, descending) = state.plugin_sort;
-    for (index, name) in ["Name", "Vendor", "Type", "Format", "Modified"].into_iter().enumerate() {
-        let (left, right) = column_span(area, index);
-        if right <= left {
-            continue;
-        }
+    for (index, name) in COLUMN_NAMES.into_iter().enumerate() {
+        let Some((left, right)) = column_span(area, index) else { continue };
         let rect = Rect::from_min_size(Pos2::new(left, area.top() + 2.0), Vec2::new(right - left, FILTER));
-        let response = widgets::button_area(ui, rect, Id::new(("browser-column", index)), format!("Sort by {name}"));
+        let response = widgets::button_area(ui, rect, Id::unique(("browser-column", index)), format!("Sort by {name}"));
         if response.clicked() {
             state.plugin_sort = (index as u8, if sorted == index as u8 { !descending } else { false });
         }
         let chosen = sorted == index as u8;
         let label =
             if chosen { format!("{name} {}", if descending { "▼" } else { "▲" }) } else { name.to_string() };
-        let color = if chosen { theme::text_primary() } else { theme::text_hint() };
+        let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_hint() };
         let hover = motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(rect, 0.0, hover);
-        widgets::text_in(&painter, rect, Align2::RIGHT_CENTER, &label, small.clone(), color);
+        painter.fill_background(rect, 0.0, hover);
+        let align = if index == 0 { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER };
+        widgets::text_in(&painter, rect, align, &label, small.clone(), color);
     }
 }
 
-/// A unix time in seconds as a date, `YYYY-MM-DD`.
-fn date(seconds: u64) -> String {
-    // Howard Hinnant's civil_from_days.
-    let z = (seconds / 86_400) as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let (m, d) = (if mp < 10 { mp + 3 } else { mp - 9 }, doy - (153 * mp + 2) / 5 + 1);
-    let y = if m <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 };
-    format!("{y:04}-{m:02}-{d:02}")
+/// Chooses `category` from the category row: the list shows again in place of the sample map,
+/// and a recent place of another kind is let go, since the category would hide all it lists.
+/// The category already chosen, clicked again, shows its whole tree (lets go of any place).
+pub fn choose_category(state: &mut BrowserState, category: Category) {
+    let again = state.category == category && state.mode == crate::browser::ResultsMode::List;
+    state.mode = crate::browser::ResultsMode::List;
+    let conflicts = state.place.as_ref().and_then(Place::category).is_some_and(|c| c != category);
+    if again || (conflicts && category != Category::All) {
+        state.place = None;
+    }
+    state.category = category;
 }
 
 /// Why nothing can preview now, if so: previews play through the active project's audio output,
@@ -1085,13 +1395,23 @@ pub fn preview_sample(state: &mut BrowserState, projects: &mut Projects, path: P
     state.want_preview(path, from);
 }
 
-/// Stops any preview.
+/// Stops any preview: the one waiting to be read, and whatever the preview voice plays, even
+/// when the browser has lost track of it (#836).
 pub fn stop_preview(state: &mut BrowserState, projects: &mut Projects) {
-    let was = state.previewing.is_some() || state.preview_pending();
+    let was = state.previewing.is_some() || state.preview_pending() || preview_sounding(projects).0;
     state.cancel_preview();
     if was {
         let _ = projects.execute("preview.stop", &json!({}));
     }
+}
+
+/// Whether the preview voice plays now.
+/// Whether the preview voice plays now, and how many previews it has started.
+fn preview_sounding(projects: &Projects) -> (bool, u64) {
+    projects
+        .preview_session()
+        .and_then(|s| s.player())
+        .map_or((false, 0), |p| (p.preview_monitor().playing(), p.preview_monitor().started()))
 }
 
 fn preview_strip(
@@ -1104,18 +1424,55 @@ fn preview_strip(
     out: &mut BrowserOut,
 ) {
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::window_background());
+    painter.fill_background(area, 0.0, theme::window_background());
     painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(theme::border()));
+    // The Auto switch at the top right: a selected sample plays by itself while it is lit
+    // (Settings › Browser › the same setting).
+    let auto = Rect::from_min_size(Pos2::new(area.right() - PAD - 40.0, area.top() + 4.0), Vec2::new(40.0, 16.0));
+    let response = ui
+        .interact(auto, Id::unique("browser-preview-auto"), Sense::click())
+        .on_hover_text("Auto preview: a sample plays when it is selected");
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Auto preview"));
+    let auto_style = crate::kit::style_class::enter_response("button", &response);
+    if response.clicked() {
+        out.toggle_autoplay = true;
+    }
+    let (fill, text) = widgets::toggle_colors(ui, &response, settings.preview_autoplay);
+    widgets::button_surface(&painter, auto, &response, settings.preview_autoplay, fill, 3.0);
+    widgets::text_in(
+        &painter,
+        auto,
+        Align2::CENTER_CENTER,
+        "Auto",
+        theme::ui_font(theme::TEXT_SMALL),
+        crate::kit::style_class::foreground(text),
+    );
+    drop(auto_style);
+    let area = Rect::from_min_max(area.min, Pos2::new(auto.left() - PAD, area.bottom()));
     let item = match state.selected.as_slice() {
         [one] if matches!(one.kind, ItemKind::Sample | ItemKind::Midi) => one.clone(),
         _ => {
+            // Nothing to preview picked, but a preview still sounding (its point was unpicked on
+            // the map): a Stop button for it, so a sounding preview always has one (#836).
+            let (sounding, _) = preview_sounding(projects);
+            let mut hint = area.shrink(PAD);
+            if sounding {
+                let stop = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::splat(PLAY));
+                let response = widgets::button_area(ui, stop, Id::unique("browser-preview-play"), "Stop preview");
+                widgets::button_surface(&painter, stop, &response, true, theme::control_background(), 0.0);
+                play_glyph(&painter, stop.center(), true, theme::accent(), 7.0);
+                if response.clicked() {
+                    stop_preview(state, projects);
+                }
+                hint = Rect::from_min_max(Pos2::new(stop.right() + PAD, hint.top()), hint.max);
+            }
             widgets::text_in(
                 &painter,
-                area.shrink(PAD),
+                hint,
                 Align2::LEFT_CENTER,
                 "Select a sample or MIDI file to preview",
                 theme::ui_font(theme::TEXT_SMALL),
-                theme::text_hint(),
+                theme::browser_text_hint(),
             );
             return;
         }
@@ -1125,31 +1482,37 @@ fn preview_strip(
         .preview_session()
         .and_then(|s| s.player())
         .map(|p| (p.preview_monitor().playing(), p.preview_monitor().seconds()));
-    let playing_this = state.previewing.as_deref() == Some(item.key.as_str()) && monitor.is_some_and(|m| m.0);
-    if state.previewing.as_deref() == Some(item.key.as_str())
-        && monitor.is_some_and(|m| !m.0)
-        && !state.preview_pending()
-    {
-        state.previewing = None;
-    }
+    // Stop shows while this item previews or waits to, and while any preview sounds, so a
+    // sounding preview always has a control that stops it (#836).
+    let playing_this = state.preview_active_for(&item.key) || monitor.is_some_and(|m| m.0);
     let info = state.info(&path, true).cloned().unwrap_or_default();
 
     // Top line: play, name, length, tempo, key.
     let top = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::new(area.width() - PAD * 2.0, PLAY));
     let play = Rect::from_min_size(top.min, Vec2::splat(PLAY));
-    let response = widgets::button_area(ui, play, Id::new("browser-preview-play"), "Preview");
-    painter.rect_filled(
-        play,
-        0.0,
-        motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
-    );
-    play_glyph(
+    let response = widgets::button_area(ui, play, Id::unique("browser-preview-play"), "Preview");
+    let play_style = crate::kit::style_class::enter_response("button", &response);
+    widgets::button_surface(
         &painter,
-        play.center(),
+        play,
+        &response,
         playing_this,
-        if playing_this { theme::accent() } else { theme::text_primary() },
-        7.0,
+        motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+        0.0,
     );
+    let ink =
+        crate::kit::style_class::foreground(if playing_this { theme::accent() } else { theme::browser_text_primary() });
+    if !crate::kit::skin::paint(
+        &painter,
+        play,
+        if playing_this { "stop" } else { "play" },
+        crate::kit::skin::State::response(&response, playing_this),
+        ink,
+        0.0,
+    ) {
+        play_glyph(&painter, play.center(), playing_this, ink, 7.0);
+    }
+    drop(play_style);
     if response.clicked() {
         if playing_this {
             stop_preview(state, projects);
@@ -1172,7 +1535,7 @@ fn preview_strip(
     let facts = facts.join("  ");
     let facts_width = widgets::text_width(ui, &facts, mono.clone());
     let text_rect = Rect::from_min_max(Pos2::new(play.right() + PAD, top.top()), top.max);
-    widgets::text_in(&painter, text_rect, Align2::RIGHT_CENTER, &facts, mono, theme::text_secondary());
+    widgets::text_in(&painter, text_rect, Align2::RIGHT_CENTER, &facts, mono, theme::browser_text_secondary());
     let name_rect =
         Rect::from_min_max(text_rect.min, Pos2::new(text_rect.right() - facts_width - PAD, text_rect.bottom()));
     widgets::text_in(
@@ -1181,7 +1544,7 @@ fn preview_strip(
         Align2::LEFT_CENTER,
         &item.name,
         theme::ui_font(theme::TEXT_SMALL),
-        theme::text_primary(),
+        theme::browser_text_primary(),
     );
 
     // The waveform, or the notes, with the part played brighter and the playhead.
@@ -1215,12 +1578,13 @@ fn preview_strip(
             Rect::from_min_max(Pos2::new(played_x, wave.top()), wave.max),
         );
         let clipped = |part: Rect| painter.with_clip_rect(part.intersect(painter.clip_rect()));
-        crate::kit::waveform::paint(
-            &clipped(done),
-            &shape,
-            crate::kit::waveform::Colors::from(theme::text_secondary()),
-        );
-        crate::kit::waveform::paint(&clipped(rest), &shape, crate::kit::waveform::Colors::from(theme::text_hint()));
+        // `.browser-preview-wave { color }` for the part played, `border-color` for the rest.
+        let _wave = crate::kit::style_class::enter("browser-preview-wave");
+        let style = crate::kit::style_class::computed();
+        let played = crate::kit::style_class::foreground(theme::browser_text_secondary());
+        let ahead = style.as_ref().filter(|s| s.authored.border).map_or(theme::browser_text_hint(), |s| s.border);
+        crate::kit::waveform::paint(&clipped(done), &shape, crate::kit::waveform::Colors::from(played));
+        crate::kit::waveform::paint(&clipped(rest), &shape, crate::kit::waveform::Colors::from(ahead));
     } else if let Some(notes) = &info.notes {
         let (low, high) = notes.iter().fold((127u8, 0u8), |(l, h), n| (l.min(n.2), h.max(n.2)));
         let span = f32::from(high.saturating_sub(low).max(1));
@@ -1229,7 +1593,7 @@ fn preview_strip(
             let x0 = wave.left() + (*start / beats) as f32 * wave.width();
             let x1 = wave.left() + ((start + length) / beats) as f32 * wave.width();
             let y = wave.bottom() - f32::from(key - low) / span * (wave.height() - 2.0) - 2.0;
-            let color = if x0 <= played_x { theme::text_secondary() } else { theme::text_hint() };
+            let color = if x0 <= played_x { theme::browser_text_secondary() } else { theme::browser_text_hint() };
             painter.rect_filled(Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1.max(x0 + 1.0), y + 2.0)), 0.0, color);
         }
     } else {
@@ -1239,7 +1603,7 @@ fn preview_strip(
             Align2::LEFT_CENTER,
             "Reading…",
             theme::ui_font(theme::TEXT_SMALL),
-            theme::text_hint(),
+            theme::browser_text_hint(),
         );
     }
     if playing_this {
@@ -1247,7 +1611,7 @@ fn preview_strip(
     }
     // A click on the waveform previews from there.
     let response =
-        ui.interact(wave, Id::new("browser-preview-wave"), Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
+        ui.interact(wave, Id::unique("browser-preview-wave"), Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
     if response.clicked()
         && total > 0.0
         && let Some(pointer) = response.interact_pointer_pos()
@@ -1264,7 +1628,7 @@ fn preview_strip(
 /// ([browser](browser.md) › Colour tags).
 fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut Projects, out: &mut BrowserOut) {
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::window_background());
+    painter.fill_background(area, 0.0, theme::window_background());
     painter.rect_stroke(area, 1.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
     // How many items carry each tag, counted when the editor opened and after every change
     // made in it.
@@ -1286,10 +1650,10 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
             break; // more tags than the popup's room; the footer's dots hold the rest
         }
         y = rect.bottom() + 2.0;
-        let row = ui.interact(rect, Id::new(("tag-editor-row", &tag.name)), Sense::hover());
+        let row = ui.interact(rect, Id::unique(("tag-editor-row", &tag.name)), Sense::hover());
         row.widget_info(|| {
             egui::WidgetInfo::labeled(
-                egui::WidgetType::Button,
+                egui::Role::Button,
                 true,
                 format!("Tag row {} ({} items)", tag.name, counts.get(&tag.name).copied().unwrap_or(0)),
             )
@@ -1300,7 +1664,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
         } else {
             motion::mix(theme::window_background(), theme::panel_hover(), widgets::hover(ui, &row))
         };
-        painter.rect_filled(rect, 0.0, fill);
+        painter.fill_background(rect, 0.0, fill);
         // Its checkbox: with items selected, it tags them (ticked while every selected item
         // carries the tag); with none, it filters the results by the tag, as the footer's
         // dots do.
@@ -1316,10 +1680,10 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
             selection.iter().all(|key| projects.file_library_mut().item_tags(key).contains(&tag.name))
         };
         let box_rect = Rect::from_min_size(Pos2::new(rect.left() + 4.0, rect.center().y - 7.0), Vec2::splat(14.0));
-        let check = ui.interact(box_rect, Id::new(("tag-editor-filter", &tag.name)), Sense::click());
+        let check = ui.interact(box_rect, Id::unique(("tag-editor-filter", &tag.name)), Sense::click());
         check.widget_info(|| {
             egui::WidgetInfo::labeled(
-                egui::WidgetType::Checkbox,
+                egui::Role::CheckBox,
                 true,
                 if selection.is_empty() {
                     format!("Filter tag {}", tag.name)
@@ -1328,9 +1692,13 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 },
             )
         });
-        painter.rect_filled(box_rect, 3.0, if on { theme::text_value() } else { theme::control_background() });
+        painter.fill_background(
+            box_rect,
+            3.0,
+            if on { theme::control_selected() } else { theme::control_background() },
+        );
         if on {
-            painter.rect_filled(box_rect.shrink(4.0), 0.0, theme::window_background());
+            painter.rect_filled(box_rect.shrink(4.0), 0.0, theme::text_inverse());
         }
         if check.clicked() {
             if selection.is_empty() {
@@ -1372,9 +1740,10 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
         let field_left = pick_rect.right() + 4.0;
         let field_right = (rect.right() - remove_width - keep_width - count_width - 10.0).max(field_left + 48.0);
         let field_rect = Rect::from_min_max(Pos2::new(field_left, rect.top()), Pos2::new(field_right, rect.bottom()));
-        let id = Id::new(("tag-editor-name", &tag.name));
+        let id = Id::unique(("tag-editor-name", &tag.name));
         let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
-        let field = ui.put(
+        let field = crate::kit::widgets::text_input_at(
+            ui,
             field_rect,
             egui::TextEdit::singleline(&mut name)
                 .id(id)
@@ -1382,9 +1751,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 .font(theme::ui_font(theme::TEXT_SMALL)),
         );
         ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-        field.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, format!("Tag name {}", tag.name))
-        });
+        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Tag name {}", tag.name)));
         if field.lost_focus()
             && ui.input(|i| i.key_pressed(Key::Enter))
             && !name.trim().is_empty()
@@ -1413,7 +1780,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 Align2::RIGHT_CENTER,
                 &format!("{} items", counts.get(&tag.name).copied().unwrap_or(0)),
                 theme::mono_font(theme::TEXT_TINY),
-                theme::text_hint(),
+                theme::browser_text_hint(),
             );
         }
         // Remove, armed by the first click and done by the second; Keep stands it down.
@@ -1425,7 +1792,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
         let remove = widgets::button_area(
             ui,
             remove_rect,
-            Id::new(("tag-editor-remove", &tag.name)),
+            Id::unique(("tag-editor-remove", &tag.name)),
             format!("Remove tag {}", tag.name),
         );
         widgets::text_in(
@@ -1434,7 +1801,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
             Align2::CENTER_CENTER,
             &remove_label,
             theme::ui_font(theme::TEXT_SMALL),
-            if armed { theme::recording() } else { theme::text_secondary() },
+            if armed { theme::recording() } else { theme::browser_text_secondary() },
         );
         if remove.clicked() {
             if armed {
@@ -1453,14 +1820,14 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 Pos2::new(remove_rect.right() + 4.0, rect.center().y - FILTER / 2.0),
                 Vec2::new(keep_width, FILTER),
             );
-            let keep = widgets::button_area(ui, keep_rect, Id::new(("tag-editor-keep", &tag.name)), "Keep");
+            let keep = widgets::button_area(ui, keep_rect, Id::unique(("tag-editor-keep", &tag.name)), "Keep");
             widgets::text_in(
                 &painter,
                 keep_rect,
                 Align2::CENTER_CENTER,
                 "Keep",
                 theme::ui_font(theme::TEXT_SMALL),
-                theme::text_secondary(),
+                theme::browser_text_secondary(),
             );
             if keep.clicked() {
                 state.tag_editor_confirm = None;
@@ -1470,11 +1837,12 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
     // The last row adds a tag: a name and the next default colour, the field the popup wide.
     if y + EDITOR_ROW <= area.bottom() - 2.0 {
         let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), EDITOR_ROW));
-        let id = Id::new("tag-editor-new");
+        let id = Id::unique("tag-editor-new");
         let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
         let field_rect =
             Rect::from_min_max(Pos2::new(area.left() + PAD, rect.top()), Pos2::new(area.right() - PAD, rect.bottom()));
-        let field = ui.put(
+        let field = crate::kit::widgets::text_input_at(
+            ui,
             field_rect,
             egui::TextEdit::singleline(&mut name)
                 .id(id)
@@ -1483,7 +1851,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 .font(theme::ui_font(theme::TEXT_SMALL)),
         );
         ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-        field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "New tag name".to_string()));
+        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
         if field.lost_focus()
             && ui.input(|i| i.key_pressed(Key::Enter))
             && !name.trim().is_empty()
@@ -1509,7 +1877,7 @@ fn footer_view(
     out: &mut BrowserOut,
 ) -> Rect {
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::panel_background());
+    painter.fill_background(area, 0.0, theme::panel_background());
     painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(theme::border()));
     // The Edit tags button's room, so the dots stop before it.
     let edit_width = widgets::text_width(ui, "Edit tags", theme::ui_font(theme::TEXT_SMALL)) + FILTER_PAD * 2.0;
@@ -1522,8 +1890,9 @@ fn footer_view(
         if x > area.right() - 90.0 - edit_width - 8.0 {
             break;
         }
-        let response = widgets::button_area(ui, rect, Id::new(("browser-tag", &tag.name)), format!("Tag {}", tag.name))
-            .on_hover_text(&tag.name);
+        let response =
+            widgets::button_area(ui, rect, Id::unique(("browser-tag", &tag.name)), format!("Tag {}", tag.name))
+                .on_hover_text(&tag.name);
         if response.hovered() {
             // The tag's name and how many items carry it, in the status bar. The count is read
             // where the tags are kept, not from the editor's `tag_counts`: that is absent until
@@ -1543,9 +1912,9 @@ fn footer_view(
         // Right-click: rename, recolour or remove the tag. Clicks inside do not close it: a
         // tag's new name is typed here (egui's default closes a menu on a click inside it).
         egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-            let id = Id::new(("browser-rename-tag", &tag.name));
+            let id = Id::unique(("browser-rename-tag", &tag.name));
             let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
-            let field = ui.add(egui::TextEdit::singleline(&mut name).desired_width(120.0));
+            let field = crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut name).desired_width(120.0));
             ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
             if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && name.trim() != tag.name {
                 if run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out) {
@@ -1579,7 +1948,7 @@ fn footer_view(
         });
         painter.circle_filled(rect.center(), DOT / 2.0, tag_color(&tag.color));
         if on {
-            painter.circle_stroke(rect.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, theme::text_primary()));
+            painter.circle_stroke(rect.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
         }
     }
     let count = match state.selected.len() {
@@ -1593,9 +1962,9 @@ fn footer_view(
         Vec2::new(edit_width, FILTER),
     );
     {
-        let small = theme::ui_font(theme::TEXT_SMALL);
         let rect = edit_rect;
-        let response = widgets::button_area(ui, rect, Id::new("browser-edit-tags"), "Edit tags");
+        let response = widgets::button_area(ui, rect, Id::unique("browser-edit-tags"), "Edit tags");
+        let _style = crate::kit::style_class::enter_response("button", &response);
         if response.clicked() {
             state.tag_editor = !state.tag_editor;
             state.tag_counts = None;
@@ -1603,9 +1972,20 @@ fn footer_view(
         }
         let lit = motion::toward(ui.ctx(), response.id.with("on"), state.tag_editor, motion::VALUE);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(rect, 0.0, motion::mix(idle, theme::text_value(), lit));
-        let text = motion::mix(theme::text_secondary(), theme::window_background(), lit);
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, "Edit tags", small.clone(), text);
+        widgets::button_surface(
+            &painter,
+            rect,
+            &response,
+            state.tag_editor,
+            motion::mix(idle, theme::control_selected(), lit),
+            0.0,
+        );
+        let text = crate::kit::style_class::foreground(motion::mix(
+            theme::browser_text_secondary(),
+            theme::text_inverse(),
+            lit,
+        ));
+        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, "Edit tags", theme::ui_font(theme::TEXT_SMALL), text);
     }
     widgets::text_in(
         &painter,
@@ -1613,25 +1993,42 @@ fn footer_view(
         Align2::RIGHT_CENTER,
         &count,
         theme::mono_font(theme::TEXT_TINY),
-        theme::text_hint(),
+        theme::browser_text_hint(),
     );
     edit_rect
 }
 
-/// The browser's resize handle at its inner edge; returns the new width while dragged.
-pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool) -> Option<f32> {
-    let response =
-        ui.interact(handle, Id::new("browser-resize"), Sense::drag()).on_hover_cursor(CursorIcon::ResizeHorizontal);
+/// The browser's resize handle at its inner edge: dragged, the width it is dragged to;
+/// double-clicked, `default`. Gives that width, and whether the handle was let go (or reset)
+/// now: the width is saved then, not on every frame of a drag.
+pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32) -> (Option<f32>, bool) {
+    let response = ui
+        .interact(handle, Id::unique("browser-resize"), Sense::click_and_drag())
+        .on_hover_cursor(CursorIcon::ResizeHorizontal);
+    if response.double_clicked() {
+        return (Some(default), true);
+    }
     ui.painter().rect_filled(
         handle,
         0.0,
         if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() },
     );
-    if response.dragged() {
-        let dx = response.drag_delta().x;
-        return Some(if left { width + dx } else { width - dx });
+    // The width follows the pointer from where the drag began, so it never falls behind it
+    // (adding each frame's movement to the width rounded to whole points would).
+    let start_id = Id::unique("browser-resize-start");
+    if response.drag_started()
+        && let Some(pointer) = response.interact_pointer_pos()
+    {
+        ui.ctx().data_mut(|d| d.insert_temp(start_id, (width, pointer.x)));
     }
-    None
+    if response.dragged()
+        && let (Some((from, x0)), Some(pointer)) =
+            (ui.ctx().data(|d| d.get_temp::<(f32, f32)>(start_id)), response.interact_pointer_pos())
+    {
+        let dx = pointer.x - x0;
+        return (Some(if left { from + dx } else { from - dx }), false);
+    }
+    (None, response.drag_stopped())
 }
 
 /// The active project's session.
@@ -1639,9 +2036,42 @@ fn active(projects: &Projects) -> Option<&suhina_session::Session> {
     projects.active().and_then(|id| projects.get(id))
 }
 
+/// A place or kind in the browser's left column, `.browser-place`: `:hover`, `:active`, and
+/// `:checked` and `:selected` while it is the one shown.
+fn place_style(response: &egui::Response, chosen: bool) -> crate::kit::style_class::Scope {
+    let style = crate::kit::style_class::enter_response("browser-place", response);
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, chosen);
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, chosen);
+    style
+}
+
+/// A row's background: the sheet's `background-color` for the element in scope, else `fill`,
+/// and its gradients and shadows.
+fn paint_row(painter: &egui::Painter, rect: Rect, fill: egui::Color32) {
+    painter.fill_background(rect, 0.0, crate::kit::style_class::background(fill));
+    crate::kit::native_css::background(painter, rect);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The name of a plug-in always shows: as the panel narrows, the columns to its right drop
+    /// (the rightmost first) before the name gets narrower than its least.
+    #[test]
+    fn the_name_column_keeps_its_room_and_the_others_drop_from_the_right() {
+        let wide = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 20.0));
+        assert_eq!(columns_shown(wide), 1);
+        let (name_left, name_right) = column_span(wide, 0).unwrap();
+        let (format_left, format_right) = column_span(wide, 1).unwrap();
+        assert!(name_right <= format_left && format_right <= wide.right() && name_left >= wide.left());
+        assert!(name_right - name_left >= NAME_LEAST);
+        let narrow = Rect::from_min_size(Pos2::ZERO, Vec2::new(NAME_LEAST + 30.0, 20.0));
+        assert_eq!(columns_shown(narrow), 0);
+        assert!(column_span(narrow, 1).is_none());
+        let (left, right) = column_span(narrow, 0).unwrap();
+        assert_eq!(right - left, narrow.width() - 2.0 * PAD, "the name takes the whole row");
+    }
 
     /// Two dots of a row tag the same item, so their centers are close: their hit areas must
     /// touch at most, or a pointer inside one would fall in the other too and answer with the

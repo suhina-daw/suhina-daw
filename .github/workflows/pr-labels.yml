@@ -1,7 +1,8 @@
 name: Pull request labels
 
-# Adds the kind of change (from the branch name) and the areas (from the files changed) to a pull
-# request, as .github/labeler.yml maps them. pull_request_target runs this workflow as it is on
+# Keeps the kind of change (from the branch name) and the areas (from the files changed) of a pull
+# request as .github/labeler.yml maps them: those that match are added, those that no longer
+# match are taken off (sync-labels); labels the file does not list are left alone. pull_request_target runs this workflow as it is on
 # main, so it can label pull requests from forks too; it never checks out or runs their code.
 on:
   pull_request_target:
@@ -15,6 +16,6 @@ jobs:
   label:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/labeler@v5
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
         with:
-          sync-labels: false
+          sync-labels: true

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The Session view's channel strip in the window: what each mixer height shows, resizing it from
+//! The Launcher view's channel strip in the window: what each mixer height shows, resizing it from
 //! its top edge, the fader (one undo step, a double-click for 0 dB), the output dropdown and the
 //! device list
 //! (`docs/spec/ui-session-view.md` › Mixer); the detail area's two layouts; and the setting that
@@ -27,12 +27,14 @@ fn project() -> suhina_engine::model::Project {
     let mut project = demo_project();
     for (name, enabled) in [("Utility", true), ("Limiter", false)] {
         project.channels[0].devices.push(Device {
+            id: Default::default(),
             name: name.into(),
             kind: DeviceKind::Builtin(name.to_lowercase()),
             enabled,
             state: None,
             params: Vec::new(),
             automation: Vec::new(),
+            clip_host: false,
             extensions: Extensions::default(),
         });
     }
@@ -45,6 +47,8 @@ fn window_with(settings: Settings, browser: bool) -> Harness<'static, App> {
     app.set_browser_open(browser);
     app.set_session(Session::new(project()), &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60)
@@ -187,15 +191,15 @@ fn a_fader_drag_is_one_undo_step_and_a_double_click_resets_it_to_0_db() {
     harness.run_steps(1);
     harness.drag_at(fader);
     harness.run_steps(1);
-    // Down lowers the volume, 0.25 dB a point.
-    for down in [12.0, 24.0, 48.0] {
+    // Down lowers the volume, the cap moving as far as the pointer.
+    for down in [3.0, 6.0, 12.0] {
         harness.hover_at(fader + vec2(0.0, down));
         harness.run_steps(1);
     }
-    harness.drop_at(fader + vec2(0.0, 48.0));
+    harness.drop_at(fader + vec2(0.0, 12.0));
     harness.run();
     let lowered = volume(&harness);
-    assert!(lowered < 0.3 && lowered > 0.2, "about -12 dB: {lowered}");
+    assert!(lowered < 0.95 && lowered > 0.1, "lower, not silent: {lowered}");
 
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
@@ -307,6 +311,22 @@ fn the_detail_area_sits_beside_the_browser_or_spans_the_full_width() {
     assert!(harness.query_by_label("Device Utility").is_some(), "the chain still shows");
 }
 
+/// A double-click on the detail area's splitter closes the area; one on the closed splitter opens
+/// it again at its default size.
+#[test]
+fn a_double_click_on_the_splitter_closes_the_detail_area_and_opens_it_again() {
+    let mut harness = window_with(Settings::default(), false);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    assert!(harness.query_by_label("Device Utility").is_some(), "the chain shows");
+    let splitter = harness.get_by_label("Detail area splitter").rect().center();
+    double_click_at(&mut harness, splitter);
+    assert!(harness.query_by_label("Device Utility").is_none(), "closed");
+    let closed = harness.get_by_label("Detail area splitter").rect().center();
+    double_click_at(&mut harness, closed);
+    assert!(harness.query_by_label("Device Utility").is_some(), "open again");
+}
+
 /// A double-click at `at`, after a second without clicks.
 fn double_click_at(harness: &mut Harness<'static, App>, at: Pos2) {
     harness.hover_at(at);
@@ -362,7 +382,7 @@ fn a_double_click_makes_a_clip_only_while_the_setting_is_on() {
 
         let at = harness.get_by_label("Stop Keys (scene 1)").rect().center();
         double_click_at(&mut harness, at);
-        assert_eq!(keys_clips(&harness), (slots + made, lane), "Session view, setting on: {on}");
+        assert_eq!(keys_clips(&harness), (slots + made, lane), "Launcher view, setting on: {on}");
 
         harness.get_by_label("Arrangement view").click();
         harness.run();
@@ -372,7 +392,7 @@ fn a_double_click_makes_a_clip_only_while_the_setting_is_on() {
     }
 }
 
-/// Renders the Session view with a tall mixer to `target/ui-snapshots/mixer-strip.png`, for
+/// Renders the Launcher view with a tall mixer to `target/ui-snapshots/mixer-strip.png`, for
 /// looking at: `cargo test -p suhina-ui --test mixer_strip -- --ignored`.
 #[test]
 #[ignore = "needs a GPU adapter; run with --ignored"]
@@ -384,6 +404,8 @@ fn render_the_strip() {
         app.set_browser_open(false);
         app.set_session(Session::new(project()), &[]);
         let mut harness = Harness::builder()
+            .allow_missing_glyphs()
+            .allow_missing_glyphs()
             .with_size(SIZE)
             .with_pixels_per_point(2.0)
             .with_step_dt(0.05)
@@ -409,4 +431,385 @@ fn render_the_strip() {
         std::fs::create_dir_all(&out).unwrap_or_else(|e| panic!("{e}"));
         image.save(out.join(file)).unwrap_or_else(|e| panic!("{e}"));
     }
+}
+
+/// The names of the devices on Drums, in chain order.
+fn drums_devices(harness: &Harness<'static, App>) -> Vec<String> {
+    let p = harness.state().session().unwrap().project();
+    let channel = p.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel).unwrap();
+    p.channel(channel).unwrap().devices.iter().map(|d| d.name.clone()).collect()
+}
+
+#[test]
+fn devices_picked_in_the_strip_are_copied_pasted_and_deleted_together() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    let before = drums_devices(&harness);
+    assert!(before.len() >= 2, "{before:?}");
+    // A click picks one; Ctrl (Cmd) adds another.
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    // The chain in the detail area lights the same two.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::C);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::V);
+    harness.run();
+    let pasted = drums_devices(&harness);
+    assert_eq!(pasted.len(), before.len() + 2, "both pasted: {pasted:?}");
+    // Delete takes the two picked ones out in one step (the first of each name: the originals).
+    harness.query_all_by_label("Show Utility on Drums").next().unwrap().click();
+    harness.run();
+    harness.query_all_by_label("Show Limiter on Drums").next().unwrap().click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(drums_devices(&harness).len(), pasted.len() - 2);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(drums_devices(&harness), pasted, "one undo brings both back");
+}
+
+/// The devices on Drums.
+fn drums(harness: &Harness<'static, App>) -> Vec<Device> {
+    let p = harness.state().session().unwrap().project();
+    let channel = p.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel).unwrap();
+    p.channel(channel).unwrap().devices.clone()
+}
+
+#[test]
+fn ctrl_g_groups_the_picked_devices_and_the_group_panel_edits_its_branches() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    let before = drums_devices(&harness);
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    harness.run();
+    let grouped = drums(&harness);
+    assert_eq!(grouped.len(), before.len() - 1, "two devices became one group");
+    let group = grouped.iter().find_map(Device::as_group).expect("a device group");
+    let inside: Vec<&str> = group.branches[0].devices.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(inside, ["Utility", "Limiter"]);
+    // The strip lists the group with how many devices it holds.
+    assert!(harness.query_by_label("Show Group on Drums").is_some());
+
+    // The group's panel in the detail area: add a branch, mute and solo it.
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    harness.get_by_label("Add a branch to Group").click();
+    harness.run();
+    harness.get_by_label("Mute branch Branch 2").click();
+    harness.run();
+    harness.get_by_label("Solo branch Branch 1").click();
+    harness.run();
+    let group = drums(&harness).iter().find_map(Device::as_group).cloned().expect("a device group");
+    assert_eq!(group.branches.len(), 2);
+    assert!(group.branches[1].mute && group.branches[0].solo);
+    // The first branch's devices follow the panel in the chain.
+    assert!(harness.query_by_label("Device Utility").is_some());
+
+    // Ctrl+Shift+G takes a group of one branch apart; this one has two.
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::G);
+    harness.run();
+    assert!(drums(&harness).iter().any(|d| d.as_group().is_some()), "two branches stay a group");
+    for _ in 0..3 {
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run();
+    }
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::G);
+    harness.run();
+    assert_eq!(drums_devices(&harness), before, "ungrouped, the chain is as it was");
+}
+
+/// The devices on `track`'s channel, by name.
+fn chain_of(harness: &Harness<'static, App>, track: &str) -> Vec<String> {
+    let project = harness.state().session().unwrap().project();
+    let channel = project.tracks.iter().find(|t| t.name == track).and_then(|t| t.channel).unwrap();
+    project.channel(channel).unwrap().devices.iter().map(|d| d.name.clone()).collect()
+}
+
+fn drag_device(harness: &mut Harness<'static, App>, from: Pos2, to: Pos2) {
+    // Stepped: the label beside the pointer repaints while it is dragged.
+    harness.hover_at(from);
+    harness.run();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(from + (to - from) * 0.5);
+    harness.step();
+    harness.step();
+    harness.hover_at(to);
+    harness.step();
+    harness.step();
+    harness.drop_at(to);
+    harness.step();
+    harness.run();
+}
+
+#[test]
+fn a_device_dragged_onto_another_track_moves_there_and_with_ctrl_is_copied() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    let (drums, bass) = (chain_of(&harness, "Drums"), chain_of(&harness, "Bass"));
+    let from = harness.get_by_label("Show Limiter on Drums").rect().center();
+    let to = harness.get_by_label("Bass channel strip").rect().center();
+    drag_device(&mut harness, from, to);
+    assert!(!chain_of(&harness, "Drums").contains(&"Limiter".to_string()), "moved away");
+    assert_eq!(chain_of(&harness, "Bass").len(), bass.len() + 1);
+    assert_eq!(chain_of(&harness, "Bass").last().map(String::as_str), Some("Limiter"));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!((chain_of(&harness, "Drums"), chain_of(&harness, "Bass")), (drums.clone(), bass.clone()), "one undo");
+    // With Ctrl held it is copied: Drums keeps it.
+    let from = harness.get_by_label("Show Limiter on Drums").rect().center();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    drag_device(&mut harness, from, to);
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    assert_eq!(chain_of(&harness, "Drums"), drums);
+    assert_eq!(chain_of(&harness, "Bass").len(), bass.len() + 1);
+}
+
+#[test]
+fn a_clicked_volume_takes_a_typed_number_and_the_arrow_keys() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    let db = |h: &Harness<'static, App>| 20.0 * volume(h).log10();
+    let name = harness.state().session().unwrap().project().channels[0].name.clone();
+    harness.get_by_label(&format!("{name} volume")).click();
+    harness.run();
+    harness.event(egui::Event::Text("-12".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!((db(&harness) + 12.0).abs() < 0.05, "typed: {}", db(&harness));
+    // Clicked again, later than a double-click: Up is 1 dB louder, Shift and Down 0.1 dB quieter.
+    harness.run_steps(60);
+    harness.get_by_label(&format!("{name} volume")).click();
+    harness.run();
+    harness.key_press(Key::ArrowUp);
+    harness.run();
+    assert!((db(&harness) + 11.0).abs() < 0.05, "{}", db(&harness));
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowDown);
+    harness.run();
+    assert!((db(&harness) + 11.1).abs() < 0.05, "{}", db(&harness));
+    // With Ctrl held the arrow is the window's shortcut's, not a step of the value.
+    let before = volume(&harness);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::ArrowUp);
+    harness.run();
+    assert_eq!(volume(&harness), before, "Ctrl+Up does not step the volume");
+}
+
+/// A device inside a group is picked with a click on its panel and deleted from its branch;
+/// Ctrl+A picks every device of the chain, so Delete takes them all in one step (#916).
+#[test]
+fn a_device_inside_a_group_is_picked_and_ctrl_a_picks_the_whole_chain() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    harness.run();
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    // On the panel's header, clear of the controls that take a click in its middle.
+    let panel = harness.get_by_label("Device Limiter").rect();
+    let header = Pos2::new(panel.left() + panel.width() / 2.0, panel.top() + 8.0);
+    harness.hover_at(header);
+    harness.run();
+    harness.drag_at(header);
+    harness.run();
+    harness.drop_at(header);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    let group = drums(&harness).iter().find_map(Device::as_group).cloned().expect("a device group");
+    let inside: Vec<&str> = group.branches[0].devices.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(inside, ["Utility"], "the Limiter inside the group went");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    let grouped = drums(&harness);
+    // Ctrl+A on the chain, then Delete: every device goes in one step, and one undo brings them.
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert!(drums(&harness).is_empty(), "{:?}", drums(&harness).iter().map(|d| d.name.clone()).collect::<Vec<_>>());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(drums(&harness), grouped);
+}
+
+#[test]
+fn session_pan_spans_the_strip_and_sends_have_room_for_values() {
+    let harness = window_at(320.0);
+    let pan = harness.get_by_label("Drums pan").rect();
+    let name = harness.get_by_label("Drums strip").rect();
+    assert_eq!(pan.x_range(), name.x_range());
+    let a = harness.get_by_label("Drums send to A Reverb").rect();
+    let b = harness.get_by_label("Drums send to B Delay").rect();
+    assert!(a.width() >= 22.0 && b.width() >= 22.0);
+    assert_eq!(a.top(), b.top());
+    assert!(a.right() < b.left());
+    assert!(b.right() <= pan.right());
+    let volume = harness.get_by_label("Drums volume").rect();
+    let meter = harness.get_by_label_contains("Drums level:").rect();
+    // Fader stays left; sends occupy one horizontal row below the controls.
+    assert_eq!(volume.left(), pan.left());
+    assert_eq!(a.left(), pan.left());
+    assert!(a.top() > meter.bottom());
+}
+
+#[test]
+fn scrolling_the_send_grid_reaches_later_returns_without_moving_the_fader() {
+    let mut harness = window_at(SENDS_AT);
+    for name in ["C Return", "D Return", "E Return", "F Return", "G Return", "H Return"] {
+        harness.state_mut().projects_mut().execute("return.add", &serde_json::json!({"name": name})).unwrap();
+    }
+    harness.run();
+    let fader = harness.get_by_label("Drums volume").rect();
+    let before = volume(&harness);
+    assert!(harness.query_by_label("Drums send to G Return").is_none());
+    let area = harness.get_by_label("Drums send to A Reverb").rect();
+    harness.hover_at(area.center());
+    harness.step();
+    harness.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, -1000.0),
+        modifiers: Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    harness.run();
+    assert!(harness.query_by_label("Drums send to G Return").is_some());
+    assert_eq!(harness.get_by_label("Drums volume").rect(), fader);
+    assert_eq!(volume(&harness), before);
+}
+
+#[test]
+fn further_sends_continue_horizontally_and_shift_wheel_reaches_them() {
+    let mut harness = window_at(320.0);
+    for name in ["C Return", "D Return", "E Return"] {
+        harness.state_mut().projects_mut().execute("return.add", &serde_json::json!({"name": name})).unwrap();
+    }
+    harness.run();
+    let a = harness.get_by_label("Drums send to A Reverb").rect();
+    let b = harness.get_by_label("Drums send to B Delay").rect();
+    assert_eq!(a.top(), b.top());
+    assert!(a.right() < b.left());
+    assert!(harness.query_by_label("Drums send to E Return").is_none());
+    harness.hover_at(a.center());
+    harness.step();
+    harness.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, -1000.0),
+        modifiers: Modifiers::SHIFT,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    harness.run();
+    let d = harness.get_by_label("Drums send to D Return").rect();
+    let e = harness.get_by_label("Drums send to E Return").rect();
+    assert_eq!(d.top(), a.top());
+    assert_eq!(d.top(), e.top());
+    assert!(d.right() < e.left());
+}
+
+#[test]
+fn session_track_type_stays_in_the_header_with_the_mixer_collapsed() {
+    let mut harness = window_at(46.0);
+    let marker = harness.get_by_label("Drums: MIDI track").rect();
+    let header = harness.get_by_label("Track Drums").rect();
+    assert!(header.contains_rect(marker));
+    let before = harness.state().session().map(|s| s.project().clone());
+    harness.hover_at(marker.center());
+    harness.run();
+    assert_eq!(harness.state().session().map(|s| s.project().clone()), before);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    assert_eq!(harness.state().session().map(|s| s.project().clone()), before);
+}
+
+/// A branch's volume sends each frame of its drag, so a playing group follows it, and the drag is
+/// one undo step (#763 › 4).
+#[test]
+fn a_branch_volume_drag_is_sent_while_it_lasts_and_is_one_undo_step() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    harness.run();
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    let volume = |h: &Harness<'static, App>| {
+        drums(h).iter().find_map(Device::as_group).map(|g| g.branches[0].volume).expect("a device group")
+    };
+    let row = harness.get_by_label(" 0.0 dB").rect().center();
+    harness.hover_at(row);
+    harness.run();
+    harness.drag_at(row);
+    harness.step();
+    harness.hover_at(row + egui::vec2(20.0, 0.0));
+    harness.step();
+    harness.step();
+    let during = volume(&harness);
+    assert!(during > 1.0, "heard while the drag lasts: {during}");
+    harness.hover_at(row + egui::vec2(40.0, 0.0));
+    harness.step();
+    harness.step();
+    harness.drop_at(row + egui::vec2(40.0, 0.0));
+    harness.step();
+    harness.run();
+    let after = volume(&harness);
+    assert!(after > during, "{during} -> {after}");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(volume(&harness), 1.0, "the drag was one undo step");
+}
+
+/// A drag that starts against the branch volume's limit is its own undo step: what it sends first
+/// opens a step rather than continuing the previous drag's.
+#[test]
+fn a_branch_volume_drag_from_its_limit_is_its_own_undo_step() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    harness.run();
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    let volume = |h: &Harness<'static, App>| {
+        drums(h).iter().find_map(Device::as_group).map(|g| g.branches[0].volume).expect("a device group")
+    };
+    let row = harness.get_by_label(" 0.0 dB").rect().center();
+    let drag = |harness: &mut Harness<'static, App>, moves: &[f32]| {
+        harness.hover_at(row);
+        harness.run();
+        harness.drag_at(row);
+        harness.step();
+        for &x in moves {
+            harness.hover_at(row + vec2(x, 0.0));
+            harness.step();
+            harness.step();
+        }
+        harness.drop_at(row + vec2(*moves.last().unwrap_or(&0.0), 0.0));
+        harness.step();
+        harness.run();
+    };
+    drag(&mut harness, &[100.0, 300.0]);
+    let top = volume(&harness);
+    assert_eq!(top, suhina_engine::model::automation::MAX_VOLUME, "the first drag reaches the limit");
+    // Pushed further against the limit first, so its first frame sends nothing, then pulled back.
+    drag(&mut harness, &[20.0, -20.0]);
+    assert!(volume(&harness) < top);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(volume(&harness), top, "the second drag was an undo step of its own");
 }

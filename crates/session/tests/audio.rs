@@ -12,15 +12,18 @@ use serde_json::{Value, json};
 use suhina_engine::{AudioPool, LaunchCommand, Renderer};
 use suhina_model::Project;
 use suhina_session::audio::{DeviceInfo, HostInfo, Opened};
-use suhina_session::{
-    AudioSystem, CommandKind, LiveOutput, OutputChoice, OutputInfo, Player, Projects, Session, audio_commands,
-};
+use suhina_session::{AudioSystem, LiveOutput, OutputChoice, OutputInfo, Player, Projects, Session, audio_commands};
+
+use crate::support::run;
+use suhina_test_support::{WavFormat, write_wav};
 
 const SR: u32 = 48_000;
 
 /// Opens players on renderers it keeps, so a test can run them, and records each choice.
 #[derive(Default)]
 struct Stand {
+    panel_open: Arc<std::sync::atomic::AtomicBool>,
+    reject_next_open: std::sync::atomic::AtomicBool,
     renderers: Mutex<Vec<Renderer>>,
     opened: Mutex<Vec<(OutputChoice, bool)>>,
     /// The device that is "not there": choosing it falls back with a notice. Besides
@@ -34,9 +37,12 @@ struct Stand {
 
 /// An output: what it was opened on, its error flag, and whether it plays in place of the
 /// device chosen.
-struct Live(OutputChoice, Arc<std::sync::atomic::AtomicBool>, bool);
+struct Live(OutputChoice, Arc<std::sync::atomic::AtomicBool>, bool, Arc<std::sync::atomic::AtomicBool>);
 
 impl LiveOutput for Live {
+    fn control_panel_open(&self) -> bool {
+        self.3.load(std::sync::atomic::Ordering::Acquire)
+    }
     fn info(&self) -> OutputInfo {
         OutputInfo {
             host: self.0.host.clone().unwrap_or_else(|| "Stand".into()),
@@ -79,6 +85,7 @@ impl AudioSystem for Stand {
         &self,
         project: &Project,
         audio: &AudioPool,
+        _assets: &suhina_engine::DeviceAssets,
         choice: &OutputChoice,
         previous: Option<Player>,
     ) -> Result<Opened, String> {
@@ -91,10 +98,18 @@ impl AudioSystem for Stand {
         }
         self.opened.lock().unwrap().push((choice.clone(), previous.is_some()));
         drop(previous);
-        let mut renderer = Renderer::stopped(project, audio, choice.sample_rate.unwrap_or(SR)).unwrap();
+        if self.reject_next_open.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            return Err("test output unavailable".into());
+        }
+        let mut renderer =
+            Renderer::stopped(project, audio, choice.sample_rate.unwrap_or(SR), suhina_session::devices()).unwrap();
         let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.failed.lock().unwrap().push(Arc::clone(&failed));
-        let player = Player::with_output(renderer.controller(), None, Arc::new(Live(choice, failed, fallback)));
+        let player = Player::with_output(
+            renderer.controller(),
+            None,
+            Arc::new(Live(choice, failed, fallback, Arc::clone(&self.panel_open))),
+        );
         self.renderers.lock().unwrap().push(renderer);
         Ok(Opened { player, notice, plugins_kept: true })
     }
@@ -113,11 +128,11 @@ impl Stand {
 }
 
 fn project() -> Project {
-    suhina_session::blank_project()
+    suhina_test_support::with_ids(project_built())
 }
 
-fn run(projects: &mut Projects, id: &str, params: Value) -> Result<Value, String> {
-    projects.execute(id, &params).map_err(|e| e.0)
+fn project_built() -> Project {
+    suhina_session::blank_project()
 }
 
 fn with_stand(missing: Option<&str>) -> (Projects, Arc<Stand>) {
@@ -130,8 +145,19 @@ fn with_stand(missing: Option<&str>) -> (Projects, Arc<Stand>) {
 #[test]
 fn audio_commands_are_listed_with_their_kind() {
     let ids: Vec<&str> = audio_commands().iter().map(|c| c.id).collect();
-    assert_eq!(ids, ["audio.devices", "audio.setOutput", "output.setCuePair", "output.setCueVolume", "audio.info"]);
-    assert!(audio_commands().iter().all(|c| c.kind == CommandKind::Audio));
+    assert_eq!(
+        ids,
+        [
+            "audio.openControlPanel",
+            "audio.devices",
+            "audio.setOutput",
+            "audio.setTrackInput",
+            "output.setCuePair",
+            "output.setCueVolume",
+            "audio.info",
+        ]
+    );
+    assert!(audio_commands().iter().all(|c| c.kind.target == suhina_session::Target::Audio));
     let listed = suhina_session::all_commands();
     assert!(listed.as_array().unwrap().iter().any(|c| c["id"] == "audio.setOutput"));
 }
@@ -143,7 +169,7 @@ fn without_an_audio_system_the_commands_say_so() {
     assert!(err.contains("no audio output"), "{err}");
     // Info and choosing still work: the choice waits for an output.
     assert_eq!(run(&mut projects, "audio.info", json!({})).unwrap()["playing"], json!(false));
-    let set = run(&mut projects, "audio.setOutput", json!({ "buffer_frames": 256 })).unwrap();
+    let set = run(&mut projects, "audio.setOutput", json!({ "bufferFrames": 256 })).unwrap();
     assert_eq!(set["chosen"]["buffer_frames"], json!(256));
     assert_eq!(projects.output_choice().buffer_frames, Some(256));
 }
@@ -177,7 +203,7 @@ fn a_new_choice_reopens_the_playing_project_where_it_was() {
     let before = projects.session_mut(None).unwrap().player().unwrap().monitor().beat();
     assert!(before >= 4.0, "{before}");
 
-    let result = run(&mut projects, "audio.setOutput", json!({ "buffer_frames": 256, "sample_rate": 44_100 })).unwrap();
+    let result = run(&mut projects, "audio.setOutput", json!({ "bufferFrames": 256, "sampleRate": 44_100 })).unwrap();
     assert_eq!(result["playing"], json!(true));
     assert_eq!(result["engine_block"], json!(256));
     assert_eq!(result["sample_rate"], json!(44_100));
@@ -208,7 +234,7 @@ fn a_stopped_project_keeps_its_marker_on_the_new_output() {
     projects.open_output(None).unwrap();
     projects.session_mut(None).unwrap().execute("transport.setPosition", &json!({ "beats": 8.0 })).unwrap();
     stand.run_latest();
-    run(&mut projects, "audio.setOutput", json!({ "buffer_frames": 512 })).unwrap();
+    run(&mut projects, "audio.setOutput", json!({ "bufferFrames": 512 })).unwrap();
     stand.run_latest();
     let monitor = projects.session_mut(None).unwrap().player().unwrap().monitor();
     assert!(!monitor.running());
@@ -234,7 +260,7 @@ fn nothing_reopens_while_no_project_plays() {
     projects.add(Session::new(project()), None).unwrap();
     run(&mut projects, "audio.setOutput", json!({ "exclusive": true })).unwrap();
     assert!(stand.opened.lock().unwrap().is_empty());
-    assert!(run(&mut projects, "audio.setOutput", json!({ "buffer_frames": 10 })).is_err());
+    assert!(run(&mut projects, "audio.setOutput", json!({ "bufferFrames": 10 })).is_err());
     assert!(projects.output_choice().exclusive);
     // The next output opens as chosen.
     projects.open_output(None).unwrap();
@@ -325,13 +351,21 @@ fn a_choice_is_found_by_its_host_and_device() {
 
 /// A project with two tracks whose first launcher slots hold looping clips.
 fn launcher_project() -> Project {
-    let mut p = project();
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = launcher_project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn launcher_project_built() -> Project {
+    let mut p = project_built();
     let note = suhina_model::Note::new(0.0, 0.25, 60, 1.0);
     p.contents.push(suhina_model::ClipContent {
         id: suhina_model::ContentId(900),
         name: "loop".into(),
         length: 4.0,
-        lanes: vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(vec![note]) }],
+        lanes: vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(vec![note].into()) }]
+            .into(),
         extensions: suhina_model::Extensions::default(),
         scale: None,
     });
@@ -357,7 +391,7 @@ fn a_reopen_keeps_the_marker_the_launched_clips_and_the_quantization() {
         session.execute("launcher.setQuantization", &json!({ "value": "1/4" })).unwrap();
         session.execute("transport.setPosition", &json!({ "beats": 4.0 })).unwrap();
         session.execute("transport.play", &json!({})).unwrap();
-        session.execute("clip.launch", &json!({ "track": 1, "scene": 1 })).unwrap();
+        session.execute("clip.launch", &json!({ "track": 1, "scene": 0 })).unwrap();
     }
     // Long enough for the launch at the next beat, and a bit of the clip.
     for _ in 0..30 {
@@ -368,7 +402,7 @@ fn a_reopen_keeps_the_marker_the_launched_clips_and_the_quantization() {
         let monitor = session.player().unwrap().monitor();
         assert_eq!(monitor.column(0).unwrap().playing, Some(0), "the clip plays");
         // A launch on the second track waits for the next beat when the output reopens.
-        session.execute("clip.launch", &json!({ "track": 2, "scene": 1 })).unwrap();
+        session.execute("clip.launch", &json!({ "track": 2, "scene": 0 })).unwrap();
     }
     stand.run_latest();
     let (beat, elapsed) = {
@@ -377,7 +411,7 @@ fn a_reopen_keeps_the_marker_the_launched_clips_and_the_quantization() {
     };
     assert!(elapsed > 0.0);
 
-    run(&mut projects, "audio.setOutput", json!({ "buffer_frames": 256 })).unwrap();
+    run(&mut projects, "audio.setOutput", json!({ "bufferFrames": 256 })).unwrap();
     stand.run_latest();
     let monitor = projects.session_mut(None).unwrap().player().unwrap().monitor();
     assert!(monitor.running());
@@ -409,13 +443,7 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
 /// A mono WAV file of a second at a steady level of 0.5.
 fn wav(dir: &std::path::Path) -> String {
     let path = dir.join("listen.wav");
-    let spec =
-        hound::WavSpec { channels: 1, sample_rate: SR, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
-    let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-    for _ in 0..SR {
-        writer.write_sample(0.5f32).unwrap();
-    }
-    writer.finalize().unwrap();
+    write_wav(&path, SR, 1, WavFormat::Float32, &[0.5; SR as usize]);
     path.display().to_string()
 }
 
@@ -466,7 +494,7 @@ fn the_preview_output_closes_before_a_project_or_another_output_opens() {
     assert!(projects.preview_session().is_none(), "closed before a project's output opens");
 
     run(&mut projects, "preview.play", json!({ "path": wav(&dir) })).unwrap();
-    run(&mut projects, "audio.setOutput", json!({ "buffer_frames": 256 })).unwrap();
+    run(&mut projects, "audio.setOutput", json!({ "bufferFrames": 256 })).unwrap();
     assert!(projects.preview_session().is_none(), "another output: it opens there when next needed");
     run(&mut projects, "preview.play", json!({ "path": wav(&dir) })).unwrap();
     let last = stand.opened.lock().unwrap().last().cloned().unwrap();
@@ -476,4 +504,60 @@ fn the_preview_output_closes_before_a_project_or_another_output_opens() {
     assert!(projects.preview_session().is_some_and(|s| s.player().is_none()), "the project's session now");
     run(&mut projects, "preview.play", json!({ "path": wav(&dir) })).unwrap_err();
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn choosing_an_output_recovers_after_a_driver_open_failed() {
+    let (mut projects, stand) = with_stand(None);
+    projects.add(Session::new(project()), None).unwrap();
+    projects.open_output(None).unwrap();
+    stand.reject_next_open.store(true, std::sync::atomic::Ordering::Relaxed);
+    let error = run(&mut projects, "audio.setOutput", json!({"device": "USB"})).unwrap_err();
+    assert!(error.contains("test output unavailable"), "{error}");
+    assert!(projects.session_mut(None).unwrap().player().is_none());
+    run(&mut projects, "audio.setOutput", json!({"device": "Default"})).unwrap();
+    assert!(projects.session_mut(None).unwrap().player().is_some());
+    assert_eq!(stand.opened.lock().unwrap().len(), 3);
+    assert_eq!(run(&mut projects, "audio.info", json!({})).unwrap()["device"], "Default");
+}
+
+#[test]
+fn a_native_panel_blocks_output_and_tab_changes_without_detaching_the_player() {
+    use std::sync::atomic::Ordering;
+    let (mut projects, stand) = with_stand(None);
+    let first = projects.add(Session::new(project()), None).unwrap();
+    let second = projects.add(Session::new(project()), None).unwrap();
+    projects.open_output(None).unwrap();
+    let chosen = projects.output_choice().clone();
+    let opened = stand.opened.lock().unwrap().len();
+    stand.panel_open.store(true, Ordering::Release);
+    assert!(projects.open_output(None).unwrap_err().to_string().contains("close the ASIO control panel first"));
+    assert!(projects.reopen_output().is_err());
+    assert!(projects.switch(first).is_err());
+    assert!(projects.cycle(1).is_err());
+    assert!(projects.close(second).is_err());
+    assert!(projects.add(Session::new(project()), None).is_err());
+    assert!(run(&mut projects, "audio.setOutput", json!({"device": "USB"})).is_err());
+    assert_eq!(projects.output_choice(), &chosen);
+    assert_eq!(projects.active(), Some(second));
+    assert_eq!(projects.len(), 2);
+    assert!(projects.get(second).unwrap().player().is_some());
+    assert_eq!(stand.opened.lock().unwrap().len(), opened);
+    stand.panel_open.store(false, Ordering::Release);
+    projects.reopen_output().unwrap();
+    projects.close(second).unwrap();
+    assert_eq!(projects.active(), Some(first));
+}
+
+#[test]
+fn the_watch_tells_when_the_devices_change_and_not_before() {
+    let names = |list: &[&str]| Some(list.iter().map(ToString::to_string).collect::<Vec<_>>());
+    let mut watch = suhina_session::audio::DeviceWatch::default();
+    assert!(!watch.changed(None), "no answer yet");
+    assert!(!watch.changed(names(&["Speakers"])), "the first answer is what is known");
+    assert!(!watch.changed(None), "no answer says nothing");
+    assert!(!watch.changed(names(&["Speakers"])));
+    assert!(watch.changed(names(&["Headphones", "Speakers"])), "connected");
+    assert!(!watch.changed(names(&["Headphones", "Speakers"])), "said once");
+    assert!(watch.changed(names(&["Speakers"])), "disconnected");
 }

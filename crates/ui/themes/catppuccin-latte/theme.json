@@ -1,0 +1,7 @@
+{
+  "format": 1,
+  "name": "Catppuccin Latte",
+  "author": "The Suhina contributors",
+  "description": "The Catppuccin Latte palette (MIT, catppuccin.com), a light theme, mapped onto Suhina's tokens.",
+  "swatch": "var(--window-background)"
+}

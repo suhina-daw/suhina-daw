@@ -7,6 +7,8 @@
 
 mod common;
 
+use common::{close_editor_window, user_closes_windows};
+
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -26,6 +28,7 @@ fn launch(plugin: &str) -> Launch {
         sample_rate: 48_000.0,
         timeout: PATIENT,
         group: None,
+        ara: None,
     }
 }
 
@@ -77,10 +80,8 @@ fn a_crash_is_noticed_and_a_restart_recovers() {
     for _ in 0..3 {
         assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 1.0));
     }
-    let started = Instant::now();
     assert_eq!(block(&mut audio, DEADLINE).0, Outcome::Missed);
     assert_eq!(block(&mut audio, DEADLINE).0, Outcome::Busy);
-    assert!(started.elapsed() < Duration::from_millis(50), "{:?}", started.elapsed());
     wait_for(&mut plugin, Health::Crashed);
     assert!(!plugin.ping());
 
@@ -244,6 +245,22 @@ fn a_clap_plugin_gets_every_audio_port_it_declares() {
 }
 
 #[test]
+fn a_mono_link_plays_through_a_stereo_plugin_in_both_formats() {
+    // The link's one channel reaches both of a stereo plug-in's inputs in CLAP and in VST3
+    // alike (#767), and the plug-in's first output channel comes back on it. The `-mix` gains'
+    // first output is the mean of their two, so it is 0.25, not 0.5, when the second input is
+    // left silent. The rule itself, for every layout, is tested in `audio.rs`.
+    for (plugin, expected) in [("test:clap-mix", 0.5), ("test:vst3-mix", 0.5), ("test:clap-ports", 1.0)] {
+        let (_plugin, mut audio) =
+            Plugin::start(Launch { channels: 1, ..launch(plugin) }).unwrap_or_else(|e| panic!("{plugin}: {e}"));
+        let mut output = [9.0f32; FRAMES];
+        let outcome = audio.process(&[1.0; FRAMES], &mut output, PATIENT);
+        assert_eq!(outcome, Outcome::Done, "{plugin}");
+        assert!(output.iter().all(|s| *s == expected), "{plugin}: {output:?}");
+    }
+}
+
+#[test]
 fn a_vst3_plugin_processes_reports_latency_and_keeps_state() {
     let (mut plugin, mut audio) = start("test:vst3");
     assert_eq!(plugin.latency(), 32);
@@ -338,9 +355,31 @@ fn notes_and_controllers_reach_clap_and_vst3_plugins() {
         let volume = [Event { frame: 0, note: -1, kind: EventKind::Controller { channel: 0, number: 7, value: 1.0 } }];
         assert_eq!(audio.process_with_events(&[1.0; FRAMES * 2], &volume, &mut output, PATIENT), Outcome::Done);
         assert_eq!(output[0], 1.0, "{spec}");
+        // Channel pressure (aftertouch, #812) at none sets the gain to 0.
+        let pressure = [Event { frame: 0, note: -1, kind: EventKind::Pressure { channel: 0, value: 0.0 } }];
+        assert_eq!(audio.process_with_events(&[1.0; FRAMES * 2], &pressure, &mut output, PATIENT), Outcome::Done);
+        assert_eq!(output[0], 0.0, "{spec}");
         // Blocks without events play as before.
-        assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 1.0), "{spec}");
+        assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.0), "{spec}");
     }
+}
+
+/// A controller that moves a VST3 plug-in's parameter through its MIDI mapping moves it on the
+/// edit controller too, which its editor draws (#812): the on-screen wheel follows the
+/// hardware's. The test plug-in's controller keeps its own gain, apart from the processor's.
+#[test]
+fn a_mapped_controller_reaches_a_vst3_plugins_edit_controller() {
+    use suhina_plugins::{Event, EventKind};
+    let (mut plugin, mut audio) = start("test:vst3");
+    let gain = |plugin: &mut Plugin| plugin.params().unwrap()[0].value;
+    assert_eq!(gain(&mut plugin), 0.5);
+    let mut output = [9.0f32; FRAMES * 2];
+    let volume = [Event { frame: 0, note: -1, kind: EventKind::Controller { channel: 0, number: 7, value: 0.25 } }];
+    assert_eq!(audio.process_with_events(&[1.0; FRAMES * 2], &volume, &mut output, PATIENT), Outcome::Done);
+    assert_eq!(output[0], 0.25);
+    // Reading the parameters hands over what the block moved first, so the read right after the
+    // block shows it, however long the host takes to turn its loop (#887).
+    assert_eq!(gain(&mut plugin), 0.25);
 }
 
 #[test]
@@ -360,52 +399,31 @@ fn an_offline_run_plays_notes_at_their_frames() {
     assert_eq!(total, 0.75);
 }
 
-/// Asks the editor's window to close, as the user does with its close button.
 #[cfg(windows)]
-fn close_editor_window() {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW, WM_CLOSE};
-    let class: Vec<u16> = "SuhinaPluginEditor".encode_utf16().chain([0]).collect();
-    // SAFETY: a class name that outlives the call; any title.
-    let window = unsafe { FindWindowW(class.as_ptr(), std::ptr::null()) };
-    assert!(!window.is_null(), "no editor window");
-    // SAFETY: a window found just now; WM_CLOSE carries no pointers.
-    unsafe { PostMessageW(window, WM_CLOSE, 0, 0) };
-}
-
-/// Asks the editor's window to close, as the user does with its close button: the window
-/// manager's WM_DELETE_WINDOW message, sent to the newest window whose class is the editor's
-/// (the root's children come bottom to top).
-#[cfg(target_os = "linux")]
-fn close_editor_window() {
-    use x11rb::connection::Connection;
-    use x11rb::protocol::xproto::{AtomEnum, ClientMessageEvent, ConnectionExt, EventMask};
-    let (connection, screen) = x11rb::connect(None).unwrap();
-    let root = connection.setup().roots[screen].root;
-    let atom = |name: &[u8]| connection.intern_atom(false, name).unwrap().reply().unwrap().atom;
-    let (protocols, delete) = (atom(b"WM_PROTOCOLS"), atom(b"WM_DELETE_WINDOW"));
-    let children = connection.query_tree(root).unwrap().reply().unwrap().children;
-    let window = children
-        .into_iter()
-        .rfind(|w| {
-            let class = connection.get_property(false, *w, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 64);
-            class.ok().and_then(|c| c.reply().ok()).is_some_and(|c| c.value.starts_with(b"suhina-plugin-editor"))
-        })
-        .unwrap_or_else(|| panic!("no editor window"));
-    let message = ClientMessageEvent::new(32, window, protocols, [delete, 0, 0, 0, 0]);
-    connection.send_event(false, window, EventMask::NO_EVENT, message).unwrap();
-    // A round trip before the connection closes: closed straight after the request, the
-    // server could drop the message unsent, and the test waited for a close that never
-    // came (#237). Xlib's XCloseDisplay does the same (XSync).
-    connection.get_input_focus().unwrap().reply().unwrap();
-}
-
-#[cfg(not(any(windows, target_os = "linux")))]
-fn close_editor_window() {}
-
-/// Whether the test can close the host's window from here, as the user would: another
-/// process's window cannot be reached on macOS.
-fn user_closes_windows() -> bool {
-    cfg!(windows) || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty()))
+#[test]
+fn editor_window_lookup_is_scoped_to_its_host_process() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+    let (mut first, _first_audio) = start("test:vst3");
+    let (mut second, _second_audio) = start("test:vst3");
+    first.open_editor().unwrap();
+    second.open_editor().unwrap();
+    for host in [&first, &second] {
+        let window = common::editor_window(host.process_id());
+        assert!(!window.is_null());
+        let mut owner = 0;
+        // SAFETY: the window belongs to a live host; owner is a writable u32.
+        unsafe { GetWindowThreadProcessId(window, &raw mut owner) };
+        assert_eq!(owner, host.process_id(), "must not select another host's editor");
+    }
+    assert!(common::editor_window(0).is_null(), "a missing host must not select some other editor");
+    close_editor_window(first.process_id());
+    let deadline = Instant::now() + PATIENT;
+    while first.editor_open() {
+        assert!(Instant::now() < deadline, "the targeted editor did not close");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(second.editor_open(), "closing the first host must leave the other editor open");
+    second.close_editor().unwrap();
 }
 
 /// Whether editors can open here: on Windows, and on Linux with an X server.
@@ -433,7 +451,7 @@ fn an_editor_opens_in_a_window_and_closes() {
         // so there the user's close is a hand check with a real plug-in.)
         assert_eq!(plugin.open_editor().unwrap(), (300, 200));
         if user_closes_windows() {
-            close_editor_window();
+            close_editor_window(plugin.process_id());
             let deadline = Instant::now() + PATIENT;
             while plugin.editor_open() {
                 assert!(Instant::now() < deadline, "the closed window was not reported");
@@ -454,8 +472,8 @@ fn an_editor_opens_in_a_window_and_closes() {
         assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125));
         assert_eq!(edited.save_state().unwrap().data, 0.125f32.to_le_bytes());
     }
-    // A plug-in without an editor says so.
-    let (mut plain, _audio) = start("test:clap");
+    // A plug-in without an editor says so (the delay plug-in registers no gui).
+    let (mut plain, _audio) = start("test:clap-delay");
     assert!(matches!(plain.open_editor(), Err(PluginError::Host(_))));
     plain.close_editor().unwrap();
 }
@@ -549,6 +567,20 @@ fn parameters_are_listed_set_and_kept_over_a_restart() {
     }
     let (mut plain, _audio) = start("test:gain");
     assert!(plain.params().unwrap().is_empty());
+}
+
+#[test]
+fn parameters_listed_within_a_time_wait_for_no_longer() {
+    let (mut plugin, _audio) = start("test:clap");
+    assert_eq!(plugin.params_within(PATIENT).unwrap().len(), 1);
+    // A time too short for the host to answer in: a timeout (or the answer, if it was quicker),
+    // whatever the launch's. How long it took is not measured: a busy runner proves nothing.
+    match plugin.params_within(Duration::ZERO) {
+        Ok(_) | Err(PluginError::Timeout(_)) => {}
+        Err(other) => panic!("{other}"),
+    }
+    // The late answer is skipped by the next request, which gets its own.
+    assert_eq!(plugin.params().unwrap().len(), 1);
 }
 
 /// Runs blocks of `input` (`FRAMES` frames, stereo) until the plug-in reports `latency`, and

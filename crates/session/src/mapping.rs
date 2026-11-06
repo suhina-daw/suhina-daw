@@ -9,7 +9,8 @@
 use serde_json::{Value, json};
 use suhina_model::{LaunchMapping, MappingSource, MappingTarget, Project};
 
-use crate::commands::{column_index, scene_index, track_id};
+use crate::commands::Args;
+use crate::commands::{column_index, scene_id, scene_index, track_id};
 use crate::{CommandError, Session};
 
 /// The most mappings a project keeps, so a script cannot grow the project without bound.
@@ -17,14 +18,14 @@ pub const MAX_MAPPINGS: usize = 1024;
 
 fn source(params: &Value) -> Result<MappingSource, CommandError> {
     let what = "a key (key:Q, key:Space) or a MIDI note (note:<channel 1-16>:<note 0-127>)";
-    let text = params.get("source").and_then(Value::as_str).ok_or_else(|| format!("source must be {what}"))?;
+    let text = Args::new(params).raw_str("source").ok_or_else(|| format!("source must be {what}"))?;
     MappingSource::from_name(text).ok_or_else(|| format!("source must be {what}, got {text:?}").into())
 }
 
 /// The target `params.target` names, with the track and scene it needs, checked against the
 /// project: the track has slots and the scene exists.
 fn target(p: &Project, params: &Value) -> Result<MappingTarget, CommandError> {
-    let kind = params.get("target").and_then(Value::as_str).ok_or("target must be slot, scene or stop")?;
+    let kind = Args::new(params).raw_str("target").ok_or("target must be slot, scene or stop")?;
     let track = || -> Result<_, CommandError> {
         column_index(p, params)?;
         track_id(p, params)
@@ -58,7 +59,8 @@ fn describe(p: &Project, m: &LaunchMapping) -> Value {
             map.insert("track".into(), json!(track.0));
         }
         if let Some(scene) = m.target.scene() {
-            map.insert("scene".into(), json!(scene.saturating_add(1)));
+            map.insert("scene".into(), json!(scene));
+            map.insert("scene_id".into(), scene_id(p, scene));
         }
     }
     out
@@ -86,7 +88,7 @@ pub(crate) fn add_mapping(session: &mut Session, params: &Value) -> Result<Value
 
 pub(crate) fn remove_mapping(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &session.project;
-    let removed: Vec<LaunchMapping> = match (params.get("source"), params.get("target")) {
+    let removed: Vec<LaunchMapping> = match (Args::new(params).value("source"), Args::new(params).value("target")) {
         (Some(_), None) => {
             let source = source(params)?;
             p.launcher.mappings.iter().filter(|m| m.source == source).cloned().collect()
@@ -122,7 +124,7 @@ pub fn mapped_command(project: &Project, source: &MappingSource, pressed: bool) 
     }
     match (mapping.target, pressed) {
         (MappingTarget::Slot { track, scene }, true) => {
-            Some(("clip.launch", json!({ "track": track.0, "scene": scene.saturating_add(1) })))
+            Some(("clip.launch", json!({ "track": track.0, "scene": scene })))
         }
         (MappingTarget::Slot { track, scene }, false) => {
             let clip = project
@@ -132,12 +134,9 @@ pub fn mapped_command(project: &Project, source: &MappingSource, pressed: bool) 
                 .find(|c| c.track == track)
                 .and_then(|c| c.slots.get(scene))
                 .and_then(|s| s.clip.as_ref())?;
-            clip.launch
-                .mode
-                .uses_release()
-                .then(|| ("clip.release", json!({ "track": track.0, "scene": scene.saturating_add(1) })))
+            clip.launch.mode.uses_release().then(|| ("clip.release", json!({ "track": track.0, "scene": scene })))
         }
-        (MappingTarget::Scene { scene }, true) => Some(("scene.launch", json!({ "scene": scene.saturating_add(1) }))),
+        (MappingTarget::Scene { scene }, true) => Some(("scene.launch", json!({ "scene": scene }))),
         (MappingTarget::Stop { track }, true) => Some(("track.stop", json!({ "track": track.0 }))),
         (MappingTarget::Scene { .. } | MappingTarget::Stop { .. }, false) => None,
     }

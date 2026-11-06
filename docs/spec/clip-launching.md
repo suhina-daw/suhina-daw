@@ -1,9 +1,9 @@
 ---
 description: How launching clips and scenes behaves: quantisation, stop buttons, scene tempo, launched clip fades, follow actions, launch modes, legato, per-clip quantisation, launching from computer keys and MIDI notes, launcher over arrangement
-read_when: clip launching, scenes, launch quantisation, stop, session view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, launcher.addMapping
+read_when: clip launching, scenes, launch quantisation, stop, launcher view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, launcher.addMapping
 type: spec
 status: current
-last_verified: 2026-10-16
+last_verified: 2026-11-06
 covers:
   - crates/engine/src/launcher.rs
   - crates/engine/src/follow.rs
@@ -26,7 +26,7 @@ covers:
 
 # Clip launching
 
-- **Sources:** the behaviour of the Session View as the public Live 12 manual describes it
+- **Sources:** the behaviour of the Launcher view as the public Live 12 manual describes it
   (launching clips and scenes, launch quantisation, stop buttons, scene tempo, clip launch
   modes, legato and clip quantisation), and the Live Set
   fields in [`als-format.md`](als-format.md) (scenes, clip slots, `HasStop`, scene tempo, clip
@@ -50,8 +50,10 @@ decides something the sources do not settle, the text says so (**Suhina:**).
   from the moment it starts. A bar is `numerator × 4 / denominator` beats.
 - **Launch quantisation:** the grid that launches wait for. Choices: none, 8, 4, 2 or 1 bars,
   or a note value (1/2, 1/4, 1/8, 1/16, 1/32, and the triplets 1/2T, 1/4T, 1/8T, 1/16T).
-  Default: 1 bar. The same value is the Arrangement view's grid, its lines and what snaps to
-  them ([arrangement editing](arrangement-editing.md) › The grid). Each open project's session
+  Default: 1 bar. It is the control bar's **Quantize** box, which sets nothing else and which nothing else sets:
+  the Arrangement view and the piano roll each have a grid and snapping of their own
+  ([arrangement editing](arrangement-editing.md) › The grid; [clip editor](ui-clip-editor.md) ›
+  Grid and snapping). Each open project's session
   keeps it, without an audio engine too, and hands it to an engine when one is attached; it is
   not saved in the project.
 
@@ -102,6 +104,13 @@ decides something the sources do not settle, the text says so (**Suhina:**).
 
 ## Editing scenes
 
+- **Naming a scene.** A command's `scene` (and `clip.moveSlot`'s `toScene`) is the scene's
+  number, from 0, or `{"id": n}` with its id. The id stays the scene's while scenes are
+  inserted, deleted or moved before it ([ADR 0025](../decisions/0025-object-identity.md)), so
+  an agent that read `project.launcher` can still name the scene it meant. An id no scene has is
+  an error naming it. `project.launcher` and every result that reports a scene give its
+  `scene_id` beside `scene`. The window still sends numbers. `scene.insert {scene: {"id": n}}`
+  inserts before that scene.
 - **Insert** (`scene.insert`) adds an empty scene at a position (after the last one if none is
   given): a row of empty slots, each with a stop button, in every track.
 - **Duplicate** (`scene.duplicate`) copies a scene to a new one right below it: name, tempo, time
@@ -161,10 +170,10 @@ own decision (**Suhina:**), not yet compared with Live 12 (see *To observe*).
 7. **Commands.** `clip.setFollowAction {track, scene, enabled?, time?, linked?, actionA?,
    actionB?, chanceA?, chanceB?}` changes what it is given, in one undo step; actions are named
    `nothing`, `stop`, `again`, `previous`, `next`, `first`, `last`, `any`, `other` or `jump N`
-   (N a scene number, from 1). `project.launcher` lists each slot clip's `follow_action`. The
+   (N a scene number, from 1: the follow action's name, as the file keeps it and the window shows it, unlike the `scene` parameters, which count from 0). `project.launcher` lists each slot clip's `follow_action`. The
    project file stores it as the clip's `follow` ([suhina-format](suhina-format.md)). The
    detail area shows a selected slot clip's follow action and changes it through the same
-   command ([Session view](ui-session-view.md) › Detail area: follow action).
+   command ([Launcher view](ui-session-view.md) › Detail area: follow action).
 8. **While playing.** Editing a follow action swaps in a new graph (ADR 0005); a clip that is
    playing keeps its launch time, so a follow time now shorter than what it has played runs at
    once.
@@ -223,9 +232,12 @@ settings ([Suhina format](suhina-format.md)).
 ## Launching from keys and notes
 
 A **mapping** makes a computer key or a MIDI note launch a slot, a scene or a track's stop
-button, the same way the mouse does. This is Suhina's own design; the general controller
-mappings of [ADR 0019](https://github.com/suhina-daw/suhina-daw/pull/405) (knobs, faders,
-profiles) are planned separately and can take these over.
+button, the same way the mouse does. This is Suhina's own design. The general controller
+mappings of [ADR 0019](../decisions/0019-midi-controllers-and-mapping.md#amendment-launch-keys-are-controller-mappings-2026-11-02) (knobs, faders, profiles; planned) take these over when they are
+built: a launch key becomes a controller mapping with a launch command as its target, kept in
+`controller_mappings`, made in the same mapping mode and by `mapping.*` instead of the
+`launcher.*` commands below ([MIDI mapping › Launch keys](midi-mapping.md#launch-keys)). What
+a key or a note does stays as described here.
 
 1. **Sources.** A key by its name (`key:Q`, `key:1`, `key:Space`, `key:F5`), pressed without
    Ctrl, Alt, Shift or Cmd; or a MIDI note on a channel (`note:<channel 1-16>:<note 0-127>`,
@@ -241,13 +253,14 @@ profiles) are planned separately and can take these over.
    stays in the project and does nothing; `launcher.mappings` reports it as `broken`, and an undo
    that brings the track back makes it work again.
 4. **Where keys count.** In the window a mapped key wins over a shortcut on the same key only
-   while the Session view is shown and nothing else has the keyboard
-   ([Session view](ui-session-view.md#launch-keys)).
+   while the Launcher view is shown and nothing else has the keyboard
+   ([Launcher view](ui-session-view.md#launch-keys)).
 5. **MIDI notes.** **Suhina:** a mapped note launches and does not also play on a track. The
-   mappings, the commands and the press and release logic for notes are in place; Suhina reads no
-   live MIDI input yet ([#264](https://github.com/suhina-daw/suhina-daw/issues/264)). When live
-   input lands, its notes go through the same lookup (`suhina_session::mapped_command`) as keys,
-   and the window's mapping mode learns notes as it learns keys.
+   mappings, the commands and the press and release logic for notes are in place, but live MIDI
+   input ([ADR 0017](../decisions/0017-inputs-and-latency.md)) plays the armed tracks and does not
+   reach the mappings yet, so only computer keys launch from the window. Wired up, its notes go
+   through the same lookup (`suhina_session::mapped_command`) as keys, and the window's mapping
+   mode learns notes as it learns keys.
 
 **Commands.** `launcher.addMapping {source, target, track?, scene?}` (`target` slot, scene or
 stop; a slot needs `track` and `scene`, a scene `scene`, a stop button `track`) and
@@ -288,8 +301,11 @@ The project file keeps them under the launcher ([Suhina format](suhina-format.md
   boundary. `clip.setFades {track, scene, …}` sets a slot clip's fades, with the same parameters
   and checks as for an arrangement clip (`scene` instead of `index`); one undo step.
 - **Time-stretching.** Launched warped clips are time-stretched like arrangement clips (ADR
-  0003): each one's stretcher is prepared for the project's start tempo when the project opens
-  and rewound at every launch; where the tempo map is at another tempo they are re-pitched.
+  0003): each one's stretcher is prepared for the project's start tempo, in the background after
+  the project opens or an edit changes the clip, and rewound at every launch; where the tempo map
+  is at another tempo they are re-pitched. A launch that comes before its stretcher is ready (an
+  unquantised launch right after such an edit) starts on time; its stretched audio is silent
+  until the stretcher arrives, a few milliseconds later, and then plays from where the clip is.
 - **Tempo map.** While no scene tempo applies, the launcher clock reads its beat from the
   project's [tempo map](tempo-map.md), so launched clips stay on the arrangement's grid through
   tempo changes and ramps, and bar quantisation waits for the next bar line of the meter.
@@ -321,9 +337,9 @@ The project file keeps them under the launcher ([Suhina format](suhina-format.md
 ## Clips between the arrangement and the slots
 
 **Suhina**, our own design: a clip gets into a slot from the arrangement, and from a slot onto
-the arrangement, by copying ([Session view](ui-session-view.md) › Between the views).
+the arrangement, by copying ([Launcher view](ui-session-view.md) › Between the views).
 
-- `clip.copy {track, scene}` copies the clip in a track's slot (scene from 1); `clip.copy
+- `clip.copy {track, scene}` copies the clip in a track's slot (scene from 0); `clip.copy
   {track, index}` an arrangement clip. Both fill the same clipboard.
 - `clip.paste {track, scene}` puts the copied clip in that track's slot: the track must have clip
   slots (a group or return track has none), the scene must exist, and the track must take the
@@ -337,8 +353,8 @@ the arrangement, by copying ([Session view](ui-session-view.md) › Between the 
   paste).
 - In the window: Copy and Paste in a slot's or a clip's right-click menu, Ctrl+C and Ctrl+V on the
   selected slot or clip, and dragging a clip over the other view's name in the control bar.
-- A slot clip's fades are kept, but launched clips do not play them yet (Suhina decisions ›
-  Fades above).
+- A slot clip's fades are kept, and launched clips play them (Suhina decisions › Clip fades
+  above).
 
 ## To observe
 

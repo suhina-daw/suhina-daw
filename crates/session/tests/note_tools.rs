@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 use suhina_model::*;
 use suhina_session::{MAX_NOTES_PER_COMMAND, Session, midi_velocity};
 
+use crate::support::run;
+
 fn note(time: f64, duration: f64, key: u8) -> Note {
     Note::new(time, duration, key, 100.0 / 127.0)
 }
@@ -23,15 +25,19 @@ fn clip(content: u32) -> Clip {
 /// Track 1 "Keys" has, on the arrangement, a MIDI clip with `notes` (index 0), an empty MIDI clip
 /// (index 1) and an audio clip (index 2).
 fn project(notes: Vec<Note>) -> Project {
+    suhina_test_support::with_ids(project_built(notes))
+}
+
+fn project_built(notes: Vec<Note>) -> Project {
     let content = |id: u32, lanes: Vec<ContentLane>| ClipContent {
         id: ContentId(id),
         name: format!("C{id}"),
         length: 8.0,
-        lanes,
+        lanes: lanes.into(),
         extensions: Extensions::default(),
         scale: None,
     };
-    let lane = |n: Vec<Note>| vec![ContentLane { target: None, data: LaneData::Notes(n) }];
+    let lane = |n: Vec<Note>| vec![ContentLane { target: None, data: LaneData::Notes(n.into()) }];
     let audio = AudioRegion::new("a.wav");
     Project {
         tracks: vec![Track { content: ContentKinds { notes: true, audio: true }, ..Track::new(TrackId(1), "Keys") }],
@@ -42,11 +48,13 @@ fn project(notes: Vec<Note>) -> Project {
         ],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "Keys".into(),
                 track: Some(TrackId(1)),
                 clips: vec![clip(1), clip(2), clip(3)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }
@@ -57,17 +65,13 @@ fn scale_notes() -> Vec<Note> {
     vec![note(0.0, 1.0, 60), note(1.0, 1.0, 64), note(2.0, 1.0, 67), note(3.0, 0.5, 71)]
 }
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
-
 fn notes_of(session: &Session, content: u32) -> Vec<Note> {
     let content = session.project().content(ContentId(content)).expect("the content");
     content
         .lanes
         .iter()
         .find_map(|l| match &l.data {
-            LaneData::Notes(n) => Some(n.clone()),
+            LaneData::Notes(n) => Some(n.to_vec()),
             LaneData::Audio(_) => None,
         })
         .unwrap_or_default()
@@ -293,21 +297,38 @@ fn reversing_turns_the_notes_round_inside_their_own_span() {
 }
 
 #[test]
-fn legato_lasts_until_the_next_note_of_the_same_key() {
-    // Keys 60, 60 and 64: the first 60 lasts until the second one starts; both last notes keep
-    // their length.
+fn legato_lasts_until_the_next_note_on_any_key() {
+    // A line over keys 60, 64 and 60: each note lasts until the next one starts, on any key, and
+    // the last one keeps its length.
     let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(1.5, 1.0, 60), note(0.5, 1.0, 64)]));
     let before = notes_of(&session, 1);
     let result = run(&mut session, "note.legato", json!({ "track": 1, "index": 0 })).unwrap();
     assert_eq!(result, json!({ "notes": [0, 1, 2], "changed": 1 }));
-    close(&lengths(&session), &[1.5, 1.0, 1.0]);
+    close(&lengths(&session), &[0.5, 1.0, 1.0]);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(notes_of(&session, 1), before);
 
-    // Never shorter than a hundredth of a beat: two notes of a key at the same beat.
+    // A chord stays together: both its notes end where the next note starts.
+    let mut chord = Session::new(project(vec![note(0.0, 0.25, 60), note(0.0, 0.5, 64), note(1.0, 1.0, 62)]));
+    run(&mut chord, "note.legato", json!({ "track": 1, "index": 0 })).unwrap();
+    close(&lengths(&chord), &[1.0, 1.0, 1.0]);
+
+    // Only the named notes count: a note left out is no next note.
+    let mut named = Session::new(project(vec![note(0.0, 0.25, 60), note(1.0, 0.25, 62), note(2.0, 0.25, 64)]));
+    run(&mut named, "note.legato", json!({ "track": 1, "index": 0, "notes": [0, 2] })).unwrap();
+    close(&lengths(&named), &[2.0, 0.25, 0.25]);
+
+    // With replace, a note left out that the line now runs over goes.
+    let mut under = Session::new(project(vec![note(0.0, 0.25, 60), note(0.5, 0.25, 60), note(2.0, 0.25, 64)]));
+    let result =
+        run(&mut under, "note.legato", json!({ "track": 1, "index": 0, "notes": [0, 2], "replace": true })).unwrap();
+    assert_eq!(result, json!({ "notes": [0, 1], "changed": 1, "replaced": [1] }));
+    close(&lengths(&under), &[2.0, 0.25]);
+
+    // Notes that start together have no next note to reach.
     let mut together = Session::new(project(vec![note(1.0, 1.0, 60), note(1.0, 2.0, 60)]));
     run(&mut together, "note.legato", json!({ "track": 1, "index": 0 })).unwrap();
-    close(&lengths(&together), &[0.01, 2.0]);
+    close(&lengths(&together), &[1.0, 2.0]);
 
     // A named note whose length is already right changes nothing.
     let mut quiet = Session::new(project(scale_notes()));
@@ -497,7 +518,7 @@ fn malformed_tool_params_are_refused_and_change_nothing() {
         ("note.stretch", json!({ "track": 1, "index": 0, "factor": 0 }), "factor must be"),
         ("note.stretch", json!({ "track": 1, "index": 0, "factor": -1 }), "factor must be"),
         ("note.stretch", json!({ "track": 1, "index": 0, "factor": 200 }), "factor must be"),
-        ("note.stretch", json!({ "track": 1, "index": 0 }), "give factor"),
+        ("note.stretch", json!({ "track": 1, "index": 0 }), "factor must be given"),
         ("note.randomizeVelocity", json!({ "track": 1, "index": 0, "amount": 128 }), "amount must be"),
         ("note.randomizeVelocity", json!({ "track": 1, "index": 0, "amount": -1 }), "amount must be"),
         ("note.rampVelocity", json!({ "track": 1, "index": 0, "from": 0, "to": 127 }), "from must be"),

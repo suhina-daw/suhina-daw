@@ -2,8 +2,9 @@
 description: The shape of collaboration and project versions in Suhina — three products with three physics kept apart, why it is core and not an extension, why the project becomes a folder, and why every asset is content-addressed
 read_when: collaboration, peer-to-peer, P2P, shared session, host and guest, project versions, version browser, merge, content addressing, blob, manifest, project folder, relay, no server, extension or core
 type: decision
-status: draft
-last_verified: 2026-10-15
+status: proposed
+built: no
+last_verified: 2026-11-02
 covers:
   - crates/model/src/lib.rs
   - crates/session/src/lib.rs
@@ -14,7 +15,6 @@ covers:
 
 # 0023: Collaboration and project versions: the shape
 
-- **Status:** proposed
 - **Date:** 2026-10-15
 
 ## Context
@@ -95,9 +95,10 @@ A feasibility pass produced these findings, all of which the decisions below res
    UI, the CLI and MCP, and its permissions and path confinement extend the patterns those callers
    already have. It is untrusted **data**, not untrusted code, which is why it does not need the
    process boundary a plug-in or an extension needs.
-5. **All positions are musical time, and tempo is append-only.** Exactly one representation for
-   where something is, and a tempo change appends a segment instead of rewriting one, because an
-   append-only list merges as a union. Decided in [0024](0024-musical-time-and-tempo.md), and
+5. **All positions are musical time, and the tempo map merges by key.** Exactly one representation
+   for where something is, and the tempo map is a list of changes keyed by beat (by bar for the time
+   signature), so two versions merge it three-way against their ancestor. Decided in
+   [0024](0024-musical-time-and-tempo.md), and
    independently of whether collaboration ever ships, because being wrong here is a model-wide
    rewrite later.
 6. **Objects have stable identity, and identity never comes from content.** A hash cannot be an
@@ -211,7 +212,7 @@ A feasibility pass produced these findings, all of which the decisions below res
 
 ## Sources
 
-- Ableton Link, on tempo changes as timeline segments (read for
+- Ableton Link, on tempo changes as timeline segments (read for the first version of
   [0024](0024-musical-time-and-tempo.md)):
   <https://help.ableton.com/hc/en-us/articles/209776125-Link-features-and-functions-FAQ>
 - The published large-scale measurement of hole punching (4.4 M attempts, 85 000 networks, 167
@@ -223,7 +224,7 @@ A feasibility pass produced these findings, all of which the decisions below res
   <https://jamulus.app/wiki/Getting-Started>,
   <https://ccrma.stanford.edu/groups/soundwire/software/jacktrip/index.html>. SonoBus is GPL-3.0 and
   JackTrip is MIT, so either may be ported with its notices kept and credited in `ATTRIBUTION.md`
-  under rule 9; the clean-room rule concerns proprietary products and neither is one. What ports is
+  under rule 10; the clean-room rule concerns proprietary products and neither is one. What ports is
   the streaming structure and the jitter buffer — the alignment problem, which is the hard part, this
   project already solves (ADR 0005, ADR 0006).
 - This repository: ADR 0001, ADR 0002, ADR 0005, ADR 0006, ADR 0010, ADR 0011, ADR 0012, ADR 0013,

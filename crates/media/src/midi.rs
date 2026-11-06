@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use suhina_engine::model::Note;
+use suhina_model::Note;
 
 /// Largest file read.
 pub const MAX_BYTES: u64 = 16 * 1024 * 1024;
@@ -43,17 +43,17 @@ pub struct MidiFile {
 }
 
 /// Reads the MIDI file at `path`.
-pub fn read_file(path: &Path) -> Result<MidiFile, String> {
+pub fn read_file(path: &Path) -> Result<MidiFile, crate::MediaError> {
     let length = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
     if length > MAX_BYTES {
-        return Err(format!("larger than {} MiB", MAX_BYTES / 1024 / 1024));
+        return Err(format!("larger than {} MiB", MAX_BYTES / 1024 / 1024).into());
     }
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     read(&bytes)
 }
 
 /// Reads a MIDI file from its bytes.
-pub fn read(bytes: &[u8]) -> Result<MidiFile, String> {
+pub fn read(bytes: &[u8]) -> Result<MidiFile, crate::MediaError> {
     let mut reader = Reader { bytes, at: 0 };
     let (id, header) = reader.chunk()?;
     if id != *b"MThd" || header.len() < 6 {
@@ -63,7 +63,7 @@ pub fn read(bytes: &[u8]) -> Result<MidiFile, String> {
     let count = usize::from(u16::from_be_bytes([header[2], header[3]]));
     let division = u16::from_be_bytes([header[4], header[5]]);
     if format > 2 {
-        return Err(format!("unknown MIDI file format {format}"));
+        return Err(format!("unknown MIDI file format {format}").into());
     }
     if division & 0x8000 != 0 {
         return Err("time in SMPTE frames is not supported".into());

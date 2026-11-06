@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The start panel: what the window shows right of the browser while no project is open (at
-//! start, as Settings › General › At start › Panel says, and after the last project closes). A
+//! start, as Settings › Projects and backups › Startup project › Panel says, and after the last project closes). A
 //! new project, one from a template, or a recent project, found by name and listed with when it
 //! was last saved; the audio output at a glance; the version. Files dropped on it open as they
 //! do anywhere on the window.
 
+use crate::kit::surface::Backgrounds as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -22,6 +23,7 @@ const MAX_WIDTH: f32 = 820.0;
 const TWO_COLUMNS: f32 = 560.0;
 const AUDIO_WIDTH: f32 = 240.0;
 const ACTION: Vec2 = Vec2::new(132.0, 24.0);
+const NOTICE_BUTTON: Vec2 = Vec2::new(150.0, 18.0);
 
 /// Which list the panel shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -38,6 +40,9 @@ pub struct StartState {
     pub search: String,
     pub tab: Tab,
 }
+
+/// What a drop on the window opens, said on the start panel and in the status bar.
+pub const DROP_HINT: &str = "Drop a project (.suhina) or an .als file here to open it";
 
 /// The audio output as the panel shows it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -59,9 +64,29 @@ pub enum StartChoice {
     AudioSettings,
     /// Take a project off the recent list.
     Forget(PathBuf),
+    /// The update line's button: Download update now, Restart now or Try again.
+    Update,
+    /// The update line's page (the release, or the pull request).
+    UpdatePage(String),
 }
 
-/// Draws the start panel in `area`; `now` dates the recent projects, `version` is the app's.
+/// The line under the actions about a newer build (`docs/spec/updates.md` › The start panel).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Notice {
+    pub text: String,
+    /// The button at its end.
+    pub button: Option<&'static str>,
+    /// How much of the download is done, 0 to 1, drawn under the text.
+    pub progress: Option<f32>,
+    /// The text says what went wrong.
+    pub error: bool,
+    /// The page *What's new* opens.
+    pub page: Option<String>,
+}
+
+/// Draws the start panel in `area`; `now` dates the recent projects, `version` is the app's,
+/// `notice` the line about a newer build.
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut Ui,
     area: Rect,
@@ -69,11 +94,16 @@ pub fn show(
     lists: &Lists,
     audio: &AudioSummary,
     version: &str,
+    notice: Option<&Notice>,
     now: SystemTime,
 ) -> Option<StartChoice> {
+    // `.start-page` styles it; its buttons and fields take the sheet's `.button` and `.text-input`.
+    let _style = crate::kit::style_class::enter("start-page");
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::window_background());
+    crate::kit::native_css::surface(&painter, area, 0.0, theme::window_background());
     let width = (area.width() - 4.0 * PAD).min(MAX_WIDTH);
     let content = Rect::from_min_max(
         Pos2::new(area.center().x - width / 2.0, area.top() + 4.0 * PAD),
@@ -104,18 +134,44 @@ pub fn show(
         x = rect.right() + PAD;
     }
 
-    // The footer: the version, and what a drop does.
+    // What a drop does, right under the actions where it is read with them.
+    let drop_hint = Rect::from_min_size(
+        Pos2::new(content.left(), content.top() + ACTION.y + PAD),
+        Vec2::new(content.width(), LINE),
+    );
+    widgets::text_in(
+        &painter,
+        drop_hint,
+        Align2::LEFT_CENTER,
+        DROP_HINT,
+        theme::ui_font(theme::TEXT),
+        theme::text_secondary(),
+    );
+
+    // The footer: the version.
     let footer = Rect::from_min_max(Pos2::new(content.left(), content.bottom() - LINE), content.max);
-    let small = theme::ui_font(theme::TEXT_SMALL);
     let version = format!("Suhina {version}");
-    widgets::text_in(&painter, footer, Align2::LEFT_CENTER, &version, small.clone(), theme::text_hint());
-    let hint = "Drop a project or a Live Set (.als) here to open it";
-    widgets::text_in(&painter, footer, Align2::RIGHT_CENTER, hint, small, theme::text_hint());
+    widgets::text_in(
+        &painter,
+        footer,
+        Align2::LEFT_CENTER,
+        &version,
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_hint(),
+    );
+
+    // A newer build, under the actions.
+    let mut top = drop_hint.bottom() + PAD;
+    if let Some(notice) = notice {
+        let line = Rect::from_min_size(Pos2::new(content.left(), top), Vec2::new(content.width(), ACTION.y));
+        if let Some(chosen) = notice_line(ui, &painter, line, notice) {
+            choice = Some(chosen);
+        }
+        top = line.bottom() + 2.0 * PAD;
+    }
 
     // The list, and the audio card beside it or under it.
-    let body = Rect::from_min_max(Pos2::new(content.left(), content.top() + ACTION.y + 2.0 * PAD), {
-        Pos2::new(content.right(), footer.top() - PAD)
-    });
+    let body = Rect::from_min_max(Pos2::new(content.left(), top), Pos2::new(content.right(), footer.top() - PAD));
     let audio_height = 4.0 * LINE + BUTTON.y + 3.0 * PAD;
     let (list, card) = if body.width() >= TWO_COLUMNS {
         let card = Rect::from_min_size(
@@ -136,13 +192,52 @@ pub fn show(
     choice
 }
 
+/// The update line: its text, a progress bar while downloading, and its buttons on the right.
+fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: &Notice) -> Option<StartChoice> {
+    let mut choice = None;
+    painter.fill_background(line, 0.0, theme::panel_background());
+    let edge = if notice.error { theme::recording() } else { theme::accent() };
+    painter.rect_filled(Rect::from_min_size(line.min, Vec2::new(3.0, line.height())), 0.0, edge);
+    let mut right = line.right() - PAD;
+    if let Some(text) = notice.button {
+        let rect = Rect::from_min_size(
+            Pos2::new(right - NOTICE_BUTTON.x, line.center().y - NOTICE_BUTTON.y / 2.0),
+            NOTICE_BUTTON,
+        );
+        if button(ui, painter, rect, text, text) {
+            choice = Some(StartChoice::Update);
+        }
+        right = rect.left() - PAD;
+    }
+    if let Some(page) = &notice.page {
+        let rect = Rect::from_min_size(Pos2::new(right - BUTTON.x, line.center().y - BUTTON.y / 2.0), BUTTON);
+        if button(ui, painter, rect, "What's new", "What's new in the new version") {
+            choice = Some(StartChoice::UpdatePage(page.clone()));
+        }
+        right = rect.left() - PAD;
+    }
+    let text = Rect::from_min_max(Pos2::new(line.left() + 3.0 + PAD, line.top()), Pos2::new(right, line.bottom()));
+    let colour = if notice.error { theme::recording() } else { theme::text_primary() };
+    widgets::text_in(painter, text, Align2::LEFT_CENTER, &notice.text, theme::ui_font(theme::TEXT), colour);
+    if let Some(part) = notice.progress {
+        let bar = Rect::from_min_size(Pos2::new(text.left(), line.bottom() - 4.0), Vec2::new(text.width(), 2.0));
+        painter.fill_background(bar, 0.0, theme::control_background());
+        painter.rect_filled(
+            Rect::from_min_size(bar.min, Vec2::new(bar.width() * part, bar.height())),
+            0.0,
+            theme::accent(),
+        );
+    }
+    choice
+}
+
 /// The Recent and Templates tabs, the search field and the list.
 fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now: SystemTime) -> Option<StartChoice> {
     if area.height() < 3.0 * LINE {
         return None;
     }
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::panel_background());
+    painter.fill_background(area, 0.0, theme::panel_background());
     painter.rect_stroke(area, 0.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
     let inner = area.shrink(PAD);
     let mut choice = None;
@@ -153,7 +248,8 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
         let font = theme::ui_font(theme::TEXT);
         let w = widgets::text_width(ui, text, font.clone()) + 2.0 * PAD;
         let rect = Rect::from_min_size(Pos2::new(x, inner.top()), Vec2::new(w, LINE));
-        let response = widgets::button_area(ui, rect, egui::Id::new(("start-tab", text)), format!("{text} projects"));
+        let response =
+            widgets::button_area(ui, rect, egui::Id::unique(("start-tab", text)), format!("{text} projects"));
         let on = state.tab == tab;
         let color = if on { theme::text_primary() } else { theme::text_hint() };
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, text, font, color);
@@ -169,11 +265,12 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
     if search_width > 60.0 {
         let field =
             Rect::from_min_size(Pos2::new(inner.right() - search_width, inner.top()), Vec2::new(search_width, LINE));
-        let edit = ui.put(
+        let edit = crate::kit::widgets::text_input_at(
+            ui,
             field,
             egui::TextEdit::singleline(&mut state.search).hint_text("Search").font(theme::ui_font(theme::TEXT_SMALL)),
         );
-        edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Search projects"));
+        edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Search projects"));
     }
     let top = inner.top() + LINE + PAD;
     painter.hline(inner.x_range(), top - PAD / 2.0, theme::hairline(theme::border()));
@@ -227,7 +324,10 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
         Tab::Templates => {
             let rows: Vec<&PathBuf> = lists.templates.iter().filter(|p| found(p)).collect();
             let note = Rect::from_min_max(Pos2::new(list.left(), list.bottom() - LINE), list.max);
-            let folder = format!("Templates in {}; the folder is set in Settings › General", lists.templates_folder);
+            let folder = format!(
+                "Templates in {}; the folder is set in Settings › Projects and backups",
+                lists.templates_folder
+            );
             widgets::text_in(&painter, note, Align2::LEFT_CENTER, &folder, small.clone(), theme::text_hint());
             let list = Rect::from_min_max(list.min, Pos2::new(list.right(), note.top() - 4.0));
             if rows.is_empty() {
@@ -261,7 +361,7 @@ fn audio_card(ui: &Ui, area: Rect, audio: &AudioSummary) -> bool {
         return false;
     }
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::panel_background());
+    painter.fill_background(area, 0.0, theme::panel_background());
     painter.rect_stroke(area, 0.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
     let inner = area.shrink(PAD);
     heading(&painter, Rect::from_min_size(inner.min, Vec2::new(inner.width(), 0.0)), "Audio");
@@ -306,12 +406,16 @@ mod tests {
     type Panel = (StartState, Option<StartChoice>);
 
     fn panel(lists: Lists, size: Vec2) -> Harness<'static, Panel> {
+        panel_with(lists, size, None)
+    }
+
+    fn panel_with(lists: Lists, size: Vec2, notice: Option<Notice>) -> Harness<'static, Panel> {
         let audio = AudioSummary { device: "Speakers".into(), sample_rate: "48000 Hz".into(), buffer: "256".into() };
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
-        Harness::builder().with_size(size).build_ui_state(
+        Harness::builder().allow_missing_glyphs().with_size(size).build_ui_state(
             move |ui, (state, chosen): &mut Panel| {
                 let area = ui.max_rect();
-                if let Some(choice) = show(ui, area, state, &lists, &audio, "0.26.0", now) {
+                if let Some(choice) = show(ui, area, state, &lists, &audio, "0.26.0", notice.as_ref(), now) {
                     *chosen = Some(choice);
                 }
             },
@@ -326,6 +430,7 @@ mod tests {
             saved: vec![Some(now - Duration::from_secs(3 * 86_400)), None],
             templates: vec![PathBuf::from("templates/Beat.suhina")],
             templates_folder: "templates".into(),
+            new_returns: true,
         }
     }
 
@@ -355,6 +460,26 @@ mod tests {
         harness.get_by_label("Recent projects").click();
         harness.run();
         assert_eq!(harness.state().0.tab, Tab::Recent);
+    }
+
+    #[test]
+    fn a_newer_build_is_offered_under_the_actions() {
+        let notice = Notice {
+            text: "New version available: Suhina 0.0.1-nightly.20261018+c176a33".into(),
+            button: Some("Download update now"),
+            progress: None,
+            error: false,
+            page: Some("https://example.invalid/nightly".into()),
+        };
+        let mut harness = panel_with(lists(), Vec2::new(900.0, 600.0), Some(notice));
+        harness.run();
+        assert!(harness.query_by_label("Open Night drive").is_some());
+        harness.get_by_label("Download update now").click();
+        harness.run();
+        assert_eq!(harness.state().1, Some(StartChoice::Update));
+        harness.get_by_label("What's new in the new version").click();
+        harness.run();
+        assert_eq!(harness.state().1, Some(StartChoice::UpdatePage("https://example.invalid/nightly".into())));
     }
 
     #[test]

@@ -20,10 +20,11 @@
 //! times the drive.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
-use suhina_dsp::Smoother;
 use suhina_dsp::gain::db_to_gain;
+use suhina_dsp::{AttackRelease, Smoother};
 
 /// How far ahead the limiter looks, in seconds.
 pub const LOOKAHEAD_SECONDS: f64 = 0.0015;
@@ -38,15 +39,13 @@ pub mod param {
     pub(crate) const COUNT: usize = 3;
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("threshold", "Threshold", (-30.0, 0.0), 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("ceiling", "Ceiling", (-12.0, 0.0), -0.3, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("release", "Release", (0.001, 1.0), 0.05, Unit::Seconds, Scale::Logarithmic),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "limiter", name: "Limiter", role: Role::Effect, params: &PARAMS };
-
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
+pub static INFO: DeviceInfo = DeviceInfo::new("limiter", "Limiter", Role::Effect, &PARAMS);
 
 /// Lookahead in frames at `sample_rate`: [`LOOKAHEAD_SECONDS`] rounded up, at least one.
 pub fn lookahead_frames(sample_rate: f64) -> usize {
@@ -103,12 +102,13 @@ impl SlidingMinimum {
 
 pub struct Limiter {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     /// Linear gain into the limiter (`ceiling - threshold` dB).
     drive: Smoother,
     /// The ceiling as a linear level.
     ceiling: Smoother,
-    release: f64,
+    /// An instant attack, so the gain is never above what the window needs, and the release.
+    dynamics: AttackRelease,
     lookahead: usize,
     /// Delay line for both sides, `lookahead` frames.
     delay: Vec<[f32; 2]>,
@@ -136,10 +136,10 @@ impl Limiter {
     pub fn new() -> Self {
         let mut limiter = Self {
             sample_rate: DEFAULT_SAMPLE_RATE,
-            values: PARAMS.map(|p| p.default),
+            params: ParamBank::new(&PARAMS),
             drive: Smoother::new(1.0, 1),
             ceiling: Smoother::new(1.0, 1),
-            release: 0.0,
+            dynamics: AttackRelease::default(),
             lookahead: 1,
             delay: Vec::new(),
             minimum: SlidingMinimum::new(1),
@@ -162,7 +162,7 @@ impl Limiter {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     fn targets(&self) -> [f32; 2] {
@@ -171,8 +171,7 @@ impl Limiter {
     }
 
     fn tune(&mut self) {
-        let frames = self.value(param::RELEASE) * self.sample_rate;
-        self.release = if frames.is_finite() && frames > 0.0 { (-1.0 / frames).exp() } else { 0.0 };
+        self.dynamics = AttackRelease::new(0.0, self.value(param::RELEASE), self.sample_rate);
     }
 
     /// Buffers for the current sample rate. Allocates: only from `new` and `prepare`.
@@ -204,7 +203,7 @@ impl Limiter {
 }
 
 impl Device for Limiter {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 
@@ -220,9 +219,9 @@ impl Device for Limiter {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         let [drive, ceiling] = self.targets();
         self.drive.set_target(drive);
         self.ceiling.set_target(ceiling);
@@ -232,7 +231,7 @@ impl Device for Limiter {
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn latency(&self) -> u32 {
@@ -256,8 +255,7 @@ impl Device for Limiter {
             let needed = if peak > f64::from(ceiling) { f64::from(ceiling) / peak } else { 1.0 };
 
             let smallest = self.minimum.push(self.frame, needed);
-            self.envelope =
-                if smallest < self.envelope { smallest } else { smallest + (self.envelope - smallest) * self.release };
+            self.envelope = self.dynamics.fall(self.envelope, smallest);
             let old = self.gains.get(self.at % window).copied().unwrap_or(1.0);
             if let Some(slot) = self.gains.get_mut(self.at % window) {
                 *slot = self.envelope;

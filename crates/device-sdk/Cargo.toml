@@ -6,9 +6,11 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+suhina-fs.workspace = true
 base64.workspace = true
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] } # MIT OR Apache-2.0
 suhina-dsp.workspace = true
+suhina-stretch.workspace = true
 suhina-device-api.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -27,3 +29,6 @@ path = "examples/gated_instrument.rs"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+allocation-counter = "0.8.1" # MIT OR Apache-2.0; callback allocation/deallocation checks only

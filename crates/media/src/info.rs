@@ -56,7 +56,10 @@ pub fn kind_of(path: &Path) -> Option<FileKind> {
     if crate::stems::is_stems_path(path) {
         return Some(FileKind::Stems);
     }
-    if suhina_project_file::is_project_file(path) {
+    if suhina_model::is_preset_file(path) {
+        return Some(FileKind::Preset);
+    }
+    if suhina_model::is_project_file(path) {
         return Some(FileKind::Project);
     }
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
@@ -114,7 +117,7 @@ pub struct SampleInfo {
 
 /// Reads a sample's header and metadata (not its audio). The tempo and key come from the
 /// metadata first, then the file name.
-pub fn sample_info(path: &Path) -> Result<SampleInfo, String> {
+pub fn sample_info(path: &Path) -> Result<SampleInfo, crate::MediaError> {
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
@@ -392,8 +395,9 @@ mod tests {
         assert_eq!(kind_of(Path::new("x.aiff")), Some(FileKind::Sample));
         assert_eq!(kind_of(Path::new("groove.MID")), Some(FileKind::Midi));
         assert_eq!(kind_of(Path::new("bank.syx")), Some(FileKind::Preset));
+        assert_eq!(kind_of(Path::new("Bass.fm-synth.preset.suhina")), Some(FileKind::Preset));
         assert_eq!(kind_of(Path::new("song.suhina")), Some(FileKind::Project));
-        assert_eq!(kind_of(Path::new("old song.LOCR")), Some(FileKind::Project));
+        assert_eq!(kind_of(Path::new("old song.SUHINA")), Some(FileKind::Project));
         assert_eq!(kind_of(Path::new("set.als")), Some(FileKind::Project));
         assert_eq!(kind_of(Path::new("effects/gain.SD")), Some(FileKind::Effect));
         assert_eq!(kind_of(Path::new("readme.txt")), None);

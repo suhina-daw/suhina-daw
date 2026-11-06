@@ -2,45 +2,28 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Build the filter effect as a self-contained .sd file.
-use suhina_device_sdk::{DeviceGraph, DeviceRole, FilterMode, Node as N, NodeKind as K};
+use suhina_device_sdk::{
+    DeviceGraph, DeviceRole, FilterMode, NodeKind as K, Parameter, ParameterControl, author::GraphBuilder,
+};
 
 pub fn build() -> Result<DeviceGraph, Box<dyn std::error::Error>> {
-    let mut g = DeviceGraph::new("org.example.filter", "filter", DeviceRole::Effect);
-    g.nodes = vec![N::audio_input("in"), N::audio_output("out")];
+    let mut g = GraphBuilder::new("org.example.filter", "filter", DeviceRole::Effect);
+    let input = g.node("in", K::AudioInput)?;
+    let output = g.node("out", K::AudioOutput)?;
 
-    parameter(&mut g, "cutoff", (20.0, 20_000.0), 1000.0, "Hz", true);
-    g.nodes.push(N::new("filter", K::Filter { mode: FilterMode::Lowpass }));
-    wire(&mut g, "in", "filter", "in");
-    wire(&mut g, "cutoff", "filter", "frequency");
-    wire(&mut g, "filter", "out", "in");
+    let cutoff = g.parameter_signal(
+        Parameter::new("cutoff", "cutoff", (20.0, 20_000.0), 1000.0).unit("Hz").control(ParameterControl::LogKnob),
+    )?;
+    let filter =
+        g.op("filter", K::Filter { mode: FilterMode::Lowpass }, &[("in", input.out()), ("frequency", cutoff.out())])?;
+    g.connect(filter.out(), output.input("in"))?;
 
-    finish(g)
+    finish(g.finish()?)
 }
 
 #[cfg(not(test))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     save(build()?, "filter")
-}
-
-fn parameter(
-    graph: &mut suhina_device_sdk::DeviceGraph,
-    id: &str,
-    range: (f64, f64),
-    default: f64,
-    unit: &str,
-    logarithmic: bool,
-) {
-    let mut p = suhina_device_sdk::Parameter::new(id, id, range, default);
-    p.unit = unit.into();
-    if logarithmic {
-        p.control = suhina_device_sdk::ParameterControl::LogSlider;
-    }
-    graph.parameters.push(p);
-    graph.nodes.push(suhina_device_sdk::Node::new(id, suhina_device_sdk::NodeKind::Parameter { parameter: id.into() }));
-}
-
-fn wire(graph: &mut suhina_device_sdk::DeviceGraph, from: &str, to: &str, port: &str) {
-    graph.connections.push(suhina_device_sdk::Connection::ports(from, "out", to, port));
 }
 
 fn style_parameter(parameter: &mut suhina_device_sdk::Parameter) {
@@ -62,12 +45,6 @@ fn finish(mut g: suhina_device_sdk::DeviceGraph) -> Result<suhina_device_sdk::De
         node.visible = false;
     }
     for p in &mut g.parameters {
-        p.control = match p.id.as_str() {
-            "cutoff" | "rate" | "time" => suhina_device_sdk::ParameterControl::LogKnob,
-            "drive" | "feedback" | "width" => suhina_device_sdk::ParameterControl::Knob,
-            "ratio" | "attack" | "release" => suhina_device_sdk::ParameterControl::Number,
-            _ => p.control,
-        };
         style_parameter(p);
         p.ui.tooltip = format!("{} ({})", p.name, p.unit);
         if !g.ui.as_ref().is_some_and(|ui| ui.hidden_parameters.contains(&p.id)) {

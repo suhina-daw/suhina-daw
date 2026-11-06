@@ -14,8 +14,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use serde_json::{Value, json};
 use suhina_engine::{LiveEvent, LiveSender, LiveSource};
 
+use crate::commands::Args;
 use crate::commands::{CommandKind, CommandSpec, ParamType, param};
-use crate::{CommandError, Projects};
+use crate::{Agents, CommandError, Policy, Projects};
 
 /// The MIDI input ports of the system, and opening one of them; made by the MIDI layer, which
 /// is the only code that opens a MIDI device.
@@ -172,8 +173,9 @@ static MIDI_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "midi.inputs",
         label: "List the MIDI input ports with whether each is on and open; what the open ones play goes to the armed tracks of the project that plays (track.setArm)",
         params: &[],
-        kind: CommandKind::Audio,
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Read),
         run: inputs,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "midi.setInput",
@@ -182,8 +184,9 @@ static MIDI_COMMANDS: &[CommandSpec<Projects>] = &[
             param("port", ParamType::Text, "a port's name from midi.inputs"),
             param("enabled", ParamType::Bool, "true turns it on"),
         ],
-        kind: CommandKind::Audio,
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
         run: set_input,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
 ];
 
@@ -203,8 +206,8 @@ fn inputs(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 }
 
 fn set_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let port = params.get("port").and_then(Value::as_str).map(str::trim).ok_or("port must be a text")?;
-    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let port = Args::new(params).raw_str("port").map(str::trim).ok_or("port must be a text")?;
+    let enabled = Args::new(params).bool("enabled")?;
     let midi = projects.midi_mut();
     let system = midi.system.clone().ok_or_else(no_midi)?;
     let ports = system.ports().map_err(|e| CommandError(format!("the MIDI inputs could not be listed: {e}")))?;

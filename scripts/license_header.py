@@ -25,7 +25,8 @@ Exceptions, kept in the lists below:
   before. Original copyright lines are never removed or changed. The ported files are the MSFA
   engine files of `devices/fm-synth` (Apache-2.0) and the Signalsmith Stretch port in
   `crates/stretch` (MIT); the other files of those crates are Suhina's own and get the header.
-  A newly ported file is added to `PORTED` in the same change.
+  The VST2 definitions ported from VeSTige into `crates/plugin-host` (ADR 0022) will be listed
+  here with `GPL-2.0-or-later`. A newly ported file is added to `PORTED` in the same change.
 - `third_party/` is vendored source, left as it is (`SKIP_PREFIXES`).
 - Test fixtures (any path with a `fixtures`, `golden`, `testdata` or `tests/data` folder) and
   generated files (a `@generated` or `DO NOT EDIT` marker in their first lines) are left out.
@@ -60,6 +61,9 @@ PORTED = {
     "devices/fm-synth/src/voice.rs": "Apache-2.0",
     "crates/stretch/src/lib.rs": "MIT",
     "crates/stretch/src/stft.rs": "MIT",
+    # The VST2 interface definitions ported from VeSTige as Ardour distributes it, at the
+    # commit ADR 0022 pins, with its notice kept (the one named clean-room exception).
+    "crates/plugin-host/src/vst2/vestige.rs": "GPL-2.0-or-later",
 }
 
 SKIP_PREFIXES = ("third_party/",)

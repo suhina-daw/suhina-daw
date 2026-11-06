@@ -31,12 +31,12 @@ fn held(group_devices: Vec<Device>) -> Project {
 }
 
 fn channel(project: &mut Project, id: u32) -> &mut Channel {
-    project.channels.iter_mut().find(|c| c.id == ChannelId(id)).expect("channel")
+    project.channel_mut(ChannelId(id)).expect("channel")
 }
 
 /// Plays `seconds` of `project` in blocks of 256 frames; returns the renderer and the output.
 fn play(project: &Project, seconds: f64) -> (Renderer, Vec<f32>) {
-    let mut renderer = Renderer::new(project, SR).expect("renderer");
+    let mut renderer = Renderer::new(project, SR, suhina_device_registry::factory()).expect("renderer");
     let count = (seconds * f64::from(SR) / 256.0).round() as usize;
     let out = blocks(&mut renderer, count, 256);
     (renderer, out)
@@ -174,7 +174,7 @@ fn a_clip_stays_lit_until_reset_and_peaks_fall_once_the_sound_stops() {
 #[test]
 fn meters_follow_their_tracks_through_an_edit_while_playing() {
     let project = held(vec![]);
-    let mut renderer = Renderer::new(&project, SR).expect("renderer");
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).expect("renderer");
     let mut controller = renderer.controller();
     blocks(&mut renderer, 200, 256);
     // A new track first: every slot moves, and each meter stays with its track.
@@ -206,11 +206,44 @@ fn meters_follow_their_tracks_through_an_edit_while_playing() {
 #[test]
 fn a_launched_clip_moves_its_track_meter() {
     let project = crate::chain_tests::project(vec![crate::chain_tests::note(0.0, 4.0, 69)], 4.0, vec![]);
-    let mut renderer = Renderer::stopped(&project, &crate::AudioPool::new(), SR).expect("renderer");
+    let mut renderer =
+        Renderer::stopped(&project, &crate::AudioPool::new(), SR, suhina_device_registry::factory()).expect("renderer");
     let mut controller = renderer.controller();
     blocks(&mut renderer, 20, 256);
     assert_eq!(controller.meter_monitor().track(TrackId(1)), Some(Level::default()));
     controller.send(crate::LaunchCommand::LaunchClip { column: 0, slot: 0 }).expect("launch");
     blocks(&mut renderer, (3.0 * f64::from(SR) / 256.0) as usize, 256);
     assert_level(controller.meter_monitor().track(TrackId(1)).expect("track 1"), [NOTE; 2], "launched");
+}
+
+/// A project whose track 4 runs `devices`, after a moment of playing.
+fn playing_with(devices: Vec<Device>) -> Renderer {
+    let mut project = held(Vec::new());
+    channel(&mut project, 4).devices = devices;
+    play(&project, 0.1).0
+}
+
+#[test]
+fn every_device_hands_its_panel_live_values_inside_groups_too() {
+    let inner = Branch { devices: vec![device("utility", &[]), device("multiband", &[])], ..Branch::new("B") };
+    let group = Device::group("G", DeviceGroup::with_branches(vec![Branch::new("A"), inner]));
+    let renderer = playing_with(vec![device("multiband", &[]), group, device("multiband", &[])]);
+    let monitor = renderer.meter_monitor();
+    let shown = |path: &[usize]| monitor.readouts(TrackId(4), path).is_some();
+    assert!(shown(&[0]));
+    assert!(shown(&[1, 1, 1]));
+    assert!(shown(&[2]));
+    assert!(!shown(&[1]), "the group itself has none");
+    assert!(!shown(&[1, 1, 0]), "the utility has none");
+    assert!(!shown(&[3]));
+    assert!(monitor.readouts(TrackId(1), &[0]).is_none(), "another track's");
+}
+
+#[test]
+fn a_track_shows_as_many_devices_live_values_as_its_row_holds() {
+    let last = crate::MAX_READOUT_DEVICES;
+    let renderer = playing_with((0..=last).map(|_| device("multiband", &[])).collect());
+    let monitor = renderer.meter_monitor();
+    assert!(monitor.readouts(TrackId(4), &[last - 1]).is_some());
+    assert!(monitor.readouts(TrackId(4), &[last]).is_none());
 }

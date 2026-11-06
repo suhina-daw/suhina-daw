@@ -4,7 +4,10 @@
 //! The piano roll's own grid value (› Grid and snapping in `docs/spec/ui-clip-editor.md`):
 //! whether things snap to it, an adaptive width whose lines follow the zoom or a fixed value from
 //! 8 bars to 1/32, and triplets. The toolbar's grid menu and the keys Ctrl+1 to Ctrl+4 change it;
-//! the window keeps it.
+//! the window keeps it. The lines and snapping it gives are the shared timeline grid's
+//! ([`crate::interaction::timeline_grid`]).
+
+use crate::interaction::timeline_grid;
 
 /// How far apart an adaptive grid's lines are at least.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,14 +63,8 @@ const SIXTEENTH: usize = 7;
 /// The first note value (not a bar count) in [`FIXED_VALUES`].
 const FIRST_NOTE: usize = 4;
 
-/// The control bar's names for the triplet note values 1/2 to 1/16 (it has no 1/32 triplet).
-const TRIPLET_VALUES: [&str; 4] = ["1/2T", "1/4T", "1/8T", "1/16T"];
-
-/// The finest note value an adaptive grid reaches, in beats (1/32).
+/// The finest fixed value, in beats (1/32).
 const FINEST: f64 = 0.125;
-
-/// How many times an adaptive grid doubles a bar when zoomed far out, at most.
-const MAX_BAR_DOUBLINGS: i32 = 16;
 
 /// Whether the lines follow the zoom or stay one value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,19 +109,17 @@ impl PianoGrid {
         }
     }
 
-    /// The control bar's value for this grid: `none` when snap is off, else the fixed value.
-    /// `None` when the control bar has no such value (an adaptive grid, a 1/32 triplet).
-    pub fn control_bar_value(&self) -> Option<&'static str> {
-        if !self.snap {
-            return Some("none");
+    /// The grid a setting names: `adaptive narrow` and the other widths, or a fixed value as
+    /// [`PianoGrid::from_value`] reads it.
+    pub fn from_setting(value: &str) -> Self {
+        let normal = value.trim().to_ascii_lowercase();
+        match normal.strip_prefix("adaptive ") {
+            Some(width) => match Width::ALL.into_iter().find(|w| w.name().eq_ignore_ascii_case(width)) {
+                Some(width) => Self { snap: true, mode: GridMode::Adaptive(width), triplet: false },
+                None => Self::default(),
+            },
+            None => Self::from_value(&normal),
         }
-        let GridMode::Fixed(index) = self.mode else {
-            return None;
-        };
-        if self.triplet && index >= FIRST_NOTE {
-            return TRIPLET_VALUES.get(index - FIRST_NOTE).copied();
-        }
-        FIXED_VALUES.get(index).copied()
     }
 
     /// Whether the lines follow the zoom.
@@ -146,7 +141,9 @@ impl PianoGrid {
     pub fn step(&self, beat_width: f32, bar_beats: f64) -> f64 {
         match self.mode {
             GridMode::Fixed(_) => self.fixed_step(bar_beats),
-            GridMode::Adaptive(width) => adaptive_step(width, self.triplet, beat_width, bar_beats),
+            GridMode::Adaptive(width) => {
+                timeline_grid::adaptive_step(width.spacing(), self.triplet, beat_width, bar_beats)
+            }
         }
     }
 
@@ -200,14 +197,9 @@ impl PianoGrid {
     }
 }
 
-/// Beats in a bar, or 4 when `bar_beats` is not a positive number.
-fn bar_length(bar_beats: f64) -> f64 {
-    if bar_beats.is_finite() && bar_beats > 0.0 { bar_beats } else { 4.0 }
-}
-
 /// Fixed value `index` in beats.
 fn fixed_beats(index: usize, bar_beats: f64, triplet: bool) -> f64 {
-    let bar = bar_length(bar_beats);
+    let bar = timeline_grid::bar_length(bar_beats);
     let third = if triplet { 2.0 / 3.0 } else { 1.0 };
     match index {
         0 => 8.0 * bar,
@@ -220,35 +212,6 @@ fn fixed_beats(index: usize, bar_beats: f64, triplet: bool) -> f64 {
         7 => 0.25 * third,
         _ => FINEST * third,
     }
-}
-
-fn adaptive_step(width: Width, triplet: bool, beat_width: f32, bar_beats: f64) -> f64 {
-    let bar = bar_length(bar_beats);
-    if !(beat_width.is_finite() && beat_width > 0.0) {
-        return bar;
-    }
-    let points = f64::from(beat_width);
-    let spacing = width.spacing();
-    let third = if triplet { 2.0 / 3.0 } else { 1.0 };
-    // The note values shorter than a bar: 1/32, 1/16, ... at most five of them (to 1/2).
-    let mut value = FINEST;
-    for _ in 0..5 {
-        if value >= bar {
-            break;
-        }
-        if value * third * points >= spacing {
-            return value * third;
-        }
-        value *= 2.0;
-    }
-    let mut step = bar;
-    for _ in 0..MAX_BAR_DOUBLINGS {
-        if step * points >= spacing {
-            return step;
-        }
-        step *= 2.0;
-    }
-    step
 }
 
 #[cfg(test)]
@@ -265,7 +228,6 @@ mod tests {
         assert_eq!(grid.step(40.0, 4.0), 0.25);
         assert_eq!(grid.step(400.0, 4.0), 0.25, "a fixed value ignores the zoom");
         assert_eq!(grid.label(), "1/16");
-        assert_eq!(grid.control_bar_value(), Some("1/16"));
     }
 
     #[test]
@@ -298,7 +260,7 @@ mod tests {
         for width in [f32::NAN, 0.0, -5.0, f32::INFINITY, f32::NEG_INFINITY] {
             assert_eq!(adaptive(Width::Narrowest).step(width, 4.0), 4.0, "{width}");
         }
-        assert_eq!(adaptive(Width::Widest).step(f32::MIN_POSITIVE, 4.0), 4.0 * 2f64.powi(MAX_BAR_DOUBLINGS));
+        assert_eq!(adaptive(Width::Widest).step(f32::MIN_POSITIVE, 4.0), 4.0 * 2f64.powi(16));
         assert_eq!(adaptive(Width::Medium).step(40.0, f64::NAN), 1.0, "a broken bar length is 4 beats");
         assert_eq!(PianoGrid::default().step(f32::NAN, -1.0), 0.25);
         assert_eq!(PianoGrid { mode: GridMode::Fixed(99), ..PianoGrid::default() }.step(40.0, 4.0), 0.125);
@@ -335,18 +297,5 @@ mod tests {
         // Bars are not made triplets.
         let bar = PianoGrid::from_value("1 bar").toggle_triplet();
         assert_eq!((bar.label(), bar.step(40.0, 4.0)), ("1 bar".to_string(), 4.0));
-    }
-
-    #[test]
-    fn control_bar_values_round_trip_where_the_control_bar_has_them() {
-        for value in ["8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16"] {
-            assert_eq!(PianoGrid::from_value(value).control_bar_value(), Some(value), "{value}");
-        }
-        assert_eq!(PianoGrid::from_value("1/16T").control_bar_value(), Some("1/16T"));
-        assert_eq!(PianoGrid::from_value("none").control_bar_value(), Some("none"));
-        assert_eq!(PianoGrid::from_value("1/32").toggle_triplet().control_bar_value(), None);
-        assert_eq!(adaptive(Width::Wide).control_bar_value(), None);
-        assert_eq!(PianoGrid::from_value("nonsense"), PianoGrid::default());
-        assert_eq!(PianoGrid::from_value(""), PianoGrid::default());
     }
 }

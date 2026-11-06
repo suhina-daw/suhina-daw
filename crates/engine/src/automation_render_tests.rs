@@ -39,27 +39,40 @@ fn off_by(out: &[f32], plain: &[f32], gain: impl Fn(f64) -> (f64, f64)) -> f32 {
 
 #[test]
 fn the_volume_follows_its_lane() {
-    let plain = render_offline(&automated(vec![], vec![]), SR, 512).unwrap();
+    let plain = render_offline(&automated(vec![], vec![]), SR, 512, suhina_device_registry::factory()).unwrap();
     let p = automated(vec![lane("volume", &[(0.0, 0.0), (4.0, 1.0)])], vec![]);
-    let out = render_offline(&p, SR, 512).unwrap();
-    // The sine peaks at a quarter: within half a percent of it everywhere.
-    let worst = off_by(&out[..plain.len()], &plain, |beat| (f64::min(beat / 4.0, 1.0), f64::min(beat / 4.0, 1.0)));
+    let out = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
+    // Evenly along the fader, from its bottom to 0 dB at 0.85 of it. The sine peaks at a
+    // quarter: within half a percent of it everywhere.
+    use suhina_model::automation::{Curve, Taper, VolumeTaper};
+    let fader = |share: f64| VolumeTaper.value(0.85 * share.clamp(0.0, 1.0));
+    let worst = off_by(&out[..plain.len()], &plain, |beat| (fader(beat / 4.0), fader(beat / 4.0)));
     assert!(worst < 0.25 * 0.005, "{worst}");
-    // A curve bends the rise: a quarter of the way in, well under a quarter of the volume.
+    // Not evenly in gain: a quarter of the way in, the gain is well under a quarter.
+    assert!(fader(0.25) < 0.05);
+    // A curve bends the rise, in the fader's position.
     let mut bent = p.clone();
-    bent.channels[0].automation[0].points[0].curve = -1.0;
-    let bent = render_offline(&bent, SR, 512).unwrap();
+    bent.channels[0].automation[0].points[0].curve = Curve::bend(-1.0);
+    let bent = render_offline(&bent, SR, 512, suhina_device_registry::factory()).unwrap();
+    // Leaving out the last tenth of a beat, where a full bend rises almost straight up and the
+    // gains' steps cut across it.
     let worst = off_by(&bent[..plain.len()], &plain, |beat| {
-        let v = suhina_model::automation::shape(beat / 4.0, -1.0);
-        (v, v)
+        let v = fader(Curve::bend(-1.0).shape(beat / 4.0));
+        if (3.9..4.0).contains(&beat) { (f64::NAN, f64::NAN) } else { (v, v) }
     });
     assert!(worst < 0.25 * 0.01, "{worst}");
 }
 
 #[test]
 fn the_pan_follows_its_lane() {
-    let plain = render_offline(&automated(vec![], vec![]), SR, 512).unwrap();
-    let out = render_offline(&automated(vec![lane("pan", &[(0.0, -1.0), (4.0, 1.0)])], vec![]), SR, 512).unwrap();
+    let plain = render_offline(&automated(vec![], vec![]), SR, 512, suhina_device_registry::factory()).unwrap();
+    let out = render_offline(
+        &automated(vec![lane("pan", &[(0.0, -1.0), (4.0, 1.0)])], vec![]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
     let worst = off_by(&out[..plain.len()], &plain, |beat| {
         let pan = (beat / 2.0 - 1.0).min(1.0);
         let angle = (pan + 1.0) * std::f64::consts::FRAC_PI_4;
@@ -75,11 +88,11 @@ fn the_pan_follows_its_lane() {
 
 #[test]
 fn a_mute_lane_steps_and_overrides_the_channels_mute() {
-    let plain = render_offline(&automated(vec![], vec![]), SR, 512).unwrap();
+    let plain = render_offline(&automated(vec![], vec![]), SR, 512, suhina_device_registry::factory()).unwrap();
     // Muted on the channel, but the lane says when: sounding, silent from beat 1 to beat 2.
     let mut p = automated(vec![lane("mute", &[(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)])], vec![]);
     p.channels[0].mute = true;
-    let out = render_offline(&p, SR, 512).unwrap();
+    let out = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
     let gain = |beat: f64| if (1.0..2.0).contains(&beat) { (0.0, 0.0) } else { (1.0, 1.0) };
     // Away from the two switches, which ramp over one step.
     let near = |frame: usize| [BEAT, BEAT * 2].iter().any(|&at| frame.abs_diff(at) <= crate::automation::STEP);
@@ -92,18 +105,21 @@ fn a_mute_lane_steps_and_overrides_the_channels_mute() {
     assert!(worst < 1e-5, "{worst}");
     // Turned off, the lane does not play: the channel's mute holds.
     p.channels[0].automation[0].enabled = false;
-    let out = render_offline(&p, SR, 512).unwrap();
+    let out = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
     assert!(out.iter().all(|s| s.abs() < 1e-9));
 }
 
 #[test]
 fn a_device_parameter_follows_its_lane() {
-    let plain = render_offline(&automated(vec![], vec![device("utility", &[])]), SR, 512).unwrap();
+    let plain =
+        render_offline(&automated(vec![], vec![device("utility", &[])]), SR, 512, suhina_device_registry::factory())
+            .unwrap();
     // The utility's gain: unity, then a jump to half (-6 dB) at beat 2, then a ramp down to
     // silence (-60 dB is far below the sine) at beat 4.
     let mut utility = device("utility", &[("gain", -20.0)]);
     utility.automation = vec![lane("gain", &[(0.0, 0.0), (2.0, 0.0), (2.0, -6.0206), (3.0, -6.0206)])];
-    let out = render_offline(&automated(vec![], vec![utility.clone()]), SR, 512).unwrap();
+    let out =
+        render_offline(&automated(vec![], vec![utility.clone()]), SR, 512, suhina_device_registry::factory()).unwrap();
     // The lane, not the set value (-20 dB), from the first frame; the device smooths a jump
     // over 20 ms.
     let settle = SR as usize / 40;
@@ -116,7 +132,7 @@ fn a_device_parameter_follows_its_lane() {
 
     // Turned off, the device plays its set value.
     utility.automation[0].enabled = false;
-    let set = render_offline(&automated(vec![], vec![utility]), SR, 512).unwrap();
+    let set = render_offline(&automated(vec![], vec![utility]), SR, 512, suhina_device_registry::factory()).unwrap();
     let tenth: Vec<f32> = plain.iter().map(|s| s * 0.1).collect();
     assert!(max_diff(&set[BEAT * 2..BEAT * 6], &tenth[BEAT * 2..BEAT * 6]) < 1e-4);
 }
@@ -129,17 +145,17 @@ fn automation_sounds_the_same_in_any_block_size() {
         vec![lane("volume", &[(0.0, 1.0), (3.1, 0.2)]), lane("pan", &[(0.5, 0.7), (2.0, -0.4)])],
         vec![utility],
     );
-    p.channels[0].automation[0].points[0].curve = 0.6;
-    let reference = render_offline(&p, SR, 512).unwrap();
+    p.channels[0].automation[0].points[0].curve = suhina_model::automation::Curve::bend(0.6);
+    let reference = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
     for size in [1, 64, 333, 4_096] {
-        let other = render_offline(&p, SR, size).unwrap();
+        let other = render_offline(&p, SR, size, suhina_device_registry::factory()).unwrap();
         assert!(max_diff(&reference, &other) < 1e-6, "block {size}: {}", max_diff(&reference, &other));
     }
 }
 
 #[test]
 fn a_groups_volume_lane_scales_the_tracks_routed_into_it() {
-    let plain = render_offline(&automated(vec![], vec![]), SR, 512).unwrap();
+    let plain = render_offline(&automated(vec![], vec![]), SR, 512, suhina_device_registry::factory()).unwrap();
     let mut p = automated(vec![], vec![]);
     p.channels.push(Channel {
         role: ChannelRole::Submix,
@@ -150,10 +166,12 @@ fn a_groups_volume_lane_scales_the_tracks_routed_into_it() {
     p.tracks.push(Track { channel: Some(ChannelId(2)), ..Track::new(TrackId(2), "G") });
     p.channels[0].output = Some(ChannelId(2));
     p.tracks[0].parent = Some(TrackId(2));
-    let out = render_offline(&p, SR, 512).unwrap();
+    let out = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
     let mut worst = 0.0f32;
     for (frame, ([l, _], [pl, _])) in out.as_chunks::<2>().0.iter().zip(plain.as_chunks::<2>().0).enumerate() {
-        if frame.abs_diff(BEAT * 2) > crate::automation::STEP {
+        // The jump is smoothed over a few milliseconds around it.
+        let ramp = (crate::automation::VOLUME_SMOOTHING * f64::from(SR)) as usize / 2 + crate::automation::MIX_STEP;
+        if frame.abs_diff(BEAT * 2) > ramp {
             let gain = if frame < BEAT * 2 { 1.0 } else { 0.5 };
             worst = worst.max((l - pl * gain).abs());
         }

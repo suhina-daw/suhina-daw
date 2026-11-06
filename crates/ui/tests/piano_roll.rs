@@ -16,7 +16,6 @@ use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
 use suhina_ui::kit::widgets::Action;
-use suhina_ui::settings::Settings;
 use suhina_ui::{App, kit::theme};
 
 const SIZE: (f32, f32) = (1280.0, 800.0);
@@ -33,18 +32,15 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     let mut app = App::new();
     app.set_browser_open(false);
     app.set_session(session, &[]);
-    app.run(&Action::new("launcher.setQuantization", json!({ "value": "1/8" })));
+    app.set_piano_grid(suhina_ui::detail::piano_roll_grid::PianoGrid::from_value("1/8"));
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
-    // These tests set the grid in the control bar, so the piano roll follows it (Settings ›
-    // Clip editor › Piano roll grid); its own grid value has tests of its own.
-    let settings = Settings { piano_grid_follows: true, ..Settings::default() };
-    let ctx = harness.ctx.clone();
-    harness.state_mut().set_settings(&ctx, settings);
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
@@ -54,7 +50,13 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
 }
 
 fn engine() -> suhina_engine::Renderer {
-    suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap()
+    suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap()
 }
 
 /// The edited clip's notes in the project.
@@ -63,7 +65,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let project = session.project();
     let clip = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap();
     match &project.content(clip.content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }
@@ -211,11 +213,53 @@ fn clicks_and_a_rectangle_select_notes() {
     // The rectangle starts inside the grid, not in the key column at its left (a clip whose
     // first note starts at the clip's start begins at the grid's left edge).
     let around = a.union(b).expand(3.0);
-    let from = pos2(grid.left() + 2.0, around.top());
+    let from = pos2(grid.left() + 2.0, around.top().max(grid.top() + 1.0));
     drag(&mut h, from, around.right_bottom(), Modifiers::NONE);
     assert_eq!(selected(&h), [0, 1]);
     // Nothing in the project changed.
     assert_eq!(notes(&h), n);
+}
+
+/// The params that name the edited clip in a `note.*` command.
+fn clip_params(h: &Harness<'static, App>) -> serde_json::Value {
+    let project = h.state().session().unwrap().project();
+    let lane = &project.arrangement.lanes[0];
+    let index = lane.clips.iter().position(|c| c.start == CLIP_START).unwrap();
+    json!({ "track": lane.track.unwrap().0, "index": index })
+}
+
+/// The selection stays on the notes it was on when another writer (an agent, a script, undo)
+/// deletes or adds notes before them (#1182), and leaves a note another writer deleted.
+#[test]
+fn the_selection_follows_its_notes_through_another_writers_edits() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let n = notes(&h);
+    assert!(n.len() >= 4, "the demo clip has notes to pick from");
+    for (index, modifiers) in [(2, Modifiers::NONE), (3, Modifiers::SHIFT)] {
+        let at = note_rect(&h, &n[index]).center();
+        click(&mut h, at, modifiers);
+        h.run();
+    }
+    assert_eq!(selected(&h), [2, 3]);
+    // Another writer deletes the first note: the selected notes are now at 1 and 2.
+    let mut params = clip_params(&h);
+    params["notes"] = json!([0]);
+    h.state_mut().run(&Action::new("note.delete", params));
+    h.run();
+    assert_eq!(selected(&h), [1, 2]);
+    let now = notes(&h);
+    assert_eq!((now[1], now[2]), (n[2], n[3]), "the same two notes are selected");
+    // Undo puts the first note back: the selection moves back with its notes.
+    undo(&mut h);
+    assert_eq!(selected(&h), [2, 3]);
+    // Another writer deletes one of the selected notes: the other stays selected.
+    let mut params = clip_params(&h);
+    params["notes"] = json!([2]);
+    h.state_mut().run(&Action::new("note.delete", params));
+    h.run();
+    assert_eq!(selected(&h), [2]);
+    assert_eq!(notes(&h)[2], n[3]);
 }
 
 #[test]
@@ -324,6 +368,7 @@ fn the_wheel_scrolls_and_ctrl_zooms() {
             delta,
             modifiers,
             phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         });
         h.run();
         h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
@@ -475,6 +520,7 @@ fn ctrl_d_duplicates_the_selection_right_after_it() {
     assert_eq!(selected(&h), [before.len(), before.len() + 1]);
     undo(&mut h);
     assert_eq!(notes(&h), before);
+    assert_eq!(selected(&h), [0, 1], "the selection before the copy is back");
 }
 
 #[test]
@@ -497,4 +543,28 @@ fn the_keys_leave_the_notes_alone_when_the_piano_roll_does_not_have_the_keyboard
     }
     assert_eq!(notes(&h), before);
     assert!(!h.state().session().unwrap().can_undo());
+}
+
+/// With two clips picked the strip shows both, a click on a bar gives its clip the focus, and the keys
+/// act on that clip's notes: an arrow moves one, and Delete takes one note, not the clips.
+#[test]
+fn with_two_clips_picked_the_keys_act_on_the_focused_clip() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    h.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    h.get_by_label("Clip Walk on Bass at bar 17").click();
+    h.run();
+    h.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    h.run();
+    h.get_by_label_contains("Beat B in the piano roll").click();
+    h.run();
+    let before = notes(&h);
+    let shown = before.iter().position(|n| h.query_by_label(&note_label(n)).is_some()).unwrap();
+    pick(&mut h, shown);
+    key(&mut h, Modifiers::NONE, Key::ArrowUp);
+    assert_eq!(notes(&h)[shown].key, before[shown].key + 1);
+    key(&mut h, Modifiers::NONE, Key::Delete);
+    assert_eq!(notes(&h).len(), before.len() - 1);
+    assert!(h.query_by_label("Clip Walk on Bass at bar 17").is_some(), "the clips stay");
+    assert!(h.query_by_label(CLIP).is_some(), "the clips stay");
 }

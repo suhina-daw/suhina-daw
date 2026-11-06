@@ -6,6 +6,7 @@
 //! on the volume control's dB scale, with the highest peak of the last moments held as a line
 //! and a clip light that a click turns off (`mixer.resetClip`).
 
+use crate::kit::surface::Backgrounds as _;
 use egui::{Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::TrackId;
@@ -44,11 +45,38 @@ impl Meters {
         self.tracks.iter().find(|(t, _)| *t == track).map(|(_, l)| *l).unwrap_or_default()
     }
 
-    /// Whether any meter shows a level, so the window keeps drawing while they fall.
+    /// Whether any meter shows a level, so the window keeps drawing while they fall: one below
+    /// the scale's bottom shows nothing.
     pub fn moving(&self) -> bool {
-        let lit = |l: &Level| l.peak.iter().any(|&p| p > 0.0);
+        let lit = |l: &Level| l.peak.iter().any(|&p| shown_db(p).is_some());
         lit(&self.main) || self.tracks.iter().any(|(_, l)| lit(l))
     }
+
+    /// Whether `other` draws the same meters: the same levels to the scale's step, the same clip
+    /// lights. A plug-in's noise or a reverb's tail far below the scale changed the levels every
+    /// block, and the window drew every frame for it, which held up an embedded plug-in
+    /// editor's input (it shares the window's input queue).
+    pub fn shows_same(&self, other: &Self) -> bool {
+        let same = |a: &Level, b: &Level| {
+            a.clipped == b.clipped
+                && a.peak.iter().chain(&a.rms).zip(b.peak.iter().chain(&b.rms)).all(|(x, y)| step(*x) == step(*y))
+        };
+        same(&self.main, &other.main)
+            && self.tracks.len() == other.tracks.len()
+            && self.tracks.iter().zip(&other.tracks).all(|((ta, a), (tb, b))| ta == tb && same(a, b))
+    }
+}
+
+/// A level in dB on the scale, `None` below its bottom (nothing drawn).
+fn shown_db(level: f32) -> Option<f64> {
+    let db = 20.0 * f64::from(level.max(0.0)).log10();
+    (db.is_finite() && db >= RANGE.0).then_some(db)
+}
+
+/// A level as the meter draws it, to a quarter of a dB (finer than a point on any meter's
+/// height); everything below the scale is one step.
+fn step(level: f32) -> Option<i64> {
+    shown_db(level).map(|db| (db * 4.0).round() as i64)
 }
 
 /// Whose meter it is: the clip light's click resets this one.
@@ -117,9 +145,14 @@ pub fn show(
     if rect.width() <= 0.0 || rect.height() <= 0.0 || !rect.intersects(painter.clip_rect()) {
         return;
     }
-    let id = Id::new(("meter", source));
+    let id = Id::unique(("meter", source));
     let response = ui.interact(rect.intersect(painter.clip_rect()), id, Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, describe(name, level)));
+    let _style = crate::kit::style_class::enter_response("meter", &response);
+    // A surrounding CSS gradient has a transparent background-color. The empty
+    // rails must retain their native ink unless the meter itself overrides it.
+    let background = crate::kit::style_class::background(ui.visuals().extreme_bg_color);
+    super::native_css::background(painter, rect);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, describe(name, level)));
     if response.clicked() && level.clipped {
         actions.push(match source {
             Source::Main => Action::new("mixer.resetClip", json!({ "main": true })),
@@ -127,7 +160,9 @@ pub fn show(
         });
     }
     let hold = held(ui, id, level);
+    let skin = super::skin::current();
     let upright = rect.height() > rect.width();
+    let _orientation = super::style_class::enter(if upright { "meter-vertical" } else { "meter-horizontal" });
     let (light, bars) = if upright {
         let light = Rect::from_min_size(rect.min, Vec2::new(rect.width(), CLIP));
         (light, Rect::from_min_max(Pos2::new(rect.left(), light.bottom() + 1.0), rect.max))
@@ -135,15 +170,33 @@ pub fn show(
         let light = Rect::from_min_max(Pos2::new(rect.right() - CLIP, rect.top()), rect.max);
         (light, Rect::from_min_max(rect.min, Pos2::new(light.left() - 1.0, rect.bottom())))
     };
-    painter.rect_filled(light, 0.0, if level.clipped { theme::recording() } else { theme::window_background() });
+    painter.fill_background(light, 0.0, if level.clipped { theme::recording() } else { background });
+    // Intensity changes only measured ink, never rails or the safety indicator.
+    let mut ink = painter.clone();
+    ink.multiply_opacity(f32::from(skin.meter_intensity.min(100)) / 100.0);
+    if skin.meter == super::skin::MeterStyle::Frames {
+        let peak = fraction(level.peak.iter().copied().fold(0.0, f32::max));
+        let state = if response.is_pointer_button_down_on() {
+            super::skin::State::Active
+        } else if response.hovered() {
+            super::skin::State::Hover
+        } else {
+            super::skin::State::Normal
+        };
+        if super::skin::meter_frame(&ink, bars, state, peak) {
+            return;
+        }
+    }
     let hot_from = ((HOT_DB - RANGE.0) / (RANGE.1 - RANGE.0)) as f32;
+    let thickness = if upright { bars.width() } else { bars.height() };
+    let bar_width = ((thickness - GAP) / 2.0).max(0.0);
     for side in 0..2 {
-        let offset = side as f32 * (BAR + GAP);
+        let offset = side as f32 * (bar_width + GAP);
         // The bar's track, and a part of it from 0 to `to` (0 … 1).
         let bar = if upright {
-            Rect::from_min_size(Pos2::new(bars.left() + offset, bars.top()), Vec2::new(BAR, bars.height()))
+            Rect::from_min_size(Pos2::new(bars.left() + offset, bars.top()), Vec2::new(bar_width, bars.height()))
         } else {
-            Rect::from_min_size(Pos2::new(bars.left(), bars.top() + offset), Vec2::new(bars.width(), BAR))
+            Rect::from_min_size(Pos2::new(bars.left(), bars.top() + offset), Vec2::new(bars.width(), bar_width))
         };
         let part = |from: f32, to: f32| {
             if upright {
@@ -158,17 +211,58 @@ pub fn show(
                 )
             }
         };
-        painter.rect_filled(bar, 0.0, theme::window_background());
+        painter.fill_background(bar, 0.0, background);
+        let _level = super::style_class::enter("meter-level");
+        let opacity = super::style_class::computed().map_or(1.0, |style| style.opacity);
+        let mut native_ink = ink.clone();
+        native_ink.multiply_opacity(opacity);
+        if skin.meter == super::skin::MeterStyle::Needle {
+            let origin = if upright { bar.center_bottom() } else { bar.left_center() };
+            for (value, width) in [
+                (level.peak.get(side).copied().unwrap_or(0.0), 1.0),
+                (level.rms.get(side).copied().unwrap_or(0.0), 2.0),
+            ] {
+                let value = fraction(value);
+                let to = egui::pos2(bar.left() + bar.width() * value, bar.bottom() - bar.height() * value);
+                let color = if value > hot_from { theme::meter_hot() } else { theme::meter_normal() };
+                native_ink.line_segment([origin, to], egui::Stroke::new(width, color));
+            }
+            continue;
+        }
         let peak = fraction(level.peak.get(side).copied().unwrap_or(0.0));
         let rms = fraction(level.rms.get(side).copied().unwrap_or(0.0));
+        if peak > 0.0 {
+            super::native_css::level_glow(&ink, part(0.0, peak));
+        }
         // The peak dimmer, the RMS level in the full colour over it.
         for (to, alpha) in [(peak, 0.45), (rms, 1.0)] {
             if to <= 0.0 {
                 continue;
             }
-            painter.rect_filled(part(0.0, to.min(hot_from)), 0.0, theme::meter_normal().gamma_multiply(alpha));
-            if to > hot_from {
-                painter.rect_filled(part(hot_from, to), 0.0, theme::meter_hot().gamma_multiply(alpha));
+            let fill = |from: f32, to: f32, color: egui::Color32| {
+                let lit = part(from, to);
+                let mut clipped = ink.with_clip_rect(painter.clip_rect().intersect(lit));
+                clipped.multiply_opacity(alpha);
+                if !super::native_css::level_fill(&clipped, bar) {
+                    native_ink.rect_filled(lit, 0.0, color.gamma_multiply(alpha));
+                }
+            };
+            if skin.meter == super::skin::MeterStyle::Segmented {
+                let count = skin.segments.clamp(4, 64);
+                for segment in 0..count {
+                    let from = f32::from(segment) / f32::from(count);
+                    if from >= to {
+                        break;
+                    }
+                    let end = ((f32::from(segment) + 0.8) / f32::from(count)).min(to);
+                    let color = if from >= hot_from { theme::meter_hot() } else { theme::meter_normal() };
+                    fill(from, end, color);
+                }
+            } else {
+                fill(0.0, to.min(hot_from), theme::meter_normal());
+                if to > hot_from {
+                    fill(hot_from, to, theme::meter_hot());
+                }
             }
         }
         let hold = fraction(hold.get(side).copied().unwrap_or(0.0));
@@ -181,30 +275,11 @@ pub fn show(
                 let x = (bar.left() + bar.width() * hold).min(bar.right());
                 Rect::from_x_y_ranges(egui::Rangef::new(x - 1.0, x), bar.y_range())
             };
-            painter.rect_filled(line, 0.0, color);
+            native_ink.rect_filled(line, 0.0, color);
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_scale_is_the_volume_controls() {
-        assert_eq!(fraction(0.0), 0.0);
-        assert_eq!(fraction(f32::NAN), 0.0);
-        assert!((fraction(1.0) - 70.0 / 76.0).abs() < 1e-6);
-        assert_eq!(fraction(4.0), 1.0);
-        // -3 dB is where the top 12 % begin.
-        let hot = fraction(10f32.powf(-3.0 / 20.0));
-        assert!((hot - 0.88).abs() < 0.005, "{hot}");
-    }
-
-    #[test]
-    fn the_description_names_the_louder_side_and_the_clip() {
-        let level = Level { peak: [0.25, 0.5], rms: [0.1, 0.1], clipped: false };
-        assert_eq!(describe("Drums", &level), "Drums level: -6.0 dB");
-        assert_eq!(describe("Main", &Level { clipped: true, ..Level::default() }), "Main level: silent, clipped");
-    }
-}
+#[path = "meter_tests.rs"]
+mod tests;

@@ -14,10 +14,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
-use suhina_model::{Note, Scale, ScaleMode};
+use suhina_model::{Note, Notes, Scale, ScaleMode};
 
+use crate::commands::Args;
 use crate::notes::{
-    MAX_BEAT, MAX_NOTES_PER_COMMAND, edit_notes, indices, midi_velocity, notes_of, optional_number, velocity_of,
+    MAX_BEAT, MAX_NOTES_PER_COMMAND, after_removal, edit_notes, indices, midi_velocity, notes_of, replace_under,
+    replaces, velocity_of, with_replaced,
 };
 use crate::{CommandError, Session};
 
@@ -34,6 +36,8 @@ const MIN_FACTOR: f64 = 0.01;
 const MAX_FACTOR: f64 = 100.0;
 /// The shortest length `note.legato` leaves a note: a hundredth of a beat.
 const MIN_LENGTH: f64 = 0.01;
+/// Starts this close are one start.
+const EPSILON: f64 = 1e-9;
 
 /// Suhina's own random number generator for the note tools: splitmix64, written out here so the
 /// same seed gives the same draws on every machine and every run, which is what lets the CLI and
@@ -83,22 +87,23 @@ fn fresh_seed() -> u64 {
 
 /// The seed the call uses: `params.seed` when given, a fresh one otherwise.
 fn seed_of(params: &Value) -> Result<u64, CommandError> {
-    match params.get("seed") {
-        None | Some(Value::Null) => Ok(fresh_seed()),
+    match Args::new(params).value("seed") {
+        None => Ok(fresh_seed()),
         Some(value) => value.as_u64().ok_or_else(|| "seed must be a whole number, 0 or more".into()),
     }
 }
 
 /// Whether the command acts on every note of the clip (`notes` left out).
 fn whole_clip(params: &Value) -> bool {
-    matches!(params.get("notes"), None | Some(Value::Null))
+    !Args::new(params).has("notes")
 }
 
 /// The notes the command acts on: the named ones, or every note of the clip, in rising order.
-fn chosen(params: &Value, count: usize) -> Result<Vec<usize>, CommandError> {
+fn chosen(params: &Value, notes: &Notes) -> Result<Vec<usize>, CommandError> {
     if !whole_clip(params) {
-        return indices(params, count);
+        return indices(params, notes);
     }
+    let count = notes.len();
     if count > MAX_NOTES_PER_COMMAND {
         return Err(format!("at most {MAX_NOTES_PER_COMMAND} notes in one command, got {count}").into());
     }
@@ -138,8 +143,8 @@ fn velocity_param(params: &Value, key: &str) -> Result<f64, CommandError> {
 /// it is missing.
 pub(crate) fn root_of(params: &Value) -> Result<u8, CommandError> {
     let unknown = || CommandError::from("root must be a key name such as C, F# or Bb, or a whole number 0 to 11");
-    match params.get("root") {
-        None | Some(Value::Null) => Ok(0),
+    match Args::new(params).value("root") {
+        None => Ok(0),
         Some(Value::String(name)) => {
             let mut chars = name.chars();
             let Some(letter) = chars.next() else { return Err(unknown()) };
@@ -174,8 +179,8 @@ pub(crate) fn root_of(params: &Value) -> Result<u8, CommandError> {
 
 /// The mode `params[key]` names, one of the model's ([`ScaleMode::name`]); `None` when missing.
 pub(crate) fn mode_of(params: &Value, key: &str) -> Result<Option<ScaleMode>, CommandError> {
-    let name = match params.get(key) {
-        None | Some(Value::Null) => return Ok(None),
+    let name = match Args::new(params).value(key) {
+        None => return Ok(None),
         Some(Value::String(name)) => name.as_str(),
         Some(_) => return Err(format!("{key} must be a text such as major or blues").into()),
     };
@@ -188,7 +193,7 @@ pub(crate) fn mode_of(params: &Value, key: &str) -> Result<Option<ScaleMode>, Co
 /// The scale `note.fitToScale` fits to: `root` and `scale` when either is given (C and major for
 /// the one left out), else the clip's own scale, else C major.
 fn fit_scale(session: &Session, params: &Value) -> Result<Scale, CommandError> {
-    let named = params.get("root").is_some_and(|v| !v.is_null()) || params.get("scale").is_some_and(|v| !v.is_null());
+    let named = Args::new(params).has("root") || Args::new(params).has("scale");
     let own = if named { None } else { crate::scales::scale_of_clip(&session.project, params)? };
     let scale = match own {
         Some(scale) => Some(scale),
@@ -200,12 +205,12 @@ fn fit_scale(session: &Session, params: &Value) -> Result<Scale, CommandError> {
 /// `note.setMuted`: mutes the named notes (`muted: true`), unmutes them (`false`), or flips each
 /// one when `muted` is left out. The result names every note and the state it now has.
 pub(crate) fn set_muted(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let muted = match params.get("muted") {
-        None | Some(Value::Null) => None,
+    let muted = match Args::new(params).value("muted") {
+        None => None,
         Some(value) => Some(value.as_bool().ok_or("muted must be true or false")?),
     };
     edit_notes(&mut session.project, params, |notes| {
-        let named = indices(params, notes.len())?;
+        let named = indices(params, notes)?;
         let mut states = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get_mut(index).ok_or("a note is missing")?;
@@ -220,11 +225,11 @@ pub(crate) fn set_muted(session: &mut Session, params: &Value) -> Result<Value, 
 /// a random draw in ±`velocity` MIDI steps, each kept within its range. The same `seed` gives the
 /// same result, so a call can be repeated.
 pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let beats = optional_number(params, "time")?.unwrap_or(DEFAULT_HUMANIZE_BEATS);
+    let beats = Args::new(params).opt_f64("time")?.unwrap_or(DEFAULT_HUMANIZE_BEATS);
     if !(0.0..=MAX_HUMANIZE_BEATS).contains(&beats) {
         return Err(format!("time must be 0 to {MAX_HUMANIZE_BEATS} beats, got {beats}").into());
     }
-    let steps = optional_number(params, "velocity")?.unwrap_or(DEFAULT_HUMANIZE_STEPS);
+    let steps = Args::new(params).opt_f64("velocity")?.unwrap_or(DEFAULT_HUMANIZE_STEPS);
     if !(0.0..=127.0).contains(&steps) {
         return Err(format!("velocity must be 0 to 127 MIDI steps, got {steps}").into());
     }
@@ -233,7 +238,7 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
         return Ok(json!({ "notes": [], "seed": seed }));
     }
     edit_notes(&mut session.project, params, move |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let mut rng = Rng::new(seed);
         let mut moved = Vec::with_capacity(named.len());
         for &index in &named {
@@ -264,7 +269,7 @@ pub(crate) fn fit_to_scale(session: &mut Session, params: &Value) -> Result<Valu
         return Ok(json!({ "notes": [], "moved": 0 }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let mut moved = 0;
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -287,7 +292,7 @@ pub(crate) fn invert(session: &mut Session, params: &Value) -> Result<Value, Com
         return Ok(json!({ "notes": [] }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let (mut lowest, mut highest) = (u8::MAX, 0u8);
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -317,7 +322,7 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
         return Ok(json!({ "notes": [] }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         // Mirrored inside the span from the earliest start to the latest end: a note ending at
         // the span's end starts at its start, and the notes stay where they were in the clip.
         let (mut from, mut to) = (f64::INFINITY, f64::NEG_INFINITY);
@@ -340,48 +345,49 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
     })
 }
 
-/// `note.legato`: makes each note last until the next note of its own key starts, never shorter
-/// than a hundredth of a beat; the last note of a key keeps its length.
+/// `note.legato`: makes each named note last until the next named note starts, on any key, never
+/// shorter than a hundredth of a beat. Notes that start together end together, and the last ones
+/// keep their length.
 pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     if nothing_to_do(session, params)? {
         return Ok(json!({ "notes": [], "changed": 0 }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
-        // Key, then time, then index: the same note always takes the same place in the order.
+        let named = chosen(params, notes)?;
+        // Time, then index: the same note always takes the same place in the order.
         let mut order = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
-            order.push((note.key, note.time, index));
+            order.push((note.time, index));
         }
-        order.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)));
-        let mut changed = 0;
-        for pair in order.windows(2) {
-            // The last note of a key is followed by another key (or nothing): it keeps its length.
-            if pair[0].0 != pair[1].0 {
-                continue;
-            }
-            let (index, next) = (pair[0].2, pair[1].1);
-            let note = notes.get(index).ok_or("a note is missing")?;
-            let length = (next - note.time).max(MIN_LENGTH);
+        order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let until = Args::new(params).opt_f64("until")?;
+        let mut lengthened = Vec::new();
+        for &(time, index) in &order {
+            // The first start after this one; none for the last notes, which keep their length.
+            let next = order.partition_point(|n| n.0 <= time + EPSILON);
+            let next = order.get(next).map(|n| n.0).or(until.filter(|end| *end > time + EPSILON));
+            let Some(next) = next else { continue };
+            let length = (next - time).max(MIN_LENGTH);
             if !length.is_finite() || length > MAX_BEAT {
                 return Err(format!("note {index} would be {length} beats long, after {MAX_BEAT}").into());
             }
+            let note = notes.get_mut(index).ok_or("a note is missing")?;
             if length != note.duration {
-                if let Some(slot) = notes.get_mut(index) {
-                    slot.duration = length;
-                }
-                changed += 1;
+                note.duration = length;
+                lengthened.push(index);
             }
         }
-        Ok(json!({ "notes": named, "changed": changed }))
+        let changed = lengthened.len();
+        let replaced = if replaces(params) && changed > 0 { replace_under(notes, &lengthened) } else { Vec::new() };
+        Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced), "changed": changed }), &replaced))
     })
 }
 
 /// `note.stretch`: stretches the acted notes in time about the earliest of their starts, starts
 /// and lengths alike; a result outside the model's range fails the whole command.
 pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let factor = optional_number(params, "factor")?.ok_or("give factor, how much to stretch by (0.01 to 100)")?;
+    let factor = Args::new(params).opt_f64("factor")?.ok_or("give factor, how much to stretch by (0.01 to 100)")?;
     if !(MIN_FACTOR..=MAX_FACTOR).contains(&factor) {
         return Err(format!("factor must be {MIN_FACTOR} to {MAX_FACTOR}, got {factor}").into());
     }
@@ -389,7 +395,7 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
         return Ok(json!({ "notes": [] }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         // Multiplying by one is exact for nothing but zero: leave the notes as they are, so a
         // factor of 1 changes nothing and marks no undo step.
         if factor == 1.0 {
@@ -423,7 +429,7 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
 /// `note.randomizeVelocity`: moves each velocity by a random draw in ±`amount` MIDI steps, each
 /// kept within 1 to 127. The same `seed` gives the same result.
 pub(crate) fn randomize_velocity(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let steps = optional_number(params, "amount")?.unwrap_or(DEFAULT_RANDOMIZE_STEPS);
+    let steps = Args::new(params).opt_f64("amount")?.unwrap_or(DEFAULT_RANDOMIZE_STEPS);
     if !(0.0..=127.0).contains(&steps) {
         return Err(format!("amount must be 0 to 127 MIDI steps, got {steps}").into());
     }
@@ -432,7 +438,7 @@ pub(crate) fn randomize_velocity(session: &mut Session, params: &Value) -> Resul
         return Ok(json!({ "notes": [], "seed": seed }));
     }
     edit_notes(&mut session.project, params, move |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let mut rng = Rng::new(seed);
         for &index in &named {
             let note = notes.get_mut(index).ok_or("a note is missing")?;
@@ -452,7 +458,7 @@ pub(crate) fn ramp_velocity(session: &mut Session, params: &Value) -> Result<Val
         return Ok(json!({ "notes": [], "count": 0 }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let mut order = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;

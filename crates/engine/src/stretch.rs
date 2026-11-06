@@ -8,12 +8,14 @@
 //! plays when and how fast (warp marker segments, loop jumps). The stretcher reads the playlist
 //! as one continuous input stream; each call covers one stretch of constant speed, and the speed
 //! is the ratio of the input it is given to the output it makes. Nothing here allocates once the
-//! voice exists (AGENTS.md rule 3).
+//! voice is prepared (AGENTS.md rule 3); preparing it, which builds the stretcher, runs off the
+//! audio thread.
 //!
 //! The stretcher runs at the file's sample rate, so pitch is kept against the file's own pitch;
 //! its output is then read at the project's sample rate with linear interpolation. Transpose is
 //! the stretcher's own pitch shift.
 
+use crate::tempo::TempoClock;
 use std::sync::Arc;
 
 use suhina_model::{AudioRegion, Clip, StretchMode, TempoMap};
@@ -65,32 +67,34 @@ struct Place {
     turn: u64,
 }
 
-/// When a clip's beats play: seconds after the clip's start.
-enum Clock<'a> {
-    /// At one tempo, in bpm.
-    Constant(f64),
-    /// Through a tempo map counted in frames at `sample_rate`, for a clip that starts at song
-    /// beat `start`.
-    Map { map: &'a TempoMap, start: f64, sample_rate: f64 },
+/// When a clip's beats play: seconds after the clip's start, which is at song beat `start`, on
+/// the arrangement's [`TempoClock`] at `sample_rate`.
+struct Clock {
+    tempo: TempoClock,
+    start: f64,
+    sample_rate: f64,
 }
 
-impl Clock<'_> {
+impl Clock {
     /// Seconds from the clip's start to `played` beats into it.
     fn seconds(&self, played: f64) -> f64 {
-        match self {
-            Self::Constant(bpm) => played * (60.0 / bpm),
-            Self::Map { map, start, sample_rate } => (map.time_at(start + played) - map.time_at(*start)) / sample_rate,
-        }
+        self.tempo.seconds_from(self.start, played, self.sample_rate)
+    }
+
+    /// Seconds the `beats` from `played` beats into the clip take.
+    fn seconds_over(&self, played: f64, beats: f64) -> f64 {
+        self.tempo.seconds_over(self.start, played, beats, self.sample_rate)
+    }
+
+    /// Seconds between `from` and `to` beats into the clip.
+    fn seconds_between(&self, from: f64, to: f64) -> f64 {
+        self.tempo.seconds_between(self.start, from, to, self.sample_rate)
     }
 
     /// The most beats a piece starting `played` beats into the clip may last: up to the next
     /// tempo change, and a sixteenth during a ramp. Unlimited at a constant tempo.
     fn piece_limit(&self, played: f64) -> f64 {
-        let Self::Map { map, start, .. } = self else { return f64::INFINITY };
-        let song = start + played;
-        let next_change = map.next_break_after(song + 1e-9).map_or(f64::INFINITY, |b| b - song);
-        let ramp = if map.ramps_at(song + 1e-9) { RAMP_PIECE_BEATS } else { f64::INFINITY };
-        next_change.min(ramp)
+        self.tempo.steady_beats(self.start + played, RAMP_PIECE_BEATS)
     }
 }
 
@@ -108,7 +112,8 @@ fn playlist(
     if !(tempo_bpm.is_finite() && tempo_bpm > 0.0) {
         return None;
     }
-    playlist_on(clip, region, data, &Clock::Constant(tempo_bpm))
+    let clock = Clock { tempo: TempoClock::constant(tempo_bpm, 1.0), start: clip.start, sample_rate: 1.0 };
+    playlist_on(clip, region, data, &clock)
 }
 
 /// The playlist on any [`Clock`]: at a constant tempo the pieces are exactly the ones it has
@@ -123,8 +128,8 @@ fn playlist_on(
     if markers.len() < 2 || markers.windows(2).any(|w| matches!(w, [a, b] if b.1 <= a.1)) {
         return None;
     }
-    if let Clock::Constant(bpm) = clock
-        && !(bpm.is_finite() && *bpm > 0.0)
+    if let TempoClock::Constant { bpm, .. } = clock.tempo
+        && !(bpm.is_finite() && bpm > 0.0)
     {
         return None;
     }
@@ -152,10 +157,7 @@ fn playlist_on(
             [next_marker, loop_end, Some(clip_end), tempo_cut].into_iter().flatten().fold(f64::INFINITY, f64::min);
         let src_start = seconds_at(&markers, beat) * file_rate;
         let src_end = seconds_at(&markers, next) * file_rate;
-        let out_seconds = match clock {
-            Clock::Constant(bpm) => (next - beat) * (60.0 / bpm),
-            Clock::Map { .. } => clock.seconds(played + (next - beat)) - clock.seconds(played),
-        };
+        let out_seconds = clock.seconds_over(played, next - beat);
         let rate = (src_end - src_start) / file_rate / out_seconds;
         if !(rate.is_finite() && rate > 0.0) {
             return None;
@@ -177,10 +179,7 @@ fn playlist_on(
     if played < clip.length - 1e-9 {
         // Cut at the cap: keep whole loops and repeat them, or refuse the clip.
         let (Some(first), Some(last)) = (first_loop, last_loop) else { return None };
-        let out = match clock {
-            Clock::Constant(bpm) => (last.1 - first.1) * (60.0 / bpm),
-            Clock::Map { .. } => clock.seconds(last.1) - clock.seconds(first.1),
-        };
+        let out = clock.seconds_between(first.1, last.1);
         let repeat = Repeat { first: first.0, out, stream: last.2 - first.2 };
         if last.0 <= first.0 || !(repeat.out > 0.0 && repeat.stream > 0.0) {
             return None;
@@ -191,12 +190,67 @@ fn playlist_on(
     Some((pieces, max_rate, None))
 }
 
+/// What a [`StretchVoice`]'s stretcher and buffers are built from ([`StretchVoice::spec`]): a
+/// worker builds them from this while the voice stays where it is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct StretchSpec {
+    channels: usize,
+    file_rate: f64,
+    pitch: f64,
+    max_rate: f64,
+    step: f64,
+}
+
+impl StretchSpec {
+    /// Builds the stretcher and the buffers. Allocates (1 to 4 ms for a mono clip at 48 kHz in a
+    /// release build): call it off the audio thread.
+    pub(crate) fn build(self) -> StretchParts {
+        let channels = self.channels;
+        let mut stretch = Stretch::new(channels, self.file_rate as f32);
+        if self.pitch != 1.0 {
+            stretch.set_transpose_factor(self.pitch as f32, 0.0);
+        }
+        // Input for one chunk at the fastest speed, or for a seek (which wants up to one block
+        // plus the output latency at that speed).
+        let input_frames = (CHUNK_FRAMES as f64 * self.max_rate).ceil() as usize
+            + stretch.block_samples() * 2
+            + (self.max_rate * stretch.output_latency() as f64).ceil() as usize
+            + 2;
+        // Room for one project block of up to CHUNK_FRAMES frames at any step, plus a chunk.
+        let fifo_frames = (CHUNK_FRAMES as f64 * self.step.max(1.0)) as usize + 2 * CHUNK_FRAMES + 4;
+        StretchParts {
+            stretch,
+            fifo: vec![0.0; fifo_frames * channels],
+            input: vec![0.0; input_frames * channels],
+            chunk: vec![0.0; CHUNK_FRAMES * channels],
+        }
+    }
+}
+
+/// A voice's stretcher and buffers, built by [`StretchSpec::build`] for
+/// [`StretchVoice::install`].
+pub(crate) struct StretchParts {
+    stretch: Stretch,
+    fifo: Vec<f32>,
+    input: Vec<f32>,
+    chunk: Vec<f32>,
+}
+
 /// One warped clip placement being stretched in real time.
 pub(crate) struct StretchVoice {
     data: Arc<AudioData>,
     pieces: Vec<Piece>,
     repeat: Option<Repeat>,
-    stretch: Stretch,
+    /// Built with its buffers before the voice first plays ([`StretchVoice::prepare`], or
+    /// [`StretchSpec::build`] on another thread and [`StretchVoice::install`]), off the audio
+    /// thread: building every voice of a project with hundreds of stretched clips for each edit
+    /// held the window up for most of a second.
+    stretch: Option<Stretch>,
+    /// Moved since it was built: it plays from where the last seek put it.
+    started: bool,
+    /// The pitch factor and the fastest speed of the playlist, for that build.
+    pitch: f64,
+    max_rate: f64,
     channels: usize,
     /// Stretcher output frames per second of the clip (the file's sample rate).
     file_rate: f64,
@@ -229,7 +283,14 @@ impl StretchVoice {
         if !(tempo_bpm.is_finite() && tempo_bpm > 0.0) {
             return None;
         }
-        Self::with_clock(clip, region, data, &Clock::Constant(tempo_bpm), sample_rate)
+        let rate = f64::from(sample_rate);
+        Self::with_clock(
+            clip,
+            region,
+            data,
+            &Clock { tempo: TempoClock::constant(tempo_bpm, rate), start: clip.start, sample_rate: rate },
+            sample_rate,
+        )
     }
 
     /// [`StretchVoice::new`] for a clip on an arrangement whose tempo follows `map` (counted in
@@ -239,13 +300,13 @@ impl StretchVoice {
         clip: &Clip,
         region: &AudioRegion,
         data: Arc<AudioData>,
-        map: &TempoMap,
+        map: &Arc<TempoMap>,
         sample_rate: u32,
     ) -> Option<Self> {
         if map.is_constant() {
             return Self::new(clip, region, data, map.start_bpm(), sample_rate);
         }
-        let clock = Clock::Map { map, start: clip.start, sample_rate: f64::from(sample_rate) };
+        let clock = Clock { tempo: TempoClock::of(map), start: clip.start, sample_rate: f64::from(sample_rate) };
         Self::with_clock(clip, region, data, &clock, sample_rate)
     }
 
@@ -275,60 +336,103 @@ impl StretchVoice {
             return None;
         }
         let file_rate = f64::from(data.sample_rate);
-        let mut stretch = Stretch::new(channels, file_rate as f32);
-        if pitch != 1.0 {
-            stretch.set_transpose_factor(pitch as f32, 0.0);
-        }
         let step = file_rate / f64::from(sample_rate.max(1));
-        // Input for one chunk at the fastest speed, or for a seek (which wants up to one block
-        // plus the output latency at that speed).
-        let input_frames = (CHUNK_FRAMES as f64 * max_rate).ceil() as usize
-            + stretch.block_samples() * 2
-            + (max_rate * stretch.output_latency() as f64).ceil() as usize
-            + 2;
-        // Room for one project block of up to CHUNK_FRAMES frames at any step, plus a chunk.
-        let fifo_frames = (CHUNK_FRAMES as f64 * step.max(1.0)) as usize + 2 * CHUNK_FRAMES + 4;
-        let mut voice = Self {
+        Some(Self {
             data,
             pieces,
             repeat,
-            stretch,
+            stretch: None,
+            started: false,
+            pitch,
+            max_rate,
             channels,
             file_rate,
             fed: 0.0,
             produced: 0,
-            fifo: vec![0.0; fifo_frames * channels],
+            fifo: Vec::new(),
             fifo_len: 0,
             fifo_read: 0,
             fifo_position: 0.0,
             step,
-            input: vec![0.0; input_frames * channels],
-            chunk: vec![0.0; CHUNK_FRAMES * channels],
-        };
-        voice.seek(0);
-        Some(voice)
+            input: Vec::new(),
+            chunk: Vec::new(),
+        })
+    }
+
+    /// What the voice's stretcher and buffers are built from, to build them on another thread.
+    pub(crate) fn spec(&self) -> StretchSpec {
+        StretchSpec {
+            channels: self.channels,
+            file_rate: self.file_rate,
+            pitch: self.pitch,
+            max_rate: self.max_rate,
+            step: self.step,
+        }
+    }
+
+    /// Builds the stretcher and the buffers, once. Allocates: the worker's thread (or an
+    /// offline render) runs it, before the voice's first frames.
+    pub(crate) fn prepare(&mut self) {
+        if self.stretch.is_none() {
+            self.install(&mut Some(self.spec().build()));
+        }
+    }
+
+    /// Takes the stretcher and buffers built from [`StretchVoice::spec`] on another thread out of
+    /// `parts`. Never allocates or frees: a voice that has its own already leaves `parts` where
+    /// they are, for the caller to drop off the audio thread.
+    pub(crate) fn install(&mut self, parts: &mut Option<StretchParts>) {
+        if self.stretch.is_some() {
+            return;
+        }
+        let Some(StretchParts { stretch, fifo, input, chunk }) = parts.take() else { return };
+        // The voice's own buffers are still the empty ones `with_clock` made, which free nothing.
+        self.fifo = fifo;
+        self.input = input;
+        self.chunk = chunk;
+        self.stretch = Some(stretch);
+        self.started = false;
+    }
+
+    /// Whether the stretcher and the buffers are built.
+    pub(crate) fn is_prepared(&self) -> bool {
+        self.stretch.is_some()
+    }
+
+    /// The voice, prepared ([`StretchVoice::prepare`]).
+    #[cfg(test)]
+    pub(crate) fn prepared(mut self) -> Self {
+        self.prepare();
+        self
     }
 
     /// Rewinds the voice to the clip's first frame, for a transport restart or a relaunch.
-    /// Never allocates.
+    /// Never allocates; nothing for a voice not prepared yet.
     pub(crate) fn restart(&mut self) {
         self.seek(0);
     }
 
     /// Moves the voice so that its next frame is `frames` project frames after the clip's start.
-    /// Never allocates; runs the stretcher's start-up on the calling thread.
+    /// Runs the stretcher's start-up on the calling thread. Never allocates: a voice not
+    /// prepared yet ([`StretchVoice::prepare`]) stays where it is.
     pub(crate) fn seek(&mut self, frames: u64) {
+        if self.stretch.is_none() {
+            return;
+        }
+        self.started = true;
         let at = (frames as f64 * self.step).round() as u64;
         let Some(piece) = self.piece(self.piece_at(at)) else { return };
         let into_piece = (at as f64 - piece.out_start * self.file_rate).max(0.0);
         let stream = (piece.stream_start + into_piece * piece.rate).floor();
-        let length = self.stretch.output_seek_length(piece.rate as f32);
+        let Some(length) = self.stretch.as_ref().map(|s| s.output_seek_length(piece.rate as f32)) else { return };
         let channels = self.channels;
         let mut input = std::mem::take(&mut self.input);
         let length = length.min(input.len() / channels);
         if let Some(buffer) = input.get_mut(..length * channels) {
             self.read_stream(stream, buffer);
-            self.stretch.output_seek(buffer);
+            if let Some(stretch) = self.stretch.as_mut() {
+                stretch.output_seek(buffer);
+            }
         }
         self.input = input;
         self.fed = stream + length as f64;
@@ -462,7 +566,11 @@ impl StretchVoice {
         // input follows the piece heard then: a speed change reaches the input that much before
         // it is heard, and the input never runs ahead or behind the timing. One speed per call:
         // stop where that piece ends.
-        let latency = self.stretch.output_latency() as u64;
+        let Some((latency, input_latency)) =
+            self.stretch.as_ref().map(|s| (s.output_latency() as u64, s.input_latency()))
+        else {
+            return;
+        };
         let heard = self.produced + latency;
         let place = self.piece_at(heard);
         if let Some(boundary) = self.next(place).and_then(|n| self.out_frame(n))
@@ -474,7 +582,7 @@ impl StretchVoice {
         // Never less than half the speed's input: a call without input makes the stretcher freeze
         // its sound (after a seek, or a playlist that jumps). At half the input the stretch stays
         // clean at 1x and above, and any lead left over drains within a few calls.
-        let want = self.stream_at(heard + frames) + self.stretch.input_latency() as f64;
+        let want = self.stream_at(heard + frames) + input_latency as f64;
         let fed = want.max(self.fed + frames as f64 * rate * 0.5);
         let input_frames = ((fed.floor() - self.fed.floor()).max(0.0) as usize).min(self.input.len() / channels);
         let frames = frames as usize;
@@ -484,7 +592,9 @@ impl StretchVoice {
             (input.get_mut(..input_frames * channels), chunk.get_mut(..frames * channels))
         {
             self.read_stream(self.fed.floor(), input_buffer);
-            self.stretch.process(input_buffer, output);
+            if let Some(stretch) = self.stretch.as_mut() {
+                stretch.process(input_buffer, output);
+            }
         }
         self.input = input;
         self.chunk = chunk;
@@ -499,8 +609,17 @@ impl StretchVoice {
         }
     }
 
-    /// Renders the next `out.len() / 2` project frames as interleaved stereo into `out`.
+    /// Renders the next `out.len() / 2` project frames as interleaved stereo into `out`: silence
+    /// while the voice is not prepared. Never allocates.
     pub(crate) fn render(&mut self, out: &mut [f32]) {
+        if self.stretch.is_none() {
+            out.fill(0.0);
+            return;
+        }
+        // Not played or moved yet: from the clip's start.
+        if !self.started {
+            self.seek(0);
+        }
         let channels = self.channels;
         for frame in out.as_chunks_mut::<2>().0 {
             // Linear interpolation needs this frame and the next.
@@ -527,376 +646,5 @@ impl StretchVoice {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use suhina_model::*;
-
-    fn sine(hz: f64, seconds: f64, sample_rate: u32) -> Arc<AudioData> {
-        let frames = (seconds * f64::from(sample_rate)) as usize;
-        let samples = (0..frames)
-            .map(|i| (std::f64::consts::TAU * hz * i as f64 / f64::from(sample_rate)).sin() as f32 * 0.5)
-            .collect();
-        Arc::new(AudioData { sample_rate, channels: 1, samples })
-    }
-
-    fn region(markers: &[(f64, f64)], mode: StretchMode) -> AudioRegion {
-        AudioRegion {
-            warped: true,
-            stretch: mode,
-            warp_markers: markers.iter().map(|&(time, audio_time)| WarpMarker { time, audio_time }).collect(),
-            ..AudioRegion::new("sine.wav")
-        }
-    }
-
-    fn clip(length: f64, offset: f64, loop_range: Option<(f64, f64)>) -> Clip {
-        Clip {
-            offset,
-            loop_range: loop_range.map(|(start, end)| LoopRange { start, end }),
-            ..Clip::new(ContentId(1), 0.0, length)
-        }
-    }
-
-    #[test]
-    fn playlist_follows_markers_and_loops() {
-        let data = sine(440.0, 4.0, 1000);
-        // Beats 0–4 = 0–2 s, beats 4–6 = 2–4 s; loop beats 2–6; play 8 beats from beat 3.
-        let r = region(&[(0.0, 0.0), (4.0, 2.0), (6.0, 4.0)], StretchMode::Smooth);
-        let (pieces, _, _) = playlist(&clip(8.0, 3.0, Some((2.0, 6.0))), &r, &data, 120.0).unwrap();
-        let summary: Vec<(f64, f64, f64, f64, f64)> =
-            pieces.iter().map(|p| (p.out_start, p.src_start, p.src_end, p.rate, p.stream_start)).collect();
-        assert_eq!(
-            summary,
-            [
-                (0.0, 1500.0, 2000.0, 1.0, 0.0),    // beat 3–4
-                (0.5, 2000.0, 4000.0, 2.0, 500.0),  // beat 4–6, twice as fast
-                (1.5, 1000.0, 2000.0, 1.0, 2500.0), // loop back to beat 2–4
-                (2.5, 2000.0, 4000.0, 2.0, 3500.0), // beat 4–6
-                (3.5, 1000.0, 1500.0, 1.0, 5500.0), // beat 2–3, clip ends
-            ]
-        );
-    }
-
-    /// A clip with tens of thousands of warp markers builds its playlist and plays: lookups are
-    /// binary searches, so the playlist is no longer quadratic in the markers (#162).
-    #[test]
-    fn a_clip_with_many_warp_markers_builds_and_plays() {
-        let data = sine(440.0, 30.0, 8000);
-        // 40 000 segments over 60 beats (30 s at 120 bpm), alternating 1.1x and 0.9x.
-        let markers: Vec<(f64, f64)> = (0..=40_000)
-            .scan(0.0, |seconds, i| {
-                let beat = f64::from(i) * 60.0 / 40_000.0;
-                let here = (beat, *seconds);
-                *seconds += 60.0 / 40_000.0 * 0.5 * if i % 2 == 0 { 1.1 } else { 0.9 };
-                Some(here)
-            })
-            .collect();
-        let r = region(&markers, StretchMode::Smooth);
-        let c = clip(60.0, 0.0, None);
-        let (pieces, _, _) = playlist(&c, &r, &data, 120.0).unwrap();
-        assert_eq!(pieces.len(), 40_000);
-        let mut voice = StretchVoice::new(&c, &r, data, 120.0, 48_000).unwrap();
-        voice.seek(48_000 * 15);
-        let mut out = vec![0.0f32; 2 * 4096];
-        for _ in 0..4 {
-            voice.render(&mut out);
-        }
-        assert!(out.iter().all(|s| s.is_finite()) && out.iter().any(|s| s.abs() > 0.1));
-    }
-
-    /// The level of a 440 Hz sine stretched at 2x for four beats and then at `slower`, in 10 ms
-    /// windows, with how far each window is from a clean sine (the residual of the best-fitting
-    /// 440 Hz sine, relative to the window's level).
-    fn seam(slower: f64) -> Vec<(f64, f32, f32)> {
-        let rate = 48_000;
-        let data = sine(440.0, 8.0, rate);
-        let r = region(&[(0.0, 0.0), (4.0, 4.0), (8.0, 4.0 + 2.0 * slower)], StretchMode::Smooth);
-        let c = clip(8.0, 0.0, None);
-        let mut voice = StretchVoice::new(&c, &r, data, 120.0, rate).unwrap();
-        let mut out = vec![0.0f32; 2 * 4 * rate as usize];
-        for block in out.chunks_mut(2 * 512) {
-            voice.render(block);
-        }
-        let left: Vec<f64> = out.as_chunks::<2>().0.iter().map(|[l, _]| f64::from(*l)).collect();
-        let window = rate as usize / 100;
-        left.chunks_exact(window)
-            .enumerate()
-            .map(|(i, w)| {
-                let t0 = (i * window) as f64;
-                let w_hz = std::f64::consts::TAU * 440.0 / f64::from(rate);
-                let (mut ss, mut sc, mut cc, mut ys, mut yc, mut yy) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-                for (k, y) in w.iter().enumerate() {
-                    let (sn, cs) = ((t0 + k as f64) * w_hz).sin_cos();
-                    ss += sn * sn;
-                    sc += sn * cs;
-                    cc += cs * cs;
-                    ys += y * sn;
-                    yc += y * cs;
-                    yy += y * y;
-                }
-                let det = ss * cc - sc * sc;
-                let (a, b) = ((ys * cc - yc * sc) / det, (yc * ss - ys * sc) / det);
-                let fitted = a * ys + b * yc;
-                let rms = (yy / w.len() as f64).sqrt();
-                let residual = ((yy - fitted).max(0.0) / yy.max(1e-12)).sqrt();
-                (i as f64 * 0.01, rms as f32, residual as f32)
-            })
-            .collect()
-    }
-
-    /// A speed drop at a warp marker keeps the sound: before, the stretcher got no input for a
-    /// few calls after the drop and froze its sound, a 60-200 ms dip (#165).
-    #[test]
-    fn a_speed_drop_keeps_the_level() {
-        for slower in [1.0, 0.5] {
-            let windows = seam(slower);
-            let level = |from: f64, to: f64| {
-                let w: Vec<f32> = windows.iter().filter(|(t, _, _)| (from..to).contains(t)).map(|w| w.1).collect();
-                w.iter().sum::<f32>() / w.len() as f32
-            };
-            let (before, after) = (level(1.0, 1.9), level(2.5, 3.9));
-            for &(t, rms, residual) in windows.iter().filter(|(t, _, _)| (1.0..3.9).contains(t)) {
-                assert!(
-                    rms > 0.85 * before.min(after) && rms < 1.15 * before.max(after),
-                    "{slower}x at {t:.2} s: {rms}"
-                );
-                assert!(residual < 0.05, "{slower}x at {t:.2} s: {residual} off a clean sine");
-            }
-        }
-    }
-
-    /// A looping clip that needs more than `MAX_PIECES` pieces keeps looping where its playlist
-    /// was cut, instead of running on through the file and going silent (#167).
-    #[test]
-    fn a_loop_past_the_piece_cap_keeps_looping() {
-        let data = sine(330.0, 2.0, 8000);
-        // A half-beat loop of five 0.1-beat segments at alternating speeds: 5 pieces a loop, so a
-        // 30 000-beat clip (60 000 loops) needs 300 000 pieces, three times the cap.
-        let markers: Vec<(f64, f64)> = (0..=10)
-            .scan(0.0, |seconds, i| {
-                let here = (f64::from(i) * 0.1, *seconds);
-                *seconds += 0.05 * if i % 2 == 0 { 1.2 } else { 0.8 };
-                Some(here)
-            })
-            .collect();
-        let r = region(&markers, StretchMode::Smooth);
-        let c = clip(30_000.0, 0.0, Some((0.0, 0.5)));
-        let (pieces, _, _) = playlist(&c, &r, &data, 120.0).unwrap();
-        assert!(pieces.len() <= MAX_PIECES);
-        // At 120 bpm a beat is 24 000 project frames. Beats 1 000 and 25 000 are both at the
-        // loop's start, the second far past where the playlist was cut; and playing on across
-        // the cut sounds like playing on across any other loop start.
-        let last = pieces.last().unwrap();
-        let cut = (last.out_start + (last.src_end - last.src_start) / 8000.0 / last.rate) * 2.0;
-        assert!(cut > 1_000.0 && cut < 30_000.0 && (cut * 2.0 - (cut * 2.0).round()).abs() < 1e-6, "{cut}");
-        let render_from = |beat: f64| {
-            let mut voice = StretchVoice::new(&c, &r, data.clone(), 120.0, 48_000).unwrap();
-            voice.seek((beat * 24_000.0).round() as u64);
-            let mut out = vec![0.0f32; 2 * 24_000];
-            voice.render(&mut out);
-            out
-        };
-        let level = |s: &[f32]| (s.iter().map(|x| x * x).sum::<f32>() / s.len() as f32).sqrt();
-        let same = |a: &[f32], b: &[f32]| {
-            let diff: Vec<f32> = a.iter().zip(b).map(|(x, y)| x - y).collect();
-            assert!(level(a) > 0.1, "{}", level(a));
-            assert!(level(&diff) < 0.01 * level(a), "{} vs {}, apart by {}", level(b), level(a), level(&diff));
-        };
-        same(&render_from(1_000.0), &render_from(25_000.0));
-        same(&render_from(1_000.25), &render_from(cut - 0.25));
-    }
-
-    /// An offset past the loop end starts at the loop start, like the direct reader and the
-    /// notes, instead of playing what lies past the loop first (#166).
-    #[test]
-    fn an_offset_past_the_loop_end_starts_at_the_loop_start() {
-        let data = sine(440.0, 4.0, 1000);
-        let r = region(&[(0.0, 0.0), (4.0, 2.0), (6.0, 4.0)], StretchMode::Smooth);
-        let (pieces, _, _) = playlist(&clip(4.0, 7.0, Some((2.0, 6.0))), &r, &data, 120.0).unwrap();
-        let summary: Vec<(f64, f64, f64)> = pieces.iter().map(|p| (p.out_start, p.src_start, p.src_end)).collect();
-        assert_eq!(summary, [(0.0, 1000.0, 2000.0), (1.0, 2000.0, 4000.0)]);
-    }
-
-    /// Clicks every `every` seconds: a 2 ms burst at full scale, silence between.
-    fn clicks(every: f64, seconds: f64, sample_rate: u32) -> Arc<AudioData> {
-        let frames = (seconds * f64::from(sample_rate)) as usize;
-        let period = (every * f64::from(sample_rate)) as usize;
-        let burst = (0.002 * f64::from(sample_rate)) as usize;
-        let samples = (0..frames).map(|i| if i % period < burst { 0.9 } else { 0.0 }).collect();
-        Arc::new(AudioData { sample_rate, channels: 1, samples })
-    }
-
-    /// Onset times (seconds) in interleaved stereo: where the level first rises above a threshold
-    /// after at least 50 ms below it.
-    fn onsets(stereo: &[f32], sample_rate: u32) -> Vec<f64> {
-        let quiet_needed = (0.05 * f64::from(sample_rate)) as usize;
-        let mut quiet = quiet_needed;
-        let mut found = Vec::new();
-        for (i, frame) in stereo.as_chunks::<2>().0.iter().enumerate() {
-            if frame[0].abs() > 0.2 {
-                if quiet >= quiet_needed {
-                    found.push(i as f64 / f64::from(sample_rate));
-                }
-                quiet = 0;
-            } else {
-                quiet += 1;
-            }
-        }
-        found
-    }
-
-    /// Renders a warped click clip (transposed by `transpose`, from `seek` seconds into it) and
-    /// returns how far each click lands from where the warp markers put it, in milliseconds.
-    fn click_errors(markers: &[(f64, f64)], length_beats: f64, seek: f64, transpose: f64) -> Vec<f64> {
-        let sr = 48_000;
-        let data = clicks(0.5, 40.0, sr);
-        let r = AudioRegion { transpose, ..region(markers, StretchMode::Smooth) };
-        let c = clip(length_beats, 0.0, None);
-        let mut voice = StretchVoice::new(&c, &r, data, 120.0, sr).unwrap();
-        let skipped = (seek * f64::from(sr)) as usize;
-        if skipped > 0 {
-            voice.seek(skipped as u64);
-        }
-        let frames = (length_beats * 0.5 * f64::from(sr)) as usize - skipped;
-        let mut out = vec![0.0; frames * 2];
-        for block in out.chunks_mut(512 * 2) {
-            voice.render(block);
-        }
-        // Where each click should play: file time → beat through the markers → seconds at 120 bpm.
-        let beat_of = |seconds: f64| {
-            let i = markers.iter().position(|m| m.1 > seconds).unwrap_or(markers.len()).clamp(1, markers.len() - 1);
-            let (a, b) = (markers[i - 1], markers[i]);
-            a.0 + (seconds - a.1) * (b.0 - a.0) / (b.1 - a.1)
-        };
-        onsets(&out, sr)
-            .iter()
-            .map(|&t| t + seek)
-            .map(|t| {
-                // The nearest click in the file to this onset.
-                let expected = (0..80)
-                    .map(|k| beat_of(k as f64 * 0.5) * 0.5)
-                    .fold(f64::INFINITY, |best, e| if (e - t).abs() < (best - t).abs() { e } else { best });
-                (t - expected) * 1000.0
-            })
-            .collect()
-    }
-
-    fn worst(errors: &[f64]) -> f64 {
-        errors.iter().fold(0.0f64, |w, x| w.max(x.abs()))
-    }
-
-    const SEGMENTS: [(f64, f64); 6] = [(0.0, 0.0), (8.0, 3.9), (16.0, 8.1), (24.0, 11.9), (32.0, 16.2), (48.0, 23.8)];
-
-    #[test]
-    fn transients_stay_on_the_grid() {
-        for (markers, limit) in [
-            (vec![(0.0, 0.0), (64.0, 30.4)], 3.0), // 0.95x
-            (vec![(0.0, 0.0), (64.0, 33.6)], 3.0), // 1.05x
-            (vec![(0.0, 0.0), (64.0, 22.4)], 4.0), // 0.7x
-            (vec![(0.0, 0.0), (64.0, 48.0)], 4.0), // 1.5x
-            (SEGMENTS.to_vec(), 3.0),              // changing speed
-        ] {
-            let errors = click_errors(&markers, 46.0, 0.0, 0.0);
-            assert!(errors.len() >= 30, "{markers:?}: {} clicks found", errors.len());
-            assert!(worst(&errors) < limit, "{markers:?}: {errors:?}");
-        }
-    }
-
-    /// Clicks stay on the grid after a speed drop: feeding the stretcher at least some input
-    /// after the drop must not leave the input ahead for good (#165).
-    #[test]
-    fn transients_stay_on_the_grid_after_a_speed_drop() {
-        // 16 beats at 2x (16 s of file in 8 s), then 24 beats at 1x or 0.5x.
-        for markers in [vec![(0.0, 0.0), (16.0, 16.0), (40.0, 28.0)], vec![(0.0, 0.0), (16.0, 16.0), (40.0, 22.0)]] {
-            let errors = click_errors(&markers, 40.0, 0.0, 0.0);
-            // At 0.5x a stretched click can show a second onset 120 ms in (as before #165): only
-            // the clicks themselves are timed here.
-            let clicks: Vec<f64> = errors.iter().copied().filter(|e| e.abs() < 50.0).collect();
-            assert!(clicks.len() >= 45, "{markers:?}: {} clicks found", clicks.len());
-            assert!(worst(&clicks) < 4.0, "{markers:?}: {errors:?}");
-        }
-    }
-
-    #[test]
-    fn a_voice_can_start_anywhere_in_its_clip() {
-        // Seek into the middle of a beat, of a speed segment, and just past a segment change.
-        for seek in [3.3, 9.87, 16.01] {
-            let errors = click_errors(&SEGMENTS, 46.0, seek, 0.0);
-            assert!(errors.len() >= 10, "seek {seek}: {} clicks found", errors.len());
-            assert!(worst(&errors) < 4.0, "seek {seek}: {errors:?}");
-        }
-    }
-
-    #[test]
-    fn transposed_clips_keep_transients_on_the_grid() {
-        for transpose in [-7.0, -3.0, 2.0, 7.0] {
-            let errors = click_errors(&[(0.0, 0.0), (64.0, 30.4)], 46.0, 0.0, transpose);
-            assert!(errors.len() >= 40, "{transpose} st: {} clicks found", errors.len());
-            assert!(worst(&errors) < 4.0, "{transpose} st: {errors:?}");
-        }
-    }
-
-    /// Renders a warped sine clip and returns (frequency in Hz, frames with sound) at 48 kHz.
-    fn transposed(hz: f64, markers: &[(f64, f64)], beats: f64, transpose: f64) -> (f64, usize) {
-        let sr = 48_000;
-        let data = sine(hz, 20.0, 44_100);
-        let r = AudioRegion { transpose, ..region(markers, StretchMode::Smooth) };
-        let mut voice = StretchVoice::new(&clip(beats, 0.0, None), &r, data, 120.0, sr).unwrap();
-        let frames = (beats * 0.5 * f64::from(sr)) as usize;
-        let mut out = vec![0.0; frames * 2];
-        for block in out.chunks_mut(512 * 2) {
-            voice.render(block);
-        }
-        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
-        let middle = &left[left.len() / 4..left.len() * 3 / 4];
-        let ups = middle.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
-        let sounding = left.iter().rposition(|s| s.abs() > 0.05).map_or(0, |i| i + 1);
-        (ups as f64 / (middle.len() as f64 / f64::from(sr)), sounding)
-    }
-
-    #[test]
-    fn transpose_shifts_pitch_but_not_time_on_warped_clips() {
-        // 8 beats at 120 bpm = 4 s, the file playing at its own speed, then at 0.9x.
-        for (markers, transpose, expected) in [
-            (vec![(0.0, 0.0), (8.0, 4.0)], 12.0, 880.0),
-            (vec![(0.0, 0.0), (8.0, 4.0)], -5.0, 440.0 * 2f64.powf(-5.0 / 12.0)),
-            (vec![(0.0, 0.0), (8.0, 3.6)], 7.0, 440.0 * 2f64.powf(7.0 / 12.0)),
-            (vec![(0.0, 0.0), (8.0, 3.6)], 0.0, 440.0),
-        ] {
-            let (hz, sounding) = transposed(440.0, &markers, 8.0, transpose);
-            assert!((hz - expected).abs() < expected * 0.01, "{transpose} st: {hz:.1} Hz, expected {expected:.1}");
-            // The clip still fills its 4 s.
-            assert!(sounding > 4 * 48_000 - 2_000, "{transpose} st: sound ends at frame {sounding}");
-        }
-    }
-
-    #[test]
-    fn plays_through_at_any_device_rate_and_block_size() {
-        // A 48 kHz file on 44.1 kHz and 96 kHz devices, in odd block sizes.
-        let data = clicks(0.25, 40.0, 48_000);
-        for markers in [vec![(0.0, 0.0), (64.0, 30.4)], vec![(0.0, 0.0), (64.0, 45.0)]] {
-            let r = region(&markers, StretchMode::Smooth);
-            for (device_rate, block) in [(44_100, 441), (44_100, 448), (96_000, 37), (22_050, 1000)] {
-                let mut voice =
-                    StretchVoice::new(&clip(60.0, 0.0, None), &r, data.clone(), 120.0, device_rate).unwrap();
-                let mut out = vec![0.0; block * 2];
-                for _ in 0..(30 * device_rate as usize / block) {
-                    voice.render(&mut out);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn unusable_clips_get_no_voice() {
-        let data = sine(440.0, 1.0, 48_000);
-        let one_marker = region(&[(0.0, 0.0)], StretchMode::Smooth);
-        assert!(StretchVoice::new(&clip(1.0, 0.0, None), &one_marker, data.clone(), 120.0, 48_000).is_none());
-        let unity = region(&[(0.0, 0.0), (2.0, 1.0)], StretchMode::Smooth);
-        assert!(StretchVoice::new(&clip(1.0, 0.0, None), &unity, data.clone(), 120.0, 48_000).is_none());
-        let repitch = region(&[(0.0, 0.0), (2.0, 0.9)], StretchMode::Repitch);
-        assert!(StretchVoice::new(&clip(1.0, 0.0, None), &repitch, data.clone(), 120.0, 48_000).is_none());
-        // 1 beat holding 0.02 s at 120 bpm: 0.04x speed, too slow to stretch.
-        let extreme = region(&[(0.0, 0.0), (1.0, 0.02)], StretchMode::Smooth);
-        assert!(StretchVoice::new(&clip(1.0, 0.0, None), &extreme, data, 120.0, 48_000).is_none());
-    }
-}
+#[path = "stretch_tests.rs"]
+mod tests;

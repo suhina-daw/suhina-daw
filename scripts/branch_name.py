@@ -1,7 +1,7 @@
 # Copyright (C) 2026 The Suhina contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Check a pull request's branch name against the rule in AGENTS.md › Tasks.
+"""Check a pull request's branch name against the rule in docs/workflow.md › Branch names.
 
 A branch is named `<kind>/<short-description>`: `feature/` for something a user can do, `fix/` for
 a bug, `docs/` for documentation and `chore/` for repository, build and release work; the
@@ -44,7 +44,7 @@ def main(argv: list[str]) -> int:
         print(f"`{branch}` follows the branch name rule.")
     else:
         # A warning annotation, never a failure (see the docstring).
-        print(f"::warning title=Branch name::`{branch}` {found} (AGENTS.md › Tasks › Branch names).")
+        print(f"::warning title=Branch name::`{branch}` {found} (docs/workflow.md › Branch names).")
     return 0
 
 

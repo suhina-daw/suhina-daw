@@ -26,10 +26,20 @@ const CLIP_START: f64 = 64.0;
 /// Walk's first note, E1 (MIDI 40), under the edited clip's first beat.
 const BASS_GHOST: &str = "Ghost note E1 at beat 0 from Bass";
 /// Beat B at bar 17: the second clip on Drums' lane.
-const EDITED: ClipRef = ClipRef::Arrangement(TrackId(1), 1);
+fn edited() -> ClipRef {
+    let project = demo_project();
+    let lane = project.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap();
+    ClipRef::Arrangement(TrackId(1), lane.clips[1].id)
+}
 
 fn engine() -> suhina_engine::Renderer {
-    suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap()
+    suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap()
 }
 
 fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
@@ -39,6 +49,8 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(20)
@@ -60,7 +72,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let project = session.project();
     let clip = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap();
     match &project.content(clip.content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }
@@ -70,7 +82,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
 fn ghosts(h: &Harness<'static, App>, from: &str) -> usize {
     let project = h.state().session().unwrap().project();
     let source = h.state().piano_roll().ghost_source;
-    let ghosts = suhina_ui::detail::piano_roll_ghosts::ghosts(project, EDITED, source);
+    let ghosts = suhina_ui::detail::piano_roll_ghosts::ghosts(project, edited(), source);
     ghosts.notes.iter().filter(|g| ghosts.sources.get(g.source).is_some_and(|s| s == from)).count()
 }
 
@@ -206,6 +218,8 @@ fn render_the_ghost_notes_and_menu() {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut h = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
         .with_size(SIZE)
         .with_step_dt(0.05)
         .with_max_steps(40)

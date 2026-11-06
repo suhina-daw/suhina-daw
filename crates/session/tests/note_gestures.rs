@@ -8,9 +8,11 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers outside #[test] functions
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::{MAX_NOTES_PER_COMMAND, Session};
+
+use crate::support::{run, without_ids};
 
 fn note(time: f64, key: u8) -> Note {
     Note { time, duration: 1.0, key, velocity: 100.0 / 127.0, release_velocity: 0.5, channel: 0, muted: false }
@@ -18,6 +20,7 @@ fn note(time: f64, key: u8) -> Note {
 
 fn clip(content: u32, start: f64) -> Clip {
     Clip {
+        id: Default::default(),
         content: ContentId(content),
         start,
         length: 4.0,
@@ -29,6 +32,8 @@ fn clip(content: u32, start: f64) -> Clip {
         fade_in_curve: Default::default(),
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
+        color: None,
+        ara: false,
         extensions: Extensions::default(),
         launch: Default::default(),
     }
@@ -39,7 +44,7 @@ fn content(id: u32, lanes: Vec<ContentLane>) -> ClipContent {
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,
-        lanes,
+        lanes: lanes.into(),
         extensions: Extensions::default(),
         scale: None,
     }
@@ -49,6 +54,10 @@ fn content(id: u32, lanes: Vec<ContentLane>) -> ClipContent {
 /// clip (index 1), an audio clip (index 2) and a pattern for another track (index 3); in scene 1
 /// a slot with a MIDI clip and in scene 2 an empty slot.
 fn project() -> Project {
+    suhina_test_support::with_ids(project_built())
+}
+
+fn project_built() -> Project {
     let track = |id: u32, name: &str| Track {
         id: TrackId(id),
         name: name.into(),
@@ -60,7 +69,7 @@ fn project() -> Project {
         audio_input: Default::default(),
         midi_input: Default::default(),
     };
-    let notes = |n: Vec<Note>| ContentLane { target: None, data: LaneData::Notes(n) };
+    let notes = |n: Vec<Note>| ContentLane { target: None, data: LaneData::Notes(n.into()) };
     let audio = AudioRegion {
         file: "a.wav".into(),
         absolute_file: None,
@@ -69,7 +78,7 @@ fn project() -> Project {
         duration_seconds: None,
         warped: false,
         stretch: StretchMode::default(),
-        warp_markers: Vec::new(),
+        warp_markers: Default::default(),
         gain: 1.0,
         transpose: 0.0,
         stream: None,
@@ -80,16 +89,21 @@ fn project() -> Project {
             content(1, vec![notes(vec![note(0.0, 60), note(1.0, 64), note(2.0, 67)])]),
             content(2, Vec::new()),
             content(3, vec![ContentLane { target: None, data: LaneData::Audio(audio) }]),
-            content(4, vec![ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.0, 36)]) }]),
+            content(
+                4,
+                vec![ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.0, 36)].into()) }],
+            ),
             content(5, vec![notes(vec![note(0.5, 48)])]),
         ],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "Keys".into(),
                 track: Some(TrackId(1)),
                 clips: vec![clip(1, 0.0), clip(2, 4.0), clip(3, 8.0), clip(4, 12.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
+            takes: Vec::new(),
         },
         launcher: Launcher {
             scenes: vec![Scene::default(), Scene::default()],
@@ -103,17 +117,13 @@ fn project() -> Project {
     }
 }
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
-
 fn notes(session: &Session, content: u32) -> Vec<Note> {
     let content = session.project().content(ContentId(content)).expect("the content");
     content
         .lanes
         .iter()
         .find_map(|l| match &l.data {
-            LaneData::Notes(n) => Some(n.clone()),
+            LaneData::Notes(n) => Some(n.to_vec()),
             LaneData::Audio(_) => None,
         })
         .unwrap_or_default()
@@ -222,7 +232,7 @@ fn a_duplicate_can_go_beats_and_semitones_away() {
         json!({ "track": 1, "index": 0, "notes": [0, 1], "beats": 4, "semitones": 2 }),
     )
     .unwrap();
-    assert_eq!(result, json!({ "added": [3, 4], "count": 5 }));
+    assert_eq!(without_ids(&result), json!({ "added": [3, 4], "count": 5 }));
     let now = notes(&session, 1);
     assert_eq!(&now[..3], &before[..], "the originals stay");
     assert_eq!(now.iter().skip(3).map(|n| (n.time, n.key)).collect::<Vec<_>>(), [(4.0, 62), (5.0, 66)]);

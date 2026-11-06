@@ -12,7 +12,7 @@ body:
     id: device
     attributes:
       label: Device
-      description: The device id, from `suhina-cli` or `devices.list`.
+      description: The device id, from `suhina-cli` or `device.list`.
       placeholder: e.g. compressor
     validations:
       required: true

@@ -3,7 +3,7 @@ description: Suhina's visual language: principles, what stays familiar and what 
 read_when: UI design, colours, tokens, typography, theme, accent, track colours, browser design, squint test, reference mockups
 type: spec
 status: draft
-last_verified: 2026-10-16
+last_verified: 2026-11-06
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/settings/themes.rs
@@ -44,7 +44,7 @@ From [research](#sources) and the first design rounds:
 1. **Grey first.** Build hierarchy with lightness only, check it in greyscale, add colour last.
 2. **Quiet the surroundings** instead of shouting the important thing.
 3. **States differ in lightness, not hue alone** (playing is brighter, not just "accent").
-4. **Two type sizes:** 11 px for UI text, 10 px for small values. No bold headings. 9 px is
+4. **Two type sizes:** 12 px for UI text, 11 px for small values. No bold headings. 9 px is
    kept for tags beside a name, 13 px for a page title (components › Global rules).
 5. **One window, no pop-ups.** Menus and pickers open in place. The exceptions are plug-in
    editors, which float in their own windows (ADR 0006), the project dialogs, and the sample map
@@ -52,16 +52,17 @@ From [research](#sources) and the first design rounds:
    ([spec](../spec/sample-map.md) › Where the map is shown).
 6. **Progressive disclosure.** Controls appear when there is room or need (track height, toggled
    sections), never all at once.
-7. **Every grid shows its lines.** Columns and rows of the Session grid, bars and beats, key rows.
+7. **Every grid shows its lines.** Columns and rows of the Launcher grid, bars and beats, key rows.
 8. **Not pure black.** The darkest surface is a warm near-black so the eye can adapt.
 
 ## Keep familiar (behaviour and structure)
 
 - Window regions: control bar on top, browser on the left, the main view in the centre, the
   detail area (devices or clip editor) at the bottom, info text and status at the very bottom.
-- Session view as a grid: tracks are columns, scenes are rows, scene launch on the right, return
+- Launcher view as a grid: tracks are columns, scenes are rows, scene launch on the right, return
   tracks and the main track after the regular tracks.
-- Arrangement view: timeline left, track headers on the right with their controls.
+- Arrangement view: track headers with their controls on the left of the timeline by default
+  (#1046); the right is a setting, and a theme may choose it.
 - Interactions: click to launch, pending state while quantised, drag from the browser, double-click
   to open a clip (on an empty slot or lane of a MIDI track, to make one), Tab between Session and
   Arrangement; keyboard shortcuts and menu structure.
@@ -74,15 +75,15 @@ From [research](#sources) and the first design rounds:
 | Base palette | Warm graphite surfaces in four lightness steps (see tokens) | Live's neutral mid-grey |
 | Accent | Iris `#A6A3FF`, used sparingly: transport play, solo, queued, device on, selected parameter | Orange as the active colour; cyan as the value colour |
 | Track colours | Our own muted palette (terracotta, ochre, steel blue, lavender, …) | Live's saturated pastel palette |
-| Type | Encode Sans Semi Expanded for UI text, IBM Plex Mono for numbers and time | Live's typeface |
+| Type | Manrope for UI text, IBM Plex Mono for numbers and time | Live's typeface |
 | Knobs | Small circle with a pointer line, value below | Live's open arc knobs |
 | Value fields | Neutral grey fill; volume fills full height with a level tick at the edges only; pan is a thin bottom bar growing from a centre tick | Live's cyan-filled boxes |
 | Toggles | Track on = light grey number button; solo = accent; arm = red ring, filled when armed | The orange numbered track button |
-| Track headers | A band of the track colour down the Arrangement header's edge; the Session header filled with it, its name in the theme's light or dark text, whichever reads | A dot of colour too small to tell tracks apart |
+| Track headers | A band of the track colour down the Arrangement header's edge; the Launcher header filled with it, its name in the theme's light or dark text, whichever reads | A dot of colour too small to tell tracks apart |
 | Clip slots | Flat cells, a small square in the track colour; playing = brighter cell with an accent progress line; queued = accent outline; recording = red dot and line | Fully coloured slots with triangle and square glyphs |
 | Arrangement clips | Neutral body, 2 px top strip and note or wave marks in the track colour | Colour-filled clip bodies |
 | MIDI notes | Track colour, velocity as brightness, selected note with a light outline | Velocity as saturation; blue selected notes |
-| Device panels | Plain panels, a square on/off switch in the header | Live's title bar with a round activator |
+| Device panels | Plain panels, a square on/off switch in the header; a device with more room to show draws its own panel (the NAM Amp Modeler's and Cab Loader's: a name dropdown with steppers, knob columns with labels over and values under, lit toggles, a file dropdown at the bottom — [nam spec](../spec/nam-amp-and-cab.md)) | Live's title bar with a round activator; Live's Amp and Cabinet & Mic devices' look |
 | Meters | Two thin bars, green with yellow only near the top | Live's meters |
 | Browser | Search, category filters as buttons, sidebar of places only (Pinned, Recent, Folders), tree with type icons, colour tags as dots on rows, preview with waveform, BPM and key | Live's sidebar of Collections, Library categories and Places |
 | Icons | Lucide (ISC) or our own simple strokes | Any glyph traced from Live |
@@ -91,7 +92,7 @@ From [research](#sources) and the first design rounds:
 
 ## Layout decisions
 
-- **Grid lines:** Session columns are separated by `border.strong`, scene rows by `border`; the
+- **Grid lines:** Launcher columns are separated by `border.strong`, scene rows by `border`; the
   separators run through the mixer section. Arrangement tracks are separated by `border.strong`.
 - **Track headers grow with track height** (Arrangement): compact = name and on/solo/arm; then
   volume and pan; then routing (output, and input, channel and monitor In/Auto/Off with
@@ -106,67 +107,118 @@ From [research](#sources) and the first design rounds:
 ## Tokens
 
 All colours, spacing, radii, stroke widths and type sizes are named tokens in one theme module.
-Widgets never contain literal colours. The colours below are the built-in theme, Suhina Dark;
+Widgets never contain literal colours. The colours below are the built-in theme, Suhina Studio;
 a theme file can change any of them (see Themes). Current values:
 
-| Token | Suhina Dark | Use |
+| Token | Suhina Studio | Use |
 |---|---|---|
 | `window.background` | `#1D1C1A` | The window behind everything: grid, empty slots, lanes, Settings |
 | `panel.background` | `#252421` | Panels and headers: menu, control and status bars, track headers, beat lines |
-| `panel.hoverBackground` | `#2A2926` | A panel or list row under the pointer |
-| `control.background` | `#2E2D2A` | Fields, buttons and stopped clips |
-| `control.hoverBackground` | `#34332F` | A field, button or clip under the pointer |
-| `control.activeBackground` | `#45433F` | Selected or pressed: a selected clip or track, a dragged field |
-| `control.playingBackground` | `#4A4843` | A playing clip or scene, the fill of a volume field |
-| `border` | `#383733` | Hairlines between regions and rows |
-| `border.strong` | `#45433F` | Session columns and arrangement track lines |
+| `panel.hoverBackground` | `#31302C` | A panel or list row under the pointer |
+| `control.background` | `#343330` | Fields, buttons and stopped clips |
+| `control.hoverBackground` | `#3F3D3A` | A field, button or clip under the pointer |
+| `control.activeBackground` | `#4B4A46` | Selected or pressed: a selected clip or track, a dragged field |
+| `control.playingBackground` | `#545472` | A playing clip or scene |
+| `control.selectedBackground` | `#D0CCC6` | The chosen option of a switch, a lit toggle, the level of a volume or pan field |
+| `border` | `#343330` | Hairlines between regions and rows |
+| `border.strong` | `#484642` | Launcher columns and arrangement track lines |
 | `text.primary` | `#ECE8E1` | Names and values |
-| `text.secondary` | `#9A958C` | Labels and notes |
-| `text.hint` | `#66625B` | Inactive text, hints and section titles |
-| `text.value` | `#C9C4BB` | Clip names, values on fields, the chosen option of a switch |
+| `text.secondary` | `#B5B2AC` | Labels and notes |
+| `text.hint` | `#85837E` | Inactive text, hints and section titles |
+| `text.value` | `#DAD6D0` | Clip names and values on fields |
+| `text.inverse` | `#1D1C1A` | Text on lit fills: a switch's chosen option, a lit button |
 | `text.playing` | `#FFFFFF` | The name of a playing clip |
+| `text.onColorLight`, `text.onColorDark` | `#ECE8E1`, `#1D1C1A` | The contrast-selected text on coloured tracks, returns and clips |
+| `browser.text.primary`, `browser.text.secondary`, `browser.text.hint`, `browser.text.value` | `#ECE8E1`, `#B5B2AC`, `#85837E`, `#DAD6D0` | Independent browser names, labels, hints and values; older themes inherit the corresponding text tokens |
 | `accent` | `#A6A3FF` | The playhead, queued clips, a key being set |
 | `recording` | `#E5484D` | Recording and errors |
-| `recording.background` | `#3A2B2A` | Behind an armed track's arm button and a recording clip |
+| `recording.background` | `#4D2F2B` | Behind an armed track's arm button and a recording clip |
 | `meter.normal` | `#8BC48A` | A level meter below the top |
 | `meter.hot` | `#E3C86A` | A level meter near the top |
-| `slot.empty` | `#4A4743` | The mark in an empty clip slot |
-| `track.mutedBackground` | `#34322F` | The fills of a muted track |
-| `pan.background` | `#232220` | Behind a track header's pan field |
-| `pan.centre` | `#55524C` | The centre mark of a pan field |
-| `track.1`–`track.4` | `#D08F6E` `#C6AC5E` `#73AAC0` `#A497CC` | The colours tracks without one of their own take in turn; also the browser's icons (effects, MIDI files, samples, instruments and presets) |
+| `slot.empty` | `#484642` | The mark in an empty clip slot |
+| `track.mutedBackground` | `#21201D` | The fills of a muted track |
+| `pan.background` | `#1F1E1C` | Behind a track header's pan field |
+| `pan.centre` | `#817F7A` | The centre mark of a pan field |
+| `track.1`–`track.8` | `#FF9A3C` `#F2D541` `#4FC3F7` `#B38BFF` `#7FDB5A` `#FF6FA8` `#5C8DFF` `#2FD9C4` | Eight colour-picker swatches, also used to resolve legacy uncoloured tracks once on opening. New tracks and clips use the MIDI/audio creation defaults; + picks any colour |
 | `track.5`–`track.8` | `#8FA87A` `#C27C8E` `#7F8FB0` `#B9B2A6` | The other colours of the track colour palette (track menu, colour areas, colour tags' menu) |
 | `kind.kick`, `kind.snare`, `kind.clap`, `kind.closedHat`, `kind.openHat`, `kind.hat`, `kind.rim`, `kind.tom`, `kind.crash`, `kind.ride`, `kind.cymbal`, `kind.percussion`, `kind.bass`, `kind.tonal`, `kind.vocal`, `kind.effect`, `kind.other` | `#D06E5E` `#73AAC0` `#5EC0B0` `#C6AC5E` `#D08F6E` `#D8C47A` `#8CA8E0` `#B074A4` `#E0A0C8` `#C8B8E8` `#A497CC` `#8FC06E` `#A84F4F` `#6EB0D0` `#E8D0A0` `#9CC49C` `#8A8680` | Sample-map points of each kind ([spec](../spec/sample-map.md)) |
-| type | 11 px UI, 10 px values, 9 px rulers | |
+| type | 12 px UI, 11 px values, 9 px rulers | |
 | row height | 20 px grid rows and fields, 15–16 px inline fields, 17 px browser rows (`theme::BROWSER_ROW`) | |
 | radius | 0 everywhere | |
 
 ## Themes
 
-A theme is a JSON file in the `themes` folder of Suhina's app-data folder, beside
-`settings.txt`; its file name without `.json` is its id, which `settings.txt` keeps as
-`theme = <id>`. It names the theme and gives colour tokens as `#RRGGBB`:
+A theme is a folder in the `themes` folder of Suhina's app-data folder, beside
+`settings.txt`; the folder's name is its id, which `settings.txt` keeps as `theme = <id>`. It holds
+a `theme.json` that names the theme and gives its swatch, and a `theme.css` that sets its colour
+tokens as `#RRGGBB` custom properties:
 
 ```json
-{ "name": "Night", "colors": { "window.background": "#14161A", "accent": "#7FD1B9" } }
+{ "format": 1, "name": "Night", "swatch": "var(--window-background)" }
 ```
 
-A token the file leaves out keeps Suhina Dark's colour, so a file needs only the colours it
-changes; an unknown token or a value that is not `#RRGGBB` is skipped with a warning. Files with
+```css
+:root { --window-background: #14161A; --accent: #7FD1B9; }
+```
+
+Text and backgrounds never share a token: text on a lit fill is `text.inverse`, text on a track
+colour is `text.onColorLight` or `text.onColorDark`, and the chosen option of a switch is filled
+with `control.selectedBackground`. A file from before these tokens takes `window.background`
+(opaque) for `text.inverse` and `text.onColorDark`, and `text.value` for
+`control.selectedBackground`.
+
+A background token's alpha is how much of the desktop shows through the window there. A
+background (`window.background`, `panel.*`, `control.*Background`, `track.headerBackground`,
+`track.headerSelectedBackground`, `track.mutedBackground`, `pan.background`,
+`recording.background`, and colours mixed from them) sets the colour and alpha of the pixels it
+covers rather than blending with what is under it; text, lines, marks and overlays blend. While a
+background has alpha, the system blurs what is behind the window. Dialogs, menus and floating
+panels blend with the window behind them, and menus (the menu bar's, right-click menus and
+dropdowns) blur the window's content under them, with the GPU renderer and effects on.
+
+The window is see-through with the GPU renderer where its swapchain hands alpha to the system's
+compositor, which Suhina asks the GPU on the first frame: on macOS always, on Windows with DX12
+(its swapchain is made from a DirectComposition visual), and on Linux where the GPU offers
+premultiplied or postmultiplied alpha (usually Wayland; X11 usually not). Elsewhere, and with
+OpenGL, the window stays opaque and backgrounds blend. The blur behind the window is the
+system's: macOS's, DWM's acrylic on Windows, and the compositor's on Wayland where it offers one
+(KDE); other Linux desktops show the desktop through unblurred. On macOS the window's content
+runs under the title bar, which takes `panel.background`; Windows draws its own title bar (the
+application bar), and Linux keeps the system's.
+
+A displayed private background image takes precedence over desktop transparency: background
+fills blend over that image. Clearing the image restores the host's transparent fill path.
+
+A token the file leaves out keeps Suhina Studio's colour, so a file needs only the colours it
+changes; an unknown token or a value that is not `#RRGGBB` or `#RRGGBBAA` is skipped with a warning. Transparent RGB is preserved under canonical token names, including inherited text roles. Files with
 the first token names (`surface.0`, `line`, `text.tertiary` …) still read. Only colours belong to
-a theme: sizes, spacing and type stay the design's. A track's own colour comes from the project; tracks without one take the theme's
-`track.1`–`track.4` in turn.
+a theme: sizes, spacing and type stay the design's. A track's own colour comes from the project; tracks without one take
+a numbered palette colour resolved once when opened. `clip.midiDefault` and
+`clip.audioDefault` are creation-only RGB defaults, copied to new tracks and clips;
+existing project colours never follow edits to those defaults. The theme editor
+offers these two defaults; numbered `track.1`–`track.8` remain legacy swatches for file
+compatibility and colour pickers, rather than a list of default track colours.
 
-Themes that come with Suhina (`crates/ui/themes/`, read-only; editing one makes a copy):
-Suhina Dark (the default), Editor Dark (cool greys and blue, like a code editor), Suhina
-Light, High Contrast, and four popular open palettes mapped onto the tokens: Dracula, Nord,
-Catppuccin Mocha and Latte, Solarized Dark (all MIT, licences in `crates/ui/themes/licenses/`).
 
-Settings › Appearance › Theme picks a theme and changes its colours (writing the file); the name
+Themes that come with Suhina (one folder each in `crates/ui/themes/<id>/`, of `theme.json`,
+`theme.css`, `thumbnail.svg` and artwork, built into the app; read-only, editing one makes a copy):
+Suhina Sheet is an original playful spreadsheet-inspired light theme: chrome in two shades of one
+accent colour (green by default), white cells, compact Session geometry and embedded square SVG
+controls. Its palette,
+CSS and artwork travel together when duplicated or exported.
+Suhina Meadow pairs classic blue/cream paper surfaces with an original generated
+green-hill background and translucent liquid materials. Its SVG controls and PNG are embedded and export with the theme. Suhina Blocks adds original brown plank surfaces, stone-like controls and colour-keyed pixel textures without landscape wallpaper.
+Suhina Studio (the default, with Darker, Darkest, Light, Blue and Forest variants), Suhina
+Light, High Contrast, and popular open palettes mapped onto the tokens: Nord, with Polar Night and
+Snow Storm variants, and Catppuccin Mocha and Latte (all MIT, licences in `crates/ui/themes/licenses/`).
+
+Settings › Appearance › Themes picks a theme from cards showing each theme's thumbnail (or its
+swatch colour), with a swatch per variant. Edit current theme changes its grouped colours (writing the file); the name
 of a theme file is changed there too, and its file is renamed to match. Duplicate copies the
 theme in use, Reload reads the files again, Open folder shows the themes folder, Back up writes
 every theme file into `exports/suhina-themes-<date>.zip`, and Export template writes
-`exports/suhina-theme-template.zip`: `template.json` (every token written out), `README.md`
+`exports/suhina-theme-template.zip`: a `my-theme/` folder (`theme.json`, and `theme.css` with every
+token written out), `README.md`
 (the format and every token, written so an AI agent can make a theme from it alone) and the
 built-in themes in `examples/`. A theme file or a zip of them (a backup) dropped on the window is
 added; a theme already there is not doubled, and one whose id is taken gets `-2`. A theme file
@@ -180,6 +232,48 @@ Before a view ships, put it next to the same view in Live:
 2. At thumbnail size, nobody mistakes it for Live. **Different enough.**
 
 If (2) fails, change colours, control shapes, typography and wording, not the layout.
+
+## Local Studio appearance experiment
+
+Studio Light and Studio Dark are opt-in themes using warm surfaces and gold accents.
+Arrangement headers keep their track-color edge band on neutral, theme-editable surfaces
+(`track.headerBackground`, `track.headerSelectedBackground`). Missing new tokens in older
+theme files fall back to the built-in palette. The selected token supplies the base of selected headers before track-colour strength and the selection highlight are applied; selection retains an outline.
+The larger transport and initial Arrangement dimensions are described in components.
+These initial dimensions are shared implementation constants, not yet user-configurable
+appearance metrics; the planned metrics settings remain follow-up work.
+
+### Website-to-application direction
+
+Use the Suhina website as the primary visual reference: warm paper/charcoal, muted clip
+colors, a restrained gold accent, thin quiet grid lines and readable hierarchy. Preserve a
+dense music workspace without making every field equally prominent. Glass is an optional
+material, not the visual foundation; solid mode must look complete on its own. Grid strength
+is independently editable through `grid.major` and `grid.minor`.
+
+Public references reviewed on 20 October 2026: [Bitwig display profiles](https://www.bitwig.com/userguide/latest/a_musical_swiss_army_knife/),
+[Live display and theme settings](https://www.ableton.com/en/manual/first-steps/), and
+[FabFilter scaling](https://www.fabfilter.com/help/micro/using/scaling). These inform general
+principles (adaptable density, separate color controls, usable scaling), not copied graphics,
+text, widget shapes or layouts. No proprietary assets were downloaded into this repository.
+
+### Default UI typeface
+
+Manrope is the default proportional UI font, matching the website. The original Encode Sans
+Semi Expanded asset and license remain embedded as a fallback and the named `encode-sans`
+font family. This does not yet add a user-facing font selector (#513). Number fields retain
+IBM Plex Mono. All bundled fonts load offline.
+
+
+### Theme skins and native CSS
+
+Themes also own SVG control artwork, continuous/segmented/needle meter presentation,
+and optional control-bar module order/visibility. These travel in a portable theme ZIP,
+including a theme's background PNG. The theme editor and the initial native CSS subset
+share the same model, with live CSS/JSON file synchronization. See
+[Theme skins](../spec/theme-skins.md) for supported declarations and failure handling.
+The broader modern CSS target and candidate engines are recorded separately in
+[ADR 0030](../decisions/0030-native-theme-css.md); this initial subset is not full CSS.
 
 ## Sources
 
