@@ -11,6 +11,7 @@ use suhina_theme_render::{Subject, scenes};
 
 /// The counts recorded for each scene. `approximations` and `context_misses` are those of a
 /// settled frame; the `*_approximations` are summed over the frames a change takes to settle.
+#[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
@@ -36,6 +37,40 @@ const RECORDED: [(&str, Counts); 2] = [
             paint_callbacks: 163,
             theme_change_frames: 3,
             theme_change_approximations: 2193,
+            hover_frames: 4,
+            hover_approximations: 0,
+        },
+    ),
+];
+
+/// The same on Windows, where Suhina draws the window's title bar itself (the application bar), which
+/// the other systems leave to the system.
+#[cfg(windows)]
+const RECORDED: [(&str, Counts); 2] = [
+    (
+        "launcher",
+        Counts {
+            nodes: 326,
+            contexts: 67,
+            approximations: 0,
+            context_misses: 0,
+            paint_callbacks: 139,
+            theme_change_frames: 3,
+            theme_change_approximations: 1097,
+            hover_frames: 4,
+            hover_approximations: 0,
+        },
+    ),
+    (
+        "expanded-fm-synth",
+        Counts {
+            nodes: 549,
+            contexts: 85,
+            approximations: 0,
+            context_misses: 0,
+            paint_callbacks: 164,
+            theme_change_frames: 3,
+            theme_change_approximations: 2214,
             hover_frames: 4,
             hover_approximations: 0,
         },
