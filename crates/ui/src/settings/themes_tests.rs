@@ -307,3 +307,29 @@ fn a_saved_edit_of_a_built_in_variant_wins_and_goes_when_its_file_goes() {
     themes.set(Vec::new(), None);
     assert_eq!(themes.palette("nord@snow-storm"), original);
 }
+
+#[test]
+fn resetting_a_skin_only_edit_makes_no_variant_and_restores_the_theme_itself() {
+    let (ink, _) =
+        theme::from_folder(theme::ThemeMeta::new("Ink", theme::DEFAULT_SWATCH), ":root { --accent: #112233; }");
+    let original = ink.clone();
+    let mut edited = ink.clone();
+    edited.skin.toolbar_offsets.insert("tempo".into(), 40);
+    let mut themes = Themes::default();
+    themes.put(ThemeEntry { id: "ink".into(), theme: edited });
+    assert_ne!(themes.get("ink").unwrap().skin.toolbar_offsets, original.skin.toolbar_offsets);
+    let switched = themes.request(
+        "ink",
+        ThemeRequest::ResetEdits {
+            colors: original.colors,
+            liquid: original.liquid,
+            gradients: original.gradients.clone(),
+            transparent_rgb: original.transparent_rgb.clone(),
+            skin: Box::new(original.skin.clone()),
+            values: [("--accent".to_string(), "#112233".to_string())].into(),
+        },
+    );
+    assert_eq!(themes.get("ink").unwrap().skin.toolbar_offsets, original.skin.toolbar_offsets);
+    assert!(themes.get("ink@custom").is_none(), "a reset of what was not edited made a variant");
+    assert_ne!(switched.as_deref(), Some("ink@custom"));
+}

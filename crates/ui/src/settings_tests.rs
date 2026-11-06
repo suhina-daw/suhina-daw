@@ -463,4 +463,8 @@ fn a_saved_built_in_theme_that_went_is_read_as_what_took_its_place() {
     ] {
         assert_eq!(Settings::from_text(&format!("theme = {saved}\n")).0.theme, read, "{saved}");
     }
+    // A variant that is a path is no theme id, renamed or not, and is said so.
+    let (settings, warnings) = Settings::from_text("theme = suhina-dark@../x\n");
+    assert_eq!(settings.theme, Settings::default().theme);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
 }

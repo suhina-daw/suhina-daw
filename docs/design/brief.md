@@ -148,12 +148,17 @@ a theme file can change any of them (see Themes). Current values:
 
 ## Themes
 
-A theme is a JSON file in the `themes` folder of Suhina's app-data folder, beside
-`settings.txt`; its file name without `.json` is its id, which `settings.txt` keeps as
-`theme = <id>`. It names the theme and gives colour tokens as `#RRGGBB`:
+A theme is a folder in the `themes` folder of Suhina's app-data folder, beside
+`settings.txt`; the folder's name is its id, which `settings.txt` keeps as `theme = <id>`. It holds
+a `theme.json` that names the theme and gives its swatch, and a `theme.css` that sets its colour
+tokens as `#RRGGBB` custom properties:
 
 ```json
-{ "name": "Night", "colors": { "window.background": "#14161A", "accent": "#7FD1B9" } }
+{ "format": 1, "name": "Night", "swatch": "var(--window-background)" }
+```
+
+```css
+:root { --window-background: #14161A; --accent: #7FD1B9; }
 ```
 
 Text and backgrounds never share a token: text on a lit fill is `text.inverse`, text on a track

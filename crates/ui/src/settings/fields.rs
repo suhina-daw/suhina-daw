@@ -189,7 +189,7 @@ pub(super) const FIELDS: &[Field] = &[
         write: |s| s.theme.clone(),
         read: |s, v| {
             // A built-in theme saved under an id it has since lost is its successor.
-            if let Some(now) = renamed_theme(v) {
+            if let Some(now) = renamed_theme(v).filter(|now| is_theme_id(now)) {
                 s.theme = now;
                 return true;
             }

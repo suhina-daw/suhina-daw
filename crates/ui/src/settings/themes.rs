@@ -374,6 +374,7 @@ impl Themes {
         settings: bool,
         change: impl FnOnce(&mut Theme),
     ) -> Option<String> {
+        let mut change = Some(change);
         let real = self.real_id(current);
         self.get(&real)?;
         let (base, variant) = crate::kit::theme_vars::split_id(&real);
@@ -388,11 +389,21 @@ impl Themes {
             let mut theme = self.get(&real)?.clone();
             theme.vars.variant = crate::kit::theme_vars::split_id(&id).1.map(str::to_owned);
             theme.vars.variant_name = Some("Custom".into());
-            self.entries.push(ThemeEntry { id: id.clone(), theme });
+            // A change that changes nothing (a reset of what was not edited) makes no variant.
+            let mut changed = theme.clone();
+            if let Some(change) = change.take() {
+                change(&mut changed);
+            }
+            if changed == theme {
+                return None;
+            }
+            self.entries.push(ThemeEntry { id: id.clone(), theme: changed });
             (id, true)
         };
         let entry = self.entries.iter_mut().find(|e| e.id == id)?;
-        change(&mut entry.theme);
+        if let Some(change) = change.take() {
+            change(&mut entry.theme);
+        }
         // A theme read from a sheet keeps its edited settings as values over the sheet's.
         if !entry.theme.vars.base.is_empty() {
             crate::kit::theme_vars::sync(&mut entry.theme);
