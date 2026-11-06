@@ -42,7 +42,7 @@ const RECORDED: [(&str, Counts); 2] = [
     ),
 ];
 
-fn within(name: &str, theme: &str, counts: Counts, budget: Counts) {
+fn within(name: &str, theme: &str, counts: Counts, budget: Counts) -> Vec<String> {
     let fields = [
         ("nodes", counts.nodes as u64, budget.nodes as u64),
         ("contexts", counts.contexts as u64, budget.contexts as u64),
@@ -58,22 +58,28 @@ fn within(name: &str, theme: &str, counts: Counts, budget: Counts) {
         ("frames after a hover", counts.hover_frames, budget.hover_frames),
         ("approximations after a hover", counts.hover_approximations as u64, budget.hover_approximations as u64),
     ];
-    for (field, now, recorded) in fields {
-        assert!(now <= recorded, "{theme} in {name}: {field} went up from {recorded} to {now}: {counts:?}");
-    }
+    fields
+        .into_iter()
+        .filter(|(_, now, recorded)| now > recorded)
+        .map(|(field, now, recorded)| {
+            format!("{theme} in {name}: {field} went up from {recorded} to {now}: {counts:?}")
+        })
+        .collect()
 }
 
 #[test]
 fn the_demo_and_an_expanded_fm_synth_stay_within_the_budget() {
     // Glass, a bundled see-through theme with a style sheet, and the see-through test theme.
     let themes = [Subject::built_in("suhina-glass").expect("a built-in theme"), super::see_through().unwrap()];
+    let mut over = Vec::new();
     for theme in &themes {
         for (name, budget) in RECORDED {
             let scene = scenes::find(name).unwrap_or_else(|| panic!("no scene {name}"));
             let counts = count(theme, &scene).unwrap_or_else(|e| panic!("{name}: {e}"));
-            within(name, &theme.id, counts, budget);
+            over.extend(within(name, &theme.id, counts, budget));
         }
     }
+    assert!(over.is_empty(), "over the budget:\n{}", over.join("\n"));
 }
 
 #[test]
