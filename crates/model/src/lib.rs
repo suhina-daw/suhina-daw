@@ -55,7 +55,7 @@ mod overlap;
 mod scale;
 mod shared;
 pub use launch::{LaunchMode, LaunchQuantization, LaunchSettings};
-pub use mapping::{KEY_NAME_MAX, LaunchMapping, MappingSource, MappingTarget};
+pub use mapping::{ControllerMapping, KEY_NAME_MAX, MappingSource, MappingTarget};
 pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, TOUCH_TOLERANCE};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
 pub use shared::{Bytes, Shared};
@@ -98,6 +98,11 @@ pub struct Project {
     /// The scale a new MIDI clip takes, if any; clips made before it was set keep theirs
     /// ([ADR 0001](../../docs/decisions/0001-daw-neutral-model.md) › Amendment: clip scales).
     pub default_scale: Option<Scale>,
+    /// The project's controller mappings: keys and MIDI notes that run a command, so far the
+    /// launch commands of slots, scenes and stop buttons (ADR 0019 › Amendment: launch keys are
+    /// controller mappings). A mapping whose track or scene is gone stays, unused, so an undo
+    /// brings it back working.
+    pub controller_mappings: Vec<ControllerMapping>,
     /// The next id a clip, an arrangement lane or a scene gets: the three kinds share this
     /// counter, and a value is never handed out twice, deleted objects' included
     /// ([ADR 0025](../../docs/decisions/0025-object-identity.md)). Allocate with
@@ -973,9 +978,6 @@ pub struct ArrangementLane {
 pub struct Launcher {
     pub scenes: Vec<Scene>,
     pub columns: Vec<LauncherColumn>,
-    /// Keys and MIDI notes that launch slots, scenes and stop buttons. A mapping whose track or
-    /// scene is gone stays, unused, so an undo brings it back working.
-    pub mappings: Vec<LaunchMapping>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]

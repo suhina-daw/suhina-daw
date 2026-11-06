@@ -238,22 +238,22 @@ fn everything() -> Project {
             markers: vec![Marker::new(0.0, "Intro"), Marker::new(16.0, "Verse"), Marker::new(16.0, "")].into(),
             takes: Vec::new(),
         },
+        controller_mappings: vec![
+            ControllerMapping {
+                source: MappingSource::key("Q").unwrap(),
+                target: MappingTarget::Slot { track: TrackId(2), scene: 1 },
+            },
+            ControllerMapping {
+                source: MappingSource::note(10, 36).unwrap(),
+                target: MappingTarget::Scene { scene: 0 },
+            },
+            // Its track is gone: kept, unused.
+            ControllerMapping {
+                source: MappingSource::key("Space").unwrap(),
+                target: MappingTarget::Stop { track: TrackId(99) },
+            },
+        ],
         launcher: Launcher {
-            mappings: vec![
-                LaunchMapping {
-                    source: MappingSource::key("Q").unwrap(),
-                    target: MappingTarget::Slot { track: TrackId(2), scene: 1 },
-                },
-                LaunchMapping {
-                    source: MappingSource::note(10, 36).unwrap(),
-                    target: MappingTarget::Scene { scene: 0 },
-                },
-                // Its track is gone: kept, unused.
-                LaunchMapping {
-                    source: MappingSource::key("Space").unwrap(),
-                    target: MappingTarget::Stop { track: TrackId(99) },
-                },
-            ],
             scenes: vec![
                 Scene {
                     id: Default::default(),
@@ -388,21 +388,83 @@ fn the_cue_is_written_only_when_on() {
     assert_eq!(from_json(&to_json(&quiet)), Ok(quiet));
 }
 
-/// Mappings are written under the launcher with their scenes from 0 (from version 8), and left
-/// out when there are none.
+/// Mappings are written as `controller_mappings`, each target its command and the parameters it
+/// fixes, scenes from 0 (version 9, #1162); the launcher's `mappings` is not written, and
+/// nothing is when there are none.
 #[test]
-fn launch_mappings_are_written_with_their_targets() {
+fn controller_mappings_are_written_with_their_target_commands() {
     let written: Value = serde_json::from_str(&to_json(&everything())).unwrap();
     assert_eq!(
-        written["project"]["launcher"]["mappings"],
+        written["project"]["controller_mappings"],
         json!([
-            { "source": "key:Q", "target": "slot", "track": 2, "scene": 1 },
-            { "source": "note:10:36", "target": "scene", "scene": 0 },
-            { "source": "key:Space", "target": "stop", "track": 99 },
+            { "source": "key:Q", "target": { "command": "clip.launch", "track": 2, "scene": 1 } },
+            { "source": "note:10:36", "target": { "command": "scene.launch", "scene": 0 } },
+            { "source": "key:Space", "target": { "command": "track.stop", "track": 99 } },
         ])
     );
+    assert!(written["project"]["launcher"].get("mappings").is_none(), "{written}");
     let empty: Value = serde_json::from_str(&to_json(&Project::default())).unwrap();
-    assert!(empty["project"]["launcher"].get("mappings").is_none(), "{empty}");
+    assert!(empty["project"].get("controller_mappings").is_none(), "{empty}");
+}
+
+/// An older file's launch mappings, in the launcher's `mappings`, are read into
+/// `controller_mappings` (#1162); a version 9 file's launcher `mappings` is not read.
+#[test]
+fn an_older_files_launch_keys_are_read_as_controller_mappings() {
+    let file = |version: u64| {
+        format!(
+            r#"{{ "format": "suhina", "version": {version}, "project": {{ "launcher": {{ "mappings": [
+                {{ "source": "key:Q", "target": "slot", "track": 2, "scene": 1 }},
+                {{ "source": "note:10:36", "target": "scene", "scene": 0 }},
+                {{ "source": "key:Space", "target": "stop", "track": 99 }} ] }} }} }}"#
+        )
+    };
+    let project = from_json(&file(8)).unwrap();
+    assert_eq!(project.controller_mappings, everything().controller_mappings);
+    assert_eq!(project.launcher, Launcher::default());
+    // Saved again, they are written only as controller mappings.
+    let written: Value = serde_json::from_str(&to_json(&project)).unwrap();
+    assert!(written["project"]["launcher"].get("mappings").is_none(), "{written}");
+    assert_eq!(from_json(&to_json(&project)), Ok(project));
+    assert_eq!(from_json(&file(9)).map(|p| p.controller_mappings), Ok(Vec::new()));
+}
+
+/// A controller mapping that does not parse refuses the file, naming it, as a launch mapping
+/// did; one whose track or scene is gone is kept.
+#[test]
+fn a_malformed_controller_mapping_is_refused() {
+    let read = |mappings: &str| {
+        from_json(&format!(
+            r#"{{ "format": "suhina", "version": 9, "project": {{ "controller_mappings": {mappings} }} }}"#
+        ))
+        .map(|p| p.controller_mappings)
+    };
+    let kept = read(r#"[ { "source": "key:Q", "target": { "command": "scene.launch", "scene": 7 } } ]"#);
+    assert_eq!(
+        kept,
+        Ok(vec![ControllerMapping {
+            source: MappingSource::key("Q").unwrap(),
+            target: MappingTarget::Scene { scene: 7 }
+        }])
+    );
+    for bad in [
+        r#"{}"#,
+        r#"[ 5 ]"#,
+        r#"[ { "target": { "command": "scene.launch", "scene": 0 } } ]"#,
+        r#"[ { "source": "cc:1:20", "target": { "command": "scene.launch", "scene": 0 } } ]"#,
+        r#"[ { "source": "key:Q" } ]"#,
+        r#"[ { "source": "key:Q", "target": "scene" } ]"#,
+        r#"[ { "source": "key:Q", "target": { "scene": 0 } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "track.setVolume", "track": 1 } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "clip.launch", "track": 1 } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "scene.launch", "scene": -1 } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "track.stop", "track": "Bass" } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "track.stop", "track": 1 } },
+             { "source": "key:Q", "target": { "command": "track.stop", "track": 2 } } ]"#,
+    ] {
+        let err = read(bad).unwrap_err().to_string();
+        assert!(err.contains("project.controller_mappings"), "{bad}: {err}");
+    }
 }
 
 /// A launch mapping's scene counts from 0 from version 8 (#763 › 1) and from 1 before, so a
@@ -413,7 +475,7 @@ fn a_launch_mappings_scene_counts_from_0_from_version_8() {
         from_json(&format!(
             r#"{{ "format": "suhina", "version": {version}, "project": {{ "launcher": {{ "mappings": [ {{ "source": "key:Q", "target": "scene", "scene": {scene} }} ] }} }} }}"#
         ))
-        .map(|p| p.launcher.mappings[0].target)
+        .map(|p| p.controller_mappings[0].target)
     };
     assert_eq!(read(8, 0), Ok(MappingTarget::Scene { scene: 0 }));
     assert_eq!(read(7, 1), Ok(MappingTarget::Scene { scene: 0 }));

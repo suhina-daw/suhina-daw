@@ -418,10 +418,10 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   release of a slot's launch button; in the Launcher view a slot launches as the mouse button goes
   down, and right-clicking a clip sets its launch settings
   ([spec](docs/spec/clip-launching.md#launch-settings)).
-- Computer keys launch slots, scenes and stop buttons: Ctrl+M or **Map keys** in the title bar maps
+- Computer keys launch slots, scenes and stop buttons: Ctrl+M or **Map** in the title bar maps
   the next key to the clicked control, and a key down and up are the press and release, so gate
-  and repeat clips play from the keyboard. `launcher.addMapping` maps MIDI notes too, kept in the
-  project; playing them waits for MIDI input
+  and repeat clips play from the keyboard. `mapping.add` maps MIDI notes too, kept in the
+  project's controller mappings; playing them waits for MIDI input
   ([spec](docs/spec/clip-launching.md#launching-from-keys-and-notes)).
 - Still to do: launching from live MIDI notes, fades on launched clips
   ([#104](https://github.com/suhina-daw/suhina-daw/issues/104)), reading the global

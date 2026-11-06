@@ -1272,10 +1272,11 @@ fn shown_scene(scene: &serde_json::Value) -> String {
 
 /// A mapping command's target in words: "track 2 scene 1", "scene 3", "the stop button of track 2".
 pub(super) fn mapping_target(p: &serde_json::Value) -> String {
-    match p["target"].as_str() {
-        Some("slot") => format!("track {} scene {}", p["track"], shown_scene(&p["scene"])),
-        Some("scene") => format!("scene {}", shown_scene(&p["scene"])),
-        _ => format!("the stop button of track {}", p["track"]),
+    let t = &p["target"];
+    match t["command"].as_str() {
+        Some("clip.launch") => format!("track {} scene {}", t["track"], shown_scene(&t["scene"])),
+        Some("scene.launch") => format!("scene {}", shown_scene(&t["scene"])),
+        _ => format!("the stop button of track {}", t["track"]),
     }
 }
 
@@ -1287,12 +1288,12 @@ pub(super) fn describe(action: &Action) -> Option<String> {
         "scene.launch" => format!("Launched scene {}", shown_scene(&p["scene"])),
         "track.stop" => format!("Stopping track {}", p["track"]),
         "launcher.stopAll" => "Stopping all clips".into(),
-        "launcher.addMapping" => format!(
+        "mapping.add" => format!(
             "Mapped {} to {}",
             p["source"].as_str().unwrap_or_default().trim_start_matches("key:"),
             mapping_target(p)
         ),
-        "launcher.removeMapping" => format!("Removed the keys of {}", mapping_target(p)),
+        "mapping.remove" => format!("Removed the keys of {}", mapping_target(p)),
         "launcher.setQuantization" => format!("Launch quantisation {}", p["value"].as_str().unwrap_or_default()),
         "clip.setLaunchMode" => format!("Launch mode {}", p["mode"].as_str().unwrap_or_default()),
         "clip.setQuantization" => format!("Clip launch quantisation {}", p["value"].as_str().unwrap_or_default()),

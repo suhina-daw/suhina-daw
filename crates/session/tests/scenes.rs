@@ -54,7 +54,6 @@ fn project_built() -> Project {
                 LauncherColumn { track: TrackId(1), slots: vec![slot(Some(1)), slot(Some(2))] },
                 LauncherColumn { track: TrackId(2), slots: vec![slot(None), slot(Some(3))] },
             ],
-            mappings: Default::default(),
         },
         ..Project::default()
     }

@@ -65,7 +65,6 @@ fn project(lane: LaneData, length: f64) -> Project {
                     has_stop: true,
                 }],
             }],
-            mappings: Vec::new(),
         },
         ..Project::default()
     }
