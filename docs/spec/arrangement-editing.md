@@ -166,7 +166,9 @@ After a header click Delete removes the selected tracks, not a clip (a clip on t
 selected for the detail area until another is picked); a click on a clip or a lane gives Delete
 back to the clips. In the Launcher view a header click does the same for its track (#690). After a
 header click **Ctrl+C**, **Ctrl+X**, **Ctrl+V** and **Ctrl+D** copy, cut, paste and duplicate the
-selected tracks, in their order, one undo step each (Tracks, #919). The
+selected tracks, in their order, one undo step each (Tracks, #919). A time selection painted
+afterwards, in the lanes or on the ruler, or a click in a lane takes these keys back from the
+tracks: they then act on the painted time, until a header is clicked again (#1199). The
 header shows its track's colour strongly (60 % over the panel); a selected track's is brighter
 and more saturated, with an outline in it. A track keeps the colour it shows when tracks are
 added, removed or moved: one without a colour of its own gets its place's palette colour stored
@@ -305,8 +307,10 @@ itself) is not built yet.
 
 ## Duplicating and deleting
 
-`clip.duplicate {clips, stack?}` places a copy of each named clip right after it, replacing what
-the copies cover unless stacked, as a moved clip does (the window stacks when the setting for the
+`clip.duplicate {clips, stack?}` places copies of the named clips right after them as one block:
+each copy is moved by the span from the first clip's start to the last one's end, over every
+track at once, so the copies keep their places among each other and never land on the clips they
+copy (one clip goes right after itself; #1206). They replace what they cover unless stacked, as a moved clip does (the window stacks when the setting for the
 clip's kind is on); `clip.delete {clips}` removes them. Both take a list of `{ track, index }` as
 `project.clips` lists them, at least one, and make one undo step for the whole list
 (`clip.delete` also takes one clip as `{track, index}`, or a slot's clip as `{track, scene}`). In the
@@ -404,8 +408,10 @@ both sides (2 ms), and for a warped clip, whose second part starts its time-stre
 without the audio before it, very slightly for its first moments, as when playback starts there
 (Play position).
 
-In the Arrangement view **Ctrl+E** splits the selected clip at the playhead (nothing happens,
-with a hint in the status bar, when the playhead is not inside it), and a clip's right-click
+In the Arrangement view **Ctrl+E** splits the selected clip where its body was clicked (the
+play start marker that click put there, on the grid; Alt: free), playing or stopped, never at
+the playhead (#1186); when the clip was picked without a click inside it (by its name bar, a
+rectangle, Ctrl+A), nothing happens and a hint in the status bar asks for one. A clip's right-click
 menu has **Split here**, which cuts where the clip was right-clicked, on the grid clips snap to
 at that zoom (Alt held while right-clicking: exactly there).
 
@@ -638,7 +644,7 @@ pass the setting **Stop** (Settings › Arrangement › Time and play): **Marker
 **Playing from the selected clip.** A clip's start is often where one wants to listen from;
 moving the marker there by hand first is a step too many. **Suhina:** the play/stop key and the
 Play button pass the setting **Play from** (Settings › Arrangement › Time and play): **Selected clip** (default) or
-**Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them; while playing, playback goes on and the next start begins there. A click where a drag would move the clip (by default its name bar; with the lower half moving it, that half) picks it whole and moves the marker to its exact start, off the grid too, even when it was picked already. A click where a drag would paint time picks it but sets the play start on the grid line at or before the click, never before the clip's start, and play starts there, not from the clip's start, until the clip is picked whole again.
+**Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them; while playing, playback goes on and the next start begins there. A click where a drag would move the clip (by default its name bar; with the lower half moving it, that half) picks it whole and moves the marker to its exact start, off the grid too, even when it was picked already. A click where a drag would paint time picks it but sets the play start on the grid line nearest the click (the line before it when the nearest is at or past the clip's end), never before the clip's start, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with a
 time selection painted after the clip was picked, no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
@@ -744,7 +750,8 @@ while playing; offline it plays without a gap.
 the tracks (returns and Main left out), in every view, message and file name: "# Bass" on the
 third track shows as "3 Bass" and follows the track when tracks move. New tracks are "# MIDI" and
 "# Audio". A track the user never renamed is named after its instrument with its number
-("# FM Synth", shown "3 FM Synth"), and gets the new tracks' name back when the instrument goes
+("# FM Synth", shown "3 FM Synth"), or after the preset the instrument was added with ("# Warm
+FM Bass"); an effect does not rename it. It gets the new tracks' name back when the instrument goes
 or the track becomes an audio track; a name the user chose stays. Commands find a track by its
 name as shown ("3 FM Synth") or as written.
 

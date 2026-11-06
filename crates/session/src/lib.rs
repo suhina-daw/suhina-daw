@@ -103,6 +103,7 @@ pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
 pub use player::{OutputHandle, Player};
 pub use plugins::{device_plugin, plugin_commands};
+pub use projects::{DeviceInputs, MAX_DEVICE_INPUTS};
 pub use projects::{
     MAX_OPEN_PROJECTS, OpenOptions, ProjectId, Projects, all_commands, commands_markdown, params_of, policy,
     project_commands,
@@ -227,6 +228,21 @@ pub struct Session {
     /// The take lane heard in place of its track's clips (`take.solo`, #989): its track and its
     /// index in `arrangement.takes`. Not saved, not an undo step.
     pub(crate) take_solo: Option<(suhina_model::TrackId, usize)>,
+    /// The audio input a new audio track takes, and an armed one that hears none: the
+    /// default track input of Settings › Audio while an input device is chosen, else none
+    /// ([`Session::set_default_input`], ADR 0017).
+    default_input: suhina_model::InputChannels,
+    /// The tracks of a new project still unchanged that took the default track input when it
+    /// was made or since: they follow the default while the project stays unchanged
+    /// ([`Session::set_default_input`]).
+    defaulted: Vec<suhina_model::TrackId>,
+}
+
+/// Whether `track` records audio from an input: an audio track on a regular mixer strip (a return
+/// or a group records nothing), as the default track input is given to (ADR 0017).
+pub(crate) fn records_audio(track: &suhina_model::Track, channels: &[suhina_model::Channel]) -> bool {
+    let role = track.channel.and_then(|id| channels.iter().find(|c| c.id == id)).map(|c| c.role);
+    track.content.audio && !track.content.notes && matches!(role, None | Some(suhina_model::ChannelRole::Regular))
 }
 
 /// Files kept decoded ahead of the commands that use them.
@@ -254,7 +270,62 @@ impl Session {
             backup: backup::SessionBackups::default(),
             live: live_input::LiveInput::default(),
             take_solo: None,
+            default_input: suhina_model::InputChannels::None,
+            defaulted: Vec::new(),
         }
+    }
+
+    /// Sets the audio input new audio tracks take from now on ([`Projects`] keeps it in line
+    /// with Settings › Audio). Tracks that are there already keep theirs, except in a new project
+    /// nothing has changed yet (blank or from a template, never saved, no edit made): there its
+    /// audio tracks that hear nothing take the default too, and keep following it while the
+    /// project stays unchanged, so a new project is ready to record on the sound card chosen
+    /// (#1191). Giving it is not an edit: no undo step, nothing to save.
+    pub fn set_default_input(&mut self, input: suhina_model::InputChannels) {
+        self.default_input = input;
+        let unchanged = self.source.is_none() && !self.has_unsaved_changes() && !self.can_undo();
+        if !unchanged {
+            self.defaulted.clear();
+            return;
+        }
+        let given = self.default_input().unwrap_or_default();
+        let (tracks, channels) = (&mut self.project.tracks, &self.project.channels);
+        let mut changed = false;
+        for track in tracks.iter_mut().filter(|t| records_audio(t, channels)) {
+            let ours = self.defaulted.contains(&track.id);
+            if track.audio_input.channels != suhina_model::InputChannels::None && !ours {
+                continue;
+            }
+            if track.audio_input.channels != given {
+                track.audio_input.channels = given;
+                changed = true;
+            }
+            match (given == suhina_model::InputChannels::None, ours) {
+                (true, true) => self.defaulted.retain(|id| *id != track.id),
+                (false, false) => self.defaulted.push(track.id),
+                _ => {}
+            }
+        }
+        if changed && let Err(e) = self.update_player(None) {
+            suhina_plugins::trace!("default track input: the playing engine could not follow: {}", e.0);
+        }
+    }
+
+    /// The audio input a new audio track takes now: the default set, when there is one and the
+    /// open input device has its channels. With no output open the channels are not known, and
+    /// the default is taken as it is.
+    pub fn default_input(&self) -> Option<suhina_model::InputChannels> {
+        use suhina_model::InputChannels;
+        let last = match self.default_input {
+            InputChannels::None => return None,
+            InputChannels::Mono(c) => c,
+            InputChannels::Stereo(c) => c.checked_add(1)?,
+        };
+        if !crate::projects::valid_track_input(self.default_input) || last == 0 {
+            return None;
+        }
+        let channels = self.player().and_then(Player::output_info).map(|i| i.input_channels);
+        channels.is_none_or(|n| last <= n).then_some(self.default_input)
     }
 
     /// Sets how long the fades of parts comped from now on are, in milliseconds.

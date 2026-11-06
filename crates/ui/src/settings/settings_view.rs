@@ -2203,9 +2203,70 @@ pub(crate) fn audio_output(cx: &mut Cx<'_>, y: &mut f32) {
             return;
         }
         let picked = restore_driver(picked, cx.settings, cx.about);
+        let picked = restore_input(picked, &active, cx.settings);
         let apply = select_output(&mut cx.state.audio_pending, &active, picked);
         use_output(cx, apply);
     }
+}
+
+/// Audio › Output › Default track input (#1191): none, or a channel or a stereo pair of the
+/// input device, listed from its channels. Each audio device (Device) keeps its own with its
+/// Input, so choosing another one brings both back; the app runs `audio.setTrackInput`.
+pub(crate) fn default_track_input(cx: &mut Cx<'_>, r: Rect) {
+    let choice = cx.settings.output_choice();
+    let channels = match &cx.about.audio_live {
+        Some(live) if live.input.is_some() => live.input_channels,
+        _ => {
+            let host = chosen(cx.settings, cx.about).host;
+            let inputs = host.map_or(&[][..], |h| h.inputs.as_slice());
+            match &choice.input {
+                suhina_session::InputChoice::Off => 0,
+                suhina_session::InputChoice::Default => inputs.iter().find(|i| i.default).map_or(0, |i| i.channels),
+                suhina_session::InputChoice::Named(name) => {
+                    inputs.iter().find(|i| i.name.eq_ignore_ascii_case(name)).map_or(0, |i| i.channels)
+                }
+            }
+        }
+    };
+    if choice.input == suhina_session::InputChoice::Off {
+        cx.note("Choose an input device under Input first: each audio device keeps its own default track input");
+        return;
+    }
+    let current = suhina_session::audio::input_channels_text(cx.settings.track_input());
+    let options = track_input_options(channels, &current);
+    cx.note("What a new audio track hears, and an armed track that hears nothing; each audio device keeps its own with its Input, tracks that are there keep theirs");
+    if let Some(picked) = choice_dropdown(cx.ui, cx.painter, r, cx.name, &options, &current)
+        && let Some(slot) = cx.settings.track_input_slot()
+    {
+        *slot = picked;
+        cx.outcome.changed = true;
+    }
+}
+
+/// The choices of Default track input for a device with `channels` inputs: None, each channel,
+/// then each stereo pair as the track's Audio From lists them (1/2, 3/4, …); and `current` when
+/// it is not among them: as it is when the device has its channels (a pair such as 2/3 set from
+/// MCP), marked when it does not.
+pub(crate) fn track_input_options(channels: u16, current: &str) -> Vec<(String, String)> {
+    use suhina_engine::model::InputChannels;
+    let channels = channels.min(suhina_engine::model::MAX_INPUT_CHANNEL);
+    let mut options = vec![("None".to_string(), "none".to_string())];
+    options.extend((1..=channels).map(|c| (format!("In {c}"), c.to_string())));
+    options.extend((1..channels).step_by(2).map(|c| (format!("In {c}/{}", c + 1), format!("{c}/{}", c + 1))));
+    if !options.iter().any(|(_, value)| value == current) {
+        let last = match suhina_session::audio::input_channels_from_text(current) {
+            Some(InputChannels::Mono(c)) => Some(c),
+            Some(InputChannels::Stereo(c)) => c.checked_add(1),
+            _ => None,
+        };
+        let label = if last.is_some_and(|last| last <= channels) {
+            format!("In {current}")
+        } else {
+            format!("In {current} (not on this device)")
+        };
+        options.push((label, current.to_string()));
+    }
+    options
 }
 
 /// Audio › Cue: the cue's output pair and volume.
@@ -2283,6 +2344,18 @@ fn restore_driver(picked: OutputPick, settings: &Settings, about: &About) -> Out
         }
     }
     OutputPick::Driver(choice)
+}
+
+/// Another audio device brings back the input it was last chosen with, so its default track
+/// input comes back with it (#1191); a device not chosen before keeps the input there is.
+fn restore_input(picked: OutputPick, active: &suhina_session::OutputChoice, settings: &Settings) -> OutputPick {
+    let OutputPick::Device(mut choice) = picked else { return picked };
+    if choice.device_key() != active.device_key()
+        && let Some(input) = settings.remembered_input(&choice)
+    {
+        choice.input = input;
+    }
+    OutputPick::Device(choice)
 }
 
 fn select_output(

@@ -755,6 +755,7 @@ mod refused_tests {
         for id in [
             "project.close",
             "audio.setOutput",
+            "audio.setTrackInput",
             "midi.setInput",
             "plugin.setHosting",
             "plugin.setEnabled",

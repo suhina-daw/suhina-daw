@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-06
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/gradient_editor.rs
@@ -71,7 +71,7 @@ what is inside it).
 | Projects and backups | Projects | Open projects in, Startup project, Projects folder, Templates folder, Settings folder (used from the next start; changing it asks, backs up and moves the files), Startup template (shown with Startup project › Template) |
 | Projects and backups | Backups | Backup interval (the note names the newest backup of the active project), Delete old backups |
 | Audio | Status | Audio status: the output and input in use, how long sound takes to come out, dropouts, List devices again (a panel, not a setting) |
-| Audio | Output | Audio device: Driver, Device, Sample rate, Buffer size (or Engine block), Exclusive mode, Input |
+| Audio | Output | Audio device: Driver, Device, Sample rate, Buffer size (or Engine block), Exclusive mode, Input; Default track input (None, each channel and each pair of the input device; each audio device keeps its own with its Input, so choosing another Device brings both back; only a note while Input is Off) |
 | Audio | Cue | Headphone output: Cue output, Cue volume |
 | MIDI | MIDI inputs | Each MIDI input port, on or off |
 | MIDI | Arming | Arm selected track |

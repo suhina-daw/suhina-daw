@@ -36,6 +36,13 @@ impl Session {
     /// records one undo step when it changes the project; if it fails, or leaves a project that
     /// does not validate, the project is restored and an error is returned.
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
+        if id == "track.setArm" {
+            return self.arm(params);
+        }
+        self.run(id, params)
+    }
+
+    fn run(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
         let prepared = self.prepare(id, params)?;
         let params = prepared.resolved.as_ref().unwrap_or(params);
         let spec = prepared.spec;
@@ -70,6 +77,47 @@ impl Session {
             // Reads, transport, and what runs outside a project's undo history.
             _ => (spec.run)(self, params),
         }
+    }
+
+    /// `track.setArm`. An audio track armed while it hears no input then gets one, in an undo
+    /// step of its own (`track.setAudioInput`), so recording has something to record (#682): the
+    /// default track input ([`Session::default_input`]), or else the input device's first
+    /// channels (a stereo pair where there are two). The arm runs first, so a request it refuses
+    /// changes nothing. Only a track on a regular mixer strip is given one: a return or a group
+    /// records nothing. The result says which in `input_given`, or with `no_input` that there was
+    /// none to give.
+    fn arm(&mut self, params: &Value) -> Result<Value, CommandError> {
+        use suhina_model::InputChannels;
+        let arming = Args::new(params).value("armed").and_then(Value::as_bool) == Some(true);
+        let hears_nothing = |s: &Self| {
+            let track = commands::track_id(&s.project, params).ok()?;
+            s.project
+                .track(track)
+                .filter(|t| {
+                    crate::records_audio(t, &s.project.channels) && t.audio_input.channels == InputChannels::None
+                })
+                .map(|_| track)
+        };
+        let track = if arming { hears_nothing(self) } else { None };
+        let mut value = self.run("track.setArm", params)?;
+        let Some(track) = track else { return Ok(value) };
+        let first = || {
+            let channels = self.player().and_then(crate::Player::output_info).map_or(0, |i| i.input_channels);
+            match channels {
+                0 => None,
+                1 => Some(InputChannels::Mono(1)),
+                _ => Some(InputChannels::Stereo(1)),
+            }
+        };
+        match self.default_input().or_else(first) {
+            Some(input) => {
+                let text = commands::input_channels_text(input);
+                self.run("track.setAudioInput", &serde_json::json!({ "track": track.0, "input": text }))?;
+                value["input_given"] = Value::String(text);
+            }
+            None => value["no_input"] = Value::Bool(true),
+        }
+        Ok(value)
     }
 
     /// Before a command runs: finds it, checks its parameters, resolves the clips they name by
@@ -126,6 +174,9 @@ impl Session {
         let mut value = (prepared.spec.run)(self, params)?;
         if prepared.spec.id.starts_with("device.") {
             crate::devices::follow_instruments(self, before);
+            if prepared.spec.id == "device.add" {
+                crate::devices::follow_preset(self, params, &value);
+            }
             crate::clip_ara::keep_hosts_first(&mut self.project);
         }
         // A lane, clip, scene or device the command added without an id gets one now.

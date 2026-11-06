@@ -331,6 +331,9 @@ pub struct ArrangementViewState {
     /// A drag from the browser over the window: the view says which target is under the
     /// pointer (`docs/spec/browser.md` › Dragging into the project).
     pub drop: Option<DropProbe>,
+    /// The beat under the pointer over the lanes, snapped to the grid, as the view drew it last;
+    /// `None` with the pointer elsewhere. The quick-add palette places a sample there.
+    pub pointer_beat: Option<f64>,
     /// The engine's levels this frame, for the headers' meters.
     pub meters: Meters,
     /// The piano roll is pulled to the top: the view shows only this track, highlighted, and
@@ -467,6 +470,7 @@ impl Default for ArrangementViewState {
             reveal: None,
             zoom_one: false,
             drop: None,
+            pointer_beat: None,
             meters: Meters::default(),
             focus: None,
             clip_clicked: false,
@@ -560,10 +564,12 @@ impl ArrangementViewState {
         self.time_selection.as_ref()
     }
 
-    /// Sets or clears the time selection: after a duplicate it moves onto the copy.
+    /// Sets or clears the time selection: after a duplicate it moves onto the copy. A time
+    /// selection takes the edit keys from the track headers (#1199).
     pub fn set_time_selection(&mut self, selection: Option<TimeSelection>) {
         if selection.is_some() {
             self.clear_take_selection();
+            self.track_focus = false;
         }
         self.time_selection = selection;
     }

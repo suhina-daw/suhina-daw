@@ -938,29 +938,33 @@ fn set_midi_input(session: &mut Session, params: &Value) -> Result<Value, Comman
     Ok(json!({ "midi_input": midi_input_json(&track.midi_input) }))
 }
 
-fn set_audio_input(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    use suhina_model::{InputChannels, MAX_INPUT_CHANNEL, Monitor};
-    let id = track_id(&session.project, params)?;
+/// The input channels `text` names, as `track.setAudioInput` and `audio.setTrackInput` take
+/// them: "none", a channel from 1 ("3") or a pair of neighbouring channels ("1/2").
+pub(crate) fn parse_input_channels(value: &Value) -> Result<suhina_model::InputChannels, CommandError> {
+    use suhina_model::{InputChannels, MAX_INPUT_CHANNEL};
     let bad = || {
         CommandError(format!("input must be \"none\", a channel from 1 to {MAX_INPUT_CHANNEL} or a pair like \"1/2\""))
     };
     let channel = |text: &str| text.trim().parse::<u16>().ok().filter(|c| (1..=MAX_INPUT_CHANNEL).contains(c));
-    let channels = match Args::new(params).value("input") {
-        None => None,
-        Some(Value::String(text)) => Some(match text.trim() {
-            "none" => InputChannels::None,
-            pair if pair.contains('/') => {
-                let (left, right) = pair.split_once('/').ok_or_else(bad)?;
-                let (left, right) = (channel(left).ok_or_else(bad)?, channel(right).ok_or_else(bad)?);
-                if left.checked_add(1) != Some(right) {
-                    return Err("a stereo pair is two neighbouring channels, like \"1/2\" or \"3/4\"".into());
-                }
-                InputChannels::Stereo(left)
+    let text = value.as_str().ok_or_else(bad)?;
+    Ok(match text.trim() {
+        "none" => InputChannels::None,
+        pair if pair.contains('/') => {
+            let (left, right) = pair.split_once('/').ok_or_else(bad)?;
+            let (left, right) = (channel(left).ok_or_else(bad)?, channel(right).ok_or_else(bad)?);
+            if left.checked_add(1) != Some(right) {
+                return Err("a stereo pair is two neighbouring channels, like \"1/2\" or \"3/4\"".into());
             }
-            one => InputChannels::Mono(channel(one).ok_or_else(bad)?),
-        }),
-        Some(_) => return Err(bad()),
-    };
+            InputChannels::Stereo(left)
+        }
+        one => InputChannels::Mono(channel(one).ok_or_else(bad)?),
+    })
+}
+
+fn set_audio_input(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    use suhina_model::Monitor;
+    let id = track_id(&session.project, params)?;
+    let channels = Args::new(params).value("input").map(parse_input_channels).transpose()?;
     let monitor = match Args::new(params).value("monitor") {
         None => None,
         Some(v) => Some(match v.as_str() {

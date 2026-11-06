@@ -151,6 +151,7 @@ fn audio_commands_are_listed_with_their_kind() {
             "audio.openControlPanel",
             "audio.devices",
             "audio.setOutput",
+            "audio.setTrackInput",
             "output.setCuePair",
             "output.setCueVolume",
             "audio.info",

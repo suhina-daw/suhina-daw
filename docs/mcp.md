@@ -3,7 +3,7 @@ description: The MCP server for agents: tools, file roots, errors and how to run
 read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-06
 covers:
   - crates/automation/src/server.rs
   - crates/automation/src/workspace.rs
@@ -150,6 +150,14 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   what a track hears: `input` `"none"`, a channel (`"3"`) or a pair (`"1/2"`), `monitor`
   `auto` (while armed), `in` or `off`; it is an edit, saved with the project. Arm several
   tracks with `track.setArm` and `exclusive: false` to hear a band on separate tracks.
+  `audio.setTrackInput {input}` chooses the default track input of the audio device chosen, in
+  the same form: what new audio tracks hear, and an audio track armed while it hears nothing
+  (whose arm result then says `input_given`, or `no_input` when there was nothing to give). Each
+  audio device keeps its own with its input: `audio.setOutput` with another `device` and no
+  `input` brings back the input that device was last chosen with, and its default track input
+  with it; the result names the device as `input_device` (`host|device`). It is refused while the
+  input device is off, and `audio.info` and `audio.devices` show the device's as
+  `chosen.track_input`.
   `audio.info` adds `input`, `input_channels` and `input_underruns`. Arming is not an edit (no undo step, not saved) and works
   before an engine plays; `project.tracks` says which tracks are `armed`. Without `--audio`,
   `midi.*` returns an error.
@@ -292,7 +300,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   picks the same random actions every time ([clip launching](spec/clip-launching.md#follow-actions)).
 
 - **Tracks and files.** `track.add {kind?, name?, after?, device?, preset?, voice?, sd?}` adds an audio
-  or MIDI track (with a device, when one is named). `clip.addFiles {paths, track?, start? |
+  or MIDI track (with a device, when one is named). `clip.addFiles {paths, track?, after?, start? |
   scene?, separate?, stack?, warp?}` places samples and MIDI files as clips, on a track or on new
   tracks (a Stems file as a group of its master, muted, and its stems, with its mastering on the
   group, [spec](spec/stems-format.md)), one after another from a beat or down the clip slots from a scene; files that cannot be
@@ -500,7 +508,7 @@ suhina-cli mcp --attach
   and browser library. Agents cannot grant themselves access. Revocation applies to subsequent
   operations and exports still gathering state; it does not cancel a render already started.
 - **Settings.** Commands that change the app's settings or the person's library rather than a
-  project are refused: `audio.setOutput`, `output.setCuePair`, `output.setCueVolume`,
+  project are refused: `audio.setOutput`, `audio.setTrackInput`, `output.setCuePair`, `output.setCueVolume`,
   `midi.setInput`, `plugin.setHosting`, `library.setPluginsView`, `library.pin`, `library.unpin`,
   `library.tag`, `library.setTag`, `library.removeTag`, `soundmap.setKind`, and
   `project.autosave` with `interval` or `cleanUp`. Transport commands play on the window's output.

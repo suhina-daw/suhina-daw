@@ -27,6 +27,7 @@ pub mod missing_files;
 pub mod name_clash_dialog;
 mod plugin_host;
 pub mod project_dialog;
+mod quick_add;
 pub mod splash;
 pub mod start_panel;
 mod tabs;
@@ -439,6 +440,12 @@ pub struct App {
     /// The project switcher Ctrl+Tab opens: the open project picked so far (its place among
     /// them). It switches when Ctrl is let go, as most programs' do.
     tab_switcher: Option<usize>,
+    /// The quick-add palette while it is open (`quick_add.rs`).
+    quick_add: Option<quick_add::QuickAdd>,
+    /// What the palette's buttons narrow it to, kept from one palette to the next.
+    quick_add_filter: quick_add::Filter,
+    /// What the palette's field said when it was closed without adding, for the next one.
+    quick_add_kept: String,
     /// The Arrangement's clip selection last frame: when it changes while stopped, the play
     /// start marker goes to its first clip.
     clips_before: Vec<(TrackId, ClipId)>,
@@ -667,6 +674,9 @@ impl App {
             editor_in_chain: false,
             rename: None,
             tab_switcher: None,
+            quick_add: None,
+            quick_add_filter: quick_add::Filter::default(),
+            quick_add_kept: String::new(),
             clips_before: Vec::new(),
             detail_max: false,
             detail_drag: None,
@@ -1903,6 +1913,7 @@ impl App {
             }
         }
         self.tab_switcher_ui(ui.ctx());
+        self.quick_add_ui(ui.ctx());
         if let Some((target, mut draft, focused)) = self.rename.take() {
             let (mut keep, mut apply) = (true, None);
             // The field sits on the clip's name, where the views drew it last frame: Enter or a
@@ -2410,31 +2421,9 @@ impl App {
         };
         // A critical operation is backed up first, when the settings say so.
         self.projects.back_up_before(action.id);
-        let mut no_input = false;
         let Ok(session) = self.projects.session_mut(None) else { return };
-        // An audio track armed while it hears no input gets the device's first input (a stereo
-        // pair where there are two channels), so Record has something to record and stays on
-        // (#682). Without one, recording refuses the track.
-        if action.id == "track.setArm"
-            && action.params["armed"].as_bool() == Some(true)
-            && let Some(track) = action.params["track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId)
-            && session.project().tracks.iter().any(|t| {
-                t.id == track && !t.content.notes && t.audio_input.channels == suhina_engine::model::InputChannels::None
-            })
-        {
-            let inputs = session.player().and_then(suhina_session::Player::output_info).map_or(0, |i| i.input_channels);
-            let input = match inputs {
-                0 => None,
-                1 => Some("1"),
-                _ => Some("1/2"),
-            };
-            if let Some(input) = input {
-                let _ = session.execute("track.setAudioInput", &json!({ "track": track.0, "input": input }));
-            } else {
-                // Armed with nothing to hear: say so, rather than a button that seems not to work.
-                no_input = true;
-            }
-        }
+        // An audio track armed while it hears no input gets the default track input, or the
+        // device's first input: the session gives it and says which (`track.setArm`, #682, #1191).
         suhina_plugins::trace!("action {} {}", action.id, action.params);
         // The track to select once tracks are deleted or cut: the next one, or the one before
         // when they were the last (#918). Known before the command, while they are there.
@@ -2454,12 +2443,17 @@ impl App {
             _ => None,
         };
         match session.execute(action.id, params) {
-            Ok(_) if no_input => {
+            Ok(result) if result["no_input"].as_bool() == Some(true) => {
                 self.revision += 1;
                 self.status = Status::Hint(
                     "Armed, but the audio device has no input: choose an input device in Settings › Audio, then pick it under Audio From"
                         .into(),
                 );
+            }
+            Ok(result) if result["input_given"].is_string() => {
+                self.revision += 1;
+                let input = result["input_given"].as_str().unwrap_or_default();
+                self.status = Status::Hint(format!("Armed, hearing In {input}: change it under Audio From"));
             }
             Ok(result) => {
                 if action.id == "edit.undo" {
@@ -3274,6 +3268,7 @@ impl App {
                             };
                             let mut timeline = timeline;
                             timeline.follow_automation(session.project());
+                            timeline.follow_drag(self.arrangement.automation.dragged.as_ref());
                             timeline.recording_spans = session.arrangement_recording_spans();
                             timeline.midi_ports = self.projects.midi_ports().to_vec();
                             // What ARA plug-ins found in the audio clips, as it is now (#720).

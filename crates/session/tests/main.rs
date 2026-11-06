@@ -54,6 +54,7 @@ mod support;
 mod temp_dir;
 mod tempo;
 mod track_copy;
+mod track_input;
 mod track_names;
 mod trusted_audio;
 

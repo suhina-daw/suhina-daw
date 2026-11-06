@@ -3,7 +3,7 @@ description: User guide to the keyboard shortcuts, one entry per action with its
 read_when: user guide, keyboard shortcuts, what does this key do, list of keys, every shortcut explained, keybindings, hotkeys, action ids, which action a key runs, back up keys, share keymap, keymap.json, rebind a key, keys for agents
 type: howto
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -79,6 +79,7 @@ The project you leave stops playing.
 | Alt+M | `view.araEditor` | Arrangement | Opens the selected audio clip in its track's plug-in that edits clips (such as a pitch editor): the detail area shows the clip with the plug-in's editor. |
 | Ctrl+B | `view.browser` | Anywhere | Shows or hides the browser, the panel on the left that lists your samples, presets, effects, instruments and plug-ins. With the Draw-first preset this is Ctrl+Shift+B. |
 | Ctrl+F | `browser.search` | Anywhere | Puts the cursor in the browser's search field, and shows the browser when it is hidden. In the field, Up and Down move through the results, Enter adds the selected result to the selected track, and Escape clears the search and then leaves the field. |
+| Ctrl+P | `view.quickAdd` | Anywhere, with a project open | Opens the quick-add palette in the middle of the window. The buttons along its bottom (Instruments, Effects, Samples, Presets) narrow what it lists, and with Instruments or Effects on, buttons under the field narrow plug-ins to VST2, VST3 or CLAP; each plug-in shows its format at the right. Type part of a name: Up and Down move through what it finds, and Enter (or a click) adds the lit effect or instrument to the selected track, or puts the lit sample or MIDI file on that track (on a new track below it when the track cannot hold the file), at the beat under the pointer or at the play start marker. With no track selected, a device gets a new track of its own. Escape or a click outside closes it. |
 | Ctrl+Alt+Shift+M | `view.sampleMap` | Anywhere | Shows or hides the sample map in the main area. The sample map places your samples on a map by how they sound, so similar sounds are close together. Escape on the map closes it too. |
 | Ctrl+Alt+M | `view.sampleMapWindow` | Anywhere | Opens the sample map in a window of its own, or puts it back in the main window. |
 | 1 to 6 | `arrangement.tool1` … `arrangement.tool6` | Arrangement | With the Arrangement's toolbar on (Settings › Arrangement › Toolbar) and the Arrangement clicked last, choose its Select, Range, Split, Erase, Draw and Mute tools. With the piano roll clicked last, the same keys choose the piano roll's tools. |
@@ -106,7 +107,7 @@ The zoom level is remembered the next time Suhina starts.
 | Delete or Backspace | `selection.delete` | Selection | Deletes the selected clips, or in the piano roll the selected notes. |
 | 0 | `selection.mute` | Selection | Mutes the selected clips, or unmutes them if they are muted. A muted clip stays in place but makes no sound. |
 | Ctrl+A | `selection.selectAll` | Anywhere | Selects every clip in the arrangement. In the piano roll, after a click in it, selects every note instead. |
-| Ctrl+E | `selection.split` | Selection | Splits the selected clip in two at the playhead. |
+| Ctrl+E | `selection.split` | Selection | Splits the selected clip in two where you clicked inside it, while playing too. It never splits at the playhead. |
 | Ctrl+J | `selection.consolidate` | Selection | Joins the selected clips, and the space between them, into one new clip. |
 
 Every key that acts on clips acts on the whole selection, and all of it is one undo step.

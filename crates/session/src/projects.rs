@@ -70,6 +70,30 @@ pub(crate) struct Browser {
     pub(crate) sound_map_revision: Option<u64>,
 }
 
+/// How many audio devices keep an input and a default track input of their own.
+pub const MAX_DEVICE_INPUTS: usize = 64;
+
+/// Whether a track could hear `input`: none, or channels from 1 to
+/// [`suhina_model::MAX_INPUT_CHANNEL`] (a pair's right channel too), as `track.setAudioInput` takes them.
+pub(crate) fn valid_track_input(input: suhina_model::InputChannels) -> bool {
+    use suhina_model::{InputChannels, MAX_INPUT_CHANNEL};
+    match input {
+        InputChannels::None => true,
+        InputChannels::Mono(c) => (1..=MAX_INPUT_CHANNEL).contains(&c),
+        InputChannels::Stereo(c) => (1..MAX_INPUT_CHANNEL).contains(&c),
+    }
+}
+
+/// What an audio device (a sound card, by [`crate::OutputChoice::device_key`]) keeps for itself,
+/// so choosing it again brings both back (ADR 0017, Amendment: default track input).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DeviceInputs {
+    /// The input device chosen while it played (`audio.setOutput`'s `input`).
+    pub input: crate::InputChoice,
+    /// The default track input chosen for it (`audio.setTrackInput`).
+    pub track_input: suhina_model::InputChannels,
+}
+
 /// The audio and MIDI devices the open projects play through.
 #[derive(Default)]
 struct Devices {
@@ -78,6 +102,10 @@ struct Devices {
     audio: Option<std::sync::Arc<dyn crate::AudioSystem>>,
     /// The output the user chose (`audio.setOutput`, the window's settings).
     output_choice: crate::OutputChoice,
+    /// The input and the default track input each audio device keeps, by
+    /// [`crate::OutputChoice::device_key`] (ADR 0017): choosing a device again brings back its
+    /// input, and new audio tracks take its default track input.
+    device_inputs: std::collections::BTreeMap<String, DeviceInputs>,
     /// When a failed output was last opened again, so a device that keeps failing is tried
     /// every [`OUTPUT_RETRY`], not every frame.
     output_retried: Option<std::time::Instant>,
@@ -251,10 +279,91 @@ impl Projects {
     }
 
     /// Chooses the output players open on from now on; [`Projects::reopen_output`] moves the
-    /// playing one there.
+    /// playing one there. The device keeps the input chosen with it, for the next time it is
+    /// chosen ([`Projects::remembered_input`]).
     pub fn set_output_choice(&mut self, choice: crate::OutputChoice) {
+        let key = choice.device_key();
+        let inputs = &mut self.devices.device_inputs;
+        if inputs.len() < MAX_DEVICE_INPUTS || inputs.contains_key(&key) {
+            inputs.entry(key).or_default().input = choice.input.clone();
+        }
         self.devices.output_choice = choice;
         self.devices.output_watched = None;
+        self.share_track_input();
+    }
+
+    /// The input device `device` was last chosen with, when it was chosen before.
+    pub fn remembered_input(&self, device: &crate::OutputChoice) -> Option<crate::InputChoice> {
+        self.devices.device_inputs.get(&device.device_key()).map(|kept| kept.input.clone())
+    }
+
+    /// The default track input of the audio device chosen: none while Input is off or when
+    /// none was chosen for this device.
+    pub fn track_input(&self) -> suhina_model::InputChannels {
+        let choice = &self.devices.output_choice;
+        if choice.input == crate::InputChoice::Off {
+            return suhina_model::InputChannels::None;
+        }
+        self.devices.device_inputs.get(&choice.device_key()).map(|kept| kept.track_input).unwrap_or_default()
+    }
+
+    /// The input and default track input every audio device keeps, by
+    /// [`crate::OutputChoice::device_key`]; the settings keep them.
+    pub fn device_inputs(&self) -> &std::collections::BTreeMap<String, DeviceInputs> {
+        &self.devices.device_inputs
+    }
+
+    /// Takes what each audio device keeps (the settings, at start): at most
+    /// [`MAX_DEVICE_INPUTS`] devices. The device chosen keeps the input it is chosen with.
+    pub fn set_device_inputs(&mut self, inputs: std::collections::BTreeMap<String, DeviceInputs>) {
+        self.devices.device_inputs = inputs
+            .into_iter()
+            .filter(|(key, _)| !key.trim().is_empty())
+            .map(|(key, mut kept)| {
+                if !valid_track_input(kept.track_input) {
+                    kept.track_input = suhina_model::InputChannels::None;
+                }
+                (key.trim().to_lowercase(), kept)
+            })
+            .take(MAX_DEVICE_INPUTS)
+            .collect();
+        let choice = self.devices.output_choice.clone();
+        self.set_output_choice(choice);
+    }
+
+    /// Chooses the audio input new audio tracks take from now on, and armed tracks that hear
+    /// none, on the audio device chosen; the tracks that are there keep theirs, and another
+    /// device keeps its own. Refused while Input is off, since nothing opens a microphone
+    /// unasked (ADR 0017). Returns the device's key.
+    pub fn set_track_input(&mut self, input: suhina_model::InputChannels) -> Result<String, CommandError> {
+        if !valid_track_input(input) {
+            return Err(
+                format!("a default track input is channels from 1 to {}", suhina_model::MAX_INPUT_CHANNEL).into()
+            );
+        }
+        let choice = &self.devices.output_choice;
+        if choice.input == crate::InputChoice::Off {
+            return Err("no input device is chosen: choose one first (audio.setOutput's input)".into());
+        }
+        let key = choice.device_key();
+        let chosen_input = choice.input.clone();
+        let inputs = &mut self.devices.device_inputs;
+        if inputs.len() >= MAX_DEVICE_INPUTS && !inputs.contains_key(&key) {
+            return Err(format!("inputs are kept for at most {MAX_DEVICE_INPUTS} audio devices").into());
+        }
+        let kept = inputs.entry(key.clone()).or_default();
+        kept.input = chosen_input;
+        kept.track_input = input;
+        self.share_track_input();
+        Ok(key)
+    }
+
+    /// Gives every open project the default track input of the input device chosen.
+    fn share_track_input(&mut self) {
+        let input = self.track_input();
+        for open in &mut self.tabs.open {
+            open.session.set_default_input(input);
+        }
     }
 
     /// Opens the chosen output for project `id` (the active one when `None`), with its
@@ -360,6 +469,7 @@ impl Projects {
             let source = session.source().map(Path::to_path_buf);
             session.set_trusted(self.trusted_audio_for(source.as_deref()));
         }
+        session.set_default_input(self.track_input());
         self.tabs.open.push(Open { id, name, session });
         self.activate(id);
         Ok(id)

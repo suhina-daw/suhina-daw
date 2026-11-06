@@ -303,11 +303,18 @@ fn ruler_beat(raw: f64, grid: TimelineGrid, free: bool) -> f64 {
     if beat.is_finite() { beat.max(0.0) } else { 0.0 }
 }
 
-/// Where a click `raw` beats into a clip's body puts the play start marker: on the grid line at or
-/// before it, never before the clip's start, so a click on the clip never plays from past it.
-fn clip_body_beat(raw: f64, clip_start: f64, grid: TimelineGrid, free: bool) -> f64 {
+/// Where a click `raw` beats into a clip's body, from `clip_start` to `clip_end`, puts the play
+/// start marker: on the grid line nearest to it, so a click that misses a line still lands on it.
+/// A nearest line at or past the clip's end gives the line before the click instead, and nothing
+/// lands before the clip's start, so a click on the clip never plays from outside it.
+fn clip_body_beat(raw: f64, clip_start: f64, clip_end: f64, grid: TimelineGrid, free: bool) -> f64 {
     let free = free || !grid.snaps;
-    let beat = if free { (raw * 1000.0).round() / 1000.0 } else { grid.place(raw, false, true) };
+    let beat = if free {
+        (raw * 1000.0).round() / 1000.0
+    } else {
+        let nearest = grid.place(raw, false, false);
+        if nearest < clip_end - 1e-9 { nearest } else { grid.place(raw, false, true) }
+    };
     let beat = beat.max(clip_start);
     if beat.is_finite() { beat.max(0.0) } else { 0.0 }
 }
@@ -344,6 +351,13 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
     show_lanes(ui, timeline, state, actions);
     if state.focus.is_some() {
         state.scroll.y = scrolled;
+    }
+    // The line a drag holds, for the headers and panels: they are drawn before the lanes move
+    // it, so a change is drawn again at once (#811).
+    let dragged = state.automation.take_drawn_drag();
+    if dragged != state.automation.dragged {
+        state.automation.dragged = dragged;
+        ui.ctx().request_repaint();
     }
 }
 
@@ -1124,6 +1138,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             }
             state.time_selection = None;
             state.clear_take_selection();
+            // A click in a lane gives the edit keys back to the lanes, editor or not (#1199).
+            state.track_focus = false;
             // The click also moves the play start marker there, on the clip grid (Alt: free);
             // while playing, playback goes on where it is and the next start begins there (#657).
             if let Some(pointer) = body.interact_pointer_pos() {
@@ -1232,7 +1248,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             && (timeline.start_beat - beat).abs() < 1e-6
         {
             let x = x_of(beat).round() + 0.5;
-            if lanes_area.x_range().contains(x) {
+            // In the timeline only: never over the track headers beside it (#1197).
+            if time.x_range().contains(x) {
                 lanes_painter.vline(x, row.time.y_range(), egui::Stroke::new(1.0, theme::text_primary()));
             }
         }
@@ -1332,6 +1349,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 Some(kept) => Some(kept.gone_on(&tracks, start, end, row)),
                 None => (end - start > 1e-6 && !tracks.is_empty()).then_some(TimeSelection { tracks, start, end, row }),
             };
+            // The edit keys act on the painted time, not on tracks a header click picked (#1199).
+            state.track_focus = false;
             if done {
                 state.marquee = None;
                 state.painted_from = None;
@@ -1616,7 +1635,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let colour = crate::kit::style_class::foreground(theme::accent());
             let width = style.as_ref().and_then(|s| s.width).map_or(1.5, |w| w.clamp(0.5, 6.0));
             let down = egui::Rangef::new(lanes_area.top(), fixed.bottom());
-            let column = Rect::from_x_y_ranges(lanes_area.x_range(), down);
+            // The timeline's width, not the view's: a beat under the track headers, on either
+            // side, is hidden under them (#1197).
+            let column = Rect::from_x_y_ranges(time.x_range(), down);
             let line_painter = painter.with_clip_rect(column);
             for beat in [start, end] {
                 let x = x_of(beat).round() + 0.5;
@@ -1673,6 +1694,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let beat_at =
         |x: f32, free: bool| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free, false);
     let free = ui.input(|i| i.modifiers.alt);
+    let lanes = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(marker_row.bottom(), area.bottom()));
+    state.pointer_beat =
+        ui.ctx().pointer_hover_pos().filter(|p| lanes.contains(*p)).map(|p| beat_at(p.x, false).max(0.0));
     if let Some(probe) = state.drop.as_mut() {
         for row in rows.iter() {
             let Some(lane) = timeline.lanes.iter().find(|l| l.track == row.track) else { continue };

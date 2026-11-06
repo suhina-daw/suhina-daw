@@ -60,8 +60,9 @@ fn split_here_cuts_a_clip_where_it_was_right_clicked() {
     assert_eq!(parts, [(112.0, 8.0), (120.0, 8.0)]);
 }
 
+/// Ctrl+E splits the selected clip where its body was clicked, never at the playhead (#1186).
 #[test]
-fn ctrl_e_splits_the_selected_clip_at_the_playhead() {
+fn ctrl_e_splits_the_selected_clip_where_it_was_clicked_not_at_the_playhead() {
     let project = demo_project();
     let mut renderer =
         suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
@@ -71,25 +72,29 @@ fn ctrl_e_splits_the_selected_clip_at_the_playhead() {
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut harness = arrangement(session);
-    harness.get_by_label("Clip Fill on Drums at bar 29").click();
-    harness.run();
-    // The playhead is at the start, outside Fill: nothing is split.
+    let click = |harness: &mut Harness<'static, App>, renderer: &mut suhina_engine::Renderer, at: egui::Pos2| {
+        harness.hover_at(at);
+        harness.run();
+        harness.drag_at(at);
+        harness.drop_at(at);
+        harness.run();
+        renderer.process(&mut [0.0f32; 2 * 64]);
+        harness.run();
+    };
+    // Fill picked whole by its name bar, and the playhead put inside it from the ruler (bar 30,
+    // beat 116): nothing was clicked inside the clip, so nothing is split.
+    let fill = harness.get_by_label("Clip Fill on Drums at bar 29").rect();
+    click(&mut harness, &mut renderer, fill.center_top() + egui::vec2(0.0, 6.0));
+    let ruler = harness.get_by_label("Ruler").rect();
+    let beat_width = harness.state().arrangement().beat_width;
+    click(&mut harness, &mut renderer, egui::pos2(fill.left() + 4.0 * beat_width, ruler.center().y));
     let before = drums(&harness);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::E);
     harness.run();
-    assert_eq!(drums(&harness), before);
+    assert_eq!(drums(&harness), before, "no split at the playhead");
 
-    // A click on the ruler moves the playhead to bar 30 (beat 116); the next block takes it.
-    let ruler = harness.get_by_label("Ruler").rect();
-    let fill = harness.get_by_label("Clip Fill on Drums at bar 29").rect();
-    let at = egui::pos2(fill.left() + 4.0 * harness.state().arrangement().beat_width, ruler.center().y);
-    harness.hover_at(at);
-    harness.run();
-    harness.drag_at(at);
-    harness.drop_at(at);
-    harness.run();
-    renderer.process(&mut [0.0f32; 2 * 64]);
-    harness.run();
+    // A click in its body, 4 beats in (on the grid line at or before it): Ctrl+E cuts there.
+    click(&mut harness, &mut renderer, egui::pos2(fill.left() + 4.05 * beat_width, fill.bottom() - 6.0));
     harness.key_press_modifiers(Modifiers::COMMAND, Key::E);
     harness.run();
     let parts: Vec<(f64, f64)> =

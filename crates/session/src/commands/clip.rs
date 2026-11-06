@@ -200,7 +200,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.duplicate",
-        label: "Place a copy of each arrangement clip right after it, replacing what the copies cover unless stacked",
+        label: "Place copies of arrangement clips right after them as one block, moved by the span from the first start to the last end, replacing what the copies cover unless stacked",
         params: &[
             CLIPS,
             optional(
@@ -581,6 +581,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "track",
                 ParamType::Track,
                 "the track to place them on; files it cannot hold go on a new track after it (default: new tracks)",
+            ),
+            optional(
+                "after",
+                ParamType::Track,
+                "with no track: put the new tracks after this one, in its group (default: after the last regular track)",
             ),
             optional("start", ParamType::Number, "arrangement beat the first clip starts at"),
             optional("scene", ParamType::Integer, "scene number, from 0, of the first clip slot"),
@@ -1183,6 +1188,19 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
         Some(v) => v.as_bool().ok_or("stack must be true or false")?,
     };
     let clips = clip_list(&session.project, params)?;
+    // The clips go as one block, on every track at once: each copy keeps its place among the
+    // others, moved by the span from the first start to the last end, so copies never land on the
+    // clips they copy (one clip: right after it).
+    let spans: Vec<(f64, f64)> = clips
+        .iter()
+        .filter_map(|(track, index)| {
+            let lane = session.project.arrangement.lanes.iter().find(|l| l.track == Some(*track))?;
+            lane.clips.get(*index).map(|c| (c.start, c.start + c.length))
+        })
+        .collect();
+    let first = spans.iter().map(|s| s.0).fold(f64::INFINITY, f64::min);
+    let last = spans.iter().map(|s| s.1).fold(f64::NEG_INFINITY, f64::max);
+    let shift = if last > first { last - first } else { 0.0 };
     // The automation under each clip, laid under its copy once the copies are placed.
     let carried: Vec<(TrackId, f64, Vec<crate::automation_range::Under>)> = clips
         .iter()
@@ -1190,7 +1208,7 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
             let lane = session.project.arrangement.lanes.iter().find(|l| l.track == Some(*track))?;
             let clip = lane.clips.get(*index)?;
             let end = clip.start + clip.length;
-            Some((*track, end, crate::automation_range::under(session, *track, clip.start, end)))
+            Some((*track, clip.start + shift, crate::automation_range::under(session, *track, clip.start, end)))
         })
         .collect();
     let p = &mut session.project;
@@ -1201,7 +1219,7 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
             Some(lane) => indexes
                 .iter()
                 .filter_map(|i| lane.clips.get(*i))
-                .map(|c| Clip { start: c.start + c.length, ..c.clone() })
+                .map(|c| Clip { start: c.start + shift, ..c.clone() })
                 .collect(),
             None => continue,
         };
@@ -1214,7 +1232,7 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
         let take_spans: Vec<_> = copies
             .iter()
             .filter_map(|c| {
-                let original = Clip { start: c.start - c.length, ..c.clone() };
+                let original = Clip { start: c.start - shift, ..c.clone() };
                 crate::take_carry::span_of_part(p, track, track, &original, c.length)
             })
             .collect();
