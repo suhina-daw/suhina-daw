@@ -308,6 +308,19 @@ fn legato_lasts_until_the_next_note_of_the_same_key() {
 }
 
 #[test]
+fn reversing_notes_later_in_the_clip_keeps_them_in_their_span() {
+    // Beats 4 to 5.5: a rising line becomes a falling one in the same place, not at beat 0. Each
+    // start becomes 4 + 5.5 minus the note's end.
+    let mut session = Session::new(project(vec![note(4.0, 1.0, 60), note(5.0, 0.5, 64), note(8.0, 1.0, 67)]));
+    run(&mut session, "note.reverse", json!({ "track": 1, "index": 0, "notes": [0, 1] })).unwrap();
+    close(&times(&session), &[4.5, 4.0, 8.0]);
+    close(&lengths(&session), &[1.0, 0.5, 1.0]);
+    // Reversing again puts them back.
+    run(&mut session, "note.reverse", json!({ "track": 1, "index": 0, "notes": [0, 1] })).unwrap();
+    close(&times(&session), &[4.0, 5.0, 8.0]);
+}
+
+#[test]
 fn stretching_scales_starts_and_lengths_about_the_earliest_start() {
     let mut session = Session::new(project(scale_notes()));
     let before = notes_of(&session, 1);

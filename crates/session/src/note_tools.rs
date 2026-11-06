@@ -316,15 +316,18 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
     }
     edit_notes(&mut session.project, params, |notes| {
         let named = chosen(params, notes.len())?;
-        let mut to = f64::NEG_INFINITY;
+        // The span from the earliest start to the latest end: each note's end moves to where
+        // its start was, mirrored inside that span, so the notes stay where they were.
+        let (mut from, mut to) = (f64::INFINITY, f64::NEG_INFINITY);
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
+            from = from.min(note.time);
             to = to.max(note.time + note.duration);
         }
         let mut times = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
-            times.push((index, (to - (note.time + note.duration)).clamp(0.0, MAX_BEAT)));
+            times.push((index, (from + to - (note.time + note.duration)).clamp(0.0, MAX_BEAT)));
         }
         for (index, time) in times {
             if let Some(note) = notes.get_mut(index) {
