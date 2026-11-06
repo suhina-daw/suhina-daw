@@ -10,7 +10,8 @@ use serde_json::Value;
 use suhina_model::Project;
 
 use crate::commands::Args;
-use crate::commands::{self, CommandKind, CommandSpec, commands};
+use crate::commands::{self, CommandKind, CommandSpec, Policy, commands};
+use crate::history::{Gesture, Replacing};
 use crate::{CommandError, Session, unknown_command};
 
 /// What [`Session::prepare`] works out before a command runs.
@@ -22,8 +23,11 @@ struct Prepared<'a> {
     gesture: Option<&'a str>,
     /// Whether the call joins the gesture that is open.
     joins: bool,
-    /// A call that joins an open gesture of a command whose calls replace each other: it runs on
-    /// the project as it was before the gesture began.
+    /// What a command whose calls replace each other ([`Policy::gesture_replaces`]) works on: its
+    /// parameters but the gesture and those it changes live.
+    target: Option<Value>,
+    /// A call that joins an open gesture whose last change was this command on this target: it
+    /// runs on the project as it was before that run of calls began.
     replaces: bool,
 }
 
@@ -51,9 +55,9 @@ impl Session {
                 // it (the top of the undo stack, which the open step pushed); `before` stays the
                 // project as shown, so the player hears the change.
                 if prepared.replaces
-                    && let Some(start) = self.history.undo.last()
+                    && let Some(replacing) = self.history.gesture.as_ref().and_then(|g| g.replacing.as_ref())
                 {
-                    self.project = start.clone();
+                    self.project = replacing.base.clone();
                 }
                 match self.apply(&prepared, params, &before) {
                     Ok(value) => self.commit(&prepared, before).map(|()| value),
@@ -80,7 +84,8 @@ impl Session {
         commands::check_params(id, spec.params, params)?;
         // A clip named by its id is found where it is now and handed to the command by position.
         let resolved = commands::resolve_clip_ids(&self.project, spec, params)?;
-        let mut prepared = Prepared { spec, resolved, gesture, joins: false, replaces: false };
+        let target = replace_target(spec, resolved.as_ref().unwrap_or(params));
+        let mut prepared = Prepared { spec, resolved, gesture, target, joins: false, replaces: false };
         match spec.kind {
             // Undo and redo end the gesture first, then undo or redo it as one step.
             CommandKind::HISTORY => self.history.gesture = None,
@@ -88,12 +93,18 @@ impl Session {
                 self.sync.param_edits.clear();
                 self.sync.mixer_edits.clear();
                 self.sync.unheard = false;
-                prepared.joins = gesture.is_some() && self.history.gesture.as_deref() == gesture;
+                let open = self.history.gesture.as_ref();
+                prepared.joins = gesture.is_some() && open.map(|g| g.id.as_str()) == gesture;
                 if !prepared.joins {
                     // Any other edit, or a call with another gesture, ends the one that is open.
                     self.history.gesture = None;
                 }
-                prepared.replaces = prepared.joins && spec.policy.gesture_replaces;
+                prepared.replaces =
+                    prepared.joins
+                        && prepared.target.is_some()
+                        && self.history.gesture.as_ref().and_then(|g| g.replacing.as_ref()).is_some_and(|last| {
+                            last.command == spec.id && Some(&last.target) == prepared.target.as_ref()
+                        });
             }
             _ => {}
         }
@@ -102,7 +113,7 @@ impl Session {
 
     /// `history.endGesture {gesture}`: closes the gesture if it is the open one. Whether it was.
     pub(crate) fn end_gesture(&mut self, gesture: &str) -> bool {
-        let open = self.history.gesture.as_deref() == Some(gesture);
+        let open = self.history.gesture.as_ref().is_some_and(|g| g.id == gesture);
         if open {
             self.history.gesture = None;
         }
@@ -146,12 +157,22 @@ impl Session {
             let changes = std::mem::take(&mut self.sync.param_edits);
             // The first call of a gesture, or an edit outside one, makes a step; a call that joins
             // the open gesture adds to its step. The gesture opens with its first change.
+            // A command whose calls replace each other keeps what the gesture changed before its
+            // run of calls: it replaces its own last change only.
+            let kept = if prepared.replaces { self.history.gesture.take().and_then(|g| g.replacing) } else { None };
+            let replacing = match (kept, &prepared.target) {
+                (Some(last), _) => Some(last),
+                (None, Some(target)) => {
+                    Some(Replacing { command: prepared.spec.id, target: target.clone(), base: before.clone() })
+                }
+                (None, None) => None,
+            };
             if prepared.joins {
                 self.history.redo.clear();
             } else {
                 self.push_undo(before);
             }
-            self.history.gesture = prepared.gesture.map(str::to_owned);
+            self.history.gesture = prepared.gesture.map(|id| Gesture { id: id.to_owned(), replacing });
             // A parameter change goes to the engine as a message; anything else, or a message
             // that cannot be sent, as a new graph.
             let mixer = std::mem::take(&mut self.sync.mixer_edits);
@@ -184,6 +205,21 @@ impl Session {
         }
         Ok(())
     }
+}
+
+/// What a call of a command whose calls replace each other works on: its parameters but the
+/// `gesture` and those the command changes live. None for any other command.
+fn replace_target(spec: &CommandSpec, params: &Value) -> Option<Value> {
+    let Policy { gesture_replaces: live, .. } = spec.policy;
+    let mut target = params.as_object()?.clone();
+    if live.is_empty() {
+        return None;
+    }
+    target.remove("gesture");
+    for name in live {
+        target.remove(*name);
+    }
+    Some(Value::Object(target))
 }
 
 /// The `gesture` of a call: 1 to 128 bytes of text, or none.

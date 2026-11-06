@@ -1082,3 +1082,79 @@ fn moved_points_keep_their_ids_and_pasted_ones_are_new() {
     unique.dedup();
     assert_eq!(unique.len(), now.len(), "an id is never on a lane twice: {now:?}");
 }
+
+fn volume_points(session: &Session) -> usize {
+    lanes(session).iter().find(|l| l.param == "volume").map_or(0, |l| l.points.len())
+}
+
+/// A shape call that replaces the last one replaces its own lane's, not what the gesture did
+/// elsewhere (ADR 0002 › 9): shapes on two lanes in one gesture both stay, and one undo takes
+/// both away.
+#[test]
+fn a_shape_on_another_lane_in_the_same_gesture_keeps_the_first() {
+    let mut session = Session::new(project());
+    let start = session.project().clone();
+    let shape = |param: &str| json!({ "track": 1, "param": param, "start": 0, "end": 4, "shape": "square", "cycles": 2, "gesture": "g" });
+    run(&mut session, "automation.insertShape", shape("pan")).unwrap();
+    let pan = pan_points(&session);
+    assert!(!pan.is_empty());
+    run(&mut session, "automation.insertShape", shape("volume")).unwrap();
+    assert_eq!(pan_points(&session), pan, "the first lane keeps its shape");
+    assert!(volume_points(&session) > 0);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(session.project() == &start && !session.can_undo(), "one step for the whole gesture");
+}
+
+/// A value another command set in the gesture stays when a replacing command comes after it.
+#[test]
+fn a_replacing_call_keeps_what_another_command_changed_in_the_gesture() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, 0.5), (1.0, -0.5), (2.0, 0.5)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    let start = session.project().clone();
+    run(&mut session, "track.setVolume", json!({ "tracks": [1], "db": -12, "gesture": "g" })).unwrap();
+    let volume = session.project().channels[0].volume;
+    let scale =
+        |factor: f64| json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": factor, "gesture": "g" });
+    run(&mut session, "automation.scaleRange", scale(2.0)).unwrap();
+    assert_eq!(session.project().channels[0].volume, volume, "the volume change stays");
+    // The same range again replaces the last scaling: 0.5 from the line as it was.
+    run(&mut session, "automation.scaleRange", scale(0.5)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values, [0.25, -0.25, 0.25]);
+    assert_eq!(session.project().channels[0].volume, volume);
+    // Another change in between keeps both, and the next scaling replaces only itself.
+    run(&mut session, "track.setPan", json!({ "tracks": [1], "pan": 0.5, "gesture": "g" })).unwrap();
+    run(&mut session, "automation.scaleRange", scale(2.0)).unwrap();
+    run(&mut session, "automation.scaleRange", scale(0.5)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values, [0.125, -0.125, 0.125], "the second run starts from the first run's result");
+    assert!((session.project().channels[0].pan - 0.5).abs() < 1e-9);
+    assert_eq!(session.project().channels[0].volume, volume);
+    // The whole gesture is one undo step.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(session.project() == &start);
+}
+
+/// A failed replacing call leaves the run as it was, and ending the gesture starts a new one.
+#[test]
+fn a_failed_replacing_call_keeps_the_run_and_ending_the_gesture_starts_another() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, 0.5), (1.0, -0.5), (2.0, 0.5)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    let scale =
+        |factor: f64| json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": factor, "gesture": "g" });
+    run(&mut session, "automation.scaleRange", scale(2.0)).unwrap();
+    assert!(run(&mut session, "automation.scaleRange", scale(9.0)).is_err());
+    run(&mut session, "automation.scaleRange", scale(1.5)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values, [0.75, -0.75, 0.75]);
+    run(&mut session, "history.endGesture", json!({ "gesture": "g" })).unwrap();
+    run(&mut session, "automation.scaleRange", scale(0.5)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values, [0.375, -0.375, 0.375], "a new gesture builds on the result");
+}

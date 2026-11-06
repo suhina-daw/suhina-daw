@@ -238,7 +238,7 @@ decided yet: transport, version policy, trust): the helper library's exact shape
 - The registry's parameter description grows (kind, range, curve, unit). The window's knobs and
   sliders can use the same description, which removes ranges that are now repeated in the UI
   (`VOLUME_RANGE`).
-- Gestures change the history: a run can now replace the live value of an open step. Undo during
+- Gestures change the history: a run can now replace its own last live value in an open step. Undo during
   an open gesture ends it first. The window's drags can move to gestures and show the value in
   the engine while dragging, which they do not today.
 - The engine gains a block-rate path for track volume, pan and send levels, beside the one for

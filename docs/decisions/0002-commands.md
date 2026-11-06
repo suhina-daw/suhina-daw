@@ -4,7 +4,7 @@ read_when: adding a command, undo, redo, command registry, params, CommandSpec
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-05
+last_verified: 2026-11-02
 covers:
   - crates/session/src/commands.rs
   - crates/session/src/commands
@@ -96,8 +96,13 @@ UI, CLI, control channel and MCP server all dispatch commands by id. We take the
    and on undo or redo (which end it first, then undo or redo it as one step). A gesture may span
    tracks and commands (a selection's faders, a pad setting two values). A command whose calls
    build on the last (`automation.insertShape`, `simplify`, `smooth`, `scaleRange`: its policy's
-   `gesture_replaces`) starts each call from the project as it was before the gesture, so a
-   slider's live value replaces the one before; one that sets a value needs no such thing. The
+   `gesture_replaces` names the parameters it changes live) replaces the gesture's last change
+   when that was a call of the same command on the same target (the same parameters but those):
+   it starts from the project as it was before that run of calls, so a slider's live value
+   replaces the one before and what the gesture changed earlier stays. A call of it on another
+   target, or after another command's change, adds to the step like any call (going back to
+   the first target after that builds on its earlier result), so give each target's slider a
+   gesture of its own. A command that sets a value needs no such thing. The
    window sends every frame of a drag with a gesture named after its control and ends it once no
    mouse button is down, so a drag closes on mouse up; a double-click reset is a step of its own.
    (This replaces `continue`, `replace` and `continuous`, which had a rule each.) Every effective

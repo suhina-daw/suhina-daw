@@ -100,7 +100,7 @@ pub fn arrangement_clip(project: &Project, track: TrackId, id: ClipId) -> Option
 }
 
 /// The piano roll for a launcher slot's clip: `scene` is 0-based, as the session's selection
-/// carries it; the `note.*` commands name the clip by `scene` (1-based). A slot's clip plays
+/// carries it; the `note.*` commands name the clip by `scene` (from 0). A slot's clip plays
 /// from its launch, not from an arrangement position: its placement starts at the launch and
 /// never ends, so the beats since the launch map through it — the playhead and paste at the
 /// playhead take those beats.

@@ -217,7 +217,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::EDIT,
         run: crate::automation_range::insert_shape,
-        policy: Policy::REPLACING,
+        policy: Policy::replacing(&["shape", "cycles", "depth", "center"]),
     },
     CommandSpec {
         id: "automation.simplify",
@@ -237,7 +237,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::EDIT,
         run: crate::automation_range::simplify,
-        policy: Policy::REPLACING,
+        policy: Policy::replacing(&["tolerance"]),
     },
     CommandSpec {
         id: "automation.smooth",
@@ -257,7 +257,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::EDIT,
         run: crate::automation_range::smooth,
-        policy: Policy::REPLACING,
+        policy: Policy::replacing(&["amount"]),
     },
     CommandSpec {
         id: "automation.scaleRange",
@@ -287,7 +287,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::EDIT,
         run: crate::automation_range::scale_range,
-        policy: Policy::REPLACING,
+        policy: Policy::replacing(&["factor", "around"]),
     },
     CommandSpec {
         id: "automation.list",

@@ -81,7 +81,7 @@ pub fn play(project: &Project, audio: &AudioPool, assets: &DeviceAssets, choice:
 }
 
 const LAUNCHER_HELP: &str = "\
-commands (scenes count from 1; a track is its name or id):
+commands (scenes count from 0, as grid lists them; a track is its name or id):
   scene <n>             launch scene n
   clip <track> <n>      launch the clip in scene n of a track (a press of its launch button)
   release <track> <n>   release its launch button: stops a gate clip, ends a repeat clip's repeats
@@ -362,6 +362,13 @@ mod tests {
         assert_eq!(both.len(), 2);
         assert!(both[0].contains("3 times"), "{both:?}");
         assert!(both[1].starts_with("512 frames of stretched audio"), "{both:?}");
+    }
+
+    /// The help says scenes count from 0, and the number typed is the one the commands take.
+    #[test]
+    fn the_help_counts_scenes_as_the_commands_do() {
+        assert!(LAUNCHER_HELP.contains("scenes count from 0"));
+        assert_eq!(parse_line("scene 0"), Ok(Line::Command("scene.launch".into(), json!({ "scene": 0 }))));
     }
 
     #[test]

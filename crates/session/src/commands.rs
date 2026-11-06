@@ -445,11 +445,14 @@ pub struct Policy {
     pub after: After,
     /// A preview: with no project open it runs in the previews' own session, not on a project.
     pub previews: bool,
-    /// A call that joins an open gesture starts from the project as it was before the gesture,
-    /// so each call replaces the last (a shape dragged over a lane) instead of adding to it. A
-    /// command that sets values needs none: setting a value again replaces it anyway, and a
-    /// gesture may set several (#1146).
-    pub gesture_replaces: bool,
+    /// The parameters a gesture's calls of this command change live (a shape's depth dragged over
+    /// a lane). A call that joins an open gesture whose last change was this command on the same
+    /// target (its other parameters) starts from the project as it was before that run of calls,
+    /// so each call replaces the last instead of adding to it; on another target, or after
+    /// another command's change, it adds to the step like any call. Empty: calls add. A command
+    /// that sets values needs none: setting a value again replaces it anyway, and a gesture may
+    /// set several (#1146).
+    pub gesture_replaces: &'static [&'static str],
 }
 
 impl Policy {
@@ -460,10 +463,12 @@ impl Policy {
         agents: Agents::Allowed,
         after: After::Nothing,
         previews: false,
-        gesture_replaces: false,
+        gesture_replaces: &[],
     };
-    /// A gesture's calls each start from where the gesture began.
-    pub const REPLACING: Self = Self { gesture_replaces: true, ..Self::DEFAULT };
+    /// A gesture's calls replace each other while `live`, the parameters they change, vary.
+    pub const fn replacing(live: &'static [&'static str]) -> Self {
+        Self { gesture_replaces: live, ..Self::DEFAULT }
+    }
     /// An edit only seen: a name, a colour, a marker.
     pub const UNHEARD: Self = Self { heard: false, ..Self::DEFAULT };
     /// Backed up before it runs.
@@ -1259,7 +1264,7 @@ pub(crate) fn column_index(p: &Project, params: &Value) -> Result<usize, Command
         .ok_or_else(|| format!("track {} has no clip slots", track_name(p, track)).into())
 }
 
-/// The 0-based scene index of the 1-based `params.scene`.
+/// The scene index `params.scene` names, counted from 0.
 pub(crate) fn scene_index(p: &Project, params: &Value) -> Result<usize, CommandError> {
     let count = p.launcher.scenes.len();
     let number =
