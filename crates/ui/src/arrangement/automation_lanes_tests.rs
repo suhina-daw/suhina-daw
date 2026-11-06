@@ -468,3 +468,139 @@ fn the_dragged_text_is_that_of_the_value_the_command_sets() {
     assert_eq!(Scale::Volume.committed(10f64.powf(-80.0 / 20.0)), 0.0);
     assert_eq!(Scale::Mute.committed(0.7), 1.0);
 }
+
+/// The parameter list a hosted plug-in gives: a CLAP gain in 0 … 1 with its text for the value
+/// it listed, a 4-step choice in a group, a hidden and a read-only parameter, and one it does not
+/// let be automated.
+fn plugin_list() -> std::sync::Arc<[suhina_plugins::ParamInfo]> {
+    let param = |id: u32, name: &str| suhina_plugins::ParamInfo {
+        id,
+        name: name.into(),
+        group: String::new(),
+        min: 0.0,
+        max: 1.0,
+        default: 0.5,
+        value: 0.5,
+        text: String::new(),
+        steps: 0,
+        automatable: true,
+        read_only: false,
+        hidden: false,
+    };
+    vec![
+        suhina_plugins::ParamInfo { text: "50 %".into(), ..param(0, "Gain") },
+        suhina_plugins::ParamInfo {
+            group: "Osc".into(),
+            min: 0.0,
+            max: 3.0,
+            steps: 3,
+            value: 1.0,
+            ..param(4, "Osc Shape")
+        },
+        suhina_plugins::ParamInfo { hidden: true, ..param(5, "Hidden") },
+        suhina_plugins::ParamInfo { read_only: true, ..param(6, "Meter") },
+        suhina_plugins::ParamInfo { automatable: false, ..param(7, "Bypass") },
+    ]
+    .into()
+}
+
+/// A project whose first track's channel runs a CLAP plug-in, with a lane on parameter 9, which
+/// the plug-in does not list.
+fn plugin_project() -> (Project, TrackId) {
+    let mut project = crate::demo::demo_project();
+    let track = project.tracks[0].id;
+    let channel = project.tracks[0].channel.unwrap();
+    let mut device = suhina_engine::model::Device::new(
+        "Synth",
+        suhina_engine::model::DeviceKind::Clap { id: "com.example.synth".into() },
+    );
+    let mut lane = AutomationLane::new("9");
+    lane.points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, 2.0)];
+    device.automation.push(lane);
+    project.channel_mut(channel).unwrap().devices.insert(0, device);
+    (project, track)
+}
+
+/// A hosted plug-in's parameters are rows of the same list as a built-in device's: under the
+/// device's name, in the plug-in's own groups, only those it lets be automated, seen and changed;
+/// a lane on a parameter it does not list stays with its points and says so (#1205).
+#[test]
+fn a_plug_in_s_parameters_are_listed_like_a_device_s() {
+    let (project, track) = plugin_project();
+    // Without the plug-in's list (it has not answered yet) only its lane is there.
+    let alone = Params::build(&project);
+    let names: Vec<String> = alone.of(track).iter().filter(|p| p.key.device == Some(0)).map(Param::label).collect();
+    assert_eq!(names, ["Synth: Parameter 9 (not available)"]);
+    let missing = alone.param(track, &LaneKey { device: Some(0), param: "9".into() }).unwrap();
+    assert_eq!(missing.points.len(), 2, "the lane keeps its points");
+    assert_eq!(missing.scale.position(2.0), 1.0, "its range reaches its points");
+
+    let mut lists = PluginLists::default();
+    lists.lists.insert((track, 0), plugin_list());
+    let params = Params::build_with(&project, lists.clone());
+    let rows: Vec<(String, Option<&str>)> =
+        params.of(track).iter().filter(|p| p.key.device == Some(0)).map(|p| (p.label(), p.group.as_deref())).collect();
+    assert_eq!(
+        rows,
+        [
+            ("Synth: Gain".to_string(), None),
+            ("Synth: Osc Shape".to_string(), Some("Osc")),
+            ("Synth: Parameter 9 (not available)".to_string(), None),
+        ]
+    );
+    // The search finds it by the device and the group, as a device's.
+    let shape = params.param(track, &LaneKey { device: Some(0), param: "4".into() }).unwrap();
+    assert!(shape.search_text().contains("synth osc"));
+    assert_eq!(shape.short_name(), "Shape");
+    assert_eq!(shape.current, 1.0, "the value it listed");
+    // Built again with the very same lists, nothing changes; a new list builds them again.
+    let mut again = params.clone();
+    again.take_plugins(&project, lists);
+    assert_eq!(again, params);
+}
+
+/// A plug-in lane's scale: evenly over the plug-in's range, on its steps for a stepped one, and
+/// the plug-in's own text for a value it named; a value it did not name shows the number and is
+/// asked about (#1205).
+#[test]
+fn a_plug_in_lane_takes_the_plug_in_s_range_steps_and_text() {
+    let (project, track) = plugin_project();
+    let mut lists = PluginLists::default();
+    lists.lists.insert((track, 0), plugin_list());
+    let mut texts = suhina_session::ParamTexts::new();
+    texts.insert((0, 0.25f64.to_bits()), "25 %".into());
+    lists.texts.insert((track, 0), std::sync::Arc::new(texts));
+    let params = Params::build_with(&project, lists);
+    let gain = params.param(track, &LaneKey { device: Some(0), param: "0".into() }).unwrap();
+    assert!(!gain.scale.stepped());
+    assert_eq!(gain.scale.position(0.25), 0.25);
+    assert_eq!(gain.scale.text(0.5), "50 %", "the text it listed");
+    assert_eq!(gain.scale.text(0.25), "25 %", "a text it gave since");
+    assert_eq!(gain.scale.text(0.75), "0.750", "not named yet: the number");
+    assert_eq!(gain.scale.command(1.5), json!(1.0), "kept in range");
+    let shape = params.param(track, &LaneKey { device: Some(0), param: "4".into() }).unwrap();
+    assert!(shape.scale.stepped());
+    assert_eq!(shape.scale.value_at(0.4), 1.0, "on its nearest step");
+    assert_eq!(shape.scale.text(2.0), "2");
+    assert_eq!(shape.scale.nudge_step(), 1.0, "Up and Down move a step");
+    // The values it was asked about and did not name go to the app to ask, once.
+    let asked = params.asked_texts();
+    let mut asked: Vec<(u32, Vec<f64>)> = asked.into_iter().map(|(_, _, id, values)| (id, values)).collect();
+    asked.sort_by_key(|(id, _)| *id);
+    assert_eq!(asked, [(0, vec![0.75]), (4, vec![2.0])]);
+    assert!(params.asked_texts().is_empty());
+}
+
+/// A plug-in's range is not trusted: an empty or upside-down one and numbers that are not finite
+/// stay on the lane (#1205).
+#[test]
+fn a_plug_in_scale_survives_hostile_ranges() {
+    let upside_down = PluginScale { min: 1.0, max: -1.0, ..PluginScale::default() };
+    assert_eq!(upside_down.snap(5.0), 1.0);
+    assert_eq!(Scale::Plugin(Box::new(upside_down)).position(0.0), 0.5);
+    let empty = Scale::Plugin(Box::new(PluginScale { min: 2.0, max: 2.0, steps: 4, ..PluginScale::default() }));
+    assert_eq!((empty.position(2.0), empty.value_at(0.7)), (0.0, 2.0));
+    let wild = Scale::Plugin(Box::new(PluginScale { min: f64::NAN, max: f64::INFINITY, ..PluginScale::default() }));
+    assert_eq!(wild.value_at(0.5), 0.5, "0 … 1 instead");
+    assert_eq!(wild.position(f64::NAN), 0.0);
+}

@@ -104,6 +104,113 @@ pub enum Scale {
     Device(ParamInfo),
     /// A data-only device parameter, placed linearly or logarithmically as its control requires.
     Sd(Box<suhina_device_sdk::Parameter>),
+    /// A hosted plug-in's parameter, evenly over its own range (#1205).
+    Plugin(Box<PluginScale>),
+}
+
+/// A hosted plug-in's parameter as it listed it (#1205): its own range (a VST3 plug-in's
+/// normalized 0 … 1, a CLAP plug-in's plain values), its steps, and the plug-in's own text for
+/// the values it was asked about.
+#[derive(Debug, Clone, Default)]
+pub struct PluginScale {
+    /// The parameter's id, which the plug-in's texts are kept by.
+    pub id: u32,
+    pub min: f64,
+    pub max: f64,
+    /// Steps of a stepped parameter (a switch has 1), 0 for a continuous one.
+    pub steps: u32,
+    /// The value the plug-in listed and its text for it.
+    pub listed: Option<(f64, String)>,
+    /// The plug-in's texts for values it was asked about, as the session keeps them.
+    pub texts: std::sync::Arc<suhina_session::ParamTexts>,
+    /// Values a text was wanted for and not known yet, for the app to ask the plug-in about.
+    pub asked: std::sync::Arc<std::sync::Mutex<Vec<f64>>>,
+}
+
+impl PartialEq for PluginScale {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.min == other.min
+            && self.max == other.max
+            && self.steps == other.steps
+            && self.listed == other.listed
+            && std::sync::Arc::ptr_eq(&self.texts, &other.texts)
+    }
+}
+
+/// Most values one parameter's lane asks a plug-in's text for between two frames.
+const MAX_ASKED: usize = 64;
+
+impl PluginScale {
+    /// The range low to high, whichever way the plug-in gave it; 0 … 1 when it is not a range.
+    fn range(&self) -> (f64, f64) {
+        let (low, high) = (self.min.min(self.max), self.min.max(self.max));
+        if low.is_finite() && high.is_finite() { (low, high) } else { (0.0, 1.0) }
+    }
+
+    /// `value` kept in the range and, for a stepped parameter, on its nearest step.
+    pub fn snap(&self, value: f64) -> f64 {
+        let (low, high) = self.range();
+        let value = if value.is_finite() { value.clamp(low, high) } else { low };
+        let span = high - low;
+        if self.steps == 0 || span <= 0.0 {
+            return value;
+        }
+        let step = span / f64::from(self.steps);
+        (low + ((value - low) / step).round() * step).clamp(low, high)
+    }
+
+    /// Where `value` sits on the lane, 0 at the bottom of the range to 1 at its top.
+    fn position(&self, value: f64) -> f64 {
+        let (low, high) = self.range();
+        if high - low <= 0.0 { 0.0 } else { (self.snap(value) - low) / (high - low) }
+    }
+
+    /// The value at `position` (0 … 1), on a step for a stepped parameter.
+    fn value_at(&self, position: f64) -> f64 {
+        let (low, high) = self.range();
+        self.snap(low + position * (high - low))
+    }
+
+    /// The plug-in's own text for `value` when it gave one; else the number.
+    pub fn text(&self, value: f64) -> String {
+        let value = self.snap(value);
+        match self.known_text(value) {
+            Some(text) => text.to_string(),
+            None => {
+                let (low, high) = self.range();
+                if self.steps > 0 && high - low >= f64::from(self.steps) {
+                    format!("{}", value.round())
+                } else {
+                    format!("{value:.3}")
+                }
+            }
+        }
+    }
+
+    /// The text the plug-in gave for `value`, if it gave one. A value it was never asked about
+    /// is noted for the app to ask it, so the next frames show its text.
+    pub fn known_text(&self, value: f64) -> Option<&str> {
+        let (low, high) = self.range();
+        let near = ((high - low) * 1e-6).max(1e-12);
+        if let Some((_, text)) =
+            self.listed.as_ref().filter(|(at, text)| (at - value).abs() <= near && !text.trim().is_empty())
+        {
+            return Some(text.as_str());
+        }
+        match self.texts.get(&(self.id, value.to_bits())) {
+            Some(text) => Some(text.as_str()).filter(|text| !text.trim().is_empty()),
+            None => {
+                if let Ok(mut asked) = self.asked.lock()
+                    && asked.len() < MAX_ASKED
+                    && !asked.iter().any(|a| a.to_bits() == value.to_bits())
+                {
+                    asked.push(value);
+                }
+                None
+            }
+        }
+    }
 }
 
 impl Scale {
@@ -115,6 +222,7 @@ impl Scale {
             Self::Mute => value,
             Self::Device(info) => info.to_normalized(value),
             Self::Sd(parameter) => sd_position(parameter, value),
+            Self::Plugin(plugin) => plugin.position(value),
         };
         if position.is_finite() { position.clamp(0.0, 1.0) } else { 0.0 }
     }
@@ -128,6 +236,7 @@ impl Scale {
             Self::Mute => position.round(),
             Self::Device(info) => info.from_normalized(position),
             Self::Sd(parameter) => sd_value(parameter, position),
+            Self::Plugin(plugin) => plugin.value_at(position),
         }
     }
 
@@ -177,6 +286,10 @@ impl Scale {
             },
             Self::Sd(parameter) if parameter.control.is_stepped() => 1.0,
             Self::Sd(parameter) => (parameter.max - parameter.min) / 100.0,
+            Self::Plugin(plugin) => {
+                let (low, high) = plugin.range();
+                (high - low) / if plugin.steps > 0 { f64::from(plugin.steps) } else { 100.0 }
+            }
         }
     }
 
@@ -223,6 +336,7 @@ impl Scale {
             Self::Mute => value.round().clamp(0.0, 1.0),
             Self::Device(info) => info.clamp(value),
             Self::Sd(parameter) => parameter.clamp(value),
+            Self::Plugin(plugin) => plugin.snap(value),
         };
         Some(json!(value))
     }
@@ -235,6 +349,7 @@ impl Scale {
             Self::Mute => value.round(),
             Self::Device(info) => info.clamp(value),
             Self::Sd(parameter) => parameter.clamp(value),
+            Self::Plugin(plugin) => plugin.snap(value),
         }
     }
 
@@ -251,6 +366,7 @@ impl Scale {
             Self::Mute => (value + delta).clamp(0.0, 1.0).round(),
             Self::Device(info) => info.clamp(value + delta),
             Self::Sd(parameter) => parameter.clamp(value + delta),
+            Self::Plugin(plugin) => plugin.snap(value + delta),
         }
     }
 
@@ -260,6 +376,7 @@ impl Scale {
             Self::Mute => true,
             Self::Device(info) => matches!(info.kind, ParamKind::Toggle | ParamKind::Choice(_)),
             Self::Sd(parameter) => parameter.control.is_stepped(),
+            Self::Plugin(plugin) => plugin.steps > 0,
             Self::Volume | Self::Pan => false,
         }
     }
@@ -312,6 +429,7 @@ impl Scale {
                 _ if !parameter.unit.is_empty() => format!("{value:.2} {}", parameter.unit),
                 _ => format!("{value:.2}"),
             },
+            Self::Plugin(plugin) => plugin.text(value),
         }
     }
 }
@@ -360,12 +478,52 @@ pub struct Param {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Params {
     tracks: HashMap<TrackId, Vec<Param>>,
+    /// The plug-ins' parameter lists they were built with (#1205), so lists that have not
+    /// changed are not built again.
+    plugins: PluginLists,
+}
+
+/// What the hosted plug-ins on the tracks listed (#1205): each one's parameters as it last listed
+/// them and its own texts for values, by its track and its place in the track's chain.
+#[derive(Debug, Clone, Default)]
+pub struct PluginLists {
+    pub lists: HashMap<(TrackId, usize), std::sync::Arc<[suhina_plugins::ParamInfo]>>,
+    /// Each plug-in's own texts for values it was asked about, as the session keeps them.
+    pub texts: HashMap<(TrackId, usize), std::sync::Arc<suhina_session::ParamTexts>>,
+}
+
+impl PartialEq for PluginLists {
+    /// The same lists, the very ones the session handed over: comparing thousands of parameters
+    /// every frame would cost more than building them again.
+    fn eq(&self, other: &Self) -> bool {
+        fn same<T: ?Sized>(
+            a: &HashMap<(TrackId, usize), std::sync::Arc<T>>,
+            b: &HashMap<(TrackId, usize), std::sync::Arc<T>>,
+        ) -> bool {
+            a.len() == b.len() && a.iter().all(|(key, x)| b.get(key).is_some_and(|y| std::sync::Arc::ptr_eq(x, y)))
+        }
+        same(&self.lists, &other.lists) && same(&self.texts, &other.texts)
+    }
 }
 
 impl Params {
     /// Every track's parameters from `project`: its mixer's volume, pan and mute, then each
     /// built-in and `.sd` device's parameters in device order, with their lanes' points.
     pub fn build(project: &Project) -> Self {
+        Self::build_with(project, PluginLists::default())
+    }
+
+    /// Builds the parameters again with `plugins` when they are not the lists the parameters
+    /// were built with (#1205).
+    pub fn take_plugins(&mut self, project: &Project, plugins: PluginLists) {
+        if self.plugins != plugins {
+            *self = Self::build_with(project, plugins);
+        }
+    }
+
+    /// [`Params::build`], with each hosted plug-in's parameters from `plugins` after the
+    /// built-in and `.sd` devices' (#1205).
+    pub fn build_with(project: &Project, plugins: PluginLists) -> Self {
         let mut tracks = HashMap::new();
         // Every track's channel, and Main's under [`TrackId::MAIN`] (#687).
         let channels = project
@@ -437,12 +595,31 @@ impl Params {
                             });
                         }
                     }
+                    DeviceKind::Clap { .. } | DeviceKind::Vst3 { .. } | DeviceKind::Vst2 { .. } => {
+                        params.extend(plugin_params(track, index, device, &plugins));
+                    }
                     _ => {}
                 }
             }
             tracks.insert(track, params);
         }
-        Self { tracks }
+        Self { tracks, plugins }
+    }
+
+    /// The values of hosted plug-ins' parameters whose text the lanes wanted since the last call
+    /// and did not know (#1205), by track, device and parameter id, for the app to ask for.
+    pub fn asked_texts(&self) -> Vec<(TrackId, usize, u32, Vec<f64>)> {
+        let mut asked = Vec::new();
+        for (track, params) in &self.tracks {
+            for param in params {
+                let (Scale::Plugin(plugin), Some(device)) = (&param.scale, param.key.device) else { continue };
+                let values = plugin.asked.lock().map(|mut a| std::mem::take(&mut *a)).unwrap_or_default();
+                if !values.is_empty() {
+                    asked.push((*track, device, plugin.id, values));
+                }
+            }
+        }
+        asked
     }
 
     /// `track`'s parameters, in the order the chooser lists them; none for a track without a
@@ -455,6 +632,72 @@ impl Params {
     pub(crate) fn param(&self, track: TrackId, key: &LaneKey) -> Option<&Param> {
         self.of(track).iter().find(|p| &p.key == key)
     }
+}
+
+/// A hosted plug-in's parameters as lanes can show them (#1205): those it lists as automatable
+/// and lets be seen and changed, in its order, grouped by its own groups; then each lane of its
+/// whose parameter it does not list (it is not running, is not installed, or no longer has it),
+/// kept with its points and named as missing.
+fn plugin_params(
+    track: TrackId,
+    index: usize,
+    device: &suhina_engine::model::Device,
+    plugins: &PluginLists,
+) -> Vec<Param> {
+    let lane_of = |id: &str| device.automation.iter().find(|l| l.param == id);
+    let set = |id: u32| device.params.iter().find(|p| p.id.parse::<u32>().ok() == Some(id)).map(|p| p.value);
+    let texts = plugins.texts.get(&(track, index)).cloned().unwrap_or_default();
+    let mut params = Vec::new();
+    let listed = plugins.lists.get(&(track, index)).map_or(&[][..], |list| &list[..]);
+    for info in listed.iter().filter(|p| p.automatable && !p.hidden && !p.read_only) {
+        let id = info.id.to_string();
+        let lane = lane_of(&id);
+        params.push(Param {
+            key: LaneKey { device: Some(index), param: id },
+            name: if info.name.trim().is_empty() { format!("Parameter {}", info.id) } else { info.name.clone() },
+            device_name: Some(device.name.clone()),
+            group: (!info.group.trim().is_empty()).then(|| info.group.clone()),
+            scale: Scale::Plugin(Box::new(PluginScale {
+                id: info.id,
+                min: info.min,
+                max: info.max,
+                steps: info.steps,
+                listed: (!info.text.is_empty()).then(|| (info.value, info.text.clone())),
+                texts: texts.clone(),
+                asked: Default::default(),
+            })),
+            enabled: lane.is_none_or(|l| l.enabled),
+            points: lane.map(|l| l.points.clone()).unwrap_or_default(),
+            current: set(info.id).unwrap_or(info.value),
+        });
+    }
+    // A lane the list does not name stays, with its points, so nothing is lost while the
+    // plug-in is away; its range is what its points and the project's value reach, at least 0 … 1.
+    for lane in &device.automation {
+        if params.iter().any(|p| p.key.param == lane.param) {
+            continue;
+        }
+        let Ok(id) = lane.param.parse::<u32>() else { continue };
+        let values = lane.points.iter().map(|p| p.value).chain(set(id)).filter(|v| v.is_finite());
+        let (min, max) = values.fold((0.0f64, 1.0f64), |(low, high), v| (low.min(v), high.max(v)));
+        params.push(Param {
+            key: LaneKey { device: Some(index), param: lane.param.clone() },
+            name: format!("Parameter {id} (not available)"),
+            device_name: Some(device.name.clone()),
+            group: None,
+            scale: Scale::Plugin(Box::new(PluginScale {
+                id,
+                min,
+                max,
+                texts: texts.clone(),
+                ..PluginScale::default()
+            })),
+            enabled: lane.enabled,
+            points: lane.points.clone(),
+            current: set(id).unwrap_or(min),
+        });
+    }
+    params
 }
 
 impl Param {

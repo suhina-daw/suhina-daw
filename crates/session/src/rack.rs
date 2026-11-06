@@ -225,6 +225,9 @@ enum Done {
     AraUpdated(Result<(), String>),
     /// Its parameters were listed for its generated panel; `None` when it did not answer.
     Listed(Option<Vec<suhina_plugins::ParamInfo>>),
+    /// It gave its texts for values of a parameter (#1205): the parameter, the values asked
+    /// about and the texts, `None` when it did not answer.
+    Texts(u32, Vec<f64>, Option<Vec<String>>),
     /// The edits of a clip carried to another track were stored ([`Carry`], by its number).
     AraExported(u64, Result<(String, Vec<u8>), String>),
     /// They were given to the other track's plug-in, or not yet.
@@ -239,6 +242,13 @@ const LIST_EVERY: Duration = Duration::from_secs(2);
 /// meanwhile, so it must not wait for as long as the start-up timeout does: a host that stops
 /// answering would keep restarts and health checks away for minutes.
 const LIST_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// A plug-in's own texts for values of its parameters (#1205): by parameter id and the value's
+/// bits, the text it gave (empty where it gave none or did not answer, so it is not asked again).
+pub type ParamTexts = std::collections::HashMap<(u32, u64), String>;
+
+/// Most texts kept for one plug-in; past this the texts are forgotten and asked for again.
+const MAX_TEXTS: usize = 8192;
 
 /// A parameter list's ids and ranges (lowest, highest), as [`Instance::ranges`] keeps them.
 fn ranges(list: &[suhina_plugins::ParamInfo]) -> Vec<(u32, f64, f64)> {
@@ -353,6 +363,10 @@ struct Instance {
     listed: Option<(Arc<[suhina_plugins::ParamInfo]>, Instant)>,
     /// A listing for the panel is under way.
     listing: bool,
+    /// Its texts for the values automation lanes show (#1205), and whether a request for more
+    /// is under way.
+    texts: Arc<ParamTexts>,
+    texting: bool,
     /// When the last listing for the panel ended, answered or not; a plug-in that refuses to
     /// list is asked as seldom as one that answers.
     list_tried: Option<Instant>,
@@ -395,6 +409,21 @@ impl Instance {
         }
     }
 
+    /// A request for texts of `values` of parameter `id` ended with `texts`, or with nothing when
+    /// the plug-in did not answer: the values without a text keep an empty one, so they are not
+    /// asked about again.
+    fn texts_done(&mut self, id: u32, values: &[f64], texts: Option<Vec<String>>) {
+        self.texting = false;
+        let texts = texts.unwrap_or_default();
+        let kept = Arc::make_mut(&mut self.texts);
+        if kept.len().saturating_add(values.len()) > MAX_TEXTS {
+            kept.clear();
+        }
+        for (at, value) in values.iter().enumerate() {
+            kept.insert((id, value.to_bits()), texts.get(at).cloned().unwrap_or_default());
+        }
+    }
+
     fn new(status: PluginStatus, plugin: Option<(String, String, &'static str)>, generation: u64) -> Self {
         Self {
             status,
@@ -404,6 +433,8 @@ impl Instance {
             ranges: None,
             listed: None,
             listing: false,
+            texts: Arc::default(),
+            texting: false,
             list_tried: None,
             control: None,
             last_state: None,
@@ -985,6 +1016,7 @@ impl Rack {
                             instance.ara_failed = true;
                         }
                         Done::Listed(list) => instance.list_done(list, Instant::now()),
+                        Done::Texts(id, values, texts) => instance.texts_done(id, &values, texts),
                         Done::Saved(Some(state)) => {
                             self.edits.read(key, &state);
                             instance.last_state = Some(state);
@@ -1065,6 +1097,44 @@ impl Rack {
             && let Some(instance) = self.instances.get_mut(&key)
         {
             instance.listing = true;
+        }
+    }
+
+    /// The plug-in device `key`'s own texts for values it was asked about (#1205).
+    pub fn texts(&self, key: u64) -> Option<Arc<ParamTexts>> {
+        self.instances.get(&key).map(|i| Arc::clone(&i.texts))
+    }
+
+    /// Asks the plug-in device `key` in the background for its texts of `values` of parameter
+    /// `id` it has not given yet (#1205); one request at a time, while it runs and its control
+    /// half is not lent out.
+    pub fn ask_texts(&mut self, key: u64, id: u32, values: &[f64]) {
+        let Some(instance) = self.instances.get(&key) else { return };
+        if instance.status != PluginStatus::Running || instance.texting || instance.control.is_none() {
+            return;
+        }
+        let mut wanted: Vec<f64> = Vec::new();
+        for value in values.iter().copied().filter(|v| v.is_finite()) {
+            if !instance.texts.contains_key(&(id, value.to_bits()))
+                && !wanted.iter().any(|w| w.to_bits() == value.to_bits())
+            {
+                wanted.push(value);
+            }
+            if wanted.len() >= suhina_plugins::protocol::MAX_PARAM_TEXTS {
+                break;
+            }
+        }
+        if wanted.is_empty() {
+            return;
+        }
+        let lent = self.lend(key, move |control| {
+            let texts = control.param_texts_within(id, &wanted, LIST_TIMEOUT).ok();
+            Done::Texts(id, wanted, texts)
+        });
+        if lent.is_ok()
+            && let Some(instance) = self.instances.get_mut(&key)
+        {
+            instance.texting = true;
         }
     }
 

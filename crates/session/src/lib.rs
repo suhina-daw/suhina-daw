@@ -105,8 +105,8 @@ pub use projects::{
     MAX_OPEN_PROJECTS, ProjectId, Projects, all_commands, commands_markdown, params_of, policy, project_commands,
 };
 pub use rack::{
-    BlockCounts, Hosted, OfflinePlugins, PluginEnv, PluginProgress, PluginReport, PluginStatus, ProcessGroup, Rack,
-    is_instrument, plugin_group, start_offline,
+    BlockCounts, Hosted, OfflinePlugins, ParamTexts, PluginEnv, PluginProgress, PluginReport, PluginStatus,
+    ProcessGroup, Rack, is_instrument, plugin_group, start_offline,
 };
 pub use recording::{COUNT_IN_BARS, LiveTake, RECORDED_FOLDER};
 pub use relink::COLLECTED;
@@ -846,6 +846,20 @@ impl Session {
     pub fn plugin_report_at(&mut self, track: suhina_model::TrackId, path: &[usize]) -> Option<PluginReport> {
         let key = plugin_key_at_path(&self.project, track, path)?;
         self.plugins.report(key)
+    }
+
+    /// The plug-in device at `path` on `track`'s own texts for values it was asked about
+    /// ([`Session::ask_plugin_texts_at`], #1205).
+    pub fn plugin_texts_at(&self, track: suhina_model::TrackId, path: &[usize]) -> Option<std::sync::Arc<ParamTexts>> {
+        self.plugins.texts(plugin_key_at_path(&self.project, track, path)?)
+    }
+
+    /// Asks the plug-in device at `path` on `track` in the background for its own texts of
+    /// `values` of parameter `id`, for automation lanes to show (#1205).
+    pub fn ask_plugin_texts_at(&mut self, track: suhina_model::TrackId, path: &[usize], id: u32, values: &[f64]) {
+        if let Some(key) = plugin_key_at_path(&self.project, track, path) {
+            self.plugins.ask_texts(key, id, values);
+        }
     }
 
     /// Has the plug-in device at `path` on `track` list its parameters again in the background,

@@ -1087,6 +1087,32 @@ impl Plugin {
         }
     }
 
+    /// The plug-in's own text for each of `values` of parameter `id`, in its own range (#1205):
+    /// one text a value, empty where it gives none. At most [`protocol::MAX_PARAM_TEXTS`]
+    /// values are asked about; the rest get no text.
+    pub fn param_texts_within(
+        &mut self,
+        id: u32,
+        values: &[f64],
+        timeout: Duration,
+    ) -> Result<Vec<String>, PluginError> {
+        let instance = self.instance;
+        let asked: Vec<f64> = values.iter().copied().take(protocol::MAX_PARAM_TEXTS).collect();
+        let reply = self.request_within(
+            timeout,
+            &Message::GetParamTexts { instance, id, values: asked },
+            "param_texts",
+            |m| matches!(m, Message::ParamTexts { instance: i, id: p, .. } if *i == instance && *p == id),
+        )?;
+        match reply {
+            Message::ParamTexts { mut texts, .. } => {
+                texts.resize(values.len(), String::new());
+                Ok(texts)
+            }
+            _ => Err(PluginError::Protocol("expected parameter texts".into())),
+        }
+    }
+
     /// Sets parameter `id` to `value`, in its own range (see [`ParamInfo`]); the plug-in's
     /// audio follows from its next block. Returns the parameter as it is now. Kept for a
     /// restart.
