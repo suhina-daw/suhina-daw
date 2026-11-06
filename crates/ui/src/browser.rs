@@ -855,9 +855,15 @@ pub fn duration_text(seconds: f64) -> String {
     if !seconds.is_finite() || seconds < 0.0 {
         return String::new();
     }
-    let minutes = (seconds / 60.0).floor();
-    let rest = seconds - minutes * 60.0;
-    if seconds < 60.0 { format!("0:{rest:04.1}") } else { format!("{}:{:02}", minutes as u64, rest.floor() as u64) }
+    // Under a minute the text shows tenths: round to them first, so 59.97 s reads 1:00, not
+    // 0:60.0.
+    let tenths = (seconds * 10.0).round() / 10.0;
+    if tenths < 60.0 {
+        return format!("0:{tenths:04.1}");
+    }
+    let minutes = (tenths / 60.0).floor();
+    let rest = tenths - minutes * 60.0;
+    format!("{}:{:02}", minutes as u64, rest.floor() as u64)
 }
 
 #[cfg(test)]
@@ -869,6 +875,9 @@ mod tests {
         assert_eq!(duration_text(4.2), "0:04.2");
         assert_eq!(duration_text(0.06), "0:00.1");
         assert_eq!(duration_text(201.7), "3:21");
+        assert_eq!(duration_text(59.94), "0:59.9");
+        assert_eq!(duration_text(59.97), "1:00", "rounded up to a minute, not 0:60.0");
+        assert_eq!(duration_text(60.0), "1:00");
         assert_eq!(duration_text(f64::NAN), "");
     }
 
