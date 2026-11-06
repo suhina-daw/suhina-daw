@@ -466,3 +466,37 @@ fn a_save_does_not_write_into_a_folder_with_other_files_and_no_theme_css() {
     assert_eq!(files.write("empty", &night()), Ok(()));
     let _clean = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_variant_save_does_not_write_into_a_folder_that_is_not_a_theme() {
+    let dir = folder("foreign-variant");
+    let themes = dir.join("themes");
+    let photos = themes.join("photos");
+    std::fs::create_dir_all(photos.join(VARIANTS)).unwrap();
+    std::fs::write(photos.join("background.png"), b"mine").unwrap();
+    std::fs::write(photos.join(VARIANTS).join("custom.json"), b"{\"mine\":true}").unwrap();
+    let mut files = ThemeFiles::new(Some(themes));
+    assert!(files.write("photos@custom", &night()).is_err());
+    assert_eq!(std::fs::read(photos.join(VARIANTS).join("custom.json")).unwrap(), b"{\"mine\":true}");
+    assert_eq!(std::fs::read(photos.join("background.png")).unwrap(), b"mine");
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_import_looks_at_its_destination_when_the_scan_of_names_stops_short() {
+    let dir = folder("scan-limit");
+    let themes = dir.join("themes");
+    let before: Vec<_> = ["taken-a", "taken-b"].iter().flat_map(|id| nightly_folder(&themes, id)).collect();
+    let mut files = ThemeFiles::new(Some(themes));
+    // The scan sees one folder of the two, so one of them is not in the names.
+    files.max_folders = 1;
+    let drop = dir.join("drop");
+    std::fs::create_dir_all(&drop).unwrap();
+    for (id, expected) in [("taken-a", "taken-a-2"), ("taken-b", "taken-b-2")] {
+        let sheet = drop.join(format!("{id}.css"));
+        std::fs::write(&sheet, ":root { --background: #202020; }\n").unwrap();
+        assert_eq!(files.import_with(&sheet, Again::Copy).unwrap().ids, [expected]);
+    }
+    unchanged(&before);
+    let _clean = std::fs::remove_dir_all(&dir);
+}

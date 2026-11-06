@@ -94,6 +94,8 @@ pub struct ThemeFiles {
     not_themes: Vec<String>,
     /// The folder names last given to the window as taken, so a change is sent once.
     reserved: Vec<String>,
+    /// How many entries of the themes folder are looked at for names.
+    max_folders: usize,
 }
 
 impl ThemeFiles {
@@ -106,6 +108,7 @@ impl ThemeFiles {
             user_seen: None,
             not_themes: Vec::new(),
             reserved: Vec::new(),
+            max_folders: 4096,
         }
     }
 
@@ -115,7 +118,7 @@ impl ThemeFiles {
         let Some(Ok(dir)) = self.folder.as_ref().map(std::fs::read_dir) else { return Vec::new() };
         let mut names: Vec<String> = dir
             .filter_map(Result::ok)
-            .take(4096)
+            .take(self.max_folders)
             .filter(|e| std::fs::metadata(e.path()).is_ok_and(|m| m.is_dir()))
             .filter_map(|e| e.file_name().to_str().map(str::to_owned))
             .collect();
@@ -344,6 +347,10 @@ impl ThemeFiles {
         let (base, variant) = theme_vars::split_id(id);
         if !is_theme_id(base) || variant.is_some_and(|v| !theme_vars::is_variant_id(v)) {
             return Err(format!("{id} cannot name a theme file"));
+        }
+        if !theme::is_built_in(base) {
+            // Before anything is written, a variant's file included.
+            writable(&folder, base)?;
         }
         if let Some(variant) = variant {
             // The settings editors write the variant's file, and nothing of the theme's own.
@@ -1146,6 +1153,22 @@ fn package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8>)>, Stri
     Ok(files)
 }
 
+/// Whether the theme `id`'s folder is the theme's to write in: not there, empty, or a theme with a
+/// `theme.json`. A folder with a `theme.css` and no `theme.json`, or with other files and no
+/// `theme.css`, is not a theme (yet), and what is in it is not ours to edit.
+fn writable(folder: &Path, id: &str) -> Result<(), String> {
+    let dir = folder.join(id);
+    let is_file = |name: &str| std::fs::symlink_metadata(dir.join(name)).is_ok_and(|m| m.is_file());
+    if is_file(THEME_CSS) {
+        if !is_file(THEME_JSON) {
+            return Err(format!("{id} has a theme.css but no theme.json, so it was not changed"));
+        }
+    } else if holds_other_files(&dir) {
+        return Err(format!("{id} is a folder that is not a theme, so nothing was written into it"));
+    }
+    Ok(())
+}
+
 /// Whether `dir` exists and holds something besides a `variants` folder (which a variant saved
 /// just before the theme's own files makes).
 fn holds_other_files(dir: &Path) -> bool {
@@ -1162,17 +1185,9 @@ fn persist_theme(folder: &Path, id: &str, theme: &Theme) -> Result<(), String> {
     use suhina_ui::kit::theme_css;
     let dir = folder.join(id);
     let sheet_path = dir.join(THEME_CSS);
+    writable(folder, id)?;
     if !std::fs::symlink_metadata(&sheet_path).is_ok_and(|m| m.is_file()) {
-        // A new theme gets a folder of its own: one that is there with other things in it is not ours.
-        if holds_other_files(&dir) {
-            return Err(format!("{id} is a folder that is not a theme, so nothing was written into it"));
-        }
         return write_files(folder, package_files(id, theme)?);
-    }
-    // A `theme.css` with no `theme.json` beside it is not this theme's: it is a folder that is not a
-    // theme (yet), and what is in it is not ours to edit.
-    if !std::fs::symlink_metadata(dir.join(THEME_JSON)).is_ok_and(|m| m.is_file()) {
-        return Err(format!("{id} has a theme.css but no theme.json, so it was not changed"));
     }
     let source = read_text(&sheet_path)?;
     let sheet = theme::from_css(&source).0;
