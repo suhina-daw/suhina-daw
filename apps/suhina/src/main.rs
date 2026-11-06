@@ -241,6 +241,9 @@ fn main() -> ExitCode {
     }
     window.app.projects_mut().set_audio_system(std::sync::Arc::new(suhina_output::DeviceOutput::new()));
     window.app.projects_mut().set_output_choice(settings.output_choice());
+    // Each audio device keeps its input and its default track input (Settings › Audio,
+    // `audio.setTrackInput`): new audio tracks hear the chosen device's.
+    window.app.projects_mut().set_device_inputs(settings.device_inputs());
     // The MIDI controllers, every port on but the ones the settings turn off (Settings › MIDI,
     // `midi.*`, ADR 0017).
     window.app.projects_mut().set_midi_inputs_off(settings.midi_inputs_off.clone());

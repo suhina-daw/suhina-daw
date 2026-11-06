@@ -82,6 +82,18 @@ pub fn cue_channels(pair: u16) -> (u32, u32) {
     (first, first + 1)
 }
 
+/// The input channels `text` names, as `audio.setTrackInput` takes them: "none", a channel
+/// from 1 ("3") or a pair of neighbouring channels ("1/2"); `None` for anything else.
+pub fn input_channels_from_text(text: &str) -> Option<suhina_model::InputChannels> {
+    crate::commands::parse_input_channels(&Value::String(text.to_string())).ok()
+}
+
+/// Input channels as `audio.setTrackInput` takes them and the settings keep them: "none", "3"
+/// or "1/2".
+pub fn input_channels_text(channels: suhina_model::InputChannels) -> String {
+    crate::commands::input_channels_text(channels)
+}
+
 /// A gain in dB, rounded to a hundredth; silence is `None` (JSON null).
 fn gain_db(gain: f32) -> Option<f64> {
     (gain > 0.0).then(|| (20.0 * f64::from(gain).log10() * 100.0).round() / 100.0)
@@ -140,6 +152,16 @@ impl OutputChoice {
 
     /// The same device and format without the cue's settings, to compare two choices by the
     /// device they open.
+    /// The audio device (sound card) this choice plays on, as what it keeps is filed under
+    /// ([`crate::Projects::device_inputs`]): "host|device" in lower case, "default" for a part
+    /// not chosen.
+    pub fn device_key(&self) -> String {
+        let part = |name: &Option<String>| {
+            name.as_deref().map(str::trim).filter(|n| !n.is_empty()).unwrap_or("default").to_lowercase()
+        };
+        format!("{}|{}", part(&self.host), part(&self.device))
+    }
+
     pub fn device_only(&self) -> Self {
         Self { cue_pair: None, cue_gain: 1.0, ..self.clone() }
     }
@@ -492,7 +514,7 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
     },
     CommandSpec {
         id: "audio.setOutput",
-        label: "Choose the audio output: host, device, sample rate, buffer size (the block the engine renders in, fitted to the sizes the device allows; on WASAPI shared mode the engine's block alone, since Windows sets the device's buffer), WASAPI exclusive mode and the audio input device the tracks' audio inputs hear; parts left out stay, an empty text or 0 goes back to the default. Reopens the active project's output, keeping the transport where it is",
+        label: "Choose the audio output: host, device, sample rate, buffer size (the block the engine renders in, fitted to the sizes the device allows; on WASAPI shared mode the engine's block alone, since Windows sets the device's buffer), WASAPI exclusive mode and the audio input device the tracks' audio inputs hear; parts left out stay, an empty text or 0 goes back to the default. Another device brings back the input it was last chosen with, unless input is given. Reopens the active project's output, keeping the transport where it is",
         params: &[
             optional("host", ParamType::Text, "a host from audio.devices, \"\" for the default"),
             optional("device", ParamType::Text, "an output device of that host, \"\" for its default"),
@@ -511,6 +533,18 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         ],
         kind: CommandKind::Audio,
         run: set_output,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "audio.setTrackInput",
+        label: "Choose the default track input of the audio device chosen: the channels of its input a new audio track hears, and an armed track that hears none (none, one channel or a stereo pair). Each audio device keeps its own, with the input chosen for it, and choosing that device again (audio.setOutput) brings both back. Refused while no input device is chosen; tracks that are there keep their own input",
+        params: &[param(
+            "input",
+            ParamType::Text,
+            "\"none\" (the default), a channel from 1 (\"3\"), or a pair (\"1/2\")",
+        )],
+        kind: CommandKind::Audio,
+        run: set_track_input,
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
@@ -583,12 +617,35 @@ pub(crate) fn hosts_json(hosts: &[HostInfo]) -> Value {
 
 fn devices(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
     let hosts = system(projects)?.hosts();
-    Ok(json!({ "hosts": hosts_json(&hosts), "chosen": projects.output_choice().to_json() }))
+    Ok(json!({ "hosts": hosts_json(&hosts), "chosen": chosen_json(projects) }))
+}
+
+/// The output chosen, with the default track input.
+fn chosen_json(projects: &Projects) -> Value {
+    let mut chosen = projects.output_choice().to_json();
+    chosen["track_input"] = json!(crate::commands::input_channels_text(projects.track_input()));
+    chosen
+}
+
+fn set_track_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let input = crate::commands::parse_input_channels(Args::new(params).value("input").unwrap_or(&Value::Null))?;
+    let device = projects.set_track_input(input)?;
+    Ok(json!({
+        "track_input": crate::commands::input_channels_text(input),
+        "input_device": device,
+    }))
 }
 
 fn set_output(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     projects.ensure_output_can_close()?;
-    let choice = projects.output_choice().with_params(params)?;
+    let mut choice = projects.output_choice().with_params(params)?;
+    // Another audio device brings back the input it was last chosen with, unless one is given.
+    if choice.device_key() != projects.output_choice().device_key()
+        && !Args::new(params).has("input")
+        && let Some(input) = projects.remembered_input(&choice)
+    {
+        choice.input = input;
+    }
     projects.set_output_choice(choice);
     let notice = projects.reopen_output()?;
     let mut result = info(projects, &Value::Null)?;
@@ -628,7 +685,7 @@ fn set_cue_volume(projects: &mut Projects, params: &Value) -> Result<Value, Comm
 }
 
 fn info(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
-    let chosen = projects.output_choice().to_json();
+    let chosen = chosen_json(projects);
     let playing = projects.session_mut(None).ok().and_then(|s| s.player()).and_then(Player::output_info);
     Ok(match playing {
         Some(info) => {
