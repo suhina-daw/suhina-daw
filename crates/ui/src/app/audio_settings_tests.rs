@@ -27,7 +27,9 @@ fn rejected_output_and_cue_choices_restore_settings_without_recording_history() 
     let mut app = App::new();
     let (current, requested) = choices();
     let mut session = Session::new(suhina_engine::model::Project::default());
-    let mut renderer = suhina_engine::Renderer::stopped(session.project(), &Default::default(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(session.project(), &Default::default(), 48_000, suhina_session::devices())
+            .unwrap();
     session.attach_player(Player::with_output(renderer.controller(), None, Arc::new(Panel)));
     app.projects.add(session, None).unwrap();
     app.projects.set_output_choice(current.clone());
@@ -71,7 +73,8 @@ impl AudioSystem for FailedOpen {
     ) -> Result<suhina_session::audio::Opened, String> {
         if choice.host.as_deref() == Some("WASAPI") {
             let mut renderer =
-                suhina_engine::Renderer::stopped(project, &Default::default(), 48_000).map_err(|e| e.to_string())?;
+                suhina_engine::Renderer::stopped(project, &Default::default(), 48_000, suhina_session::devices())
+                    .map_err(|e| e.to_string())?;
             return Ok(suhina_session::audio::Opened {
                 player: Player::new(renderer.controller(), None),
                 notice: None,
@@ -87,7 +90,9 @@ fn failed_device_open_keeps_requested_choice_for_retry_but_not_history() {
     let mut app = App::new();
     let (current, selected) = choices();
     let mut session = Session::new(suhina_engine::model::Project::default());
-    let mut renderer = suhina_engine::Renderer::stopped(session.project(), &Default::default(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(session.project(), &Default::default(), 48_000, suhina_session::devices())
+            .unwrap();
     session.attach_player(Player::new(renderer.controller(), None));
     app.projects.add(session, None).unwrap();
     app.projects.set_audio_system(Arc::new(FailedOpen));
@@ -107,7 +112,9 @@ fn switching_after_a_failed_open_preserves_the_previous_drivers_working_device()
     let mut app = App::new();
     let (working, failed) = choices();
     let mut session = Session::new(suhina_engine::model::Project::default());
-    let mut renderer = suhina_engine::Renderer::stopped(session.project(), &Default::default(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(session.project(), &Default::default(), 48_000, suhina_session::devices())
+            .unwrap();
     session.attach_player(Player::new(renderer.controller(), None));
     app.projects.add(session, None).unwrap();
     app.projects.set_audio_system(Arc::new(FailedOpen));

@@ -45,7 +45,7 @@ fn a_saved_project_opens_as_it_was() {
 fn an_empty_audio_clip_saves_and_opens_with_nothing_to_decode_or_miss() {
     let dir = folder("empty-audio");
     let mut session = Session::new(blank_project());
-    session.execute("clip.create", &json!({ "track": "3 Audio", "scene": 1 })).unwrap_or_else(|e| panic!("{e}"));
+    session.execute("clip.create", &json!({ "track": "3 Audio", "scene": 0 })).unwrap_or_else(|e| panic!("{e}"));
     session
         .execute("project.save", &json!({ "path": dir.join("song.suhina").display().to_string() }))
         .unwrap_or_else(|e| panic!("{e}"));

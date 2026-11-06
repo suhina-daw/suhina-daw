@@ -718,16 +718,10 @@ impl Window {
             self.app.set_status(Status::Error(error.to_string()));
             return false;
         }
-        let folder = session.audio_folder().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
         // Outside the project's folder only the person's own saved files and library folders
-        // are read (`docs/spec/missing-files.md` › Project file boundaries).
-        let source = session.source().map(Path::to_path_buf);
-        let trusted = self.app.projects_mut().trusted_audio_for(source.as_deref());
-        let (audio, audio_warnings) = suhina_media::load_project_audio_trusted(session.project(), &folder, &trusted);
-        session.set_trusted(trusted);
-        warnings.extend(audio_warnings);
-        let waveforms = suhina_ui::kit::waveform::from_pool(&audio);
-        session.set_audio(audio);
+        // are read (`docs/spec/missing-files.md` › Project file boundaries), as the CLI and MCP do.
+        warnings.extend(self.app.projects_mut().load_audio(&mut session));
+        let waveforms = suhina_ui::kit::waveform::from_pool(session.audio());
         let choice = self.app.projects().output_choice().clone();
         // A device may only be open once: the previews' own output closes first (ADR 0011).
         self.app.projects_mut().close_preview_output();

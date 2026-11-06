@@ -31,7 +31,7 @@ class SkillChecks(unittest.TestCase):
         self.assertEqual(check(text), [])
 
     def test_a_type_is_found_where_it_is_defined_without_being_re_exported(self):
-        self.assertEqual(check("`suhina_engine::launcher::Launcher::new()`"), [])
+        self.assertEqual(check("`suhina_engine::launcher::ClipLauncher::new()`"), [])
 
     def test_a_path_that_is_gone_fails(self):
         self.assertEqual(

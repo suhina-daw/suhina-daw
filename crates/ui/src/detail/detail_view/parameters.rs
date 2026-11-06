@@ -134,11 +134,13 @@ pub(super) fn parameter_cell(
         let color = style.text_color.map_or_else(theme::text_value, rgb);
         widgets::text_in(painter, rect, align, &value_text(parameter, value), font, color);
     }
-    if let Some(response) = response.filter(|r| r.changed() || r.drag_stopped()) {
-        let continuous = (response.drag_started() || response.dragged()) && !response.drag_stopped();
+    if response.as_ref().is_some_and(|r| r.changed() || r.drag_stopped()) {
+        // Every frame of a drag, its last too, is one gesture; the window ends it on mouse up.
+        let gesture =
+            crate::interaction::commands::gesture(format_args!("param:{}:{}:{}", track.0, at.value(), parameter.id));
         actions.push(Action::new(
             "device.setParam",
-            json!({ "track": track.0, "device": at.value(), "param": parameter.id, "value": value, "continuous": continuous }),
+            json!({ "track": track.0, "device": at.value(), "param": parameter.id, "value": value, "gesture": gesture }),
         ));
     }
 }

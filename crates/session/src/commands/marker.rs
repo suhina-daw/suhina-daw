@@ -4,6 +4,7 @@
 //! The `marker.*` commands, and what runs them here.
 
 use super::*;
+use crate::named::find_one;
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
@@ -13,7 +14,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param("beat", ParamType::Number, "where, in beats from the beginning, 0 … 120000"),
             optional("name", ParamType::Text, "the marker's name (default \"Marker n\")"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: add_marker,
         policy: Policy::UNHEARD,
     },
@@ -21,7 +22,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "marker.move",
         label: "Move a marker to another beat; markers stay in beat order, so its index can change",
         params: &[MARKER, param("beat", ParamType::Number, "the new beat, 0 … 120000")],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: move_marker,
         policy: Policy::UNHEARD,
     },
@@ -29,7 +30,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "marker.rename",
         label: "Rename a marker",
         params: &[MARKER, param("name", ParamType::Text, "the new name, not empty")],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: rename_marker,
         policy: Policy::UNHEARD,
     },
@@ -37,7 +38,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "marker.delete",
         label: "Delete a marker",
         params: &[MARKER],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: delete_marker,
         policy: Policy::UNHEARD,
     },
@@ -45,7 +46,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "marker.jump",
         label: "Move the play start marker to a marker; while playing, playback jumps there at once",
         params: &[MARKER],
-        kind: CommandKind::Transport,
+        kind: CommandKind::TRANSPORT,
         run: jump_to_marker,
         policy: Policy::DEFAULT,
     },
@@ -60,8 +61,12 @@ fn marker_beat(args: Args) -> Result<f64, CommandError> {
     Ok(beat)
 }
 
-/// `index`, checked to name a marker.
+/// `index`, checked to name a marker: its index, or `{"id": n}` with its id (#763 › 1).
 fn marker_index(p: &Project, args: Args) -> Result<usize, CommandError> {
+    if let Some(item) = args.value("index").filter(|v| v.get("id").is_some()) {
+        return find_one(&p.arrangement.markers, suhina_model::MarkerId, item)
+            .map_err(|_| format!("no marker has id {}", item["id"]).into());
+    }
     let index = args.index("index", "from project.markers")?;
     let count = p.arrangement.markers.len();
     (index < count)
@@ -85,7 +90,9 @@ fn add_marker(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         }
     };
     let index = markers.insert_marker(Marker::new(beat, name.clone()));
-    Ok(json!({ "index": index, "beat": beat, "name": name }))
+    // The new marker's id, for the commands that name it next.
+    let id = session.project.arrangement.markers.id(index).map(|m| m.0);
+    Ok(json!({ "index": index, "id": id, "beat": beat, "name": name }))
 }
 
 fn move_marker(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -93,11 +100,12 @@ fn move_marker(session: &mut Session, params: &Value) -> Result<Value, CommandEr
     let index = marker_index(&session.project, args)?;
     let beat = marker_beat(args)?;
     let arrangement = &mut session.project.arrangement;
-    let mut marker = arrangement.markers.remove(index);
-    marker.beat = beat;
-    let name = marker.name.clone();
-    let index = arrangement.insert_marker(marker);
-    Ok(json!({ "index": index, "beat": beat, "name": name }))
+    // Taken out and put back with its id: a moved marker stays the same marker.
+    let mut marker = arrangement.markers.take(index);
+    marker.value.beat = beat;
+    let (name, id) = (marker.value.name.clone(), marker.id().0);
+    let index = arrangement.put_marker(marker);
+    Ok(json!({ "index": index, "id": id, "beat": beat, "name": name }))
 }
 
 fn rename_marker(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

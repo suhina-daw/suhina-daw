@@ -590,6 +590,9 @@ pub struct App {
     waker_set: bool,
     /// The selection a fader or a send is moving, as it was when the drag began.
     selection_drag: Option<actions::SelectionDrag>,
+    /// The gesture the window's last drag frame named (#1146): the window ends it once no mouse
+    /// button is down, so a drag is one undo step that closes on mouse up.
+    open_gesture: Option<String>,
     switch_hover: Option<(View, f64)>,
     /// Agents (ADR 0028): connections waiting for the person's answer, the answers for the app,
     /// the agents let in, and those the person disconnected, for the app.
@@ -742,6 +745,7 @@ impl App {
             browser_part: 1.0,
             waker_set: false,
             selection_drag: None,
+            open_gesture: None,
             switch_hover: None,
             agent_asks: Vec::new(),
             agent_answers: Vec::new(),
@@ -2366,6 +2370,9 @@ impl App {
 
     /// Runs one command and shows its outcome in the status bar.
     pub fn run(&mut self, action: &Action) {
+        if let Some(gesture) = action.params.get("gesture").and_then(serde_json::Value::as_str) {
+            self.open_gesture = Some(gesture.to_owned());
+        }
         // A fader or a send dragged on one of several selected tracks moves them together.
         if let Some(wider) = self.drag_to_selection(action) {
             return self.run(&wider);
@@ -2511,7 +2518,7 @@ impl App {
                 {
                     let at = |key: &str| result[key].as_u64().and_then(|i| usize::try_from(i).ok());
                     let clip = result["clip"].as_u64().and_then(|c| u32::try_from(c).ok()).map(ClipId);
-                    match (clip.filter(|_| at("scene").is_none()), at("scene").and_then(|s| s.checked_sub(1))) {
+                    match (clip.filter(|_| at("scene").is_none()), at("scene")) {
                         (Some(clip), _) => self.arrangement.select_clip(track, clip),
                         (None, Some(scene)) => self.view.select_slot(track, scene),
                         (None, None) => self.view.selected = Some(track),
@@ -2564,7 +2571,7 @@ impl App {
                 let changes_project = suhina_session::commands()
                     .iter()
                     .find(|c| c.id == action.id)
-                    .is_some_and(|c| matches!(c.kind, CommandKind::Edit | CommandKind::History));
+                    .is_some_and(|c| matches!(c.kind, CommandKind::EDIT | CommandKind::HISTORY));
                 // Arming changes no project, but the track headers show it.
                 if changes_project || action.id == "track.setArm" {
                     self.revision += 1;
@@ -3512,6 +3519,7 @@ impl App {
         }
         // A selection this frame's commands or clicks made arms its track.
         self.follow_selection_with_arm();
+        self.end_gesture_on_release(ui.ctx());
         self.frame_trace.mark("commands");
         self.frame_trace.note(|| format!("{ran} commands"));
         self.guard_quit(ui.ctx());

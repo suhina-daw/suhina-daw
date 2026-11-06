@@ -13,8 +13,13 @@ use super::*;
 #[test]
 #[ignore = "needs a GPU adapter; run with --ignored"]
 fn render_the_piano_roll() {
-    let mut renderer = suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000)
-        .unwrap_or_else(|e| panic!("{e}"));
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
     let mut session = Session::new(demo_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();

@@ -100,7 +100,7 @@ fn an_offline_render_plays_the_automation() {
         let (plugins, seen) = with_level(&project);
         let out = render_offline_from(
             &project,
-            RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
             SR,
             block,
             None,
@@ -128,9 +128,14 @@ fn set_values_go_at_the_start_and_a_lane_wins_while_it_plays() {
     // Parameter 0 set to 0.25, parameter 4 to 0.75: both at the first frame.
     let project = automated(1.0, &[("0", 0.25), ("4", 0.75)], &[]);
     let (plugins, seen) = with_level(&project);
-    let out =
-        render_offline_from(&project, RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins), SR, 512, None)
-            .unwrap();
+    let out = render_offline_from(
+        &project,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
     assert!(out.iter().step_by(2).take(BEAT).all(|&s| (s - out[0]).abs() < 1e-7 && s > 0.0));
     let seen = seen.lock().unwrap().clone();
     assert_eq!(&seen[..2], [(0, 0, 0.25), (0, 4, 0.75)]);
@@ -138,9 +143,14 @@ fn set_values_go_at_the_start_and_a_lane_wins_while_it_plays() {
     // With a lane on parameter 0, the lane's value follows the set one at the first frame.
     let project = automated(1.0, &[("0", 0.25)], &[(0.0, 0.5)]);
     let (plugins, seen) = with_level(&project);
-    let _ =
-        render_offline_from(&project, RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins), SR, 512, None)
-            .unwrap();
+    let _ = render_offline_from(
+        &project,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
     let seen = seen.lock().unwrap().clone();
     assert_eq!(&seen[..2], [(0, 0, 0.25), (0, 0, 0.5)]);
 }
@@ -151,7 +161,7 @@ fn a_value_set_while_playing_is_heard_from_the_next_block() {
     let (plugins, seen) = with_level(&project);
     let mut renderer = Renderer::build(
         &project,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
         SR,
         RenderOptions::PLAYING,
     )
@@ -173,7 +183,7 @@ fn an_edit_resends_only_the_values_that_changed() {
     let (plugins, seen) = with_level(&project);
     let mut renderer = Renderer::build(
         &project,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
         SR,
         RenderOptions::PLAYING,
     )
@@ -198,7 +208,7 @@ fn a_device_added_beside_a_plug_in_does_not_send_its_set_values_again() {
     let (plugins, seen) = with_level(&project);
     let mut renderer = Renderer::build(
         &project,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
         SR,
         RenderOptions::PLAYING,
     )

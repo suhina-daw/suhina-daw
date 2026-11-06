@@ -548,7 +548,7 @@ impl Params {
                     group: None,
                     scale,
                     enabled: lane.as_ref().is_none_or(|l| l.enabled),
-                    points: lane.map(|l| l.points).unwrap_or_default(),
+                    points: lane.map(|l| l.points.into_values()).unwrap_or_default(),
                     current,
                 }
             })
@@ -567,7 +567,7 @@ impl Params {
                                 group: (!spec.group.is_empty()).then(|| spec.group.to_string()),
                                 scale: Scale::Device(spec.clone()),
                                 enabled: lane.as_ref().is_none_or(|l| l.enabled),
-                                points: lane.map(|l| l.points).unwrap_or_default(),
+                                points: lane.map(|l| l.points.into_values()).unwrap_or_default(),
                                 current: set(&spec.id).unwrap_or(spec.default),
                             });
                         }
@@ -590,7 +590,7 @@ impl Params {
                                 group: (!spec.ui.group.is_empty()).then(|| spec.ui.group.clone()),
                                 scale: Scale::Sd(Box::new(spec.clone())),
                                 enabled: lane.as_ref().is_none_or(|l| l.enabled),
-                                points: lane.map(|l| l.points).unwrap_or_default(),
+                                points: lane.map(|l| l.points.into_values()).unwrap_or_default(),
                                 current: set(&spec.id).unwrap_or(spec.default),
                             });
                         }
@@ -2490,14 +2490,14 @@ fn range_menu(
         params["cycles"] = json!((((end - start) / rate.max(1e-6)).round() as usize).clamp(1, 512));
         params["depth"] = json!(state.shape_depth.unwrap_or(1.0));
         // Put in again in the same range, the shape swings around the place the first one did,
-        // and replaces it when nothing else changed since (`continue` with `replace`), so the
-        // range's edges come from the line as it was, not from the shape before.
+        // and replaces it when nothing else changed since (one gesture of a command whose calls
+        // replace each other), so the range's edges come from the line as it was, not from the
+        // shape before.
         let again =
             state.last_shape.clone().filter(|l| l.track == track && &l.key == key && l.start == start && l.end == end);
         let center = again.as_ref().map_or(center, |l| l.center);
         params["center"] = json!(center.clamp(0.0, 1.0));
-        params["continue"] = json!(again.is_some());
-        params["replace"] = json!(again.is_some());
+        range_gesture(&mut params, actions, "shape", again.is_some());
         actions.push(Action::new("automation.insertShape", params));
         state.selection = None;
         state.smooth = None;
@@ -2562,8 +2562,7 @@ fn range_menu(
         let mut params = ranged();
         params["factor"] = json!(factor);
         params["around"] = json!(if state.scale_bottom { "bottom" } else { "middle" });
-        params["continue"] = json!(again);
-        params["replace"] = json!(again);
+        range_gesture(&mut params, actions, "scale", again);
         actions.push(Action::new("automation.scaleRange", params));
         // The shape is scaled now: Depth and Rate would put the unscaled one back, and Smooth and
         // Simplify start again from the scaled line.
@@ -2582,12 +2581,11 @@ fn range_menu(
     let amount = amount / 100.0;
     state.smooth = Some(Smoothed { of: of.clone(), amount });
     if live(ui, state, &smooth_slider) {
-        // Each amount replaces the one before in this range's step (`continue` with `replace`),
-        // so it rounds the line as it was; a line it does not change (a sine's) stays as it is.
+        // Each amount replaces the one before in this range's step (one gesture), so it rounds
+        // the line as it was; a line it does not change (a sine's) stays as it is.
         let mut params = ranged();
         params["amount"] = json!(amount.clamp(0.0, 1.0));
-        params["continue"] = json!(kept.is_some());
-        params["replace"] = json!(kept.is_some());
+        range_gesture(&mut params, actions, "smooth", kept.is_some());
         actions.push(Action::new("automation.smooth", params));
         state.selection = None;
         state.last_shape = None;
@@ -2619,8 +2617,7 @@ fn range_menu(
         // Each amount replaces the one before in this range's step, so it thins the line as it was.
         let mut params = ranged();
         params["tolerance"] = json!(simplify_tolerance(amount));
-        params["continue"] = json!(kept.is_some());
-        params["replace"] = json!(kept.is_some());
+        range_gesture(&mut params, actions, "simplify", kept.is_some());
         actions.push(Action::new("automation.simplify", params));
         state.selection = None;
         state.smooth = None;
@@ -2661,11 +2658,25 @@ fn picked_menu(
         params["points"] = json!(points);
         params["factor"] = json!(factor);
         params["around"] = json!(if state.scale_bottom { "bottom" } else { "middle" });
-        params["continue"] = json!(again);
-        params["replace"] = json!(again);
+        range_gesture(&mut params, actions, "scale", again);
         actions.push(Action::new("automation.scaleRange", params));
     }
 }
+
+/// Puts a range tool's call in its gesture (#1146): `again` joins the open one, so the call
+/// replaces the last; otherwise the gesture is ended first and this call starts another. A range
+/// gesture stays open when the mouse is let go (its id starts with [`RANGE_GESTURE`]): the next
+/// click on the same tool joins it, and any other edit ends it.
+fn range_gesture(params: &mut serde_json::Value, actions: &mut Vec<Action>, tool: &str, again: bool) {
+    let gesture = format!("{RANGE_GESTURE}{tool}");
+    if !again {
+        actions.push(Action::new("history.endGesture", json!({ "gesture": gesture })));
+    }
+    params["gesture"] = json!(gesture);
+}
+
+/// The start of a range tool's gesture id, which the window does not end on mouse up.
+pub const RANGE_GESTURE: &str = "range:";
 
 /// The grid entries at the end of the lanes' menus: the Arrangement's grid, as its toolbar and
 /// its lanes' menus offer it.

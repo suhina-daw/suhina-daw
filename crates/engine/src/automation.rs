@@ -399,6 +399,11 @@ pub(crate) struct MixLanes {
 }
 
 impl MixLanes {
+    /// Whether a lane carries the pan: the pan knob is then the lane's, not live.
+    pub(crate) fn has_pan(&self) -> bool {
+        self.pan.is_some()
+    }
+
     /// The lanes of `channel` at `frames_per_beat` and `sample_rate`; `None` when none plays.
     /// Allocates.
     pub(crate) fn new(channel: &Channel, frames_per_beat: f64, pan_applies: bool, sample_rate: f64) -> Option<Self> {

@@ -3,7 +3,7 @@ description: Tempo and time-signature changes over the song (the tempo map): ste
 read_when: tempo map, tempo change, tempo ramp, time-signature change, meter, bars, beats to samples, beat to frame, tempo.addPoint, timeSignature.add, bar ruler
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-03
 covers:
   - crates/model/src/tempo.rs
   - crates/engine/src/tempo.rs
@@ -69,7 +69,10 @@ or frames at the sample rate. Nothing converts with the start tempo alone.
   this is `TempoClock` (`crates/engine/src/tempo.rs`): the audio clips, their fades, the
   stretched clips and the launcher's clock ask it, and it takes that fast path when the map is
   constant and goes through the map otherwise. Sending a constant tempo through the map instead
-  moves a launched clip by a frame, so the fast path stays.
+  moves a launched clip by a frame, so the fast path stays. The launcher's bars are a
+  `LaunchClock` (`crates/engine/src/launcher/clock.rs`): the time signature playing, where its
+  bars are counted from after a scene changed it, and the launch quantisation, from which it
+  finds the beat a launch happens at.
 - Malformed changes are ignored, not refused: a beat that is not finite, not after beat 0 or past
   beat 120 000, a tempo outside 1 to 999 bpm, more than 10 000 changes. Of two changes on one beat
   the later in the list wins, except a ramp followed by a step: the ramp arrives at its tempo,
@@ -149,8 +152,10 @@ scene's tempo and signature until it is started again.
 
 ## Commands
 
-All are edits with one undo step. Tempo points are numbered from 1 in beat order, as
-`tempo.points` lists them; bars are numbered from 1, as shown.
+All are edits with one undo step. Tempo points are numbered from 0 in beat order, as
+`tempo.points` lists them, each with an `id` a command may name it by instead (`"point": {"id":
+7}`, #763 › 1); bars are numbered from 1, as shown, since a bar number is a place in the music,
+not an index into a list.
 
 | Command | Params | Does |
 |---|---|---|

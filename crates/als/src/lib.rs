@@ -318,7 +318,9 @@ impl Reader {
                 let ramp = previous.is_some_and(|p| p < time);
                 match transport.tempo_changes.last_mut().filter(|p| p.beat == time) {
                     Some(last) if !last.ramp => *last = TempoPoint { beat: time, bpm, ramp: false },
-                    _ => transport.tempo_changes.push(TempoPoint { beat: time, bpm, ramp }),
+                    _ => {
+                        transport.tempo_changes.push(TempoPoint { beat: time, bpm, ramp });
+                    }
                 }
             }
             previous = Some(time.max(0.0));
@@ -729,8 +731,8 @@ impl Reader {
 
     /// The set's locators as markers, in beat order (`docs/spec/als-format.md` › Locators). One
     /// without a usable time is left out with a warning.
-    fn markers(&mut self, live_set: Node) -> Vec<Marker> {
-        let Some(locators) = path(live_set, &["Locators", "Locators"]) else { return Vec::new() };
+    fn markers(&mut self, live_set: Node) -> suhina_model::IdList<suhina_model::MarkerId, Marker> {
+        let Some(locators) = path(live_set, &["Locators", "Locators"]) else { return Default::default() };
         let mut arrangement = Arrangement::default();
         for locator in locators.children().filter(|n| n.has_tag_name("Locator")) {
             let name = value(locator, &["Name"]).unwrap_or_default();
@@ -796,7 +798,7 @@ impl Reader {
                     self.warn(format!("track {track}: clip {name:?} imported without a scale: {reason}"));
                     None
                 });
-                LaneData::Notes(self.notes(node, &name, track))
+                LaneData::Notes(self.notes(node, &name, track).into())
             }
             "AudioClip" => LaneData::Audio(self.audio(node, &name, track)?),
             other => {

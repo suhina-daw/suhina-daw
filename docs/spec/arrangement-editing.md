@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-05
+last_verified: 2026-11-06
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -332,7 +332,7 @@ in the [automation spec](automation.md#in-the-arrangement-view).
 after its kind (a "MIDI clip" or an "Audio clip"), on a track that holds clips: MIDI on a track
 that plays notes, an "Audio clip" with no file yet on a track that plays audio and not notes; an
 audio clip so far plays silence until a sample is dropped on its slot or lane. A group or a return
-is refused. It goes either in clip slot `scene` (from 1, an existing scene; the slot must be
+is refused. It goes either in clip slot `scene` (from 0, an existing scene; the slot must be
 empty), where it loops over its length, or at beat `start` in the arrangement (0 up to the
 engine's last beat), where it replaces what it covers unless stacked, as a pasted clip does.
 `length` is in beats, one bar of the project's time signature by default (four beats in 4/4, three
@@ -866,7 +866,7 @@ and the commands land when it is let go; a number typed or a double-click sets t
 value), one click on a track-on or a solo button turns them all
 off or on, and the whole list is one undo step. With one track selected, or with a click outside
 the selection, they act on that track alone, and it is heard while it is dragged: each frame sets
-the value with `continue`, so the drag is one undo step.
+the value in one `gesture`, so the drag is one undo step.
 
 **Ctrl (Cmd on macOS) and the wheel over a field** change its value instead of scrolling the view: one tick of a
 wheel is one step (1 dB, or 0.02 of pan), Shift as well makes it ten times finer, and the view

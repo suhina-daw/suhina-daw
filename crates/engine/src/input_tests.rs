@@ -34,7 +34,7 @@ fn tracks_with_inputs(tracks: &[(u32, InputChannels, Monitor)]) -> Project {
 
 /// A stopped renderer reading an input of `channels` channels, and the ring's writing end.
 fn with_input(project: &Project, channels: usize) -> (Renderer, rtrb::Producer<f32>, Arc<AtomicU64>) {
-    let mut renderer = Renderer::stopped(project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let (producer, consumer) = rtrb::RingBuffer::new(BLOCK * channels * 16);
     let underruns = Arc::new(AtomicU64::new(0));
     renderer.set_audio_input(consumer, channels, Arc::clone(&underruns));
@@ -179,11 +179,12 @@ fn hostile_input_is_made_safe() {
     }
     // A renderer without an input device, and one told of 0 or 1000 channels, stay silent and
     // finite.
-    let mut silent = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut silent = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     assert!(blocks(&mut silent, 2, BLOCK).iter().all(|s| *s == 0.0));
     for channels in [0, 1000] {
         let (mut producer, consumer) = rtrb::RingBuffer::new(1024);
-        let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+        let mut renderer =
+            Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
         renderer.set_audio_input(consumer, channels, Arc::new(AtomicU64::new(0)));
         for _ in 0..1000 {
             let _ = producer.push(0.5);
@@ -195,6 +196,6 @@ fn hostile_input_is_made_safe() {
 #[test]
 fn an_offline_render_hears_no_input() {
     let project = tracks_with_inputs(&[(1, InputChannels::Mono(1), Monitor::In)]);
-    let out = crate::render_offline(&project, SR, BLOCK).unwrap();
+    let out = crate::render_offline(&project, SR, BLOCK, suhina_device_registry::factory()).unwrap();
     assert!(out.iter().all(|s| *s == 0.0));
 }

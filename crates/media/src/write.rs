@@ -170,15 +170,20 @@ impl WriteMode {
 /// half-written encode never tears what was there, and the rules above hold in the moment the
 /// file appears, not minutes before. The samples are the mix's own: never clipped here, and
 /// `dither` only applies where the depth is reduced.
-pub fn write_audio_file(path: &Path, samples: &[f32], spec: &AudioFileSpec, mode: WriteMode) -> Result<(), String> {
+pub fn write_audio_file(
+    path: &Path,
+    samples: &[f32],
+    spec: &AudioFileSpec,
+    mode: WriteMode,
+) -> Result<(), crate::MediaError> {
     if spec.sample_rate < 8000 || spec.sample_rate > 384_000 {
-        return Err(format!("sample rate {} is not supported", spec.sample_rate));
+        return Err(format!("sample rate {} is not supported", spec.sample_rate).into());
     }
     if !samples.len().is_multiple_of(2) {
         return Err("the audio is not a whole number of stereo frames".into());
     }
     if let Some(why) = mode.blocked(path) {
-        return Err(why);
+        return Err(why.into());
     }
     // The staged file, beside the destination so the move is a rename on one filesystem.
     let stage = staged(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -191,7 +196,7 @@ pub fn write_audio_file(path: &Path, samples: &[f32], spec: &AudioFileSpec, mode
     if let Err(e) = encoded {
         // A failed encode leaves the destination alone: what was there still plays.
         let _ = std::fs::remove_file(&stage);
-        return Err(e);
+        return Err(e.into());
     }
     // The finished file is put in place in the one step the rules hold in.
     let landing = match mode {
@@ -205,7 +210,7 @@ pub fn write_audio_file(path: &Path, samples: &[f32], spec: &AudioFileSpec, mode
         }
         Err(e) => {
             let _ = std::fs::remove_file(&stage);
-            Err(format!("{}: {e}", path.display()))
+            Err(format!("{}: {e}", path.display()).into())
         }
     }
 }

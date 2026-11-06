@@ -27,3 +27,13 @@ impl Execute for Projects {
 pub fn run(target: &mut impl Execute, id: &str, params: Value) -> Result<Value, String> {
     target.execute(id, &params).map_err(String::from)
 }
+
+/// A command's result without the ids of the notes it names, which come from a counter for the
+/// whole program (#1182).
+pub fn without_ids(result: &Value) -> Value {
+    let mut result = result.clone();
+    if let Some(map) = result.as_object_mut() {
+        map.remove("ids");
+    }
+    result
+}

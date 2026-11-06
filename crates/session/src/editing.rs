@@ -163,7 +163,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
     let data = match (notes, audio) {
         (true, true) => return Err("the range holds both MIDI and audio clips".into()),
         (false, false) => return Err("the clips in the range play nothing".into()),
-        (true, false) => LaneData::Notes(joined_notes(p, &clips, start, end)),
+        (true, false) => LaneData::Notes(joined_notes(p, &clips, start, end).into()),
         (false, true) => LaneData::Audio(render_audio(session, track, &clips, start, end)?),
     };
     let file = match &data {
@@ -334,7 +334,7 @@ fn render_audio(
         duration_seconds: Some(seconds),
         warped: false,
         stretch: StretchMode::default(),
-        warp_markers: Vec::new(),
+        warp_markers: Default::default(),
         gain: 1.0,
         transpose: 0.0,
         stream: None,

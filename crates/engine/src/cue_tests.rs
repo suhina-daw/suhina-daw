@@ -17,7 +17,9 @@ use crate::{
 fn render_both(project: &Project, gain: f32, separate: bool) -> (Vec<f32>, Vec<f32>) {
     render_offline_with_cue(
         project,
-        RenderInputs::from_audio(&AudioPool::new()).with_assets(&DeviceAssets::new()).with_plugins(Plugins::new()),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_assets(&DeviceAssets::new())
+            .with_plugins(Plugins::new()),
         SR,
         512,
         gain,
@@ -40,7 +42,7 @@ fn master(volume: f64) -> Channel {
 #[test]
 fn a_cued_track_is_heard_on_the_cue_and_the_main_mix_does_not_change() {
     let plain = project(vec![note(0.0, 1.0, 69)], 1.0, vec![]);
-    let alone = render_offline(&plain, SR, 512).unwrap();
+    let alone = render_offline(&plain, SR, 512, suhina_device_registry::factory()).unwrap();
     let (main, cue) = render_both(&cued(plain.clone()), 1.0, true);
     // A cued track without devices goes through a passthrough chain: the same sound, no
     // longer (a passthrough adds no tail).
@@ -57,7 +59,7 @@ fn a_cued_track_is_heard_on_the_cue_and_the_main_mix_does_not_change() {
 #[test]
 fn a_cued_track_with_devices_is_heard_after_them() {
     let effect = project(vec![note(0.0, 1.0, 69)], 1.0, vec![device("utility", &[("gain", -6.0206)])]);
-    let alone = render_offline(&effect, SR, 512).unwrap();
+    let alone = render_offline(&effect, SR, 512, suhina_device_registry::factory()).unwrap();
     let (main, cue) = render_both(&cued(effect), 1.0, true);
     assert!(max_diff(&main, &alone) < 1e-6);
     assert!(max_diff(&cue, &main) < 1e-6);
@@ -97,7 +99,13 @@ fn steady() -> Arc<AudioData> {
 }
 
 fn preview_both(separate: bool, gain: f32) -> (Vec<f32>, Vec<f32>) {
-    let mut renderer = Renderer::stopped(&crate::chain_tests::empty_project(), &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(
+        &crate::chain_tests::empty_project(),
+        &AudioPool::new(),
+        SR,
+        suhina_device_registry::factory(),
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     controller.send(LaunchCommand::SetCue { gain: Some(gain), separate: Some(separate) }).unwrap();
     controller.preview_sample(steady(), 0.0, 1.0).unwrap();
@@ -121,10 +129,20 @@ fn the_preview_plays_on_the_cue_and_on_the_main_output_only_while_the_cue_plays_
 #[test]
 fn process_with_cue_matches_process_and_fills_a_short_cue_buffer_only_where_it_has_room() {
     let song = cued(project(vec![note(0.0, 1.0, 69)], 1.0, vec![]));
-    let mut a =
-        Renderer::build(&song, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
-    let mut b =
-        Renderer::build(&song, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut a = Renderer::build(
+        &song,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut b = Renderer::build(
+        &song,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut plain = vec![0.0f32; 4096];
     a.process(&mut plain);
     let (mut main, mut cue) = (vec![0.0f32; 4096], vec![9.0f32; 1000]);

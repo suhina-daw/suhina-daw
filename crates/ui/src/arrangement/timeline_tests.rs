@@ -9,7 +9,8 @@ fn the_ruler_marks_tempo_and_time_signature_changes() {
     use suhina_engine::model::{TempoPoint, TimeSignature, TimeSignatureChange};
     let mut project = demo_project();
     project.transport.tempo_changes =
-        vec![TempoPoint { beat: 16.0, bpm: 140.0, ramp: false }, TempoPoint { beat: 32.0, bpm: 97.5, ramp: true }];
+        vec![TempoPoint { beat: 16.0, bpm: 140.0, ramp: false }, TempoPoint { beat: 32.0, bpm: 97.5, ramp: true }]
+            .into();
     project.transport.time_signature_changes =
         vec![TimeSignatureChange { bar: 4, time_signature: TimeSignature { numerator: 7, denominator: 8 } }];
     let timeline = Timeline::build(&project, None);
@@ -37,7 +38,7 @@ fn audio_clips_map_beats_to_file_seconds_like_the_engine() {
         file: "a.wav".into(),
         offset: 1.0,
         loop_range: Some((0.0, 4.0)),
-        markers: Vec::new(),
+        markers: Default::default(),
         seconds_per_beat: 0.5,
         rate: 1.0,
         gain_db: 0.0,
@@ -107,7 +108,7 @@ fn headers_show_what_automation_plays_at_the_playhead_running_or_stopped() {
     c.volume = 1.0;
     c.automation.push(AutomationLane {
         param: "volume".into(),
-        points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(8.0, 0.5)],
+        points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(8.0, 0.5)].into(),
         enabled: true,
     });
     let mut timeline = Timeline::build(&project, None);

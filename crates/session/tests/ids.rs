@@ -16,7 +16,8 @@ fn content(id: u32, name: &str, key: u8) -> ClipContent {
         id: ContentId(id),
         name: name.into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, key, 1.0)]) }].into(),
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, key, 1.0)].into()) }]
+            .into(),
         extensions: Extensions::default(),
         scale: None,
     }
@@ -46,7 +47,7 @@ fn project() -> Project {
                 clips: vec![clip(1, 0.0), clip(1, 8.0), clip(2, 16.0)],
                 ..ArrangementLane::default()
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {
@@ -224,7 +225,7 @@ fn a_slot_clip_is_named_by_id_as_well() {
     let mut session = Session::new(project());
     let slot = session.project().launcher.columns[0].slots[0].clip.as_ref().unwrap().id;
     let set = run(&mut session, "clip.setLength", json!({ "clip": slot.0, "length": 2 })).unwrap();
-    assert_eq!(set, json!({ "clip": slot.0, "scene": 1, "length": 2.0 }));
+    assert_eq!(set, json!({ "clip": slot.0, "scene": 0, "length": 2.0 }));
     run(&mut session, "clip.delete", json!({ "clip": slot.0 })).unwrap();
     assert!(session.project().launcher.columns[0].slots[0].clip.is_none());
 }
@@ -261,7 +262,7 @@ fn a_clip_named_wrongly_is_an_error_that_changes_nothing() {
         ("clip.move", json!({ "clip": slot.0, "start": 0 }), "in a clip slot"),
         ("clip.setEnabled", json!({ "clips": [{ "clip": slot.0 }], "enabled": false }), "in a clip slot"),
         ("clip.setEnabled", json!({ "clips": [{ "clip": first.0, "index": 0 }], "enabled": false }), "not both"),
-        ("note.list", json!({ "clip": first.0, "scene": 1 }), "not both"),
+        ("note.list", json!({ "clip": first.0, "scene": 0 }), "not both"),
     ] {
         let err = run(&mut session, command, params.clone()).unwrap_err();
         assert!(err.contains(says), "{command} {params}: {err} should say {says:?}");
@@ -289,4 +290,15 @@ fn every_command_that_takes_a_clip_index_takes_a_clip_id_and_says_the_index_is_d
             || spec.params.iter().any(|p| p.name == "clips" && p.doc.contains("\"clip\": id"));
         assert!(takes_ids, "{id} takes clip ids");
     }
+}
+
+/// A marker's id is not written to the file (#763 › 1), but undo still never hands it out
+/// again: a command from a read before the undo must not find the next marker under it.
+#[test]
+fn a_marker_id_freed_by_undo_is_not_handed_out_again() {
+    let mut session = Session::new(project());
+    let added = run(&mut session, "marker.add", json!({ "beat": 4 })).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let again = run(&mut session, "marker.add", json!({ "beat": 8 })).unwrap();
+    assert!(again["id"].as_u64() > added["id"].as_u64(), "{added} then {again}");
 }

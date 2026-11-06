@@ -14,6 +14,13 @@ use crate::commands::{CommandKind, CommandSpec, Param, ParamType, commands, para
 use crate::plugins::plugin_commands;
 use crate::{Agents, CommandError, Policy, Session};
 
+/// How [`Projects::open_path`] opens a project.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OpenOptions {
+    /// Decode the audio its clips play: off for a frontend that only reads or edits it.
+    pub audio: bool,
+}
+
 /// Projects that may be open at once; opening more is refused. Each holds its own undo history.
 pub const MAX_OPEN_PROJECTS: usize = 32;
 
@@ -142,7 +149,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.list",
         label: "List the open projects in tab order with id, name, source and whether each is active",
         params: &[],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Read),
         run: list,
         policy: Policy::DEFAULT,
     },
@@ -150,7 +157,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.switch",
         label: "Make an open project the active one; the previous one stops playing",
         params: &[PROJECT],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: switch,
         policy: Policy::DEFAULT,
     },
@@ -158,7 +165,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.next",
         label: "Make the next open project active, wrapping around after the last",
         params: &[],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: next,
         policy: Policy::DEFAULT,
     },
@@ -166,7 +173,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.previous",
         label: "Make the previous open project active, wrapping around before the first",
         params: &[],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: previous,
         policy: Policy::DEFAULT,
     },
@@ -174,7 +181,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.close",
         label: "Close an open project and its undo history; a neighbour becomes active if it was",
         params: &[PROJECT],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: close,
         policy: Policy {
             critical: true,
@@ -702,6 +709,39 @@ impl Projects {
         self.trusted_audio_for(None)
     }
 
+    /// Opens the project at `path` in a session, a `.suhina` file read or a Live Set imported,
+    /// and with `options.audio` decodes the audio its clips play ([`Projects::load_audio`]). The
+    /// one way the window, the CLI and the MCP server open a project from disk (#764 › 3). The
+    /// session is not added to the open projects: the caller adds it ([`Projects::add`]) or shows
+    /// it. Returns the session and what could not be read.
+    pub fn open_path(&mut self, path: &Path, options: OpenOptions) -> Result<(Session, Vec<String>), CommandError> {
+        let (mut session, mut warnings) = Session::open(path)?;
+        if options.audio {
+            warnings.extend(self.load_audio(&mut session));
+        }
+        Ok((session, warnings))
+    }
+
+    /// Decodes the audio `session`'s project plays, from its folder and, outside it, from what
+    /// this Suhina trusts ([`Projects::trusted_audio_for`]: the library's folders, the project's
+    /// own folders and the files the person saved; `docs/spec/missing-files.md` › Project file
+    /// boundaries). Every frontend trusts the same (#764 › 3, decided 2026-11-02). The session keeps
+    /// the audio and what it trusts, for files decoded later. Returns the files that could not be
+    /// read.
+    pub fn load_audio(&mut self, session: &mut Session) -> Vec<String> {
+        let folder = session
+            .audio_folder()
+            .map(Path::to_path_buf)
+            .or_else(|| session.source().and_then(Path::parent).map(Path::to_path_buf))
+            .unwrap_or_else(|| PathBuf::from("."));
+        let source = session.source().map(Path::to_path_buf);
+        let trusted = self.trusted_audio_for(source.as_deref());
+        let (audio, warnings) = suhina_media::load_project_audio_trusted(session.project(), &folder, &trusted);
+        session.set_trusted(trusted);
+        session.set_audio(audio);
+        warnings
+    }
+
     /// [`Projects::trusted_audio`] for the project saved as `project`: with the folders outside
     /// it that its audio was loaded from (kept on this machine, not in the project).
     pub fn trusted_audio_for(&mut self, project: Option<&Path>) -> suhina_media::Trusted {
@@ -963,7 +1003,7 @@ pub fn commands_markdown() -> String {
          `suhina-cli commands --markdown`; do not edit by hand. A workflow regenerates it on `main`\n\
          after every merge, so pull requests leave it alone. The CLI, the MCP server and the UI run\n\
          these same commands ([ADR 0002](decisions/0002-commands.md), [`mcp.md`](mcp.md)).\n\n\
-         | Command | Kind | What it does | Parameters |\n\
+         | Command | Runs on, does | What it does | Parameters |\n\
          |---|---|---|---|\n",
     );
     let rows =

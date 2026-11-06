@@ -221,11 +221,11 @@ impl Renderer {
             }
         }
         launcher.pending_tempo = None;
-        launcher.pending_signature = None;
+        launcher.bars.pending_signature = None;
         // A scene's time signature stays while stopped, its bars counted from the start again;
         // the next start puts the clock back on the tempo map.
-        launcher.bar_origin = 0.0;
-        launcher.bars_before = 0.0;
+        launcher.bars.bar_origin = 0.0;
+        launcher.bars.bars_before = 0.0;
         launcher.beat = self.transport.start_beat;
         launcher.tempo_from_map();
         launcher.monitor.running.store(false, Ordering::Relaxed);
@@ -345,7 +345,7 @@ impl Renderer {
     /// where they are, and launches still waiting are queued again for the next boundary from
     /// there, as after a jump. Never allocates.
     pub(crate) fn clock_to_map(&mut self) {
-        if !self.graph.launcher.follows_map {
+        if !self.graph.launcher.bars.follows_map {
             return;
         }
         if self.transport.running {
@@ -381,7 +381,7 @@ impl Renderer {
         if let Some((at, _)) = launcher.pending_tempo.as_mut() {
             *at = at_beat;
         }
-        if let Some((at, _)) = launcher.pending_signature.as_mut() {
+        if let Some((at, _)) = launcher.bars.pending_signature.as_mut() {
             *at = at_beat;
         }
     }

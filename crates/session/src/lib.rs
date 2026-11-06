@@ -40,6 +40,7 @@ mod clip_edges;
 mod clip_shape;
 mod clipboards;
 mod commands;
+mod demo;
 mod device_files;
 mod device_groups;
 mod devices;
@@ -55,6 +56,7 @@ mod live_input;
 mod mapping;
 mod meters;
 mod midi;
+mod named;
 mod note_tools;
 mod notes;
 mod player;
@@ -89,9 +91,10 @@ pub use audio::{AudioSystem, InputChoice, LiveOutput, OutputChoice, OutputInfo, 
 pub use automation_range::{SHAPES as AUTOMATION_SHAPES, shape_points as automation_shape};
 pub use blank::{blank_project, blank_project_with};
 pub use commands::{
-    After, Agents, CommandKind, CommandSpec, Param, ParamType, PathKind, Policy, Recent, Run, commands,
+    After, Agents, CommandKind, CommandSpec, Effect, Param, ParamType, PathKind, Policy, Recent, Run, Target, commands,
     parse_quantization,
 };
+pub use demo::{demo_project, grouped_project};
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::{MAX_FILES, file_tempo};
 pub use library::{Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items};
@@ -102,7 +105,8 @@ pub use player::{OutputHandle, Player};
 pub use plugins::{device_plugin, plugin_commands};
 pub use projects::{DeviceInputs, MAX_DEVICE_INPUTS};
 pub use projects::{
-    MAX_OPEN_PROJECTS, ProjectId, Projects, all_commands, commands_markdown, params_of, policy, project_commands,
+    MAX_OPEN_PROJECTS, OpenOptions, ProjectId, Projects, all_commands, commands_markdown, params_of, policy,
+    project_commands,
 };
 pub use rack::{
     BlockCounts, Hosted, OfflinePlugins, ParamTexts, PluginEnv, PluginProgress, PluginReport, PluginStatus,
@@ -114,6 +118,12 @@ pub use relink::{MAX_RELINK, search as find_candidates};
 pub use soundmap::{scope_files, sound_map_commands};
 pub use suhina_plugins::Placement;
 pub use suhina_project_file::{EXTENSION as PROJECT_EXTENSION, is_project_file};
+
+/// What makes the devices a project names: the device registry, handed to every renderer the
+/// session, the app, the CLI and the MCP server build (#1147). The engine knows no device itself.
+pub fn devices() -> suhina_engine::Devices {
+    suhina_device_registry::factory()
+}
 
 /// Undo steps kept per session; the oldest are dropped first.
 const MAX_UNDO: usize = 256;
@@ -144,6 +154,13 @@ impl fmt::Display for CommandError {
 
 impl std::error::Error for CommandError {}
 
+/// Why the playing engine did not follow an edit ([`Session::follow_player`]).
+struct PlayerLag {
+    error: CommandError,
+    /// The engine was busy; a later try can get through.
+    transient: bool,
+}
+
 impl From<String> for CommandError {
     fn from(message: String) -> Self {
         Self(message)
@@ -153,6 +170,18 @@ impl From<String> for CommandError {
 impl From<&str> for CommandError {
     fn from(message: &str) -> Self {
         Self(message.to_string())
+    }
+}
+
+impl From<suhina_media::MediaError> for CommandError {
+    fn from(e: suhina_media::MediaError) -> Self {
+        Self(e.0)
+    }
+}
+
+impl From<suhina_engine::ControlError> for CommandError {
+    fn from(e: suhina_engine::ControlError) -> Self {
+        Self(e.to_string())
     }
 }
 
@@ -459,7 +488,7 @@ impl Session {
     /// for a NAM Amp Modeler, the IR's parent folder's name for a NAM Cab Loader. `None` while
     /// the file is not in the assets.
     pub fn device_asset_name(&self, path: &str) -> Option<String> {
-        self.device_files.assets.get(path)?.name(std::path::Path::new(path))
+        suhina_device_registry::asset_name(self.device_files.assets.get(path)?, std::path::Path::new(path))
     }
 
     /// Why a device's file is not in the assets, by the path: what a read gave, for a device
@@ -1188,8 +1217,11 @@ impl Session {
     /// Sends the project to the playing engine again if a continued edit could not reach it
     /// (its queue was full). The window calls it every frame, through `Projects::poll_plugins`.
     pub fn catch_up_player(&mut self) {
-        if self.sync.behind && self.update_player(None).is_ok() {
-            self.sync.behind = false;
+        if self.sync.behind {
+            // A failure that is not the engine being busy would come again every frame, so it
+            // stops the retries; the next edit reports it.
+            let retry = self.follow_player(None);
+            self.sync.behind = retry.as_ref().is_err_and(|lag| lag.transient);
         }
     }
 
@@ -1274,6 +1306,13 @@ impl Session {
     /// The edit stays made if this fails.
     /// `scenes` is the scene inserted or removed since the last update, if that is what changed.
     fn update_player(&mut self, scenes: Option<suhina_engine::SceneShift>) -> Result<(), CommandError> {
+        self.follow_player(scenes).map_err(|lag| lag.error)
+    }
+
+    /// [`Session::update_player`], keeping whether a failure is the engine being busy (its queue
+    /// full, its stretch thread not taking work), which a later try can clear, or one that
+    /// will come again until the project changes (a graph that cannot be built).
+    fn follow_player(&mut self, scenes: Option<suhina_engine::SceneShift>) -> Result<(), PlayerLag> {
         self.sync_device_files();
         let Some(player) = self.sync.player.as_mut() else { return Ok(()) };
         if self.audio.changed {
@@ -1286,13 +1325,14 @@ impl Session {
         }
         let heard = self.take_solo.map(|_| self.heard_project().into_owned());
         let Some(player) = self.sync.player.as_mut() else { return Ok(()) };
-        player.update_with_scenes(heard.as_ref().unwrap_or(&self.project), scenes).map_err(|e| {
-            CommandError(format!("the edit was made, but the playing engine could not follow it: {}", e.0))
+        player.update_with_scenes(heard.as_ref().unwrap_or(&self.project), scenes).map_err(|e| PlayerLag {
+            transient: matches!(e, suhina_engine::ControlError::Full(_) | suhina_engine::ControlError::StretchBusy),
+            error: CommandError(format!("the edit was made, but the playing engine could not follow it: {e}")),
         })
     }
 
     fn push_undo(&mut self, before: Project) {
-        self.history.open_step = None;
+        self.history.gesture = None;
         if self.history.undo.len() >= MAX_UNDO {
             self.history.undo.remove(0);
         }

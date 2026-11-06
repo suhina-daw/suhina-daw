@@ -12,7 +12,7 @@ use serde_json::json;
 use suhina_model::*;
 use suhina_session::{MAX_NOTES_PER_COMMAND, Session};
 
-use crate::support::run;
+use crate::support::{run, without_ids};
 
 fn note(time: f64, key: u8) -> Note {
     Note { time, duration: 1.0, key, velocity: 100.0 / 127.0, release_velocity: 0.5, channel: 0, muted: false }
@@ -69,7 +69,7 @@ fn project_built() -> Project {
         audio_input: Default::default(),
         midi_input: Default::default(),
     };
-    let notes = |n: Vec<Note>| ContentLane { target: None, data: LaneData::Notes(n) };
+    let notes = |n: Vec<Note>| ContentLane { target: None, data: LaneData::Notes(n.into()) };
     let audio = AudioRegion {
         file: "a.wav".into(),
         absolute_file: None,
@@ -78,7 +78,7 @@ fn project_built() -> Project {
         duration_seconds: None,
         warped: false,
         stretch: StretchMode::default(),
-        warp_markers: Vec::new(),
+        warp_markers: Default::default(),
         gain: 1.0,
         transpose: 0.0,
         stream: None,
@@ -89,7 +89,10 @@ fn project_built() -> Project {
             content(1, vec![notes(vec![note(0.0, 60), note(1.0, 64), note(2.0, 67)])]),
             content(2, Vec::new()),
             content(3, vec![ContentLane { target: None, data: LaneData::Audio(audio) }]),
-            content(4, vec![ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.0, 36)]) }]),
+            content(
+                4,
+                vec![ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.0, 36)].into()) }],
+            ),
             content(5, vec![notes(vec![note(0.5, 48)])]),
         ],
         arrangement: Arrangement {
@@ -99,7 +102,7 @@ fn project_built() -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![clip(1, 0.0), clip(2, 4.0), clip(3, 8.0), clip(4, 12.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {
@@ -120,7 +123,7 @@ fn notes(session: &Session, content: u32) -> Vec<Note> {
         .lanes
         .iter()
         .find_map(|l| match &l.data {
-            LaneData::Notes(n) => Some(n.clone()),
+            LaneData::Notes(n) => Some(n.to_vec()),
             LaneData::Audio(_) => None,
         })
         .unwrap_or_default()
@@ -229,7 +232,7 @@ fn a_duplicate_can_go_beats_and_semitones_away() {
         json!({ "track": 1, "index": 0, "notes": [0, 1], "beats": 4, "semitones": 2 }),
     )
     .unwrap();
-    assert_eq!(result, json!({ "added": [3, 4], "count": 5 }));
+    assert_eq!(without_ids(&result), json!({ "added": [3, 4], "count": 5 }));
     let now = notes(&session, 1);
     assert_eq!(&now[..3], &before[..], "the originals stay");
     assert_eq!(now.iter().skip(3).map(|n| (n.time, n.key)).collect::<Vec<_>>(), [(4.0, 62), (5.0, 66)]);

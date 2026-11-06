@@ -47,7 +47,7 @@ fn app_on(project: Project, renderer: &mut Renderer, auto_arm: bool) -> Harness<
 }
 
 fn engine() -> Renderer {
-    Renderer::stopped(&demo_project(), &AudioPool::new(), 48_000).unwrap()
+    Renderer::stopped(&demo_project(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap()
 }
 
 fn armed(harness: &Harness<'static, App>) -> Vec<TrackId> {
@@ -197,7 +197,7 @@ fn an_audio_track_is_armed_too() {
     let mut project = demo_project();
     let vox = project.track_mut(VOX).unwrap();
     vox.content = ContentKinds { notes: false, audio: true };
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
     let mut harness = app_on(project, &mut renderer, true);
     select(&mut harness, "Keys");
     select(&mut harness, "Vox");
