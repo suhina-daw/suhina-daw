@@ -1335,10 +1335,10 @@ fn a_theme_search_nothing_matches_says_no_themes_match() {
 fn the_theme_in_use_is_marked_as_selected_in_the_list() {
     let mut app = App::new();
     app.set_session(Session::new(demo_project()), &[]);
+    // No GPU: the CI machines have none, and nothing here is drawn to an image.
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
         .with_size((1200.0, 900.0))
-        .wgpu()
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
     harness.run();
