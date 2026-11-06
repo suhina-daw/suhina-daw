@@ -8,7 +8,7 @@
 //! ceiling (Settings › Arrangement › Gain envelope) at its top and down to −70 dB at its bottom,
 //! each half even in dB. With Show gain envelope on, a clip with points shows its line. Edit gain
 //! envelope (Alt+E, or the button left of the clip's name) opens one clip for editing: a click on
-//! its body adds a point, a drag moves one (snapped to the dB grid, or free with Free move), a
+//! its body adds a point, a drag moves one (snapped to the grids, or free with Free move or Alt), a
 //! double-click on a point or Delete over it removes it; each is one `clip.setEnvelope`. The
 //! waveform is drawn through the envelope, so it shows what is heard as a point is dragged.
 
@@ -292,19 +292,21 @@ fn with_point(points: &[GainPoint], beat: f64, db: f64) -> (Vec<GainPoint>, usiz
 }
 
 /// The dB a point dragged to `pointer` gets, `before` being where it was: on the grid (or free),
-/// below the ceiling, a tenth of the way with Shift; near the middle, 0 dB itself.
+/// below the ceiling, a tenth of the way with Shift; near the middle, 0 dB itself. Alt holds it
+/// off the grid and the middle, as Free move does.
 fn dragged_db(ui: &Ui, rect: Rect, pointer: Pos2, before: f64, top: f64) -> f64 {
     let settings = settings(ui.ctx());
     let target = db_at(rect, pointer.y, top);
     let fine = ui.input(|i| i.modifiers.shift);
+    let loose = ui.input(|i| i.modifiers.alt);
     // The sample's own level is pulled to, so the line goes back to it exactly.
-    if !fine && (pointer.y - y_of(rect, 0.0, top)).abs() <= ZERO_PULL {
+    if !fine && !loose && (pointer.y - y_of(rect, 0.0, top)).abs() <= ZERO_PULL {
         return 0.0;
     }
     let db = if fine { before + (target - before) * 0.1 } else { target };
     // A point already above the ceiling may stay there, never go higher.
     let ceiling = settings.ceiling.max(before);
-    snapped(db, settings.step, fine || free_move(ui.ctx())).clamp(*GAIN_POINT_RANGE.start(), ceiling)
+    snapped(db, settings.step, fine || loose || free_move(ui.ctx())).clamp(*GAIN_POINT_RANGE.start(), ceiling)
 }
 
 /// Where a clip's envelope is drawn: its body `rect` as drawn now (an edge being dragged
@@ -323,7 +325,7 @@ pub struct Place {
 /// Draws `view`'s envelope over the clip at `place`. While `edit` is on, the dB grid shows, the
 /// body takes the pointer (a click adds a point, a drag adds one and moves it) and the points can
 /// be dragged; `snap` puts a beat from the clip's start on the timeline's grid, unless Free move
-/// is on or Shift held. What changes is pushed to `actions`. The points' squares are named
+/// is on or Alt (or Shift, which also moves a tenth as much) held. What changes is pushed to `actions`. The points' squares are named
 /// "Envelope point N of NAME".
 #[allow(clippy::too_many_arguments)]
 pub fn show(
@@ -352,7 +354,8 @@ pub fn show(
     let x_of = |elapsed: f64| origin + elapsed as f32 * beat_width;
     let elapsed_at = |x: f32| f64::from((x - origin) / beat_width.max(1e-3)).clamp(0.0, length);
     // On the timeline's grid sideways too, unless the points move freely.
-    let free = free_move(ui.ctx()) || ui.input(|i| i.modifiers.shift);
+    // Alt frees a point being dragged, as on the piano roll's grid.
+    let free = free_move(ui.ctx()) || ui.input(|i| i.modifiers.shift || i.modifiers.alt);
     let placed_at = |x: f32| {
         let elapsed = elapsed_at(x);
         if free { elapsed } else { snap(elapsed).clamp(0.0, length) }

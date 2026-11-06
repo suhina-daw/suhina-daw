@@ -161,7 +161,8 @@ switch; the same again closes it. While it is open:
   time on the Arrangement's beat grid, up and down in level on the dB grid and below the ceiling;
   dragged over another point it passes it, as on an automation lane, and on another point's beat it
   stays on the side it came from. Within 5 points of the middle it goes to 0 dB itself, the sample's
-  own level. Shift moves it a tenth as much and off both grids. Its value shows beside the pointer
+  own level. Alt holds it off both grids and the middle while it is dragged, as Free move does (and
+  as Alt frees a drag on the piano roll's grid); Shift moves it a tenth as much, off the grids too. Its value shows beside the pointer
   while the button is down ("−3 dB");
 - the **round handle** half-way along a sloping segment (one at least 28 points wide) bends it when
   dragged up or down, as an automation lane's does, and a double-click on it straightens it; Alt

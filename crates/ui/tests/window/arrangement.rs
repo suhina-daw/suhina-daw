@@ -2647,6 +2647,30 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
     assert_eq!(loop_envelope(&harness), points);
+    // With Free move off again, a point dragged with Alt held still moves freely, off the grids.
+    harness.get_by_label("Free move").click();
+    harness.run();
+    let point = harness.get_all_by_label("Envelope point 1 of Loop").next().expect("the point").rect().center();
+    harness.hover_at(point);
+    harness.run();
+    harness.drag_at(point);
+    harness.run();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::ALT));
+    harness.hover_at(point + egui::vec2(3.0, -4.0));
+    harness.run();
+    harness.hover_at(point + egui::vec2(7.0, -9.0));
+    harness.run();
+    harness.drop_at(point + egui::vec2(7.0, -9.0));
+    harness.run();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.run();
+    let free = loop_envelope(&harness);
+    assert_eq!(free.len(), 1, "{free:?}");
+    assert!(free[0].0 > points[0].0 && free[0].0 != free[0].0.round(), "off the beat grid: {free:?}");
+    assert!(free[0].1 > points[0].1, "higher: {free:?} after {points:?}");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(loop_envelope(&harness), points, "the Alt drag is one undo step");
     // A double-click on the point removes it.
     let point = harness.get_all_by_label("Envelope point 1 of Loop").next().expect("the point").rect().center();
     double_click_at(&mut harness, point);
