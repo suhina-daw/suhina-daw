@@ -621,7 +621,9 @@ fn sidebar_view(
         *y += 8.0;
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, *y), Vec2::new(area.width() - PAD, 12.0));
         widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, title_font.clone(), theme::browser_text_hint());
-        *y += 12.0;
+        // The rows that follow paint over the title's room: three points of clearance so a
+        // descender ("g" in Tags, "y" in Library) is not clipped by the first one.
+        *y += 15.0;
     };
     title(&mut y, "Pinned");
     entry_row(ui, &painter, area, &mut y, state, Target::Place(Place::Pinned), "Pinned", None);

@@ -143,8 +143,10 @@ pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str)
     let mut picked = swatch_strip(ui, current);
     let mut open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     let text = if open { format!("{label}…") } else { label.to_string() };
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width().max(120.0), SWATCH + 8.0), Sense::click());
+    // The row is its content's own width: a popup menu given the parent's whole room would
+    // stretch to it and drag the menu out to that width.
+    let width = widgets::text_width(ui, &text, theme::ui_font(theme::TEXT_SMALL)) + SWATCH + 6.0 + theme::PAD * 2.0;
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, SWATCH + 8.0), Sense::click());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text.clone()));
     let fill = widgets::hover(ui, &response);
     if fill > 0.0 {
