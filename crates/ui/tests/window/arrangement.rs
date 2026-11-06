@@ -2598,9 +2598,9 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     harness.run();
     assert!(harness.query_by_label("Envelope: On").is_some(), "the panel's switch follows the button");
     assert!(harness.query_by_label("Free move").is_some(), "Free move shows under the name while editing");
-    // One click in the clip's body adds a point there, on the grid.
+    // One click low in the clip's body adds a point there, on the grids.
     let body = harness.get_by_label("Gain envelope of Loop").rect();
-    let at = egui::pos2(clip.center().x, body.bottom() - body.height() * 0.2);
+    let at = egui::pos2(clip.center().x, body.bottom() - 2.0);
     harness.hover_at(at);
     harness.run();
     harness.drag_at(at);
@@ -2611,6 +2611,23 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     assert_eq!(points.len(), 1, "{points:?}");
     assert!(points[0].1 < 0.0, "below 0 dB, where it was clicked: {points:?}");
     assert_eq!(points[0].1, points[0].1.round(), "on the 1 dB grid: {points:?}");
+    assert_eq!(points[0].0, points[0].0.round(), "on the beat grid: {points:?}");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert!(loop_envelope(&harness).is_empty());
+    // With Free move a point goes where it is clicked, off the grids.
+    harness.get_by_label("Free move").click();
+    harness.run();
+    let at = egui::pos2(clip.left() + clip.width() * 0.4, body.bottom() - 2.0);
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.run();
+    harness.drop_at(at);
+    harness.run();
+    let points = loop_envelope(&harness);
+    assert_eq!(points.len(), 1, "{points:?}");
+    assert!(points[0].0 > 0.0 && points[0].1 < 0.0, "{points:?}");
     // Dragged up, it rises.
     let point = harness.get_all_by_label("Envelope point 1 of Loop").next().expect("the point").rect().center();
     harness.hover_at(point);

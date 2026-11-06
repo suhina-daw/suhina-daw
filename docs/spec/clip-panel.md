@@ -45,7 +45,7 @@ beside it, and controls are 6 points apart, so no two touch.
 | **Audio** (112 points) | **Warp**: a switch the width of the part | `clip.setAudio` (`warp`) |
 | | **Mode**: a list of Re-pitch, Rhythmic, Tonal, Texture, Smooth, High quality | `clip.setAudio` (`mode`) |
 | | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
-| | **Edit gain envelope**: a switch that opens the clip's gain envelope on its waveform for editing, as Alt+E and the button by the clip's name do; it says how many points the envelope has | `clip.setEnvelope` |
+| | **Edit gain envelope**: a switch that opens the clip's gain envelope on its waveform for editing, as Alt+E and the button by the clip's name do | `clip.setEnvelope` |
 | **Gain and Pitch** (128 points) | **Gain**: a vertical fader, its scale at its left (24, 0 half-way, −inf at the bottom), the dB readout under it | `clip.setGain` |
 | | **Pitch**: a knob in semitones; under it the semitones and the cents side by side, `st` and `ct` under them | `clip.setAudio` (`transpose`) |
 
@@ -157,11 +157,14 @@ switch; the same again closes it. While it is open:
   default; lines closer than 5 points are left out), the 0 dB line stronger;
 - a **click** on the body adds a point there: its beat and the level under the pointer, on the grid;
 - a **drag** from the body adds a point and moves it; a point is **dragged** to move it: sideways in
-  time, up and down in level on the grid and below the ceiling, kept between its neighbours. Shift
-  moves it a tenth as much and off the grid. Its value shows beside the pointer while the button is
-  down ("−3 dB");
-- **Free move**, a button under the name, lets points move freely, to a tenth of a dB, instead of
-  on the grid; Settings › Envelope points move says which it starts as;
+  time on the Arrangement's beat grid, up and down in level on the dB grid and below the ceiling,
+  kept between its neighbours. Within 5 points of the middle it goes to 0 dB itself, the sample's
+  own level. Shift moves it a tenth as much and off both grids. Its value shows beside the pointer
+  while the button is down ("−3 dB");
+- **Free move**, a button under the name, lets points move freely, in time and to a tenth of a dB,
+  instead of on the grids; Settings › Envelope points move says which it starts as;
+- while a clip's edge is dragged, its envelope is drawn with its waveform: a looping clip dragged
+  longer shows the envelope on every new pass at once;
 - a **double-click** on a point, or Delete with the pointer over it, removes it.
 
 Each change is one `clip.setEnvelope`, one undo step. The clip itself is moved by its name bar while

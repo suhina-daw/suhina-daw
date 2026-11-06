@@ -934,12 +934,7 @@ fn audio_part(
     // editing, as Alt+E and the button by the clip's name do.
     if matches!(at, ClipRef::Arrangement(..)) {
         let on = crate::arrangement::envelope::editing(ui.ctx()) == Some(panel.clip);
-        let text = if panel.envelope_points > 0 {
-            format!("Edit gain envelope · {}", panel.envelope_points)
-        } else {
-            "Edit gain envelope".into()
-        };
-        if toggle(ui, painter, row(y, TOGGLE), "Envelope", &text, on) {
+        if toggle(ui, painter, row(y, TOGGLE), "Envelope", "Edit gain envelope", on) {
             crate::arrangement::envelope::toggle_editing(ui.ctx(), panel.clip);
         }
     }

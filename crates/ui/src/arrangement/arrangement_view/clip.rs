@@ -1012,6 +1012,7 @@ pub(super) fn clip_box<'a>(
             &state.clip_look(),
         );
     };
+    let mut envelope_place = None;
     let result = match state.clip_drag {
         Some(drag) if mine(&drag) && drag.target != lane.track => {
             if drag.copy || copy_key {
@@ -1046,6 +1047,13 @@ pub(super) fn clip_box<'a>(
                 }
                 None => (clip_rect(space, start, clip.length, x_of), row.clip),
             };
+            // The envelope goes with the waveform: counted from the clip's own start, over the
+            // span drawn now.
+            envelope_place = Some(crate::arrangement::envelope::Place {
+                rect: wave_area(rect),
+                origin: x_of(start),
+                beat_width: state.beat_width,
+            });
             // An audio clip's edge dragged with Ctrl and Alt stretches its audio: drawn stretched
             // as it goes, about the edge that stays, not only once it is let go.
             let stretching = state
@@ -1057,6 +1065,11 @@ pub(super) fn clip_box<'a>(
                     let factor = (to - from) / clip.length;
                     let anchor = if drag.grab == EdgeGrab::Left { clip.start + clip.length } else { clip.start };
                     let stretched = move |beat: f64| x_of(anchor + (beat - anchor) * factor);
+                    envelope_place = Some(crate::arrangement::envelope::Place {
+                        rect: wave_area(rect),
+                        origin: stretched(start),
+                        beat_width: state.beat_width * factor as f32,
+                    });
                     paint_clip(
                         &painter.with_clip_rect(clip_area),
                         rect,
@@ -1107,18 +1120,14 @@ pub(super) fn clip_box<'a>(
     // of the name, and Free move under it while editing.
     if let Some(view) = &clip.audio_view {
         let envelope_painter = painter.with_clip_rect(row.clip);
-        let edit = envelope_edited && state.clip_drag.is_none();
-        crate::arrangement::envelope::show(
-            ui,
-            &envelope_painter,
-            wave_area(rect),
-            clip.length,
-            clip.id,
-            name,
-            view,
-            edit,
-            actions,
-        );
+        let edit = envelope_edited && state.clip_drag.is_none() && state.edge_drag.is_none();
+        let place = envelope_place.unwrap_or(crate::arrangement::envelope::Place {
+            rect: wave_area(rect),
+            origin: rect.left(),
+            beat_width: state.beat_width,
+        });
+        let snap = |elapsed: f64| grid.place(clip.start + elapsed, false, false) - clip.start;
+        crate::arrangement::envelope::show(ui, &envelope_painter, place, clip.id, name, view, edit, &snap, actions);
         if let Some(bar) = clip_name_bar(rect)
             && rect.width() >= ENVELOPE_BUTTON_LEAST
         {

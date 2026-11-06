@@ -30,6 +30,8 @@ const MAX_PASSES: usize = 256;
 const STEP: f32 = 2.0;
 /// Grid lines closer than this, in points, are left out (every other one, and so on).
 const GRID_GAP: f32 = 5.0;
+/// How near 0 dB, in points, a dragged point is pulled onto it.
+const ZERO_PULL: f32 = 5.0;
 /// The side of the buttons on the clip: Edit gain envelope by the name, Free move under it.
 pub const BUTTON: f32 = 14.0;
 
@@ -240,33 +242,50 @@ fn set(clip: ClipId, points: &[GainPoint]) -> Action {
 }
 
 /// The dB a point dragged to `pointer` gets, `before` being where it was: on the grid (or free),
-/// below the ceiling, a tenth of the way with Shift.
+/// below the ceiling, a tenth of the way with Shift; near the middle, 0 dB itself.
 fn dragged_db(ui: &Ui, rect: Rect, pointer: Pos2, before: f64, top: f64) -> f64 {
     let settings = settings(ui.ctx());
     let target = db_at(rect, pointer.y, top);
     let fine = ui.input(|i| i.modifiers.shift);
+    // The sample's own level is pulled to, so the line goes back to it exactly.
+    if !fine && (pointer.y - y_of(rect, 0.0, top)).abs() <= ZERO_PULL {
+        return 0.0;
+    }
     let db = if fine { before + (target - before) * 0.1 } else { target };
     // A point already above the ceiling may stay there, never go higher.
     let ceiling = settings.ceiling.max(before);
     snapped(db, settings.step, fine || free_move(ui.ctx())).clamp(*GAIN_POINT_RANGE.start(), ceiling)
 }
 
-/// Draws `view`'s envelope over the clip's body `rect` (`length` beats from its start). While
-/// `edit` is on, the dB grid shows, the body takes the pointer (a click adds a point, a drag adds
-/// one and moves it) and the points can be dragged. What changes is pushed to `actions`. The
-/// points' squares are named "Envelope point N of NAME".
+/// Where a clip's envelope is drawn: its body `rect` as drawn now (an edge being dragged
+/// included), the x of the clip's own start, where its beats are counted from, and the width of
+/// a beat, so the line goes on with the passes of a loop as an edge is dragged out.
+#[derive(Debug, Clone, Copy)]
+pub struct Place {
+    pub rect: Rect,
+    pub origin: f32,
+    pub beat_width: f32,
+}
+
+/// Draws `view`'s envelope over the clip at `place`. While `edit` is on, the dB grid shows, the
+/// body takes the pointer (a click adds a point, a drag adds one and moves it) and the points can
+/// be dragged; `snap` puts a beat from the clip's start on the timeline's grid, unless Free move
+/// is on or Shift held. What changes is pushed to `actions`. The points' squares are named
+/// "Envelope point N of NAME".
 #[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &Ui,
     painter: &egui::Painter,
-    rect: Rect,
-    length: f64,
+    place: Place,
     clip: ClipId,
     name: &str,
     view: &AudioView,
     edit: bool,
+    snap: &dyn Fn(f64) -> f64,
     actions: &mut Vec<Action>,
 ) {
+    let Place { rect, origin, beat_width } = place;
+    let length = f64::from((rect.right() - origin) / beat_width.max(1e-3));
     if rect.width() <= 1.0 || rect.height() <= 4.0 || length <= 0.0 {
         return;
     }
@@ -277,8 +296,14 @@ pub fn show(
     }
     let mapping = Mapping::of(view);
     let top = top(settings.ceiling, &points);
-    let x_of = |elapsed: f64| rect.left() + (elapsed / length) as f32 * rect.width();
-    let elapsed_at = |x: f32| (f64::from((x - rect.left()) / rect.width()) * length).clamp(0.0, length);
+    let x_of = |elapsed: f64| origin + elapsed as f32 * beat_width;
+    let elapsed_at = |x: f32| f64::from((x - origin) / beat_width.max(1e-3)).clamp(0.0, length);
+    // On the timeline's grid sideways too, unless the points move freely.
+    let free = free_move(ui.ctx()) || ui.input(|i| i.modifiers.shift);
+    let placed_at = |x: f32| {
+        let elapsed = elapsed_at(x);
+        if free { elapsed } else { snap(elapsed).clamp(0.0, length) }
+    };
     let ink = theme::accent();
     let visible = painter.clip_rect().intersect(rect);
 
@@ -307,7 +332,7 @@ pub fn show(
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     body.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Gain envelope of {name}")));
     let add_at = |pointer: Pos2| {
-        let beat = mapping.content(elapsed_at(pointer.x));
+        let beat = mapping.content(placed_at(pointer.x));
         let db = dragged_db(ui, rect, pointer, 0.0, top);
         let mut more = points.clone();
         let at = more.partition_point(|p| p.beat <= beat);
@@ -377,7 +402,7 @@ pub fn show(
     {
         let before = moved.get(index).copied().unwrap_or(GainPoint { beat: 0.0, db: 0.0 });
         let fine = ui.input(|i| i.modifiers.shift);
-        let target = mapping.content(elapsed_at(pointer.x));
+        let target = mapping.content(placed_at(pointer.x));
         let beat = if fine { before.beat + (target - before.beat) * 0.1 } else { target };
         let db = dragged_db(ui, rect, pointer, before.db, top);
         let low = index.checked_sub(1).and_then(|i| moved.get(i)).map_or(0.0, |p| p.beat);
