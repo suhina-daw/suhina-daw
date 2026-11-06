@@ -179,8 +179,8 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
         .map(|(scene, number): (_, u32)| {
             json!({
                 "scene": number,
-                "id": scene.id.0,
-                "scene_id": scene.id.0,
+                "id": scene_id_value(scene.id),
+                "scene_id": scene_id_value(scene.id),
                 "name": scene.name,
                 "tempo_bpm": scene.tempo_bpm,
                 "time_signature": scene.time_signature.map(signature_text),

@@ -1395,7 +1395,7 @@ fn an_empty_midi_clip_is_refused_where_it_cannot_go_and_changes_nothing() {
         (json!({ "track": "Lead", "scene": 0 }), "already has a clip"),
         (json!({ "track": "Bass", "scene": 2 }), "from 0 to 1"),
         (json!({ "track": "Bass", "scene": -1 }), "from 0"),
-        (json!({ "track": "Bass", "scene": "one" }), "scene must be"),
+        (json!({ "track": "Bass", "scene": "one" }), "scene must be an index"),
         (json!({ "track": "Bass" }), "either start"),
         (json!({ "track": "Bass", "scene": 0, "start": 0 }), "either start"),
         (json!({ "track": "Bass", "start": -1 }), "start must be"),
@@ -1534,4 +1534,16 @@ fn command_ids_and_parameters_follow_one_convention() {
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn a_scene_without_an_id_reports_no_id_rather_than_zero() {
+    let mut project = lane_project();
+    project.launcher.scenes.push(Scene { id: SceneId(0), ..Scene::default() });
+    // The counter has run out, so `Session::new` cannot give the scene an id.
+    project.next_id = u32::MAX;
+    let mut session = Session::new(project);
+    let grid = run(&mut session, "project.launcher", json!({})).unwrap();
+    let scene = &grid["scenes"][grid["scenes"].as_array().unwrap().len() - 1];
+    assert!(scene["scene_id"].is_null() && scene["id"].is_null(), "{scene}");
 }

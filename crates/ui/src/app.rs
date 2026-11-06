@@ -2244,6 +2244,12 @@ impl App {
         }
     }
 
+    /// For tests and renders: waits until the background image being loaded is ready, so the
+    /// next frame shows it. Returns at once when none is loading.
+    pub fn wait_for_background(&mut self) {
+        self.background.wait();
+    }
+
     /// A theme file read again after it changed on disk; the window redraws in it if it is the
     /// theme in use.
     pub fn put_theme(&mut self, ctx: &egui::Context, entry: ThemeEntry) {
