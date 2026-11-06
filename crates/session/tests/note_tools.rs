@@ -230,7 +230,7 @@ fn fit_to_scale_moves_to_the_nearest_key_and_takes_the_lower_on_a_tie() {
 fn inverting_mirrors_the_keys_around_the_middle_of_the_range() {
     let mut session = Session::new(project(scale_notes()));
     let before = notes_of(&session, 1);
-    // The named notes 0 and 1 span 60 to 64, so the pivot is 62.
+    // The named notes 0 and 1 span 60 to 64: they swap.
     let result = run(&mut session, "note.invert", json!({ "track": 1, "index": 0, "notes": [0, 1] })).unwrap();
     assert_eq!(result, json!({ "notes": [0, 1] }));
     assert_eq!(keys(&session), [64, 60, 67, 71]);
@@ -238,9 +238,14 @@ fn inverting_mirrors_the_keys_around_the_middle_of_the_range() {
     assert_eq!(notes_of(&session, 1), before);
     assert!(!session.can_undo());
 
-    // The whole clip spans 60 to 71: the pivot is 65, and 62 (2 * 65 - 68) stays inside the keys.
+    // The whole clip spans 60 to 71: each key k becomes 60 + 71 - k, so the lowest and the
+    // highest swap and every key stays inside the range.
     run(&mut session, "note.invert", json!({ "track": 1, "index": 0 })).unwrap();
-    assert_eq!(keys(&session), [70, 66, 63, 59]);
+    assert_eq!(keys(&session), [71, 67, 64, 60]);
+    // Inverting again gives the notes back.
+    run(&mut session, "note.invert", json!({ "track": 1, "index": 0 })).unwrap();
+    assert_eq!(keys(&session), [60, 64, 67, 71]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
     // A single note is its own pivot and does not move; no undo step is marked.
     run(&mut session, "edit.undo", json!({})).unwrap();
     let once = session.project().clone();
@@ -253,8 +258,19 @@ fn inverting_mirrors_the_keys_around_the_middle_of_the_range() {
 fn inverting_keeps_the_keys_within_0_to_127() {
     let mut session = Session::new(project(vec![note(0.0, 1.0, 0), note(1.0, 1.0, 1)]));
     run(&mut session, "note.invert", json!({ "track": 1, "index": 0 })).unwrap();
-    // The pivot is 0: note 1 would land on -1 and is kept at 0.
-    assert_eq!(keys(&session), [0, 0]);
+    // The range is 0 to 1: the two keys swap rather than land on one key.
+    assert_eq!(keys(&session), [1, 0]);
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 126), note(1.0, 1.0, 127), note(2.0, 1.0, 60)]));
+    run(&mut session, "note.invert", json!({ "track": 1, "index": 0 })).unwrap();
+    assert_eq!(keys(&session), [61, 60, 127]);
+}
+
+#[test]
+fn inverting_an_odd_range_keeps_its_lowest_and_highest_keys() {
+    // C and E flat (60 and 63) swap; rounding the middle down would give D and B (62 and 59).
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(1.0, 1.0, 63)]));
+    run(&mut session, "note.invert", json!({ "track": 1, "index": 0 })).unwrap();
+    assert_eq!(keys(&session), [63, 60]);
 }
 
 #[test]
