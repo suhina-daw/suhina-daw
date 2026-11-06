@@ -649,7 +649,7 @@ fn keyframes_advance_with_the_clock_and_the_motion_setting_suppresses_them() {
             }));
         }
         if motion {
-            assert!(colors[1].r() > 20 && colors[1].b() > 20, "{colors:?}");
+            assert!(colors[1].to_array()[0] > 20 && colors[1].to_array()[2] > 20, "{colors:?}");
             assert_eq!(colors[2], Color32::BLUE);
         } else {
             assert_eq!(colors, [Color32::RED; 3]);
@@ -688,7 +688,7 @@ fn native_state_change_starts_a_transition() {
         }));
     }
     assert_eq!(colors[0], Color32::RED);
-    assert!(colors[2].r() > 20 && colors[2].b() > 20, "{colors:?}");
+    assert!(colors[2].to_array()[0] > 20 && colors[2].to_array()[2] > 20, "{colors:?}");
     assert_eq!(colors[3], Color32::BLUE);
     skin::configure(&skin::Skin::default());
 }

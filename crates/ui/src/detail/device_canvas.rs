@@ -1187,7 +1187,8 @@ fn rgba(color: egui::Color32) -> [u8; 4] {
     color.to_srgba_unmultiplied()
 }
 fn accent_text(accent: egui::Color32) -> [u8; 4] {
-    let luminance = 0.2126 * f32::from(accent.r()) + 0.7152 * f32::from(accent.g()) + 0.0722 * f32::from(accent.b());
+    let [r, g, b, _] = accent.to_srgba_unmultiplied();
+    let luminance = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
     if luminance > 145.0 { [29, 28, 26, 255] } else { [255, 255, 255, 255] }
 }
 fn widget_palette() -> WidgetPalette {
@@ -1539,8 +1540,8 @@ fn plot_inside(points: &[(f32, f32)], top: f32, bottom: f32) -> Vec<Vec<(f32, f3
     lines
 }
 
-/// A drawing's colour: one of the SDK's theme tokens takes the theme's custom property (or its
-/// default), keeping the drawing's alpha.
+/// A drawing's colour: one of the SDK's theme tokens takes the theme's colour (or its default),
+/// its alpha times the drawing's, so a translucent theme colour stays translucent.
 fn color(c: [u8; 4]) -> Color32 {
     let [r, g, b, a] = c;
     // The theme's own colours by token ([3, 1, k]): text, panel, control, border, accent.
@@ -1553,17 +1554,23 @@ fn color(c: [u8; 4]) -> Color32 {
             4 => palette.border,
             _ => palette.accent,
         };
-        return Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), a);
+        return with_alpha(base, a);
     }
     if let Some((_, property, default)) = suhina_device_sdk::ui::THEME_TOKENS.iter().find(|(rgb, ..)| *rgb == [r, g, b])
     {
         let base = crate::kit::style_class::property(property)
             .as_deref()
             .and_then(crate::kit::theme::parse_hex)
-            .map_or(*default, |c| [c.r(), c.g(), c.b()]);
-        return Color32::from_rgba_unmultiplied(base[0], base[1], base[2], a);
+            .unwrap_or(Color32::from_rgb(default[0], default[1], default[2]));
+        return with_alpha(base, a);
     }
     Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+/// `base` with its alpha multiplied by `alpha` (0 to 255).
+fn with_alpha(base: Color32, alpha: u8) -> Color32 {
+    let [r, g, b, a] = base.to_srgba_unmultiplied();
+    let alpha = (u16::from(a) * u16::from(alpha) + 127) / 255;
+    Color32::from_rgba_unmultiplied(r, g, b, u8::try_from(alpha).unwrap_or(u8::MAX))
 }
 fn normalized(p: &GraphParameter, log: bool) -> f64 {
     if log && p.min > 0.0 {

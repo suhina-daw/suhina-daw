@@ -810,7 +810,8 @@ fn luminance(color: Color32) -> f32 {
         let s = f32::from(v) / 255.0;
         if s <= 0.040_45 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
     };
-    0.2126 * linear(color.r()) + 0.7152 * linear(color.g()) + 0.0722 * linear(color.b())
+    let [r, g, b, _] = color.to_srgba_unmultiplied();
+    0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
 }
 
 /// Grid rows, headers, fields.

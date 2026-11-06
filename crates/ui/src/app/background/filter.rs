@@ -43,7 +43,7 @@ mod tests {
         let mut input = image::RgbaImage::from_pixel(7, 1, image::Rgba([255, 0, 0, 0]));
         input.put_pixel(3, 0, image::Rgba([0, 0, 255, 255]));
         let result = apply(&input, 1.0);
-        assert!(result.pixels.iter().all(|pixel| pixel.r() == 0));
-        assert!(result.pixels.iter().any(|pixel| pixel.b() > 0));
+        assert!(result.pixels.iter().all(|pixel| pixel.to_array()[0] == 0));
+        assert!(result.pixels.iter().any(|pixel| pixel.to_array()[2] > 0));
     }
 }

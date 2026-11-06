@@ -202,6 +202,48 @@ fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
     assert!(actions.iter().any(|action| action.id == "device.setParam" && action.params["param"] == "enabled"));
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
 }
+/// A token drawing in a translucent theme colour keeps the theme's alpha, times its own (#1235).
+#[test]
+fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
+    let canvas = Arc::new(DeviceUi {
+        size: [100.0, 60.0],
+        layers: vec![
+            Draw::rect([0.0, 0.0, 40.0, 20.0], [3, 1, 4, 255]),
+            Draw::rect([0.0, 30.0, 40.0, 20.0], [3, 1, 4, 128]),
+        ],
+        ..Default::default()
+    });
+    let ctx = egui::Context::default();
+    let faint = Color32::from_rgba_unmultiplied(255, 255, 255, 0x14);
+    crate::kit::theme::set_palette(
+        &ctx,
+        crate::kit::theme::Palette { border: faint, ..crate::kit::theme::Palette::DARK },
+    );
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        show(
+            ui,
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 60.0)),
+            &canvas,
+            &crate::detail::device_widgets::PanelState::none(),
+            &[],
+            TrackId(1),
+            &crate::detail::detail_view::DeviceAt(vec![0]),
+            &mut Vec::new(),
+        )
+    });
+    crate::kit::theme::set_palette(&ctx, crate::kit::theme::Palette::DARK);
+    output.textures_delta.clear();
+    let fill = |at: Rect| {
+        output.shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.rect == at => Some(rect.fill),
+            _ => None,
+        })
+    };
+    let whole = fill(Rect::from_min_size(Pos2::ZERO, Vec2::new(40.0, 20.0)));
+    assert_eq!(whole, Some(faint), "the drawing's full alpha keeps the theme's");
+    let half = fill(Rect::from_min_size(Pos2::new(0.0, 30.0), Vec2::new(40.0, 20.0)));
+    assert_eq!(half, Some(Color32::from_rgba_unmultiplied(255, 255, 255, 10)), "half of the theme's alpha");
+}
 #[test]
 fn sample_markers_have_one_solid_color_without_an_outline() {
     let context = egui::Context::default();

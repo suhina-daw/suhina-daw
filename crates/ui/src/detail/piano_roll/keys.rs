@@ -62,7 +62,8 @@ pub(super) struct KeyColours {
 fn mix(base: Color32, over: Color32, share: f32) -> Color32 {
     let share = share.clamp(0.0, 1.0);
     let channel = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * share).round() as u8;
-    Color32::from_rgb(channel(base.r(), over.r()), channel(base.g(), over.g()), channel(base.b(), over.b()))
+    let ([r0, g0, b0, _], [r1, g1, b1, _]) = (base.to_srgba_unmultiplied(), over.to_srgba_unmultiplied());
+    Color32::from_rgb(channel(r0, r1), channel(g0, g1), channel(b0, b1))
 }
 
 fn shine(r: u8, g: u8, b: u8, alpha: f32) -> Color32 {

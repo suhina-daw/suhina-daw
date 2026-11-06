@@ -232,7 +232,9 @@ widget are not resolved against the theme as widgets' are; they name the theme's
 accent (any alpha). A drawing coloured `[3, 0, 1]` … `[3, 0, 6]` (any alpha) takes a theme token: `--device-display`
 (a display's dark ground, default `#0a1117`), `--device-series-1` … `3` (a device's series, such as
 its bands; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`) `--device-highlight` (`#ffcf7a`) and `--device-spectrum` (`#3fc4e4`), from
-the theme's CSS custom property of that name or the default, with the drawing's alpha. A handle's optional `offset` moves its bounds along its travel, in canvas units, for a value that starts where another ends. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture A clicked handle takes the focus, and the arrow keys along its travel then move it 1 % of the way (0.1 % with Shift).
+the theme's CSS custom property of that name or the default. A token's colour keeps its own alpha,
+multiplied by the drawing's: a translucent theme colour stays translucent, and a drawing at half
+alpha shows it at half of that. A handle's optional `offset` moves its bounds along its travel, in canvas units, for a value that starts where another ends. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture A clicked handle takes the focus, and the arrow keys along its travel then move it 1 % of the way (0.1 % with Shift).
 `position`) draws a line where its parameter is, across its bounds (an X binding: a
 vertical line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 7 points
 of it: dragging sets the value from the pointer as `position` does, a double click resets it, and a

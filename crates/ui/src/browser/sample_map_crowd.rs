@@ -208,10 +208,11 @@ pub(crate) fn density(
         let Some(texel) = texels.get_mut(y * width + x) else { continue };
         match colour(i) {
             Some(c) => {
+                let [r, g, b, _] = c.to_srgba_unmultiplied();
                 texel[0] += 1.0;
-                texel[1] += f32::from(c.r());
-                texel[2] += f32::from(c.g());
-                texel[3] += f32::from(c.b());
+                texel[1] += f32::from(r);
+                texel[2] += f32::from(g);
+                texel[3] += f32::from(b);
             }
             None => texel[4] += 1.0,
         }
@@ -221,7 +222,7 @@ pub(crate) fn density(
     }
     let densest = texels.iter().map(|t| t[0]).fold(0.0f32, f32::max).max(1e-6).ln_1p();
     let dimmest = texels.iter().map(|t| t[4]).fold(0.0f32, f32::max).max(1e-6).ln_1p();
-    let grey = crate::kit::theme::text_hint();
+    let [grey_r, grey_g, grey_b, _] = crate::kit::theme::text_hint().to_srgba_unmultiplied();
     let pixels = texels
         .iter()
         .map(|t| {
@@ -237,7 +238,7 @@ pub(crate) fn density(
                 )
             } else if t[4] > 0.02 {
                 let alpha = 48.0 * (t[4].ln_1p() / dimmest).min(1.0);
-                Color32::from_rgba_unmultiplied(grey.r(), grey.g(), grey.b(), alpha as u8)
+                Color32::from_rgba_unmultiplied(grey_r, grey_g, grey_b, alpha as u8)
             } else {
                 Color32::TRANSPARENT
             }

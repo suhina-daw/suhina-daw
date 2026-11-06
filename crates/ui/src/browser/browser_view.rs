@@ -1727,7 +1727,8 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
             })
             .inner;
         if picked.changed() {
-            let hex = format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
+            let [r, g, b, _] = color.to_srgba_unmultiplied();
+            let hex = format!("#{r:02X}{g:02X}{b:02X}");
             run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
             state.tag_counts = None;
         }
@@ -1935,7 +1936,8 @@ fn footer_view(
             let mut color = tag_color(&tag.color);
             if egui::color_picker::color_edit_button_srgba(ui, &mut color, egui::color_picker::Alpha::Opaque).changed()
             {
-                let hex = format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
+                let [r, g, b, _] = color.to_srgba_unmultiplied();
+                let hex = format!("#{r:02X}{g:02X}{b:02X}");
                 run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
             }
             if ui.button("Remove tag").clicked() {
