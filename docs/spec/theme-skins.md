@@ -989,6 +989,8 @@ of bars, and a slider id per parameter.
 - **Mixer volume readout:** `#mixer-volume-readout` (a `value`): background, radius, `font-size`,
   `color` and the value formats.
 - **Empty slots:** `.slot { background-color }` replaces the track-tinted fill of an empty slot.
+- **Hovered clips:** `.clip:hover { background-color }` replaces the lighter mix of a clip under
+  the pointer in a slot; the clip fades toward it and back as the pointer comes and goes.
 - **Knob artwork per part:** `pan.knob.body|pointer` and `send.knob.body|pointer` for a pan's and
   a send's knob, in the Launcher and the Arrangement; without them they use `knob.*`. An
   Arrangement send is a knob with `.send { --suhina-appearance: knob }`, as in the mixer.

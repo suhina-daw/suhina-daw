@@ -910,3 +910,39 @@ fn mains_volume_field_has_an_element_of_its_own() {
     assert!(!seen.contains(&egui::Color32::RED), "the panel's background stays off the field: {seen:?}");
     assert!(seen.contains(&egui::Color32::from_rgb(0, 0xFF, 0)), "#main-volume reaches it: {seen:?}");
 }
+
+/// A clip in a slot takes the pointer's hover: `.clip:hover { background-color }` replaces the
+/// lighter mix under the pointer (#1241).
+#[test]
+fn a_hovered_clip_takes_the_themes_hover_background() {
+    fn fills(shape: &egui::Shape, around: egui::Rect, out: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| fills(s, around, out)),
+            egui::Shape::Rect(rect) if rect.rect.contains_rect(around) => out.push(rect.fill),
+            _ => {}
+        }
+    }
+    let mut app = App::new();
+    app.set_session(Session::new(demo_project()), &[]);
+    suhina_ui::kit::native_css::set_user_sheet(Some(".clip:hover { background-color: #00ff00; }".into()));
+    let mut h = window(app);
+    h.get_by_label("Launcher view").click();
+    h.run();
+    let launch = h.get_by_label("Launch Walk on Bass (scene 2)").rect();
+    let painted = |h: &mut Harness<'static, App>| {
+        let mut seen = Vec::new();
+        h.output().shapes.iter().for_each(|s| fills(&s.shape, launch, &mut seen));
+        seen
+    };
+    let green = egui::Color32::from_rgb(0, 0xFF, 0);
+    assert!(!painted(&mut h).contains(&green), "not before the pointer comes");
+    h.hover_at(launch.center());
+    h.run();
+    let hovered = painted(&mut h);
+    h.hover_at(egui::pos2(1.0, 1.0));
+    h.run();
+    let left = painted(&mut h);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(hovered.contains(&green), "the hovered clip takes the rule's background: {hovered:?}");
+    assert!(!left.contains(&green), "and gives it back once the pointer has gone");
+}

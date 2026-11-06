@@ -822,6 +822,7 @@ control with no room left is not drawn, without a notice: check narrow tracks an
 - **Mixer volume readout:** `#mixer-volume-readout { background-color: #1E1E1E; border-radius: 6px;
   font-size: 11px; }`.
 - **Empty slots:** `.slot { background-color: #262626; }`.
+- **Hovered clips:** `.clip:hover { background-color: #3a3a3a; }` in place of the lighter mix.
 - **Pan and send knobs of their own:** `pan.knob.body`, `pan.knob.pointer`, `send.knob.body` and
   `send.knob.pointer` artwork change only those knobs, in the Launcher and the Arrangement.
   `.send { --suhina-appearance: knob; }` makes the Arrangement's sends knobs too.
