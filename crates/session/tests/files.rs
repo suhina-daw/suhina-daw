@@ -149,6 +149,18 @@ fn a_track_is_added_before_the_returns_with_its_channel_slots_and_lane() {
 }
 
 #[test]
+fn a_new_track_never_takes_the_name_of_one_still_there() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "track.delete", json!({ "track": "Audio 3" })).unwrap();
+    // Four audio tracks counted the next one "Audio 4", the name of a track still there.
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    assert_eq!(names(session.project())[4..6], ["Audio 4", "Audio 5"]);
+    assert!(run(&mut session, "track.setMute", json!({ "tracks": ["Audio 4"], "mute": true })).is_ok());
+}
+
+#[test]
 fn two_tracks_with_the_same_name_are_named_by_id_instead() {
     let mut session = Session::new(blank_project());
     run(&mut session, "track.rename", json!({ "track": "4 Audio", "name": "3 Audio" })).unwrap();

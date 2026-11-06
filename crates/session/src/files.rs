@@ -168,7 +168,14 @@ fn within(p: &Project, track: TrackId, group: TrackId) -> bool {
 /// "Audio 3": the next number among tracks of that kind.
 fn numbered_name(p: &Project, kind: TrackKind) -> String {
     let count = p.tracks.iter().filter(|t| TrackKind::of(t) == Some(kind)).count();
-    format!("{} {}", kind.default_name(), count + 1)
+    // Counting on from the number of tracks, the first name no track has: after a track is
+    // deleted the count can land on a name still in use.
+    let taken = |name: &str| p.tracks.iter().any(|t| t.name.eq_ignore_ascii_case(name));
+    (count + 1..)
+        .map(|n| format!("{} {n}", kind.default_name()))
+        .take(p.tracks.len() + 1)
+        .find(|name| !taken(name))
+        .unwrap_or_else(|| format!("{} {}", kind.default_name(), count + 1))
 }
 
 fn text<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>, CommandError> {
