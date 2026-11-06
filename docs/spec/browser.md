@@ -99,8 +99,9 @@ Four sections, each title in small hint text:
   Browser › Recent's kinds set to Chips, chips over the list while Recent is chosen.
 - **Tags:** one row per tag (#1196), in the order they were made: the tag's colour dot, its
   name and, at the right, how many items carry it. A tag that no item carries still shows,
-  dimmed, so a new tag can be found before it is used; its row's right-click menu, the footer
-  dots and the tag editor are the other ways to its actions ([Colour tags](#colour-tags)).
+  dimmed, so a new tag can be found before it is used; its row's right-click menu (and the
+  footer dots for the same tags) are the other ways to its actions
+  ([Colour tags](#colour-tags)).
   The wheel scrolls the sidebar when its entries are more than its room, and the rows past
   its top come back; nothing else moves.
 - **Library:** All, Samples, MIDI, Instruments, Effects, Presets, Plug-ins: each shows the whole
@@ -493,7 +494,8 @@ row lights up under the pointer and the drop tags every dragged item with the ta
 headings left out); the drag stops the preview as any drop does not. The other way round, a
 tag row dragged out of the section carries the tag to the results, the item row it is over
 lights up, and a drop tags that item — or every selected item when the row is one of them, as
-the tag editor's checkbox does; a drop elsewhere changes nothing. While either is carried, a
+a row's Tag menu applies to one and the section's drops apply to every dragged one; a drop
+elsewhere changes nothing. While either is carried, a
 pill beside the pointer says what a drop does, and the status bar says so: *Tag 3 items with
 Blue*, *Drop to tag Kick.wav with Blue*. The row's right-click
 menu renames (typed in; the place and the footer's filter follow the new name), recolours —
@@ -501,25 +503,14 @@ the palette's swatches, or **Select colour…**, which opens the theme editor's 
 menu itself, where a picker of its own would end the menu as a click outside it does —, and
 removes the tag — the first click on Remove asks, saying how many items carry it, and **Keep**
 stands it down; a second click removes the tag from the list and from every item carrying it.
-The footer's dots stay as they are (#1196): where the section reaches a tag's items as a
+The menu adds a tag for the section too: a typed **New tag…** name and Enter, with the colour
+this menu shows outlined — the tag it was added from shows it —, shown dimmed until
+something carries it; the row's menu can rename, recolour or remove every tag there is. The
+footer's dots stay as they are (#1196): where the section reaches a tag's items as a
 place, the dots are still the quick filter of whatever list is shown, a search's or a place's
-items included.
-
-The **tag editor** is all of that in one place: the footer's **Edit tags** button opens a
-popup right above itself (its bottom at the footer's top, its right edge at the button's),
-floating over the preview strip and the list's bottom. One row per tag: its
-checkbox — with items selected, ticking it tags the selection and unticking takes the tag
-off every selected item (ticked while every one of them carries it); with nothing selected,
-it filters the results by the tag —, its colour button, its name (typed in
-the field, Enter renames it), how many items carry it (hidden when the popup is narrow), and
-**Remove** (the first click arms it —
-the button asks "Remove Red?" with a **Keep** beside it; the second click removes the tag from
-the list and from every item carrying it). The last row adds a tag: a name and Enter, with the
-next default colour. With
-the editor open the footer's dots make way for it — its rows are the tag list; a click
-anywhere outside the popup (the list, the sidebar) closes it, as does the Edit tags button.
-The
-editor's open state is the window's own and is not kept between runs.
+items included. The section is the one place the tags are kept, so the former tag editor and
+its Edit tags button are gone: adding, renaming, recolouring and removing have their row
+here, and items are tagged from the rows' Tag menu, by the drags, and over the same commands.
 
 ## Where it is kept
 

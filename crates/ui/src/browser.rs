@@ -323,13 +323,11 @@ pub struct BrowserState {
     pub anchor: Option<usize>,
     /// Only items carrying any of these tags.
     pub tag_filter: Vec<String>,
-    /// The tag editor is open (the browser footer's Edit tags button toggles it).
-    pub tag_editor: bool,
-    /// The tag whose Remove is armed in the sidebar's right-click menu or in the editor: the
-    /// second click removes it.
+    /// The tag whose Remove is armed in the tag's right-click menus: the second click removes
+    /// it.
     pub(crate) tag_remove_confirm: Option<String>,
     /// How many items carry each tag, counted when the library's tags last changed (the
-    /// sidebar's rows and the editor share the cache).
+    /// sidebar's rows share the cache).
     pub(crate) tag_counts: Option<(u64, HashMap<String, usize>)>,
     /// The Plug-ins category's list sorts by this column (0 name, 1 format), `true`
     /// descending. The window's own, not kept between runs.
@@ -406,7 +404,6 @@ impl Default for BrowserState {
             selected: Vec::new(),
             anchor: None,
             tag_filter: Vec::new(),
-            tag_editor: false,
             tag_remove_confirm: None,
             tag_counts: None,
             plugin_sort: (0, false),
