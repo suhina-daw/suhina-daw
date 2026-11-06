@@ -115,9 +115,9 @@ editor back (`param_changed`, #828), so the session keeps
 the project's values in step with it — no undo step of its own, and a change since the
 last save. A change there of a parameter an enabled lane plays turns the lane off as one undo
 step, unless it is a value the lane sent (#1205, [automation](automation.md#a-manual-change-turns-the-lane-off)).
-While the transport is stopped, a lane sends its value at the playhead once, and again when the
-playhead moves, the lane changes or the plug-in starts again, so the editor follows it stopped
-too. For automation lanes the host also names any value of a parameter in the plug-in's own
+While the transport is stopped, a lane sends its value at the playhead when the playhead moves
+or the lane changes, so the editor follows it stopped too; a plug-in that starts keeps the state
+it was given until then, so opening a project changes nothing in it. For automation lanes the host also names any value of a parameter in the plug-in's own
 words (`get_param_texts`, [the protocol](plugin-protocol.md)), in the background, without setting
 it.
 

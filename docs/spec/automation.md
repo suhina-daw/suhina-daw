@@ -211,8 +211,10 @@ audio thread.
 - **Plug-in parameters**: as #109 built them (ADR 0006 › 3): a value at the block's start, at
   each point and every 64 frames while it moves, as parameter events at their frames; the curve
   and the enabled flag apply too. While stopped, a lane sends its value where the transport
-  stands once, and again when the play start marker moves, the lane changes or the plug-in
-  starts again, so the plug-in's editor and its parameter list show what plays there (#1205).
+  stands when the play start marker moves or the lane changes, so the plug-in's editor and its
+  parameter list show what plays there (#1205). A plug-in that starts (the project opened, a
+  restart) keeps the state it was given until then, so opening a project changes nothing in it
+  and leaves no unsaved change.
 - **Mixer lanes**: the track's gains are computed at every 16th frame of the arrangement and move
   in a straight line between, frame by frame, so a frame's gain depends on its time only (not on the
   block size) and a fader move or mute never clicks: a mute switches over 16 frames. A **jump of
