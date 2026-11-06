@@ -646,14 +646,17 @@ fn sidebar_view(
     state.drop_tag = None;
     let tag_list = projects.file_library_mut().tags();
     let counts = state.tag_counts(projects.file_library_mut());
-    for tag in tag_list {
+    // The rows' ids ride the tag's position in the list, not its name: a name typed follows
+    // the field through the store per key, and a widget keyed by the changing name would
+    // lose its caret, menu and popups mid-typing.
+    for (tag_index, tag) in tag_list.into_iter().enumerate() {
         let count = counts.get(&tag.name).copied().unwrap_or(0);
         let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW));
         y += ROW;
         // A press carries the tag to an item of the results as well (#1196): click selects
         // the place, a drag takes it there.
         let response =
-            ui.interact(rect.intersect(area), Id::unique(("browser-tag-place", &tag.name)), Sense::click_and_drag());
+            ui.interact(rect.intersect(area), Id::unique(("browser-tag-place", tag_index)), Sense::click_and_drag());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Place Tag {}", tag.name)));
         // Dragging items here tags them when dropped (#1196), and a drag of the row itself
         // takes the tag to an item of the results to tag it there (#1196). A drag owns the
@@ -734,7 +737,7 @@ fn sidebar_view(
             let cleared = widgets::button_area(
                 ui,
                 clear.intersect(area),
-                Id::unique(("browser-tag-clear", &tag.name)),
+                Id::unique(("browser-tag-clear", tag_index)),
                 "Show everything",
             );
             let color =
@@ -775,7 +778,7 @@ fn sidebar_view(
         // Right-click: rename (a click off the menu applies the typed name, as Enter does),
         // recolour, remove — asking first while items carry it.
         egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-            let id = Id::unique(("browser-rename-tag", &tag.name));
+            let id = Id::unique(("browser-rename-tag", tag_index));
             let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
             let field =
                 crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut name).id(id).desired_width(120.0));
@@ -783,28 +786,23 @@ fn sidebar_view(
                 egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", tag.name))
             });
             ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-            // Enter commits, and so does a click outside the menu: the name typed is taken
-            // when the menu goes, wherever the click lands. A change that is refused keeps
-            // the menu and the field (the status bar says why).
-            let committed = (field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
-                || ui.input(|i| {
-                    i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !ui.max_rect().contains(p))
-                });
-            if committed
+            // The name follows the field while it is typed into: every key renames, where
+            // the section, the footer dots and a tag's place read the live name. Erasing the
+            // field changes nothing in the store, and a name another tag has is refused
+            // where it stands (the status bar says why).
+            if !name.trim().is_empty()
                 && name.trim() != tag.name
                 && run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out)
             {
                 for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
                     *filter = name.trim().to_string();
                 }
-                // The tags the place is made of go with the new name, so the list follows.
+                // The tags the place is made of go with the live name, so the place holds.
                 if let Some(Place::Tag(tags)) = &mut state.place {
                     for t in tags.iter_mut().filter(|t| **t == tag.name) {
                         *t = name.trim().to_string();
                     }
                 }
-                ui.ctx().data_mut(|d| d.remove::<String>(id));
-                state.relist();
             }
             let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
             // Select colour: the palette's swatches and the theme editor's picker, opened in
@@ -812,7 +810,7 @@ fn sidebar_view(
             // the colour one command a pick.
             if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
                 ui,
-                Id::unique(("browser-tag-colour", &tag.name)),
+                Id::unique(("browser-tag-colour", tag_index)),
                 current,
                 "Select colour",
             ) {
@@ -823,7 +821,7 @@ fn sidebar_view(
             // A new tag from here: a typed name, added with Enter or the Add tag button, in
             // the colour this menu shows outlined, shown dimmed until something carries it
             // (#1196).
-            let new_id = Id::unique(("browser-section-new-tag", &tag.name));
+            let new_id = Id::unique(("browser-section-new-tag", tag_index));
             let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
             let field = crate::kit::widgets::text_input(
                 ui,
@@ -1905,7 +1903,9 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
     painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(theme::border()));
     let mut x = area.left() + PAD;
     let tags = projects.file_library_mut().tags();
-    for tag in tags {
+    // As the section's rows: the dots' ids ride the position, so a live rename keeps the
+    // menu and its field.
+    for (tag_index, tag) in tags.into_iter().enumerate() {
         let rect = Rect::from_center_size(Pos2::new(x + DOT / 2.0 + 2.0, area.center().y), Vec2::splat(DOT + 4.0));
         x = rect.right() + 2.0;
         // The dots stop before the count at the right end.
@@ -1913,7 +1913,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             break;
         }
         let response =
-            widgets::button_area(ui, rect, Id::unique(("browser-tag", &tag.name)), format!("Tag {}", tag.name))
+            widgets::button_area(ui, rect, Id::unique(("browser-tag", tag_index)), format!("Tag {}", tag.name))
                 .on_hover_text(&tag.name);
         if response.hovered() {
             // The tag's name and how many items carry it, in the status bar. The count is
@@ -1934,7 +1934,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
         // tag. Clicks inside do not close it: a tag's new name is typed here (egui's default
         // closes a menu on a click inside it).
         egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-            let id = Id::unique(("browser-rename-tag", &tag.name));
+            let id = Id::unique(("browser-rename-tag", tag_index));
             let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
             let field =
                 crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut name).id(id).desired_width(120.0));
@@ -1965,7 +1965,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             // the colour one command a pick.
             if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
                 ui,
-                Id::unique(("browser-tag-colour", &tag.name)),
+                Id::unique(("browser-tag-colour", tag_index)),
                 current,
                 "Select colour",
             ) {
@@ -1976,7 +1976,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             // A new tag from here: a typed name, added with Enter or the Add tag button, in
             // the colour this menu shows outlined, shown dimmed until something carries it
             // (#1196).
-            let new_id = Id::unique(("browser-section-new-tag", &tag.name));
+            let new_id = Id::unique(("browser-section-new-tag", tag_index));
             let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
             let field = crate::kit::widgets::text_input(
                 ui,

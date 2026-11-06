@@ -2,8 +2,8 @@
   per tag with its colour dot, its name and how many items carry it (a tag with none dimmed),
   clicked as a place lists every item that carries it of any kind (`library.search` takes it
   as `tag:<name>`), Ctrl-click combines tags, the row's right-click menu adds (a New tag…
-  field with an Add tag button, taking the colour the menu's own tag shows), renames (a
-  name typed is committed with Enter or a click off the menu), recolours
+  field with an Add tag button, taking the colour the menu's own tag shows), renames live as
+  the name is typed, recolours
   (the palette or the theme editor's picker in the menu) and removes it (asking first while
   items carry it);
   items dropped on a row are tagged with it, and a tag dragged from its row tags the item it

@@ -1462,8 +1462,10 @@ fn the_tags_section_renames_and_removes_a_tag_asking_first() {
     harness.run();
     harness.get_by_label("Rename tag Red").type_text("Hot");
     harness.run();
-    // The name typed is taken when the menu is clicked off, Enter or not: a click on the
-    // window's empty footer goes with it.
+    // The name follows the field as it is typed: no Enter, no click off.
+    assert!(harness.query_by_label("Place Tag Hot").is_some(), "the name follows the field");
+    assert!(harness.query_by_label("Place Tag Red").is_none(), "the old name is gone");
+    // The menu is still open; a click off closes it.
     let at = Pos2::new(SIZE.0 - 20.0, SIZE.1 - 10.0);
     click_at(&mut harness, at);
     harness.run();
