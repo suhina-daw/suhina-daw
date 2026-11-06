@@ -16,51 +16,51 @@ fn the_trace_watch_merges_peaks_and_starts_each_interval_from_silence() {
 }
 
 /// The main thread resets the counters while the audio thread keeps adding to them: no
-/// frame is lost, and a peak that was taken never comes back. The audio thread is inside
-/// its loop (a barrier) before the first reset and leaves it only when told to after the
-/// last one, so every reset happens while it runs; how many blocks it adds meanwhile varies,
-/// and the assertions hold for any count.
+/// frame is lost, and a peak that was taken never comes back. The work runs in rounds that
+/// both threads start and end at a barrier: in each, the audio thread adds a fixed number of
+/// blocks while the main thread resets, and after the end barrier one more reset closes the
+/// round. So every round's interval holds exactly its blocks, whatever order the threads
+/// ran in inside it, and the counts below are exact.
 #[test]
 fn resetting_the_trace_watch_loses_no_frames_and_repeats_no_peak() {
-    const RESETS: u32 = 20_000;
-    // Below 2^24, so every block's number is an exact `f32` and the peaks strictly rise.
-    const MOST_BLOCKS: u32 = 1 << 23;
+    const ROUNDS: u32 = 500;
+    const BLOCKS_PER_ROUND: u32 = 400;
+    const RESETS_PER_ROUND: u32 = 100;
+    // 200 000 blocks, below 2^24, so every block's number is an exact `f32`.
+    const BLOCKS: u32 = ROUNDS * BLOCKS_PER_ROUND;
     let watch = Arc::new(Watch::default());
-    let stop = Arc::new(AtomicBool::new(false));
-    let started = Arc::new(std::sync::Barrier::new(2));
+    let round = Arc::new(std::sync::Barrier::new(2));
     let audio = {
-        let (watch, stop, started) = (watch.clone(), stop.clone(), started.clone());
+        let (watch, round) = (watch.clone(), round.clone());
         std::thread::spawn(move || {
-            started.wait();
-            let mut added = 0_u32;
-            for block in 1..=MOST_BLOCKS {
-                if stop.load(Ordering::Acquire) {
-                    break;
+            for first in (0..ROUNDS).map(|r| r * BLOCKS_PER_ROUND + 1) {
+                round.wait();
+                for block in first..first + BLOCKS_PER_ROUND {
+                    watch.merge_peak(&[block as f32]);
+                    watch.frames.fetch_add(1, Ordering::Release);
                 }
-                watch.merge_peak(&[block as f32]);
-                watch.frames.fetch_add(1, Ordering::Release);
-                added = block;
+                round.wait();
             }
-            added
         })
     };
-    let (mut frames, mut peaks) = (0_u64, Vec::new());
-    let mut take = |frames: &mut u64| {
-        *frames += watch.take_frames();
+    let mut peaks = Vec::new();
+    let mut take = || {
+        let frames = watch.take_frames();
         let peak = watch.take_peak();
         if peak > 0.0 {
             peaks.push(peak);
         }
+        frames
     };
-    started.wait();
-    for _ in 0..RESETS {
-        take(&mut frames);
+    for r in 0..ROUNDS {
+        round.wait();
+        let mut frames: u64 = (0..RESETS_PER_ROUND).map(|_| take()).sum();
+        round.wait();
+        frames += take();
+        assert_eq!(frames, u64::from(BLOCKS_PER_ROUND), "round {r}: frames were erased by a reset");
     }
-    stop.store(true, Ordering::Release);
-    let added = audio.join().unwrap();
-    take(&mut frames);
-    assert_eq!(frames, u64::from(added), "frames were erased by a reset");
-    assert_eq!(peaks.last().copied(), (added > 0).then_some(added as f32));
+    audio.join().unwrap();
+    assert_eq!(peaks.last().copied(), Some(BLOCKS as f32));
     assert!(peaks.windows(2).all(|pair| pair[0] < pair[1]), "an old peak was written back");
 }
 
