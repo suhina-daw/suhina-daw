@@ -353,7 +353,9 @@ fn at_the_least_height_the_selection_rows_are_left_out_not_cut() {
     click(&mut h, pos2(grid.right() - 4.0, grid.top() + 4.0));
     h.key_press_modifiers(Modifiers::COMMAND, Key::A);
     h.run();
-    assert!(h.query_by_label_contains("Pitch: ").is_some(), "the selection rows show at the default height");
+    // The figures sit under the Clip part: a taller detail area shows them.
+    pull_to(&mut h, bottom - 340.0);
+    assert!(h.query_by_label_contains("Pitch: ").is_some(), "the selection rows show in a tall detail area");
     pull_to(&mut h, bottom - 90.0);
     assert!(h.query_by_label_contains("Notes tab").is_some(), "the tools' tabs fit");
     for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {

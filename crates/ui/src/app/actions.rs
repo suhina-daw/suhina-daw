@@ -117,6 +117,14 @@ impl App {
             "view.editor" => {}
             "view.devices" => self.toggle_devices(),
             "view.araEditor" => self.open_ara_editor(),
+            "view.gainEnvelope" => match self.shown_clip() {
+                Some(ClipRef::Arrangement(track, clip))
+                    if self.piano_clip(Some(ClipRef::Arrangement(track, clip))).is_none() =>
+                {
+                    self.arrangement.toggle_envelope = Some(clip);
+                }
+                _ => self.status = Status::Hint("Select an audio clip in the Arrangement first".into()),
+            },
             "view.plugin" => self.toggle_plugin_editor(),
             "view.mappingMode" => self.toggle_mapping_mode(),
             "track.addAudio" | "track.addMidi" => {

@@ -46,8 +46,8 @@ start marker does not change which sixteenths are delayed.
 
 ## In the window
 
-- **MIDI clip panel**, in the Clip part under **Scale** ([clip editor spec](ui-clip-editor.md) ›
-  Clip column): the name says whose swing the clip plays, **Swing (global)** or **Swing (this
+- **MIDI clip panel**, at the foot of the **Notes** tab of its note tools ([clip editor
+  spec](ui-clip-editor.md) › Note tools): the name says whose swing the clip plays, **Swing (global)** or **Swing (this
   clip)**, with the amount at its right; under it the **Global** switch (lit while the clip follows
   the project's swing) and a slider.
   - While **Global** is lit the slider shows the project's swing, and dragging it sets the

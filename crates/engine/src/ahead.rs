@@ -63,6 +63,11 @@ const CLOSED: u64 = u64::MAX;
 /// The rings made so far, so each has its own number (a voice's handover names the ring).
 static RINGS: AtomicU64 = AtomicU64::new(1);
 
+/// How long a clip's new voice takes over from the one it replaces (an edit of how the clip
+/// plays, such as its tempo or transpose, while it plays): the two sound at different places of
+/// the clip, and cutting from one to the other clicked at each step of a drag.
+const FADE_SECONDS: f64 = 0.02;
+
 /// Frames from the start point each voice must have rendered before the transport rolls.
 const START_FRAMES: u64 = 4 * BLOCK_FRAMES as u64;
 /// What a voice that fell behind jumps past the frame it was asked for, in blocks: time for the
@@ -145,6 +150,21 @@ struct Reader {
     jumping: Option<u64>,
     /// Its track is heard (not muted, not left out by a solo): a start waits for it.
     heard: bool,
+    /// The clip the voice plays, by its id: a new graph's voice for the same clip takes over
+    /// from this one by a fade when it cannot take over its ring.
+    clip: u32,
+    /// The ring of the voice this one replaced, while its sound fades out
+    /// ([`AheadReader::adopt_from`]); a ring of nothing otherwise. It goes with the graph,
+    /// never freed on the audio thread.
+    fade: Consumer<f32>,
+    /// The arrangement frame at the head of `fade`.
+    fade_next: u64,
+    /// Frames of the fade left; 0 when there is none.
+    fade_left: u64,
+    /// The fade has begun: until this voice's own frames arrive, the old one plays on alone.
+    fade_started: bool,
+    /// Its ring went to a voice of the next graph.
+    handed: bool,
 }
 
 /// Renders stretched clips ahead into the rings the [`AheadReader`] reads. A
@@ -410,14 +430,17 @@ pub(crate) struct AheadReader {
     /// A ring's length in frames: how long before a loop's wrap the voices at its start are
     /// moved there.
     ring_frames: u64,
+    /// The length of a fade from a replaced voice, in frames ([`FADE_SECONDS`]).
+    fade_frames: u64,
     /// The worker, while no thread has taken it: the reader then fills the rings itself.
     inline: Option<StretchWorker>,
 }
 
 impl AheadReader {
-    /// Splits `voices` (each with its clip's start and length in arrangement frames) into a reader
-    /// and its worker, with a ring per voice holding [`AHEAD_SECONDS`] at `sample_rate`.
-    pub(crate) fn new(voices: Vec<(StretchVoice, u64, u64, u64)>, sample_rate: u32) -> Self {
+    /// Splits `voices` (each with its clip's start and length in arrangement frames, its
+    /// [`voice_key`] and its clip's id) into a reader and its worker, with a ring per voice
+    /// holding [`AHEAD_SECONDS`] at `sample_rate`.
+    pub(crate) fn new(voices: Vec<(StretchVoice, u64, u64, u64, u32)>, sample_rate: u32) -> Self {
         let frames = ((AHEAD_SECONDS * f64::from(sample_rate)) as usize).max(2 * BLOCK_FRAMES);
         let jumps = voices.iter().map(|_| Jump::default()).collect();
         let adopted = voices.iter().map(|_| AtomicU64::new(0)).collect();
@@ -426,10 +449,27 @@ impl AheadReader {
         let shared = Arc::new(Shared { jumps, adopted, handed_jump, handed_from, ..Shared::default() });
         let mut readers = Vec::with_capacity(voices.len());
         let mut writers = Vec::with_capacity(voices.len());
-        for (voice, start, length, key) in voices {
+        for (voice, start, length, key, clip) in voices {
             let (producer, consumer) = RingBuffer::new(frames * 2);
             let ring = RINGS.fetch_add(1, Ordering::Relaxed);
-            readers.push(Reader { consumer, ring, start, length, next: 0, rewound: false, jumping: None, heard: true });
+            // A ring of nothing, for the place a replaced voice's ring takes at a swap.
+            let (_, fade) = RingBuffer::new(0);
+            readers.push(Reader {
+                consumer,
+                ring,
+                start,
+                length,
+                next: 0,
+                rewound: false,
+                jumping: None,
+                heard: true,
+                clip,
+                fade,
+                fade_next: 0,
+                fade_left: 0,
+                fade_started: false,
+                handed: false,
+            });
             writers.push(Writer { voice, producer, key, ring, start, produced: 0, length, jumped: 0, seek_to: None });
         }
         let worker = StretchWorker {
@@ -439,7 +479,8 @@ impl AheadReader {
             scratch: vec![0.0; BLOCK_FRAMES * 2],
             ring: frames as u64,
         };
-        Self { readers, shared, ring_frames: frames as u64, inline: Some(worker) }
+        let fade_frames = ((FADE_SECONDS * f64::from(sample_rate)) as u64).max(1);
+        Self { readers, shared, ring_frames: frames as u64, fade_frames, inline: Some(worker) }
     }
 
     /// Whether there are no stretched clips to read.
@@ -466,10 +507,18 @@ impl AheadReader {
     /// handed over: each one's reading end and where it is, so the clip plays on without a
     /// break. A voice not handed over yet is closed to it and starts afresh. On the audio
     /// thread at the swap; never allocates.
+    ///
+    /// A voice of a clip that changed how it plays (its tempo, its transpose) cannot be handed
+    /// over: its new voice plays from another place of the clip. It fades in over the old one's
+    /// ring instead, which plays on alone until the new voice's frames arrive.
     pub(crate) fn adopt_from(&mut self, before: &mut AheadReader) {
+        let mut fresh = false;
         for (index, (reader, slot)) in self.readers.iter_mut().zip(&self.shared.adopted).enumerate() {
             let ring = match slot.compare_exchange(0, CLOSED, Ordering::AcqRel, Ordering::Acquire) {
-                Ok(_) => continue,
+                Ok(_) => {
+                    fresh = true;
+                    continue;
+                }
                 Err(ring) => ring,
             };
             let Some(old_index) =
@@ -479,6 +528,8 @@ impl AheadReader {
             };
             // The index is the old graph's; its ring confirms it is the reader handed over.
             let Some(old) = before.readers.get_mut(old_index).filter(|r| r.ring == ring) else { continue };
+            old.handed = true;
+            reader.handed = true;
             std::mem::swap(&mut reader.consumer, &mut old.consumer);
             std::mem::swap(&mut reader.ring, &mut old.ring);
             reader.next = old.next;
@@ -501,11 +552,58 @@ impl AheadReader {
                 reader.jumping = Some(requested);
             }
         }
+        if fresh {
+            self.fade_from(before);
+        }
+        // `handed` marks this swap only.
+        for reader in &mut self.readers {
+            reader.handed = false;
+        }
+    }
+
+    /// Starts the fades of [`AheadReader::adopt_from`]: each voice that starts afresh takes the
+    /// ring of the old voice of its clip, when that one was playing where it should be.
+    fn fade_from(&mut self, before: &mut AheadReader) {
+        let settled = before.shared.drained.load(Ordering::Acquire) == before.shared.requested.load(Ordering::Acquire);
+        if !settled {
+            return;
+        }
+        for reader in &mut self.readers {
+            if reader.handed {
+                continue;
+            }
+            let Some(old) = before.readers.iter_mut().find(|r| r.clip == reader.clip && !r.handed) else { continue };
+            if old.jumping.is_some() || old.rewound {
+                continue;
+            }
+            old.handed = true;
+            // A voice still waiting for its own frames: the sound heard is the one it fades from.
+            if old.fade_left > 0 && !old.fade_started {
+                std::mem::swap(&mut reader.fade, &mut old.fade);
+                reader.fade_next = old.fade_next;
+            } else {
+                std::mem::swap(&mut reader.fade, &mut old.consumer);
+                reader.fade_next = old.start.saturating_add(old.next);
+            }
+            reader.fade_left = self.fade_frames;
+            reader.fade_started = false;
+        }
     }
 
     /// Asks for the voices to continue from arrangement frame `to`; until the worker has moved
     /// them, reads are silence.
     pub(crate) fn move_to(&mut self, to: u64) {
+        // The sound moves anyway: no fade from where it was.
+        for reader in &mut self.readers {
+            reader.fade_left = 0;
+        }
+        self.move_voices(to);
+    }
+
+    /// [`AheadReader::move_to`], for a graph swapped in off where its voices were rendered for:
+    /// the fades from the old voices play on, as their rings are where the playhead is, and
+    /// cover the new voices' silence until the worker has moved them.
+    pub(crate) fn move_voices(&mut self, to: u64) {
         self.shared.seek_to.store(to, Ordering::Release);
         self.shared.playhead.store(to, Ordering::Release);
         self.shared.requested.fetch_add(1, Ordering::AcqRel);
@@ -592,6 +690,7 @@ impl AheadReader {
         }
         self.shared.playhead.store(to, Ordering::Release);
         for (reader, jump) in self.readers.iter_mut().zip(&self.shared.jumps) {
+            reader.fade_left = 0;
             let local = to.saturating_sub(reader.start).min(reader.length);
             request_jump(reader, jump, local);
         }
@@ -641,6 +740,18 @@ impl AheadReader {
     /// is under way or has delivered nothing yet (that silence is the jump's); never blocks or
     /// allocates.
     pub(crate) fn read(&mut self, index: usize, from: u64, out: &mut [f32]) {
+        let got = self.read_ring(index, from, out);
+        let fade_frames = self.fade_frames;
+        if let Some(reader) = self.readers.get_mut(index)
+            && reader.fade_left > 0
+        {
+            fade(reader, from, out, got, fade_frames);
+        }
+    }
+
+    /// [`AheadReader::read`] of the voice's own ring. Returns the frames it put at the start of
+    /// `out`.
+    fn read_ring(&mut self, index: usize, from: u64, out: &mut [f32]) -> usize {
         out.fill(0.0);
         let wanted = (out.len() / 2) as u64;
         if let Some(reader) = self.readers.get(index) {
@@ -650,22 +761,22 @@ impl AheadReader {
             worker.fill();
         }
         let ready = self.shared.drained.load(Ordering::Acquire) == self.shared.requested.load(Ordering::Acquire);
-        let Some(reader) = self.readers.get_mut(index) else { return };
+        let Some(reader) = self.readers.get_mut(index) else { return 0 };
         // A rewind under way, or done with nothing rendered since: silence the transport asked
         // for, not frames the worker failed to deliver.
         if !ready {
-            return;
+            return 0;
         }
-        let Some(jump) = self.shared.jumps.get(index) else { return };
+        let Some(jump) = self.shared.jumps.get(index) else { return 0 };
         // A jump under way: once the worker has stopped pushing, the ring is emptied and the voice
         // goes on from where it jumped to.
         if !complete_jump(reader, jump) {
             self.shared.underruns.fetch_add(wanted, Ordering::Relaxed);
-            return;
+            return 0;
         }
         if reader.rewound {
             if reader.consumer.slots() == 0 {
-                return;
+                return 0;
             }
             reader.rewound = false;
         }
@@ -688,7 +799,7 @@ impl AheadReader {
                 jump.requested.store(requested, Ordering::Release);
                 reader.jumping = Some(requested);
             }
-            return;
+            return 0;
         }
         let frames = (wanted as usize).min(reader.consumer.slots() / 2);
         if let Ok(chunk) = reader.consumer.read_chunk(frames * 2) {
@@ -705,11 +816,66 @@ impl AheadReader {
         if (frames as u64) < wanted {
             self.shared.underruns.fetch_add(wanted - frames as u64, Ordering::Relaxed);
         }
+        frames
     }
 
     /// Frames needed that were not ready, since the renderer was built.
     pub(crate) fn underruns(&self) -> u64 {
         self.shared.underruns.load(Ordering::Relaxed)
+    }
+}
+
+/// Mixes the fade from a replaced voice into `out`, which holds `got` frames of `reader`'s own
+/// from clip frame `from` on: until those arrive the old voice plays alone, then it fades out as
+/// the new one fades in, both at equal power over `fade_frames`. A fade with nothing left to
+/// play from ends. Never allocates.
+fn fade(reader: &mut Reader, from: u64, out: &mut [f32], got: usize, fade_frames: u64) {
+    let wanted = out.len() / 2;
+    let at = reader.start.saturating_add(from);
+    // Drop what was due before `at`.
+    if reader.fade_next < at {
+        let skip = ((at - reader.fade_next) as usize).min(reader.fade.slots() / 2);
+        if let Ok(chunk) = reader.fade.read_chunk(skip * 2) {
+            chunk.commit_all();
+        }
+        reader.fade_next += skip as u64;
+    }
+    if reader.fade_next != at {
+        reader.fade_left = 0;
+        return;
+    }
+    let available = reader.fade.slots() / 2;
+    let frames = wanted.min(available);
+    let Ok(chunk) = reader.fade.read_chunk(frames * 2) else {
+        reader.fade_left = 0;
+        return;
+    };
+    let (first, second) = chunk.as_slices();
+    let old = |i: usize| first.get(i).or_else(|| second.get(i - first.len())).copied().unwrap_or(0.0);
+    if !reader.fade_started && got < wanted {
+        // The new voice is not there yet: the old one plays on.
+        for (i, sample) in out.iter_mut().enumerate().take(frames * 2) {
+            *sample = old(i);
+        }
+    } else {
+        reader.fade_started = true;
+        let length = fade_frames.max(1) as f32;
+        for (frame, pair) in out.as_chunks_mut::<2>().0.iter_mut().enumerate().take(frames) {
+            if reader.fade_left == 0 {
+                break;
+            }
+            // From the old voice alone to the new one alone.
+            let t = 1.0 - reader.fade_left as f32 / length;
+            let (new_gain, old_gain) = (t * std::f32::consts::FRAC_PI_2).sin_cos();
+            pair[0] = pair[0] * new_gain + old(frame * 2) * old_gain;
+            pair[1] = pair[1] * new_gain + old(frame * 2 + 1) * old_gain;
+            reader.fade_left -= 1;
+        }
+    }
+    chunk.commit_all();
+    reader.fade_next += frames as u64;
+    if frames < wanted {
+        reader.fade_left = 0;
     }
 }
 
@@ -794,7 +960,7 @@ mod handover_tests {
         };
         let clip = Clip { audio, ..Clip::new(ContentId(1), 0.0, 4.0) };
         let Some(voice) = StretchVoice::new(&clip, data, 100.0, SR) else { panic!("no voice") };
-        AheadReader::new(vec![(voice, 0, LENGTH, 7)], SR)
+        AheadReader::new(vec![(voice, 0, LENGTH, 7, 1)], SR)
     }
 
     /// The new graph's reader after its worker took the voice over and the swap, with a jump

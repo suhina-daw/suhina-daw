@@ -351,11 +351,10 @@ pub(super) fn clip_box<'a>(
         // Clips picked by a click or moved: the time selection gives way to them.
         state.time_selection = None;
     }
-    // With its gain envelope shown, a double-click on the clip adds a point there instead of
-    // opening it (`docs/spec/clip-panel.md` › Gain envelope).
-    let envelope_shown = clip.audio_view.is_some() && crate::arrangement::envelope::shown(ui.ctx()) == Some(clip.id);
-    let envelope_added = response.double_clicked().then(|| response.interact_pointer_pos()).flatten();
-    if response.double_clicked() && !envelope_shown {
+    // With its gain envelope being edited, the body adds and moves points, not the clip
+    // (`docs/spec/clip-panel.md` › Gain envelope).
+    let envelope_edited = clip.audio_view.is_some() && crate::arrangement::envelope::editing(ui.ctx()) == Some(clip.id);
+    if response.double_clicked() && !envelope_edited {
         state.clip_opened = true;
     }
     if response.clicked() && !tool_click {
@@ -1099,20 +1098,41 @@ pub(super) fn clip_box<'a>(
             StrokeKind::Inside,
         );
     }
-    // The gain envelope, when it is shown, over the waveform and under the gain field.
-    if envelope_shown && let Some(view) = &clip.audio_view {
-        let added = envelope_added.filter(|_| state.clip_drag.is_none());
+    // The gain envelope over the waveform and under the gain field: its line while Show gain
+    // envelope is on, its grid and points while it is edited; the Edit gain envelope button left
+    // of the name, and Free move under it while editing.
+    if let Some(view) = &clip.audio_view {
+        let envelope_painter = painter.with_clip_rect(row.clip);
+        let edit = envelope_edited && state.clip_drag.is_none();
         crate::arrangement::envelope::show(
             ui,
-            &painter.with_clip_rect(row.clip),
-            rect,
+            &envelope_painter,
+            wave_area(rect),
             clip.length,
             clip.id,
             name,
             view,
-            added,
+            edit,
             actions,
         );
+        if let Some(bar) = clip_name_bar(rect)
+            && rect.width() >= ENVELOPE_BUTTON_LEAST
+        {
+            let left = rect.left().max(row.clip.left()) + 4.0;
+            let size = crate::arrangement::envelope::BUTTON;
+            let button = Rect::from_min_size(Pos2::new(left, bar.center().y - size / 2.0), Vec2::splat(size));
+            if crate::arrangement::envelope::edit_button(ui, &envelope_painter, button, clip.id, name, envelope_edited)
+            {
+                crate::arrangement::envelope::toggle_editing(ui.ctx(), clip.id);
+            }
+            if envelope_edited && rect.height() >= bar.height() + size + 6.0 {
+                let free = crate::arrangement::envelope::free_move(ui.ctx());
+                let under = Rect::from_min_size(Pos2::new(left, bar.bottom() + 3.0), Vec2::splat(size));
+                if crate::arrangement::envelope::free_button(ui, &envelope_painter, under, clip.id, free) {
+                    crate::arrangement::envelope::set_free_move(ui.ctx(), !free);
+                }
+            }
+        }
     }
     // The gain sits on top of the clip.
     if let Some((field, db, hover)) = gain_paint {
@@ -1392,8 +1412,14 @@ pub(super) fn paint_clip(
     });
     let has_name = bar.is_some();
     if has_name {
-        // The name stays in view while the clip's start is scrolled off to the left.
-        let left = rect.left().max(view.left()) + 7.0;
+        // The name stays in view while the clip's start is scrolled off to the left; an audio
+        // clip's starts after its Edit gain envelope button.
+        let button = if clip.audio_view.is_some() && rect.width() >= ENVELOPE_BUTTON_LEAST {
+            crate::arrangement::envelope::BUTTON + 4.0
+        } else {
+            0.0
+        };
+        let left = rect.left().max(view.left()) + 7.0 + button;
         let name_rect = Rect::from_min_max(
             Pos2::new(left, rect.top() + 3.0),
             Pos2::new(rect.right() - 5.0, bar.map_or(rect.top(), |bar| bar.bottom()) - 3.0),
@@ -1403,10 +1429,7 @@ pub(super) fn paint_clip(
         let text_color = crate::kit::style_class::foreground(text_color);
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &clip.name, font, text_color);
     }
-    let marks = Rect::from_min_max(
-        Pos2::new(rect.left() + 3.0, bar.map_or(rect.top() + 4.0, |bar| bar.bottom() + 3.0)),
-        Pos2::new(rect.right(), rect.bottom() - 3.0),
-    );
+    let marks = wave_area(rect);
     if let Some(view) = clip.audio_view.as_ref().filter(|_| marks.height() >= 4.0)
         && let Some(peaks) = timeline.waveforms.get(&view.file)
     {
@@ -1425,12 +1448,18 @@ pub(super) fn paint_clip(
         // away what it covers. The fades go by the edges.
         let anchor = x_of(start);
         let length = f64::from(rect.width() / beat_width);
+        // Through the gain envelope as well, a point being dragged where it is now, so the
+        // waveform shows what is heard while it is edited.
+        let envelope = crate::arrangement::envelope::points_now(painter.ctx(), clip.id, &view.envelope);
+        let mapping = crate::arrangement::envelope::Mapping::of(view);
         let columns: Vec<waveform::Column> = (0..count)
             .map(|i| {
                 let x = from + i as f32;
                 let elapsed = f64::from(x - anchor) * per_point;
                 let from_edge = f64::from(x - rect.left()) * per_point;
-                let gain = gain * fade_gain(from_edge + per_point / 2.0, length, &shown);
+                let gain = gain
+                    * fade_gain(from_edge + per_point / 2.0, length, &shown)
+                    * crate::arrangement::envelope::gain_at(&envelope, &mapping, elapsed + per_point / 2.0);
                 let (a, b) = (view.seconds(elapsed), view.seconds(elapsed + per_point));
                 waveform::Column { x: x + 0.5, from: a.min(b), to: a.max(b), gain }
             })
@@ -1541,6 +1570,19 @@ fn paint_take_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
 /// upper half for painting time; `None` when the whole clip moves it.
 pub(super) fn clip_grab_area(rect: Rect) -> Option<Rect> {
     (rect.height() >= CLIP_BODY_LEAST).then(|| Rect::from_min_max(Pos2::new(rect.left(), rect.center().y), rect.max))
+}
+
+/// Narrowest clip, in points, that has the Edit gain envelope button by its name.
+const ENVELOPE_BUTTON_LEAST: f32 = 48.0;
+
+/// Where a clip's waveform (or notes) is drawn: under its name bar, a little in from its edges.
+/// Its gain envelope's 0 dB runs across the middle of it.
+pub(super) fn wave_area(rect: Rect) -> Rect {
+    let bar = clip_name_bar(rect);
+    Rect::from_min_max(
+        Pos2::new(rect.left() + 3.0, bar.map_or(rect.top() + 4.0, |bar| bar.bottom() + 3.0)),
+        Pos2::new(rect.right(), rect.bottom() - 3.0),
+    )
 }
 
 /// The bar along a clip's top that carries its name, on a lane tall enough to have a body under

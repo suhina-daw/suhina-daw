@@ -47,7 +47,7 @@ beside it, and controls are 6 points apart, so no two touch.
 | **Audio** (112 points) | **Warp**: a switch the width of the part | `clip.setAudio` (`warp`) |
 | | **Mode**: a list of Re-pitch, Rhythmic, Tonal, Texture, Smooth, High quality | `clip.setAudio` (`mode`) |
 | | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
-| | **Gain envelope**: a switch that shows the clip's gain envelope on its waveform to edit; it says how many points the envelope has | `clip.setEnvelope` |
+| | **Edit gain envelope**: a switch that opens the clip's gain envelope on its waveform for editing, as Alt+E and the button by the clip's name do; it says how many points the envelope has | `clip.setEnvelope` |
 | **Gain and Pitch** (128 points) | **Gain**: a vertical fader, its scale at its left (24, 0 half-way, −inf at the bottom), the dB readout under it | `clip.setGain` |
 | | **Pitch**: a knob in semitones; under it the semitones and the cents side by side, `st` and `ct` under them | `clip.setAudio` (`transpose`) |
 
@@ -135,18 +135,39 @@ same stretch of envelope on every pass, a clip whose start marker moves plays th
 there, and a clip that is split gives each part the part of the envelope it plays. Stretching a
 clip stretches its envelope with its audio.
 
-**Editing it:** the Gain group's **Envelope** switch shows the envelope of the selected arrangement
-clip as a line over its waveform in the Arrangement, the clip's points as small squares. While it
-is shown:
+**The scale.** On a clip in the Arrangement the envelope is drawn over the waveform's area (under
+the name bar): 0 dB, the sample as it is, across its middle; the ceiling (Settings › Arrangement ›
+Gain envelope ceiling: +3, +6, +12 or +24 dB, +6 by default) at its top; −70 dB at its bottom.
+Each half is even in dB, so the lower half's steps are smaller than the upper half's. A point set
+above the ceiling before it was lowered keeps its level, and the scale's top reaches it, so the line
+is always drawn where it is heard.
 
-- a **double-click** on the clip adds a point there (its beat and the level under the pointer);
-- a point is **dragged** to move it: sideways in time, up and down in level, kept between its
-  neighbours; Shift moves it by a tenth as much;
+**The waveform follows it.** The clip's waveform is drawn through its envelope, as through its gain
+and fades: while a point is dragged the waveform grows and shrinks with it, before the button is let
+go.
+
+**Seeing it.** With **Show gain envelope** on (Settings › Arrangement, on by default), every audio
+clip with points shows its line, thin, while it is not being edited.
+
+**Editing it.** **Edit gain envelope** opens one clip's envelope for editing: Alt+E (`view.gainEnvelope`)
+with the clip selected, the small envelope button left of the clip's name, or the clip panel's
+switch; the same again closes it. While it is open:
+
+- the pointer over the clip's body is a pointing hand; over a point, an open hand, and a closed
+  one while it is dragged;
+- faint lines show the dB grid (Settings › Gain envelope grid: 0.5, 1, 2, 3 or 6 dB, 1 dB by
+  default; lines closer than 5 points are left out), the 0 dB line stronger;
+- a **click** on the body adds a point there: its beat and the level under the pointer, on the grid;
+- a **drag** from the body adds a point and moves it; a point is **dragged** to move it: sideways in
+  time, up and down in level on the grid and below the ceiling, kept between its neighbours. Shift
+  moves it a tenth as much and off the grid. Its value shows beside the pointer while the button is
+  down ("−3 dB");
+- **Free move**, a button under the name, lets points move freely, to a tenth of a dB, instead of
+  on the grid; Settings › Envelope points move says which it starts as;
 - a **double-click** on a point, or Delete with the pointer over it, removes it.
 
-Each of these is one `clip.setEnvelope`, one undo step. The line is drawn on a scale from −70 dB at
-the clip's bottom to +24 dB at its top, 0 dB marked. A slot's clip has no waveform there; its
-envelope is set by command.
+Each change is one `clip.setEnvelope`, one undo step. The clip itself is moved by its name bar while
+its envelope is edited. A slot's clip has no waveform there; its envelope is set by command.
 
 ## The grey box
 

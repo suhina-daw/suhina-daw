@@ -2446,8 +2446,9 @@ fn loop_envelope(harness: &Harness<'static, App>) -> Vec<(f64, f64)> {
         .unwrap_or_default()
 }
 
-/// The clip panel's Envelope switch shows the clip's gain envelope on its waveform: a double-click
-/// on the clip adds a point, a drag moves it, a double-click on it removes it, each one undo step
+/// Edit gain envelope (the button left of the clip's name, Alt+E or the clip panel's switch)
+/// opens the clip's gain envelope on its waveform: a click on the clip's body adds a point there
+/// on the 1 dB grid, a drag moves it, a double-click on it removes it, each one undo step
 /// (`docs/spec/clip-panel.md` › Gain envelope).
 #[test]
 fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
@@ -2456,17 +2457,25 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     harness.run();
     let clip = harness.get_by_label("Clip Loop on Loop at bar 1").rect();
     click_name_bar(&mut harness, "Clip Loop on Loop at bar 1");
-    harness.get_by_label("Envelope: Off").click();
+    harness.get_by_label("Edit gain envelope of Loop").click();
     harness.run();
-    assert!(harness.query_by_label("Envelope: On").is_some(), "the switch shows it");
-    // A double-click in the clip's body adds a point there.
-    let at = egui::pos2(clip.center().x, clip.bottom() - clip.height() * 0.3);
-    double_click_at(&mut harness, at);
+    assert!(harness.query_by_label("Envelope: On").is_some(), "the panel's switch follows the button");
+    assert!(harness.query_by_label("Free move").is_some(), "Free move shows under the name while editing");
+    // One click in the clip's body adds a point there, on the grid.
+    let body = harness.get_by_label("Gain envelope of Loop").rect();
+    let at = egui::pos2(clip.center().x, body.bottom() - body.height() * 0.2);
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.run();
+    harness.drop_at(at);
+    harness.run();
     let points = loop_envelope(&harness);
     assert_eq!(points.len(), 1, "{points:?}");
     assert!(points[0].1 < 0.0, "below 0 dB, where it was clicked: {points:?}");
+    assert_eq!(points[0].1, points[0].1.round(), "on the 1 dB grid: {points:?}");
     // Dragged up, it rises.
-    let point = harness.get_by_label("Envelope point 1 of Loop").rect().center();
+    let point = harness.get_all_by_label("Envelope point 1 of Loop").next().expect("the point").rect().center();
     harness.hover_at(point);
     harness.run();
     harness.drag_at(point);
@@ -2485,7 +2494,13 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     harness.run();
     assert_eq!(loop_envelope(&harness), points);
     // A double-click on the point removes it.
-    let point = harness.get_by_label("Envelope point 1 of Loop").rect().center();
+    let point = harness.get_all_by_label("Envelope point 1 of Loop").next().expect("the point").rect().center();
     double_click_at(&mut harness, point);
     assert!(loop_envelope(&harness).is_empty());
+    // Alt+E stops editing: the body no longer takes clicks.
+    harness.key_press_modifiers(Modifiers::ALT, Key::E);
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label("Gain envelope of Loop").is_none());
+    assert!(harness.query_by_label("Envelope: Off").is_some());
 }

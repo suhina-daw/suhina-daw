@@ -355,6 +355,15 @@ pub struct LauncherMonitor {
     /// Renderer frames played so far, and the arrangement frame playing (ADR 0005).
     pub(crate) position: AtomicU64,
     pub(crate) arrangement: AtomicU64,
+    /// The loop's start and end in arrangement frames while the playhead follows it (both 0
+    /// otherwise): a swap expected past the loop end lands after the wrap.
+    pub(crate) loop_start: AtomicU64,
+    pub(crate) loop_end: AtomicU64,
+    /// Counts the audio thread's publications of the playhead: odd while one is being written,
+    /// so an update reads `position`, `arrangement`, the loop and `frames_per_beat` of one block
+    /// ([`LauncherMonitor::playhead`]). Read apart, they could be a block apart, and the swap
+    /// landed off where its stretched clips were rendered for and restarted them (a click).
+    pub(crate) published: AtomicU64,
     pub(crate) stretch_underruns: AtomicU64,
     /// Graph swaps while playing that had to move the stretch voices (they landed too far from
     /// where they were rendered for): each silences the stretched clips until they catch up.
@@ -392,6 +401,30 @@ pub struct LauncherMonitor {
 }
 
 impl LauncherMonitor {
+    /// The playhead as the audio thread last published it, all from one block: renderer frames
+    /// played, the arrangement frame, the loop it follows (`None` without one) and the
+    /// arrangement frames per beat. Never blocks for long: it reads again while a publication is
+    /// being written, and after a few tries takes what it read.
+    pub(crate) fn playhead(&self) -> (u64, u64, Option<(u64, u64)>, f64) {
+        let mut read = (0, 0, None, 0.0);
+        for _ in 0..64 {
+            let before = self.published.load(Ordering::Acquire);
+            let start = self.loop_start.load(Ordering::Acquire);
+            let end = self.loop_end.load(Ordering::Acquire);
+            read = (
+                self.position.load(Ordering::Acquire),
+                self.arrangement.load(Ordering::Acquire),
+                (end > start).then_some((start, end)),
+                f64::from_bits(self.frames_per_beat.load(Ordering::Acquire)),
+            );
+            if before.is_multiple_of(2) && self.published.load(Ordering::Acquire) == before {
+                break;
+            }
+            std::hint::spin_loop();
+        }
+        read
+    }
+
     fn new(columns: usize, tempo: f64, signature: TimeSignature) -> Self {
         let room = columns.max(MONITOR_COLUMNS);
         Self {
@@ -405,6 +438,9 @@ impl LauncherMonitor {
             elapsed: (0..room).map(|_| AtomicU64::new(0f64.to_bits())).collect(),
             position: AtomicU64::new(0),
             arrangement: AtomicU64::new(0),
+            loop_start: AtomicU64::new(0),
+            loop_end: AtomicU64::new(0),
+            published: AtomicU64::new(0),
             stretch_underruns: AtomicU64::new(0),
             stretch_moves: AtomicU64::new(0),
             plugin_misses: AtomicU64::new(0),

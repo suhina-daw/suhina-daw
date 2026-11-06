@@ -8,8 +8,8 @@
 //! whole clip; `.midi-tools` styles the tools part.
 
 use super::clip_panel::{
-    CLIP_PART, Change, FIELD, Field, GAP, NAME, PART_GAP, TOGGLE, Text, bar_of, clip_part, drop_down, name_over,
-    number_field, pair, plain_number, set_button, small_button, toggle, whole,
+    CLIP_PART, Change, FIELD, Field, GAP, NAME, TOGGLE, Text, bar_of, clip_part, drop_down, name_over, number_field,
+    pair, plain_number, set_button, small_button, toggle, whole,
 };
 use super::*;
 use crate::detail::midi_tools::{Tools, ToolsTab, Transform, tools_width};
@@ -33,9 +33,9 @@ const INFO_ROW: f32 = 14.0;
 const RANGE_BAR: f32 = 10.0;
 /// The space between the buttons of the Notes tab's grid.
 const BUTTON_GAP: f32 = 4.0;
-/// How tall the tools part is under its tab row: its taller tab, Transform (the list, the hint,
-/// two fields, a switch and Apply).
-const TOOLS_BODY: f32 = FIELD + GAP + 12.0 + GAP + NAME + FIELD + GAP + TOGGLE + GAP + TOGGLE;
+/// How tall the tools part is under its tab row: its taller tab, Notes (Transpose, the buttons and
+/// the Swing row; Transform's list, hint, fields, switch and Apply are a little shorter).
+const TOOLS_BODY: f32 = NAME + FIELD + GAP + FIELD * 3.0 + BUTTON_GAP * 2.0 + GAP + NAME + FIELD;
 /// How tall the figures are at most: the chip, Pitch, From, To, Muted, Velocity and its bar.
 const FIGURES: f32 = CHIP + GAP + INFO_ROW * 4.0 + 4.0 + INFO_ROW + RANGE_BAR;
 /// The room between the Clip part and the figures under it.
@@ -44,14 +44,19 @@ const FIGURES_GAP: f32 = 12.0;
 /// The panel's width in a row: the Clip part with the figures under it, and the tools part beside
 /// them when it is shown.
 pub(super) fn row_width(tools: bool) -> f32 {
-    let tools = if tools { PART_GAP + tools_width() } else { 0.0 };
+    let tools = if tools { TOOLS_GAP + tools_width() } else { 0.0 };
     CLIP_PART + tools + 16.0
 }
+
+/// The room between the Clip part and the tools part: a little less than the audio panel's, so
+/// the panel is no wider than the clip column and the tools column were together and the piano
+/// roll's toolbar keeps its menus at 1280 points.
+const TOOLS_GAP: f32 = 8.0;
 
 /// How tall the panel is with its parts one under another (the detail area stacked), under its
 /// title row: the Clip part, and with `midi` the figures and, with `tools`, the tools part.
 pub(super) fn stacked_height(midi: bool, tools: bool) -> f32 {
-    let clip = (NAME + FIELD) * 4.0 + TOGGLE + GAP * 4.0;
+    let clip = (NAME + FIELD) * 3.0 + TOGGLE + GAP * 3.0;
     let figures = if midi { FIGURES_GAP + FIGURES } else { 0.0 };
     let tools = if midi && tools { 14.0 + TAB_ROW + GAP + TOOLS_BODY } else { 0.0 };
     clip + figures + tools + 16.0
@@ -76,7 +81,6 @@ pub(super) fn midi_panel(
     let clip =
         if stacked { area } else { Rect::from_min_max(area.min, Pos2::new(area.left() + CLIP_PART, area.bottom())) };
     let end = clip_part(ui, painter, clip, info, at, panel, actions);
-    let end = swing_row(ui, painter, clip, end + GAP, at, panel, actions);
     let Some(midi) = midi else { return };
     // The figures stay under the Clip part at any height, their rows left out whole where they do
     // not fit, so the panel keeps its width while the detail area is resized.
@@ -93,7 +97,7 @@ pub(super) fn midi_panel(
     let part = if stacked {
         Rect::from_min_max(Pos2::new(area.left(), figures_end + 14.0), area.max)
     } else {
-        let left = clip.right() + PART_GAP;
+        let left = clip.right() + TOOLS_GAP;
         Rect::from_min_max(
             Pos2::new(left, area.top()),
             Pos2::new((left + tools_width()).min(area.right()), area.bottom()),
@@ -102,7 +106,7 @@ pub(super) fn midi_panel(
     tools_part(ui, painter, part, panel, midi, actions);
 }
 
-/// The Swing row under the Clip part (#1221, `docs/spec/swing.md`): its name says whose swing the
+/// The Swing row at the foot of the Notes tab (#1221, `docs/spec/swing.md`): its name says whose swing the
 /// clip plays, the **Global** switch makes it follow the project's swing or play its own again, and
 /// the slider sets the swing it plays: the project's while it follows it (so every clip that
 /// follows changes with it), else its own. Left out whole when it does not fit. Returns where it
@@ -112,13 +116,20 @@ fn swing_row(
     painter: &egui::Painter,
     part: Rect,
     top: f32,
-    at: ClipRef,
+    address: &serde_json::Value,
     panel: &AudioPanel,
     actions: &mut Vec<Action>,
-) -> f32 {
+) {
     if top + NAME + FIELD > part.bottom() + 0.5 {
-        return top - GAP;
+        return;
     }
+    let on_clip = |more: serde_json::Value| {
+        let mut params = address.clone();
+        if let (Some(map), serde_json::Value::Object(more)) = (params.as_object_mut(), more) {
+            map.extend(more);
+        }
+        params
+    };
     let global = !panel.swing.own;
     let percent = (panel.swing.effective(panel.global_swing) * 100.0).round();
     let name = Rect::from_min_size(Pos2::new(part.left(), top), Vec2::new(part.width(), NAME));
@@ -133,7 +144,7 @@ fn swing_row(
     );
     let switch = Rect::from_min_size(Pos2::new(part.left(), top + NAME), Vec2::new(52.0, FIELD));
     if toggle(ui, painter, switch, "Use global swing", "Global", global) {
-        actions.push(Action::new("clip.setSwing", on_clip(at, json!({ "global": !global }))));
+        actions.push(Action::new("clip.setSwing", on_clip(json!({ "global": !global }))));
     }
     let slider =
         Rect::from_min_max(Pos2::new(switch.right() + 4.0, switch.top()), Pos2::new(part.right(), switch.bottom()));
@@ -143,11 +154,10 @@ fn swing_row(
         let action = if global {
             Action::new("transport.setSwing", json!({ "amount": amount, "continue": continues }))
         } else {
-            Action::new("clip.setSwing", on_clip(at, json!({ "amount": amount, "continue": continues })))
+            Action::new("clip.setSwing", on_clip(json!({ "amount": amount, "continue": continues })))
         };
         actions.push(action);
     }
-    switch.bottom()
 }
 
 /// The tools part: its tab row, and the tab shown.
@@ -171,12 +181,20 @@ fn tools_part(
     let body = Rect::from_min_max(Pos2::new(part.left(), tab_row.bottom() + GAP), part.max);
     // A time selection with no note in it gives the tools nothing to act on.
     let before = actions.len();
-    match state.tools_tab {
-        ToolsTab::Notes => notes_tab(ui, painter, body, panel, tools, state, actions),
-        ToolsTab::Transform => transform_tab(ui, painter, body, tools, state, actions),
-    }
+    let notes_end = match state.tools_tab {
+        ToolsTab::Notes => Some(notes_tab(ui, painter, body, panel, tools, state, actions)),
+        ToolsTab::Transform => {
+            transform_tab(ui, painter, body, tools, state, actions);
+            None
+        }
+    };
     if tools.nothing {
         actions.truncate(before);
+    }
+    // The clip's swing, under the Notes tab's tools: the clip's own, so it works whatever the
+    // tools act on.
+    if let Some(end) = notes_end {
+        swing_row(ui, painter, body, end + GAP, tools.address, panel, actions);
     }
     // Escape leaves Quantise for the Notes tab, as it closed the quantise block before (Escape also
     // clears the note selection in the piano roll; both happen, as both are what the key means).
@@ -278,7 +296,7 @@ fn notes_tab(
     tools: &Tools<'_>,
     state: &mut PianoRollState,
     actions: &mut Vec<Action>,
-) {
+) -> f32 {
     let left = body;
     let enabled = tools.count() > 0;
     let mut y = left.top();
@@ -346,6 +364,7 @@ fn notes_tab(
         }
         y += FIELD + BUTTON_GAP;
     }
+    y - BUTTON_GAP
 }
 
 /// Fit to scale for a clip with no scale: a list of the scales, each with its roots; picking one

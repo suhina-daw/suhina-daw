@@ -2,14 +2,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! An audio clip's gain envelope on its waveform in the Arrangement (`docs/spec/clip-panel.md` ›
-//! Gain envelope, ADR 0035): drawn as a line from −70 dB at the clip's bottom to +24 dB at its top,
-//! its points as small squares, while the clip panel's Envelope switch shows it. A double-click on
-//! the clip adds a point, a point is dragged to move it, and a double-click on it (or Delete over
-//! it) removes it; each is one `clip.setEnvelope`.
+//! Gain envelope, ADR 0035).
+//!
+//! 0 dB, the sample as it is, runs across the middle of the clip's body; gain goes up to the
+//! ceiling (Settings › Arrangement › Gain envelope) at its top and down to −70 dB at its bottom,
+//! each half even in dB. With Show gain envelope on, a clip with points shows its line. Edit gain
+//! envelope (Alt+E, or the button left of the clip's name) opens one clip for editing: a click on
+//! its body adds a point, a drag moves one (snapped to the dB grid, or free with Free move), a
+//! double-click on a point or Delete over it removes it; each is one `clip.setEnvelope`. The
+//! waveform is drawn through the envelope, so it shows what is heard as a point is dragged.
 
 use egui::{Id, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::json;
-use suhina_engine::model::{ClipId, GAIN_POINT_RANGE, GainPoint, envelope_db_at};
+use suhina_engine::model::{ClipId, GAIN_POINT_RANGE, GainPoint, db_to_gain, envelope_db_at};
 
 use super::timeline::AudioView;
 use crate::kit::theme;
@@ -23,40 +28,119 @@ const POINT_HIT: f32 = 11.0;
 const MAX_PASSES: usize = 256;
 /// The line is drawn as a point every this many points across.
 const STEP: f32 = 2.0;
+/// Grid lines closer than this, in points, are left out (every other one, and so on).
+const GRID_GAP: f32 = 5.0;
+/// The side of the buttons on the clip: Edit gain envelope by the name, Free move under it.
+pub const BUTTON: f32 = 14.0;
 
-/// The window-wide key of the clip whose envelope is shown.
-fn shown_key() -> Id {
-    Id::unique("clip-envelope-shown")
+/// How the envelope is shown and edited (Settings › Arrangement › Gain envelope).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EnvelopeSettings {
+    /// Clips with points show their envelope while they are not being edited.
+    pub show: bool,
+    /// The highest gain a point can be dragged to, in dB.
+    pub ceiling: f64,
+    /// The dB grid points snap to, in dB.
+    pub step: f64,
+    /// Points move freely, not on the grid, until Free move is switched.
+    pub free: bool,
 }
 
-/// The arrangement clip whose gain envelope is shown for editing, if one is.
-pub fn shown(ctx: &egui::Context) -> Option<ClipId> {
-    ctx.data(|d| d.get_temp::<ClipId>(shown_key()))
+impl Default for EnvelopeSettings {
+    fn default() -> Self {
+        Self { show: true, ceiling: 6.0, step: 1.0, free: false }
+    }
 }
 
-/// Shows `clip`'s envelope for editing, or none.
-pub fn set_shown(ctx: &egui::Context, clip: Option<ClipId>) {
+fn settings_key() -> Id {
+    Id::unique("clip-envelope-settings")
+}
+
+/// Hands the settings to the views drawn this frame.
+pub fn set_settings(ctx: &egui::Context, settings: EnvelopeSettings) {
+    ctx.data_mut(|d| d.insert_temp(settings_key(), settings));
+}
+
+/// The settings the window handed over.
+pub fn settings(ctx: &egui::Context) -> EnvelopeSettings {
+    ctx.data(|d| d.get_temp::<EnvelopeSettings>(settings_key())).unwrap_or_default()
+}
+
+fn free_key() -> Id {
+    Id::unique("clip-envelope-free")
+}
+
+/// Whether points move freely: Free move as last switched, else the setting.
+pub fn free_move(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(free_key())).unwrap_or_else(|| settings(ctx).free)
+}
+
+/// Switches Free move.
+pub fn set_free_move(ctx: &egui::Context, free: bool) {
+    ctx.data_mut(|d| d.insert_temp(free_key(), free));
+}
+
+/// The window-wide key of the clip whose envelope is being edited.
+fn editing_key() -> Id {
+    Id::unique("clip-envelope-editing")
+}
+
+/// The arrangement clip whose gain envelope is being edited, if one is.
+pub fn editing(ctx: &egui::Context) -> Option<ClipId> {
+    ctx.data(|d| d.get_temp::<ClipId>(editing_key()))
+}
+
+/// Opens `clip`'s envelope for editing, or closes it.
+pub fn set_editing(ctx: &egui::Context, clip: Option<ClipId>) {
     ctx.data_mut(|d| {
         if let Some(clip) = clip {
-            d.insert_temp(shown_key(), clip);
+            d.insert_temp(editing_key(), clip);
         } else {
-            d.remove::<ClipId>(shown_key());
+            d.remove::<ClipId>(editing_key());
         }
     });
 }
 
-/// The height of `db` in `rect`: −70 dB at its bottom, +24 dB at its top.
-pub fn y_of(rect: Rect, db: f64) -> f32 {
-    let (low, high) = (*GAIN_POINT_RANGE.start(), *GAIN_POINT_RANGE.end());
-    let t = ((db.clamp(low, high) - low) / (high - low)) as f32;
-    rect.bottom() - t * rect.height()
+/// Edit gain envelope on `clip`, or off when it is on.
+pub fn toggle_editing(ctx: &egui::Context, clip: ClipId) {
+    let on = editing(ctx) == Some(clip);
+    set_editing(ctx, (!on).then_some(clip));
 }
 
-/// The dB at height `y` in `rect`, the inverse of [`y_of`], kept in the range.
-pub fn db_at(rect: Rect, y: f32) -> f64 {
-    let (low, high) = (*GAIN_POINT_RANGE.start(), *GAIN_POINT_RANGE.end());
-    let t = if rect.height() > 0.0 { f64::from((rect.bottom() - y) / rect.height()) } else { 0.0 };
-    (low + t.clamp(0.0, 1.0) * (high - low)).clamp(low, high)
+/// The top of the scale for `points`: the ceiling, or higher when a point is above it (set before
+/// the ceiling was lowered), so the line is drawn where it is heard.
+pub fn top(ceiling: f64, points: &[GainPoint]) -> f64 {
+    let highest = points.iter().map(|p| p.db).fold(f64::NEG_INFINITY, f64::max);
+    ceiling.max(highest).clamp(0.5, *GAIN_POINT_RANGE.end())
+}
+
+/// The height of `db` in `rect`: 0 dB across the middle, `top` at the top and −70 dB at the
+/// bottom, each half even in dB.
+pub fn y_of(rect: Rect, db: f64, top: f64) -> f32 {
+    let low = *GAIN_POINT_RANGE.start();
+    let middle = rect.center().y;
+    let half = rect.height() / 2.0;
+    if db >= 0.0 {
+        middle - (db.min(top) / top.max(1e-9)) as f32 * half
+    } else {
+        middle + (db.max(low) / low) as f32 * half
+    }
+}
+
+/// The dB at height `y` in `rect`, the inverse of [`y_of`], kept between −70 dB and `top`.
+pub fn db_at(rect: Rect, y: f32, top: f64) -> f64 {
+    let low = *GAIN_POINT_RANGE.start();
+    let half = rect.height() / 2.0;
+    if half <= 0.0 {
+        return 0.0;
+    }
+    let t = f64::from((rect.center().y - y) / half).clamp(-1.0, 1.0);
+    if t >= 0.0 { t * top } else { -t * low }
+}
+
+/// `db` on the grid of `step` dB, or to a tenth of a dB when free.
+pub fn snapped(db: f64, step: f64, free: bool) -> f64 {
+    if free || step <= 0.0 { (db * 10.0).round() / 10.0 } else { (db / step).round() * step }
 }
 
 /// How the clip maps its own beats (from its start) to its content's.
@@ -131,6 +215,21 @@ fn draft_key() -> Id {
     Id::unique("clip-envelope-draft")
 }
 
+fn draft(ctx: &egui::Context, clip: ClipId) -> Option<Draft> {
+    ctx.data(|d| d.get_temp::<Draft>(draft_key())).filter(|d| d.clip == clip)
+}
+
+/// `clip`'s envelope as it is drawn now: a point being dragged where it is, else `committed`.
+pub fn points_now(ctx: &egui::Context, clip: ClipId, committed: &[GainPoint]) -> Vec<GainPoint> {
+    draft(ctx, clip).map_or_else(|| committed.to_vec(), |d| d.points)
+}
+
+/// The envelope's gain, as a factor, `elapsed` beats after the clip starts: what the waveform is
+/// drawn through. 1 without points.
+pub fn gain_at(points: &[GainPoint], mapping: &Mapping, elapsed: f64) -> f32 {
+    if points.is_empty() { 1.0 } else { db_to_gain(envelope_db_at(points, mapping.content(elapsed))) as f32 }
+}
+
 /// The points as `clip.setEnvelope` takes them: `[beat, dB, …]`.
 fn flat(points: &[GainPoint]) -> Vec<f64> {
     points.iter().flat_map(|p| [p.beat, p.db]).collect()
@@ -140,9 +239,22 @@ fn set(clip: ClipId, points: &[GainPoint]) -> Action {
     Action::new("clip.setEnvelope", json!({ "clip": clip.0, "points": flat(points) }))
 }
 
-/// Draws `view`'s envelope over the clip in `rect` (`length` beats from its start) and takes the
-/// pointer on its points; `added` is where a double-click on the clip's body was, to add a point.
-/// What changes is pushed to `actions`. The points' squares are named "Envelope point N of NAME".
+/// The dB a point dragged to `pointer` gets, `before` being where it was: on the grid (or free),
+/// below the ceiling, a tenth of the way with Shift.
+fn dragged_db(ui: &Ui, rect: Rect, pointer: Pos2, before: f64, top: f64) -> f64 {
+    let settings = settings(ui.ctx());
+    let target = db_at(rect, pointer.y, top);
+    let fine = ui.input(|i| i.modifiers.shift);
+    let db = if fine { before + (target - before) * 0.1 } else { target };
+    // A point already above the ceiling may stay there, never go higher.
+    let ceiling = settings.ceiling.max(before);
+    snapped(db, settings.step, fine || free_move(ui.ctx())).clamp(*GAIN_POINT_RANGE.start(), ceiling)
+}
+
+/// Draws `view`'s envelope over the clip's body `rect` (`length` beats from its start). While
+/// `edit` is on, the dB grid shows, the body takes the pointer (a click adds a point, a drag adds
+/// one and moves it) and the points can be dragged. What changes is pushed to `actions`. The
+/// points' squares are named "Envelope point N of NAME".
 #[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &Ui,
@@ -152,115 +264,256 @@ pub fn show(
     clip: ClipId,
     name: &str,
     view: &AudioView,
-    added: Option<Pos2>,
+    edit: bool,
     actions: &mut Vec<Action>,
 ) {
     if rect.width() <= 1.0 || rect.height() <= 4.0 || length <= 0.0 {
         return;
     }
+    let settings = settings(ui.ctx());
+    let points = points_now(ui.ctx(), clip, &view.envelope);
+    if !edit && (!settings.show || points.is_empty()) {
+        return;
+    }
     let mapping = Mapping::of(view);
-    let draft = ui.data(|d| d.get_temp::<Draft>(draft_key())).filter(|d| d.clip == clip);
-    let points = draft.as_ref().map_or_else(|| view.envelope.clone(), |d| d.points.clone());
+    let top = top(settings.ceiling, &points);
     let x_of = |elapsed: f64| rect.left() + (elapsed / length) as f32 * rect.width();
-    let elapsed_at = |x: f32| f64::from((x - rect.left()) / rect.width()) * length;
+    let elapsed_at = |x: f32| (f64::from((x - rect.left()) / rect.width()) * length).clamp(0.0, length);
     let ink = theme::accent();
-
-    // The 0 dB line, faint, and the envelope over it.
-    let zero = y_of(rect, 0.0);
-    painter.hline(rect.x_range(), zero, Stroke::new(1.0, ink.gamma_multiply(0.25)));
     let visible = painter.clip_rect().intersect(rect);
+
+    if edit {
+        paint_grid(painter, rect, visible, settings.step, top, ink);
+    }
     let mut line = Vec::new();
     let mut x = visible.left();
     while x <= visible.right() {
         let db = envelope_db_at(&points, mapping.content(elapsed_at(x)));
-        line.push(Pos2::new(x, y_of(rect, db)));
+        line.push(Pos2::new(x, y_of(rect, db, top)));
         x += STEP;
     }
     if line.len() >= 2 {
-        painter.add(egui::Shape::line(line, Stroke::new(1.5, ink)));
+        let width = if edit { 1.5 } else { 1.0 };
+        let stroke = if edit { ink } else { ink.gamma_multiply(0.7) };
+        painter.add(egui::Shape::line(line, Stroke::new(width, stroke)));
+    }
+    if !edit {
+        return;
+    }
+
+    // The body: a click adds a point, a drag adds one and moves it.
+    let body = ui
+        .interact(visible, Id::unique(("clip-envelope-body", clip.0)), Sense::click_and_drag())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    body.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Gain envelope of {name}")));
+    let add_at = |pointer: Pos2| {
+        let beat = mapping.content(elapsed_at(pointer.x));
+        let db = dragged_db(ui, rect, pointer, 0.0, top);
+        let mut more = points.clone();
+        let at = more.partition_point(|p| p.beat <= beat);
+        more.insert(at, GainPoint { beat, db });
+        (more, at)
+    };
+    if body.clicked()
+        && let Some(pointer) = body.interact_pointer_pos()
+    {
+        actions.push(set(clip, &add_at(pointer).0));
+        return;
+    }
+    if body.drag_started_by(egui::PointerButton::Primary)
+        && let Some(pointer) = body.interact_pointer_pos()
+    {
+        let (more, index) = add_at(pointer);
+        ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: more }));
+    }
+    let mut dragging = None;
+    if body.dragged_by(egui::PointerButton::Primary) {
+        dragging = draft(ui.ctx(), clip).map(|d| d.index);
     }
 
     // The points, on every pass they play.
     let mut removed = None;
     for (index, point) in points.iter().enumerate() {
         for (pass, at) in mapping.places(point.beat, length).into_iter().enumerate() {
-            let center = Pos2::new(x_of(at), y_of(rect, point.db));
+            let center = Pos2::new(x_of(at), y_of(rect, point.db, top));
             let hit = Rect::from_center_size(center, Vec2::splat(POINT_HIT));
             if !visible.intersects(hit) {
                 continue;
             }
             let id = Id::unique(("clip-envelope-point", clip.0, index, pass));
-            let response = ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Grab);
+            let response = ui.interact(hit, id, Sense::click_and_drag());
+            let response = if response.dragged() {
+                response.on_hover_cursor(egui::CursorIcon::Grabbing)
+            } else {
+                response.on_hover_cursor(egui::CursorIcon::Grab)
+            };
             let label = format!("Envelope point {} of {name}", index + 1);
             response.widget_info(|| {
                 let mut info = egui::WidgetInfo::labeled(egui::Role::Slider, true, &label);
                 info.value = Some(point.db);
                 info
             });
-            let hovered = response.hovered() || response.dragged();
+            let hovered = response.hovered() || response.dragged() || dragging == Some(index);
             let square = Rect::from_center_size(center, Vec2::splat(if hovered { POINT + 2.0 } else { POINT }));
             painter.rect_filled(square, 0.0, if hovered { ink } else { theme::panel_background() });
             painter.rect_stroke(square, 0.0, Stroke::new(1.0, ink), StrokeKind::Inside);
-            let delete_key = hovered && ui.input(|i| i.key_pressed(egui::Key::Delete));
+            let delete_key = response.hovered() && ui.input(|i| i.key_pressed(egui::Key::Delete));
             if response.double_clicked() || delete_key {
                 removed = Some(index);
                 continue;
             }
-            if response.dragged_by(egui::PointerButton::Primary)
-                && let Some(pointer) = response.interact_pointer_pos()
-            {
-                let fine = ui.input(|i| i.modifiers.shift);
-                let mut moved = points.clone();
-                let before = moved.get(index).copied().unwrap_or(*point);
-                let target_beat = mapping.content(elapsed_at(pointer.x).clamp(0.0, length));
-                let target_db = db_at(rect, pointer.y);
-                let (beat, db) = if fine {
-                    (before.beat + (target_beat - before.beat) * 0.1, before.db + (target_db - before.db) * 0.1)
-                } else {
-                    (target_beat, target_db)
-                };
-                // Kept between its neighbours, so the points stay in order.
-                let low = index.checked_sub(1).and_then(|i| moved.get(i)).map_or(0.0, |p| p.beat);
-                let high = moved.get(index + 1).map_or(f64::INFINITY, |p| p.beat);
-                if let Some(p) = moved.get_mut(index) {
-                    p.beat = beat.clamp(low, high.max(low));
-                    p.db = (db * 10.0).round() / 10.0;
-                }
-                ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: moved }));
+            if response.drag_started_by(egui::PointerButton::Primary) {
+                ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: points.clone() }));
             }
-            if response.drag_stopped_by(egui::PointerButton::Primary) {
-                if let Some(done) = ui.data(|d| d.get_temp::<Draft>(draft_key())).filter(|d| d.clip == clip) {
-                    actions.push(set(clip, &done.points));
-                }
-                ui.data_mut(|d| d.remove::<Draft>(draft_key()));
+            if response.dragged_by(egui::PointerButton::Primary) {
+                dragging = Some(index);
             }
         }
     }
-    // A drag whose point stopped being drawn (its pass moved past the clip's end) never sees its
-    // drag stop: once the button is up, what it moved to is set, and the draft goes.
-    if let Some(done) = ui.data(|d| d.get_temp::<Draft>(draft_key())).filter(|d| d.clip == clip)
+    // The point being dragged follows the pointer: in beat between its neighbours, so the points
+    // stay in order, and in dB on the grid below the ceiling.
+    if let (Some(index), Some(pointer)) = (dragging, ui.input(|i| i.pointer.latest_pos()))
+        && let Some(mut moved) = draft(ui.ctx(), clip).map(|d| d.points)
+    {
+        let before = moved.get(index).copied().unwrap_or(GainPoint { beat: 0.0, db: 0.0 });
+        let fine = ui.input(|i| i.modifiers.shift);
+        let target = mapping.content(elapsed_at(pointer.x));
+        let beat = if fine { before.beat + (target - before.beat) * 0.1 } else { target };
+        let db = dragged_db(ui, rect, pointer, before.db, top);
+        let low = index.checked_sub(1).and_then(|i| moved.get(i)).map_or(0.0, |p| p.beat);
+        let high = moved.get(index + 1).map_or(f64::INFINITY, |p| p.beat);
+        if let Some(p) = moved.get_mut(index) {
+            p.beat = beat.clamp(low, high.max(low));
+            p.db = db;
+        }
+        ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: moved }));
+        // Its value beside the pointer while the button is down.
+        egui::Tooltip::always_open(
+            ui.ctx().clone(),
+            ui.layer_id(),
+            Id::unique(("clip-envelope-value", clip.0)),
+            egui::PopupAnchor::Pointer,
+        )
+        .gap(12.0)
+        .show(|ui| ui.add(egui::Label::new(db_text(db)).wrap_mode(egui::TextWrapMode::Extend)));
+    }
+    // Once the button is up, what the point moved to is set, and the draft goes: also for a drag
+    // whose point stopped being drawn (its pass moved past the clip's end).
+    if let Some(done) = draft(ui.ctx(), clip)
         && !ui.input(|i| i.pointer.any_down())
     {
         ui.data_mut(|d| d.remove::<Draft>(draft_key()));
         actions.push(set(clip, &done.points));
     }
     if let Some(index) = removed {
-        let mut kept = points.clone();
+        let mut kept = points;
         if index < kept.len() {
             kept.remove(index);
         }
         ui.data_mut(|d| d.remove::<Draft>(draft_key()));
         actions.push(set(clip, &kept));
-        return;
     }
-    if let Some(pointer) = added.filter(|p| rect.contains(*p)) {
-        let beat = mapping.content(elapsed_at(pointer.x));
-        let db = (db_at(rect, pointer.y) * 10.0).round() / 10.0;
-        let mut more = points;
-        let at = more.partition_point(|p| p.beat <= beat);
-        more.insert(at, GainPoint { beat, db });
-        actions.push(set(clip, &more));
+}
+
+/// A point's value as it is shown: "+1.5 dB", "0 dB", "−6 dB".
+pub fn db_text(db: f64) -> String {
+    let rounded = (db * 10.0).round() / 10.0;
+    if rounded == 0.0 {
+        "0 dB".into()
+    } else if rounded > 0.0 {
+        format!("+{} dB", trim(rounded))
+    } else {
+        format!("\u{2212}{} dB", trim(-rounded))
     }
+}
+
+fn trim(value: f64) -> String {
+    let text = format!("{value:.1}");
+    text.strip_suffix(".0").map_or(text.clone(), str::to_string)
+}
+
+/// The dB grid while editing: a faint line every `step` dB (fewer where they would crowd), the
+/// 0 dB line stronger.
+fn paint_grid(painter: &egui::Painter, rect: Rect, visible: Rect, step: f64, top: f64, ink: egui::Color32) {
+    let faint = Stroke::new(1.0, ink.gamma_multiply(0.12));
+    let low = *GAIN_POINT_RANGE.start();
+    for (from, to, sign) in [(0.0, top, 1.0), (0.0, low, -1.0)] {
+        let mut last = y_of(rect, from, top);
+        let mut k = 1.0;
+        loop {
+            let db = from + sign * k * step.max(0.1);
+            if (sign > 0.0 && db > to + 1e-9) || (sign < 0.0 && db < to - 1e-9) {
+                break;
+            }
+            let y = y_of(rect, db, top);
+            if (y - last).abs() >= GRID_GAP {
+                painter.hline(visible.x_range(), y, faint);
+                last = y;
+            }
+            k += 1.0;
+        }
+    }
+    painter.hline(visible.x_range(), y_of(rect, 0.0, top), Stroke::new(1.0, ink.gamma_multiply(0.4)));
+}
+
+/// The Edit gain envelope button at `rect` (left of the clip's name), lit while `on`. Returns
+/// whether it was clicked.
+pub fn edit_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, name: &str, on: bool) -> bool {
+    let response = ui
+        .interact(rect, Id::unique(("clip-envelope-edit", clip.0)), Sense::click())
+        .on_hover_text("Edit gain envelope (Alt+E)")
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, format!("Edit gain envelope of {name}"))
+    });
+    let ink = if on { theme::accent() } else { theme::text_secondary() };
+    if on || response.hovered() {
+        painter.rect_filled(rect, 2.0, ink.gamma_multiply(0.18));
+    }
+    // A line with a peak: an envelope.
+    let r = rect.shrink(3.0);
+    let line = vec![
+        Pos2::new(r.left(), r.center().y + 1.0),
+        Pos2::new(r.left() + r.width() * 0.35, r.center().y + 1.0),
+        Pos2::new(r.center().x + 1.0, r.top()),
+        Pos2::new(r.right() - r.width() * 0.2, r.bottom()),
+        Pos2::new(r.right(), r.bottom()),
+    ];
+    painter.add(egui::Shape::line(line, Stroke::new(1.3, ink)));
+    response.clicked()
+}
+
+/// The Free move button at `rect` (under the clip's name while its envelope is edited): lit while
+/// points move freely, off while they snap to the dB grid. Returns whether it was clicked.
+pub fn free_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, free: bool) -> bool {
+    let response = ui
+        .interact(rect, Id::unique(("clip-envelope-free", clip.0)), Sense::click())
+        .on_hover_text(if free { "Free move: points move freely" } else { "Free move: points snap to the dB grid" })
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, free, "Free move"));
+    let ink = if free { theme::accent() } else { theme::text_secondary() };
+    painter.rect_filled(rect, 2.0, theme::panel_background().gamma_multiply(0.85));
+    if free || response.hovered() {
+        painter.rect_filled(rect, 2.0, ink.gamma_multiply(0.18));
+    }
+    let r = rect.shrink(3.0);
+    if free {
+        // Arrows up and down: moves anywhere.
+        let c = r.center();
+        let stroke = Stroke::new(1.3, ink);
+        painter.line_segment([Pos2::new(c.x, r.top()), Pos2::new(c.x, r.bottom())], stroke);
+        for (y, dy) in [(r.top(), 2.5), (r.bottom(), -2.5)] {
+            painter.line_segment([Pos2::new(c.x, y), Pos2::new(c.x - 2.5, y + dy)], stroke);
+            painter.line_segment([Pos2::new(c.x, y), Pos2::new(c.x + 2.5, y + dy)], stroke);
+        }
+    } else {
+        // Rungs: steps of the grid.
+        for k in 0..3 {
+            let y = r.top() + r.height() * (k as f32 + 0.5) / 3.0;
+            painter.hline(r.x_range(), y, Stroke::new(1.0, ink));
+        }
+    }
+    response.clicked()
 }
 
 #[cfg(test)]
@@ -268,12 +521,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decibels_map_to_heights_and_back() {
-        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 94.0));
-        assert_eq!(y_of(rect, 24.0), 0.0);
-        assert_eq!(y_of(rect, -70.0), 94.0);
-        assert!((db_at(rect, y_of(rect, -6.0)) + 6.0).abs() < 1e-4);
-        assert_eq!(db_at(rect, -10.0), 24.0, "kept in the range");
+    fn zero_db_is_the_middle_and_each_half_is_even() {
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0));
+        assert_eq!(y_of(rect, 0.0, 6.0), 50.0);
+        assert_eq!(y_of(rect, 6.0, 6.0), 0.0);
+        assert_eq!(y_of(rect, 3.0, 6.0), 25.0);
+        assert_eq!(y_of(rect, -70.0, 6.0), 100.0);
+        assert_eq!(y_of(rect, -35.0, 6.0), 75.0);
+        assert!((db_at(rect, y_of(rect, -6.0, 6.0), 6.0) + 6.0).abs() < 1e-4);
+        assert!((db_at(rect, y_of(rect, 2.5, 6.0), 6.0) - 2.5).abs() < 1e-4);
+        assert_eq!(db_at(rect, -10.0, 6.0), 6.0, "kept below the top");
+    }
+
+    #[test]
+    fn the_scale_reaches_a_point_above_the_ceiling() {
+        let points = [GainPoint { beat: 0.0, db: 12.0 }];
+        assert_eq!(top(6.0, &points), 12.0);
+        assert_eq!(top(6.0, &[]), 6.0);
+        assert_eq!(top(24.0, &points), 24.0);
+    }
+
+    #[test]
+    fn points_snap_to_the_grid_unless_free() {
+        assert_eq!(snapped(-3.4, 1.0, false), -3.0);
+        assert_eq!(snapped(-3.6, 0.5, false), -3.5);
+        assert_eq!(snapped(-3.44, 1.0, true), -3.4);
+        assert_eq!(db_text(-3.0), "\u{2212}3 dB");
+        assert_eq!(db_text(1.5), "+1.5 dB");
+        assert_eq!(db_text(0.04), "0 dB");
     }
 
     #[test]

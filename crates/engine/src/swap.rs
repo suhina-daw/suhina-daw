@@ -95,6 +95,13 @@ pub(crate) struct SwapState {
     parked: Vec<(u64, Processor)>,
 }
 
+impl SwapState {
+    /// The old graph held until the controller takes it back, if any.
+    pub(crate) fn held_graph(&mut self) -> Option<&mut Box<Graph>> {
+        self.held.as_mut()
+    }
+}
+
 /// The controller's end: builds graphs and takes old ones back to free them.
 pub(crate) struct Updater {
     swaps: Producer<Swap>,
@@ -193,6 +200,10 @@ impl Renderer {
 
     /// Takes the next graph from the queue, once any old graph has gone back. Never blocks.
     pub(crate) fn receive_swap(&mut self) {
+        // The old graph plays on in the fades between ways of playing (`PathFade`) until they end.
+        if self.path_fade_left > 0 && self.swap.held.is_some() {
+            return;
+        }
         if let Some(old) = self.swap.held.take()
             && let Some(retired) = self.swap.retired.as_mut()
             && let Err(rtrb::PushError::Full(old)) = retired.push(old)
@@ -387,10 +398,11 @@ impl Renderer {
             // A swap a few frames off where it was expected keeps the voices rendered for it: the
             // reader drops the frames already past or waits out the few not yet due. Moving them
             // emptied every stretched clip's ring at each edit, and a large project dropped out
-            // while a fader moved.
+            // while a fader moved. The fades from the old voices go on through a move: their
+            // rings play where the playhead is.
             let near = swap.arrangement.is_some_and(|expected| expected.abs_diff(time) <= SWAP_TOLERANCE);
             if !near {
-                self.graph.ahead.move_to(time);
+                self.graph.ahead.move_voices(time);
                 self.graph.launcher.monitor.stretch_moves.fetch_add(1, Ordering::Relaxed);
             }
             self.stretch_fresh = false;
@@ -402,18 +414,73 @@ impl Renderer {
             }
             self.stretch_fresh = true;
         }
+        self.path_fades(&old, old_time, time);
         self.swap.held = Some(old);
         self.receive_swap();
+    }
+
+    /// Finds the clips playing at arrangement frame `time` (`old_time` in `old`, the graph
+    /// swapped out) whose sound goes from the file directly to a stretch voice or back, and fades
+    /// them (`PathFade`). Never allocates: at most [`crate::PATH_FADES`].
+    fn path_fades(&mut self, old: &Graph, old_time: u64, time: u64) {
+        self.path_fades.clear();
+        self.path_fade_left = 0;
+        if !self.transport.running {
+            return;
+        }
+        let playing = |start: u64, end: u64, at: u64| start <= at && at < end;
+        for (new, event) in self.graph.stretch_events.iter().enumerate() {
+            if !playing(event.start, event.end, time) || self.path_fades.len() >= crate::PATH_FADES {
+                continue;
+            }
+            if let Some(old) = old
+                .audio_events
+                .iter()
+                .position(|a| a.key == event.key && playing(a.event.start, a.event.end, old_time))
+            {
+                self.path_fades.push(crate::PathFade::FromDirect { old, new });
+            }
+        }
+        for &new in self.active_audio.get(..self.active_audio_count).unwrap_or_default() {
+            let Some(arranged) = self.graph.audio_events.get(new) else { continue };
+            if self.path_fades.len() >= crate::PATH_FADES {
+                break;
+            }
+            if let Some(old) =
+                old.stretch_events.iter().position(|e| e.key == arranged.key && playing(e.start, e.end, old_time))
+            {
+                self.path_fades.push(crate::PathFade::FromStretch { old, new });
+            }
+        }
+        if !self.path_fades.is_empty() {
+            self.path_fade_at = time;
+            self.path_fade_left = (crate::PATH_FADE_SECONDS * f64::from(self.sample_rate)) as u64;
+        }
     }
 
     /// Publishes the playhead for the controller.
     pub(crate) fn publish_position(&self) {
         let monitor = &self.graph.launcher.monitor;
-        monitor.position.store(self.transport.position, Ordering::Relaxed);
-        monitor.arrangement.store(self.time(), Ordering::Relaxed);
+        let (loop_start, loop_end) = self.loop_frames().unwrap_or((0, 0));
+        monitor.published.fetch_add(1, Ordering::AcqRel);
+        monitor.position.store(self.transport.position, Ordering::Release);
+        monitor.arrangement.store(self.time(), Ordering::Release);
+        monitor.loop_start.store(loop_start, Ordering::Release);
+        monitor.loop_end.store(loop_end, Ordering::Release);
+        monitor.frames_per_beat.store(self.graph.tempo.start_per_beat().to_bits(), Ordering::Release);
+        monitor.published.fetch_add(1, Ordering::AcqRel);
         monitor.stretch_underruns.store(self.stretch_underruns(), Ordering::Relaxed);
-        monitor.frames_per_beat.store(self.graph.tempo.start_per_beat().to_bits(), Ordering::Relaxed);
         monitor.start_beat.store(self.transport.start_beat.to_bits(), Ordering::Relaxed);
+    }
+}
+
+/// The arrangement frame `ahead` frames after `arrangement`, through the wrap of the loop
+/// `looping` (start and end frames) when the playhead is before its end.
+fn after_loop(arrangement: u64, ahead: u64, looping: Option<(u64, u64)>) -> u64 {
+    let at = arrangement.saturating_add(ahead);
+    match looping {
+        Some((start, end)) if end > start && arrangement < end && at >= end => start + (at - end) % (end - start),
+        _ => at,
     }
 }
 
@@ -544,15 +611,13 @@ impl Controller {
         let (at, arrangement) = if monitor.running() {
             let ahead =
                 if graph.ahead.is_empty() { 0 } else { (SWAP_AHEAD_SECONDS * f64::from(updater.sample_rate)) as u64 };
-            let position = monitor.position.load(Ordering::Relaxed);
-            let arrangement = monitor.arrangement.load(Ordering::Relaxed);
+            let (position, arrangement, looping, playing) = monitor.playhead();
             // Arrangement frames are in the playing graph's tempo map; the swap keeps the beat, so
             // the new graph's voices go to the same beat in its own map. At constant tempos the
             // playing graph's frames per beat come from the monitor, exact even with an edit
             // still on its way; a changing map is the last one sent.
-            let at = arrangement + ahead;
+            let at = after_loop(arrangement, ahead, looping);
             let moved = if updater.tempo.is_constant() && graph.tempo.is_constant() {
-                let playing = f64::from_bits(monitor.frames_per_beat.load(Ordering::Relaxed));
                 crate::tempo::rescale_constant(at, playing, graph.tempo.start_per_beat())
             } else {
                 crate::tempo::rescale(at, &updater.tempo, &graph.tempo)
@@ -775,5 +840,20 @@ impl Controller {
     pub fn plugin_time(&self) -> (u64, u32) {
         let m = &self.monitor;
         (m.plugin_blocked.load(Ordering::Relaxed), m.worst_trip.load(Ordering::Relaxed))
+    }
+}
+
+#[cfg(test)]
+mod after_loop_tests {
+    use super::after_loop;
+
+    #[test]
+    fn a_swap_past_the_loop_end_lands_after_the_wrap() {
+        let looping = Some((1_000, 5_000));
+        assert_eq!(after_loop(4_000, 500, looping), 4_500);
+        assert_eq!(after_loop(4_800, 500, looping), 1_300);
+        assert_eq!(after_loop(4_800, 500, None), 5_300);
+        // A playhead past the loop end plays on without wrapping.
+        assert_eq!(after_loop(6_000, 500, looping), 6_500);
     }
 }

@@ -805,9 +805,6 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   than drawn cut in half, and the title goes last.
 - The figures are window state, like the selection itself: not part of the project, not an undo
   step, and gone when the selection is cleared or another clip is shown (› Selecting).
-- **Built ([#1221](https://github.com/suhina-daw/suhina-daw/issues/1221)):** a **Swing** row under
-  **Scale**: the **Global** switch and a slider of the swing the clip plays, the project's or its
-  own ([swing spec](swing.md)).
 - **Later:** quantise while recording (record quantisation) belongs to recording, which has its own
   issue.
 
@@ -923,7 +920,7 @@ button opens its clip in the editor.
   a click on the **MIDI tools** icon in the toolbar (› Layout). Showing or hiding it is window
   state: it is not a command, not saved with the project and not an undo step, and hiding it never
   changes the notes or the selection. `.midi-tools` styles it (its background, its text, and its
-  width from 120 to 480 points, 136 by default). The figures under the Clip part (› Clip column)
+  width from 120 to 480 points, 128 by default). The figures under the Clip part (› Clip column)
   say what the tools act on, and stay while the tools are hidden.
 - Its tab row has two tabs, **Notes** and **Transform** (`.editor-tab`, `#tab-notes` and
   `#tab-transform`; the one shown in `text.primary` over a 2 px `accent` line). Both tabs are the
@@ -931,7 +928,10 @@ button opens its clip in the editor.
 - The tools keep their settings (Transpose's semitones, Humanise's, the velocity tools') until
   Suhina closes, as quantise's are, and the tab and the transformation chosen too.
 - **Notes** tab: Transpose, then the tools two to a row, one click each, over the notes the chip
-  names, one undo step, so the same edit runs from the CLI and MCP (› Commands).
+  names, one undo step, so the same edit runs from the CLI and MCP (› Commands). At its foot the
+  clip's **Swing** row ([#1221](https://github.com/suhina-daw/suhina-daw/issues/1221)): the
+  **Global** switch and a slider of the swing the clip plays, the project's or its own ([swing
+  spec](swing.md)); it changes the clip, whatever the tools act on.
 
   | Tool | Does | Command |
   |---|---|---|
