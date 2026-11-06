@@ -206,6 +206,11 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   changes whenever a clip before it moves, and it is accepted only until the project format's
   next version. The examples below show the positional form where it is still the only way to
   name a slot (`scene`).
+- **Scenes by id.** Every `scene` and `toScene` parameter takes the scene's number, from 0, or
+  `{"id": n}` with its id, which names the scene wherever it has moved since. `project.launcher`
+  lists each scene's `scene_id`, and every result that reports a scene (`scene.insert`,
+  `scene.launch`, `clip.create` in a slot, `launcher.state` and the rest) gives `scene_id` beside
+  `scene` ([clip launching](spec/clip-launching.md) › Editing scenes).
 
 - **Clips.** `project.clips` lists each arrangement clip with its id, start, length and fades
   (lengths, shapes and curves); `clip.move`, `clip.duplicate`, `clip.delete`, `clip.copy`,

@@ -57,7 +57,8 @@ names no other program's behaviour.
 
 ### Into a clip slot
 
-`clip.record` on an **empty slot** of an armed track:
+`clip.record` on an **empty slot** of an armed track (its `scene` a number from 0 or
+`{"id": n}`; the answer, and `record.state`'s takes into a slot, give the `scene_id` too):
 
 1. Recording starts at the next launch boundary (the launch quantisation, as a launch would). If
    the transport is stopped it starts, after the count-in when one is set, and the take starts
