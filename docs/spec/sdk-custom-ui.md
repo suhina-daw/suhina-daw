@@ -339,7 +339,8 @@ The `menu` gesture binds only X to a Choice parameter. A click, Enter or Space o
 of its declared `ui.options`, with the current item selected. Choosing an item dispatches one
 `device.setParam` command with its zero-based option index and ends the gesture. Opening,
 cancelling with Escape, or clicking outside changes no parameter. Popups use the host overlay
-layer and remain visible above or below the authored canvas. `text.format: choice` displays
+layer and remain visible above or below the authored canvas. A popup is the host's standard
+dropdown: its frame is every other menu's, and the theme's `.popup` rules style its items. `text.format: choice` displays
 the bound parameter's current option label instead of a number.
 
 `ValueMenu` uses the same menu gesture with explicit `choices: [[value, label], ...]`.

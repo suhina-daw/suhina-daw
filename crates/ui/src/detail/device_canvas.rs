@@ -2561,17 +2561,17 @@ pub(crate) fn show(
                 } else if key_open {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
-                let frame = egui::Frame::popup(ui.style())
-                    .corner_radius(0)
-                    .fill(color(loaded.palette.panel))
-                    .stroke(Stroke::new(1., color(loaded.palette.accent)));
                 let mut picked = None;
-                popup.frame(frame).show(|ui| {
+                // The standard popup frame, as every other dropdown's; `.popup` styles its rows and
+                // `.button:checked` the chosen one (#1239).
+                popup.show(|ui| {
+                    let _popup = crate::kit::style_class::enter("popup");
+                    let mut styled_ui = crate::kit::style_class::ui(ui);
+                    let ui = &mut *styled_ui;
                     ui.spacing_mut().item_spacing.y = 0.;
                     ui.spacing_mut().scroll =
                         egui::style::ScrollStyle { bar_width: 6., ..egui::style::ScrollStyle::solid() };
                     ui.spacing_mut().interact_size.y = 14.;
-                    ui.visuals_mut().selection.bg_fill = color(loaded.palette.accent);
                     let choices: Vec<(f64, &str)> = if let Some(Widget::ValueMenu { choices }) = &control.widget {
                         choices.iter().map(|(v, label)| (f64::from(*v), label.as_str())).collect()
                     } else {
@@ -2601,11 +2601,7 @@ pub(crate) fn show(
                     egui::ScrollArea::vertical().max_height(240.).show(ui, |ui| {
                         for (value, label) in choices {
                             let selected = p.value.round() == value;
-                            let text = egui::RichText::new(label).size(11.).color(color(if selected {
-                                loaded.palette.accent_text
-                            } else {
-                                loaded.palette.text
-                            }));
+                            let text = egui::RichText::new(label).size(11.);
                             let clicked = if matches!(control.widget, Some(Widget::WaveformMenu)) {
                                 let response = ui.add_sized(
                                     Vec2::new(ui.available_width(), 18.),
@@ -2629,11 +2625,11 @@ pub(crate) fn show(
                                     points,
                                     Stroke::new(
                                         1.,
-                                        color(if selected {
-                                            loaded.palette.accent_text
+                                        if selected {
+                                            ui.visuals().selection.stroke.color
                                         } else {
-                                            loaded.palette.accent
-                                        }),
+                                            crate::kit::theme::accent()
+                                        },
                                     ),
                                 ));
                                 response.clicked()

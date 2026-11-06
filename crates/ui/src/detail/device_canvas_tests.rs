@@ -1061,6 +1061,65 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     let actions = click(&canvas, &time_parameters, Pos2::new(35., 59.));
     assert!(actions.iter().any(|a| a.params["param"] == "sync_left" && a.params["value"] == 1.0));
 }
+/// A canvas dropdown has the standard popup frame, as every other dropdown, and `.popup` styles
+/// its rows (#1239).
+#[test]
+fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
+    use egui_kittest::kittest::Queryable;
+    let graph = super::delay_example::build().unwrap();
+    let parameters: Vec<_> = graph.parameters.iter().map(|p| GraphParameter::new(p, p.default)).collect();
+    let canvas = Arc::new(graph.ui.unwrap());
+    let skin = crate::kit::skin::Skin { css: Some(Arc::from(".popup { color: #00ff00; }")), ..Default::default() };
+    crate::kit::skin::configure(&skin);
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 300.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            let _frame = crate::kit::native_css::frame(ui);
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
+    harness.run();
+    harness.get_by_label("Motion waveform").click();
+    harness.run();
+    harness.run();
+    let row = harness.get_by_label("Wander").rect();
+    let visuals = harness.ctx.global_style().visuals.clone();
+    let frames: Vec<_> = harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.rect.contains_rect(row) && rect.rect != shape.clip_rect => {
+                Some(rect.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    assert!(
+        frames.iter().any(|frame| frame.fill == visuals.window_fill
+            && frame.stroke == visuals.window_stroke
+            && frame.corner_radius == visuals.menu_corner_radius),
+        "the menu's frame is egui's popup frame: {frames:?}"
+    );
+    // A row's text without a colour of its own takes the text shape's.
+    let ink = harness.output().shapes.iter().find_map(|shape| match &shape.shape {
+        egui::Shape::Text(text) if text.galley.job.text == "Wander" => {
+            let own = text.galley.job.sections[0].format.color;
+            Some(if own == Color32::PLACEHOLDER { text.fallback_color } else { own })
+        }
+        _ => None,
+    });
+    assert_eq!(ink, Some(Color32::from_rgb(0, 0xFF, 0)), ".popup's colour reaches a row");
+}
 #[test]
 fn delay_menus_open_choose_and_cancel_without_spurious_edits() {
     use egui_kittest::kittest::Queryable;
