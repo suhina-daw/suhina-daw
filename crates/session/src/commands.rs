@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 use suhina_engine::{ColumnStatus, LaunchCommand, MAX_START_BEAT, Quantization, Queued};
 use suhina_model::{
     ArrangementLane, Channel, ChannelId, ChannelRole, Clip, ClipContent, ClipId, ClipPlace, FadeCurve, FadeShape,
-    LaneData, LoopRange, MAX_GROUP_DEPTH, Marker, MidiPort, Project, Scene, Slot, TimeSignature, Track, TrackId,
+    LaneData, LoopRange, MAX_GROUP_DEPTH, Marker, MidiPort, Project, Scene, SceneId, Slot, TimeSignature, Track,
+    TrackId,
 };
 
 use crate::{
@@ -1313,9 +1314,15 @@ pub(crate) fn opt_scene_at(p: &Project, params: &Value, key: &str) -> Result<Opt
 }
 
 /// The id of the scene at `index`, for results that report a scene beside its number (#1156);
-/// `null` past the end.
+/// `null` past the end, and for a scene with no id (a project whose ids ran out), since `{"id": 0}`
+/// names no scene.
 pub(crate) fn scene_id(p: &Project, index: usize) -> Value {
-    p.launcher.scenes.get(index).map_or(Value::Null, |s| json!(s.id.0))
+    p.launcher.scenes.get(index).map_or(Value::Null, |s| scene_id_value(s.id))
+}
+
+/// A scene's id as a result reports it: `null` when it has none.
+pub(crate) fn scene_id_value(id: SceneId) -> Value {
+    if id.is_some() { json!(id.0) } else { Value::Null }
 }
 
 fn track_name(p: &Project, track: TrackId) -> String {
