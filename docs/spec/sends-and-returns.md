@@ -58,7 +58,7 @@ track delays what it sends, once.
 | Command | Parameters | Does |
 |---|---|---|
 | `track.setSend` | `track`, `return`, `level` (dB, at most 0; `"-inf"` is silence) | Sets the level of the track's send to the return, making the send (after the fader) when there is none |
-| `track.setMixerValues` | `tracks`, `control` (`volume`, `pan` or `send`), `values` (one per track), `return` with `send`, `continue` | Sets each track's volume, pan or send to the return to its own value, one undo step (a drag on a selection) |
+| `track.setMixerValues` | `tracks`, `control` (`volume`, `pan` or `send`), `values` (one per track), `return` with `send`, `gesture` | Sets each track's volume, pan or send to the return to its own value, one undo step (a drag on a selection) |
 | `track.setSendMode` | `track`, `return`, `mode` (`pre` or `post`) | Takes the send before or after the track's volume and pan; makes a silent send when there is none |
 | `return.add` | `name` (optional) | Adds a return after every other track, playing into the main channel; named A Return, B Return and so on when no name is given |
 | `return.remove` | `return` | Removes the return and every send to it |

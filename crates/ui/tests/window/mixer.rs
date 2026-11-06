@@ -147,7 +147,9 @@ fn press_while_playing(harness: &mut Harness<'static, App>, renderer: &mut suhin
 #[test]
 fn a_pan_drag_is_heard_while_dragging_and_is_one_undo_step() {
     let project = drums_alone();
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
@@ -212,7 +214,9 @@ fn a_pan_drag_is_heard_while_dragging_and_is_one_undo_step() {
 #[test]
 fn a_volume_drag_in_the_arrangement_is_heard_while_dragging_and_is_one_undo_step() {
     let project = drums_alone();
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
@@ -744,4 +748,41 @@ fn a_group_s_menu_recolors_the_tracks_inside_it() {
     for inside in ["Drums", "Bass"] {
         assert_eq!(track(&harness, inside).and_then(|t| t.color), colour, "{inside}");
     }
+}
+
+/// Two drags of one knob are two undo steps: the window ends a drag's gesture when the mouse is
+/// let go, though both drags name the same gesture (#1146).
+#[test]
+fn a_drag_ends_on_mouse_up_and_the_next_drag_is_a_step_of_its_own() {
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(drums_alone()), &[]);
+    let mut harness = window_with_step(app, 1.0 / 60.0);
+    let pan = |h: &Harness<'static, App>| h.state().session().map_or(f64::NAN, |s| s.project().channels[0].pan);
+    let knob = harness.get_by_label("Drums pan").rect().center();
+    let drag = |harness: &mut Harness<'static, App>, up: f32| {
+        harness.hover_at(knob);
+        harness.run_steps(1);
+        harness.drag_at(knob);
+        harness.run_steps(1);
+        for step in 1..=3 {
+            harness.hover_at(knob - egui::vec2(0.0, up * step as f32 / 3.0));
+            harness.run_steps(1);
+        }
+        harness.drop_at(knob - egui::vec2(0.0, up));
+        harness.run_steps(2);
+        // Half a second later, as a person would, so the two drags are not a double-click.
+        harness.run_steps(30);
+    };
+    drag(&mut harness, 20.0);
+    let first = pan(&harness);
+    drag(&mut harness, 40.0);
+    let second = pan(&harness);
+    assert!(second > first && first > 0.0, "{first} {second}");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(2);
+    assert_eq!(pan(&harness), first, "one undo takes back the second drag only");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(2);
+    assert_eq!(pan(&harness), 0.0);
 }

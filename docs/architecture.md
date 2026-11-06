@@ -74,7 +74,10 @@ session will hold it and `media` will write its stems (planned, #146). The built
 `device-api` and `device-sdk` depend on no Suhina runtime crate, and each device crate under
 `devices/` depends only on `dsp`, `device-api` and, for the SDK's widgets and runtimes,
 `device-sdk` ([ADR 0004](decisions/0004-built-in-devices.md) › 1).
-The engine runs them in chains on tracks, made through `device-registry`.
+The engine runs them in chains on tracks. It knows no device itself: it makes them with a
+`DeviceFactory` (`device-sdk`) it is handed in `RenderInputs`, and the session hands it the
+registry's (`suhina_session::devices()`, #1147). The engine depends on `device-registry` only for
+its tests.
 
 | Crate | Owns | Depends on |
 |---|---|---|
@@ -84,7 +87,7 @@ The engine runs them in chains on tracks, made through `device-registry`.
 | `als` | Reading Live Sets into `model`, with warnings for what it skips ([spec](spec/als-format.md)). One crate per format later. | model, plugins |
 | `flp` | Reading an FL Studio project's container and event stream: the `FLhd` header, the `FLdt` chunk, events with typed values and strings in the encoding the version event decides, every error with its offset ([spec](spec/flp-format.md)). No model mapping yet ([epic #271](https://github.com/suhina-daw/suhina-daw/issues/271)). | nothing |
 | `project-file` | Suhina's own project file (`.suhina`): the model as versioned JSON, written and read with nothing lost, every value checked; which paths are project files (`is_project_file`); audio paths moved when a project is saved elsewhere ([ADR 0010](decisions/0010-project-files.md), [spec](spec/suhina-format.md)). | model, fs |
-| `engine` | Turns a project into audio: note voices, audio clips with real-time stretching ([ADR 0003](decisions/0003-time-stretching.md)), the clip launcher ([spec](spec/clip-launching.md)), device chains with plug-in slots ([ADR 0004](decisions/0004-built-in-devices.md), [device chains](spec/device-chains.md)), the tempo map ([spec](spec/tempo-map.md)), latency compensation, sends, the preview voice ([ADR 0011](decisions/0011-preview-and-added-audio.md)), live notes and audio input ([ADR 0017](decisions/0017-inputs-and-latency.md)) and the cue bus. Main types: `Renderer`, `Controller`, `PluginProcessor`. Never touches files and never loads a plug-in. | model, stretch, dsp, device-api, device-registry, device-sdk |
+| `engine` | Turns a project into audio: note voices, audio clips with real-time stretching ([ADR 0003](decisions/0003-time-stretching.md)), the clip launcher ([spec](spec/clip-launching.md)), device chains with plug-in slots ([ADR 0004](decisions/0004-built-in-devices.md), [device chains](spec/device-chains.md)), the tempo map ([spec](spec/tempo-map.md)), latency compensation, sends, the preview voice ([ADR 0011](decisions/0011-preview-and-added-audio.md)), live notes and audio input ([ADR 0017](decisions/0017-inputs-and-latency.md)) and the cue bus. Main types: `Renderer`, `Controller`, `PluginProcessor`. Never touches files and never loads a plug-in. | model, stretch, dsp, device-api, device-sdk (`device-registry` for its tests only) |
 | `media` | Finds and decodes a project's audio (symphonia, on all cores) into an `AudioPool`; reads what a browser file is (`info`), MIDI files (`midi`), loop tempo (`tempo`) and Stems files (`stems`, [spec](spec/stems-format.md)); writes what an export renders (`write`: WAV, FLAC, Ogg Vorbis, MP3; [export](spec/export.md) › Formats). | model, mp3 (its tests: devices/compressor, devices/limiter) |
 | `mp3` | MP3 encoding through LAME 3.100's encoder, vendored as C source in `third_party/lame/` and compiled into a static library by the build ([ADR 0029](decisions/0029-mp3-encoder.md)): the settings, the encoder behind a safe API that owns and frees the C handle, the stream's blocks and flush, the LAME tag frame, and putting the finished file's bytes together. Never touches files; encoding runs on an export's path only, never in the audio callback. One of the three crates allowed `unsafe`. | nothing (cc) |
 | `library` | The browser's library ([ADR 0012](decisions/0012-file-library.md)): the folders the user added, an index of their samples, MIDI files, presets and projects kept on disk and up to date (checked at start, then watched with `notify` or polled), search, pins, recent items and colour tags in `browser.json`; finding files by name in the index or by walking a folder (`find`, for missing files). | media, fs |
@@ -93,7 +96,7 @@ The engine runs them in chains on tracks, made through `device-registry`.
 | `separation` | Stem separation ([spec](spec/stem-separation.md), planned in steps): resampling, windowing and adding back a model's output (`resample`, `chunk`, `shape`) around a `Backend`; `BandSplitter` runs the pipeline in tests. No model, runtime or commands yet. | nothing |
 | `theme-package` | Theme packages, `.theme.suhina` ([spec](spec/theme-skins.md#theme-packages)): a theme's folder as a zip with `manifest.json` naming the theme and each file's SHA-256 sum; packs a folder, reads a package and checks it (paths, sizes, sums, a `theme.css` that parses, SVG, PNG and JSON that are what they say) before anything is written. It also reads `theme.json` (`meta`) and checks the swatch for every variant and the thumbnail's 16:9 shape. The app's export and import and `suhina-cli theme` use it. | style |
 | `update` | Updates ([spec](spec/updates.md)): finds the nightly release or the test builds on GitHub (`github`, through the system's `curl` in `net`), compares versions (`version`), and downloads, checks (SHA-256) and installs a build in place of the running one (`install`). | nothing |
-| `session` | An open project with its undo history (`Session`) and the open projects (`Projects`, [ADR 0007](decisions/0007-several-open-projects.md)); the command registry and every command ([ADR 0002](decisions/0002-commands.md), [commands](commands.md)); the `Player` that connects a session to an engine; the audio and MIDI choices (`AudioSystem`, `MidiSystem`); the running plug-ins (`rack`, [plug-in hosting](spec/plugin-hosting.md)); the browser's library and sample map; missing files; backups ([spec](spec/backups.md)). | model, engine, media, library, soundmap, als, project-file, plugins, device-api, device-registry, device-sdk, devices/fm-synth, fs |
+| `session` | An open project with its undo history (`Session`) and the open projects (`Projects`, [ADR 0007](decisions/0007-several-open-projects.md)); the command registry and every command ([ADR 0002](decisions/0002-commands.md), [commands](commands.md)); the `Player` that connects a session to an engine; the audio and MIDI choices (`AudioSystem`, `MidiSystem`); the running plug-ins (`rack`, [plug-in hosting](spec/plugin-hosting.md)); the browser's library and sample map; missing files; backups ([spec](spec/backups.md)). | model, engine, media, library, soundmap, als, project-file, plugins, device-api, device-registry, device-sdk, fs |
 | `automation` | The MCP server over the open projects, file roots for agents (every path a command reads is checked against the read root), the user's browser library, offline WAV rendering ([`mcp.md`](mcp.md)); the desktop app's endpoints, a named pipe or Unix socket per build: one instance per build, and agents working on the window's open projects through a job queue the window runs between frames ([ADR 0028](decisions/0028-mcp-in-the-running-app.md)). | session, engine, media, library |
 | `output` | The audio device: lists hosts and devices (cpal: WASAPI, ASIO, ALSA, PulseAudio, JACK, CoreAudio; WASAPI exclusive through `wasapi`), which host says which devices play, so a device that cannot say its formats yet (a Bluetooth endpoint) is still listed, and `AudioSystem::device_names` lets a list on screen follow what is connected and plays a `Renderer` that renders ahead on a real-time thread into a lock-free ring the device reads, with the main pair and the cue ([spec](spec/cue-output.md)); opens the chosen input ([ADR 0017](decisions/0017-inputs-and-latency.md)). `open_chosen` gives a `Player`; `DeviceOutput` is the session's `AudioSystem`. The only code that opens an audio device. | engine, session, realtime |
 | `midi` | MIDI controllers ([ADR 0017](decisions/0017-inputs-and-latency.md)): lists the system's MIDI input ports and opens them with `midir` (ALSA sequencer, WinMM, CoreMIDI); `parse` turns note on and off, the sustain pedal, every other control change, pitch bend and channel pressure, and all-notes-off, on every channel, into the engine's `LiveEvent`s (#812), and the driver's callback hands them to the session's `LiveInput`. `Midi` is the session's `MidiSystem`. The only code that opens a MIDI device. | engine, session, plugins (the trace log) |
@@ -102,9 +105,9 @@ reads the program's RAM for the control bar and the plug-in hosts' reports their
 | `suhina-cli` | The command line: render, play, mcp (with `--audio`, the MIDI inputs too). | all of the above |
 | `suhina` | The desktop app: opens and makes projects, runs `ui` in an eframe window with `output` playing, starts the browser's library, shows the system's file dialogs (`rfd`), keeps the settings, keymap and theme files, opens the MIDI inputs, builds the macOS menu bar (`mac_menu.rs`), draws see-through backgrounds where the GPU allows (`surface.rs`), and lets agents work on the open projects ([ADR 0028](decisions/0028-mcp-in-the-running-app.md)). | engine, session, media, library, plugins, output, midi, ui, update |
 | `dsp` | Signal-processing blocks for devices: conversions and smoothing, followers, filters (biquads, state-variable, first-order, crossovers), LFOs with tempo sync, waveshapers, oversamplers, delay lines and allpasses, a band spectrum for panels (`Analyser`), a resampler and IR convolution. Real-time safe, panic-free on any input ([ADR 0004](decisions/0004-built-in-devices.md) › 1). | nothing |
-| `device-registry` | Every built-in effect, instrument or MIDI effect by its stable id: makes the device a project's `DeviceKind::Builtin` names, lists them, and gives its panel (`panel`: its parameters from `DeviceInfo` and its layout, or the generated list; ADR 0021 › Amendment: device panels). | device-api, device-sdk, devices/* |
-| `device-api` | The `Device` trait, `DeviceInfo` (an effect, an instrument or a MIDI effect) and `ParamInfo` (plain values in their unit, conversion to knob travel), `NoteEvent` for instruments and MIDI effects (with the clip's `MusicalScale`), and the contract tests every device runs (`conformance::check`, with note checks for instruments and event checks for MIDI effects). | nothing |
-| `device-sdk` | Builds, validates, serializes and prepares data-only `.sd` effect, MIDI-effect and instrument graphs ([ADR 0021](decisions/0021-device-graph-files.md), [format](spec/sd-device-format.md), [nodes](spec/sdk-nodes.md)): the node catalog, polyphonic voice and grain graphs, generated parameter UI and custom panels ([spec](spec/sdk-custom-ui.md)). Graphs run over bounded buffers allocated when prepared, sample-accurate for parameters and MIDI. No executable code in `.sd` files. | dsp, stretch, device-api, serde, serde_json, base64, image (PNG/JPEG), fs |
+| `device-registry` | Every built-in effect, instrument or MIDI effect by its stable id: makes the device a project's `DeviceKind::Builtin` names, lists them, and gives its panel (`panel`: its parameters from `DeviceInfo` and its layout, or the generated list; ADR 0021 › Amendment: device panels). A device that runs a file declares it in its row (`FileKind`): the extension, how it is read off the audio thread (`load_file`, giving an opaque `DeviceAsset`), what a panel calls it and the device that runs it, so the session and the engine never name a device to load its file. | device-api, device-sdk, devices/* |
+| `device-api` | The `Device` trait, `DeviceInfo` (an effect, an instrument or a MIDI effect; a built-in's a `static`, a `.sd` graph's read with it) and `ParamInfo` (plain values in their unit, conversion to knob travel through `ParamShape`), `NoteEvent` for instruments and MIDI effects (with the clip's `MusicalScale`), and the contract tests every device runs (`conformance::check`, with note checks for instruments and event checks for MIDI effects). | nothing |
+| `device-sdk` | Builds, validates, serializes and prepares data-only `.sd` effect, MIDI-effect and instrument graphs ([ADR 0021](decisions/0021-device-graph-files.md), [format](spec/sd-device-format.md), [nodes](spec/sdk-nodes.md)): the node catalog, polyphonic voice and grain graphs, generated parameter UI and custom panels ([spec](spec/sdk-custom-ui.md)). `GraphDevice` runs a graph as a `Device` (#763 › 6). The sample instrument runtime that the `sample` node and the built-in Sampler share (`sample_instrument`). Graphs run over bounded buffers allocated when prepared, sample-accurate for parameters and MIDI. No executable code in `.sd` files. | dsp, stretch, device-api, serde, serde_json, base64, image (PNG/JPEG), fs |
 | `ipc` | Audio blocks between the engine and a plug-in host process: a shared-memory region per instance with the block's events and followers, a doorbell per direction and a deadline; `AudioSource`, a decoded file mapped read only for an ARA plug-in; memory the system frees when the last holder ends (`shm`, `sweep`). One of the two crates allowed `unsafe` ([ADR 0006](decisions/0006-plug-in-hosting.md) › 3, 4, 6; [protocol](spec/plugin-protocol.md)). | nothing |
 | `fs` | Saving a file whole or not at all (`write_atomic`: beside it, flushed, renamed over it), for every crate that saves a file it reads again. | nothing |
 | `realtime` | Real-time priority for the threads that make sound (`RealTime::join`): MMCSS on Windows, `SCHED_FIFO` or rtkit on Linux, the highest priority elsewhere. Says what it got, never fails, and paces a render thread under rtkit's limit ([plug-in hosting](spec/plugin-hosting.md) › Block sync and the deadline). No `unsafe`. | nothing |
@@ -164,7 +167,8 @@ crates/ui/src/
                  timeline_grid (the lines and snapping of the arrangement, piano roll and automation)
   kit/           what every view draws with: theme, widgets, meter, motion, logo, waveform, scroll,
                  surface (backgrounds that set the window's pixels)
-  demo.rs        the demo project the app opens with `--demo` and the tests draw
+  demo           `suhina_session::demo_project`, re-exported: the demo project the app and the
+                 CLI open with `--demo` and the tests draw
 ```
 
 The rule: a view uses `interaction/`, `kit/` and the stored settings, never another view's
@@ -304,7 +308,7 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
    warped clip placement (two stretchers each, so a fresh one takes over before every strong
    onset and transients stay on the grid; ADR 0003), the prepared launcher clips, the
    per-track gains (group and master chain included) and a device chain for each track whose
-   channel holds built-in effects and instruments, made through `device-registry` and prepared (ADR 0004;
+   channel holds built-in effects and instruments, made by the `DeviceFactory` in `RenderInputs` (the session passes `device-registry`'s) and prepared (ADR 0004;
    built-in MIDI effects change the chain's note events before its instrument, and each note
    carries its clip's scale for them; MIDI effects without an instrument after them get the
    engine's sine tones as one, `sine.rs`, ADR 0004 › 14); a
@@ -328,7 +332,9 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
 
 Built-in devices are native Rust crates; `.sd` devices are data-only graphs that `device-sdk`
 prepares ([ADR 0021](decisions/0021-device-graph-files.md), [format](spec/sd-device-format.md),
-[nodes](spec/sdk-nodes.md)). Both run in the same chains ([device chains](spec/device-chains.md)).
+[nodes](spec/sdk-nodes.md)). Both run in the same chains ([device chains](spec/device-chains.md)) as the same
+`Device` trait: a graph is wrapped in `GraphDevice` (#763 › 6), describes itself from its parameters and
+passes the same conformance checks.
 
 Native stereo sources and effects use the device-neutral `NativeNode` contract. The graph
 interpreter stores prepared trait objects; a separate factory and implementation adapters
@@ -376,7 +382,7 @@ do not add DSP graph nodes or run on the audio thread.
 
 Sampler read-head positions travel through the engine meter monitor as atomic values. The UI reads them without accessing audio-thread device state.
 
-Host-owned AudioData implements AsRef<[f32]> so sample instruments share decoded PCM through Device::load_shared_sample without a copy. SDK transient analyses are shared by source identity and format in an off-thread weak cache, which retains no unused source or analysis. Device::set_context receives each block context before its MIDI events, including events at frame zero.
+Host-owned AudioData implements AsRef<[f32]> so sample instruments share decoded PCM through `SampleSource::load_shared_sample` (a device that plays samples gives it from `Device::samples`, #764 › 9) without a copy. SDK transient analyses are shared by source identity and format in an off-thread weak cache, which retains no unused source or analysis. Device::set_context receives each block context before its MIDI events, including events at frame zero.
 
 Registered zero-latency audio effects used as `native_effect` graph kernels resolve in
 `device-registry::compile_graph`. Track chains and nested device groups use this same factory;
@@ -487,6 +493,8 @@ project directly.
 | Plugin | Acts on one of the project's running plug-ins: opens or closes its editor, restarts it (`device.openEditor`, `device.closeEditor`, `device.restart`). | none |
 | Audio | Lists or chooses the audio output (host, device, sample rate, buffer size) and reports on it (`audio.*`, on `Projects`); reopens the active project's output. Lists the MIDI inputs and turns them on or off (`midi.*`). | none |
 
+A snapshot is a copy of the `Project`, but its heavy parts are shared: a device's `state` is `Bytes` and a clip content's `lanes` are `Shared` (`suhina_model::Shared`, an `Arc` copied when an edit changes it), so an undo step costs what the edit touched (#763 › 3; `cargo run --release -p suhina-session --example undo_cost` measures it).
+
 **Edits while playing** ([ADR 0005](decisions/0005-edits-while-playing.md)): after an Edit or
 History command changes the project, the session calls `Player::update`. The controller builds a
 new `Graph` (everything the renderer derives from the project) on the main thread and the audio
@@ -507,8 +515,8 @@ block's notes for the host, which applies them sample-accurately.
 **Automation of built-in and `.sd` devices and the mixer** (#395, [spec](spec/automation.md)):
 `engine::automation` turns lanes into arrangement frames when the graph is built. A chain's
 `DeviceLanes` plan each block's parameter changes with the plug-in events, and the chain splits
-its built-in and `.sd` devices' blocks at them; `.sd` processors receive parameter changes through
-the SDK's allocation-free setters. A track whose mixer has lanes gets a chain (one without devices
+its built-in and `.sd` devices' blocks at them; a `.sd` device takes them through `Device::set_param`
+like a built-in. A track whose mixer has lanes gets a chain (one without devices
 when it has none) whose `MixLanes` give its gains frame by frame after its devices. The graph is
 built from a copy of the project with those mixer parameters at rest (volume 1, centred, not muted),
 so routing and gains need no second path. A manual change to an automated parameter turns its lane

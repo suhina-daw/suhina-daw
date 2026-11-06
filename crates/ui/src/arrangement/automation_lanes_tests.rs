@@ -130,6 +130,7 @@ fn a_built_in_devices_parameters_can_be_shown_with_its_lanes() {
     let mut lane = AutomationLane::new("gain");
     lane.insert(AutomationPoint::new(4.0, -6.0));
     channel.devices.push(suhina_engine::model::Device {
+        id: Default::default(),
         name: "Utility".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,
@@ -173,10 +174,11 @@ fn sd_parameters_are_listed_and_use_their_control_scale() {
     let mut lane = AutomationLane::new("frequency");
     lane.insert(AutomationPoint::new(4.0, 1_000.0));
     channel.devices.push(suhina_engine::model::Device {
+        id: Default::default(),
         name: "Test Filter".into(),
         kind: DeviceKind::Sd,
         enabled: true,
-        state: graph.to_sd().ok().map(String::into_bytes),
+        state: graph.to_sd().ok().map(String::into_bytes).map(Into::into),
         params: Vec::new(),
         automation: vec![lane],
         clip_host: false,
@@ -293,9 +295,11 @@ fn built_in_and_sd_parameters_carry_their_group() {
     graph.connections =
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     let state = graph.to_sd().ok().map(String::into_bytes);
-    channel
-        .devices
-        .push(suhina_engine::model::Device { state, ..suhina_engine::model::Device::new("Test Gain", DeviceKind::Sd) });
+    channel.devices.push(suhina_engine::model::Device {
+        id: Default::default(),
+        state: state.map(Into::into),
+        ..suhina_engine::model::Device::new("Test Gain", DeviceKind::Sd)
+    });
     let params = Params::build(&project);
     let group = |device, id: &str| {
         params.param(track, &LaneKey { device: Some(device), param: id.into() }).and_then(|p| p.group.clone())
@@ -317,4 +321,150 @@ fn an_sd_choice_point_outside_its_range_names_the_nearest_option() {
     assert_eq!(scale.text(2.0), "Square");
     assert_eq!(scale.text(9.0), "Saw");
     assert_eq!(scale.text(-4.0), "Sine");
+}
+
+/// A lane's plot of the default height (a 40-point lane inside its 4-point inset) and geometry
+/// with a beat every 100 points.
+fn plot_and_geometry() -> (Rect, Geometry) {
+    let plot = plot(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, LANE)));
+    let geometry = Geometry {
+        time: egui::Rangef::new(0.0, 1000.0),
+        headers: egui::Rangef::new(0.0, 0.0),
+        visible: Rect::from_min_size(Pos2::ZERO, Vec2::splat(1000.0)),
+        scroll_x: 0.0,
+        beat_width: 100.0,
+        grid: TimelineGrid::new(1.0, 100.0, 4.0, 8.0),
+    };
+    (plot, geometry)
+}
+
+/// A pan lane with one point at `value`, beat 4.
+fn pan_lane(value: f64) -> Param {
+    Param { points: vec![AutomationPoint::new(4.0, value)], ..param(None, None, "Pan") }
+}
+
+/// A drag of the lane's only point, taken hold of at `grab` (beat and place on the lane).
+fn point_drag(grab: (f64, f64)) -> PointDrag {
+    PointDrag {
+        track: TrackId(1),
+        key: LaneKey::mixer(PAN),
+        point: 0,
+        together: vec![0],
+        grab,
+        now: grab,
+        segment: false,
+        body: false,
+    }
+}
+
+/// Within two points of a lane's top or bottom a place on it is the end itself, so a point a
+/// pixel under the top is the maximum (#811); further in it stays where it is.
+#[test]
+fn a_place_next_to_a_lanes_top_or_bottom_is_the_end() {
+    let (plot, _) = plot_and_geometry();
+    assert_eq!(plot.height(), 32.0);
+    let one_point = 1.0 / 32.0;
+    assert_eq!(at_ends(plot, 1.0 - one_point), 1.0);
+    assert_eq!(at_ends(plot, 1.0 - 2.0 * one_point), 1.0);
+    assert_eq!(at_ends(plot, one_point), 0.0);
+    assert_eq!(at_ends(plot, 0.0), 0.0);
+    let inside = 1.0 - 3.0 * one_point;
+    assert_eq!(at_ends(plot, inside), inside);
+    assert_eq!(at_ends(plot, 0.5), 0.5);
+    // A click a point under the top puts in full right, not 47R.
+    assert_eq!(Scale::Pan.text(Scale::Pan.value_at(position_of(plot, plot.top() + 1.0))), "47R");
+    assert_eq!(Scale::Pan.text(Scale::Pan.value_at(at_ends(plot, position_of(plot, plot.top() + 1.0)))), "50R");
+    // The volume's top is its maximum, +6 dB.
+    let top = Scale::Volume.value_at(at_ends(plot, position_of(plot, plot.top() + 1.0)));
+    assert!((gain_to_db(top) - 6.0).abs() < 1e-9);
+    // A plot of no height has no ends to snap to.
+    assert_eq!(at_ends(Rect::from_min_size(Pos2::ZERO, Vec2::new(10.0, 0.0)), 0.99), 0.99);
+}
+
+/// A point dragged to a pixel under the top of a pan lane is let go of at 50R exactly, even when
+/// it was taken hold of off its centre; the value moved there is the one the command sets, the
+/// one the engine plays. A Shift drag, for fine values, does not jump to the end.
+#[test]
+fn a_point_dragged_next_to_the_top_or_bottom_gets_the_end_value() {
+    let (plot, geometry) = plot_and_geometry();
+    let param = pan_lane(0.0);
+    // Taken hold of a little above the point's centre (C, the lane's middle).
+    let grab = (4.0, 0.55);
+    let start = grabbed_at(&param, &point_drag(grab));
+    assert_eq!(start, 0.5);
+    let near_top = position_of(plot, plot.top() + 1.0) + (grab.1 - start);
+    let mut drag = point_drag(grab);
+    drag.now = dragged_to(grab, 4.0, near_top, start, plot, &geometry, false);
+    assert_eq!(dragged_text(&param, &drag, &geometry, false).as_deref(), Some("50R at beat 4"));
+    let action = drop_points(&drag, &param, &geometry, false);
+    assert_eq!(action.as_ref().map(|a| a.id), Some("automation.movePoint"));
+    assert_eq!(action.map(|a| a.params["value"].clone()), Some(json!(1.0)));
+
+    // To the bottom: 50L.
+    let near_bottom = position_of(plot, plot.bottom() - 1.0) + (grab.1 - start);
+    drag.now = dragged_to(grab, 4.0, near_bottom, start, plot, &geometry, false);
+    assert_eq!(dragged_text(&param, &drag, &geometry, false).as_deref(), Some("50L at beat 4"));
+    assert_eq!(drop_points(&drag, &param, &geometry, false).map(|a| a.params["value"].clone()), Some(json!(-1.0)));
+
+    // Further in, the point follows the pointer.
+    let inside = 0.8 + (grab.1 - start);
+    drag.now = dragged_to(grab, 4.0, inside, start, plot, &geometry, false);
+    assert_eq!(dragged_text(&param, &drag, &geometry, false).as_deref(), Some("30R at beat 4"));
+
+    // With Shift the point moves a quarter of the pointer's way and stops short of the end.
+    let fine = point_drag((4.0, 0.5));
+    let mut fine_drag = fine.clone();
+    fine_drag.now = dragged_to(fine.grab, 4.0, 0.5 + 4.0 * 0.47, 0.5, plot, &geometry, true);
+    assert_eq!(dragged_text(&param, &fine_drag, &geometry, false).as_deref(), Some("47R at beat 4"));
+}
+
+/// The text shown while a point is dragged says where it will land, its beat on the grid.
+#[test]
+fn the_text_of_a_dragged_point_has_its_value_and_beat() {
+    let (plot, geometry) = plot_and_geometry();
+    let param = pan_lane(-0.5);
+    let grab = (4.0, 0.25);
+    let mut drag = point_drag(grab);
+    drag.now = dragged_to(grab, 6.2, 0.75, grabbed_at(&param, &drag), plot, &geometry, false);
+    assert_eq!(dragged_text(&param, &drag, &geometry, false).as_deref(), Some("25R at beat 6"));
+    assert_eq!(dragged_text(&param, &drag, &geometry, true).as_deref(), Some("25R at beat 6.2"));
+    let gone = PointDrag { point: 3, ..drag };
+    assert_eq!(dragged_text(&param, &gone, &geometry, false), None);
+}
+
+/// A point taken hold of well off its centre still reaches the lane's ends: the pointer is
+/// measured past the plot's top and bottom, not held in it (#811).
+#[test]
+fn a_point_taken_off_its_centre_reaches_the_lanes_ends() {
+    let (plot, geometry) = plot_and_geometry();
+    let param = pan_lane(0.0);
+    // 4.8 points above the point's centre, near the edge of the square that takes it.
+    let grab = (4.0, place_of(plot, plot.center().y - 4.8));
+    let start = grabbed_at(&param, &point_drag(grab));
+    let mut drag = point_drag(grab);
+    // The pointer at the plot's top would leave the point 4.8 points short of it; above the top
+    // it reaches the end.
+    assert!((place_of(plot, plot.top() - 10.0) - (1.0 + 10.0 / 32.0)).abs() < 1e-9);
+    drag.now = dragged_to(grab, 4.0, place_of(plot, plot.top() - 10.0), start, plot, &geometry, false);
+    assert_eq!(dragged_text(&param, &drag, &geometry, false).as_deref(), Some("50R at beat 4"));
+    assert_eq!(drop_points(&drag, &param, &geometry, false).map(|a| a.params["value"].clone()), Some(json!(1.0)));
+    drag.now = dragged_to(grab, 4.0, place_of(plot, plot.bottom() + 10.0), start, plot, &geometry, false);
+    assert_eq!(dragged_text(&param, &drag, &geometry, false).as_deref(), Some("50L at beat 4"));
+    assert_eq!(drop_points(&drag, &param, &geometry, false).map(|a| a.params["value"].clone()), Some(json!(-1.0)));
+}
+
+/// The text shown while dragging is that of the value the command sets: a pan rounded to a
+/// thousandth (0.2499 sets 0.25, 13R, not the 12R its unrounded value reads), a volume to a
+/// hundredth of a decibel, silent at its floor.
+#[test]
+fn the_dragged_text_is_that_of_the_value_the_command_sets() {
+    assert_eq!(Scale::Pan.text(0.2499), "12R");
+    assert_eq!(Scale::Pan.committed(0.2499), 0.25);
+    assert_eq!(Scale::Pan.text(Scale::Pan.committed(0.2499)), "13R");
+    assert_eq!(Scale::Pan.command(0.2499), json!(0.25));
+    let gain = 10f64.powf(-6.004 / 20.0);
+    assert!((gain_to_db(Scale::Volume.committed(gain)) + 6.0).abs() < 1e-9);
+    assert_eq!(Scale::Volume.committed(0.0), 0.0);
+    assert_eq!(Scale::Volume.committed(10f64.powf(-80.0 / 20.0)), 0.0);
+    assert_eq!(Scale::Mute.committed(0.7), 1.0);
 }

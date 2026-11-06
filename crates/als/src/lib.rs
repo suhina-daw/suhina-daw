@@ -318,7 +318,9 @@ impl Reader {
                 let ramp = previous.is_some_and(|p| p < time);
                 match transport.tempo_changes.last_mut().filter(|p| p.beat == time) {
                     Some(last) if !last.ramp => *last = TempoPoint { beat: time, bpm, ramp: false },
-                    _ => transport.tempo_changes.push(TempoPoint { beat: time, bpm, ramp }),
+                    _ => {
+                        transport.tempo_changes.push(TempoPoint { beat: time, bpm, ramp });
+                    }
                 }
             }
             previous = Some(time.max(0.0));
@@ -544,6 +546,7 @@ impl Reader {
         if let Some((id, name, params)) = devices::builtin(node, &mut |w| self.warn(format!("track {track_name}: {w}")))
         {
             return Some(Device {
+                id: suhina_model::DeviceId::NONE,
                 name: user_name.unwrap_or(name).to_string(),
                 kind: DeviceKind::Builtin(id.into()),
                 enabled,
@@ -581,6 +584,7 @@ impl Reader {
             }
             if let Some(import) = import {
                 let mut device = Device {
+                    id: suhina_model::DeviceId::NONE,
                     name: user_name
                         .unwrap_or(if node.has_tag_name("MultiSampler") { "Sampler" } else { "Simpler" })
                         .to_string(),
@@ -604,6 +608,7 @@ impl Reader {
         if !node.has_tag_name("PluginDevice") {
             self.warn(format!("track {track_name}: Live device {tag} is imported as a placeholder"));
             return Some(Device {
+                id: suhina_model::DeviceId::NONE,
                 name: user_name.unwrap_or(tag).to_string(),
                 kind: DeviceKind::Foreign { format: "als".into(), id: tag.into() },
                 enabled,
@@ -680,10 +685,11 @@ impl Reader {
             }
         };
         Some(Device {
+            id: suhina_model::DeviceId::NONE,
             name: user_name.or(plugin_name).unwrap_or("Plug-in").to_string(),
             kind,
             enabled,
-            state,
+            state: state.map(Into::into),
             params: Vec::new(),
             automation: Vec::new(),
             clip_host: false,
@@ -725,8 +731,8 @@ impl Reader {
 
     /// The set's locators as markers, in beat order (`docs/spec/als-format.md` › Locators). One
     /// without a usable time is left out with a warning.
-    fn markers(&mut self, live_set: Node) -> Vec<Marker> {
-        let Some(locators) = path(live_set, &["Locators", "Locators"]) else { return Vec::new() };
+    fn markers(&mut self, live_set: Node) -> suhina_model::IdList<suhina_model::MarkerId, Marker> {
+        let Some(locators) = path(live_set, &["Locators", "Locators"]) else { return Default::default() };
         let mut arrangement = Arrangement::default();
         for locator in locators.children().filter(|n| n.has_tag_name("Locator")) {
             let name = value(locator, &["Name"]).unwrap_or_default();
@@ -792,7 +798,7 @@ impl Reader {
                     self.warn(format!("track {track}: clip {name:?} imported without a scale: {reason}"));
                     None
                 });
-                LaneData::Notes(self.notes(node, &name, track))
+                LaneData::Notes(self.notes(node, &name, track).into())
             }
             "AudioClip" => LaneData::Audio(self.audio(node, &name, track)?),
             other => {
@@ -815,7 +821,7 @@ impl Reader {
             id,
             name: name.clone(),
             length: loop_end.max(out_marker).max(0.0),
-            lanes: vec![ContentLane { target: None, data }],
+            lanes: vec![ContentLane { target: None, data }].into(),
             extensions: Extensions::default(),
             scale,
         });

@@ -33,7 +33,8 @@ fn project_built() -> Project {
         id: ContentId(id),
         name: format!("Loop {id}"),
         length: 1.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 0.25, 60, 1.0)]) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 0.25, 60, 1.0)].into()) }]
+            .into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -65,7 +66,7 @@ fn project_built() -> Project {
 
 fn playing() -> (Session, Renderer) {
     let project = project();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     (session, renderer)
@@ -93,7 +94,7 @@ fn state(session: &mut Session) -> Value {
 fn launch_settings_are_edits_with_undo_and_show_in_the_grid() {
     let mut session = Session::new(project());
     let slot = |extra: Value| {
-        let mut params = json!({ "track": "Drums", "scene": 1 });
+        let mut params = json!({ "track": "Drums", "scene": 0 });
         params.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
         params
     };
@@ -133,24 +134,24 @@ fn malformed_launch_settings_are_errors_and_change_nothing() {
     let mut session = Session::new(project());
     let before = session.project().clone();
     let bad = [
-        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 1, "mode": "hold" })),
-        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 1, "mode": 2 })),
-        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 1 })),
-        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 1, "mode": "Gate" })),
+        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 99, "mode": "hold" })),
+        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 99, "mode": 2 })),
+        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 99 })),
+        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 99, "mode": "Gate" })),
         // An empty slot, a scene and a track that do not exist.
-        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 2, "mode": "gate" })),
-        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 0, "mode": "gate" })),
+        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 1, "mode": "gate" })),
+        ("clip.setLaunchMode", json!({ "track": "Drums", "scene": 99, "mode": "gate" })),
         ("clip.setLaunchMode", json!({ "track": "Drums", "scene": u64::MAX, "mode": "gate" })),
-        ("clip.setLaunchMode", json!({ "track": "Nope", "scene": 1, "mode": "gate" })),
-        ("clip.setLegato", json!({ "track": "Drums", "scene": 1, "on": "yes" })),
-        ("clip.setLegato", json!({ "track": "Drums", "scene": 1, "on": 1 })),
-        ("clip.setLegato", json!({ "track": "Drums", "scene": 1 })),
-        ("clip.setLegato", json!({ "track": "Bass", "scene": 1, "on": true })),
-        ("clip.setQuantization", json!({ "track": "Drums", "scene": 1, "value": "3 bars" })),
-        ("clip.setQuantization", json!({ "track": "Drums", "scene": 1, "value": 4 })),
-        ("clip.setQuantization", json!({ "track": "Drums", "scene": 1, "value": "" })),
-        ("clip.setQuantization", json!({ "track": "Drums", "scene": 1, "value": "1/32T" })),
-        ("clip.setQuantization", json!({ "track": "Drums", "scene": 1, "value": "1 bar", "extra": 1 })),
+        ("clip.setLaunchMode", json!({ "track": "Nope", "scene": 99, "mode": "gate" })),
+        ("clip.setLegato", json!({ "track": "Drums", "scene": 99, "on": "yes" })),
+        ("clip.setLegato", json!({ "track": "Drums", "scene": 99, "on": 1 })),
+        ("clip.setLegato", json!({ "track": "Drums", "scene": 99 })),
+        ("clip.setLegato", json!({ "track": "Bass", "scene": 99, "on": true })),
+        ("clip.setQuantization", json!({ "track": "Drums", "scene": 99, "value": "3 bars" })),
+        ("clip.setQuantization", json!({ "track": "Drums", "scene": 99, "value": 4 })),
+        ("clip.setQuantization", json!({ "track": "Drums", "scene": 99, "value": "" })),
+        ("clip.setQuantization", json!({ "track": "Drums", "scene": 99, "value": "1/32T" })),
+        ("clip.setQuantization", json!({ "track": "Drums", "scene": 99, "value": "1 bar", "extra": 1 })),
         ("clip.setQuantization", json!({ "track": "Drums", "scene": -1, "value": "1 bar" })),
     ];
     for (id, params) in bad {
@@ -159,19 +160,19 @@ fn malformed_launch_settings_are_errors_and_change_nothing() {
     assert_eq!(session.project(), &before);
     assert!(!session.can_undo());
     // Without a player the release is an error like any transport command.
-    let err = run(&mut session, "clip.release", json!({ "track": "Drums", "scene": 1 })).unwrap_err();
+    let err = run(&mut session, "clip.release", json!({ "track": "Drums", "scene": 0 })).unwrap_err();
     assert!(err.contains("no audio engine"), "{err}");
 }
 
 #[test]
 fn a_gate_clip_plays_while_held() {
     let (mut session, mut renderer) = playing();
-    run(&mut session, "clip.setLaunchMode", json!({ "track": "Drums", "scene": 1, "mode": "gate" })).unwrap();
-    run(&mut session, "clip.setQuantization", json!({ "track": "Drums", "scene": 1, "value": "1/4" })).unwrap();
-    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    run(&mut session, "clip.setLaunchMode", json!({ "track": "Drums", "scene": 0, "mode": "gate" })).unwrap();
+    run(&mut session, "clip.setQuantization", json!({ "track": "Drums", "scene": 0, "value": "1/4" })).unwrap();
+    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 0 })).unwrap();
     advance(&mut renderer, BEAT + BEAT / 2);
-    assert_eq!(state(&mut session)["tracks"][0]["playing"]["scene"], 1);
-    let released = run(&mut session, "clip.release", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    assert_eq!(state(&mut session)["tracks"][0]["playing"]["scene"], 0);
+    let released = run(&mut session, "clip.release", json!({ "track": "Drums", "scene": 0 })).unwrap();
     assert_eq!(released["released"], true);
     advance(&mut renderer, 1);
     assert_eq!(state(&mut session)["tracks"][0]["queued"], "stop");
@@ -183,12 +184,12 @@ fn a_gate_clip_plays_while_held() {
 #[test]
 fn a_toggle_clip_stops_on_the_second_launch() {
     let (mut session, mut renderer) = playing();
-    run(&mut session, "clip.setLaunchMode", json!({ "track": "Drums", "scene": 1, "mode": "toggle" })).unwrap();
-    run(&mut session, "clip.setQuantization", json!({ "track": "Drums", "scene": 1, "value": "none" })).unwrap();
-    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    run(&mut session, "clip.setLaunchMode", json!({ "track": "Drums", "scene": 0, "mode": "toggle" })).unwrap();
+    run(&mut session, "clip.setQuantization", json!({ "track": "Drums", "scene": 0, "value": "none" })).unwrap();
+    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 0 })).unwrap();
     advance(&mut renderer, BEAT);
-    assert_eq!(state(&mut session)["tracks"][0]["playing"]["scene"], 1);
-    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    assert_eq!(state(&mut session)["tracks"][0]["playing"]["scene"], 0);
+    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 0 })).unwrap();
     advance(&mut renderer, 1);
     assert_eq!(state(&mut session)["tracks"][0]["playing"], Value::Null);
 }
@@ -197,19 +198,19 @@ fn a_toggle_clip_stops_on_the_second_launch() {
 fn a_mode_changed_while_held_is_heard_and_a_trigger_ignores_the_release() {
     let (mut session, mut renderer) = playing();
     run(&mut session, "launcher.setQuantization", json!({ "value": "none" })).unwrap();
-    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 0 })).unwrap();
     advance(&mut renderer, BEAT);
     // A trigger clip was never held: the release does nothing.
-    run(&mut session, "clip.release", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    run(&mut session, "clip.release", json!({ "track": "Drums", "scene": 0 })).unwrap();
     advance(&mut renderer, 1);
-    assert_eq!(state(&mut session)["tracks"][0]["playing"]["scene"], 1);
+    assert_eq!(state(&mut session)["tracks"][0]["playing"]["scene"], 0);
     // Pressed as a gate clip, then edited while held (a new graph): the release still stops it.
-    run(&mut session, "clip.setLaunchMode", json!({ "track": "Drums", "scene": 1, "mode": "gate" })).unwrap();
-    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    run(&mut session, "clip.setLaunchMode", json!({ "track": "Drums", "scene": 0, "mode": "gate" })).unwrap();
+    run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 0 })).unwrap();
     advance(&mut renderer, BEAT);
-    run(&mut session, "clip.setLegato", json!({ "track": "Drums", "scene": 1, "on": true })).unwrap();
+    run(&mut session, "clip.setLegato", json!({ "track": "Drums", "scene": 0, "on": true })).unwrap();
     advance(&mut renderer, BEAT);
-    run(&mut session, "clip.release", json!({ "track": "Drums", "scene": 1 })).unwrap();
+    run(&mut session, "clip.release", json!({ "track": "Drums", "scene": 0 })).unwrap();
     advance(&mut renderer, 1);
     assert_eq!(state(&mut session)["tracks"][0]["playing"], Value::Null);
 }

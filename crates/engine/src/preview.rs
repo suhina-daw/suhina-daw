@@ -119,9 +119,9 @@ pub(crate) struct PreviewSender {
 }
 
 impl PreviewSender {
-    pub(crate) fn send(&mut self, command: PreviewCommand) -> Result<(), String> {
+    pub(crate) fn send(&mut self, command: PreviewCommand) -> Result<(), crate::ControlError> {
         self.collect();
-        self.commands.push(command).map_err(|_| "the audio engine has not taken the previous preview yet".to_string())
+        self.commands.push(command).map_err(|_| crate::ControlError::Full("preview"))
     }
 
     pub(crate) fn collect(&mut self) {

@@ -19,7 +19,7 @@ fn steady() -> Arc<AudioData> {
 }
 
 fn stopped(project: &Project) -> Renderer {
-    Renderer::stopped(project, &AudioPool::new(), SR).unwrap()
+    Renderer::stopped(project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap()
 }
 
 #[test]
@@ -105,8 +105,13 @@ fn the_level_of_a_playing_preview_changes_smoothly_and_it_keeps_playing() {
 fn the_preview_is_heard_with_the_transport_running_and_a_track_muted() {
     let mut muted = project(vec![note(0.0, 4.0, 60)], 4.0, Vec::new());
     muted.channels[0].mute = true;
-    let mut renderer =
-        Renderer::build(&muted, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &muted,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     controller.preview_sample(steady(), 0.0, 0.5).unwrap();
     let out = blocks(&mut renderer, 2, 1024);
@@ -179,10 +184,14 @@ fn audio_set_on_the_controller_is_heard_from_the_next_graph() {
     };
     let mut audio_project = project(Vec::new(), 2.0, Vec::new());
     audio_project.tracks[0].content = ContentKinds { notes: false, audio: true };
-    audio_project.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(region) }];
-    let mut renderer =
-        Renderer::build(&audio_project, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING)
-            .unwrap();
+    audio_project.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(region) }].into();
+    let mut renderer = Renderer::build(
+        &audio_project,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     assert_eq!(peak(&blocks(&mut renderer, 4, 1024)), 0.0, "the file is not in the pool yet");
 

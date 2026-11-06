@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A small self-made project: four tracks, two return tracks, six scenes with clips and a
-//! 48-bar arrangement. The app opens it with `--demo`, and the UI tests draw it.
+//! 48-bar arrangement. The app and the CLI open it with `--demo`, and the UI tests draw it
+//! (#764 › 12: one demo project, where the CLI had one of its own).
 
-use suhina_engine::model::{
+use suhina_model::{
     Arrangement, ArrangementLane, Channel, ChannelId, ChannelRole, Clip, ClipContent, ContentId, ContentKinds,
     ContentLane, Extensions, LaneData, Launcher, LauncherColumn, LoopRange, Note, Project, Scene, Send, Slot, Track,
     TrackId, Transport,
@@ -150,7 +151,7 @@ fn content_of(id: ContentId, name: &str, track: u8) -> ClipContent {
         id,
         name: name.into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }].into(),
         extensions: Extensions::default(),
         scale: None,
     }
@@ -179,9 +180,8 @@ fn clip_of(content: ContentId) -> Clip {
 
 /// The demo project with Drums and Bass inside a group, "Group", standing in front of them, as
 /// `track.group` leaves them. The view tests that fold or route a group build on it.
-#[cfg(test)]
-pub(crate) fn grouped_project() -> Project {
-    use suhina_engine::model::{Channel, ChannelId, ChannelRole, Track, TrackId};
+pub fn grouped_project() -> Project {
+    use suhina_model::{Channel, ChannelId, ChannelRole, Track, TrackId};
     let mut project = demo_project();
     let (group, channel) = (TrackId(50), ChannelId(150));
     project.channels.push(Channel {

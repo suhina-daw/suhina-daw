@@ -51,7 +51,7 @@ pub mod channel {
     pub const SWAP: f64 = 3.0;
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("gain", "Gain", (SILENCE_DB as f64, 35.0), 0.0, Unit::Decibels, Scale::Gain),
     ParamInfo::continuous("balance", "Balance", (-1.0, 1.0), 0.0, Unit::Balance, Scale::Linear),
     ParamInfo::continuous("width", "Width", (0.0, 4.0), 1.0, Unit::Percent, Scale::Linear),
@@ -75,7 +75,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::toggle("bassMonoListen", "Bass Mono Listen", false),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "utility", name: "Utility", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("utility", "Utility", Role::Effect, &PARAMS);
 
 pub struct Utility {
     sample_rate: f64,
@@ -210,7 +210,7 @@ impl Utility {
 }
 
 impl Device for Utility {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

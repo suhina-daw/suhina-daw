@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Sample instrument: shared SDK runtime and theme-aware SDK panel.
-pub use suhina_device_sdk::sampler::{INFO, PARAMS, Sampler};
+pub use suhina_device_sdk::sample_instrument::{INFO, PARAMS, Sampler};
 use suhina_device_sdk::ui::*;
 
 /// The sampler's layout: its compact panel, every parameter drawn by the canvas (ADR 0021 ›
@@ -114,6 +114,7 @@ mod tests;
 mod slice_tests {
     use super::*;
     use std::sync::Arc;
+    use suhina_device_api::SampleSource as _;
     use suhina_device_api::{Device, NoteEvent, ProcessContext};
     fn set(s: &mut Sampler, id: &str, value: f64) {
         s.set_param(PARAMS.iter().position(|p| p.id == id).unwrap(), value);
@@ -143,7 +144,7 @@ mod slice_tests {
     }
     #[test]
     fn transient_manual_and_beat_maps_are_bounded() {
-        use suhina_device_sdk::sampler::SliceAnalysis;
+        use suhina_device_sdk::sample_instrument::SliceAnalysis;
         // A hit, then a quieter one after a short silence: both found, a reading before each.
         let source = [vec![0.; 500], vec![1.; 500], vec![0.; 500], vec![0.5; 500]].concat();
         let analysis = SliceAnalysis::new(&source, 1, 1000.);
@@ -170,6 +171,7 @@ mod slice_tests {
 mod dynamic_slice_tests {
     use super::*;
     use std::sync::Arc;
+    use suhina_device_api::SampleSource as _;
     use suhina_device_api::{Device, NoteEvent, ProcessContext};
     #[test]
     fn manual_maps_beyond_legacy_and_midi_limits_crop_and_swap_without_stopping_voices() {

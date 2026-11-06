@@ -91,6 +91,22 @@ impl PreparedMidiEffect {
         Ok(Self { ops, stages, parameters, values, keys: [Key::Unseen; 128] })
     }
 
+    /// The value parameter `index` is set to.
+    pub fn parameter(&self, index: usize) -> Option<f64> {
+        self.values.get(index).copied()
+    }
+
+    /// Forgets the notes it holds, as if just made. Never allocates.
+    pub fn reset(&mut self) {
+        self.keys = [Key::Unseen; 128];
+        for stage in &mut self.stages {
+            match stage {
+                Stage::Transpose(child) => child.reset(),
+                Stage::Events(kernel) => kernel.reset(),
+            }
+        }
+    }
+
     /// Update a prepared transpose control without allocating or rebuilding the graph.
     pub fn set_parameter(&mut self, index: usize, value: f64) {
         if let (Some(parameter), Some(current)) = (self.parameters.get(index), self.values.get_mut(index)) {

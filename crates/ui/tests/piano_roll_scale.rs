@@ -23,7 +23,13 @@ const SIZE: (f32, f32) = (1280.0, 800.0);
 const CLIP: &str = "Clip Walk on Bass at bar 17";
 
 fn engine() -> suhina_engine::Renderer {
-    suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap()
+    suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap()
 }
 
 /// The app at 1280 × 800 with the browser closed and the MIDI tools column open (the default),
@@ -60,7 +66,7 @@ fn edited(h: &Harness<'static, App>) -> (Vec<Note>, Option<Scale>) {
     assert_eq!(clip.start, 64.0);
     let content = project.content(clip.content).unwrap();
     let notes = match &content.lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     };
     (notes, content.scale)

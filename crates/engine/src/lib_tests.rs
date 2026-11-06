@@ -47,13 +47,13 @@ fn project_with(lanes: Vec<ContentLane>, clips: Vec<Clip>, tracks: u32) -> Proje
             id: ContentId(1),
             name: "c".into(),
             length: 4.0,
-            lanes,
+            lanes: lanes.into(),
             extensions: Extensions::default(),
             scale: None,
         }],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane { id: Default::default(), name: "l".into(), track: Some(TrackId(1)), clips }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -82,7 +82,7 @@ fn clip(start: f64, length: f64) -> Clip {
 }
 
 fn untargeted(notes: Vec<Note>) -> Vec<ContentLane> {
-    vec![ContentLane { target: None, data: LaneData::Notes(notes) }]
+    vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }]
 }
 
 /// Frames where sound starts after more than 100 silent frames.
@@ -110,20 +110,20 @@ fn assert_onsets(out: &[f32], expected: &[usize]) {
 
 #[test]
 fn empty_project_renders_nothing() {
-    assert_eq!(render_offline(&Project::default(), SR, 256), Ok(Vec::new()));
+    assert_eq!(render_offline(&Project::default(), SR, 256, suhina_device_registry::factory()), Ok(Vec::new()));
 }
 
 #[test]
 fn note_on_beat_two_starts_half_a_second_in_at_120_bpm() {
     let project = project_with(untargeted(vec![note(1.0, 1.0, 69)]), vec![clip(0.0, 4.0)], 1);
-    let out = render_offline(&project, SR, 256).unwrap();
+    let out = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     assert_onsets(&out, &[SR as usize / 2]);
 }
 
 #[test]
 fn a4_plays_at_440_hz() {
     let project = project_with(untargeted(vec![note(0.0, 2.0, 69)]), vec![clip(0.0, 4.0)], 1);
-    let out = render_offline(&project, SR, 256).unwrap();
+    let out = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     // Count upward zero crossings over one second of the left channel.
     let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[0]).take(SR as usize).collect();
     let crossings = left.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
@@ -137,9 +137,13 @@ fn block_size_does_not_change_the_output() {
         vec![clip(0.0, 4.0)],
         1,
     );
-    let reference = render_offline(&project, SR, 1).unwrap();
+    let reference = render_offline(&project, SR, 1, suhina_device_registry::factory()).unwrap();
     for block in [7, 64, 256, 1024, 100_000] {
-        assert_eq!(render_offline(&project, SR, block).unwrap(), reference, "block {block}");
+        assert_eq!(
+            render_offline(&project, SR, block, suhina_device_registry::factory()).unwrap(),
+            reference,
+            "block {block}"
+        );
     }
 }
 
@@ -147,7 +151,7 @@ fn block_size_does_not_change_the_output() {
 fn muted_channel_is_silent() {
     let mut project = project_with(untargeted(vec![note(0.0, 1.0, 60)]), vec![clip(0.0, 4.0)], 1);
     project.channels[0].mute = true;
-    assert_eq!(render_offline(&project, SR, 256), Ok(Vec::new()));
+    assert_eq!(render_offline(&project, SR, 256, suhina_device_registry::factory()), Ok(Vec::new()));
 }
 
 /// Mutes note `index` of the first content's first note lane.
@@ -166,21 +170,21 @@ fn a_muted_note_is_silent_and_does_not_shorten_the_render() {
     // whether the second note plays or not.
     let notes = vec![note(0.0, 2.0, 60), note(0.5, 0.5, 64)];
     let mut project = project_with(untargeted(notes.clone()), vec![clip(0.0, 4.0)], 1);
-    let all = render_offline(&project, SR, 256).unwrap();
+    let all = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     let ends = SR as usize + (RELEASE_SECONDS * f64::from(SR)) as usize;
     assert_eq!(all.len() / 2, ends);
 
     mute_note(&mut project, 1);
-    let muted = render_offline(&project, SR, 256).unwrap();
+    let muted = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     assert_eq!(muted.len(), all.len(), "muting does not change the render length");
     assert!(rms(&muted, 0, muted.len() / 2) < rms(&all, 0, all.len() / 2));
     // The muted note is not there at all: the render is the other note's alone.
     let alone = project_with(untargeted(vec![notes[0]]), vec![clip(0.0, 4.0)], 1);
-    assert_eq!(muted, render_offline(&alone, SR, 256).unwrap());
+    assert_eq!(muted, render_offline(&alone, SR, 256, suhina_device_registry::factory()).unwrap());
 
     // Every note muted: silence, and no length at all.
     mute_note(&mut project, 0);
-    assert_eq!(render_offline(&project, SR, 256), Ok(Vec::new()));
+    assert_eq!(render_offline(&project, SR, 256, suhina_device_registry::factory()), Ok(Vec::new()));
 }
 
 #[test]
@@ -189,16 +193,20 @@ fn muting_one_of_two_notes_halves_the_sounding_notes() {
     // 1/sqrt(2) of the pair's, and the render is what the other note alone would give.
     let notes = vec![note(0.0, 1.0, 60), note(0.0, 1.0, 64)];
     let mut project = project_with(untargeted(notes.clone()), vec![clip(0.0, 4.0)], 1);
-    let all = render_offline(&project, SR, 256).unwrap();
+    let all = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     let all_rms = rms(&all, 0, all.len() / 2);
 
     mute_note(&mut project, 0);
-    let muted = render_offline(&project, SR, 256).unwrap();
+    let muted = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     let muted_rms = rms(&muted, 0, muted.len() / 2);
     assert!(muted_rms < all_rms * 0.9 && muted_rms > all_rms * 0.5, "one of two voices: {muted_rms} against {all_rms}");
 
     let alone = project_with(untargeted(vec![notes[1]]), vec![clip(0.0, 4.0)], 1);
-    assert_eq!(muted, render_offline(&alone, SR, 256).unwrap(), "the muted note is not there");
+    assert_eq!(
+        muted,
+        render_offline(&alone, SR, 256, suhina_device_registry::factory()).unwrap(),
+        "the muted note is not there"
+    );
     assert_eq!(onsets(&all).len(), 1, "the two notes start together");
 }
 
@@ -206,7 +214,7 @@ fn muting_one_of_two_notes_halves_the_sounding_notes() {
 fn hard_left_pan_leaves_right_silent() {
     let mut project = project_with(untargeted(vec![note(0.0, 1.0, 60)]), vec![clip(0.0, 4.0)], 1);
     project.channels[0].pan = -1.0;
-    let out = render_offline(&project, SR, 256).unwrap();
+    let out = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     assert!(out.as_chunks::<2>().0.iter().all(|f| f[1].abs() < 1e-6));
     assert!(out.as_chunks::<2>().0.iter().any(|f| f[0].abs() > 0.1));
 }
@@ -214,7 +222,7 @@ fn hard_left_pan_leaves_right_silent() {
 #[test]
 fn clip_cuts_notes_at_its_end_and_skips_notes_after_it() {
     let project = project_with(untargeted(vec![note(0.0, 4.0, 60), note(2.0, 1.0, 64)]), vec![clip(0.0, 1.0)], 1);
-    let out = render_offline(&project, SR, 256).unwrap();
+    let out = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     // One beat at 120 bpm plus the release tail.
     let expected = SR as usize / 2 + (RELEASE_SECONDS * f64::from(SR)) as usize;
     assert_eq!(out.len() / 2, expected);
@@ -226,7 +234,7 @@ fn loop_range_repeats_until_the_clip_ends() {
     let mut looped = clip(0.0, 4.0);
     looped.loop_range = Some(LoopRange { start: 0.0, end: 1.0 });
     let project = project_with(untargeted(vec![note(0.0, 0.25, 60)]), vec![looped], 1);
-    let out = render_offline(&project, SR, 256).unwrap();
+    let out = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     let beat = SR as usize / 2;
     assert_onsets(&out, &[0, beat, 2 * beat, 3 * beat]);
 }
@@ -235,51 +243,51 @@ fn loop_range_repeats_until_the_clip_ends() {
 #[test]
 fn shared_pattern_plays_every_placement_on_its_target_tracks() {
     let lanes = vec![
-        ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 0.25, 36)]) },
-        ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.5, 0.25, 38)]) },
+        ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 0.25, 36)].into()) },
+        ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.5, 0.25, 38)].into()) },
     ];
     let mut project = project_with(lanes, vec![clip(0.0, 1.0), clip(2.0, 1.0)], 2);
     project.arrangement.lanes[0].track = None;
-    let out = render_offline(&project, SR, 256).unwrap();
+    let out = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     let beat = SR as usize / 2;
     assert_onsets(&out, &[0, beat / 2, 2 * beat, 2 * beat + beat / 2]);
 
     // Muting track 2 removes only its notes.
     project.channels[1].mute = true;
-    let out = render_offline(&project, SR, 256).unwrap();
+    let out = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     assert_onsets(&out, &[0, 2 * beat]);
 }
 
 #[test]
 fn solo_leaves_only_soloed_tracks_their_groups_and_returns() {
     let lanes = vec![
-        ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 0.25, 36)]) },
-        ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.5, 0.25, 38)]) },
+        ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 0.25, 36)].into()) },
+        ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(0.5, 0.25, 38)].into()) },
     ];
     let mut project = project_with(lanes, vec![clip(0.0, 1.0)], 2);
     project.arrangement.lanes[0].track = None;
     let beat = SR as usize / 2;
 
     project.channels[1].solo = true;
-    assert_onsets(&render_offline(&project, SR, 256).unwrap(), &[beat / 2]);
+    assert_onsets(&render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap(), &[beat / 2]);
 
     // A return track stays audible.
     project.channels[0].role = ChannelRole::Effect;
-    assert_onsets(&render_offline(&project, SR, 256).unwrap(), &[0, beat / 2]);
+    assert_onsets(&render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap(), &[0, beat / 2]);
     project.channels[0].role = ChannelRole::Regular;
 
     // Soloing a group plays what is routed into it.
     project.channels[1].solo = false;
     project.channels.push(Channel { id: ChannelId(5), solo: true, ..project.channels[1].clone() });
     project.channels[0].output = Some(ChannelId(5));
-    assert_onsets(&render_offline(&project, SR, 256).unwrap(), &[0]);
+    assert_onsets(&render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap(), &[0]);
 
     // A track muted is silent though the group it plays into is soloed.
     project.channels[0].mute = true;
-    assert_eq!(render_offline(&project, SR, 256), Ok(Vec::new()));
+    assert_eq!(render_offline(&project, SR, 256, suhina_device_registry::factory()), Ok(Vec::new()));
     // Soloed itself, a muted track is heard: a solo outranks the track's own mute.
     project.channels[0].solo = true;
-    assert_onsets(&render_offline(&project, SR, 256).unwrap(), &[0]);
+    assert_onsets(&render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap(), &[0]);
 }
 
 #[test]
@@ -287,18 +295,23 @@ fn a_muted_track_soloed_is_heard_but_its_muted_clips_are_not() {
     let mut project = project_with(untargeted(vec![note(0.0, 0.25, 36)]), vec![clip(0.0, 1.0), clip(1.0, 1.0)], 2);
     let beat = SR as usize / 2;
     project.channels[0].mute = true;
-    assert_eq!(render_offline(&project, SR, 256), Ok(Vec::new()));
+    assert_eq!(render_offline(&project, SR, 256, suhina_device_registry::factory()), Ok(Vec::new()));
     project.channels[0].solo = true;
-    assert_onsets(&render_offline(&project, SR, 256).unwrap(), &[0, beat]);
+    assert_onsets(&render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap(), &[0, beat]);
     // A clip turned off stays silent.
     project.arrangement.lanes[0].clips[1].enabled = false;
-    assert_onsets(&render_offline(&project, SR, 256).unwrap(), &[0]);
+    assert_onsets(&render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap(), &[0]);
 }
 
 #[test]
 fn group_and_master_volume_and_mute_apply_to_the_tracks_routed_through_them() {
     let mut project = project_with(untargeted(vec![note(0.0, 1.0, 69)]), vec![clip(0.0, 4.0)], 2);
-    let peak = |p: &Project| render_offline(p, SR, 256).unwrap().iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let peak = |p: &Project| {
+        render_offline(p, SR, 256, suhina_device_registry::factory())
+            .unwrap()
+            .iter()
+            .fold(0.0f32, |m, s| m.max(s.abs()))
+    };
     let alone = peak(&project);
 
     // Track 1 plays into channel 2 (a group) at half volume.
@@ -307,7 +320,7 @@ fn group_and_master_volume_and_mute_apply_to_the_tracks_routed_through_them() {
     assert!((peak(&project) - alone * 0.5).abs() < 1e-3);
 
     project.channels[1].mute = true;
-    assert_eq!(render_offline(&project, SR, 256), Ok(Vec::new()));
+    assert_eq!(render_offline(&project, SR, 256, suhina_device_registry::factory()), Ok(Vec::new()));
     project.channels[1].mute = false;
 
     // A master channel scales everything that does not route to it explicitly.
@@ -321,7 +334,7 @@ fn group_and_master_volume_and_mute_apply_to_the_tracks_routed_through_them() {
 
     // A routing cycle is silence, not a hang.
     project.channels[1].output = Some(ChannelId(1));
-    assert_eq!(render_offline(&project, SR, 256), Ok(Vec::new()));
+    assert_eq!(render_offline(&project, SR, 256, suhina_device_registry::factory()), Ok(Vec::new()));
 }
 
 /// A warped audio clip of a sine at `hz` (44.1 kHz file) whose warp markers put `seconds` of
@@ -366,14 +379,30 @@ fn frequency(out: &[f32]) -> f64 {
 fn warped_audio_is_stretched_in_time_not_pitch() {
     // 4 s of audio on 8 beats at 100 bpm lasts 4.8 s: 0.83× speed, pitch must stay 440 Hz.
     let (project, pool) = stretched_project(440.0, 4.0, 8.0, 100.0, StretchMode::Smooth);
-    let out = render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 512, None).unwrap();
+    let out = render_offline_from(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
     assert!((out.len() as f64 / 2.0 / f64::from(SR) - 4.8).abs() < 0.01);
     let hz = frequency(&out);
     assert!((hz - 440.0).abs() < 440.0 * 0.01, "{hz} Hz");
 
     // Re-pitch for comparison: the same clip plays 0.83× lower.
     let (project, pool) = stretched_project(440.0, 4.0, 8.0, 100.0, StretchMode::Repitch);
-    let hz = frequency(&render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
+    let hz = frequency(
+        &render_offline_from(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            512,
+            None,
+        )
+        .unwrap(),
+    );
     assert!((hz - 440.0 * 100.0 / 120.0).abs() < 440.0 * 0.01, "{hz} Hz");
 }
 
@@ -381,16 +410,39 @@ fn warped_audio_is_stretched_in_time_not_pitch() {
 fn rhythmic_mode_keeps_pitch_within_its_range() {
     // 2 s on 4 beats at 126 bpm: 1.05× speed.
     let (project, pool) = stretched_project(330.0, 2.0, 4.0, 126.0, StretchMode::Rhythmic);
-    let hz = frequency(&render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
+    let hz = frequency(
+        &render_offline_from(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            512,
+            None,
+        )
+        .unwrap(),
+    );
     assert!((hz - 330.0).abs() < 330.0 * 0.02, "{hz} Hz");
 }
 
 #[test]
 fn stretched_audio_does_not_depend_on_the_block_size() {
     let (project, pool) = stretched_project(440.0, 2.0, 4.0, 110.0, StretchMode::Smooth);
-    let reference = render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 1024, None).unwrap();
+    let reference = render_offline_from(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        1024,
+        None,
+    )
+    .unwrap();
     for block in [64, 333, 4096] {
-        let out = render_offline_from(&project, RenderInputs::from_audio(&pool), SR, block, None).unwrap();
+        let out = render_offline_from(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            block,
+            None,
+        )
+        .unwrap();
         assert_eq!(out.len(), reference.len());
         let worst = out.iter().zip(&reference).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
         assert!(worst < 1e-4, "block {block}: differs by {worst}");
@@ -403,29 +455,35 @@ fn a_nan_velocity_note_leaves_the_mix_finite() {
     let mut bad = note(0.0, 1.0, 60);
     bad.velocity = f32::NAN;
     let project = project_with(untargeted(vec![bad, note(1.0, 1.0, 69)]), vec![clip(0.0, 4.0)], 1);
-    let out = render_offline(&project, SR, 256).unwrap();
+    let out = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     assert!(out.iter().all(|s| s.is_finite()));
     assert_onsets(&out, &[SR as usize / 2]);
 }
 
 #[test]
 fn hostile_input_returns_errors_or_silence_instead_of_panicking() {
-    assert_eq!(render_offline(&Project::default(), 0, 256).err(), Some(RenderError::InvalidSampleRate(0)));
+    assert_eq!(
+        render_offline(&Project::default(), 0, 256, suhina_device_registry::factory()).err(),
+        Some(RenderError::InvalidSampleRate(0))
+    );
     let mut project = Project::default();
     project.transport.tempo_bpm = f64::NAN;
-    assert!(matches!(render_offline(&project, SR, 256), Err(RenderError::InvalidTempo(_))));
+    assert!(matches!(
+        render_offline(&project, SR, 256, suhina_device_registry::factory()),
+        Err(RenderError::InvalidTempo(_))
+    ));
 
     let weird = vec![note(f64::NAN, 1.0, 60), note(0.0, f64::INFINITY, 127), note(-5.0, 1.0, 0)];
     let mut project = project_with(untargeted(weird), vec![clip(0.0, 1.0)], 1);
     project.channels[0].volume = f64::NAN;
-    assert!(render_offline(&project, SR, 256).is_ok());
+    assert!(render_offline(&project, SR, 256, suhina_device_registry::factory()).is_ok());
 
     let project = project_with(untargeted(vec![note(0.0, 1.0, 60)]), vec![clip(0.0, 1e12)], 1);
     let mut looped = clip(0.0, 1e12);
     looped.loop_range = Some(LoopRange { start: 0.0, end: 1e-9 });
     let looping = project_with(untargeted(vec![note(0.0, 1.0, 60)]), vec![looped], 1);
-    assert!(render_offline(&project, SR, 256).is_ok());
-    assert!(render_offline(&looping, SR, 256).is_ok());
+    assert!(render_offline(&project, SR, 256, suhina_device_registry::factory()).is_ok());
+    assert!(render_offline(&looping, SR, 256, suhina_device_registry::factory()).is_ok());
 }
 
 /// Renders `blocks` blocks of `frames` from `renderer`, calling `between` before each.
@@ -447,9 +505,21 @@ fn max_diff(a: &[f32], b: &[f32]) -> f32 {
 #[test]
 fn a_stretch_worker_renders_the_same_audio_as_offline() {
     let (project, pool) = stretched_project(440.0, 2.0, 4.0, 110.0, StretchMode::Smooth);
-    let mut offline = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut offline = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let reference = blocks(&mut offline, 200, 441, |_| {});
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut worker = renderer.take_stretch_worker().unwrap();
     assert!(renderer.take_stretch_worker().is_none());
     let out = blocks(&mut renderer, 200, 441, |_| worker.fill());
@@ -461,9 +531,21 @@ fn a_stretch_worker_renders_the_same_audio_as_offline() {
 #[test]
 fn a_late_stretch_worker_costs_silence_but_not_timing() {
     let (project, pool) = stretched_project(440.0, 2.0, 4.0, 110.0, StretchMode::Smooth);
-    let mut offline = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut offline = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let reference = blocks(&mut offline, 200, 441, |_| {});
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut worker = renderer.take_stretch_worker().unwrap();
     // The worker stalls for 1 s (blocks 0-99), longer than it renders ahead.
     let out = blocks(&mut renderer, 200, 441, |i| {
@@ -489,7 +571,13 @@ fn a_late_stretch_worker_costs_silence_but_not_timing() {
 #[test]
 fn a_stretch_worker_rewinds_with_the_transport() {
     let (project, pool) = stretched_project(440.0, 2.0, 4.0, 110.0, StretchMode::Smooth);
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut worker = renderer.take_stretch_worker().unwrap();
     let first = blocks(&mut renderer, 50, 441, |_| worker.fill());
     renderer.handle(LaunchCommand::Stop);
@@ -509,8 +597,13 @@ fn a_stretch_worker_rewinds_with_the_transport() {
 fn a_transport_jump_is_not_counted_as_underruns() {
     let (project, pool) = stretched_project(440.0, 2.0, 4.0, 110.0, StretchMode::Smooth);
     for frames in [128, 441] {
-        let mut renderer =
-            Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+        let mut renderer = Renderer::build(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
         let mut worker = renderer.take_stretch_worker().unwrap();
         blocks(&mut renderer, 20, frames, |_| worker.fill());
         renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
@@ -523,9 +616,21 @@ fn a_transport_jump_is_not_counted_as_underruns() {
 #[test]
 fn a_stretch_worker_thread_keeps_up() {
     let (project, pool) = stretched_project(440.0, 2.0, 4.0, 110.0, StretchMode::Smooth);
-    let mut offline = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut offline = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let reference = blocks(&mut offline, 100, 441, |_| {});
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
     // Paced like a device: one 10 ms block every 10 ms.
@@ -553,8 +658,13 @@ fn an_edit_is_heard_from_the_frame_it_takes_over() {
         let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, mode);
         let mut edited = project.clone();
         edited.channels[0].volume = 0.5;
-        let mut renderer =
-            Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+        let mut renderer = Renderer::build(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
         let mut controller = renderer.controller();
         let mut out = blocks(&mut renderer, 50, 480, |_| {});
         controller.update(&edited).unwrap();
@@ -563,14 +673,24 @@ fn an_edit_is_heard_from_the_frame_it_takes_over() {
         let at = if mode == StretchMode::Repitch { 50 * 480 } else { swap_frame(50) };
         let ratio = rms(&out, at, at + 9_600) / rms(&out, at - 9_600, at);
         assert!((ratio - 0.5).abs() < 0.01, "{mode:?}: level changed by {ratio}");
-        let mut original =
-            Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+        let mut original = Renderer::build(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
         let original = blocks(&mut original, 150, 480, |_| {});
         assert_eq!(max_diff(&out[..at * 2], &original[..at * 2]), 0.0, "{mode:?}: before the swap");
         if mode == StretchMode::Repitch {
             // Read directly, the edited project's own render is the oracle, sample for sample.
-            let mut reference =
-                Renderer::build(&edited, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+            let mut reference = Renderer::build(
+                &edited,
+                RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+                SR,
+                RenderOptions::PLAYING,
+            )
+            .unwrap();
             let reference = blocks(&mut reference, 150, 480, |_| {});
             // Sample for sample once the step the edit made has been eased away.
             let eased = (at + crate::DECLICK_FRAMES) * 2;
@@ -586,8 +706,13 @@ fn the_playhead_keeps_its_beat_when_the_tempo_changes() {
     let project = project_with(untargeted(notes), vec![clip(0.0, 8.0)], 1);
     let mut slower = project.clone();
     slower.transport.tempo_bpm = 60.0;
-    let mut renderer =
-        Renderer::build(&project, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 90, 480, |_| {});
     controller.update(&slower).unwrap();
@@ -615,7 +740,7 @@ fn a_launched_clip_plays_on_through_an_edit() {
     edited.transport.time_signature = project.transport.time_signature;
     edited.tracks[0].name = "renamed".into();
     let render = |update: bool| {
-        let mut renderer = Renderer::stopped(&project, &pool, SR).unwrap();
+        let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
         let mut controller = renderer.controller();
         renderer.handle(LaunchCommand::LaunchClip { column: 0, slot: 0 });
         let mut out = blocks(&mut renderer, 50, 480, |_| {});
@@ -636,13 +761,19 @@ fn an_edit_while_stopped_is_heard_from_the_next_start() {
     let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
     let mut edited = project.clone();
     edited.channels[0].volume = 0.25;
-    let mut renderer = Renderer::stopped(&project, &pool, SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
     let mut controller = renderer.controller();
     controller.update(&edited).unwrap();
     blocks(&mut renderer, 2, 480, |_| {});
     renderer.handle(LaunchCommand::Play);
     let out = blocks(&mut renderer, 50, 480, |_| {});
-    let mut reference = Renderer::build(&edited, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut reference = Renderer::build(
+        &edited,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let reference = blocks(&mut reference, 50, 480, |_| {});
     assert_eq!(max_diff(&out, &reference), 0.0);
 }
@@ -652,7 +783,13 @@ fn stretched_clips_carry_on_through_a_tempo_edit() {
     let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
     let mut slower = project.clone();
     slower.transport.tempo_bpm = 95.0;
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
     // Paced like a device, with the worker on its own thread.
@@ -671,9 +808,21 @@ fn a_stretched_clip_keeps_its_voice_through_an_edit_that_leaves_it_alone() {
     // An edit elsewhere (a solo, a fader) sends a new graph: the clip's voice carries over to
     // it, stretcher and ring, so what plays is the same to the sample (#743).
     let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
-    let mut offline = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut offline = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let reference = blocks(&mut offline, 150, 480, |_| {});
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
     let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
@@ -690,9 +839,21 @@ fn an_edit_refused_by_a_full_queue_leaves_the_playing_voices_alone() {
     // Edits faster than the audio thread takes them (a fader drag) fill the swap queue; the
     // one refused must not hand the playing clip's voice to a graph that is then dropped.
     let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
-    let mut offline = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut offline = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let reference = blocks(&mut offline, 150, 480, |_| {});
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
     let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
@@ -727,9 +888,21 @@ fn an_unwarped_clip_carries_on_through_a_tempo_edit() {
     }
     let mut slower = project.clone();
     slower.transport.tempo_bpm = 90.0;
-    let mut original = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut original = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let original = blocks(&mut original, 150, 480, |_| {});
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 50, 480, |_| {});
     controller.update(&slower).unwrap();
@@ -751,7 +924,7 @@ fn the_metronome_clicks_on_every_beat_and_marks_the_bar() {
     // An empty project in 3/4 at 120 bpm: 24 000 frames to a beat.
     let mut project = Project::default();
     project.transport.time_signature = TimeSignature { numerator: 3, denominator: 4 };
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::SetMetronome { on: true, gain: Some(0.5) });
     renderer.handle(LaunchCommand::Play);
     let out = blocks(&mut renderer, 200, 480, |_| {});
@@ -770,7 +943,7 @@ fn the_metronome_clicks_on_every_beat_and_marks_the_bar() {
 #[test]
 fn the_metronome_follows_a_tempo_edit() {
     let mut project = Project::default();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let mut controller = renderer.controller();
     renderer.handle(LaunchCommand::SetMetronome { on: true, gain: Some(0.5) });
     renderer.handle(LaunchCommand::Play);
@@ -788,6 +961,7 @@ fn the_metronome_follows_a_tempo_edit() {
 
 fn with_utility(project: &mut Project) {
     project.channels[0].devices.push(Device {
+        id: Default::default(),
         name: "Utility".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,
@@ -807,7 +981,13 @@ fn edits_sent_together_all_take_the_next_block() {
     half.channels[0].volume = 0.5;
     let mut quarter = project.clone();
     quarter.channels[0].volume = 0.25;
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let first = blocks(&mut renderer, 20, 480, |_| {});
     controller.update(&half).unwrap();
@@ -823,7 +1003,13 @@ fn a_device_parameter_is_heard_from_the_next_block_and_outlives_an_older_graph()
     // Stretched audio, so a new graph waits 0.08 s before it takes over.
     let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
     with_utility(&mut project);
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 50, 480, |_| {});
     // A graph built from the project before the change (here with no other edit), then the
@@ -831,7 +1017,13 @@ fn a_device_parameter_is_heard_from_the_next_block_and_outlives_an_older_graph()
     controller.update(&project).unwrap();
     controller.set_device_param(TrackId(1), 0, 0, -6.0206).unwrap();
     out.extend(blocks(&mut renderer, 100, 480, |_| {}));
-    let mut untouched = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut untouched = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let reference = blocks(&mut untouched, 150, 480, |_| {});
     let now = 50 * 480;
     // Heard from the next block, after the utility's 20 ms ramp...
@@ -853,6 +1045,7 @@ fn a_device_parameter_on_the_main_channel_is_heard_from_the_next_block() {
     project.channels.push(main);
     if let Some(main) = project.channels.last_mut() {
         main.devices.push(Device {
+            id: Default::default(),
             name: "Utility".into(),
             kind: DeviceKind::Builtin("utility".into()),
             enabled: true,
@@ -863,7 +1056,13 @@ fn a_device_parameter_on_the_main_channel_is_heard_from_the_next_block() {
             extensions: Extensions::default(),
         });
     }
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 50, 480, |_| {});
     controller.set_device_param(TrackId::MAIN, 0, 0, -6.0206).unwrap();
@@ -883,8 +1082,13 @@ fn a_mix_edit_reaches_a_sounding_note_at_the_next_block() {
     ] {
         let mut edited = project.clone();
         (edited.channels[0].volume, edited.channels[0].pan, edited.channels[0].mute) = edit;
-        let mut renderer =
-            Renderer::build(&project, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+        let mut renderer = Renderer::build(
+            &project,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
         let mut controller = renderer.controller();
         let before = blocks(&mut renderer, 20, 480, |_| {});
         controller.update(&edited).unwrap();
@@ -924,7 +1128,7 @@ fn a_note_over_the_loop_end_is_released_and_the_loop_plays_its_notes_again() {
     let mut project = project_with(untargeted(notes), vec![clip(0.0, 4.0)], 1);
     project.transport.loop_range = Some(LoopRange { start: 1.0, end: 2.0 });
     project.transport.loop_enabled = true;
-    let mut renderer = Renderer::new(&project, SR).unwrap();
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
     let out = frames(&mut renderer, 4 * beat);
     // Once the cut note's release has faded, each pass is the first pass again.
     let release = (RELEASE_SECONDS * f64::from(SR)) as usize + 1;
@@ -940,15 +1144,15 @@ fn a_note_over_the_loop_end_is_released_and_the_loop_plays_its_notes_again() {
 fn playing_from_a_beat_renders_the_tail_of_the_whole_render() {
     let beat = SR as usize / 2;
     let project = notes_around_beat_two();
-    let whole = render_offline(&project, SR, 256).unwrap();
+    let whole = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
     // Running from the start, jumped to beat 2 before the first block.
-    let mut renderer = Renderer::new(&project, SR).unwrap();
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::SetPosition { beat: 2.0 });
     let tail = frames(&mut renderer, whole.len() / 2 - 2 * beat);
     assert!(tail.iter().any(|s| s.abs() > 0.1));
     assert_eq!(max_diff(&tail, &whole[2 * beat * 2..]), 0.0);
     // Stopped, the marker set, then started: the same.
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::SetPosition { beat: 2.0 });
     renderer.handle(LaunchCommand::Play);
     let started = frames(&mut renderer, whole.len() / 2 - 2 * beat);
@@ -961,8 +1165,15 @@ fn audio_clips_play_from_their_middle_when_the_transport_starts_inside_them() {
     for mode in [StretchMode::Repitch, StretchMode::Smooth] {
         // 4 s on 8 beats at 120 bpm: the clip runs from beat 0 to 8.
         let (project, pool) = stretched_project(440.0, 4.0, 8.0, 120.0, mode);
-        let whole = render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 333, None).unwrap();
-        let mut renderer = Renderer::stopped(&project, &pool, SR).unwrap();
+        let whole = render_offline_from(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            333,
+            None,
+        )
+        .unwrap();
+        let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
         renderer.handle(LaunchCommand::SetPosition { beat: 3.0 });
         renderer.handle(LaunchCommand::Play);
         let tail = frames(&mut renderer, whole.len() / 2 - 3 * beat);
@@ -980,8 +1191,8 @@ fn audio_clips_play_from_their_middle_when_the_transport_starts_inside_them() {
 fn a_jump_while_playing_plays_on_from_the_new_beat() {
     let beat = SR as usize / 2;
     let project = notes_around_beat_two();
-    let whole = render_offline(&project, SR, 256).unwrap();
-    let mut renderer = Renderer::new(&project, SR).unwrap();
+    let whole = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
     // Half a beat in (nothing sounding), jump to beat 2.
     let before = frames(&mut renderer, beat / 2);
     assert_eq!(max_diff(&before, &whole[..beat]), 0.0);
@@ -1000,7 +1211,7 @@ fn a_jump_into_a_sounding_note_plays_it_either_way() {
     let beat = SR as usize / 2;
     let project = notes_around_beat_two();
     let jumped = |command: LaunchCommand| {
-        let mut renderer = Renderer::new(&project, SR).unwrap();
+        let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
         frames(&mut renderer, beat / 2);
         renderer.handle(command);
         // A quarter of a beat: the note from beat 2 to 2.5, nothing else.
@@ -1014,7 +1225,7 @@ fn a_jump_into_a_sounding_note_plays_it_either_way() {
 #[test]
 fn stop_returns_to_the_marker_and_a_second_stop_to_the_start() {
     let project = notes_around_beat_two();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let monitor = renderer.monitor();
     renderer.handle(LaunchCommand::SetPosition { beat: 1.5 });
     frames(&mut renderer, 10);
@@ -1033,7 +1244,7 @@ fn stop_returns_to_the_marker_and_a_second_stop_to_the_start() {
 #[test]
 fn stop_here_moves_the_marker_to_the_playhead() {
     let project = notes_around_beat_two();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let monitor = renderer.monitor();
     renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
     renderer.handle(LaunchCommand::Play);
@@ -1055,7 +1266,7 @@ fn stop_here_moves_the_marker_to_the_playhead() {
 #[test]
 fn hostile_positions_are_ignored_or_kept_in_range() {
     let project = notes_around_beat_two();
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let monitor = renderer.monitor();
     for (beat, want) in [(f64::NAN, 0.0), (-4.0, 0.0), (f64::INFINITY, 0.0), (1e300, MAX_START_BEAT)] {
         renderer.handle(LaunchCommand::SetPosition { beat });
@@ -1070,7 +1281,7 @@ fn hostile_positions_are_ignored_or_kept_in_range() {
 #[test]
 fn the_metronome_waits_for_the_next_beat_after_a_start_between_beats() {
     let project = project_with(untargeted(Vec::new()), vec![clip(0.0, 4.0)], 1);
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     renderer.handle(LaunchCommand::SetMetronome { on: true, gain: Some(0.5) });
     renderer.handle(LaunchCommand::SetPosition { beat: 1.5 });
     renderer.handle(LaunchCommand::Play);
@@ -1081,7 +1292,8 @@ fn the_metronome_waits_for_the_next_beat_after_a_start_between_beats() {
 
 #[test]
 fn the_cpu_load_is_measured_only_in_real_time() {
-    let mut renderer = Renderer::stopped(&Project::default(), &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::stopped(&Project::default(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let controller = renderer.controller();
     let mut block = vec![0.0f32; 2 * 256];
     // Offline renders run flat out: nothing is measured.
@@ -1113,7 +1325,13 @@ fn an_edit_that_jumps_the_sound_is_eased_and_smooth_sound_is_left_exact() {
     let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Repitch);
     let mut silent = project.clone();
     silent.channels[0].volume = 0.0;
-    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 50, 480, |_| {});
     controller.update(&silent).unwrap();
@@ -1141,8 +1359,13 @@ fn a_clip_deleted_or_moved_while_playing_stops_where_it_was() {
             } else {
                 edited.arrangement.lanes[0].clips.clear();
             }
-            let mut renderer =
-                Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+            let mut renderer = Renderer::build(
+                &project,
+                RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+                SR,
+                RenderOptions::PLAYING,
+            )
+            .unwrap();
             let mut controller = renderer.controller();
             controller.run_stretch_worker(&mut renderer).unwrap();
             let pace = |_| std::thread::sleep(std::time::Duration::from_millis(5));
@@ -1154,4 +1377,118 @@ fn a_clip_deleted_or_moved_while_playing_stops_where_it_was() {
             assert!(after < 1e-4, "{mode:?}, moved {moved}: still playing at {after}");
         }
     }
+}
+
+/// The registry, counting the devices it is asked to make.
+struct Counting(std::sync::atomic::AtomicUsize);
+
+impl DeviceFactory for Counting {
+    fn create(&self, id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn suhina_device_api::Device>> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        suhina_device_registry::factory().create(id, asset)
+    }
+
+    fn graph_device(
+        &self,
+        graph: &suhina_device_sdk::DeviceGraph,
+        rate: f64,
+        samples: suhina_device_sdk::sample_resource::PreparedSamples,
+    ) -> Result<suhina_device_sdk::GraphDevice, suhina_device_sdk::DeviceSdkError> {
+        suhina_device_registry::factory().graph_device(graph, rate, samples)
+    }
+
+    fn runs_a_file(&self, id: &str) -> bool {
+        suhina_device_registry::factory().runs_a_file(id)
+    }
+
+    fn preview_instrument(&self) -> Option<Box<dyn suhina_device_api::Device>> {
+        suhina_device_registry::factory().preview_instrument()
+    }
+}
+
+/// The engine makes its devices with the factory it is handed (#1147): the first graph and each
+/// graph a controller builds after an edit.
+#[test]
+fn devices_are_made_by_the_factory_the_renderer_is_given() {
+    let mut project = project_with(Vec::new(), Vec::new(), 1);
+    with_utility(&mut project);
+    let counting = Arc::new(Counting(std::sync::atomic::AtomicUsize::new(0)));
+    let mut renderer = Renderer::new(&project, SR, counting.clone()).unwrap();
+    assert_eq!(counting.0.load(std::sync::atomic::Ordering::Relaxed), 1);
+    let mut controller = renderer.controller();
+    with_utility(&mut project);
+    controller.update(&project).unwrap();
+    assert!(counting.0.load(std::sync::atomic::Ordering::Relaxed) >= 3);
+}
+
+/// A main channel with volume 0.5 and nothing else: its volume reaches every track's gains.
+fn with_main(project: &mut Project, volume: f64) {
+    let mut main = project_with(Vec::new(), Vec::new(), 1).channels.remove(0);
+    (main.id, main.role, main.volume, main.output) = (ChannelId(9), ChannelRole::Master, volume, None);
+    main.devices.clear();
+    project.channels.push(main);
+}
+
+/// The main fader of a main channel with no chain moves as a message, from the next block and
+/// smoothed, without a new graph; the metronome is not scaled by it (#763 › 4).
+#[test]
+fn the_main_fader_moves_while_playing_and_leaves_the_click_alone() {
+    let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
+    with_main(&mut project, 0.5);
+    let play = || {
+        Renderer::build(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap()
+    };
+    let mut renderer = play();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 50, 480, |_| {});
+    controller.set_device_param(TrackId::MAIN, MIXER_VOLUME, 0, 0.25).unwrap();
+    out.extend(blocks(&mut renderer, 50, 480, |_| {}));
+    let now = 50 * 480;
+    let ratio = rms(&out, now + 6_000, now + 12_000) / rms(&out, now - 6_000, now - 1_200);
+    assert!((ratio - 0.5).abs() < 0.02, "{ratio}");
+    // A muted main channel takes a new graph.
+    let mut muted = project.clone();
+    muted.channels.last_mut().unwrap().mute = true;
+    let mut renderer = Renderer::new(&muted, SR, suhina_device_registry::factory()).unwrap();
+    assert!(renderer.controller().set_device_param(TrackId::MAIN, MIXER_VOLUME, 0, 0.25).is_err());
+
+    // The click of an empty project with a main fader moved to silence still sounds.
+    let mut empty = Project::default();
+    with_main(&mut empty, 1.0);
+    let mut renderer = Renderer::stopped(&empty, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    controller.set_device_param(TrackId::MAIN, MIXER_VOLUME, 0, 0.0).unwrap();
+    renderer.handle(LaunchCommand::SetMetronome { on: true, gain: Some(0.5) });
+    renderer.handle(LaunchCommand::Play);
+    let clicks = blocks(&mut renderer, 120, 480, |_| {});
+    assert_eq!(onsets(&clicks), [1, 24_001, 48_001]);
+}
+
+/// A track with a volume lane pans live: its pan is not on the lane (#763 › 4).
+#[test]
+fn a_track_with_a_volume_lane_pans_without_a_new_graph() {
+    let mut project = project_with(Vec::new(), Vec::new(), 1);
+    with_utility(&mut project);
+    project.channels[0].automation = vec![AutomationLane {
+        param: "volume".into(),
+        points: vec![AutomationPoint::new(0.0, 0.8)].into(),
+        enabled: true,
+    }];
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    assert!(controller.set_device_param(TrackId(1), MIXER_PAN, 0, -1.0).is_ok());
+    // A pan lane keeps the knob off the message path.
+    project.channels[0].automation.push(AutomationLane {
+        param: "pan".into(),
+        points: vec![AutomationPoint::new(0.0, 0.0)].into(),
+        enabled: true,
+    });
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
+    assert!(renderer.controller().set_device_param(TrackId(1), MIXER_PAN, 0, -1.0).is_err());
 }

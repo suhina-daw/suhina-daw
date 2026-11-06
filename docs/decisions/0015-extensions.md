@@ -4,7 +4,7 @@ read_when: extension, add-on, optional component, model weights, model licence, 
 type: decision
 status: proposed
 built: no
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 ---
 
 # 0015: Extensions: optional components outside the tree
@@ -88,7 +88,9 @@ requirements for the plug-ins".
   ([ADR 0006](0006-plug-in-hosting.md)); a separation is a long job that answers with a progress
   stream and files, so it may want a simpler request/response channel beside it.
 - **One host binary extensions plug into, or one program per extension** — the `Hosting` choice
-  [ADR 0006](0006-plug-in-hosting.md) already offers for plug-ins.
+  [ADR 0006](0006-plug-in-hosting.md) already offers for plug-ins. For surface-program scripts
+  this has an answer: one program per extension, over one runner binary Suhina ships, written
+  into the amendment of [ADR 0019](0019-midi-controllers-and-mapping.md).
 - **The protocol's version policy**: what an extension that is too new or too old gets, and whether
   Suhina refuses it or runs it with a warning.
 - **Whether the app may open the rights holder's page** for a model the user must obtain itself (a

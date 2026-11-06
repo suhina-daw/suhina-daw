@@ -100,7 +100,7 @@ pub mod param {
     }
 }
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("lowCrossover", "Low Crossover", (30.0, 3_000.0), 120.0, Unit::Hertz, Scale::Logarithmic),
     ParamInfo::continuous(
         "highCrossover",
@@ -156,7 +156,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("meterRange", "Meter Range", (12.0, 96.0), 60.0, Unit::Decibels, Scale::Linear),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "multiband", name: "Multiband", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("multiband", "Multiband", Role::Effect, &PARAMS);
 
 /// `u` through a quadratic knee `width` decibels wide centred on zero: 0 under it, `u` over it.
 #[inline]
@@ -418,7 +418,7 @@ impl Multiband {
 }
 
 impl Device for Multiband {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use suhina_device_registry::DeviceAsset;
+use suhina_device_sdk::{DeviceAsset, DeviceFactory};
 
 pub(crate) fn sample_edits(
     device: &suhina_model::Device,
@@ -44,8 +44,8 @@ impl DeviceAssets {
 }
 
 /// The file path a device's state holds, if it is a path a device with `id` can run.
-pub(crate) fn stored_path<'a>(id: &str, state: Option<&'a [u8]>) -> Option<&'a str> {
-    if !suhina_device_registry::is_file_device(id) {
+pub(crate) fn stored_path<'a>(devices: &dyn DeviceFactory, id: &str, state: Option<&'a [u8]>) -> Option<&'a str> {
+    if !devices.runs_a_file(id) {
         return None;
     }
     std::str::from_utf8(state?).ok().filter(|p| !p.is_empty())

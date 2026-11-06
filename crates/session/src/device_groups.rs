@@ -43,6 +43,19 @@ const PATH_HELP: &str =
 
 /// The device path in `params[key]`, checked against `devices`.
 pub(crate) fn device_path(devices: &[Device], params: &Value, key: &str) -> Result<Vec<usize>, CommandError> {
+    // A device named by its id, `{"id": 7}` (#763 › 1): found where it is now on the track.
+    if let Some(Value::Object(named)) = Args::new(params).value(key) {
+        let id = named
+            .get("id")
+            .and_then(Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| format!("{key} must be {PATH_HELP}, or {{\"id\": a device_id}}"))?;
+        return suhina_model::walk_devices(devices)
+            .into_iter()
+            .find(|(_, d)| d.id.0 == id && d.id.is_some())
+            .map(|(path, _)| path)
+            .ok_or_else(|| format!("the track has no device with device_id {id}; track.devices lists them").into());
+    }
     let path = Args::new(params).value(key).and_then(parse_path).ok_or_else(|| format!("{key} must be {PATH_HELP}"))?;
     if path.len() % 2 == 0 || device_at(devices, &path).is_none() {
         let shown = path.iter().map(ToString::to_string).collect::<Vec<_>>().join("/");
@@ -319,8 +332,8 @@ pub(crate) fn add_group(session: &mut Session, params: &Value) -> Result<Value, 
 }
 
 /// `device.move {track, device, to}`: moves a device before the position `to`, along the chain,
-/// between branches, into or out of a group. Macro mappings to it follow it while it stays in
-/// its group; those whose device leaves the group go.
+/// between branches, into or out of a group. Macro mappings name it by its id, so they follow it
+/// while it stays in its group; those whose device leaves the group go (`drop_lost_mappings`).
 pub(crate) fn move_device(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     edit_chain(session, params, |devices| {
         let from = device_path(devices, params, "device")?;
@@ -346,105 +359,14 @@ pub(crate) fn move_device(session: &mut Session, params: &Value) -> Result<Value
         {
             *step -= 1;
         }
-        let mappings = absolute_mappings(devices);
         let device = container_mut(devices, from_parent).ok_or("the device is missing")?.remove(from_index);
         let list = container_mut(devices, &to_parent).ok_or("the position is missing")?;
         let to_index = to_index.min(list.len());
         list.insert(to_index, device);
         let mut path = to_parent.clone();
         path.push(to_index);
-        let moved = Moved { from: &from, from_parent, from_index, to_parent: &to_parent, to_index, path: &path };
-        place_mappings(devices, mappings, &moved);
         Ok(json!({ "device": path_value(&path) }))
     })
-}
-
-/// Every macro mapping on a track: the path of its group, its macro and the target's absolute
-/// path.
-fn absolute_mappings(devices: &[Device]) -> Vec<(Vec<usize>, usize, Vec<usize>, suhina_model::MacroMapping)> {
-    let mut out = Vec::new();
-    for (path, device) in suhina_model::walk_devices(devices) {
-        let Some(group) = device.as_group() else { continue };
-        for (m, macro_) in group.macros.iter().enumerate() {
-            for mapping in &macro_.mappings {
-                let mut target = path.clone();
-                target.extend(mapping.device.iter().map(|&i| i as usize));
-                out.push((path.clone(), m, target, mapping.clone()));
-            }
-        }
-    }
-    out
-}
-
-/// A device moved from `from` (in the list `from_parent`, at `from_index`) to `path` (in the list
-/// `to_parent`, at `to_index`, counted once it was out of its place).
-struct Moved<'a> {
-    from: &'a [usize],
-    from_parent: &'a [usize],
-    from_index: usize,
-    to_parent: &'a [usize],
-    to_index: usize,
-    path: &'a [usize],
-}
-
-impl Moved<'_> {
-    /// Where the device at `old` (a path from before the move) is now.
-    fn translate(&self, old: &[usize]) -> Vec<usize> {
-        if let Some(rest) = old.strip_prefix(self.from) {
-            let mut new = self.path.to_vec();
-            new.extend_from_slice(rest);
-            return new;
-        }
-        let mut new = old.to_vec();
-        // Out of its list: what came after it moves up; into the new one: what comes after moves
-        // down.
-        if new.starts_with(self.from_parent)
-            && let Some(i) = new.get_mut(self.from_parent.len())
-            && *i > self.from_index
-        {
-            *i -= 1;
-        }
-        if new.starts_with(self.to_parent)
-            && let Some(i) = new.get_mut(self.to_parent.len())
-            && *i >= self.to_index
-        {
-            *i += 1;
-        }
-        new
-    }
-}
-
-/// Puts the mappings `absolute_mappings` took before a move back, each at its group's new place
-/// and pointing at its device's new place: a mapping follows its device while the device stays
-/// inside the group, and goes when it leaves.
-fn place_mappings(
-    devices: &mut [Device],
-    mappings: Vec<(Vec<usize>, usize, Vec<usize>, suhina_model::MacroMapping)>,
-    moved: &Moved<'_>,
-) {
-    let groups: Vec<Vec<usize>> = suhina_model::walk_devices(devices)
-        .into_iter()
-        .filter(|(_, d)| d.as_group().is_some())
-        .map(|(p, _)| p)
-        .collect();
-    for path in groups {
-        if let Some(group) = device_at_mut(devices, &path).and_then(Device::as_group_mut) {
-            for m in &mut group.macros {
-                m.mappings.clear();
-            }
-        }
-    }
-    for (group_path, m, target, mapping) in mappings {
-        let group_path = moved.translate(&group_path);
-        let target = moved.translate(&target);
-        let Some(relative) = target.strip_prefix(group_path.as_slice()).filter(|r| !r.is_empty()) else { continue };
-        let device: Vec<u32> = relative.iter().filter_map(|&i| u32::try_from(i).ok()).collect();
-        if let Some(group) = device_at_mut(devices, &group_path).and_then(Device::as_group_mut)
-            && let Some(macro_) = group.macros.get_mut(m)
-        {
-            macro_.mappings.push(suhina_model::MacroMapping { device, ..mapping });
-        }
-    }
 }
 
 /// `device.duplicate {track, device}`: a copy of a device (a group with everything in it) next
@@ -502,23 +424,8 @@ pub(crate) fn branch_add(session: &mut Session, params: &Value) -> Result<Value,
         };
         let name = name.unwrap_or_else(|| format!("Branch {}", group.branches.len() + 1));
         group.branches.insert(position, Branch::new(name.clone()));
-        shift_mappings(group, position, 1);
         Ok(json!({ "branch": position, "name": name }))
     })
-}
-
-/// Moves the macro mappings into branches from `from` on by `by` (1 after an insert, -1 after a
-/// removal, whose own branch's mappings are gone first).
-fn shift_mappings(group: &mut DeviceGroup, from: usize, by: isize) {
-    for m in &mut group.macros {
-        for mapping in &mut m.mappings {
-            if let Some(branch) = mapping.device.first_mut()
-                && *branch as usize >= from
-            {
-                *branch = branch.saturating_add_signed(by as i32);
-            }
-        }
-    }
 }
 
 /// `branch.remove {track, device, branch}`: removes a branch with its devices and their
@@ -529,12 +436,8 @@ pub(crate) fn branch_remove(session: &mut Session, params: &Value) -> Result<Val
         if group.branches.len() == 1 {
             return Err("a device group keeps at least one branch".into());
         }
+        // Its devices' mappings go after the edit (`drop_lost_mappings`).
         let removed = group.branches.remove(index);
-        let at = u32::try_from(index).unwrap_or(u32::MAX);
-        for m in &mut group.macros {
-            m.mappings.retain(|x| x.device.first() != Some(&at));
-        }
-        shift_mappings(group, index + 1, -1);
         Ok(json!({ "removed": removed.name, "branches": group.branches.len() }))
     })
 }
@@ -548,7 +451,6 @@ pub(crate) fn branch_duplicate(session: &mut Session, params: &Value) -> Result<
         }
         let copy = group.branches.get(index).cloned().ok_or("the branch is missing")?;
         group.branches.insert(index + 1, copy);
-        shift_mappings(group, index + 1, 1);
         Ok(json!({ "branch": index + 1 }))
     })
 }
@@ -575,8 +477,9 @@ pub(crate) fn branch_set_volume(session: &mut Session, params: &Value) -> Result
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;
         branch.volume = volume;
-        Ok(json!({ "branch": index, "volume_db": crate::commands::to_db(volume) }))
+        Ok((index, json!({ "branch": index, "volume_db": crate::commands::to_db(volume) })))
     })
+    .map(|(index, value)| live_branch(session, params, index, suhina_engine::BranchValue::Volume, volume, value))
 }
 
 /// `branch.setPan {track, device, branch, pan}`.
@@ -589,8 +492,9 @@ pub(crate) fn branch_set_pan(session: &mut Session, params: &Value) -> Result<Va
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;
         branch.pan = pan;
-        Ok(json!({ "branch": index, "pan": pan }))
+        Ok((index, json!({ "branch": index, "pan": pan })))
     })
+    .map(|(index, value)| live_branch(session, params, index, suhina_engine::BranchValue::Pan, pan, value))
 }
 
 /// `branch.setMute {track, device, branch, mute}`: its devices keep running.
@@ -600,7 +504,10 @@ pub(crate) fn branch_set_mute(session: &mut Session, params: &Value) -> Result<V
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;
         branch.mute = mute;
-        Ok(json!({ "branch": index, "mute": mute }))
+        Ok((index, json!({ "branch": index, "mute": mute })))
+    })
+    .map(|(index, value)| {
+        live_branch(session, params, index, suhina_engine::BranchValue::Mute, f64::from(u8::from(mute)), value)
     })
 }
 
@@ -611,8 +518,38 @@ pub(crate) fn branch_set_solo(session: &mut Session, params: &Value) -> Result<V
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;
         branch.solo = solo;
-        Ok(json!({ "branch": index, "solo": solo }))
+        Ok((index, json!({ "branch": index, "solo": solo })))
     })
+    .map(|(index, value)| {
+        live_branch(session, params, index, suhina_engine::BranchValue::Solo, f64::from(u8::from(solo)), value)
+    })
+}
+
+/// After a branch's volume, pan, mute or solo changed: a playing engine takes it as a message,
+/// as a track's fader is, for a group at the top of its chain or inside another (#763 › 4). The
+/// message names the group by its number ([`suhina_engine::group_number`]). Hands `value`, the
+/// command's result, back.
+fn live_branch(
+    session: &mut Session,
+    params: &Value,
+    branch: usize,
+    what: suhina_engine::BranchValue,
+    level: f64,
+    value: Value,
+) -> Value {
+    let Ok(track) = crate::commands::track_or_main_id(&session.project, params) else { return value };
+    let Some(channel) = session.project.channel_of_track(track) else { return value };
+    if let Ok(path) = device_path(&channel.devices, params, "device")
+        && let Some(group) = suhina_engine::group_number(&channel.devices, &path)
+    {
+        session.sync.mixer_edits = vec![crate::ParamEdit {
+            track,
+            device: suhina_engine::MIXER_BRANCH,
+            param: suhina_engine::branch_param(group, branch, what),
+            value: level,
+        }];
+    }
+    value
 }
 
 /// A device group as `track.devices` lists it: its parameters, branches (each with its devices,
@@ -658,7 +595,15 @@ pub(crate) fn group_json(
             let mappings: Vec<Value> = macro_
                 .mappings
                 .iter()
-                .map(|x| json!({ "device": x.device.iter().map(ToString::to_string).collect::<Vec<_>>().join("/"), "param": x.param, "min": x.min, "max": x.max }))
+                .map(|x| {
+                    let path = group.mapped_path(x.device).unwrap_or_default();
+                    let path = path.iter().map(ToString::to_string).collect::<Vec<_>>().join("/");
+                    let id = match x.device {
+                        suhina_model::MappedDevice::Id(id) => Some(id.0),
+                        suhina_model::MappedDevice::Nth(_) => None,
+                    };
+                    json!({ "device": path, "device_id": id, "param": x.param, "min": x.min, "max": x.max })
+                })
                 .collect();
             json!({ "macro": m + 1, "name": macro_.name, "value": values.get(m + 2), "mappings": mappings })
         })

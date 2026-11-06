@@ -12,9 +12,7 @@ use serde_json::{Value, json};
 use suhina_engine::{AudioPool, LaunchCommand, Renderer};
 use suhina_model::Project;
 use suhina_session::audio::{DeviceInfo, HostInfo, Opened};
-use suhina_session::{
-    AudioSystem, CommandKind, LiveOutput, OutputChoice, OutputInfo, Player, Projects, Session, audio_commands,
-};
+use suhina_session::{AudioSystem, LiveOutput, OutputChoice, OutputInfo, Player, Projects, Session, audio_commands};
 
 use crate::support::run;
 use suhina_test_support::{WavFormat, write_wav};
@@ -103,7 +101,8 @@ impl AudioSystem for Stand {
         if self.reject_next_open.swap(false, std::sync::atomic::Ordering::Relaxed) {
             return Err("test output unavailable".into());
         }
-        let mut renderer = Renderer::stopped(project, audio, choice.sample_rate.unwrap_or(SR)).unwrap();
+        let mut renderer =
+            Renderer::stopped(project, audio, choice.sample_rate.unwrap_or(SR), suhina_session::devices()).unwrap();
         let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.failed.lock().unwrap().push(Arc::clone(&failed));
         let player = Player::with_output(
@@ -152,12 +151,13 @@ fn audio_commands_are_listed_with_their_kind() {
             "audio.openControlPanel",
             "audio.devices",
             "audio.setOutput",
+            "audio.setTrackInput",
             "output.setCuePair",
             "output.setCueVolume",
             "audio.info",
         ]
     );
-    assert!(audio_commands().iter().all(|c| c.kind == CommandKind::Audio));
+    assert!(audio_commands().iter().all(|c| c.kind.target == suhina_session::Target::Audio));
     let listed = suhina_session::all_commands();
     assert!(listed.as_array().unwrap().iter().any(|c| c["id"] == "audio.setOutput"));
 }
@@ -364,7 +364,8 @@ fn launcher_project_built() -> Project {
         id: suhina_model::ContentId(900),
         name: "loop".into(),
         length: 4.0,
-        lanes: vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(vec![note]) }],
+        lanes: vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(vec![note].into()) }]
+            .into(),
         extensions: suhina_model::Extensions::default(),
         scale: None,
     });
@@ -390,7 +391,7 @@ fn a_reopen_keeps_the_marker_the_launched_clips_and_the_quantization() {
         session.execute("launcher.setQuantization", &json!({ "value": "1/4" })).unwrap();
         session.execute("transport.setPosition", &json!({ "beats": 4.0 })).unwrap();
         session.execute("transport.play", &json!({})).unwrap();
-        session.execute("clip.launch", &json!({ "track": 1, "scene": 1 })).unwrap();
+        session.execute("clip.launch", &json!({ "track": 1, "scene": 0 })).unwrap();
     }
     // Long enough for the launch at the next beat, and a bit of the clip.
     for _ in 0..30 {
@@ -401,7 +402,7 @@ fn a_reopen_keeps_the_marker_the_launched_clips_and_the_quantization() {
         let monitor = session.player().unwrap().monitor();
         assert_eq!(monitor.column(0).unwrap().playing, Some(0), "the clip plays");
         // A launch on the second track waits for the next beat when the output reopens.
-        session.execute("clip.launch", &json!({ "track": 2, "scene": 1 })).unwrap();
+        session.execute("clip.launch", &json!({ "track": 2, "scene": 0 })).unwrap();
     }
     stand.run_latest();
     let (beat, elapsed) = {

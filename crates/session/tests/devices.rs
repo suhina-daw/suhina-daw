@@ -65,7 +65,7 @@ fn devices_are_added_set_switched_and_removed_with_undo() {
     for _ in 0..7 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
-    assert_eq!(session.project(), &project());
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn continuous_parameter_updates_share_one_undo_step() {
         run(
             &mut session,
             "device.setParam",
-            json!({ "track": 1, "device": 0, "param": "gain", "value": value, "continuous": true }),
+            json!({ "track": 1, "device": 0, "param": "gain", "value": value, "gesture": "knob" }),
         )
         .unwrap();
     }
@@ -97,7 +97,7 @@ fn saving_during_a_parameter_gesture_keeps_later_updates_dirty() {
         run(
             &mut session,
             "device.setParam",
-            json!({ "track": 1, "device": 0, "param": "gain", "value": value, "continuous": true }),
+            json!({ "track": 1, "device": 0, "param": "gain", "value": value, "gesture": "knob" }),
         )
         .unwrap();
         assert!(session.has_unsaved_changes());
@@ -216,7 +216,7 @@ fn sd_device_updates_migrate_values_atomically_and_undo_to_the_embedded_revision
     let device = &session.project().channels[0].devices[0];
     assert_eq!(device.name, "New Gain");
     assert_eq!(device.params, vec![DeviceParam::new("level", 1.75)]);
-    let state = String::from_utf8(device.state.clone().expect("updated graph is embedded")).unwrap();
+    let state = String::from_utf8(device.state.clone().expect("updated graph is embedded").to_vec()).unwrap();
     assert_eq!(DeviceGraph::from_sd(&state).unwrap().device_version, 2);
 
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -454,6 +454,20 @@ fn plugin_env() -> std::sync::Arc<suhina_session::PluginEnv> {
     std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into()))
 }
 
+/// A new track with a plug-in is named after it, however the plug-in is named: its id, its name
+/// or its spec, as the browser and the quick-add palette give it.
+#[test]
+fn a_track_added_with_a_plug_in_takes_its_name_by_any_of_its_names() {
+    let env = plugin_env();
+    let spec = env.catalog.plugins().find(|p| p.name == "Synth").map(|p| p.spec()).unwrap();
+    for device in ["com.vendor.synth", "Synth", spec.as_str()] {
+        let mut session = Session::new(project());
+        session.rack_mut().set_env(plugin_env());
+        let added = run(&mut session, "track.add", json!({ "device": device })).unwrap();
+        assert_eq!((added["name"].clone(), added["kind"].clone()), (json!("Synth"), json!("midi")), "{device}");
+    }
+}
+
 #[test]
 fn installed_plug_ins_are_added_from_the_catalog() {
     let mut session = Session::new(project());
@@ -545,7 +559,7 @@ fn plug_in_commands_need_a_plug_in_and_a_playing_project() {
     let kinds: Vec<(&str, &str)> = suhina_session::commands()
         .iter()
         .filter(|c| c.id.starts_with("device.") && c.id.contains("Editor") || c.id == "device.restart")
-        .map(|c| (c.id, c.kind.name()))
+        .map(|c| (c.id, c.kind.target.name()))
         .collect();
     assert_eq!(
         kinds,
@@ -626,21 +640,14 @@ fn xy_gesture_groups_axes_and_ends_on_unchanged_value() {
     let mut session = Session::new(project());
     run(&mut session, "device.add", json!({"track":1,"id":"utility"})).unwrap();
     let before = session.project().clone();
-    for (param, value, continuous) in [("gain", 2.0, true), ("balance", 0.5, true), ("balance", 0.5, false)] {
-        run(
-            &mut session,
-            "device.setParam",
-            json!({"track":1,"device":0,"param":param,"value":value,"continuous":continuous,"gesture":"xy"}),
-        )
-        .unwrap();
+    for (param, value) in [("gain", 2.0), ("balance", 0.5), ("balance", 0.5)] {
+        run(&mut session, "device.setParam", json!({"track":1,"device":0,"param":param,"value":value,"gesture":"xy"}))
+            .unwrap();
     }
+    run(&mut session, "history.endGesture", json!({"gesture":"xy"})).unwrap();
     let after = session.project().clone();
-    run(
-        &mut session,
-        "device.setParam",
-        json!({"track":1,"device":0,"param":"gain","value":3.0,"continuous":false,"gesture":"xy"}),
-    )
-    .unwrap();
+    run(&mut session, "device.setParam", json!({"track":1,"device":0,"param":"gain","value":3.0,"gesture":"xy"}))
+        .unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project(), &after);
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -685,9 +692,15 @@ fn sdk_linked_delay_values_update_both_directions_and_undo_together() {
     assert_eq!(value(&session, "time_left"), 427.);
     edit(&mut session, "link", 1.);
     assert_eq!(value(&session, "time_right"), 427.);
-    for (v, continuous) in [(500., true), (520., true), (550., false)] {
-        run(&mut session,"device.setParam",json!({"track":1,"device":0,"param":"time_right","value":v,"continuous":continuous,"gesture":"linked-time"})).unwrap();
+    for v in [500., 520., 550.] {
+        run(
+            &mut session,
+            "device.setParam",
+            json!({"track":1,"device":0,"param":"time_right","value":v,"gesture":"linked-time"}),
+        )
+        .unwrap();
     }
+    run(&mut session, "history.endGesture", json!({"gesture":"linked-time"})).unwrap();
     assert_eq!(value(&session, "time_left"), 550.);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(value(&session, "time_left"), 427.);
@@ -751,7 +764,7 @@ fn a_nam_device_loads_its_file_with_the_command() {
     assert_eq!(file_info["file"], amp_path);
     assert_eq!(file_info["name"], "Test amp 1965");
     let asset = session.device_asset(&amp_path).unwrap();
-    assert!(matches!(asset, suhina_device_registry::DeviceAsset::Nam(_)));
+    assert_eq!(asset.device(), "nam-amp-modeler");
 
     let ir_file = ir_path.display().to_string();
     run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 1, "path": &ir_file })).unwrap();
@@ -759,7 +772,7 @@ fn a_nam_device_loads_its_file_with_the_command() {
     assert_eq!(ir["file"], ir_file);
     // The cab's shown name is its parent folder's, per the spec (its files are the cabs).
     assert_eq!(ir["name"], "IRs");
-    assert!(matches!(session.device_asset(&ir_file), Some(suhina_device_registry::DeviceAsset::Ir(_))));
+    assert_eq!(session.device_asset(&ir_file).map(|a| a.device()), Some("nam-cab-loader"));
 
     // A wrong extension is refused with a message that names what it wants.
     let error =
@@ -798,7 +811,7 @@ fn a_projects_stored_path_gets_the_extension_check() {
 
     let mut project = project();
     project.channels[0].devices.push(Device {
-        state: Some(impostor.display().to_string().into_bytes()),
+        state: Some(impostor.display().to_string().into_bytes().into()),
         ..Device::new("Amp", DeviceKind::Builtin("nam-amp-modeler".into()))
     });
     let file = dir.join("with-nam.suhina");
@@ -1135,16 +1148,20 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
         extensions: Default::default(),
         lanes: vec![ContentLane {
             target: None,
-            data: LaneData::Notes(vec![Note {
-                time: 0.,
-                duration: 0.5,
-                key: 60,
-                velocity: 1.,
-                release_velocity: 0.,
-                channel: 0,
-                muted: false,
-            }]),
-        }],
+            data: LaneData::Notes(
+                vec![Note {
+                    time: 0.,
+                    duration: 0.5,
+                    key: 60,
+                    velocity: 1.,
+                    release_velocity: 0.,
+                    channel: 0,
+                    muted: false,
+                }]
+                .into(),
+            ),
+        }]
+        .into(),
     });
     saved.arrangement.lanes.push(ArrangementLane {
         id: Default::default(),
@@ -1185,13 +1202,18 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
     std::fs::remove_file(&wav).unwrap();
     let (audio, warnings) = suhina_media::decode_project_audio(&restored, &moved);
     assert!(warnings.is_empty(), "{warnings:?}");
-    let expected =
-        suhina_engine::render_offline_from(&restored, suhina_engine::RenderInputs::from_audio(&audio), 48000, 64, None)
-            .unwrap();
+    let expected = suhina_engine::render_offline_from(
+        &restored,
+        suhina_engine::RenderInputs::from_audio(&audio, suhina_session::devices()),
+        48000,
+        64,
+        None,
+    )
+    .unwrap();
     assert!(expected.iter().any(|v| v.abs() > 0.01));
     let actual = suhina_engine::render_offline_from(
         &restored,
-        suhina_engine::RenderInputs::from_audio(&audio),
+        suhina_engine::RenderInputs::from_audio(&audio, suhina_session::devices()),
         48000,
         257,
         None,
@@ -1202,20 +1224,69 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
     let (_, warnings) = suhina_media::decode_project_audio(&restored, &moved);
     assert!(!warnings.is_empty(), "missing resource must be reported");
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &before);
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..before });
     let _ = std::fs::remove_dir_all(root);
+}
+
+/// A device has an id from the project's counter: an adding command returns it, a command names
+/// the device by it wherever the device has gone, and a copy gets a new one (#763 › 1).
+#[test]
+fn a_device_is_named_by_its_id_wherever_it_moves() {
+    let mut session = Session::new(project());
+    let utility = run(&mut session, "device.add", json!({ "track": "Keys", "id": "utility" })).unwrap();
+    let overdrive = run(&mut session, "device.add", json!({ "track": "Keys", "id": "overdrive" })).unwrap();
+    let (u, o) = (utility["device_id"].as_u64().unwrap(), overdrive["device_id"].as_u64().unwrap());
+    assert_ne!(u, o);
+    // The overdrive moved before the utility: its id still names it, its old index does not.
+    run(&mut session, "device.move", json!({ "track": "Keys", "device": 1, "to": 0 })).unwrap();
+    run(&mut session, "device.setEnabled", json!({ "track": "Keys", "device": { "id": u }, "enabled": false }))
+        .unwrap();
+    let list = run(&mut session, "track.devices", json!({ "track": "Keys" })).unwrap();
+    assert_eq!(list[1]["device_id"], json!(u));
+    assert_eq!(list[1]["enabled"], json!(false));
+    assert_eq!(list[0]["enabled"], json!(true));
+    // A copy is a new device.
+    let copy = run(&mut session, "device.duplicate", json!({ "track": "Keys", "device": { "id": o } })).unwrap();
+    let ids: Vec<u64> = run(&mut session, "track.devices", json!({ "track": "Keys" }))
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["device_id"].as_u64().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 3);
+    assert!(ids[0] == o && ids[1] != o && ids[1] != u, "{ids:?} {copy}");
+    // An id the track does not have is refused, and undo brings ids back as they were.
+    let missing =
+        run(&mut session, "device.setEnabled", json!({ "track": "Keys", "device": { "id": 9999 }, "enabled": true }));
+    assert!(missing.unwrap_err().contains("device_id 9999"));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let list = run(&mut session, "track.devices", json!({ "track": "Keys" })).unwrap();
+    assert_eq!((list[0]["device_id"].as_u64(), list[1]["device_id"].as_u64()), (Some(o), Some(u)));
+    // A duplicated track's devices are new devices too.
+    let ids_of = |session: &mut Session, track: Value| -> Vec<u64> {
+        let list = run(session, "track.devices", json!({ "track": track })).unwrap();
+        list.as_array().unwrap().iter().map(|d| d["device_id"].as_u64().unwrap()).collect()
+    };
+    let duplicated = run(&mut session, "track.duplicate", json!({ "tracks": ["Keys"] })).unwrap();
+    let new_track = duplicated["tracks"][0].clone();
+    let (old_ids, new_ids) = (ids_of(&mut session, json!("Keys")), ids_of(&mut session, new_track));
+    assert_eq!(new_ids.len(), old_ids.len());
+    assert!(new_ids.iter().all(|id| !old_ids.contains(id)), "{old_ids:?} {new_ids:?}");
 }
 
 /// Sets `calls` as one gesture on `device`, the last call ending it, as a preset does.
 fn one_gesture(session: &mut Session, device: Value, calls: &[(&str, f64)]) {
-    for (i, (param, value)) in calls.iter().enumerate() {
+    for (param, value) in calls {
         let set = run(
             session,
             "device.setParam",
-            json!({"track":1,"device":device,"param":param,"value":value,"continuous":i + 1 < calls.len(),"gesture":"preset"}),
+            json!({"track":1,"device":device,"param":param,"value":value,"gesture":"preset"}),
         );
         assert!(set.is_ok(), "{set:?}");
     }
+    let ended = run(session, "history.endGesture", json!({"gesture":"preset"}));
+    assert!(ended.is_ok(), "{ended:?}");
 }
 
 #[test]

@@ -59,7 +59,7 @@ fn describe(p: &Project, m: &LaunchMapping) -> Value {
             map.insert("track".into(), json!(track.0));
         }
         if let Some(scene) = m.target.scene() {
-            map.insert("scene".into(), json!(scene.saturating_add(1)));
+            map.insert("scene".into(), json!(scene));
         }
     }
     out
@@ -123,7 +123,7 @@ pub fn mapped_command(project: &Project, source: &MappingSource, pressed: bool) 
     }
     match (mapping.target, pressed) {
         (MappingTarget::Slot { track, scene }, true) => {
-            Some(("clip.launch", json!({ "track": track.0, "scene": scene.saturating_add(1) })))
+            Some(("clip.launch", json!({ "track": track.0, "scene": scene })))
         }
         (MappingTarget::Slot { track, scene }, false) => {
             let clip = project
@@ -133,12 +133,9 @@ pub fn mapped_command(project: &Project, source: &MappingSource, pressed: bool) 
                 .find(|c| c.track == track)
                 .and_then(|c| c.slots.get(scene))
                 .and_then(|s| s.clip.as_ref())?;
-            clip.launch
-                .mode
-                .uses_release()
-                .then(|| ("clip.release", json!({ "track": track.0, "scene": scene.saturating_add(1) })))
+            clip.launch.mode.uses_release().then(|| ("clip.release", json!({ "track": track.0, "scene": scene })))
         }
-        (MappingTarget::Scene { scene }, true) => Some(("scene.launch", json!({ "scene": scene.saturating_add(1) }))),
+        (MappingTarget::Scene { scene }, true) => Some(("scene.launch", json!({ "scene": scene }))),
         (MappingTarget::Stop { track }, true) => Some(("track.stop", json!({ "track": track.0 }))),
         (MappingTarget::Scene { .. } | MappingTarget::Stop { .. }, false) => None,
     }

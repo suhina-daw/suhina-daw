@@ -22,13 +22,13 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
     Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, Channel, ChannelId,
-    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceKind,
-    DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels, LaneData,
-    LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange,
-    MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
-    MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene,
-    SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId,
-    Transport, WarpMarker, automation, valid_bpm,
+    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceId,
+    DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels,
+    LaneData, LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn,
+    LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
+    MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale,
+    ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange,
+    Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
 };
 
 /// The file extension, without the dot.
@@ -39,7 +39,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 5;
+pub const VERSION: u64 = 8;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -111,7 +111,7 @@ pub fn from_json(text: &str) -> Result<Project, ProjectFileError> {
     if version == 0 || version > VERSION {
         return Err(format!("the project is version {version}; this Suhina reads up to version {VERSION}").into());
     }
-    let project = read_project(root.get("project").ok_or("the project is missing")?)?;
+    let project = read_project(root.get("project").ok_or("the project is missing")?, version)?;
     project.validate().map_err(|errors| {
         let list: Vec<String> = errors.iter().take(5).map(ToString::to_string).collect();
         format!("the project does not hold together: {}", list.join("; "))
@@ -253,6 +253,7 @@ fn project_value(p: &Project) -> Value {
     }).collect::<Vec<_>>() });
     // Left out when there are none, so a project without markers is written as before.
     if !p.arrangement.markers.is_empty() {
+        // A marker's id lives only while the project is open, so it is not written (#763 › 1).
         arrangement["markers"] =
             p.arrangement.markers.iter().map(|m| json!({ "beat": number(m.beat), "name": m.name })).collect();
     }
@@ -463,6 +464,9 @@ fn device_value(d: &Device) -> Value {
         "params": d.params.iter().map(|p| json!({ "id": p.id, "value": number(p.value) })).collect::<Vec<_>>(),
     });
     if let Some(map) = out.as_object_mut() {
+        if d.id.is_some() {
+            map.insert("id".into(), json!(d.id.0));
+        }
         // Only devices with automation say so, so files without any keep their shape.
         if !d.automation.is_empty() {
             map.insert("automation".into(), lanes_value(&d.automation));
@@ -502,7 +506,23 @@ fn group_value(g: &DeviceGroup) -> Value {
             let mappings: Vec<Value> = m
                 .mappings
                 .iter()
-                .map(|x| json!({ "device": x.device, "param": x.param, "min": number(x.min), "max": number(x.max) }))
+                .filter_map(|x| {
+                    // From version 7 the device's id (#763 › 1). A device with none yet (a
+                    // project built without a session) is written by its path in the group,
+                    // which every version reads; a mapping whose device is gone is left out, as
+                    // no reader could place it.
+                    let device = match x.device {
+                        MappedDevice::Id(id) => {
+                            g.inner_devices().iter().any(|(_, d)| id.is_some() && d.id == id).then(|| json!(id.0))?
+                        }
+                        MappedDevice::Nth(n) => {
+                            let inner = g.inner_devices();
+                            let (path, d) = inner.get(usize::try_from(n).ok()?)?;
+                            if d.id.is_some() { json!(d.id.0) } else { json!(path) }
+                        }
+                    };
+                    Some(json!({ "device": device, "param": x.param, "min": number(x.min), "max": number(x.max) }))
+                })
                 .collect();
             json!({ "name": m.name, "mappings": mappings })
         })
@@ -613,7 +633,7 @@ fn clip_value(c: &Clip) -> Value {
     out
 }
 
-/// A launch mapping; its scene counts from 1, as in the commands.
+/// A launch mapping; its scene counts from 0, as in the commands (from version 8, #763 › 1).
 fn mapping_value(m: &LaunchMapping) -> Value {
     let mut out = json!({ "source": m.source.name(), "target": m.target.kind() });
     if let Some(map) = out.as_object_mut() {
@@ -621,7 +641,7 @@ fn mapping_value(m: &LaunchMapping) -> Value {
             map.insert("track".into(), json!(track.0));
         }
         if let Some(scene) = m.target.scene() {
-            map.insert("scene".into(), json!(scene.saturating_add(1)));
+            map.insert("scene".into(), json!(scene));
         }
     }
     out
@@ -852,7 +872,8 @@ fn time_signature_changes(t: &Obj) -> Result<Vec<TimeSignatureChange>, ProjectFi
         .collect()
 }
 
-fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
+/// The project of a file of `version`.
+fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError> {
     let p = object(value, "project")?;
     let transport = match p.get("transport") {
         None | Some(Value::Null) => Transport::default(),
@@ -881,7 +902,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 time_signature: signature,
                 loop_range,
                 loop_enabled,
-                tempo_changes: tempo_changes(t)?,
+                tempo_changes: tempo_changes(t)?.into(),
                 time_signature_changes: time_signature_changes(t)?,
             }
         }
@@ -929,7 +950,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 if beat < 0.0 {
                     return Err(format!("{at}.beat: expected a beat from 0 on").into());
                 }
-                markers.push(Marker { beat, name: text(m, "name", &at)? });
+                markers.push(Marker::new(beat, text(m, "name", &at)?));
             }
             let mut takes = Vec::new();
             for (i, v) in list(a, "takes", "project.arrangement")?.iter().enumerate() {
@@ -949,7 +970,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                     color: read_color(take.get("color"), &at)?,
                 });
             }
-            let mut arrangement = Arrangement { lanes, markers, takes };
+            let mut arrangement = Arrangement { lanes, markers: markers.into(), takes };
             arrangement.sort_markers();
             arrangement
         }
@@ -987,7 +1008,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
             }
             let mut mappings: Vec<LaunchMapping> = Vec::new();
             for (i, v) in list(l, "mappings", "project.launcher")?.iter().enumerate() {
-                let mapping = read_mapping(v, &format!("project.launcher.mappings[{i}]"))?;
+                let mapping = read_mapping(v, &format!("project.launcher.mappings[{i}]"), version)?;
                 if mappings.iter().any(|m| m.source == mapping.source) {
                     return Err(ProjectFileError(format!(
                         "project.launcher.mappings[{i}]: {} is mapped twice",
@@ -1012,7 +1033,8 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
     };
     // A file written before ids, or an object added by hand without one: the objects without an
     // id get the next ones in document order, so the same file always reads with the same ids.
-    // A stale `next_id` moves past the ids in use.
+    // A stale `next_id` moves past the ids in use. Markers, automation points and tempo changes
+    // got new ids as their lists were built: the file holds none (#763 › 1).
     project.assign_ids().map_err(|e| ProjectFileError(format!("project: {e}")))?;
     Ok(project)
 }
@@ -1181,13 +1203,15 @@ fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileErr
             let at = format!("{at}.points[{j}]");
             let p = object(p, &at)?;
             let curve = read_curve(p, &at)?;
-            points.push(AutomationPoint { beat: float(p, "beat", &at)?, value: float(p, "value", &at)?, curve });
+            let (beat, value) = (float(p, "beat", &at)?, float(p, "value", &at)?);
+            points.push(AutomationPoint { beat, value, curve });
         }
         // In beat order, as the model keeps them; points at the same beat keep their order.
         points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        // Each point gets a new id: the file holds none (#763 › 1).
         automation.push(AutomationLane {
             param: required_text(lane, "param", &at)?,
-            points,
+            points: points.into(),
             enabled: flag(lane, "enabled", true, &at)?,
         });
     }
@@ -1245,10 +1269,12 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
     }
     let automation = read_lanes(d, at)?;
     Ok(Device {
+        // From version 6 (#763 › 1); earlier files' devices get theirs when the project is opened.
+        id: DeviceId(read_id(d, at)?),
         name: text(d, "name", at)?,
         kind,
         enabled: flag(d, "enabled", true, at)?,
-        state: bytes(d, "state", at)?,
+        state: bytes(d, "state", at)?.map(Into::into),
         params,
         automation,
         clip_host: flag(d, "clip_host", false, at)?,
@@ -1278,7 +1304,7 @@ fn read_group(k: &Obj, at: &str) -> Result<DeviceGroup, ProjectFileError> {
             extensions: extensions(b, &at)?,
         });
     }
-    let mut macros = Vec::new();
+    let mut group = DeviceGroup { branches, macros: Vec::new() };
     for (i, v) in list(k, "macros", at)?.iter().enumerate() {
         let at = format!("{at}.macros[{i}]");
         let m = object(v, &at)?;
@@ -1286,21 +1312,37 @@ fn read_group(k: &Obj, at: &str) -> Result<DeviceGroup, ProjectFileError> {
         for (j, v) in list(m, "mappings", &at)?.iter().enumerate() {
             let at = format!("{at}.mappings[{j}]");
             let x = object(v, &at)?;
-            let mut device = Vec::new();
-            for step in list(x, "device", &at)? {
-                let step = step.as_u64().and_then(|n| u32::try_from(n).ok());
-                device.push(step.ok_or_else(|| format!("{at}.device: expected a list of whole numbers"))?);
-            }
             mappings.push(MacroMapping {
-                device,
+                device: read_mapped_device(&group, x, &at)?,
                 param: required_text(x, "param", &at)?,
                 min: float_or(x, "min", 0.0, &at)?,
                 max: float_or(x, "max", 1.0, &at)?,
             });
         }
-        macros.push(Macro { name: text(m, "name", &at)?, mappings });
+        group.macros.push(Macro { name: text(m, "name", &at)?, mappings });
     }
-    Ok(DeviceGroup { branches, macros })
+    Ok(group)
+}
+
+/// A macro mapping's device: its id from version 7 (#763 › 1), or before that its path relative
+/// to the group (`[branch, index, …]`), read as its place among the group's devices until the
+/// project gives them ids.
+fn read_mapped_device(group: &DeviceGroup, x: &Obj, at: &str) -> Result<MappedDevice, ProjectFileError> {
+    match x.get("device") {
+        Some(Value::Number(n)) => {
+            let id = n.as_u64().and_then(|n| u32::try_from(n).ok()).filter(|&n| n != 0);
+            id.map(|id| MappedDevice::Id(DeviceId(id)))
+                .ok_or_else(|| format!("{at}.device: expected a device id, a whole number from 1").into())
+        }
+        _ => {
+            let mut path = Vec::new();
+            for step in list(x, "device", at)? {
+                let step = step.as_u64().and_then(|n| u32::try_from(n).ok());
+                path.push(step.ok_or_else(|| format!("{at}.device: expected a list of whole numbers"))?);
+            }
+            group.nth_at(&path).ok_or_else(|| format!("{at}.device: no device in the group at {path:?}").into())
+        }
+    }
 }
 
 fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError> {
@@ -1332,7 +1374,7 @@ fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError
                         muted: flag(n, "muted", false, &at)?,
                     });
                 }
-                LaneData::Notes(notes)
+                LaneData::Notes(notes.into())
             }
             (None, Some(audio)) => LaneData::Audio(read_audio(audio, &format!("{at}.audio"))?),
             _ => return Err(format!("{at}: a lane has either notes or audio").into()),
@@ -1343,7 +1385,7 @@ fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError
         id: ContentId(whole(c, "id", at)?),
         name: text(c, "name", at)?,
         length: float(c, "length", at)?,
-        lanes,
+        lanes: lanes.into(),
         extensions: extensions(c, at)?,
         scale: read_scale(c, "scale", at)?,
     })
@@ -1476,9 +1518,9 @@ fn read_follow(c: &Obj, at: &str) -> Result<FollowAction, ProjectFileError> {
 }
 
 /// A launch mapping: `source` (`key:Q`, `note:1:60`), `target` (slot, scene or stop) and the
-/// `track` and 1-based `scene` the target needs. The track need not exist: a mapping whose track
-/// is gone is kept, unused.
-fn read_mapping(value: &Value, at: &str) -> Result<LaunchMapping, ProjectFileError> {
+/// `track` and `scene` the target needs, the scene from 0 (from version 8, #763 › 1; from 1
+/// before). The track need not exist: a mapping whose track is gone is kept, unused.
+fn read_mapping(value: &Value, at: &str, version: u64) -> Result<LaunchMapping, ProjectFileError> {
     let m = object(value, at)?;
     let name = match m.get("source") {
         Some(Value::String(name)) => name.as_str(),
@@ -1488,6 +1530,9 @@ fn read_mapping(value: &Value, at: &str) -> Result<LaunchMapping, ProjectFileErr
         .ok_or_else(|| ProjectFileError(format!("{at}.source: unknown source {name:?}")))?;
     let scene = || -> Result<usize, ProjectFileError> {
         let number: usize = whole(m, "scene", at)?;
+        if version >= 8 {
+            return Ok(number);
+        }
         number.checked_sub(1).ok_or_else(|| ProjectFileError(format!("{at}.scene: scenes count from 1")))
     };
     let track = || whole(m, "track", at).map(TrackId);

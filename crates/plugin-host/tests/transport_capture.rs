@@ -89,7 +89,7 @@ fn capture_instrument_and_mix_around_pause() {
     .unwrap();
     control
         .load_state(SavedState {
-            data: device.state.clone().unwrap(),
+            data: device.state.clone().unwrap().to_vec(),
             controller: device.extensions.0.iter().find(|e| e.key == "Vst3ControllerState").map(|e| e.data.clone()),
         })
         .unwrap();
@@ -114,7 +114,7 @@ fn capture_instrument_and_mix_around_pause() {
     );
     let mut renderer = Renderer::build(
         &project,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
         rate,
         RenderOptions::STOPPED,
     )

@@ -1,10 +1,10 @@
 ---
 description: How played input reaches the engine (MIDI controllers first, audio inputs later), what arming a track is, and what a key press costs in latency today and how that is made smaller
-read_when: MIDI input, MIDI controller, keyboard, arm, armed track, track.setArm, midi.inputs, live notes, sustain pedal, input latency, monitoring, recording, low latency, midir
+read_when: MIDI input, default track input, audio.setTrackInput, MIDI controller, keyboard, arm, armed track, track.setArm, midi.inputs, live notes, sustain pedal, input latency, monitoring, recording, low latency, midir
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-04
+last_verified: 2026-11-06
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/live.rs
@@ -89,7 +89,8 @@ engine code.
    track armed by hand is never disarmed by it, and selecting one already armed leaves it as it
    is. Only a track that plays notes or audio through a regular channel is armed: a return,
    the main track or a group leaves the arm where it is. An audio track is armed as its arm
-   button arms it: one with no audio input gets the device's first input (#682). While a take records, the selection
+   button arms it: one with no audio input gets the default track input, or else the device's
+   first input (#682; Amendment: default track input). While a take records, the selection
    does not move the arm (a take asked to end still records until it is a clip: a slot's, to its
    launch boundary); once the take ends, the track selected then is armed. Turning the
    setting off leaves the arm as it is. The window remembers which track it armed, per project.
@@ -162,6 +163,11 @@ engine code.
      waiting in the ring, and then the same path as a key on a MIDI controller (decision 5); an
      armed track keeps the shallower queue (decision 6). `audio.info` reports the input device,
      its channels and its underruns.
+   - *The default track input* (Amendment: default track input). New audio tracks hear the
+     channels Settings › Audio › Default track input names for the audio device chosen
+     (`audio.setTrackInput`); each audio device keeps its own, with its Input. An audio track
+     armed while it hears nothing gets them too.
+   *Amended 2026-11-05, see Amendment: default track input.*
 
 10. **Notes are placed by when they were played** (amendment,
     [#269](https://github.com/suhina-daw/suhina-daw/issues/269)). A note on the first frame of the
@@ -202,6 +208,48 @@ engine code.
     transport stopped and starts the transport on the frame it ends. A loopback test (the
     output fed back into the input offline, with a known delay) checks that a recorded frame
     lands on the frame it was played at.
+
+## Amendment: default track input (2026-11-05)
+
+[#1191](https://github.com/suhina-daw/suhina-daw/issues/1191). Before, every new audio track heard
+nothing until its input was picked by hand. Suhina now keeps a *default track input*: none (as
+before), one channel or a neighbouring pair of the input device. It belongs to the app, not to a
+project, and **each audio device keeps its own, with its input**: a sound card used every day and
+another used now and then each have their Input and their Default track input, and choosing the
+card under Device brings both back, with no global value that is wrong for the other card. The
+cards are told apart by `OutputChoice::device_key` (host and device in lower case,
+`asio|universal audio thunderbolt`); a card not chosen before keeps the Input there is and has no
+default track input. Settings › Audio › Output › Default track input shows and changes the one of
+the card chosen, and the settings keep every card's Input and default track input across starts
+(`audio_device_inputs`, at most 64 cards). `audio.setOutput` with another device and no `input`
+brings back the input that device was last chosen with; `audio.setTrackInput {input}` sets the
+default of the card chosen from MCP and the CLI and is refused while Input is Off (`audio.devices`
+and `audio.info` show the card's as `chosen.track_input`). `Projects` keeps both
+(`Projects::device_inputs`) and hands the default in effect to every open project
+(`Session::set_default_input`) whenever the card, its input or a default changes; it is none while
+Input is Off, so the default never makes a track use a microphone the user has not chosen
+(decision 9). It is only a default: a track's own input is chosen on the track as before and saved
+with the project.
+
+- Every audio track a command adds takes it: `track.add` (one or `count`), tracks made for
+  dropped audio files, and split stems. MIDI tracks, returns and groups do not. It is part of the
+  edit that adds the track, so undo takes both back.
+- An audio track armed while it hears nothing (`track.setArm`) gets it in an undo step of its
+  own before it is armed; with no default it gets the device's first channels, as before (#682).
+  The arm's result says which in `input_given`, or with `no_input` that the device has no input
+  to give; the window shows it in the status bar. This moved from the window into the session,
+  so arming from MCP gives the input too.
+- A default the open input device does not have (In 3/4 on a two-channel device) is not given;
+  with no output open the channels are not known and it is given as chosen. Settings lists the
+  device's channels and its pairs, and keeps a choice the device lacks listed and marked.
+- Changing the default leaves the tracks that are there as they are, except in a new project
+  nothing has changed yet (blank or from a template, never saved, no edit made): its audio tracks
+  that hear nothing take the default when it opens, and follow it while the project stays
+  unchanged, so choosing another sound card before the first edit moves them with it. Giving it
+  there is not an edit (no undo step, nothing to save); the first edit ends it
+  (`Session::set_default_input`).
+- Only an audio track on a regular mixer strip is given a default: a return or a group records
+  nothing.
 
 ## Amendment: playback reserve (2026-10-29)
 

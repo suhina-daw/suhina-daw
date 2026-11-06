@@ -44,7 +44,7 @@ pub mod param {
 /// Band gains run from silence up to +6 dB.
 pub const GAIN_RANGE: (f64, f64) = (SILENCE_DB as f64, 6.0);
 
-const PARAMS: [ParamInfo; param::COUNT] = [
+static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("low", "Low", GAIN_RANGE, 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("mid", "Mid", GAIN_RANGE, 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("high", "High", GAIN_RANGE, 0.0, Unit::Decibels, Scale::Linear),
@@ -63,7 +63,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::choice("slope", "Slope", &["24 dB/oct", "48 dB/oct"], 0),
 ];
 
-pub const INFO: DeviceInfo = DeviceInfo { id: "dj-eq", name: "DJ EQ", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("dj-eq", "DJ EQ", Role::Effect, &PARAMS);
 
 /// The two filters of one side.
 #[derive(Clone, Copy)]
@@ -179,7 +179,7 @@ impl DjEq {
 }
 
 impl Device for DjEq {
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

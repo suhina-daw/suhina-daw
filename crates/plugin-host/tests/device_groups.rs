@@ -51,7 +51,8 @@ fn bank(gain: f32) -> Vec<u8> {
 
 /// One note track whose chain is a device group holding the test plug-in.
 fn project() -> Project {
-    let plugin = Device { state: Some(bank(0.25)), ..Device::new("Test vst3", DeviceKind::Clap { id: "vst3".into() }) };
+    let plugin =
+        Device { state: Some(bank(0.25).into()), ..Device::new("Test vst3", DeviceKind::Clap { id: "vst3".into() }) };
     let group = DeviceGroup::with_branches(vec![Branch { devices: vec![plugin], ..Branch::new("Synth") }]);
     Project {
         tracks: vec![Track {
@@ -82,7 +83,7 @@ fn wait_running(session: &mut Session, renderer: &mut Renderer, device: &Value) 
 #[test]
 fn a_plug_in_in_a_group_runs_saves_and_restarts_by_its_path() {
     let p = project();
-    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(p);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
@@ -99,7 +100,7 @@ fn a_plug_in_in_a_group_runs_saves_and_restarts_by_its_path() {
     session.execute("project.save", &json!({ "path": path.display().to_string() })).unwrap();
     let (file, _) = Session::open(&path).unwrap();
     let saved = device_at(&file.project().channels[0].devices, &[0, 0, 0]).unwrap();
-    assert_eq!(saved.state, Some(0.25f32.to_le_bytes().to_vec()));
+    assert_eq!(saved.state.as_deref(), Some(&0.25f32.to_le_bytes()[..]));
 
     // Ungrouping keeps the same process: it is running at once at its new place.
     session.execute("device.ungroup", &json!({ "track": 1, "device": 0 })).unwrap();

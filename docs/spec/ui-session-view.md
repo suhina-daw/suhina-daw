@@ -258,7 +258,9 @@ scene can change it.
 ### Launch keys
 
 **Suhina:** a computer key can launch a slot, a scene or a track's stop button
-([clip launching](clip-launching.md#launching-from-keys-and-notes)).
+([clip launching](clip-launching.md#launching-from-keys-and-notes)). When controller mappings
+are built, this mode becomes their mapping mode and **Map keys** becomes **Map**
+([MIDI mapping › Mapping mode](midi-mapping.md#mapping-mode)); keys keep working as below.
 
 - **Mapping mode.** **Map keys** at the right end of the title bar, after the view names, or
   Ctrl+M (`view.mappingMode`) turns it on and shows the Launcher view; **Map keys** is lit while
@@ -326,7 +328,7 @@ meters](level-meters.md)), track on/off (shows the
 track number), solo, cue (headphones: the track is also heard on the cue output, headphones,
 `track.setCue`; [spec](cue-output.md)), arm (MIDI and audio tracks). Pan and volume are dragged
 up or down and double-clicked to reset; the change is heard while dragging, and one drag is one
-undo step (`track.setPan`, `track.setVolume` with `continue`). The Arrangement view's track
+undo step (`track.setPan`, `track.setVolume` with a `gesture`, ended on mouse up). The Arrangement view's track
 headers work the same. **Solo:** while any track is soloed, only the
 soloed tracks are heard, with the groups they play into, the tracks inside a soloed group, and
 the return tracks (so effects stay audible); mute still wins. A click solos one track and ends
@@ -360,7 +362,7 @@ vertical channel strip under its slots, and the strip shows more the taller the 
   list shows, to the list after the fader is tall enough. Every strip reserves the same 26 px footer below the toggles when sends are shown, keeping faders and toggles aligned across tracks, returns and Main.
 - **The fader** is dragged up or down (Shift for finer), and the wheel over it moves it a dB at
   a time; every frame of a drag is heard, and the drag is one undo step (`track.setVolume` with
-  `tracks` and `continue`). A double-click sets it back to 0 dB, as the Arrangement headers do.
+  `tracks` and a `gesture`). A double-click sets it back to 0 dB, as the Arrangement headers do.
 - **The output** reads "→ Main" or "→" and the group the track plays into. A click opens a menu
   of Main and the project's group tracks (a group does not list itself); picking one routes the
   track there (`track.setOutput`, one undo step). A route that would make a loop is refused with a

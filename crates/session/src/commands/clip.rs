@@ -10,7 +10,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "arrangement.audioOverlaps",
         label: "List the pairs of audio clips that sound together on one track because their arrangement spans overlap; clips that only touch do not",
         params: &[optional("track", ParamType::Track, "only overlaps on this track (id or name)")],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: audio_overlaps,
         policy: Policy::DEFAULT,
     },
@@ -18,7 +18,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.delete",
         label: "Delete arrangement clips as one undo step, or the clip in a track's slot of a scene",
         params: &[CLIP, DELETE_CLIPS, DELETE_TRACK, CLIP_INDEX, CLIP_SCENE],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: delete_clips,
         policy: Policy::DEFAULT,
     },
@@ -32,7 +32,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_SCENE,
             param("name", ParamType::Text, "the new name (empty clears it)"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: rename_clip,
         policy: Policy::UNHEARD,
     },
@@ -49,7 +49,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "true leaves clips under them as they are; false (default) replaces them",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::clip_edges::trim_clips,
         policy: Policy::DEFAULT,
     },
@@ -57,7 +57,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.renameMany",
         label: "Give several arrangement clips the same name, as one undo step; clips that play the same content share the name",
         params: &[CLIPS, param("name", ParamType::Text, "the new name (empty clears it)")],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: rename_clips,
         policy: Policy::UNHEARD,
     },
@@ -65,7 +65,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.setColorMany",
         label: "Give several arrangement clips a colour of their own, or their tracks' colour again, as one undo step",
         params: &[CLIPS, param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for each track's colour")],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: set_clips_color,
         policy: Policy::UNHEARD,
     },
@@ -83,7 +83,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_SCENE,
             param("db", ParamType::Decibels, "gain in dB, at most +24; \"-inf\" or below -150 is silence"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: set_clip_gain,
         policy: Policy::DEFAULT,
     },
@@ -101,7 +101,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "scene",
                 ParamType::Integer,
-                "instead of index: the clip in the track's slot of this scene, from 1",
+                "instead of index: the clip in the track's slot of this scene, from 0",
             ),
             optional("in", ParamType::Number, "fade-in length in beats from the clip's start, at least 0; 0 is none"),
             optional("out", ParamType::Number, "fade-out length in beats before the clip's end, at least 0; 0 is none"),
@@ -118,7 +118,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "fade-out curve, -1 (slower start) to +1 (faster start); 0 is the shape",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: set_clip_fades,
         policy: Policy::DEFAULT,
     },
@@ -135,7 +135,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the curve every one of these fades takes, -1 to +1 (default: as each is)",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: shift_fades,
         policy: Policy::DEFAULT,
     },
@@ -157,10 +157,10 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "scene",
                 ParamType::Integer,
-                "with track: the clip in this scene's slot, from 1, as in project.launcher",
+                "with track: the clip in this scene's slot, from 0, as in project.launcher",
             ),
         ],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: copy_clips,
         policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
@@ -168,7 +168,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.cut",
         label: "Copy arrangement clips for clip.paste and delete them, as one undo step",
         params: &[CLIPS],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: cut_clips,
         policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
@@ -189,18 +189,18 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "scene",
                 ParamType::Integer,
-                "instead of start: the scene, from 1, whose slot on the track takes the clip",
+                "instead of start: the scene, from 0, whose slot on the track takes the clip",
             ),
             optional("stack", ParamType::Bool, "with start, true leaves clips under it as they are"),
             optional("replace", ParamType::Clip, "with track and start, remove this destination clip before pasting"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: paste_clip,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "clip.duplicate",
-        label: "Place a copy of each arrangement clip right after it, replacing what the copies cover unless stacked",
+        label: "Place copies of arrangement clips right after them as one block, moved by the span from the first start to the last end, replacing what the copies cover unless stacked",
         params: &[
             CLIPS,
             optional(
@@ -209,7 +209,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "true leaves clips under the copies as they are; false (default) shortens, splits or removes them",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: duplicate_clips,
         policy: Policy::DEFAULT,
     },
@@ -217,7 +217,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.setEnabled",
         label: "Turn arrangement clips on or off: a clip that is off is drawn dimmed and plays nothing",
         params: &[CLIPS, param("enabled", ParamType::Bool, "true plays the clips, false silences them")],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: set_clip_enabled,
         policy: Policy::DEFAULT,
     },
@@ -233,7 +233,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the ARA plug-in a track without one gets, as plugin.list names it (default: the installed one, Melodyne first)",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::clip_ara::set_ara,
         policy: Policy::DEFAULT,
     },
@@ -250,7 +250,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "clip index on the track, from project.clips (deprecated, use clip); every clip of the track when neither is given",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::clip_color::set_clip_color,
         policy: Policy::UNHEARD,
     },
@@ -270,7 +270,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             optional("stack", ParamType::Bool, "true leaves clips under it as they are; false (default) replaces them"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::clip_edges::trim_clip,
         policy: Policy::DEFAULT,
     },
@@ -285,7 +285,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("end", ParamType::Number, "where the clip's right edge goes, in beats from the beginning"),
             optional("stack", ParamType::Bool, "true leaves clips under it as they are; false (default) replaces them"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::clip_edges::stretch_clip,
         policy: Policy::DEFAULT,
     },
@@ -327,7 +327,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "true leaves clips under them as they are; false (default) replaces them",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::range::move_clips,
         policy: Policy::DEFAULT,
     },
@@ -344,7 +344,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             param("at", ParamType::Number, "where to cut, in beats from the beginning of the song, inside the clip"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: editing::split_clip,
         policy: Policy::DEFAULT,
     },
@@ -361,7 +361,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "only these clips (ids from project.clips), the others in the range left as they are: one row of a stack",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: editing::consolidate,
         policy: Policy::DEFAULT,
     },
@@ -393,7 +393,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "\"#rrggbb\": the colour the clip shows now, which it keeps on another track when it has none of its own",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: move_clip,
         policy: Policy::DEFAULT,
     },
@@ -408,9 +408,9 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Track,
                 "track to move the clip to (id or name); it must take the clip's kind: notes or audio (default: the same track)",
             ),
-            optional("toScene", ParamType::Integer, "the scene to move it to, from 1 (default: the same scene)"),
+            optional("toScene", ParamType::Integer, "the scene to move it to, from 0 (default: the same scene)"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: move_slot,
         policy: Policy::DEFAULT,
     },
@@ -418,7 +418,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.record",
         label: "Record into an empty clip slot of an armed track from the next launch boundary (after the count-in when the transport is stopped); clip.launch on the slot ends the take at the next boundary and plays it, looped",
         params: &[TRACK, SCENE],
-        kind: CommandKind::Transport,
+        kind: CommandKind::TRANSPORT,
         run: crate::recording::record_clip,
         policy: Policy::DEFAULT,
     },
@@ -426,7 +426,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.launch",
         label: "Launch the clip in a track's slot at the next quantisation boundary (an empty slot with a stop button stops the track)",
         params: &[TRACK, SCENE],
-        kind: CommandKind::Transport,
+        kind: CommandKind::TRANSPORT,
         run: launch_clip,
         policy: Policy::DEFAULT,
     },
@@ -446,7 +446,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("start", ParamType::Number, "the loop's start in content beats, 0 to 120000"),
             optional("end", ParamType::Number, "the loop's end in content beats, after start, at most 120000"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::clip_shape::set_loop,
         policy: Policy::DEFAULT,
     },
@@ -466,7 +466,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             optional("transpose", ParamType::Number, "pitch shift in semitones, -48 to 48 (fractions are cents)"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::clip_shape::set_audio,
         policy: Policy::DEFAULT,
     },
@@ -480,7 +480,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_SCENE,
             param("length", ParamType::Number, "the new length in beats, above 0 and at most 120000"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::clip_shape::set_length,
         policy: Policy::DEFAULT,
     },
@@ -498,7 +498,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the start marker in content beats, 0 to 120000; before the loop's end, or the clip's end",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::clip_shape::set_start,
         policy: Policy::DEFAULT,
     },
@@ -518,13 +518,13 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "actionA",
                 ParamType::Text,
-                "nothing, stop, again, previous, next, first, last, any, other, or \"jump N\" for the slot of scene N",
+                "nothing, stop, again, previous, next, first, last, any, other, or \"jump N\" for the slot of scene N (N from 1, as the window shows it; the scene parameter counts from 0)",
             ),
             optional("actionB", ParamType::Text, "like actionA"),
             optional("chanceA", ParamType::Integer, "weight of action A, 0 to 100"),
             optional("chanceB", ParamType::Integer, "weight of action B, 0 to 100"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: follow::set_follow_action,
         policy: Policy::DEFAULT,
     },
@@ -532,7 +532,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.release",
         label: "Release a slot's launch button (clip.launch is the press): stops a clip in gate mode, ends the repeats of one in repeat mode",
         params: &[TRACK, SCENE],
-        kind: CommandKind::Transport,
+        kind: CommandKind::TRANSPORT,
         run: launch::release_clip,
         policy: Policy::DEFAULT,
     },
@@ -540,7 +540,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.setLaunchMode",
         label: "Set what launching a slot's clip does: trigger (plays until stopped), gate (plays while held), toggle (a second launch stops it) or repeat (relaunches at its quantisation while held)",
         params: &[TRACK, SCENE, param("mode", ParamType::Text, "trigger, gate, toggle or repeat")],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: launch::set_launch_mode,
         policy: Policy::DEFAULT,
     },
@@ -548,7 +548,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.setLegato",
         label: "Set whether a slot's clip starts at the position of the clip it replaces on its track (legato) instead of at its start",
         params: &[TRACK, SCENE, param("on", ParamType::Bool, "true for legato")],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: launch::set_legato,
         policy: Policy::DEFAULT,
     },
@@ -564,7 +564,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "global, none, 8 bars, 4 bars, 2 bars, 1 bar, 1/2, 1/2T, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T or 1/32",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: launch::set_quantization,
         policy: Policy::DEFAULT,
     },
@@ -582,8 +582,13 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Track,
                 "the track to place them on; files it cannot hold go on a new track after it (default: new tracks)",
             ),
+            optional(
+                "after",
+                ParamType::Track,
+                "with no track: put the new tracks after this one, in its group (default: after the last regular track)",
+            ),
             optional("start", ParamType::Number, "arrangement beat the first clip starts at"),
-            optional("scene", ParamType::Integer, "scene number, from 1, of the first clip slot"),
+            optional("scene", ParamType::Integer, "scene number, from 0, of the first clip slot"),
             optional(
                 "separate",
                 ParamType::Bool,
@@ -596,7 +601,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "stretch mode for samples with a known tempo: repitch, rhythmic (default), tonal, texture, smooth, high-quality",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: files::add_files,
         policy: Policy { after: After::Recent(Recent::Files), ..Policy::CRITICAL },
     },
@@ -605,12 +610,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Make an empty clip on a track that holds clips: MIDI on a notes track, audio with no file yet on an audio track; in an empty clip slot, or at a beat in the arrangement, replacing what it covers unless stacked",
         params: &[
             TRACK,
-            optional("scene", ParamType::Integer, "scene number, from 1, of an empty clip slot"),
+            optional("scene", ParamType::Integer, "scene number, from 0, of an empty clip slot"),
             optional("start", ParamType::Number, "arrangement beat it starts at, at least 0"),
             optional("length", ParamType::Number, "length in beats (default one bar of the time signature)"),
             optional("stack", ParamType::Bool, "in the arrangement, keep the clips the new one covers (default false)"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: files::create_clip,
         policy: Policy::DEFAULT,
     },
@@ -618,7 +623,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "clip.scale",
         label: "The scale of a MIDI clip (root and mode, or null for none) and the project's default scale for new clips",
         params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
-        kind: CommandKind::Read,
+        kind: CommandKind::READ,
         run: crate::scales::clip_scale,
         policy: Policy::DEFAULT,
     },
@@ -634,7 +639,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             SCALE_MODE,
             optional("off", ParamType::Bool, "true clears the scale; not with root or mode"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: crate::scales::set_scale,
         policy: Policy::DEFAULT,
     },
@@ -688,7 +693,7 @@ fn clip_at(p: &Project, params: &Value) -> Result<ClipAt, CommandError> {
             let (column, scene) = (column_index(p, params)?, scene_index(p, params)?);
             match p.launcher.columns.get(column).and_then(|c| c.slots.get(scene)) {
                 Some(slot) if slot.clip.is_some() => Ok(ClipAt::Slot { column, scene }),
-                _ => Err(format!("the slot of scene {} is empty", scene + 1).into()),
+                _ => Err(format!("the slot of scene {} is empty", scene).into()),
             }
         }
         (Some(_), None) => lane_and_index(p, params).map(|(lane, index)| ClipAt::Arrangement { lane, index }),
@@ -836,7 +841,7 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
             let (column, scene) = (column_index(p, params)?, scene_index(p, params)?);
             let slot = p.launcher.columns.get(column).and_then(|c| c.slots.get(scene));
             let clip =
-                slot.and_then(|s| s.clip.clone()).ok_or_else(|| format!("the slot in scene {} is empty", scene + 1))?;
+                slot.and_then(|s| s.clip.clone()).ok_or_else(|| format!("the slot in scene {} is empty", scene))?;
             let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
             copied.push((clip, content));
         }
@@ -939,7 +944,7 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
             p.launcher.columns.get_mut(column).and_then(|c| c.slots.get_mut(scene)).ok_or("the slot is missing")?;
         let replaced = slot.clip.is_some();
         slot.clip = Some(placed);
-        return Ok(json!({ "clip": placed_id.0, "track": track.0, "scene": scene + 1, "replaced": replaced }));
+        return Ok(json!({ "clip": placed_id.0, "track": track.0, "scene": scene, "replaced": replaced }));
     }
     let start = match at {
         PasteAt::Beat(start) => start,
@@ -1183,6 +1188,19 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
         Some(v) => v.as_bool().ok_or("stack must be true or false")?,
     };
     let clips = clip_list(&session.project, params)?;
+    // The clips go as one block, on every track at once: each copy keeps its place among the
+    // others, moved by the span from the first start to the last end, so copies never land on the
+    // clips they copy (one clip: right after it).
+    let spans: Vec<(f64, f64)> = clips
+        .iter()
+        .filter_map(|(track, index)| {
+            let lane = session.project.arrangement.lanes.iter().find(|l| l.track == Some(*track))?;
+            lane.clips.get(*index).map(|c| (c.start, c.start + c.length))
+        })
+        .collect();
+    let first = spans.iter().map(|s| s.0).fold(f64::INFINITY, f64::min);
+    let last = spans.iter().map(|s| s.1).fold(f64::NEG_INFINITY, f64::max);
+    let shift = if last > first { last - first } else { 0.0 };
     // The automation under each clip, laid under its copy once the copies are placed.
     let carried: Vec<(TrackId, f64, Vec<crate::automation_range::Under>)> = clips
         .iter()
@@ -1190,7 +1208,7 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
             let lane = session.project.arrangement.lanes.iter().find(|l| l.track == Some(*track))?;
             let clip = lane.clips.get(*index)?;
             let end = clip.start + clip.length;
-            Some((*track, end, crate::automation_range::under(session, *track, clip.start, end)))
+            Some((*track, clip.start + shift, crate::automation_range::under(session, *track, clip.start, end)))
         })
         .collect();
     let p = &mut session.project;
@@ -1201,7 +1219,7 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
             Some(lane) => indexes
                 .iter()
                 .filter_map(|i| lane.clips.get(*i))
-                .map(|c| Clip { start: c.start + c.length, ..c.clone() })
+                .map(|c| Clip { start: c.start + shift, ..c.clone() })
                 .collect(),
             None => continue,
         };
@@ -1214,7 +1232,7 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
         let take_spans: Vec<_> = copies
             .iter()
             .filter_map(|c| {
-                let original = Clip { start: c.start - c.length, ..c.clone() };
+                let original = Clip { start: c.start - shift, ..c.clone() };
                 crate::take_carry::span_of_part(p, track, track, &original, c.length)
             })
             .collect();
@@ -1370,12 +1388,9 @@ fn move_slot(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     };
     let to_scene: Option<usize> = match Args::new(params).value("toScene") {
         None => None,
-        Some(v) => Some(
-            v.as_u64()
-                .and_then(|n| usize::try_from(n).ok())
-                .and_then(|n| n.checked_sub(1))
-                .ok_or("toScene must be a whole number from 1")?,
-        ),
+        Some(v) => {
+            Some(v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("toScene must be a whole number from 0")?)
+        }
     };
 
     // An empty track of the other kind takes the clip's (#945).
@@ -1474,7 +1489,7 @@ fn move_slot(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     Ok(json!({
         "moved": true,
         "track": to_track.0,
-        "scene": to_scene + 1,
+        "scene": to_scene,
         "swapped": swapped,
     }))
 }
@@ -1494,5 +1509,5 @@ fn launch_clip(session: &mut Session, params: &Value) -> Result<Value, CommandEr
         _ => return Err("that slot is empty and has no stop button".into()),
     };
     send(session, LaunchCommand::LaunchClip { column, slot: scene })?;
-    Ok(json!({ "scene": scene + 1, "queued": queued }))
+    Ok(json!({ "scene": scene, "queued": queued }))
 }

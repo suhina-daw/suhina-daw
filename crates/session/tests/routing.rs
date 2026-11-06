@@ -64,16 +64,20 @@ fn project_built() -> Project {
             length: 1.0,
             lanes: vec![ContentLane {
                 target: None,
-                data: LaneData::Notes(vec![Note {
-                    time: 0.0,
-                    duration: 1.0,
-                    key: 69,
-                    velocity: 1.0,
-                    release_velocity: 0.5,
-                    channel: 0,
-                    muted: false,
-                }]),
-            }],
+                data: LaneData::Notes(
+                    vec![Note {
+                        time: 0.0,
+                        duration: 1.0,
+                        key: 69,
+                        velocity: 1.0,
+                        release_velocity: 0.5,
+                        channel: 0,
+                        muted: false,
+                    }]
+                    .into(),
+                ),
+            }]
+            .into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -101,7 +105,7 @@ fn project_built() -> Project {
                     extensions: Extensions::default(),
                 }],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -114,7 +118,7 @@ fn output(session: &Session, channel: u32) -> Option<ChannelId> {
 
 /// The loudest sample of the left and of the right channel (both the same here: nothing is panned).
 fn peaks(project: &Project) -> (f32, f32) {
-    let samples = suhina_engine::render_offline(project, 48_000, 512).unwrap();
+    let samples = suhina_engine::render_offline(project, 48_000, 512, suhina_session::devices()).unwrap();
     samples.as_chunks::<2>().0.iter().fold((0.0f32, 0.0f32), |(l, r), [a, b]| (l.max(a.abs()), r.max(b.abs())))
 }
 

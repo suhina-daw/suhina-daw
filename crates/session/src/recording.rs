@@ -362,7 +362,7 @@ impl Session {
         take.asked = Some(Instant::now());
         take.play = true;
         self.send_ends();
-        Some(json!({ "scene": scene + 1, "queued": "end recording", "end_beat": end }))
+        Some(json!({ "scene": scene, "queued": "end recording", "end_beat": end }))
     }
 
     /// Takes in what the recording thread has, finishes the takes that are done (one undo step
@@ -548,7 +548,7 @@ impl Session {
                 if !(length > 0.0 && length.is_finite()) {
                     return Ok(());
                 }
-                (LaneData::Notes(notes_of(&take, length)), length)
+                (LaneData::Notes(notes_of(&take, length).into()), length)
             }
             Some(path) => {
                 let (frames, channels, error) = take.finished.clone().unwrap_or((0, 1, None));
@@ -578,7 +578,7 @@ impl Session {
                     duration_seconds: Some(seconds),
                     warped: false,
                     stretch: StretchMode::default(),
-                    warp_markers: Vec::new(),
+                    warp_markers: Default::default(),
                     gain: 1.0,
                     transpose: 0.0,
                     stream: None,
@@ -792,7 +792,7 @@ impl Session {
                     duration_seconds: Some(seconds),
                     warped: false,
                     stretch: StretchMode::default(),
-                    warp_markers: Vec::new(),
+                    warp_markers: Default::default(),
                     gain: 1.0,
                     transpose: 0.0,
                     stream: None,
@@ -843,7 +843,7 @@ impl Session {
                     _ => {
                         let played = take.notes.iter().filter_map(|n| in_pass(n, pass, take.start).map(|at| (n, at)));
                         let notes = notes_in(played, pass.length);
-                        (add_content(p, &name, pass.length, LaneData::Notes(notes))?, 0.0, pass.length)
+                        (add_content(p, &name, pass.length, LaneData::Notes(notes.into()))?, 0.0, pass.length)
                     }
                 };
                 suhina_plugins::trace!(
@@ -892,7 +892,7 @@ fn add_content(p: &mut Project, name: &str, length: f64, data: LaneData) -> Resu
         id,
         name: name.to_string(),
         length,
-        lanes: vec![ContentLane { target: None, data }],
+        lanes: vec![ContentLane { target: None, data }].into(),
         extensions: Default::default(),
         scale,
     });
@@ -1018,7 +1018,7 @@ pub(crate) fn record_clip(session: &mut Session, params: &Value) -> Result<Value
     session.begin_takes(&[track], Target::Slot { scene }, start, running)?;
     Ok(json!({
         "track": track.0,
-        "scene": scene + 1,
+        "scene": scene,
         "start_beat": start,
         "count_in_bars": if running { 0 } else { session.live.recording.count_in_bars },
     }))
@@ -1150,7 +1150,7 @@ pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, Co
             json!({
                 "track": t.track.0,
                 "track_name": track_name(p, t.track),
-                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene + 1 }), Target::Arrangement => json!("arrangement"), Target::Sampler { device } => json!({"device": device}) },
+                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene }), Target::Arrangement => json!("arrangement"), Target::Sampler { device } => json!({"device": device}) },
                 "kind": if t.file.is_some() { "audio" } else { "midi" },
                 "start_beat": t.start,
                 "end_beat": t.end,

@@ -1,9 +1,9 @@
 ---
 description: What a MIDI controller can do in Suhina - sources, targets, ranges, takeover, relative encoders, gestures and undo, the controller profile file, mappings saved in a project, the mapping mode and MIDI learn, the commands, and how malformed input is treated
-read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback
+read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, launch keys, launcher.mappings, Map keys, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback, surface program, Lua runner
 type: spec
 status: planned
-last_verified: 2026-11-02
+last_verified: 2026-11-06
 ---
 
 # MIDI controllers and mapping
@@ -35,9 +35,10 @@ last_verified: 2026-11-02
 | `note` | Note on and note off, key 0 to 127 | velocity 1 to 127, or 0 for off | A note on of velocity 0 is a note off. |
 | `bend` | Pitch bend | 0 to 16383, 8192 at rest | Per channel. |
 | `program` | Program change | 0 to 127 | No value of its own: the number is the control, and the message is a trigger. |
+| `key` | A computer key, pressed without Ctrl, Alt, Shift or Cmd | pressed or released | Not MIDI: a key of the window's keyboard, for project mappings to triggers and toggles only (see *Launch keys*). |
 
 A source is written `kind:channel:number`, for example `cc:1:21`, `cc14:1:7`, `note:10:36`,
-`bend:2`, `program:1:5`. With several ports, a source also names its port: by the profile that
+`bend:2`, `program:1:5`, and a key by its name, `key:Q`, `key:1`, `key:Space`, `key:F5`. With several ports, a source also names its port: by the profile that
 matched the port, or by the port's name.
 
 **Relative encoders** send changes, not positions. A `cc` control may be marked relative with
@@ -65,7 +66,7 @@ A command can be a target when its registry entry describes its **value**
 | Stop a track's clips | `track.stop` | trigger |
 | A device parameter | `device.setParam` | the parameter's own kind, range and curve from `ParamInfo` |
 | Device on and off | `device.setEnabled` | toggle |
-| Launch a clip slot | `clip.launch` | trigger |
+| Launch a clip slot | `clip.launch` | trigger; the release runs `clip.release` (a clip in gate or repeat mode) |
 | Launch a scene | `scene.launch` | trigger |
 | Stop all clips | `launcher.stopAll` | trigger |
 | Play, stop | `transport.play`, `transport.stop` | trigger |
@@ -73,6 +74,7 @@ A command can be a target when its registry entry describes its **value**
 | Metronome | `transport.setMetronome` | toggle |
 | Undo, redo | `edit.undo`, `edit.redo` | trigger |
 
+A trigger's value description may name the command its release runs; only `clip.launch` does.
 Sends, plug-in parameters and launch quantisation join when they are commands with a value. A
 target may be **relative to the focus** instead of naming a track or device:
 
@@ -207,11 +209,12 @@ empty:
 ```json
 "controller_mappings": [
   { "profile": "knob-box", "source": "cc:1:23", "target": { "command": "device.setParam", "track": 4, "device": 1, "param": "cutoff" }, "takeover": "jump" },
-  { "port": "USB MIDI 1", "source": "note:1:60", "target": { "command": "clip.launch", "track": 2, "scene": 1 } }
+  { "port": "USB MIDI 1", "source": "note:1:60", "target": { "command": "clip.launch", "track": 2, "scene": 0 } }
 ]
 ```
 
-- A source names a `profile` (by id) or a `port` (by name), never both.
+- A source names a `profile` (by id) or a `port` (by name), never both. A `key` source names
+  neither; a MIDI source that names neither is heard from every port.
 - Targets name tracks by id and devices by position, like the commands. When a track or device is
   deleted, its mappings stay in the list, unused and shown as broken in the mapping list, so an
   undo brings them back working; `mapping.removeBroken` deletes them.
@@ -219,17 +222,44 @@ empty:
 - Reading follows the format's rules for malformed input: a mapping that does not parse is
   dropped with a warning, the rest of the project opens.
 
+### Launch keys
+
+Launch keys ([clip launching](clip-launching.md#launching-from-keys-and-notes)) are built and
+become entries of this list when it is built
+([ADR 0019 › Amendment: launch keys are controller mappings](../decisions/0019-midi-controllers-and-mapping.md#amendment-launch-keys-are-controller-mappings-2026-11-02)):
+
+```json
+{ "source": "key:Q", "target": { "command": "clip.launch", "track": 2, "scene": 0 } },
+{ "source": "note:10:36", "target": { "command": "scene.launch", "scene": 3 } },
+{ "source": "key:Space", "target": { "command": "track.stop", "track": 2 } }
+```
+
+- A key down is the press and a key up the release, as a note on and a note off are. A held key
+  that the system repeats is not pressed again.
+- A mapped key wins over a shortcut on the same key only while the Launcher view is shown and
+  nothing else has the keyboard, and a held key is released when that ends
+  ([Launcher view](ui-session-view.md#launch-keys)). Mapped keys elsewhere in the window are not
+  decided.
+- A source has one target at most in a project; mapping it again moves it. This is *Conflicts*'
+  rule, which launch keys already follow.
+- The version that adds `controller_mappings` reads the launcher's `mappings` of an older file
+  as entries of this list (`slot` → `clip.launch`, `scene` → `scene.launch`, `stop` →
+  `track.stop`, their notes with no port), and never writes the launcher's `mappings` again.
+
 ## Mapping mode
 
 - **Turning it on**: the **Map** button at the right of the title bar, or Ctrl+M
-  (`view.mappingMode`). The button stays lit while the mode is on; Escape or Ctrl+M again leaves.
+  (`view.mappingMode`). It is the launch keys' mode (**Map keys** today), grown to every
+  mappable control. The button stays lit while the mode is on; Escape or Ctrl+M again leaves.
 - **What it shows**: every control in the window that has a mappable target (a fader, pan knob,
   mute, solo and arm button, a device's knobs, a clip slot, a scene's launch button, the play and
   stop buttons, the tempo) gets a tinted overlay; a control that is mapped shows the source in
   small text on the overlay (`CC 21`, `Note 36`). Clicking a control selects it and does not
   operate it.
 - **Learning**: with a control selected, the next message from any controller that is not a note
-  off or a value of zero on a button is taken as its source. A mapping is made in the project, or
+  off or a value of zero on a button is taken as its source; so is a key pressed without Ctrl,
+  Alt, Shift or Cmd when the control's target is a trigger or a toggle. Delete or Backspace with
+  nothing being learned removes the selected control's project mappings. A mapping is made in the project, or
   in the active port's profile when **Save to profile** is ticked in the mapping list and the
   target names nothing in the project. A relative encoder is recognized when it sends only values
   near 1, 127, 63 or 65 during learning; otherwise the control is absolute.
@@ -250,12 +280,13 @@ empty:
 | `mapping.list` | read | The mappings that reach the active project, project and profile, with their state |
 | `mapping.add` | edit | Adds a project mapping: `source`, `target`, and the optional settings |
 | `mapping.set` | edit | Changes a project mapping's settings |
-| `mapping.remove` | edit | Removes a project mapping, by its index in `mapping.list` |
+| `mapping.remove` | edit | Removes a project mapping, by its index in `mapping.list` or by its `source`, or every project mapping of a `target` |
 | `mapping.removeBroken` | edit | Removes the project mappings whose target no longer exists |
 | `mapping.learn` | transport | Waits up to 10 s for the next control moved and returns its source; makes no mapping |
 | `mapping.bankNext`, `mapping.bankPrevious` | transport | Move the bank of eight tracks |
 
-`controllers.*` runs on `Projects`, like `audio.*`; agents over MCP may run all of them. Adding a
+They replace `launcher.addMapping`, `launcher.removeMapping` and `launcher.mappings`, which are
+removed in the same change (*Launch keys*). `controllers.*` runs on `Projects`, like `audio.*`; agents over MCP may run all of them. Adding a
 mapping over MCP is the way an agent maps without a window.
 
 ## Feedback (later)
@@ -269,12 +300,32 @@ to the control that moves it. The velocities a pad needs for its colours are the
 
 ## Surface programs (later)
 
-A surface program is an extension ([`extensions.md`](extensions.md)) whose manifest says
-`"provides": "surface"` and lists the port name patterns it claims. Suhina passes it every
-message from those ports, system exclusive included, sends what it asks on their output ports,
+A surface program is an extension ([`extensions.md`](extensions.md)) whose `provides` carries an
+entry with the id `surface`, and whose `ports` are the port name patterns it claims. Suhina
+passes it every message from those ports, system exclusive included, sends what it asks on
+their output ports,
 and gives it the command protocol: it runs commands, reads state through reading commands and
 subscribes to changes. It never reaches the engine or the model by another way. When it is not
 running, its ports fall back to their profiles.
+
+Suhina ships the **Lua runner** ready-made: a small separate program built from this tree, which
+runs a surface program's script. The extension is the script's folder, not the runner: its
+manifest carries in `provides` an entry with the id `surface`, lists in `ports` the port name
+patterns the script claims, lists the script file in `programs` with its SHA-256, and names in
+`runner` the runner it needs (`"lua"`). Suhina starts the runner it shipped with that script, so
+each surface program is one runner process of its own: a crash or a hang of the runner process
+restarts that program alone, with its ports back on the profiles meanwhile, the way a plug-in
+host's process is restarted. A script holds what any surface program
+is given and nothing more: every message of its claimed ports, with the timestamp it arrived
+with; a send-back leaves from a queue Suhina drains, and the script never waits on an answer to
+send one; commands, reading commands and subscriptions. The runner's Lua environment is
+narrowed to what it allows: no `io` or `os`, no `dofile`, `loadfile` or `package` (no `require`
+with it), and `load` reads text chunks only; that narrowing is the runner's convenience, and
+the boundary that is enforced is the process the runner runs in. The runner preloads its own
+helpers, the usual modes, layers and session, mixer and device components, versioned with the
+runner and outside the surface-program protocol, for a script to compose instead of
+reimplement. A script whose handler fails is stopped at an error boundary and shows in the
+extension's state: it stays stopped, its ports on their profiles, until `extensions.restart`.
 
 ## Testing
 

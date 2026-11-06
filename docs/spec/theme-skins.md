@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-03
+last_verified: 2026-11-05
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -950,7 +950,8 @@ of bars, and a slider id per parameter.
   clipped below its header and buttons.
 - **Browser:** `.browser-place` and `.browser-row` with their states.
 - **Loop lines:** `.loop-line` (`color`, `width` 0.5–6), from the top of the lanes to the bottom
-  of the fixed rows, at the dragged brace while it moves.
+  of the fixed rows, at the dragged brace while it moves. They stay in the timeline: a loop edge
+  under the track headers, on either side, is hidden under them, as is the insert marker (#1197).
 - **Nine-slice sampling:** the middle column and row sample half a texel inside their pixels.
 - **File order:** there is one sheet, `theme.css`; the editors' rules are edited into it.
 

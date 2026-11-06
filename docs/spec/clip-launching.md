@@ -163,7 +163,7 @@ own decision (**Suhina:**), not yet compared with Live 12 (see *To observe*).
 7. **Commands.** `clip.setFollowAction {track, scene, enabled?, time?, linked?, actionA?,
    actionB?, chanceA?, chanceB?}` changes what it is given, in one undo step; actions are named
    `nothing`, `stop`, `again`, `previous`, `next`, `first`, `last`, `any`, `other` or `jump N`
-   (N a scene number, from 1). `project.launcher` lists each slot clip's `follow_action`. The
+   (N a scene number, from 1: the follow action's name, as the file keeps it and the window shows it, unlike the `scene` parameters, which count from 0). `project.launcher` lists each slot clip's `follow_action`. The
    project file stores it as the clip's `follow` ([suhina-format](suhina-format.md)). The
    detail area shows a selected slot clip's follow action and changes it through the same
    command ([Launcher view](ui-session-view.md) › Detail area: follow action).
@@ -225,9 +225,12 @@ settings ([Suhina format](suhina-format.md)).
 ## Launching from keys and notes
 
 A **mapping** makes a computer key or a MIDI note launch a slot, a scene or a track's stop
-button, the same way the mouse does. This is Suhina's own design; the general controller
-mappings of [ADR 0019](https://github.com/suhina-daw/suhina-daw/pull/405) (knobs, faders,
-profiles) are planned separately and can take these over.
+button, the same way the mouse does. This is Suhina's own design. The general controller
+mappings of [ADR 0019](../decisions/0019-midi-controllers-and-mapping.md#amendment-launch-keys-are-controller-mappings-2026-11-02) (knobs, faders, profiles; planned) take these over when they are
+built: a launch key becomes a controller mapping with a launch command as its target, kept in
+`controller_mappings`, made in the same mapping mode and by `mapping.*` instead of the
+`launcher.*` commands below ([MIDI mapping › Launch keys](midi-mapping.md#launch-keys)). What
+a key or a note does stays as described here.
 
 1. **Sources.** A key by its name (`key:Q`, `key:1`, `key:Space`, `key:F5`), pressed without
    Ctrl, Alt, Shift or Cmd; or a MIDI note on a channel (`note:<channel 1-16>:<note 0-127>`,
@@ -329,7 +332,7 @@ The project file keeps them under the launcher ([Suhina format](suhina-format.md
 **Suhina**, our own design: a clip gets into a slot from the arrangement, and from a slot onto
 the arrangement, by copying ([Launcher view](ui-session-view.md) › Between the views).
 
-- `clip.copy {track, scene}` copies the clip in a track's slot (scene from 1); `clip.copy
+- `clip.copy {track, scene}` copies the clip in a track's slot (scene from 0); `clip.copy
   {track, index}` an arrangement clip. Both fill the same clipboard.
 - `clip.paste {track, scene}` puts the copied clip in that track's slot: the track must have clip
   slots (a group or return track has none), the scene must exist, and the track must take the

@@ -43,6 +43,7 @@ fn clicking_a_second_device_moves_the_selection_so_delete_takes_it() {
     use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions};
     let mut project = project_with_a_device();
     project.channels[0].devices.push(Device {
+        id: Default::default(),
         name: "Utility 2".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,
@@ -87,6 +88,7 @@ fn a_removals_undo_puts_the_selection_back_on_its_device() {
     use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions};
     let mut project = project_with_a_device();
     project.channels[0].devices.push(Device {
+        id: Default::default(),
         name: "Utility 2".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,
@@ -156,7 +158,9 @@ fn the_detail_area_shows_the_selected_tracks_devices_in_a_row_or_stacked() {
 #[test]
 fn the_piano_roll_playhead_follows_a_launched_clip_not_the_transport() {
     let project = demo_project();
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
@@ -308,6 +312,7 @@ fn removing_a_device_below_the_selected_one_moves_the_selection_with_it() {
     };
     let mut project = project_with_a_device();
     project.channels[0].devices.push(Device {
+        id: Default::default(),
         name: "Utility 2".into(),
         kind: DeviceKind::Builtin("utility".into()),
         enabled: true,
@@ -381,7 +386,7 @@ fn an_automated_parameter_shows_its_lane_without_a_player() {
     use suhina_engine::model::{AutomationLane, AutomationPoint};
     let mut project = project_with_a_device();
     let mut lane = AutomationLane::new("gain");
-    lane.points = vec![AutomationPoint::new(0.0, -12.0)];
+    lane.points = vec![AutomationPoint::new(0.0, -12.0)].into();
     project.channels[0].devices[0].automation.push(lane);
     let mut app = App::new();
     app.set_session(Session::new(project), &[]);

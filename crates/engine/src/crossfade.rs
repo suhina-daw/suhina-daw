@@ -74,7 +74,7 @@ mod tests {
             id: ContentId(1),
             name: "take".into(),
             length: 24.0,
-            lanes: Vec::new(),
+            lanes: Vec::new().into(),
             extensions: Default::default(),
             scale: None,
         });
@@ -152,7 +152,8 @@ mod tests {
         p.contents[0].lanes = vec![suhina_model::ContentLane {
             target: None,
             data: suhina_model::LaneData::Audio(suhina_model::AudioRegion::new("t.wav")),
-        }];
+        }]
+        .into();
         // Only the first two parts: 0.2 from take 1, then 0.6 from take 2.
         p.arrangement.lanes[0].clips.truncate(2);
         p.assign_ids().unwrap();
@@ -160,7 +161,9 @@ mod tests {
         let samples: Vec<f32> = (0..beat * 24).map(|i| if i < beat * 8 { 0.2 } else { 0.6 }).collect();
         let mut pool = AudioPool::new();
         pool.files.insert("t.wav".into(), std::sync::Arc::new(AudioData { sample_rate: SR, channels: 1, samples }));
-        let out = render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap();
+        let out =
+            render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 512, None)
+                .unwrap();
         let left = |frame: usize| out.get(frame * 2).copied().unwrap_or(0.0);
         let take_1 = left(beat * 2);
         let take_2 = left(beat * 5);

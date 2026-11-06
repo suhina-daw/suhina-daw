@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use suhina_device_api::NoteEvent;
-use suhina_model::{ChannelId, DeviceKind, Project, TrackId, walk_devices};
+use suhina_model::{ChannelId, DeviceId, DeviceKind, Project, TrackId, walk_devices};
 
 use crate::plugin_params::{ParamEvent, SlotParams};
 
@@ -239,10 +239,15 @@ pub struct PluginDevice {
     pub track: Option<TrackId>,
 }
 
-/// The key of the `nth` plug-in device of `kind` (counting from 0) on `channel`: it stays the
-/// same while devices are added, removed or moved around it, so a running plug-in keeps its
-/// slot through edits. `None` for devices that are not plug-ins.
-pub fn plugin_key(channel: ChannelId, kind: &DeviceKind, nth: u32) -> Option<u64> {
+/// The key of the plug-in device `device` of `kind` on `channel`, from its id (#763 › 1): it stays
+/// the same while devices are added, removed or moved around it on the channel, identical
+/// plug-ins included, so a running plug-in keeps its process and its state through edits. A
+/// device moved to another channel gets a new key, and a new process from its saved state.
+///
+/// A device without an id yet (a project the session has not given ids, as some tests build) is
+/// keyed by `nth`, how many plug-ins of `kind` come before it on the channel (counting from 0).
+/// `None` for devices that are not plug-ins.
+pub fn plugin_key(channel: ChannelId, kind: &DeviceKind, device: DeviceId, nth: u32) -> Option<u64> {
     let (format, id): (u8, String) = match kind {
         DeviceKind::Clap { id } => (1, id.clone()),
         DeviceKind::Vst3 { id } => (2, id.clone()),
@@ -260,15 +265,18 @@ pub fn plugin_key(channel: ChannelId, kind: &DeviceKind, nth: u32) -> Option<u64
     eat(&channel.0.to_le_bytes());
     eat(&[format]);
     eat(id.as_bytes());
-    eat(&[0]);
-    eat(&nth.to_le_bytes());
+    if device.is_some() {
+        eat(&[0, 1]);
+        eat(&device.0.to_le_bytes());
+    } else {
+        eat(&[0]);
+        eat(&nth.to_le_bytes());
+    }
     Some(hash)
 }
 
-/// Every plug-in device in `project`, channel by channel, in order: depth-first through device
-/// groups, so "the nth of the same plug-in" counts the same way inside groups as outside, and
-/// moving a plug-in into or out of a group keeps its key while the order of identical plug-ins
-/// stays (`docs/spec/device-groups.md`).
+/// Every plug-in device in `project`, channel by channel, in order, depth-first through device
+/// groups, each with its key ([`plugin_key`]): moving a plug-in into or out of a group keeps it.
 pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
     let mut list = Vec::new();
     for channel in &project.channels {
@@ -281,7 +289,7 @@ pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
         let mut seen: Vec<(u64, u32)> = Vec::new();
         for (path, device) in walk_devices(&channel.devices) {
             let position = path.first().copied().unwrap_or(0);
-            let Some(first) = plugin_key(channel.id, &device.kind, 0) else { continue };
+            let Some(first) = plugin_key(channel.id, &device.kind, DeviceId::NONE, 0) else { continue };
             let nth = match seen.iter_mut().find(|(k, _)| *k == first) {
                 Some((_, count)) => {
                     *count += 1;
@@ -292,7 +300,7 @@ pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
                     0
                 }
             };
-            if let Some(key) = plugin_key(channel.id, &device.kind, nth) {
+            if let Some(key) = plugin_key(channel.id, &device.kind, device.id, nth) {
                 list.push(PluginDevice { key, channel: channel.id, position, path, track });
             }
         }
@@ -315,14 +323,16 @@ impl Plugins {
     /// Reconfigures all retained processors before building a renderer at a new rate.
     /// Never called from rendering. Failure aborts opening the new renderer: mixing
     /// processors configured at different rates would produce incorrect sound.
-    pub fn reconfigure(&mut self, sample_rate: u32, timeout: Duration) -> Result<(), String> {
+    pub fn reconfigure(&mut self, sample_rate: u32, timeout: Duration) -> Result<(), crate::ControlError> {
         let deadline = Instant::now() + timeout;
         for (key, processor) in &mut self.processors {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
-                return Err("plug-in audio reconfiguration timed out".into());
+                return Err(crate::ControlError::Plugin("plug-in audio reconfiguration timed out".into()));
             }
-            let latency = processor.reconfigure(sample_rate, left).map_err(|why| format!("plug-in {key}: {why}"))?;
+            let latency = processor
+                .reconfigure(sample_rate, left)
+                .map_err(|why| crate::ControlError::Plugin(format!("plug-in {key}: {why}")))?;
             if let Some(info) = self.info.get_mut(key) {
                 info.latency = latency;
             }
@@ -613,29 +623,39 @@ mod tests {
     #[test]
     fn keys_follow_the_plug_in_not_its_position() {
         let vst3 = DeviceKind::Vst3 { id: "ABC".into() };
-        let a = plugin_key(ChannelId(1), &vst3, 0);
+        let key = |channel: u32, kind: &DeviceKind, id: u32, nth: u32| {
+            plugin_key(ChannelId(channel), kind, suhina_model::DeviceId(id), nth)
+        };
+        let a = key(1, &vst3, 5, 0);
         assert!(a.is_some());
-        assert_eq!(a, plugin_key(ChannelId(1), &vst3, 0));
-        assert_ne!(a, plugin_key(ChannelId(1), &vst3, 1));
-        assert_ne!(a, plugin_key(ChannelId(2), &vst3, 0));
-        assert_ne!(a, plugin_key(ChannelId(1), &DeviceKind::Clap { id: "ABC".into() }, 0));
-        assert_eq!(plugin_key(ChannelId(1), &DeviceKind::Builtin("utility".into()), 0), None);
+        assert_eq!(a, key(1, &vst3, 5, 3), "an id makes the place irrelevant");
+        assert_ne!(a, key(1, &vst3, 6, 0));
+        assert_ne!(a, key(2, &vst3, 5, 0));
+        assert_ne!(a, key(1, &DeviceKind::Clap { id: "ABC".into() }, 5, 0));
+        assert_ne!(key(1, &vst3, 0, 0), key(1, &vst3, 0, 1), "without an id, by place");
+        assert_ne!(key(1, &vst3, 0, 1), key(1, &vst3, 1, 0), "an id is never taken for a place");
+        assert_eq!(key(1, &DeviceKind::Builtin("utility".into()), 5, 0), None);
 
         let mut project = crate::chain_tests::empty_project();
+        let with_id = |kind: DeviceKind, id: u32| Device { id: suhina_model::DeviceId(id), ..plug(kind) };
         project.channels[0].devices = vec![
-            plug(vst3.clone()),
-            plug(DeviceKind::Builtin("utility".into())),
-            plug(vst3.clone()),
-            plug(DeviceKind::Vst2 { id: 7 }),
+            with_id(vst3.clone(), 1),
+            with_id(DeviceKind::Builtin("utility".into()), 2),
+            with_id(vst3.clone(), 3),
+            with_id(DeviceKind::Vst2 { id: 7 }, 4),
         ];
         let found = plugin_devices(&project);
         assert_eq!(found.iter().map(|d| d.position).collect::<Vec<_>>(), [0, 2, 3]);
-        assert_eq!(found[0].key, a.unwrap_or_default());
-        assert_eq!(Some(found[1].key), plugin_key(ChannelId(1), &vst3, 1));
+        assert_eq!(Some(found[1].key), key(1, &vst3, 3, 0));
         // A device added in front of them changes no key.
-        project.channels[0].devices.insert(0, plug(DeviceKind::Builtin("utility".into())));
+        project.channels[0].devices.insert(0, with_id(DeviceKind::Builtin("utility".into()), 5));
         let after: Vec<u64> = plugin_devices(&project).iter().map(|d| d.key).collect();
         assert_eq!(after, found.iter().map(|d| d.key).collect::<Vec<_>>());
+        // The first of the two identical plug-ins is removed: the second keeps its own key, so
+        // its own process, not the removed one's.
+        project.channels[0].devices.remove(1);
+        let after: Vec<u64> = plugin_devices(&project).iter().map(|d| d.key).collect();
+        assert_eq!(after, [found[1].key, found[2].key]);
     }
 
     #[test]

@@ -20,7 +20,7 @@
 //! their value at the play start marker. The grid is the arrangement's, not the block's, so the
 //! sound does not depend on the block size. Nothing here allocates after the graph is built.
 
-use suhina_device_api::{Device, ParamInfo, ParamKind};
+use suhina_device_api::{Device, ParamKind, ParamShape, ShapeKind};
 use suhina_model::automation::{self as model, Curve, MAX_POINTS, MUTE, PAN, Taper, VOLUME, VolumeTaper};
 use suhina_model::{AutomationLane, Channel, Project, TrackId};
 
@@ -48,30 +48,16 @@ pub(crate) enum Position {
     Value,
     /// The volume fader, for a linear gain.
     Volume,
-    /// A built-in device parameter, as its knob turns.
-    Param(ParamInfo),
-    /// A data-only device parameter on a logarithmic control: equal steps multiply the value.
-    Log { min: f64, max: f64 },
+    /// A device parameter (a built-in's or a `.sd` graph's), as its knob turns.
+    Param(ParamShape),
 }
 
 impl Position {
-    /// The position of a data-only device's parameter: logarithmic on a log control with a
-    /// positive range, the value itself otherwise.
-    pub(crate) fn sd(parameter: &suhina_device_sdk::Parameter) -> Self {
-        use suhina_device_sdk::ParameterControl::{LogKnob, LogSlider};
-        let (min, max) = (parameter.min, parameter.max);
-        if matches!(parameter.control, LogKnob | LogSlider) && min > 0.0 && max > min {
-            Self::Log { min, max }
-        } else {
-            Self::Value
-        }
-    }
-
     /// What the parameter takes when the lane is at `value`: a whole-number parameter's value
     /// with its fraction cut off toward zero (`ParamInfo::played`), anything else as it is.
     fn played(&self, value: f64) -> f64 {
         match self {
-            Self::Param(info) if matches!(info.kind, ParamKind::Integer) => info.played(value),
+            Self::Param(info) if matches!(info.kind, ShapeKind::Integer) => info.played(value),
             _ => value,
         }
     }
@@ -83,7 +69,6 @@ impl Taper for Position {
             Self::Value => value,
             Self::Volume => VolumeTaper.position(value),
             Self::Param(info) => info.to_normalized(value),
-            Self::Log { min, max } => (value.clamp(*min, *max) / min).ln() / (max / min).ln(),
         }
     }
     fn value(&self, position: f64) -> f64 {
@@ -91,11 +76,10 @@ impl Taper for Position {
             Self::Value => position,
             Self::Volume => VolumeTaper.value(position),
             // A whole-number parameter moves along the line; `played` cuts the fraction off.
-            Self::Param(info) if matches!(info.kind, ParamKind::Integer) => {
+            Self::Param(info) if matches!(info.kind, ShapeKind::Integer) => {
                 info.min + position.clamp(0.0, 1.0) * (info.max - info.min)
             }
             Self::Param(info) => info.from_normalized(position),
-            Self::Log { min, max } => min * (max / min).powf(position.clamp(0.0, 1.0)),
         }
     }
 }
@@ -319,31 +303,7 @@ impl DeviceLanes {
             let stepped =
                 info.params.get(param).is_some_and(|p| matches!(p.kind, ParamKind::Toggle | ParamKind::Choice(_)));
             let Some(info) = info.params.get(param) else { continue };
-            if let Some(envelope) = Envelope::new(lane, frames_per_beat, stepped, Position::Param(*info)) {
-                self.lanes.push(DeviceLane { slot, param, envelope, last: f64::NAN });
-            }
-        }
-        if self.block.capacity() < MAX_EVENTS && !self.lanes.is_empty() {
-            self.block.reserve_exact(MAX_EVENTS);
-        }
-    }
-
-    /// Adds a data-only device's lanes, matched to its parameters by id. Allocates.
-    pub(crate) fn add_sd(
-        &mut self,
-        slot: usize,
-        parameters: &[suhina_device_sdk::Parameter],
-        lanes: &[AutomationLane],
-        frames_per_beat: f64,
-    ) {
-        for lane in lanes {
-            let Some(param) = parameters.iter().position(|p| p.id == lane.param) else { continue };
-            if self.lanes.len() >= MAX_DEVICE_LANES || self.lanes.iter().any(|l| l.slot == slot && l.param == param) {
-                continue;
-            }
-            let Some(parameter) = parameters.get(param) else { continue };
-            let stepped = parameter.control.is_stepped();
-            if let Some(envelope) = Envelope::new(lane, frames_per_beat, stepped, Position::sd(parameter)) {
+            if let Some(envelope) = Envelope::new(lane, frames_per_beat, stepped, Position::Param(info.shape())) {
                 self.lanes.push(DeviceLane { slot, param, envelope, last: f64::NAN });
             }
         }
@@ -427,6 +387,11 @@ pub(crate) struct MixLanes {
 }
 
 impl MixLanes {
+    /// Whether a lane carries the pan: the pan knob is then the lane's, not live.
+    pub(crate) fn has_pan(&self) -> bool {
+        self.pan.is_some()
+    }
+
     /// The lanes of `channel` at `frames_per_beat` and `sample_rate`; `None` when none plays.
     /// Allocates.
     pub(crate) fn new(channel: &Channel, frames_per_beat: f64, pan_applies: bool, sample_rate: f64) -> Option<Self> {

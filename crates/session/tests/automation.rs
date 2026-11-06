@@ -36,10 +36,11 @@ fn sd_device() -> Device {
     graph.connections =
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     Device {
+        id: Default::default(),
         name: "Test Gain".into(),
         kind: DeviceKind::Sd,
         enabled: true,
-        state: graph.to_sd().ok().map(String::into_bytes),
+        state: graph.to_sd().ok().map(String::into_bytes).map(Into::into),
         params: Vec::new(),
         automation: Vec::new(),
         clip_host: false,
@@ -181,7 +182,7 @@ fn mixer_points_are_added_moved_and_deleted_with_undo() {
     let volume = &lanes(&session)[0];
     assert_eq!(volume.param, "volume");
     assert_eq!(
-        volume.points,
+        *volume.points,
         [AutomationPoint { beat: 0.0, value: 0.0, curve: Curve::bend(0.5) }, AutomationPoint::new(4.0, 1.0)]
     );
 
@@ -213,7 +214,8 @@ fn mixer_points_are_added_moved_and_deleted_with_undo() {
     for _ in 0..6 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
-    assert_eq!(session.project(), &project());
+    // The counter stays past the ids the points had: an id is never handed out twice.
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
 }
 
 /// A whole-number parameter's lane, placed as the engine places it: a value between two whole
@@ -237,7 +239,7 @@ fn a_point_added_on_a_whole_number_lane_keeps_the_envelope() {
     let mut session = Session::new(project());
     run(&mut session, "device.add", json!({ "track": 1, "id": "sampler" })).unwrap();
     let poly = suhina_device_registry::info("sampler")
-        .and_then(|info| info.params.iter().find(|p| p.id == "poly").copied())
+        .and_then(|info| info.params.iter().find(|p| p.id == "poly").cloned())
         .unwrap();
     assert!(matches!(poly.kind, suhina_device_api::ParamKind::Integer));
     let taper = WholeNumbers(poly);
@@ -800,9 +802,9 @@ fn scaling_around_the_bottom_and_back_restores_the_line() {
         run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
             .unwrap();
     }
-    let scale = |factor: f64, again: bool| {
+    let scale = |factor: f64, _again: bool| {
         json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": factor, "around": "middle",
-                "continue": again, "replace": again })
+                "gesture": "drag" })
     };
     run(&mut session, "automation.scaleRange", scale(2.0, false)).unwrap();
     let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
@@ -909,7 +911,7 @@ fn continued_scaling_is_one_undo_step() {
             .unwrap();
     }
     let before = pan_points(&session);
-    let scale = |continued: bool| json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": 1.2, "continue": continued });
+    let scale = |_continued: bool| json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": 1.2, "gesture": "drag" });
     run(&mut session, "automation.scaleRange", scale(false)).unwrap();
     run(&mut session, "automation.scaleRange", scale(true)).unwrap();
     run(&mut session, "automation.scaleRange", scale(true)).unwrap();
@@ -918,8 +920,8 @@ fn continued_scaling_is_one_undo_step() {
     assert_eq!(pan_points(&session), before);
 }
 
-/// A slider's live values replace one another (`continue` with `replace`): each runs on the line
-/// as the step found it, a value that changes nothing (Smooth on a sine) leaves the line and the
+/// A slider's live values replace one another (one `gesture` of a command that replaces): each
+/// runs on the line as the gesture found it, a value that changes nothing (Smooth on a sine) leaves the line and the
 /// history as they were, and one undo takes the whole drag back (#916).
 #[test]
 fn replacing_live_values_starts_from_the_line_as_it_was() {
@@ -933,9 +935,9 @@ fn replacing_live_values_starts_from_the_line_as_it_was() {
     )
     .unwrap();
     let sine = lane(&session);
-    let smooth = |amount: f64, continued: bool| {
+    let smooth = |amount: f64, _continued: bool| {
         json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "amount": amount,
-                "continue": continued, "replace": continued })
+                "gesture": "drag" })
     };
     // A sine's segments are bent already: Smooth leaves it, however often it is asked.
     for (i, amount) in [0.2, 0.5, 0.9].into_iter().enumerate() {
@@ -952,9 +954,9 @@ fn replacing_live_values_starts_from_the_line_as_it_was() {
     let mut session = Session::new(project());
     run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0 })).unwrap();
     let line = lane(&session);
-    let shape = |depth: f64, continued: bool| {
+    let shape = |depth: f64, _continued: bool| {
         json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "shape": "square", "depth": depth,
-                "center": 0.5, "continue": continued, "replace": continued })
+                "center": 0.5, "gesture": "drag" })
     };
     run(&mut session, "automation.insertShape", shape(1.0, false)).unwrap();
     run(&mut session, "automation.insertShape", shape(0.5, true)).unwrap();
@@ -1035,4 +1037,124 @@ fn a_point_is_not_added_where_a_half_would_lose_its_rise() {
     let refused = run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 4 }));
     assert!(refused.is_err());
     assert_eq!(lanes(&session)[0], before);
+}
+
+/// A point's id is held by its lane (#763 › 1): moving points keeps theirs, points pasted into
+/// the same lane are new ones, and the points outside a pasted range keep theirs.
+#[test]
+fn moved_points_keep_their_ids_and_pasted_ones_are_new() {
+    let mut session = Session::new(project());
+    let mut ids = Vec::new();
+    for (beat, value) in [(0.0, -1.0), (4.0, 1.0), (16.0, 0.0)] {
+        let added = run(
+            &mut session,
+            "automation.addPoint",
+            json!({ "track": 1, "param": "pan", "beat": beat, "value": value }),
+        )
+        .unwrap();
+        ids.push(added["id"].as_u64().unwrap());
+    }
+    let pan_ids = |session: &Session| -> Vec<u64> {
+        let lane = lanes(session).iter().find(|l| l.param == "pan").unwrap();
+        lane.points.ids().iter().map(|id| id.0).collect()
+    };
+    // One point moved past another, and two moved together: each keeps its id.
+    run(
+        &mut session,
+        "automation.movePoint",
+        json!({ "track": 1, "param": "pan", "point": { "id": ids[0] }, "beat": 6 }),
+    )
+    .unwrap();
+    assert_eq!(pan_ids(&session), [ids[1], ids[0], ids[2]]);
+    run(&mut session, "automation.movePoints", json!({ "track": 1, "param": "pan", "points": [0, 1], "beats": 1 }))
+        .unwrap();
+    assert_eq!(pan_ids(&session), [ids[1], ids[0], ids[2]]);
+    // The first two copied and pasted into the same lane: the copies are new points, and the one
+    // outside the pasted range keeps its id.
+    run(&mut session, "automation.copy", json!({ "track": 1, "param": "pan", "points": [0, 1] })).unwrap();
+    run(&mut session, "automation.paste", json!({ "track": 1, "param": "pan", "start": 10 })).unwrap();
+    let now = pan_ids(&session);
+    assert_eq!(now.len(), 5);
+    assert_eq!(&now[..2], &[ids[1], ids[0]]);
+    assert_eq!(now.last(), Some(&ids[2]));
+    let mut unique = now.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(unique.len(), now.len(), "an id is never on a lane twice: {now:?}");
+}
+
+fn volume_points(session: &Session) -> usize {
+    lanes(session).iter().find(|l| l.param == "volume").map_or(0, |l| l.points.len())
+}
+
+/// A shape call that replaces the last one replaces its own lane's, not what the gesture did
+/// elsewhere (ADR 0002 › 9): shapes on two lanes in one gesture both stay, and one undo takes
+/// both away.
+#[test]
+fn a_shape_on_another_lane_in_the_same_gesture_keeps_the_first() {
+    let mut session = Session::new(project());
+    let start = session.project().clone();
+    let shape = |param: &str| json!({ "track": 1, "param": param, "start": 0, "end": 4, "shape": "square", "cycles": 2, "gesture": "g" });
+    run(&mut session, "automation.insertShape", shape("pan")).unwrap();
+    let pan = pan_points(&session);
+    assert!(!pan.is_empty());
+    run(&mut session, "automation.insertShape", shape("volume")).unwrap();
+    assert_eq!(pan_points(&session), pan, "the first lane keeps its shape");
+    assert!(volume_points(&session) > 0);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(session.project() == &start && !session.can_undo(), "one step for the whole gesture");
+}
+
+/// A value another command set in the gesture stays when a replacing command comes after it.
+#[test]
+fn a_replacing_call_keeps_what_another_command_changed_in_the_gesture() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, 0.5), (1.0, -0.5), (2.0, 0.5)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    let start = session.project().clone();
+    run(&mut session, "track.setVolume", json!({ "tracks": [1], "db": -12, "gesture": "g" })).unwrap();
+    let volume = session.project().channels[0].volume;
+    let scale =
+        |factor: f64| json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": factor, "gesture": "g" });
+    run(&mut session, "automation.scaleRange", scale(2.0)).unwrap();
+    assert_eq!(session.project().channels[0].volume, volume, "the volume change stays");
+    // The same range again replaces the last scaling: 0.5 from the line as it was.
+    run(&mut session, "automation.scaleRange", scale(0.5)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values, [0.25, -0.25, 0.25]);
+    assert_eq!(session.project().channels[0].volume, volume);
+    // Another change in between keeps both, and the next scaling replaces only itself.
+    run(&mut session, "track.setPan", json!({ "tracks": [1], "pan": 0.5, "gesture": "g" })).unwrap();
+    run(&mut session, "automation.scaleRange", scale(2.0)).unwrap();
+    run(&mut session, "automation.scaleRange", scale(0.5)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values, [0.125, -0.125, 0.125], "the second run starts from the first run's result");
+    assert!((session.project().channels[0].pan - 0.5).abs() < 1e-9);
+    assert_eq!(session.project().channels[0].volume, volume);
+    // The whole gesture is one undo step.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(session.project() == &start);
+}
+
+/// A failed replacing call leaves the run as it was, and ending the gesture starts a new one.
+#[test]
+fn a_failed_replacing_call_keeps_the_run_and_ending_the_gesture_starts_another() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, 0.5), (1.0, -0.5), (2.0, 0.5)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    let scale =
+        |factor: f64| json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": factor, "gesture": "g" });
+    run(&mut session, "automation.scaleRange", scale(2.0)).unwrap();
+    assert!(run(&mut session, "automation.scaleRange", scale(9.0)).is_err());
+    run(&mut session, "automation.scaleRange", scale(1.5)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values, [0.75, -0.75, 0.75]);
+    run(&mut session, "history.endGesture", json!({ "gesture": "g" })).unwrap();
+    run(&mut session, "automation.scaleRange", scale(0.5)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values, [0.375, -0.375, 0.375], "a new gesture builds on the result");
 }

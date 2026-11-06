@@ -818,7 +818,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   always (In) or never (Off), through its devices and mix (`track.setAudioInput`); arm many
   tracks at once to hear a band on separate tracks; the source and the monitor sit on the
   track's strip — Audio From and the three buttons — where the picker is visible without a
-  menu ([#267](https://github.com/suhina-daw/suhina-daw/issues/267), ADR 0017).
+  menu ([#267](https://github.com/suhina-daw/suhina-daw/issues/267), ADR 0017). Settings › Audio ›
+  Default track input gives new audio tracks, and armed ones that hear nothing, a channel or a
+  pair of the input device; each audio device keeps its own with its Input, so choosing another
+  sound card brings both back (`audio.setTrackInput`,
+  [#1191](https://github.com/suhina-daw/suhina-daw/issues/1191)).
 - **A MIDI input per track:** each track hears every MIDI port, one port, or none, and every
   channel or one, so a keyboard and a pad controller (or two players) each play their own armed
   track; set from the track's menu or the Arrangement header (`track.setMidiInput`), saved with

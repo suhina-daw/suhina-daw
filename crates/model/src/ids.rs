@@ -1,22 +1,55 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The identity of clips, arrangement lanes and scenes
+//! The identity of clips, arrangement lanes, scenes and devices
 //! ([ADR 0025](../../docs/decisions/0025-object-identity.md)).
 //!
-//! The three kinds take their ids from one counter in the project, [`Project::next_id`], so a
+//! The four kinds take their ids from one counter in the project, [`Project::next_id`], so a
 //! value names at most one object of any of them, and a value once handed out is never handed
 //! out again: deleting an object does not return its id. Id 0 is no id: an object built in code
 //! starts with it, and [`Project::assign_ids`] gives every such object the next ids in document
 //! order (lanes, each followed by its clips, then the scenes, then the launcher's clips column by
-//! column), which is also how a file written before ids existed gets them.
+//! column, then the channels' devices, a group before the devices in it), which is also how a
+//! file written before ids existed gets them.
+//!
+//! Markers, automation points, tempo changes and notes have ids too, held by the lists they are in and
+//! not written to the file ([`crate::IdList`], #763 › 1).
 //!
 //! Tracks and channels have ids of their own ([`TrackId`], [`ChannelId`]);
 //! [`Project::track`] and [`Project::channel`] find one by it.
 
 use std::fmt;
 
-use crate::{Channel, ChannelId, Clip, Project, Track, TrackId};
+use crate::{Channel, ChannelId, Clip, Device, Project, Track, TrackId};
+
+/// Gives the devices among `devices` without an id, or with one `seen` already, the next ids.
+fn fill_device_ids(
+    devices: &mut [Device],
+    counter: &mut Counter,
+    seen: &mut std::collections::HashSet<DeviceId>,
+    renumbered: &mut Vec<(DeviceId, DeviceId)>,
+) -> Result<(), IdsExhausted> {
+    for device in devices {
+        let old = device.id;
+        if !old.is_some() || !seen.insert(old) {
+            device.id = DeviceId(counter.take()?);
+            seen.insert(device.id);
+            if old.is_some() {
+                renumbered.push((old, device.id));
+            }
+        }
+        if let Some(group) = device.as_group_mut() {
+            // The ids given inside the group, so its macro mappings follow them.
+            let mut inner = Vec::new();
+            for branch in &mut group.branches {
+                fill_device_ids(&mut branch.devices, counter, seen, &mut inner)?;
+            }
+            group.resolve_mappings(&inner);
+            renumbered.extend(inner);
+        }
+    }
+    Ok(())
+}
 
 /// Identifies a [`Clip`], on the arrangement or in a launcher slot. Stays the same
 /// when the clip is moved, trimmed or edited; a copy gets a new one.
@@ -30,6 +63,11 @@ pub struct LaneId(pub u32);
 /// Identifies a [`Scene`](crate::Scene).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct SceneId(pub u32);
+
+/// Identifies a [`Device`] on a channel, inside a device group too (#763 › 1).
+/// Stays the same when the device moves, to another track or into a group; a copy gets a new one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct DeviceId(pub u32);
 
 macro_rules! object_id {
     ($($id:ident),*) => {$(
@@ -51,7 +89,41 @@ macro_rules! object_id {
     )*};
 }
 
-object_id!(ClipId, LaneId, SceneId);
+object_id!(ClipId, LaneId, SceneId, DeviceId);
+
+/// Identifies an arrangement [`Marker`](crate::Marker) in the arrangement's markers (#763 › 1).
+/// Stays the same when the marker moves or is renamed. Given by [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MarkerId(pub u64);
+
+/// Identifies an [`AutomationPoint`](crate::AutomationPoint) on its lane (#763 › 1). Stays the
+/// same when the point is dragged; a point a range tool draws anew is a new one. Given by
+/// [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PointId(pub u64);
+
+/// Identifies a [`TempoPoint`](crate::TempoPoint), a change in the tempo map (#763 › 1). Given by
+/// [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TempoPointId(pub u64);
+
+/// Identifies a [`Note`](crate::Note) in its content's notes (#1182). Stays the same when the note
+/// is moved, resized or changed; a copy (paste, duplicate, a split's second half) is a new note.
+/// Given by [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct NoteId(pub u64);
+
+macro_rules! list_ids {
+    ($($id:ident),*) => {$(
+        impl fmt::Display for $id {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+    )*};
+}
+
+list_ids!(MarkerId, PointId, TempoPointId, NoteId);
 
 /// The counter has reached the largest id there is: the project can name no more objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,12 +187,13 @@ impl Project {
         let lanes = self.arrangement.lanes.iter().map(|l| l.id.0);
         let clips = self.all_clips().map(|c| c.id.0);
         let scenes = self.launcher.scenes.iter().map(|s| s.id.0);
-        lanes.chain(clips).chain(scenes).max().unwrap_or(0)
+        let devices = self.all_devices().map(|d| d.id.0);
+        lanes.chain(clips).chain(scenes).chain(devices).max().unwrap_or(0)
     }
 
-    /// Moves the counter past every id in use, then gives every lane, clip and scene that has no
-    /// id ([`ClipId::NONE`]) the next ones, in document order. Objects that have an id keep it,
-    /// so calling it again changes nothing. Fails, leaving the objects it did not reach without
+    /// Moves the counter past every id in use, then gives every lane, clip, scene and device that
+    /// has no id ([`ClipId::NONE`]) the next ones, in document order. Objects that have an id keep
+    /// it, so calling it again changes nothing. Fails, leaving the objects it did not reach without
     /// an id, when the counter runs out.
     pub fn assign_ids(&mut self) -> Result<(), IdsExhausted> {
         let used = self.max_object_id();
@@ -150,7 +223,28 @@ impl Project {
         for clip in launched.filter(|c| !c.id.is_some()) {
             clip.id = ClipId(counter.take()?);
         }
+        // A device that has an id an earlier device has (a copy that kept it) gets a new one too:
+        // the first one, in document order, keeps it.
+        let mut seen = std::collections::HashSet::new();
+        for channel in &mut self.channels {
+            fill_device_ids(&mut channel.devices, counter, &mut seen, &mut Vec::new())?;
+        }
         Ok(())
+    }
+
+    /// Every device on every channel, depth-first: a group before the devices in it.
+    pub fn all_devices(&self) -> impl Iterator<Item = &crate::Device> {
+        self.channels.iter().flat_map(|c| crate::walk_devices(&c.devices).into_iter().map(|(_, d)| d))
+    }
+
+    /// The channel and the path of the device `id`, or `None` when no device has it.
+    pub fn device_place(&self, id: DeviceId) -> Option<(ChannelId, Vec<usize>)> {
+        if !id.is_some() {
+            return None;
+        }
+        self.channels.iter().find_map(|c| {
+            crate::walk_devices(&c.devices).into_iter().find(|(_, d)| d.id == id).map(|(path, _)| (c.id, path))
+        })
     }
 
     /// Every clip, the arrangement's lane by lane and then the launcher's column by column.

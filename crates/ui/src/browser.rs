@@ -232,7 +232,7 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
                     info.tempo = header.tempo;
                     info.key = header.key;
                 }
-                Err(e) => info.error = Some(e),
+                Err(e) => info.error = Some(e.into()),
             }
             if whole {
                 match suhina_media::decode_file(path) {
@@ -244,7 +244,7 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
                         info.data = Some(data);
                         info.error = None;
                     }
-                    Err(e) => info.error = Some(e),
+                    Err(e) => info.error = Some(e.into()),
                 }
             }
         }
@@ -258,7 +258,7 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
                 info.tempo = midi.tempo_bpm.map(|bpm| Tempo { bpm, source: TempoSource::Metadata });
                 info.notes = Some(Arc::new(notes));
             }
-            Err(e) => info.error = Some(e),
+            Err(e) => info.error = Some(e.into()),
         },
         _ => {}
     }
@@ -287,7 +287,7 @@ fn flat_rows(found: Vec<Found>) -> Vec<Row> {
 
 /// A search looking through more files than this runs on a thread of its own, so typing never
 /// waits for it; a smaller one takes less than a frame and answers at once.
-const SEARCH_ON_THE_WINDOW_THREAD: usize = 4096;
+pub(crate) const SEARCH_ON_THE_WINDOW_THREAD: usize = 4096;
 
 /// A search running on its thread: its answer comes through `answer`, and `cancel` ends it when
 /// the search field has changed since.
@@ -647,14 +647,15 @@ impl BrowserState {
             Role::MidiEffect => ItemKind::MidiEffect,
         };
         for info in suhina_device_registry::DEVICES.iter().filter(|info| info.role == role) {
-            let item = BrowserItem { key: format!("device:{}", info.id), name: info.name.into(), kind, plugin: false };
+            let item =
+                BrowserItem { key: format!("device:{}", info.id), name: info.name.to_string(), kind, plugin: false };
             // A device opens on its presets; the row itself stays the device at its defaults.
-            let has_presets = stock_of(info.id).next().is_some();
+            let has_presets = stock_of(&info.id).next().is_some();
             let open = has_presets && self.open.contains(&item.key);
             let parent = item.key.clone();
             rows.push(Row { item, depth: 1, opens: has_presets, open, context: None, columns: None, node: None });
             if open {
-                stock_rows_of(info.id, &parent, 2, rows);
+                stock_rows_of(&info.id, &parent, 2, rows);
             }
         }
     }
@@ -676,11 +677,11 @@ impl BrowserState {
         if !open {
             return;
         }
-        for info in suhina_device_registry::DEVICES.iter().filter(|info| stock_of(info.id).next().is_some()) {
-            let node = child_node(NODE, info.id);
+        for info in suhina_device_registry::DEVICES.iter().filter(|info| stock_of(&info.id).next().is_some()) {
+            let node = child_node(NODE, &info.id);
             let open = self.open.contains(&node);
             rows.push(Row {
-                item: heading(&node, info.name),
+                item: heading(&node, &info.name),
                 depth: 1,
                 opens: true,
                 open,
@@ -689,7 +690,7 @@ impl BrowserState {
                 node: None,
             });
             if open {
-                stock_rows_of(info.id, &node, 2, rows);
+                stock_rows_of(&info.id, &node, 2, rows);
             }
         }
     }

@@ -29,11 +29,11 @@ fn project_built(notes: Vec<Note>) -> Project {
         id: ContentId(id),
         name: format!("C{id}"),
         length: 8.0,
-        lanes,
+        lanes: lanes.into(),
         extensions: Extensions::default(),
         scale: None,
     };
-    let lane = |n: Vec<Note>| vec![ContentLane { target: None, data: LaneData::Notes(n) }];
+    let lane = |n: Vec<Note>| vec![ContentLane { target: None, data: LaneData::Notes(n.into()) }];
     Project {
         tracks: vec![Track { content: ContentKinds { notes: true, audio: false }, ..Track::new(TrackId(1), "Keys") }],
         contents: vec![content(1, lane(notes.clone())), content(2, Vec::new()), content(3, lane(notes))],
@@ -44,7 +44,7 @@ fn project_built(notes: Vec<Note>) -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![clip(1), clip(2)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {
@@ -69,7 +69,7 @@ fn notes(session: &Session, content: u32) -> Vec<Note> {
         .lanes
         .iter()
         .find_map(|l| match &l.data {
-            LaneData::Notes(n) => Some(n.clone()),
+            LaneData::Notes(n) => Some(n.to_vec()),
             LaneData::Audio(_) => None,
         })
         .unwrap_or_default()
@@ -167,7 +167,7 @@ fn only_the_named_notes_move_and_a_slot_clip_quantises_too() {
     let result = run(&mut session, json!({ "track": 1, "index": 0, "notes": [2, 0, 2], "grid": "1/4" })).unwrap();
     assert_eq!(result, json!({ "notes": [0, 2], "moved": 2 }));
     close(&starts(&session), &[0.0, 1.1, 2.0]);
-    run(&mut session, json!({ "track": "Keys", "scene": 1, "grid": "1/4" })).unwrap();
+    run(&mut session, json!({ "track": "Keys", "scene": 0, "grid": "1/4" })).unwrap();
     close(&notes(&session, 3).iter().map(|n| n.time).collect::<Vec<_>>(), &[0.0, 1.0, 2.0]);
     // An empty clip has nothing to move, and stays as it was.
     let before = session.project().clone();

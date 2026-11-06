@@ -49,10 +49,11 @@ fn everything() -> Project {
             points: vec![
                 AutomationPoint { beat: 0.0, value: 0.0, curve: Curve::bend(0.5) },
                 AutomationPoint::new(8.0, 1.25),
-            ],
+            ]
+            .into(),
             enabled: true,
         },
-        AutomationLane { param: "mute".into(), points: vec![AutomationPoint::new(2.0, 1.0)], enabled: false },
+        AutomationLane { param: "mute".into(), points: vec![AutomationPoint::new(2.0, 1.0)].into(), enabled: false },
     ];
     keys.devices = vec![
         Device {
@@ -62,35 +63,36 @@ fn everything() -> Project {
                 points: vec![
                     AutomationPoint { beat: 1.0, value: -12.0, curve: Curve::bend(-0.75) },
                     AutomationPoint::new(3.5, 0.0),
-                ],
+                ]
+                .into(),
                 enabled: false,
             }],
             ..Device::new("FM", DeviceKind::Builtin("fm-synth".into()))
         },
         Device {
             enabled: false,
-            state: Some(vec![9, 8, 7, 0, 255]),
+            state: Some(vec![9, 8, 7, 0, 255].into()),
             extensions: ext("Vst3ControllerState"),
             ..Device::new("Verb", DeviceKind::Vst3 { id: "0123456789ABCDEF0123456789ABCDEF".into() })
         },
         Device {
-            state: Some(br#"{"format":"suhina-device","version":1}"#.to_vec()),
+            state: Some(br#"{"format":"suhina-device","version":1}"#.to_vec().into()),
             params: vec![DeviceParam::new("gain", 0.5)],
             automation: vec![AutomationLane {
                 param: "gain".into(),
-                points: vec![AutomationPoint::new(0.0, 0.5), AutomationPoint::new(4.0, 1.0)],
+                points: vec![AutomationPoint::new(0.0, 0.5), AutomationPoint::new(4.0, 1.0)].into(),
                 enabled: true,
             }],
             ..Device::new("Community Gain", DeviceKind::Sd)
         },
-        Device { state: Some(Vec::new()), ..Device::new("Old", DeviceKind::Vst2 { id: 1_234_567 }) },
+        Device { state: Some(Vec::new().into()), ..Device::new("Old", DeviceKind::Vst2 { id: 1_234_567 }) },
         Device {
-            state: Some(b"/home/me/Suhina/NAM models/edge.nam".to_vec()),
+            state: Some(b"/home/me/Suhina/NAM models/edge.nam".to_vec().into()),
             params: vec![DeviceParam::new("inputGain", -3.5), DeviceParam::new("eqMidFreq", 800.0)],
             ..Device::new("Amp", DeviceKind::Builtin("nam-amp-modeler".into()))
         },
         Device {
-            state: Some(b"/home/me/Suhina/IRs/marshall.wav".to_vec()),
+            state: Some(b"/home/me/Suhina/IRs/marshall.wav".to_vec().into()),
             params: vec![DeviceParam::new("volume", -1.9)],
             ..Device::new("Cab", DeviceKind::Builtin("nam-cab-loader".into()))
         },
@@ -109,7 +111,8 @@ fn everything() -> Project {
                         value: 0.5,
                         curve: Curve { x1: 1.195_800_350_656_066_6, y1: 0.0, x2: 0.5, y2: -0.293_128_413_857_272_2 },
                     },
-                ],
+                ]
+                .into(),
                 enabled: true,
             }],
             ..Device::new("Clap", DeviceKind::Clap { id: "com.example.clap".into() })
@@ -135,7 +138,8 @@ fn everything() -> Project {
             tempo_changes: vec![
                 TempoPoint { beat: 14.0, bpm: 90.0, ramp: false },
                 TempoPoint { beat: 30.5, bpm: 140.25, ramp: true },
-            ],
+            ]
+            .into(),
             time_signature_changes: vec![TimeSignatureChange {
                 bar: 4,
                 time_signature: TimeSignature { numerator: 3, denominator: 4 },
@@ -176,11 +180,15 @@ fn everything() -> Project {
                 length: 8.0,
                 lanes: vec![ContentLane {
                     target: None,
-                    data: LaneData::Notes(vec![
-                        Note::new(0.0, 1.0, 60, 0.75),
-                        Note { release_velocity: 0.0, channel: 15, ..Note::new(1.5, 0.25, 127, 1.0) },
-                    ]),
-                }],
+                    data: LaneData::Notes(
+                        vec![
+                            Note::new(0.0, 1.0, 60, 0.75),
+                            Note { release_velocity: 0.0, channel: 15, ..Note::new(1.5, 0.25, 127, 1.0) },
+                        ]
+                        .into(),
+                    ),
+                }]
+                .into(),
                 extensions: ext("MidiClip"),
                 scale: None,
             },
@@ -206,7 +214,8 @@ fn everything() -> Project {
                         stream: Some(3),
                         ..AudioRegion::new("Samples/loop.wav")
                     }),
-                }],
+                }]
+                .into(),
                 extensions: Extensions::default(),
                 scale: None,
             },
@@ -226,7 +235,7 @@ fn everything() -> Project {
                     clips: vec![Clip { enabled: false, loop_range: None, ..clip(2, 4.0) }],
                 },
             ],
-            markers: vec![Marker::new(0.0, "Intro"), Marker::new(16.0, "Verse"), Marker::new(16.0, "")],
+            markers: vec![Marker::new(0.0, "Intro"), Marker::new(16.0, "Verse"), Marker::new(16.0, "")].into(),
             takes: Vec::new(),
         },
         launcher: Launcher {
@@ -278,6 +287,93 @@ fn every_part_of_a_project_survives_a_round_trip() {
     assert_eq!(from_json(&to_json(&project)), Ok(project));
 }
 
+/// Markers, automation points and tempo changes have ids only while the project is open
+/// (#763 › 1): the file holds none, a reader gives new ones, and saving a project again after
+/// reading it leaves `next_id` where it was.
+#[test]
+fn markers_points_and_tempo_changes_are_written_without_ids() {
+    let project = everything();
+    assert!(!project.arrangement.markers.is_empty() && !project.transport.tempo_changes.is_empty());
+    assert!(project.channels.iter().any(|c| c.automation.iter().any(|lane| !lane.points.is_empty())));
+    let text = to_json(&project);
+    let file: Value = serde_json::from_str(&text).unwrap();
+    let has_id = |v: &Value| v.get("id").is_some();
+    assert!(!file["project"]["arrangement"]["markers"].as_array().unwrap().iter().any(has_id), "{text}");
+    assert!(!file["project"]["transport"]["tempo_changes"].as_array().unwrap().iter().any(has_id), "{text}");
+    for channel in file["project"]["channels"].as_array().unwrap() {
+        let lanes = channel["automation"].as_array().into_iter().flatten();
+        let device_lanes = channel["devices"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|d| d["automation"].as_array().into_iter().flatten());
+        for lane in lanes.chain(device_lanes) {
+            assert!(!lane["points"].as_array().unwrap().iter().any(has_id), "{lane}");
+        }
+    }
+
+    let read = from_json(&text).unwrap();
+    assert_eq!(read.next_id, project.next_id);
+    assert_eq!(to_json(&read), text, "a project read and written again is the same file");
+    // Each read gives new ids: they live only while the project is open.
+    let again = from_json(&text).unwrap();
+    assert!(read.arrangement.markers.ids().iter().all(|id| !again.arrangement.markers.ids().contains(id)));
+
+    // An id a file has anyway (one written by hand) is not taken: the reader gives its own.
+    let mut file = file;
+    file["project"]["arrangement"]["markers"][0]["id"] = json!(500);
+    let read = from_json(&file.to_string()).unwrap();
+    assert_ne!(read.arrangement.markers.id(0), Some(suhina_model::MarkerId(500)));
+}
+
+/// Notes have ids only while the project is open too (#1182): the file holds none, so its version
+/// does not change, a read project writes the same file, and each read gives every note a new id.
+#[test]
+fn notes_are_written_without_ids_and_read_with_new_ones() {
+    let project = everything();
+    let notes_in = |p: &Project| -> Vec<suhina_model::Notes> {
+        p.contents
+            .iter()
+            .flat_map(|c| c.lanes.iter())
+            .filter_map(|l| match &l.data {
+                LaneData::Notes(notes) => Some(notes.clone()),
+                LaneData::Audio(_) => None,
+            })
+            .collect()
+    };
+    assert!(notes_in(&project).iter().any(|n| !n.is_empty()), "the fixture holds notes");
+    let text = to_json(&project);
+    let file: Value = serde_json::from_str(&text).unwrap();
+    for content in file["project"]["contents"].as_array().unwrap() {
+        for lane in content["lanes"].as_array().unwrap() {
+            let mut notes = lane["notes"].as_array().into_iter().flatten();
+            assert!(notes.all(|n| n.get("id").is_none()), "{lane}");
+        }
+    }
+
+    let read = from_json(&text).unwrap();
+    assert_eq!(to_json(&read), text, "a project read and written again is the same file");
+    let again = from_json(&text).unwrap();
+    let ids =
+        |p: &Project| -> Vec<suhina_model::NoteId> { notes_in(p).iter().flat_map(|n| n.ids().to_vec()).collect() };
+    let (first, second) = (ids(&read), ids(&again));
+    assert_eq!(first.len(), second.len());
+    assert!(first.iter().all(|id| !second.contains(id)), "each read gives new ids");
+
+    // An id a file has on a note anyway (one written by hand) is not taken.
+    let mut file = file;
+    let lane = file["project"]["contents"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .flat_map(|c| c["lanes"].as_array_mut().unwrap().iter_mut())
+        .find(|l| l.get("notes").is_some())
+        .unwrap();
+    lane["notes"][0]["id"] = json!(7);
+    let read = from_json(&file.to_string()).unwrap();
+    assert!(!ids(&read).contains(&suhina_model::NoteId(7)));
+}
+
 /// A channel's cue is written only when on, so a project without one reads and writes as it
 /// did before the cue existed.
 #[test]
@@ -292,20 +388,37 @@ fn the_cue_is_written_only_when_on() {
     assert_eq!(from_json(&to_json(&quiet)), Ok(quiet));
 }
 
-/// Mappings are written under the launcher with 1-based scenes, and left out when there are none.
+/// Mappings are written under the launcher with their scenes from 0 (from version 8), and left
+/// out when there are none.
 #[test]
 fn launch_mappings_are_written_with_their_targets() {
     let written: Value = serde_json::from_str(&to_json(&everything())).unwrap();
     assert_eq!(
         written["project"]["launcher"]["mappings"],
         json!([
-            { "source": "key:Q", "target": "slot", "track": 2, "scene": 2 },
-            { "source": "note:10:36", "target": "scene", "scene": 1 },
+            { "source": "key:Q", "target": "slot", "track": 2, "scene": 1 },
+            { "source": "note:10:36", "target": "scene", "scene": 0 },
             { "source": "key:Space", "target": "stop", "track": 99 },
         ])
     );
     let empty: Value = serde_json::from_str(&to_json(&Project::default())).unwrap();
     assert!(empty["project"]["launcher"].get("mappings").is_none(), "{empty}");
+}
+
+/// A launch mapping's scene counts from 0 from version 8 (#763 › 1) and from 1 before, so a
+/// file of either version plays the same scene.
+#[test]
+fn a_launch_mappings_scene_counts_from_0_from_version_8() {
+    let read = |version: u64, scene: i64| {
+        from_json(&format!(
+            r#"{{ "format": "suhina", "version": {version}, "project": {{ "launcher": {{ "mappings": [ {{ "source": "key:Q", "target": "scene", "scene": {scene} }} ] }} }} }}"#
+        ))
+        .map(|p| p.launcher.mappings[0].target)
+    };
+    assert_eq!(read(8, 0), Ok(MappingTarget::Scene { scene: 0 }));
+    assert_eq!(read(7, 1), Ok(MappingTarget::Scene { scene: 0 }));
+    assert!(read(7, 0).is_err());
+    assert!(read(8, -1).is_err());
 }
 
 /// A clip edited by its channel's ARA plug-in and the channel's clip host survive a round trip
@@ -358,7 +471,7 @@ fn an_empty_project_survives_a_round_trip() {
 }
 
 /// The notes of content 1, to change.
-fn notes_of(project: &mut Project) -> Option<&mut Vec<Note>> {
+fn notes_of(project: &mut Project) -> Option<&mut suhina_model::Notes> {
     match &mut project.contents.first_mut()?.lanes.first_mut()?.data {
         LaneData::Notes(notes) => Some(notes),
         LaneData::Audio(_) => None,
@@ -611,7 +724,8 @@ fn automation_points_are_read_in_beat_order() {
 /// plays. A channel without lanes writes none.
 #[test]
 fn automation_defaults_are_left_out_and_read_back() {
-    let lane = AutomationLane { param: "pan".into(), points: vec![AutomationPoint::new(0.0, 0.5)], enabled: true };
+    let lane =
+        AutomationLane { param: "pan".into(), points: vec![AutomationPoint::new(0.0, 0.5)].into(), enabled: true };
     let mut project =
         from_json(r#"{ "format": "suhina", "version": 1, "project": { "channels": [ { "id": 1 } ] } }"#).unwrap();
     assert!(project.channels[0].automation.is_empty());
@@ -862,7 +976,7 @@ fn an_empty_audio_region_is_left_alone_by_rebase_audio() {
         id: ContentId(900),
         name: "Audio clip".into(),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion { ..AudioRegion::new("") }) }],
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion { ..AudioRegion::new("") }) }].into(),
         extensions: Extensions::default(),
         scale: None,
     });
@@ -945,9 +1059,24 @@ fn without_ids(project: &Project) -> String {
             _ => {}
         }
     }
+    // A device's own id, not its parameters' or its kind's.
+    fn strip_devices(devices: &mut Value) {
+        for device in devices.as_array_mut().into_iter().flatten() {
+            device.as_object_mut().map(|d| d.remove("id"));
+            strip(&mut device["automation"]);
+            for branch in device["kind"]["branches"].as_array_mut().into_iter().flatten() {
+                strip_devices(&mut branch["devices"]);
+            }
+        }
+    }
     let mut file: Value = serde_json::from_str(&to_json(project)).unwrap();
     strip(&mut file["project"]["arrangement"]);
     strip(&mut file["project"]["launcher"]);
+    strip(&mut file["project"]["transport"]);
+    for channel in file["project"]["channels"].as_array_mut().into_iter().flatten() {
+        strip(&mut channel["automation"]);
+        strip_devices(&mut channel["devices"]);
+    }
     file["project"].as_object_mut().unwrap().remove("next_id");
     file.to_string()
 }
@@ -1076,7 +1205,7 @@ fn with_a_group() -> Project {
     let mut inner = Device::group("Inner", DeviceGroup::default());
     if let Some(g) = inner.as_group_mut() {
         g.branches[0].devices.push(Device {
-            state: Some(vec![1, 2, 3]),
+            state: Some(vec![1, 2, 3].into()),
             ..Device::new("Synth", DeviceKind::Clap { id: "com.example.synth".into() })
         });
     }
@@ -1094,8 +1223,18 @@ fn with_a_group() -> Project {
     ];
     let mut group = DeviceGroup::with_branches(branches);
     group.macros[0].name = "Crush".into();
-    group.macros[0].mappings.push(MacroMapping { device: vec![1, 0], param: "threshold".into(), min: 0.8, max: 0.2 });
-    group.macros[1].mappings.push(MacroMapping { device: vec![1, 1], param: "macro.1".into(), min: 0.0, max: 1.0 });
+    group.macros[0].mappings.push(MacroMapping {
+        device: MappedDevice::Nth(0),
+        param: "threshold".into(),
+        min: 0.8,
+        max: 0.2,
+    });
+    group.macros[1].mappings.push(MacroMapping {
+        device: MappedDevice::Nth(1),
+        param: "macro.1".into(),
+        min: 0.0,
+        max: 1.0,
+    });
     let mut device = Device::group("Parallel crush", group);
     device.params = vec![DeviceParam::new("mix", 0.75), DeviceParam::new("macro.1", 0.4)];
     device.extensions = ext;
@@ -1106,8 +1245,51 @@ fn with_a_group() -> Project {
 
 #[test]
 fn a_device_group_survives_a_round_trip() {
-    let project = with_a_group();
+    let mut project = with_a_group();
+    project.assign_ids().unwrap();
+    // From version 7 a mapping names its device by id.
+    let group = project.channels[0].devices[1].as_group().unwrap();
+    let compressor = group.branches[1].devices[0].id;
+    assert_eq!(group.macros[0].mappings[0].device, MappedDevice::Id(compressor));
+    let written: serde_json::Value = serde_json::from_str(&to_json(&project)).unwrap();
+    let macros = &written["project"]["channels"][0]["devices"][1]["kind"]["macros"];
+    assert_eq!(macros[0]["mappings"][0]["device"], compressor.0);
     assert_eq!(from_json(&to_json(&project)), Ok(project));
+}
+
+/// A project written before its devices have ids (built by hand, not through a session) still
+/// opens: a mapping whose device has no id is written by its path, which every version reads.
+#[test]
+fn a_mapping_to_a_device_with_no_id_is_written_by_its_path() {
+    let project = with_a_group();
+    let written: serde_json::Value = serde_json::from_str(&to_json(&project)).unwrap();
+    let macros = &written["project"]["channels"][0]["devices"][1]["kind"]["macros"];
+    assert_eq!(macros[0]["mappings"][0]["device"], serde_json::json!([1, 0]));
+    assert_eq!(macros[1]["mappings"][0]["device"], serde_json::json!([1, 1]));
+    let read = from_json(&to_json(&project)).expect("the file opens");
+    let group = read.channels[0].devices[1].as_group().unwrap();
+    let compressor = group.branches[1].devices[0].id;
+    let mapped = group.macros[0].mappings[0].device;
+    assert!(
+        mapped == MappedDevice::Nth(0) || compressor.is_some() && mapped == MappedDevice::Id(compressor),
+        "{mapped:?}"
+    );
+}
+
+#[test]
+fn a_mapping_to_a_place_or_an_id_with_no_device_is_an_error() {
+    let with = |device: &str| {
+        from_json(&format!(
+            r#"{{ "format": "suhina", "version": 7, "project": {{ "channels": [ {{ "id": 1, "devices": [ {{ "id": 1, "kind": {{ "type": "group",
+              "branches": [ {{ "devices": [ {{ "id": 2, "kind": {{ "type": "builtin", "id": "utility" }} }} ] }} ],
+              "macros": [ {{ "mappings": [ {{ "device": {device}, "param": "gain" }} ] }}, {{}}, {{}}, {{}}, {{}}, {{}}, {{}}, {{}} ] }} }} ] }} ] }} }}"#
+        ))
+    };
+    assert!(with("2").is_ok());
+    assert!(with("[0, 0]").is_ok(), "a path, as before version 7");
+    assert!(with("[0, 1]").is_err());
+    assert!(with("0").is_err());
+    assert!(with("9").is_err(), "no device inside the group has id 9");
 }
 
 /// Every feature at once: [`everything`] with [`with_a_group`]'s device group on its first
@@ -1126,6 +1308,16 @@ fn every_feature() -> Project {
     sample_edits.push(2);
     sample_edits.extend_from_slice(&1i64.to_le_bytes());
     project.channels[0].devices[0].set_sample_edit_data(sample_edits).unwrap();
+    renumbered(project)
+}
+
+/// `project` with its devices' ids given again in document order, right after the other objects'
+/// ids, as a reader gives them to a file written before devices had ids (version 6).
+fn renumbered(mut project: Project) -> Project {
+    // `forget_ids` keeps each macro mapping on its device while the ids are gone.
+    project.channels.iter_mut().flat_map(|c| &mut c.devices).for_each(Device::forget_ids);
+    project.next_id = project.max_object_id() + 1;
+    project.assign_ids().unwrap();
     project
 }
 
@@ -1163,7 +1355,8 @@ fn a_file_of_every_version_reads() {
         if version < 5 {
             expected.channels[0].devices[0].clear_sample_edits();
         }
-        assert_eq!(from_json(&text), Ok(expected), "version {version}");
+        // Devices get their ids in document order when a file before version 6 is read.
+        assert_eq!(from_json(&text).map(renumbered), Ok(renumbered(expected)), "version {version}");
     }
     assert!(!version_file(VERSION + 1).exists(), "a file for a version this Suhina does not write");
 }
@@ -1207,7 +1400,10 @@ fn a_group_reads_from_the_spec_example_with_defaults_filled_in() {
     assert_eq!(group.branches.len(), 2);
     assert_eq!((group.branches[0].volume, group.branches[0].pan, group.branches[0].mute), (1.0, 0.0, false));
     assert_eq!(group.branches[1].volume, 0.5);
-    assert_eq!(group.macros[0].mappings[0].device, vec![1, 0]);
+    // An older file's path ([1, 0]: branch 1's first device) reads as the compressor's id.
+    let compressor = group.branches[1].devices[0].id;
+    assert!(compressor.is_some());
+    assert_eq!(group.macros[0].mappings[0].device, MappedDevice::Id(compressor));
     assert_eq!(group.macros[1].mappings, vec![]);
 }
 

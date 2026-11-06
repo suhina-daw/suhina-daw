@@ -3,8 +3,8 @@
 
 use crate::{
     Arrangement, ArrangementLane, Channel, ChannelId, ChannelRole, Clip, ClipContent, ClipId, ClipPlace, ContentId,
-    Extensions, IdsExhausted, LaneId, Launcher, LauncherColumn, Project, Scene, SceneId, Slot, Track, TrackId,
-    ValidationError,
+    Device, DeviceId, DeviceKind, Extensions, IdsExhausted, LaneId, Launcher, LauncherColumn, Project, Scene, SceneId,
+    Slot, Track, TrackId, ValidationError,
 };
 
 fn clip(start: f64) -> Clip {
@@ -24,11 +24,11 @@ fn project() -> Project {
             id: ContentId(1),
             name: String::new(),
             length: 4.0,
-            lanes: Vec::new(),
+            lanes: Vec::new().into(),
             extensions: Extensions::default(),
             scale: None,
         }],
-        arrangement: Arrangement { lanes: vec![lane(1), lane(2)], markers: Vec::new(), takes: Vec::new() },
+        arrangement: Arrangement { lanes: vec![lane(1), lane(2)], markers: Default::default(), takes: Vec::new() },
         launcher: Launcher {
             scenes: vec![Scene::default(), Scene::default()],
             columns: vec![LauncherColumn {
@@ -186,4 +186,35 @@ fn an_output_chain_follows_outputs_and_ends_at_a_cycle_or_a_missing_channel() {
     // An output that names no channel is given, and the walk ends there.
     assert_eq!(chain(6), [9]);
     assert_eq!(chain(42), Vec::<u32>::new());
+}
+
+/// Devices take ids from the same counter, after the other objects, a group before the devices
+/// in it; a copy that kept its id gets a new one, the first in document order keeping it.
+#[test]
+fn devices_get_ids_in_document_order_and_a_copy_a_new_one() {
+    let inner = Device::new("Inner", DeviceKind::Builtin("utility".into()));
+    let group = Device::group(
+        "G",
+        crate::DeviceGroup::with_branches(vec![crate::Branch { devices: vec![inner], ..crate::Branch::new("B") }]),
+    );
+    let mut channel = Channel::new(ChannelId(1), "C");
+    channel.devices = vec![Device::new("A", DeviceKind::Builtin("utility".into())), group];
+    let mut project = Project { channels: vec![channel], ..Project::default() };
+    project.assign_ids().unwrap();
+    let ids: Vec<u32> = project.all_devices().map(|d| d.id.0).collect();
+    assert_eq!(ids, [1, 2, 3]);
+    assert_eq!(project.device_place(DeviceId(3)), Some((ChannelId(1), vec![1, 0, 0])));
+    assert_eq!(project.device_place(DeviceId::NONE), None);
+
+    // A copy that kept its id, put after the original, gets the next id.
+    let copy = project.channels[0].devices[0].clone();
+    project.channels[0].devices.push(copy);
+    assert!(project.validate().is_err(), "an id used twice");
+    project.assign_ids().unwrap();
+    let ids: Vec<u32> = project.all_devices().map(|d| d.id.0).collect();
+    assert_eq!(ids, [1, 2, 3, 4]);
+    assert!(project.validate().is_ok());
+    // `copied` forgets the ids inside a group too.
+    let copied = project.channels[0].devices[1].copied();
+    assert!(crate::walk_devices(std::slice::from_ref(&copied)).iter().all(|(_, d)| !d.id.is_some()));
 }

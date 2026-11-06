@@ -19,7 +19,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use suhina_engine::model::{LaneData, Project};
 use suhina_session::{
-    Agents, AudioSystem, CommandKind, MidiSystem, Player, ProjectId, Projects, Session, all_commands, project_commands,
+    Agents, AudioSystem, MidiSystem, Player, ProjectId, Projects, Session, all_commands, project_commands,
 };
 
 use crate::attach::AppHost;
@@ -146,11 +146,11 @@ pub struct BatchParams {
 pub struct RenderParams {
     /// Output `.wav` path, relative to the write root.
     pub output: String,
-    /// Render this launcher scene (1-based) instead of the arrangement.
+    /// Render this launcher scene (from 0, as `project.launcher` numbers them) instead of the arrangement.
     #[serde(default)]
     pub scene: Option<usize>,
     /// Render clip launches instead: commands run at times in seconds, starting with the transport
-    /// stopped, e.g. `[{"at": 0, "id": "scene.launch", "params": {"scene": 1}}]`. Needs `seconds`.
+    /// stopped, e.g. `[{"at": 0, "id": "scene.launch", "params": {"scene": 0}}]`. Needs `seconds`.
     #[serde(default)]
     pub launches: Option<Vec<LaunchParams>>,
     /// Length of a `launches` render in seconds (at most 600).
@@ -348,7 +348,10 @@ impl SuhinaMcp {
         let output = self.audio_output;
         let result = self
             .with_projects(move |projects| {
-                let (opened, mut warnings) = Session::open(&path).map_err(String::from)?;
+                // Opened as the window and the CLI open it; its audio is decoded, trusted as they
+                // trust it, when the server plays it (#764 › 3).
+                let options = suhina_session::OpenOptions { audio: output };
+                let (opened, mut warnings) = projects.open_path(&path, options).map_err(String::from)?;
                 let id = projects.add(opened, None).map_err(String::from)?;
                 let session = projects.session_mut(Some(id)).map_err(String::from)?;
                 let mut info = session.execute("project.info", &json!({})).map_err(String::from)?;
@@ -374,7 +377,7 @@ impl SuhinaMcp {
     }
 
     #[tool(
-        description = "List command ids with a description, kind (read, edit, history, transport, projects, plugins, plugin, library, audio) and parameter schema. Run them with command_run."
+        description = "List command ids with a description, what each runs on (target: project, projects, plugins, plugin, library, audio), what it does (effect: read, edit, history, transport, change) and parameter schema. Run them with command_run."
     )]
     async fn command_list(&self, Parameters(p): Parameters<ListParams>) -> Result<CallToolResult, McpError> {
         let filter = p.filter.unwrap_or_default();
@@ -534,7 +537,6 @@ impl SuhinaMcp {
                 if launches.is_none() && seconds.is_some() {
                     return Err("seconds applies only to launches".into());
                 }
-                let scene = scene.map(|n| n.checked_sub(1).ok_or("scenes are numbered from 1")).transpose()?;
                 // The running plug-ins' state as it is now, so the render plays what is heard.
                 let heard = session.project_as_heard();
                 let project = match (scene, &launches) {
@@ -753,6 +755,7 @@ mod refused_tests {
         for id in [
             "project.close",
             "audio.setOutput",
+            "audio.setTrackInput",
             "midi.setInput",
             "plugin.setHosting",
             "plugin.setEnabled",

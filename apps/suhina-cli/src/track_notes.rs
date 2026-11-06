@@ -102,7 +102,7 @@ mod tests {
                 id: ContentId(1),
                 name: "Riff".into(),
                 length: 4.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             }],
@@ -113,7 +113,7 @@ mod tests {
                     track: Some(TrackId(1)),
                     clips,
                 }],
-                markers: Vec::new(),
+                markers: Default::default(),
                 takes: Vec::new(),
             },
             ..Project::default()

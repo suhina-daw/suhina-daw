@@ -6,10 +6,10 @@
 //!
 //! A device inside groups is found by a *device path*: its index on the channel, then for each
 //! group on the way the branch and the index in it (`[2, 1, 0]` is the first device of branch 1
-//! of the group at index 2). A macro mapping names its target the same way, relative to its
-//! group (`[branch, index, …]`).
+//! of the group at index 2). A macro mapping names its target by the device's id, which stays
+//! with the device while it moves inside its group (#763 › 1).
 
-use crate::{ChannelId, Device, DeviceKind, Extensions, ValidationError};
+use crate::{ChannelId, Device, DeviceId, DeviceKind, Extensions, ValidationError};
 
 /// Most branches one device group holds.
 pub const MAX_BRANCHES: usize = 16;
@@ -57,15 +57,25 @@ pub struct Macro {
 /// A parameter a macro moves, and over which part of its travel.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MacroMapping {
-    /// The target device, as a path relative to the group: branch, index, then branch, index
-    /// again for each nested group (`[2, 0]` is branch 2's first device).
-    pub device: Vec<u32>,
+    /// The target device, inside the group at any depth.
+    pub device: MappedDevice,
     /// The parameter's stable id: a built-in parameter id (ADR 0004), a plug-in parameter id as
     /// text, or `macro.N` of a nested group.
     pub param: String,
     /// Positions on the parameter's 0..1 travel; `min > max` inverts the mapping.
     pub min: f64,
     pub max: f64,
+}
+
+/// Which device a macro mapping moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MappedDevice {
+    /// The device with this id, inside the mapping's group at any depth.
+    Id(DeviceId),
+    /// The `n`th device inside the group, as [`DeviceGroup::inner_devices`] lists them: the form
+    /// a copied group's mappings take while its devices have no ids ([`Device::forget_ids`]), and
+    /// an older file's paths. [`crate::Project::assign_ids`] turns it into [`Self::Id`].
+    Nth(u32),
 }
 
 impl Default for DeviceGroup {
@@ -95,6 +105,103 @@ impl DeviceGroup {
         }
         rest.is_empty().then_some(device)
     }
+
+    /// Every device inside the group with its path relative to it (`[branch, index, …]`),
+    /// depth-first as [`walk_devices`] goes: a nested group before the devices in it.
+    pub fn inner_devices(&self) -> Vec<(Vec<u32>, &Device)> {
+        let mut out = Vec::new();
+        for (b, branch) in self.branches.iter().enumerate() {
+            for (path, device) in walk_devices(&branch.devices) {
+                let mut relative = vec![u32::try_from(b).unwrap_or(u32::MAX)];
+                relative.extend(path.iter().map(|&i| u32::try_from(i).unwrap_or(u32::MAX)));
+                out.push((relative, device));
+            }
+        }
+        out
+    }
+
+    /// The path, relative to the group, of the device `target` names, or `None` when no device
+    /// inside the group is it.
+    pub fn mapped_path(&self, target: MappedDevice) -> Option<Vec<u32>> {
+        let mut inner = self.inner_devices().into_iter();
+        match target {
+            MappedDevice::Id(id) => inner.find(|(_, d)| id.is_some() && d.id == id).map(|(path, _)| path),
+            MappedDevice::Nth(n) => inner.nth(usize::try_from(n).ok()?).map(|(path, _)| path),
+        }
+    }
+
+    /// The device at `path` relative to the group, as [`MappedDevice::Nth`].
+    pub fn nth_at(&self, path: &[u32]) -> Option<MappedDevice> {
+        let n = self.inner_devices().iter().position(|(p, _)| p.as_slice() == path)?;
+        u32::try_from(n).ok().map(MappedDevice::Nth)
+    }
+
+    /// Makes every mapping name its device by its place among [`Self::inner_devices`], before a
+    /// copy's devices lose their ids.
+    pub(crate) fn mark_copied_mappings(&mut self) {
+        let ids: Vec<DeviceId> = self.inner_devices().iter().map(|(_, d)| d.id).collect();
+        for mapping in self.macros.iter_mut().flat_map(|m| &mut m.mappings) {
+            if let MappedDevice::Id(id) = mapping.device
+                && let Some(n) = ids.iter().position(|&d| id.is_some() && d == id).and_then(|n| u32::try_from(n).ok())
+            {
+                mapping.device = MappedDevice::Nth(n);
+            }
+        }
+    }
+
+    /// Names every mapping's device by its id again once the devices inside have theirs:
+    /// [`MappedDevice::Nth`] by the device at that place, and an id that `renumbered` (old id,
+    /// new id) gave a device inside the group a new one for (a copy that kept its ids) by the new.
+    pub(crate) fn resolve_mappings(&mut self, renumbered: &[(DeviceId, DeviceId)]) {
+        let ids: Vec<DeviceId> = self.inner_devices().iter().map(|(_, d)| d.id).collect();
+        for mapping in self.macros.iter_mut().flat_map(|m| &mut m.mappings) {
+            mapping.device = match mapping.device {
+                MappedDevice::Nth(n) => match usize::try_from(n).ok().and_then(|n| ids.get(n)) {
+                    Some(&id) => MappedDevice::Id(id),
+                    None => continue,
+                },
+                MappedDevice::Id(id) if !ids.contains(&id) => {
+                    match renumbered.iter().find(|(old, new)| *old == id && ids.contains(new)) {
+                        Some(&(_, new)) => MappedDevice::Id(new),
+                        None => continue,
+                    }
+                }
+                MappedDevice::Id(_) => continue,
+            };
+        }
+    }
+
+    /// Drops the mappings whose device is no longer inside the group (it was removed, or moved
+    /// out of it).
+    pub fn drop_lost_mappings(&mut self) {
+        let ids: Vec<DeviceId> = self.inner_devices().iter().map(|(_, d)| d.id).collect();
+        let count = ids.len();
+        for m in &mut self.macros {
+            m.mappings.retain(|mapping| match mapping.device {
+                MappedDevice::Id(id) => id.is_some() && ids.contains(&id),
+                MappedDevice::Nth(n) => usize::try_from(n).is_ok_and(|n| n < count),
+            });
+        }
+    }
+}
+
+impl crate::Project {
+    /// [`DeviceGroup::drop_lost_mappings`] for every group in the project. The session runs it
+    /// after every edit, so removing or moving a mapped device out of its group takes the
+    /// mapping with it.
+    pub fn drop_lost_mappings(&mut self) {
+        fn walk(devices: &mut [Device]) {
+            for group in devices.iter_mut().filter_map(Device::as_group_mut) {
+                group.drop_lost_mappings();
+                for branch in &mut group.branches {
+                    walk(&mut branch.devices);
+                }
+            }
+        }
+        for channel in &mut self.channels {
+            walk(&mut channel.devices);
+        }
+    }
 }
 
 impl Branch {
@@ -123,6 +230,23 @@ impl Device {
     /// A device group named `name`, switched on, with its parameters at their defaults.
     pub fn group(name: impl Into<String>, group: DeviceGroup) -> Self {
         Self::new(name, DeviceKind::Group(Box::new(group)))
+    }
+
+    /// Makes this device, and every device inside it, a new one: a copy of a device has no id
+    /// until the project gives it one ([`crate::Project::assign_ids`], #763 › 1).
+    pub fn forget_ids(&mut self) {
+        self.id = crate::DeviceId::NONE;
+        if let Some(group) = self.as_group_mut() {
+            group.mark_copied_mappings();
+            group.branches.iter_mut().flat_map(|b| &mut b.devices).for_each(Device::forget_ids);
+        }
+    }
+
+    /// This device as a copy: the same, with [`Device::forget_ids`].
+    pub fn copied(&self) -> Self {
+        let mut copy = self.clone();
+        copy.forget_ids();
+        copy
     }
 
     /// The group this device is, if it is one.
@@ -242,13 +366,16 @@ pub(crate) fn validate_devices(channel: ChannelId, devices: &[Device], errors: &
         let mut bad_mapping = false;
         let mut twice = false;
         for mapping in group.macros.iter().flat_map(|m| &m.mappings) {
-            let resolves = mapping.device.len() % 2 == 0 && group.device_at(&mapping.device).is_some();
-            if !resolves || !travel(mapping.min) || !travel(mapping.max) {
+            let Some(relative) = group.mapped_path(mapping.device) else {
+                bad_mapping = true;
+                continue;
+            };
+            if !travel(mapping.min) || !travel(mapping.max) {
                 bad_mapping = true;
                 continue;
             }
             let mut target = path.clone();
-            target.extend(mapping.device.iter().map(|&i| i as usize));
+            target.extend(relative.iter().map(|&i| i as usize));
             if mapped.iter().any(|(p, param)| *p == target && *param == mapping.param) {
                 twice = true;
             } else {

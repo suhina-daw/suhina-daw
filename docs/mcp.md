@@ -3,7 +3,7 @@ description: The MCP server for agents: tools, file roots, errors and how to run
 read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
-last_verified: 2026-11-04
+last_verified: 2026-11-06
 covers:
   - crates/automation/src/server.rs
   - crates/automation/src/workspace.rs
@@ -80,8 +80,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   next audio block (0.15 s later when stretched arrangement clips must be prepared first), with
   launched clips playing on
   ([ADR 0005](decisions/0005-edits-while-playing.md)). To sweep a track's volume or pan by
-  ear as one undo step, send `track.setVolume` or `track.setPan` repeatedly with
-  `continue: true` after the first ([ADR 0002](decisions/0002-commands.md)). Only the active project plays: switching
+  ear as one undo step, send `track.setVolume` or `track.setPan` repeatedly with the same
+  `gesture` (an id you pick), then `history.endGesture` with it
+  ([ADR 0002](decisions/0002-commands.md) › 9). Only the active project plays: switching
   closes the previous project's output and starts the new one (its result has `audio_output`),
   so transport commands aimed at another project fail.
 - **Plug-ins between commands.** The server takes in the plug-ins that started every 50 ms, as
@@ -126,7 +127,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 - **Tempo map.** `tempo.points` lists the start tempo, the tempo changes and the time-signature
   changes; `tempo.addPoint {beat, bpm, ramp?}`, `tempo.movePoint` and `tempo.deletePoint` edit the
-  tempo changes (numbered from 1), `timeSignature.add {bar, numerator, denominator}`,
+  tempo changes (numbered from 0, each with an `id` the commands also take as `{"id": n}`), `timeSignature.add {bar, numerator, denominator}`,
   `timeSignature.move` and `timeSignature.delete` the signature changes (bars from 1). Renders and
   the playing engine follow them ([tempo map](spec/tempo-map.md)). A launched scene's tempo or
   time signature overrides the map for the launcher clock (`launcher.state` reports
@@ -149,6 +150,14 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   what a track hears: `input` `"none"`, a channel (`"3"`) or a pair (`"1/2"`), `monitor`
   `auto` (while armed), `in` or `off`; it is an edit, saved with the project. Arm several
   tracks with `track.setArm` and `exclusive: false` to hear a band on separate tracks.
+  `audio.setTrackInput {input}` chooses the default track input of the audio device chosen, in
+  the same form: what new audio tracks hear, and an audio track armed while it hears nothing
+  (whose arm result then says `input_given`, or `no_input` when there was nothing to give). Each
+  audio device keeps its own with its input: `audio.setOutput` with another `device` and no
+  `input` brings back the input that device was last chosen with, and its default track input
+  with it; the result names the device as `input_device` (`host|device`). It is refused while the
+  input device is off, and `audio.info` and `audio.devices` show the device's as
+  `chosen.track_input`.
   `audio.info` adds `input`, `input_channels` and `input_underruns`. Arming is not an edit (no undo step, not saved) and works
   before an engine plays; `project.tracks` says which tracks are `armed`. Without `--audio`,
   `midi.*` returns an error.
@@ -226,14 +235,17 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   changes by as much). These are what the piano roll's ruler runs when its loop handles and
   markers are dragged ([clip editor](spec/ui-clip-editor.md) › Commands).
 
-- **Notes.** `note.list {track, index | scene}` lists a MIDI clip's notes (index, time and length
-  in beats, key with 60 as C3, velocity 1 to 127, and `muted`); `note.add {..., notes: [{time, length, key,
-  velocity?}]}` appends notes and returns their indices; `note.delete`, `note.move {beats?,
+- **Notes.** `note.list {track, index | scene}` lists a MIDI clip's notes (index, `id`, time and
+  length in beats, key with 60 as C3, velocity 1 to 127, and `muted`); `note.add {..., notes: [{time, length, key,
+  velocity?}]}` appends notes and returns their indices and `ids`; `note.delete`, `note.move {beats?,
   semitones?}`, `note.resize {length? | by? | startBy?}` (`startBy` moves each start and keeps
   each end) and `note.setVelocity {velocity? | by? | velocities?}` (`velocities`: one value per
   entry of `notes`) take
-  `notes`, a list of those indices. Edits keep the notes' order, so the indices of notes not
-  deleted stay valid; each is one undo step and fails as a whole on a bad value
+  `notes`, a list of those indices or of `{"id": n}`. An id names a note wherever it is now, so a
+  command built from an earlier `note.list` still names the notes it read after another writer
+  has added, deleted or moved notes; it lasts while the project is open. Edits keep the notes'
+  order, so the indices of notes not deleted stay valid, and a changed or moved note keeps its
+  id; each is one undo step and fails as a whole on a bad value
   ([clip editor spec](spec/ui-clip-editor.md) › Commands). An edit to a clip whose content
   other clips also play (a duplicate) first gives that clip its own copy of the content, so the
   others do not change; the result's indices are the same.
@@ -279,7 +291,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 - **Splitting notes.** `note.split {track, index | scene, notes, at}` splits each named note that
   spans the beat `at` into two at `at` (the first keeps the start, the second the end); a note
   that starts or ends exactly at `at` is left alone, so a second split at the same beat changes
-  nothing. One undo step; it returns the indices of the notes it made, and `at` is a beat from 0
+  nothing. One undo step; it returns the indices and `ids` of the notes it made (each first half
+  keeps its note's id), and `at` is a beat from 0
   to 120 000.
 - **Follow actions.** `clip.setFollowAction {track, scene, enabled?, time?, linked?, actionA?,
   actionB?, chanceA?, chanceB?}` sets what a slot clip does after its follow time (one undo
@@ -287,7 +300,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   picks the same random actions every time ([clip launching](spec/clip-launching.md#follow-actions)).
 
 - **Tracks and files.** `track.add {kind?, name?, after?, device?, preset?, voice?, sd?}` adds an audio
-  or MIDI track (with a device, when one is named). `clip.addFiles {paths, track?, start? |
+  or MIDI track (with a device, when one is named). `clip.addFiles {paths, track?, after?, start? |
   scene?, separate?, stack?, warp?}` places samples and MIDI files as clips, on a track or on new
   tracks (a Stems file as a group of its master, muted, and its stems, with its mastering on the
   group, [spec](spec/stems-format.md)), one after another from a beat or down the clip slots from a scene; files that cannot be
@@ -318,7 +331,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   (`key:Q`) or a MIDI note (`note:1:36`) to a slot, a scene or a track's stop button;
   `launcher.removeMapping` and `launcher.mappings` remove and list them. Agents launch with
   `clip.launch` and friends as before; the mappings are for the window and controllers
-  ([spec](spec/clip-launching.md#launching-from-keys-and-notes)).
+  ([spec](spec/clip-launching.md#launching-from-keys-and-notes)). These three commands are
+  replaced by `mapping.*` when controller mappings are built
+  ([spec](spec/midi-mapping.md#launch-keys)).
 - **CPU load.** `launcher.state` reports `cpu`: the audio engine's share of wall time spent
   rendering, in percent, measured over windows of 0.2 s and smoothed so it settles within about
   a second (`0.0` before anything is measured, `null` without an audio output). The control bar shows the same number.
@@ -367,7 +382,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   such as `"2/1/0"` is the device at index 2 (a group), its branch 1, device 0 there. Every
   `device.*` command takes a path for `device`, and `device.add`, `device.addSd`,
   `device.addPlugin` and `device.paste` a path for `position` (`"2/1/3"`: branch 1 of the group
-  at 2, before its device 3). `track.devices` gives each device its `path`, and a group its
+  at 2, before its device 3). A device may also be named by its id, `{"id": 7}`, which stays the
+  same while it moves (ADR 0025); `track.devices` lists it as `device_id`, and a command that adds
+  devices returns `device_id` (or `device_ids`). `track.devices` gives each device its `path`, and a group its
   `params` (`mix`, `gain`, `macro.1` … `macro.8`, set with `device.setParam`), `branches` (name,
   volume, pan, mute, solo and their `devices`) and `macros`. `device.group {track, device, count?,
   name?}` puts consecutive devices into a new group of one branch without changing the sound,
@@ -392,7 +409,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   (fewer points), `automation.clear`,
   `automation.setEnabled` and `automation.list` (through `command_run`) edit
   the envelopes of a track's `volume`, `pan` and `mute` (no `device`) and of any device
-  parameter (`device` and its `param` id), point by point, each one undo step; values in the
+  parameter (`device` and its `param` id), point by point, each one undo step (a point by its
+  index on the lane or as `{"id": n}`, which `automation.list` gives); values in the
   set command's unit (the volume in dB). `device.setAutomation` replaces a whole device lane, for
   built-in devices too. Setting an automated parameter by hand turns its lane off (the answer
   says `"automation": "off"`) until `automation.setEnabled` turns it on again
@@ -449,10 +467,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 |---|---|
 | `project_open` | Open a Suhina project (`.suhina`) or a `.als` Live Set below the read root as a new, active project; returns its `project` id, a summary and import warnings. |
 | `project_inspect` | Summary, tracks (volume, pan, mute, devices) and arrangement clips as JSON; optional `project`. |
-| `command_list` | Command ids with description, kind (`read`, `edit`, `history`, `transport`, `projects`, `plugins`, `plugin`, `library`, `audio`) and parameter schema; optional `filter`. |
+| `command_list` | Command ids with description, target (`project`, `projects`, `plugins`, `plugin`, `library`, `audio`), effect (`read`, `edit`, `history`, `transport`, `change`) and parameter schema; optional `filter`. |
 | `command_run` | Run one command: `{"id": "track.setPan", "params": {"tracks": ["Bass"], "pan": -1}}`; optional `project`. |
 | `command_batch` | Run `steps` in order; each editing command is its own undo step; `stop_on_error` (default true); optional `project` for every step. |
-| `project_render` | Render the active project (or `project`): the arrangement, or `scene` (1-based), to a WAV below the write root. Audio files are loaded from the opened set's folder; missing ones are listed in `warnings`. Its plug-ins start with the state the project's running plug-ins have now (what their editors changed included), as `project.save` writes it. With `launches` (and `seconds`), render a launch script instead: transport commands run at times in seconds from a stopped transport, e.g. `[{"at": 0, "id": "scene.launch", "params": {"scene": 1}}, {"at": 4, "id": "track.stop", "params": {"track": "Bass"}}]`; each step's result is returned. The steps are confined like the tool calls' and never carry the file-writing commands (`project.export`, `project.save`); the render's output is the only file a script writes. |
+| `project_render` | Render the active project (or `project`): the arrangement, or `scene` (from 0, as `project.launcher` numbers them), to a WAV below the write root. Audio files are loaded from the opened set's folder, the library folders and the files the person chose or saved the project with (the same trust as the app, [missing-files](spec/missing-files.md) › Project file boundaries); missing ones are listed in `warnings`. Its plug-ins start with the state the project's running plug-ins have now (what their editors changed included), as `project.save` writes it. With `launches` (and `seconds`), render a launch script instead: transport commands run at times in seconds from a stopped transport, e.g. `[{"at": 0, "id": "scene.launch", "params": {"scene": 0}}, {"at": 4, "id": "track.stop", "params": {"track": "Bass"}}]`; each step's result is returned. The steps are confined like the tool calls' and never carry the file-writing commands (`project.export`, `project.save`); the render's output is the only file a script writes. |
 
 Commands are defined once in `suhina-session` (ADR 0002); the MCP server, the CLI and the
 desktop app all run the same ones. [`commands.md`](commands.md) lists every command with its
@@ -490,7 +508,7 @@ suhina-cli mcp --attach
   and browser library. Agents cannot grant themselves access. Revocation applies to subsequent
   operations and exports still gathering state; it does not cancel a render already started.
 - **Settings.** Commands that change the app's settings or the person's library rather than a
-  project are refused: `audio.setOutput`, `output.setCuePair`, `output.setCueVolume`,
+  project are refused: `audio.setOutput`, `audio.setTrackInput`, `output.setCuePair`, `output.setCueVolume`,
   `midi.setInput`, `plugin.setHosting`, `library.setPluginsView`, `library.pin`, `library.unpin`,
   `library.tag`, `library.setTag`, `library.removeTag`, `soundmap.setKind`, and
   `project.autosave` with `interval` or `cleanUp`. Transport commands play on the window's output.
@@ -530,7 +548,7 @@ claude mcp add suhina-app -- /path/to/suhina-cli mcp --attach
 Sampler manual boundaries are edited with `device.setSampleSlices` (`track`,
 `device`, `points`: normalized source positions strictly between 0 and 1). The
 command validates, sorts and deduplicates the list and supports undo/redo; an
-empty list clears the map. Optional `continue` groups consecutive drag edits.
+empty list clears the map. Calls with the same `gesture` make one undo step.
 
 `track.devices` includes `sample_slices` when a Sampler has an explicit manual map.
 

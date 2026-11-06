@@ -22,6 +22,7 @@ const SLOT: &str = "Select Beat B on Drums (scene 3)";
 
 fn device(name: &str) -> Device {
     Device {
+        id: Default::default(),
         name: name.into(),
         kind: DeviceKind::Builtin(name.to_lowercase()),
         enabled: true,
@@ -284,7 +285,7 @@ fn nam_project() -> Project {
     let mut project = demo_project();
     for (name, id) in [("NAM Amp Modeler", "nam-amp-modeler"), ("NAM Cab Loader", "nam-cab-loader")] {
         let params = suhina_device_registry::info(id)
-            .map(|info| info.params.iter().map(|p| DeviceParam::new(p.id, p.default)).collect())
+            .map(|info| info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect())
             .unwrap_or_default();
         let device = Device { name: name.into(), kind: DeviceKind::Builtin(id.into()), params, ..device("nam") };
         project.channels[0].devices.push(device);
@@ -585,7 +586,7 @@ fn expanded_device() -> Device {
         drawing: vec![],
     });
     graph.expanded = Some(big);
-    Device { state: Some(graph.to_sd().unwrap().into_bytes()), ..Device::new("Big Gain", DeviceKind::Sd) }
+    Device { state: Some(graph.to_sd().unwrap().into_bytes().into()), ..Device::new("Big Gain", DeviceKind::Sd) }
 }
 
 /// A device with an expanded panel has a button in its header that opens it over the main area;

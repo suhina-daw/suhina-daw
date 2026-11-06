@@ -331,6 +331,9 @@ pub struct ArrangementViewState {
     /// A drag from the browser over the window: the view says which target is under the
     /// pointer (`docs/spec/browser.md` › Dragging into the project).
     pub drop: Option<DropProbe>,
+    /// The beat under the pointer over the lanes, snapped to the grid, as the view drew it last;
+    /// `None` with the pointer elsewhere. The quick-add palette places a sample there.
+    pub pointer_beat: Option<f64>,
     /// The engine's levels this frame, for the headers' meters.
     pub meters: Meters,
     /// The piano roll is pulled to the top: the view shows only this track, highlighted, and
@@ -361,6 +364,8 @@ pub struct ArrangementViewState {
     pub waveform_zoom: f32,
     pub waveform_appearance: crate::settings::view_settings::WaveformAppearance,
     pub audio_colour_strength: u8,
+    /// This frame's grid lines, as clips draw them through their bodies: (x, is a bar line).
+    pub(crate) clip_grid: std::sync::Arc<Vec<(f32, bool)>>,
     pub header_colour_strength: u8,
     /// Where the last click in a lane or a clip's body put the play start, on which track: a
     /// thin line there in that lane while the play start is still there.
@@ -465,6 +470,7 @@ impl Default for ArrangementViewState {
             reveal: None,
             zoom_one: false,
             drop: None,
+            pointer_beat: None,
             meters: Meters::default(),
             focus: None,
             clip_clicked: false,
@@ -477,6 +483,7 @@ impl Default for ArrangementViewState {
             waveform_zoom: 1.0,
             waveform_appearance: crate::settings::view_settings::WaveformAppearance::default(),
             audio_colour_strength: 82,
+            clip_grid: std::sync::Arc::default(),
             header_colour_strength: 82,
             insert: None,
             open_devices: None,
@@ -557,10 +564,12 @@ impl ArrangementViewState {
         self.time_selection.as_ref()
     }
 
-    /// Sets or clears the time selection: after a duplicate it moves onto the copy.
+    /// Sets or clears the time selection: after a duplicate it moves onto the copy. A time
+    /// selection takes the edit keys from the track headers (#1199).
     pub fn set_time_selection(&mut self, selection: Option<TimeSelection>) {
         if selection.is_some() {
             self.clear_take_selection();
+            self.track_focus = false;
         }
         self.time_selection = selection;
     }
@@ -1020,5 +1029,28 @@ impl ArrangementViewState {
     /// brace and marker rows under it, and the whole lane.
     pub fn focus_height(&self, track: TrackId) -> f32 {
         RULER + 1.0 + loop_row_height() + 1.0 + MARKER_ROW + 1.0 + self.lane_height(track) + 1.0
+    }
+}
+
+/// How this frame draws clips: the grid lines through their bodies, the waveform zoom and look,
+/// how strongly an audio clip takes its colour. Handed to the clip painter as a value, where it
+/// read them from egui's memory (#764 › 12).
+#[derive(Clone)]
+pub(crate) struct ClipLook {
+    pub(crate) grid: std::sync::Arc<Vec<(f32, bool)>>,
+    pub(crate) waveform_zoom: f32,
+    pub(crate) waveform_appearance: crate::settings::view_settings::WaveformAppearance,
+    pub(crate) audio_colour_strength: u8,
+}
+
+impl ArrangementViewState {
+    /// How clips draw this frame.
+    pub(crate) fn clip_look(&self) -> ClipLook {
+        ClipLook {
+            grid: std::sync::Arc::clone(&self.clip_grid),
+            waveform_zoom: self.waveform_zoom,
+            waveform_appearance: self.waveform_appearance,
+            audio_colour_strength: self.audio_colour_strength,
+        }
     }
 }

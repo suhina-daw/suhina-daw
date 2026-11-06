@@ -64,7 +64,7 @@ fn project(fades: Option<(FadeShape, f64)>) -> Project {
             id: ContentId(1),
             name: "noise".into(),
             length: CLIP_BEATS,
-            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -77,7 +77,7 @@ fn project(fades: Option<(FadeShape, f64)>) -> Project {
                     clips: (0..CLIPS).map(clip).collect(),
                 })
                 .collect(),
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -110,8 +110,12 @@ struct Timings {
 fn time_blocks(project: &Project, pool: &AudioPool) -> Timings {
     let mut best: Option<Timings> = None;
     for _ in 0..ROUNDS {
-        let Ok(mut renderer) = Renderer::build(project, RenderInputs::from_audio(pool), SR, RenderOptions::PLAYING)
-        else {
+        let Ok(mut renderer) = Renderer::build(
+            project,
+            RenderInputs::from_audio(pool, suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        ) else {
             panic!("the project renders");
         };
         let blocks = renderer.length().div_ceil(BLOCK as u64) as usize;

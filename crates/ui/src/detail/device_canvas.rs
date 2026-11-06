@@ -214,17 +214,12 @@ fn nearest_slice(points: &[f64], view: SampleView, field: Rect, pointer: Pos2, s
             (view.x(points[a], field) - pointer.x).abs().total_cmp(&(view.x(points[b], field) - pointer.x).abs())
         })
 }
-fn slice_edit(
-    actions: &mut Vec<Action>,
-    track: TrackId,
-    device: &serde_json::Value,
-    points: Vec<f64>,
-    continued: bool,
-) {
-    actions.push(Action::new(
-        "device.setSampleSlices",
-        json!({"track":track.0,"device":device,"points":points,"continue":continued}),
-    ));
+fn slice_edit(actions: &mut Vec<Action>, track: TrackId, device: &serde_json::Value, points: Vec<f64>, dragged: bool) {
+    let mut params = json!({"track":track.0,"device":device,"points":points});
+    if dragged {
+        params["gesture"] = crate::interaction::commands::gesture(format_args!("slices:{}:{device}", track.0));
+    }
+    actions.push(Action::new("device.setSampleSlices", params));
 }
 
 fn sample_marker_color() -> Color32 {
@@ -339,7 +334,7 @@ fn sample_waveform(
     let edits = ui
         .ctx()
         .data(|d| d.get_temp::<Arc<suhina_device_api::sample_edits::SampleEdits>>(source_id.with("slice-edits")));
-    let params: Vec<_> = suhina_device_sdk::sampler::PARAMS
+    let params: Vec<_> = suhina_device_sdk::sample_instrument::PARAMS
         .iter()
         .map(|p| parameters.iter().find(|v| v.id == p.id).map_or(p.default, |v| v.value))
         .collect();
@@ -347,12 +342,12 @@ fn sample_waveform(
     if slicing && let Some(source) = &source {
         let cache_id = source_id.with("slices");
         let cached = ui.ctx().data(|d| {
-            d.get_temp::<(Arc<suhina_engine::AudioData>, suhina_device_sdk::sampler::SliceAnalysis)>(cache_id)
+            d.get_temp::<(Arc<suhina_engine::AudioData>, suhina_device_sdk::sample_instrument::SliceAnalysis)>(cache_id)
         });
         let analysis = if let Some((_, analysis)) = cached.filter(|(old, _)| Arc::ptr_eq(old, source)) {
             analysis
         } else {
-            let analysis = suhina_device_sdk::sampler::SliceAnalysis::new(
+            let analysis = suhina_device_sdk::sample_instrument::SliceAnalysis::new(
                 &source.samples,
                 usize::from(source.channels),
                 f64::from(source.sample_rate),
@@ -393,7 +388,7 @@ fn sample_waveform(
                 && automatic_points.contains(&previous)
                 && let Some(source) = &source
             {
-                params_json["identity"] = json!(suhina_device_sdk::sampler::SliceAnalysis::identity(
+                params_json["identity"] = json!(suhina_device_sdk::sample_instrument::SliceAnalysis::identity(
                     &params,
                     source.frames(),
                     f64::from(source.sample_rate),
@@ -546,13 +541,11 @@ fn sample_waveform(
             }
             ui.ctx().data_mut(|d| d.insert_temp(meter_id, meter));
             if ui.button("Apply time signature").clicked() {
-                // One undo step: the first stays open, the second closes it.
-                for (param, value, open) in
-                    [("source_numerator", meter.0.round(), true), ("source_denominator", meter.1 as f64, false)]
-                {
+                // One undo step: both values in one gesture.
+                for (param, value) in [("source_numerator", meter.0.round()), ("source_denominator", meter.1 as f64)] {
                     actions.push(Action::new(
                         "device.setParam",
-                        json!({"track":track.0,"device":address,"param":param,"value":value,"continuous":open,"gesture":"source_meter"}),
+                        json!({"track":track.0,"device":address,"param":param,"value":value,"gesture":"source_meter"}),
                     ));
                 }
                 ui.close();
@@ -948,13 +941,13 @@ fn sample_waveform(
             if let Some(p) = parameters.iter().find(|p| p.id == id) {
                 actions.push(Action::new(
                     "device.setParam",
-                    json!({"track":track.0,"device":address,"param":id,"value":p.default,"continuous":false}),
+                    json!({"track":track.0,"device":address,"param":id,"value":p.default}),
                 ));
             }
         } else if (response.dragged() || response.drag_stopped())
             && let Some(pos) = response.interact_pointer_pos()
         {
-            actions.push(Action::new("device.setParam", json!({"track": track.0, "device": address, "param": id, "value": ((snap(view.point(pos.x,field)) - f64::from(origin)) / f64::from(span)).clamp(0., 1.), "continuous": !response.drag_stopped()})));
+            actions.push(Action::new("device.setParam", json!({"track": track.0, "device": address, "param": id, "value": ((snap(view.point(pos.x,field)) - f64::from(origin)) / f64::from(span)).clamp(0., 1.), "gesture": crate::interaction::commands::gesture(format_args!("param:{}:{address}:{id}", track.0))})));
         }
     }
     if inline_recording {
@@ -1173,9 +1166,8 @@ fn envelope(
                     (value - f64::from(keys.y) * (p.max - p.min) * 0.01 * f64::from(fine)).clamp(p.min, p.max),
                 ));
             }
-            let len = edits.len();
-            for (i, (p, value)) in edits.into_iter().enumerate() {
-                actions.push(Action::new("device.setParam", json!({"track":target.0.0,"device":target.1,"param":p.id,"value":if response.double_clicked() { p.default } else { value },"continuous":i+1<len || response.dragged(),"gesture":format!("{}_{}",control.id,index)})));
+            for (p, value) in edits {
+                actions.push(Action::new("device.setParam", json!({"track":target.0.0,"device":target.1,"param":p.id,"value":if response.double_clicked() { p.default } else { value },"gesture":format!("{}_{}",control.id,index)})));
             }
         }
         if response.drag_stopped() || !ui.input(|i| i.pointer.primary_down()) {
@@ -1507,7 +1499,7 @@ fn handle(
                 "device.setParam",
                 json!({
                     "track": track.0, "device": at.value(), "param": axis.parameter.id, "value": value,
-                    "continuous": response.dragged() && !response.drag_stopped(), "gesture": control.id
+                    "gesture": control.id
                 }),
             ));
         }
@@ -2280,7 +2272,6 @@ pub(crate) fn show(
             });
             let keyed = (up != 0)
                 .then(|| normalized(p, binding.logarithmic) + f64::from(up) * if shift { 0.001 } else { 0.01 });
-            let ended = response.drag_stopped() || response.clicked() || keyed.is_some();
             if let Some(x) = control.x.as_ref().filter(|_| height.is_some())
                 && parameters.iter().any(|w| w.id == x.parameter && w.value != f64::from(wanted))
             {
@@ -2288,30 +2279,23 @@ pub(crate) fn show(
                     "device.setParam",
                     json!({
                         "track": track.0, "device": at.value(), "param": x.parameter, "value": wanted,
-                        "continuous": true, "gesture": DRAW_GESTURE
+                        "gesture": DRAW_GESTURE
                     }),
                 ));
             }
             if let Some(next) = height.or(keyed) {
                 let value = p.min + next.clamp(0.0, 1.0) * (p.max - p.min);
-                if value != p.value || ended {
+                // The stroke is one gesture, which the window ends on mouse up (#1146); a click
+                // or a key sets its bar even to the value it has.
+                if value != p.value || response.clicked() || keyed.is_some() {
                     actions.push(Action::new(
                         "device.setParam",
                         json!({
                             "track": track.0, "device": at.value(), "param": p.id, "value": value,
-                            "continuous": !ended, "gesture": DRAW_GESTURE
+                            "gesture": DRAW_GESTURE
                         }),
                     ));
                 }
-            } else if ended {
-                // The stroke ended over another bar: this one, where it began, closes the step.
-                actions.push(Action::new(
-                    "device.setParam",
-                    json!({
-                        "track": track.0, "device": at.value(), "param": p.id, "value": p.value,
-                        "continuous": false, "gesture": DRAW_GESTURE
-                    }),
-                ));
             }
             response.widget_info(|| {
                 let mut info = egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &control.name);
@@ -2341,7 +2325,7 @@ pub(crate) fn show(
                         "device.setParam",
                         json!({
                             "track": track.0, "device": at.value(), "param": x.parameter, "value": page,
-                            "continuous": false, "gesture": control.id
+                            "gesture": control.id
                         }),
                     ));
                 }
@@ -2389,14 +2373,13 @@ pub(crate) fn show(
             if response.clicked()
                 && let Some(preset) = canvas.presets.get(usize::from(index))
             {
-                // Every value but the last is continuous, so the preset is one undo step.
-                let count = preset.values.len();
-                for (i, (id, value)) in preset.values.iter().enumerate() {
+                // Every value in one gesture, so the preset is one undo step.
+                for (id, value) in &preset.values {
                     actions.push(Action::new(
                         "device.setParam",
                         json!({
                             "track": track.0, "device": at.value(), "param": id, "value": value,
-                            "continuous": i + 1 < count, "gesture": control.id
+                            "gesture": control.id
                         }),
                     ));
                 }
@@ -2473,7 +2456,7 @@ pub(crate) fn show(
                     "device.setParam",
                     json!({
                         "track":track.0,"device":at.value(),"param":p.id,"value":value,
-                        "continuous":response.dragged(),"gesture":control.id
+                        "gesture":control.id
                     }),
                 ));
             }
@@ -2538,7 +2521,7 @@ pub(crate) fn show(
                 let mut popup = egui::Popup::menu(&response).gap(2.0);
                 if response.double_clicked() {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Bool(false)));
-                    control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":at.value(),"param":p.id,"value":p.default,"continuous":false,"gesture":control.id})));
+                    control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":at.value(),"param":p.id,"value":p.default,"gesture":control.id})));
                 } else if key_open {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
@@ -2629,7 +2612,10 @@ pub(crate) fn show(
                     });
                 });
                 if let Some(value) = picked.filter(|v| *v != p.value) {
-                    control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":at.value(),"param":p.id,"value":value,"continuous":false,"gesture":control.id})));
+                    control_actions.push(Action::new(
+                        "device.setParam",
+                        json!({"track":track.0,"device":at.value(),"param":p.id,"value":value,"gesture":control.id}),
+                    ));
                 }
                 continue;
             }
@@ -2774,20 +2760,13 @@ pub(crate) fn show(
                     "device.setParam",
                     json!({
                         "track": track.0, "device": at.value(), "param": p.id, "value": value,
-                        "continuous": response.dragged() || response.is_pointer_button_down_on() || button,
                         "gesture": control.id
                     }),
                 ));
             }
         }
         // Both axes are one undo gesture, including a single click or a keyboard step.
-        let count = control_actions.len();
-        for (index, mut action) in control_actions.into_iter().enumerate() {
-            if index + 1 < count {
-                action.params["continuous"] = json!(true);
-            }
-            actions.push(action);
-        }
+        actions.extend(control_actions);
         response.widget_info(|| {
             let kind = if matches!(
                 control.gesture,

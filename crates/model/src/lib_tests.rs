@@ -64,7 +64,7 @@ fn per_track_clip_project_validates() {
                 id: ContentId(1),
                 name: "Bass A".into(),
                 length: 4.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 36)]) }],
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(0.0, 36)].into()) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             },
@@ -72,7 +72,7 @@ fn per_track_clip_project_validates() {
                 id: ContentId(2),
                 name: "Bass B".into(),
                 length: 4.0,
-                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(1.0, 38)]) }],
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note(1.0, 38)].into()) }].into(),
                 extensions: Extensions::default(),
                 scale: None,
             },
@@ -84,7 +84,7 @@ fn per_track_clip_project_validates() {
                 track: Some(TrackId(1)),
                 clips: vec![clip(1, 0.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         launcher: Launcher {
@@ -112,9 +112,10 @@ fn shared_pattern_project_validates_and_shares_content() {
         name: "Pattern 1".into(),
         length: 4.0,
         lanes: vec![
-            ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 36), note(2.0, 36)]) },
-            ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(1.0, 38), note(3.0, 38)]) },
-        ],
+            ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(0.0, 36), note(2.0, 36)].into()) },
+            ContentLane { target: Some(TrackId(2)), data: LaneData::Notes(vec![note(1.0, 38), note(3.0, 38)].into()) },
+        ]
+        .into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -129,7 +130,7 @@ fn shared_pattern_project_validates_and_shares_content() {
                 track: None,
                 clips: vec![clip(1, 0.0), clip(1, 4.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -156,7 +157,7 @@ fn dangling_references_are_reported() {
                 track: Some(TrackId(5)),
                 clips: vec![clip(3, 0.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -229,7 +230,7 @@ fn fades_must_be_non_negative_and_fit_the_clip() {
         id: ContentId(1),
         name: String::new(),
         length: 4.0,
-        lanes: Vec::new(),
+        lanes: Vec::new().into(),
         extensions: Extensions::default(),
         scale: None,
     };
@@ -242,7 +243,7 @@ fn fades_must_be_non_negative_and_fit_the_clip() {
                 track: None,
                 clips: vec![with(1.0, 1.0), with(3.0, 3.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -299,7 +300,7 @@ fn markers_stay_in_beat_order_and_must_be_at_a_beat_from_0() {
     let project = Project {
         arrangement: Arrangement {
             lanes: Vec::new(),
-            markers: vec![Marker::new(0.0, "ok"), Marker::new(-1.0, "before"), Marker::new(f64::NAN, "nan")],
+            markers: vec![Marker::new(0.0, "ok"), Marker::new(-1.0, "before"), Marker::new(f64::NAN, "nan")].into(),
             takes: Vec::new(),
         },
         ..Project::default()

@@ -895,10 +895,10 @@ fn shown(state: &SessionViewState, column: &Column, control: Control, value: f64
     }
 }
 
-/// A finished or moving volume drag as its command; every frame of a drag but the first
-/// continues its undo step, so the drag is one step.
-fn set_volume(track: u32, v: f64, continued: bool) -> Action {
-    commands::set_volume(&[track], v, Some(continued))
+/// A finished or moving volume drag as its command; every frame of a drag is in one gesture, so
+/// the drag is one step.
+fn set_volume(track: u32, v: f64) -> Action {
+    commands::set_volume(&[track], v, true)
 }
 
 /// Runs a volume drag on `response`; returns the value to draw this frame.
@@ -920,17 +920,17 @@ fn volume_drag(
     match volume_gesture(ui, response, &mut preview, column.volume_db, fader) {
         Drag::Moving(v) => {
             state.drag = Some((track, Control::Volume, v));
-            actions.push(set_volume(track.0, v, continued));
+            actions.push(set_volume(track.0, v));
         }
         Drag::Done(v) => {
             state.drag = None;
             committed = Some(v);
-            actions.push(set_volume(track.0, v, continued));
+            actions.push(set_volume(track.0, v));
         }
         Drag::Set(v) => {
             state.drag = None;
             committed = Some(v);
-            actions.push(commands::set_volume(&[track.0], v, None));
+            actions.push(commands::set_volume(&[track.0], v, false));
         }
         Drag::None => {
             if continued {
@@ -1045,22 +1045,28 @@ pub fn main_fader(
     let label = widgets::format_db(preview.unwrap_or(volume_db));
     let response = volume_response(ui, painter, readout, fader, Id::unique("main-volume"), "Main volume", &label);
     let continued = preview.is_some();
-    let send = |v: f64, continued: bool| {
-        Action::new(
-            "mixer.setMainVolume",
-            json!({ "db": commands::db_param(v, VOLUME_RANGE.0), "continue": continued }),
-        )
+    let send = |v: f64, dragged: bool| {
+        let mut params = json!({ "db": commands::db_param(v, VOLUME_RANGE.0) });
+        if dragged {
+            params["gesture"] = commands::gesture("main-volume");
+        }
+        Action::new("mixer.setMainVolume", params)
     };
     let mut db = volume_db;
     match volume_gesture(ui, &response, &mut preview, volume_db, fader) {
         Drag::Moving(v) => {
             state.drag = Some((MAIN, Control::Volume, v));
-            actions.push(send(v, continued));
+            actions.push(send(v, true));
             db = v;
         }
-        Drag::Done(v) | Drag::Set(v) => {
+        Drag::Done(v) => {
             state.drag = None;
-            actions.push(send(v, continued));
+            actions.push(send(v, true));
+            db = v;
+        }
+        Drag::Set(v) => {
+            state.drag = None;
+            actions.push(send(v, false));
             db = v;
         }
         Drag::None => {
@@ -1307,33 +1313,15 @@ fn pan_row(
         Some((t, Control::Pan, v)) if t == track => Some(v),
         _ => None,
     };
-    // Every frame of a drag sets the value, so it is heard while dragging; all but the first
-    // continue its undo step, so the drag is one step.
-    let continued = preview.is_some();
-    let set_pan = |v: f64| {
-        Action::new(
-            "track.setPan",
-            json!({ "tracks": [track.0], "pan": (v * 100.0).round() / 100.0, "continue": continued }),
-        )
-    };
+    // Every frame of a drag sets the value, so it is heard while dragging, all in one gesture,
+    // so the drag is one step (`ChannelControlDrag`, as the Arrangement's headers do).
     let mut committed = None;
-    match widgets::drag_value(ui, &pan_response, &mut preview, column.pan, 0.01, 0.02, (-1.0, 1.0), 0.0) {
-        Drag::Moving(v) => {
-            state.drag = Some((track, Control::Pan, v));
-            actions.push(set_pan(v));
-        }
-        Drag::Done(v) => {
-            state.drag = None;
-            committed = Some(v);
-            actions.push(set_pan(v));
-        }
-        Drag::Set(v) => {
-            state.drag = None;
-            committed = Some(v);
-            actions
-                .push(Action::new("track.setPan", json!({ "tracks": [track.0], "pan": (v * 100.0).round() / 100.0 })));
-        }
-        Drag::None => {}
+    let drag = widgets::drag_value(ui, &pan_response, &mut preview, column.pan, 0.01, 0.02, (-1.0, 1.0), 0.0);
+    if !matches!(drag, Drag::None) {
+        let frame = commands::ChannelControlDrag { track, control: commands::ChannelControl::Pan }.frame(drag);
+        state.drag = frame.moving.map(|v| (track, Control::Pan, v));
+        committed = frame.committed;
+        actions.extend(frame.action);
     }
     // Shown after this frame's drag, so the knob never trails the pointer.
     let pan = match state.drag {
@@ -1440,8 +1428,7 @@ fn send_knobs(
         let level = if send.level_db.is_finite() { send.level_db } else { widgets::SEND_RANGE.0 };
         let mut committed = None;
         // Heard while it is dragged, every frame of it in one undo step, as the fader is (#705).
-        let continued = preview.is_some();
-        match widgets::drag_value(
+        let drag = widgets::drag_value(
             ui,
             &response,
             &mut preview,
@@ -1450,22 +1437,13 @@ fn send_knobs(
             1.0,
             widgets::SEND_RANGE,
             widgets::SEND_RANGE.0,
-        ) {
-            Drag::Moving(v) => {
-                state.drag = Some((track, control, v));
-                actions.push(commands::set_send(track, send.target, v, continued));
-            }
-            Drag::Done(v) => {
-                state.drag = None;
-                committed = Some(v);
-                actions.push(commands::set_send(track, send.target, v, continued));
-            }
-            Drag::Set(v) => {
-                state.drag = None;
-                committed = Some(v);
-                actions.push(commands::set_send_outright(track, send.target, v));
-            }
-            Drag::None => {}
+        );
+        if !matches!(drag, Drag::None) {
+            let frame = commands::ChannelControlDrag { track, control: commands::ChannelControl::Send(send.target) }
+                .frame(drag);
+            state.drag = frame.moving.map(|v| (track, control, v));
+            committed = frame.committed;
+            actions.extend(frame.action);
         }
         response.context_menu(|ui| {
             for (pre, label) in [(true, "Before the fader (pre)"), (false, "After the fader (post)")] {

@@ -4,10 +4,11 @@ read_when: object id, ClipId, clip identity, positional addressing, clip.move, d
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/ids.rs
+  - crates/model/src/id_list.rs
   - crates/session/src/commands.rs
   - crates/session/src/lib.rs
   - crates/project-file/src/lib.rs
@@ -255,6 +256,65 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
 - **Whether the derived-in-document-order rule is the v1 read path forever**, or only until a v2 file
   carries ids explicitly. Decided as far as it goes: a file without ids keeps opening; ADR 0026's
   version decides whether a newer file may leave them out.
+
+Decided since: **devices take their ids from the same counter** (#763 › 1, `.suhina` version 6).
+A `DeviceId` names a device on a channel, inside a device group too, and stays with it when it
+moves along the chain, between branches or to another track; a copy (duplicate, paste, a copied
+track) is a new device and gets a new id, and should a copy keep one, `assign_ids` gives the later
+device in document order a new id. A file before version 6 gives its devices ids in document order
+after the other objects'. Commands name a device by it as `"device": {"id": 7}`, and report it as
+`device_id`, since a device's `id` already says what it is (a built-in's or a plug-in's).
+
+Decided since: **markers, automation points and tempo changes too, but only while the project is
+open** (#763 › 1). A command that takes a marker's `index`, a lane's `point` or `points`, or a
+tempo change's `point` takes `{"id": n}` in its place, found where it is now; `project.markers`,
+`automation.list` and `tempo.points` list each one's `id`, and the commands that add one return it.
+A copy is a new object: `assign_ids` gives the later of two with one id a new one. Two points are
+equal without their ids, so a range tool that draws a line again as it was changes nothing.
+
+Decided since: **notes too, in the same way** (#1182). A content's notes are an
+`IdList<NoteId, Note>` (`suhina_model::Notes`), and every `note.*` command that names notes takes
+`{"id": n}` for one in place of its index; `note.list` gives each note's `id` beside its index, and
+the commands that make notes (`note.add`, `note.paste`, `note.duplicate`, `note.split`) return the
+new ones as `ids`. A note changed or moved in place keeps its id; a note an edit makes is a new one
+(a split's first half keeps the note's id, its second half is new). A content copied whole (a clip
+given its own copy, a duplicated clip) keeps its notes' ids, which is no clash, since a note is
+always named with its clip. Note ids are not written to the file either, so `.suhina` stays at
+version 8: per-note expression puts its curves on the note itself and an ARA archive names clips
+and contents, not notes. A version merge ([ADR 0023](0023-collaboration-and-project-versions.md),
+[ADR 0027](0027-merge-and-versions.md)) is the one thing that would need saved note ids, and that
+waits for the merge decision; the proposal for then is ids counted per content, saved in the file.
+The piano roll keeps its selection on its notes by id, so another writer's edit between two frames
+does not move it to other notes.
+
+Their ids are **not written to the file**. The rule: **an id is saved when something refers to its
+object across a save** — another part of the file (a clip's `content`, a macro mapping's
+`device`), a plug-in's saved state (an ARA archive names its regions `clip-<id>` and modifications
+`content-<id>`), or a later version of the project being merged. Nothing refers to a marker, a
+point or a tempo change that way: a version merge matches tempo changes by beat
+([ADR 0024](0024-musical-time-and-tempo.md) › 5), and automation merges by lane or time range, since
+a point is a sample of a curve rather than an object with an identity in the music. What the ids
+are for — a command from an earlier read not hitting the wrong object — lasts as long as the
+project is open. Saving them later, if a merge comes to need it, is a format version like any other.
+
+**The id is held by the list, not by the value** (`suhina_model::IdList`). A marker, a point, a
+tempo change or a note is its beat, value and so on; which one it is belongs to the list it is in
+(the arrangement's markers, a lane's points, the tempo map's changes, a content's notes). A value can be copied freely —
+paste, duplicate and the range tools copy them all the time — and copying it copies no id. The
+only ways into a list give a new id (adding a value), or keep the id of an entry taken out of that
+list (a move: `take`, then `put`), and an entry cannot be copied; an entry whose id the list
+already has gets a new one. So **an id is never in a list twice, by construction**: there is no
+pass after an edit that looks for duplicates, and no counter in the project. Ids come from one
+counter for the whole program that only goes up, so undo and redo, which put back an older
+project, can never make an id handed out before be handed out again. A command names one within
+the list it names, so a list copied whole (a duplicated track's lanes) keeping its ids is no clash.
+Two lists are equal when their values are, so a range tool that draws a line again as it was
+changes nothing.
+
+Considered and rejected: the id as a field of the value, given by a pass after every edit that
+gives one to each object without one and a new one to the later of two that share one. Copies keep
+the field, so uniqueness then rests on that pass running after every change, and it walks every
+object of the project each time, which notes (up to 100 000 a clip, #1182) would make too slow.
 
 Decided since: **an imported `.als` gets fresh ids.** Its own id space is separate and its object-id
 counter is not ours to reinterpret; the importer gives every lane, clip and scene a new id in

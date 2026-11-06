@@ -63,6 +63,7 @@ fn env() -> Arc<PluginEnv> {
 
 fn plugin_device(id: &str) -> Device {
     Device {
+        id: Default::default(),
         name: format!("Test {id}"),
         kind: DeviceKind::Clap { id: id.into() },
         enabled: true,
@@ -118,7 +119,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
             id: ContentId(1),
             name: "c".into(),
             length,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -146,7 +147,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
                     extensions: Extensions::default(),
                 }],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -164,7 +165,7 @@ fn an_offline_render_runs_a_projects_plug_in_effect() {
     assert_eq!(started.running(), 1, "{:?}", started.notices);
     let wet = render_offline_from(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(started.plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(started.plugins),
         SR,
         512,
         None,
@@ -172,7 +173,7 @@ fn an_offline_render_runs_a_projects_plug_in_effect() {
     .unwrap();
     // Without the plug-in (not installed) the sound passes; the test gain halves it. The chain
     // adds a tail for effects to ring out.
-    let dry = render_offline(&p, SR, 512).unwrap();
+    let dry = render_offline(&p, SR, 512, suhina_session::devices()).unwrap();
     assert!(wet.len() > dry.len());
     let half: Vec<f32> = dry.iter().map(|s| s * 0.5).collect();
     assert!(max_diff(&wet[..dry.len()], &half) < 1e-6, "{}", max_diff(&wet[..dry.len()], &half));
@@ -185,13 +186,13 @@ fn an_offline_render_plays_notes_on_a_plug_in_instrument() {
     // The VST3 test plug-in answers each note with its velocity on the note's frame and
     // reports 32 frames of latency; it is the track's instrument, so no sine voices play.
     let mut device = plugin_device("vst3");
-    device.state = Some(1.0f32.to_le_bytes().to_vec());
+    device.state = Some(1.0f32.to_le_bytes().to_vec().into());
     let p = project(2.0, true, vec![device]);
     let started = suhina_session::start_offline(&p, &AudioPool::new(), &env(), SR);
     assert!(started.notices.is_empty(), "{:?}", started.notices);
     let out = render_offline_from(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(started.plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(started.plugins),
         SR,
         256,
         None,
@@ -248,7 +249,7 @@ fn a_block_a_plug_in_does_not_answer_counts_once() {
     plugins.insert(key, suhina_engine::PluginSlotInfo::default(), Box::new(hosted));
     let mut renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
         SR,
         RenderOptions::PLAYING,
     )
@@ -267,7 +268,13 @@ fn a_block_a_plug_in_does_not_answer_counts_once() {
 fn a_busy_plug_in_loses_no_block_offline_and_passes_the_sound_in_real_time() {
     let p = project(8.0, false, vec![plugin_device("x")]);
     let key = plugin_devices(&p)[0].key;
-    let mut dry = Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut dry = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     dry.set_offline(true);
     let (reference, _) = play(&mut dry, 20);
 
@@ -277,7 +284,7 @@ fn a_busy_plug_in_loses_no_block_offline_and_passes_the_sound_in_real_time() {
     plugins.insert(key, suhina_engine::PluginSlotInfo::default(), Box::new(hosted));
     let mut renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
         SR,
         RenderOptions::PLAYING,
     )
@@ -296,7 +303,7 @@ fn a_busy_plug_in_loses_no_block_offline_and_passes_the_sound_in_real_time() {
     plugins.insert(key, suhina_engine::PluginSlotInfo::default(), Box::new(hosted));
     let mut renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
         SR,
         RenderOptions::PLAYING,
     )
@@ -336,7 +343,7 @@ fn a_plug_in_that_crashes_or_hangs_leaves_the_engine_playing() {
         plugins.insert(key, suhina_engine::PluginSlotInfo::default(), Box::new(hosted));
         let mut renderer = Renderer::build(
             &p,
-            RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+            RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
             SR,
             RenderOptions::PLAYING,
         )
@@ -344,8 +351,13 @@ fn a_plug_in_that_crashes_or_hangs_leaves_the_engine_playing() {
         let mut controller = renderer.controller();
         // The same project without the plug-in, block for block: the effect passes the sound
         // through before it fails, and the engine passes it on without it after.
-        let mut dry =
-            Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+        let mut dry = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
         let deadline = Instant::now() + PATIENT;
         let mut blocks = 0;
         // Until well after it failed (block 40 for the plug-in; more for the engine when a
@@ -386,7 +398,7 @@ fn a_plug_in_that_crashes_or_hangs_leaves_the_engine_playing() {
 /// `offline` waits for each block as an offline render does, so what is heard does not depend
 /// on how busy the test machine is (the engine's `chain_wait_tests` test the deadline).
 fn session(project: Project, offline: bool) -> (Session, Renderer) {
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     renderer.set_offline(offline);
     let controller = renderer.controller();
     let mut session = Session::new(project);
@@ -414,9 +426,11 @@ fn until(session: &mut Session, renderer: &mut Renderer, what: &str, done: impl 
 fn a_session_starts_its_projects_plug_ins_and_reports_the_missing_ones() {
     let mut missing = plugin_device("not-installed");
     missing.name = "Gone".into();
-    missing.state = Some(vec![1, 2, 3]);
+    missing.state = Some(vec![1, 2, 3].into());
     // A note long enough to still sound however long the plug-in takes to start.
-    let p = project(256.0, false, vec![plugin_device("gain"), missing]);
+    let mut p = project(256.0, false, vec![plugin_device("gain"), missing]);
+    // With the ids the session gives its devices, so they compare as the same devices.
+    p.assign_ids().unwrap();
     let (mut session, mut renderer) = session(p.clone(), true);
     session.execute("transport.play", &json!({})).unwrap();
     let notices = session.sync_plugins();
@@ -428,12 +442,18 @@ fn a_session_starts_its_projects_plug_ins_and_reports_the_missing_ones() {
     assert_eq!(listed[0]["plugin"]["status"], "running");
     assert_eq!(listed[0]["plugin"]["plugin"]["name"], "Test gain");
     // The missing plug-in keeps its state untouched, to be saved back as it was.
-    assert_eq!(session.project().channels[0].devices[1].state, Some(vec![1, 2, 3]));
+    assert_eq!(session.project().channels[0].devices[1].state.as_deref(), Some(&[1, 2, 3][..]));
     assert_eq!(session.project().channels[0].devices, p.channels[0].devices);
 
     // The plug-in is heard: the track at half its level, once the graph with it plays.
     let (out, _) = play(&mut renderer, 10);
-    let mut dry = Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut dry = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let (reference, _) = play(&mut dry, 10);
     let peak = |s: &[f32]| s.iter().fold(0.0f32, |m, x| m.max(x.abs()));
     assert!((peak(&out) - peak(&reference) * 0.5).abs() < 0.02, "{} vs {}", peak(&out), peak(&reference));
@@ -852,7 +872,7 @@ fn plug_ins_sharing_a_process_render_the_same_as_each_in_its_own() {
         let processes = started.process_ids();
         let out = render_offline_from(
             &p,
-            RenderInputs::from_audio(&AudioPool::new()).with_plugins(started.plugins),
+            RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(started.plugins),
             SR,
             512,
             None,

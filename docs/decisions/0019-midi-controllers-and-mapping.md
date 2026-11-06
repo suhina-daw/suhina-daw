@@ -1,10 +1,10 @@
 ---
-description: How hardware MIDI controllers drive Suhina - MIDI learn onto any command that takes a value, controller profiles in the user's settings, mappings to one project's tracks and devices saved in that project, gestures that make one undo step, and surface programs as extensions
-read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob, CC, control change, fader, encoder, relative encoder, takeover, pick up, controller profile, control surface, mapping mode, controller feedback, LED, MIDI output
+description: How hardware MIDI controllers drive Suhina - MIDI learn onto any command that takes a value, controller profiles in the user's settings, mappings to one project's tracks and devices saved in that project, gestures that make one undo step, and surface programs as extensions, with the Lua runner Suhina ships to run their scripts
+read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob, CC, control change, fader, encoder, relative encoder, takeover, pick up, controller profile, control surface, mapping mode, controller feedback, LED, MIDI output, launch keys, launcher.mappings, Map keys, Lua, Lua runner
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-04
+last_verified: 2026-11-06
 ---
 
 # 0019: MIDI controllers and mapping
@@ -34,7 +34,7 @@ What exists, or is in review:
   engine's graph, except a device parameter, which has a cheap path
   (`Player::set_device_param`) that changes one value from the next block.
 - **The window's drags**: a volume or pan drag runs `track.setVolume` or `track.setPan` on every
-  frame, with `continue` so the drag is one undo step ([ADR 0002](0002-commands.md) › 9).
+  frame, in one `gesture` so the drag is one undo step ([ADR 0002](0002-commands.md) › 9).
 - **Settings and keymap**: the window keeps `settings.txt` and `keymap.json` in its storage
   folder; the keymap maps keys to commands that take no parameters.
 - **Extensions** ([ADR 0015](0015-extensions.md)): an optional component is a separate program
@@ -143,8 +143,11 @@ have.
     raw messages of those ports (including system exclusive) and sends what it asks to send; the
     program changes Suhina only through commands and reads it only through reading commands and
     the state changes it subscribes to, as an agent over MCP does. Suhina embeds no scripting
-    language. A surface program that crashes or hangs is restarted like a plug-in host, and its
-    ports fall back to the profile's mappings meanwhile.
+    language. To run them it ships the Lua runner: a separate program, built from this tree, that
+    runs each surface program in a process of its own; the runner itself is not an extension and
+    not a surface program, the script's folder is both. A surface program that crashes or hangs
+    is restarted like a plug-in host, and its ports fall back to the profile's mappings meanwhile.
+    *Amended 2026-11-05, see Amendment: a Lua runner for surface programs.*
 
 11. **Generic first.** The first version supports what a generic controller sends: CC (7 bit and
     14 bit pairs), notes, pitch bend and program change, on any channel; absolute, and relative
@@ -155,6 +158,79 @@ have.
     play the armed tracks through the same live input a controller's notes take (ADR 0017), Z
     and X move the octave and C and V the velocity; it maps nothing.
 
+## Amendment: launch keys are controller mappings (2026-11-02)
+
+Launch keys were built before this design ([clip launching](../spec/clip-launching.md#launching-from-keys-and-notes)):
+a computer key or a MIDI note that launches a slot, a scene or a track's stop button, kept in the
+launcher's `mappings`, with a mapping mode on Ctrl+M and **Map keys**. They share the key, the
+mode and the note sources with this design, and would have been a second store in the file
+(#763 › 8). They become one kind of controller mapping, before controller mappings are built:
+
+- **One store.** A project's launch keys are entries of `controller_mappings`, with a launch
+  command as the target: `clip.launch {track, scene}`, `scene.launch {scene}`, `track.stop
+  {track}`. A slot's release runs `clip.release`, as it does today: the value description of
+  decision 2 lets a trigger name the command its release runs.
+- **Computer keys are a source kind**, `key:<name>`, pressed without Ctrl, Alt, Shift or Cmd.
+  A key is a button with no velocity: it can map to triggers and toggles only, and lives only in
+  project mappings (the keymap is the place for keys that work in every project). A key source
+  names no port or profile. A note source that names neither is heard from every port, which is
+  what launch notes do today.
+- **One mapping mode.** Ctrl+M and the title bar's **Map** button (today **Map keys**) learn a
+  key or a MIDI message for any control the mode marks. A mapped key wins over a shortcut on the
+  same key where it does today (the Launcher view shown and nothing else holding the keyboard).
+- **One set of commands.** `mapping.add`, `mapping.remove` and `mapping.list` take launch
+  mappings; `launcher.addMapping`, `launcher.removeMapping` and `launcher.mappings` are removed
+  when they land, not kept as second names.
+- **Order and the file.** The move is the first step of building controller mappings, together
+  with `mapping.*` and `controller_mappings`, so no release has two stores. That step raises the
+  `.suhina` version: a newer Suhina reads the launcher's `mappings` from an older file as
+  `controller_mappings` entries and writes only `controller_mappings`.
+
+## Amendment: one gesture, with an explicit end (2026-11-02)
+
+Item 3's gesture is now the session's one way to make a drag one undo step, for every frontend
+([#1146](https://github.com/suhina-daw/suhina-daw/issues/1146), [ADR 0002](0002-commands.md) › 9):
+a command that can be dragged takes a `gesture` id the caller picks, and calls with the open
+gesture are one step. It ends with `history.endGesture`, which the window sends on mouse up, so
+a step closes at once with no wait; any other edit, another gesture, undo and redo end it too.
+Only the controller layer ends its gestures on a timeout (400 ms of rest, or a touch-sensitive
+control released), since a controller cannot say when a move ends; it sends the same
+`history.endGesture`. `continue`, `replace` and `continuous` are gone.
+
+## Amendment: a Lua runner for surface programs (2026-11-05)
+
+[#1200](https://github.com/suhina-daw/suhina-daw/issues/1200). Decision 10 names the program
+Suhina ships itself to run surface programs: a **Lua runner**, a small separate binary built
+from this tree, started and supervised like the plug-in host ([ADR 0006](0006-plug-in-hosting.md));
+the runner is not an extension and not a surface program, the script's folder is both. No script
+shares a process with Suhina or with another script: each surface program is one runner process
+of its own, because a script is code whose stopping nobody can know in advance; a crash or a
+hang of the runner process costs that program a restart, its ports back on the profile's
+mappings meanwhile (decision 10). The
+manifest belongs to the surface program, not the runner: a script's folder is an extension of
+its own ([ADR 0015](0015-extensions.md)), whose manifest names the script, the port patterns it
+claims and the runner it needs, and Suhina starts the shipped runner with that script; that is
+one program per extension over one shipped binary, which decides the Hosting question
+[ADR 0015](0015-extensions.md) › Not decided yet leaves open, for the runner. The
+implementation is `mlua` (MIT), Lua 5.4 built from the `lua-src` crate, so the build needs no
+system Lua; the interpreter runs only in the runner's processes, outside the audio path, with no
+first-party `unsafe` (rule 2 untouched); `cargo deny check` gates the dependency,
+and `piccolo`, pure Rust, is the route away if the C becomes a burden. A script reaches Suhina
+only through decision 10's protocol: the messages of the ports its manifest claims, each with
+the driver's timestamp it arrived with; send-backs leaving from a queue Suhina drains, with no
+answer the script waits for; the same commands, reading commands and subscriptions the window,
+CLI and MCP use, one API to keep. The runner gives a script an environment narrowed to what it
+allows: no `io` or `os`, no `dofile`, `loadfile` or `package` (no `require` with it), and `load`
+reads text chunks only; the removals are the runner's convenience, and the boundary that is
+enforced is the process ([ADR 0015](0015-extensions.md) › Trust). The runner preloads its own
+helpers, the usual modes, layers and session, mixer and device components, versioned with the
+runner and outside the surface-program protocol, for scripts to compose instead of
+reimplement; an ordinary script failure stops at an error boundary: it is reported, and the
+script stays stopped with its ports on their profiles until `extensions.restart`, while a crash
+or a hang of the runner process is what the process restart covers. "Suhina embeds no scripting language" stands: the language never runs in Suhina's
+process. Open while the surface-program protocol is open ([ADR 0015](0015-extensions.md) › Not
+decided yet: transport, version policy, trust): the helper library's exact shape and its caps.
+
 ## Consequences
 
 - One mechanism maps every control a user can see: a new command with a value description is
@@ -162,7 +238,7 @@ have.
 - The registry's parameter description grows (kind, range, curve, unit). The window's knobs and
   sliders can use the same description, which removes ranges that are now repeated in the UI
   (`VOLUME_RANGE`).
-- Gestures change the history: a run can now replace the live value of an open step. Undo during
+- Gestures change the history: a run can now replace its own last live value in an open step. Undo during
   an open gesture ends it first. The window's drags can move to gestures and show the value in
   the engine while dragging, which they do not today.
 - The engine gains a block-rate path for track volume, pan and send levels, beside the one for

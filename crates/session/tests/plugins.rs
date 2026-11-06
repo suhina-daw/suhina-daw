@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 use suhina_model::Project;
 use suhina_plugins::library::Library;
-use suhina_session::{CommandKind, ProjectId, Projects, Session, plugin_commands};
+use suhina_session::{ProjectId, Projects, Session, plugin_commands};
 
 use crate::support::run;
 
@@ -149,14 +149,18 @@ fn plugins_are_switched_off_and_on_and_files_for_another_processor_are_listed() 
 
 #[test]
 fn plugin_commands_belong_to_suhina_not_to_a_project() {
-    assert!(plugin_commands().iter().all(|c| c.id.starts_with("plugin.") && c.kind == CommandKind::Plugins));
+    assert!(
+        plugin_commands()
+            .iter()
+            .all(|c| c.id.starts_with("plugin.") && c.kind.target == suhina_session::Target::Plugins)
+    );
     let (mut p, _) = projects("kinds");
     let all = run(&mut p, "command.list", json!({})).unwrap();
     let kinds: Vec<(&str, &str)> = all
         .as_array()
         .unwrap()
         .iter()
-        .filter_map(|c| Some((c["id"].as_str()?, c["kind"].as_str()?)))
+        .filter_map(|c| Some((c["id"].as_str()?, c["target"].as_str()?)))
         .filter(|(id, _)| id.starts_with("plugin."))
         .collect();
     assert_eq!(kinds.len(), plugin_commands().len());
@@ -184,7 +188,7 @@ fn a_projects_plugins_are_matched_to_the_installed_ones() {
     std::fs::write(settings.join("plugin-catalog.json"), catalog.to_string()).unwrap();
     let mut p = Projects::with_library(Library::new(Some(settings), dir.join("no-such-host")));
 
-    let device = |name: &str, kind: DeviceKind| Device { state: Some(vec![1, 2, 3]), ..Device::new(name, kind) };
+    let device = |name: &str, kind: DeviceKind| Device { state: Some(vec![1, 2, 3].into()), ..Device::new(name, kind) };
     let mut project = Project::default();
     project.channels.push(Channel {
         devices: vec![

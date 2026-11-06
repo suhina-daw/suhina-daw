@@ -200,7 +200,7 @@ fn bass_mono_listen_plays_only_the_lows() {
 
 #[test]
 fn the_gain_knob_is_even_in_db_over_its_top_three_quarters_and_falls_to_silence() {
-    let gain = PARAMS[param::GAIN];
+    let gain = &PARAMS[param::GAIN];
     for (position, db) in [(1.0, 35.0), (0.75, 17.5), (0.5, 0.0), (0.25, -17.5)] {
         assert!((gain.from_normalized(position) - db).abs() < 1e-9, "{position}");
         assert!((gain.to_normalized(db) - position).abs() < 1e-9, "{db}");
@@ -216,7 +216,7 @@ fn the_gain_knob_is_even_in_db_over_its_top_three_quarters_and_falls_to_silence(
 
 #[test]
 fn a_jump_in_gain_glides_along_the_knob_in_a_few_milliseconds() {
-    let gain = PARAMS[param::GAIN];
+    let gain = &PARAMS[param::GAIN];
     let mut u = utility(&[(param::GAIN, -54.0)]);
     u.set_param(param::GAIN, 8.0);
     // A steady 1 on both sides: the output is the gain.

@@ -58,7 +58,7 @@ fn project(tracks: u32) -> Project {
             id: ContentId(1),
             name: "c".into(),
             length: 64.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -88,6 +88,7 @@ fn project(tracks: u32) -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                id: Default::default(),
                 name: "Synth".into(),
                 kind: DeviceKind::Clap { id: "x".into() },
                 enabled: true,
@@ -150,7 +151,7 @@ fn renderer_with_gate(specs: &[&str], sample_rate: u32, gate: bool) -> (Renderer
     }
     let renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
         sample_rate,
         RenderOptions::STOPPED,
     )

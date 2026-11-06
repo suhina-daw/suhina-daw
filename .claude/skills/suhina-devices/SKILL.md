@@ -16,7 +16,9 @@ Everything around the device (the wrapper, the panel, saving, automation, old pr
 its `INFO` and finds parameters by id, so the change is mostly the device's own crate.
 
 1. **Append** a `ParamInfo` to `PARAMS` in `devices/<name>/src/lib.rs`
-   (`ParamInfo::continuous`, `toggle`, `choice`), and its index to `mod param`, raising `COUNT`.
+   (`ParamInfo::continuous`, `toggle`, `integer`, `choice`; in a group,
+   `ParamInfo::in_group("LFO").continuous(…)`), and its index to `mod param`, raising `COUNT`.
+   `PARAMS` and `INFO` are `static`s built in `const` code (`DeviceInfo::new`).
    Append, never insert or reorder: indices are what `set_param` and the tests use, and a
    project stores each value by the parameter's id (`suhina_model::DeviceParam`), so an old
    project that lacks the new id gets its default.
@@ -51,7 +53,7 @@ its `INFO` and finds parameters by id, so the change is mostly the device's own 
 3. **Registry**, `crates/device-registry/src/lib.rs`: one row in `ENTRIES` (browser order; the
    array's length is in its type) with its `INFO`, its constructor, its layout (its
    `panel.json`, one built in Rust, or the generated list) and whether it runs a file.
-   `DEVICES`, `create`, `layout`, `panel` and `is_file_device` read that row.
+   `DEVICES`, `create`, `layout`, `panel`, `is_file_device` and `load_file` read that row; a device that runs a file gives its `FileKind` there (extension, read, shown name, make), and nothing outside the registry names it to load its file.
 4. **Tests**: the device's own in `devices/<name>/src/tests.rs`; the registry's conformance test
    covers it once it is listed. A device whose sound is the point gets a golden render.
 5. **Documents**: the crate's row in `docs/architecture.md` and the crate map; the devices table

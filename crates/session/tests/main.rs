@@ -33,6 +33,7 @@ mod main_channel;
 mod meters;
 mod midi;
 mod note_gestures;
+mod note_ids;
 mod note_quantize;
 mod note_tools;
 mod notes;
@@ -53,6 +54,7 @@ mod support;
 mod temp_dir;
 mod tempo;
 mod track_copy;
+mod track_input;
 mod track_names;
 mod trusted_audio;
 

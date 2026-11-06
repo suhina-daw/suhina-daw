@@ -35,7 +35,7 @@ fn project_built(volume: f64) -> Project {
             id: ContentId(1),
             name: "A".into(),
             length: 16.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note].into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -49,7 +49,7 @@ fn project_built(volume: f64) -> Project {
                     clips: vec![clip.clone()],
                 })
                 .collect(),
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -59,7 +59,7 @@ fn project_built(volume: f64) -> Project {
 /// A session at `volume` on "Lead", playing for two seconds in an offline renderer.
 fn played(volume: f64) -> (Session, Renderer) {
     let project = project(volume);
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "transport.play", json!({})).unwrap();

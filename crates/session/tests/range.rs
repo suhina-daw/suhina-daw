@@ -176,7 +176,7 @@ fn adding_a_section_inserts_empty_time_and_moves_everything_after_it() {
     let main = p.channels.iter().position(|c| c.role == ChannelRole::Master).unwrap();
     p.channels[main].automation.push(AutomationLane {
         param: "volume".into(),
-        points: vec![AutomationPoint::new(1.0, 1.0), AutomationPoint::new(8.0, 0.5)],
+        points: vec![AutomationPoint::new(1.0, 1.0), AutomationPoint::new(8.0, 0.5)].into(),
         enabled: true,
     });
     let mut session = Session::new(p);
@@ -211,7 +211,7 @@ fn adding_a_section_refuses_to_push_any_beat_past_the_end_of_the_song() {
         ("an automation point", |p, last, main| {
             p.channels[main].automation.push(AutomationLane {
                 param: "volume".into(),
-                points: vec![AutomationPoint::new(last - 1000.0, 0.5)],
+                points: vec![AutomationPoint::new(last - 1000.0, 0.5)].into(),
                 enabled: true,
             });
         }),

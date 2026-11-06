@@ -6,7 +6,7 @@ use super::{NodeInfo, PortInfo};
 use crate::native_node::NativeNode;
 use crate::{DeviceSdkError, NodeKind, PreparedEffect, ProcessContext};
 use std::any::Any;
-use suhina_device_api::{Device, NoteEvent};
+use suhina_device_api::{Device, NoteEvent, SampleSource};
 pub(crate) const SAMPLER: NodeInfo = NodeInfo {
     kind: "sampler",
     name: "Sampler",
@@ -26,7 +26,7 @@ pub(crate) const SAMPLER: NodeInfo = NodeInfo {
 pub(crate) fn prepare(kind: &NodeKind, rate: f64) -> Result<Option<Box<dyn NativeNode>>, DeviceSdkError> {
     match kind {
         NodeKind::Sampler => {
-            let mut kernel = Box::new(crate::sampler::Sampler::new());
+            let mut kernel = Box::new(crate::sample_instrument::Sampler::new());
             kernel.prepare(rate).map_err(|e| DeviceSdkError(e.to_string()))?;
             Ok(Some(Box::new(Adapter { kernel, connected: [false; 5] })))
         }
@@ -35,7 +35,7 @@ pub(crate) fn prepare(kind: &NodeKind, rate: f64) -> Result<Option<Box<dyn Nativ
 }
 
 struct Adapter {
-    kernel: Box<crate::sampler::Sampler>,
+    kernel: Box<crate::sample_instrument::Sampler>,
     connected: [bool; 5],
 }
 impl NativeNode for Adapter {
@@ -98,7 +98,7 @@ impl NativeNode for Adapter {
 
 impl PreparedEffect {
     /// Bind a sample source off the audio thread. Replacement may release old resources.
-    pub fn sampler_mut(&mut self, node: &str) -> Option<&mut crate::sampler::Sampler> {
+    pub fn sampler_mut(&mut self, node: &str) -> Option<&mut crate::sample_instrument::Sampler> {
         self.native_node_mut(node)?.as_any_mut().downcast_mut()
     }
 }
@@ -115,7 +115,7 @@ pub(crate) fn prepare_bound(
     source: std::sync::Arc<crate::sample_resource::SampleAsset>,
     rate: f64,
 ) -> Result<Box<dyn NativeNode>, DeviceSdkError> {
-    let mut kernel = Box::new(crate::sampler::Sampler::new());
+    let mut kernel = Box::new(crate::sample_instrument::Sampler::new());
     kernel.prepare(rate).map_err(|e| DeviceSdkError(e.to_string()))?;
     kernel.load_shared_sample(source.sample_rate(), source.channels() as u16, source.shared_pcm());
     if let Some(bpm) = source.source_bpm()

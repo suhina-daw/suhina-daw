@@ -217,10 +217,11 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                id: Default::default(),
                 name: "Suhina Test Gain".into(),
                 kind: DeviceKind::Vst2 { id: 0x5368_5447 },
                 enabled: true,
-                state: Some(state),
+                state: Some(state.into()),
                 params: Vec::new(),
                 clip_host: false,
                 extensions: Extensions::default(),
@@ -233,7 +234,7 @@ fn project() -> Project {
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note].into()) }].into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -244,7 +245,7 @@ fn project() -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, 1.0)],
             }],
-            markers: Vec::new(),
+            markers: Vec::new().into(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -265,7 +266,7 @@ fn saved_gain(project: &Project) -> Option<f32> {
 fn a_project_s_vst2_plug_in_plays_with_its_saved_settings() {
     let mut project = project();
     assert_eq!(project.assign_ids(), Ok(()));
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project.clone());
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(vst2_env());
@@ -283,13 +284,13 @@ fn a_project_s_vst2_plug_in_plays_with_its_saved_settings() {
     assert_eq!(started.running(), 1, "{:?}", started.notices);
     let wet = render_offline_from(
         session.project(),
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(started.plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(started.plugins),
         SR,
         256,
         None,
     )
     .unwrap_or_default();
-    let dry = render_offline(session.project(), SR, 256).unwrap_or_default();
+    let dry = render_offline(session.project(), SR, 256, suhina_session::devices()).unwrap_or_default();
     assert!(gain(&dry) > 0.1, "the note plays without the plug-in");
     assert!((gain(&wet) / gain(&dry) - SAVED_GAIN).abs() < 1e-4, "the saved gain is the one it plays with");
 

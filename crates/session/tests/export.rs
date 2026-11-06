@@ -60,7 +60,8 @@ fn one_track() -> Project {
             id: ContentId(1),
             name: "Riff".into(),
             length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, 69, 0.8)]) }],
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, 69, 0.8)].into()) }]
+                .into(),
             extensions: Extensions::default(),
             scale: None,
         }],
@@ -71,7 +72,7 @@ fn one_track() -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, 1.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -89,7 +90,7 @@ fn the_whole_arrangement_export_round_trips_the_float_render() {
     assert_eq!(result["format"], "wav");
     assert_eq!(result["bit_depth"], "32f");
     let written = samples_of(&path);
-    let rendered = suhina_engine::render_offline(&project, SR, 512).unwrap();
+    let rendered = suhina_engine::render_offline(&project, SR, 512, suhina_session::devices()).unwrap();
     assert_eq!(written, rendered);
 }
 
@@ -141,7 +142,7 @@ fn an_existing_file_is_never_replaced_without_overwrite() {
 fn a_flac_export_decodes_to_the_source() {
     let project = one_track();
     let mut session = Session::new(project.clone());
-    let source = suhina_engine::render_offline(&project, SR, 512).unwrap();
+    let source = suhina_engine::render_offline(&project, SR, 512, suhina_session::devices()).unwrap();
     for depth in ["24", "16"] {
         let path = temp_file("flac", "flac");
         let result = run(&mut session, json!({ "path": path.display().to_string(), "bitDepth": depth })).unwrap();
@@ -219,7 +220,7 @@ fn a_node_render_names_the_returns_its_sends_go_to() {
 fn an_mp3_export_decodes_to_the_signal_and_is_deterministic() {
     let project = one_track();
     let mut session = Session::new(project.clone());
-    let source = suhina_engine::render_offline(&project, SR, 512).unwrap();
+    let source = suhina_engine::render_offline(&project, SR, 512, suhina_session::devices()).unwrap();
     let path = temp_file("mp3", "mp3");
     let result = run(&mut session, json!({ "path": path.display().to_string(), "mp3Rate": "320" })).unwrap();
     assert_eq!(result["format"], "mp3");

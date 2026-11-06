@@ -634,9 +634,9 @@ impl App {
                     "clip.moveSlot",
                     &json!({
                         "track": track.0,
-                        "scene": scene + 1,
+                        "scene": scene,
                         "toTrack": to_track.0,
-                        "toScene": to_scene + 1,
+                        "toScene": to_scene,
                     }),
                 ) {
                     Ok(out) => {
@@ -659,14 +659,14 @@ impl App {
         }
         let copy = match carry.from {
             CarryFrom::Arrangement { clip, .. } => json!({ "clips": [{ "clip": clip.0 }] }),
-            CarryFrom::Slot { track, scene } => json!({ "track": track.0, "scene": scene + 1 }),
+            CarryFrom::Slot { track, scene } => json!({ "track": track.0, "scene": scene }),
         };
         let mut paste = match target {
             DropTarget::Slot { track, scene } => {
                 if carry.from == (CarryFrom::Slot { track, scene }) {
                     return;
                 }
-                json!({ "track": track.0, "scene": scene + 1 })
+                json!({ "track": track.0, "scene": scene })
             }
             DropTarget::Lane { track, beat } => json!({ "track": track.0, "start": beat }),
             _ => return,

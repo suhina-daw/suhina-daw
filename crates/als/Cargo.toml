@@ -24,4 +24,5 @@ workspace = true
 [dev-dependencies]
 flate2.workspace = true
 suhina-engine.workspace = true
+suhina-device-registry.workspace = true
 suhina-device-pitch.workspace = true

@@ -3,7 +3,7 @@ description: Planned key inputs - a device whose detector reads another channel'
 read_when: sidechain, key input, key source, tap point, pre FX, post FX, post fader, routing, aux input, aux output, multi-out, multiple outputs, bus, audio port, region version, protocol version, VST2 bus, device input
 type: spec
 status: planned
-last_verified: 2026-11-04
+last_verified: 2026-11-05
 covers:
   - crates/model/src/lib.rs
   - crates/engine/src/chain.rs
@@ -172,7 +172,7 @@ pub struct Device {
     pub name: String,
     pub kind: DeviceKind,
     pub enabled: bool,
-    pub state: Option<Vec<u8>>,
+    pub state: Option<Bytes>,
     pub params: Vec<DeviceParam>,
     /// The device's ports that read another signal (docs/spec/sidechain.md). Empty for almost every
     /// device. At most one entry in the first version.
@@ -279,7 +279,7 @@ already cleans up.
   last two live today (`crates/engine/src/chain.rs`).
 - The key buffer passes the **alignment delay** (above) before the reader sees it.
 - A chain runs its devices as it does now; a slot with a key is handed `(buffer, key)` instead of `buffer`
-  (`Slot::Device` and `Slot::Plugin` both).
+  (`DeviceSlot::Device` and `DeviceSlot::Plugin` both).
 - Order: chains are sorted topologically over sum and key edges (above). A key edge is not a summing target: it
   does not make its source a bus and does not change any gain.
 - Offline renders run this code unchanged (AGENTS.md rule 4), so the golden renders are the oracle: a keyed
@@ -305,7 +305,7 @@ fn process(&mut self, context: &ProcessContext, inputs: Inputs<'_>, buffer: &mut
 
 - The key is **read-only** (`&[f32]`): a device cannot leak it into its output by accident.
 - A port the engine has no source for is handed **silence**, never left unset, so a device needs one code path.
-- `DeviceInfo` gains the ports it declares (`key_ports: &'static [&'static str]`, empty for almost every device),
+- `DeviceInfo` gains the ports it declares (`key_ports`, empty for almost every device),
   so the model, the command and the panel agree on what a device can read.
 - Every built-in device is updated mechanically; `devices/compressor` is the first that uses it,
   and `limiter`, `overdrive` and the planned `bus-compressor` (issue #385) follow.
@@ -387,17 +387,15 @@ be true, and they belong in the `.sd` work rather than after it:
    ("stereo input of the track") say the device has one input, so a key cannot be expressed at all.
 2. **The graph runs its input nodes from their own buffers.** The runtime binds each declared input node to the
    buffer the engine hands it; a node with no source reads silence. Nothing else in the graph changes.
-3. **A graph device reports what a device reports.** The prepared graph is wrapped in a type that implements
-   `suhina_device_api::Device`: its `info()` from the graph's parameters and role, its ports from the graph's
-   declarations, its `latency()` from the graph's own delay nodes, and its `process` taking `Inputs` like every
-   other device.
+3. **A graph device reports what a device reports.** Done (#763 › 6): the prepared graph is wrapped in
+   `suhina_device_sdk::GraphDevice`, which implements `suhina_device_api::Device`. Its `info()` comes from the
+   graph's parameters and role (a device's description may own its names, so one read at run time is a
+   description like a built-in's), and it runs the same conformance checks. What is left for keys: its ports
+   from the graph's declarations, and its `process` taking `Inputs` like every other device.
 
-The last point is a *change to how the engine runs a graph device today*: a graph device is a separate slot kind
-that the engine drives through the SDK's own processing entry point, so it does not have the trait, the contract
-tests, the latency reporting or the device registry that every built-in device has. Without the wrapper the key
-input would have to be implemented twice — once for built-in devices and once for graphs — and a third time for
-plug-ins; with it, a key is one path for all three, and the graph's delay nodes are latency-compensated like any
-other device's.
+The engine runs a graph through the same `DeviceSlot::Device` and `DeviceSlot::MidiDevice` as a built-in, so the key input
+is one path for built-ins and graphs, and one more for plug-ins. A graph reports a latency of 0: its delay nodes
+are the sound (an echo), not delay to compensate (`docs/spec/sdk-nodes.md`).
 
 ## Import and export
 

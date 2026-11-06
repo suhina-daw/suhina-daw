@@ -4,6 +4,7 @@
 //! The user's settings: what they are, their defaults, and the text file they are kept in
 //! (`key = value` lines, so a person can read and fix it). The app decides where the file lives.
 
+mod fields;
 mod gradient_editor;
 pub mod keymap;
 pub mod plugin_manager;
@@ -469,6 +470,11 @@ pub struct Settings {
     /// The audio input device (Settings › Audio, `audio.setOutput`'s `input`): "off" (the
     /// default), "default" or a device's name.
     pub audio_input: String,
+    /// What each audio device keeps (Settings › Audio, ADR 0017), by
+    /// [`suhina_session::OutputChoice::device_key`]: the input chosen with it ("off", "default"
+    /// or a name) and its default track input (`audio.setTrackInput`: "none", "3" or "1/2").
+    /// Choosing the device again brings both back.
+    pub audio_device_inputs: std::collections::BTreeMap<String, [String; 2]>,
     /// The MIDI input ports turned off, by name (Settings › MIDI, `midi.setInput`); every
     /// other port is on. One `midi_input_off` line each, since a port's name may hold commas.
     pub midi_inputs_off: Vec<String>,
@@ -547,6 +553,7 @@ impl Default for Settings {
             audio_cue_pair: 0,
             audio_cue_volume: 0,
             audio_input: "off".into(),
+            audio_device_inputs: Default::default(),
             midi_inputs_off: Vec::new(),
             zoom: ZOOM,
             backup: suhina_session::backup::Interval::default(),
@@ -558,6 +565,13 @@ impl Default for Settings {
         }
     }
 }
+
+/// The longest audio device key (`host|device`) and input device name the settings keep for a
+/// card; longer ones are not written, so what is written is read back.
+const MAX_DEVICE_KEY: usize = 2048;
+const MAX_DEVICE_NAME: usize = 1024;
+/// The longest `audio_device_inputs` line read: room for every card at the longest names.
+const MAX_DEVICE_INPUTS_LINE: usize = 262_144;
 
 impl Settings {
     pub(crate) fn remember_output(&mut self, choice: &suhina_session::OutputChoice, default_host: Option<&str>) {
@@ -593,6 +607,82 @@ impl Settings {
                 10f64.powf(f64::from(self.audio_cue_volume) / 20.0) as f32
             },
             input: suhina_session::InputChoice::from_text(&self.audio_input),
+        }
+    }
+
+    /// The default track input of the audio device these settings choose: none while Input is
+    /// off or when none was chosen for the device.
+    pub fn track_input(&self) -> suhina_engine::model::InputChannels {
+        let choice = self.output_choice();
+        if choice.input == suhina_session::InputChoice::Off {
+            return suhina_engine::model::InputChannels::None;
+        }
+        self.audio_device_inputs
+            .get(&choice.device_key())
+            .and_then(|[_, track]| suhina_session::audio::input_channels_from_text(track))
+            .unwrap_or_default()
+    }
+
+    /// What every audio device keeps (`Projects::set_device_inputs`, at start).
+    pub fn device_inputs(&self) -> std::collections::BTreeMap<String, suhina_session::DeviceInputs> {
+        self.audio_device_inputs
+            .iter()
+            .map(|(key, [input, track])| {
+                let kept = suhina_session::DeviceInputs {
+                    input: suhina_session::InputChoice::from_text(input),
+                    track_input: suhina_session::audio::input_channels_from_text(track).unwrap_or_default(),
+                };
+                (key.clone(), kept)
+            })
+            .collect()
+    }
+
+    /// Keeps what every audio device keeps as the session has it, after a change.
+    pub(crate) fn keep_device_inputs(
+        &mut self,
+        inputs: &std::collections::BTreeMap<String, suhina_session::DeviceInputs>,
+    ) {
+        self.audio_device_inputs = inputs
+            .iter()
+            .filter(|(key, kept)| key.len() <= MAX_DEVICE_KEY && kept.input.as_text().len() <= MAX_DEVICE_NAME)
+            .take(suhina_session::MAX_DEVICE_INPUTS)
+            .map(|(key, kept)| {
+                let texts =
+                    [kept.input.as_text().to_string(), suhina_session::audio::input_channels_text(kept.track_input)];
+                (key.clone(), texts)
+            })
+            .collect();
+    }
+
+    /// The input `device` was last chosen with, when it was chosen before.
+    pub(crate) fn remembered_input(
+        &self,
+        device: &suhina_session::OutputChoice,
+    ) -> Option<suhina_session::InputChoice> {
+        self.audio_device_inputs
+            .get(&device.device_key())
+            .map(|[input, _]| suhina_session::InputChoice::from_text(input))
+    }
+
+    /// The setting the Default track input row changes: the one of the audio device chosen,
+    /// "none" until one is chosen for it. `None` while Input is off.
+    pub(crate) fn track_input_slot(&mut self) -> Option<&mut String> {
+        let choice = self.output_choice();
+        if choice.input == suhina_session::InputChoice::Off {
+            return None;
+        }
+        let input = choice.input.as_text().to_string();
+        let [kept_input, track] =
+            self.audio_device_inputs.entry(choice.device_key()).or_insert_with(|| [input.clone(), "none".into()]);
+        *kept_input = input;
+        Some(track)
+    }
+
+    /// Keeps `input` as the default track input of the audio device chosen; nothing while
+    /// Input is off.
+    pub(crate) fn set_track_input(&mut self, input: suhina_engine::model::InputChannels) {
+        if let Some(slot) = self.track_input_slot() {
+            *slot = suhina_session::audio::input_channels_text(input);
         }
     }
 
@@ -637,99 +727,18 @@ impl Settings {
 
     /// The settings as the lines of a settings file.
     pub fn to_text(&self) -> String {
-        let headers = match self.track_headers {
-            None => "theme",
-            Some(Side::Left) => "left",
-            Some(Side::Right) => "right",
+        let lines = |fields: &[fields::Field]| -> String {
+            fields.iter().map(|f| format!("{} = {}\n", f.key, (f.write)(self))).collect()
         };
-        let graphics = match self.graphics {
-            Graphics::Gpu => "wgpu",
-            Graphics::OpenGl => "glow",
-        };
-        let on = |b: bool| if b { "on" } else { "off" };
-        let devices = match self.device_layout {
-            DeviceLayout::Row => "row",
-            DeviceLayout::Stack => "stack",
-        };
-        let on_open = match self.on_open {
-            OnOpen::Ask => "ask",
-            OnOpen::NewTab => "tab",
-            OnOpen::Replace => "replace",
-        };
-        let at_start = match self.at_start {
-            AtStart::Panel => "panel",
-            AtStart::Blank => "blank",
-            AtStart::Template => "template",
-            AtStart::Last => "last",
-        };
-        let editors = match self.plugin_editors {
-            EditorPlacement::Window => "window",
-            EditorPlacement::DeviceView => "device",
-        };
-        format!(
-            "# Suhina settings; changed from Options > Settings.\nanimations = {}\ntrack_headers = {headers}\nrenderer = {graphics}\nsample_stacking = {}\nmidi_stacking = {}\nopen_projects = {on_open}\nat_start = {at_start}\nstart_template = {}\nstop = {stop}\nplay_start = {play_from}\ndevice_chain = {devices}\nmixer_controls = {mixer}\nselect_on_launch = {select_on_launch}\nplugin_editors = {editors}\ntheme = {}\nprojects_folder = {}\ntemplates_folder = {}\nnam_models_folder = {}\nirs_folder = {}\nthemes_folder = {}\nbrowser = {}\nbrowser_side = {browser_side}\nbrowser_width = {}\npreview_autoplay = {}\npreview_volume = {}\ndrop_files = {drop}\nwarp_mode = {}\nmap_layout = {map_layout}\nmap_hover_preview = {}\nmap_max_seconds = {}\nmap_dot_size = {}\nmap_label_size = {}\nmap_window = {}\nmap_window_rect = {}\naudio_host = {}\naudio_device = {}\naudio_sample_rate = {}\naudio_buffer = {}\naudio_exclusive = {}\naudio_cue_pair = {}\naudio_cue_volume = {}\naudio_input = {}\nzoom = {}\nwaveform_scale = {waveform_scale}\npiano_roll_top = {piano_top}\npiano_roll_toolbar = {piano_toolbar}\nbackup = {}\nbackup_clean_up = {}\n",
-            on(self.animations),
-            on(self.sample_stacking),
-            on(self.midi_stacking),
-            self.start_template,
-            self.theme,
-            self.projects_folder,
-            self.templates_folder,
-            self.nam_models_folder,
-            self.irs_folder,
-            self.themes_folder,
-            on(self.browser_open),
-            self.browser_width,
-            on(self.preview_autoplay),
-            self.preview_volume,
-            self.warp_mode.param(),
-            on(self.map_hover_preview),
-            self.map_max_seconds,
-            self.map_dot_size,
-            self.map_label_size,
-            on(self.map_window),
-            self.map_window_rect.map_or_else(|| "none".to_string(), |[x, y, w, h]| format!("{x}, {y}, {w}, {h}")),
-            self.audio_host,
-            self.audio_device,
-            self.audio_sample_rate,
-            self.audio_buffer,
-            on(self.audio_exclusive),
-            self.audio_cue_pair,
-            self.audio_cue_volume,
-            self.audio_input,
-            self.zoom,
-            self.backup.name(),
-            on(self.backup_clean_up),
-            map_layout = if self.map_grid { "grid" } else { "cloud" },
-            waveform_scale = if self.waveform_db { "db" } else { "linear" },
-            stop = self.stop.param(),
-            select_on_launch = on(self.select_on_launch),
-            play_from = self.play_from.param(),
-            browser_side = match self.browser_side {
-                Side::Left => "left",
-                Side::Right => "right",
-            },
-            drop = if self.drop_separate { "separate" } else { "one_track" },
-            piano_top = match self.piano_roll_top {
-                PianoRollTop::Track => "track",
-                PianoRollTop::Window => "window",
-            },
-            mixer = match self.mixer_controls {
-                MixerControls::Field => "field",
-                MixerControls::Knob => "knob",
-            },
-            piano_toolbar = self.toolbar_size.param(),
-        ) + &self.view.to_text()
-            + &format!("piano_key_style = {}\n", self.piano_key_style.param())
-            + &format!("piano_key_names = {}\n", self.piano_key_names.param())
-            + &format!("background_image = {}\n", self.background_image.replace(['\r', '\n'], ""))
-            + &format!("agents = {}\n", if self.agents { "on" } else { "off" })
-            + &format!("mcp_project_folder = {}\n", if self.mcp_project_folder { "on" } else { "off" })
+        "# Suhina settings; changed from Options > Settings.\n".to_string()
+            + &lines(fields::FIELDS)
+            + &self.view.to_text()
+            + &lines(fields::LATER)
             + &format!("mcp_write_folders = {}\n", serde_json::json!(self.mcp_write_folders))
-            + &format!("auto_arm = {}\n", if self.auto_arm { "on" } else { "off" })
-            + &format!("setting_descriptions = {}\n", self.setting_descriptions.param())
+            + &lines(fields::LAST)
             + &self.updates.to_text()
             + &format!("audio_devices = {}\n", serde_json::json!(self.audio_devices))
+            + &format!("audio_device_inputs = {}\n", serde_json::json!(self.audio_device_inputs))
             + &self.midi_inputs_off.iter().map(|port| format!("midi_input_off = {port}\n")).collect::<String>()
     }
 
@@ -751,100 +760,19 @@ impl Settings {
             if settings.view.parse(key, value) || settings.updates.parse(key, value) {
                 continue;
             }
+            if fields::field(key).is_some_and(|f| (f.read)(&mut settings, value)) {
+                continue;
+            }
             match (key, value) {
-                ("animations", "on" | "off") => settings.animations = value == "on",
-                ("background_image", path) => settings.background_image = path.to_string(),
-                ("sample_stacking", "on" | "off") => settings.sample_stacking = value == "on",
-                ("agents", "on" | "off") => settings.agents = value == "on",
-                ("mcp_project_folder", "on" | "off") => settings.mcp_project_folder = value == "on",
+                // `play_start` since the selected clip became the default; the old key, which
+                // every file got written with "marker" while that was the default, is left alone.
+                ("play_from", "marker" | "clip") => {}
                 ("mcp_write_folders", folders) => match serde_json::from_str::<Vec<String>>(folders) {
                     Ok(folders) => settings.mcp_write_folders = folders,
                     Err(_) => {
                         warnings.push(format!("settings line {}: expected a list of MCP write folders", number + 1))
                     }
                 },
-                ("auto_arm", "on" | "off") => settings.auto_arm = value == "on",
-                ("midi_stacking", "on" | "off") => settings.midi_stacking = value == "on",
-                ("track_headers", "theme") => settings.track_headers = None,
-                ("track_headers", "left") => settings.track_headers = Some(Side::Left),
-                ("track_headers", "right") => settings.track_headers = Some(Side::Right),
-                ("device_chain", "row") => settings.device_layout = DeviceLayout::Row,
-                ("device_chain", "stack") => settings.device_layout = DeviceLayout::Stack,
-                ("select_on_launch", "on" | "off") => settings.select_on_launch = value == "on",
-                ("mixer_controls", "field") => settings.mixer_controls = MixerControls::Field,
-                ("mixer_controls", "knob") => settings.mixer_controls = MixerControls::Knob,
-                ("plugin_editors", "window") => settings.plugin_editors = EditorPlacement::Window,
-                ("plugin_editors", "device") => settings.plugin_editors = EditorPlacement::DeviceView,
-                ("projects_folder", folder) => settings.projects_folder = folder.to_string(),
-                ("templates_folder", folder) => settings.templates_folder = folder.to_string(),
-                ("nam_models_folder", folder) => settings.nam_models_folder = folder.to_string(),
-                ("irs_folder", folder) => settings.irs_folder = folder.to_string(),
-                ("themes_folder", folder) => settings.themes_folder = folder.to_string(),
-                ("open_projects", "ask") => settings.on_open = OnOpen::Ask,
-                ("open_projects", "tab") => settings.on_open = OnOpen::NewTab,
-                ("open_projects", "replace") => settings.on_open = OnOpen::Replace,
-                // `dialog` is what test builds wrote before the start panel took the dialog's place.
-                ("at_start", "panel" | "dialog") => settings.at_start = AtStart::Panel,
-                ("at_start", "blank") => settings.at_start = AtStart::Blank,
-                ("at_start", "template") => settings.at_start = AtStart::Template,
-                ("at_start", "last") => settings.at_start = AtStart::Last,
-                ("start_template", path) => settings.start_template = path.to_string(),
-                ("stop", "marker") => settings.stop = StopReturn::Marker,
-                ("stop", "here") => settings.stop = StopReturn::Here,
-                // `play_start` since the selected clip became the default; the old key, which
-                // every file got written with "marker" while that was the default, is left alone.
-                ("play_start", "marker") => settings.play_from = PlayFrom::Marker,
-                ("play_start", "clip") => settings.play_from = PlayFrom::Clip,
-                ("play_from", "marker" | "clip") => {}
-                ("renderer", "wgpu") => settings.graphics = Graphics::Gpu,
-                ("renderer", "glow") => settings.graphics = Graphics::OpenGl,
-                ("theme", id) if renamed_theme(id).is_some() => {
-                    settings.theme = renamed_theme(id).unwrap_or(crate::kit::theme::BUILT_IN.into())
-                }
-                ("theme", id) if is_theme_id(id) => settings.theme = id.to_string(),
-                ("browser", "on" | "off") => settings.browser_open = value == "on",
-                ("browser_side", "left") => settings.browser_side = Side::Left,
-                ("browser_side", "right") => settings.browser_side = Side::Right,
-                ("browser_width", width) if width.parse::<u32>().is_ok() => {
-                    settings.browser_width =
-                        width.parse::<u32>().unwrap_or(BROWSER_WIDTH).clamp(BROWSER_WIDTHS.0, BROWSER_WIDTHS.1);
-                }
-                ("preview_autoplay", "on" | "off") => settings.preview_autoplay = value == "on",
-                ("preview_volume", db) if db.parse::<i32>().is_ok() => {
-                    settings.preview_volume =
-                        db.parse::<i32>().unwrap_or(PREVIEW_VOLUME).clamp(PREVIEW_VOLUMES.0, PREVIEW_VOLUMES.1);
-                }
-                ("map_layout", "cloud" | "grid") => settings.map_grid = value == "grid",
-                ("map_hover_preview", "on" | "off") => settings.map_hover_preview = value == "on",
-                ("waveform_scale", "linear" | "db") => settings.waveform_db = value == "db",
-                ("map_max_seconds", seconds) if seconds.parse::<u32>().is_ok() => {
-                    settings.map_max_seconds = seconds
-                        .parse::<u32>()
-                        .unwrap_or(MAP_MAX_SECONDS)
-                        .clamp(MAP_MAX_SECONDS_RANGE.0, MAP_MAX_SECONDS_RANGE.1);
-                }
-                ("map_dot_size", size) if size.parse::<u32>().is_ok() => {
-                    settings.map_dot_size =
-                        size.parse::<u32>().unwrap_or(MAP_DOT_SIZE).clamp(MAP_DOT_SIZES.0, MAP_DOT_SIZES.1);
-                }
-                ("map_label_size", size) if size.parse::<u32>().is_ok_and(|s| MAP_LABEL_SIZES.contains(&s)) => {
-                    settings.map_label_size = size.parse::<u32>().unwrap_or(MAP_LABEL_SIZE);
-                }
-                ("map_window", "on" | "off") => settings.map_window = value == "on",
-                ("map_window_rect", "none") => settings.map_window_rect = None,
-                ("map_window_rect", rect) if parse_window_rect(rect).is_some() => {
-                    settings.map_window_rect = parse_window_rect(rect);
-                }
-                ("zoom", percent) if percent.parse::<u32>().is_ok() => {
-                    settings.zoom = percent.parse::<u32>().unwrap_or(ZOOM).clamp(ZOOMS.0, ZOOMS.1);
-                }
-                ("drop_files", "one_track") => settings.drop_separate = false,
-                ("drop_files", "separate") => settings.drop_separate = true,
-                ("warp_mode", mode) if WarpMode::parse(mode).is_some() => {
-                    settings.warp_mode = WarpMode::parse(mode).unwrap_or_default();
-                }
-                ("audio_host", host) => settings.audio_host = host.to_string(),
-                ("audio_device", device) => settings.audio_device = device.to_string(),
                 ("audio_devices", value) if value.len() <= 32_768 => {
                     if let Ok(devices) =
                         serde_json::from_str::<std::collections::BTreeMap<String, Option<String>>>(value)
@@ -861,50 +789,43 @@ impl Settings {
                         warnings.push(format!("settings line {}: invalid audio device history", number + 1));
                     }
                 }
-                ("audio_sample_rate", rate) if rate.parse::<u32>().is_ok_and(|r| r <= MAX_SAMPLE_RATE) => {
-                    settings.audio_sample_rate = rate.parse().unwrap_or(0);
-                }
-                ("audio_buffer", frames)
-                    if frames
-                        .parse::<u32>()
-                        .is_ok_and(|f| f == 0 || (MIN_BUFFER_FRAMES..=MAX_BUFFER_FRAMES).contains(&f)) =>
-                {
-                    settings.audio_buffer = frames.parse().unwrap_or(0);
-                }
-                ("audio_exclusive", "on" | "off") => settings.audio_exclusive = value == "on",
-                ("audio_cue_pair", pair) if pair.parse::<u16>().is_ok_and(|p| p <= MAX_CUE_PAIR) => {
-                    settings.audio_cue_pair = pair.parse().unwrap_or(0);
-                }
-                ("audio_cue_volume", db) if db.parse::<i32>().is_ok() => {
-                    settings.audio_cue_volume = db.parse::<i32>().unwrap_or(0).clamp(CUE_VOLUMES.0, CUE_VOLUMES.1);
-                }
-                ("piano_roll_top", "track") => settings.piano_roll_top = PianoRollTop::Track,
-                ("piano_roll_top", "window") => settings.piano_roll_top = PianoRollTop::Window,
                 // Retired: the piano roll's grid is no longer linked to the control bar.
                 ("piano_roll_grid", "own" | "control_bar") => {}
-                ("backup", when) if suhina_session::backup::Interval::parse(when).is_some() => {
-                    settings.backup = suhina_session::backup::Interval::parse(when).unwrap_or_default();
-                }
-                ("backup_clean_up", "on" | "off") => settings.backup_clean_up = value == "on",
-                ("setting_descriptions", text) if Descriptions::parse(text).is_some() => {
-                    settings.setting_descriptions = Descriptions::parse(text).unwrap_or_default();
-                }
-                ("audio_input", input) => {
-                    settings.audio_input = suhina_session::InputChoice::from_text(input).as_text().to_string()
+                ("audio_device_inputs", value) if value.len() <= MAX_DEVICE_INPUTS_LINE => {
+                    match serde_json::from_str::<std::collections::BTreeMap<String, [String; 2]>>(value) {
+                        Ok(inputs) => {
+                            let listed = inputs.len();
+                            settings.audio_device_inputs = inputs
+                                .into_iter()
+                                .filter(|(key, [input, _])| {
+                                    !key.trim().is_empty()
+                                        && key.len() <= MAX_DEVICE_KEY
+                                        && input.len() <= MAX_DEVICE_NAME
+                                })
+                                .filter_map(|(key, [input, track])| {
+                                    let track = suhina_session::audio::input_channels_from_text(&track)?;
+                                    let input = suhina_session::InputChoice::from_text(&input).as_text().to_string();
+                                    Some((
+                                        key.trim().to_lowercase(),
+                                        [input, suhina_session::audio::input_channels_text(track)],
+                                    ))
+                                })
+                                .take(suhina_session::MAX_DEVICE_INPUTS)
+                                .collect();
+                            if settings.audio_device_inputs.len() < listed {
+                                warnings.push(format!(
+                                    "settings line {}: an audio device's inputs that could not be read were left out",
+                                    number + 1
+                                ));
+                            }
+                        }
+                        Err(_) => warnings.push(format!("settings line {}: invalid audio device inputs", number + 1)),
+                    }
                 }
                 ("midi_input_off", port) if !port.is_empty() => {
                     if !settings.midi_inputs_off.iter().any(|p| p == port) {
                         settings.midi_inputs_off.push(port.to_string());
                     }
-                }
-                ("piano_roll_toolbar", size) if ToolbarSize::parse(size).is_some() => {
-                    settings.toolbar_size = ToolbarSize::parse(size).unwrap_or_default();
-                }
-                ("piano_key_style", style) if PianoKeyStyle::parse(style).is_some() => {
-                    settings.piano_key_style = PianoKeyStyle::parse(style).unwrap_or_default();
-                }
-                ("piano_key_names", names) if PianoKeyNames::parse(names).is_some() => {
-                    settings.piano_key_names = PianoKeyNames::parse(names).unwrap_or_default();
                 }
                 _ => {
                     warnings.push(format!("settings line {}: {key} = {value} is not a known setting", number + 1));
@@ -932,7 +853,6 @@ fn parse_window_rect(text: &str) -> Option<[i32; 4]> {
 pub const WINDOW_SIZES: (i32, i32) = (200, 10_000);
 const WINDOW_POSITION: i32 = 30_000;
 
-/// Whether `id` can name a theme file: not empty and not a path.
 /// What a saved built-in theme that has since gone or changed its id is called now.
 fn renamed_theme(id: &str) -> Option<String> {
     Some(match id {
@@ -946,6 +866,7 @@ fn renamed_theme(id: &str) -> Option<String> {
     })
 }
 
+/// Whether `id` can name a theme file: not empty and not a path.
 pub fn is_theme_id(id: &str) -> bool {
     !id.is_empty() && !id.contains(['/', '\\', ':']) && id != "." && id != ".."
 }

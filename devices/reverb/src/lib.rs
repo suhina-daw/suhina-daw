@@ -403,78 +403,141 @@ pub mod param {
 pub const MIN_LEVEL_DB: f64 = -30.4576;
 
 /// The parameters, in [`param`] order.
-const PARAMS: [ParamInfo; param::COUNT] = [
-    ParamInfo::continuous("predelay", "Predelay", (0.000_5, 0.25), 0.002_5, Unit::Seconds, Scale::Logarithmic)
-        .in_group("Input"),
-    ParamInfo::toggle("lowCut", "Low Cut", false).in_group("Input"),
-    ParamInfo::toggle("highCut", "High Cut", true).in_group("Input"),
-    ParamInfo::continuous(
+static PARAMS: [ParamInfo; param::COUNT] = [
+    ParamInfo::in_group("Input").continuous(
+        "predelay",
+        "Predelay",
+        (0.000_5, 0.25),
+        0.002_5,
+        Unit::Seconds,
+        Scale::Logarithmic,
+    ),
+    ParamInfo::in_group("Input").toggle("lowCut", "Low Cut", false),
+    ParamInfo::in_group("Input").toggle("highCut", "High Cut", true),
+    ParamInfo::in_group("Input").continuous(
         "inputFrequency",
         "Input Frequency",
         (50.0, 18_000.0),
         830.0,
         Unit::Hertz,
         Scale::Logarithmic,
-    )
-    .in_group("Input"),
-    ParamInfo::continuous("inputWidth", "Input Width", (0.5, 9.0), 5.85, Unit::Octaves, Scale::Linear)
-        .in_group("Input"),
-    ParamInfo::toggle("spin", "Spin", true).in_group("Early Reflections"),
-    ParamInfo::continuous("spinRate", "Spin Rate", (0.07, 1.3), 0.3, Unit::Hertz, Scale::Logarithmic)
-        .in_group("Early Reflections"),
-    ParamInfo::continuous("spinAmount", "Spin Amount", (2.0, 55.0), 17.5, Unit::None, Scale::Logarithmic)
-        .in_group("Early Reflections"),
-    ParamInfo::continuous("shape", "Shape", (0.0, 1.0), 0.5, Unit::None, Scale::Linear).in_group("Early Reflections"),
-    ParamInfo::toggle("highDamping", "High Damping", true).in_group("Damping"),
-    ParamInfo::choice("highDampingType", "High Damping Type", &["Shelf", "Low-Pass"], 0).in_group("Damping"),
-    ParamInfo::continuous(
+    ),
+    ParamInfo::in_group("Input").continuous(
+        "inputWidth",
+        "Input Width",
+        (0.5, 9.0),
+        5.85,
+        Unit::Octaves,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Early Reflections").toggle("spin", "Spin", true),
+    ParamInfo::in_group("Early Reflections").continuous(
+        "spinRate",
+        "Spin Rate",
+        (0.07, 1.3),
+        0.3,
+        Unit::Hertz,
+        Scale::Logarithmic,
+    ),
+    ParamInfo::in_group("Early Reflections").continuous(
+        "spinAmount",
+        "Spin Amount",
+        (2.0, 55.0),
+        17.5,
+        Unit::None,
+        Scale::Logarithmic,
+    ),
+    ParamInfo::in_group("Early Reflections").continuous("shape", "Shape", (0.0, 1.0), 0.5, Unit::None, Scale::Linear),
+    ParamInfo::in_group("Damping").toggle("highDamping", "High Damping", true),
+    ParamInfo::in_group("Damping").choice("highDampingType", "High Damping Type", &["Shelf", "Low-Pass"], 0),
+    ParamInfo::in_group("Damping").continuous(
         "highDampingFrequency",
         "High Damping Frequency",
         (20.0, 16_000.0),
         4_500.0,
         Unit::Hertz,
         Scale::Logarithmic,
-    )
-    .in_group("Damping"),
-    ParamInfo::continuous("highDampingGain", "High Damping Gain", (0.2, 1.0), 0.7, Unit::None, Scale::Linear)
-        .in_group("Damping"),
-    ParamInfo::toggle("lowDamping", "Low Damping", false).in_group("Damping"),
-    ParamInfo::continuous(
+    ),
+    ParamInfo::in_group("Damping").continuous(
+        "highDampingGain",
+        "High Damping Gain",
+        (0.2, 1.0),
+        0.7,
+        Unit::None,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Damping").toggle("lowDamping", "Low Damping", false),
+    ParamInfo::in_group("Damping").continuous(
         "lowDampingFrequency",
         "Low Damping Frequency",
         (20.0, 15_000.0),
         90.0,
         Unit::Hertz,
         Scale::Logarithmic,
-    )
-    .in_group("Damping"),
-    ParamInfo::continuous("lowDampingGain", "Low Damping Gain", (0.2, 1.0), 0.75, Unit::None, Scale::Linear)
-        .in_group("Damping"),
-    ParamInfo::continuous("diffusion", "Diffusion", (0.001, 0.96), 0.6, Unit::Percent, Scale::Linear)
-        .in_group("Diffusion"),
-    ParamInfo::continuous("scale", "Scale", (0.05, 1.0), 0.4, Unit::Percent, Scale::Linear).in_group("Diffusion"),
-    ParamInfo::toggle("chorus", "Chorus", true).in_group("Diffusion"),
-    ParamInfo::continuous("chorusRate", "Chorus Rate", (0.01, 8.0), 0.02, Unit::Hertz, Scale::Logarithmic)
-        .in_group("Diffusion"),
-    ParamInfo::continuous("chorusAmount", "Chorus Amount", (0.01, 4.0), 0.02, Unit::None, Scale::Linear)
-        .in_group("Diffusion"),
-    ParamInfo::continuous("size", "Size", (0.222, 500.0), 100.0, Unit::None, Scale::Logarithmic).in_group("Decay"),
-    ParamInfo::choice("smooth", "Smooth", &["None", "Slow", "Fast"], 2).in_group("Decay"),
-    ParamInfo::continuous("decay", "Decay", (0.2, 60.0), 1.2, Unit::Seconds, Scale::Logarithmic).in_group("Decay"),
-    ParamInfo::toggle("freeze", "Freeze", false).in_group("Decay"),
-    ParamInfo::toggle("flat", "Flat", true).in_group("Decay"),
-    ParamInfo::toggle("cut", "Cut", true).in_group("Decay"),
-    ParamInfo::continuous("stereo", "Stereo", (0.0, 120.0), 100.0, Unit::None, Scale::Linear).in_group("Global"),
-    ParamInfo::choice("density", "Density", &["Sparse", "Low", "Mid", "High"], 1).in_group("Global"),
-    ParamInfo::continuous("reflect", "Reflect", (MIN_LEVEL_DB, 6.0), 0.0, Unit::Decibels, Scale::Linear)
-        .in_group("Output"),
-    ParamInfo::continuous("diffuse", "Diffuse", (MIN_LEVEL_DB, 6.0), 0.0, Unit::Decibels, Scale::Linear)
-        .in_group("Output"),
-    ParamInfo::continuous("mix", "Dry/Wet", (0.0, 1.0), 0.55, Unit::Percent, Scale::Linear).in_group("Output"),
+    ),
+    ParamInfo::in_group("Damping").continuous(
+        "lowDampingGain",
+        "Low Damping Gain",
+        (0.2, 1.0),
+        0.75,
+        Unit::None,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Diffusion").continuous(
+        "diffusion",
+        "Diffusion",
+        (0.001, 0.96),
+        0.6,
+        Unit::Percent,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Diffusion").continuous("scale", "Scale", (0.05, 1.0), 0.4, Unit::Percent, Scale::Linear),
+    ParamInfo::in_group("Diffusion").toggle("chorus", "Chorus", true),
+    ParamInfo::in_group("Diffusion").continuous(
+        "chorusRate",
+        "Chorus Rate",
+        (0.01, 8.0),
+        0.02,
+        Unit::Hertz,
+        Scale::Logarithmic,
+    ),
+    ParamInfo::in_group("Diffusion").continuous(
+        "chorusAmount",
+        "Chorus Amount",
+        (0.01, 4.0),
+        0.02,
+        Unit::None,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Decay").continuous("size", "Size", (0.222, 500.0), 100.0, Unit::None, Scale::Logarithmic),
+    ParamInfo::in_group("Decay").choice("smooth", "Smooth", &["None", "Slow", "Fast"], 2),
+    ParamInfo::in_group("Decay").continuous("decay", "Decay", (0.2, 60.0), 1.2, Unit::Seconds, Scale::Logarithmic),
+    ParamInfo::in_group("Decay").toggle("freeze", "Freeze", false),
+    ParamInfo::in_group("Decay").toggle("flat", "Flat", true),
+    ParamInfo::in_group("Decay").toggle("cut", "Cut", true),
+    ParamInfo::in_group("Global").continuous("stereo", "Stereo", (0.0, 120.0), 100.0, Unit::None, Scale::Linear),
+    ParamInfo::in_group("Global").choice("density", "Density", &["Sparse", "Low", "Mid", "High"], 1),
+    ParamInfo::in_group("Output").continuous(
+        "reflect",
+        "Reflect",
+        (MIN_LEVEL_DB, 6.0),
+        0.0,
+        Unit::Decibels,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Output").continuous(
+        "diffuse",
+        "Diffuse",
+        (MIN_LEVEL_DB, 6.0),
+        0.0,
+        Unit::Decibels,
+        Scale::Linear,
+    ),
+    ParamInfo::in_group("Output").continuous("mix", "Dry/Wet", (0.0, 1.0), 0.55, Unit::Percent, Scale::Linear),
 ];
 
 /// What the reverb is and the parameters it has.
-pub const INFO: DeviceInfo = DeviceInfo { id: "reverb", name: "Reverb", role: Role::Effect, params: &PARAMS };
+pub static INFO: DeviceInfo = DeviceInfo::new("reverb", "Reverb", Role::Effect, &PARAMS);
 
 /// `out` set to the values `t` (0..1) of the way from `a` to `b`.
 fn lerp<const N: usize>(out: &mut [f64; N], a: &[f64; N], b: &[f64; N], t: f64) {
@@ -1229,7 +1292,7 @@ impl Reverb {
 
 impl Device for Reverb {
     /// The reverb's [`INFO`].
-    fn info(&self) -> &'static DeviceInfo {
+    fn info(&self) -> &DeviceInfo {
         &INFO
     }
 

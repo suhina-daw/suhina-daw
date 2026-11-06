@@ -20,6 +20,9 @@
 
 mod ahead;
 pub use assets::DeviceAssets;
+pub use control_error::ControlError;
+mod control_error;
+pub use suhina_device_sdk::{DeviceAsset, DeviceFactory, Devices};
 mod assets;
 mod audio;
 mod automation;
@@ -108,7 +111,7 @@ pub use cpu::CpuMonitor;
 pub use cue::MAX_CUE_GAIN;
 pub use group::{GROUP_PARAMS, SILENT_DB, group_param_index, group_param_values};
 pub use input::MAX_INPUT_CHANNELS;
-use launcher::Launcher;
+use launcher::ClipLauncher;
 pub use launcher::{
     ColumnStatus, Controller, LaunchCommand, LauncherMonitor, MAX_START_BEAT, PlayingMeter, Quantization, Queued,
     SceneShift,
@@ -166,6 +169,70 @@ pub const MIXER_SEND: usize = usize::MAX - 1;
 /// ([`Controller::set_device_param`]): the value is the channel's new pan, -1 to 1; the playing
 /// graph takes it without a new graph where the track's chain can.
 pub const MIXER_PAN: usize = usize::MAX - 2;
+/// The device index of a parameter message that moves a branch of a device group on a track's
+/// chain, at its top or inside another group ([`Controller::set_device_param`]): the parameter is
+/// [`branch_param`], the value the branch's new linear volume, pan (-1 to 1), or mute or solo
+/// (1 on, 0 off) (#763 › 4).
+pub const MIXER_BRANCH: usize = usize::MAX - 3;
+
+/// What a [`MIXER_BRANCH`] message moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchValue {
+    Volume = 0,
+    Pan = 1,
+    Mute = 2,
+    Solo = 3,
+}
+
+/// The parameter of a [`MIXER_BRANCH`] message: the group's number ([`group_number`]), the branch
+/// and what moves.
+pub fn branch_param(group: usize, branch: usize, value: BranchValue) -> usize {
+    (group.min(BRANCH_PARAM_GROUPS - 1) * BRANCH_PARAM_BRANCHES + branch.min(BRANCH_PARAM_BRANCHES / 4 - 1) * 4)
+        + value as usize
+}
+
+const BRANCH_PARAM_BRANCHES: usize = 4 * 1024;
+const BRANCH_PARAM_GROUPS: usize = 1 << 20;
+
+/// The group, branch and value a [`MIXER_BRANCH`] parameter names; `None` for one no
+/// [`branch_param`] gives.
+pub(crate) fn branch_of_param(param: usize) -> Option<(usize, usize, BranchValue)> {
+    let value = match param % 4 {
+        0 => BranchValue::Volume,
+        1 => BranchValue::Pan,
+        2 => BranchValue::Mute,
+        _ => BranchValue::Solo,
+    };
+    let group = param / BRANCH_PARAM_BRANCHES;
+    (group < BRANCH_PARAM_GROUPS).then_some((group, (param % BRANCH_PARAM_BRANCHES) / 4, value))
+}
+
+/// The number of the group at device `path` among a channel's `devices`: groups are counted in
+/// depth-first order, a group before the groups inside it, every group counted whether it runs
+/// or not. What a [`MIXER_BRANCH`] message names a group by. `None` for a path that is no group.
+pub fn group_number(devices: &[suhina_model::Device], path: &[usize]) -> Option<usize> {
+    let (&first, rest) = path.split_first()?;
+    let mut number = 0;
+    for device in devices.get(..first)? {
+        number += count_groups(std::slice::from_ref(device));
+    }
+    let group = devices.get(first)?.as_group()?;
+    let Some((&branch, inner)) = rest.split_first() else { return Some(number) };
+    number += 1;
+    for before in group.branches.get(..branch)? {
+        number += count_groups(&before.devices);
+    }
+    Some(number + group_number(&group.branches.get(branch)?.devices, inner)?)
+}
+
+/// How many groups `devices` hold, those inside groups too.
+pub(crate) fn count_groups(devices: &[suhina_model::Device]) -> usize {
+    devices
+        .iter()
+        .filter_map(suhina_model::Device::as_group)
+        .map(|group| 1 + group.branches.iter().map(|b| count_groups(&b.devices)).sum::<usize>())
+        .sum()
+}
 
 /// Whether `project` plays the send from `source` to return `target`: both heard, a level above
 /// silence, no loop. A send that plays neither before an edit nor after it changes nothing the
@@ -294,7 +361,7 @@ struct HostedClip {
 
 /// A note with its position resolved to sample frames and its mix resolved from the channel.
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct NoteEvent {
+struct ArrangedNote {
     start: u64,
     end: u64,
     frequency: f64,
@@ -390,10 +457,15 @@ pub struct Renderer {
     start_target: Option<f64>,
     start_guard: declick::StartGuard,
     stretch_scratch: Vec<f32>,
+    /// The block's metronome click, interleaved, while the main fader moves: it is added after
+    /// the fader scales the mix ([`graph::Graph::main_fader`]).
+    click: Vec<f32>,
     /// What the graph was built from, so a controller can build the next one (ADR 0005).
     audio: Arc<AudioPool>,
     /// The file-backed devices' files, for the next graph (docs/spec/nam-amp-and-cab.md).
     assets: Arc<DeviceAssets>,
+    /// What makes the devices of the next graph (#1147).
+    devices: Devices,
     swap: swap::SwapState,
     /// Stretch underruns counted by graphs swapped out.
     underruns_before: u64,
@@ -429,20 +501,29 @@ pub struct Renderer {
     meters: meters::MeterWriter,
 }
 
-/// What a render plays besides the project (#764 › 3): the decoded audio its clips name, the
-/// parsed models and IRs its file-backed devices run ([docs/spec/nam-amp-and-cab.md]), and its
-/// running plug-ins (ADR 0006). Empty by default: notes and built-in devices only.
-#[derive(Default)]
+/// What a render plays besides the project (#764 › 3): what makes its devices (#1147), the
+/// decoded audio its clips name, the parsed models and IRs its file-backed devices run
+/// ([docs/spec/nam-amp-and-cab.md]), and its running plug-ins (ADR 0006).
+///
+/// There is no default: every constructor takes the device factory, so a render cannot be made
+/// that plays no devices without saying so.
 pub struct RenderInputs {
+    pub devices: Devices,
     pub audio: AudioPool,
     pub assets: DeviceAssets,
     pub plugins: Plugins,
 }
 
 impl RenderInputs {
+    /// Inputs that make devices with `devices`, with no audio, files or plug-ins: notes and
+    /// built-in devices only.
+    pub fn new(devices: Devices) -> Self {
+        Self { devices, audio: AudioPool::default(), assets: DeviceAssets::default(), plugins: Plugins::default() }
+    }
+
     /// Inputs that play the audio clips whose files are in `audio`.
-    pub fn from_audio(audio: &AudioPool) -> Self {
-        Self { audio: audio.clone(), ..Self::default() }
+    pub fn from_audio(audio: &AudioPool, devices: Devices) -> Self {
+        Self { audio: audio.clone(), ..Self::new(devices) }
     }
 
     /// These inputs, with the file-backed devices running what `assets` holds.
@@ -528,13 +609,18 @@ impl Declick {
 
 impl Renderer {
     /// A renderer for the project's notes; audio clips stay silent. See [`Renderer::build`].
-    pub fn new(project: &Project, sample_rate: u32) -> Result<Self, RenderError> {
-        Self::build(project, RenderInputs::default(), sample_rate, RenderOptions::PLAYING)
+    pub fn new(project: &Project, sample_rate: u32, devices: Devices) -> Result<Self, RenderError> {
+        Self::build(project, RenderInputs::new(devices), sample_rate, RenderOptions::PLAYING)
     }
 
     /// A renderer whose transport is stopped, playing the audio clips whose files are in `audio`.
-    pub fn stopped(project: &Project, audio: &AudioPool, sample_rate: u32) -> Result<Self, RenderError> {
-        Self::build(project, RenderInputs::from_audio(audio), sample_rate, RenderOptions::STOPPED)
+    pub fn stopped(
+        project: &Project,
+        audio: &AudioPool,
+        sample_rate: u32,
+        devices: Devices,
+    ) -> Result<Self, RenderError> {
+        Self::build(project, RenderInputs::from_audio(audio, devices), sample_rate, RenderOptions::STOPPED)
     }
 
     /// A renderer for `project` that plays what `inputs` holds, started as `options` say.
@@ -544,8 +630,8 @@ impl Renderer {
         sample_rate: u32,
         options: RenderOptions,
     ) -> Result<Self, RenderError> {
-        let RenderInputs { audio, assets, mut plugins } = inputs;
-        let mut graph = Graph::build(project, &audio, &assets, sample_rate, &mut plugins, options.source)?;
+        let RenderInputs { devices, audio, assets, mut plugins } = inputs;
+        let mut graph = Graph::build(project, &audio, &assets, &*devices, sample_rate, &mut plugins, options.source)?;
         if plugins.carried {
             // The old note-off schedule died with its renderer, but the retained
             // instruments did not. Release those voices before chasing notes here.
@@ -581,8 +667,10 @@ impl Renderer {
             start_target: None,
             start_guard: declick::StartGuard::new(sample_rate),
             stretch_scratch: vec![0.0; STRETCH_BLOCK * 2],
+            click: vec![0.0; MAX_BLOCK * 2],
             audio: Arc::new(audio),
             assets: Arc::new(assets),
+            devices,
             swap: swap::SwapState::default(),
             underruns_before: 0,
             metronome: metronome::Metronome::new(sample_rate),
@@ -1023,6 +1111,17 @@ impl Renderer {
         let block_start = self.transport.position;
         // The transport changes only through commands, which are applied above.
         let running = self.transport.running;
+        // While the main fader moves, the click stays out of the mix it scales.
+        let main_moving = match self.graph.main_fader.as_mut() {
+            Some((_, fader)) => {
+                fader.plan(frames, f64::from(self.sample_rate));
+                !fader.unity()
+            }
+            None => false,
+        };
+        if let Some(click) = self.click.get_mut(..frames * 2) {
+            click.fill(0.0);
+        }
         for (frame, [out_left, out_right]) in out.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             self.block_frame = frame;
             for chain in self.graph.chains.iter_mut().filter(|c| c.instrument) {
@@ -1035,6 +1134,12 @@ impl Renderer {
             let click =
                 self.metronome.frame(self.transport.running, launcher.beat(), |index| launcher.starts_bar(index))
                     + self.count_in_frame();
+            let click = if main_moving && let Some([left, right]) = self.click.as_chunks_mut::<2>().0.get_mut(frame) {
+                (*left, *right) = (click, click);
+                0.0
+            } else {
+                click
+            };
             let (launched_left, launched_right) = self.launcher_frame();
             let time = self.time();
             if self.transport.running && self.transport.chase {
@@ -1126,6 +1231,11 @@ impl Renderer {
         }
         // What went straight to the output waits for the slowest chain (latency compensation).
         self.graph.direct_delay.run(out);
+        if self.graph.main_fader.is_some()
+            && let Some(click) = self.click.get_mut(..frames * 2)
+        {
+            self.graph.click_delay.run(click);
+        }
         // The chains no chain plays into run their plug-ins at the same time, so the block's
         // deadline is shared by the slowest chain rather than by all of them in turn: each
         // chain runs until it hands a block to a plug-in, and goes on as soon as that plug-in
@@ -1145,6 +1255,22 @@ impl Renderer {
             buffer: &mut capture.buffer,
         });
         sends::finish(&mut self.graph.chains, out, &mut self.cue.bus, frames, &context, capture);
+        // The main fader's move since the graph was built, then the click it leaves alone. With
+        // the fader still, the click is in the mix already and this changes nothing.
+        if let Some((_, fader)) = self.graph.main_fader.as_ref()
+            && let Some(click) = self.click.get(..frames * 2)
+        {
+            let pairs = out.as_chunks_mut::<2>().0.iter_mut().zip(click.as_chunks::<2>().0);
+            for (frame, ([left, right], [click_left, click_right])) in pairs.enumerate() {
+                if main_moving {
+                    let factor = fader.at(frame);
+                    *left *= factor;
+                    *right *= factor;
+                }
+                *left += click_left;
+                *right += click_right;
+            }
+        }
         self.graph.levels.finish(&self.graph.chains, frames, &mut self.meters);
         // The preview comes after every track and the main channel's mix (ADR 0011), into the
         // cue bus, and into the main output too while the cue plays with it.
@@ -1162,7 +1288,7 @@ impl Renderer {
                 *to = *from;
             }
         }
-        self.meters.measure(meters::Meter::Main, out, frames);
+        self.meters.measure(meters::MeterTarget::Main, out, frames);
         self.block_frame = 0;
     }
 
@@ -1396,8 +1522,13 @@ fn split_cue(cue: Option<&mut [f32]>, at: usize) -> (Option<&mut [f32]>, Option<
 
 /// Renders the whole arrangement offline into interleaved stereo, `block_frames` at a time.
 /// Audio clips stay silent; see [`render_offline_from`].
-pub fn render_offline(project: &Project, sample_rate: u32, block_frames: usize) -> Result<Vec<f32>, RenderError> {
-    render_offline_from(project, RenderInputs::default(), sample_rate, block_frames, None)
+pub fn render_offline(
+    project: &Project,
+    sample_rate: u32,
+    block_frames: usize,
+    devices: Devices,
+) -> Result<Vec<f32>, RenderError> {
+    render_offline_from(project, RenderInputs::new(devices), sample_rate, block_frames, None)
 }
 
 /// Renders the whole arrangement offline into interleaved stereo, `block_frames` at a time,
@@ -1465,8 +1596,9 @@ pub fn render_launches(
     sample_rate: u32,
     commands: &[(f64, LaunchCommand)],
     seconds: f64,
+    devices: Devices,
 ) -> Result<Vec<f32>, RenderError> {
-    render_launches_from(project, RenderInputs::from_audio(audio), sample_rate, commands, seconds)
+    render_launches_from(project, RenderInputs::from_audio(audio, devices), sample_rate, commands, seconds)
 }
 
 /// [`render_launches`] playing what `inputs` holds. This is the same path a live
@@ -1588,7 +1720,7 @@ fn collect_notes(
     map: &TempoMap,
     (track, gain_left, gain_right, column, bus, meter): (TrackId, f32, f32, u32, u32, u32),
     scale: Option<MusicalScale>,
-    events: &mut Vec<NoteEvent>,
+    events: &mut Vec<ArrangedNote>,
 ) {
     let LaneData::Notes(notes) = &lane.data else { return };
     if !(clip.length.is_finite() && clip.length > 0.0 && clip.start.is_finite() && clip.offset.is_finite()) {
@@ -1613,7 +1745,7 @@ fn collect_notes(
                 continue;
             }
             let end = (start + note.duration.max(0.0)).min(clip_end);
-            events.push(NoteEvent {
+            events.push(ArrangedNote {
                 start: to_frame(start),
                 end: to_frame(end),
                 frequency: 440.0 * 2f64.powf((f64::from(note.key) - 69.0) / 12.0),

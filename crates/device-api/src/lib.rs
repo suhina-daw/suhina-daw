@@ -21,7 +21,45 @@
 pub mod conformance;
 pub mod sample_edits;
 
+use std::borrow::Cow;
 use std::fmt;
+use std::sync::Arc;
+
+/// A name or id in a device's description: written in the code (a built-in's, `const`), or
+/// read with the device (a `.sd` graph's, #763 › 6).
+pub type Text = Cow<'static, str>;
+
+/// The options of a choice parameter, in order: written in the code, or read with the device.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Labels {
+    Static(&'static [&'static str]),
+    Owned(Arc<[String]>),
+}
+
+impl Labels {
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Static(labels) => labels.len(),
+            Self::Owned(labels) => labels.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The option at `index`.
+    pub fn get(&self, index: usize) -> Option<&str> {
+        match self {
+            Self::Static(labels) => labels.get(index).copied(),
+            Self::Owned(labels) => labels.get(index).map(String::as_str),
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &str> + '_ {
+        (0..self.len()).filter_map(|i| self.get(i))
+    }
+}
 
 /// How a parameter's value is shown and what it means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,25 +105,197 @@ const GAIN_KNEE: f64 = 0.25;
 /// decibels does not break at the knee.
 const GAIN_POWER: f64 = GAIN_SLOPE * GAIN_KNEE * std::f64::consts::LN_10 / 20.0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParamKind {
     Continuous(Scale),
     /// 0.0 is off, 1.0 is on.
     Toggle,
     /// The value is the index of the chosen option.
-    Choice(&'static [&'static str]),
+    Choice(Labels),
     /// A whole number between `min` and `max` (a level from 0 to 99, a number of semitones).
     Integer,
 }
 
-/// One parameter of a device. `id` is stable: projects store values by it, so renaming it is a
-/// breaking change; `name` is what the user sees and may change.
+/// Makes parameters in one group ([`ParamInfo::in_group`]): the constructors of [`ParamInfo`],
+/// with the group set.
+#[derive(Debug, Clone, Copy)]
+pub struct InGroup(&'static str);
+
+impl InGroup {
+    pub const fn continuous(
+        self,
+        id: &'static str,
+        name: &'static str,
+        range: (f64, f64),
+        default: f64,
+        unit: Unit,
+        scale: Scale,
+    ) -> ParamInfo {
+        let kind = ParamKind::Continuous(scale);
+        self.make(id, name, kind, range, default, unit)
+    }
+
+    pub const fn toggle(self, id: &'static str, name: &'static str, default: bool) -> ParamInfo {
+        let default = if default { 1.0 } else { 0.0 };
+        self.make(id, name, ParamKind::Toggle, (0.0, 1.0), default, Unit::None)
+    }
+
+    /// A whole number in `range`.
+    pub const fn integer(
+        self,
+        id: &'static str,
+        name: &'static str,
+        range: (i32, i32),
+        default: i32,
+        unit: Unit,
+    ) -> ParamInfo {
+        self.make(id, name, ParamKind::Integer, (range.0 as f64, range.1 as f64), default as f64, unit)
+    }
+
+    /// A choice between `options`; the default is the option at index `default`.
+    pub const fn choice(
+        self,
+        id: &'static str,
+        name: &'static str,
+        options: &'static [&'static str],
+        default: usize,
+    ) -> ParamInfo {
+        let max = options.len().saturating_sub(1) as f64;
+        let kind = ParamKind::Choice(Labels::Static(options));
+        self.make(id, name, kind, (0.0, max), default as f64, Unit::None)
+    }
+
+    const fn make(
+        self,
+        id: &'static str,
+        name: &'static str,
+        kind: ParamKind,
+        range: (f64, f64),
+        default: f64,
+        unit: Unit,
+    ) -> ParamInfo {
+        ParamInfo {
+            id: Cow::Borrowed(id),
+            name: Cow::Borrowed(name),
+            group: self.0,
+            kind,
+            min: range.0,
+            max: range.1,
+            default,
+            unit,
+        }
+    }
+}
+
+/// A parameter written in the code, as plain `Copy` data, for tables that `const` code builds
+/// by moving entries around (the FM synth's): [`ParamInfo`] owns its names, which `const` code
+/// cannot drop. [`params`] turns a table into parameters.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ParamInfo {
+pub struct ParamSpec {
     pub id: &'static str,
     pub name: &'static str,
+    pub group: &'static str,
+    pub kind: SpecKind,
+    pub min: f64,
+    pub max: f64,
+    pub default: f64,
+    pub unit: Unit,
+}
+
+/// [`ParamKind`] for a [`ParamSpec`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpecKind {
+    Continuous(Scale),
+    Toggle,
+    Choice(&'static [&'static str]),
+    Integer,
+}
+
+impl ParamSpec {
+    pub const fn continuous(
+        id: &'static str,
+        name: &'static str,
+        range: (f64, f64),
+        default: f64,
+        unit: Unit,
+        scale: Scale,
+    ) -> Self {
+        let kind = SpecKind::Continuous(scale);
+        Self { id, name, group: "", kind, min: range.0, max: range.1, default, unit }
+    }
+
+    pub const fn toggle(id: &'static str, name: &'static str, default: bool) -> Self {
+        let default = if default { 1.0 } else { 0.0 };
+        Self { id, name, group: "", kind: SpecKind::Toggle, min: 0.0, max: 1.0, default, unit: Unit::None }
+    }
+
+    /// A whole number in `range`.
+    pub const fn integer(id: &'static str, name: &'static str, range: (i32, i32), default: i32, unit: Unit) -> Self {
+        let (min, max) = (range.0 as f64, range.1 as f64);
+        Self { id, name, group: "", kind: SpecKind::Integer, min, max, default: default as f64, unit }
+    }
+
+    /// A choice between `options`; the default is the option at index `default`.
+    pub const fn choice(
+        id: &'static str,
+        name: &'static str,
+        options: &'static [&'static str],
+        default: usize,
+    ) -> Self {
+        let max = options.len().saturating_sub(1) as f64;
+        let kind = SpecKind::Choice(options);
+        Self { id, name, group: "", kind, min: 0.0, max, default: default as f64, unit: Unit::None }
+    }
+
+    /// The same parameter in `group` ("Op 1", "LFO").
+    pub const fn in_group(self, group: &'static str) -> Self {
+        Self { group, ..self }
+    }
+
+    /// The parameter this describes.
+    pub const fn info(self) -> ParamInfo {
+        let kind = match self.kind {
+            SpecKind::Continuous(scale) => ParamKind::Continuous(scale),
+            SpecKind::Toggle => ParamKind::Toggle,
+            SpecKind::Choice(options) => ParamKind::Choice(Labels::Static(options)),
+            SpecKind::Integer => ParamKind::Integer,
+        };
+        ParamInfo {
+            id: Cow::Borrowed(self.id),
+            name: Cow::Borrowed(self.name),
+            group: self.group,
+            kind,
+            min: self.min,
+            max: self.max,
+            default: self.default,
+            unit: self.unit,
+        }
+    }
+}
+
+/// The parameters a table of [`ParamSpec`]s describes, in order.
+pub const fn params<const N: usize>(specs: &[ParamSpec; N]) -> [ParamInfo; N] {
+    const BLANK: ParamInfo = ParamInfo::toggle("", "", false);
+    let mut out = [BLANK; N];
+    let mut i = 0;
+    while i < N {
+        // `const` code cannot drop the blank it replaces; a blank owns nothing, so forgetting it
+        // loses nothing.
+        std::mem::forget(std::mem::replace(&mut out[i], specs[i].info()));
+        i += 1;
+    }
+    out
+}
+
+/// One parameter of a device. `id` is stable: projects store values by it, so renaming it is a
+/// breaking change; `name` is what the user sees and may change.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamInfo {
+    pub id: Text,
+    pub name: Text,
     /// The part of the device it belongs to ("Op 1", "LFO"), or empty: lists of many
     /// parameters (the automation lanes' menu) gather a group's parameters under its name.
+    /// Built-ins only: a `.sd` graph's parameters have no group.
     pub group: &'static str,
     pub kind: ParamKind,
     pub min: f64,
@@ -103,26 +313,16 @@ impl ParamInfo {
         unit: Unit,
         scale: Scale,
     ) -> Self {
-        Self { id, name, group: "", kind: ParamKind::Continuous(scale), min: range.0, max: range.1, default, unit }
+        InGroup("").continuous(id, name, range, default, unit, scale)
     }
 
     pub const fn toggle(id: &'static str, name: &'static str, default: bool) -> Self {
-        let default = if default { 1.0 } else { 0.0 };
-        Self { id, name, group: "", kind: ParamKind::Toggle, min: 0.0, max: 1.0, default, unit: Unit::None }
+        InGroup("").toggle(id, name, default)
     }
 
     /// A whole number in `range`.
     pub const fn integer(id: &'static str, name: &'static str, range: (i32, i32), default: i32, unit: Unit) -> Self {
-        Self {
-            id,
-            name,
-            group: "",
-            kind: ParamKind::Integer,
-            min: range.0 as f64,
-            max: range.1 as f64,
-            default: default as f64,
-            unit,
-        }
+        InGroup("").integer(id, name, range, default, unit)
     }
 
     /// A choice between `options`; the default is the option at index `default`.
@@ -132,31 +332,74 @@ impl ParamInfo {
         options: &'static [&'static str],
         default: usize,
     ) -> Self {
-        let max = options.len().saturating_sub(1) as f64;
-        Self {
-            id,
-            name,
-            group: "",
-            kind: ParamKind::Choice(options),
-            min: 0.0,
-            max,
-            default: default as f64,
-            unit: Unit::None,
-        }
+        InGroup("").choice(id, name, options, default)
     }
 
-    /// The same parameter in `group` ("Op 1", "LFO").
-    pub const fn in_group(self, group: &'static str) -> Self {
-        Self { group, ..self }
+    /// Parameters in `group` ("Op 1", "LFO"): `ParamInfo::in_group("LFO").continuous(…)`.
+    pub const fn in_group(group: &'static str) -> InGroup {
+        InGroup(group)
     }
 
+    /// What this parameter's values are, without its names: [`ParamShape`].
+    pub fn shape(&self) -> ParamShape {
+        let kind = match self.kind {
+            ParamKind::Continuous(scale) => ShapeKind::Continuous(scale),
+            ParamKind::Toggle => ShapeKind::Toggle,
+            ParamKind::Choice(_) => ShapeKind::Choice,
+            ParamKind::Integer => ShapeKind::Integer,
+        };
+        ParamShape { kind, min: self.min, max: self.max, default: self.default, unit: self.unit }
+    }
+
+    /// [`ParamShape::clamp`].
+    pub fn clamp(&self, value: f64) -> f64 {
+        self.shape().clamp(value)
+    }
+
+    /// [`ParamShape::played`].
+    pub fn played(&self, value: f64) -> f64 {
+        self.shape().played(value)
+    }
+
+    /// [`ParamShape::to_normalized`].
+    pub fn to_normalized(&self, value: f64) -> f64 {
+        self.shape().to_normalized(value)
+    }
+
+    /// [`ParamShape::from_normalized`].
+    pub fn from_normalized(&self, normalized: f64) -> f64 {
+        self.shape().from_normalized(normalized)
+    }
+}
+
+/// A parameter's values without its names: its kind, range, default and unit. `Copy`, and
+/// owning nothing, so the audio thread can keep one (an automation lane) and drop it freely.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ParamShape {
+    pub kind: ShapeKind,
+    pub min: f64,
+    pub max: f64,
+    pub default: f64,
+    pub unit: Unit,
+}
+
+/// [`ParamKind`] without a choice's labels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapeKind {
+    Continuous(Scale),
+    Toggle,
+    Choice,
+    Integer,
+}
+
+impl ParamShape {
     /// `value` made valid for this parameter: limited to its range, rounded to a whole number
     /// for toggles, choices and integers, and the default when it is not a finite number.
     pub fn clamp(&self, value: f64) -> f64 {
         let value = self.limit(value);
         match self.kind {
-            ParamKind::Continuous(_) => value,
-            ParamKind::Toggle | ParamKind::Choice(_) | ParamKind::Integer => value.round(),
+            ShapeKind::Continuous(_) => value,
+            ShapeKind::Toggle | ShapeKind::Choice | ShapeKind::Integer => value.round(),
         }
     }
 
@@ -171,7 +414,7 @@ impl ParamInfo {
     /// [`Self::clamp`] makes it (`docs/spec/automation.md` › Lanes and points).
     pub fn played(&self, value: f64) -> f64 {
         match self.kind {
-            ParamKind::Integer if value.is_finite() => {
+            ShapeKind::Integer if value.is_finite() => {
                 let whole = value.round();
                 let value = if (value - whole).abs() <= 1e-9 { whole } else { value.trunc() };
                 // Adding zero makes -0 (from -0.94) plain 0.
@@ -182,17 +425,17 @@ impl ParamInfo {
     }
 
     fn logarithmic(&self) -> bool {
-        matches!(self.kind, ParamKind::Continuous(Scale::Logarithmic)) && self.min > 0.0 && self.max > self.min
+        matches!(self.kind, ShapeKind::Continuous(Scale::Logarithmic)) && self.min > 0.0 && self.max > self.min
     }
 
     fn gain(&self) -> bool {
-        matches!(self.kind, ParamKind::Continuous(Scale::Gain)) && self.min < self.max - GAIN_SLOPE * (1.0 - GAIN_KNEE)
+        matches!(self.kind, ShapeKind::Continuous(Scale::Gain)) && self.min < self.max - GAIN_SLOPE * (1.0 - GAIN_KNEE)
     }
 
     /// Where `value` sits on the knob, from 0.0 to 1.0. An integer's value between two whole
     /// numbers, which an automation lane can hold, sits where it falls between them, unrounded.
     pub fn to_normalized(&self, value: f64) -> f64 {
-        let value = if matches!(self.kind, ParamKind::Integer) { self.limit(value) } else { self.clamp(value) };
+        let value = if matches!(self.kind, ShapeKind::Integer) { self.limit(value) } else { self.clamp(value) };
         let n = if self.max <= self.min {
             0.0
         } else if self.gain() {
@@ -249,15 +492,23 @@ pub enum Role {
 /// What a device is: its stable id (the model's `DeviceKind::Builtin` id), the name the user
 /// sees, whether it is an effect or an instrument, and its parameters in a fixed order. A
 /// parameter's index in `params` is how the host addresses it while playing.
-#[derive(Debug, Clone, Copy, PartialEq)]
+///
+/// A built-in's is a `const` ([`DeviceInfo::new`]); a device read at run time (a `.sd` graph)
+/// owns its own (#763 › 6).
+#[derive(Debug, Clone, PartialEq)]
 pub struct DeviceInfo {
-    pub id: &'static str,
-    pub name: &'static str,
+    pub id: Text,
+    pub name: Text,
     pub role: Role,
-    pub params: &'static [ParamInfo],
+    pub params: Cow<'static, [ParamInfo]>,
 }
 
 impl DeviceInfo {
+    /// A description written in the code.
+    pub const fn new(id: &'static str, name: &'static str, role: Role, params: &'static [ParamInfo]) -> Self {
+        Self { id: Cow::Borrowed(id), name: Cow::Borrowed(name), role, params: Cow::Borrowed(params) }
+    }
+
     /// The index of the parameter with this id.
     pub fn param_index(&self, id: &str) -> Option<usize> {
         self.params.iter().position(|p| p.id == id)
@@ -479,36 +730,20 @@ impl<const N: usize> ParamBank<N> {
 /// Most live values a device hands its panel ([`Device::readouts`]).
 pub const MAX_READOUTS: usize = 35;
 
-/// A built-in instrument or effect.
-///
-/// `new`-style constructors, [`prepare`](Self::prepare) and dropping run off the audio thread
-/// and may allocate. [`reset`](Self::reset), [`set_param`](Self::set_param),
-/// [`param`](Self::param) and [`process`](Self::process) run on the audio thread: they never
-/// allocate, free, lock, block, log or do I/O, and never panic, whatever values they get.
-pub trait Device: Send {
+/// A device that plays a sample: the host hands it decoded audio, manual slices and source
+/// corrections off the audio thread, and reads where its voices are. Only a sample instrument
+/// implements it ([`Device::samples`]), so every other device carries none of it (#764 › 9).
+pub trait SampleSource {
     /// Current normalized sample read position, when a sample voice is active.
     fn sample_position(&self) -> Option<f32> {
         None
     }
+
     /// Independent sample read heads; inactive voices are None. No allocation.
     fn sample_positions(&self) -> [Option<f32>; 32] {
         let mut positions = [None; 32];
         positions[0] = self.sample_position();
         positions
-    }
-
-    /// Live values for the device's panel (a band's level, its gain change), read after each
-    /// block: up to [`MAX_READOUTS`], in an order the device's panel knows. `None` for a device
-    /// that shows none. Runs on the audio thread: no allocation.
-    fn readouts(&self) -> Option<[f32; MAX_READOUTS]> {
-        None
-    }
-
-    fn info(&self) -> &'static DeviceInfo;
-
-    /// Refresh block context before MIDI events, including events at frame zero. Never allocates.
-    fn set_context(&mut self, context: &ProcessContext) {
-        let _ = context;
     }
 
     /// Share host-owned decoded PCM without copying it. Called off the audio thread.
@@ -545,6 +780,38 @@ pub trait Device: Send {
     /// Exchange prepared corrections during adoption; never release their last owner here.
     fn swap_sample_edits(&mut self, edits: &mut Option<std::sync::Arc<sample_edits::SampleEdits>>) {
         let _ = edits;
+    }
+}
+
+/// A built-in instrument or effect.
+///
+/// `new`-style constructors, [`prepare`](Self::prepare) and dropping run off the audio thread
+/// and may allocate. [`reset`](Self::reset), [`set_param`](Self::set_param),
+/// [`param`](Self::param) and [`process`](Self::process) run on the audio thread: they never
+/// allocate, free, lock, block, log or do I/O, and never panic, whatever values they get.
+pub trait Device: Send {
+    fn info(&self) -> &DeviceInfo;
+
+    /// Live values for the device's panel (a band's level, its gain change), read after each
+    /// block: up to [`MAX_READOUTS`], in an order the device's panel knows. `None` for a device
+    /// that shows none. Runs on the audio thread: no allocation.
+    fn readouts(&self) -> Option<[f32; MAX_READOUTS]> {
+        None
+    }
+
+    /// The device as a sample player, when it is one; `None` by default.
+    fn samples(&mut self) -> Option<&mut dyn SampleSource> {
+        None
+    }
+
+    /// The device as a sample player to read from, when it is one; `None` by default.
+    fn samples_ref(&self) -> Option<&dyn SampleSource> {
+        None
+    }
+
+    /// Refresh block context before MIDI events, including events at frame zero. Never allocates.
+    fn set_context(&mut self, context: &ProcessContext) {
+        let _ = context;
     }
 
     /// Gets ready to run at `sample_rate`, allocating whatever that needs, and clears all state.
