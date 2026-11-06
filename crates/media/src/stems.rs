@@ -122,9 +122,9 @@ struct Boxes {
 }
 
 /// Reads a Stems file's track layout and metadata.
-pub fn read_info(path: &Path) -> Result<StemsInfo, String> {
+pub fn read_info(path: &Path) -> Result<StemsInfo, crate::MediaError> {
     let boxes = read_boxes(path)?;
-    info_from(&boxes)
+    info_from(&boxes).map_err(Into::into)
 }
 
 fn info_from(boxes: &Boxes) -> Result<StemsInfo, String> {
@@ -270,7 +270,7 @@ fn gain_db(value: f64) -> f64 {
 
 /// Decodes every audio track of a Stems file in one pass, the master first, each trimmed by its
 /// edit list. All tracks must share a sample rate (a Stems file's do).
-pub fn decode_streams(path: &Path) -> Result<Vec<AudioData>, String> {
+pub fn decode_streams(path: &Path) -> Result<Vec<AudioData>, crate::MediaError> {
     let boxes = read_boxes(path)?;
     let info = info_from(&boxes)?;
 
@@ -323,7 +323,7 @@ pub fn decode_streams(path: &Path) -> Result<Vec<AudioData>, String> {
         let packet = match format.next_packet() {
             Ok(Some(packet)) => packet,
             Ok(None) | Err(SymphoniaError::ResetRequired) => break,
-            Err(e) => return Err(format!("read error: {e}")),
+            Err(e) => return Err(format!("read error: {e}").into()),
         };
         let capacity_left =
             crate::MAX_DECODED_SAMPLES.saturating_sub(outs.iter().map(|out| out.samples.capacity()).sum());
@@ -344,7 +344,7 @@ pub fn decode_streams(path: &Path) -> Result<Vec<AudioData>, String> {
             }
             // A damaged packet is skipped, as players do.
             Err(SymphoniaError::DecodeError(_) | SymphoniaError::IoError(_)) => continue,
-            Err(e) => return Err(format!("decode error: {e}")),
+            Err(e) => return Err(format!("decode error: {e}").into()),
         }
     }
 
@@ -355,7 +355,7 @@ pub fn decode_streams(path: &Path) -> Result<Vec<AudioData>, String> {
             trim(&mut samples, out.sample_rate, out.channels, edit);
         }
         if samples.is_empty() {
-            return Err(format!("no audio decoded in track {}", track.id));
+            return Err(format!("no audio decoded in track {}", track.id).into());
         }
         result.push(AudioData { sample_rate: out.sample_rate, channels: out.channels, samples });
     }

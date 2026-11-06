@@ -140,7 +140,7 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
     assert!(has_body(&h), "colour-keyed body artwork spans the slot column");
     assert_eq!(
         clicked(&mut h, "Launch Walk on Bass (scene 2)"),
-        [Action::new("clip.launch", json!({"track":2,"scene":2}))]
+        [Action::new("clip.launch", json!({"track":2,"scene":1}))]
     );
     blocks.skin.styles.get_mut(".track-column").unwrap().insert("--suhina-track-artwork".into(), "off".into());
     skin::configure(&blocks.skin);
@@ -172,7 +172,7 @@ fn a_horizontal_session_fader_drags_on_its_drawn_axis_and_keeps_the_native_comma
     assert!(!changes.is_empty());
     assert_eq!(changes.last().unwrap().params["tracks"], json!([1]));
     assert_eq!(changes.last().unwrap().params["db"], json!(-6.0));
-    assert_eq!(changes.last().unwrap().params["continue"], json!(true));
+    assert!(changes.last().unwrap().params["gesture"].is_string());
     skin::configure(&skin::Skin::default());
 }
 
@@ -225,7 +225,7 @@ fn session_density_keeps_slot_launches_and_clip_drop_targets_on_the_drawn_cells(
     assert!((first.height() - 18.0).abs() < 0.01);
     assert_eq!(
         clicked(&mut harness, "Launch Walk on Bass (scene 2)"),
-        [Action::new("clip.launch", json!({"track": 2, "scene": 2}))]
+        [Action::new("clip.launch", json!({"track": 2, "scene": 1}))]
     );
     harness.state_mut().state.drop = Some(DropProbe::for_clip(second.center()));
     harness.run_steps(2);

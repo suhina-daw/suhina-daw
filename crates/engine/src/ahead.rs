@@ -380,13 +380,13 @@ impl StretchThread {
     }
 
     /// Hands a graph's worker to the thread.
-    pub(crate) fn add(&mut self, worker: StretchWorker) -> Result<(), String> {
-        self.inbox.push(worker).map_err(|_| "the stretch worker thread is not taking new work".to_string())
+    pub(crate) fn add(&mut self, worker: StretchWorker) -> Result<(), crate::ControlError> {
+        self.inbox.push(worker).map_err(|_| crate::ControlError::StretchBusy)
     }
 
     /// Hands a graph's launcher preparer to the thread.
-    pub(crate) fn add_preparer(&mut self, preparer: Preparer) -> Result<(), String> {
-        self.preparers.push(preparer).map_err(|_| "the stretch worker thread is not taking new work".to_string())
+    pub(crate) fn add_preparer(&mut self, preparer: Preparer) -> Result<(), crate::ControlError> {
+        self.preparers.push(preparer).map_err(|_| crate::ControlError::StretchBusy)
     }
 }
 

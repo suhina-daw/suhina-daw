@@ -163,7 +163,7 @@ own decision (**Suhina:**), not yet compared with Live 12 (see *To observe*).
 7. **Commands.** `clip.setFollowAction {track, scene, enabled?, time?, linked?, actionA?,
    actionB?, chanceA?, chanceB?}` changes what it is given, in one undo step; actions are named
    `nothing`, `stop`, `again`, `previous`, `next`, `first`, `last`, `any`, `other` or `jump N`
-   (N a scene number, from 1). `project.launcher` lists each slot clip's `follow_action`. The
+   (N a scene number, from 1: the follow action's name, as the file keeps it and the window shows it, unlike the `scene` parameters, which count from 0). `project.launcher` lists each slot clip's `follow_action`. The
    project file stores it as the clip's `follow` ([suhina-format](suhina-format.md)). The
    detail area shows a selected slot clip's follow action and changes it through the same
    command ([Launcher view](ui-session-view.md) › Detail area: follow action).
@@ -332,7 +332,7 @@ The project file keeps them under the launcher ([Suhina format](suhina-format.md
 **Suhina**, our own design: a clip gets into a slot from the arrangement, and from a slot onto
 the arrangement, by copying ([Launcher view](ui-session-view.md) › Between the views).
 
-- `clip.copy {track, scene}` copies the clip in a track's slot (scene from 1); `clip.copy
+- `clip.copy {track, scene}` copies the clip in a track's slot (scene from 0); `clip.copy
   {track, index}` an arrangement clip. Both fill the same clipboard.
 - `clip.paste {track, scene}` puts the copied clip in that track's slot: the track must have clip
   slots (a group or return track has none), the scene must exist, and the track must take the

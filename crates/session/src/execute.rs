@@ -7,10 +7,11 @@
 //! only step that records undo and tells the player.
 
 use serde_json::Value;
-use suhina_model::{Project, TrackId};
+use suhina_model::Project;
 
 use crate::commands::Args;
-use crate::commands::{self, CommandKind, CommandSpec, commands};
+use crate::commands::{self, CommandKind, CommandSpec, Policy, commands};
+use crate::history::{Gesture, Replacing};
 use crate::{CommandError, Session, unknown_command};
 
 /// What [`Session::prepare`] works out before a command runs.
@@ -18,18 +19,15 @@ struct Prepared<'a> {
     spec: &'static CommandSpec,
     /// `params` with clips named by id resolved to where they are now, when any were.
     resolved: Option<Value>,
-    /// The key a `device.setParam` drag gives its gesture, so its calls make one undo step.
+    /// The gesture the call names (#1146): one drag's calls make one undo step.
     gesture: Option<&'a str>,
-    /// The gesture with the track and device it acts on: what one undo step has in common.
-    gesture_key: Option<String>,
-    /// A `device.setParam` call that is one frame of a drag.
-    continuous: bool,
-    /// The undo step a `continue` call may join: the command and its track.
-    step: Option<(&'static str, TrackId)>,
-    /// Whether this call asked to `continue` the step.
-    continued: bool,
-    /// A `replace` call that continues the open step: it runs on the project as it was before
-    /// the step began.
+    /// Whether the call joins the gesture that is open.
+    joins: bool,
+    /// What a command whose calls replace each other ([`Policy::gesture_replaces`]) works on: its
+    /// parameters but the gesture and those it changes live.
+    target: Option<Value>,
+    /// A call that joins an open gesture whose last change was this command on this target: it
+    /// runs on the project as it was before that run of calls began.
     replaces: bool,
 }
 
@@ -49,15 +47,7 @@ impl Session {
         let params = prepared.resolved.as_ref().unwrap_or(params);
         let spec = prepared.spec;
         match spec.kind {
-            CommandKind::Read
-            | CommandKind::Transport
-            | CommandKind::Projects
-            | CommandKind::Plugins
-            | CommandKind::Library
-            | CommandKind::Audio
-            | CommandKind::Plugin => (spec.run)(self, params),
-            CommandKind::History => {
-                self.history.open_step = None;
+            CommandKind::HISTORY => {
                 let scenes = self.project.launcher.clone();
                 let value = (spec.run)(self, params)?;
                 let shift = suhina_engine::SceneShift::between(&scenes, &self.project.launcher);
@@ -66,15 +56,15 @@ impl Session {
                 self.send_armed();
                 Ok(value)
             }
-            CommandKind::Edit => {
+            CommandKind::EDIT => {
                 let before = self.project.clone();
                 // A live value that replaces the last one runs on the project as the step found
                 // it (the top of the undo stack, which the open step pushed); `before` stays the
                 // project as shown, so the player hears the change.
                 if prepared.replaces
-                    && let Some(start) = self.history.undo.last()
+                    && let Some(replacing) = self.history.gesture.as_ref().and_then(|g| g.replacing.as_ref())
                 {
-                    self.project = start.clone();
+                    self.project = replacing.base.clone();
                 }
                 match self.apply(&prepared, params, &before) {
                     Ok(value) => self.commit(&prepared, before).map(|()| value),
@@ -84,6 +74,8 @@ impl Session {
                     }
                 }
             }
+            // Reads, transport, and what runs outside a project's undo history.
+            _ => (spec.run)(self, params),
         }
     }
 
@@ -132,75 +124,48 @@ impl Session {
     /// id, and for an edit, works out which undo step and which drag it belongs to.
     fn prepare<'a>(&mut self, id: &str, params: &'a Value) -> Result<Prepared<'a>, CommandError> {
         let spec = commands().iter().find(|c| c.id == id).ok_or_else(|| unknown_command(id))?;
-        // A command that takes `gesture` and `continuous` makes one undo step of a drag that way.
-        let drags = spec.params.iter().any(|p| p.name == "gesture");
-        let gesture = if drags {
-            match Args::new(params).value("gesture") {
-                None => None,
-                Some(Value::String(s)) if !s.is_empty() && s.len() <= 128 => Some(s.as_str()),
-                Some(_) => return Err("gesture must be 1..128 bytes of text".into()),
-            }
-        } else {
-            None
+        // A command that takes `gesture` makes one undo step of a drag's calls (#1146).
+        let gesture = match spec.params.iter().any(|p| p.name == "gesture") {
+            true => gesture_of(params)?,
+            false => None,
         };
-        let gesture_key = gesture.map(|key| {
-            let args = Args::new(params);
-            format!(
-                "custom:{}:{}:{key}",
-                args.value("track").unwrap_or(&Value::Null),
-                args.value("device").unwrap_or(&Value::Null)
-            )
-        });
-        let continuous = drags && Args::new(params).value("continuous").and_then(Value::as_bool) == Some(true);
-        if (spec.kind == CommandKind::Edit && !continuous && gesture.is_none()) || spec.kind == CommandKind::History {
-            self.history.param_gesture = None;
-        }
         commands::check_params(id, spec.params, params)?;
         // A clip named by its id is found where it is now and handed to the command by position.
         let resolved = commands::resolve_clip_ids(&self.project, spec, params)?;
-        let mut prepared = Prepared {
-            spec,
-            resolved,
-            gesture,
-            gesture_key,
-            continuous,
-            step: None,
-            continued: false,
-            replaces: false,
-        };
-        if spec.kind == CommandKind::Edit {
-            let params = prepared.resolved.as_ref().unwrap_or(params);
-            self.sync.param_edits.clear();
-            self.sync.mixer_edits.clear();
-            self.sync.unheard = false;
-            // A command with a `continue` parameter can add to the step it made last time.
-            prepared.step = spec
-                .params
-                .iter()
-                .any(|p| p.name == "continue")
-                .then(|| self.step_track(params))
-                .flatten()
-                .map(|track| (spec.id, track));
-            prepared.continued = Args::new(params).value("continue").and_then(Value::as_bool) == Some(true);
-            if !prepared.continued || prepared.step != self.history.open_step {
-                self.history.open_step = None;
-            } else {
-                prepared.replaces = Args::new(params).value("replace").and_then(Value::as_bool) == Some(true);
+        let target = replace_target(spec, resolved.as_ref().unwrap_or(params));
+        let mut prepared = Prepared { spec, resolved, gesture, target, joins: false, replaces: false };
+        match spec.kind {
+            // Undo and redo end the gesture first, then undo or redo it as one step.
+            CommandKind::HISTORY => self.history.gesture = None,
+            CommandKind::EDIT => {
+                self.sync.param_edits.clear();
+                self.sync.mixer_edits.clear();
+                self.sync.unheard = false;
+                let open = self.history.gesture.as_ref();
+                prepared.joins = gesture.is_some() && open.map(|g| g.id.as_str()) == gesture;
+                if !prepared.joins {
+                    // Any other edit, or a call with another gesture, ends the one that is open.
+                    self.history.gesture = None;
+                }
+                prepared.replaces =
+                    prepared.joins
+                        && prepared.target.is_some()
+                        && self.history.gesture.as_ref().and_then(|g| g.replacing.as_ref()).is_some_and(|last| {
+                            last.command == spec.id && Some(&last.target) == prepared.target.as_ref()
+                        });
             }
+            _ => {}
         }
         Ok(prepared)
     }
 
-    /// The track a `continue` step is kept for: the command's track, the first of several, or for
-    /// a command with no track (the main output's), a mark of its own.
-    fn step_track(&self, params: &Value) -> Option<TrackId> {
-        commands::track_id(&self.project, params)
-            .ok()
-            .or_else(|| commands::track_list(&self.project, params).ok().and_then(|l| l.first().copied()))
-            .or_else(|| {
-                (!params.as_object().is_some_and(|o| o.contains_key("track") || o.contains_key("tracks")))
-                    .then_some(TrackId(u32::MAX))
-            })
+    /// `history.endGesture {gesture}`: closes the gesture if it is the open one. Whether it was.
+    pub(crate) fn end_gesture(&mut self, gesture: &str) -> bool {
+        let open = self.history.gesture.as_ref().is_some_and(|g| g.id == gesture);
+        if open {
+            self.history.gesture = None;
+        }
+        open
     }
 
     /// Runs an edit on the project, gives what it added an id and keeps the tracks' colours, and
@@ -241,22 +206,24 @@ impl Session {
             let shift = suhina_engine::SceneShift::between(&before.launcher, &self.project.launcher);
             self.history.changes = self.history.changes.wrapping_add(1);
             let changes = std::mem::take(&mut self.sync.param_edits);
-            // A call with a gesture may send no parameter edit (it turned a lane off, or the device
-            // is in a group), and is still one step with the rest of its gesture.
-            let gesture = prepared.gesture_key.clone().or_else(|| {
-                changes.first().map(|change| format!("parameter:{}:{}:{}", change.track.0, change.device, change.param))
-            });
-            if !changes.is_empty() || prepared.gesture.is_some() {
-                if (!prepared.continuous && prepared.gesture.is_none()) || self.history.param_gesture != gesture {
-                    self.push_undo(before);
+            // The first call of a gesture, or an edit outside one, makes a step; a call that joins
+            // the open gesture adds to its step. The gesture opens with its first change.
+            // A command whose calls replace each other keeps what the gesture changed before its
+            // run of calls: it replaces its own last change only.
+            let kept = if prepared.replaces { self.history.gesture.take().and_then(|g| g.replacing) } else { None };
+            let replacing = match (kept, &prepared.target) {
+                (Some(last), _) => Some(last),
+                (None, Some(target)) => {
+                    Some(Replacing { command: prepared.spec.id, target: target.clone(), base: before.clone() })
                 }
-                self.history.param_gesture = prepared.continuous.then_some(gesture).flatten();
-            } else if self.history.open_step.is_some() {
+                (None, None) => None,
+            };
+            if prepared.joins {
                 self.history.redo.clear();
             } else {
                 self.push_undo(before);
-                self.history.open_step = prepared.step;
             }
+            self.history.gesture = prepared.gesture.map(|id| Gesture { id: id.to_owned(), replacing });
             // A parameter change goes to the engine as a message; anything else, or a message
             // that cannot be sent, as a new graph.
             let mixer = std::mem::take(&mut self.sync.mixer_edits);
@@ -275,20 +242,42 @@ impl Session {
                     _ => false,
                 };
             if !sent {
-                match self.update_player(shift) {
+                match self.follow_player(shift) {
                     Ok(()) => self.sync.behind = false,
                     // A drag sends a value every frame and may outrun the engine taking new
-                    // graphs: the engine catches up on a later frame.
-                    Err(_) if prepared.continued => self.sync.behind = true,
-                    Err(e) => return Err(e),
+                    // graphs: the engine catches up on a later frame. Any other failure (a graph
+                    // that cannot be built) is the edit's error, as outside a gesture.
+                    Err(lag) if lag.transient && prepared.gesture.is_some() => self.sync.behind = true,
+                    Err(lag) => return Err(lag.error),
                 }
                 // The edit may have changed what an armed track hears.
                 self.send_armed();
             }
         }
-        if !prepared.continuous {
-            self.history.param_gesture = None;
-        }
         Ok(())
+    }
+}
+
+/// What a call of a command whose calls replace each other works on: its parameters but the
+/// `gesture` and those the command changes live. None for any other command.
+fn replace_target(spec: &CommandSpec, params: &Value) -> Option<Value> {
+    let Policy { gesture_replaces: live, .. } = spec.policy;
+    let mut target = params.as_object()?.clone();
+    if live.is_empty() {
+        return None;
+    }
+    target.remove("gesture");
+    for name in live {
+        target.remove(*name);
+    }
+    Some(Value::Object(target))
+}
+
+/// The `gesture` of a call: 1 to 128 bytes of text, or none.
+fn gesture_of(params: &Value) -> Result<Option<&str>, CommandError> {
+    match Args::new(params).value("gesture") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) if !s.is_empty() && s.len() <= 128 => Ok(Some(s.as_str())),
+        Some(_) => Err("gesture must be 1 to 128 bytes of text".into()),
     }
 }

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 use suhina_library::Library;
 use suhina_model::*;
-use suhina_session::{Projects, Session};
+use suhina_session::{OpenOptions, Projects, Session};
 use suhina_test_support::{WavFormat, write_wav};
 
 fn temp(name: &str) -> PathBuf {
@@ -65,6 +65,14 @@ fn a_saved_projects_own_audio_outside_its_folder_opens_with_it_again() {
     let (pool, warnings) = suhina_media::load_project_audio_trusted(reopened.project(), &folder, &trusted);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(pool.files.len(), 1);
+    // `Projects::open_path`, as the window, the CLI and the MCP server open a project (#764 › 3):
+    // the trusted sample is decoded with it, and nothing without audio asked for.
+    let (opened, warnings) = projects.open_path(&song, OpenOptions { audio: true }).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(opened.audio().files.len(), 1);
+    assert_eq!(opened.trusted(), &projects.trusted_audio_for(Some(&song)));
+    let (bare, _) = projects.open_path(&song, OpenOptions::default()).unwrap();
+    assert!(bare.audio().files.is_empty());
 
     // The trust is kept in the library's file, for the next run.
     let mut again = Library::new(Some(settings));

@@ -688,7 +688,7 @@ static BACKUP_COMMANDS: &[CommandSpec<Projects>] = &[CommandSpec {
         ),
         optional("cleanUp", ParamType::Bool, "true keeps only the newest 20 backups of each project"),
     ],
-    kind: CommandKind::Projects,
+    kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
     run: autosave,
     policy: Policy::DEFAULT,
 }];

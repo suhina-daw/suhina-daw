@@ -1111,7 +1111,7 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     let absolute = crate::files::absolute(std::path::Path::new(path));
     let absolute_text = absolute.display().to_string();
     let asset = session.load_device_file(&kind, &absolute_text).map_err(CommandError)?;
-    let name = asset.name(&absolute).unwrap_or_default();
+    let name = suhina_device_registry::asset_name(&asset, &absolute).unwrap_or_default();
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
@@ -1431,7 +1431,7 @@ pub(crate) fn set_automation(session: &mut Session, params: &Value) -> Result<Va
     let name = if plugin { id.to_string() } else { param.to_string() };
     device.automation.retain(|lane| if plugin { param_id(&lane.param) != Some(id) } else { lane.param != name });
     if !points.is_empty() {
-        device.automation.push(AutomationLane { param: name.clone(), points, enabled: true });
+        device.automation.push(AutomationLane { param: name.clone(), points: points.into(), enabled: true });
     }
     let param = if plugin { json!(id) } else { json!(name) };
     Ok(json!({ "device": index, "param": param, "points": count }))

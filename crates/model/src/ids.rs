@@ -12,6 +12,9 @@
 //! column, then the channels' devices, a group before the devices in it), which is also how a
 //! file written before ids existed gets them.
 //!
+//! Markers, automation points, tempo changes and notes have ids too, held by the lists they are in and
+//! not written to the file ([`crate::IdList`], #763 › 1).
+//!
 //! Tracks and channels have ids of their own ([`TrackId`], [`ChannelId`]);
 //! [`Project::track`] and [`Project::channel`] find one by it.
 
@@ -88,6 +91,40 @@ macro_rules! object_id {
 
 object_id!(ClipId, LaneId, SceneId, DeviceId);
 
+/// Identifies an arrangement [`Marker`](crate::Marker) in the arrangement's markers (#763 › 1).
+/// Stays the same when the marker moves or is renamed. Given by [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MarkerId(pub u64);
+
+/// Identifies an [`AutomationPoint`](crate::AutomationPoint) on its lane (#763 › 1). Stays the
+/// same when the point is dragged; a point a range tool draws anew is a new one. Given by
+/// [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PointId(pub u64);
+
+/// Identifies a [`TempoPoint`](crate::TempoPoint), a change in the tempo map (#763 › 1). Given by
+/// [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TempoPointId(pub u64);
+
+/// Identifies a [`Note`](crate::Note) in its content's notes (#1182). Stays the same when the note
+/// is moved, resized or changed; a copy (paste, duplicate, a split's second half) is a new note.
+/// Given by [`crate::IdList`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct NoteId(pub u64);
+
+macro_rules! list_ids {
+    ($($id:ident),*) => {$(
+        impl fmt::Display for $id {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+    )*};
+}
+
+list_ids!(MarkerId, PointId, TempoPointId, NoteId);
+
 /// The counter has reached the largest id there is: the project can name no more objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IdsExhausted;
@@ -154,9 +191,9 @@ impl Project {
         lanes.chain(clips).chain(scenes).chain(devices).max().unwrap_or(0)
     }
 
-    /// Moves the counter past every id in use, then gives every lane, clip and scene that has no
-    /// id ([`ClipId::NONE`]) the next ones, in document order. Objects that have an id keep it,
-    /// so calling it again changes nothing. Fails, leaving the objects it did not reach without
+    /// Moves the counter past every id in use, then gives every lane, clip, scene and device that
+    /// has no id ([`ClipId::NONE`]) the next ones, in document order. Objects that have an id keep
+    /// it, so calling it again changes nothing. Fails, leaving the objects it did not reach without
     /// an id, when the counter runs out.
     pub fn assign_ids(&mut self) -> Result<(), IdsExhausted> {
         let used = self.max_object_id();

@@ -69,15 +69,18 @@ fn project(chains: &[usize]) -> Project {
             length: 64.0,
             lanes: vec![ContentLane {
                 target: None,
-                data: LaneData::Notes(vec![Note {
-                    time: 0.0,
-                    duration: 64.0,
-                    key: 69,
-                    velocity: 1.0,
-                    release_velocity: 0.5,
-                    channel: 0,
-                    muted: false,
-                }]),
+                data: LaneData::Notes(
+                    vec![Note {
+                        time: 0.0,
+                        duration: 64.0,
+                        key: 69,
+                        velocity: 1.0,
+                        release_velocity: 0.5,
+                        channel: 0,
+                        muted: false,
+                    }]
+                    .into(),
+                ),
             }]
             .into(),
             extensions: Extensions::default(),
@@ -156,7 +159,7 @@ fn start_chains(chains: &[Vec<&str>], sample_rate: u32) -> (Renderer, Vec<Plugin
     }
     let renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
         sample_rate,
         RenderOptions::PLAYING,
     )

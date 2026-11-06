@@ -28,7 +28,7 @@ fn two_synths() -> Project {
 }
 
 fn stopped(project: &Project) -> Renderer {
-    Renderer::stopped(project, &AudioPool::new(), SR).unwrap()
+    Renderer::stopped(project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap()
 }
 
 fn peak(out: &[f32]) -> f32 {

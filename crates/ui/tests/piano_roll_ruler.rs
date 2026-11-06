@@ -48,7 +48,13 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, project: Project) -> Harnes
 }
 
 fn engine() -> suhina_engine::Renderer {
-    suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap()
+    suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap()
 }
 
 /// The demo project with the edited clip not looping: it plays its 48 beats once.
@@ -69,7 +75,7 @@ fn notes(h: &Harness<'static, App>) -> Vec<Note> {
     let session = h.state().session().unwrap();
     let project = session.project();
     match &project.content(clip(h).content).unwrap().lanes[0].data {
-        LaneData::Notes(notes) => notes.clone(),
+        LaneData::Notes(notes) => notes.to_vec(),
         LaneData::Audio(_) => Vec::new(),
     }
 }

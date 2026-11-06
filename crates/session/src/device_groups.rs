@@ -525,9 +525,10 @@ pub(crate) fn branch_set_solo(session: &mut Session, params: &Value) -> Result<V
     })
 }
 
-/// After a branch's volume, pan, mute or solo changed: a playing engine takes it as a message
-/// when the group is at the top of its chain, as a track's fader is (#763 › 4); a group inside
-/// another takes a new graph. Hands `value`, the command's result, back.
+/// After a branch's volume, pan, mute or solo changed: a playing engine takes it as a message,
+/// as a track's fader is, for a group at the top of its chain or inside another (#763 › 4). The
+/// message names the group by its number ([`suhina_engine::group_number`]). Hands `value`, the
+/// command's result, back.
 fn live_branch(
     session: &mut Session,
     params: &Value,
@@ -538,11 +539,13 @@ fn live_branch(
 ) -> Value {
     let Ok(track) = crate::commands::track_or_main_id(&session.project, params) else { return value };
     let Some(channel) = session.project.channel_of_track(track) else { return value };
-    if let Ok([group]) = device_path(&channel.devices, params, "device").as_deref() {
+    if let Ok(path) = device_path(&channel.devices, params, "device")
+        && let Some(group) = suhina_engine::group_number(&channel.devices, &path)
+    {
         session.sync.mixer_edits = vec![crate::ParamEdit {
             track,
             device: suhina_engine::MIXER_BRANCH,
-            param: suhina_engine::branch_param(*group, branch, what),
+            param: suhina_engine::branch_param(group, branch, what),
             value: level,
         }];
     }

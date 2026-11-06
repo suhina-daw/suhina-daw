@@ -29,7 +29,8 @@ fn half() -> Device {
 }
 
 fn render(devices: Vec<Device>) -> Vec<f32> {
-    render_offline(&project(vec![note(0.0, 2.0, 69)], 2.0, devices), SR, 512).unwrap_or_default()
+    render_offline(&project(vec![note(0.0, 2.0, 69)], 2.0, devices), SR, 512, suhina_device_registry::factory())
+        .unwrap_or_default()
 }
 
 fn scaled(signal: &[f32], by: f32) -> Vec<f32> {
@@ -146,9 +147,9 @@ fn the_sound_does_not_depend_on_the_block_size() {
         group(vec![branch(vec![device("overdrive", &[("drive", 0.7)])]), muted, branch(vec![])], &[("mix", 0.6)]),
     ];
     let p = project(vec![note(0.0, 2.0, 69), note(0.5, 1.0, 76)], 2.0, devices);
-    let big = render_offline(&p, SR, 512).unwrap_or_default();
+    let big = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap_or_default();
     for frames in [64, 100, 1024] {
-        let small = render_offline(&p, SR, frames).unwrap_or_default();
+        let small = render_offline(&p, SR, frames, suhina_device_registry::factory()).unwrap_or_default();
         assert!(max_diff(&small, &big) < 1e-5, "{frames}: {}", max_diff(&small, &big));
     }
 }
@@ -156,11 +157,18 @@ fn the_sound_does_not_depend_on_the_block_size() {
 #[test]
 fn instruments_in_a_group_are_layered_and_hear_every_note() {
     let notes = vec![note(0.0, 1.0, 60), note(0.5, 1.0, 67)];
-    let one = render_offline(&project(notes.clone(), 2.0, vec![device("fm-synth", &[])]), SR, 512).unwrap_or_default();
+    let one = render_offline(
+        &project(notes.clone(), 2.0, vec![device("fm-synth", &[])]),
+        SR,
+        512,
+        suhina_device_registry::factory(),
+    )
+    .unwrap_or_default();
     // The mix is fixed at 1 in an instrument group: the 0 here changes nothing.
     let layered =
         group(vec![branch(vec![device("fm-synth", &[])]), branch(vec![device("fm-synth", &[])])], &[("mix", 0.0)]);
-    let two = render_offline(&project(notes, 2.0, vec![layered]), SR, 512).unwrap_or_default();
+    let two = render_offline(&project(notes, 2.0, vec![layered]), SR, 512, suhina_device_registry::factory())
+        .unwrap_or_default();
     assert!(peak(&one) > 0.01);
     let len = one.len().min(two.len());
     let doubled = scaled(&one[..len], 2.0);
@@ -185,16 +193,24 @@ fn an_edit_to_a_branch_keeps_the_group_playing() {
     if let Some(g) = edited.channels[0].devices[0].as_group_mut() {
         g.branches[0].volume = 0.5;
     }
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
-            .unwrap_or_else(|e| panic!("{e:?}"));
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap_or_else(|e| panic!("{e:?}"));
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 50, 480);
     controller.update(&edited).unwrap_or_else(|e| panic!("{e}"));
     out.extend(blocks(&mut renderer, 100, 480));
-    let mut untouched =
-        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
-            .unwrap_or_else(|e| panic!("{e:?}"));
+    let mut untouched = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap_or_else(|e| panic!("{e:?}"));
     let reference = blocks(&mut untouched, 150, 480);
     // The note carries on through the swap (no new attack), and after the 20 ms ramp the branch
     // plays at half its level.
@@ -243,6 +259,7 @@ fn a_nested_group_reports_its_latency_to_the_outer_one() {
         sample_rate: SR,
         audio: &audio,
         assets: &assets,
+        devices: &*suhina_device_registry::factory(),
         plugins: &mut plugins,
         keys: &[],
         channel: ChannelId(1),
@@ -289,7 +306,14 @@ fn a_sampler_in_a_group_plays_its_sample() {
     let pool = noise_pool();
     let play = |devices: Vec<Device>| {
         let project = project(vec![note(0.0, 1.0, 60)], 1.0, devices);
-        crate::render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 512, None).unwrap_or_default()
+        crate::render_offline_from(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            512,
+            None,
+        )
+        .unwrap_or_default()
     };
     let plain = play(vec![sampler()]);
     assert!(peak(&plain) > 0.01, "the sampler sounds at all");
@@ -314,7 +338,14 @@ fn a_sampler_in_a_group_plays_its_manual_slices() {
     let pool = noise_pool();
     let play = |devices: Vec<Device>| {
         let project = project(vec![note(0.0, 1.0, 61)], 1.0, devices);
-        crate::render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 512, None).unwrap_or_default()
+        crate::render_offline_from(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            512,
+            None,
+        )
+        .unwrap_or_default()
     };
     let slices = [0.25, 0.5, 0.75];
     let plain = play(vec![sliced_sampler(&slices)]);
@@ -369,16 +400,24 @@ fn a_lane_in_a_group_keeps_playing_through_a_graph_swap() {
         device.params = vec![DeviceParam::new("gain", -40.0)];
         device.automation = vec![lane("gain", &[(0.0, 0.0), (2.0, 0.0), (2.0, -12.0412), (3.0, -12.0412)])];
     }
-    let mut renderer =
-        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
-            .unwrap_or_else(|e| panic!("{e:?}"));
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap_or_else(|e| panic!("{e:?}"));
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 50, 480);
     controller.update(&edited).unwrap_or_else(|e| panic!("{e}"));
     out.extend(blocks(&mut renderer, 100, 480));
-    let mut untouched =
-        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
-            .unwrap_or_else(|e| panic!("{e:?}"));
+    let mut untouched = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap_or_else(|e| panic!("{e:?}"));
     let reference = blocks(&mut untouched, 150, 480);
     // The swap comes before the jump at beat 2 (frame 48 000): until then the lane's unity is
     // heard, not the edited value; after it, a quarter of the untouched project's half.
@@ -404,13 +443,14 @@ fn a_file_device_in_a_group_is_known_by_its_file() {
             sample_rate: SR,
             audio: &audio,
             assets: &assets,
+            devices: &*suhina_device_registry::factory(),
             plugins: &mut plugins,
             keys: &[],
             channel: ChannelId(1),
             frames_per_beat: 24_000.0,
         };
         let built = outer.as_group().and_then(|g| builder.group(&outer, g, 0, &[0])).map(|b| b.id);
-        (built, crate::chain::device_identity("nam-cab-loader", &cab, &audio))
+        (built, crate::chain::device_identity("nam-cab-loader", &cab, &audio, &*suhina_device_registry::factory()))
     };
     let (first, chain_first) = identity(b"one.wav");
     let (again, _) = identity(b"one.wav");
@@ -435,7 +475,15 @@ fn a_branch_moves_while_the_group_plays_without_a_new_graph() {
     use crate::{BranchValue, MIXER_BRANCH, branch_param};
     let devices = || vec![group(vec![branch(vec![device("utility", &[])]), branch(vec![device("utility", &[])])], &[])];
     let project = project(vec![note(0.0, 8.0, 69)], 8.0, devices());
-    let play = || crate::Renderer::build(&project, RenderInputs::default(), SR, RenderOptions::PLAYING).unwrap();
+    let play = || {
+        crate::Renderer::build(
+            &project,
+            RenderInputs::new(suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap()
+    };
     let mut untouched = play();
     let reference = blocks(&mut untouched, 40, 480);
     let mut renderer = play();
@@ -471,7 +519,13 @@ fn a_branch_parameter_names_its_group_branch_and_value() {
 fn a_pan_message_moves_a_branch_by_the_channel_law() {
     use crate::{BranchValue, MIXER_BRANCH, branch_param};
     let project = project(vec![note(0.0, 8.0, 69)], 8.0, vec![group(vec![branch(vec![device("utility", &[])])], &[])]);
-    let mut renderer = crate::Renderer::build(&project, RenderInputs::default(), SR, RenderOptions::PLAYING).unwrap();
+    let mut renderer = crate::Renderer::build(
+        &project,
+        RenderInputs::new(suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     blocks(&mut renderer, 2, 480);
     controller.set_device_param(TrackId(1), MIXER_BRANCH, branch_param(0, 0, BranchValue::Pan), -1.0).unwrap();
@@ -479,4 +533,81 @@ fn a_pan_message_moves_a_branch_by_the_channel_law() {
     let right: f32 = out[10 * 960..].iter().skip(1).step_by(2).map(|s| s.abs()).fold(0.0, f32::max);
     let left: f32 = out[10 * 960..].iter().step_by(2).map(|s| s.abs()).fold(0.0, f32::max);
     assert!(right < 1e-4 && left > 0.1, "left {left}, right {right}");
+}
+
+/// A branch of a group inside another group takes the message path too, named by the inner
+/// group's number (#763 › 4).
+#[test]
+fn a_branch_of_a_nested_group_moves_while_it_plays() {
+    use crate::{BranchValue, MIXER_BRANCH, branch_param, group_number};
+    let inner = || group(vec![branch(vec![device("utility", &[])]), branch(vec![device("utility", &[])])], &[]);
+    let devices = vec![device("utility", &[]), group(vec![branch(vec![inner()])], &[])];
+    assert_eq!(group_number(&devices, &[1]), Some(0));
+    assert_eq!(group_number(&devices, &[1, 0, 0]), Some(1));
+    assert_eq!(group_number(&devices, &[0]), None);
+    let project = project(vec![note(0.0, 8.0, 69)], 8.0, devices);
+    let play = || {
+        crate::Renderer::build(
+            &project,
+            RenderInputs::new(suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap()
+    };
+    let reference = blocks(&mut play(), 20, 480);
+    let mut renderer = play();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 10, 480);
+    controller.set_device_param(TrackId(1), MIXER_BRANCH, branch_param(1, 1, BranchValue::Mute), 1.0).unwrap();
+    out.extend(blocks(&mut renderer, 10, 480));
+    assert!((level_ratio(&out, &reference, 12 * 480..20 * 480) - 0.5).abs() < 0.01);
+}
+
+#[test]
+fn groups_are_numbered_depth_first_whether_they_run_or_not() {
+    use crate::group_number;
+    let mut off = group(vec![branch(vec![group(vec![branch(vec![])], &[])])], &[]);
+    off.enabled = false;
+    let devices = vec![off, group(vec![branch(vec![]), branch(vec![group(vec![branch(vec![])], &[])])], &[])];
+    assert_eq!(group_number(&devices, &[0]), Some(0));
+    assert_eq!(group_number(&devices, &[0, 0, 0]), Some(1));
+    assert_eq!(group_number(&devices, &[1]), Some(2));
+    assert_eq!(group_number(&devices, &[1, 1, 0]), Some(3));
+    assert_eq!(group_number(&devices, &[1, 0, 0]), None);
+}
+
+/// A group that keeps running through an edit takes its new number, so a branch message built
+/// from the new project reaches it (#1149 review).
+#[test]
+fn a_group_keeps_its_message_address_when_an_edit_renumbers_it() {
+    use crate::{BranchValue, MIXER_BRANCH, branch_param, group_number};
+    let a = group(vec![branch(vec![device("utility", &[])])], &[]);
+    let b = group(vec![branch(vec![device("utility", &[])])], &[]);
+    let mut project = project(vec![note(0.0, 8.0, 69)], 8.0, vec![a, b]);
+    // The devices keep their ids across the edit, as the session's edits do.
+    project.assign_ids().unwrap();
+    let kept = project.channels[0].devices[1].id;
+    assert!(kept.is_some());
+    let mut edited = project.clone();
+    edited.channels[0].devices.remove(0);
+    // After deleting A, B is group 0 of the project, though it runs as group 1.
+    assert_eq!(edited.channels[0].devices[0].id, kept);
+    assert_eq!(group_number(&edited.channels[0].devices, &[0]), Some(0));
+    let mut renderer = crate::Renderer::build(
+        &project,
+        RenderInputs::new(suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let before = blocks(&mut renderer, 10, 480);
+    assert!(peak(&before[5 * 960..]) > 0.05);
+    controller.update(&edited).unwrap_or_else(|e| panic!("{e}"));
+    controller.set_device_param(TrackId(1), MIXER_BRANCH, branch_param(0, 0, BranchValue::Mute), 1.0).unwrap();
+    blocks(&mut renderer, 10, 480);
+    // B's only branch is muted, so nothing is left after the ramp.
+    let after = blocks(&mut renderer, 10, 480);
+    assert!(peak(&after) < 1e-4, "{}", peak(&after));
 }

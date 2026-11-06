@@ -108,7 +108,7 @@ fn project() -> Project {
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, 4.0)],
             }],
-            markers: Vec::new(),
+            markers: Default::default(),
             takes: Vec::new(),
         },
         ..Project::default()
@@ -188,7 +188,7 @@ fn an_export_gathers_its_states_over_frames_without_the_window_waiting() {
     // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
-    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
@@ -243,7 +243,7 @@ fn a_gather_keeps_the_reads_across_a_project_switch() {
     let mut projects = suhina_session::Projects::new();
     let id =
         projects.add(Session::new(opened.clone()), Some("gain".into())).map_err(|e| e.message().to_string()).unwrap();
-    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let device = json!({ "track": 1, "device": 0 });
     projects.get_mut(id).unwrap().attach_player(Player::new(renderer.controller(), None));
     projects.get_mut(id).unwrap().rack_mut().set_env(env());
@@ -326,7 +326,7 @@ fn a_cancelled_gather_starts_nothing_on_a_late_reply() {
     // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
-    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
@@ -364,7 +364,7 @@ fn a_gather_past_its_deadline_says_which_plug_in_did_not_answer() {
     // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
-    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
@@ -461,10 +461,10 @@ fn an_export_plays_the_running_plug_ins_state_without_a_project_change() {
     // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
-    let dry = render_offline(&opened, SR, 256).unwrap();
+    let dry = render_offline(&opened, SR, 256, suhina_session::devices()).unwrap();
     let peak = |samples: &[f32]| samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
     assert!(peak(&dry) > 0.1, "the notes sound: {}", peak(&dry));
-    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
@@ -496,7 +496,12 @@ fn an_export_plays_the_running_plug_ins_state_without_a_project_change() {
     let ratio = export_peak(&mut session) / peak(&dry);
     assert!((ratio - EDITOR_GAIN).abs() < 1e-4, "{ratio}");
     assert!(
-        (render_offline(&opened, SR, 256).unwrap().iter().fold(0.0f32, |m, s| m.max(s.abs())) - peak(&dry)).abs()
+        (render_offline(&opened, SR, 256, suhina_session::devices())
+            .unwrap()
+            .iter()
+            .fold(0.0f32, |m, s| m.max(s.abs()))
+            - peak(&dry))
+        .abs()
             < 1e-4
     );
 

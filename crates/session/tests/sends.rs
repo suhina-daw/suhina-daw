@@ -168,8 +168,12 @@ fn returns_are_added_renamed_and_removed_with_their_sends() {
 
 #[test]
 fn a_send_set_by_command_is_heard_through_the_return() {
-    let peak =
-        |p: &Project| suhina_engine::render_offline(p, 48_000, 512).unwrap().iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let peak = |p: &Project| {
+        suhina_engine::render_offline(p, 48_000, 512, suhina_session::devices())
+            .unwrap()
+            .iter()
+            .fold(0.0f32, |m, s| m.max(s.abs()))
+    };
     let mut session = Session::new(project());
     run(&mut session, "track.setVolume", json!({ "tracks": ["Bass"], "db": "-inf" })).unwrap();
     assert!(peak(session.project()) < 1e-6);
@@ -186,11 +190,11 @@ fn a_send_set_by_command_is_heard_through_the_return() {
 fn a_send_dragged_is_one_undo_step() {
     let mut session = Session::new(project_built());
     let before = session.project().clone();
-    for (level, continued) in [(-30.0, false), (-20.0, true), (-10.0, true), (-6.0, true)] {
+    for level in [-30.0, -20.0, -10.0, -6.0] {
         run(
             &mut session,
             "track.setSend",
-            json!({ "track": "Bass", "return": "A Return", "level": level, "continue": continued }),
+            json!({ "track": "Bass", "return": "A Return", "level": level, "gesture": "send" }),
         )
         .unwrap();
     }
@@ -203,11 +207,11 @@ fn a_send_dragged_is_one_undo_step() {
 fn several_tracks_take_their_own_values_in_one_undo_step() {
     let mut session = Session::new(project());
     let send = |session: &Session, channel: u32| sends(session, channel).first().map(|s| s.level);
-    for (values, continued) in [([-6.0, -12.0], false), ([-3.0, -200.0], true)] {
+    for values in [[-6.0, -12.0], [-3.0, -200.0]] {
         run(
             &mut session,
             "track.setMixerValues",
-            json!({ "tracks": ["Bass", "Lead"], "control": "send", "return": "A Return", "values": values, "continue": continued }),
+            json!({ "tracks": ["Bass", "Lead"], "control": "send", "return": "A Return", "values": values, "gesture": "sends" }),
         )
         .unwrap();
     }
@@ -243,4 +247,33 @@ fn several_tracks_take_their_own_values_in_one_undo_step() {
     ] {
         assert!(run(&mut session, "track.setMixerValues", bad.clone()).is_err(), "{bad}");
     }
+}
+
+/// A send turned up from silence is not in the playing graph: its first move builds one, and the
+/// rest of the drag reaches the engine as messages (#763 › 4).
+#[test]
+fn a_send_turned_up_from_silence_takes_one_graph_then_messages() {
+    let project = project();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
+    let mut session = Session::new(project);
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    // No gesture: a move that needed a new graph would fail here, not catch up later.
+    let level = |db: f64| json!({ "track": "Bass", "return": "A Return", "level": db });
+    run(&mut session, "track.setSend", level(-30.0)).unwrap();
+    // Every later graph waits: the engine's queue of new graphs fills.
+    let mut full = false;
+    for i in 0..64 {
+        if run(&mut session, "track.setMute", json!({ "tracks": ["Lead"], "mute": i % 2 == 0 })).is_err() {
+            full = true;
+            break;
+        }
+    }
+    assert!(full, "the queue of new graphs is full");
+    for db in [-24.0, -18.0, -12.0] {
+        run(&mut session, "track.setSend", level(db)).unwrap();
+    }
+    let mut out = vec![0.0f32; 960];
+    renderer.process(&mut out);
 }

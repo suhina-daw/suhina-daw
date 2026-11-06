@@ -33,6 +33,7 @@ mod main_channel;
 mod meters;
 mod midi;
 mod note_gestures;
+mod note_ids;
 mod note_quantize;
 mod note_tools;
 mod notes;

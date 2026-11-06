@@ -39,7 +39,10 @@
 pub mod app;
 pub mod arrangement;
 pub mod browser;
-pub mod demo;
+/// The demo project, which the session keeps for the app and the CLI alike.
+pub mod demo {
+    pub use suhina_session::{demo_project, grouped_project};
+}
 pub mod detail;
 pub mod interaction;
 pub mod kit;

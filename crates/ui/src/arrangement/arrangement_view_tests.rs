@@ -690,7 +690,20 @@ fn a_narrow_clip_draws_no_name_and_nothing_outside_itself() {
             let lanes = ui.painter().with_clip_rect(view);
             let beat_width = width / clip.length.max(1e-3) as f32;
             let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * beat_width;
-            paint_clip(&lanes, rect, lane, &clip, Shown::of(&clip), clip.start, &x_of, beat_width, &timeline, true);
+            let look = ArrangementViewState::default().clip_look();
+            paint_clip(
+                &lanes,
+                rect,
+                lane,
+                &clip,
+                Shown::of(&clip),
+                clip.start,
+                &x_of,
+                beat_width,
+                &timeline,
+                true,
+                &look,
+            );
         });
         output.textures_delta.clear();
         // The clip's own shapes: those painted within the lanes' view.

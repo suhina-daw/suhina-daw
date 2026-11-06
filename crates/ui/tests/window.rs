@@ -325,7 +325,8 @@ impl suhina_session::AudioSystem for StandAudio {
         _choice: &suhina_session::OutputChoice,
         _previous: Option<suhina_session::Player>,
     ) -> Result<suhina_session::audio::Opened, String> {
-        let mut renderer = suhina_engine::Renderer::stopped(project, audio, 48_000).map_err(|e| e.to_string())?;
+        let mut renderer = suhina_engine::Renderer::stopped(project, audio, 48_000, suhina_session::devices())
+            .map_err(|e| e.to_string())?;
         let player = suhina_session::Player::new(renderer.controller(), None);
         Ok(suhina_session::audio::Opened { player, notice: None, plugins_kept: true })
     }

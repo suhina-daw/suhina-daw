@@ -74,7 +74,7 @@ fn paste_replacement_accepts_names_and_rejects_ambiguous_or_wrong_track_targets(
     for params in [
         json!({"track":2,"start":8.0,"replace":"Clip 2"}),
         json!({"track":1,"start":8.0,"replace":"missing"}),
-        json!({"track":1,"scene":1,"replace":"Clip 2"}),
+        json!({"track":1,"scene":0,"replace":"Clip 2"}),
         json!({"track":1,"start":8.0,"replace":4294967296u64}),
     ] {
         assert!(run(&mut session, "clip.paste", params).is_err());

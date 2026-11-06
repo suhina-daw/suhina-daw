@@ -34,7 +34,7 @@ What exists, or is in review:
   engine's graph, except a device parameter, which has a cheap path
   (`Player::set_device_param`) that changes one value from the next block.
 - **The window's drags**: a volume or pan drag runs `track.setVolume` or `track.setPan` on every
-  frame, with `continue` so the drag is one undo step ([ADR 0002](0002-commands.md) › 9).
+  frame, in one `gesture` so the drag is one undo step ([ADR 0002](0002-commands.md) › 9).
 - **Settings and keymap**: the window keeps `settings.txt` and `keymap.json` in its storage
   folder; the keymap maps keys to commands that take no parameters.
 - **Extensions** ([ADR 0015](0015-extensions.md)): an optional component is a separate program
@@ -186,6 +186,17 @@ mode and the note sources with this design, and would have been a second store i
   `.suhina` version: a newer Suhina reads the launcher's `mappings` from an older file as
   `controller_mappings` entries and writes only `controller_mappings`.
 
+## Amendment: one gesture, with an explicit end (2026-11-02)
+
+Item 3's gesture is now the session's one way to make a drag one undo step, for every frontend
+([#1146](https://github.com/suhina-daw/suhina-daw/issues/1146), [ADR 0002](0002-commands.md) › 9):
+a command that can be dragged takes a `gesture` id the caller picks, and calls with the open
+gesture are one step. It ends with `history.endGesture`, which the window sends on mouse up, so
+a step closes at once with no wait; any other edit, another gesture, undo and redo end it too.
+Only the controller layer ends its gestures on a timeout (400 ms of rest, or a touch-sensitive
+control released), since a controller cannot say when a move ends; it sends the same
+`history.endGesture`. `continue`, `replace` and `continuous` are gone.
+
 ## Amendment: a Lua runner for surface programs (2026-11-05)
 
 [#1200](https://github.com/suhina-daw/suhina-daw/issues/1200). Decision 10 names the program
@@ -227,7 +238,7 @@ decided yet: transport, version policy, trust): the helper library's exact shape
 - The registry's parameter description grows (kind, range, curve, unit). The window's knobs and
   sliders can use the same description, which removes ranges that are now repeated in the UI
   (`VOLUME_RANGE`).
-- Gestures change the history: a run can now replace the live value of an open step. Undo during
+- Gestures change the history: a run can now replace its own last live value in an open step. Undo during
   an open gesture ends it first. The window's drags can move to gestures and show the value in
   the engine while dragging, which they do not today.
 - The engine gains a block-rate path for track volume, pan and send levels, beside the one for

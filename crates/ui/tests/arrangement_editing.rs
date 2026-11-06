@@ -64,10 +64,11 @@ fn split_here_cuts_a_clip_where_it_was_right_clicked() {
 #[test]
 fn ctrl_e_splits_the_selected_clip_where_it_was_clicked_not_at_the_playhead() {
     let project = demo_project();
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000)
-        .unwrap_or_else(|e| {
-            panic!("{e}");
-        });
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap_or_else(|e| {
+                panic!("{e}");
+            });
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut harness = arrangement(session);

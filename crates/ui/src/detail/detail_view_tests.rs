@@ -105,7 +105,7 @@ fn the_clip_column_edits_the_clip() {
     // A slot's clip is named by its track and its scene, from 1.
     assert_eq!(
         on_clip(ClipRef::Slot(TrackId(2), 1), json!({ "loop": true })),
-        json!({ "track": 2, "scene": 2, "loop": true })
+        json!({ "track": 2, "scene": 1, "loop": true })
     );
 }
 
@@ -151,7 +151,7 @@ fn panels_follow_automation_as_the_engine_plays_it() {
     let mut utility = Device::new("Utility", DeviceKind::Builtin("utility".into()));
     for param in ["mono", "balance"] {
         let mut lane = AutomationLane::new(param);
-        lane.points = vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(4.0, -1.0)];
+        lane.points = vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(4.0, -1.0)].into();
         utility.automation.push(lane);
     }
     project.channels[0].devices.push(utility);
@@ -176,7 +176,7 @@ fn panels_follow_a_dragged_line_at_the_playhead() {
     let mut project = demo_project();
     let mut utility = Device::new("Utility", DeviceKind::Builtin("utility".into()));
     let mut lane = AutomationLane::new("balance");
-    lane.points = vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(4.0, -1.0)];
+    lane.points = vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(4.0, -1.0)].into();
     utility.automation.push(lane);
     project.channels[0].devices.push(utility);
     let index = project.channels[0].devices.len() - 1;
@@ -614,8 +614,8 @@ fn automation_replaces_a_plug_ins_listed_text_with_the_value_it_plays() {
     let mut project = with_plugin();
     let point = |beat, value| AutomationPoint { beat, value, curve: Default::default() };
     project.channels[0].devices[0].automation = vec![
-        AutomationLane { param: "1".into(), points: vec![point(0.0, 0.75), point(8.0, 0.75)], enabled: true },
-        AutomationLane { param: "2".into(), points: vec![point(0.0, 3.0), point(8.0, 3.0)], enabled: true },
+        AutomationLane { param: "1".into(), points: vec![point(0.0, 0.75), point(8.0, 0.75)].into(), enabled: true },
+        AutomationLane { param: "2".into(), points: vec![point(0.0, 3.0), point(8.0, 3.0)].into(), enabled: true },
     ];
     let mut detail = build_with(
         &project,
@@ -644,7 +644,7 @@ fn a_followed_value_between_steps_is_not_sent_as_an_edit() {
     let mut utility = Device::new("Utility", DeviceKind::Builtin("utility".into()));
     for param in ["mono", "balance", "gain", "width"] {
         let mut lane = AutomationLane::new(param);
-        lane.points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, 1.0)];
+        lane.points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, 1.0)].into();
         utility.automation.push(lane);
     }
     project.channels[0].devices.push(utility);

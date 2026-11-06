@@ -10,7 +10,6 @@ suhina-model.workspace = true
 suhina-stretch.workspace = true
 suhina-device-api.workspace = true
 suhina-device-sdk.workspace = true
-suhina-device-registry.workspace = true
 suhina-dsp.workspace = true
 rtrb.workspace = true
 
@@ -18,4 +17,5 @@ rtrb.workspace = true
 workspace = true
 
 [dev-dependencies]
+suhina-device-registry.workspace = true
 suhina-test-support.workspace = true

@@ -58,5 +58,5 @@ pub(crate) fn release_clip(session: &mut Session, params: &Value) -> Result<Valu
     let column = column_index(session.project(), params)?;
     let scene = scene_index(session.project(), params)?;
     session.player_mut()?.send(LaunchCommand::ReleaseClip { column, slot: scene })?;
-    Ok(json!({ "scene": scene + 1, "released": true }))
+    Ok(json!({ "scene": scene, "released": true }))
 }

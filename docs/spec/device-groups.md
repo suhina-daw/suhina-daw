@@ -351,7 +351,7 @@ its own `format` name, holding the group's device exactly as the project file wr
 Every behaviour above is a command (AGENTS.md rule 6, ADR 0002); each edit is one undo step and a
 playing engine hears it at once (ADR 0005). A drag of a branch's volume or pan in the panel sends every frame, the
 first one starting an undo step and the rest continuing it, so the drag is heard as it moves and is
-one undo step; for a group at the top of a chain the playing graph takes it as a message
+one undo step; the playing graph takes it as a message, for a group inside another too
 (ADR 0005 › Amendment, #763 › 4).
 
 **Addressing devices inside groups.** Today `device` is a device's index on the track. It becomes a
@@ -376,8 +376,8 @@ is branch 1 of the group at 2, before its device 3. `track.devices` lists a grou
 | `branch.remove` | edit | `track`; `device`; `branch` (integer) | Removes a branch with its devices and their mappings. The last branch cannot be removed. |
 | `branch.duplicate` | edit | `track`; `device`; `branch` | Copies a branch next to itself. |
 | `branch.rename` | edit | `track`; `device`; `branch`; `name` (text) | Renames a branch. |
-| `branch.setVolume` | edit | `track`; `device`; `branch`; `db` (number); `continue` (bool, optional) | As `track.setVolume`, in decibels; `continue` adds a drag's frame to its undo step. |
-| `branch.setPan` | edit | `track`; `device`; `branch`; `pan` (number, −1 … 1); `continue` (bool, optional) | As `track.setPan`. |
+| `branch.setVolume` | edit | `track`; `device`; `branch`; `db` (number); `gesture` (optional) | As `track.setVolume`, in decibels; a drag's frames name one `gesture`, one undo step. |
+| `branch.setPan` | edit | `track`; `device`; `branch`; `pan` (number, −1 … 1); `gesture` (optional) | As `track.setPan`. |
 | `branch.setMute` | edit | `track`; `device`; `branch`; `mute` (bool) | Mutes a branch; its devices keep running. |
 | `branch.setSolo` | edit | `track`; `device`; `branch`; `solo` (bool) | Solos a branch within its group. |
 | `macro.rename` | edit | `track`; `device` (group); `macro` (integer 1 … 8); `name` (text) | Renames a macro. |
@@ -392,7 +392,7 @@ uses device paths when these commands land; the command list itself is generated
 
 ## Engine
 
-- A chain's slots (`Slot`, `crates/engine/src/chain.rs`) gain `Slot::Group`: its branches, each a
+- A chain's slots (`DeviceSlot`, `crates/engine/src/chain.rs`) gain `DeviceSlot::Group`: its branches, each a
   list of slots with its own buffer of `MAX_BLOCK` frames, the dry buffer, the delay lines and the
   smoothed gains, all made when the graph is built. Running a group copies the input into each
   branch buffer, runs the branches, delays, scales and sums them; nothing allocates, locks or
@@ -455,7 +455,7 @@ it.
    each; `.suhina` version 2 (written then only with a group), round-trip tests; the depth-first plug-in
    key in `plugin_devices`. ADR 0001 gets an amendment. *Nothing audible yet: the engine passes a
    group through.*
-2. **Engine: groups in the chain.** `Slot::Group` with branches, volume, pan, mute, solo, mix and
+2. **Engine: groups in the chain.** `DeviceSlot::Group` with branches, volume, pan, mute, solo, mix and
    gain; built-in devices only; golden renders (two branches, one muted, one soloed, mix at 0, 0.5,
    1), passthrough exactness for a group of one empty branch, block-size independence and the
    real-time rules. ADR 0004 gets a decision.

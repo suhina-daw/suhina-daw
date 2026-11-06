@@ -77,7 +77,7 @@ fn volume(harness: &Harness<'static, App>) -> (Vec<AutomationPoint>, bool) {
     let project = session.project();
     let channel = project.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel);
     let lane = project.channels.iter().find(|c| Some(c.id) == channel).and_then(|c| c.lane("volume"));
-    lane.map_or((Vec::new(), true), |l| (l.points.clone(), l.enabled))
+    lane.map_or((Vec::new(), true), |l| (l.points.to_vec(), l.enabled))
 }
 
 /// The points of the Drums track's pan lane.
@@ -86,7 +86,7 @@ fn pan(harness: &Harness<'static, App>) -> (Vec<AutomationPoint>, bool) {
     let project = session.project();
     let channel = project.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel);
     let lane = project.channels.iter().find(|c| Some(c.id) == channel).and_then(|c| c.lane("pan"));
-    lane.map_or((Vec::new(), true), |l| (l.points.clone(), l.enabled))
+    lane.map_or((Vec::new(), true), |l| (l.points.to_vec(), l.enabled))
 }
 
 /// A press and release of the left button at `pos`.
@@ -1110,7 +1110,9 @@ fn a_painted_range_copies_duplicates_and_pastes() {
 #[test]
 fn a_painted_range_moves_the_play_start_marker_to_its_start() {
     let project = demo_project();
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
     let monitor = renderer.monitor();
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));

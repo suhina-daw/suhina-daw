@@ -80,8 +80,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   next audio block (0.15 s later when stretched arrangement clips must be prepared first), with
   launched clips playing on
   ([ADR 0005](decisions/0005-edits-while-playing.md)). To sweep a track's volume or pan by
-  ear as one undo step, send `track.setVolume` or `track.setPan` repeatedly with
-  `continue: true` after the first ([ADR 0002](decisions/0002-commands.md)). Only the active project plays: switching
+  ear as one undo step, send `track.setVolume` or `track.setPan` repeatedly with the same
+  `gesture` (an id you pick), then `history.endGesture` with it
+  ([ADR 0002](decisions/0002-commands.md) › 9). Only the active project plays: switching
   closes the previous project's output and starts the new one (its result has `audio_output`),
   so transport commands aimed at another project fail.
 - **Plug-ins between commands.** The server takes in the plug-ins that started every 50 ms, as
@@ -126,7 +127,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 - **Tempo map.** `tempo.points` lists the start tempo, the tempo changes and the time-signature
   changes; `tempo.addPoint {beat, bpm, ramp?}`, `tempo.movePoint` and `tempo.deletePoint` edit the
-  tempo changes (numbered from 1), `timeSignature.add {bar, numerator, denominator}`,
+  tempo changes (numbered from 0, each with an `id` the commands also take as `{"id": n}`), `timeSignature.add {bar, numerator, denominator}`,
   `timeSignature.move` and `timeSignature.delete` the signature changes (bars from 1). Renders and
   the playing engine follow them ([tempo map](spec/tempo-map.md)). A launched scene's tempo or
   time signature overrides the map for the launcher clock (`launcher.state` reports
@@ -234,14 +235,17 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   changes by as much). These are what the piano roll's ruler runs when its loop handles and
   markers are dragged ([clip editor](spec/ui-clip-editor.md) › Commands).
 
-- **Notes.** `note.list {track, index | scene}` lists a MIDI clip's notes (index, time and length
-  in beats, key with 60 as C3, velocity 1 to 127, and `muted`); `note.add {..., notes: [{time, length, key,
-  velocity?}]}` appends notes and returns their indices; `note.delete`, `note.move {beats?,
+- **Notes.** `note.list {track, index | scene}` lists a MIDI clip's notes (index, `id`, time and
+  length in beats, key with 60 as C3, velocity 1 to 127, and `muted`); `note.add {..., notes: [{time, length, key,
+  velocity?}]}` appends notes and returns their indices and `ids`; `note.delete`, `note.move {beats?,
   semitones?}`, `note.resize {length? | by? | startBy?}` (`startBy` moves each start and keeps
   each end) and `note.setVelocity {velocity? | by? | velocities?}` (`velocities`: one value per
   entry of `notes`) take
-  `notes`, a list of those indices. Edits keep the notes' order, so the indices of notes not
-  deleted stay valid; each is one undo step and fails as a whole on a bad value
+  `notes`, a list of those indices or of `{"id": n}`. An id names a note wherever it is now, so a
+  command built from an earlier `note.list` still names the notes it read after another writer
+  has added, deleted or moved notes; it lasts while the project is open. Edits keep the notes'
+  order, so the indices of notes not deleted stay valid, and a changed or moved note keeps its
+  id; each is one undo step and fails as a whole on a bad value
   ([clip editor spec](spec/ui-clip-editor.md) › Commands). An edit to a clip whose content
   other clips also play (a duplicate) first gives that clip its own copy of the content, so the
   others do not change; the result's indices are the same.
@@ -287,7 +291,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 - **Splitting notes.** `note.split {track, index | scene, notes, at}` splits each named note that
   spans the beat `at` into two at `at` (the first keeps the start, the second the end); a note
   that starts or ends exactly at `at` is left alone, so a second split at the same beat changes
-  nothing. One undo step; it returns the indices of the notes it made, and `at` is a beat from 0
+  nothing. One undo step; it returns the indices and `ids` of the notes it made (each first half
+  keeps its note's id), and `at` is a beat from 0
   to 120 000.
 - **Follow actions.** `clip.setFollowAction {track, scene, enabled?, time?, linked?, actionA?,
   actionB?, chanceA?, chanceB?}` sets what a slot clip does after its follow time (one undo
@@ -404,7 +409,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   (fewer points), `automation.clear`,
   `automation.setEnabled` and `automation.list` (through `command_run`) edit
   the envelopes of a track's `volume`, `pan` and `mute` (no `device`) and of any device
-  parameter (`device` and its `param` id), point by point, each one undo step; values in the
+  parameter (`device` and its `param` id), point by point, each one undo step (a point by its
+  index on the lane or as `{"id": n}`, which `automation.list` gives); values in the
   set command's unit (the volume in dB). `device.setAutomation` replaces a whole device lane, for
   built-in devices too. Setting an automated parameter by hand turns its lane off (the answer
   says `"automation": "off"`) until `automation.setEnabled` turns it on again
@@ -461,10 +467,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 |---|---|
 | `project_open` | Open a Suhina project (`.suhina`) or a `.als` Live Set below the read root as a new, active project; returns its `project` id, a summary and import warnings. |
 | `project_inspect` | Summary, tracks (volume, pan, mute, devices) and arrangement clips as JSON; optional `project`. |
-| `command_list` | Command ids with description, kind (`read`, `edit`, `history`, `transport`, `projects`, `plugins`, `plugin`, `library`, `audio`) and parameter schema; optional `filter`. |
+| `command_list` | Command ids with description, target (`project`, `projects`, `plugins`, `plugin`, `library`, `audio`), effect (`read`, `edit`, `history`, `transport`, `change`) and parameter schema; optional `filter`. |
 | `command_run` | Run one command: `{"id": "track.setPan", "params": {"tracks": ["Bass"], "pan": -1}}`; optional `project`. |
 | `command_batch` | Run `steps` in order; each editing command is its own undo step; `stop_on_error` (default true); optional `project` for every step. |
-| `project_render` | Render the active project (or `project`): the arrangement, or `scene` (1-based), to a WAV below the write root. Audio files are loaded from the opened set's folder; missing ones are listed in `warnings`. Its plug-ins start with the state the project's running plug-ins have now (what their editors changed included), as `project.save` writes it. With `launches` (and `seconds`), render a launch script instead: transport commands run at times in seconds from a stopped transport, e.g. `[{"at": 0, "id": "scene.launch", "params": {"scene": 1}}, {"at": 4, "id": "track.stop", "params": {"track": "Bass"}}]`; each step's result is returned. The steps are confined like the tool calls' and never carry the file-writing commands (`project.export`, `project.save`); the render's output is the only file a script writes. |
+| `project_render` | Render the active project (or `project`): the arrangement, or `scene` (from 0, as `project.launcher` numbers them), to a WAV below the write root. Audio files are loaded from the opened set's folder, the library folders and the files the person chose or saved the project with (the same trust as the app, [missing-files](spec/missing-files.md) › Project file boundaries); missing ones are listed in `warnings`. Its plug-ins start with the state the project's running plug-ins have now (what their editors changed included), as `project.save` writes it. With `launches` (and `seconds`), render a launch script instead: transport commands run at times in seconds from a stopped transport, e.g. `[{"at": 0, "id": "scene.launch", "params": {"scene": 0}}, {"at": 4, "id": "track.stop", "params": {"track": "Bass"}}]`; each step's result is returned. The steps are confined like the tool calls' and never carry the file-writing commands (`project.export`, `project.save`); the render's output is the only file a script writes. |
 
 Commands are defined once in `suhina-session` (ADR 0002); the MCP server, the CLI and the
 desktop app all run the same ones. [`commands.md`](commands.md) lists every command with its
@@ -542,7 +548,7 @@ claude mcp add suhina-app -- /path/to/suhina-cli mcp --attach
 Sampler manual boundaries are edited with `device.setSampleSlices` (`track`,
 `device`, `points`: normalized source positions strictly between 0 and 1). The
 command validates, sorts and deduplicates the list and supports undo/redo; an
-empty list clears the map. Optional `continue` groups consecutive drag edits.
+empty list clears the map. Calls with the same `gesture` make one undo step.
 
 `track.devices` includes `sample_slices` when a Sampler has an explicit manual map.
 

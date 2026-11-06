@@ -78,12 +78,9 @@ impl PianoRollState {
     /// comes back.
     pub(super) fn settle_selection(&mut self, notes: &[Note]) {
         let count = notes.len();
-        let undone = std::mem::take(&mut self.undone);
-        if self.span_undo.last().is_some_and(|step| {
-            step.copies == self.selected
-                && (step.copies.iter().any(|i| *i >= count) || (undone && step.notes == notes_hash(notes)))
-        }) && let Some(step) = self.span_undo.pop()
-        {
+        let taken_back = self.copy_taken_back(notes);
+        self.undone = false;
+        if taken_back && let Some(step) = self.span_undo.pop() {
             self.span = step.span;
             self.selected = step.selected;
         }
@@ -106,6 +103,16 @@ impl PianoRollState {
                 .collect(),
             None => BTreeSet::new(),
         };
+    }
+
+    /// Whether the selection is the copies of the last copy and that copy is gone: undone, or
+    /// refused for running past the end of the notes. [`Self::settle_selection`] then brings back
+    /// the selection before it.
+    pub(super) fn copy_taken_back(&self, notes: &[Note]) -> bool {
+        self.span_undo.last().is_some_and(|step| {
+            step.copies == self.selected
+                && (step.copies.iter().any(|i| *i >= notes.len()) || (self.undone && step.notes == notes_hash(notes)))
+        })
     }
 
     /// An undo ran: the window says so, as a copy can leave the notes just as they were.

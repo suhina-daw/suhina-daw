@@ -117,7 +117,7 @@ pub struct SampleInfo {
 
 /// Reads a sample's header and metadata (not its audio). The tempo and key come from the
 /// metadata first, then the file name.
-pub fn sample_info(path: &Path) -> Result<SampleInfo, String> {
+pub fn sample_info(path: &Path) -> Result<SampleInfo, crate::MediaError> {
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
