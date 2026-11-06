@@ -1084,3 +1084,25 @@ fn host_values_reach_devices_inside_groups_with_or_without_live_values() {
     assert_eq!(value(&chain.devices, &inner, "#r0"), Some(-3.0));
     assert_eq!(value(&chain.devices, &top, "#r0"), None);
 }
+
+/// A plug-in's panel, a generated list and a canvas panel in one row are as tall as each other,
+/// the tallest's height, never under a compact panel's (#1238).
+#[test]
+fn the_panels_in_a_row_are_one_height() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let mut project = with_plugin();
+    project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    project.channels[0].devices.push(Device::new("EQ", DeviceKind::Builtin("eq".into())));
+    let detail = build(&project, Some(TrackId(1)), None);
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(2400.0, 500.0)).build_ui(|ui| {
+        show_row(ui, &detail, &[], &mut Vec::new(), &mut Vec::new());
+    });
+    harness.run_steps(3);
+    let heights: Vec<f32> = ["Verb", "Utility", "EQ"]
+        .iter()
+        .map(|name| harness.get_by_label(&format!("Device {name}")).rect().height())
+        .collect();
+    assert!(heights.iter().all(|h| (h - heights[0]).abs() < 0.5), "one height: {heights:?}");
+    assert!(heights[0] >= device_row_height() - 0.5, "at least a compact panel's: {heights:?}");
+}
