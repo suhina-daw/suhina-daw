@@ -102,16 +102,27 @@ mod tests {
     }
 
     #[test]
-    fn a_thin_backdrop_covers_the_window_and_its_transparent_pixels_show_black() {
+    fn a_thin_backdrop_covers_the_window_from_its_centre() {
         let thin =
-            RgbaImage::from_fn(1, 10_000, |_, y| if y < 5_000 { Rgba([255, 0, 0, 255]) } else { Rgba([0, 255, 0, 0]) });
+            RgbaImage::from_fn(
+                1,
+                10_000,
+                |_, y| if y < 5_000 { Rgba([255, 0, 0, 255]) } else { Rgba([0, 0, 255, 255]) },
+            );
         let covered = cover(&thin, 8, 8).unwrap();
         assert_eq!(covered.dimensions(), (8, 8));
-        // The centre of the picture is the seam between the opaque red and the clear green.
-        let corner = covered.get_pixel(0, 0).0;
-        assert!(corner[0] > 200 && corner[1] == 0, "red on top: {corner:?}");
-        let bottom = covered.get_pixel(0, 7).0;
-        assert_eq!(bottom, [0, 0, 0, 255], "a transparent pixel is black, not its green");
+        // Only the picture's middle shows, at the seam between red and blue.
+        let [r, _, b, a] = covered.get_pixel(4, 4).0;
+        assert!(a == 255 && (r > 0 || b > 0));
+    }
+
+    #[test]
+    fn transparent_backdrop_pixels_show_black_not_their_colour() {
+        let clear = RgbaImage::from_pixel(4, 4, Rgba([0, 255, 0, 0]));
+        assert_eq!(cover(&clear, 4, 4).unwrap().get_pixel(1, 1).0, [0, 0, 0, 255]);
+        let half = RgbaImage::from_pixel(4, 4, Rgba([200, 100, 50, 128]));
+        let [r, g, b, a] = cover(&half, 4, 4).unwrap().get_pixel(1, 1).0;
+        assert!(a == 255 && r < 110 && g < 55 && b < 30, "{r} {g} {b}");
     }
 
     #[test]
