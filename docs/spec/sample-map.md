@@ -96,7 +96,9 @@ Both play a sample as soon as the pointer is over it.
   start; a place no screen could show is not used.
 
 The map holds the samples of the browser's place, whichever category filter is chosen (the
-filters choose what the list shows).
+filters choose what the list shows). The **List** / **Sample map** switch over the list shows wherever the
+place can hold samples: Library › Samples, a folder, Pinned, and Recent of every kind or of
+samples; Plug-ins, Instruments, Effects and Presets have none (#862).
 
 **Suhina:** analysis starts with the desktop app and the MCP server, as indexing does; tests
 and the command line never analyse a user's folders unasked.
