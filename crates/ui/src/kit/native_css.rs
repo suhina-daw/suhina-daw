@@ -214,6 +214,38 @@ struct Engine {
     variant: Option<(Arc<str>, Arc<suhina_style::sheet::Sheet>)>,
     /// Parsed device panel sheets by the hash of their text, bounded.
     device_sheets: HashMap<u64, Arc<suhina_style::sheet::Sheet>>,
+    /// Styles served this frame to a scope with no resolved style of its own.
+    approximations: usize,
+    /// Of those, the ones worked out afresh, not found among the contexts.
+    context_misses: usize,
+}
+
+/// What the style engine did in the frame drawn last, for budget tests (`suhina-theme-render`):
+/// counts that later work may only lower.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Budget {
+    /// Style nodes the frame entered.
+    pub nodes: usize,
+    /// Distinct scope stacks kept with an approximate style.
+    pub contexts: usize,
+    /// Styles served to a scope whose node had no style resolved from the previous frame, so it
+    /// painted with an approximation from its class names.
+    pub approximations: usize,
+    /// Of those, the ones worked out afresh this frame.
+    pub context_misses: usize,
+}
+
+/// The counts of the frame drawn last; read them after the frame, before the next begins.
+pub fn budget() -> Budget {
+    ENGINE.with(|engine| {
+        let engine = engine.borrow();
+        Budget {
+            nodes: engine.nodes.len(),
+            contexts: engine.contexts.len(),
+            approximations: engine.approximations,
+            context_misses: engine.context_misses,
+        }
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -307,6 +339,8 @@ pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
         engine.nodes.clear();
         engine.parents.clear();
         engine.occurrences.clear();
+        engine.approximations = 0;
+        engine.context_misses = 0;
     });
     Frame(ui.ctx().clone(), ui.input(|input| input.time))
 }
@@ -821,12 +855,14 @@ pub fn scoped(stack: &[String]) -> Option<Computed> {
         {
             return Some(values.clone());
         }
+        engine.approximations += 1;
         if let Some(values) = engine.contexts.get(stack) {
             return Some(values.clone());
         }
         if engine.contexts.len() >= MAX_CONTEXTS {
             return None;
         }
+        engine.context_misses += 1;
         let values = native::scoped(&engine, stack)?;
         engine.contexts.insert(stack.to_vec(), values.clone());
         Some(values)

@@ -1,0 +1,21 @@
+[package]
+name = "suhina-ui-gpu"
+description = "The GPU hosts for suhina-ui's providers: background fills that set a see-through window's pixels and the liquid materials' backdrops (wgpu), shared by the app and suhina-theme-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+suhina-ui.workspace = true
+# Its trace points only; suhina-ui already depends on it.
+suhina-plugins.workspace = true
+egui = "0.37"  # MIT OR Apache-2.0
+# egui's wgpu renderer, and wgpu through it, as eframe uses them.
+egui-wgpu = "0.37"  # MIT OR Apache-2.0
+
+[dev-dependencies]
+suhina-session.workspace = true
+
+[lints]
+workspace = true

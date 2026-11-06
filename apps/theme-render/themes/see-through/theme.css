@@ -1,0 +1,32 @@
+/* See-through test: a test theme, not one to use. Every colour lets the desktop through, and the
+   button and fader artwork is round, so the pixels around it show what the window leaves there. */
+:root {
+  --window-background: rgb(16 24 40 / 45%);
+  --panel-background: rgb(24 36 60 / 55%);
+  --panel-hoverBackground: rgb(40 60 96 / 60%);
+  --track-headerBackground: rgb(32 48 80 / 55%);
+  --track-headerSelectedBackground: rgb(64 96 160 / 65%);
+  --track-mutedBackground: rgb(24 24 24 / 40%);
+  --control-background: rgb(48 72 120 / 50%);
+  --control-hoverBackground: rgb(64 96 160 / 60%);
+  --control-activeBackground: rgb(96 128 200 / 70%);
+  --control-playingBackground: rgb(64 160 96 / 70%);
+  --control-selectedBackground: rgb(200 220 255 / 70%);
+  --border: rgb(160 190 255 / 35%);
+  --border-strong: rgb(180 210 255 / 60%);
+  --grid-major: rgb(255 255 255 / 12%);
+  --grid-minor: rgb(255 255 255 / 6%);
+  --slot-empty: rgb(255 255 255 / 10%);
+  --pan-background: rgb(0 0 0 / 30%);
+  --pan-centre: rgb(255 255 255 / 50%);
+  --recording-background: rgb(200 40 40 / 50%);
+  --accent: #8fd3ff;
+  --selection: #ffffff;
+  --text-primary: #f4f7ff;
+  --text-secondary: #c8d2e8;
+  --text-hint: #94a0bc;
+  --text-value: #ffffff;
+}
+button { image: url("assets/button.svg"); }
+fader.cap { image: url("assets/fader.cap.svg"); }
+fader.rail { image: url("assets/fader.rail.svg"); }

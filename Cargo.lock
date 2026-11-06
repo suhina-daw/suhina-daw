@@ -5311,6 +5311,7 @@ dependencies = [
  "suhina-session",
  "suhina-theme-package",
  "suhina-ui",
+ "suhina-ui-gpu",
  "suhina-update",
  "window-vibrancy",
  "winit",
@@ -5800,6 +5801,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "suhina-theme-render"
+version = "0.0.1"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "egui_kittest",
+ "image",
+ "serde_json",
+ "suhina-device-api",
+ "suhina-device-registry",
+ "suhina-session",
+ "suhina-theme-package",
+ "suhina-ui",
+ "suhina-ui-gpu",
+]
+
+[[package]]
 name = "suhina-ui"
 version = "0.0.1"
 dependencies = [
@@ -5829,6 +5847,17 @@ dependencies = [
  "suhina-theme-package",
  "suhina-update",
  "tiny-skia 0.12.0",
+]
+
+[[package]]
+name = "suhina-ui-gpu"
+version = "0.0.1"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "suhina-plugins",
+ "suhina-session",
+ "suhina-ui",
 ]
 
 [[package]]
