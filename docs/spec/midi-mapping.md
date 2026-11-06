@@ -1,9 +1,9 @@
 ---
 description: What a MIDI controller can do in Suhina - sources, targets, ranges, takeover, relative encoders, gestures and undo, the controller profile file, mappings saved in a project, the mapping mode and MIDI learn, the commands, and how malformed input is treated
-read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, launch keys, launcher.mappings, Map keys, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback
+read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, launch keys, launcher.mappings, Map keys, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback, surface program, Lua runner
 type: spec
 status: planned
-last_verified: 2026-11-02
+last_verified: 2026-11-05
 ---
 
 # MIDI controllers and mapping
@@ -300,12 +300,32 @@ to the control that moves it. The velocities a pad needs for its colours are the
 
 ## Surface programs (later)
 
-A surface program is an extension ([`extensions.md`](extensions.md)) whose manifest says
-`"provides": "surface"` and lists the port name patterns it claims. Suhina passes it every
-message from those ports, system exclusive included, sends what it asks on their output ports,
+A surface program is an extension ([`extensions.md`](extensions.md)) whose `provides` carries an
+entry with the id `surface`, and whose `ports` are the port name patterns it claims. Suhina
+passes it every message from those ports, system exclusive included, sends what it asks on
+their output ports,
 and gives it the command protocol: it runs commands, reads state through reading commands and
 subscribes to changes. It never reaches the engine or the model by another way. When it is not
 running, its ports fall back to their profiles.
+
+Suhina ships the **Lua runner** ready-made: a small separate program built from this tree, which
+runs a surface program's script. The extension is the script's folder, not the runner: its
+manifest carries in `provides` an entry with the id `surface`, lists in `ports` the port name
+patterns the script claims, lists the script file in `programs` with its SHA-256, and names in
+`runner` the runner it needs (`"lua"`). Suhina starts the runner it shipped with that script, so
+each surface program is one runner process of its own: a crash or a hang of the runner process
+restarts that program alone, with its ports back on the profiles meanwhile, the way a plug-in
+host's process is restarted. A script holds what any surface program
+is given and nothing more: every message of its claimed ports, with the timestamp it arrived
+with; a send-back leaves from a queue Suhina drains, and the script never waits on an answer to
+send one; commands, reading commands and subscriptions. The runner's Lua environment is
+narrowed to what it allows: no `io` or `os`, no `dofile`, `loadfile` or `package` (no `require`
+with it), and `load` reads text chunks only; that narrowing is the runner's convenience, and
+the boundary that is enforced is the process the runner runs in. The runner preloads its own
+helpers, the usual modes, layers and session, mixer and device components, versioned with the
+runner and outside the surface-program protocol, for a script to compose instead of
+reimplement. A script whose handler fails is stopped at an error boundary and shows in the
+extension's state: it stays stopped, its ports on their profiles, until `extensions.restart`.
 
 ## Testing
 
