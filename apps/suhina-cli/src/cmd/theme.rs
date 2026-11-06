@@ -11,7 +11,7 @@ pub(crate) fn theme(args: &[String]) -> Result<(), String> {
     use suhina_theme_package as package;
     let usage = || {
         format!(
-            "usage: suhina-cli theme (pack <theme-folder> [-o <out.theme.suhina>] | validate (<file.theme.suhina> | <folder>) | render <theme-folder> [options])\n\n{USAGE}"
+            "usage: suhina-cli theme (pack <theme-folder> [-o <out.theme.suhina>] | validate (<file.theme.suhina> | <folder>) | render <theme-folder | built-in-theme-id> [--backdrop <image.png>] [--out <folder>] [--scale <n>] [--scene <name>] [--budget])\n\n{USAGE}"
         )
     };
     let print_warnings = |warnings: &[String]| {
@@ -75,5 +75,9 @@ fn render(args: &[String]) -> Result<(), String> {
         .ok_or_else(|| format!("{name} is not beside suhina-cli; build it with cargo build -p suhina-theme-render"))?;
     let status =
         std::process::Command::new(&program).args(args).status().map_err(|e| format!("{}: {e}", program.display()))?;
-    if status.success() { Ok(()) } else { Err(format!("suhina-theme-render stopped: {status}")) }
+    if status.success() {
+        return Ok(());
+    }
+    // The program has said why; this passes its exit code on without a second message.
+    std::process::exit(status.code().unwrap_or(1));
 }

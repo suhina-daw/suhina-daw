@@ -25,7 +25,14 @@ fn every_bundled_theme_is_driven_through_every_scene() {
 fn drive_every_scene(theme: &Subject) -> Vec<String> {
     let mut failed = Vec::new();
     for scene in scenes::scenes() {
-        let mut h = headless((scene.app)(), theme, scene.width);
+        let app = match (scene.app)() {
+            Ok(app) => app,
+            Err(e) => {
+                failed.push(format!("{} in {}: {e}", theme.id, scene.name));
+                continue;
+            }
+        };
+        let mut h = headless(app, theme, scene.width);
         assert_eq!(h.state().settings().theme, theme.id, "{} is chosen", theme.id);
         if let Err(e) = (scene.drive)(&mut h) {
             failed.push(format!("{} in {}: {e}", theme.id, scene.name));

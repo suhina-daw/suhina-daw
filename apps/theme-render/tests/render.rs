@@ -17,7 +17,7 @@ use suhina_theme_render::{Gpu, Subject, render_all, rendered, scenes, shoot};
 fn the_see_through_themes_square_holes_under_artwork_show_in_its_render() {
     let theme = super::see_through().unwrap();
     let scene = scenes::find("launcher").expect("the launcher scene");
-    let mut h = rendered((scene.app)(), &theme, scene.width, 1.0, &Gpu::new());
+    let mut h = rendered((scene.app)().unwrap(), &theme, scene.width, 1.0, &Gpu::new().unwrap());
     (scene.drive)(&mut h).unwrap_or_else(|e| panic!("{e}"));
     let play = h.get_by_label("Play").rect();
     let shot = shoot(&mut h).unwrap_or_else(|e| panic!("{e}"));

@@ -133,31 +133,63 @@ pub fn headless(app: App, subject: &Subject, width: f32) -> Harness<'static, App
     harness(app, subject, width, 1.0, None)
 }
 
-/// The GPU the renders are drawn with.
+/// The GPU the renders are drawn with: one device for every scene.
 pub struct Gpu {
-    setup: egui_wgpu::WgpuSetup,
+    state: egui_wgpu::RenderState,
 }
 
 impl Gpu {
-    /// The default adapter, as kittest's snapshot tests find one. Each window gets a render
-    /// state of its own, since kittest takes only a fresh one.
-    pub fn new() -> Self {
-        Self { setup: egui_kittest::wgpu::default_wgpu_setup() }
+    /// The default adapter, as kittest's snapshot tests find one; `Err` says there is none.
+    pub fn new() -> Result<Self, String> {
+        let setup = egui_kittest::wgpu::default_wgpu_setup();
+        let instance = block_on(setup.new_instance());
+        let config = egui_wgpu::WgpuConfiguration { wgpu_setup: setup, ..Default::default() };
+        block_on(egui_wgpu::RenderState::create(&config, &instance, None, egui_wgpu::RendererOptions::PREDICTABLE))
+            .map(|state| Self { state })
+            .map_err(|e| format!("no GPU adapter to draw with ({e}); --budget runs without one"))
     }
 
+    /// The most pixels a window may be wide or high.
+    pub fn max_side(&self) -> u32 {
+        self.state.device.limits().max_texture_dimension_2d
+    }
+
+    /// A render state of its own on the shared device: kittest takes only a fresh one, since the
+    /// renderer keeps the textures of the window it draws.
     fn render_state(&self) -> egui_wgpu::RenderState {
-        egui_kittest::wgpu::create_render_state(self.setup.clone(), egui_wgpu::RendererOptions::PREDICTABLE)
+        let existing = egui_wgpu::WgpuSetupExisting {
+            instance: self.state.instance.clone(),
+            adapter: self.state.adapter.clone(),
+            device: self.state.device.clone(),
+            queue: self.state.queue.clone(),
+        };
+        egui_kittest::wgpu::create_render_state(existing.into(), egui_wgpu::RendererOptions::PREDICTABLE)
     }
 }
 
-impl Default for Gpu {
-    fn default() -> Self {
-        Self::new()
+/// Runs a future that only waits for the GPU's driver.
+fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
+    struct Wake(std::thread::Thread);
+    impl std::task::Wake for Wake {
+        fn wake(self: Arc<Self>) {
+            self.0.unpark();
+        }
+    }
+    let waker = std::task::Waker::from(Arc::new(Wake(std::thread::current())));
+    let mut context = std::task::Context::from_waker(&waker);
+    let mut future = std::pin::pin!(future);
+    loop {
+        if let std::task::Poll::Ready(value) = future.as_mut().poll(&mut context) {
+            return value;
+        }
+        std::thread::park();
     }
 }
 
 /// A window on the GPU, with the app's surface and liquid providers installed as the app installs
-/// them in a see-through window.
+/// them in a see-through window. The render shows a window that composites alpha; on a system whose
+/// window does not (the app then leaves the surface provider out and blends fills over the panel
+/// colour), nested translucent fills look different there.
 pub fn rendered(app: App, subject: &Subject, width: f32, scale: f32, gpu: &Gpu) -> Harness<'static, App> {
     let state = gpu.render_state();
     let renderer = egui_kittest::wgpu::WgpuTestRenderer::from_render_state(state.clone());
@@ -196,6 +228,9 @@ pub struct Rendered {
     pub written: Vec<String>,
     /// The scenes that could not be drawn, with why.
     pub failed: Vec<String>,
+    /// The scenes drawn smaller than asked, because the GPU's textures are not large enough, with
+    /// the scale used.
+    pub clamped: Vec<String>,
     /// The scenes whose window never stopped asking to be drawn again: the window would keep
     /// repainting there, and its last frame is the one drawn.
     pub restless: Vec<String>,
@@ -216,10 +251,25 @@ pub fn render_all(
     only: Option<&str>,
 ) -> Result<Rendered, String> {
     std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
-    let gpu = Gpu::new();
+    let gpu = Gpu::new()?;
     let mut done = Rendered::default();
-    for scene in scenes::scenes().iter().filter(|s| only.is_none_or(|name| s.name == name)) {
-        let mut harness = rendered((scene.app)(), subject, scene.width, scale, &gpu);
+    for scene in scenes::select(only) {
+        let app = match (scene.app)() {
+            Ok(app) => app,
+            Err(e) => {
+                done.failed.push(format!("{}: {e}", scene.name));
+                continue;
+            }
+        };
+        // The window's pixels must fit the GPU's textures.
+        let fits = (gpu.max_side() as f32 - 1.0) / scene.width.max(SIZE.1);
+        let scale = if scale > fits {
+            done.clamped.push(format!("{}: {fits:.2}", scene.name));
+            fits
+        } else {
+            scale
+        };
+        let mut harness = rendered(app, subject, scene.width, scale, &gpu);
         if let Err(e) = (scene.drive)(&mut harness) {
             done.failed.push(format!("{}: {e}", scene.name));
             continue;
@@ -227,7 +277,13 @@ pub fn render_all(
         if restless(&harness) {
             done.restless.push(scene.name.clone());
         }
-        let shot = shoot(&mut harness)?;
+        let shot = match shoot(&mut harness) {
+            Ok(shot) => shot,
+            Err(e) => {
+                done.failed.push(format!("{}: {e}", scene.name));
+                continue;
+            }
+        };
         let raw = composite::unpremultiply(&shot.pixels);
         let over = composite::over_backdrop(&shot, backdrop, scale);
         for (name, image) in [(format!("{}.raw.png", scene.name), raw), (format!("{}.png", scene.name), over)] {

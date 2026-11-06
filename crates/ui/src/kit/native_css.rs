@@ -216,7 +216,8 @@ struct Engine {
     device_sheets: HashMap<u64, Arc<suhina_style::sheet::Sheet>>,
     /// Styles served this frame to a scope with no resolved style of its own.
     approximations: usize,
-    /// Of those, the ones worked out afresh, not found among the contexts.
+    /// Of those, the ones worked out afresh, not found among the contexts; and the theme swatches
+    /// worked out afresh.
     context_misses: usize,
 }
 
@@ -231,7 +232,7 @@ pub struct Budget {
     /// Styles served to a scope whose node had no style resolved from the previous frame, so it
     /// painted with an approximation from its class names.
     pub approximations: usize,
-    /// Of those, the ones worked out afresh this frame.
+    /// Of those, the ones worked out afresh this frame; and the theme swatches worked out afresh.
     pub context_misses: usize,
 }
 
@@ -855,15 +856,17 @@ pub fn scoped(stack: &[String]) -> Option<Computed> {
         {
             return Some(values.clone());
         }
-        engine.approximations += 1;
-        if let Some(values) = engine.contexts.get(stack) {
-            return Some(values.clone());
+        // Only a style served is counted: not a lookup that finds none.
+        if let Some(values) = engine.contexts.get(stack).cloned() {
+            engine.approximations += 1;
+            return Some(values);
         }
         if engine.contexts.len() >= MAX_CONTEXTS {
             return None;
         }
-        engine.context_misses += 1;
         let values = native::scoped(&engine, stack)?;
+        engine.approximations += 1;
+        engine.context_misses += 1;
         engine.contexts.insert(stack.to_vec(), values.clone());
         Some(values)
     })
@@ -883,6 +886,7 @@ pub fn theme_swatch(color: Color32) -> Option<Computed> {
             return Some(values.clone());
         }
         let values = native::theme_swatch(&engine, &key[1])?;
+        engine.context_misses += 1;
         // Past the cache's limit a swatch is worked out each time, so that every swatch in a
         // gallery is styled alike.
         if engine.contexts.len() < MAX_CONTEXTS {

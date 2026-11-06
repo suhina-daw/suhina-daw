@@ -22,10 +22,10 @@ type Window = Harness<'static, App>;
 /// What is done in a scene: `Err` names a control it could not find.
 type Step = fn(&mut Window) -> Result<(), String>;
 type Drive = Arc<dyn Fn(&mut Window) -> Result<(), String> + Send + Sync>;
-type Open = Arc<dyn Fn() -> App + Send + Sync>;
+type Open = Arc<dyn Fn() -> Result<App, String> + Send + Sync>;
 
-/// A scene: its name (the PNGs' names), the window's width in points, the app it opens, and what
-/// is done in it.
+/// A scene: its name (the PNGs' names), the window's width in points, the app it opens (`Err` if
+/// a device it adds is refused), and what is done in it.
 #[derive(Clone)]
 pub struct Scene {
     pub name: String,
@@ -57,7 +57,7 @@ pub fn scenes() -> Vec<Scene> {
         .map(|&(name, drive)| Scene {
             name: name.to_owned(),
             width: crate::SIZE.0,
-            app: Arc::new(crate::demo_app),
+            app: Arc::new(|| Ok(crate::demo_app())),
             drive: Arc::new(drive),
         })
         .collect();
@@ -86,6 +86,11 @@ pub fn scenes() -> Vec<Scene> {
         });
     }
     scenes
+}
+
+/// The scenes to draw: all of them, or only the one called `only`.
+pub fn select(only: Option<&str>) -> Vec<Scene> {
+    scenes().into_iter().filter(|s| only.is_none_or(|name| s.name == name)).collect()
 }
 
 /// The scene called `name`.
@@ -136,16 +141,17 @@ fn piano_roll(h: &mut Window) -> Result<(), String> {
 
 /// The demo project with `devices` added to Keys in order: an instrument takes the place of
 /// Keys' own.
-fn on_keys(devices: &[&str]) -> App {
+fn on_keys(devices: &[&str]) -> Result<App, String> {
     let mut session = suhina_session::Session::new(suhina_ui::demo::demo_project());
     for id in devices {
-        // A device the track cannot hold is not drawn, and the scene's render shows it missing.
-        let _ = session.execute("device.add", &json!({ "track": "Keys", "id": id }));
+        session
+            .execute("device.add", &json!({ "track": "Keys", "id": id }))
+            .map_err(|e| format!("device.add {id}: {e}"))?;
     }
     let mut app = App::new();
     app.set_browser_open(false);
     app.set_session(session, &[]);
-    app
+    Ok(app)
 }
 
 fn settings(h: &mut Window) -> Result<(), String> {

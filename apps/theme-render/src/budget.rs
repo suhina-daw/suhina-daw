@@ -76,7 +76,7 @@ fn frames(h: &mut Harness<'static, App>) -> (u64, usize) {
 /// chosen, then the pointer moved onto a clip.
 pub fn count(subject: &Subject, scene: &crate::scenes::Scene) -> Result<Counts, String> {
     let built_in = Subject { id: suhina_ui::kit::theme::BUILT_IN.to_owned(), theme: None };
-    let mut h = crate::headless((scene.app)(), &built_in, scene.width);
+    let mut h = crate::headless((scene.app)()?, &built_in, scene.width);
     suhina_ui::kit::surface::install(&h.ctx, Arc::new(CountedFills));
     (scene.drive)(&mut h)?;
     frames(&mut h);

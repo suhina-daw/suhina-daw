@@ -49,8 +49,9 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             }
             "--scene" => {
                 let name = value("--scene")?;
-                if scenes::find(&name).is_none() {
-                    let names: Vec<_> = scenes::scenes().into_iter().map(|s| s.name).collect();
+                let all = scenes::scenes();
+                if !all.iter().any(|s| s.name == name) {
+                    let names: Vec<_> = all.into_iter().map(|s| s.name).collect();
                     return Err(format!("no scene {name:?}; the scenes are {}", names.join(", ")));
                 }
                 parsed.scene = Some(name);
@@ -79,9 +80,8 @@ fn run() -> Result<(), String> {
         Subject::built_in(&args.theme)
             .ok_or_else(|| format!("{}: neither a theme folder nor a built-in theme's id", args.theme))?
     };
-    let chosen = |s: &scenes::Scene| args.scene.as_deref().is_none_or(|name| s.name == name);
     if args.budget {
-        for scene in scenes::scenes().iter().filter(|s| chosen(s)) {
+        for scene in &scenes::select(args.scene.as_deref()) {
             match budget::count(&subject, scene) {
                 Ok(counts) => println!("{}: {counts:?}", scene.name),
                 Err(e) => println!("{}: not drawn: {e}", scene.name),
@@ -96,6 +96,11 @@ fn run() -> Result<(), String> {
     let done = render_all(&subject, &backdrop, &args.out, args.scale, args.scene.as_deref())?;
     for problem in &done.failed {
         eprintln!("not drawn: {problem}");
+    }
+    for scene in &done.clamped {
+        eprintln!(
+            "warning: drawn at a smaller scale than --scale, which the GPU's textures are too small for ({scene})"
+        );
     }
     if !done.restless.is_empty() {
         eprintln!(
