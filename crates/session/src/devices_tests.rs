@@ -86,7 +86,9 @@ fn an_editor_edit_turns_its_lane_off_but_an_echo_does_not() {
 /// a value its lane sent there is not (#1205).
 #[test]
 fn a_parameter_moved_in_an_editor_is_reported_for_its_lanes() {
-    let project = with_lane();
+    let mut project = with_lane();
+    // The track plays through the plug-in's channel, so its lanes are the track's.
+    project.tracks[0].channel = Some(ChannelId(1));
     let key = suhina_engine::plugin_devices(&project)[0].key;
     let edits = [(key, 0, 0.95), (key, 3, 0.2), (key, 3, 0.4)];
     assert_eq!(touched_by_hand(&project, &edits, Some((false, 4.0))), [(TrackId(1), 0, 0), (TrackId(1), 0, 3)]);
