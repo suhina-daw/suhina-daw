@@ -946,3 +946,56 @@ fn a_hovered_clip_takes_the_themes_hover_background() {
     assert!(hovered.contains(&green), "the hovered clip takes the rule's background: {hovered:?}");
     assert!(!left.contains(&green), "and gives it back once the pointer has gone");
 }
+
+/// A workspace layout with only gaps keeps both splitters, and they still resize their panels; a
+/// fixed browser width takes the browser's splitter away (#1240).
+#[test]
+fn a_layout_with_only_gaps_keeps_the_splitters_and_a_fixed_width_takes_the_browsers() {
+    fn press(h: &mut Harness<'static, App>, pos: egui::Pos2, pressed: bool) {
+        let (button, modifiers) = (egui::PointerButton::Primary, egui::Modifiers::NONE);
+        h.input_mut().events.push(egui::Event::PointerButton { pos, button, pressed, modifiers });
+        h.step();
+    }
+    fn drag(h: &mut Harness<'static, App>, label: &str, by: Vec2) -> Option<egui::Rect> {
+        let from = h.query_by_label(label)?.rect().center();
+        h.hover_at(from);
+        h.step();
+        press(h, from, true);
+        for step in 1..=6 {
+            h.hover_at(from + by * (step as f32 / 6.0));
+            h.step();
+        }
+        press(h, from + by, false);
+        h.run();
+        h.query_by_label(label).map(|n| n.rect())
+    }
+    let open = |css: &str| {
+        let mut app = App::new();
+        app.set_browser_open(true);
+        app.set_session(Session::new(demo_project()), &[]);
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+        let mut h = window(app);
+        // A clip's editor: its height is the splitter's (a track's devices open at one height).
+        h.get_by_label("Launcher view").click();
+        h.run();
+        h.get_by_label("Select Beat B on Drums (scene 3)").click();
+        h.run();
+        h
+    };
+    let mut h = open("#workspace { gap: 8px; }");
+    let width = h.state().settings().browser_width;
+    assert!(drag(&mut h, "Browser splitter", Vec2::new(40.0, 0.0)).is_some(), "the browser's splitter stays");
+    let wider = h.state().settings().browser_width;
+    let before = h.get_by_label("Detail area splitter").rect();
+    let after = drag(&mut h, "Detail area splitter", Vec2::new(0.0, -40.0));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(wider >= width + 30, "dragging it widens the browser: {width} to {wider}");
+    assert!(after.is_some_and(|a| a.top() < before.top() - 30.0), "the detail area's grows: {before:?} {after:?}");
+
+    let h = open("#workspace { gap: 8px; } #panel-browser { width: 260px; }");
+    let fixed = h.query_by_label("Browser splitter").is_none();
+    let detail = h.query_by_label("Detail area splitter").is_some();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(fixed, "the sheet's width owns the browser's size");
+    assert!(detail, "the detail area's height is still the splitter's");
+}

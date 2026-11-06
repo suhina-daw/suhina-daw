@@ -759,10 +759,37 @@ fn workspace_grid_resolves_real_panels_and_respects_native_visibility() {
     assert_eq!(layout.main, Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(552.0, 432.0)));
     assert_eq!(layout.browser.unwrap().left(), 560.0);
     assert_eq!(layout.detail.unwrap().top(), 440.0);
+    assert!(!layout.browser_follows && !layout.detail_follows, "the sheet sizes both: no splitters");
     let closed = workspace(Vec2::new(800.0, 600.0), None, None).unwrap();
     assert!(closed.browser.is_none() && closed.detail.is_none());
     prepare(".browser {color:red;}", 800.0);
     assert!(workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, 120.0))).is_none());
+    skin::configure(&skin::Skin::default());
+}
+/// A layout that only adds gaps leaves the panels' sizes to their splitters, beside the view or
+/// stacked; a fixed size takes that panel's (#1240).
+#[test]
+fn a_workspace_layout_keeps_the_splitters_of_the_panels_it_does_not_size() {
+    for stacked in [false, true] {
+        prepare("#workspace { gap: 6px; }", 800.0);
+        let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((stacked, 120.0))).unwrap();
+        assert!(layout.browser_follows && layout.detail_follows, "gaps only, stacked {stacked}: {layout:?}");
+        prepare("#workspace { gap: 6px; } #panel-browser { width: 248px; }", 800.0);
+        let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((stacked, 120.0))).unwrap();
+        assert!(!layout.browser_follows && layout.detail_follows, "a fixed browser, stacked {stacked}: {layout:?}");
+    }
+    let between = splitter_between(
+        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(200.0, 600.0)),
+        Rect::from_min_max(egui::pos2(206.0, 0.0), egui::pos2(800.0, 600.0)),
+        4.0,
+    );
+    assert_eq!(between, Rect::from_min_max(egui::pos2(200.0, 0.0), egui::pos2(206.0, 600.0)), "the gap");
+    let thin = splitter_between(
+        Rect::from_min_max(egui::pos2(0.0, 500.0), egui::pos2(800.0, 600.0)),
+        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(800.0, 500.0)),
+        4.0,
+    );
+    assert_eq!(thin, Rect::from_min_max(egui::pos2(0.0, 498.0), egui::pos2(800.0, 502.0)), "at least its thickness");
     skin::configure(&skin::Skin::default());
 }
 #[test]

@@ -145,17 +145,27 @@ impl App {
     }
 
     /// Lays out the detail area beside or under the view in `area`, draws it with its splitter,
-    /// and returns what is left for the view.
+    /// and returns what is left for the view. With `geometry` the theme's layout places it: the
+    /// view's rectangle, its own, and whether its size follows the splitter
+    /// (`Workspace::detail_follows`).
     pub(super) fn detail_area(
         &mut self,
         ui: &mut Ui,
         area: Rect,
         actions: &mut Vec<Action>,
-        geometry: Option<(Rect, Rect)>,
+        geometry: Option<(Rect, Rect, bool)>,
     ) -> Rect {
         let _panel_style = crate::kit::style_class::enter_named("workspace-panel", "panel-detail");
         let styled_ui = crate::kit::style_class::ui(ui);
-        let mut styled_ui = if let Some((_, detail)) = geometry { styled_ui.clipped_to(detail) } else { styled_ui };
+        // The splitter a theme's layout keeps lies in the gap beside the area: drawn and taking the
+        // pointer there too (#1240).
+        let css_splitter = geometry.map(|(view, detail, follows)| {
+            if follows { crate::kit::native_css::splitter_between(detail, view, SPLITTER) } else { Rect::NOTHING }
+        });
+        let mut styled_ui = match (geometry, css_splitter) {
+            (Some((_, detail, _)), Some(splitter)) => styled_ui.clipped_to(detail.union(splitter)),
+            _ => styled_ui,
+        };
         let ui = &mut *styled_ui;
         let stacked = self.settings.device_layout == DeviceLayout::Stack;
         // The piano roll's Focus switch keeps the focus on the clip picked first.
@@ -330,8 +340,8 @@ impl App {
                 self.detail_showing,
             ),
         );
-        let (view, splitter, detail) = if let Some((view, detail)) = geometry {
-            (view, Rect::NOTHING, detail)
+        let (view, splitter, detail) = if let Some((view, detail, _)) = geometry {
+            (view, css_splitter.unwrap_or(Rect::NOTHING), detail)
         } else if stacked {
             self.detail_width = self.detail_width.clamp(180.0, (area.width() - 240.0).max(180.0));
             let x = area.right() - self.detail_width;
@@ -371,7 +381,7 @@ impl App {
         // The splitter: dragged to make the detail area bigger or smaller; under the
         // Arrangement view, past the view's least height the piano roll goes to the top, and a
         // double-click takes it there and back.
-        if geometry.is_none() {
+        if splitter.is_positive() {
             let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
             let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
             let sense = Sense::click_and_drag();

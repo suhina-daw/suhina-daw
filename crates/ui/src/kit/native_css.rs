@@ -32,7 +32,7 @@ pub use paint::{
     surface, thickness,
 };
 pub use text::paint_text;
-pub use workspace::{Workspace, workspace};
+pub use workspace::{Workspace, splitter_between, workspace};
 
 const MAX_CONTEXTS: usize = 128;
 const MAX_DEPTH: usize = 16;

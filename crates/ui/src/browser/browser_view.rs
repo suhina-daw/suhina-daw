@@ -2007,6 +2007,7 @@ pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32
     let response = ui
         .interact(handle, Id::unique("browser-resize"), Sense::click_and_drag())
         .on_hover_cursor(CursorIcon::ResizeHorizontal);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Browser splitter"));
     if response.double_clicked() {
         return (Some(default), true);
     }

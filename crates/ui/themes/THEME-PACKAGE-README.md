@@ -420,8 +420,10 @@ Portable exports include inherited artwork so another machine receives the same 
 #panel-detail { grid-column: 2; grid-row: 2; height: 180px; }
 ```
 
-Workspace layout respects native panel visibility. CSS-owned sizes replace the
-browser/detail splitters; removing the layout rules restores saved native sizes. A panel the grid
+Workspace layout respects native panel visibility. A panel whose size the sheet sets (a `width`
+on `#panel-browser`, a `height` on `#panel-detail`, a fixed grid track) has no splitter; one whose
+size it leaves alone keeps its splitter, in the gap beside it, so `#workspace { gap: 8px; }`
+alone keeps both. Removing the layout rules restores saved native sizes. A panel the grid
 places in the same cells as `#panel-main` is drawn over the view and takes the pointer there,
 for example a browser floating over the left of the view:
 

@@ -669,8 +669,11 @@ children `#panel-browser`, `#panel-main`, `#panel-detail`. They contain the brow
 Launcher/Arrangement and detail scopes respectively. Authored layout declarations on
 these containers opt into CSS Flex/Grid geometry. With none, native splitters and layout
 remain in charge. Closed native panels do not become visible merely through CSS.
-In CSS layout mode, dimensions and placement come from the stylesheet, so browser/detail
-splitters do not change CSS-owned sizes. Drawing, input clipping and drag/drop targets
+In CSS layout mode, placement comes from the stylesheet. A panel whose size the sheet sets has no
+splitter; one whose size it leaves to the native grid (a layout with only gaps or margins) keeps
+its splitter in the gap beside it, and dragging it still sets the saved size. Which panels follow
+is found by laying the grid out again with their preferred sizes a point larger, not by a list of
+properties (#1240). Drawing, input clipping and drag/drop targets
 must use the same resolved rectangles. Removing those layout declarations restores the
 native arrangement and its saved sizes. Bars and floating windows remain host-managed.
 
