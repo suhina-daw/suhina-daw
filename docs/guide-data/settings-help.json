@@ -2468,7 +2468,7 @@
   },
   "Arrangement/Gain envelope/gain_envelope_step": {
     "summary": "Choose the steps a gain envelope point moves in when it snaps.",
-    "description": "While a gain envelope is edited, faint lines show this grid over the clip, and points added or dragged land on it unless Free move is on or Shift is held.",
+    "description": "While a gain envelope is edited, faint lines show this grid over the clip, and points added or dragged land on it unless Free move is on or Alt is held.",
     "options": [
       {
         "name": "0.5 dB",

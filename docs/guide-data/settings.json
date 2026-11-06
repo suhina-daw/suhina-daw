@@ -1563,7 +1563,7 @@
       ],
       "sourceFingerprint": "e4a380889345138a7ff6b956568bcc1f906af09d1f9147cd6df2aac52d66c7a3",
       "helpStatus": "reviewed",
-      "description": "While a gain envelope is edited, faint lines show this grid over the clip, and points added or dragged land on it unless Free move is on or Shift is held.",
+      "description": "While a gain envelope is edited, faint lines show this grid over the clip, and points added or dragged land on it unless Free move is on or Alt is held.",
       "options": [
         {
           "name": "0.5 dB",

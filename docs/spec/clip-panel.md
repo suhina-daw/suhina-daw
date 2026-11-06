@@ -137,7 +137,10 @@ clip stretches its envelope with its audio.
 **The scale.** On a clip in the Arrangement the envelope is drawn over the waveform's area (under
 the name bar): 0 dB, the sample as it is, across its middle; the ceiling (Settings › Arrangement ›
 Gain envelope ceiling: +3, +6, +12 or +24 dB, +6 by default) at its top; −70 dB at its bottom.
-Each half is even in dB, so the lower half's steps are smaller than the upper half's. A point set
+The upper half is even in dB. The lower half goes by the gain a level plays at, as the waveform is
+drawn: the first dB of a cut, where most cuts are, take most of it (−1 dB about 11 % of the way
+down, −3 dB about 30 %, −6 dB half, −20 dB 90 %), so a cut of a few dB is a drag of many points,
+not of a few, and the line's height reads like the waveform's. A point set
 above the ceiling before it was lowered keeps its level, and the scale's top reaches it, so the line
 is always drawn where it is heard.
 
@@ -152,21 +155,23 @@ clip with points shows its line, thin, while it is not being edited.
 with the clip selected, the small envelope button left of the clip's name, or the clip panel's
 switch; the same again closes it. While it is open:
 
-- the pointer over the clip's body is a pointing hand; over a point, an open hand, and a closed
-  one while it is dragged;
+- only the line and the points take the pointer: a click or a drag anywhere else on the clip
+  selects and moves it as ever. The pointer within 5 points of the line is a pointing hand; over a
+  point, an open hand, and a closed one while it is dragged;
 - faint lines show the dB grid (Settings › Gain envelope grid: 0.5, 1, 2, 3 or 6 dB, 1 dB by
   default; lines closer than 5 points are left out), the 0 dB line stronger;
-- a **click** on the body adds a point there: its beat and the level under the pointer, on the grid;
-- a **drag** from the body adds a point and moves it; a point is **dragged** to move it: sideways in
+- a **click** on the line adds a point there, on the beat grid, at the level the line has there, so
+  the line keeps its shape;
+- a **drag** from the line adds a point and moves it; a point is **dragged** to move it: sideways in
   time on the Arrangement's beat grid, up and down in level on the dB grid and below the ceiling;
   dragged over another point it passes it, as on an automation lane, and on another point's beat it
-  stays on the side it came from. Within 5 points of the middle it goes to 0 dB itself, the sample's
+  stays on the side it came from. Within 3 points of the middle it goes to 0 dB itself, the sample's
   own level. Alt holds it off both grids and the middle while it is dragged, as Free move does (and
   as Alt frees a drag on the piano roll's grid); Shift moves it a tenth as much, off the grids too. Its value shows beside the pointer
   while the button is down ("−3 dB");
 - the **round handle** half-way along a sloping segment (one at least 28 points wide) bends it when
   dragged up or down, as an automation lane's does, and a double-click on it straightens it; Alt
-  and a drag of the body bend the segment under the pointer the same way. A point added on a bent
+  and a drag from the line bend the segment under the pointer the same way. A point added on a bent
   segment cuts its curve in two, so the line keeps its shape (`Curve::split`);
 - **Free move**, a button under the name, lets points move freely, in time and to a tenth of a dB,
   instead of on the grids; Settings › Envelope points move says which it starts as;

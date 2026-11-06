@@ -6,9 +6,10 @@
 //!
 //! 0 dB, the sample as it is, runs across the middle of the clip's body; gain goes up to the
 //! ceiling (Settings › Arrangement › Gain envelope) at its top and down to −70 dB at its bottom,
-//! each half even in dB. With Show gain envelope on, a clip with points shows its line. Edit gain
+//! even in dB above the middle and by gain below it. With Show gain envelope on, a clip with points shows its line. Edit gain
 //! envelope (Alt+E, or the button left of the clip's name) opens one clip for editing: a click on
-//! its body adds a point, a drag moves one (snapped to the grids, or free with Free move or Alt), a
+//! its line adds a point on it, a drag from the line or a point moves one (elsewhere the clip
+//! takes the pointer as ever) (snapped to the grids, or free with Free move or Alt), a
 //! double-click on a point or Delete over it removes it; each is one `clip.setEnvelope`. The
 //! waveform is drawn through the envelope, so it shows what is heard as a point is dragged.
 
@@ -32,7 +33,9 @@ const STEP: f32 = 2.0;
 /// Grid lines closer than this, in points, are left out (every other one, and so on).
 const GRID_GAP: f32 = 5.0;
 /// How near 0 dB, in points, a dragged point is pulled onto it.
-const ZERO_PULL: f32 = 5.0;
+const ZERO_PULL: f32 = 3.0;
+/// How near the line, in points, the pointer adds a point or bends a segment.
+const LINE_HIT: f32 = 5.0;
 /// The bend handle half-way along a segment, as an automation lane's: its radius, and the
 /// narrowest segment, in points, that has one.
 const CURVE_HANDLE: f32 = 3.5;
@@ -123,28 +126,37 @@ pub fn top(ceiling: f64, points: &[GainPoint]) -> f64 {
     ceiling.max(highest).clamp(0.5, *GAIN_POINT_RANGE.end())
 }
 
-/// The height of `db` in `rect`: 0 dB across the middle, `top` at the top and −70 dB at the
-/// bottom, each half even in dB.
+/// How far down the lower half `db` (below 0) is, from 0 at the middle to 1 at −70 dB: by the
+/// gain it plays at, as the waveform is drawn, so the first few dB of a cut, where most cuts are,
+/// take most of the half (−3 dB about 30 %, −6 dB half, −20 dB 90 %).
+fn depth(db: f64) -> f64 {
+    let floor = db_to_gain(*GAIN_POINT_RANGE.start());
+    ((1.0 - db_to_gain(db)) / (1.0 - floor)).clamp(0.0, 1.0)
+}
+
+/// The dB `depth` down the lower half, the inverse of [`depth`].
+fn depth_db(depth: f64) -> f64 {
+    let floor = db_to_gain(*GAIN_POINT_RANGE.start());
+    let gain = 1.0 - depth.clamp(0.0, 1.0) * (1.0 - floor);
+    (20.0 * gain.max(floor).log10()).max(*GAIN_POINT_RANGE.start())
+}
+
+/// The height of `db` in `rect`: 0 dB across the middle, `top` at the top, even in dB above the
+/// middle, and −70 dB at the bottom, by the gain below it ([`depth`]).
 pub fn y_of(rect: Rect, db: f64, top: f64) -> f32 {
-    let low = *GAIN_POINT_RANGE.start();
     let middle = rect.center().y;
     let half = rect.height() / 2.0;
-    if db >= 0.0 {
-        middle - (db.min(top) / top.max(1e-9)) as f32 * half
-    } else {
-        middle + (db.max(low) / low) as f32 * half
-    }
+    if db >= 0.0 { middle - (db.min(top) / top.max(1e-9)) as f32 * half } else { middle + depth(db) as f32 * half }
 }
 
 /// The dB at height `y` in `rect`, the inverse of [`y_of`], kept between −70 dB and `top`.
 pub fn db_at(rect: Rect, y: f32, top: f64) -> f64 {
-    let low = *GAIN_POINT_RANGE.start();
     let half = rect.height() / 2.0;
     if half <= 0.0 {
         return 0.0;
     }
     let t = f64::from((rect.center().y - y) / half).clamp(-1.0, 1.0);
-    if t >= 0.0 { t * top } else { -t * low }
+    if t >= 0.0 { t * top } else { depth_db(-t) }
 }
 
 /// `db` on the grid of `step` dB, or to a tenth of a dB when free.
@@ -224,7 +236,12 @@ fn draft_key() -> Id {
     Id::unique("clip-envelope-draft")
 }
 
-/// A segment's curve being dragged (its bend handle, or Alt and a drag of the body), as on an
+/// The clip whose envelope line the pointer was pressed on, while a button is down.
+fn held_key() -> Id {
+    Id::unique("clip-envelope-held")
+}
+
+/// A segment's curve being dragged (its bend handle, or Alt and a drag from the line), as on an
 /// automation lane (`docs/spec/automation.md` › Dragging a curve): the segment's first point,
 /// the drag's paths and how far it has moved.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -386,25 +403,51 @@ pub fn show(
         return;
     }
 
-    // The body: a click adds a point, a drag adds one and moves it; with Alt a drag bends the
-    // segment under the pointer, as on an automation lane.
-    let body = ui
-        .interact(visible, Id::unique(("clip-envelope-body", clip.0)), Sense::click_and_drag())
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
-    body.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Gain envelope of {name}")));
+    // The body only names the envelope; clicks and drags away from the line go to the clip as
+    // ever (select, move). On the line: a click adds a point on it, a drag adds one and moves it;
+    // with Alt a drag bends the segment under the pointer, as on an automation lane.
+    ui.interact(visible, Id::unique(("clip-envelope-area", clip.0)), Sense::hover())
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Gain envelope of {name}")));
+    let any_down = ui.input(|i| i.pointer.any_down());
+    if !any_down {
+        ui.data_mut(|d| d.remove::<ClipId>(held_key()));
+    }
+    // Once pressed on the line, the drag goes on wherever the pointer goes.
+    let held = any_down && ui.data(|d| d.get_temp::<ClipId>(held_key())) == Some(clip);
+    let line_y = |x: f32| y_of(rect, envelope_db_at(&points, mapping.content(elapsed_at(x))), top);
+    let near =
+        ui.input(|i| i.pointer.hover_pos()).filter(|p| visible.contains(*p) && (p.y - line_y(p.x)).abs() <= LINE_HIT);
+    let hit = if held {
+        Some(visible)
+    } else {
+        near.map(|p| {
+            Rect::from_center_size(Pos2::new(p.x, line_y(p.x)), Vec2::new(LINE_HIT * 6.0, LINE_HIT * 2.0))
+                .intersect(visible)
+        })
+    };
+    let body = hit.map(|hit| {
+        ui.interact(hit, Id::unique(("clip-envelope-body", clip.0)), Sense::click_and_drag())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    });
+    if body.as_ref().is_some_and(egui::Response::is_pointer_button_down_on) {
+        ui.data_mut(|d| d.insert_temp(held_key(), clip));
+    }
     let alt = ui.input(|i| i.modifiers.alt);
+    // A point added on the line keeps the line's shape: at the level the line has there.
     let add_at = |pointer: Pos2| {
         let beat = mapping.content(placed_at(pointer.x));
-        with_point(&points, beat, dragged_db(ui, rect, pointer, 0.0, top))
+        with_point(&points, beat, (envelope_db_at(&points, beat) * 100.0).round() / 100.0)
     };
-    if body.clicked()
+    if let Some(body) = &body
+        && body.clicked()
         && !alt
         && let Some(pointer) = body.interact_pointer_pos()
     {
         actions.push(set(clip, &add_at(pointer).0));
         return;
     }
-    if body.drag_started_by(egui::PointerButton::Primary)
+    if let Some(body) = &body
+        && body.drag_started_by(egui::PointerButton::Primary)
         && let Some(pointer) = body.interact_pointer_pos()
     {
         if alt {
@@ -419,7 +462,9 @@ pub fn show(
         }
     }
     let mut dragging = None;
-    if body.dragged_by(egui::PointerButton::Primary) {
+    if let Some(body) = &body
+        && body.dragged_by(egui::PointerButton::Primary)
+    {
         if curve_edit(ui.ctx(), clip).is_some() {
             drag_curve(ui, clip, body.drag_delta().y);
         } else {
@@ -725,16 +770,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn zero_db_is_the_middle_and_each_half_is_even() {
+    fn zero_db_is_the_middle_and_the_first_db_of_a_cut_are_wide() {
         let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0));
         assert_eq!(y_of(rect, 0.0, 6.0), 50.0);
         assert_eq!(y_of(rect, 6.0, 6.0), 0.0);
-        assert_eq!(y_of(rect, 3.0, 6.0), 25.0);
+        assert_eq!(y_of(rect, 3.0, 6.0), 25.0, "even in dB above the middle");
         assert_eq!(y_of(rect, -70.0, 6.0), 100.0);
-        assert_eq!(y_of(rect, -35.0, 6.0), 75.0);
-        assert!((db_at(rect, y_of(rect, -6.0, 6.0), 6.0) + 6.0).abs() < 1e-4);
-        assert!((db_at(rect, y_of(rect, 2.5, 6.0), 6.0) - 2.5).abs() < 1e-4);
+        // Below it by gain: a 3 dB cut is near a third of the way down, 6 dB half of it.
+        assert!((y_of(rect, -3.0, 6.0) - 64.6).abs() < 0.1, "{}", y_of(rect, -3.0, 6.0));
+        assert!((y_of(rect, -6.0, 6.0) - 75.0).abs() < 0.1, "{}", y_of(rect, -6.0, 6.0));
+        assert!(y_of(rect, -1.0, 6.0) - 50.0 > 5.0, "a dB is over five points of a 100-point clip");
+        for db in [-0.5, -1.0, -6.0, -24.0, -60.0, 2.5] {
+            assert!((db_at(rect, y_of(rect, db, 6.0), 6.0) - db).abs() < 1e-3, "{db}");
+        }
         assert_eq!(db_at(rect, -10.0, 6.0), 6.0, "kept below the top");
+        assert_eq!(db_at(rect, 120.0, 6.0), -70.0, "and above the floor");
     }
 
     #[test]

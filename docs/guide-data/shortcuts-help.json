@@ -1238,7 +1238,7 @@
     ]
   },
   "view.gainEnvelope": {
-    "description": "Opens the selected audio clip's gain envelope for editing on its waveform in the Arrangement, or closes it. While it is open a click on the clip adds a point and a drag moves one.",
+    "description": "Opens the selected audio clip's gain envelope for editing on its waveform in the Arrangement, or closes it. While it is open a click on the envelope line adds a point and a drag moves one; elsewhere the clip is selected and moved as usual.",
     "context": "Requires an audio clip selected in the Arrangement.",
     "whenToUse": "Ride a clip's level over time without automation, such as taming one loud word.",
     "platformNotes": "Windows and Linux use Alt. On macOS it is Option; the action and focus requirements are the same.",
