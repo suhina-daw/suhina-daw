@@ -652,8 +652,9 @@ impl App {
         let piano_roll = &mut self.piano_roll;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
             if let (Some(piano), detail_view::Detail::Clip(info, _)) = (&piano, &shown) {
-                // The clip's panel, with its note tools beside the Clip part while they are shown
-                // (the toolbar's three-slider button; › Note tools).
+                // The clip's panel: the Clip part with what the tools act on under it, and the note
+                // tools beside them while they are shown (the toolbar's three-slider button;
+                // › Note tools).
                 let selected = piano_roll.acting().clone();
                 // A time selection with no note in it gives the tools nothing to act on.
                 let nothing = selected.is_empty() && piano_roll.span_end().is_some();
@@ -664,8 +665,13 @@ impl App {
                     length: piano.length,
                     nothing,
                 };
-                let midi = (piano_roll.tools_open && !info.audio)
-                    .then_some(detail_view::MidiTools { tools: &tools, state: &mut *piano_roll });
+                let show_tools = piano_roll.tools_open;
+                let midi = (!info.audio).then_some(detail_view::MidiTools {
+                    tools: &tools,
+                    state: &mut *piano_roll,
+                    show_tools,
+                    figures_beside: false,
+                });
                 let (rest, picked) = detail_view::show_clip_column(ui, info, stacked, midi, actions);
                 let picked = detail_view::Picked { showing: picked.showing, ..detail_view::Picked::default() };
                 let seeks = matches!(piano.address.get("clip"), Some(serde_json::Value::Number(_)));

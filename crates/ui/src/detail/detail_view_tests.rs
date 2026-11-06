@@ -1424,7 +1424,7 @@ fn midi_harness(
                 length: 16.0,
                 nothing: false,
             };
-            let midi = MidiTools { tools: &tools, state };
+            let midi = MidiTools { tools: &tools, state, show_tools: true, figures_beside: false };
             show_clip_column(ui, &info, stacked, Some(midi), actions);
         },
         (Vec::new(), crate::detail::piano_roll::PianoRollState::default()),
@@ -1437,10 +1437,14 @@ fn midi_harness(
 #[test]
 fn the_midi_panels_tabs_run_the_note_tools() {
     use egui_kittest::kittest::Queryable;
-    let mut harness = midi_harness(None, &[1, 2], egui::vec2(1000.0, 260.0), false);
+    let mut harness = midi_harness(None, &[1, 2], egui::vec2(1000.0, 320.0), false);
     assert!(harness.query_by_label("Selected notes").is_some(), "the chip says what the tools act on");
-    assert!(harness.query_by_label("2 of 4 notes").is_some());
-    assert!(harness.query_by_label("Notes: 2 of 4").is_some(), "and the figures how many");
+    assert!(harness.query_by_label("2 of 4 notes").is_some(), "and how many");
+    // The figures are under the Clip part, the tools beside them.
+    let scale = harness.get_by_label_contains("Scale: ").rect();
+    let chip = harness.get_by_label("Selected notes").rect();
+    let reverse = harness.get_by_label("Reverse").rect();
+    assert!(chip.top() >= scale.bottom() && chip.right() <= reverse.left(), "{scale:?} {chip:?} {reverse:?}");
     harness.get_by_label("Reverse").click();
     harness.run();
     let reversed = harness.state().0.last().cloned();

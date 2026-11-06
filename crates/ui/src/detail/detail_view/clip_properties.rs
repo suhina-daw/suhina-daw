@@ -150,10 +150,17 @@ pub(super) fn clip_properties(
     });
     // Stacked, the tools part goes under the Clip part only where it leaves the note grid under
     // them its room.
-    let midi = midi.filter(|_| !stacked || area.height() >= 26.0 + super::midi_panel::stacked_height(true) + 160.0);
+    let midi = midi.map(|mut midi| {
+        let room = 26.0 + super::midi_panel::stacked_height(true, true) + 160.0;
+        midi.show_tools &= !stacked || area.height() >= room;
+        midi.figures_beside = !stacked && !super::midi_panel::figures_fit_under(area.height() - 26.0);
+        midi
+    });
+    let show_tools = midi.as_ref().is_some_and(|m| m.show_tools);
+    let figures_beside = midi.as_ref().is_some_and(|m| m.figures_beside);
     let column = if stacked {
         let height = match &panel {
-            Some(_) if !info.audio => 26.0 + super::midi_panel::stacked_height(midi.is_some()),
+            Some(_) if !info.audio => 26.0 + super::midi_panel::stacked_height(midi.is_some(), show_tools),
             Some(_) => 26.0 + super::clip_panel::stacked_height(info),
             None => ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW,
         };
@@ -166,7 +173,7 @@ pub(super) fn clip_properties(
             crate::kit::style_class::computed().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0))
         };
         let width = match &panel {
-            Some(_) if !info.audio => super::midi_panel::row_width(midi.is_some()),
+            Some(_) if !info.audio => super::midi_panel::row_width(show_tools, figures_beside),
             Some(_) => super::clip_panel::ROW_WIDTH,
             None => width,
         };

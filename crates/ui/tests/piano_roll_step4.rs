@@ -367,15 +367,16 @@ fn humanise_twice_gives_two_different_results() {
 fn the_three_slider_icon_hides_and_shows_the_column() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    assert!(h.query_by_label("Whole clip").is_some(), "the column shows at first");
+    assert!(h.query_by_label("Notes tab").is_some(), "the tools show at first");
     h.get_by_label("MIDI tools").click();
     h.run();
     assert!(!h.state().piano_roll().tools_open);
-    assert!(h.query_by_label("Whole clip").is_none(), "the column is hidden");
+    assert!(h.query_by_label("Notes tab").is_none(), "the tools are hidden");
+    assert!(h.query_by_label("Whole clip").is_some(), "what they act on still shows");
     h.get_by_label("MIDI tools").click();
     h.run();
     assert!(h.state().piano_roll().tools_open);
-    assert!(h.query_by_label("Whole clip").is_some(), "and comes back");
+    assert!(h.query_by_label("Notes tab").is_some(), "and they come back");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -388,7 +389,7 @@ fn the_clip_column_describes_the_selection() {
     let mut h = piano_app(&mut renderer, Settings::default());
     let notes = notes(&h);
     let total = notes.len();
-    assert!(h.query_by_label(&format!("Notes: {total}")).is_some(), "nothing selected: the count");
+    assert!(h.query_by_label(&format!("{total} notes")).is_some(), "nothing selected: the count");
     // With nothing selected the figures are the whole clip's.
     for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
         assert!(h.query_by_label_contains(label).is_some(), "the whole clip's {label}");
@@ -398,7 +399,7 @@ fn the_clip_column_describes_the_selection() {
     click(&mut h, at);
     let selected = h.state().piano_roll().selected.len();
     assert_eq!(selected, 1);
-    assert!(h.query_by_label(&format!("Notes: 1 of {total}")).is_some());
+    assert!(h.query_by_label(&format!("1 of {total} notes")).is_some());
     for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
         assert!(h.query_by_label_contains(label).is_some(), "{label}");
     }
@@ -411,7 +412,7 @@ fn the_clip_column_describes_the_selection() {
     tool(&mut h, "Mute");
     let at = note_rect(&h, &notes[0]).center();
     click(&mut h, at);
-    assert!(h.query_by_label(&format!("Notes: 1 of {total}, 1 muted")).is_some());
+    assert!(h.query_by_label("Muted: 1").is_some());
 }
 
 // ---------------------------------------------------------------------------------------------

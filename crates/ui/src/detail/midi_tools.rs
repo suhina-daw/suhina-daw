@@ -12,13 +12,13 @@ use serde_json::{Value, json};
 use suhina_engine::model::Note;
 
 /// The tools part's width in a row, beside the Clip part.
-pub const TOOLS_WIDTH: f32 = 284.0;
+pub const TOOLS_WIDTH: f32 = 136.0;
 
-/// The tools part's width: `.midi-tools { width }` in the theme (200 to 480 points), else
+/// The tools part's width: `.midi-tools { width }` in the theme (120 to 480 points), else
 /// [`TOOLS_WIDTH`].
 pub fn tools_width() -> f32 {
     let _style = crate::kit::style_class::enter("midi-tools");
-    crate::kit::style_class::computed().and_then(|c| c.width).map_or(TOOLS_WIDTH, |w| w.clamp(200.0, 480.0))
+    crate::kit::style_class::computed().and_then(|c| c.width).map_or(TOOLS_WIDTH, |w| w.clamp(120.0, 480.0))
 }
 
 /// The tools part's tabs: one-click tools on the notes, or a transformation with its settings.
@@ -63,13 +63,13 @@ impl Transform {
         }
     }
 
-    /// The line under the list that says what it does.
+    /// The line under the list that says what it does, short enough for the narrow part.
     pub fn hint(self) -> &'static str {
         match self {
-            Transform::Quantise => "Moves note starts toward the grid",
-            Transform::Humanise => "Moves notes slightly, like a person playing",
-            Transform::RandomiseVelocity => "Moves each velocity up or down at random",
-            Transform::RampVelocity => "Velocities rise or fall from first note to last",
+            Transform::Quantise => "Starts toward the grid",
+            Transform::Humanise => "Small shifts, like a player",
+            Transform::RandomiseVelocity => "Velocities up or down",
+            Transform::RampVelocity => "Velocities rise or fall",
         }
     }
 }

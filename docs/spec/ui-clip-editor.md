@@ -743,7 +743,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   once. The quantise controls are **Quantise** in the **Transform** tab of the clip panel's tools
   (› Note tools), on the left of the note grid: **Grid** (1/32 to 8 bars, triplets too; 1/16 at
   first), **Amount** (0 to 100 %, 100 at first) and **Move ends too** (off at first), and the
-  Apply button that says what it quantises (**Quantise clip**, **Quantise 3 notes**). The toolbar's
+  Apply button under them that says what it quantises (**Quantise clip**, **Quantise 3 notes**). The toolbar's
   quantise icon shows them (and lights while they show); a second click goes back to the Notes
   tab. Nothing floats over the note grid.
 - Escape goes back to the Notes tab. A press elsewhere does not (the tab is part of the panel, not
@@ -764,10 +764,13 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   ([clip panel spec](clip-panel.md)): a title row (the clip's colour, a click opens the palette; its
   name, a double-click renames it; its length in beats; the **Clip / Devices** switch), then the
   **Clip part** the two kinds share: **Start** | **End** with **Set**, the **Loop** switch,
-  **Position** | **Length** with **Set**, and **Scale** (root and mode, `clip.setScale`). In a row
-  the note tools sit beside it (› Note tools); with the detail area stacked (a column at the right
-  of the window) they go under it when the column is tall enough to leave the note grid under them
-  160 px, and are left out otherwise. The piano roll takes the rest.
+  **Position** | **Length** with **Set**, and **Scale** (root and mode, `clip.setScale`). Under
+  the Clip part, what the tools act on in figures (below); a row too short for them under it
+  (less than about 280 points under the title) puts them in a narrow column of their own at the
+  panel's right instead. In a row the note tools sit beside the Clip part (› Note tools); with the
+  detail area stacked (a column at the right of the window) everything goes one under another, the
+  tools only when the column is tall enough to leave the note grid under them 160 px. The piano
+  roll takes the rest.
 - **Several clips picked** in the Arrangement: the title says how many ("2 selected") and the
   panel shows the last picked clip; its Loop switch turns every picked clip's loop on or off with
   it. With several MIDI clips picked (#1054) the piano roll edits one of them, the one with the
@@ -784,15 +787,17 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **An audio clip's column** is its panel, in parts (Clip, Audio, Gain and Pitch) with a gain
   fader, a pitch knob with cents, the clip's tempo, Set buttons and numbers to type:
   [clip panel spec](clip-panel.md) ([#1190](https://github.com/suhina-daw/suhina-daw/issues/1190)).
-- **What is selected, in figures** (the Notes tab's right half, › Note tools): **Notes** reads
-  **"N of M"** while notes are selected, where N is how many are selected and M how many the clip
-  has, and just **M** with nothing selected; a selection of muted notes says how many, such as
-  `2 of 4, 1 muted`. Under it, for the selection or, with nothing selected, the whole clip, and
+- **What the tools act on, in figures**: first a chip with what the tools act on, **Whole clip**,
+  **Selected notes** (lit while notes are selected) or **No notes in time** (a time selection that
+  holds no note start; the tools then act on nothing), and how many notes that is (`4 notes`,
+  `3 of 12 notes`). Under it, for the selection or, with nothing selected, the whole clip, and
   only when they say something:
   - **Pitch**: the range of the keys, by name, such as `C3` for one key or `C3–G3` for several.
   - **From** and **To**: the span in the clip's beats, as the ruler writes them (bar and beat,
     such as `2.1` and `2.3`), from the earliest start to the latest end. They describe the notes as
     they are on the grid, so a drag shows the values it would land on only when it is let go.
+  - **Muted**: how many of them are muted, so a run muted with the Mute tool is visible here as
+    well as on the grid.
   - **Velocity**: the range of the velocities as 1 to 127, such as `64` or `64–127`, and under it a
     bar of 1 to 127 with the range lit.
 - **Built:** the panel never wraps a value onto more lines, at any height or width. A value too
@@ -916,16 +921,15 @@ button opens its clip in the editor.
   a click on the **MIDI tools** icon in the toolbar (› Layout). Showing or hiding it is window
   state: it is not a command, not saved with the project and not an undo step, and hiding it never
   changes the notes or the selection. `.midi-tools` styles it (its background, its text, and its
-  width from 200 to 480 points, 284 by default).
+  width from 120 to 480 points, 136 by default). The figures under the Clip part (› Clip column)
+  say what the tools act on, and stay while the tools are hidden.
 - Its tab row has two tabs, **Notes** and **Transform** (`.editor-tab`, `#tab-notes` and
-  `#tab-transform`; the one shown in `text.primary` over a 2 px `accent` line), and at its right a
-  chip that says what the tools act on: **Whole clip**, **Selected notes** (lit while notes are
-  selected), or **No notes in time** when a time selection holds no note start and the tools act on
-  nothing, with the count beside it (`4 notes` or `3 of 12 notes`).
+  `#tab-transform`; the one shown in `text.primary` over a 2 px `accent` line). Both tabs are the
+  part's width.
 - The tools keep their settings (Transpose's semitones, Humanise's, the velocity tools') until
   Suhina closes, as quantise's are, and the tab and the transformation chosen too.
-- **Notes** tab: one click each, over the notes the chip names, one undo step, so the same edit
-  runs from the CLI and MCP (› Commands). Beside them, what is selected in figures (› Clip column).
+- **Notes** tab: Transpose, then the tools two to a row, one click each, over the notes the chip
+  names, one undo step, so the same edit runs from the CLI and MCP (› Commands).
 
   | Tool | Does | Command |
   |---|---|---|
@@ -936,9 +940,9 @@ button opens its clip in the editor.
   | **Legato** | Makes each note last until the next one starts, at most, and the last notes until the end of a time selection, else the next note after them, else the clip's end | `note.legato` |
   | **×2**, **÷2** | Stretches or squeezes the selection in time, its starts and its lengths | `note.stretch` |
 
-- **Transform** tab: a list of transformations, a line on what the chosen one does, its settings,
-  and **Apply** at the top right, which says what it does and to what (**Humanise 3 notes**,
-  **Ramp clip**); a tooltip on it says the same line.
+- **Transform** tab, one under another: a list of transformations, a short line on what the
+  chosen one does, its settings, and at the bottom **Apply**, the part's width, which says what it
+  does and to what (**Humanise 3 notes**, **Ramp clip**); a tooltip on it says the same line.
 
   | Transformation | Settings | Command |
   |---|---|---|

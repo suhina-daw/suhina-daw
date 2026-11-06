@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A MIDI clip's panel in the clip column (`docs/spec/ui-clip-editor.md` › Clip column and › Note
-//! tools): the Clip part it shares with an audio clip's panel, and beside it (under it when the
-//! detail area is stacked) the tools part with its Notes and Transform tabs. Every tool is one
-//! `note.*` command over the selection or the whole clip; `.midi-tools` styles the tools part.
+//! tools): the Clip part it shares with an audio clip's panel with what the tools act on in
+//! figures under it, and beside them (under them when the detail area is stacked) the tools part
+//! with its Notes and Transform tabs. Every tool is one `note.*` command over the selection or the
+//! whole clip; `.midi-tools` styles the tools part.
 
 use super::clip_panel::{
     CLIP_PART, Change, FIELD, Field, GAP, NAME, PART_GAP, TOGGLE, Text, bar_of, clip_part, drop_down, name_over,
@@ -15,39 +16,61 @@ use crate::detail::midi_tools::{Tools, ToolsTab, Transform, tools_width};
 use crate::detail::piano_roll::{PianoRollState, QUANTIZE_GRIDS};
 use suhina_engine::model::{ROOT_NAMES, ScaleMode};
 
-/// What a MIDI clip's panel needs from the piano roll to show its tools: what they act on, and the
-/// piano roll's state, which keeps their settings, tab and transformation.
+/// What a MIDI clip's panel needs from the piano roll: what the tools act on, the piano roll's
+/// state (which keeps their settings, tab and transformation), and whether the tools part shows
+/// (the toolbar's three-slider button). The figures under the Clip part show either way.
 pub struct MidiTools<'a, 'b> {
     pub tools: &'a Tools<'b>,
     pub state: &'a mut PianoRollState,
+    pub show_tools: bool,
+    /// In a row too short for the figures under the Clip part, they go in a column of their own at
+    /// the panel's right instead (set by the column, from its height).
+    pub figures_beside: bool,
 }
 
-/// The tab row at the top of the tools part, a row of the selection's figures, and the bar under
-/// the velocity figures.
+/// The tab row at the top of the tools part, the chip at the top of the figures, a row of the
+/// figures, and the bar under the velocity figures.
 const TAB_ROW: f32 = 22.0;
+const CHIP: f32 = 18.0;
 const INFO_ROW: f32 = 14.0;
 const RANGE_BAR: f32 = 10.0;
 /// The space between the buttons of the Notes tab's grid.
 const BUTTON_GAP: f32 = 4.0;
-/// How tall the tools part is under its tab row: the tallest of its tabs.
-const TOOLS_BODY: f32 = NAME + FIELD + GAP + FIELD * 3.0 + BUTTON_GAP * 2.0;
+/// How tall the tools part is under its tab row: its taller tab, Transform (the list, the hint,
+/// two fields, a switch and Apply).
+const TOOLS_BODY: f32 = FIELD + GAP + 12.0 + GAP + NAME + FIELD + GAP + TOGGLE + GAP + TOGGLE;
+/// How tall the figures are at most: the chip, Pitch, From, To, Muted, Velocity and its bar.
+const FIGURES: f32 = CHIP + GAP + INFO_ROW * 4.0 + 4.0 + INFO_ROW + RANGE_BAR;
+/// The room between the Clip part and the figures under it.
+const FIGURES_GAP: f32 = 12.0;
 
-/// The panel's width in a row: the Clip part, and the tools part when it is shown.
-pub(super) fn row_width(tools: bool) -> f32 {
+/// The panel's width in a row: the Clip part with the figures under it, the tools part beside
+/// them when it is shown, and the figures in a column of their own when they do not fit under.
+pub(super) fn row_width(tools: bool, figures_beside: bool) -> f32 {
     let tools = if tools { PART_GAP + tools_width() } else { 0.0 };
-    CLIP_PART + tools + 16.0
+    let figures = if figures_beside { PART_GAP + tools_width() } else { 0.0 };
+    CLIP_PART + tools + figures + 16.0
+}
+
+/// Whether a row `height` tall (under the column's title row) holds the figures under the Clip
+/// part.
+pub(super) fn figures_fit_under(height: f32) -> bool {
+    let clip = (NAME + FIELD) * 3.0 + TOGGLE + GAP * 3.0;
+    height >= clip + FIGURES_GAP + FIGURES + 16.0
 }
 
 /// How tall the panel is with its parts one under another (the detail area stacked), under its
-/// title row.
-pub(super) fn stacked_height(tools: bool) -> f32 {
+/// title row: the Clip part, and with `midi` the figures and, with `tools`, the tools part.
+pub(super) fn stacked_height(midi: bool, tools: bool) -> f32 {
     let clip = (NAME + FIELD) * 3.0 + TOGGLE + GAP * 3.0;
-    let tools = if tools { 14.0 + TAB_ROW + GAP + TOOLS_BODY } else { 0.0 };
-    clip + tools + 16.0
+    let figures = if midi { FIGURES_GAP + FIGURES } else { 0.0 };
+    let tools = if midi && tools { 14.0 + TAB_ROW + GAP + TOOLS_BODY } else { 0.0 };
+    clip + figures + tools + 16.0
 }
 
-/// The MIDI clip's parts in `area` under the title row: side by side in a row, one under the other
-/// when `stacked`. Without `midi` (the clip's editor is not shown) only the Clip part is drawn.
+/// The MIDI clip's parts in `area` under the title row: the Clip part with the figures under it,
+/// and the tools part beside them in a row, or all one under another when `stacked`. Without
+/// `midi` (the clip's editor is not shown) only the Clip part is drawn.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn midi_panel(
     ui: &mut Ui,
@@ -61,27 +84,47 @@ pub(super) fn midi_panel(
     actions: &mut Vec<Action>,
 ) {
     let area = area.shrink(8.0);
-    if stacked {
-        let clip = Rect::from_min_max(area.min, Pos2::new(area.right(), area.bottom()));
-        let end = clip_part(ui, painter, clip, info, at, panel, actions);
-        if let Some(midi) = midi {
-            let top = end + 14.0;
-            let part = Rect::from_min_max(Pos2::new(area.left(), top), area.max);
-            tools_part(ui, painter, part, panel, midi, actions);
+    let clip =
+        if stacked { area } else { Rect::from_min_max(area.min, Pos2::new(area.left() + CLIP_PART, area.bottom())) };
+    let end = clip_part(ui, painter, clip, info, at, panel, actions);
+    let Some(midi) = midi else { return };
+    let beside = midi.figures_beside && !stacked;
+    if beside {
+        let tools = if midi.show_tools { PART_GAP + tools_width() } else { 0.0 };
+        let left = clip.right() + tools + PART_GAP;
+        let part = Rect::from_min_max(
+            Pos2::new(left, area.top()),
+            Pos2::new((left + tools_width()).min(area.right()), area.bottom()),
+        );
+        if part.width() > 40.0 {
+            figures(ui, painter, part, panel, midi.tools);
         }
+    }
+    let figures_top = end + FIGURES_GAP;
+    let figures_end = if beside {
+        figures_top
+    } else if figures_top < clip.bottom() {
+        let part = Rect::from_min_max(Pos2::new(clip.left(), figures_top), clip.max);
+        figures(ui, painter, part, panel, midi.tools)
+    } else {
+        figures_top
+    };
+    if !midi.show_tools {
         return;
     }
-    let clip = Rect::from_min_max(area.min, Pos2::new(area.left() + CLIP_PART, area.bottom()));
-    clip_part(ui, painter, clip, info, at, panel, actions);
-    if let Some(midi) = midi {
+    let part = if stacked {
+        Rect::from_min_max(Pos2::new(area.left(), figures_end + 14.0), area.max)
+    } else {
         let left = clip.right() + PART_GAP;
-        let right = (left + tools_width()).min(area.right());
-        let part = Rect::from_min_max(Pos2::new(left, area.top()), Pos2::new(right, area.bottom()));
-        tools_part(ui, painter, part, panel, midi, actions);
-    }
+        Rect::from_min_max(
+            Pos2::new(left, area.top()),
+            Pos2::new((left + tools_width()).min(area.right()), area.bottom()),
+        )
+    };
+    tools_part(ui, painter, part, panel, midi, actions);
 }
 
-/// The tools part: its tab row with what the tools act on, and the tab shown.
+/// The tools part: its tab row, and the tab shown.
 fn tools_part(
     ui: &mut Ui,
     painter: &egui::Painter,
@@ -93,12 +136,12 @@ fn tools_part(
     if part.height() < TAB_ROW || part.width() < 40.0 {
         return;
     }
-    let MidiTools { tools, state } = midi;
+    let MidiTools { tools, state, .. } = midi;
     // `.midi-tools` styles the part: its background and, through the scope, its controls' text.
     let _style = crate::kit::style_class::enter("midi-tools");
     crate::kit::native_css::surface(painter, part, 0.0, theme::panel_background());
     let tab_row = Rect::from_min_size(part.min, Vec2::new(part.width(), TAB_ROW));
-    tab_row_of(ui, painter, tab_row, tools, state);
+    tab_row_of(ui, painter, tab_row, state);
     let body = Rect::from_min_max(Pos2::new(part.left(), tab_row.bottom() + GAP), part.max);
     // A time selection with no note in it gives the tools nothing to act on.
     let before = actions.len();
@@ -116,14 +159,14 @@ fn tools_part(
     }
 }
 
-/// The tab row: the Notes and Transform tabs at the left (the one shown `text.primary` over a 2 px
-/// `accent` line, the other `text.hint`), and at the right a chip that says what the tools act on.
-fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, tools: &Tools<'_>, state: &mut PianoRollState) {
+/// The tab row: the Notes and Transform tabs (the one shown `text.primary` over a 2 px `accent`
+/// line, the other `text.hint`).
+fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRollState) {
     painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(theme::border()));
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut x = row.left();
     for (tab, text) in [(ToolsTab::Notes, "Notes"), (ToolsTab::Transform, "Transform")] {
-        let width = widgets::text_width(ui, text, font.clone()) + 16.0;
+        let width = (widgets::text_width(ui, text, font.clone()) + 16.0).min((row.right() - x).max(0.0));
         let cell = Rect::from_min_max(Pos2::new(x, row.top()), Pos2::new(x + width, row.bottom()));
         x = cell.right() + 2.0;
         let response = widgets::button_area(ui, cell, Id::unique(("midi-tools-tab", text)), format!("{text} tab"));
@@ -153,35 +196,6 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, tools: &Tools<'_>, st
             state.tools_tab = tab;
         }
     }
-    // The chip: what the tools act on and how many notes that is, lit while notes are selected.
-    let head = tools.head();
-    let count = tools.count_text();
-    let tiny = theme::ui_font(theme::TEXT_TINY);
-    let mono = theme::mono_font(theme::TEXT_TINY);
-    let head_width = widgets::text_width(ui, head, tiny.clone());
-    let count_width = widgets::text_width(ui, &count, mono.clone());
-    let chip_width = (head_width + count_width + 18.0).min((row.right() - x - 4.0).max(0.0));
-    if chip_width < 24.0 {
-        return;
-    }
-    let chip = Rect::from_center_size(
-        Pos2::new(row.right() - chip_width / 2.0, row.center().y - 1.0),
-        Vec2::new(chip_width, 16.0),
-    );
-    let selected = !tools.selected.is_empty();
-    let fill = if selected { theme::control_selected() } else { theme::control_background() };
-    let ink = if selected { theme::text_on(theme::control_selected()) } else { theme::text_secondary() };
-    painter.fill_background(chip, 3.0, fill);
-    let inner = chip.shrink2(Vec2::new(6.0, 0.0));
-    let head_rect = Rect::from_min_max(inner.min, Pos2::new(inner.left() + head_width, inner.bottom()));
-    let count_rect = Rect::from_min_max(Pos2::new(head_rect.right() + 6.0, inner.top()), inner.max);
-    widgets::text_in(painter, head_rect, Align2::LEFT_CENTER, head, tiny, ink);
-    widgets::text_in(painter, count_rect, Align2::RIGHT_CENTER, &count, mono, ink);
-    // The head and the count are named for a reader and a test, as the piano roll's parts are.
-    ui.interact(head_rect, Id::unique("piano-roll-tools-head"), Sense::hover())
-        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, head));
-    ui.interact(count_rect, Id::unique("piano-roll-tools-count"), Sense::hover())
-        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &count));
 }
 
 /// A button of the tools, drawn as the panel's small buttons are; returns its response.
@@ -228,8 +242,7 @@ fn explain(ui: &Ui, rect: Rect, id: &str, text: &str) {
     let _ = ui.interact(rect, Id::unique(("midi-tools-hint", id)), Sense::hover()).on_hover_text(text);
 }
 
-/// The Notes tab: Transpose and the one-click tools at the left, what is selected (or the whole
-/// clip) at the right.
+/// The Notes tab: Transpose and the one-click tools, two to a row.
 #[allow(clippy::too_many_arguments)]
 fn notes_tab(
     ui: &mut Ui,
@@ -240,9 +253,7 @@ fn notes_tab(
     state: &mut PianoRollState,
     actions: &mut Vec<Action>,
 ) {
-    let half = (body.width() - PART_GAP) / 2.0;
-    let left = Rect::from_min_size(body.min, Vec2::new(half, body.height()));
-    let right = Rect::from_min_max(Pos2::new(left.right() + PART_GAP, body.top()), body.max);
+    let left = body;
     let enabled = tools.count() > 0;
     let mut y = left.top();
     let fits = |y: f32, height: f32| y + height <= body.bottom() + 0.5;
@@ -309,7 +320,6 @@ fn notes_tab(
         }
         y += FIELD + BUTTON_GAP;
     }
-    figures(ui, painter, right, panel, tools);
 }
 
 /// Fit to scale for a clip with no scale: a list of the scales, each with its roots; picking one
@@ -341,19 +351,21 @@ fn fit_to_a_new_scale(response: &egui::Response, tools: &Tools<'_>, actions: &mu
 /// The roots as the lists show them.
 const ROOT_LABELS: [&str; 12] = ["C", "C#/Db", "D", "D#/Eb", "E", "F", "F#/Gb", "G", "G#/Ab", "A", "A#/Bb", "B"];
 
-/// What the tools act on, in figures: how many notes, their keys, where they start and end, and
-/// their velocities as numbers and a bar of 1 to 127. Each row is named "`Name`: `value`" for a
-/// reader and a test; rows that do not fit are left out whole.
-fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, tools: &Tools<'_>) {
+/// What the tools act on, in figures, under the Clip part: a chip with what they act on and how
+/// many notes that is (lit while notes are selected), then the notes' keys, where they start and
+/// end, how many are muted, and their velocities as numbers and a bar of 1 to 127. Each row is
+/// named "`Name`: `value`" for a reader and a test; rows that do not fit are left out whole.
+/// Returns where the figures end.
+fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, tools: &Tools<'_>) -> f32 {
+    let mut y = part.top();
+    if y + CHIP > part.bottom() + 0.5 {
+        return y;
+    }
+    chip(ui, painter, Rect::from_min_size(part.min, Vec2::new(part.width(), CHIP)), tools);
+    y += CHIP + GAP;
     let all: std::collections::BTreeSet<usize> = (0..tools.notes.len()).collect();
     let acted = if tools.selected.is_empty() { &all } else { tools.selected };
     let info = SelectionInfo::of(tools.notes, acted, bar_of(panel));
-    let total = tools.notes.len();
-    let notes = match (tools.selected.is_empty(), info.muted) {
-        (true, _) => total.to_string(),
-        (false, 0) => format!("{} of {total}", info.selected),
-        (false, muted) => format!("{} of {total}, {muted} muted", info.selected),
-    };
     let key_name = crate::detail::piano_roll::key_name;
     let pitch = match (info.low_key, info.high_key) {
         (Some(low), Some(high)) if low == high => Some(key_name(low)),
@@ -365,34 +377,24 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
         (Some(low), Some(high)) => Some(format!("{low}–{high}")),
         _ => None,
     };
-    let rows = [("Notes", Some(notes)), ("Pitch", pitch), ("From", info.from.clone()), ("To", info.to.clone())];
-    let mut y = part.top();
+    let muted = (info.muted > 0).then(|| info.muted.to_string());
+    let rows = [("Pitch", pitch), ("From", info.from.clone()), ("To", info.to.clone()), ("Muted", muted)];
     for (name, value) in rows {
         let Some(value) = value else { continue };
         if y + INFO_ROW > part.bottom() + 0.5 {
-            return;
+            return y;
         }
-        figure(
-            ui,
-            painter,
-            Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), INFO_ROW)),
-            name,
-            &value,
-        );
+        let row = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), INFO_ROW));
+        figure(ui, painter, row, name, &value);
         y += INFO_ROW;
     }
-    let (Some(velocity), Some(low), Some(high)) = (velocity, info.low_velocity, info.high_velocity) else { return };
+    let (Some(velocity), Some(low), Some(high)) = (velocity, info.low_velocity, info.high_velocity) else { return y };
     if y + 4.0 + INFO_ROW + RANGE_BAR > part.bottom() + 0.5 {
-        return;
+        return y;
     }
     y += 4.0;
-    figure(
-        ui,
-        painter,
-        Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), INFO_ROW)),
-        "Velocity",
-        &velocity,
-    );
+    let row = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), INFO_ROW));
+    figure(ui, painter, row, "Velocity", &velocity);
     y += INFO_ROW;
     let bar = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), RANGE_BAR));
     painter.fill_background(bar, 3.0, theme::control_background());
@@ -402,6 +404,31 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
         Pos2::new(x_of(high).max(x_of(low) + 3.0), bar.bottom() - 3.0),
     );
     painter.rect_filled(span, 2.0, theme::accent());
+    bar.bottom()
+}
+
+/// The chip at the top of the figures: what the tools act on (**Whole clip**, **Selected notes**,
+/// **No notes in time**) and how many notes that is, lit while notes are selected.
+fn chip(ui: &Ui, painter: &egui::Painter, rect: Rect, tools: &Tools<'_>) {
+    let head = tools.head();
+    let count = tools.count_text();
+    let selected = !tools.selected.is_empty();
+    let fill = if selected { theme::control_selected() } else { theme::control_background() };
+    let ink = if selected { theme::text_on(theme::control_selected()) } else { theme::text_secondary() };
+    painter.fill_background(rect, 3.0, fill);
+    let inner = rect.shrink2(Vec2::new(6.0, 0.0));
+    let tiny = theme::ui_font(theme::TEXT_TINY);
+    let mono = theme::mono_font(theme::TEXT_TINY);
+    let count_width = widgets::text_width(ui, &count, mono.clone());
+    let count_rect = Rect::from_min_max(Pos2::new(inner.right() - count_width, inner.top()), inner.max);
+    let head_rect = Rect::from_min_max(inner.min, Pos2::new(count_rect.left() - 6.0, inner.bottom()));
+    widgets::text_in(painter, head_rect, Align2::LEFT_CENTER, head, tiny, ink);
+    widgets::text_in(painter, count_rect, Align2::RIGHT_CENTER, &count, mono, ink);
+    // The head and the count are named for a reader and a test, as the piano roll's parts are.
+    ui.interact(head_rect, Id::unique("piano-roll-tools-head"), Sense::hover())
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, head));
+    ui.interact(count_rect, Id::unique("piano-roll-tools-count"), Sense::hover())
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &count));
 }
 
 /// One row of [`figures`]: its name at the left, its value at the right.
@@ -427,8 +454,8 @@ fn figure(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, value: &str) 
     );
 }
 
-/// The Transform tab: the list of transformations and Apply on one line, a line on what the chosen
-/// one does, and its settings.
+/// The Transform tab, one under another: the list of transformations, a line on what the chosen one
+/// does, its settings, and Apply, which says what it does and to what ("Humanise 3 notes").
 fn transform_tab(
     ui: &mut Ui,
     painter: &egui::Painter,
@@ -441,15 +468,7 @@ fn transform_tab(
         return;
     }
     let chosen = state.transform;
-    // Apply, at the right, says what it does and to what: "Humanise 3 notes", "Quantise clip".
-    let apply_text = format!("{} {}", chosen.verb(), tools.target());
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    let apply_width = (widgets::text_width(ui, &apply_text, font.clone()) + 16.0).min(body.width() / 2.0);
-    let apply = Rect::from_min_max(
-        Pos2::new(body.right() - apply_width, body.top()),
-        Pos2::new(body.right(), body.top() + FIELD),
-    );
-    let list = Rect::from_min_max(body.min, Pos2::new((apply.left() - 8.0).max(body.left()), body.top() + FIELD));
+    let list = Rect::from_min_size(body.min, Vec2::new(body.width(), FIELD));
     let entries: Vec<Option<(&str, bool)>> = Transform::ALL
         .iter()
         .flat_map(|t| {
@@ -466,20 +485,6 @@ fn transform_tab(
             state.transform = *t;
         }
     }
-    let enabled = tools.count() > 0;
-    let response =
-        widgets::button_area(ui, apply, Id::unique("midi-tools-apply"), &apply_text).on_hover_text(chosen.hint());
-    let (fill, ink) = if enabled {
-        widgets::toggle_colors(ui, &response, true)
-    } else {
-        (theme::panel_background(), theme::text_hint())
-    };
-    painter.fill_background(apply, 3.0, fill);
-    if !enabled {
-        painter.rect_stroke(apply, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
-    }
-    widgets::text_in(painter, apply, Align2::CENTER_CENTER, &apply_text, font, ink);
-    let applied = enabled && response.clicked();
     let mut y = body.top() + FIELD + GAP;
     // What it does, in a line.
     let hint = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), 12.0));
@@ -526,6 +531,7 @@ fn transform_tab(
                 y += NAME + FIELD + GAP;
                 if y + TOGGLE <= body.bottom() + 0.5 {
                     let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), TOGGLE));
+                    y += TOGGLE + GAP;
                     explain(ui, row, "chords", "Notes that start together move together");
                     if toggle(
                         ui,
@@ -567,6 +573,7 @@ fn transform_tab(
                 y += NAME + FIELD + GAP;
                 if y + TOGGLE <= body.bottom() + 0.5 {
                     let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), TOGGLE));
+                    y += TOGGLE + GAP;
                     if toggle(ui, painter, row, "Move ends too", "Move ends too", quantize.ends) {
                         quantize.ends = !quantize.ends;
                     }
@@ -588,6 +595,7 @@ fn transform_tab(
                 {
                     settings.random_amount = v;
                 }
+                y += NAME + FIELD + GAP;
             }
             params["amount"] = json!(settings.random_amount.clamp(0.0, 127.0));
         }
@@ -605,12 +613,32 @@ fn transform_tab(
                 if let Some(v) = setting_field(ui, painter, to_field, "Ramp to", to, (1.0, 127.0), &steps) {
                     settings.ramp_to = v.round() as i32;
                 }
+                y += NAME + FIELD + GAP;
             }
             params["from"] = json!(settings.ramp_from.clamp(1, 127));
             params["to"] = json!(settings.ramp_to.clamp(1, 127));
         }
     }
-    if applied {
+    // Apply, at the bottom, says what it does and to what: "Humanise 3 notes", "Quantise clip".
+    if y + TOGGLE > body.bottom() + 0.5 {
+        return;
+    }
+    let apply_text = format!("{} {}", chosen.verb(), tools.target());
+    let apply = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), TOGGLE));
+    let enabled = tools.count() > 0;
+    let response =
+        widgets::button_area(ui, apply, Id::unique("midi-tools-apply"), &apply_text).on_hover_text(chosen.hint());
+    let (fill, ink) = if enabled {
+        widgets::toggle_colors(ui, &response, true)
+    } else {
+        (theme::panel_background(), theme::text_hint())
+    };
+    painter.fill_background(apply, 3.0, fill);
+    if !enabled {
+        painter.rect_stroke(apply, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+    }
+    widgets::text_in(painter, apply, Align2::CENTER_CENTER, &apply_text, theme::ui_font(theme::TEXT_SMALL), ink);
+    if enabled && response.clicked() {
         // No seed for Humanise and Randomise: a fresh draw each press.
         let id = match chosen {
             Transform::Quantise => "note.quantize",

@@ -222,8 +222,8 @@ fn the_splitter_stops_at_the_piano_rolls_least_height() {
     let grid = h.get_by_label_contains("Piano roll,").rect();
     assert!(grid.height() >= 5.0 * 12.0 - 0.5, "five key rows: the grid is {} px", grid.height());
     // The clip panel's first rows are there, under its title, inside the detail area: the markers,
-    // the loop switch and the tools' count of notes.
-    for label in ["Start marker: ", "End marker: ", "Loop: ", "Notes: "] {
+    // the loop switch and the tools' tabs.
+    for label in ["Start marker: ", "End marker: ", "Loop: ", "Notes tab"] {
         let row = h.get_by_label_contains(label).rect();
         assert!(row.bottom() <= bottom + 0.5, "{label} is whole: {row:?} over {bottom}");
     }
@@ -355,7 +355,7 @@ fn at_the_least_height_the_selection_rows_are_left_out_not_cut() {
     h.run();
     assert!(h.query_by_label_contains("Pitch: ").is_some(), "the selection rows show at the default height");
     pull_to(&mut h, bottom - 90.0);
-    assert!(h.query_by_label_contains("Notes: ").is_some(), "the Notes row fits");
+    assert!(h.query_by_label_contains("Notes tab").is_some(), "the tools' tabs fit");
     for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
         if let Some(row) = h.query_by_label_contains(label) {
             assert!(row.rect().bottom() <= bottom + 0.5, "{label} is drawn whole or not at all: {:?}", row.rect());
