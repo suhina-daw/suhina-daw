@@ -511,7 +511,12 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
         ),
     };
     let length = match params.get("length") {
-        None | Some(Value::Null) => bar_beats(p),
+        // An arrangement clip is one bar of the signature where it starts, as a recorded take
+        // is; a slot has no place in the song, so it takes the start signature's bar.
+        None | Some(Value::Null) => match start {
+            Some(beat) if beat.is_finite() => p.transport.meter().position(beat.max(0.0)).bar_beats,
+            _ => bar_beats(p),
+        },
         Some(_) => number(params, "length")?,
     };
     if !(length > 0.0 && length <= suhina_engine::MAX_START_BEAT) {

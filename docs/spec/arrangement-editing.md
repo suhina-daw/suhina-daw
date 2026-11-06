@@ -119,8 +119,9 @@ in the [automation spec](automation.md#in-the-arrangement-view).
 clip", on a track that plays notes; an audio track, a group or a return is refused. It goes
 either in clip slot `scene` (from 1, an existing scene; the slot must be empty), where it loops
 over its length, or at beat `start` in the arrangement (0 up to the engine's last beat), where it
-replaces what it covers unless stacked, as a pasted clip does. `length` is in beats, one bar of
-the project's time signature by default (four beats in 4/4, three in 3/4), more than 0. It is
+replaces what it covers unless stacked, as a pasted clip does. `length` is in beats, one bar by default (four beats in 4/4, three in 3/4): in the arrangement
+the bar of the time signature at `start`, so after a time-signature change it is that bar's
+length; in a slot the bar of the start signature. It is more than 0. It is
 one undo step and returns the track and the scene, or the start and the clip's index as
 `project.clips` counts it.
 
