@@ -39,11 +39,16 @@ fn click_anywhere(harness: &mut Harness<'static, App>, on: bool) {
 
 /// [`arrangement`] in a window of `size`.
 fn arrangement_sized(project: Project, size: (f32, f32)) -> Harness<'static, App> {
+    session_sized(Session::new(project), size)
+}
+
+/// [`arrangement_sized`], for `session` as it is (with a player, say).
+fn session_sized(session: Session, size: (f32, f32)) -> Harness<'static, App> {
     let mut app = App::new();
     app.set_browser_open(false);
     // These tests place points on a bar grid.
     app.set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1 bar"));
-    app.set_session(Session::new(project), &[]);
+    app.set_session(session, &[]);
     let mut harness = Harness::builder()
         .allow_missing_glyphs()
         .allow_missing_glyphs()
@@ -1098,6 +1103,34 @@ fn a_painted_range_copies_duplicates_and_pastes() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
     assert_eq!(beats(&harness), pasted);
+}
+
+/// A range painted on a lane moves the play start marker to its start, as a time selection on
+/// the clips' lanes does, so the lane's controls show the value there and Play starts there (#811).
+#[test]
+fn a_painted_range_moves_the_play_start_marker_to_its_start() {
+    let project = demo_project();
+    let mut renderer = suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let monitor = renderer.monitor();
+    let mut session = Session::new(project);
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    let mut harness = session_sized(session, SIZE);
+    click_anywhere(&mut harness, true);
+    harness.get_by_label("Show automation of Drums").click();
+    harness.run();
+    // Two points low on the lane, so its upper half is away from the line.
+    for x in [100.0, 200.0] {
+        add_point(&mut harness, x);
+    }
+    // Bars 3 to 8 (beats 8 to 32), on the grid, painted from the lane's upper half.
+    let rect = lane(&harness);
+    drag(&mut harness, Pos2::new(rect.left() + 60.0, rect.top() + rect.height() * 0.25), vec2(180.0, 0.0));
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    assert_eq!(monitor.start_beat(), 8.0);
+    // Painted again from its end leftwards, the start is still its earlier edge.
+    drag(&mut harness, Pos2::new(rect.left() + 392.0, rect.top() + rect.height() * 0.25), vec2(-96.0, 0.0));
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    assert_eq!(monitor.start_beat(), 36.0);
 }
 
 /// A right-click at `at`.

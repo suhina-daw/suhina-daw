@@ -167,6 +167,50 @@ fn panels_follow_automation_as_the_engine_plays_it() {
     assert_eq!((value("mono"), value("balance")), (Some(0.0), Some(-1.0)), "the last point, kept in range");
 }
 
+/// While a device parameter's lane is dragged, its knob shows what the line as it is dragged
+/// plays at the playhead; a drag on another track or device changes nothing (#811).
+#[test]
+fn panels_follow_a_dragged_line_at_the_playhead() {
+    use crate::arrangement::automation_lanes::{Dragged, LaneKey};
+    use suhina_engine::model::{AutomationLane, AutomationPoint};
+    let mut project = demo_project();
+    let mut utility = Device::new("Utility", DeviceKind::Builtin("utility".into()));
+    let mut lane = AutomationLane::new("balance");
+    lane.points = vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(4.0, -1.0)];
+    utility.automation.push(lane);
+    project.channels[0].devices.push(utility);
+    let index = project.channels[0].devices.len() - 1;
+    let balance = |detail: &Detail| {
+        let Detail::Devices(chain) = detail else { return None };
+        chain.devices.last().and_then(|d| d.values.iter().find(|(p, _)| p == "balance")).map(|v| v.1)
+    };
+    // The first point dragged from full right down to the centre: at beat 2 the line is half way
+    // from it to the second point, -0.5, where it played 0 before.
+    let points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, -1.0)];
+    let key = LaneKey { device: Some(index), param: "balance".into() };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, None);
+    assert_eq!(balance(&detail), Some(0.0), "the project's line");
+    let other_track = Dragged { track: TrackId(2), key: key.clone(), points: points.clone(), at: None };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&other_track));
+    assert_eq!(balance(&detail), Some(0.0), "another track's drag");
+    let elsewhere = LaneKey { device: Some(index + 1), param: "balance".into() };
+    let other_device = Dragged { track: TrackId(1), key: elsewhere, points: points.clone(), at: None };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&other_device));
+    assert_eq!(balance(&detail), Some(0.0), "another device's drag");
+    let held = Dragged { track: TrackId(1), key: key.clone(), points: points.clone(), at: None };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&held));
+    assert_eq!(balance(&detail), Some(-0.5));
+    // A range being painted: the knob shows the line at its moving edge, not at the playhead.
+    let painting = Dragged { track: TrackId(1), key, points, at: Some(4.0) };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&painting));
+    assert_eq!(balance(&detail), Some(-1.0));
+}
+
 #[test]
 fn a_selected_slot_clip_shows_its_scene_loop_and_fades() {
     let mut project = demo_project();

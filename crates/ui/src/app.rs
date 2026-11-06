@@ -3261,6 +3261,7 @@ impl App {
                             };
                             let mut timeline = timeline;
                             timeline.follow_automation(session.project());
+                            timeline.follow_drag(self.arrangement.automation.dragged.as_ref());
                             timeline.recording_spans = session.arrangement_recording_spans();
                             timeline.midi_ports = self.projects.midi_ports().to_vec();
                             // What ARA plug-ins found in the audio clips, as it is now (#720).
