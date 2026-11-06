@@ -335,7 +335,11 @@ const DEVICES: Param = param(
     "device indices on the track, from 0, or paths through groups such as \"2/1/0\", as in track.devices; at least one",
 );
 const RETURN: Param = param("return", ParamType::Track, "return track id or name, from project.tracks");
-const SCENE: Param = param("scene", ParamType::Integer, "scene number, from 0, as in project.launcher");
+const SCENE: Param = param(
+    "scene",
+    ParamType::Item,
+    "the scene: its number, from 0, or {\"id\": n} with its scene_id, which names it wherever it has moved, as in project.launcher",
+);
 /// A clip command's clip by its id (ADR 0025): it stays the same when other clips move.
 const CLIP: Param = optional(
     "clip",
@@ -351,8 +355,11 @@ const CLIP_INDEX: Param = optional(
     ParamType::Integer,
     "an arrangement clip's index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
 );
-const CLIP_SCENE: Param =
-    optional("scene", ParamType::Integer, "instead of index: the clip in the track's slot of this scene, from 0");
+const CLIP_SCENE: Param = optional(
+    "scene",
+    ParamType::Item,
+    "instead of index: the clip in the track's slot of this scene, its number from 0 or {\"id\": n} with its scene_id",
+);
 /// A scale's root and mode, for `clip.setScale` and `project.setDefaultScale`.
 const SCALE_ROOT: Param = optional(
     "root",
@@ -1271,15 +1278,44 @@ pub(crate) fn column_index(p: &Project, params: &Value) -> Result<usize, Command
         .ok_or_else(|| format!("track {} has no clip slots", track_name(p, track)).into())
 }
 
-/// The scene index `params.scene` names, counted from 0.
+/// The scene index `params.scene` names, counted from 0: its number, or `{"id": n}` (#1156).
 pub(crate) fn scene_index(p: &Project, params: &Value) -> Result<usize, CommandError> {
     let count = p.launcher.scenes.len();
-    let number =
-        Args::new(params).value("scene").and_then(Value::as_u64).ok_or("scene must be a whole number from 0")?;
-    usize::try_from(number)
-        .ok()
-        .filter(|i| *i < count)
-        .ok_or_else(|| format!("scene {number} does not exist; the project has {count} scenes").into())
+    let index = opt_scene_at(p, params, "scene")?.ok_or("scene must be a whole number from 0, or {\"id\": n}")?;
+    (index < count)
+        .then_some(index)
+        .ok_or_else(|| format!("scene {index} does not exist; the project has {count} scenes").into())
+}
+
+/// The scene `params[key]` names, counted from 0, or `None` when it is left out: a number, which
+/// is not checked against the scenes (a command that makes scenes may take one past the end), or
+/// `{"id": n}` with a scene's id, found where the scene is now (#1156), which must exist.
+pub(crate) fn opt_scene_at(p: &Project, params: &Value, key: &str) -> Result<Option<usize>, CommandError> {
+    let Some(value) = Args::new(params).value(key) else { return Ok(None) };
+    if let Some(id) = value.get("id") {
+        let id = id
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| format!("{key}'s id must be a whole number"))?;
+        return p
+            .launcher
+            .scenes
+            .iter()
+            .position(|s| s.id.is_some() && s.id.0 == id)
+            .map(Some)
+            .ok_or_else(|| format!("no scene has id {id}").into());
+    }
+    value
+        .as_u64()
+        .and_then(|n| usize::try_from(n).ok())
+        .map(Some)
+        .ok_or_else(|| format!("{key} must be a whole number from 0, or {{\"id\": n}}").into())
+}
+
+/// The id of the scene at `index`, for results that report a scene beside its number (#1156);
+/// `null` past the end.
+pub(crate) fn scene_id(p: &Project, index: usize) -> Value {
+    p.launcher.scenes.get(index).map_or(Value::Null, |s| json!(s.id.0))
 }
 
 fn track_name(p: &Project, track: TrackId) -> String {

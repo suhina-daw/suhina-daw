@@ -180,6 +180,7 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
             json!({
                 "scene": number,
                 "id": scene.id.0,
+                "scene_id": scene.id.0,
                 "name": scene.name,
                 "tempo_bpm": scene.tempo_bpm,
                 "time_signature": scene.time_signature.map(signature_text),
@@ -198,6 +199,7 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
                 .map(|(slot, number): (_, u32)| match &slot.clip {
                     Some(clip) => json!({
                         "scene": number,
+                        "scene_id": scene_id(p, number as usize),
                         "id": clip.id.0,
                         "clip": p.content(clip.content).map(|c| c.name.as_str()),
                         "length": clip.length,
@@ -208,7 +210,12 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
                         "legato": clip.launch.legato,
                         "quantization": clip.launch.quantization.name(),
                     }),
-                    None => json!({ "scene": number, "clip": null, "stop_button": slot.has_stop }),
+                    None => json!({
+                        "scene": number,
+                        "scene_id": scene_id(p, number as usize),
+                        "clip": null,
+                        "stop_button": slot.has_stop,
+                    }),
                 })
                 .collect();
             json!({ "track": column.track.0, "track_name": track_name(p, column.track), "slots": slots })

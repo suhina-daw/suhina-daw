@@ -25,7 +25,7 @@ use suhina_model::{
 use crate::files::TrackKind;
 
 use crate::commands::Args;
-use crate::commands::{column_index, scene_index, track_id};
+use crate::commands::{column_index, scene_id, scene_index, track_id};
 use crate::record_writer::{Order, RecordThread, Report};
 use crate::{CommandError, Session};
 
@@ -362,7 +362,9 @@ impl Session {
         take.asked = Some(Instant::now());
         take.play = true;
         self.send_ends();
-        Some(json!({ "scene": scene, "queued": "end recording", "end_beat": end }))
+        Some(
+            json!({ "scene": scene, "scene_id": scene_id(&self.project, scene), "queued": "end recording", "end_beat": end }),
+        )
     }
 
     /// Takes in what the recording thread has, finishes the takes that are done (one undo step
@@ -1019,6 +1021,7 @@ pub(crate) fn record_clip(session: &mut Session, params: &Value) -> Result<Value
     Ok(json!({
         "track": track.0,
         "scene": scene,
+        "scene_id": scene_id(session.project(), scene),
         "start_beat": start,
         "count_in_bars": if running { 0 } else { session.live.recording.count_in_bars },
     }))
@@ -1150,7 +1153,7 @@ pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, Co
             json!({
                 "track": t.track.0,
                 "track_name": track_name(p, t.track),
-                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene }), Target::Arrangement => json!("arrangement"), Target::Sampler { device } => json!({"device": device}) },
+                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene, "scene_id": scene_id(p, scene) }), Target::Arrangement => json!("arrangement"), Target::Sampler { device } => json!({"device": device}) },
                 "kind": if t.file.is_some() { "audio" } else { "midi" },
                 "start_beat": t.start,
                 "end_beat": t.end,

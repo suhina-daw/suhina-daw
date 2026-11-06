@@ -111,11 +111,12 @@ fn mappings_are_edits_with_undo_and_are_listed() {
     run(&mut session, "launcher.addMapping", json!({ "source": "note:10:36", "target": "scene", "scene": 1 })).unwrap();
     run(&mut session, "launcher.addMapping", json!({ "source": "key:Space", "target": "stop", "track": 2 })).unwrap();
     let list = run(&mut session, "launcher.mappings", json!({})).unwrap();
+    let scene_id = |i: usize| session.project().launcher.scenes[i].id.0;
     assert_eq!(
         list["mappings"],
         json!([
-            { "source": "key:Q", "label": "Q", "target": "slot", "command": "clip.launch", "track": 1, "scene": 0, "broken": false },
-            { "source": "note:10:36", "label": "Ch 10 Note 36", "target": "scene", "command": "scene.launch", "scene": 1, "broken": false },
+            { "source": "key:Q", "label": "Q", "target": "slot", "command": "clip.launch", "track": 1, "scene": 0, "scene_id": scene_id(0), "broken": false },
+            { "source": "note:10:36", "label": "Ch 10 Note 36", "target": "scene", "command": "scene.launch", "scene": 1, "scene_id": scene_id(1), "broken": false },
             { "source": "key:Space", "label": "Space", "target": "stop", "command": "track.stop", "track": 2, "broken": false },
         ])
     );

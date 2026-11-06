@@ -1109,8 +1109,8 @@ edits. A command names a clip by `clip`, its id from `project.clips` or `project
 stays the same when the clip or the clips around it move
 ([ADR 0025](../decisions/0025-object-identity.md)); the piano roll names the clip it shows that
 way. The older form, `track` with `index` (an arrangement clip's place on its track) or `scene`
-(the clip in the track's slot of that scene, from 0), still works and is deprecated, except that
-a slot's clip may still be named by its `scene`. The clip must be a MIDI clip: an audio clip, an
+(the clip in the track's slot of that scene, from 0, or `{"id": n}` with the scene's id), still
+works and is deprecated, except that a slot's clip may still be named by its `scene`. The clip must be a MIDI clip: an audio clip, an
 empty slot or a clip that does not exist is an error. Notes are named by their **index** in the clip's notes, as `note.list` returns them, or
 by their **id**, `{"id": n}`, which names a note wherever it is now, after another writer has
 added, deleted or moved notes (#1182; [ADR 0025](../decisions/0025-object-identity.md) › Decided
