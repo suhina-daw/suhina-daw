@@ -315,6 +315,32 @@ struct StretchEvent {
     /// Its track's chain has a clip host that this clip does not play through: it is added
     /// after the host (#990).
     past_host: bool,
+    /// Which clip of the project this is, as [`ArrangedAudio::key`].
+    key: (usize, usize, usize),
+}
+
+/// A clip whose sound went from one way of playing to the other at a graph swap: from the file
+/// directly to a stretch voice, or back (its tempo dragged to or from the project's while it
+/// plays). The old graph's sound fades out over [`PATH_FADE_SECONDS`] as the new one fades in;
+/// cutting from one to the other clicked.
+#[derive(Debug, Clone, Copy)]
+enum PathFade {
+    /// Stretch event `new` fades in over the old graph's direct audio event `old`.
+    FromDirect { old: usize, new: usize },
+    /// Direct audio event `new` fades in over the old graph's stretch event `old`.
+    FromStretch { old: usize, new: usize },
+}
+
+/// How long a [`PathFade`] lasts.
+const PATH_FADE_SECONDS: f64 = 0.02;
+/// Most clips one swap fades between ways of playing; any more are cut.
+const PATH_FADES: usize = 64;
+
+/// The gains of a [`PathFade`] at arrangement frame `frame`, `at` being where it began and
+/// `length` its frames: the new sound's and the old one's, at equal power.
+fn path_gains(frame: u64, at: u64, length: u64) -> (f32, f32) {
+    let t = (frame.saturating_sub(at) as f32 / length.max(1) as f32).min(1.0);
+    (t * std::f32::consts::FRAC_PI_2).sin_cos()
 }
 
 /// An ARA clip on a track whose chain has a clip host (#990): the host plays it, and the gains
@@ -429,6 +455,11 @@ pub struct Renderer {
     start_target: Option<f64>,
     start_guard: declick::StartGuard,
     stretch_scratch: Vec<f32>,
+    /// The clips the last swap fades between ways of playing, where that began (an arrangement
+    /// frame) and the renderer frames it has left; the old graph is held until it ends.
+    path_fades: Vec<PathFade>,
+    path_fade_at: u64,
+    path_fade_left: u64,
     /// What the graph was built from, so a controller can build the next one (ADR 0005).
     audio: Arc<AudioPool>,
     /// The file-backed devices' files, for the next graph (docs/spec/nam-amp-and-cab.md).
@@ -620,6 +651,9 @@ impl Renderer {
             start_target: None,
             start_guard: declick::StartGuard::new(sample_rate),
             stretch_scratch: vec![0.0; STRETCH_BLOCK * 2],
+            path_fades: Vec::with_capacity(PATH_FADES),
+            path_fade_at: 0,
+            path_fade_left: 0,
             audio: Arc::new(audio),
             assets: Arc::new(assets),
             swap: swap::SwapState::default(),
@@ -863,6 +897,7 @@ impl Renderer {
                     if !before.is_empty() {
                         self.process_block(before, cue_before, batch_deadline);
                         self.declick.ease(before);
+                        self.path_fade_left = self.path_fade_left.saturating_sub((before.len() / 2) as u64);
                     }
                     self.apply_swap();
                     self.declick.pending = true;
@@ -875,6 +910,7 @@ impl Renderer {
         if !rest.is_empty() {
             self.process_block(rest, cue_rest, batch_deadline);
             self.declick.ease(rest);
+            self.path_fade_left = self.path_fade_left.saturating_sub((rest.len() / 2) as u64);
         }
         self.publish_position();
         self.publish_plugin_misses();
@@ -1254,10 +1290,24 @@ impl Renderer {
         let chains = &mut self.graph.chains;
         let levels = &mut self.graph.levels;
         self.stretch_fresh = false;
+        let fading = self.path_fade_left > 0;
+        let (fades, fade_at) = (&self.path_fades, self.path_fade_at);
+        let fade_length = (PATH_FADE_SECONDS * f64::from(self.sample_rate)) as u64;
+        let held = self.swap.held_graph();
         for (index, event) in self.graph.stretch_events.iter().enumerate() {
             if event.end <= time_start || event.start >= time_end {
                 continue;
             }
+            // The direct sound of the clip in the old graph, fading out under this one.
+            let from_direct = fading
+                .then(|| {
+                    fades.iter().find_map(|f| match *f {
+                        PathFade::FromDirect { old, new } if new == index => Some(old),
+                        _ => None,
+                    })
+                })
+                .flatten()
+                .and_then(|old| held.as_deref().and_then(|g| g.audio_events.get(old)));
             let mut time = event.start.max(time_start);
             let to = event.end.min(time_end);
             while time < to {
@@ -1273,7 +1323,56 @@ impl Renderer {
                     let until_end = (event.end - frame) as f64;
                     let fade = event.fades.gain(since_start, until_end);
                     let at = (frame - time_start) as usize;
-                    let (l, r) = (left * event.gain_left * fade, right * event.gain_right * fade);
+                    let (mut l, mut r) = (left * event.gain_left * fade, right * event.gain_right * fade);
+                    if let Some(old) = from_direct {
+                        let (new_gain, old_gain) = path_gains(frame, fade_at, fade_length);
+                        let (ol, or) = if frame < old.event.end { old.event.sample(frame) } else { (0.0, 0.0) };
+                        l = l * new_gain + ol * old_gain;
+                        r = r * new_gain + or * old_gain;
+                    }
+                    if let Some(chain) = bus_chain(chains, event.bus) {
+                        if event.past_host {
+                            chain.add_past_host(at, l, r);
+                        } else {
+                            chain.add(at, l, r);
+                        }
+                    } else if let Some([ol, or]) =
+                        out.get_mut(at * 2..at * 2 + 2).and_then(|s| <&mut [f32; 2]>::try_from(s).ok())
+                    {
+                        levels.add(event.meter, at, l, r);
+                        *ol += l;
+                        *or += r;
+                    }
+                }
+                time += frames as u64;
+            }
+        }
+        // The stretched sound of clips the old graph stretched and this one reads directly,
+        // fading out from the old graph's rings.
+        if !fading {
+            return;
+        }
+        let Some(old_graph) = held else { return };
+        for fade in fades {
+            let PathFade::FromStretch { old, .. } = *fade else { continue };
+            let Some(event) = old_graph.stretch_events.get(old) else { continue };
+            let from = event.start.max(time_start);
+            let to = event.end.min(time_end).min(fade_at.saturating_add(fade_length));
+            let mut time = from;
+            while time < to {
+                let frames = ((to - time) as usize).min(STRETCH_BLOCK);
+                let Some(chunk) = scratch.get_mut(..frames * 2) else { return };
+                old_graph.ahead.read(old, time - event.start, chunk);
+                for (k, [left, right]) in chunk.as_chunks::<2>().0.iter().enumerate() {
+                    let frame = time + k as u64;
+                    if launcher.overrides_at(event.column, frame - time_start + block_start) {
+                        continue;
+                    }
+                    let fade = event.fades.gain((frame - event.start) as f64, (event.end - frame) as f64);
+                    let (_, old_gain) = path_gains(frame, fade_at, fade_length);
+                    let gain = fade * old_gain;
+                    let at = (frame - time_start) as usize;
+                    let (l, r) = (left * event.gain_left * gain, right * event.gain_right * gain);
                     if let Some(chain) = bus_chain(chains, event.bus) {
                         if event.past_host {
                             chain.add_past_host(at, l, r);
@@ -1316,7 +1415,19 @@ impl Renderer {
             match self.graph.audio_events.get(index) {
                 Some(arranged) if time < arranged.event.end => {
                     if !self.graph.launcher.overrides(arranged.column) {
-                        let (l, r) = arranged.event.sample(time);
+                        let (mut l, mut r) = arranged.event.sample(time);
+                        // Fading in over the old graph's stretched sound of the clip.
+                        if self.path_fade_left > 0
+                            && self
+                                .path_fades
+                                .iter()
+                                .any(|f| matches!(*f, PathFade::FromStretch { new, .. } if new == index))
+                        {
+                            let length = (PATH_FADE_SECONDS * f64::from(self.sample_rate)) as u64;
+                            let (new_gain, _) = path_gains(time, self.path_fade_at, length);
+                            l *= new_gain;
+                            r *= new_gain;
+                        }
                         match bus_chain(&mut self.graph.chains, arranged.bus) {
                             Some(chain) if arranged.past_host => chain.add_past_host(frame, l, r),
                             Some(chain) => chain.add(frame, l, r),

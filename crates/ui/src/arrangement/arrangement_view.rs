@@ -643,6 +643,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     if !state.grid_in_clips {
         grid_xs.clear();
     }
+    if let Some(clip) = state.toggle_envelope.take() {
+        crate::arrangement::envelope::toggle_editing(ui.ctx(), clip);
+    }
     ui.ctx().data_mut(|d| {
         d.insert_temp(Id::unique(CLIP_GRID), std::sync::Arc::new(grid_xs));
         d.insert_temp(Id::unique(WAVEFORM_ZOOM), state.waveform_zoom);

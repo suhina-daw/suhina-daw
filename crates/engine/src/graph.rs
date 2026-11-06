@@ -191,7 +191,7 @@ impl Graph {
                                 let (start, end) = (to_frame(clip.start), to_frame(clip.start + clip.length));
                                 let length = end.saturating_sub(start);
                                 let key = ahead::voice_key(clip, region, data, (start, length), tempo_key);
-                                stretch_voices.push((voice, start, length, key));
+                                stretch_voices.push((voice, start, length, key, clip.id.0));
                                 stretch_heard.push(track_gains(project, track).is_some());
                                 stretch_events.push(StretchEvent {
                                     start,
@@ -203,6 +203,7 @@ impl Graph {
                                     bus,
                                     meter,
                                     past_host,
+                                    key: (lane_index, clip_index, content_index),
                                 });
                                 continue;
                             }
