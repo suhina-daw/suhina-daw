@@ -1415,20 +1415,25 @@ fn midi_harness(
     }
     let selected: std::collections::BTreeSet<usize> = selected.iter().copied().collect();
     let address = json!({ "clip": beat_b.0 });
-    egui_kittest::Harness::builder().allow_missing_glyphs().with_size(size).with_step_dt(1.0 / 60.0).build_ui_state(
-        move |ui, (actions, state): &mut (Vec<Action>, crate::detail::piano_roll::PianoRollState)| {
-            let tools = crate::detail::midi_tools::Tools {
-                address: &address,
-                notes: &notes,
-                selected: &selected,
-                length: 16.0,
-                nothing: false,
-            };
-            let midi = MidiTools { tools: &tools, state, show_tools: true, figures_beside: false };
-            show_clip_column(ui, &info, stacked, Some(midi), actions);
-        },
-        (Vec::new(), crate::detail::piano_roll::PianoRollState::default()),
-    )
+    egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(size)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(
+            move |ui, (actions, state): &mut (Vec<Action>, crate::detail::piano_roll::PianoRollState)| {
+                let tools = crate::detail::midi_tools::Tools {
+                    address: &address,
+                    notes: &notes,
+                    selected: &selected,
+                    length: 16.0,
+                    nothing: false,
+                };
+                let midi = MidiTools { tools: &tools, state, show_tools: true };
+                show_clip_column(ui, &info, stacked, Some(midi), actions);
+            },
+            (Vec::new(), crate::detail::piano_roll::PianoRollState::default()),
+        )
 }
 
 /// The tools' tabs: the Notes tab's one-click tools, then the Transform tab's Humanise with its

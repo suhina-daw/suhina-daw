@@ -670,7 +670,6 @@ impl App {
                     tools: &tools,
                     state: &mut *piano_roll,
                     show_tools,
-                    figures_beside: false,
                 });
                 let (rest, picked) = detail_view::show_clip_column(ui, info, stacked, midi, actions);
                 let picked = detail_view::Picked { showing: picked.showing, ..detail_view::Picked::default() };

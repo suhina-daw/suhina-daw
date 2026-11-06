@@ -765,9 +765,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   name, a double-click renames it; its length in beats; the **Clip / Devices** switch), then the
   **Clip part** the two kinds share: **Start** | **End** with **Set**, the **Loop** switch,
   **Position** | **Length** with **Set**, and **Scale** (root and mode, `clip.setScale`). Under
-  the Clip part, what the tools act on in figures (below); a row too short for them under it
-  (less than about 280 points under the title) puts them in a narrow column of their own at the
-  panel's right instead. In a row the note tools sit beside the Clip part (› Note tools); with the
+  the Clip part, what the tools act on in figures (below), at any height: in a short detail area
+  their rows are left out whole from the bottom up, so the panel keeps its width (and the piano
+  roll its place) while the detail area is resized. In a row the note tools sit beside the Clip part (› Note tools); with the
   detail area stacked (a column at the right of the window) everything goes one under another, the
   tools only when the column is tall enough to leave the note grid under them 160 px. The piano
   roll takes the rest.

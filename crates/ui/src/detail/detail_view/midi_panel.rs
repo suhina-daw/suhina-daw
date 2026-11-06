@@ -23,9 +23,6 @@ pub struct MidiTools<'a, 'b> {
     pub tools: &'a Tools<'b>,
     pub state: &'a mut PianoRollState,
     pub show_tools: bool,
-    /// In a row too short for the figures under the Clip part, they go in a column of their own at
-    /// the panel's right instead (set by the column, from its height).
-    pub figures_beside: bool,
 }
 
 /// The tab row at the top of the tools part, the chip at the top of the figures, a row of the
@@ -44,19 +41,11 @@ const FIGURES: f32 = CHIP + GAP + INFO_ROW * 4.0 + 4.0 + INFO_ROW + RANGE_BAR;
 /// The room between the Clip part and the figures under it.
 const FIGURES_GAP: f32 = 12.0;
 
-/// The panel's width in a row: the Clip part with the figures under it, the tools part beside
-/// them when it is shown, and the figures in a column of their own when they do not fit under.
-pub(super) fn row_width(tools: bool, figures_beside: bool) -> f32 {
+/// The panel's width in a row: the Clip part with the figures under it, and the tools part beside
+/// them when it is shown.
+pub(super) fn row_width(tools: bool) -> f32 {
     let tools = if tools { PART_GAP + tools_width() } else { 0.0 };
-    let figures = if figures_beside { PART_GAP + tools_width() } else { 0.0 };
-    CLIP_PART + tools + figures + 16.0
-}
-
-/// Whether a row `height` tall (under the column's title row) holds the figures under the Clip
-/// part.
-pub(super) fn figures_fit_under(height: f32) -> bool {
-    let clip = (NAME + FIELD) * 3.0 + TOGGLE + GAP * 3.0;
-    height >= clip + FIGURES_GAP + FIGURES + 16.0
+    CLIP_PART + tools + 16.0
 }
 
 /// How tall the panel is with its parts one under another (the detail area stacked), under its
@@ -88,22 +77,10 @@ pub(super) fn midi_panel(
         if stacked { area } else { Rect::from_min_max(area.min, Pos2::new(area.left() + CLIP_PART, area.bottom())) };
     let end = clip_part(ui, painter, clip, info, at, panel, actions);
     let Some(midi) = midi else { return };
-    let beside = midi.figures_beside && !stacked;
-    if beside {
-        let tools = if midi.show_tools { PART_GAP + tools_width() } else { 0.0 };
-        let left = clip.right() + tools + PART_GAP;
-        let part = Rect::from_min_max(
-            Pos2::new(left, area.top()),
-            Pos2::new((left + tools_width()).min(area.right()), area.bottom()),
-        );
-        if part.width() > 40.0 {
-            figures(ui, painter, part, panel, midi.tools);
-        }
-    }
+    // The figures stay under the Clip part at any height, their rows left out whole where they do
+    // not fit, so the panel keeps its width while the detail area is resized.
     let figures_top = end + FIGURES_GAP;
-    let figures_end = if beside {
-        figures_top
-    } else if figures_top < clip.bottom() {
+    let figures_end = if figures_top < clip.bottom() {
         let part = Rect::from_min_max(Pos2::new(clip.left(), figures_top), clip.max);
         figures(ui, painter, part, panel, midi.tools)
     } else {
