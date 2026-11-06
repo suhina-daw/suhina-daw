@@ -500,3 +500,24 @@ fn an_import_looks_at_its_destination_when_the_scan_of_names_stops_short() {
     unchanged(&before);
     let _clean = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_folder_of_variants_alone_is_not_written_in_by_a_save() {
+    let dir = folder("variants-only");
+    let themes = dir.join("themes");
+    let photos = themes.join("photos");
+    std::fs::create_dir_all(photos.join(VARIANTS)).unwrap();
+    std::fs::write(photos.join(VARIANTS).join("custom.json"), b"{\"mine\":true}").unwrap();
+    let mut files = ThemeFiles::new(Some(themes.clone()));
+    assert!(files.write("photos@custom", &night()).is_err());
+    assert!(files.write("photos", &night()).is_err());
+    assert_eq!(std::fs::read(photos.join(VARIANTS).join("custom.json")).unwrap(), b"{\"mine\":true}");
+    assert!(!photos.join(THEME_JSON).exists());
+    // A variant of a new theme is still written with the theme's own files, and of a built-in theme alone.
+    assert_eq!(files.write("fresh@custom", &night()), Ok(()));
+    assert!(
+        themes.join("fresh").join(THEME_JSON).exists()
+            && themes.join("fresh").join(VARIANTS).join("custom.json").exists()
+    );
+    let _clean = std::fs::remove_dir_all(&dir);
+}

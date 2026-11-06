@@ -350,7 +350,7 @@ impl ThemeFiles {
         }
         if !theme::is_built_in(base) {
             // Before anything is written, a variant's file included.
-            writable(&folder, base)?;
+            writable(&folder, base, true)?;
         }
         if let Some(variant) = variant {
             // The settings editors write the variant's file, and nothing of the theme's own.
@@ -1155,25 +1155,27 @@ fn package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8>)>, Stri
 
 /// Whether the theme `id`'s folder is the theme's to write in: not there, empty, or a theme with a
 /// `theme.json`. A folder with a `theme.css` and no `theme.json`, or with other files and no
-/// `theme.css`, is not a theme (yet), and what is in it is not ours to edit.
-fn writable(folder: &Path, id: &str) -> Result<(), String> {
+/// `theme.css`, is not a theme (yet), and what is in it is not ours to edit. `first` is the check
+/// before a save writes anything: a `variants` folder that is there then is not ours either, while
+/// after a variant's file is written it is the save's own.
+fn writable(folder: &Path, id: &str, first: bool) -> Result<(), String> {
     let dir = folder.join(id);
     let is_file = |name: &str| std::fs::symlink_metadata(dir.join(name)).is_ok_and(|m| m.is_file());
     if is_file(THEME_CSS) {
         if !is_file(THEME_JSON) {
             return Err(format!("{id} has a theme.css but no theme.json, so it was not changed"));
         }
-    } else if holds_other_files(&dir) {
+    } else if holds_other_files(&dir, first) {
         return Err(format!("{id} is a folder that is not a theme, so nothing was written into it"));
     }
     Ok(())
 }
 
-/// Whether `dir` exists and holds something besides a `variants` folder (which a variant saved
-/// just before the theme's own files makes).
-fn holds_other_files(dir: &Path) -> bool {
+/// Whether `dir` exists and holds something, but for a `variants` folder when `variants_too` is not
+/// set (a variant saved just before the theme's own files makes one).
+fn holds_other_files(dir: &Path, variants_too: bool) -> bool {
     let Ok(entries) = std::fs::read_dir(dir) else { return std::fs::symlink_metadata(dir).is_ok() };
-    entries.filter_map(Result::ok).any(|e| e.file_name() != VARIANTS)
+    entries.filter_map(Result::ok).any(|e| variants_too || e.file_name() != VARIANTS)
 }
 
 /// Writes the theme `id`'s own files from `theme`. A theme without a `theme.css` yet gets all of
@@ -1185,7 +1187,7 @@ fn persist_theme(folder: &Path, id: &str, theme: &Theme) -> Result<(), String> {
     use suhina_ui::kit::theme_css;
     let dir = folder.join(id);
     let sheet_path = dir.join(THEME_CSS);
-    writable(folder, id)?;
+    writable(folder, id, false)?;
     if !std::fs::symlink_metadata(&sheet_path).is_ok_and(|m| m.is_file()) {
         return write_files(folder, package_files(id, theme)?);
     }
