@@ -272,8 +272,9 @@ pub fn song_position(beat: f64, meter: &Meter) -> String {
     if !beat.is_finite() {
         return "-".into();
     }
-    let here = meter.position(beat.max(0.0));
-    format!("{}.{}", u64::from(here.bar) + 1, (beat.max(0.0) - here.bar_start).max(0.0).floor() as u64 + 1)
+    let beat = beat.max(0.0);
+    let here = meter.position(beat);
+    format!("{}.{}", u64::from(here.bar) + 1, (beat - here.bar_start).max(0.0).floor() as u64 + 1)
 }
 
 /// A position as the column writes it: `bar.beat`, counted from one for a position and from zero

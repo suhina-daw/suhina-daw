@@ -318,8 +318,8 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
     }
     edit_notes(&mut session.project, params, |notes| {
         let named = chosen(params, notes.len())?;
-        // The span from the earliest start to the latest end: each note's end moves to where
-        // its start was, mirrored inside that span, so the notes stay where they were.
+        // Mirrored inside the span from the earliest start to the latest end: a note ending at
+        // the span's end starts at its start, and the notes stay where they were in the clip.
         let (mut from, mut to) = (f64::INFINITY, f64::NEG_INFINITY);
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
