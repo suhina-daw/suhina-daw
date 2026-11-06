@@ -156,6 +156,45 @@ impl App {
             }
             return;
         }
+        // Items over a tag of the sidebar's Tags section carry it when dropped (#1196).
+        if let Some(tag) = self.browser.drop_tag.take() {
+            let items: Vec<String> = items
+                .iter()
+                .filter(|i| i.kind != drop::ItemKind::Heading && i.kind != drop::ItemKind::Folder)
+                .map(|i| i.key.clone())
+                .collect();
+            if !released {
+                self.status = if items.is_empty() {
+                    Status::Hint(format!("{tag} tags items of the results"))
+                } else {
+                    Status::Hint(format!(
+                        "Drop to tag {} item{} with {tag}",
+                        items.len(),
+                        if items.len() == 1 { "" } else { "s" }
+                    ))
+                };
+                return;
+            }
+            self.browser.drag = None;
+            self.map_window.drag = None;
+            let mut error: Option<Status> = None;
+            for item in &items {
+                if let Err(e) = self.projects.execute("library.tag", &json!({ "item": item, "tag": tag, "on": true }))
+                    && error.is_none()
+                {
+                    error = Some(Status::Error(e.message().to_owned()));
+                }
+            }
+            self.status = error.unwrap_or_else(|| {
+                Status::Done(format!(
+                    "Tagged {} item{} with {tag}",
+                    items.len(),
+                    if items.len() == 1 { "" } else { "s" }
+                ))
+            });
+            self.browser.relist();
+            return;
+        }
         // Carried out of every Suhina window, samples become a drag of files that the system's
         // file manager copies where they are dropped; the originals stay (#865).
         if !released && self.outside_suhina(ui.ctx(), pointer) {

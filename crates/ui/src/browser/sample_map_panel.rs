@@ -128,12 +128,15 @@ fn files_in_use(projects: &Projects) -> HashSet<PathBuf> {
 }
 
 impl Panel {
-    /// The browser's place as the `soundmap.*` commands take it.
+    /// The browser's place as the `soundmap.*` commands take it. A tag's place is not one the
+    /// commands take; the panel is not drawn with it, reached only while the samples are the
+    /// place (#862).
     fn place(state: &BrowserState) -> Option<String> {
         match &state.place {
             None => None,
             Some(Place::Pinned) => Some("pinned".into()),
             Some(place @ Place::Recent(_)) => Some(place.param()),
+            Some(Place::Tag(_)) => None,
             Some(Place::Folder(path)) => Some(path.display().to_string()),
         }
     }

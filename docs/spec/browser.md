@@ -89,7 +89,7 @@ place does not, so Space, Tab and the other shortcuts keep working (`app.rs::key
 
 ## Sidebar
 
-Three sections, each title in small hint text:
+Four sections, each title in small hint text:
 
 - **Pinned:** the entries **Pinned** (the pinned items) and **Recent**: every kind's recent
   items together, each kind the last 50 newest first. A project counts when it is opened or
@@ -97,6 +97,12 @@ Three sections, each title in small hint text:
   double-click). Previewing does not count. Recent's kinds (Projects, Samples, MIDI,
   Instruments, Effects, Plug-ins, Presets) are entries indented under it, or with Settings ›
   Browser › Recent's kinds set to Chips, chips over the list while Recent is chosen.
+- **Tags:** one row per tag (#1196), in the order they were made: the tag's colour dot, its
+  name and, at the right, how many items carry it. A tag that no item carries still shows,
+  dimmed, so a new tag can be found before it is used; its row's right-click menu, the footer
+  dots and the tag editor are the other ways to its actions ([Colour tags](#colour-tags)).
+  The wheel scrolls the sidebar when its entries are more than its room, and the rows past
+  its top come back; nothing else moves.
 - **Library:** All, Samples, MIDI, Instruments, Effects, Presets, Plug-ins: each shows the whole
   of its kind, never only the recent ones (Plug-ins lists every plug-in).
 - **Folders:** the added folders by name, each with a mark when it is not plain (`…` while
@@ -117,8 +123,8 @@ folders hold any kind.
   MIDI effects, such as [the pitch effect](pitch.md)), *Plug-ins* (installed plug-ins in a folder
   per vendor, *Unknown vendor* last), then each added folder.
 
-With a place selected the tree is that place: the folder's contents, the pinned items or the
-recent group's items (a flat list).
+With a place selected the tree is that place: the folder's contents, the pinned items, the
+recent group's items or a tag's items (a flat list, [Colour tags](#colour-tags)).
 
 **The category filter** narrows what the tree shows: Samples, MIDI and Presets show files of
 that kind and the folders that hold any (by the index; a folder not indexed yet is shown);
@@ -473,6 +479,25 @@ row's — says the tag's name: as a tooltip, and in the status bar (the footer's
 many items carry it). Clicking a tag's dot in the footer shows
 only items with that tag (several: items with any of them); clicking it again stops.
 
+The **sidebar's Tags section** ([Sidebar](#sidebar)) reaches a tag's items as a place, the way
+Pinned does (#1196): a click on the tag's row shows every item that carries it, of any kind
+(samples, MIDI files, presets and presets' voices, projects, device graphs, built-in effects
+and instruments, plug-ins), named first no matter the kind, as a `library.search` place of
+`tag:<name>`. Ctrl-click adds the tag to the place's tags or takes it off: items with any of
+the row's tags show. A place of several tags is built like the coloured dots' filter, so its
+list is ranked as a search's list is, and a preset bank's tagged voice is not among it.
+A ctrl-click on the place's last tag shows the tree again.
+As
+any chosen place, the row shows a **×** that lets the place go. While items are dragged, a tag
+row lights up under the pointer and the drop tags every dragged item with the tag (folders and
+headings left out); the drag stops the preview as any drop does not. The row's right-click
+menu renames (typed in; the place and the footer's filter follow the new name), recolours, and
+removes the tag — the first click on Remove asks, saying how many items carry it, and **Keep**
+stands it down; a second click removes the tag from the list and from every item carrying it.
+The footer's dots stay as they are (#1196): where the section reaches a tag's items as a
+place, the dots are still the quick filter of whatever list is shown, a search's or a place's
+items included.
+
 The **tag editor** is all of that in one place: the footer's **Edit tags** button opens a
 popup right above itself (its bottom at the footer's top, its right edge at the button's),
 floating over the preview strip and the list's bottom. One row per tag: its
@@ -513,7 +538,7 @@ the CLI can do the same.
 | `library.removeFolder` | `folder` | removes it and its part of the index |
 | `library.refresh` | `folder?` | reads a folder (or every folder) again |
 | `library.list` | `folder` | what is directly in a folder: sub-folders and files of the kinds above, with kind and size |
-| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
+| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); `place` takes a tag's place (`tag:<name>`), which lists the items carrying that tag of any kind no matter the folders; a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
 | `library.info` | `item` | a file's kind, size, duration, sample rate, channels, tempo (and where it came from) and key; a Stems file's stems and mastering; a MIDI file's tracks with their notes; a preset's voices; a built-in device's or plug-in's role (and a plug-in's vendor, format and version); the item's tags |
 | `library.pinned` | | the pinned items |
 | `library.pin`, `library.unpin` | `item` | pins or unpins an item |

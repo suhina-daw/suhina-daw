@@ -8,7 +8,6 @@
 //! which knows the selected track.
 
 use crate::kit::surface::Backgrounds as _;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use egui::{Align2, Color32, CursorIcon, Id, Key, Modifiers, Pos2, Rect, Sense, Stroke, Ui, Vec2};
@@ -306,7 +305,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| !popup.contains(p) && !edit_rect.contains(p))
         {
             state.tag_editor = false;
-            state.tag_editor_confirm = None;
+            state.tag_remove_confirm = None;
         }
     }
 
@@ -518,6 +517,116 @@ enum Target {
     Category(Category),
 }
 
+/// One row of the sidebar's Pinned, Library and Folders sections: selected when its place is
+/// the one shown, a `×` while the place is chosen, and a click that shows it. The row is
+/// `Row` tall and consumes that of `y`.
+#[allow(clippy::too_many_arguments)]
+fn entry_row(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    area: Rect,
+    y: &mut f32,
+    state: &mut BrowserState,
+    target: Target,
+    label: &str,
+    note: Option<&str>,
+) -> egui::Response {
+    let rect = Rect::from_min_size(Pos2::new(area.left(), *y), Vec2::new(area.width(), ROW));
+    *y += ROW;
+    let key = match &target {
+        Target::Place(place) => place.param(),
+        Target::Category(category) => format!("library:{}", category.title()),
+    };
+    let response = ui.interact(rect.intersect(area), Id::unique(("browser-place", key.as_str())), Sense::click());
+    // Screen readers and tests: "Show Samples" for the library's kinds, "Place Recent MIDI"
+    // for a recent kind, "Place Pinned" and the like for the rest.
+    let name = match &target {
+        Target::Category(category) => format!("Show {}", category.title()),
+        Target::Place(Place::Recent(Some(group))) => format!("Place Recent {}", group.title()),
+        Target::Place(_) => format!("Place {}", label.trim()),
+    };
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+    // A kind of the library is chosen while no place is: the whole of it shows.
+    let chosen = match &target {
+        Target::Place(place) => state.place.as_ref() == Some(place),
+        Target::Category(category) => state.place.is_none() && state.category == *category,
+    };
+    let place = match target {
+        Target::Place(place) => place,
+        Target::Category(category) => {
+            if response.clicked() && !chosen {
+                state.place = None;
+                state.category = category;
+                state.scroll = 0.0;
+            }
+            if rect.intersects(area) {
+                let _style = place_style(&response, chosen);
+                let fill = if chosen {
+                    theme::control_active()
+                } else {
+                    motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
+                };
+                paint_row(painter, rect.intersect(area), fill);
+                let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
+                let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
+                let color = crate::kit::style_class::foreground(color);
+                widgets::text_in(painter, text, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), color);
+            }
+            return response;
+        }
+    };
+    let fill = if chosen {
+        theme::control_active()
+    } else {
+        motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
+    };
+    let _style = place_style(&response, chosen);
+    if rect.intersects(area) {
+        paint_row(painter, rect.intersect(area), fill);
+        let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
+        let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
+        let color = crate::kit::style_class::foreground(color);
+        widgets::text_in(painter, text, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), color);
+        if let Some(note) = note.filter(|_| !chosen) {
+            widgets::text_in(
+                painter,
+                text,
+                Align2::RIGHT_CENTER,
+                note,
+                theme::mono_font(theme::TEXT_TINY),
+                theme::browser_text_hint(),
+            );
+        }
+    }
+    // The place chosen shows a × that clears it; a second click on the place keeps it.
+    if chosen && rect.intersects(area) {
+        let clear = Rect::from_min_size(Pos2::new(rect.right() - ROW, rect.top()), Vec2::splat(ROW));
+        let cleared = widgets::button_area(
+            ui,
+            clear.intersect(area),
+            Id::unique(("browser-place-clear", place.param())),
+            "Show everything",
+        );
+        let color =
+            motion::mix(theme::browser_text_hint(), theme::browser_text_primary(), widgets::hover(ui, &cleared));
+        widgets::text_in(painter, clear, Align2::CENTER_CENTER, "×", theme::ui_font(theme::TEXT_SMALL), color);
+        if cleared.clicked() {
+            state.place = None;
+            state.category = Category::All;
+            state.scroll = 0.0;
+            return response;
+        }
+    }
+    if response.clicked() && !chosen {
+        // A place lists any kind, or a recent group's own: the category follows it, so
+        // nothing the place lists is hidden (#711).
+        state.category = place.category().unwrap_or(Category::All);
+        state.place = Some(place);
+        state.scroll = 0.0;
+    }
+    response
+}
+
 fn sidebar_view(
     ui: &mut Ui,
     area: Rect,
@@ -529,59 +638,54 @@ fn sidebar_view(
     let painter = ui.painter_at(area);
     let title_font = theme::ui_font(theme::TEXT_SMALL);
     let item_font = theme::ui_font(theme::TEXT_SMALL);
-    let mut y = area.top();
+    // The rows drawn past the bottom are clipped; the wheel scrolls the whole sidebar when
+    // its entries are more than its room, as the results list does.
+    let mut y = area.top() - state.sidebar_scroll;
     let title = |y: &mut f32, text: &str| {
         *y += 8.0;
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, *y), Vec2::new(area.width() - PAD, 12.0));
         widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, title_font.clone(), theme::browser_text_hint());
         *y += 12.0;
     };
-    let mut entry = |ui: &mut Ui, y: &mut f32, target: Target, label: &str, note: Option<&str>| -> egui::Response {
-        let rect = Rect::from_min_size(Pos2::new(area.left(), *y), Vec2::new(area.width(), ROW));
-        *y += ROW;
-        let key = match &target {
-            Target::Place(place) => place.param(),
-            Target::Category(category) => format!("library:{}", category.title()),
-        };
-        let response = ui.interact(rect.intersect(area), Id::unique(("browser-place", key.as_str())), Sense::click());
-        // Screen readers and tests: "Show Samples" for the library's kinds, "Place Recent MIDI"
-        // for a recent kind, "Place Pinned" and the like for the rest.
-        let name = match &target {
-            Target::Category(category) => format!("Show {}", category.title()),
-            Target::Place(Place::Recent(Some(group))) => format!("Place Recent {}", group.title()),
-            Target::Place(_) => format!("Place {}", label.trim()),
-        };
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
-        // A kind of the library is chosen while no place is: the whole of it shows.
-        let chosen = match &target {
-            Target::Place(place) => state.place.as_ref() == Some(place),
-            Target::Category(category) => state.place.is_none() && state.category == *category,
-        };
-        let place = match target {
-            Target::Place(place) => place,
-            Target::Category(category) => {
-                if response.clicked() && !chosen {
-                    state.place = None;
-                    state.category = category;
-                    state.scroll = 0.0;
-                }
-                if rect.intersects(area) {
-                    let _style = place_style(&response, chosen);
-                    let fill = if chosen {
-                        theme::control_active()
-                    } else {
-                        motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
-                    };
-                    paint_row(&painter, rect.intersect(area), fill);
-                    let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
-                    let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
-                    let color = crate::kit::style_class::foreground(color);
-                    widgets::text_in(&painter, text, Align2::LEFT_CENTER, label, item_font.clone(), color);
-                }
-                return response;
-            }
-        };
-        let fill = if chosen {
+    title(&mut y, "Pinned");
+    entry_row(ui, &painter, area, &mut y, state, Target::Place(Place::Pinned), "Pinned", None);
+    entry_row(ui, &painter, area, &mut y, state, Target::Place(Place::Recent(None)), "Recent", None);
+    if !recent_chips {
+        for group in Group::ALL {
+            entry_row(
+                ui,
+                &painter,
+                area,
+                &mut y,
+                state,
+                Target::Place(Place::Recent(Some(group))),
+                &format!("    {}", group.title()),
+                None,
+            );
+        }
+    }
+    // The tags as places (#1196): every item that carries one, of any kind. An unused tag
+    // shows dimmed, so a new tag can be found before it is used.
+    title(&mut y, "Tags");
+    state.drop_tag = None;
+    let tag_list = projects.file_library_mut().tags();
+    let counts = state.tag_counts(projects.file_library_mut());
+    for tag in tag_list {
+        let count = counts.get(&tag.name).copied().unwrap_or(0);
+        let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW));
+        y += ROW;
+        let response = ui.interact(rect.intersect(area), Id::unique(("browser-tag-place", &tag.name)), Sense::click());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Place Tag {}", tag.name)));
+        // Dragging items here tags them when dropped, as a drop on a folder row moves them (#1196).
+        let drag_here = state.drag.is_some() && rect.intersects(area) && response.hovered();
+        if drag_here {
+            state.drop_tag = Some(tag.name.clone());
+        }
+        let chosen = matches!(&state.place, Some(Place::Tag(tags)) if tags.contains(&tag.name));
+        let alone = state.place.as_ref() == Some(&Place::Tag(vec![tag.name.clone()]));
+        let fill = if drag_here {
+            theme::control_hover()
+        } else if chosen {
             theme::control_active()
         } else {
             motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
@@ -589,28 +693,61 @@ fn sidebar_view(
         let _style = place_style(&response, chosen);
         if rect.intersects(area) {
             paint_row(&painter, rect.intersect(area), fill);
-            let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
-            let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
-            let color = crate::kit::style_class::foreground(color);
-            widgets::text_in(&painter, text, Align2::LEFT_CENTER, label, item_font.clone(), color);
-            if let Some(note) = note.filter(|_| !chosen) {
+            let dim = count == 0;
+            let center = Pos2::new(area.left() + PAD + 2.0 + DOT / 2.0, rect.center().y);
+            let mut color = tag_color(&tag.color);
+            if dim {
+                color = color.gamma_multiply(0.5);
+            }
+            painter.circle_filled(center, DOT / 2.0, color);
+            if chosen {
+                painter.circle_stroke(center, DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
+            }
+            let text = Rect::from_min_max(
+                Pos2::new(center.x + DOT / 2.0 + 3.0, rect.top()),
+                Pos2::new(rect.right() - PAD, rect.bottom()),
+            );
+            let tinted = if dim {
+                theme::browser_text_hint()
+            } else if chosen || response.hovered() {
+                theme::browser_text_primary()
+            } else {
+                theme::browser_text_secondary()
+            };
+            widgets::text_in(
+                &painter,
+                text,
+                Align2::LEFT_CENTER,
+                &tag.name,
+                item_font.clone(),
+                crate::kit::style_class::foreground(tinted),
+            );
+            if response.hovered() {
+                out.status = Some(Status::Hint(format!(
+                    "Tag {} — {} item{}",
+                    tag.name,
+                    count,
+                    if count == 1 { "" } else { "s" }
+                )));
+            }
+            if !chosen {
                 widgets::text_in(
                     &painter,
                     text,
                     Align2::RIGHT_CENTER,
-                    note,
+                    &count.to_string(),
                     theme::mono_font(theme::TEXT_TINY),
-                    theme::browser_text_hint(),
+                    if dim { theme::browser_text_hint().gamma_multiply(0.5) } else { theme::browser_text_hint() },
                 );
             }
         }
-        // The place chosen shows a × that clears it; a second click on the place keeps it.
         if chosen && rect.intersects(area) {
+            // As any chosen place: a × lets go of it.
             let clear = Rect::from_min_size(Pos2::new(rect.right() - ROW, rect.top()), Vec2::splat(ROW));
             let cleared = widgets::button_area(
                 ui,
                 clear.intersect(area),
-                Id::unique(("browser-place-clear", place.param())),
+                Id::unique(("browser-tag-clear", &tag.name)),
                 "Show everything",
             );
             let color =
@@ -620,29 +757,99 @@ fn sidebar_view(
                 state.place = None;
                 state.category = Category::All;
                 state.scroll = 0.0;
-                return response;
             }
         }
-        if response.clicked() && !chosen {
-            // A place lists any kind, or a recent group's own: the category follows it, so
-            // nothing the place lists is hidden (#711).
-            state.category = place.category().unwrap_or(Category::All);
-            state.place = Some(place);
-            state.scroll = 0.0;
+        if response.clicked() {
+            let ctrl = ui.input(|i| i.modifiers).command;
+            if chosen && ctrl && alone {
+                state.place = None;
+            } else if chosen && ctrl {
+                // Ctrl-click takes the tag off the combined place again.
+                if let Some(Place::Tag(tags)) = &mut state.place {
+                    tags.retain(|t| *t != tag.name);
+                    if tags.is_empty() {
+                        state.place = None;
+                    }
+                }
+            } else if !chosen {
+                if ctrl
+                    && let Some(Place::Tag(tags)) = &mut state.place
+                    && !tags.contains(&tag.name)
+                {
+                    // Ctrl-click adds the tag to the combined place: items with any of them.
+                    tags.push(tag.name.clone());
+                } else {
+                    state.place = Some(Place::Tag(vec![tag.name.clone()]));
+                }
+                state.category = Category::All;
+                state.scroll = 0.0;
+            }
         }
-        response
-    };
-    title(&mut y, "Pinned");
-    entry(ui, &mut y, Target::Place(Place::Pinned), "Pinned", None);
-    entry(ui, &mut y, Target::Place(Place::Recent(None)), "Recent", None);
-    if !recent_chips {
-        for group in Group::ALL {
-            entry(ui, &mut y, Target::Place(Place::Recent(Some(group))), &format!("    {}", group.title()), None);
-        }
+        // Right-click: rename (typed in), recolour, remove — asking first while items carry it.
+        egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+            let id = Id::unique(("browser-rename-tag", &tag.name));
+            let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
+            let field =
+                crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut name).id(id).desired_width(120.0));
+            field.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", tag.name))
+            });
+            ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
+            if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && name.trim() != tag.name {
+                if run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out) {
+                    for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
+                        *filter = name.trim().to_string();
+                    }
+                    // The tags the place is made of go with the new name, so the list follows.
+                    if let Some(Place::Tag(tags)) = &mut state.place {
+                        for t in tags.iter_mut().filter(|t| **t == tag.name) {
+                            *t = name.trim().to_string();
+                        }
+                    }
+                }
+                ui.ctx().data_mut(|d| d.remove::<String>(id));
+                state.relist();
+                ui.close();
+            }
+            let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
+            if let Some(picked) = crate::interaction::colour_picker::swatch_row(ui, current) {
+                let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
+                run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
+            }
+            let mut color = tag_color(&tag.color);
+            if egui::color_picker::color_edit_button_srgba(ui, &mut color, egui::color_picker::Alpha::Opaque).changed()
+            {
+                let hex = format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
+                run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
+            }
+            let armed = state.tag_remove_confirm.as_deref() == Some(tag.name.as_str());
+            let label = if armed { format!("Remove {name}? ({count} items)") } else { format!("Remove tag {name}") };
+            if ui.button(label).clicked() {
+                if !armed && count > 0 {
+                    state.tag_remove_confirm = Some(tag.name.clone());
+                } else {
+                    if run(projects, "library.removeTag", json!({ "name": tag.name }), out) {
+                        state.tag_filter.retain(|t| *t != tag.name);
+                        if let Some(Place::Tag(tags)) = &mut state.place {
+                            tags.retain(|t| *t != tag.name);
+                            if tags.is_empty() {
+                                state.place = None;
+                            }
+                        }
+                    }
+                    state.tag_remove_confirm = None;
+                    state.relist();
+                    ui.close();
+                }
+            }
+            if armed && ui.button("Keep").clicked() {
+                state.tag_remove_confirm = None;
+            }
+        });
     }
     title(&mut y, "Library");
     for category in Category::ALL {
-        entry(ui, &mut y, Target::Category(category), category.title(), None);
+        entry_row(ui, &painter, area, &mut y, state, Target::Category(category), category.title(), None);
     }
     title(&mut y, "Folders");
     let mut menus = Vec::new();
@@ -657,7 +864,16 @@ fn sidebar_view(
             FolderState::Missing => Some("gone"),
             _ => None,
         };
-        let response = entry(ui, &mut y, Target::Place(Place::Folder(folder.path.clone())), &name, note);
+        let response = entry_row(
+            ui,
+            &painter,
+            area,
+            &mut y,
+            state,
+            Target::Place(Place::Folder(folder.path.clone())),
+            &name,
+            note,
+        );
         menus.push((response, folder.path));
     }
     for (response, folder) in menus {
@@ -685,6 +901,7 @@ fn sidebar_view(
     }
     // Adding a folder: a field for its path.
     let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW + 2.0));
+    y += rect.height();
     match state.new_folder.as_mut() {
         None => {
             let response =
@@ -739,6 +956,14 @@ fn sidebar_view(
             }
         }
     }
+    // The wheel scrolls the sidebar while some of it lies past the bottom (tags, folders), so
+    // the first enters and the last stay reachable.
+    let content = (y - area.top()).max(0.0);
+    let max_scroll = (content - area.height()).max(0.0);
+    if ui.rect_contains_pointer(area) {
+        state.sidebar_scroll -= ui.input(|i| i.smooth_scroll_delta.y);
+    }
+    state.sidebar_scroll = state.sidebar_scroll.clamp(0.0, max_scroll);
 }
 
 fn results_view(
@@ -774,8 +999,12 @@ fn results_view(
     let painter = ui.painter_at(area);
     let rows: Vec<Row> = state.rows().to_vec();
     if rows.is_empty() {
-        let text = if state.search.trim().is_empty() && projects.file_library_mut().folders().is_empty() {
+        let folders = projects.file_library_mut().folders().len();
+        let tags = matches!(&state.place, Some(Place::Tag(_)));
+        let text = if state.search.trim().is_empty() && folders == 0 && !tags {
             "Add a folder to find samples"
+        } else if tags {
+            "No item carries these tags"
         } else {
             "Nothing found"
         };
@@ -1637,18 +1866,8 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::window_background());
     painter.rect_stroke(area, 1.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
-    // How many items carry each tag, counted when the editor opened and after every change
-    // made in it.
-    if state.tag_counts.is_none() {
-        let mut counts = HashMap::new();
-        for (_, names) in projects.file_library_mut().tagged() {
-            for name in names {
-                *counts.entry(name).or_default() += 1;
-            }
-        }
-        state.tag_counts = Some(counts);
-    }
-    let counts = state.tag_counts.clone().unwrap_or_default();
+    // How many items carry each tag, counted once when the library's tags changed since.
+    let counts = state.tag_counts(projects.file_library_mut());
     let tags = projects.file_library_mut().tags();
     let mut y = area.top() + 2.0;
     for tag in &tags {
@@ -1741,7 +1960,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
         }
         // Its name, typed to rename: the field takes the room between the colour and the
         // fixed right side, at least enough to type in.
-        let armed = state.tag_editor_confirm.as_deref() == Some(tag.name.as_str());
+        let armed = state.tag_remove_confirm.as_deref() == Some(tag.name.as_str());
         let remove_width = 58.0;
         let keep_width = if armed { 44.0 } else { 0.0 };
         let count_width = if area.width() >= 240.0 { 46.0 } else { 0.0 };
@@ -1769,8 +1988,8 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
             for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
                 *filter = name.trim().to_string();
             }
-            if state.tag_editor_confirm.as_deref() == Some(tag.name.as_str()) {
-                state.tag_editor_confirm = None;
+            if state.tag_remove_confirm.as_deref() == Some(tag.name.as_str()) {
+                state.tag_remove_confirm = None;
             }
             state.tag_counts = None;
             state.relist();
@@ -1816,11 +2035,11 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 if run(projects, "library.removeTag", json!({ "name": tag.name }), out) {
                     state.tag_filter.retain(|t| *t != tag.name);
                 }
-                state.tag_editor_confirm = None;
+                state.tag_remove_confirm = None;
                 state.tag_counts = None;
                 state.relist();
             } else {
-                state.tag_editor_confirm = Some(tag.name.clone());
+                state.tag_remove_confirm = Some(tag.name.clone());
             }
         }
         if armed {
@@ -1838,7 +2057,7 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 theme::browser_text_secondary(),
             );
             if keep.clicked() {
-                state.tag_editor_confirm = None;
+                state.tag_remove_confirm = None;
             }
         }
     }
@@ -1922,7 +2141,11 @@ fn footer_view(
         egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             let id = Id::unique(("browser-rename-tag", &tag.name));
             let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
-            let field = crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut name).desired_width(120.0));
+            let field =
+                crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut name).id(id).desired_width(120.0));
+            field.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", tag.name))
+            });
             ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
             if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && name.trim() != tag.name {
                 if run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out) {
@@ -1977,7 +2200,7 @@ fn footer_view(
         if response.clicked() {
             state.tag_editor = !state.tag_editor;
             state.tag_counts = None;
-            state.tag_editor_confirm = None;
+            state.tag_remove_confirm = None;
         }
         let lit = motion::toward(ui.ctx(), response.id.with("on"), state.tag_editor, motion::VALUE);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
