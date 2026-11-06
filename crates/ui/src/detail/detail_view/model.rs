@@ -401,6 +401,9 @@ pub struct AudioPanel {
     pub length_beats: f64,
     /// Its scale (an audio clip's key), when one was given (`clip.setScale`).
     pub scale: Option<suhina_engine::model::Scale>,
+    /// A MIDI clip's swing (its own, or following the project's), and the project's (#1221).
+    pub swing: suhina_engine::model::ClipSwing,
+    pub global_swing: f64,
 }
 
 /// What the detail area shows for a clip that has an editor: the editor, or its track's devices.
@@ -703,6 +706,8 @@ pub fn build_with(
                     bar_beats: bar,
                     length_beats: placed.length,
                     scale: content.and_then(|c| c.scale),
+                    swing: placed.swing,
+                    global_swing: project.transport.swing,
                 }),
             }),
             chain(project, id, plugins, nam.clone()),

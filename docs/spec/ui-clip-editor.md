@@ -805,9 +805,11 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   than drawn cut in half, and the title goes last.
 - The figures are window state, like the selection itself: not part of the project, not an undo
   step, and gone when the selection is cleared or another clip is shown (› Selecting).
-- **Later:** swing ([#1221](https://github.com/suhina-daw/suhina-daw/issues/1221), a Swing row in
-  the Clip part); quantise while recording (record quantisation) belongs to recording, which has
-  its own issue.
+- **Built ([#1221](https://github.com/suhina-daw/suhina-daw/issues/1221)):** a **Swing** row under
+  **Scale**: the **Global** switch and a slider of the swing the clip plays, the project's or its
+  own ([swing spec](swing.md)).
+- **Later:** quantise while recording (record quantisation) belongs to recording, which has its own
+  issue.
 
 ## Scale and key
 

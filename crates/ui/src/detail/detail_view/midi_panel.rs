@@ -55,14 +55,14 @@ pub(super) fn row_width(tools: bool, figures_beside: bool) -> f32 {
 /// Whether a row `height` tall (under the column's title row) holds the figures under the Clip
 /// part.
 pub(super) fn figures_fit_under(height: f32) -> bool {
-    let clip = (NAME + FIELD) * 3.0 + TOGGLE + GAP * 3.0;
+    let clip = (NAME + FIELD) * 4.0 + TOGGLE + GAP * 4.0;
     height >= clip + FIGURES_GAP + FIGURES + 16.0
 }
 
 /// How tall the panel is with its parts one under another (the detail area stacked), under its
 /// title row: the Clip part, and with `midi` the figures and, with `tools`, the tools part.
 pub(super) fn stacked_height(midi: bool, tools: bool) -> f32 {
-    let clip = (NAME + FIELD) * 3.0 + TOGGLE + GAP * 3.0;
+    let clip = (NAME + FIELD) * 4.0 + TOGGLE + GAP * 4.0;
     let figures = if midi { FIGURES_GAP + FIGURES } else { 0.0 };
     let tools = if midi && tools { 14.0 + TAB_ROW + GAP + TOOLS_BODY } else { 0.0 };
     clip + figures + tools + 16.0
@@ -87,6 +87,7 @@ pub(super) fn midi_panel(
     let clip =
         if stacked { area } else { Rect::from_min_max(area.min, Pos2::new(area.left() + CLIP_PART, area.bottom())) };
     let end = clip_part(ui, painter, clip, info, at, panel, actions);
+    let end = swing_row(ui, painter, clip, end + GAP, at, panel, actions);
     let Some(midi) = midi else { return };
     let beside = midi.figures_beside && !stacked;
     if beside {
@@ -122,6 +123,54 @@ pub(super) fn midi_panel(
         )
     };
     tools_part(ui, painter, part, panel, midi, actions);
+}
+
+/// The Swing row under the Clip part (#1221, `docs/spec/swing.md`): its name says whose swing the
+/// clip plays, the **Global** switch makes it follow the project's swing or play its own again, and
+/// the slider sets the swing it plays: the project's while it follows it (so every clip that
+/// follows changes with it), else its own. Left out whole when it does not fit. Returns where it
+/// ends.
+fn swing_row(
+    ui: &Ui,
+    painter: &egui::Painter,
+    part: Rect,
+    top: f32,
+    at: ClipRef,
+    panel: &AudioPanel,
+    actions: &mut Vec<Action>,
+) -> f32 {
+    if top + NAME + FIELD > part.bottom() + 0.5 {
+        return top - GAP;
+    }
+    let global = !panel.swing.own;
+    let percent = (panel.swing.effective(panel.global_swing) * 100.0).round();
+    let name = Rect::from_min_size(Pos2::new(part.left(), top), Vec2::new(part.width(), NAME));
+    name_over(painter, name, if global { "Swing (global)" } else { "Swing (this clip)" }, Align2::LEFT_BOTTOM);
+    widgets::text_in(
+        painter,
+        name.shrink2(Vec2::new(0.0, 2.0)),
+        Align2::RIGHT_BOTTOM,
+        &format!("{percent} %"),
+        theme::mono_font(theme::TEXT_TINY),
+        theme::text_value(),
+    );
+    let switch = Rect::from_min_size(Pos2::new(part.left(), top + NAME), Vec2::new(52.0, FIELD));
+    if toggle(ui, painter, switch, "Use global swing", "Global", global) {
+        actions.push(Action::new("clip.setSwing", on_clip(at, json!({ "global": !global }))));
+    }
+    let slider =
+        Rect::from_min_max(Pos2::new(switch.right() + 4.0, switch.top()), Pos2::new(part.right(), switch.bottom()));
+    let label = if global { "Swing (global)" } else { "Swing (this clip)" };
+    let id = Id::unique(("clip-panel-swing", panel.clip.0));
+    if let Some((amount, continues)) = widgets::percent_slider(ui, painter, slider, id, label, percent, !global) {
+        let action = if global {
+            Action::new("transport.setSwing", json!({ "amount": amount, "continue": continues }))
+        } else {
+            Action::new("clip.setSwing", on_clip(at, json!({ "amount": amount, "continue": continues })))
+        };
+        actions.push(action);
+    }
+    switch.bottom()
 }
 
 /// The tools part: its tab row, and the tab shown.

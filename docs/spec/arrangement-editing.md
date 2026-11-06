@@ -217,6 +217,11 @@ double it), scroll over it a step at a time (×1.25), double-click it for ×1; C
 Ctrl+Alt+Down step it too. It is kept as a setting (Settings › Arrangement › *Waveform zoom*,
 `waveform_zoom`, the factor).
 
+**Swing.** On the same lower line of the corner, opposite the waveform zoom, a **Swing** slider
+sets the project's swing, 0 to 100 %, which every MIDI clip without a swing of its own plays with
+([swing spec](swing.md); `transport.setSwing`). It is left out when the corner is too narrow for it
+beside the zoom.
+
 The **Hide returns** button in the header column's top corner, by the ruler, takes the return
 tracks' rows out of the view and **Show returns** brings them back; it is kept as a setting
 (Settings › Arrangement › Return tracks, `arrangement_returns`). Main's row stays. Whether a new

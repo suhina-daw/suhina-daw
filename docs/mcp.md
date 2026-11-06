@@ -248,6 +248,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `"1/8T"`, `"1 bar"`, as `launcher.setQuantization` takes it) by `amount` percent (default 100,
   onto the line); with `ends: true` the ends move too. One undo step; a bad grid, an amount
   outside 0 to 100 or a note that does not exist fails and changes nothing.
+- **Swing.** `transport.setSwing {amount}` sets the project's swing in percent (0 straight, 100 the second sixteenth of each eighth on the triplet), which every MIDI clip without its own plays with; `clip.setSwing {amount?, global?}` gives a MIDI clip its own swing (`amount`) or makes it follow the project's again (`global: true`, keeping its own for later). The notes never move; the swing is applied as the clip plays ([swing spec](spec/swing.md)).
 - **MIDI tools.** The note tools of a MIDI clip's panel (its Notes and Transform tabs) run the
   same commands an agent can: `note.humanize {notes?, ms?, time?, velocity?, chords?, seed?}` moves
   each start and velocity a little, like a person playing: a normally distributed draw within

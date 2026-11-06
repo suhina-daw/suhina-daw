@@ -1095,6 +1095,66 @@ pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, l
     response.clicked()
 }
 
+/// A horizontal slider of a percentage, 0 to 100 (swing, #1221): a click puts the handle there, a
+/// drag moves it and the value follows while it moves (every value of one drag after the first it
+/// sends `continues`, so the drag is one undo step), and a double-click puts it at 0. Named
+/// "`label`: N %" for a reader and a test. `lit` draws the filled part in the accent, otherwise in
+/// a quieter ink. Returns the value to set, and whether it continues the drag.
+#[allow(clippy::too_many_arguments)]
+pub fn percent_slider(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    id: Id,
+    label: &str,
+    value: f64,
+    lit: bool,
+) -> Option<(f64, bool)> {
+    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+    let shown = if value.is_finite() { value.clamp(0.0, 100.0).round() } else { 0.0 };
+    let named = format!("{label}: {shown} %");
+    response.widget_info(|| {
+        let mut info = WidgetInfo::labeled(Role::Slider, true, &named);
+        info.value = Some(shown);
+        info
+    });
+    let hovered = hover(ui, &response);
+    let track = rect.shrink2(Vec2::new(4.0, 0.0));
+    let mid = rect.center().y;
+    let handle_x = track.left() + track.width() * (shown / 100.0) as f32;
+    painter.line_segment(
+        [Pos2::new(track.left(), mid), Pos2::new(track.right(), mid)],
+        Stroke::new(3.0, theme::control_background()),
+    );
+    let fill = if lit { theme::accent() } else { motion::mix(theme::text_hint(), theme::text_secondary(), hovered) };
+    painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(handle_x, mid)], Stroke::new(3.0, fill));
+    let cap = Rect::from_center_size(Pos2::new(handle_x, mid), Vec2::new(8.0, 12.0));
+    painter.rect_filled(cap, 2.0, motion::mix(theme::text_secondary(), theme::text_value(), hovered));
+    let sent = id.with("sent");
+    if response.double_clicked() {
+        ui.data_mut(|d| d.remove::<bool>(sent));
+        return (shown != 0.0).then_some((0.0, false));
+    }
+    let mut out = None;
+    if (response.clicked() || response.dragged())
+        && let Some(pointer) = response.interact_pointer_pos()
+        && track.width() > 0.0
+    {
+        let at = (f64::from((pointer.x - track.left()) / track.width()).clamp(0.0, 1.0) * 100.0).round();
+        if (at - shown).abs() >= 0.5 {
+            let continues = response.dragged() && ui.data(|d| d.get_temp::<bool>(sent)).is_some();
+            if response.dragged() {
+                ui.data_mut(|d| d.insert_temp(sent, true));
+            }
+            out = Some((at, continues));
+        }
+    }
+    if response.drag_stopped() || !response.dragged() {
+        ui.data_mut(|d| d.remove::<bool>(sent));
+    }
+    out
+}
+
 #[cfg(test)]
 #[path = "widgets_tests.rs"]
 mod tests;

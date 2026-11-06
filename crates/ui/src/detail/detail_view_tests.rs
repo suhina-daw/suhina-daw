@@ -1520,3 +1520,30 @@ fn a_stacked_midi_panel_puts_the_tools_under_the_clip_part() {
     assert!(head.top() >= scale.bottom(), "{scale:?} {head:?}");
     assert!(harness.query_by_label("Fit to scale").is_some());
 }
+
+/// The Swing row: following the project's swing, its slider sets the project's (every clip that
+/// follows changes with it); the Global switch gives the clip its own (#1221).
+#[test]
+fn the_swing_row_sets_the_projects_swing_or_the_clips_own() {
+    use egui_kittest::kittest::Queryable;
+    let mut harness = midi_harness(None, &[], egui::vec2(1000.0, 320.0), false);
+    assert!(harness.query_by_label("Use global swing: On").is_some(), "a clip follows the project's swing");
+    let slider = harness.get_by_label("Swing (global): 0 %").rect();
+    harness.hover_at(slider.center());
+    harness.run();
+    harness.drag_at(slider.center());
+    harness.run();
+    harness.hover_at(slider.center() + egui::vec2(6.0, 0.0));
+    harness.run();
+    harness.drop_at(slider.center() + egui::vec2(6.0, 0.0));
+    harness.run();
+    let sets: Vec<Action> = harness.state().0.iter().filter(|a| a.id == "transport.setSwing").cloned().collect();
+    assert!(!sets.is_empty(), "{:?}", harness.state().0);
+    assert!(sets.iter().all(|a| a.params["amount"].as_f64().is_some_and(|v| v > 0.0)));
+    assert_eq!(sets[0].params["continue"], json!(false), "a drag starts one undo step");
+    harness.get_by_label("Use global swing: On").click();
+    harness.run();
+    let last = harness.state().0.last().cloned();
+    assert_eq!(last.as_ref().map(|a| a.id), Some("clip.setSwing"));
+    assert_eq!(last.map(|a| a.params["global"].clone()), Some(json!(false)));
+}
