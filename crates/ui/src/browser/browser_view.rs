@@ -674,12 +674,23 @@ fn sidebar_view(
         let count = counts.get(&tag.name).copied().unwrap_or(0);
         let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW));
         y += ROW;
-        let response = ui.interact(rect.intersect(area), Id::unique(("browser-tag-place", &tag.name)), Sense::click());
+        // A press carries the tag to an item of the results as well (#1196): click selects
+        // the place, a drag takes it there.
+        let response =
+            ui.interact(rect.intersect(area), Id::unique(("browser-tag-place", &tag.name)), Sense::click_and_drag());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Place Tag {}", tag.name)));
-        // Dragging items here tags them when dropped, as a drop on a folder row moves them (#1196).
-        let drag_here = state.drag.is_some() && rect.intersects(area) && response.hovered();
+        // Dragging items here tags them when dropped (#1196), and a drag of the row itself
+        // takes the tag to an item of the results to tag it there (#1196). A drag owns the
+        // pointer, so a row under a live drag is found by position, as the results rows find
+        // their folder drops.
+        let pointer = ui.input(|i| i.pointer.latest_pos());
+        let drag_here =
+            state.drag.is_some() && rect.intersects(area) && pointer.is_some_and(|p| rect.intersect(area).contains(p));
         if drag_here {
             state.drop_tag = Some(tag.name.clone());
+        }
+        if response.drag_started() && rect.intersects(area) {
+            state.drag_tag = Some(tag.name.clone());
         }
         let chosen = matches!(&state.place, Some(Place::Tag(tags)) if tags.contains(&tag.name));
         let alone = state.place.as_ref() == Some(&Place::Tag(vec![tag.name.clone()]));
@@ -1042,6 +1053,7 @@ fn results_view(
     let dragging_samples = state.drag.as_ref().is_some_and(|items| items.iter().any(|i| i.kind == ItemKind::Sample));
     let pointer = ui.input(|i| i.pointer.latest_pos());
     state.drop_folder = None;
+    state.drop_item = None;
     for index in first..(first + visible).min(rows.len()) {
         let Some(row) = rows.get(index) else { continue };
         let top = area.top() + index as f32 * ROW - state.scroll;
@@ -1064,7 +1076,18 @@ fn results_view(
         if drop_here {
             state.drop_folder = row.item.path();
         }
-        let fill = if drop_here {
+        // A tag carried from the Tags section highlights the item it is dropped on to tag it:
+        // anything but a heading or a folder, as a row's Tag menu does (#1196). A drag owns
+        // the pointer, so the row is found by position, the folder drops below in the same
+        // way.
+        let tag_here = state.drag_tag.is_some()
+            && row.item.kind != ItemKind::Heading
+            && row.item.kind != ItemKind::Folder
+            && pointer.is_some_and(|p| shown.contains(p));
+        if tag_here {
+            state.drop_item = Some(row.item.clone());
+        }
+        let fill = if drop_here || tag_here {
             theme::control_hover()
         } else if selected {
             theme::control_active()
@@ -1945,12 +1968,15 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
                 state.relist();
             }
         }
-        // Its colour.
+        // Its colour: the square the button paints is the UI's interact size wide whatever
+        // the room it is given, so the room is narrowed to it — at the row's own width, the
+        // name past it, nothing sitting on either (#1196).
         let mut color = tag_color(&tag.color);
         let pick_rect =
             Rect::from_min_size(Pos2::new(box_rect.right() + 4.0, rect.center().y - FILTER / 2.0), Vec2::splat(FILTER));
         let picked = ui
             .scope_builder(egui::UiBuilder::new().max_rect(pick_rect).id_salt(("tag-editor-color", &tag.name)), |ui| {
+                ui.spacing_mut().interact_size.x = FILTER;
                 egui::color_picker::color_edit_button_srgba(ui, &mut color, egui::color_picker::Alpha::Opaque)
             })
             .inner;

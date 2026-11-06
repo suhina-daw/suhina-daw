@@ -490,7 +490,12 @@ A ctrl-click on the place's last tag shows the tree again.
 As
 any chosen place, the row shows a **×** that lets the place go. While items are dragged, a tag
 row lights up under the pointer and the drop tags every dragged item with the tag (folders and
-headings left out); the drag stops the preview as any drop does not. The row's right-click
+headings left out); the drag stops the preview as any drop does not. The other way round, a
+tag row dragged out of the section carries the tag to the results, the item row it is over
+lights up, and a drop tags that item — or every selected item when the row is one of them, as
+the tag editor's checkbox does; a drop elsewhere changes nothing. While either is carried, a
+pill beside the pointer says what a drop does, and the status bar says so: *Tag 3 items with
+Blue*, *Drop to tag Kick.wav with Blue*. The row's right-click
 menu renames (typed in; the place and the footer's filter follow the new name), recolours —
 the palette's swatches, or **Select colour…**, which opens the theme editor's picker in the
 menu itself, where a picker of its own would end the menu as a click outside it does —, and

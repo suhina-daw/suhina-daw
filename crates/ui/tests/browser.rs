@@ -1685,13 +1685,86 @@ fn items_dropped_on_a_tag_carry_it() {
     double_click(&mut harness, &row(&name));
     harness.run();
     let item = folder.join("Loop 120bpm.wav").display().to_string();
-    // The loop swept onto the sidebar's tag row is tagged there.
+    // The loop swept onto the sidebar's tag row is tagged there. Mid-drag the pointer says
+    // what a drop does, status bar included.
     let from = harness.get_by_label(&row("Loop 120bpm.wav")).rect().center();
     let to = harness.get_by_label("Place Tag Red").rect().center();
-    drag(&mut harness, from, to);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    for share in [0.1, 0.3, 0.6, 1.0] {
+        harness.hover_at(from + (to - from) * share);
+        harness.step();
+    }
+    assert!(
+        matches!(harness.state().status(), Status::Hint(text) if text.contains("Red") && text.contains("tag")),
+        "{:?}",
+        harness.state().status()
+    );
+    harness.drop_at(to);
+    harness.step();
     harness.run();
     let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
     assert_eq!(tags, ["Red"], "the drop tagged it");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The tagging the other way round: a tag row dragged onto an item of the results carries the
+/// tag there, the row lit under it, and a drop on one of a selection tags them all (#1196).
+#[test]
+fn a_tag_dragged_onto_an_item_tags_it() {
+    let (settings, folder) = (temp("tag-drag-settings"), temp("tag-drag"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    double_click(&mut harness, &row(&name));
+    harness.run();
+    let loop_item = folder.join("Loop 120bpm.wav").display().to_string();
+    let kick = folder.join("Drums").join("Kick Hard.wav").display().to_string();
+    let groove = folder.join("Groove.mid").display().to_string();
+    // The tag swept from its sidebar row onto the loop carries Red there. Mid-drag the
+    // pointer says what a drop does, status bar included.
+    let from = harness.get_by_label("Place Tag Red").rect().center();
+    let to = harness.get_by_label(&row("Loop 120bpm.wav")).rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    for share in [0.1, 0.3, 0.6, 1.0] {
+        harness.hover_at(from + (to - from) * share);
+        harness.step();
+    }
+    assert!(
+        matches!(
+            harness.state().status(),
+            Status::Hint(text) if text.contains("Loop 120bpm.wav") && text.contains("Red")
+        ),
+        "{:?}",
+        harness.state().status()
+    );
+    harness.drop_at(to);
+    harness.step();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&loop_item);
+    assert_eq!(tags, ["Red"], "the drop tagged the loop");
+    // Both of the two rows selected: the drop on one of them tags the whole selection.
+    harness.get_by_label(&row("Groove.mid")).click();
+    harness.run();
+    harness.get_by_label(&row("Loop 120bpm.wav")).click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    let from = harness.get_by_label("Place Tag Blue").rect().center();
+    let to = harness.get_by_label(&row("Loop 120bpm.wav")).rect().center();
+    drag(&mut harness, from, to);
+    harness.run();
+    let library = harness.state_mut().projects_mut().file_library_mut();
+    assert!(
+        library.item_tags(&loop_item).contains(&"Blue".to_string())
+            && library.item_tags(kick.as_str()).is_empty()
+            && library.item_tags(&groove).contains(&"Blue".to_string()),
+        "the selection the row belongs to carries it"
+    );
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

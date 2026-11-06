@@ -350,6 +350,12 @@ pub struct BrowserState {
     /// The tag row under the pointer while items are dragged, which a drop tags (#1196); set
     /// as the sidebar's rows are drawn.
     pub drop_tag: Option<String>,
+    /// The tag a tag row's press carries, from the drag that took it to an item row to be
+    /// dropped there: the same tagging the other way round (#1196). `None` while nothing
+    /// carries it.
+    pub drag_tag: Option<String>,
+    /// The results row a tag is carried over, which a drop tags; set as the rows are drawn.
+    pub drop_item: Option<BrowserItem>,
     /// The sidebar's scroll when its entries are more than its room: rows above its top have
     /// gone past, as the results list scrolls.
     pub sidebar_scroll: f32,
@@ -411,6 +417,8 @@ impl Default for BrowserState {
             stop_preview: false,
             new_folder: None,
             drop_tag: None,
+            drag_tag: None,
+            drop_item: None,
             sidebar_scroll: 0.0,
             drag: None,
             drop_folder: None,
