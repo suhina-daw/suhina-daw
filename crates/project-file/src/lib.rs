@@ -13,6 +13,7 @@
 //! relative to the project file; [`rebase_audio`] moves those paths when a project is saved
 //! somewhere else.
 
+use std::collections::HashSet;
 use std::fmt;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -25,10 +26,10 @@ use suhina_model::{
     ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, ControllerMapping, Device,
     DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction,
     FollowKind, InputChannels, LaneData, LaneId, LaunchMode, LaunchQuantization, LaunchSettings, Launcher,
-    LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES,
-    Macro, MacroMapping, MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note,
-    Project, Rgb, Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature,
-    TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
+    LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_MAPPINGS, MAX_TEMPO_CHANGES,
+    MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping, MappedDevice, MappingSource, MappingTarget, Marker, MidiInput,
+    MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane,
+    TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
 };
 
 /// The file extension, without the dot.
@@ -978,6 +979,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
     };
     // Before version 9 a project's mappings were the launcher's launch mappings (#1162).
     let mut older_mappings: Vec<ControllerMapping> = Vec::new();
+    let mut older_sources = HashSet::new();
     let launcher = match p.get("launcher") {
         None | Some(Value::Null) => Launcher::default(),
         Some(l) => {
@@ -1012,7 +1014,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
             if version < 9 {
                 for (i, v) in list(l, "mappings", "project.launcher")?.iter().enumerate() {
                     let at = format!("project.launcher.mappings[{i}]");
-                    push_mapping(&mut older_mappings, read_launch_mapping(v, &at, version)?, &at)?;
+                    push_mapping(&mut older_mappings, &mut older_sources, read_launch_mapping(v, &at, version)?, &at)?;
                 }
             }
             Launcher { scenes, columns }
@@ -1022,9 +1024,10 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
         older_mappings
     } else {
         let mut mappings = Vec::new();
+        let mut sources = HashSet::new();
         for (i, v) in list(p, "controller_mappings", "project")?.iter().enumerate() {
             let at = format!("project.controller_mappings[{i}]");
-            push_mapping(&mut mappings, read_controller_mapping(v, &at)?, &at)?;
+            push_mapping(&mut mappings, &mut sources, read_controller_mapping(v, &at)?, &at)?;
         }
         mappings
     };
@@ -1526,14 +1529,19 @@ fn read_follow(c: &Obj, at: &str) -> Result<FollowAction, ProjectFileError> {
     Ok(follow)
 }
 
-/// Adds `mapping` to `mappings`, refusing a source that is mapped already: a source has one
-/// target at most.
+/// Adds `mapping` to `mappings`, refusing a source that is mapped already (a source has one
+/// target at most) and a project with more than [`MAX_MAPPINGS`], so a file cannot make opening
+/// it slow or leave a project that refuses every `mapping.add`.
 fn push_mapping(
     mappings: &mut Vec<ControllerMapping>,
+    sources: &mut HashSet<MappingSource>,
     mapping: ControllerMapping,
     at: &str,
 ) -> Result<(), ProjectFileError> {
-    if mappings.iter().any(|m| m.source == mapping.source) {
+    if mappings.len() >= MAX_MAPPINGS {
+        return Err(ProjectFileError(format!("{at}: a project keeps at most {MAX_MAPPINGS} mappings")));
+    }
+    if !sources.insert(mapping.source.clone()) {
         return Err(ProjectFileError(format!("{at}: {} is mapped twice", mapping.source.name())));
     }
     mappings.push(mapping);
@@ -1558,6 +1566,11 @@ fn read_controller_mapping(value: &Value, at: &str) -> Result<ControllerMapping,
     let at_target = format!("{at}.target");
     let t = object(m.get("target").unwrap_or(&Value::Null), &at_target)?;
     let command = required_text(t, "command", &at_target)?;
+    if let Some(takes) = MappingTarget::takes(&command)
+        && let Some(key) = t.keys().find(|k| k.as_str() != "command" && !takes.contains(&k.as_str()))
+    {
+        return Err(ProjectFileError(format!("{at_target}: {command} takes {}, not {key:?}", takes.join(" and "))));
+    }
     let track = optional_whole(t, "track", &at_target)?.map(TrackId);
     let scene = optional_whole(t, "scene", &at_target)?;
     let target = MappingTarget::from_command(&command, track, scene).ok_or_else(|| {

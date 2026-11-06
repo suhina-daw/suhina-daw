@@ -458,6 +458,9 @@ fn a_malformed_controller_mapping_is_refused() {
         r#"[ { "source": "key:Q", "target": { "command": "track.setVolume", "track": 1 } } ]"#,
         r#"[ { "source": "key:Q", "target": { "command": "clip.launch", "track": 1 } } ]"#,
         r#"[ { "source": "key:Q", "target": { "command": "scene.launch", "scene": -1 } } ]"#,
+        // A parameter its command does not take, as `mapping.add` refuses it.
+        r#"[ { "source": "key:Q", "target": { "command": "track.stop", "track": 1, "scene": 3 } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "scene.launch", "track": 1, "scene": 3 } } ]"#,
         r#"[ { "source": "key:Q", "target": { "command": "track.stop", "track": "Bass" } } ]"#,
         r#"[ { "source": "key:Q", "target": { "command": "track.stop", "track": 1 } },
              { "source": "key:Q", "target": { "command": "track.stop", "track": 2 } } ]"#,
@@ -465,6 +468,25 @@ fn a_malformed_controller_mapping_is_refused() {
         let err = read(bad).unwrap_err().to_string();
         assert!(err.contains("project.controller_mappings"), "{bad}: {err}");
     }
+}
+
+/// A file keeps at most `MAX_MAPPINGS` mappings, as a project does, and reading them does not
+/// compare every pair.
+#[test]
+fn a_file_with_more_than_the_most_mappings_is_refused() {
+    let read = |count: usize| {
+        let list: Vec<Value> = (0..count)
+            .map(|i| {
+                json!({ "source": format!("note:{}:{}", i / 128 % 16 + 1, i % 128),
+                        "target": { "command": "scene.launch", "scene": 0 } })
+            })
+            .collect();
+        let file = json!({ "format": "suhina", "version": 9, "project": { "controller_mappings": list } });
+        from_json(&file.to_string()).map(|p| p.controller_mappings.len())
+    };
+    assert_eq!(read(MAX_MAPPINGS), Ok(MAX_MAPPINGS));
+    let err = read(MAX_MAPPINGS + 1).unwrap_err().to_string();
+    assert!(err.contains("at most"), "{err}");
 }
 
 /// A launch mapping's scene counts from 0 from version 8 (#763 › 1) and from 1 before, so a

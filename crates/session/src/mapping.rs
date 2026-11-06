@@ -13,8 +13,7 @@ use crate::commands::Args;
 use crate::commands::{column_index, scene_id, scene_index, track_id};
 use crate::{CommandError, Session};
 
-/// The most mappings a project keeps, so a script cannot grow the project without bound.
-pub const MAX_MAPPINGS: usize = 1024;
+pub use suhina_model::MAX_MAPPINGS;
 
 fn source(params: &Value) -> Result<MappingSource, CommandError> {
     let what = "a key (key:Q, key:Space) or a MIDI note (note:<channel 1-16>:<note 0-127>)";
@@ -33,12 +32,8 @@ fn target(p: &Project, params: &Value) -> Result<MappingTarget, CommandError> {
         .get("command")
         .and_then(Value::as_str)
         .ok_or_else(|| format!("target.command must be one of {commands}"))?;
-    let takes: &[&str] = match command {
-        "clip.launch" => &["track", "scene"],
-        "scene.launch" => &["scene"],
-        "track.stop" => &["track"],
-        other => return Err(format!("target.command must be one of {commands}, got {other:?}").into()),
-    };
+    let takes = MappingTarget::takes(command)
+        .ok_or_else(|| format!("target.command must be one of {commands}, got {command:?}"))?;
     if let Some(key) = object.keys().find(|k| k.as_str() != "command" && !takes.contains(&k.as_str())) {
         return Err(format!("target: {command} takes {}, not {key:?}", takes.join(" and ")).into());
     }
@@ -98,6 +93,33 @@ fn describe(p: &Project, index: usize, m: &ControllerMapping) -> Value {
     out
 }
 
+/// Keeps mappings on their scenes when a row is inserted at `at`: a target on a scene from `at`
+/// on moves down one (`scene.insert`, `scene.duplicate`).
+pub(crate) fn scenes_inserted(p: &mut Project, at: usize) {
+    for m in &mut p.controller_mappings {
+        match &mut m.target {
+            MappingTarget::Slot { scene, .. } | MappingTarget::Scene { scene } if *scene >= at => *scene += 1,
+            _ => {}
+        }
+    }
+}
+
+/// Keeps mappings on their scenes when the scene at `at` is deleted: a mapping on it goes with it
+/// (undo brings it back), and one on a later scene moves up one (`scene.delete`).
+pub(crate) fn scene_deleted(p: &mut Project, at: usize) {
+    p.controller_mappings.retain_mut(|m| match &mut m.target {
+        MappingTarget::Slot { scene, .. } | MappingTarget::Scene { scene } => match (*scene).cmp(&at) {
+            std::cmp::Ordering::Equal => false,
+            std::cmp::Ordering::Greater => {
+                *scene -= 1;
+                true
+            }
+            std::cmp::Ordering::Less => true,
+        },
+        MappingTarget::Stop { .. } => true,
+    });
+}
+
 pub(crate) fn add_mapping(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let source = source(params)?;
     let target = target(&session.project, params)?;
@@ -147,11 +169,9 @@ pub(crate) fn remove_mapping(session: &mut Session, params: &Value) -> Result<Va
     }
     let list: Vec<Value> = removed.iter().map(|(i, m)| describe(p, *i, m)).collect();
     let indices: Vec<usize> = removed.iter().map(|(i, _)| *i).collect();
-    let mut at = 0;
-    session.project.controller_mappings.retain(|_| {
-        at += 1;
-        !indices.contains(&(at - 1))
-    });
+    for index in indices.into_iter().rev() {
+        session.project.controller_mappings.remove(index);
+    }
     Ok(json!({ "removed": list }))
 }
 

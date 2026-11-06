@@ -251,6 +251,10 @@ this list, the first built
   an older file as entries of this list (`slot` → `clip.launch`, `scene` → `scene.launch`,
   `stop` → `track.stop`, their notes with no port), and never writes the launcher's `mappings`
   again ([Suhina format › Versions](suhina-format.md#versions)).
+- A mapping stays on its scene while scenes change: `scene.insert` and `scene.duplicate` move the
+  targets below the new row down one, `scene.delete` moves those below it up one and removes the
+  mappings on the deleted scene (undo brings them back). A project keeps at most 1024 mappings,
+  and a file with more is refused.
 - A source names neither a `port` nor a `profile` yet: those come with controllers.
 
 ## Mapping mode

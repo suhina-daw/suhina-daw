@@ -11,6 +11,9 @@ use crate::TrackId;
 /// The longest key name a mapping keeps.
 pub const KEY_NAME_MAX: usize = 24;
 
+/// The most mappings a project keeps, so a script or a file cannot grow the project without bound.
+pub const MAX_MAPPINGS: usize = 1024;
+
 /// What a mapping listens to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MappingSource {
@@ -75,6 +78,17 @@ pub enum MappingTarget {
 impl MappingTarget {
     /// The commands a target can name, as the commands and the project file write them.
     pub const COMMANDS: [&'static str; 3] = ["clip.launch", "scene.launch", "track.stop"];
+
+    /// The parameters `command` takes beside itself, `track` and `scene`; `None` when it is not
+    /// one of [`MappingTarget::COMMANDS`].
+    pub fn takes(command: &str) -> Option<&'static [&'static str]> {
+        match command {
+            "clip.launch" => Some(&["track", "scene"]),
+            "scene.launch" => Some(&["scene"]),
+            "track.stop" => Some(&["track"]),
+            _ => None,
+        }
+    }
 
     /// The target that runs `command` with `track` and `scene`, when the command is one of
     /// [`MappingTarget::COMMANDS`] and the parameters it needs are given; `None` otherwise.

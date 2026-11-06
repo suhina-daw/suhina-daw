@@ -308,6 +308,34 @@ fn a_mapping_whose_track_is_gone_is_kept_unused_and_undo_brings_it_back() {
     assert_eq!(mapped_command(session.project(), &key("Q"), true).map(|(id, _)| id), Some("clip.launch"));
 }
 
+/// A mapping stays on its scene when scenes are inserted, duplicated or deleted before it; one on
+/// a deleted scene goes with it, and undo brings it back.
+#[test]
+fn a_mapping_follows_its_scene_when_scenes_are_inserted_or_deleted() {
+    let mut session = Session::new(project());
+    let add = |session: &mut Session, source: &str, target: Value| {
+        run(session, "mapping.add", json!({ "source": source, "target": target })).unwrap();
+    };
+    add(&mut session, "key:Q", json!({ "command": "clip.launch", "track": 2, "scene": 1 }));
+    add(&mut session, "key:W", json!({ "command": "scene.launch", "scene": 0 }));
+    add(&mut session, "key:E", json!({ "command": "track.stop", "track": 1 }));
+    let at = |session: &Session, source: &str| {
+        let mappings = &session.project().controller_mappings;
+        mappings.iter().find(|m| m.source.name() == source).and_then(|m| m.target.scene())
+    };
+    run(&mut session, "scene.insert", json!({ "scene": 0 })).unwrap();
+    assert_eq!((at(&session, "key:Q"), at(&session, "key:W"), at(&session, "key:E")), (Some(2), Some(1), None));
+    run(&mut session, "scene.duplicate", json!({ "scene": 1 })).unwrap();
+    assert_eq!((at(&session, "key:Q"), at(&session, "key:W")), (Some(3), Some(1)));
+    run(&mut session, "scene.delete", json!({ "scene": 0 })).unwrap();
+    assert_eq!((at(&session, "key:Q"), at(&session, "key:W")), (Some(2), Some(0)));
+    run(&mut session, "scene.delete", json!({ "scene": 0 })).unwrap();
+    assert_eq!(at(&session, "key:Q"), Some(1));
+    assert_eq!(at(&session, "key:W"), None, "a mapping on a deleted scene goes with it");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(at(&session, "key:W"), Some(0));
+}
+
 #[test]
 fn a_held_key_plays_a_gate_clip_and_its_release_stops_it() {
     let (mut session, mut renderer) = playing();

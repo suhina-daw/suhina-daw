@@ -55,7 +55,7 @@ mod overlap;
 mod scale;
 mod shared;
 pub use launch::{LaunchMode, LaunchQuantization, LaunchSettings};
-pub use mapping::{ControllerMapping, KEY_NAME_MAX, MappingSource, MappingTarget};
+pub use mapping::{ControllerMapping, KEY_NAME_MAX, MAX_MAPPINGS, MappingSource, MappingTarget};
 pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, TOUCH_TOLERANCE};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
 pub use shared::{Bytes, Shared};
