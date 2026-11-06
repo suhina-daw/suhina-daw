@@ -891,7 +891,6 @@ fn slot_project_built() -> Project {
                 Slot { clip: None, has_stop: true },
             ],
         }],
-        mappings: Default::default(),
     };
     p
 }
@@ -1168,7 +1167,6 @@ fn launcher_project_built() -> Project {
                 slots: vec![Slot { clip: Some(held), has_stop: true }, Slot::default()],
             },
         ],
-        mappings: Default::default(),
     };
     p
 }
@@ -1300,11 +1298,8 @@ fn midi_slot_project_built() -> Project {
         track: TrackId(track),
         slots: vec![Slot { clip: None, has_stop: true }, Slot { clip: None, has_stop: true }],
     };
-    p.launcher = Launcher {
-        scenes: vec![Scene::default(), Scene::default()],
-        columns: vec![column(1), column(2), column(3)],
-        mappings: Default::default(),
-    };
+    p.launcher =
+        Launcher { scenes: vec![Scene::default(), Scene::default()], columns: vec![column(1), column(2), column(3)] };
     let full = Clip { start: 0.0, ..p.arrangement.lanes[0].clips[0].clone() };
     p.launcher.columns[1].slots[0].clip = Some(full);
     p

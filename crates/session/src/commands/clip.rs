@@ -101,8 +101,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             optional(
                 "scene",
-                ParamType::Integer,
-                "instead of index: the clip in the track's slot of this scene, from 0",
+                ParamType::Item,
+                "instead of index: the clip in the track's slot of this scene, its number from 0 or {\"id\": n} with its scene_id",
             ),
             optional("in", ParamType::Number, "fade-in length in beats from the clip's start, at least 0; 0 is none"),
             optional("out", ParamType::Number, "fade-out length in beats before the clip's end, at least 0; 0 is none"),
@@ -157,8 +157,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             optional(
                 "scene",
-                ParamType::Integer,
-                "with track: the clip in this scene's slot, from 0, as in project.launcher",
+                ParamType::Item,
+                "with track: the clip in this scene's slot, its number from 0 or {\"id\": n} with its scene_id, as in project.launcher",
             ),
         ],
         kind: CommandKind::READ,
@@ -189,8 +189,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             optional(
                 "scene",
-                ParamType::Integer,
-                "instead of start: the scene, from 0, whose slot on the track takes the clip",
+                ParamType::Item,
+                "instead of start: the scene, its number from 0 or {\"id\": n} with its scene_id, whose slot on the track takes the clip",
             ),
             optional("stack", ParamType::Bool, "with start, true leaves clips under it as they are"),
             optional("replace", ParamType::Clip, "with track and start, remove this destination clip before pasting"),
@@ -1102,8 +1102,8 @@ fn delete_clips(session: &mut Session, params: &Value) -> Result<Value, CommandE
             Some(v) => v.as_u64().map(Some).ok_or_else(|| format!("{key} must be a whole number").into()),
         }
     };
-    match (whole("index")?, whole("scene")?) {
-        (Some(_), Some(_)) => Err("give index or scene, not both".into()),
+    match (whole("index")?, Args::new(params).has("scene").then_some(())) {
+        (Some(_), Some(())) => Err("give index or scene, not both".into()),
         (None, None) => Err("give clips, or track with index (an arrangement clip) or scene (a launcher clip)".into()),
         (Some(_), None) => {
             let (lane, index) = lane_and_index(&session.project, params)?;
@@ -1112,9 +1112,10 @@ fn delete_clips(session: &mut Session, params: &Value) -> Result<Value, CommandE
             }
             Ok(json!({ "deleted": index }))
         }
-        (None, Some(scene)) => {
+        (None, Some(())) => {
             let column = column_index(session.project(), params)?;
             let s = scene_index(session.project(), params)?;
+            let scene = s;
             let slot = session
                 .project
                 .launcher

@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-06
+last_verified: 2026-11-07
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -782,6 +782,16 @@ the theme's `id` and `name`, and under `files` every other entry's path and SHA-
 (lowercase hex). `crates/theme-package` packs a folder and reads a package; the app's
 **Export theme…** (Settings › Appearance › Themes › More), its import and `suhina-cli theme pack` and
 `suhina-cli theme validate` all use it, so they accept and refuse the same packages.
+
+**Seeing a theme without the app.** `suhina-cli theme render <theme-folder | built-in-theme-id> [--backdrop <image.png>]
+[--out <folder>] [--scale <n>] [--scene <name>] [--budget]` (or `cargo run -p suhina-theme-render -- …` from the source) draws the theme in
+a fixed set of scenes of the demo project: the Launcher and Arrangement views, the piano roll,
+every device in a row and each expanded panel, a menu, Settings, a tooltip, and hover and
+selected states. Each scene is `<scene>.raw.png`, the window's own pixels with their alpha, and
+`<scene>.png`, those over the backdrop (bright bands by default), blurred where the system blurs
+behind a see-through window. It renders as a window that composites alpha does, so a hole a see-through theme leaves
+shows. A scene wider than the GPU's textures allow is drawn at a smaller `--scale`, with a warning. A built-in theme's id works in place of a folder. It warns when the window would keep
+repainting every frame in a scene. `--budget` prints the style engine's counts instead.
 
 Reading refuses a package, before anything is written, when:
 

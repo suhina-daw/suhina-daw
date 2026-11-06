@@ -61,7 +61,6 @@ fn project_built() -> Project {
         tracks: vec![track(1, "Keys", InputChannels::None), track(2, "Mic", InputChannels::Mono(1))],
         channels: vec![channel(1), channel(2)],
         launcher: Launcher {
-            mappings: Vec::new(),
             scenes: vec![Scene::default(), Scene::default()],
             columns: vec![
                 LauncherColumn { track: TrackId(1), slots: vec![empty(), empty()] },

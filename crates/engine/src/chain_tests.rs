@@ -57,7 +57,6 @@ pub(crate) fn project(notes: Vec<Note>, length: f64, devices: Vec<Device>) -> Pr
             takes: Vec::new(),
         },
         launcher: Launcher {
-            mappings: Vec::new(),
             scenes: vec![Scene::default()],
             columns: vec![LauncherColumn {
                 track: TrackId(1),

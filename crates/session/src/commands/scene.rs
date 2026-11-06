@@ -138,6 +138,7 @@ fn insert_scene(session: &mut Session, params: &Value) -> Result<Value, CommandE
     even_slots(p);
     let id = p.new_scene_id()?;
     p.launcher.scenes.insert(at, Scene { id, name, ..Scene::default() });
+    crate::mapping::scenes_inserted(p, at);
     for column in &mut p.launcher.columns {
         column.slots.insert(at, Slot { clip: None, has_stop: true });
     }
@@ -154,6 +155,7 @@ fn duplicate_scene(session: &mut Session, params: &Value) -> Result<Value, Comma
     let mut copy = p.launcher.scenes.get(scene).cloned().unwrap_or_default();
     copy.id = p.new_scene_id()?;
     p.launcher.scenes.insert(scene + 1, copy);
+    crate::mapping::scenes_inserted(p, scene + 1);
     let mut next_content = p.contents.iter().map(|c| c.id.0).max().unwrap_or(0);
     for column in &mut p.launcher.columns {
         let mut slot = column.slots.get(scene).cloned().unwrap_or(Slot { clip: None, has_stop: true });
@@ -183,6 +185,7 @@ fn delete_scene(session: &mut Session, params: &Value) -> Result<Value, CommandE
     }
     even_slots(p);
     let deleted = p.launcher.scenes.remove(scene);
+    crate::mapping::scene_deleted(p, scene);
     for column in &mut p.launcher.columns {
         column.slots.remove(scene);
     }

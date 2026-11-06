@@ -1,6 +1,6 @@
 ---
 description: Why every audio clip has its own gain, pitch and warp, and how its gain envelope is stored and played: dB offsets on the content's beats, straight in dB, multiplied in the same engine path offline and live
-read_when: clip gain envelope, gain envelope, per-clip audio, independent audio clips, ClipAudio, clip.setEnvelope, envelope interpolation, envelope on loop, envelope on split, clip tempo source, project file version 9
+read_when: clip gain envelope, gain envelope, per-clip audio, independent audio clips, ClipAudio, clip.setEnvelope, envelope interpolation, envelope on loop, envelope on split, clip tempo source, project file version 10
 type: decision
 status: accepted
 built: yes
@@ -59,8 +59,8 @@ gain envelope, and #1190 for a clip panel whose controls change one clip.
    direct one, the stretcher's, a launched clip, a clip host's gains) multiplies it in where it
    multiplies the fades, so offline renders and playback match sample for sample (AGENTS.md
    rules 3 and 4).
-6. **The project file moves the state with a version.** Version 9 writes `audio` on the clip and
-   no state on the region. A file before version 9 is read with each clip taking the state its
+6. **The project file moves the state with a version.** Version 10 writes `audio` on the clip and
+   no state on the region. A file before version 10 is read with each clip taking the state its
    content's region held, so every clip of a shared content keeps the sound it had.
 
 ## Consequences

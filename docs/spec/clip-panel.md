@@ -220,4 +220,4 @@ Every one changes only the clip it names and is one undo step.
 
 A clip's audio state is the clip's `audio` object (`gain`, `gain_envelope`, `transpose`, `warped`,
 `stretch`, `warp_markers`, `tempo_source`), written only when it is not the starting one; the
-region keeps the file. Version 9 ([`.suhina` format](suhina-format.md) › Versions).
+region keeps the file. Version 10 ([`.suhina` format](suhina-format.md) › Versions).

@@ -54,7 +54,6 @@ fn project_built() -> Project {
                 LauncherColumn { track: TrackId(1), slots: vec![slot(Some(1)), slot(Some(2))] },
                 LauncherColumn { track: TrackId(2), slots: vec![slot(None), slot(Some(3))] },
             ],
-            mappings: Default::default(),
         },
         ..Project::default()
     }
@@ -221,6 +220,24 @@ fn a_scene_named_by_its_id_is_found_where_it_has_moved() {
     assert_eq!((deleted["deleted"].clone(), deleted["scene_id"].clone()), (json!(3), json!(drop)));
     let err = run(&mut session, "scene.rename", json!({ "scene": { "id": drop }, "name": "X" })).unwrap_err();
     assert!(err.contains(&format!("no scene has id {drop}")), "{err}");
+}
+
+/// The clip commands that name a slot by scene take the scene's id as well as its number.
+#[test]
+fn the_clip_commands_take_a_scene_by_its_id() {
+    let mut session = Session::new(project());
+    let drop = scene_id_of(&session, "Drop");
+    run(&mut session, "scene.insert", json!({ "scene": 0, "name": "Count" })).unwrap();
+    let by_id = json!({ "id": drop });
+    run(&mut session, "clip.copy", json!({ "track": 1, "scene": by_id })).unwrap();
+    run(&mut session, "clip.paste", json!({ "track": 2, "scene": by_id })).unwrap();
+    assert!(session.project().launcher.columns[1].slots[2].clip.is_some());
+    // The scene is found; the clip there is a MIDI clip, which has no fades.
+    let err = run(&mut session, "clip.setFades", json!({ "track": 1, "scene": by_id, "in": 0 })).unwrap_err();
+    assert!(err.contains("only an audio clip"), "{err}");
+    let deleted = run(&mut session, "clip.delete", json!({ "track": 2, "scene": by_id })).unwrap();
+    assert_eq!(deleted["deleted"], 2);
+    assert!(session.project().launcher.columns[1].slots[2].clip.is_none());
 }
 
 #[test]

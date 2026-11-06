@@ -53,7 +53,6 @@ fn project() -> Project {
         launcher: Launcher {
             scenes: vec![Scene::default(), Scene::default()],
             columns: vec![column(1, Some(clip(2, 0.0))), column(2, None)],
-            mappings: Vec::new(),
         },
         ..Project::default()
     }

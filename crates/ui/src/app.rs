@@ -1156,6 +1156,13 @@ impl App {
         &self.arrangement.selected_tracks
     }
 
+    /// Shows `bytes` as the program's RAM from now on and never measures it, so that renders of
+    /// the window come out the same each time (`suhina-theme-render`).
+    pub fn hold_ram(&mut self, bytes: Option<u64>) {
+        self.ram = bytes;
+        self.next_ram = Some(f64::INFINITY);
+    }
+
     /// Turns animations on or off (a setting; on by default).
     pub fn set_animations(ctx: &egui::Context, on: bool) {
         motion::set_enabled(ctx, on);
