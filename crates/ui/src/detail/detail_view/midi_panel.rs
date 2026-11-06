@@ -8,8 +8,8 @@
 //! whole clip; `.midi-tools` styles the tools part.
 
 use super::clip_panel::{
-    CLIP_PART, Change, FIELD, Field, GAP, NAME, PART_GAP, TOGGLE, Text, bar_of, clip_part, drop_down, name_over,
-    number_field, pair, plain_number, set_button, small_button, toggle, whole,
+    CLIP_PART, Change, FIELD, Field, GAP, NAME, TOGGLE, Text, bar_of, clip_part, drop_down, name_over, number_field,
+    pair, plain_number, set_button, small_button, toggle, whole,
 };
 use super::*;
 use crate::detail::midi_tools::{Tools, ToolsTab, Transform, tools_width};
@@ -44,9 +44,14 @@ const FIGURES_GAP: f32 = 12.0;
 /// The panel's width in a row: the Clip part with the figures under it, and the tools part beside
 /// them when it is shown.
 pub(super) fn row_width(tools: bool) -> f32 {
-    let tools = if tools { PART_GAP + tools_width() } else { 0.0 };
+    let tools = if tools { TOOLS_GAP + tools_width() } else { 0.0 };
     CLIP_PART + tools + 16.0
 }
+
+/// The room between the Clip part and the tools part: a little less than the audio panel's, so
+/// the panel is no wider than the clip column and the tools column were together and the piano
+/// roll's toolbar keeps its menus at 1280 points.
+const TOOLS_GAP: f32 = 8.0;
 
 /// How tall the panel is with its parts one under another (the detail area stacked), under its
 /// title row: the Clip part, and with `midi` the figures and, with `tools`, the tools part.
@@ -92,7 +97,7 @@ pub(super) fn midi_panel(
     let part = if stacked {
         Rect::from_min_max(Pos2::new(area.left(), figures_end + 14.0), area.max)
     } else {
-        let left = clip.right() + PART_GAP;
+        let left = clip.right() + TOOLS_GAP;
         Rect::from_min_max(
             Pos2::new(left, area.top()),
             Pos2::new((left + tools_width()).min(area.right()), area.bottom()),

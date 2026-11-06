@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use suhina_engine::model::Note;
 
 /// The tools part's width in a row, beside the Clip part.
-pub const TOOLS_WIDTH: f32 = 136.0;
+pub const TOOLS_WIDTH: f32 = 128.0;
 
 /// The tools part's width: `.midi-tools { width }` in the theme (120 to 480 points), else
 /// [`TOOLS_WIDTH`].

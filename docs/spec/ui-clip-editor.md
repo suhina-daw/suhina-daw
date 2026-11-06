@@ -921,7 +921,7 @@ button opens its clip in the editor.
   a click on the **MIDI tools** icon in the toolbar (› Layout). Showing or hiding it is window
   state: it is not a command, not saved with the project and not an undo step, and hiding it never
   changes the notes or the selection. `.midi-tools` styles it (its background, its text, and its
-  width from 120 to 480 points, 136 by default). The figures under the Clip part (› Clip column)
+  width from 120 to 480 points, 128 by default). The figures under the Clip part (› Clip column)
   say what the tools act on, and stay while the tools are hidden.
 - Its tab row has two tabs, **Notes** and **Transform** (`.editor-tab`, `#tab-notes` and
   `#tab-transform`; the one shown in `text.primary` over a 2 px `accent` line). Both tabs are the

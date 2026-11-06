@@ -46,6 +46,9 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
     harness.run();
     harness.get_by_label(CLIP).click();
     harness.run();
+    // A detail area tall enough for the figures under the clip panel's Clip part (› Clip column).
+    let splitter = harness.get_by_label("Detail area splitter").rect().center();
+    drag(&mut harness, splitter, splitter - egui::vec2(0.0, 160.0), 6);
     harness
 }
 
