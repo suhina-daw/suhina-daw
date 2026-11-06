@@ -2568,6 +2568,39 @@ fn parts_of_two_midi_takes_show_no_crossfade() {
     assert!(harness.query_by_label("Crossfade end on Drums").is_none());
 }
 
+/// A clip carried onto another track takes its gain envelope's button (and line) with it while it
+/// is dragged, not leaving them on the track it came from until it is let go of.
+#[test]
+fn a_clip_carried_to_another_track_leaves_no_envelope_behind() {
+    let mut harness = window_with_step(audio_app(), 1.0 / 60.0);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::T);
+    harness.run();
+    assert!(harness.query_by_label("Edit gain envelope of Loop").is_some());
+    let clip = harness.get_by_label("Clip Loop on Loop at bar 1").rect();
+    let from = clip.center_top() + egui::vec2(0.0, 6.0);
+    // The new track's lane is under the Loop track's.
+    let to = from + egui::vec2(0.0, clip.height() + 12.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(from + egui::vec2(0.0, 6.0));
+    harness.step();
+    harness.hover_at(to);
+    harness.step();
+    harness.step();
+    assert!(
+        harness.query_by_label("Edit gain envelope of Loop").is_none(),
+        "while carried, nothing of the clip is drawn on the track it left"
+    );
+    harness.drop_at(to);
+    harness.run();
+    assert!(harness.query_by_label("Clip Loop on Loop at bar 1").is_none(), "it moved to the new track");
+    assert!(harness.query_by_label("Edit gain envelope of Loop").is_some(), "back with the clip once it lands");
+}
+
 /// The Loop clip's gain envelope points, as the project has them.
 fn loop_envelope(harness: &Harness<'static, App>) -> Vec<(f64, f64)> {
     harness

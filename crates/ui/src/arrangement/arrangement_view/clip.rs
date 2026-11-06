@@ -1125,7 +1125,10 @@ pub(super) fn clip_box<'a>(
     // The gain envelope over the waveform and under the gain field: its line while Show gain
     // envelope is on, its grid and points while it is edited; the Edit gain envelope button left
     // of the name, and Free move under it while editing.
-    if let Some(view) = &clip.audio_view {
+    // Not while it is carried onto another lane, where it is drawn with its envelope (unless a
+    // copy is carried and the clip stays here).
+    let carried_away = result.is_some() && !(copy_key || state.clip_drag.is_some_and(|d| d.copy));
+    if let Some(view) = clip.audio_view.as_ref().filter(|_| !carried_away) {
         let envelope_painter = painter.with_clip_rect(row.clip);
         let edit = envelope_edited && state.clip_drag.is_none() && state.edge_drag.is_none();
         let place = envelope_place.unwrap_or(crate::arrangement::envelope::Place {
