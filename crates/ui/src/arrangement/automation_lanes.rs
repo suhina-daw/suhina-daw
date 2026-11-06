@@ -667,7 +667,7 @@ fn plugin_params(
                 asked: Default::default(),
             })),
             enabled: lane.is_none_or(|l| l.enabled),
-            points: lane.map(|l| l.points.clone()).unwrap_or_default(),
+            points: lane.map(|l| l.points.to_vec()).unwrap_or_default(),
             current: set(info.id).unwrap_or(info.value),
         });
     }
@@ -693,7 +693,7 @@ fn plugin_params(
                 ..PluginScale::default()
             })),
             enabled: lane.enabled,
-            points: lane.points.clone(),
+            points: lane.points.to_vec(),
             current: set(id).unwrap_or(min),
         });
     }

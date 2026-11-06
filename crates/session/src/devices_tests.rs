@@ -50,7 +50,7 @@ fn edits_for_devices_the_project_no_longer_holds_are_left_out() {
 fn with_lane() -> Project {
     let mut project = project();
     let mut lane = AutomationLane::new("0");
-    lane.points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(8.0, 1.0)];
+    lane.points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(8.0, 1.0)].into();
     project.channels[0].devices[0].automation.push(lane);
     project
 }

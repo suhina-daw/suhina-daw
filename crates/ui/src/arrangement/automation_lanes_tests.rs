@@ -515,7 +515,7 @@ fn plugin_project() -> (Project, TrackId) {
         suhina_engine::model::DeviceKind::Clap { id: "com.example.synth".into() },
     );
     let mut lane = AutomationLane::new("9");
-    lane.points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, 2.0)];
+    lane.points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, 2.0)].into();
     device.automation.push(lane);
     project.channel_mut(channel).unwrap().devices.insert(0, device);
     (project, track)
