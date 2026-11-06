@@ -77,7 +77,7 @@ move its rules into `theme.css`.
 ### Swatches and the thumbnail
 
 The picker draws each swatch as a `theme-swatch` element with a `color` attribute, styled by
-the theme in use. Suhina's default is a rounded square of the colour; your sheet may change it:
+the theme in use. Suhina's default is a rounded rectangle filled with the colour; your sheet may change it:
 
 ```css
 theme-swatch { background: attr(color type(<color>)); border-radius: 50%; }
@@ -119,7 +119,7 @@ A theme's settings are custom properties. Every theme has the core set: each pal
 `--background-image` (`none` or `url("background.png")`), `--background-opacity` and
 `--background-blur` (0–100), and `--session-track-width`, `--session-return-width`,
 `--session-scene-width`, `--session-slot-height`, `--session-header-height` (`auto` or pixels).
-Set them in `:root`; what you leave out keeps Suhina Dark's value.
+Set them in `:root`; what you leave out keeps Suhina Studio's value.
 
 Offer your own settings with `@property`. A property with a `label` appears under **Theme
 settings** in the editor, with a control for its type:
@@ -148,8 +148,9 @@ variable (a helper such as `--my-well`) is left out with a warning, so declare a
 `@property` when variants should change it. Anything in the file besides `name` and `values` is
 a warning. A variant's values win over the
 theme's rules for the same property, including ones inside `@media`. The editor shows a theme's
-variants as swatches under its card. A built-in theme's variants are kept in a folder of its id
-holding only `variants/`, without a copy of its CSS.
+variants as swatches under its card. A built-in theme can come with variants of its own; variants you
+add or edit for one are kept in a folder of its id holding only `variants/`, without a copy of
+its CSS.
 
 ### Your own overrides and device panels
 

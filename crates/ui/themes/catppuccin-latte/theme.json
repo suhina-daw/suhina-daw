@@ -3,5 +3,5 @@
   "name": "Catppuccin Latte",
   "author": "The Suhina contributors",
   "description": "The Catppuccin Latte palette (MIT, catppuccin.com), a light theme, mapped onto Suhina's tokens.",
-  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+  "swatch": "var(--window-background)"
 }

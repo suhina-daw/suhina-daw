@@ -30,8 +30,9 @@ is solid: it must not sample the unrelated main-window backdrop.
 The embedded panel can also be dragged by its title, within the main window.
 In the overlay, dimming disappears during control adjustments and returns immediately
 on release, without a delayed comparison interval. Background
-clicks remain blocked. Only actual value changes or holding/dragging value controls
-start that preview; background and navigation drags must not toggle the dimmer.
+clicks remain blocked. Only holding or dragging a value control starts that preview: a click that changes a
+value or chooses a theme or variant keeps the dimming on every frame, and background and
+navigation drags must not toggle the dimmer.
 Text inputs and dropdowns use transparent fills and only a
 theme-coloured underline, stronger on hover and accented on focus. Navigation rows
 have no opaque background: only selected/hovered rows add a translucent tint.
@@ -141,7 +142,11 @@ use always shows. A theme left in an earlier file format says *Not converted* on
 the reason when hovered. Each theme's card shows its thumbnail (`thumbnail.svg`, 16:9, drawn with the values of the
 theme and the variant shown), or a blank card filled with its swatch colour when it has none
 ([theme skins](theme-skins.md#theme-folders-themejson-themecss-thumbnail-and-variants)).
-Drawing them never installs a theme. The active card has an accent border and Active label.
+Drawing them never installs a theme. The theme in use is highlighted, on its large card and in
+its place in the list: a 2 px accent border and a tint of the accent over the card, and on its
+variant's swatch a 2 px accent ring. On macOS the window's title bar and the system's menus
+follow the theme: light for a theme with dark text, dark otherwise. The bar at the top of the
+screen itself is drawn by the system and follows the desktop.
 The active theme is featured once at full width with a thumbnail at most 170 px high; other
 themes remain in a two-column grid. Clicking a card immediately applies and saves the
 selected theme and returns the gallery to the top. Holding the primary button on the
@@ -168,7 +173,7 @@ on the theme's own values), so a built-in theme is not copied for them. The rend
 values when present, otherwise global settings; GPU support, reduced effects and high contrast
 remain final gates. A theme's `--liquid` property is `auto` or three integers from 0 to 100
 (panels, tracks, clips); `auto` preserves global inheritance. Copies
-and exports retain these values; Reset changes restores both entry colours and inheritance.
+and exports retain these values; Reset changes restores entry colours, inheritance and the theme's own settings.
 Colours are grouped into Surfaces, Text, Tracks & clips, Controls, Meters and Sample map.
 Each colour has its swatch, hex and wrapping token on the first line, followed by the
 full wrapping explanation on a separate line. No fixed token/description columns or
@@ -186,7 +191,9 @@ Changes apply and save live into the variant in use; moving controls or changing
 built-in theme creates a custom copy. A theme with variants shows a row of swatches under its
 card, the default variant first (named in `theme.json`, *Default* otherwise); clicking one uses
 that variant. Each swatch is a `theme-swatch` element in the variant's swatch colour, styled by
-the theme in use. More › New variant starts
+the theme in use: a rounded rectangle the colour fills to its edge, larger on the active theme's
+card than in the grid. All of a theme's swatches stay on one line, narrowing together when they
+do not fit. A card without variants keeps the row's room, so all the grid's cards are one height. More › New variant starts
 one from the values in use, and with a variant in use the name field renames the variant.
 *Theme settings* lists the settings the theme declares with `@property`, each with a control
 for its type ([theme skins](theme-skins.md#theme-folders-themejson-themecss-thumbnail-and-variants)).
@@ -393,7 +400,10 @@ Colour and gradient editors retain unmultiplied RGB at zero opacity, including a
 saving and loading a theme. Returning opacity to 100 percent restores the original hue.
 
 Suhina Glass is a bundled, editable blue glass preset. Its JSON includes all colour tokens,
-subtle surface gradients and liquid overrides. A background image remains a local user
+subtle surface gradients and liquid overrides. Its *Glassiness* (0 to 60) sets how far the desktop
+shows through the menu bar, toolbar and status bar, and macOS's title bar strip with them, on a
+host that supports it; the main window's views let through half as much. Menus and dialogs float
+over the window as glass of the bars' strength. 0 makes all of them opaque. A background image remains a local user
 choice, so sharing the theme does not share an image or a machine-specific file path.
 
 The background source, image processing and placement are separate internal modules.

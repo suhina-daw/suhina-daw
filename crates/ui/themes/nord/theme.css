@@ -1,22 +1,48 @@
-/* The Nord palette (MIT, nordtheme.com), mapped onto Suhina's tokens. */
-/* Suhina theme. Settings are custom properties; see README.md. */
+/* Nord, reduced to a few settings: every token below follows them. */
+@property --ground { syntax: "<color>"; initial-value: #2E3440; label: "Background"; group: "Colours"; }
+@property --surface { syntax: "<color>"; initial-value: #3B4252; label: "Panels"; group: "Colours"; }
+@property --ink { syntax: "<color>"; initial-value: #ECEFF4; label: "Text"; group: "Colours"; }
+@property --tint { syntax: "<color>"; initial-value: #88C0D0; label: "Accent"; group: "Colours"; }
+@property --highlight { syntax: "<color>"; initial-value: #EBCB8B; label: "Selection"; group: "Colours"; }
 :root {
-  --accent: #88C0D0;
-  --border: #3B4252;
-  --border-strong: #4C566A;
-  --browser-text-hint: #7B88A1;
-  --browser-text-primary: #ECEFF4;
-  --browser-text-secondary: #D8DEE9;
-  --browser-text-value: #E5E9F0;
+  --window-background: var(--ground);
+  --panel-background: var(--surface);
+  --panel-hoverBackground: color-mix(in oklab, var(--surface), var(--ink) 7%);
+  --track-headerBackground: var(--surface);
+  --track-headerSelectedBackground: color-mix(in oklab, var(--surface), var(--tint) 22%);
+  --track-mutedBackground: color-mix(in oklab, var(--surface), var(--ground) 50%);
+  --control-background: color-mix(in oklab, var(--surface), var(--ink) 9%);
+  --control-hoverBackground: color-mix(in oklab, var(--surface), var(--ink) 15%);
+  --control-activeBackground: color-mix(in oklab, var(--surface), var(--ink) 22%);
+  --control-playingBackground: color-mix(in oklab, var(--surface), var(--tint) 40%);
+  --control-selectedBackground: color-mix(in oklab, var(--ink), var(--ground) 12%);
+  --border: color-mix(in oklab, var(--surface), var(--ink) 9%);
+  --border-strong: color-mix(in oklab, var(--surface), var(--ink) 20%);
+  --grid-major: color-mix(in oklab, var(--ground), var(--ink) 9%);
+  --grid-minor: color-mix(in oklab, var(--ground), var(--ink) 5%);
+  --slot-empty: color-mix(in oklab, var(--surface), var(--ink) 20%);
+  --pan-background: color-mix(in oklab, var(--ground), var(--surface) 30%);
+  --pan-centre: color-mix(in oklab, var(--ink), var(--surface) 50%);
+  --accent: var(--tint);
+  --selection: var(--highlight);
+  --text-primary: var(--ink);
+  --text-secondary: color-mix(in oklab, var(--ink), var(--surface) 25%);
+  --text-hint: color-mix(in oklab, var(--ink), var(--surface) 48%);
+  --text-value: color-mix(in oklab, var(--ink), var(--surface) 8%);
+  --browser-text-primary: var(--ink);
+  --browser-text-secondary: color-mix(in oklab, var(--ink), var(--surface) 25%);
+  --browser-text-hint: color-mix(in oklab, var(--ink), var(--surface) 48%);
+  --browser-text-value: color-mix(in oklab, var(--ink), var(--surface) 8%);
+  --text-inverse: var(--ground);
+  --text-onColorDark: var(--ground);
+  --text-onColorLight: var(--ink);
+  --text-playing: contrast-color(var(--ground));
+  --recording: #BF616A;
+  --recording-background: color-mix(in oklab, var(--surface), var(--recording) 22%);
+  --meter-normal: #A3BE8C;
+  --meter-hot: #EBCB8B;
   --clip-audioDefault: #FF9A3C;
   --clip-midiDefault: #4FC3F7;
-  --control-activeBackground: #4C566A;
-  --control-background: #434C5E;
-  --control-hoverBackground: #48505F;
-  --control-playingBackground: #5E81AC;
-  --control-selectedBackground: #E5E9F0;
-  --grid-major: #383F4E;
-  --grid-minor: #333946;
   --kind-bass: #A84F4F;
   --kind-clap: #5EC0B0;
   --kind-closedHat: #C6AC5E;
@@ -34,24 +60,6 @@
   --kind-tom: #B074A4;
   --kind-tonal: #6EB0D0;
   --kind-vocal: #E8D0A0;
-  --meter-hot: #EBCB8B;
-  --meter-normal: #A3BE8C;
-  --pan-background: #2A303B;
-  --pan-centre: #7B88A1;
-  --panel-background: #3B4252;
-  --panel-hoverBackground: #434C5E;
-  --recording: #BF616A;
-  --recording-background: #4F4E5F;
-  --selection: #EBCB8B;
-  --slot-empty: #4C566A;
-  --text-hint: #7B88A1;
-  --text-inverse: #2E3440;
-  --text-onColorDark: #2E3440;
-  --text-onColorLight: #ECEFF4;
-  --text-playing: #FFFFFF;
-  --text-primary: #ECEFF4;
-  --text-secondary: #D8DEE9;
-  --text-value: #E5E9F0;
   --track-1: #FF9A3C;
   --track-2: #F2D541;
   --track-3: #4FC3F7;
@@ -60,8 +68,4 @@
   --track-6: #FF6FA8;
   --track-7: #5C8DFF;
   --track-8: #2FD9C4;
-  --track-headerBackground: #3B4252;
-  --track-headerSelectedBackground: #4C566A;
-  --track-mutedBackground: #353B48;
-  --window-background: #2E3440;
 }

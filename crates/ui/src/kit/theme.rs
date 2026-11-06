@@ -54,41 +54,41 @@ macro_rules! palette {
 }
 
 palette! {
-    grid_major, "grid.major", 0x30312D,
+    grid_major, "grid.major", 0x2C2B29,
         "Arrangement bar lines and lane separators";
-    grid_minor, "grid.minor", 0x252622,
+    grid_minor, "grid.minor", 0x252422,
         "Arrangement subdivisions between bar lines";
     track_header_background, "track.headerBackground", 0x252421,
         "The neutral surface behind Arrangement track controls";
-    track_header_selected, "track.headerSelectedBackground", 0x34332F,
+    track_header_selected, "track.headerSelectedBackground", 0x3E3E4C,
         "The surface behind a selected Arrangement track's controls";
     window_background, "window.background", 0x1D1C1A,
         "The window behind everything: grid, empty slots, lanes, Settings";
     panel_background, "panel.background", 0x252421,
         "Panels and headers: menu, control and status bars, track headers, beat lines";
-    panel_hover, "panel.hoverBackground", 0x2A2926,
+    panel_hover, "panel.hoverBackground", 0x31302C,
         "A panel or list row under the pointer";
-    control_background, "control.background", 0x2E2D2A,
+    control_background, "control.background", 0x343330,
         "Fields, buttons and stopped clips";
-    control_hover, "control.hoverBackground", 0x34332F,
+    control_hover, "control.hoverBackground", 0x3F3D3A,
         "A field, button or clip under the pointer";
-    control_active, "control.activeBackground", 0x45433F,
+    control_active, "control.activeBackground", 0x4B4A46,
         "Selected or pressed: a selected clip or track, a dragged field";
-    control_playing, "control.playingBackground", 0x4A4843,
+    control_playing, "control.playingBackground", 0x545472,
         "A playing clip or scene";
-    control_selected, "control.selectedBackground", 0xC9C4BB,
+    control_selected, "control.selectedBackground", 0xD0CCC6,
         "The chosen option of a switch, a lit toggle, the level of a volume or pan field";
-    border, "border", 0x383733,
+    border, "border", 0x343330,
         "Hairlines between regions and rows";
-    border_strong, "border.strong", 0x45433F,
+    border_strong, "border.strong", 0x484642,
         "Launcher columns and arrangement track lines";
     text_primary, "text.primary", 0xECE8E1,
         "Names and values";
-    text_secondary, "text.secondary", 0x9A958C,
+    text_secondary, "text.secondary", 0xB5B2AC,
         "Labels and notes";
-    text_hint, "text.hint", 0x66625B,
+    text_hint, "text.hint", 0x85837E,
         "Inactive text, hints and section titles";
-    text_value, "text.value", 0xC9C4BB,
+    text_value, "text.value", 0xDAD6D0,
         "Clip names and values on fields";
     text_inverse, "text.inverse", 0x1D1C1A,
         "Text on lit fills: a switch's chosen option, a lit button";
@@ -100,11 +100,11 @@ palette! {
         "Dark text on bright coloured tracks, returns and clips; paired with text.onColorLight for contrast";
     browser_text_primary, "browser.text.primary", 0xECE8E1,
         "Browser selection, search input and highlighted names";
-    browser_text_secondary, "browser.text.secondary", 0x9A958C,
+    browser_text_secondary, "browser.text.secondary", 0xB5B2AC,
         "Browser item names, categories and preview labels";
-    browser_text_hint, "browser.text.hint", 0x66625B,
+    browser_text_hint, "browser.text.hint", 0x85837E,
         "Browser section headings, search placeholder and hints";
-    browser_text_value, "browser.text.value", 0xC9C4BB,
+    browser_text_value, "browser.text.value", 0xDAD6D0,
         "Browser values and active preview controls";
     accent, "accent", 0xA6A3FF,
         "The playhead, queued clips, a key being set";
@@ -112,19 +112,19 @@ palette! {
         "The selected device's outline";
     recording, "recording", 0xE5484D,
         "Recording and errors";
-    recording_background, "recording.background", 0x3A2B2A,
+    recording_background, "recording.background", 0x4D2F2B,
         "Behind an armed track's arm button and a recording clip";
     meter_normal, "meter.normal", 0x8BC48A,
         "A level meter below the top";
     meter_hot, "meter.hot", 0xE3C86A,
         "A level meter near the top";
-    slot_empty, "slot.empty", 0x4A4743,
+    slot_empty, "slot.empty", 0x484642,
         "The mark in an empty clip slot";
-    track_muted, "track.mutedBackground", 0x34322F,
+    track_muted, "track.mutedBackground", 0x21201D,
         "The fills of a muted track";
-    pan_background, "pan.background", 0x232220,
+    pan_background, "pan.background", 0x1F1E1C,
         "Behind a track header's pan field";
-    pan_centre, "pan.centre", 0x55524C,
+    pan_centre, "pan.centre", 0x817F7A,
         "The centre mark of a pan field";
     midi_clip_default, "clip.midiDefault", 0x4FC3F7,
         "RGB colour copied only to newly created MIDI tracks and clips; existing tracks and clips never change";
@@ -249,16 +249,33 @@ pub fn see_through() -> bool {
     .any(|color| color.a() < 255)
 }
 
+/// Whether the theme in use is a light one, which the system's parts of the window follow.
+pub fn is_light() -> bool {
+    light(&palette())
+}
+
+/// Whether `p` is a light theme: one with dark text. A background can be see-through, so its
+/// colour alone does not tell, but text is always made to read on what the theme looks like.
+fn light(p: &Palette) -> bool {
+    luminance(p.text_primary) < 0.18
+}
+
+/// The light or dark scheme of `p`. egui passes it on to the native window (its title bar).
+fn scheme(p: &Palette) -> egui::Theme {
+    if light(p) { egui::Theme::Light } else { egui::Theme::Dark }
+}
+
 /// Draws with `palette` from the next frame on: the tokens and egui's own visuals.
 pub fn set_palette(ctx: &egui::Context, palette: Palette) {
     PALETTE_REVISION.with(|revision| revision.set(revision.get().wrapping_add(1)));
     PALETTE.with(|p| p.set(palette));
     ctx.all_styles_mut(|style| visuals(&mut style.visuals, &palette));
+    ctx.set_theme(scheme(&palette));
     ctx.request_repaint();
 }
 
-/// The id of the default theme, Suhina Dark, in the settings file.
-pub const BUILT_IN: &str = "suhina-dark";
+/// The id of the default theme, Suhina Studio, in the settings file.
+pub const BUILT_IN: &str = "suhina-studio";
 
 /// The swatch of a theme that says none: its panels with a little of its accent.
 pub const DEFAULT_SWATCH: &str = "color-mix(in oklab, var(--panel-background), var(--accent) 35%)";
@@ -274,29 +291,23 @@ macro_rules! folder {
     };
 }
 
-/// The themes that come with Suhina, Suhina Dark first. Dracula, Nord, Catppuccin and Solarized
+/// The themes that come with Suhina, Suhina Studio first. Nord and Catppuccin
 /// are popular open palettes (MIT, their licences in `themes/licenses/`), mapped onto Suhina's
 /// tokens.
-const BUILT_IN_FOLDERS: [BuiltInFolder; 16] = [
-    folder!("suhina-dark": "theme.json", "theme.css", "thumbnail.svg"),
-    folder!("suhina-studio-dark": "theme.json", "theme.css", "thumbnail.svg"),
-    folder!("suhina-studio-light": "theme.json", "theme.css", "thumbnail.svg"),
-    folder!("editor-dark": "theme.json", "theme.css", "thumbnail.svg"),
+const BUILT_IN_FOLDERS: [BuiltInFolder; 10] = [
+    folder!("suhina-studio": "theme.json", "theme.css", "thumbnail.svg", "variants/blue.json", "variants/darker.json", "variants/darkest.json", "variants/forest.json", "variants/light.json"),
     folder!("suhina-light": "theme.json", "theme.css", "thumbnail.svg"),
-    folder!("high-contrast": "theme.json", "theme.css", "thumbnail.svg"),
-    folder!("dracula": "theme.json", "theme.css", "thumbnail.svg"),
-    folder!("nord": "theme.json", "theme.css", "thumbnail.svg"),
-    folder!("catppuccin-mocha": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("high-contrast": "theme.json", "theme.css", "thumbnail.svg", "variants/light.json"),
+    folder!("nord": "theme.json", "theme.css", "thumbnail.svg", "variants/snow-storm.json"),
+    folder!("catppuccin-mocha": "theme.json", "theme.css", "thumbnail.svg", "variants/macchiato.json"),
     folder!("catppuccin-latte": "theme.json", "theme.css", "thumbnail.svg"),
-    folder!("solarized-dark": "theme.json", "theme.css", "thumbnail.svg"),
-    folder!("suhina-glass": "theme.json", "theme.css", "thumbnail.svg"),
-    folder!("suhina-forest-amber": "theme.json", "theme.css", "thumbnail.svg"),
+    folder!("suhina-glass": "theme.json", "theme.css", "thumbnail.svg", "variants/frost.json", "variants/midnight.json"),
     folder!("suhina-sheet": "theme.json", "theme.css", "thumbnail.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
     folder!("suhina-meadow": "theme.json", "theme.css", "thumbnail.svg", "background.png", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
-    folder!("suhina-blocks": "theme.json", "theme.css", "thumbnail.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg", "assets/track.body.color-4fc3f7.svg", "assets/track.body.color-7fdb5a.svg", "assets/track.body.color-80ada1.svg", "assets/track.body.color-a84f4f.svg", "assets/track.body.color-b38bff.svg", "assets/track.body.color-e5484d.svg", "assets/track.body.color-f2d541.svg", "assets/track.body.color-ff9a3c.svg"),
+    folder!("suhina-blocks": "theme.json", "theme.css", "thumbnail.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.color-4fc3f7.svg", "assets/track.body.color-7fdb5a.svg", "assets/track.body.color-80ada1.svg", "assets/track.body.color-a84f4f.svg", "assets/track.body.color-b38bff.svg", "assets/track.body.color-e5484d.svg", "assets/track.body.color-f2d541.svg", "assets/track.body.color-ff9a3c.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
 ];
 
-/// The themes that come with Suhina, Suhina Dark first, with their ids. They do not change;
+/// The themes that come with Suhina, Suhina Studio first, with their ids. They do not change;
 /// editing one makes a copy.
 pub fn built_in_themes() -> Vec<(&'static str, Theme)> {
     static THEMES: std::sync::OnceLock<Vec<(&'static str, Theme)>> = std::sync::OnceLock::new();
@@ -311,13 +322,38 @@ pub fn built_in_themes() -> Vec<(&'static str, Theme)> {
                     debug_assert!(read.as_ref().is_ok_and(|(_, warnings)| warnings.is_empty()), "{id}: {read:?}");
                     let mut theme = read.map_or_else(|_| Theme::default(), |(theme, _)| theme);
                     if *id == BUILT_IN {
-                        // Suhina Dark's sheet sets only the values the app has without one, so the
-                        // style engine has nothing to do for the default theme and stays off.
-                        theme.skin.css = None;
+                        // Suhina Studio's sheet sets only colours, which are in the palette now, so
+                        // the style engine has nothing to do for the default theme and stays off.
+                        theme.vars.sheet = theme.skin.css.take();
                     }
                     (*id, theme)
                 })
                 .collect()
+        })
+        .clone()
+}
+
+/// The variants that come with the built-in themes, with their ids (`nord@snow-storm`).
+pub fn built_in_variants() -> Vec<(String, Theme)> {
+    static VARIANTS: std::sync::OnceLock<Vec<(String, Theme)>> = std::sync::OnceLock::new();
+    VARIANTS
+        .get_or_init(|| {
+            let themes = built_in_themes();
+            let mut found = Vec::new();
+            for (id, files) in BUILT_IN_FOLDERS {
+                let Some((_, base)) = themes.iter().find(|(b, _)| *b == id) else { continue };
+                for (path, bytes) in files {
+                    let Some(stem) = path.strip_prefix("variants/").and_then(|p| p.strip_suffix(".json")) else {
+                        continue;
+                    };
+                    let text = String::from_utf8_lossy(bytes);
+                    // Every built-in variant reads whole (`the_built_in_variants_read_whole`).
+                    let Ok((variant, _)) = super::theme_vars::Variant::from_json(stem, &text) else { continue };
+                    let (theme, _) = super::theme_vars::with_variant(base, Some(&variant));
+                    found.push((format!("{id}@{stem}"), theme));
+                }
+            }
+            found
         })
         .clone()
 }
@@ -533,14 +569,14 @@ pub struct Theme {
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            name: "Suhina Dark".into(),
+            name: "Suhina Studio".into(),
             colors: Palette::DARK,
             liquid: None,
             gradients: Default::default(),
             transparent_rgb: Default::default(),
             skin: Default::default(),
             vars: Default::default(),
-            meta: ThemeMeta::new("Suhina Dark", DEFAULT_SWATCH),
+            meta: ThemeMeta::new("Suhina Studio", DEFAULT_SWATCH),
             thumbnail: None,
             picture: None,
             swatch: None,
@@ -559,7 +595,7 @@ impl Theme {
         rgba
     }
 
-    /// Reads a theme file. Tokens it leaves out keep Suhina Dark's colour, so a file only needs
+    /// Reads a theme file. Tokens it leaves out keep Suhina Studio's colour, so a file only needs
     /// the colours it changes; unknown tokens and values that are not `#RRGGBB` or `#RRGGBBAA` are skipped with
     /// a warning. A `"$schema"` or `"description"` is allowed and ignored.
     pub fn from_json(text: &str) -> (Self, Vec<String>) {
@@ -609,7 +645,7 @@ impl Theme {
                     let [r, g, b] = theme.transparent_rgb.get("window.background").copied().unwrap_or([r, g, b]);
                     theme.colors.text_inverse = Color32::from_rgb(r, g, b);
                 }
-                if !colors.contains_key("control.selectedBackground") {
+                if !colors.contains_key("control.selectedBackground") && colors.contains_key("text.value") {
                     theme.colors.control_selected = theme.colors.text_value;
                 }
                 // Keep old themes visually identical until these independent roles are edited.
@@ -721,7 +757,7 @@ pub const WORKSPACE_GRID_EXAMPLE: &str = "/* CSS owns panel geometry; removing t
 /// The README shipped with themes: the format, capabilities and generated palette reference.
 pub fn template_readme() -> String {
     let mut text = String::from(include_str!("../../themes/THEME-PACKAGE-README.md"));
-    text.push_str("\n\n## Palette token reference\n\n| Token | Suhina Dark | Used for |\n|---|---|---|\n");
+    text.push_str("\n\n## Palette token reference\n\n| Token | Suhina Studio | Used for |\n|---|---|---|\n");
     for (key, purpose, color) in Palette::DARK.tokens() {
         text.push_str(&format!("| `{key}` | `{}` | {purpose} |\n", hex(color)));
     }
@@ -840,8 +876,8 @@ fn fonts() -> egui::FontDefinitions {
 /// the views use.
 pub fn install(ctx: &egui::Context) {
     ctx.set_fonts(fonts());
-    ctx.set_theme(egui::Theme::Dark);
     let palette = palette();
+    ctx.set_theme(scheme(&palette));
     ctx.all_styles_mut(|style| {
         style.text_styles = [
             (TextStyle::Heading, ui_font(TEXT)),
@@ -862,10 +898,8 @@ pub fn install(ctx: &egui::Context) {
 
 /// egui's visuals in the colours of `p`.
 fn visuals(visuals: &mut egui::Visuals, p: &Palette) {
-    // egui's own light or dark defaults under the tokens, by how light the window is.
-    let [r, g, b, _] = p.window_background.to_array();
-    let light = 0.299 * f32::from(r) + 0.587 * f32::from(g) + 0.114 * f32::from(b) > 128.0;
-    *visuals = if light { egui::Visuals::light() } else { egui::Visuals::dark() };
+    // egui's own light or dark defaults under the tokens.
+    *visuals = if light(p) { egui::Visuals::light() } else { egui::Visuals::dark() };
     visuals.panel_fill = p.panel_background;
     visuals.window_fill = p.panel_background;
     visuals.extreme_bg_color = p.window_background;

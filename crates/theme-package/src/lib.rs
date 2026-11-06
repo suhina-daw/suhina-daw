@@ -44,7 +44,7 @@ pub const MAX_TOTAL: usize = 32 * 1024 * 1024;
 /// Files in one package.
 pub const MAX_FILES: usize = 512;
 
-/// Suhina's core theme properties as `@property` rules with Suhina Dark's values: the defaults a
+/// Suhina's core theme properties as `@property` rules with Suhina Studio's values: the defaults a
 /// theme's swatch resolves against, as in the app. A copy of `suhina_ui::kit::theme_vars::
 /// core_sheet()`, which this crate cannot depend on; a test in `suhina-ui` keeps the two equal.
 pub const CORE_SHEET: &str = include_str!("core.css");

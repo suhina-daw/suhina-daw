@@ -3,5 +3,5 @@
   "name": "Suhina Blocks",
   "author": "The Suhina contributors",
   "description": "Original brown plank surfaces, colour-keyed pixel textures and stone controls. No landscape wallpaper.",
-  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+  "swatch": "var(--window-background)"
 }

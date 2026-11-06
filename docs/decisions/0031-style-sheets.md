@@ -175,7 +175,7 @@ The language is CSS's core, everything in it that does not depend on HTML:
 - `transition` on colours, lengths and numbers (`transition: background 120ms ease-out`);
 - `@import "file.css"`, `@font-face`, and `@media` (section 3).
 
-The built-in default style sheet reproduces Suhina Dark exactly, so the move changes nothing on
+The built-in default style sheet reproduces Suhina Studio exactly, so the move changes nothing on
 screen until a theme does. **JSON themes are retired:** built-in themes are rewritten as `.css`. Existing user themes are converted only after a validated round trip, with their original files and artwork preserved. Legacy JSON remains readable during the staged migration. The style sheet is the theme's own source and Suhina never
 writes it: the settings a person changes in Suhina are values in a variant of the theme, and the
 Edit interface writes the theme's `layout.css`.
@@ -562,7 +562,7 @@ variables, so views move over one at a time and the snapshots must not change on
 - **Template:** Export template writes the README of every element, class, state, media feature,
   property and artwork part (from the registries), the default style sheet and the default artwork,
   for people and agents. Every exported theme carries the same README.
-- **Example themes:** besides Suhina Dark, the built-in themes include PR 841's Sheet, Meadow and
+- **Example themes:** besides Suhina Studio, the built-in themes include PR 841's Sheet, Meadow and
   Blocks, rewritten as style sheets with their original artwork, so authors start from working
   examples of artwork, density and glass.
 

@@ -1,22 +1,48 @@
-/* The Catppuccin Latte palette (MIT, catppuccin.com), a light theme, mapped onto Suhina's tokens. */
-/* Suhina theme. Settings are custom properties; see README.md. */
+/* Catppuccin Latte, reduced to a few settings: every token below follows them. */
+@property --ground { syntax: "<color>"; initial-value: #EFF1F5; label: "Background"; group: "Colours"; }
+@property --surface { syntax: "<color>"; initial-value: #E6E9EF; label: "Panels"; group: "Colours"; }
+@property --ink { syntax: "<color>"; initial-value: #4C4F69; label: "Text"; group: "Colours"; }
+@property --tint { syntax: "<color>"; initial-value: #8839EF; label: "Accent"; group: "Colours"; }
+@property --highlight { syntax: "<color>"; initial-value: #DF8E1D; label: "Selection"; group: "Colours"; }
 :root {
-  --accent: #8839EF;
-  --border: #DCE0E8;
-  --border-strong: #BCC0CC;
-  --browser-text-hint: #8C8FA1;
-  --browser-text-primary: #4C4F69;
-  --browser-text-secondary: #5C5F77;
-  --browser-text-value: #4C4F69;
+  --window-background: var(--ground);
+  --panel-background: var(--surface);
+  --panel-hoverBackground: color-mix(in oklab, var(--surface), var(--ink) 7%);
+  --track-headerBackground: var(--surface);
+  --track-headerSelectedBackground: color-mix(in oklab, var(--surface), var(--tint) 22%);
+  --track-mutedBackground: color-mix(in oklab, var(--surface), var(--ground) 50%);
+  --control-background: color-mix(in oklab, var(--surface), var(--ink) 9%);
+  --control-hoverBackground: color-mix(in oklab, var(--surface), var(--ink) 15%);
+  --control-activeBackground: color-mix(in oklab, var(--surface), var(--ink) 22%);
+  --control-playingBackground: color-mix(in oklab, var(--surface), var(--tint) 40%);
+  --control-selectedBackground: color-mix(in oklab, var(--ink), var(--ground) 12%);
+  --border: color-mix(in oklab, var(--surface), var(--ink) 9%);
+  --border-strong: color-mix(in oklab, var(--surface), var(--ink) 20%);
+  --grid-major: color-mix(in oklab, var(--ground), var(--ink) 9%);
+  --grid-minor: color-mix(in oklab, var(--ground), var(--ink) 5%);
+  --slot-empty: color-mix(in oklab, var(--surface), var(--ink) 20%);
+  --pan-background: color-mix(in oklab, var(--ground), var(--surface) 30%);
+  --pan-centre: color-mix(in oklab, var(--ink), var(--surface) 50%);
+  --accent: var(--tint);
+  --selection: var(--highlight);
+  --text-primary: var(--ink);
+  --text-secondary: color-mix(in oklab, var(--ink), var(--surface) 25%);
+  --text-hint: color-mix(in oklab, var(--ink), var(--surface) 48%);
+  --text-value: color-mix(in oklab, var(--ink), var(--surface) 8%);
+  --browser-text-primary: var(--ink);
+  --browser-text-secondary: color-mix(in oklab, var(--ink), var(--surface) 25%);
+  --browser-text-hint: color-mix(in oklab, var(--ink), var(--surface) 48%);
+  --browser-text-value: color-mix(in oklab, var(--ink), var(--surface) 8%);
+  --text-inverse: var(--ground);
+  --text-onColorDark: var(--ground);
+  --text-onColorLight: var(--ink);
+  --text-playing: contrast-color(var(--ground));
+  --recording: #D20F39;
+  --recording-background: color-mix(in oklab, var(--surface), var(--recording) 22%);
+  --meter-normal: #40A02B;
+  --meter-hot: #DF8E1D;
   --clip-audioDefault: #FF9A3C;
   --clip-midiDefault: #4FC3F7;
-  --control-activeBackground: #ACB0BE;
-  --control-background: #CCD0DA;
-  --control-hoverBackground: #BCC0CC;
-  --control-playingBackground: #9CA0B0;
-  --control-selectedBackground: #4C4F69;
-  --grid-major: #E0E3EB;
-  --grid-minor: #E8EBF0;
   --kind-bass: #A84F4F;
   --kind-clap: #5EC0B0;
   --kind-closedHat: #C6AC5E;
@@ -34,24 +60,6 @@
   --kind-tom: #B074A4;
   --kind-tonal: #6EB0D0;
   --kind-vocal: #E8D0A0;
-  --meter-hot: #DF8E1D;
-  --meter-normal: #40A02B;
-  --pan-background: #E6E9EF;
-  --pan-centre: #8C8FA1;
-  --panel-background: #E6E9EF;
-  --panel-hoverBackground: #DCE0E8;
-  --recording: #D20F39;
-  --recording-background: #CDBDCA;
-  --selection: #DF8E1D;
-  --slot-empty: #ACB0BE;
-  --text-hint: #8C8FA1;
-  --text-inverse: #EFF1F5;
-  --text-onColorDark: #EFF1F5;
-  --text-onColorLight: #4C4F69;
-  --text-playing: #000000;
-  --text-primary: #4C4F69;
-  --text-secondary: #5C5F77;
-  --text-value: #4C4F69;
   --track-1: #FF9A3C;
   --track-2: #F2D541;
   --track-3: #4FC3F7;
@@ -60,8 +68,4 @@
   --track-6: #FF6FA8;
   --track-7: #5C8DFF;
   --track-8: #2FD9C4;
-  --track-headerBackground: #E6E9EF;
-  --track-headerSelectedBackground: #ACB0BE;
-  --track-mutedBackground: #DCE0E8;
-  --window-background: #EFF1F5;
 }

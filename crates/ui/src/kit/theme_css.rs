@@ -470,7 +470,7 @@ pub fn export(theme: &Theme) -> String {
 }
 
 /// A theme's own style sheet (`theme.css`) written from the model, for a theme that has none
-/// yet (one migrated from an earlier version, or a copy of Suhina Dark): its core property values
+/// yet (one migrated from an earlier version, or a copy of Suhina Studio): its core property values
 /// in a `:root` rule, its artwork, then `advanced`, the free-form CSS it carried. Its name is in
 /// `theme.json`.
 pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {

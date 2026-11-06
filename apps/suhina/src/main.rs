@@ -501,6 +501,7 @@ impl Window {
         #[cfg(target_os = "macos")]
         if let Some(menu) = &mut self.mac_menu {
             menu.sync(&self.app.menus());
+            menu.follow_theme(suhina_ui::kit::theme::is_light());
         }
         self.answer_agents();
         if let Some((path, how)) = self.app.take_open_request() {

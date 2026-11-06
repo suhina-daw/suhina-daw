@@ -219,7 +219,7 @@ fn an_exported_package_brings_the_theme_back_and_a_damaged_one_is_refused() {
     assert_eq!(ids, ["night"]);
     assert!(same_look(&other.read_all().0[0].theme, &night()));
     // A built-in theme has no folder; it is exported from the files Suhina writes for it.
-    let built_in = files.export_package("suhina-dark", &Theme::default()).unwrap();
+    let built_in = files.export_package("suhina-studio", &Theme::default()).unwrap();
     assert!(suhina_theme_package::read(&std::fs::read(&built_in).unwrap()).is_ok());
     let mut bytes = std::fs::read(&package).unwrap();
     let last = bytes.len() / 2;
@@ -291,11 +291,11 @@ fn a_background_picture_in_the_assets_folder_is_read() {
 fn a_built_in_themes_package_carries_the_variants_kept_beside_it() {
     let dir = folder("built-in-variants");
     let themes = dir.join("themes");
-    let variants = themes.join("suhina-dark").join("variants");
+    let variants = themes.join("suhina-studio").join("variants");
     std::fs::create_dir_all(&variants).unwrap();
     std::fs::write(variants.join("warm.json"), r##"{"name":"Warm","values":{"--accent":"#FFB86C"}}"##).unwrap();
     let files = ThemeFiles::new(Some(themes));
-    let package = files.export_package("suhina-dark", &Theme::default()).unwrap();
+    let package = files.export_package("suhina-studio", &Theme::default()).unwrap();
     let read = suhina_theme_package::read(&std::fs::read(&package).unwrap()).unwrap();
     assert!(read.files.contains_key("variants/warm.json"), "{:?}", read.files.keys().collect::<Vec<_>>());
     let _clean = std::fs::remove_dir_all(&dir);

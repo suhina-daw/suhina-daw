@@ -2841,6 +2841,8 @@ impl App {
         let corner = if full_screen { 0 } else { self.window_corner };
         if self.title_bar > 0.0 && !full_screen {
             egui::Panel::top("title-bar").exact_size(self.title_bar).frame(egui::Frame::NONE).show(ui, |ui| {
+                // The strip reads as the top of the toolbar under it, in the toolbar's colour.
+                let _style_class = crate::kit::style_class::enter("toolbar");
                 let top = egui::CornerRadius { nw: corner, ne: corner, sw: 0, se: 0 };
                 ui.painter().fill_background(ui.max_rect(), top, theme::panel_background());
             });
@@ -2908,7 +2910,10 @@ impl App {
         self.frame_trace.mark("control bar");
         egui::Panel::bottom("status-bar").exact_size(theme::STATUS_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
             let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
-            ui.painter().fill_background(ui.max_rect(), bottom, theme::panel_background());
+            {
+                let _style_class = crate::kit::style_class::enter("status-bar");
+                ui.painter().fill_background(ui.max_rect(), bottom, theme::panel_background());
+            }
             self.status_bar(ui, grid.as_ref())
         });
         self.frame_trace.mark("bars");

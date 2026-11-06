@@ -161,7 +161,7 @@ fn the_swatch_must_resolve_to_a_colour_for_every_variant() {
 
 #[test]
 fn the_swatch_resolves_against_the_core_properties() {
-    // A duplicate of Suhina Dark: an empty `:root`, the swatch left as Suhina Dark's.
+    // A duplicate of Suhina Studio: an empty `:root`, the swatch left as Suhina Studio's.
     let with = |swatch: &str| {
         let mut files = theme();
         files.insert(

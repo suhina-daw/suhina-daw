@@ -18,7 +18,7 @@ fn from_sheet(text: &str) -> (Theme, Vec<String>) {
 }
 
 #[test]
-fn the_core_set_registers_every_token_and_setting_with_suhina_darks_values() {
+fn the_core_set_registers_every_token_and_setting_with_suhina_studios_values() {
     let core = core();
     for (key, _, _) in crate::kit::theme::Palette::DARK.tokens() {
         assert!(is_core(&token_property(key)), "{key}");
@@ -97,6 +97,31 @@ fn editing_the_model_writes_only_the_values_that_differ_from_the_theme() {
     theme.colors.accent = parse_hex("#123456").unwrap();
     sync(&mut theme);
     assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--meter-segments"]);
+}
+
+#[test]
+fn a_colour_derived_from_a_setting_follows_every_change_of_the_setting() {
+    let (mut theme, _) = from_sheet(
+        "@property --tint { syntax: \"<color>\"; initial-value: #112233; label: \"Accent\"; }\n\
+         :root { --accent: var(--tint); --selection: color-mix(in srgb, var(--tint), white 50%); }",
+    );
+    let mut edit = |tint: &str| {
+        theme.vars.values.insert("--tint".into(), tint.into());
+        resolve(&mut theme);
+        sync(&mut theme);
+        assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--tint"]);
+        (theme.colors.accent, theme.colors.selection)
+    };
+    let first = edit("#FF0000");
+    assert_eq!(first.0, parse_hex("#FF0000").unwrap());
+    let second = edit("#00FF00");
+    assert_eq!(second.0, parse_hex("#00FF00").unwrap());
+    assert_ne!(first.1, second.1);
+
+    // A colour edited by hand is still the variant's, over what the setting gives.
+    theme.colors.accent = parse_hex("#ABCDEF").unwrap();
+    sync(&mut theme);
+    assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--accent", "--tint"]);
 }
 
 #[test]

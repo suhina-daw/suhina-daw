@@ -93,7 +93,7 @@ fn measure_theme_slider_saves() {
     let mut files = ThemeFiles::new(Some(root.join("themes")));
     for (id, theme) in theme::built_in_themes()
         .into_iter()
-        .filter(|(id, _)| ["suhina-dark", "suhina-sheet", "suhina-blocks", "suhina-meadow"].contains(id))
+        .filter(|(id, _)| ["suhina-studio", "suhina-sheet", "suhina-blocks", "suhina-meadow"].contains(id))
     {
         let copy = format!("{id}-copy");
         files.write(&copy, &theme).unwrap();

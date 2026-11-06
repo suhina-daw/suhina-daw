@@ -3,5 +3,5 @@
   "name": "Suhina Meadow",
   "author": "The Suhina contributors",
   "description": "Classic blue-and-cream paper controls, translucent glass panels and liquid materials over an original green meadow wallpaper.",
-  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+  "swatch": "var(--panel-background)"
 }

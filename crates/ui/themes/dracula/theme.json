@@ -1,7 +1,0 @@
-{
-  "format": 1,
-  "name": "Dracula",
-  "author": "The Suhina contributors",
-  "description": "The Dracula palette (MIT, draculatheme.com), mapped onto Suhina's tokens.",
-  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
-}

@@ -435,7 +435,7 @@ impl ThemeFiles {
         write_zip(&self.exports()?.join(name), &contents)
     }
 
-    /// Writes `exports/suhina-theme-template.zip`: `my-theme/` (Suhina Dark's sheet with every
+    /// Writes `exports/suhina-theme-template.zip`: `my-theme/` (Suhina Studio's sheet with every
     /// colour written out, its artwork and an example variant), `README.md` on the format, and the
     /// built-in themes in `examples/`. Returns its path.
     pub fn export_template(&self) -> Result<PathBuf, String> {
@@ -1035,7 +1035,7 @@ fn leading_comments(text: &str) -> String {
 }
 
 /// A theme's own sheet for a theme that has none yet: the sheet it was copied with, the variant
-/// values it had then written into it, or, for a theme of an earlier version or Suhina Dark, one
+/// values it had then written into it, or, for a theme of an earlier version or Suhina Studio, one
 /// written from its values.
 fn new_sheet(theme: &Theme) -> String {
     use suhina_ui::kit::theme_css;

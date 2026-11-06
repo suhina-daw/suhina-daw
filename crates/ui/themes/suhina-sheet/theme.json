@@ -2,6 +2,6 @@
   "format": 1,
   "name": "Suhina Sheet",
   "author": "The Suhina contributors",
-  "description": "A playful green-and-white Session worksheet with square SVG controls. Audio is calculated in decibels, not cells.",
-  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+  "description": "A playful Session worksheet with square SVG controls, in two shades of one accent colour. Audio is calculated in decibels, not cells.",
+  "swatch": "var(--tint)"
 }

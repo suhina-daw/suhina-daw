@@ -89,6 +89,9 @@ it does not add spreadsheet functions or bundle third-party application artwork.
 The menu, toolbar and native Windows application bar enter their style scopes
 before painting their backgrounds, so their solid colours and CSS materials agree
 with the scoped foregrounds without changing layout or menu/transport actions.
+Its only settings are *Accent* and *Accent, light* (the browser's panels): every colour of its
+rules and artwork mixes those two with black and white, and its swatch is the accent. The white
+paper, the track and clip colours, the meters and the recording red stay as they are.
 
 ![Suhina Sheet Session with green browser, worksheet grid, SVG controls and measured meters](../design/reference/theme-sheet-session.png)
 
@@ -501,8 +504,10 @@ and has no migration. Only a sheet of the much earlier form (below) is still mig
 **Built-in themes** have exactly this structure, in `crates/ui/themes/<id>/`, built into the app
 (`theme::built_in_themes`, which reads each folder as a folder on disk is read). They cannot be
 edited, only duplicated; *Export theme…* writes a built-in theme's folder as it is, and the theme
-template carries them all in `examples/`. Suhina Dark's sheet sets only the values the app has
-without one, so the style engine stays off for it.
+template carries them all in `examples/`. A built-in folder may hold `variants/`, which come with
+the theme as its swatches (`theme::built_in_variants`). Suhina Studio's sheet sets only colours and
+settings, so it is set aside while the theme has its own values and the style engine stays off;
+any variant of it brings the sheet back.
 
 **Swatches and thumbnails.** The picker shows a swatch for each theme and variant, and a card for
 each theme.
@@ -531,7 +536,7 @@ each theme.
   arrangement drawn from their palette properties.
 
 **Settings are custom properties.** The core set every theme has is registered with
-`@property` and Suhina Dark's values (`crates/ui/src/kit/theme_vars.rs`): each palette token
+`@property` and Suhina Studio's values (`crates/ui/src/kit/theme_vars.rs`): each palette token
 (`--accent`, `--track-headerBackground`), `--meter-style`, `--meter-segments`,
 `--meter-intensity`, `--artwork-fps`, `--liquid` (`auto` or three strengths),
 `--gradient-panels|tracks|clips` (`none` or `<angle>deg, <colour> <position>%, ...`),
@@ -544,8 +549,9 @@ are read at the root of a 1280 by 800 dark window. A variant's values apply in t
 above the theme's rules, including its conditional ones.
 
 **Editing.** A setting changed in Suhina is written to the variant in use; on a theme's own values
-a variant named *Custom* is made first. A built-in theme's variants are kept in a folder of its
-id holding only `variants/`, without a copy of its CSS. Moving controls or changing artwork
+a variant named *Custom* is made first. A variant added to a built-in theme, or an edit of
+one it comes with, is kept in a folder of its id holding only `variants/`, without a copy of its
+CSS; a file there wins over the built-in variant of its id. Moving controls or changing artwork
 edits the theme's `theme.css` in place; artwork the sheet names keeps its file. A built-in theme
 is copied first. Renaming writes `theme.json`. *New variant* starts one from the values in use;
 with a variant in use, the name field renames it. The picker shows one card per theme and a

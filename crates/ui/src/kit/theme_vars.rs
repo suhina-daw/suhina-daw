@@ -7,7 +7,7 @@
 //! Suhina. What a user can change are custom properties: the **core set** every theme has (the
 //! palette tokens and the settings that were fields of the theme model: meter, artwork frame
 //! rate, liquid materials, surface gradients, the background's strength, Session geometry),
-//! registered here with Suhina Dark's values, and any the theme declares itself with
+//! registered here with Suhina Studio's values, and any the theme declares itself with
 //! `@property`. A **variant** is a small JSON file of values for those properties; the chosen
 //! one applies in the Variant tier, above the theme's own rules.
 //!
@@ -42,6 +42,9 @@ pub struct Vars {
     pub variant_name: Option<String>,
     /// Why the theme is still in an earlier file format, when its migration was refused.
     pub kept: Option<Arc<str>>,
+    /// Suhina Studio's sheet, set aside while the theme has its own values (its colours are already
+    /// in the palette, so the style engine can stay off), and back in force for a variant.
+    pub sheet: Option<Arc<str>>,
 }
 
 /// A setting's smallest and largest value.
@@ -77,12 +80,12 @@ pub fn token_property(key: &str) -> String {
     format!("--{}", key.replace('.', "-"))
 }
 
-/// The core set as a style sheet: an `@property` rule for each, with Suhina Dark's values.
+/// The core set as a style sheet: an `@property` rule for each, with Suhina Studio's values.
 pub fn core_sheet() -> &'static str {
     static SHEET: OnceLock<String> = OnceLock::new();
     SHEET.get_or_init(|| {
         let defaults = core_values(&Theme::default());
-        let mut css = String::from("/* Suhina's core theme properties, with Suhina Dark's values. */\n");
+        let mut css = String::from("/* Suhina's core theme properties, with Suhina Studio's values. */\n");
         for (name, syntax, range) in core_syntaxes() {
             let Some(initial) = defaults.get(name.as_str()) else { continue };
             css.push_str(&format!("@property {name} {{ syntax: \"{syntax}\"; initial-value: {initial};"));
@@ -346,6 +349,9 @@ fn theme_sheet(css: &Arc<str>) -> Result<Arc<Sheet>, String> {
 /// Sets the model from the theme's own values and the chosen variant's, and the Variant tier's
 /// sheet. A variant value that does not match its property's syntax is skipped with a warning.
 pub fn resolve(theme: &mut Theme) -> Vec<String> {
+    if !theme.vars.values.is_empty() && theme.skin.css.is_none() {
+        theme.skin.css = theme.vars.sheet.clone();
+    }
     let mut warnings = Vec::new();
     let mut merged = (*theme.vars.base).clone();
     let mut chosen = BTreeMap::new();
@@ -410,7 +416,7 @@ pub fn refresh_view(theme: &mut Theme) {
                 theme.skin.variables = Arc::new(full);
             }
         }
-        // A theme without a sheet (Suhina Dark): its base values under the variant's, as `resolve`.
+        // A theme without a sheet (Suhina Studio): its base values under the variant's, as `resolve`.
         None => {
             let mut merged = (*theme.vars.base).clone();
             merged.extend(theme.vars.values.clone());
@@ -457,18 +463,33 @@ pub fn variant_sheet(values: &BTreeMap<String, String>) -> Option<Arc<str>> {
 }
 
 /// After the model was edited: the variant's values become every core value that differs from
-/// the theme's own, keeping the values it sets for the theme's declared properties.
+/// what the theme's sheet gives for the variant's declared properties, keeping those values. A
+/// core property the sheet derives from a declared one is not written, so it follows the next
+/// change of that setting.
 pub fn sync(theme: &mut Theme) {
     let model = core_values(theme);
     theme.vars.values.retain(|name, _| !is_core(name));
+    let sheet_values = values_with_declared(theme);
     for (name, value) in model {
         // A value written as `var(--x)` or `oklch(…)` that gives the same model stays as written.
-        if theme.vars.base.get(&name).is_some_and(|base| same_value(&name, base, &value)) {
+        if sheet_values.get(&name).is_some_and(|sheet| same_value(&name, sheet, &value)) {
             continue;
         }
         theme.vars.values.insert(name, value);
     }
     theme.skin.variant = variant_sheet(&theme.vars.values);
+}
+
+/// The custom properties at the root from the theme's sheet under the variant's values, which
+/// here are all for declared properties.
+fn values_with_declared(theme: &Theme) -> Arc<BTreeMap<String, String>> {
+    if let (Some(css), Some(variant)) = (theme.skin.css.as_deref(), variant_sheet(&theme.vars.values))
+        && let (Ok(sheet), Ok(variant)) = (Sheet::parse(css), Sheet::parse(&variant))
+        && let Ok(values) = root_variables(&sheet, Some(&variant))
+    {
+        return Arc::new(values);
+    }
+    theme.vars.base.clone()
 }
 
 /// Whether two values of the core property `name` give the same model.

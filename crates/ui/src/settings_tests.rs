@@ -386,3 +386,20 @@ fn the_map_label_size_is_kept_and_only_its_steps_are_read() {
     let settings = Settings { map_label_size: 50, ..Settings::default() };
     assert_eq!(Settings::from_text(&settings.to_text()).0.map_label_size, 50);
 }
+
+#[test]
+fn a_saved_built_in_theme_that_went_is_read_as_what_took_its_place() {
+    for (saved, read) in [
+        ("editor-dark", "suhina-studio@darker"),
+        ("suhina-dark", "suhina-studio"),
+        ("suhina-dark@light", "suhina-studio@light"),
+        ("suhina-studio-dark", "suhina-studio"),
+        ("suhina-studio-light", "suhina-studio@light"),
+        ("dracula", "suhina-studio"),
+        ("solarized-dark", "suhina-studio"),
+        ("suhina-forest-amber", "suhina-studio"),
+        ("nord", "nord"),
+    ] {
+        assert_eq!(Settings::from_text(&format!("theme = {saved}\n")).0.theme, read, "{saved}");
+    }
+}

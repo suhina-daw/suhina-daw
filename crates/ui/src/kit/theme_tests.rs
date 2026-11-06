@@ -102,7 +102,7 @@ fn example_themes_embed_their_paint_and_all_editable_artwork() {
 }
 
 #[test]
-fn track_and_kind_colours_keep_their_values_in_suhina_dark() {
+fn track_and_kind_colours_keep_their_values_in_suhina_studio() {
     let dark = Palette::DARK;
     let tracks = [
         dark.track_color_1,
@@ -188,6 +188,28 @@ fn files_with_the_first_token_names_still_read() {
 }
 
 #[test]
+fn the_palette_sets_the_native_windows_scheme() {
+    let ctx = egui::Context::default();
+    let saved = palette();
+    let suhina_light = built_in_themes().into_iter().find(|(id, _)| *id == "suhina-light").unwrap().1;
+    set_palette(&ctx, suhina_light.colors);
+    assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::Light);
+    assert!(is_light());
+    set_palette(&ctx, Palette::DARK);
+    assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::Dark);
+    assert!(!is_light());
+    set_palette(&ctx, saved);
+}
+
+#[test]
+fn a_themes_colour_scheme_follows_its_text() {
+    let light = ["suhina-light", "catppuccin-latte", "suhina-sheet", "suhina-meadow"];
+    for (id, theme) in &built_in_themes() {
+        assert_eq!(super::light(&theme.colors), light.contains(id), "{id}");
+    }
+}
+
+#[test]
 fn the_themes_that_come_with_suhina_read_whole() {
     let themes = built_in_themes();
     assert_eq!(themes.first().map(|(id, _)| *id), Some(BUILT_IN));
@@ -204,7 +226,7 @@ fn the_themes_that_come_with_suhina_read_whole() {
         assert!(!sheet.contains("theme {"), "{id}: the name is theme.json's");
         assert_eq!(theme.name, ThemeMeta::parse(&folder[META]).unwrap().0.name, "{id}");
         assert!(theme.swatch.is_some() && theme.picture.is_some(), "{id}");
-        // Every colour is written out, so none falls back to Suhina Dark by mistake.
+        // Every colour is written out, so none falls back to Suhina Studio by mistake.
         for (key, _, _) in Palette::DARK.tokens() {
             assert!(sheet.contains(&format!("  --{}: ", key.replace('.', "-"))), "{id} leaves out {key}");
         }
@@ -213,13 +235,111 @@ fn the_themes_that_come_with_suhina_read_whole() {
         assert!(is_built_in(id));
         assert!(id == BUILT_IN || theme.name != Theme::default().name, "{id}");
         if id == BUILT_IN {
-            // Its sheet says only what the app has without one, so the style engine stays off.
-            let values = super::super::theme_vars::core_values;
-            assert_eq!(values(&theme), values(&Theme::default()));
+            // Its sheet sets only colours and settings, so the style engine stays off for it.
+            assert!(
+                sheet
+                    .split(":root")
+                    .nth(1)
+                    .is_some_and(|rest| rest.trim_end().ends_with('}') && rest.matches('{').count() == 1)
+            );
             assert_eq!(built_in_themes()[0].1.skin.css, None);
+            assert_eq!(built_in_themes()[0].1.colors, Palette::DARK);
         }
     }
     assert!(!is_built_in("night"));
+}
+
+#[test]
+fn suhina_sheet_takes_its_colours_from_its_two_accent_shades() {
+    use super::super::theme_vars::{Variant, with_variant};
+    let (_, sheet) = built_in_themes().into_iter().find(|(id, _)| *id == "suhina-sheet").unwrap();
+    let labels: Vec<_> = sheet.vars.declared.iter().filter_map(|p| p.label.clone()).collect();
+    assert_eq!(labels, ["Accent", "Accent, light"]);
+    let values = [("--tint", "#A02050"), ("--tint-light", "#E8A0B8")];
+    let variant = Variant {
+        id: "rose".into(),
+        name: "Rose".into(),
+        values: values.map(|(name, value)| (name.to_string(), value.to_string())).into(),
+    };
+    let (rose, warnings) = with_variant(&sheet, Some(&variant));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    // Colours that say what something is or holds stay, and the paper stays white.
+    let fixed = [
+        "track.",
+        "kind.",
+        "clip.",
+        "recording",
+        "meter.",
+        "window.background",
+        "control.background",
+        "text.onColorLight",
+        "text.inverse",
+        "pan.background",
+    ];
+    for ((key, _, before), (_, _, after)) in sheet.colors.tokens().iter().zip(rose.colors.tokens().iter()) {
+        if !fixed.iter().any(|prefix| key.starts_with(prefix)) {
+            assert_ne!(before, after, "{key} does not follow the accent");
+        }
+    }
+    assert_eq!(rose.swatch, Some(rgb(0xA02050)));
+    // Nothing in its rules or its artwork is a fixed colour of its own, the green panel included.
+    let css = include_str!("../../themes/suhina-sheet/theme.css");
+    let rules = &css[css.find("@layer").unwrap()..];
+    let browser = rules.lines().skip_while(|line| !line.contains(".browser")).take(3).collect::<String>();
+    assert!(browser.contains("var(--tint-light)") && !browser.contains('#'), "{browser}");
+    for (path, bytes) in built_in_files("suhina-sheet").unwrap() {
+        if path.starts_with("assets/") {
+            let svg = String::from_utf8_lossy(bytes).to_lowercase().replace("#ffffff", "");
+            assert!(!svg.contains('#'), "{path}");
+        }
+    }
+}
+
+#[test]
+fn suhina_glass_clears_its_window_as_far_as_its_glassiness_says() {
+    use super::super::theme_vars::{Variant, with_variant};
+    let (_, glass) = built_in_themes().into_iter().find(|(id, _)| *id == "suhina-glass").unwrap();
+    let window_alpha = |glassiness: &str| {
+        let values = [("--glassiness".to_string(), glassiness.to_string())].into();
+        let variant = Variant { id: "test".into(), name: "Test".into(), values };
+        let (theme, warnings) = with_variant(&glass, Some(&variant));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        theme.colors.window_background.a()
+    };
+    assert_eq!(glass.colors.window_background.a(), window_alpha("18"));
+    assert_eq!(window_alpha("0"), 255);
+    assert_eq!(window_alpha("18"), 209);
+    assert_eq!(window_alpha("60"), 102);
+    // The swatch is the colour, whatever shows through it.
+    assert_eq!(glass.swatch, Some(rgb(0x0B2638)));
+    assert_eq!(glass.colors.border.a(), 255);
+}
+
+#[test]
+fn the_built_in_variants_read_whole() {
+    let variants = built_in_variants();
+    for id in [
+        "suhina-studio@darker",
+        "suhina-studio@darkest",
+        "suhina-studio@light",
+        "nord@snow-storm",
+        "suhina-glass@frost",
+    ] {
+        let (_, theme) = variants.iter().find(|(key, _)| key == id).unwrap_or_else(|| panic!("{id}"));
+        assert!(theme.swatch.is_some() && theme.picture.is_some(), "{id}");
+    }
+    let base = |id: &str| built_in_themes().into_iter().find(|(b, _)| *b == id).unwrap().1;
+    for (id, theme) in &variants {
+        let (name, variant) = id.split_once('@').unwrap();
+        assert_ne!(theme.colors, base(name).colors, "{id}");
+        assert_eq!(theme.vars.variant.as_deref(), Some(variant));
+    }
+    // A variant of Suhina Studio has the sheet back, so what follows its settings does.
+    let (_, darkest) = variants.iter().find(|(key, _)| key == "suhina-studio@darkest").unwrap();
+    assert_eq!(darkest.colors.window_background, rgb(0x000000));
+    assert!(darkest.skin.css.is_some());
+    assert_eq!(darkest.colors.text_primary, rgb(0xD4D4D4));
+    assert_ne!(darkest.colors.panel_hover, base("suhina-studio").colors.panel_hover);
 }
 
 #[test]

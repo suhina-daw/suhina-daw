@@ -87,8 +87,10 @@ fn gradient_editor_enables_saves_and_resets_without_editing_the_project() {
     harness.run();
     harness.get_by_label("Edit current theme…").click();
     harness.run();
+    wheel_to(&mut harness, "Track gradient", 40);
     harness.get_by_label("Track gradient").click();
     harness.run();
+    wheel_to(&mut harness, "Enable Track gradient", 40);
     harness.get_by_label("Enable Track gradient").click();
     harness.run();
     let actions = harness.state_mut().take_theme_actions();
@@ -193,7 +195,7 @@ fn render_themes_gallery_and_editor_for_review() {
     harness.run();
     harness.get_by_label("Settings page: Themes").click();
     harness.run();
-    harness.get_by_label("Theme: Suhina Studio Light").click();
+    harness.get_by_label("Theme: Suhina Light").click();
     harness.run();
     harness.remove_cursor();
     harness.run();
@@ -205,8 +207,10 @@ fn render_themes_gallery_and_editor_for_review() {
     harness.remove_cursor();
     harness.run();
     harness.render().unwrap().save(folder.join("editor.png")).unwrap();
+    wheel_to(&mut harness, "Track gradient", 40);
     harness.get_by_label("Track gradient").click();
     harness.run();
+    wheel_to(&mut harness, "Enable Track gradient", 40);
     harness.get_by_label("Enable Track gradient").click();
     harness.run();
     harness.remove_cursor();
@@ -217,6 +221,132 @@ fn render_themes_gallery_and_editor_for_review() {
     harness.remove_cursor();
     harness.run();
     harness.render().unwrap().save(folder.join("colour-popup.png")).unwrap();
+}
+
+/// A swatch is a rounded rectangle its colour fills to the edge, larger on the large card, and
+/// a card without variants is as high as one with them.
+#[test]
+fn variant_swatches_fill_their_rectangle_and_cards_are_one_height() {
+    let mut app = App::new();
+    app.set_session(Session::new(demo_project()), &[]);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size((1200.0, 900.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    let sheet = |accent: &str| format!(":root {{ --accent: {accent}; --panel-background: #203040; }}");
+    let (ink, warnings) = theme::from_folder(theme::ThemeMeta::new("Ink", "#112233"), &sheet("#123456"));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let (plain, warnings) = theme::from_folder(theme::ThemeMeta::new("Plain", "#445566"), &sheet("#654321"));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let dim = suhina_ui::kit::theme_vars::Variant { id: "dim".into(), name: "Dim".into(), values: Default::default() };
+    let (ink_dim, _) = suhina_ui::kit::theme_vars::with_variant(&ink, Some(&dim));
+    use suhina_ui::settings::themes::ThemeEntry;
+    let entries = vec![
+        ThemeEntry { id: "ink".into(), theme: ink },
+        ThemeEntry { id: "ink@dim".into(), theme: ink_dim },
+        ThemeEntry { id: "plain".into(), theme: plain },
+    ];
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_themes(&ctx, entries, Some("themes".into()));
+    harness.state_mut().use_theme(&ctx, "ink");
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    let swatches: Vec<egui::Rect> = harness.get_all_by_label("Variant: Dim").map(|node| node.rect()).collect();
+    assert_eq!(swatches.len(), 2, "on the large card and on its card in the list");
+    let (large, small) = (swatches[0], swatches[1]);
+    assert!(large.width() > small.width() && large.height() > small.height(), "{large:?} {small:?}");
+    assert!(
+        small.width() > small.height() && small.height() >= 20.0,
+        "a rectangle, much larger than before: {small:?}"
+    );
+    for swatch in [large, small] {
+        assert!(
+            harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
+                egui::Shape::Rect(fill) if fill.fill != egui::Color32::TRANSPARENT
+                    && fill.rect == swatch
+                    && fill.corner_radius.nw > 0)),
+            "a rounded fill covers the whole swatch {swatch:?}"
+        );
+    }
+    let box_height = |h: &Harness<'static, App>, label: &str| {
+        let card = h.get_by_label(label).rect();
+        h.output()
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(outline)
+                    if outline.stroke.width > 0.0
+                        && outline.rect.min == card.min
+                        && outline.rect.width() == card.width()
+                        && outline.rect.height() > card.height() =>
+                {
+                    Some(outline.rect.height())
+                }
+                _ => None,
+            })
+            .next()
+            .unwrap_or_else(|| panic!("{label} has no outline"))
+    };
+    assert_eq!(box_height(&harness, "Theme: Ink"), box_height(&harness, "Theme: Plain"));
+}
+
+/// However many variants a theme has, all their swatches stay on one line inside its card.
+#[test]
+fn many_variant_swatches_narrow_to_fit_on_one_line() {
+    let mut app = App::new();
+    app.set_session(Session::new(demo_project()), &[]);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size((1200.0, 900.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    use suhina_ui::kit::theme_vars::{Variant, with_variant};
+    use suhina_ui::settings::themes::ThemeEntry;
+    let (ink, warnings) = theme::from_folder(theme::ThemeMeta::new("Ink", "#112233"), ":root {}");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    for count in [12, 80] {
+        let mut entries = vec![ThemeEntry { id: "ink".into(), theme: ink.clone() }];
+        for index in 0..count {
+            let variant = Variant { id: format!("v{index}"), name: format!("V{index}"), values: Default::default() };
+            let (chosen, _) = with_variant(&ink, Some(&variant));
+            entries.push(ThemeEntry { id: format!("ink@v{index}"), theme: chosen });
+        }
+        let ctx = harness.ctx.clone();
+        harness.state_mut().set_themes(&ctx, entries, Some("themes".into()));
+        harness.state_mut().use_theme(&ctx, "ink");
+        harness.get_by_label("Settings page: Themes").click();
+        harness.run();
+        for label in ["Theme in use: Ink", "Theme: Ink"] {
+            let card = harness.get_by_label(label).rect();
+            // On this card: its own swatch and one for each variant, in the row under its name.
+            let row: Vec<egui::Rect> = (0..count)
+                .map(|index| format!("Variant: V{index}"))
+                .chain(["Variant: Default".to_owned()])
+                .map(|name| {
+                    harness
+                        .get_all_by_label(&name)
+                        .map(|node| node.rect())
+                        .find(|rect| (rect.top() - card.bottom()).abs() < 1.0)
+                        .unwrap_or_else(|| panic!("{label}: no {name} in its row"))
+                })
+                .collect();
+            for swatch in &row {
+                assert!(swatch.left() >= card.left() && swatch.right() <= card.right() + 0.01, "{label} {swatch:?}");
+                assert_eq!(swatch.top(), row[0].top(), "on one line");
+                assert!((swatch.width() - row[0].width()).abs() < 0.01, "one width");
+            }
+            for (a, b) in row[..count].iter().zip(&row[1..count]) {
+                assert!(a.right() <= b.left() + 0.01, "{a:?} overlaps {b:?}");
+            }
+        }
+    }
 }
 
 #[test]
@@ -246,11 +376,11 @@ fn theme_cards_show_a_thumbnail_or_a_card_in_the_swatch_colour() {
         "Plain's card is filled with its swatch"
     );
     // A built-in theme's card shows its thumbnail, an SVG drawn with the theme's own values.
-    let card = harness.get_by_label("Theme in use: Suhina Dark").rect();
+    let card = harness.get_by_label("Theme in use: Suhina Studio").rect();
     assert!(
         harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
             egui::Shape::Rect(rect) if card.contains_rect(rect.rect) && rect.fill_texture_id() != egui::TextureId::default())),
-        "Suhina Dark's card shows its thumbnail"
+        "Suhina Studio's card shows its thumbnail"
     );
 }
 
@@ -323,6 +453,7 @@ fn theme_liquid_overrides_save_without_changing_global_settings() {
     harness.get_by_label("Edit current theme…").click();
     settle(&mut harness);
     let global = harness.state().settings().view.liquid;
+    wheel_to(&mut harness, "Use global liquid settings", 40);
     harness.get_by_label("Use global liquid settings").click();
     settle(&mut harness);
     let actions = harness.state_mut().take_theme_actions();
@@ -332,6 +463,7 @@ fn theme_liquid_overrides_save_without_changing_global_settings() {
     settle(&mut harness);
     let actions = harness.state_mut().take_theme_actions();
     assert!(actions.iter().any(|action| matches!(action, suhina_ui::settings::themes::FileAction::Save { theme, .. } if theme.liquid.is_some_and(|value| value.panels > global.panels))));
+    wheel_to(&mut harness, "Use global liquid settings", 40);
     harness.get_by_label("Use global liquid settings").click();
     settle(&mut harness);
     let actions = harness.state_mut().take_theme_actions();
@@ -366,22 +498,22 @@ fn themes_gallery_switches_immediately_and_opens_a_separate_editor() {
     harness.get_by_label("Settings page: Themes").click();
     settle(&mut harness);
     assert!(harness.query_by_label("Colour grid.major").is_none());
-    wheel_to(&mut harness, "Theme: Suhina Studio Light", 40);
-    harness.get_by_label("Theme: Suhina Studio Light").click();
+    wheel_to(&mut harness, "Theme: Suhina Light", 40);
+    harness.get_by_label("Theme: Suhina Light").click();
     settle(&mut harness);
-    assert_eq!(harness.state().settings().theme, "suhina-studio-light");
+    assert_eq!(harness.state().settings().theme, "suhina-light");
     let palette = theme::palette();
     // Choosing it left the page where it was: the card clicked is still in view.
-    assert!(harness.get_by_label("Theme: Suhina Studio Light").rect().is_positive());
+    assert!(harness.get_by_label("Theme: Suhina Light").rect().is_positive());
     wheel_to(&mut harness, "Edit current theme…", 40);
     harness.get_by_label("Edit current theme…").click();
     settle(&mut harness);
     harness.get_by_label("Colour grid.major");
-    assert!(harness.query_by_label("Theme: Suhina Studio Light").is_none());
+    assert!(harness.query_by_label("Theme: Suhina Light").is_none());
     assert_eq!(theme::palette(), palette, "opening the editor must not change the theme");
     harness.get_by_label("Back to themes").click();
     settle(&mut harness);
-    harness.get_by_label("Theme: Suhina Studio Light");
+    harness.get_by_label("Theme: Suhina Light");
 }
 
 #[test]
@@ -390,6 +522,9 @@ fn colour_picker_keeps_preview_clear_while_held_and_reset_restores_the_palette()
     harness.get_by_label("Settings page: Themes").click();
     settle(&mut harness);
     harness.get_by_label("Edit current theme…").click();
+    settle(&mut harness);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().use_theme(&ctx, theme::BUILT_IN);
     settle(&mut harness);
     let original = theme::palette();
     wheel_to(&mut harness, "Colour grid.major", 40);
@@ -452,6 +587,197 @@ fn dimmed(harness: &Harness<'static, App>) -> bool {
         matches!(&shape.shape,
         egui::Shape::Rect(shape) if shape.fill == tint && shape.rect.width() > 900.0)
     })
+}
+
+/// Choosing a theme leaves the window behind dimmed on every frame, so it does not flash clear.
+#[test]
+fn choosing_a_theme_keeps_the_window_behind_dimmed() {
+    let mut harness = short_window();
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    wheel_to(&mut harness, "Theme: Nord", 40);
+    let card = harness.get_by_label("Theme: Nord").rect().center();
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    harness.hover_at(card);
+    harness.step();
+    assert!(dimmed(&harness), "dimmed before the press");
+    harness.input_mut().events.push(button(card, true));
+    harness.step();
+    assert!(dimmed(&harness), "dimmed on the press");
+    harness.input_mut().events.push(button(card, false));
+    for frame in 0..6 {
+        harness.step();
+        assert!(dimmed(&harness), "dimmed on frame {frame} after the click");
+    }
+    assert!(harness.get_by_label("Theme in use: Nord").rect().is_positive());
+    theme::set_palette(&harness.ctx, theme::Palette::DARK);
+}
+
+/// The window behind stays clear from press to release, also while the pointer rests, not only
+/// on the frames where the setting's value changes.
+#[test]
+fn holding_a_themes_own_setting_keeps_the_window_clear_until_release() {
+    let mut harness = short_window();
+    let sheet = "@property --glow { syntax: \"<integer>\"; initial-value: 50; label: \"Glow\"; range: 0 100; }\n\
+                 @property --tint { syntax: \"<color>\"; initial-value: #336699; label: \"Tint\"; }\n\
+                 :root { --accent: var(--tint); }";
+    let (ink, warnings) = theme::from_folder(theme::ThemeMeta::new("Ink", theme::DEFAULT_SWATCH), sheet);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let entries = vec![suhina_ui::settings::themes::ThemeEntry { id: "ink".into(), theme: ink }];
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_themes(&ctx, entries, Some("themes".into()));
+    harness.state_mut().use_theme(&ctx, "ink");
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    harness.get_by_label("Edit current theme…").click();
+    settle(&mut harness);
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+
+    harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Glow").scroll_to_me();
+    settle(&mut harness);
+    let slider = harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Glow").rect();
+    let start = slider.center();
+    harness.hover_at(start);
+    harness.step();
+    assert!(dimmed(&harness), "dimmed before the press");
+    harness.input_mut().events.push(button(start, true));
+    harness.step();
+    assert!(!dimmed(&harness), "clear on the press");
+    let end = start + Vec2::new(40.0, 0.0);
+    harness.hover_at(end);
+    harness.step();
+    assert!(!dimmed(&harness), "clear while it moves");
+    for _ in 0..6 {
+        harness.step();
+        assert!(!dimmed(&harness), "clear while the pointer rests");
+    }
+    harness.input_mut().events.push(button(end, false));
+    harness.step();
+    assert!(dimmed(&harness), "dimmed again on the release");
+    settle(&mut harness);
+
+    harness.get_by_role_and_label(egui::accesskit::Role::ColorWell, "Tint").click();
+    settle(&mut harness);
+    let square = harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(square) if square.brush.is_some() => {
+                let rect = square.rect;
+                (rect.width() > 250.0 && rect.width() < 300.0 && (rect.width() - rect.height()).abs() < 1.0)
+                    .then_some(rect)
+            }
+            _ => None,
+        })
+        .expect("the colour picker's square");
+    let pointer = square.center();
+    harness.hover_at(pointer);
+    harness.step();
+    harness.input_mut().events.push(button(pointer, true));
+    for _ in 0..6 {
+        harness.step();
+        assert!(!dimmed(&harness), "clear while the colour is held");
+    }
+    harness.input_mut().events.push(button(pointer, false));
+    harness.step();
+    assert!(dimmed(&harness), "dimmed again when the colour is let go");
+
+    // The colours that follow the setting follow it every time, not only the first.
+    let first = theme::accent();
+    for (fraction, x) in [(0.2, 0.8), (0.8, 0.3)] {
+        let before = theme::accent();
+        let pointer = square.min + Vec2::new(square.width() * x, square.height() * fraction);
+        harness.hover_at(pointer);
+        harness.step();
+        harness.input_mut().events.push(button(pointer, true));
+        harness.step();
+        harness.input_mut().events.push(button(pointer, false));
+        harness.step();
+        harness.step();
+        assert_ne!(theme::accent(), before, "the accent follows the colour picked at {pointer:?}");
+        assert_ne!(theme::accent(), first);
+    }
+}
+
+/// Reset changes puts a theme's own settings back, and they still work afterwards.
+#[test]
+fn reset_changes_restores_a_themes_own_settings() {
+    let mut harness = short_window();
+    let sheet = "@property --glow { syntax: \"<integer>\"; initial-value: 50; label: \"Glow\"; range: 0 100; }\n\
+                 @property --tint { syntax: \"<color>\"; initial-value: #336699; label: \"Tint\"; }\n\
+                 :root { --accent: var(--tint); }";
+    let (ink, warnings) = theme::from_folder(theme::ThemeMeta::new("Ink", theme::DEFAULT_SWATCH), sheet);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let entries = vec![suhina_ui::settings::themes::ThemeEntry { id: "ink".into(), theme: ink }];
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_themes(&ctx, entries, Some("themes".into()));
+    harness.state_mut().use_theme(&ctx, "ink");
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    harness.get_by_label("Edit current theme…").click();
+    settle(&mut harness);
+    let original = theme::accent();
+
+    // A setting that no colour follows counts as a change too.
+    let glow = |h: &Harness<'static, App>| {
+        h.get_by_role_and_label(egui::accesskit::Role::Slider, "Glow").accesskit_node().numeric_value()
+    };
+    let before = glow(&harness);
+    harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Glow").scroll_to_me();
+    settle(&mut harness);
+    harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Glow").click();
+    settle(&mut harness);
+    assert_ne!(glow(&harness), before, "the click moved the slider");
+    harness.get_by_role_and_label(egui::accesskit::Role::ColorWell, "Tint").click();
+    settle(&mut harness);
+    let square = harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(square) if square.brush.is_some() => {
+                let rect = square.rect;
+                (rect.width() > 250.0 && rect.width() < 300.0 && (rect.width() - rect.height()).abs() < 1.0)
+                    .then_some(rect)
+            }
+            _ => None,
+        })
+        .expect("the colour picker's square");
+    let press = |h: &mut Harness<'static, App>, pressed| {
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: square.center(),
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+        h.step();
+    };
+    harness.hover_at(square.center());
+    harness.step();
+    press(&mut harness, true);
+    press(&mut harness, false);
+    harness.step();
+    assert_ne!(theme::accent(), original);
+    egui::Popup::close_all(&harness.ctx);
+    settle(&mut harness);
+
+    harness.get_by_label("Reset changes").scroll_to_me();
+    settle(&mut harness);
+    harness.get_by_label("Reset changes").click();
+    settle(&mut harness);
+    assert_eq!(theme::accent(), original, "the colour that follows the setting is back");
+    assert_eq!(glow(&harness), before, "the slider is back");
 }
 
 #[test]
@@ -931,6 +1257,7 @@ fn theme_override_disables_global_liquid_sliders_until_inheritance_returns() {
     settle(&mut harness);
     harness.get_by_label("Edit current theme…").click();
     settle(&mut harness);
+    wheel_to(&mut harness, "Use global liquid settings", 40);
     harness.get_by_label("Use global liquid settings").click();
     settle(&mut harness);
     let global = harness.state().settings().view.liquid;
@@ -946,6 +1273,7 @@ fn theme_override_disables_global_liquid_sliders_until_inheritance_returns() {
     settle(&mut harness);
     harness.get_by_label("Settings page: Themes").click();
     settle(&mut harness);
+    wheel_to(&mut harness, "Use global liquid settings", 40);
     harness.get_by_label("Use global liquid settings").click();
     settle(&mut harness);
     harness.get_by_label("Search settings").focus();
@@ -1001,4 +1329,33 @@ fn a_theme_search_nothing_matches_says_no_themes_match() {
     let search = harness.get_by_label("Search themes").value();
     assert_eq!(search.as_deref(), Some("zzz"));
     assert!(harness.query_by_label("No themes match").is_some());
+}
+
+#[test]
+fn the_theme_in_use_is_marked_as_selected_in_the_list() {
+    let mut app = App::new();
+    app.set_session(Session::new(demo_project()), &[]);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size((1200.0, 900.0))
+        .wgpu()
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    harness.get_by_label("Settings page: Themes").click();
+    harness.run();
+    let selected = |harness: &Harness<'static, App>, label: &str| {
+        harness.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+    };
+    assert!(selected(&harness, "Theme in use: Suhina Studio"));
+    assert!(selected(&harness, "Theme: Suhina Studio"));
+    assert!(!selected(&harness, "Theme: Suhina Light"));
+    wheel_to(&mut harness, "Theme: Suhina Light", 40);
+    harness.get_by_label("Theme: Suhina Light").click();
+    harness.run();
+    assert!(selected(&harness, "Theme: Suhina Light"));
+    assert!(!selected(&harness, "Theme: Suhina Studio"));
+    theme::set_palette(&harness.ctx, theme::Palette::DARK);
 }

@@ -95,7 +95,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     harness.run();
     harness.get_by_label("Settings page: Themes").click();
     harness.run();
-    assert!(harness.query_by_label("Theme: Suhina Dark").is_some());
+    assert!(harness.query_by_label("Theme: Suhina Studio").is_some());
     harness.get_by_label("Theme: Night").click();
     harness.run();
     assert_eq!(theme::accent(), colors.accent);

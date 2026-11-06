@@ -21,7 +21,9 @@ pub struct State {
 
 /// The settings the theme declares itself (`@property` with a label), each with a control for its
 /// type: a colour, a number in its range, a choice of keywords, or text checked against its type.
-pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option<ThemeRequest> {
+/// `held` is set while the pointer is held on one of them, so the window behind stays clear for
+/// as long as the setting is being changed.
+pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held: &mut bool) -> Option<ThemeRequest> {
     use suhina_style::registered::{Component, Syntax};
     if themes.declared.is_empty() {
         return None;
@@ -57,7 +59,11 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Op
                         _ => [0, 0, 0, 255],
                     };
                     let mut color = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
-                    if ui.color_edit_button_srgba(&mut color).changed() {
+                    let popup = ui.auto_id_with("popup");
+                    let response = ui.color_edit_button_srgba(&mut color);
+                    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, label));
+                    *held |= egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
+                    if response.changed() {
                         next = Some(crate::kit::theme::hex(color));
                     }
                 }
@@ -70,7 +76,10 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Op
                     } else if integer {
                         slider = slider.step_by(1.0);
                     }
-                    if ui.add(slider).changed() {
+                    let response = ui.add(slider);
+                    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, label));
+                    *held |= response.dragged() || response.is_pointer_button_down_on();
+                    if response.changed() {
                         next = Some(if integer { format!("{}", number.round() as i64) } else { format!("{number}") });
                     }
                 }
@@ -106,6 +115,13 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Op
         }
     }
     request
+}
+
+impl State {
+    /// Forgets what was typed into settings' fields, which then show their values again.
+    pub fn forget_drafts(&mut self) {
+        self.drafts.clear();
+    }
 }
 
 pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option<ThemeRequest> {
