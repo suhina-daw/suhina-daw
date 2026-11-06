@@ -3,7 +3,7 @@ description: How the engine runs devices on tracks - chains, instruments and the
 read_when: device chain, chain, instrument notes, note events, MIDI effect, process_events, group bus, bus, sends into returns, device group in the engine, main channel chain, latency compensation, graph swap keeps devices, chain order, Slot::Group
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-03
 covers:
   - crates/engine/src/chain.rs
   - crates/engine/src/buses.rs

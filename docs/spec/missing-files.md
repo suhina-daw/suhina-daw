@@ -3,7 +3,7 @@ description: What happens when a project's audio files cannot be found: the bar 
 read_when: missing files, missing samples, file not found, relink, locate, find files, moved samples, project.missingFiles, project.relinkFiles, library.findFiles
 type: spec
 status: draft
-last_verified: 2026-10-21
+last_verified: 2026-11-03
 covers:
   - crates/library/src/find.rs
   - crates/session/src/relink.rs
