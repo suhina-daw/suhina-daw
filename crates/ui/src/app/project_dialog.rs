@@ -97,12 +97,12 @@ fn draw(ui: &mut Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Opti
         |returns: bool| if returns { "4 tracks, 2 returns, 8 scenes" } else { "4 tracks, no returns, 8 scenes" };
     let blank = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(half, LINE));
     let returns = lists.new_returns;
-    if row(ui, &painter, blank, "New blank project", detail(returns), "New blank project").clicked() {
+    if row(ui, &painter, blank, "blank", "New blank project", detail(returns), "New blank project").clicked() {
         choice = Some(Choice::NewBlank { returns });
     }
     let other = Rect::from_min_size(Pos2::new(left.left(), blank.bottom()), Vec2::new(half, LINE));
     let other_name = if returns { "New blank project without returns" } else { "New blank project with returns" };
-    if row(ui, &painter, other, other_name, detail(!returns), other_name).clicked() {
+    if row(ui, &painter, other, "other", other_name, detail(!returns), other_name).clicked() {
         choice = Some(Choice::NewBlank { returns: !returns });
     }
     y = other.bottom() + PAD;
@@ -120,7 +120,7 @@ fn draw(ui: &mut Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Opti
                 let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), LINE), Sense::hover());
                 let painter = ui.painter().clone();
                 let label = format!("Template {}", stem(path));
-                if row(ui, &painter, r, &stem(path), &kind(path), &label).clicked() {
+                if row(ui, &painter, r, path, &stem(path), &kind(path), &label).clicked() {
                     choice = Some(Choice::NewFromTemplate(path.clone()));
                 }
             }
@@ -174,7 +174,7 @@ fn draw(ui: &mut Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Opti
                 let painter = ui.painter().clone();
                 let folder = path.parent().map(|p| p.display().to_string()).unwrap_or_default();
                 let label = format!("Recent {}", stem(path));
-                if row(ui, &painter, r, &stem(path), &folder, &label).clicked() {
+                if row(ui, &painter, r, path, &stem(path), &folder, &label).clicked() {
                     choice = Some(Choice::Open(path.clone()));
                 }
             }
@@ -795,9 +795,19 @@ pub(crate) fn heading(painter: &egui::Painter, at: Rect, text: &str) {
     painter.hline(r.x_range(), r.bottom() - 2.5, theme::hairline(theme::border()));
 }
 
-/// A row to click: a name, and a note on the right.
-pub(crate) fn row(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, note: &str, label: &str) -> egui::Response {
-    let response = widgets::button_area(ui, rect, Id::unique(("dialog-row", label)), label);
+/// A row to click: a name, and a note on the right. `key` tells it from the rows around it: a
+/// project's path, as two projects of the same name in different folders share their label
+/// (#1229).
+pub(crate) fn row(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    key: impl std::hash::Hash + std::fmt::Debug,
+    name: &str,
+    note: &str,
+    label: &str,
+) -> egui::Response {
+    let response = widgets::button_area(ui, rect, Id::unique(("dialog-row", key, label)), label);
     let fill = motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response));
     painter.fill_background(rect, 0.0, fill);
     let inner = rect.shrink2(Vec2::new(PAD, 0.0));
@@ -880,6 +890,32 @@ mod tests {
         harness.get_by_label("Recent Night").click();
         harness.run();
         assert_eq!(harness.state().1, Some(Choice::Open("songs/Night.suhina".into())));
+    }
+
+    /// Projects and templates of the same name: each row opens its own (#1229).
+    #[test]
+    fn rows_of_the_same_name_open_their_own_project() {
+        let lists = Lists {
+            recent: vec![PathBuf::from("a/Song.suhina"), PathBuf::from("b/Song.suhina")],
+            templates: vec![PathBuf::from("templates/Song.suhina"), PathBuf::from("templates/Song.als")],
+            templates_folder: "templates".into(),
+            ..Lists::default()
+        };
+        let mut harness = dialog(lists);
+        harness.run();
+        for (label, at, choice) in [
+            ("Recent Song", 0, Choice::Open("a/Song.suhina".into())),
+            ("Recent Song", 1, Choice::Open("b/Song.suhina".into())),
+            ("Template Song", 0, Choice::NewFromTemplate("templates/Song.suhina".into())),
+            ("Template Song", 1, Choice::NewFromTemplate("templates/Song.als".into())),
+        ] {
+            let mut rows: Vec<_> = harness.query_all_by_label(label).collect();
+            assert_eq!(rows.len(), 2, "{label}");
+            rows.sort_by(|a, b| a.rect().top().total_cmp(&b.rect().top()));
+            rows[at].click();
+            harness.run();
+            assert_eq!(harness.state().1, Some(choice));
+        }
     }
 
     #[test]
