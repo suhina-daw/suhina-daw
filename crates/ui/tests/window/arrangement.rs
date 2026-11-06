@@ -2586,7 +2586,8 @@ fn loop_envelope(harness: &Harness<'static, App>) -> Vec<(f64, f64)> {
 /// Edit gain envelope (the button left of the clip's name, Alt+E or the clip panel's switch)
 /// opens the clip's gain envelope on its waveform: a click on its line adds a point on it, a drag
 /// from the line adds one and moves it on the 1 dB grid (a click away from the line adds nothing),
-/// a double-click on a point removes it, each one undo step
+/// a double-click on a point puts it at 0 dB, Shift and a drag of the line moves the whole line,
+/// Alt and a click on a point removes it, and the clip's menu clears them, each one undo step
 /// (`docs/spec/clip-panel.md` › Gain envelope).
 #[test]
 fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
@@ -2683,13 +2684,50 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     assert_eq!(free.len(), 1, "{free:?}");
     assert!(free[0].0 > points[0].0 && free[0].0 != free[0].0.round(), "off the beat grid: {free:?}");
     assert!(free[0].1 > points[0].1, "higher: {free:?} after {points:?}");
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
-    harness.run();
-    assert_eq!(loop_envelope(&harness), points, "the Alt drag is one undo step");
-    // A double-click on the point removes it.
+    // A double-click on the point puts it back at 0 dB, where it is.
     let point = harness.get_all_by_label("Envelope point 1 of Loop").next().expect("the point").rect().center();
     double_click_at(&mut harness, point);
-    assert!(loop_envelope(&harness).is_empty());
+    assert_eq!(loop_envelope(&harness), vec![(free[0].0, 0.0)]);
+    // Shift and a drag of the line, away from the point, moves the whole line down, on the grid.
+    let on_line = egui::pos2(clip.left() + clip.width() * 0.85, body.center().y);
+    harness.event(egui::Event::ModifiersChanged(Modifiers::SHIFT));
+    harness.hover_at(on_line);
+    harness.run();
+    harness.drag_at(on_line);
+    harness.run();
+    harness.hover_at(on_line + egui::vec2(0.0, 8.0));
+    harness.run();
+    harness.hover_at(on_line + egui::vec2(0.0, 20.0));
+    harness.run();
+    harness.drop_at(on_line + egui::vec2(0.0, 20.0));
+    harness.run();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.run();
+    let lowered = loop_envelope(&harness);
+    assert_eq!(lowered.len(), 1, "{lowered:?}");
+    assert_eq!(lowered[0].0, free[0].0, "it moves up and down only: {lowered:?}");
+    assert!(lowered[0].1 < 0.0 && lowered[0].1 == lowered[0].1.round(), "down, on the 1 dB grid: {lowered:?}");
+    // Alt and a click on the point takes it away.
+    let point = harness.get_all_by_label("Envelope point 1 of Loop").next().expect("the point").rect().center();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::ALT));
+    harness.hover_at(point);
+    harness.run();
+    harness.drag_at(point);
+    harness.run();
+    harness.drop_at(point);
+    harness.run();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.run();
+    assert!(loop_envelope(&harness).is_empty(), "Alt+click removes the point");
+    // Clear gain envelope in the clip's menu takes them all away.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(loop_envelope(&harness), lowered);
+    harness.get_by_label("Clip Loop on Loop at bar 1").click_secondary();
+    harness.run();
+    harness.get_by_label("Clear gain envelope").click();
+    harness.run();
+    assert!(loop_envelope(&harness).is_empty(), "the menu clears it");
     // Alt+E stops editing: the body no longer takes clicks.
     harness.key_press_modifiers(Modifiers::ALT, Key::E);
     harness.run();

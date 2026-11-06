@@ -10,7 +10,9 @@
 //! envelope (Alt+E, or the button left of the clip's name) opens one clip for editing: a click on
 //! its line adds a point on it, a drag from the line or a point moves one (elsewhere the clip
 //! takes the pointer as ever) (snapped to the grids, or free with Free move or Alt), a
-//! double-click on a point or Delete over it removes it; each is one `clip.setEnvelope`. The
+//! double-click on a point puts it at 0 dB, Alt and a click or Delete over it removes it, Shift
+//! (Ctrl+Shift) and a drag of the line moves all of it (a segment) up or down; each is one
+//! `clip.setEnvelope`. The
 //! waveform is drawn through the envelope, so it shows what is heard as a point is dragged.
 
 use egui::{Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
@@ -236,6 +238,40 @@ fn draft_key() -> Id {
     Id::unique("clip-envelope-draft")
 }
 
+/// A part of the envelope being moved up or down as one (Shift and a drag of the line: all of it;
+/// Ctrl+Shift: the segment under the pointer), as a spectral editor's clip gain does: the points
+/// as they were, which of them move (`None`: all) and the line's level where the drag started.
+#[derive(Debug, Clone, PartialEq)]
+struct Lift {
+    clip: ClipId,
+    from: Vec<GainPoint>,
+    moved: Option<Vec<usize>>,
+    start: f64,
+}
+
+fn lift_key() -> Id {
+    Id::unique("clip-envelope-lift")
+}
+
+/// The points bounding the segment at content beat `beat`: the two around it, or the one at an
+/// end when it lies before the first point or after the last.
+fn segment_at(points: &[GainPoint], beat: f64) -> Vec<usize> {
+    let after = points.partition_point(|p| p.beat <= beat);
+    after.checked_sub(1).into_iter().chain((after < points.len()).then_some(after)).collect()
+}
+
+/// `from` with the points `moved` (all when `None`) `delta` dB higher, kept in -70 dB and the
+/// ceiling (or where a point already was above it).
+fn lifted(from: &[GainPoint], moved: Option<&[usize]>, delta: f64, ceiling: f64) -> Vec<GainPoint> {
+    let mut points = from.to_vec();
+    for (i, p) in points.iter_mut().enumerate() {
+        if moved.is_none_or(|m| m.contains(&i)) {
+            p.db = (p.db + delta).clamp(*GAIN_POINT_RANGE.start(), ceiling.max(p.db));
+        }
+    }
+    points
+}
+
 /// The clip whose envelope line the pointer was pressed on, while a button is down.
 fn held_key() -> Id {
     Id::unique("clip-envelope-held")
@@ -412,6 +448,7 @@ pub fn show(
     if !any_down {
         ui.data_mut(|d| d.remove::<ClipId>(held_key()));
     }
+    let mods = ui.input(|i| i.modifiers);
     // Once pressed on the line, the drag goes on wherever the pointer goes.
     let held = any_down && ui.data(|d| d.get_temp::<ClipId>(held_key())) == Some(clip);
     let line_y = |x: f32| y_of(rect, envelope_db_at(&points, mapping.content(elapsed_at(x))), top);
@@ -432,7 +469,7 @@ pub fn show(
     if body.as_ref().is_some_and(egui::Response::is_pointer_button_down_on) {
         ui.data_mut(|d| d.insert_temp(held_key(), clip));
     }
-    let alt = ui.input(|i| i.modifiers.alt);
+    let alt = mods.alt;
     // A point added on the line keeps the line's shape: at the level the line has there.
     let add_at = |pointer: Pos2| {
         let beat = mapping.content(placed_at(pointer.x));
@@ -440,23 +477,42 @@ pub fn show(
     };
     if let Some(body) = &body
         && body.clicked()
-        && !alt
         && let Some(pointer) = body.interact_pointer_pos()
     {
-        actions.push(set(clip, &add_at(pointer).0));
+        if !alt {
+            actions.push(set(clip, &add_at(pointer).0));
+        } else if mods.shift {
+            // Alt+Shift and a click takes the segment's points away.
+            let gone = segment_at(&points, mapping.content(elapsed_at(pointer.x)));
+            if !gone.is_empty() {
+                let kept: Vec<GainPoint> =
+                    points.iter().enumerate().filter(|(i, _)| !gone.contains(i)).map(|(_, p)| *p).collect();
+                actions.push(set(clip, &kept));
+            }
+        }
         return;
     }
     if let Some(body) = &body
         && body.drag_started_by(egui::PointerButton::Primary)
         && let Some(pointer) = body.interact_pointer_pos()
     {
-        if alt {
-            let beat = mapping.content(elapsed_at(pointer.x));
+        let beat = mapping.content(elapsed_at(pointer.x));
+        if alt && !mods.shift {
             let segment = points.partition_point(|p| p.beat <= beat).checked_sub(1).filter(|i| i + 1 < points.len());
             if let Some(index) = segment {
                 start_curve(ui, clip, index, &points);
             }
-        } else {
+        } else if mods.shift && !alt {
+            // Shift moves the whole line up or down, Ctrl+Shift the segment under the pointer; a
+            // line without points gets one there to move.
+            let from = if points.is_empty() { vec![GainPoint::new(beat, 0.0)] } else { points.clone() };
+            let moved = mods.command.then(|| segment_at(&from, beat));
+            let start = envelope_db_at(&from, beat);
+            ui.data_mut(|d| {
+                d.insert_temp(lift_key(), Lift { clip, from: from.clone(), moved, start });
+                d.insert_temp(draft_key(), Draft { clip, index: usize::MAX, points: from });
+            });
+        } else if !alt {
             let (more, index) = add_at(pointer);
             ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: more }));
         }
@@ -465,7 +521,23 @@ pub fn show(
     if let Some(body) = &body
         && body.dragged_by(egui::PointerButton::Primary)
     {
-        if curve_edit(ui.ctx(), clip).is_some() {
+        if let Some(lift) = ui.data(|d| d.get_temp::<Lift>(lift_key())).filter(|l| l.clip == clip)
+            && let Some(pointer) = body.interact_pointer_pos()
+        {
+            let raw = db_at(rect, pointer.y, top) - lift.start;
+            let loose = alt || free_move(ui.ctx()) || settings.step <= 0.0;
+            let delta = if loose { (raw * 10.0).round() / 10.0 } else { (raw / settings.step).round() * settings.step };
+            let moved = lifted(&lift.from, lift.moved.as_deref(), delta, settings.ceiling);
+            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index: usize::MAX, points: moved }));
+            egui::Tooltip::always_open(
+                ui.ctx().clone(),
+                ui.layer_id(),
+                Id::unique(("clip-envelope-value", clip.0)),
+                egui::PopupAnchor::Pointer,
+            )
+            .gap(12.0)
+            .show(|ui| ui.add(egui::Label::new(db_text(delta)).wrap_mode(egui::TextWrapMode::Extend)));
+        } else if curve_edit(ui.ctx(), clip).is_some() {
             drag_curve(ui, clip, body.drag_delta().y);
         } else {
             dragging = draft(ui.ctx(), clip).map(|d| d.index);
@@ -523,6 +595,7 @@ pub fn show(
 
     // The points, on every pass they play.
     let mut removed = None;
+    let mut zeroed = None;
     for (index, point) in points.iter().enumerate() {
         for (pass, at) in mapping.places(point.beat, length).into_iter().enumerate() {
             let center = Pos2::new(x_of(at), y_of(rect, point.db, top));
@@ -547,9 +620,14 @@ pub fn show(
             let square = Rect::from_center_size(center, Vec2::splat(if hovered { POINT + 2.0 } else { POINT }));
             painter.rect_filled(square.expand(1.5), 1.0, halo);
             painter.rect_filled(square, 0.0, if hovered { ink } else { line_ink });
+            // Delete over it or Alt and a click takes it away; a double-click puts it back at 0 dB.
             let delete_key = response.hovered() && ui.input(|i| i.key_pressed(egui::Key::Delete));
-            if response.double_clicked() || delete_key {
+            if delete_key || (response.clicked() && mods.alt) {
                 removed = Some(index);
+                continue;
+            }
+            if response.double_clicked() {
+                zeroed = Some(index);
                 continue;
             }
             if response.drag_started_by(egui::PointerButton::Primary) {
@@ -591,6 +669,7 @@ pub fn show(
         ui.data_mut(|d| {
             d.remove::<Draft>(draft_key());
             d.remove::<CurveEdit>(curve_key());
+            d.remove::<Lift>(lift_key());
         });
         if done.points != view.envelope {
             actions.push(set(clip, &done.points));
@@ -603,6 +682,13 @@ pub fn show(
         }
         ui.data_mut(|d| d.remove::<Draft>(draft_key()));
         actions.push(set(clip, &kept));
+    } else if let Some(index) = zeroed {
+        let mut reset = points;
+        if let Some(p) = reset.get_mut(index) {
+            p.db = 0.0;
+        }
+        ui.data_mut(|d| d.remove::<Draft>(draft_key()));
+        actions.push(set(clip, &reset));
     }
 }
 
@@ -703,6 +789,16 @@ fn paint_grid(painter: &egui::Painter, rect: Rect, visible: Rect, step: f64, top
         }
     }
     painter.hline(visible.x_range(), y_of(rect, 0.0, top), Stroke::new(1.0, ink.gamma_multiply(0.4)));
+}
+
+/// Clear gain envelope in an audio clip's menu: takes all of `envelope`'s points away in one
+/// `clip.setEnvelope`, so the clip plays at its own level again; off while it has none.
+pub fn clear_item(ui: &mut Ui, clip: ClipId, envelope: &[GainPoint], actions: &mut Vec<Action>) {
+    ui.separator();
+    if ui.add_enabled(!envelope.is_empty(), egui::Button::new("Clear gain envelope")).clicked() {
+        actions.push(set(clip, &[]));
+        ui.close();
+    }
 }
 
 /// The Edit gain envelope button at `rect` (left of the clip's name), lit while `on`. Returns
@@ -817,6 +913,21 @@ mod tests {
         let action = set(ClipId(1), &more);
         assert_eq!(action.params["curves"].as_array().map(Vec::len), Some(3));
         assert!(set(ClipId(1), &[GainPoint::new(0.0, 0.0)]).params.get("curves").is_none(), "straight: none sent");
+    }
+
+    #[test]
+    fn a_segment_moves_up_and_down_as_one_and_the_whole_line_with_it() {
+        let points = [GainPoint::new(0.0, 0.0), GainPoint::new(2.0, -3.0), GainPoint::new(4.0, 2.0)];
+        assert_eq!(segment_at(&points, 1.0), vec![0, 1]);
+        assert_eq!(segment_at(&points, 5.0), vec![2], "after the last point: that point alone");
+        assert_eq!(segment_at(&[], 1.0), Vec::<usize>::new());
+        let db = |p: Vec<GainPoint>| p.iter().map(|p| p.db).collect::<Vec<_>>();
+        // Ctrl+Shift: the segment's two points; Shift: all of them.
+        assert_eq!(db(lifted(&points, Some(&[0, 1]), -2.0, 6.0)), vec![-2.0, -5.0, 2.0]);
+        assert_eq!(db(lifted(&points, None, 3.0, 6.0)), vec![3.0, 0.0, 5.0]);
+        // Kept below the ceiling and above −70 dB.
+        assert_eq!(db(lifted(&points, None, 5.0, 6.0)), vec![5.0, 2.0, 6.0]);
+        assert_eq!(db(lifted(&points, None, -80.0, 6.0)), vec![-70.0, -70.0, -70.0]);
     }
 
     #[test]

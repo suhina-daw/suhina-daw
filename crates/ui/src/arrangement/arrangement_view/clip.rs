@@ -292,6 +292,9 @@ pub(super) fn clip_box<'a>(
             .filter_map(|(_, id)| lane.clips.iter().find(|c| c.id == *id))
             .fold((clip.start, clip.start + clip.length), |(s, e), c| (s.min(c.start), e.max(c.start + c.length)));
         menus::clip_edit_menu(ui, lane.track, clip.id, (clip.start, clip.length), joined, split_at, actions);
+        if let Some(view) = &clip.audio_view {
+            crate::arrangement::envelope::clear_item(ui, clip.id, &view.envelope, actions);
+        }
         if clip.audio
             && let Some(name) = ara
         {

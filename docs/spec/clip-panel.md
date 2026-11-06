@@ -177,7 +177,20 @@ switch; the same again closes it. While it is open:
   instead of on the grids; Settings › Envelope points move says which it starts as;
 - while a clip's edge is dragged, its envelope is drawn with its waveform: a looping clip dragged
   longer shows the envelope on every new pass at once;
-- a **double-click** on a point, or Delete with the pointer over it, removes it.
+- **Shift** and a drag of the line moves the whole line up or down by the same dB, and
+  **Ctrl+Shift** and a drag moves only the segment under the pointer (its one or two points), on
+  the dB grid unless Free move is on or Alt held; the change shows beside the pointer ("−2 dB"). A
+  line without points gets one where the drag started;
+- **Alt+Shift** and a click on the line takes away the segment's points;
+- a **double-click** on a point puts it back at 0 dB where it is; **Alt** and a click on it, or
+  Delete with the pointer over it, removes it;
+- **Clear gain envelope** in the clip's menu takes all its points away, one undo step, so the clip
+  plays at its own level again; it is off while the clip has none.
+
+These follow a spectral editor's clip gain, where a click on the line adds a point, a double-click
+puts one back at 0 dB, Alt and a click removes one and Shift or Ctrl+Shift and a drag of a segment
+moves the line or the segment up and down; Ctrl and a click anywhere, which adds a point there, is
+left out, as Ctrl and a click selects clips in the Arrangement.
 
 Each change is one `clip.setEnvelope`, one undo step. The clip itself is moved by its name bar while
 its envelope is edited. A slot's clip has no waveform there; its envelope is set by command.
