@@ -209,13 +209,11 @@ impl App {
                     position.y.clamp(bounds.top(), (bounds.bottom() - size.y).max(bounds.top())),
                 );
                 let panel = Rect::from_min_size(position, size);
-                let adjusting = self.settings_contents(ui, panel);
-                let previewing = adjusting;
+                // Only holding a control clears the dimming: a click that changes a setting or
+                // chooses a theme does not, or the window behind would flash for one frame.
+                let previewing = self.settings_contents(ui, panel);
                 if suhina_plugins::trace::on() {
-                    suhina_plugins::trace::state(
-                        "settings overlay",
-                        format!("adjusting={adjusting} previewing={previewing} rect={panel:?}"),
-                    );
+                    suhina_plugins::trace::state("settings overlay", format!("previewing={previewing} rect={panel:?}"));
                 }
                 if !previewing {
                     // The status bar stays undimmed at the bottom: an error or a confirmation from
@@ -260,9 +258,6 @@ impl App {
         }
         let mut themes = self.themes.view(&self.settings.theme);
         themes.global_liquid = self.settings.view.liquid;
-        if let Some(session) = self.session() {
-            themes.preview_scene = crate::kit::theme_preview::Scene::from_project(session.project());
-        }
         self.about.projects_default = self.default_folders.0.display().to_string();
         self.about.templates_default = self.default_folders.1.display().to_string();
         self.about.themes_default = self.themes_default_folder.display().to_string();
@@ -363,19 +358,7 @@ impl App {
             ui.ctx().data_mut(|data| data.insert_temp(Id::unique("settings-panel-position"), position));
             ui.ctx().request_repaint();
         }
-        outcome.changed
-            || outcome.adjusting
-            || outcome.themes.as_ref().is_some_and(|request| {
-                !matches!(
-                    request,
-                    crate::settings::settings_view::ThemeRequest::Edit(_)
-                        | crate::settings::settings_view::ThemeRequest::EditRgba { .. }
-                        | crate::settings::settings_view::ThemeRequest::EditLiquid(_)
-                        | crate::settings::settings_view::ThemeRequest::EditSkin(_)
-                        | crate::settings::settings_view::ThemeRequest::EditCss(_)
-                        | crate::settings::settings_view::ThemeRequest::EditGradients(_)
-                )
-            })
+        outcome.adjusting
     }
 }
 

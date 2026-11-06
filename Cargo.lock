@@ -5293,6 +5293,9 @@ dependencies = [
  "drag",
  "eframe",
  "muda",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "raw-window-handle",
  "rfd",
  "serde_json",
@@ -5823,6 +5826,7 @@ dependencies = [
  "suhina-soundmap",
  "suhina-style",
  "suhina-test-support",
+ "suhina-theme-package",
  "suhina-update",
  "tiny-skia 0.12.0",
 ]

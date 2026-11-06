@@ -5,7 +5,6 @@
 
 use crate::*;
 
-/// `fm-synth voices <file.syx>`.
 /// `theme pack` and `theme validate` (`docs/spec/theme-skins.md` › Theme packages).
 pub(crate) fn theme(args: &[String]) -> Result<(), String> {
     use suhina_theme_package as package;
@@ -36,11 +35,7 @@ pub(crate) fn theme(args: &[String]) -> Result<(), String> {
                 .map(|n| n.to_ascii_lowercase().replace(' ', "-"))
                 .ok_or("the folder has no name")?;
             let files = package::read_folder(folder)?;
-            let name = files
-                .get("theme.css")
-                .and_then(|css| std::str::from_utf8(css).ok())
-                .and_then(package::sheet_name)
-                .unwrap_or_else(|| id.clone());
+            let name = package::theme_name(&files).unwrap_or_else(|| id.clone());
             let warnings = package::validate(&files)?;
             let bytes = package::pack(&id, &name, &files)?;
             std::fs::write(&out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
