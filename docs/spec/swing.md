@@ -1,6 +1,6 @@
 ---
 description: Functional spec of swing - the project's swing and a MIDI clip's own, how swing moves notes when a clip plays (every second sixteenth of each eighth), the Global switch and slider in the MIDI clip panel, the swing slider beside Resize all, the commands transport.setSwing and clip.setSwing, and the project file
-read_when: swing, shuffle, groove, global swing, clip swing, use global swing, transport.setSwing, clip.setSwing, second sixteenth, triplet feel, swing slider, Resize all
+read_when: swing, shuffle, groove, global swing, clip swing, use global swing, transport.setSwing, clip.setSwing, second sixteenth, triplet, dotted, swing percent, step sequencer swing feel, swing slider, Resize all
 type: spec
 status: draft
 last_verified: 2026-11-06
@@ -23,12 +23,14 @@ so turning swing down gives the straight notes back.
 ## How notes move
 
 A swing amount goes from 0 % (straight) to 100 %. Within each eighth (half a beat) of the clip's
-content, the second sixteenth moves from a quarter of a beat to the eighth-note triplet, a third of
-a beat, by the amount: at 50 % a note on it plays a twenty-fourth of a beat late, at 100 % a
-twelfth. The time between is stretched before that point and squeezed after it, so a note between
-the sixteenths moves in proportion, the eighths themselves stay where they are, and no note passes
-another. A note's end moves the same way as its start would at that place, so a note that filled
-its sixteenth still fills it.
+content, the second sixteenth is delayed by the amount of half a sixteenth: at 100 % it plays an
+eighth of a beat late, three quarters of the way through the eighth (a dotted feel, three to one);
+at about 67 % it is on the eighth-note triplet, two thirds of the way; at 50 % a sixteenth of a beat
+late. This is the scale a step sequencer's swing knob uses, 0 straight and 100 half a step late;
+on the other common scale, where 50 % is straight, 100 % here is 75 % and 67 % here is 66.7 %. A
+note that starts between the sixteenths moves in proportion (the time up to the second sixteenth
+stretches, the time after it shrinks), the eighths themselves stay where they are, and no note
+passes another. A note keeps its length, so a delayed note ends that much later too.
 
 Swing works on the content's beats, so every pass of a looping clip swings the same, and a clip's
 start marker does not change which sixteenths are delayed.

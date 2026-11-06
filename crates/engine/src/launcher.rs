@@ -1144,11 +1144,9 @@ fn plan_clip(
                 let swing = clip.swing.effective(project.transport.swing);
                 for note in lane_notes.iter().filter(|n| !n.muted && n.time.is_finite() && n.duration.is_finite()) {
                     let velocity = note_velocity(note.velocity);
-                    let time = suhina_model::swung(note.time, swing);
-                    let end = suhina_model::swung(note.time + note.duration.max(0.0), swing);
                     notes.push(PlanNote {
-                        time,
-                        duration: (end - time).max(0.0),
+                        time: suhina_model::swung(note.time, swing),
+                        duration: note.duration.max(0.0),
                         frequency: 440.0 * 2f64.powf((f64::from(note.key) - 69.0) / 12.0),
                         key: note.key.min(127),
                         velocity,

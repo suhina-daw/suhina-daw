@@ -5,8 +5,8 @@
 //! it plays instead of the project's when it has one. Swing delays every second sixteenth of each
 //! eighth when the clip plays; the notes themselves never move.
 
-/// The range of a swing amount: 0 is straight, 1 puts the second sixteenth of each eighth on the
-/// eighth-note triplet.
+/// The range of a swing amount: 0 is straight, 1 delays the second sixteenth of each eighth by half
+/// a sixteenth (a dotted feel, three to one), as a step sequencer's full swing does.
 pub const SWING_RANGE: std::ops::RangeInclusive<f64> = 0.0..=1.0;
 
 /// How a MIDI clip swings: the project's swing (the default), or its own `amount`. The clip keeps
@@ -32,11 +32,13 @@ impl ClipSwing {
     }
 }
 
-/// A beat of a clip's content as it plays with `amount` of swing: within each eighth (half a
-/// beat), the time up to its second sixteenth stretches and the time after it shrinks, so a note
-/// on the second sixteenth lands `amount` of the way to the eighth-note triplet (a twelfth of a
-/// beat later at 1), and the eighths themselves stay where they are. Every beat moves forward or
-/// stays, never past the next eighth, so the order of notes never changes.
+/// Where a note that starts at `beat` of a clip's content plays with `amount` of swing: within each
+/// eighth (half a beat) the second sixteenth is delayed by `amount` of half a sixteenth (an eighth
+/// of a beat at 1: three quarters of the way through the eighth, a dotted feel; two thirds, the
+/// triplet, at 2/3), and the eighths stay where they are. A start between them moves in
+/// proportion: the time up to the second sixteenth stretches and the time after it shrinks, so
+/// every start moves forward or stays, never past the next eighth, and the order of notes never
+/// changes.
 pub fn swung(beat: f64, amount: f64) -> f64 {
     if !(beat.is_finite() && amount.is_finite()) || amount <= 0.0 {
         return beat;
@@ -44,8 +46,8 @@ pub fn swung(beat: f64, amount: f64) -> f64 {
     let amount = amount.min(*SWING_RANGE.end());
     let eighth = (beat / 0.5).floor() * 0.5;
     let within = beat - eighth;
-    // Where the second sixteenth lands: from 0.25 straight to a third of a beat (the triplet).
-    let second = 0.25 + amount / 12.0;
+    // Where the second sixteenth lands: from 0.25 straight to 0.375, half a sixteenth late.
+    let second = 0.25 + amount * 0.125;
     if within < 0.25 {
         eighth + within * second / 0.25
     } else {
@@ -60,12 +62,13 @@ mod tests {
     #[test]
     fn swing_moves_the_second_sixteenth_and_keeps_the_eighths() {
         assert_eq!(swung(0.25, 0.0), 0.25, "no swing, nothing moves");
-        assert!((swung(0.25, 1.0) - 1.0 / 3.0).abs() < 1e-12, "full swing: the triplet");
-        assert!((swung(0.25, 0.5) - (0.25 + 1.0 / 24.0)).abs() < 1e-12);
+        assert!((swung(0.25, 1.0) - 0.375).abs() < 1e-12, "full swing: half a sixteenth late");
+        assert!((swung(0.25, 2.0 / 3.0) - 1.0 / 3.0).abs() < 1e-12, "two thirds: the triplet");
+        assert!((swung(0.25, 0.5) - 0.3125).abs() < 1e-12);
         for beat in [0.0, 0.5, 1.0, 7.5] {
             assert!((swung(beat, 1.0) - beat).abs() < 1e-12, "the eighths stay: {beat}");
         }
-        assert!((swung(1.75, 1.0) - (1.5 + 1.0 / 3.0)).abs() < 1e-12, "in every eighth");
+        assert!((swung(1.75, 1.0) - 1.875).abs() < 1e-12, "in every eighth");
         // The order of notes never changes.
         let mut last = -1.0;
         for step in 0..200 {

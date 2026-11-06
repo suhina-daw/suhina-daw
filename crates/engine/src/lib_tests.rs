@@ -1212,8 +1212,8 @@ fn a_stretched_clip_starts_each_loop_pass_as_cleanly_as_the_first() {
     }
 }
 
-/// Swing delays the second sixteenth of each eighth on every pass of a loop and leaves the eighths
-/// where they are; a note's end moves with the same warp (#1221).
+/// Swing delays the second sixteenth of each eighth on every pass of a loop, by half a sixteenth at
+/// full swing, and leaves the eighths where they are; a note keeps its length (#1221).
 #[test]
 fn swing_moves_the_second_sixteenth_of_every_pass() {
     let notes = vec![Note::new(0.0, 0.25, 60, 1.0), Note::new(0.25, 0.25, 62, 1.0)];
@@ -1230,8 +1230,9 @@ fn swing_moves_the_second_sixteenth_of_every_pass() {
         spans
     };
     assert_eq!(events(0.0), [(0, 6_000), (6_000, 12_000), (12_000, 18_000), (18_000, 24_000)]);
-    // Full swing: the second sixteenth on the eighth-note triplet, a third of a beat in.
-    assert_eq!(events(1.0), [(0, 8_000), (8_000, 12_000), (12_000, 20_000), (20_000, 24_000)]);
+    // Full swing: the second sixteenth half a sixteenth late, three eighths of a beat in, its length
+    // kept (the last one cut at the clip's end).
+    assert_eq!(events(1.0), [(0, 6_000), (9_000, 15_000), (12_000, 18_000), (21_000, 24_000)]);
     // Half way.
-    assert_eq!(events(0.5)[1], (7_000, 12_000));
+    assert_eq!(events(0.5)[1], (7_500, 13_500));
 }

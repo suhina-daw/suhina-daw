@@ -13,7 +13,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param(
                 "amount",
                 ParamType::Number,
-                "percent, 0 to 100: 0 is straight, 100 puts the second sixteenth on the eighth-note triplet",
+                "percent, 0 to 100: 0 is straight, 100 delays the second sixteenth of each eighth by half a sixteenth (about 67 is the triplet)",
             ),
             optional(
                 "continue",
