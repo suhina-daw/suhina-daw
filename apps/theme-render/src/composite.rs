@@ -52,16 +52,29 @@ pub fn over(top: &RgbaImage, under: &RgbaImage) -> RgbaImage {
     out
 }
 
-/// `image` scaled to cover `w` × `h` and cropped to its centre, as a desktop picture fills it.
+/// `image` scaled to cover `w` × `h` and cropped to its centre, as a desktop picture fills it. The
+/// part that shows is cut out first, so the work is the window's size however thin the picture
+/// is, and it is laid over black so that its transparent pixels show nothing of their colour.
 fn cover(image: &RgbaImage, w: u32, h: u32) -> Option<RgbaImage> {
     let (iw, ih) = image.dimensions();
-    if iw == 0 || ih == 0 {
+    if iw == 0 || ih == 0 || w == 0 || h == 0 {
         return None;
     }
-    let ratio = (w as f32 / iw as f32).max(h as f32 / ih as f32);
-    let (sw, sh) = (((iw as f32 * ratio).ceil() as u32).max(w), ((ih as f32 * ratio).ceil() as u32).max(h));
-    let scaled = image::imageops::resize(image, sw, sh, image::imageops::FilterType::Triangle);
-    Some(image::imageops::crop_imm(&scaled, (sw - w) / 2, (sh - h) / 2, w, h).to_image())
+    // The largest centred part of the image with the window's proportions.
+    let (cw, ch) = if u64::from(iw) * u64::from(h) >= u64::from(ih) * u64::from(w) {
+        (((u64::from(ih) * u64::from(w)) / u64::from(h)).clamp(1, u64::from(iw)) as u32, ih)
+    } else {
+        (iw, ((u64::from(iw) * u64::from(h)) / u64::from(w)).clamp(1, u64::from(ih)) as u32)
+    };
+    let mut part = image::imageops::crop_imm(image, (iw - cw) / 2, (ih - ch) / 2, cw, ch).to_image();
+    for pixel in part.pixels_mut() {
+        let a = u32::from(pixel[3]);
+        for c in 0..3 {
+            pixel[c] = ((u32::from(pixel[c]) * a + 127) / 255) as u8;
+        }
+        pixel[3] = 255;
+    }
+    Some(image::imageops::resize(&part, w, h, image::imageops::FilterType::Triangle))
 }
 
 /// A backdrop for when none is given: bright diagonal bands and a fine checker, so a hole in the
@@ -86,6 +99,19 @@ mod tests {
         let under = RgbaImage::from_pixel(1, 1, Rgba([0, 0, 0, 255]));
         assert_eq!(over(&top, &under).get_pixel(0, 0).0, [128, 128, 128, 255]);
         assert_eq!(unpremultiply(&top).get_pixel(0, 0).0, [255, 255, 255, 128]);
+    }
+
+    #[test]
+    fn a_thin_backdrop_covers_the_window_and_its_transparent_pixels_show_black() {
+        let thin =
+            RgbaImage::from_fn(1, 10_000, |_, y| if y < 5_000 { Rgba([255, 0, 0, 255]) } else { Rgba([0, 255, 0, 0]) });
+        let covered = cover(&thin, 8, 8).unwrap();
+        assert_eq!(covered.dimensions(), (8, 8));
+        // The centre of the picture is the seam between the opaque red and the clear green.
+        let corner = covered.get_pixel(0, 0).0;
+        assert!(corner[0] > 200 && corner[1] == 0, "red on top: {corner:?}");
+        let bottom = covered.get_pixel(0, 7).0;
+        assert_eq!(bottom, [0, 0, 0, 255], "a transparent pixel is black, not its green");
     }
 
     #[test]

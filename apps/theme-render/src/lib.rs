@@ -55,9 +55,11 @@ impl Subject {
         Ok((Self { id, theme: Some(theme) }, warnings))
     }
 
-    /// A theme built into Suhina, by its id.
+    /// A theme built into Suhina, or one of its variants (`suhina-studio@light`), by its id.
     pub fn built_in(id: &str) -> Option<Self> {
-        theme::is_built_in(id).then(|| Self { id: id.to_ascii_lowercase(), theme: None })
+        (theme::is_built_in(id)
+            || theme::built_in_variants().iter().any(|(variant, _)| variant.eq_ignore_ascii_case(id)))
+        .then(|| Self { id: id.to_ascii_lowercase(), theme: None })
     }
 
     /// Every theme built into Suhina.
@@ -125,6 +127,8 @@ pub fn choose(harness: &mut Harness<'static, App>, subject: &Subject) {
     }
     let mut settings = app.settings().clone();
     settings.theme.clone_from(&subject.id);
+    // Setting the settings turns motion on as they say, so they say it off: no frame between.
+    settings.animations = false;
     app.set_settings(&ctx, settings);
 }
 
@@ -215,6 +219,9 @@ pub struct Shot {
 
 /// Draws the scene the harness is in.
 pub fn shoot(harness: &mut Harness<'static, App>) -> Result<Shot, String> {
+    // A background picture is read on another thread: wait for it, and draw a frame with it.
+    harness.state_mut().wait_for_background();
+    harness.run_steps(2);
     let pixels = harness.render()?;
     let see_through = theme::window_background().a() < u8::MAX;
     let [r, g, b, _] = harness.ctx.global_style().visuals.panel_fill.to_array();

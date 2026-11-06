@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Renders on a GPU, so they run only when asked:
-//! `cargo test -p suhina-theme-render --test render -- --ignored`.
+//! `cargo test -p suhina-theme-render --test main -- --ignored`.
 
 use egui_kittest::kittest::Queryable;
 use suhina_theme_render::{Gpu, Subject, render_all, rendered, scenes, shoot};

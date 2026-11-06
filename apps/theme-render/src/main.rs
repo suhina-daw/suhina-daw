@@ -25,7 +25,13 @@ struct Args {
     budget: bool,
 }
 
-fn parse(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
+/// What the command line asks for.
+enum Command {
+    Help,
+    Run(Args),
+}
+
+fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
     let mut parsed = Args {
         theme: String::new(),
         backdrop: None,
@@ -57,18 +63,24 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
                 parsed.scene = Some(name);
             }
             "--budget" => parsed.budget = true,
-            "-h" | "--help" => return Err(USAGE.into()),
+            "-h" | "--help" => return Ok(Command::Help),
             other if other.starts_with('-') => return Err(format!("unknown option {other}\n\n{USAGE}")),
             other if theme.is_none() => theme = Some(other.to_owned()),
             _ => return Err(USAGE.into()),
         }
     }
     parsed.theme = theme.ok_or(USAGE)?;
-    Ok(parsed)
+    Ok(Command::Run(parsed))
 }
 
 fn run() -> Result<(), String> {
-    let args = parse(std::env::args().skip(1))?;
+    let args = match parse(std::env::args().skip(1))? {
+        Command::Help => {
+            println!("{USAGE}");
+            return Ok(());
+        }
+        Command::Run(args) => args,
+    };
     let folder = std::path::Path::new(&args.theme);
     let subject = if folder.is_dir() {
         let (subject, warnings) = Subject::folder(folder)?;
