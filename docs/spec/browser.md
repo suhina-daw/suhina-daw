@@ -498,7 +498,9 @@ a row's Tag menu applies to one and the section's drops apply to every dragged o
 elsewhere changes nothing. While either is carried, a
 pill beside the pointer says what a drop does, and the status bar says so: *Tag 3 items with
 Blue*, *Drop to tag Kick.wav with Blue*. The row's right-click
-menu renames (typed in; the place and the footer's filter follow the new name), recolours —
+menu renames (a name typed into the menu's field applies with Enter, or when the menu is
+clicked off; the place and the footer's filter follow the new name),
+recolours —
 the palette's swatches, or **Select colour…**, which opens the theme editor's picker in the
 menu itself, where a picker of its own would end the menu as a click outside it does —, and
 removes the tag — the first click on Remove asks, saying how many items carry it, and **Keep**

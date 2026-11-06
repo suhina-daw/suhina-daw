@@ -1462,9 +1462,14 @@ fn the_tags_section_renames_and_removes_a_tag_asking_first() {
     harness.run();
     harness.get_by_label("Rename tag Red").type_text("Hot");
     harness.run();
-    harness.key_press(Key::Enter);
+    // The name typed is taken when the menu is clicked off, Enter or not: a click on the
+    // window's empty footer goes with it.
+    let at = Pos2::new(SIZE.0 - 20.0, SIZE.1 - 10.0);
+    click_at(&mut harness, at);
     harness.run();
     assert!(harness.query_by_label("Place Tag Hot").is_some(), "the section lists the new name");
+    // The menu went with the click off.
+    assert!(harness.query_by_label("New tag name").is_none(), "the menu went with the rename");
     // The place still holds: the renamed tag's items.
     harness.get_by_label("Place Tag Hot").click();
     harness.run();

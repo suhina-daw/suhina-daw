@@ -772,7 +772,8 @@ fn sidebar_view(
                 state.scroll = 0.0;
             }
         }
-        // Right-click: rename (typed in), recolour, remove — asking first while items carry it.
+        // Right-click: rename (a click off the menu applies the typed name, as Enter does),
+        // recolour, remove — asking first while items carry it.
         egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             let id = Id::unique(("browser-rename-tag", &tag.name));
             let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
@@ -782,21 +783,28 @@ fn sidebar_view(
                 egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", tag.name))
             });
             ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-            if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && name.trim() != tag.name {
-                if run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out) {
-                    for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
-                        *filter = name.trim().to_string();
-                    }
-                    // The tags the place is made of go with the new name, so the list follows.
-                    if let Some(Place::Tag(tags)) = &mut state.place {
-                        for t in tags.iter_mut().filter(|t| **t == tag.name) {
-                            *t = name.trim().to_string();
-                        }
+            // Enter commits, and so does a click outside the menu: the name typed is taken
+            // when the menu goes, wherever the click lands. A change that is refused keeps
+            // the menu and the field (the status bar says why).
+            let committed = (field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
+                || ui.input(|i| {
+                    i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !ui.max_rect().contains(p))
+                });
+            if committed
+                && name.trim() != tag.name
+                && run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out)
+            {
+                for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
+                    *filter = name.trim().to_string();
+                }
+                // The tags the place is made of go with the new name, so the list follows.
+                if let Some(Place::Tag(tags)) = &mut state.place {
+                    for t in tags.iter_mut().filter(|t| **t == tag.name) {
+                        *t = name.trim().to_string();
                     }
                 }
                 ui.ctx().data_mut(|d| d.remove::<String>(id));
                 state.relist();
-                ui.close();
             }
             let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
             // Select colour: the palette's swatches and the theme editor's picker, opened in
@@ -1922,8 +1930,9 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 state.tag_filter.push(tag.name.clone());
             }
         }
-        // Right-click: rename, recolour or remove the tag. Clicks inside do not close it: a
-        // tag's new name is typed here (egui's default closes a menu on a click inside it).
+        // Right-click: rename (typed in, with Enter or the button), recolour or remove the
+        // tag. Clicks inside do not close it: a tag's new name is typed here (egui's default
+        // closes a menu on a click inside it).
         egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             let id = Id::unique(("browser-rename-tag", &tag.name));
             let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
@@ -1933,15 +1942,21 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", tag.name))
             });
             ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-            if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && name.trim() != tag.name {
-                if run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out) {
-                    for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
-                        *filter = name.trim().to_string();
-                    }
+            // As the section's menu: Enter commits, and so does a click outside the menu. A
+            // change that is refused keeps the menu and the field (the status bar says why).
+            let committed = (field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
+                || ui.input(|i| {
+                    i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !ui.max_rect().contains(p))
+                });
+            if committed
+                && name.trim() != tag.name
+                && run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out)
+            {
+                for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
+                    *filter = name.trim().to_string();
                 }
                 ui.ctx().data_mut(|d| d.remove::<String>(id));
                 state.relist();
-                ui.close();
             }
             // The palette track colours take, then any colour.
             let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
