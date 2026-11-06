@@ -507,8 +507,9 @@ pub fn show(
             if response.drag_started_by(egui::PointerButton::Primary) {
                 ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: points.clone() }));
             }
+            // The point the drag holds, by where it is now: passing another changes its index.
             if response.dragged_by(egui::PointerButton::Primary) {
-                dragging = Some(index);
+                dragging = draft(ui.ctx(), clip).map(|d| d.index).or(Some(index));
             }
         }
     }
@@ -522,12 +523,7 @@ pub fn show(
         let target = mapping.content(placed_at(pointer.x));
         let beat = if fine { before.beat + (target - before.beat) * 0.1 } else { target };
         let db = dragged_db(ui, rect, pointer, before.db, top);
-        let low = index.checked_sub(1).and_then(|i| moved.get(i)).map_or(0.0, |p| p.beat);
-        let high = moved.get(index + 1).map_or(f64::INFINITY, |p| p.beat);
-        if let Some(p) = moved.get_mut(index) {
-            p.beat = beat.clamp(low, high.max(low));
-            p.db = db;
-        }
+        let index = passed(&mut moved, index, beat.max(0.0), db);
         ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: moved }));
         // Its value beside the pointer while the button is down.
         egui::Tooltip::always_open(
@@ -560,6 +556,28 @@ pub fn show(
         ui.data_mut(|d| d.remove::<Draft>(draft_key()));
         actions.push(set(clip, &kept));
     }
+}
+
+/// Moves point `index` of `points` to `beat` and `db`, past the points it is dragged over, as an
+/// automation lane's (`docs/spec/automation.md`): the points stay in beat order, and on another
+/// point's beat it stays on the side it came from. Returns its index now.
+fn passed(points: &mut Vec<GainPoint>, index: usize, beat: f64, db: f64) -> usize {
+    if index >= points.len() {
+        return index;
+    }
+    let mut point = points.remove(index);
+    let later = beat >= point.beat;
+    point.beat = beat;
+    point.db = db;
+    // Past the points it now lies beyond, never past one on its own beat that it has not crossed.
+    let at = if later {
+        points.partition_point(|p| p.beat < beat).max(index)
+    } else {
+        points.partition_point(|p| p.beat <= beat).min(index)
+    }
+    .min(points.len());
+    points.insert(at, point);
+    at
 }
 
 fn curve_edit(ctx: &egui::Context, clip: ClipId) -> Option<CurveEdit> {
@@ -746,6 +764,26 @@ mod tests {
         let action = set(ClipId(1), &more);
         assert_eq!(action.params["curves"].as_array().map(Vec::len), Some(3));
         assert!(set(ClipId(1), &[GainPoint::new(0.0, 0.0)]).params.get("curves").is_none(), "straight: none sent");
+    }
+
+    #[test]
+    fn a_dragged_point_passes_the_points_it_is_dragged_over() {
+        let at = |beats: &[f64]| beats.iter().map(|&b| GainPoint::new(b, 0.0)).collect::<Vec<_>>();
+        let beats = |points: &[GainPoint]| points.iter().map(|p| p.beat).collect::<Vec<_>>();
+        // The last point dragged left past the one before it.
+        let mut points = at(&[0.0, 2.0, 4.0]);
+        let index = passed(&mut points, 2, 1.0, -3.0);
+        assert_eq!((index, beats(&points)), (1, vec![0.0, 1.0, 2.0]));
+        assert_eq!(points[1].db, -3.0);
+        // The first dragged right past both.
+        let mut points = at(&[0.0, 2.0, 4.0]);
+        let index = passed(&mut points, 0, 5.0, 0.0);
+        assert_eq!((index, beats(&points)), (2, vec![2.0, 4.0, 5.0]));
+        // Onto another's beat it stays on the side it came from.
+        let mut points = at(&[0.0, 2.0, 4.0]);
+        assert_eq!(passed(&mut points, 2, 2.0, 0.0), 2, "from the right");
+        let mut points = at(&[0.0, 2.0, 4.0]);
+        assert_eq!(passed(&mut points, 0, 2.0, 0.0), 0, "from the left");
     }
 
     #[test]

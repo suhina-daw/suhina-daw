@@ -158,8 +158,9 @@ switch; the same again closes it. While it is open:
   default; lines closer than 5 points are left out), the 0 dB line stronger;
 - a **click** on the body adds a point there: its beat and the level under the pointer, on the grid;
 - a **drag** from the body adds a point and moves it; a point is **dragged** to move it: sideways in
-  time on the Arrangement's beat grid, up and down in level on the dB grid and below the ceiling,
-  kept between its neighbours. Within 5 points of the middle it goes to 0 dB itself, the sample's
+  time on the Arrangement's beat grid, up and down in level on the dB grid and below the ceiling;
+  dragged over another point it passes it, as on an automation lane, and on another point's beat it
+  stays on the side it came from. Within 5 points of the middle it goes to 0 dB itself, the sample's
   own level. Shift moves it a tenth as much and off both grids. Its value shows beside the pointer
   while the button is down ("−3 dB");
 - the **round handle** half-way along a sloping segment (one at least 28 points wide) bends it when
