@@ -868,3 +868,18 @@ fn choosing_another_themes_folder_asks_before_its_themes_move() {
     assert_eq!(h.state().settings().themes_folder, chosen.display().to_string());
     assert!(h.state_mut().take_theme_move().is_some_and(|(_, to)| to == chosen));
 }
+
+#[test]
+fn a_theme_with_a_background_image_lets_the_window_rest() {
+    // Its window style changes palette colours; the background once set the palette again each
+    // frame to undo them, and the window never stopped repainting.
+    let mut h = window(demo_app());
+    let ctx = h.ctx.clone();
+    h.state_mut().use_theme(&ctx, "suhina-meadow");
+    // The first frame starts loading the image; the next one, after the load, shows it.
+    h.step();
+    h.state_mut().wait_for_background();
+    h.step();
+    assert!(suhina_ui::kit::liquid::background_image(&ctx).is_some(), "the background image loaded");
+    assert!(h.try_run().is_ok(), "the window settles within a second of frames: {:?}", ctx.repaint_causes());
+}
