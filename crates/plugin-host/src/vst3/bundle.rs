@@ -43,11 +43,9 @@ impl Bundle {
     /// (the bundle-less `.vst3` layout) and anything else CoreFoundation will not call a
     /// bundle, where the host, as before this existed, passes null.
     pub(crate) fn open(path: &Path) -> Option<Self> {
-        if !path.is_dir() {
-            return None;
-        }
-        let Some(text) = path.to_str() else {
-            // A path CoreFoundation's UTF-8 model cannot hold: null, as before.
+        let Some(text) = super::bundle_text(path) else {
+            // A bare file, a missing folder, or a path CoreFoundation's UTF-8 model
+            // cannot hold: null, as before.
             return None;
         };
         let bytes = text.as_bytes();
@@ -86,9 +84,9 @@ impl Drop for Bundle {
 mod tests {
     use super::*;
 
-    /// A plug-in folder makes a bundle handle: made once, `Some` each time, and released
-    /// on the spot when it is dropped. A CoreFoundation bundle is a folder, whatever it
-    /// carries, so this holds for the plain fixture folder a scratch test makes.
+    /// A CoreFoundation bundle is a folder, whatever it carries: the plain fixture
+    /// folder a scratch test makes holds one, made twice through the test (an owned
+    /// reference releases in `drop`; the second open is a second, independent handle).
     #[test]
     fn a_plugin_folder_makes_a_bundle() {
         let folder = std::env::temp_dir().join(format!("suhina-bundle-test-{}", std::process::id()));
@@ -99,6 +97,7 @@ mod tests {
         drop(bundle);
         // Still fine afterwards: the second open is a second, independent handle.
         assert!(Bundle::open(&folder).is_some(), "opening again what was released");
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     /// A bare file is no bundle: the host passes null and the entry's other arm stays.
@@ -107,27 +106,6 @@ mod tests {
         let file = std::env::temp_dir().join(format!("suhina-bare-vst3-{}.vst3", std::process::id()));
         std::fs::write(&file, b"not a bundle").unwrap_or_else(|e| panic!("write {e}"));
         assert!(Bundle::open(&file).is_none(), "a file does not make a bundle");
-    }
-
-    // A path that is not UTF-8 cannot name its bundle in CoreFoundation's text model:
-    // the answer stays the null fallback (`None`) — but APFS names are UTF-8 only
-    // ("Illegal byte sequence" on creation), so the folder itself is only makeable where
-    // a file system takes arbitrary bytes (Linux), which is where the attempt runs.
-    #[cfg(all(unix, not(target_os = "macos")))]
-    #[test]
-    fn a_non_utf8_folder_stays_null() {
-        use std::os::unix::ffi::OsStringExt;
-        // 0xFF is not UTF-8, so the folder's name cannot come out as `&str`.
-        let name = std::ffi::OsString::from_vec(
-            format!("suhina-utf8-{}-", std::process::id())
-                .into_bytes()
-                .into_iter()
-                .chain([0xFF, 0x2F, 0x80, 0x81])
-                .collect(),
-        );
-        let folder = std::env::temp_dir().join(name);
-        std::fs::create_dir_all(&folder).unwrap_or_else(|e| panic!("create the folder: {e}"));
-        assert!(folder.is_dir(), "the folder exists (its name just is not UTF-8)");
-        assert!(Bundle::open(&folder).is_none(), "a non-UTF-8 path stays the null fallback");
+        let _ = std::fs::remove_file(&file);
     }
 }

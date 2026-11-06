@@ -87,6 +87,17 @@ pub(crate) fn finite(value: f64, otherwise: f64) -> f64 {
     if value.is_finite() { value } else { otherwise }
 }
 
+/// The text a macOS module contract's bundle comes from, when `path` is one: a folder
+/// that reads as UTF-8. It stands here rather than in [`bundle`], which needs
+/// CoreFoundation and only ships on macOS, so the null arm's facts — folder and text
+/// both, or nothing — are tested on every system's test run: the tests of
+/// [`bundle_text`] get it built on them (`test`), and macOS's own builds through
+/// [`bundle::Bundle::open`].
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn bundle_text(path: &Path) -> Option<&str> {
+    if path.is_dir() { path.to_str() } else { None }
+}
+
 /// Text from a fixed-size UTF-16 field (`String128`), up to its first zero.
 fn utf16(field: &[TChar]) -> String {
     let units: Vec<u16> = field.iter().take_while(|c| **c != 0).copied().collect();
@@ -106,10 +117,13 @@ fn ok(result: tresult) -> bool {
 /// A loaded plug-in file (or the built-in test plug-in) and its factory.
 struct ModuleFile {
     /// The plug-in bundle as the module's macOS contract takes it ([`bundle::Bundle`]):
-    /// first field, so a module holding it outlives the module's exit paths (dropped
-    /// last, after [`Drop for ModuleFile`][Drop] has run them). Loaded for the process's
-    /// life ([`shared_module`]), so the reference stays whole through the module's calls
-    /// wherever the module kept the handle rather than its own retain.
+    /// first field, and [`Drop for ModuleFile`][Drop] runs the module out (factory
+    /// release, the module's exit where it offers one, unload) before fields drop.
+    /// Fields drop in declaration order, the first one first, so this is dropped before
+    /// the library's own field drop would unload the module — which is why the exit work
+    /// stays in [`Drop for ModuleFile`][Drop]: a refactor that moves it to a field drop
+    /// would release the bundle the module still holds before the unload. Loaded for
+    /// the process's life ([`shared_module`]), so it outlives every call either way.
     #[cfg(target_os = "macos")]
     _bundle: Option<bundle::Bundle>,
     factory: Option<ComPtr<IPluginFactory>>,
@@ -155,6 +169,23 @@ pub(crate) fn macos_binary(macos: &Path, stem: &OsStr) -> Option<PathBuf> {
 
 impl ModuleFile {
     fn open(path: &Path) -> Result<Self, String> {
+        // `bundleEntry` (macOS): the counterpart of `InitDll` on Windows and `ModuleEntry`
+        // on Linux, and optional the same way: modules built on the current SDK initialise
+        // in their own static constructors and do not export it, and those that do
+        // (DPF-built modules, such as Cardinal and plugdata) take the handle or null
+        // either way, holding their own bundle when they need it. It is what macOS hosts
+        // that load the module as a bundle pass that stands out: the bundle's handle. The
+        // SDK's own hosts make and pass one, and a module may keep it and read it later
+        // without a null check — as Xfer's Serum 2 2.1.5 did, which crashed its host's
+        // main thread (a null dereference, #1223) the first time its editor's view was
+        // built. The handle is made here for the module to keep, not left null; where
+        // there is no bundle to make (the plug-in is a bare file, the path is not UTF-8,
+        // or the folder is not one), no handle exists, and null stays the contract's
+        // other arm. The bundle is kept before the library is loaded: a local drops
+        // before anything declared before it, and a module reaching its own exit paths
+        // after `bundleEntry` failed should keep seeing the handle it was handed.
+        #[cfg(target_os = "macos")]
+        let bundle = bundle::Bundle::open(path);
         let file = binary(path)?;
         // SAFETY: loading the library runs its initialisation code, which Rust cannot check;
         // that is what this process is for (ADR 0006). The library stays loaded while `self`
@@ -183,21 +214,8 @@ impl ModuleFile {
                 return Err("the plug-in's ModuleEntry failed".into());
             }
         }
-        // `bundleEntry` (macOS): the counterpart of `InitDll` on Windows and `ModuleEntry`
-        // on Linux, and optional the same way: modules built on the current SDK initialise
-        // in their own static constructors and do not export it, and those that do
-        // (DPF-built modules, such as Cardinal and plugdata) take the handle or null
-        // either way, holding their own bundle when they need it. It is what macOS hosts
-        // that load the module as a bundle pass that stands out: the bundle's handle. The
-        // SDK's own hosts make and pass one, and a module may keep it and read it later
-        // without a null check — as Xfer's Serum 2 2.1.5 did, which crashed its host's
-        // main thread (a null dereference, #1223) the first time its editor's view was
-        // built. The handle is made here for the module to keep, not left null; where
-        // there is no bundle to make (the plug-in is a bare file, the path is not UTF-8,
-        // or the folder is not one), no handle exists, and null stays the contract's
-        // other arm.
-        #[cfg(target_os = "macos")]
-        let bundle = bundle::Bundle::open(path);
+        // `bundleEntry` (macOS): called after the library is loaded, with the handle the
+        // bundle's `CFBundle` carries, and read one.
         #[cfg(target_os = "macos")]
         {
             let handle = bundle.as_ref().map_or(std::ptr::null_mut(), |bundle| bundle.handle());
@@ -1910,5 +1928,48 @@ mod tests {
         // A folder that is not there holds nothing.
         assert_eq!(macos_binary(&dir.join("missing").join("MacOS"), stem), None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The facts the module contract's null bundle arm waits on: a folder is the text
+    /// it carries (CoreFoundation's model is UTF-8, which a normal folder path is), a
+    /// bare file is no bundle, and a path that is not there is neither.
+    #[test]
+    fn a_bundle_folders_text_is_herself_and_the_other_arms_hold_none() {
+        let dir = std::env::temp_dir().join(format!("suhina-vst3-bundle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(bundle_text(&dir).map(str::to_string), dir.to_str().map(str::to_string));
+        // A bare file, though named like one, is no bundle.
+        let file = dir.with_extension("vst3");
+        std::fs::write(&file, b"not a bundle").unwrap();
+        assert_eq!(bundle_text(&file), None);
+        // A path that is not there is neither.
+        assert_eq!(bundle_text(&dir.join("missing")), None);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&file);
+    }
+
+    /// A folder whose name is not UTF-8 stays the null arm. Makeable only where a file
+    /// system takes arbitrary bytes (Linux: macOS's APFS answers "Illegal byte
+    /// sequence" on creation and its names are UTF-8), which is where this runs — and
+    /// it can run only here, now that the facts stand in this module rather than in the
+    /// macOS files only.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn a_non_utf8_folder_stays_the_null_arm() {
+        use std::os::unix::ffi::OsStringExt;
+        // 0xFF is not UTF-8, so the folder's name cannot come out as `str`.
+        let name = std::ffi::OsString::from_vec(
+            format!("suhina-vst3-utf8-{}-", std::process::id())
+                .into_bytes()
+                .into_iter()
+                .chain([0xFF, 0x2F, 0x80, 0x81])
+                .collect(),
+        );
+        let folder = std::env::temp_dir().join(name);
+        std::fs::create_dir_all(&folder).unwrap_or_else(|e| panic!("create the folder: {e}"));
+        assert!(folder.is_dir(), "the folder exists (its name just is not UTF-8)");
+        assert_eq!(bundle_text(&folder), None);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }
