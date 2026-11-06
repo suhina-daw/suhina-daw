@@ -1533,6 +1533,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         // The main volume as a track's: a bar that a drag sets (heard while dragging, one undo
         // step), a double-click back to 0 dB.
         let field = Rect::from_min_max(Pos2::new(inner.left() + inner.width() * 0.45, inner.top()), inner.max);
+        // An element of its own, `#main-volume`, as the tracks' are `#arrangement-volume`: without
+        // it the field paints `.arrangement`'s style as its own (#1237).
+        let volume_style = crate::kit::style_class::enter_named("value", "main-volume");
         let response = widgets::value_area(
             ui,
             field.intersect(fixed),
@@ -1560,6 +1563,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             Drag::None => {}
         }
         volume_field(&fixed_painter, field, state.main_drag.unwrap_or(db), widgets::hover(ui, &response));
+        drop(volume_style);
         let at = lying_meter(field.left() - PAD, inner.center().y);
         let level = state.meters.main;
         meter::show(ui, &fixed_painter, at, "Main", meter::Source::Main, &level, actions);

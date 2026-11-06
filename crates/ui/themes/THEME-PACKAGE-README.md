@@ -526,6 +526,7 @@ Ids:
 | `#control-play`, `#control-stop`, `#control-record`, `#control-browser-toggle`, `#control-metronome-toggle` | the toolbar's main buttons |
 | `#control-solo`, `#control-cue`, `#control-arm`, `#control-track-on` | a track's solo, cue, arm and on (the track number in the mixer) buttons |
 | `#arrangement-volume`, `#arrangement-pan` | a track header's volume and pan fields |
+| `#main-volume` | the volume field in Main's row of the Arrangement view |
 | `#mixer-volume`, `#mixer-pan` | a mixer strip's fader and pan |
 | `#workspace`, `#panel-browser`, `#panel-main`, `#panel-detail` | the workspace and its panels |
 | `#mixer-send-1`, `#mixer-send-2`, … | a mixer strip's sends, from the left |

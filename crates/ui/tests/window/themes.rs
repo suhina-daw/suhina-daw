@@ -883,3 +883,30 @@ fn a_theme_with_a_background_image_lets_the_window_rest() {
     assert!(suhina_ui::kit::liquid::background_image(&ctx).is_some(), "the background image loaded");
     assert!(h.try_run().is_ok(), "the window settles within a second of frames: {:?}", ctx.repaint_causes());
 }
+
+/// Main's volume field in the Arrangement view is an element of its own, `#main-volume`: it does
+/// not paint `.arrangement`'s style as its own, and a `#main-volume` rule reaches it (#1237).
+#[test]
+fn mains_volume_field_has_an_element_of_its_own() {
+    fn fills(shape: &egui::Shape, inside: egui::Rect, out: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| fills(s, inside, out)),
+            egui::Shape::Rect(rect) if inside.contains_rect(rect.rect) => out.push(rect.fill),
+            _ => {}
+        }
+    }
+    let mut app = App::new();
+    app.set_session(Session::new(demo_project()), &[]);
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        ".arrangement { background-color: #ff0000; } #main-volume { background-color: #00ff00; }".into(),
+    ));
+    let mut h = window(app);
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    let field = h.get_by_label("Main volume").rect();
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| fills(&s.shape, field.expand(0.5), &mut seen));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!seen.contains(&egui::Color32::RED), "the panel's background stays off the field: {seen:?}");
+    assert!(seen.contains(&egui::Color32::from_rgb(0, 0xFF, 0)), "#main-volume reaches it: {seen:?}");
+}

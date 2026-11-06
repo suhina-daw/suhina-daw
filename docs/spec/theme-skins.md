@@ -385,7 +385,8 @@ under the last track keep their own fill.
 **Level bars.** Volume and pan fields of the track headers and the mixer are one level
 bar (`mixer_controls::level_bar`): the field's element is the track and `.value-fill` the
 lit part; `height` sets the thickness of either. `#arrangement-volume`,
-`#arrangement-pan`, `#mixer-volume` and `#mixer-pan` select them, and `volume.track`,
+`#arrangement-pan`, `#main-volume` (Main's row in the Arrangement view), `#mixer-volume` and
+`#mixer-pan` select them, and `volume.track`,
 `volume.fill`, `pan.track` and `pan.fill` are artwork roles. Without any of these the
 volume field is the native capsule and the pan field the native flat field.
 

@@ -484,7 +484,8 @@ pub const CONTROL_IDS: &[&str] = &[
 ];
 
 /// Level fields a theme selects by id (`#arrangement-volume`).
-pub const LEVEL_FIELDS: &[&str] = &["arrangement-volume", "arrangement-pan", "mixer-volume", "mixer-pan"];
+pub const LEVEL_FIELDS: &[&str] =
+    &["arrangement-volume", "arrangement-pan", "main-volume", "mixer-volume", "mixer-pan"];
 
 /// The element id a theme selects a scope by: documented controls and panels keep their
 /// literal ids; others get one derived from their key.
