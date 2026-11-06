@@ -3974,10 +3974,14 @@ pub(crate) fn track_at(p: &Project, params: &Value, key: &str) -> Result<TrackId
                 .ok_or_else(|| format!("track {id} does not exist").into())
         }
         Some(Value::String(name)) => {
-            if let Some(t) = p.tracks.iter().find(|t| t.name == *name) {
-                return Ok(t.id);
-            }
-            let matches: Vec<&Track> = p.tracks.iter().filter(|t| t.name.eq_ignore_ascii_case(name)).collect();
+            // An exact match wins over one that differs in case, but two exact matches are as
+            // ambiguous as two that differ in case: neither is picked for the caller.
+            let exact: Vec<&Track> = p.tracks.iter().filter(|t| t.name == *name).collect();
+            let matches = if exact.is_empty() {
+                p.tracks.iter().filter(|t| t.name.eq_ignore_ascii_case(name)).collect()
+            } else {
+                exact
+            };
             match matches.as_slice() {
                 [t] => Ok(t.id),
                 [] => Err(format!("no track named {name:?}; project.tracks lists them").into()),
