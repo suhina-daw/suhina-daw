@@ -59,6 +59,16 @@ class Internal(unittest.TestCase):
         ):
             self.assertTrue(rn.is_internal(paths), paths)
 
+    def test_titles_of_code_structure_tests_and_deps_are_internal(self):
+        for title in ("Architecture: the rest of #763, one commit each (#1149)",
+                      "Code structure: the #764 follow-ups (#1141)", "Tests: follow egui_kittest 0.37",
+                      "Deps: Bump zip from 9.0.4 to 9.0.5 (#1053)", "CI: pin every action to its commit",
+                      "Docs: regenerate INDEX.md", "Refactor: one TempoClock"):
+            self.assertTrue(rn.is_internal_title(title), title)
+        for title in ("Quick add: a palette that searches devices (#1181)", "Fixes: time selection play start",
+                      "Architecture of the mixer: sends move with a selection", "EQ: a panel with the response curve"):
+            self.assertFalse(rn.is_internal_title(title), title)
+
     def test_code_is_not_internal(self):
         for paths in (
             ["crates/engine/src/lib.rs", "docs/architecture.md"],
@@ -132,7 +142,7 @@ class Discord(unittest.TestCase):
         shown = post.count("\n- ")
         self.assertLessEqual(shown, rn.DISCORD_ITEMS)
         self.assertIn(f"…and {40 - shown} more", post)
-        self.assertTrue(post.endswith("2 internal changes (documentation, CI, scripts, tests) not listed."))
+        self.assertTrue(post.endswith("2 internal changes (documentation, CI, scripts, tests, code structure) not listed."))
 
     def test_links_the_rolling_nightly_by_default(self):
         post = rn.discord_post([], 0, "base", REPO, "v")
