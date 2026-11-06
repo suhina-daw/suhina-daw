@@ -105,6 +105,7 @@ status bar.
 | Show or hide the sample map in the main area (`view.sampleMap`; Escape on the map closes it too) | Ctrl+Alt+Shift+M |
 | Insert an empty MIDI clip over the time selection (`clip.insertMidi`) | Ctrl+Shift+M |
 | Show or hide every track's automation lanes (`view.automation`) | A |
+| Edit the selected audio clip's gain envelope on its waveform, or stop (`view.gainEnvelope`; [spec](spec/clip-panel.md#gain-envelope)): a click on the clip adds a point, a drag moves one | Alt+E |
 | Add an audio track, a MIDI track below the selected one (`track.addAudio`, `track.addMidi`) | Ctrl+T, Ctrl+Shift+T |
 | Open the sample map in a window of its own, or put it back (`view.sampleMapWindow`; [spec](spec/sample-map.md) › Where the map is shown) | Ctrl+Alt+M |
 | Search in the browser (`browser.search`; shows it when hidden). In the search field: Up and Down move through the results, Enter adds the selection to the selected track, Escape clears the search and then leaves the field | Ctrl+F |

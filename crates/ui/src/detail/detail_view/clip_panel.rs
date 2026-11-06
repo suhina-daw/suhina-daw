@@ -922,16 +922,17 @@ fn audio_part(
         let params = json!({ "bpm": bpm, "source": source.name(), "continue": more });
         actions.push(Action::new("clip.setTempo", on_clip(at, params)));
     }
-    // The gain envelope's switch: it shows the envelope on the clip's waveform in the Arrangement.
+    // Edit gain envelope: opens the envelope on the clip's waveform in the Arrangement for
+    // editing, as Alt+E and the button by the clip's name do.
     if matches!(at, ClipRef::Arrangement(..)) {
-        let on = crate::arrangement::envelope::shown(ui.ctx()) == Some(panel.clip);
+        let on = crate::arrangement::envelope::editing(ui.ctx()) == Some(panel.clip);
         let text = if panel.envelope_points > 0 {
-            format!("Gain envelope · {}", panel.envelope_points)
+            format!("Edit gain envelope · {}", panel.envelope_points)
         } else {
-            "Gain envelope".into()
+            "Edit gain envelope".into()
         };
         if toggle(ui, painter, row(y, TOGGLE), "Envelope", &text, on) {
-            crate::arrangement::envelope::set_shown(ui.ctx(), (!on).then_some(panel.clip));
+            crate::arrangement::envelope::toggle_editing(ui.ctx(), panel.clip);
         }
     }
     y + TOGGLE

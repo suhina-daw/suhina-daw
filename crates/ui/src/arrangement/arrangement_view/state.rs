@@ -359,6 +359,8 @@ pub struct ArrangementViewState {
     /// How much larger audio clips' waveforms are drawn, 1 … 16: the display only, never the
     /// sound or the clip's gain (the slider by the ruler; Ctrl+Alt+Up and Down).
     pub waveform_zoom: f32,
+    /// Edit gain envelope asked for on this clip (Alt+E): switched on the next frame.
+    pub toggle_envelope: Option<suhina_engine::model::ClipId>,
     pub waveform_appearance: crate::settings::view_settings::WaveformAppearance,
     pub audio_colour_strength: u8,
     pub header_colour_strength: u8,
@@ -475,6 +477,7 @@ impl Default for ArrangementViewState {
             name_bar_moves: true,
             grid_in_clips: true,
             waveform_zoom: 1.0,
+            toggle_envelope: None,
             waveform_appearance: crate::settings::view_settings::WaveformAppearance::default(),
             audio_colour_strength: 82,
             header_colour_strength: 82,
