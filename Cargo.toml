@@ -56,6 +56,7 @@ suhina-output = { path = "crates/output" }
 suhina-realtime = { path = "crates/realtime" }
 suhina-midi = { path = "crates/midi" }
 suhina-ui = { path = "crates/ui" }
+suhina-ui-gpu = { path = "crates/ui-gpu" }
 suhina-style = { path = "crates/style" }
 suhina-soundmap = { path = "crates/soundmap" }
 suhina-separation = { path = "crates/separation" }
@@ -123,6 +124,7 @@ suhina-session = { opt-level = 0 }
 suhina-style = { opt-level = 0 }
 suhina-theme-package = { opt-level = 0 }
 suhina-ui = { opt-level = 0 }
+suhina-ui-gpu = { opt-level = 0 }
 
 [profile.release]
 lto = "thin"

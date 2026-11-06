@@ -5,7 +5,7 @@ type: howto
 status: current
 last_verified: 2026-11-05
 covers:
-  - apps/suhina/src/liquid.rs
+  - crates/ui-gpu/src/liquid.rs
   - apps/suhina/src/main.rs
   - apps/suhina/src/theme_io.rs
   - apps/suhina-cli/src/play.rs

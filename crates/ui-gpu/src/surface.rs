@@ -9,8 +9,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use eframe::egui::{self, Color32, CornerRadius, Rect, Shape};
-use eframe::{egui_wgpu, wgpu};
+use egui::{Color32, CornerRadius, Rect, Shape};
+use egui_wgpu::wgpu;
 use suhina_ui::kit::surface::Provider;
 
 /// Floats in one fill: its rectangle and corner radii in pixels, its colour, the screen's size.
@@ -255,7 +255,7 @@ impl egui_wgpu::CallbackTrait for Fill {
 
 /// Whether the window's swapchain hands its alpha to the system's compositor, so backgrounds
 /// with alpha show the desktop. macOS's Metal layer does; so does DX12 with the swapchain made
-/// from a DirectComposition visual (`main.rs` asks for it on Windows). Otherwise a throwaway
+/// from a DirectComposition visual (the app asks for it on Windows). Otherwise a throwaway
 /// surface on the same window says whether the GPU can present premultiplied or postmultiplied
 /// alpha, the modes egui-wgpu picks for a transparent window.
 pub fn composites_alpha(gpu: &egui_wgpu::RenderState, window: impl Into<wgpu::SurfaceTarget<'static>>) -> bool {
