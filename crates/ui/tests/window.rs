@@ -1341,6 +1341,26 @@ fn the_wheel_over_a_fader_changes_the_volume_and_not_the_scroll() {
 }
 
 #[test]
+fn the_wheel_raises_a_silent_fader_from_the_bottom_of_its_scale() {
+    let mut harness = arrangement_app();
+    harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": [1], "db": "-inf" })));
+    harness.run();
+    let at = harness.get_by_label("Drums volume").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, -1.0),
+        modifiers: Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+    });
+    harness.run();
+    // -inf plus a step stayed -inf: a fader turned all the way down could not be raised.
+    let volume = harness.state().session().map(|s| s.project().channels[0].volume).unwrap_or(0.0);
+    assert!((volume - gain_of(-69.0)).abs() < 1e-9, "one tick up from the -70 dB floor: {volume}");
+}
+
+#[test]
 fn dragging_one_fader_of_a_selection_moves_every_track_in_proportion() {
     let mut harness = arrangement_app();
     harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": [1], "db": -6.0 })));

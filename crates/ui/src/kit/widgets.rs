@@ -246,7 +246,9 @@ pub fn drag_value(
             let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
             let step = -f64::from(points) / WHEEL_TICK * per_tick * fine;
             *preview = None;
-            return Drag::Done((value + step).clamp(range.0, range.1));
+            // A value off the scale (a volume at -inf) moves from the scale's end, as a drag does.
+            let from = if value.is_finite() { value } else { range.0 };
+            return Drag::Done((from + step).clamp(range.0, range.1));
         }
     }
     if response.double_clicked() {
