@@ -199,7 +199,7 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
     let notices = started.notices.clone();
     let mut renderer = Renderer::build(
         &data.project,
-        RenderInputs::from_audio(&data.audio).with_assets(&data.assets).with_plugins(started.plugins),
+        RenderInputs::from_audio(&data.audio, crate::devices()).with_assets(&data.assets).with_plugins(started.plugins),
         sample_rate,
         RenderOptions { source, ..RenderOptions::PLAYING },
     )

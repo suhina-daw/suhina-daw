@@ -14,6 +14,13 @@ use crate::commands::{CommandKind, CommandSpec, Param, ParamType, commands, para
 use crate::plugins::plugin_commands;
 use crate::{Agents, CommandError, Policy, Session};
 
+/// How [`Projects::open_path`] opens a project.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OpenOptions {
+    /// Decode the audio its clips play: off for a frontend that only reads or edits it.
+    pub audio: bool,
+}
+
 /// Projects that may be open at once; opening more is refused. Each holds its own undo history.
 pub const MAX_OPEN_PROJECTS: usize = 32;
 
@@ -63,6 +70,30 @@ pub(crate) struct Browser {
     pub(crate) sound_map_revision: Option<u64>,
 }
 
+/// How many audio devices keep an input and a default track input of their own.
+pub const MAX_DEVICE_INPUTS: usize = 64;
+
+/// Whether a track could hear `input`: none, or channels from 1 to
+/// [`suhina_model::MAX_INPUT_CHANNEL`] (a pair's right channel too), as `track.setAudioInput` takes them.
+pub(crate) fn valid_track_input(input: suhina_model::InputChannels) -> bool {
+    use suhina_model::{InputChannels, MAX_INPUT_CHANNEL};
+    match input {
+        InputChannels::None => true,
+        InputChannels::Mono(c) => (1..=MAX_INPUT_CHANNEL).contains(&c),
+        InputChannels::Stereo(c) => (1..MAX_INPUT_CHANNEL).contains(&c),
+    }
+}
+
+/// What an audio device (a sound card, by [`crate::OutputChoice::device_key`]) keeps for itself,
+/// so choosing it again brings both back (ADR 0017, Amendment: default track input).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DeviceInputs {
+    /// The input device chosen while it played (`audio.setOutput`'s `input`).
+    pub input: crate::InputChoice,
+    /// The default track input chosen for it (`audio.setTrackInput`).
+    pub track_input: suhina_model::InputChannels,
+}
+
 /// The audio and MIDI devices the open projects play through.
 #[derive(Default)]
 struct Devices {
@@ -71,6 +102,10 @@ struct Devices {
     audio: Option<std::sync::Arc<dyn crate::AudioSystem>>,
     /// The output the user chose (`audio.setOutput`, the window's settings).
     output_choice: crate::OutputChoice,
+    /// The input and the default track input each audio device keeps, by
+    /// [`crate::OutputChoice::device_key`] (ADR 0017): choosing a device again brings back its
+    /// input, and new audio tracks take its default track input.
+    device_inputs: std::collections::BTreeMap<String, DeviceInputs>,
     /// When a failed output was last opened again, so a device that keeps failing is tried
     /// every [`OUTPUT_RETRY`], not every frame.
     output_retried: Option<std::time::Instant>,
@@ -114,7 +149,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.list",
         label: "List the open projects in tab order with id, name, source and whether each is active",
         params: &[],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Read),
         run: list,
         policy: Policy::DEFAULT,
     },
@@ -122,7 +157,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.switch",
         label: "Make an open project the active one; the previous one stops playing",
         params: &[PROJECT],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: switch,
         policy: Policy::DEFAULT,
     },
@@ -130,7 +165,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.next",
         label: "Make the next open project active, wrapping around after the last",
         params: &[],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: next,
         policy: Policy::DEFAULT,
     },
@@ -138,7 +173,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.previous",
         label: "Make the previous open project active, wrapping around before the first",
         params: &[],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: previous,
         policy: Policy::DEFAULT,
     },
@@ -146,7 +181,7 @@ static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "project.close",
         label: "Close an open project and its undo history; a neighbour becomes active if it was",
         params: &[PROJECT],
-        kind: CommandKind::Projects,
+        kind: CommandKind::on(crate::commands::Target::Projects, crate::commands::Effect::Change),
         run: close,
         policy: Policy {
             critical: true,
@@ -244,10 +279,91 @@ impl Projects {
     }
 
     /// Chooses the output players open on from now on; [`Projects::reopen_output`] moves the
-    /// playing one there.
+    /// playing one there. The device keeps the input chosen with it, for the next time it is
+    /// chosen ([`Projects::remembered_input`]).
     pub fn set_output_choice(&mut self, choice: crate::OutputChoice) {
+        let key = choice.device_key();
+        let inputs = &mut self.devices.device_inputs;
+        if inputs.len() < MAX_DEVICE_INPUTS || inputs.contains_key(&key) {
+            inputs.entry(key).or_default().input = choice.input.clone();
+        }
         self.devices.output_choice = choice;
         self.devices.output_watched = None;
+        self.share_track_input();
+    }
+
+    /// The input device `device` was last chosen with, when it was chosen before.
+    pub fn remembered_input(&self, device: &crate::OutputChoice) -> Option<crate::InputChoice> {
+        self.devices.device_inputs.get(&device.device_key()).map(|kept| kept.input.clone())
+    }
+
+    /// The default track input of the audio device chosen: none while Input is off or when
+    /// none was chosen for this device.
+    pub fn track_input(&self) -> suhina_model::InputChannels {
+        let choice = &self.devices.output_choice;
+        if choice.input == crate::InputChoice::Off {
+            return suhina_model::InputChannels::None;
+        }
+        self.devices.device_inputs.get(&choice.device_key()).map(|kept| kept.track_input).unwrap_or_default()
+    }
+
+    /// The input and default track input every audio device keeps, by
+    /// [`crate::OutputChoice::device_key`]; the settings keep them.
+    pub fn device_inputs(&self) -> &std::collections::BTreeMap<String, DeviceInputs> {
+        &self.devices.device_inputs
+    }
+
+    /// Takes what each audio device keeps (the settings, at start): at most
+    /// [`MAX_DEVICE_INPUTS`] devices. The device chosen keeps the input it is chosen with.
+    pub fn set_device_inputs(&mut self, inputs: std::collections::BTreeMap<String, DeviceInputs>) {
+        self.devices.device_inputs = inputs
+            .into_iter()
+            .filter(|(key, _)| !key.trim().is_empty())
+            .map(|(key, mut kept)| {
+                if !valid_track_input(kept.track_input) {
+                    kept.track_input = suhina_model::InputChannels::None;
+                }
+                (key.trim().to_lowercase(), kept)
+            })
+            .take(MAX_DEVICE_INPUTS)
+            .collect();
+        let choice = self.devices.output_choice.clone();
+        self.set_output_choice(choice);
+    }
+
+    /// Chooses the audio input new audio tracks take from now on, and armed tracks that hear
+    /// none, on the audio device chosen; the tracks that are there keep theirs, and another
+    /// device keeps its own. Refused while Input is off, since nothing opens a microphone
+    /// unasked (ADR 0017). Returns the device's key.
+    pub fn set_track_input(&mut self, input: suhina_model::InputChannels) -> Result<String, CommandError> {
+        if !valid_track_input(input) {
+            return Err(
+                format!("a default track input is channels from 1 to {}", suhina_model::MAX_INPUT_CHANNEL).into()
+            );
+        }
+        let choice = &self.devices.output_choice;
+        if choice.input == crate::InputChoice::Off {
+            return Err("no input device is chosen: choose one first (audio.setOutput's input)".into());
+        }
+        let key = choice.device_key();
+        let chosen_input = choice.input.clone();
+        let inputs = &mut self.devices.device_inputs;
+        if inputs.len() >= MAX_DEVICE_INPUTS && !inputs.contains_key(&key) {
+            return Err(format!("inputs are kept for at most {MAX_DEVICE_INPUTS} audio devices").into());
+        }
+        let kept = inputs.entry(key.clone()).or_default();
+        kept.input = chosen_input;
+        kept.track_input = input;
+        self.share_track_input();
+        Ok(key)
+    }
+
+    /// Gives every open project the default track input of the input device chosen.
+    fn share_track_input(&mut self) {
+        let input = self.track_input();
+        for open in &mut self.tabs.open {
+            open.session.set_default_input(input);
+        }
     }
 
     /// Opens the chosen output for project `id` (the active one when `None`), with its
@@ -353,6 +469,7 @@ impl Projects {
             let source = session.source().map(Path::to_path_buf);
             session.set_trusted(self.trusted_audio_for(source.as_deref()));
         }
+        session.set_default_input(self.track_input());
         self.tabs.open.push(Open { id, name, session });
         self.activate(id);
         Ok(id)
@@ -590,6 +707,39 @@ impl Projects {
     /// (`docs/spec/missing-files.md` › Project file boundaries).
     pub fn trusted_audio(&mut self) -> suhina_media::Trusted {
         self.trusted_audio_for(None)
+    }
+
+    /// Opens the project at `path` in a session, a `.suhina` file read or a Live Set imported,
+    /// and with `options.audio` decodes the audio its clips play ([`Projects::load_audio`]). The
+    /// one way the window, the CLI and the MCP server open a project from disk (#764 › 3). The
+    /// session is not added to the open projects: the caller adds it ([`Projects::add`]) or shows
+    /// it. Returns the session and what could not be read.
+    pub fn open_path(&mut self, path: &Path, options: OpenOptions) -> Result<(Session, Vec<String>), CommandError> {
+        let (mut session, mut warnings) = Session::open(path)?;
+        if options.audio {
+            warnings.extend(self.load_audio(&mut session));
+        }
+        Ok((session, warnings))
+    }
+
+    /// Decodes the audio `session`'s project plays, from its folder and, outside it, from what
+    /// this Suhina trusts ([`Projects::trusted_audio_for`]: the library's folders, the project's
+    /// own folders and the files the person saved; `docs/spec/missing-files.md` › Project file
+    /// boundaries). Every frontend trusts the same (#764 › 3, decided 2026-11-02). The session keeps
+    /// the audio and what it trusts, for files decoded later. Returns the files that could not be
+    /// read.
+    pub fn load_audio(&mut self, session: &mut Session) -> Vec<String> {
+        let folder = session
+            .audio_folder()
+            .map(Path::to_path_buf)
+            .or_else(|| session.source().and_then(Path::parent).map(Path::to_path_buf))
+            .unwrap_or_else(|| PathBuf::from("."));
+        let source = session.source().map(Path::to_path_buf);
+        let trusted = self.trusted_audio_for(source.as_deref());
+        let (audio, warnings) = suhina_media::load_project_audio_trusted(session.project(), &folder, &trusted);
+        session.set_trusted(trusted);
+        session.set_audio(audio);
+        warnings
     }
 
     /// [`Projects::trusted_audio`] for the project saved as `project`: with the folders outside
@@ -853,7 +1003,7 @@ pub fn commands_markdown() -> String {
          `suhina-cli commands --markdown`; do not edit by hand. A workflow regenerates it on `main`\n\
          after every merge, so pull requests leave it alone. The CLI, the MCP server and the UI run\n\
          these same commands ([ADR 0002](decisions/0002-commands.md), [`mcp.md`](mcp.md)).\n\n\
-         | Command | Kind | What it does | Parameters |\n\
+         | Command | Runs on, does | What it does | Parameters |\n\
          |---|---|---|---|\n",
     );
     let rows =

@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
-use suhina_model::{Note, Scale, ScaleMode};
+use suhina_model::{Note, Notes, Scale, ScaleMode};
 
 use crate::commands::Args;
 use crate::notes::{
@@ -116,10 +116,11 @@ fn whole_clip(params: &Value) -> bool {
 }
 
 /// The notes the command acts on: the named ones, or every note of the clip, in rising order.
-fn chosen(params: &Value, count: usize) -> Result<Vec<usize>, CommandError> {
+fn chosen(params: &Value, notes: &Notes) -> Result<Vec<usize>, CommandError> {
     if !whole_clip(params) {
-        return indices(params, count);
+        return indices(params, notes);
     }
+    let count = notes.len();
     if count > MAX_NOTES_PER_COMMAND {
         return Err(format!("at most {MAX_NOTES_PER_COMMAND} notes in one command, got {count}").into());
     }
@@ -226,7 +227,7 @@ pub(crate) fn set_muted(session: &mut Session, params: &Value) -> Result<Value, 
         Some(value) => Some(value.as_bool().ok_or("muted must be true or false")?),
     };
     edit_notes(&mut session.project, params, |notes| {
-        let named = indices(params, notes.len())?;
+        let named = indices(params, notes)?;
         let mut states = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get_mut(index).ok_or("a note is missing")?;
@@ -283,7 +284,7 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
         return Ok(json!({ "notes": [], "seed": seed }));
     }
     edit_notes(&mut session.project, params, move |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let mut rng = Rng::new(seed);
         // The offset each start got, so a later note of a chord moves with the first.
         let mut starts: Vec<(f64, f64)> = Vec::new();
@@ -323,7 +324,7 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
 
 /// Shortens a note that now runs into the next note on its key, where either of the two was moved
 /// (`touched`): its end goes to the next one's start, a hundredth of a beat long at least.
-fn keep_off_the_next(notes: &mut [Note], touched: &[usize]) {
+fn keep_off_the_next(notes: &mut Notes, touched: &[usize]) {
     if touched.is_empty() {
         return;
     }
@@ -355,7 +356,7 @@ pub(crate) fn fit_to_scale(session: &mut Session, params: &Value) -> Result<Valu
         return Ok(json!({ "notes": [], "moved": 0 }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let mut moved = 0;
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -378,7 +379,7 @@ pub(crate) fn invert(session: &mut Session, params: &Value) -> Result<Value, Com
         return Ok(json!({ "notes": [] }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let (mut lowest, mut highest) = (u8::MAX, 0u8);
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -406,7 +407,7 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
         return Ok(json!({ "notes": [] }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let mut to = f64::NEG_INFINITY;
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -434,7 +435,7 @@ pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, Com
         return Ok(json!({ "notes": [], "changed": 0 }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         // Time, then index: the same note always takes the same place in the order.
         let mut order = Vec::with_capacity(named.len());
         for &index in &named {
@@ -476,7 +477,7 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
         return Ok(json!({ "notes": [] }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         // Multiplying by one is exact for nothing but zero: leave the notes as they are, so a
         // factor of 1 changes nothing and marks no undo step.
         if factor == 1.0 {
@@ -519,7 +520,7 @@ pub(crate) fn randomize_velocity(session: &mut Session, params: &Value) -> Resul
         return Ok(json!({ "notes": [], "seed": seed }));
     }
     edit_notes(&mut session.project, params, move |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let mut rng = Rng::new(seed);
         for &index in &named {
             let note = notes.get_mut(index).ok_or("a note is missing")?;
@@ -539,7 +540,7 @@ pub(crate) fn ramp_velocity(session: &mut Session, params: &Value) -> Result<Val
         return Ok(json!({ "notes": [], "count": 0 }));
     }
     edit_notes(&mut session.project, params, |notes| {
-        let named = chosen(params, notes.len())?;
+        let named = chosen(params, notes)?;
         let mut order = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;

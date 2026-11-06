@@ -153,7 +153,7 @@ fn warp_changes_keep_music_playing_and_fit_beats_tracks_global_tempo() {
             samples: (0..96000).map(|i| (i as f32 * std::f32::consts::TAU * 220. / 48000.).sin() * 0.2).collect(),
         }),
     );
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &pool, 48000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(&project, &pool, 48000, suhina_session::devices()).unwrap();
     let mut controller = renderer.controller();
     let mut live = controller.take_live_input().unwrap();
     let mut session = Session::new(project);
@@ -232,7 +232,7 @@ fn sampler_loading_is_atomic_undoable_persistent_and_relinkable() {
     let (pool, warnings) = suhina_media::load_project_audio(&loaded, &folder);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(pool.files[file].frames(), 4800);
-    let mut renderer = suhina_engine::Renderer::stopped(&loaded, &pool, 48000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(&loaded, &pool, 48000, suhina_session::devices()).unwrap();
     let mut controller = renderer.controller();
     let mut live = controller.take_live_input().unwrap();
     let mut playback = Session::new(loaded.clone());
@@ -359,8 +359,9 @@ fn dynamic_manual_slices_round_trip_validate_and_group_undo() {
     assert_eq!(*s.project(), before);
     s.execute("edit.redo", &json!({})).unwrap();
     assert_eq!(*s.project(), changed);
-    s.execute("device.setSampleSlices", &json!({"track":1,"device":0,"points":[0.8,0.2,0.2]})).unwrap();
-    s.execute("device.setSampleSlices", &json!({"track":1,"device":0,"points":[0.9,0.2],"continue":true})).unwrap();
+    s.execute("device.setSampleSlices", &json!({"track":1,"device":0,"points":[0.8,0.2,0.2],"gesture":"slices"}))
+        .unwrap();
+    s.execute("device.setSampleSlices", &json!({"track":1,"device":0,"points":[0.9,0.2],"gesture":"slices"})).unwrap();
     assert_eq!(s.project().channels[0].devices[0].sample_slices().unwrap(), [0.2, 0.9]);
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(*s.project(), changed);
@@ -395,7 +396,7 @@ fn manual_map_updates_reach_live_playback_and_keep_the_held_voice() {
         "source.wav".into(),
         Arc::new(suhina_engine::AudioData { sample_rate: 48000, channels: 1, samples: vec![1.; 48000] }),
     );
-    let mut renderer = suhina_engine::Renderer::stopped(&project, &pool, 48000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(&project, &pool, 48000, suhina_session::devices()).unwrap();
     let mut controller = renderer.controller();
     let mut live = controller.take_live_input().unwrap();
     let mut session = Session::new(project);

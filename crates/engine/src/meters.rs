@@ -411,12 +411,12 @@ impl Levels {
         for slot in 0..self.tracks.len() {
             let touched = self.touched.get_mut(slot).map(std::mem::take).unwrap_or(false);
             if !touched {
-                writer.measure(Meter::Track(slot), &[], frames);
+                writer.measure(MeterTarget::Track(slot), &[], frames);
                 continue;
             }
             let at = slot * MAX_BLOCK * 2;
             if let Some(block) = self.buffer.get_mut(at..at + frames * 2) {
-                writer.measure(Meter::Track(slot), block, frames);
+                writer.measure(MeterTarget::Track(slot), block, frames);
                 block.fill(0.0);
             }
         }
@@ -425,7 +425,7 @@ impl Levels {
 
 /// Which meter a block is measured for.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Meter {
+pub(crate) enum MeterTarget {
     Main,
     Track(usize),
 }
@@ -491,7 +491,7 @@ impl MeterWriter {
 
     /// Measures `block` (interleaved stereo; empty for silence) of `frames` frames for `meter`
     /// and publishes the result. Never allocates.
-    pub(crate) fn measure(&mut self, meter: Meter, block: &[f32], frames: usize) {
+    pub(crate) fn measure(&mut self, meter: MeterTarget, block: &[f32], frames: usize) {
         if frames == 0 {
             return;
         }
@@ -513,8 +513,8 @@ impl MeterWriter {
             }
         }
         let (state, row) = match meter {
-            Meter::Main => (&mut self.main, &self.monitor.main),
-            Meter::Track(slot) => match (self.tracks.get_mut(slot), self.monitor.tracks.get(slot)) {
+            MeterTarget::Main => (&mut self.main, &self.monitor.main),
+            MeterTarget::Track(slot) => match (self.tracks.get_mut(slot), self.monitor.tracks.get(slot)) {
                 (Some(state), Some(row)) => (state, row),
                 _ => return,
             },

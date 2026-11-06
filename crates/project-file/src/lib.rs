@@ -41,7 +41,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 8;
+pub const VERSION: u64 = 9;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -113,7 +113,7 @@ pub fn from_json(text: &str) -> Result<Project, ProjectFileError> {
     if version == 0 || version > VERSION {
         return Err(format!("the project is version {version}; this Suhina reads up to version {VERSION}").into());
     }
-    let project = read_project(root.get("project").ok_or("the project is missing")?)?;
+    let project = read_project(root.get("project").ok_or("the project is missing")?, version)?;
     project.validate().map_err(|errors| {
         let list: Vec<String> = errors.iter().take(5).map(ToString::to_string).collect();
         format!("the project does not hold together: {}", list.join("; "))
@@ -255,6 +255,7 @@ fn project_value(p: &Project) -> Value {
     }).collect::<Vec<_>>() });
     // Left out when there are none, so a project without markers is written as before.
     if !p.arrangement.markers.is_empty() {
+        // A marker's id lives only while the project is open, so it is not written (#763 › 1).
         arrangement["markers"] =
             p.arrangement.markers.iter().map(|m| json!({ "beat": number(m.beat), "name": m.name })).collect();
     }
@@ -572,7 +573,7 @@ fn audio_value(a: &AudioRegion) -> Value {
     })
 }
 
-/// A clip's audio state (version 8 on): gain, envelope, transpose, warp and the tempo's source.
+/// A clip's audio state (version 9 on): gain, envelope, transpose, warp and the tempo's source.
 fn clip_audio_value(a: &ClipAudio) -> Value {
     let mut out = json!({
         "gain": number(a.gain),
@@ -655,7 +656,7 @@ fn clip_value(c: &Clip) -> Value {
     out
 }
 
-/// A launch mapping; its scene counts from 1, as in the commands.
+/// A launch mapping; its scene counts from 0, as in the commands (from version 8, #763 › 1).
 fn mapping_value(m: &LaunchMapping) -> Value {
     let mut out = json!({ "source": m.source.name(), "target": m.target.kind() });
     if let Some(map) = out.as_object_mut() {
@@ -663,7 +664,7 @@ fn mapping_value(m: &LaunchMapping) -> Value {
             map.insert("track".into(), json!(track.0));
         }
         if let Some(scene) = m.target.scene() {
-            map.insert("scene".into(), json!(scene.saturating_add(1)));
+            map.insert("scene".into(), json!(scene));
         }
     }
     out
@@ -894,7 +895,8 @@ fn time_signature_changes(t: &Obj) -> Result<Vec<TimeSignatureChange>, ProjectFi
         .collect()
 }
 
-fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
+/// The project of a file of `version`.
+fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError> {
     let p = object(value, "project")?;
     let transport = match p.get("transport") {
         None | Some(Value::Null) => Transport::default(),
@@ -923,7 +925,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 time_signature: signature,
                 loop_range,
                 loop_enabled,
-                tempo_changes: tempo_changes(t)?,
+                tempo_changes: tempo_changes(t)?.into(),
                 time_signature_changes: time_signature_changes(t)?,
             }
         }
@@ -943,7 +945,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
         .enumerate()
         .map(|(i, v)| read_content(v, &format!("project.contents[{i}]")))
         .collect::<Result<Vec<_>, _>>()?;
-    // Before version 8 an audio region held the gain, transpose and warp its clips play with; each
+    // Before version 9 an audio region held the gain, transpose and warp its clips play with; each
     // clip without an audio state of its own takes its content's (ADR 0001 › Amendment: per-clip
     // audio).
     let legacy = Legacy {
@@ -979,7 +981,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 if beat < 0.0 {
                     return Err(format!("{at}.beat: expected a beat from 0 on").into());
                 }
-                markers.push(Marker { beat, name: text(m, "name", &at)? });
+                markers.push(Marker::new(beat, text(m, "name", &at)?));
             }
             let mut takes = Vec::new();
             for (i, v) in list(a, "takes", "project.arrangement")?.iter().enumerate() {
@@ -999,7 +1001,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                     color: read_color(take.get("color"), &at)?,
                 });
             }
-            let mut arrangement = Arrangement { lanes, markers, takes };
+            let mut arrangement = Arrangement { lanes, markers: markers.into(), takes };
             arrangement.sort_markers();
             arrangement
         }
@@ -1037,7 +1039,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
             }
             let mut mappings: Vec<LaunchMapping> = Vec::new();
             for (i, v) in list(l, "mappings", "project.launcher")?.iter().enumerate() {
-                let mapping = read_mapping(v, &format!("project.launcher.mappings[{i}]"))?;
+                let mapping = read_mapping(v, &format!("project.launcher.mappings[{i}]"), version)?;
                 if mappings.iter().any(|m| m.source == mapping.source) {
                     return Err(ProjectFileError(format!(
                         "project.launcher.mappings[{i}]: {} is mapped twice",
@@ -1062,7 +1064,8 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
     };
     // A file written before ids, or an object added by hand without one: the objects without an
     // id get the next ones in document order, so the same file always reads with the same ids.
-    // A stale `next_id` moves past the ids in use.
+    // A stale `next_id` moves past the ids in use. Markers, automation points and tempo changes
+    // got new ids as their lists were built: the file holds none (#763 › 1).
     project.assign_ids().map_err(|e| ProjectFileError(format!("project: {e}")))?;
     Ok(project)
 }
@@ -1231,13 +1234,15 @@ fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileErr
             let at = format!("{at}.points[{j}]");
             let p = object(p, &at)?;
             let curve = read_curve(p, &at)?;
-            points.push(AutomationPoint { beat: float(p, "beat", &at)?, value: float(p, "value", &at)?, curve });
+            let (beat, value) = (float(p, "beat", &at)?, float(p, "value", &at)?);
+            points.push(AutomationPoint { beat, value, curve });
         }
         // In beat order, as the model keeps them; points at the same beat keep their order.
         points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        // Each point gets a new id: the file holds none (#763 › 1).
         automation.push(AutomationLane {
             param: required_text(lane, "param", &at)?,
-            points,
+            points: points.into(),
             enabled: flag(lane, "enabled", true, &at)?,
         });
     }
@@ -1371,7 +1376,7 @@ fn read_mapped_device(group: &DeviceGroup, x: &Obj, at: &str) -> Result<MappedDe
     }
 }
 
-/// A content, and for one with audio written before version 8, the audio state its region held.
+/// A content, and for one with audio written before version 9, the audio state its region held.
 fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudio>), ProjectFileError> {
     let c = object(value, at)?;
     let mut lanes = Vec::new();
@@ -1402,7 +1407,7 @@ fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudi
                         muted: flag(n, "muted", false, &at)?,
                     });
                 }
-                LaneData::Notes(notes)
+                LaneData::Notes(notes.into())
             }
             (None, Some(audio)) => {
                 let (region, state) = read_audio(audio, &format!("{at}.audio"))?;
@@ -1436,7 +1441,7 @@ fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudi
     Ok((content, legacy))
 }
 
-/// An audio region, and the audio state it held when the file is older than version 8 (it has a
+/// An audio region, and the audio state it held when the file is older than version 9 (it has a
 /// `warped`, `stretch`, `warp_markers`, `gain` or `transpose`).
 fn read_audio(value: &Value, at: &str) -> Result<(AudioRegion, Option<ClipAudio>), ProjectFileError> {
     let a = object(value, at)?;
@@ -1457,7 +1462,7 @@ fn read_audio(value: &Value, at: &str) -> Result<(AudioRegion, Option<ClipAudio>
     Ok((region, state))
 }
 
-/// A clip's audio state: the `audio` of a clip, or the fields of a region before version 8.
+/// A clip's audio state: the `audio` of a clip, or the fields of a region before version 9.
 fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, ProjectFileError> {
     let stretch = match a.get("stretch") {
         None | Some(Value::Null) => None,
@@ -1516,12 +1521,12 @@ fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, Projec
     })
 }
 
-/// Most warp markers the clips of a file before version 8 are given in all, copied from their
+/// Most warp markers the clips of a file before version 9 are given in all, copied from their
 /// contents' regions: a small file of many clips on one region with many markers would otherwise
 /// copy them for every clip.
 const MAX_LEGACY_MARKERS: usize = 1_000_000;
 
-/// The audio states the regions of a file before version 8 held, by content, and how many more
+/// The audio states the regions of a file before version 9 held, by content, and how many more
 /// warp markers the clips that take them may copy.
 struct Legacy {
     states: HashMap<ContentId, ClipAudio>,
@@ -1542,7 +1547,7 @@ impl Legacy {
     }
 }
 
-/// A clip; one without an `audio` state of its own (a file older than version 8) takes the one its
+/// A clip; one without an `audio` state of its own (a file older than version 9) takes the one its
 /// content's region held, from `legacy`.
 fn read_clip(value: &Value, at: &str, legacy: &Legacy) -> Result<Clip, ProjectFileError> {
     let c = object(value, at)?;
@@ -1644,9 +1649,9 @@ fn read_follow(c: &Obj, at: &str) -> Result<FollowAction, ProjectFileError> {
 }
 
 /// A launch mapping: `source` (`key:Q`, `note:1:60`), `target` (slot, scene or stop) and the
-/// `track` and 1-based `scene` the target needs. The track need not exist: a mapping whose track
-/// is gone is kept, unused.
-fn read_mapping(value: &Value, at: &str) -> Result<LaunchMapping, ProjectFileError> {
+/// `track` and `scene` the target needs, the scene from 0 (from version 8, #763 › 1; from 1
+/// before). The track need not exist: a mapping whose track is gone is kept, unused.
+fn read_mapping(value: &Value, at: &str, version: u64) -> Result<LaunchMapping, ProjectFileError> {
     let m = object(value, at)?;
     let name = match m.get("source") {
         Some(Value::String(name)) => name.as_str(),
@@ -1656,6 +1661,9 @@ fn read_mapping(value: &Value, at: &str) -> Result<LaunchMapping, ProjectFileErr
         .ok_or_else(|| ProjectFileError(format!("{at}.source: unknown source {name:?}")))?;
     let scene = || -> Result<usize, ProjectFileError> {
         let number: usize = whole(m, "scene", at)?;
+        if version >= 8 {
+            return Ok(number);
+        }
         number.checked_sub(1).ok_or_else(|| ProjectFileError(format!("{at}.scene: scenes count from 1")))
     };
     let track = || whole(m, "track", at).map(TrackId);

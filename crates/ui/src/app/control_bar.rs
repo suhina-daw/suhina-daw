@@ -563,8 +563,12 @@ impl App {
                 // The drag's last value joins the step its moves made.
                 let bpm = snap_tempo(self.tempo_grab, bpm);
                 self.tempo_grab = None;
-                let more = self.tempo_sent.take().is_some();
-                actions.push(Action::new("transport.setTempo", json!({ "bpm": bpm, "continue": more })));
+                let dragged = self.tempo_sent.take().is_some();
+                let mut params = json!({ "bpm": bpm });
+                if dragged {
+                    params["gesture"] = crate::interaction::commands::gesture("tempo");
+                }
+                actions.push(Action::new("transport.setTempo", params));
             }
             // While it moves the project follows, a few times a second, in one undo step, so
             // clips that follow the tempo change length as it moves (#916).
@@ -572,9 +576,9 @@ impl App {
                 let bpm = snap_tempo(self.tempo_grab, bpm);
                 let now = ui.input(|i| i.time);
                 if self.tempo_sent.is_none_or(|sent| now - sent >= TEMPO_SEND) {
-                    let more = self.tempo_sent.is_some();
                     self.tempo_sent = Some(now);
-                    actions.push(Action::new("transport.setTempo", json!({ "bpm": bpm, "continue": more })));
+                    let gesture = crate::interaction::commands::gesture("tempo");
+                    actions.push(Action::new("transport.setTempo", json!({ "bpm": bpm, "gesture": gesture })));
                 }
             }
             Drag::None => {}

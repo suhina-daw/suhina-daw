@@ -36,7 +36,7 @@ fn looped(start: f64, end: f64, enabled: bool) -> (Project, AudioPool) {
 
 /// Plays `project` from the start for `frames` frames, `block` frames at a time.
 fn play(project: &Project, pool: &AudioPool, frames: usize, block: usize) -> Vec<f32> {
-    let mut renderer = Renderer::stopped(project, pool, SR).unwrap();
+    let mut renderer = Renderer::stopped(project, pool, SR, suhina_device_registry::factory()).unwrap();
     renderer.set_offline(true);
     renderer.handle(LaunchCommand::Play);
     let mut out = vec![0.0f32; frames * 2];
@@ -49,12 +49,24 @@ fn play(project: &Project, pool: &AudioPool, frames: usize, block: usize) -> Vec
 #[test]
 fn a_looped_span_renders_like_its_golden_file() {
     let (project, pool) = looped(1.0, 2.0, true);
-    let render = left(&render_launches(&project, &pool, SR, &[(0.0, LaunchCommand::Play)], 3.0).unwrap());
+    let render = left(
+        &render_launches(&project, &pool, SR, &[(0.0, LaunchCommand::Play)], 3.0, suhina_device_registry::factory())
+            .unwrap(),
+    );
     assert_golden("loop-1-2", &render);
 
     // Up to the loop end it is the clip as it plays without a loop; after it, each pass is the
     // clip from beat 1 to beat 2 again, from its first frame.
-    let once = left(&render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 256, None).unwrap());
+    let once = left(
+        &render_offline_from(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            256,
+            None,
+        )
+        .unwrap(),
+    );
     assert_eq!(max_diff(&render[..2 * BEAT], &once[..2 * BEAT]), 0.0);
     for pass in 0..4 {
         let at = 2 * BEAT + pass * BEAT;
@@ -77,11 +89,26 @@ fn the_wrap_does_not_depend_on_the_block_size() {
 fn looping_off_or_a_whole_render_plays_on_past_the_loop_end() {
     let (on, pool) = looped(1.0, 2.0, true);
     let (off, _) = looped(1.0, 2.0, false);
-    let once = left(&render_offline_from(&on, RenderInputs::from_audio(&pool), SR, 256, None).unwrap());
+    let once = left(
+        &render_offline_from(&on, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 256, None)
+            .unwrap(),
+    );
     assert_eq!(once.len(), 4 * BEAT, "the whole arrangement, once");
     assert_eq!(max_diff(&play(&off, &pool, 4 * BEAT, 333), &once), 0.0);
     assert_eq!(
-        max_diff(&left(&render_offline_from(&off, RenderInputs::from_audio(&pool), SR, 256, None).unwrap()), &once),
+        max_diff(
+            &left(
+                &render_offline_from(
+                    &off,
+                    RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+                    SR,
+                    256,
+                    None
+                )
+                .unwrap()
+            ),
+            &once
+        ),
         0.0
     );
 }
@@ -89,8 +116,17 @@ fn looping_off_or_a_whole_render_plays_on_past_the_loop_end() {
 #[test]
 fn a_playhead_moved_past_the_loop_end_plays_on() {
     let (project, pool) = looped(1.0, 2.0, true);
-    let once = left(&render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 256, None).unwrap());
-    let mut renderer = Renderer::stopped(&project, &pool, SR).unwrap();
+    let once = left(
+        &render_offline_from(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            256,
+            None,
+        )
+        .unwrap(),
+    );
+    let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
     renderer.set_offline(true);
     renderer.handle(LaunchCommand::SetPosition { beat: 2.5 });
     renderer.handle(LaunchCommand::Play);
@@ -104,7 +140,7 @@ fn a_playhead_moved_past_the_loop_end_plays_on() {
 #[test]
 fn the_playhead_reads_inside_the_loop_and_stop_returns_to_the_play_start_marker() {
     let (project, pool) = looped(1.0, 2.0, true);
-    let mut renderer = Renderer::stopped(&project, &pool, SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
     let monitor = renderer.monitor();
     renderer.handle(LaunchCommand::SetPosition { beat: 0.5 });
     renderer.handle(LaunchCommand::Play);

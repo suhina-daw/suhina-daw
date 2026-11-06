@@ -80,7 +80,7 @@ impl ProjectBuilder {
 
     /// A content `id` of `length` beats holding `notes`, on whichever track plays it.
     pub fn notes(self, id: u32, name: &str, length: f64, notes: Vec<Note>) -> Self {
-        self.content(id, name, length, LaneData::Notes(notes))
+        self.content(id, name, length, LaneData::Notes(notes.into()))
     }
 
     /// A content `id` of `length` beats playing `region`.

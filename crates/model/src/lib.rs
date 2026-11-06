@@ -16,6 +16,7 @@ mod build;
 mod clip_audio;
 mod comping;
 mod groups;
+mod id_list;
 mod ids;
 pub mod names;
 mod tempo;
@@ -50,7 +51,8 @@ pub fn is_project_file(path: &std::path::Path) -> bool {
 pub fn is_preset_file(path: &std::path::Path) -> bool {
     path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(".preset.suhina"))
 }
-pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, SceneId};
+pub use id_list::{Entry, IdList, ListId};
+pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, NoteId, PointId, SceneId, TempoPointId};
 
 mod launch;
 mod mapping;
@@ -121,7 +123,8 @@ pub struct Transport {
     /// Whether playback repeats the loop region.
     pub loop_enabled: bool,
     /// Tempo changes after beat 0, in order of beat.
-    pub tempo_changes: Vec<TempoPoint>,
+    /// In beat order, each with its id (#763 › 1).
+    pub tempo_changes: IdList<TempoPointId, TempoPoint>,
     /// Time-signature changes after bar 0, in order of bar.
     pub time_signature_changes: Vec<TimeSignatureChange>,
 }
@@ -133,7 +136,7 @@ impl Default for Transport {
             time_signature: TimeSignature { numerator: 4, denominator: 4 },
             loop_range: None,
             loop_enabled: false,
-            tempo_changes: Vec::new(),
+            tempo_changes: IdList::new(),
             time_signature_changes: Vec::new(),
         }
     }
@@ -435,13 +438,15 @@ pub struct AutomationLane {
     /// The parameter, by the id `Device::params` uses, or a mixer parameter of a channel
     /// (`volume`, `pan`, `mute`).
     pub param: String,
-    pub points: Vec<AutomationPoint>,
+    /// In beat order, each with its id (#763 › 1).
+    pub points: IdList<PointId, AutomationPoint>,
     /// Whether the lane plays. A manual change to the parameter turns it off, so the value set
     /// by hand holds until the lane is turned on again.
     pub enabled: bool,
 }
 
-/// A value at an arrangement beat, in the parameter's own unit or range.
+/// A value at an arrangement beat, in the parameter's own unit or range. Which point it is, its
+/// id, is held by its lane ([`AutomationLane::points`]), not by the value.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AutomationPoint {
     pub beat: f64,
@@ -493,9 +498,16 @@ pub struct ContentLane {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LaneData {
-    Notes(Vec<Note>),
+    /// The notes, each with an id while the project is open (#1182): [`Notes`].
+    Notes(Notes),
     Audio(AudioRegion),
 }
+
+/// A content's notes, each with its id (#1182). The id belongs to the list, not the [`Note`]: a
+/// copied note is a new one, a moved note keeps its id, and the file holds none
+/// ([`IdList`], ADR 0025 › Decided since). A content copied whole keeps its notes' ids, which is
+/// no clash, since a note is always named with its clip.
+pub type Notes = IdList<NoteId, Note>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Note {
@@ -883,7 +895,8 @@ impl FollowKind {
 pub struct Arrangement {
     pub lanes: Vec<ArrangementLane>,
     /// Named positions on the timeline, sorted by beat ([`Arrangement::sort_markers`]).
-    pub markers: Vec<Marker>,
+    /// In beat order, each with its id (#763 › 1).
+    pub markers: IdList<MarkerId, Marker>,
     /// Recorded passes kept under their tracks (take lanes), oldest first: what a recording
     /// into the arrangement played, pass by pass, so parts of each can be put together on the
     /// track (comping, ADR 0001 › Amendment: take lanes). They do not play.
@@ -913,6 +926,14 @@ impl Arrangement {
     pub fn insert_marker(&mut self, marker: Marker) -> usize {
         let at = self.markers.partition_point(|m| m.beat <= marker.beat);
         self.markers.insert(at, marker);
+        at
+    }
+
+    /// Puts back a marker taken out of the markers ([`IdList::take`]), keeping its id, after any
+    /// at its beat, and returns its index.
+    pub fn put_marker(&mut self, marker: Entry<MarkerId, Marker>) -> usize {
+        let at = self.markers.partition_point(|m| m.beat <= marker.value.beat);
+        self.markers.put(at, marker);
         at
     }
 }
@@ -1173,8 +1194,8 @@ impl Project {
         let scene_ids = unique(scene_ids, ValidationError::DuplicateScene, &mut errors);
         let device_ids = self.all_devices().map(|d| d.id).filter(|id| id.is_some());
         let device_ids = unique(device_ids, ValidationError::DuplicateDevice, &mut errors);
-        // The four kinds share one counter, so a value names at most one object of any of them
-        // (ADR 0025 › 2): a lane and a clip with the same value are refused as well.
+        // The kinds the file holds share one counter, so a value names at most one object of any
+        // of them (ADR 0025 › 2): a lane and a clip with the same value are refused as well.
         let mut kinds: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
         let values = clip_ids
             .iter()

@@ -152,7 +152,7 @@ fn warp_turned_on_marks_the_audio_s_end_at_the_song_s_tempo_now() {
 fn warp_turned_on_for_one_of_two_clips_of_a_content_changes_that_clip_only() {
     let mut p = project();
     p.transport.tempo_bpm = 120.0;
-    p.transport.tempo_changes = vec![TempoPoint { beat: 20.0, bpm: 90.0, ramp: false }];
+    p.transport.tempo_changes = vec![TempoPoint { beat: 20.0, bpm: 90.0, ramp: false }].into();
     p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(3))).unwrap().clips.push(Clip::new(
         ContentId(1),
         24.0,
@@ -183,6 +183,8 @@ fn warp_turned_on_for_one_of_two_clips_of_a_content_changes_that_clip_only() {
 #[test]
 fn warp_turned_on_again_keeps_the_clip_s_markers_and_leaves_the_other_clip() {
     let mut p = project();
+    p.transport.tempo_bpm = 120.0;
+    p.transport.tempo_changes = vec![TempoPoint { beat: 20.0, bpm: 90.0, ramp: false }].into();
     let markers = vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 8.0, audio_time: 4.0 }];
     let lane = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(3))).unwrap();
     lane.clips[0].audio.warp_markers = markers.clone();
@@ -219,14 +221,14 @@ fn warp_turned_on_in_a_slot_marks_the_audio_s_end_at_the_song_s_tempo_not_the_ar
     // beat 2) does not reach it, and its 4 s are 8 beats at the song's 120.
     let mut p = project();
     p.transport.tempo_bpm = 120.0;
-    p.transport.tempo_changes = vec![TempoPoint { beat: 2.0, bpm: 60.0, ramp: false }];
+    p.transport.tempo_changes = vec![TempoPoint { beat: 2.0, bpm: 60.0, ramp: false }].into();
     p.launcher.scenes = vec![Scene::default()];
     p.launcher.columns = vec![LauncherColumn {
         track: TrackId(3),
         slots: vec![Slot { clip: Some(Clip::new(ContentId(1), 0.0, 8.0)), has_stop: true }],
     }];
     let mut session = Session::new(p);
-    run(&mut session, "clip.setAudio", json!({ "track": 3, "scene": 1, "warp": true })).unwrap();
+    run(&mut session, "clip.setAudio", json!({ "track": 3, "scene": 0, "warp": true })).unwrap();
     let slot = session.project().launcher.columns[0].slots[0].clip.clone().unwrap();
     assert_eq!(slot.content, ContentId(1), "no copy: the warp is the slot clip's own");
     let markers = slot.audio.warp_markers;

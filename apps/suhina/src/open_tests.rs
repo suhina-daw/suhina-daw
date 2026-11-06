@@ -18,7 +18,9 @@ fn a_project_blocked_by_a_native_panel_is_not_remembered() {
     Session::new(Default::default()).save(&path, false).unwrap();
     let mut app = App::new();
     let mut session = Session::new(Default::default());
-    let mut renderer = suhina_engine::Renderer::stopped(session.project(), &Default::default(), 48_000).unwrap();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(session.project(), &Default::default(), 48_000, suhina_session::devices())
+            .unwrap();
     session.attach_player(suhina_session::Player::with_output(renderer.controller(), None, std::sync::Arc::new(Panel)));
     let active = app.projects_mut().add(session, None).unwrap();
     let mut window = Window {

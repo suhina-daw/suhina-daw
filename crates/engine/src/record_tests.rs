@@ -27,7 +27,7 @@ fn notes(receiver: &mut RecordReceiver) -> Vec<RecordedNote> {
 /// A stopped renderer of one track with an instrument, armed, and its live input and recorder.
 fn armed() -> (Renderer, crate::Controller, crate::LiveSender, RecordReceiver) {
     let project = project(Vec::new(), 4.0, vec![device("fm-synth", &[])]);
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let mut controller = renderer.controller();
     let live = controller.take_live_input().unwrap();
     let recorder = controller.take_recorder().unwrap();
@@ -147,7 +147,7 @@ fn the_sustain_pedal_ends_a_recorded_note_when_it_comes_up() {
 #[test]
 fn the_count_in_clicks_its_beats_then_starts_the_transport() {
     let project = project(Vec::new(), 4.0, Vec::new());
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let mut controller = renderer.controller();
     // One bar of 4/4 at 120 bpm: four beats of half a second.
     controller.send(LaunchCommand::CountIn { beats: 4.0, bar_beats: 4.0 }).unwrap();
@@ -178,7 +178,7 @@ fn the_count_in_clicks_its_beats_then_starts_the_transport() {
 #[test]
 fn a_stop_during_the_count_in_ends_it_and_a_count_of_nothing_starts_at_once() {
     let project = project(Vec::new(), 4.0, Vec::new());
-    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let mut controller = renderer.controller();
     controller.send(LaunchCommand::SetPosition { beat: 8.0 }).unwrap();
     controller.send(LaunchCommand::CountIn { beats: 8.0, bar_beats: 4.0 }).unwrap();
@@ -251,7 +251,8 @@ fn a_loopback_records_the_output_back_on_its_own_frames() {
     // output's latency, the input device's and the block waiting in the ring. Recorded, each
     // frame of it lines up with the frame it was played at, to the frame.
     for (delay, output, input) in [(BLOCK * 3 + 17, 500u32, 29u32), (BLOCK, 0, 0), (BLOCK * 9, 2048, 0)] {
-        let mut renderer = Renderer::stopped(&input_track(), &AudioPool::new(), SR).unwrap();
+        let mut renderer =
+            Renderer::stopped(&input_track(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
         let (mut ring, consumer) = rtrb::RingBuffer::new(BLOCK * 64);
         renderer.set_audio_input(consumer, 1, Arc::new(AtomicU64::new(0)));
         let mut controller = renderer.controller();
@@ -298,7 +299,8 @@ fn a_loopback_records_the_output_back_on_its_own_frames() {
 
 #[test]
 fn input_is_recorded_only_from_armed_tracks_while_recording_and_playing() {
-    let mut renderer = Renderer::stopped(&input_track(), &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::stopped(&input_track(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let (mut ring, consumer) = rtrb::RingBuffer::new(BLOCK * 64);
     renderer.set_audio_input(consumer, 2, Arc::new(AtomicU64::new(0)));
     let mut controller = renderer.controller();
@@ -334,7 +336,8 @@ fn input_is_recorded_only_from_armed_tracks_while_recording_and_playing() {
 
 #[test]
 fn a_full_ring_counts_what_it_dropped() {
-    let mut renderer = Renderer::stopped(&input_track(), &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::stopped(&input_track(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let (_ring, consumer) = rtrb::RingBuffer::new(16);
     renderer.set_audio_input(consumer, 1, Arc::new(AtomicU64::new(0)));
     let mut controller = renderer.controller();
@@ -375,7 +378,8 @@ fn a_jump_of_the_playhead_while_recording_goes_out_with_its_frame_and_beats() {
 #[test]
 fn the_last_frames_played_are_recorded_after_a_stop() {
     let (output, input) = (BLOCK as u32 * 2, 0u32);
-    let mut renderer = Renderer::stopped(&input_track(), &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::stopped(&input_track(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     let (mut ring, consumer) = rtrb::RingBuffer::new(BLOCK * 64);
     renderer.set_audio_input(consumer, 1, Arc::new(AtomicU64::new(0)));
     let mut controller = renderer.controller();

@@ -180,12 +180,22 @@ thread without allocating (a scan of at most 64 slots).
   new value's ratio; a track's pan is applied live over its whole range (its gains, and its
   post-fader sends', are built centred and the pan's equal-power factors multiply them); each is
   smoothed like a fader (a one-pole low pass at about 25 Hz). Where that cannot do it (a volume
-  or pan on a lane, a group, a send that starts from silence), the message is refused and the
-  edit builds a graph as before. A knob of a track that is not heard (muted, outside a solo)
-  changes nothing played, and keeps the playing graph. A branch of a device group at the top of
-  a chain takes the same path for its volume, pan, mute and solo (`MIXER_BRANCH`, #763 › 4): the
-  running group keeps each branch's values and moves its smoothed gains to the new ones; a group
-  inside another still builds a graph.
+  or pan on its own lane, a group's volume, a send that starts from silence), the message is
+  refused and the edit builds a graph as before; for a send, only its first move does, and the
+  rest of the drag are messages. A knob of a track that is not heard (muted, outside a solo)
+  changes nothing played, and keeps the playing graph. A branch of a device group takes the same
+  path for its volume, pan, mute and solo (`MIXER_BRANCH`, #763 › 4): the running group keeps
+  each branch's values and moves its smoothed gains to the new ones; the message names the group
+  by its number among the channel's groups, counted depth first (`group_number`), so a group
+  inside another takes it too.
+- More of the mixer takes messages (#763 › 4, the rest). A track whose volume or mute is on a
+  lane pans live, its pan not being on one. The main fader is a message: with no chain on the
+  main channel, its volume is still built into every track's gains and a move scales the whole
+  mix by its ratio, the metronome's click left out of it (delayed for latency compensation on its
+  own while the fader moves); with a chain, the chain's fader takes it as a track's does.
+  Mute and solo of a track stay a new graph: a click is one graph, not one per frame, and as
+  messages they would keep a muted track's voices running, which changes which voices a full
+  voice pool steals.
 - Offline rendering stays the oracle (rule 4): tests swap graphs inside an offline render and
   compare against renders of the edited project.
 

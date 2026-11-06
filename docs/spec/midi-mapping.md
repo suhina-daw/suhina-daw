@@ -3,7 +3,7 @@ description: What a MIDI controller can do in Suhina - sources, targets, ranges,
 read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, launch keys, launcher.mappings, Map keys, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback, surface program, Lua runner
 type: spec
 status: planned
-last_verified: 2026-11-05
+last_verified: 2026-11-06
 ---
 
 # MIDI controllers and mapping
@@ -209,7 +209,7 @@ empty:
 ```json
 "controller_mappings": [
   { "profile": "knob-box", "source": "cc:1:23", "target": { "command": "device.setParam", "track": 4, "device": 1, "param": "cutoff" }, "takeover": "jump" },
-  { "port": "USB MIDI 1", "source": "note:1:60", "target": { "command": "clip.launch", "track": 2, "scene": 1 } }
+  { "port": "USB MIDI 1", "source": "note:1:60", "target": { "command": "clip.launch", "track": 2, "scene": 0 } }
 ]
 ```
 
@@ -229,7 +229,7 @@ become entries of this list when it is built
 ([ADR 0019 › Amendment: launch keys are controller mappings](../decisions/0019-midi-controllers-and-mapping.md#amendment-launch-keys-are-controller-mappings-2026-11-02)):
 
 ```json
-{ "source": "key:Q", "target": { "command": "clip.launch", "track": 2, "scene": 1 } },
+{ "source": "key:Q", "target": { "command": "clip.launch", "track": 2, "scene": 0 } },
 { "source": "note:10:36", "target": { "command": "scene.launch", "scene": 3 } },
 { "source": "key:Space", "target": { "command": "track.stop", "track": 2 } }
 ```

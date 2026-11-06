@@ -13,9 +13,7 @@ use serde_json::json;
 use suhina_engine::{AudioPool, LiveEvent, Renderer};
 use suhina_model::Project;
 use suhina_session::audio::Opened;
-use suhina_session::{
-    AudioSystem, CommandKind, LiveInput, MidiSystem, OutputChoice, Player, Projects, Session, midi_commands,
-};
+use suhina_session::{AudioSystem, LiveInput, MidiSystem, OutputChoice, Player, Projects, Session, midi_commands};
 
 use crate::support::run;
 
@@ -76,7 +74,7 @@ impl AudioSystem for Stand {
         previous: Option<Player>,
     ) -> Result<Opened, String> {
         drop(previous);
-        let mut renderer = Renderer::stopped(project, audio, SR).unwrap();
+        let mut renderer = Renderer::stopped(project, audio, SR, suhina_session::devices()).unwrap();
         let player = Player::new(renderer.controller(), None);
         self.renderers.lock().unwrap().push(renderer);
         Ok(Opened { player, notice: None, plugins_kept: true })
@@ -122,7 +120,7 @@ fn armed(projects: &mut Projects) -> Vec<bool> {
 fn midi_commands_are_listed_with_their_kind() {
     let ids: Vec<&str> = midi_commands().iter().map(|c| c.id).collect();
     assert_eq!(ids, ["midi.inputs", "midi.setInput"]);
-    assert!(midi_commands().iter().all(|c| c.kind == CommandKind::Audio));
+    assert!(midi_commands().iter().all(|c| c.kind.target == suhina_session::Target::Audio));
     let listed = suhina_session::all_commands();
     for id in ["midi.inputs", "midi.setInput", "track.setArm"] {
         assert!(listed.as_array().unwrap().iter().any(|c| c["id"] == id), "{id}");

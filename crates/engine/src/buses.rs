@@ -36,7 +36,7 @@ pub(crate) fn build(
     sample_rate: u32,
     plugins: &mut Plugins,
     column_of: impl Fn(TrackId) -> u32,
-    assets: &crate::DeviceAssets,
+    assets: (&crate::DeviceAssets, &dyn suhina_device_sdk::DeviceFactory),
     source: Option<TrackId>,
 ) -> (Vec<Chain>, u32) {
     // Every track with devices has a chain, a silent one too (muted, or not soloed): its
@@ -166,9 +166,10 @@ pub(crate) fn build(
         chain.mix = automation::channel_of(project, chain.track)
             .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus, f64::from(sample_rate)));
         // A track's pan applies live (its gains centred, the pan as factors a knob's turn moves),
-        // unless mix lanes carry it; a group's pan does not apply (as for a group without devices).
+        // unless a lane carries it, also beside a volume or mute lane (#763 › 4); a group's pan
+        // does not apply (as for a group without devices).
         let live_pan = automation::channel_of(project, chain.track)
-            .filter(|_| !is_bus && chain.mix.is_none())
+            .filter(|_| !is_bus && !chain.mix.as_ref().is_some_and(MixLanes::has_pan))
             .map(|c| if c.pan.is_finite() { c.pan.clamp(-1.0, 1.0) } else { 0.0 });
         let post = gains_until(project, chain.track, target.map(|(_, ch)| ch), !is_bus && live_pan.is_none())
             .unwrap_or((0.0, 0.0));
@@ -288,7 +289,7 @@ fn main_chain(
     audio: &crate::AudioPool,
     sample_rate: u32,
     plugins: &mut Plugins,
-    assets: &crate::DeviceAssets,
+    assets: (&crate::DeviceAssets, &dyn suhina_device_sdk::DeviceFactory),
 ) -> Option<Chain> {
     if !main_runs_chain(project) {
         return None;
@@ -300,6 +301,10 @@ fn main_chain(
     chain.mix = MixLanes::new(main, frames_per_beat, true, f64::from(sample_rate));
     let volume = if main.mute || !main.volume.is_finite() { 0.0 } else { main.volume.max(0.0) };
     chain.set_main_post(volume as f32);
+    // A fader move takes the chain's live factor, unless a lane carries the volume.
+    chain.built_volume = (!main.mute && !main.automated(suhina_model::automation::VOLUME))
+        .then_some(main.volume)
+        .filter(|v| v.is_finite() && *v > 0.0);
     chain.is_bus = true;
     Some(chain)
 }

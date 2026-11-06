@@ -19,7 +19,10 @@ Every change a user makes to a project is a command (AGENTS.md rule 6). The regi
    and part of `project.*` in `projects.rs` and `backup.rs`. `NAMESPACES` lists them all.
 2. **Add a `CommandSpec`** to that `COMMANDS`: `id` in `area.verb` form (stable: agents call it),
    a one-line `label`, `params` built with `param`/`optional` and a `ParamType` (shared ones such
-   as `CLIPS` and `MARKER` are constants beside them), `kind`, `run`, and `policy`:
+   as `CLIPS`, `MARKER` and `POINT` are constants beside them; `ParamType::Item` takes an index or `{"id": n}`), `kind`, `run`, and `policy`. `kind` is
+   what it runs on and what it does (#764 › 12): `CommandKind::EDIT`, `READ`, `HISTORY` or
+   `TRANSPORT` on a project, or `CommandKind::on(Target::Library, Effect::Change)` and the like
+   for what is Suhina's rather than a project's. A drag's command takes `GESTURE`.
    - `Policy::DEFAULT`: heard, so the playing graph is rebuilt after it;
    - `Policy::UNHEARD`: changes only what is shown (a name, a colour, a marker);
    - `Policy::CRITICAL`: a backup is written just before it;

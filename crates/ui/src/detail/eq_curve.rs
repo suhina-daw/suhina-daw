@@ -259,24 +259,23 @@ fn curve_points(display: Rect, curve: &[Band]) -> Vec<Pos2> {
         .collect()
 }
 
-/// The edited values as `device.setParam` commands, all but the last one continuous so a drag
-/// is one undo step. `device` is the panel's address's `target` — the index on the track, or
-/// the path through groups.
+/// The edited values as `device.setParam` commands, all in `gesture`, so an edit of several
+/// values and a drag are one undo step each: the window ends the gesture on mouse up (#1146).
+/// `device` is the panel's address's `target` — the index on the track, or the path through
+/// groups.
 fn push_edits(
     actions: &mut Vec<Action>,
     edits: Vec<(&GraphParameter, f64)>,
     track: TrackId,
     device: &serde_json::Value,
     gesture: &str,
-    dragged: bool,
 ) {
-    let count = edits.len();
-    for (index, (parameter, value)) in edits.into_iter().enumerate() {
+    for (parameter, value) in edits {
         actions.push(Action::new(
             "device.setParam",
             json!({
                 "track": track.0, "device": device, "param": parameter.id, "value": value,
-                "continuous": index + 1 < count || dragged, "gesture": gesture
+                "gesture": gesture
             }),
         ));
     }
@@ -603,7 +602,7 @@ fn draw_dots(
                     edits.push((parameter, band.gain));
                 }
             }
-            push_edits(actions, edits, track, &address.target, "eq-curve-dot", response.dragged());
+            push_edits(actions, edits, track, &address.target, "eq-curve-dot");
         }
         if !held {
             ui.ctx().data_mut(|d| d.remove::<[f32; 2]>(state_id));
@@ -723,7 +722,7 @@ fn draw_strip(
     next = (next + f64::from(keys) * 0.01 * fine).clamp(0.0, 1.0);
     if next != at || response.double_clicked() || response.drag_stopped() {
         let value = if response.double_clicked() { parameter.default } else { denormalized(parameter, next) };
-        push_edits(actions, vec![(parameter, value)], track, &address.target, "eq-curve-strip", response.dragged());
+        push_edits(actions, vec![(parameter, value)], track, &address.target, "eq-curve-strip");
     }
     if !held {
         ui.ctx().data_mut(|d| d.remove::<f64>(state_id));
@@ -792,7 +791,7 @@ fn draw_type_menus(
         if let Some(kind) = picked.filter(|kind| *kind != band.kind)
             && let Some(parameter) = parameter_by_field(parameters, selection.0, index, "Type")
         {
-            push_edits(actions, vec![(parameter, kind as f64)], track, &address.target, "eq-curve-type", false);
+            push_edits(actions, vec![(parameter, kind as f64)], track, &address.target, "eq-curve-type");
         }
     }
 }
@@ -869,7 +868,7 @@ fn draw_numbers(
             {
                 edits.push((parameter, 1.0));
             }
-            push_edits(actions, edits, track, &address.target, "eq-curve-number", false);
+            push_edits(actions, edits, track, &address.target, "eq-curve-number");
             selection.1 = index;
         }
     }

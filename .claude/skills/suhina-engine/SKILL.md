@@ -18,12 +18,16 @@ files; tests hand it projects and audio. Before finishing, the checks of
    `audio`, `clip`, `scene`, `slot`, `tempo`, `with` for anything else, then `build`). A test
    signal: `suhina_test_support::sine`; measures: `peak`, `rms`.
 3. **Render:**
-   - the arrangement: `suhina_engine::render_offline(&project, sample_rate, block_frames)`, or
-     `render_offline_from` with `RenderInputs` (audio, plug-ins) and `RenderOptions` (one node of
-     the track tree);
+   - every renderer takes the device factory, and none has a default (#1147): in the engine's
+     own tests `suhina_device_registry::factory()` (a dev-dependency), elsewhere
+     `suhina_session::devices()`;
+   - the arrangement: `suhina_engine::render_offline(&project, sample_rate, block_frames,
+     devices)`, or `render_offline_from` with `RenderInputs` (`new(devices)`,
+     `from_audio(&audio, devices)`, then assets and plug-ins) and `RenderOptions` (one node of the
+     track tree);
    - the launcher: `suhina_engine::render_launches(&project, &audio, sample_rate, &[(seconds,
-     LaunchCommand::..)], seconds)`, the same path a live `Controller` drives;
-   - step by step: `Renderer::stopped(&project, &audio, sample_rate)`, then
+     LaunchCommand::..)], seconds, devices)`, the same path a live `Controller` drives;
+   - step by step: `Renderer::stopped(&project, &audio, sample_rate, devices)`, then
      `renderer.handle(LaunchCommand::..)` and `renderer.process(&mut block)` a fixed number of
      times. Never against the clock or an audio device.
    A low sample rate (8 kHz) keeps renders small.

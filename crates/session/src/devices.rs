@@ -295,6 +295,25 @@ pub(crate) fn follow_instruments(session: &mut Session, before: &suhina_model::P
     }
 }
 
+/// An instrument added with a preset names its track after the preset, not the device: a track
+/// [`follow_instruments`] just named after the instrument ("# FM Synth") takes the preset's
+/// name ("# Bass"). Runs after `device.add`, in the same undo step; a name the user chose stays.
+pub(crate) fn follow_preset(session: &mut Session, params: &Value, result: &Value) {
+    let (Some(preset), Some(id)) = (result["preset"].as_str(), result["id"].as_str()) else { return };
+    let Some(info) = suhina_device_registry::info(id).filter(|i| i.role == Role::Instrument) else { return };
+    let Ok(track) = crate::commands::track_id(&session.project, params) else { return };
+    let (from, to) = (suhina_model::names::new_track_name(&info.name), suhina_model::names::new_track_name(preset));
+    if preset.trim().is_empty() || !session.project.track(track).is_some_and(|t| t.name == from) {
+        return;
+    }
+    if let Some(t) = session.project.tracks.iter_mut().find(|t| t.id == track) {
+        t.name.clone_from(&to);
+    }
+    if let Some(channel) = session.project.channel_of_track_mut(track) {
+        channel.name = to;
+    }
+}
+
 /// Takes the instrument `replaced` names out of `devices`; the place the new one goes.
 fn take_out(devices: &mut Vec<Device>, replaced: Option<&(usize, String)>, position: usize) -> usize {
     match replaced {
@@ -1092,7 +1111,7 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     let absolute = crate::files::absolute(std::path::Path::new(path));
     let absolute_text = absolute.display().to_string();
     let asset = session.load_device_file(&kind, &absolute_text).map_err(CommandError)?;
-    let name = asset.name(&absolute).unwrap_or_default();
+    let name = suhina_device_registry::asset_name(&asset, &absolute).unwrap_or_default();
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
@@ -1412,7 +1431,7 @@ pub(crate) fn set_automation(session: &mut Session, params: &Value) -> Result<Va
     let name = if plugin { id.to_string() } else { param.to_string() };
     device.automation.retain(|lane| if plugin { param_id(&lane.param) != Some(id) } else { lane.param != name });
     if !points.is_empty() {
-        device.automation.push(AutomationLane { param: name.clone(), points, enabled: true });
+        device.automation.push(AutomationLane { param: name.clone(), points: points.into(), enabled: true });
     }
     let param = if plugin { json!(id) } else { json!(name) };
     Ok(json!({ "device": index, "param": param, "points": count }))

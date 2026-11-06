@@ -19,8 +19,9 @@ Styles:
 A change is a commit on main's first-parent line, so it is one pull request, titled "Area: what
 changed (#123)": a squash merge carries that title, and a merge commit ("Merge pull request #123
 from owner/branch") carries it as the first line of its message body (MERGE). Changes that touch only documentation, CI,
-scripts and tests (INTERNAL) are counted, not listed: they change nothing in the programs. Standard library
-only; reads git, never the network.
+scripts and tests (INTERNAL), and changes whose title says they are code structure, tests,
+dependencies or repository work (INTERNAL_TITLES), are counted, not listed: a user notices
+nothing of them. Standard library only; reads git, never the network.
 """
 
 from __future__ import annotations
@@ -32,6 +33,14 @@ import sys
 
 # Paths that never change the programs: a change touching only these is internal.
 INTERNAL = re.compile(r"^(docs/|\.github/|scripts/|corpus/)|(^|/)tests/|\.md$|^(LICENSE|NOTICE)$")
+# Titles that say the change is not something a user notices, by the area word before the colon
+# (docs/workflow.md › Pull request titles): code structure, tests, dependencies, repository work.
+INTERNAL_TITLES = re.compile(
+    r"^(Architecture|Code structure|Refactor|Refactoring|Tests?|CI|Deps|Dependencies|Docs|"
+    r"Documentation|Rules|Chore|Repository|Contributors|Release notes|Workflows?|Scripts|Clippy|"
+    r"Lint|Fmt|Build|Revert)\s*(\([^)]*\))?\s*:",
+    re.IGNORECASE,
+)
 # The section of ROADMAP.md that lists what works, one bullet per feature.
 WORKS_NOW = "## What works now"
 # Discord rejects longer messages.
@@ -51,6 +60,12 @@ def is_internal(paths: list[str]) -> bool:
     """True when every path is documentation, CI, a script or a test. No paths (an empty commit) counts
     as internal too."""
     return all(INTERNAL.search(path) for path in paths)
+
+
+def is_internal_title(title: str) -> bool:
+    """True when the title's area word says the change is code structure, tests, dependencies or
+    repository work, which a user does not notice even when it touches the programs."""
+    return INTERNAL_TITLES.match(title) is not None
 
 
 def title_of(subject: str, body: str) -> str:
@@ -163,7 +178,7 @@ def internal_line(count: int) -> str:
     if count == 0:
         return ""
     noun = "change" if count == 1 else "changes"
-    return f"{count} internal {noun} (documentation, CI, scripts, tests) not listed."
+    return f"{count} internal {noun} (documentation, CI, scripts, tests, code structure) not listed."
 
 
 def nightly_notes(listed: list[str], internal: int, base: str | None, repo: str) -> str:
@@ -251,7 +266,7 @@ def main(argv: list[str]) -> int:
     listed: list[str] = []
     internal = 0
     for title, paths in changes(base, args.head):
-        if is_internal(paths):
+        if is_internal(paths) or is_internal_title(title):
             internal += 1
         else:
             listed.append(title)

@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 
 use egui::{Align2, Color32, CursorIcon, Id, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
-use suhina_engine::model::{Clip, ClipId, LaneData, Note, Project, Scale, TrackId};
+use suhina_engine::model::{Clip, ClipId, LaneData, Note, NoteId, Notes, Project, Scale, TrackId};
 
 use crate::detail::detail_view::ClipRef;
 use crate::detail::midi_tools::{ToolSettings, ToolsTab, Transform};
@@ -195,9 +195,11 @@ pub fn show(
     let Context { options, keymap, copied, playhead, start_marker, seeks } = cx;
     let scale = options.toolbar_size.scale();
     let fresh = state.shown.as_ref() != Some(&clip.address);
+    let sent_from = actions.len();
     if fresh {
         state.shown = Some(clip.address.clone());
         state.selected.clear();
+        state.selected_ids = None;
         state.gesture = None;
         state.playing_key = None;
         state.key_live = None;
@@ -207,7 +209,13 @@ pub fn show(
     }
     // Keys run before the piano roll is drawn, and their commands after it: notes a paste or a
     // duplicate selected this frame exist from the next frame on.
-    if !std::mem::take(&mut state.selecting_new) {
+    let selecting_new = std::mem::take(&mut state.selecting_new);
+    if !selecting_new {
+        // A copy taken back brings back the selection before it, by index; any other selection
+        // follows its notes when another writer moved them (#1182).
+        if !state.copy_taken_back(&clip.notes) {
+            state.follow_selection(&clip.notes);
+        }
         state.settle_selection(&clip.notes);
     }
     // The toolbar along the top; the editor under it. The toolbar's height follows Settings ›
@@ -241,6 +249,7 @@ pub fn show(
     let lane = Rect::from_min_max(Pos2::new(keys.right(), keys.bottom()), area.max);
     toolbar(ui, toolbar_rect, ToolbarCx { clip, keymap, copied, scale }, state, actions);
     if grid_rect.width() <= 1.0 || grid_rect.height() <= 1.0 {
+        state.remember_selection(&clip.notes, selecting_new || sent_edit(&actions[sent_from..]));
         return;
     }
     // A newly shown clip fits the width with its notes in the middle; until the rows are scrolled
@@ -657,6 +666,13 @@ pub fn show(
     // Notes the audition sounds go on now and off a moment later.
     let track = clip.address.get("track").and_then(Value::as_u64);
     state.audition_frame(ui, track, actions);
+    state.remember_selection(&clip.notes, selecting_new || sent_edit(&actions[sent_from..]));
+}
+
+/// Whether `sent` holds an edit of the clip's notes: the piano roll set the selection for the
+/// notes as they are after it (#1182).
+fn sent_edit(sent: &[Action]) -> bool {
+    sent.iter().any(|a| a.id.starts_with("note."))
 }
 
 #[cfg(test)]

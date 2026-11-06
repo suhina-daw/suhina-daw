@@ -20,7 +20,7 @@ fn with_scale(mut p: Project, scale: Option<Scale>) -> Project {
 
 /// `p` rendered offline in blocks of 512 frames.
 fn render(p: &Project) -> Vec<f32> {
-    render_offline(p, SR, 512).unwrap_or_else(|e| panic!("{e}"))
+    render_offline(p, SR, 512, suhina_device_registry::factory()).unwrap_or_else(|e| panic!("{e}"))
 }
 
 /// The instrument after the pitch effect sounds as if the transposed keys had been written in
@@ -36,7 +36,8 @@ fn pitch_before_an_instrument_transposes_the_notes_it_plays() {
     assert!(peak(&out) > 0.05);
     assert!(max_diff(&out, &reference) < 1e-6, "{}", max_diff(&out, &reference));
     for size in [1, 64, 333, 4_096] {
-        let other = render_offline(&pitched, SR, size).unwrap_or_else(|e| panic!("{e}"));
+        let other =
+            render_offline(&pitched, SR, size, suhina_device_registry::factory()).unwrap_or_else(|e| panic!("{e}"));
         assert!(max_diff(&other, &reference) < 1e-6, "block {size}: {}", max_diff(&other, &reference));
     }
 }
@@ -51,7 +52,8 @@ fn without_an_instrument_the_changed_notes_play_as_the_tracks_sine_tones() {
     assert!(peak(&reference) > 0.05);
     for size in [1, 64, 333, 4_096] {
         let pitched = project(notes.clone(), 2.0, vec![device("pitch", &[("pitch", 12.0)])]);
-        let out = render_offline(&pitched, SR, size).unwrap_or_else(|e| panic!("{e}"));
+        let out =
+            render_offline(&pitched, SR, size, suhina_device_registry::factory()).unwrap_or_else(|e| panic!("{e}"));
         assert!(max_diff(&out, &reference) < 1e-5, "block {size}: {}", max_diff(&out, &reference));
     }
     // The tones come before the audio effects, as an instrument would.
@@ -126,7 +128,8 @@ fn launched_clips_go_through_pitch_with_their_scale() {
         (2.0, LaunchCommand::StopColumn { column: 0 }),
     ];
     let launch = |p: &Project| {
-        render_launches(p, &crate::AudioPool::new(), SR, &commands, 3.0).unwrap_or_else(|e| panic!("{e}"))
+        render_launches(p, &crate::AudioPool::new(), SR, &commands, 3.0, suhina_device_registry::factory())
+            .unwrap_or_else(|e| panic!("{e}"))
     };
     let pitch = device("pitch", &[("followScale", 1.0), ("pitchDegrees", -1.0)]);
     let minor = Scale::new(9, ScaleMode::Minor);
@@ -142,7 +145,8 @@ fn launched_clips_go_through_pitch_with_their_scale() {
 fn a_held_note_ends_at_its_key_when_pitch_moves_under_it() {
     let lane = AutomationLane {
         param: "pitch".into(),
-        points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(2.0, 0.0), AutomationPoint::new(2.0, 12.0)],
+        points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(2.0, 0.0), AutomationPoint::new(2.0, 12.0)]
+            .into(),
         enabled: true,
     };
     let mut pitch = device("pitch", &[]);

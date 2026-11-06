@@ -153,8 +153,13 @@ fn render_a_block(renderer: &mut suhina_engine::Renderer) {
 /// menu deletes it.
 #[test]
 fn markers_are_added_jumped_to_and_deleted_from_the_marker_row() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     let markers = |h: &Harness<'static, App>| -> Vec<(f64, String)> {
@@ -233,8 +238,13 @@ fn markers_are_added_jumped_to_and_deleted_from_the_marker_row() {
 /// and undo takes an edit back (`docs/spec/arrangement-editing.md` › Loop region).
 #[test]
 fn a_loop_region_is_drawn_resized_moved_and_toggled_in_the_loop_brace_row() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let looped = |h: &Harness<'static, App>| {
         let transport = h.state().session().map(|s| s.project().transport.clone()).unwrap_or_default();
@@ -282,8 +292,13 @@ fn a_loop_region_is_drawn_resized_moved_and_toggled_in_the_loop_brace_row() {
 
 #[test]
 fn a_click_on_the_ruler_moves_the_play_start_marker_on_the_grid() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     let ruler = harness.get_by_label("Ruler").rect();
@@ -340,8 +355,13 @@ fn a_click_on_the_ruler_moves_the_play_start_marker_on_the_grid() {
 
 #[test]
 fn play_starts_from_the_selected_clip_as_the_setting_says() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     let stop = |harness: &mut Harness<'static, App>, renderer: &mut suhina_engine::Renderer| {
@@ -1335,8 +1355,13 @@ fn ctrl_l_loops_the_time_selection_even_with_clips_in_it_selected() {
 /// its start when the button goes up, so Play starts there (#937).
 #[test]
 fn a_painted_time_selection_moves_the_play_start_to_its_start() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
@@ -1377,8 +1402,13 @@ fn a_painted_time_selection_moves_the_play_start_to_its_start() {
 /// Select All afterwards makes the selection span every clip (#937).
 #[test]
 fn a_time_selection_painted_while_playing_moves_only_the_marker() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
@@ -1575,12 +1605,70 @@ fn the_edit_keys_copy_cut_paste_and_duplicate_selected_tracks() {
     assert_eq!(after.get(drums + 1).map(String::as_str), Some("Bass"), "{after:?}");
 }
 
+/// A header click, then a time painted over the lanes: the edit keys act on the painted time,
+/// not on the track (#1199). A header click after the paint gives them back to the tracks.
+#[test]
+fn a_time_painted_after_a_header_click_takes_the_edit_keys_from_the_track() {
+    let mut harness = arrangement_app();
+    let names = |h: &Harness<'static, App>| {
+        h.state()
+            .session()
+            .map(|s| s.project().tracks.iter().map(|t| t.name.clone()).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let drums_length = |h: &Harness<'static, App>| {
+        h.state().session().map_or(0.0, |s| {
+            let p = s.project();
+            let drums = p.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id);
+            p.arrangement
+                .lanes
+                .iter()
+                .filter(|l| l.track == drums)
+                .flat_map(|l| &l.clips)
+                .map(|c| c.length)
+                .sum::<f64>()
+        })
+    };
+    let before = names(&harness);
+    let length = drums_length(&harness);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    assert!(harness.state().arrangement().track_focus);
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    let (from, to) = (egui::pos2(clip.left() - 64.0, clip.center().y), egui::pos2(clip.left() + 32.0, clip.center().y));
+    harness.hover_at(from);
+    harness.run();
+    harness.drag_at(from);
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert!(harness.state().arrangement().time_selection().is_some(), "time was painted");
+    assert!(!harness.state().arrangement().track_focus, "the paint took the edit keys");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::X);
+    harness.run();
+    assert_eq!(names(&harness), before, "no track was cut");
+    assert!(drums_length(&harness) < length - 1e-6, "the painted time was cut out of the clip");
+    // A header click afterwards: Ctrl+X cuts the track again (#919).
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::X);
+    harness.run();
+    assert!(!names(&harness).contains(&"Drums".to_string()), "{:?}", names(&harness));
+}
+
 /// While playing, a click in a clip's body moves the play start marker and leaves playback
 /// where it is; the ruler's seek waits for the next bar (#657).
 #[test]
 fn a_click_in_the_tracks_while_playing_moves_the_marker_not_playback() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     harness.get_by_label("Play").click();
@@ -1609,6 +1697,50 @@ fn a_click_in_the_tracks_while_playing_moves_the_marker_not_playback() {
     render_a_block(&mut renderer);
     assert_eq!(monitor.pending_jump(), Some(16.0));
     assert!(monitor.beat() < 4.0, "{}", monitor.beat());
+}
+
+/// While playing, Ctrl+E splits the clicked clip where it was clicked, not at the moving
+/// playhead (#1186).
+#[test]
+fn ctrl_e_while_playing_splits_where_the_clip_was_clicked() {
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
+    let mut harness = arrangement_app_with_engine(&mut renderer);
+    let monitor = renderer.monitor();
+    let starts = |h: &Harness<'static, App>| {
+        h.state().session().map_or(Vec::new(), |s| {
+            let p = s.project();
+            let drums = p.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id);
+            p.arrangement.lanes.iter().filter(|l| l.track == drums).flat_map(|l| &l.clips).map(|c| c.start).collect()
+        })
+    };
+    let before = starts(&harness).len();
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    for _ in 0..10 {
+        render_a_block(&mut renderer);
+    }
+    let body = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center();
+    harness.hover_at(body);
+    harness.run_steps(2);
+    harness.drag_at(body);
+    harness.drop_at(body);
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    harness.run_steps(2);
+    let clicked = monitor.start_beat();
+    assert!(clicked > 64.0, "the click put the marker in the clip: {clicked}");
+    assert!(monitor.beat() < 64.0, "the playhead is elsewhere: {}", monitor.beat());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::E);
+    harness.run_steps(2);
+    let after = starts(&harness);
+    assert_eq!(after.len(), before + 1, "the clip was split: {after:?}");
+    assert!(after.iter().any(|s| (s - clicked).abs() < 1e-6), "cut at the clicked beat {clicked}: {after:?}");
 }
 
 /// After Delete or Ctrl+X the next track is selected, Ctrl+V pastes a cut track back, and a new
@@ -1779,8 +1911,13 @@ fn renaming_in_place_starts_with_the_whole_name_selected() {
 /// arrangement (#951).
 #[test]
 fn a_click_on_the_piano_rolls_ruler_sets_where_playback_starts() {
-    let mut renderer =
-        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
     // The clip at bar 17 (beat 64), its piano roll in the detail area.
@@ -2287,7 +2424,7 @@ fn a_crossfade_between_parts_of_two_takes_shows_and_its_handle_sets_its_length()
     assert!(harness.query_by_label("Crossfade end on Loop").is_none(), "nothing has been comped");
     let id = 30;
     // Different passes of the content, so the parts are of two takes.
-    let moved = json!({ "track": id, "takes": [2], "pieces": [1], "by": 4.0 });
+    let moved = json!({ "track": id, "takes": [2], "pieces": [0], "by": 4.0 });
     harness.state_mut().run(&Action::new("take.movePieces", moved));
     harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 1 })));
     harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 2 })));
@@ -2423,7 +2560,7 @@ fn parts_of_two_midi_takes_show_no_crossfade() {
     let mut harness = window_with_drums_takes(8.0);
     let project = harness.state().session().map(|s| s.project().clone()).unwrap();
     let id = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap().0;
-    let moved = json!({ "track": id, "takes": [2], "pieces": [1], "by": 8.0 });
+    let moved = json!({ "track": id, "takes": [2], "pieces": [0], "by": 8.0 });
     harness.state_mut().run(&Action::new("take.movePieces", moved));
     harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 1 })));
     harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 2 })));

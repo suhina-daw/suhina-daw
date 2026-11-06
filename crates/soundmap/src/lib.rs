@@ -961,7 +961,7 @@ pub fn analyse_file(path: &Path, size: u64) -> Analysis {
                 None => Analysis::Failed("silent".into()),
             }
         }
-        Err(reason) => Analysis::Failed(reason),
+        Err(reason) => Analysis::Failed(reason.into()),
     }
 }
 

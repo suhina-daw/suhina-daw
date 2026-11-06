@@ -3,7 +3,7 @@ description: How recording works: MIDI and audio takes into a clip slot or the a
 read_when: recording, record, take, record button, clip.record, transport.record, count-in, transport.setCountIn, record.state, MIDI recording, audio recording, Recorded folder, latency compensation of a take, overdub, loopback
 type: spec
 status: current
-last_verified: 2026-11-03
+last_verified: 2026-11-06
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/record_tests.rs
@@ -37,10 +37,15 @@ names no other program's behaviour.
     (`track.setMidiInput`), as a MIDI clip;
   - a track with an audio input (`track.setAudioInput`) records the input's channel or pair,
     before the track's devices and mixer, as an audio clip. Monitoring (In, Auto, Off) changes
-    only what is heard while recording, not what is recorded. An audio track armed in the
-    window while it hears no input gets the device's first input (channels 1/2, or 1 on a
-    one-channel device), so Record has something to record; recording an armed track that
-    hears none is refused with the track's name.
+    only what is heard while recording, not what is recorded. An audio track armed
+    while it hears no input (`track.setArm`, from the window or MCP) gets the default track input
+    of the audio device chosen (Settings › Audio, `audio.setTrackInput`, ADR 0017; each audio
+    device keeps its own with its Input), or with none chosen for it the device's first
+    input (channels 1/2, or 1 on a one-channel device), so Record has something to record; new
+    audio tracks take the default track input too, and so do the audio tracks that hear nothing
+    in a new project nothing has changed yet (blank or from a template), until its first edit.
+    Recording an armed track that hears none is
+    refused with the track's name.
 - **Notes as they were heard.** A note starts when its key went down and ends when the sound
   was let go: at the key's release, or, while the sustain pedal is down, when the pedal comes
   up. A note still held when the take ends is cut at the take's end. Notes are kept with their
@@ -307,7 +312,7 @@ were ended, without the wait the thread gives a device for frames still on their
 | `transport.setCountIn` | `bars`: 0, 1, 2 or 4 |
 | `take.comp` | `track`, `take` (from 1), `start?`, `end?`: copies the take, or its part from `start` to `end` beats, onto the track over what is there; one undo step |
 | `take.delete` | `track`, `take`: deletes the take lane; one undo step |
-| `take.setColor` | `track`, `take`, `color` (`"#rrggbb"` or null), `piece?` (from 1): the take's colour and its parts', or one piece's and its parts'; one undo step |
+| `take.setColor` | `track`, `take`, `color` (`"#rrggbb"` or null), `piece?` (from 0, in time order): the take's colour and its parts', or one piece's and its parts'; one undo step |
 | `take.solo` | `track`, `take` (from 1, or 0 for none): the take heard in place of the track's clips; not an undo step |
 | `take.promote` | `track`, `take`: every piece of the take put on the track over what is there; one undo step |
 | `take.deleteUnused` | `track`: deletes the take lanes the comp uses nothing of; one undo step |

@@ -81,7 +81,7 @@ pub fn render_wavs(
     let samples = match cue {
         None => render_offline_from(
             project,
-            RenderInputs::from_audio(audio).with_assets(assets).with_plugins(running),
+            RenderInputs::from_audio(audio, suhina_session::devices()).with_assets(assets).with_plugins(running),
             sample_rate,
             512,
             None,
@@ -90,7 +90,7 @@ pub fn render_wavs(
         Some(cue_path) => {
             let (main, cued) = render_offline_with_cue(
                 project,
-                RenderInputs::from_audio(audio).with_assets(assets).with_plugins(running),
+                RenderInputs::from_audio(audio, suhina_session::devices()).with_assets(assets).with_plugins(running),
                 sample_rate,
                 512,
                 1.0,
@@ -122,6 +122,7 @@ fn write_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result<(), Strin
         &suhina_media::write::AudioFileSpec::float_wav(sample_rate),
         WriteMode::Replace,
     )
+    .map_err(String::from)
 }
 
 /// One step of a launch script: the command `id` with `params`, run when the render reaches
@@ -166,7 +167,7 @@ pub fn render_launch_script(
         }
         let kind = commands().iter().find(|c| c.id == step.id).map(|c| c.kind);
         match kind {
-            Some(CommandKind::Transport | CommandKind::Read) => {}
+            Some(CommandKind::TRANSPORT | CommandKind::READ) => {}
             Some(_) => return Err(format!("{}: a launch script may only run transport and read commands", step.id)),
             None => return Err(format!("unknown command {}; command_list shows them", step.id)),
         }
@@ -192,7 +193,7 @@ pub fn render_launch_script(
     let running: Plugins = std::mem::take(&mut started.plugins);
     let mut renderer = Renderer::build(
         project,
-        RenderInputs::from_audio(audio).with_plugins(running),
+        RenderInputs::from_audio(audio, suhina_session::devices()).with_plugins(running),
         sample_rate,
         RenderOptions::STOPPED,
     )
@@ -242,7 +243,7 @@ pub fn render_launch_script(
 pub fn scene_as_arrangement(project: &Project, scene: usize) -> Result<Project, String> {
     let count = project.launcher.scenes.len();
     if scene >= count {
-        return Err(format!("scene {} does not exist; the project has {count} scenes", scene.saturating_add(1)));
+        return Err(format!("scene {scene} does not exist; the project has {count} scenes"));
     }
     let lanes = project
         .launcher
@@ -263,7 +264,7 @@ pub fn scene_as_arrangement(project: &Project, scene: usize) -> Result<Project, 
         })
         .collect();
     let mut project = project.clone();
-    project.arrangement = Arrangement { lanes, markers: Vec::new(), takes: Vec::new() };
+    project.arrangement = Arrangement { lanes, markers: Default::default(), takes: Vec::new() };
     project.assign_ids().map_err(|e| e.to_string())?;
     Ok(project)
 }

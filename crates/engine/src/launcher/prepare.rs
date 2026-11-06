@@ -12,7 +12,7 @@
 //! rest in slot order.
 //!
 //! The built parts reach the audio side through a ring per graph, and the launcher moves them
-//! into their voices at the start of a block ([`Launcher::service_voices`]); a voice whose clip is
+//! into their voices at the start of a block ([`ClipLauncher::service_voices`]); a voice whose clip is
 //! playing goes to where the clip is by then. Nothing is allocated or freed there: parts the
 //! launcher cannot use go back to the worker on a second ring, and it only takes parts while
 //! that ring has room.
@@ -23,7 +23,7 @@
 //! hundreds of warped slots (a new project tempo) can lose its first few milliseconds.
 //!
 //! A new graph takes over the old graph's prepared voices for the slots whose audio did not
-//! change, at the swap on the audio thread ([`Launcher::take_voices`]). One claim per voice says
+//! change, at the swap on the audio thread ([`ClipLauncher::take_voices`]). One claim per voice says
 //! who provides it, whichever comes first: the worker as it starts building it, or the swap as it
 //! takes the old one over. So a voice never gets two. The worker leaves alone, until the new graph
 //! is swapped in, the voices the graph before has with the same audio (the swap will most likely
@@ -37,7 +37,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
-use super::{Launcher, Playing};
+use super::{ClipLauncher, Playing};
 use crate::stretch::{StretchParts, StretchSpec, StretchVoice};
 
 /// A voice nobody provides yet.
@@ -241,7 +241,7 @@ impl Voices {
     }
 }
 
-impl Launcher {
+impl ClipLauncher {
     /// Hands the preparer to a thread of its own. `None` once taken.
     pub(crate) fn take_preparer(&mut self) -> Option<Preparer> {
         self.voices.inline.take()
@@ -313,7 +313,7 @@ impl Launcher {
 
     /// Builds the voices of `column`'s clip in `slot` now, when no thread has taken the preparer
     /// (an offline render: this allocates). Nothing otherwise: the worker builds them, and
-    /// [`Launcher::service_voices`] asks for them.
+    /// [`ClipLauncher::service_voices`] asks for them.
     pub(super) fn prepare_inline(&mut self, column: usize, slot: usize) {
         if !self.voices.inline() {
             return;
@@ -331,7 +331,7 @@ impl Launcher {
     /// whose audio did not change (its slot `s` is slot `map(s)` here), each one's claim
     /// permitting; `old` gets this graph's fresh ones back. Then this graph is the one the worker
     /// builds for, and `old` is done with. On the audio thread; never allocates or frees.
-    pub(super) fn take_voices(&mut self, old: &mut Launcher, map: impl Fn(usize) -> Option<usize>) {
+    pub(super) fn take_voices(&mut self, old: &mut ClipLauncher, map: impl Fn(usize) -> Option<usize>) {
         old.receive_voices();
         let claims = &self.voices.shared.claims;
         for (new_column, old_column) in self.columns.iter_mut().zip(old.columns.iter_mut()) {

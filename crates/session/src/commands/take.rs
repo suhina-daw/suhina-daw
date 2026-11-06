@@ -28,7 +28,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the colour the part takes on the track, \"#rrggbb\" (the take lane's), so the track shows which take each part came from",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: comp_take,
         policy: Policy::DEFAULT,
     },
@@ -42,10 +42,10 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "piece",
                 ParamType::Integer,
-                "only this piece of the take, from 1 in time order (a split take has several), and its parts on the track",
+                "only this piece of the take, from 0 in time order (a split take has several), and its parts on the track",
             ),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: set_take_color,
         policy: Policy::UNHEARD,
     },
@@ -56,7 +56,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param("clip", ParamType::Integer, "the comped part's clip id, as project.clips lists it"),
             param("direction", ParamType::Text, "up or down"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: swap_take,
         policy: Policy::DEFAULT,
     },
@@ -67,7 +67,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param("clip", ParamType::Integer, "the clip id of the part before the cut"),
             param("to", ParamType::Number, "where the cut goes, in beats"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: move_cut,
         policy: Policy::DEFAULT,
     },
@@ -79,7 +79,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("length", ParamType::Number, "the whole crossfade, in beats"),
             optional("curve", ParamType::Number, "the bend of both its fades, -1 to 1, 0 for equal power"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: set_crossfade,
         policy: Policy::DEFAULT,
     },
@@ -87,7 +87,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "take.solo",
         label: "Hear a take lane in place of its track's clips (its S button), or the track again with take 0; not saved and not an undo step",
         params: &[TRACK, param("take", ParamType::Integer, "the take's number on the track, from 1, or 0 for none")],
-        kind: CommandKind::Transport,
+        kind: CommandKind::TRANSPORT,
         run: solo_take,
         policy: Policy::UNHEARD,
     },
@@ -95,7 +95,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "take.promote",
         label: "Put a whole take on its track over what is there (its up arrow), its pieces as they are",
         params: &[TRACK, param("take", ParamType::Integer, "the take's number on the track, from 1")],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: promote_take,
         policy: Policy::DEFAULT,
     },
@@ -103,7 +103,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "take.add",
         label: "Add an empty take lane under a track, numbered after its other takes, for pieces to be moved onto",
         params: &[TRACK],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: add_take,
         // Takes do not play: a new lane changes only what is shown.
         policy: Policy::UNHEARD,
@@ -112,7 +112,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "take.deleteUnused",
         label: "Delete a track's take lanes that its comp does not use; the track's clips stay",
         params: &[TRACK],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: delete_unused_takes,
         policy: Policy::UNHEARD,
     },
@@ -122,9 +122,9 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[
             TRACK,
             param("take", ParamType::Integer, "the take's number on the track, from 1"),
-            param("pieces", ParamType::Integers, "the pieces, numbered from 1 in time order"),
+            param("pieces", ParamType::Integers, "the pieces, numbered from 0 in time order"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: delete_pieces,
         policy: Policy::UNHEARD,
     },
@@ -132,7 +132,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "take.deleteRange",
         label: "Delete what some take lanes of a track hold between start and end (an area painted across them); a take left with nothing stays as an empty lane; the track's clips stay",
         params: &[TRACK, TAKE_LIST, AREA_START, AREA_END],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: delete_range,
         policy: Policy::DEFAULT,
     },
@@ -140,7 +140,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "take.cutRange",
         label: "Copy what some take lanes of a track hold between start and end for clip.paste and delete it, as one undo step",
         params: &[TRACK, TAKE_LIST, AREA_START, AREA_END],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: cut_range,
         policy: Policy { after: After::Copies, ..Policy::DEFAULT },
     },
@@ -153,12 +153,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param(
                 "pieces",
                 ParamType::Integers,
-                "the pieces, from 1 in time order within their takes, one per entry of takes",
+                "the pieces, from 0 in time order within their takes, one per entry of takes",
             ),
             param("by", ParamType::Number, "how far, in beats (the pieces stop at the start of the timeline)"),
             optional("lanesBy", ParamType::Integer, "how many lanes down (negative: up) they go; by default none"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: move_pieces,
         policy: Policy::DEFAULT,
     },
@@ -168,11 +168,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[
             TRACK,
             param("take", ParamType::Integer, "the take's number on the track, from 1"),
-            param("piece", ParamType::Integer, "the piece, from 1 in time order"),
+            param("piece", ParamType::Integer, "the piece, from 0 in time order"),
             optional("start", ParamType::Number, "where its left edge goes, in beats"),
             optional("end", ParamType::Number, "where its right edge goes, in beats"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: trim_piece,
         policy: Policy::DEFAULT,
     },
@@ -184,7 +184,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("take", ParamType::Integer, "the take's number on the track, from 1"),
             optional("takes", ParamType::Integers, "instead of take: several takes' numbers"),
         ],
-        kind: CommandKind::Edit,
+        kind: CommandKind::EDIT,
         run: delete_take,
         // Takes do not play: deleting one changes only what is shown.
         policy: Policy::UNHEARD,
@@ -327,7 +327,7 @@ fn comp_part(
 }
 
 /// `take.setColor {track, take, color, piece?}`: the take lane's colour and its parts' on the
-/// track (Recolor lane, #989), its pieces' own colours given up; with `piece` (from 1, a split
+/// track (Recolor lane, #989), its pieces' own colours given up; with `piece` (from 0, a split
 /// take has several), that piece's colour and its parts' alone (Recolor). `null` gives them the
 /// lane's or the palette's colour again.
 fn set_take_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -338,8 +338,8 @@ fn set_take_color(session: &mut Session, params: &Value) -> Result<Value, Comman
     let piece = match Args::new(params).value("piece") {
         None => None,
         Some(v) => {
-            let n = v.as_u64().filter(|n| *n >= 1).ok_or("piece must be a number from 1")?;
-            let n = usize::try_from(n - 1).map_err(|_| "piece is out of range")?;
+            let n = v.as_u64().ok_or("piece must be a number from 0")?;
+            let n = usize::try_from(n).map_err(|_| "piece is out of range")?;
             let pieces = p.arrangement.takes.get(index).map_or(0, |t| t.clips.len());
             if n >= pieces {
                 return Err(format!("the take has {pieces} pieces").into());
@@ -600,9 +600,8 @@ fn delete_pieces(session: &mut Session, params: &Value) -> Result<Value, Command
         let piece = entry
             .as_u64()
             .and_then(|n| usize::try_from(n).ok())
-            .and_then(|n| n.checked_sub(1))
             .filter(|&n| n < count)
-            .ok_or("each piece is a number from 1 up to the take's pieces")?;
+            .ok_or("each piece is a number from 0, below the take's pieces")?;
         doomed.push(piece);
     }
     doomed.sort_unstable();
@@ -696,9 +695,8 @@ fn move_pieces(session: &mut Session, params: &Value) -> Result<Value, CommandEr
         let piece = piece
             .as_u64()
             .and_then(|n| usize::try_from(n).ok())
-            .and_then(|n| n.checked_sub(1))
             .filter(|&n| n < count)
-            .ok_or("each piece is a number from 1 up to its take's pieces")?;
+            .ok_or("each piece is a number from 0, below its take's pieces")?;
         moved.push((index, piece));
     }
     moved.sort_unstable();
@@ -751,9 +749,8 @@ fn trim_piece(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         .get("piece")
         .and_then(Value::as_u64)
         .and_then(|n| usize::try_from(n).ok())
-        .and_then(|n| n.checked_sub(1))
         .filter(|&n| n < take.clips.len())
-        .ok_or("piece must be a number from 1 up to the take's pieces")?;
+        .ok_or("piece must be a number from 0, below the take's pieces")?;
     let edge = |key: &str| -> Result<Option<f64>, CommandError> {
         match params.get(key) {
             None | Some(Value::Null) => Ok(None),

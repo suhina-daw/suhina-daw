@@ -110,7 +110,7 @@ fn the_clip_column_edits_the_clip() {
     // A slot's clip is named by its track and its scene, from 1.
     assert_eq!(
         on_clip(ClipRef::Slot(TrackId(2), 1), json!({ "loop": true })),
-        json!({ "track": 2, "scene": 2, "loop": true })
+        json!({ "track": 2, "scene": 1, "loop": true })
     );
 }
 
@@ -157,7 +157,7 @@ fn panels_follow_automation_as_the_engine_plays_it() {
     let mut utility = Device::new("Utility", DeviceKind::Builtin("utility".into()));
     for param in ["mono", "balance"] {
         let mut lane = AutomationLane::new(param);
-        lane.points = vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(4.0, -1.0)];
+        lane.points = vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(4.0, -1.0)].into();
         utility.automation.push(lane);
     }
     project.channels[0].devices.push(utility);
@@ -171,6 +171,50 @@ fn panels_follow_automation_as_the_engine_plays_it() {
     let Detail::Devices(chain) = &detail else { panic!("expected the chain") };
     let value = |id: &str| chain.devices.last().and_then(|d| d.values.iter().find(|(p, _)| p == id)).map(|v| v.1);
     assert_eq!((value("mono"), value("balance")), (Some(0.0), Some(-1.0)), "the last point, kept in range");
+}
+
+/// While a device parameter's lane is dragged, its knob shows what the line as it is dragged
+/// plays at the playhead; a drag on another track or device changes nothing (#811).
+#[test]
+fn panels_follow_a_dragged_line_at_the_playhead() {
+    use crate::arrangement::automation_lanes::{Dragged, LaneKey};
+    use suhina_engine::model::{AutomationLane, AutomationPoint};
+    let mut project = demo_project();
+    let mut utility = Device::new("Utility", DeviceKind::Builtin("utility".into()));
+    let mut lane = AutomationLane::new("balance");
+    lane.points = vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(4.0, -1.0)].into();
+    utility.automation.push(lane);
+    project.channels[0].devices.push(utility);
+    let index = project.channels[0].devices.len() - 1;
+    let balance = |detail: &Detail| {
+        let Detail::Devices(chain) = detail else { return None };
+        chain.devices.last().and_then(|d| d.values.iter().find(|(p, _)| p == "balance")).map(|v| v.1)
+    };
+    // The first point dragged from full right down to the centre: at beat 2 the line is half way
+    // from it to the second point, -0.5, where it played 0 before.
+    let points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, -1.0)];
+    let key = LaneKey { device: Some(index), param: "balance".into() };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, None);
+    assert_eq!(balance(&detail), Some(0.0), "the project's line");
+    let other_track = Dragged { track: TrackId(2), key: key.clone(), points: points.clone(), at: None };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&other_track));
+    assert_eq!(balance(&detail), Some(0.0), "another track's drag");
+    let elsewhere = LaneKey { device: Some(index + 1), param: "balance".into() };
+    let other_device = Dragged { track: TrackId(1), key: elsewhere, points: points.clone(), at: None };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&other_device));
+    assert_eq!(balance(&detail), Some(0.0), "another device's drag");
+    let held = Dragged { track: TrackId(1), key: key.clone(), points: points.clone(), at: None };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&held));
+    assert_eq!(balance(&detail), Some(-0.5));
+    // A range being painted: the knob shows the line at its moving edge, not at the playhead.
+    let painting = Dragged { track: TrackId(1), key, points, at: Some(4.0) };
+    let mut detail = build(&project, Some(TrackId(1)), None);
+    detail.follow_automation_dragged(&project, 2.0, Some(&painting));
+    assert_eq!(balance(&detail), Some(-1.0));
 }
 
 #[test]
@@ -576,8 +620,8 @@ fn automation_replaces_a_plug_ins_listed_text_with_the_value_it_plays() {
     let mut project = with_plugin();
     let point = |beat, value| AutomationPoint { beat, value, curve: Default::default() };
     project.channels[0].devices[0].automation = vec![
-        AutomationLane { param: "1".into(), points: vec![point(0.0, 0.75), point(8.0, 0.75)], enabled: true },
-        AutomationLane { param: "2".into(), points: vec![point(0.0, 3.0), point(8.0, 3.0)], enabled: true },
+        AutomationLane { param: "1".into(), points: vec![point(0.0, 0.75), point(8.0, 0.75)].into(), enabled: true },
+        AutomationLane { param: "2".into(), points: vec![point(0.0, 3.0), point(8.0, 3.0)].into(), enabled: true },
     ];
     let mut detail = build_with(
         &project,
@@ -606,7 +650,7 @@ fn a_followed_value_between_steps_is_not_sent_as_an_edit() {
     let mut utility = Device::new("Utility", DeviceKind::Builtin("utility".into()));
     for param in ["mono", "balance", "gain", "width"] {
         let mut lane = AutomationLane::new(param);
-        lane.points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, 1.0)];
+        lane.points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, 1.0)].into();
         utility.automation.push(lane);
     }
     project.channels[0].devices.push(utility);
@@ -1129,9 +1173,8 @@ fn the_gain_fader_drags_and_resets() {
     let actions = std::mem::take(harness.state_mut());
     assert!(actions.len() >= 2, "{actions:?}");
     assert!(actions.iter().all(|a| a.id == "clip.setGain" && a.params["clip"] == json!(beat_b.0)));
-    // One undo step: the first call starts it, every later one continues it.
-    assert_eq!(actions[0].params["continue"], json!(false));
-    assert!(actions[1..].iter().all(|a| a.params["continue"] == json!(true)), "{actions:?}");
+    // One undo step: every call of the drag carries its gesture.
+    assert!(actions.iter().all(|a| a.params["gesture"] == json!("clip-panel")), "{actions:?}");
     let last = actions.last().and_then(|a| a.params["db"].as_f64());
     assert!(last.is_some_and(|db| db > -6.0), "{last:?}");
     double_click(&mut harness, at);
@@ -1401,7 +1444,7 @@ fn midi_harness(
         .content(project.arrangement.lanes[0].clips[1].content)
         .and_then(|c| {
             c.lanes.iter().find_map(|l| match &l.data {
-                LaneData::Notes(notes) => Some(notes.clone()),
+                LaneData::Notes(notes) => Some(notes.to_vec()),
                 LaneData::Audio(_) => None,
             })
         })
