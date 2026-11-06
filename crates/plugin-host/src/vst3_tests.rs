@@ -19,8 +19,12 @@ fn the_trace_watch_merges_peaks_and_starts_each_interval_from_silence() {
 /// frame is lost, and a peak that was taken never comes back. The work runs in rounds that
 /// both threads start and end at a barrier: in each, the audio thread adds a fixed number of
 /// blocks while the main thread resets, and after the end barrier one more reset closes the
-/// round. So every round's interval holds exactly its blocks, whatever order the threads
-/// ran in inside it, and the counts below are exact.
+/// round while the audio thread waits at the next round's start. So a reset always falls
+/// between one round's blocks and the next round's (the round's last block is the peak that
+/// reset or an earlier one took, checked each round), every round's interval holds exactly
+/// its blocks whatever order the threads ran in inside it, and the counts below are exact.
+/// The resets inside a round may or may not interleave with its blocks; nothing asserted
+/// depends on which.
 #[test]
 fn resetting_the_trace_watch_loses_no_frames_and_repeats_no_peak() {
     const ROUNDS: u32 = 500;
@@ -44,7 +48,7 @@ fn resetting_the_trace_watch_loses_no_frames_and_repeats_no_peak() {
         })
     };
     let mut peaks = Vec::new();
-    let mut take = || {
+    let take = |peaks: &mut Vec<f32>| {
         let frames = watch.take_frames();
         let peak = watch.take_peak();
         if peak > 0.0 {
@@ -54,10 +58,11 @@ fn resetting_the_trace_watch_loses_no_frames_and_repeats_no_peak() {
     };
     for r in 0..ROUNDS {
         round.wait();
-        let mut frames: u64 = (0..RESETS_PER_ROUND).map(|_| take()).sum();
+        let mut frames: u64 = (0..RESETS_PER_ROUND).map(|_| take(&mut peaks)).sum();
         round.wait();
-        frames += take();
+        frames += take(&mut peaks);
         assert_eq!(frames, u64::from(BLOCKS_PER_ROUND), "round {r}: frames were erased by a reset");
+        assert_eq!(peaks.last().copied(), Some(((r + 1) * BLOCKS_PER_ROUND) as f32), "round {r}: its last block");
     }
     audio.join().unwrap();
     assert_eq!(peaks.last().copied(), Some(BLOCKS as f32));
