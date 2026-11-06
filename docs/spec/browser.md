@@ -240,7 +240,7 @@ in the scene row dropped on) and the space under the last lane in the Arrangemen
 dropped beat). Dropping there makes new tracks at the end of the regular tracks (before the
 returns): one audio track for the samples and one note track for the MIDI files, or with Ctrl
 one track per clip. A new track made for one file is named after it; otherwise "Audio <n>" or
-"MIDI <n>".
+"MIDI <n>", `n` counting on from the number of tracks of its kind to the first name no track has.
 
 **The empty area shows two buttons**, **+ MIDI track** and **+ Audio track** (at its top in the
 Session, at its left in the Arrangement), which add an empty track of that kind. A drop on

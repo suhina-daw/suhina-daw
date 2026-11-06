@@ -114,7 +114,8 @@ Notes before the take's start (a key a little early) are not kept, nor is sound 
 ## Audio files
 
 Audio takes are written to `Recorded/` in the folder of the project file, one WAV file per take,
-named after the track and the bar the take starts at (`Bass bar 5.wav`, then `Bass bar 5 2.wav`),
+named after the track and the bar the take starts at (`Bass bar 5.wav`, then `Bass bar 5 2.wav`;
+two tracks of one name recording at once get one each),
 as 32-bit float at the engine's sample rate, mono for a one-channel input and stereo for a pair.
 Audio recording therefore needs a saved project: `clip.record` and `transport.record` refuse
 with that reason when an armed track would record audio into an unsaved project.
