@@ -17,7 +17,7 @@ use suhina_model::{
     StretchMode, Track, TrackId, WarpMarker,
 };
 
-use crate::commands::{Args, make_room, track_at};
+use crate::commands::{Args, make_room, opt_scene_at, scene_id, track_at};
 use crate::{CommandError, Session};
 
 /// Files one command places at most.
@@ -376,10 +376,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
         None => None,
         Some(_) => Some(Args::new(params).f64("start")?),
     };
-    let scene = match Args::new(params).value("scene") {
-        None => None,
-        Some(v) => Some(v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("scene must be a whole number from 0")?),
-    };
+    let scene = opt_scene_at(&session.project, params, "scene")?;
     match (start, scene) {
         (Some(_), Some(_)) | (None, None) => {
             return Err("give either start (a beat in the arrangement) or scene (a row of clip slots)".into());
@@ -620,10 +617,7 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
         None => None,
         Some(_) => Some(Args::new(params).f64("start")?),
     };
-    let scene = match Args::new(params).value("scene") {
-        None => None,
-        Some(v) => Some(v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("scene must be a whole number from 0")?),
-    };
+    let scene = opt_scene_at(&session.project, params, "scene")?;
     let stack = Args::new(params).flag("stack")?;
     match (start, scene) {
         (Some(_), Some(_)) | (None, None) => {
@@ -718,7 +712,15 @@ pub(crate) fn place_clip(
                 p.launcher.columns.iter_mut().find(|c| c.track == track).ok_or("the track has no clip slots")?;
             let slot = column.slots.get_mut(row).ok_or("the slot is missing")?;
             slot.clip = Some(clip);
-            Ok(json!({ "clip": clip_id.0, "track": track.0, "scene": row, "name": source.name, "length": length }))
+            let scene_id = scene_id(p, row);
+            Ok(json!({
+                "clip": clip_id.0,
+                "track": track.0,
+                "scene": row,
+                "scene_id": scene_id,
+                "name": source.name,
+                "length": length,
+            }))
         }
         None => {
             clip.start = at;

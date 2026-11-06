@@ -3,7 +3,7 @@ description: How launching clips and scenes behaves: quantisation, stop buttons,
 read_when: clip launching, scenes, launch quantisation, stop, launcher view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, launcher.addMapping
 type: spec
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-06
 covers:
   - crates/engine/src/launcher.rs
   - crates/engine/src/follow.rs
@@ -104,6 +104,13 @@ decides something the sources do not settle, the text says so (**Suhina:**).
 
 ## Editing scenes
 
+- **Naming a scene.** A command's `scene` (and `clip.moveSlot`'s `toScene`) is the scene's
+  number, from 0, or `{"id": n}` with its id. The id stays the scene's while scenes are
+  inserted, deleted or moved before it ([ADR 0025](../decisions/0025-object-identity.md)), so
+  an agent that read `project.launcher` can still name the scene it meant. An id no scene has is
+  an error naming it. `project.launcher` and every result that reports a scene give its
+  `scene_id` beside `scene`. The window still sends numbers. `scene.insert {scene: {"id": n}}`
+  inserts before that scene.
 - **Insert** (`scene.insert`) adds an empty scene at a position (after the last one if none is
   given): a row of empty slots, each with a stop button, in every track.
 - **Duplicate** (`scene.duplicate`) copies a scene to a new one right below it: name, tempo, time

@@ -3,7 +3,7 @@ description: Functional spec of the MIDI clip editor (piano roll): layout, toolb
 read_when: piano roll, clip editor, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools column, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
 type: spec
 status: draft
-last_verified: 2026-11-05
+last_verified: 2026-11-06
 covers:
   - crates/ui/src/detail/piano_roll.rs
   - crates/ui/src/detail/piano_roll_grid.rs
@@ -1109,8 +1109,8 @@ edits. A command names a clip by `clip`, its id from `project.clips` or `project
 stays the same when the clip or the clips around it move
 ([ADR 0025](../decisions/0025-object-identity.md)); the piano roll names the clip it shows that
 way. The older form, `track` with `index` (an arrangement clip's place on its track) or `scene`
-(the clip in the track's slot of that scene, from 0), still works and is deprecated, except that
-a slot's clip may still be named by its `scene`. The clip must be a MIDI clip: an audio clip, an
+(the clip in the track's slot of that scene, from 0, or `{"id": n}` with the scene's id), still
+works and is deprecated, except that a slot's clip may still be named by its `scene`. The clip must be a MIDI clip: an audio clip, an
 empty slot or a clip that does not exist is an error. Notes are named by their **index** in the clip's notes, as `note.list` returns them, or
 by their **id**, `{"id": n}`, which names a note wherever it is now, after another writer has
 added, deleted or moved notes (#1182; [ADR 0025](../decisions/0025-object-identity.md) › Decided

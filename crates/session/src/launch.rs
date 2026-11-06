@@ -9,7 +9,7 @@ use suhina_engine::LaunchCommand;
 use suhina_model::{Clip, LaunchMode, LaunchQuantization, Project};
 
 use crate::commands::Args;
-use crate::commands::{column_index, scene_index};
+use crate::commands::{column_index, scene_id, scene_index};
 use crate::{CommandError, Session};
 
 /// The clip in the slot `params.track`, `params.scene`.
@@ -58,5 +58,5 @@ pub(crate) fn release_clip(session: &mut Session, params: &Value) -> Result<Valu
     let column = column_index(session.project(), params)?;
     let scene = scene_index(session.project(), params)?;
     session.player_mut()?.send(LaunchCommand::ReleaseClip { column, slot: scene })?;
-    Ok(json!({ "scene": scene, "released": true }))
+    Ok(json!({ "scene": scene, "scene_id": scene_id(session.project(), scene), "released": true }))
 }

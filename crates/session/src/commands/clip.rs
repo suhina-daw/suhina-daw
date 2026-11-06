@@ -408,7 +408,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Track,
                 "track to move the clip to (id or name); it must take the clip's kind: notes or audio (default: the same track)",
             ),
-            optional("toScene", ParamType::Integer, "the scene to move it to, from 0 (default: the same scene)"),
+            optional(
+                "toScene",
+                ParamType::Item,
+                "the scene to move it to: its number, from 0, or {\"id\": n} with its scene_id (default: the same scene)",
+            ),
         ],
         kind: CommandKind::EDIT,
         run: move_slot,
@@ -588,7 +592,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "with no track: put the new tracks after this one, in its group (default: after the last regular track)",
             ),
             optional("start", ParamType::Number, "arrangement beat the first clip starts at"),
-            optional("scene", ParamType::Integer, "scene number, from 0, of the first clip slot"),
+            optional(
+                "scene",
+                ParamType::Item,
+                "the scene of the first clip slot: its number, from 0, or {\"id\": n} with its scene_id",
+            ),
             optional(
                 "separate",
                 ParamType::Bool,
@@ -610,7 +618,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Make an empty clip on a track that holds clips: MIDI on a notes track, audio with no file yet on an audio track; in an empty clip slot, or at a beat in the arrangement, replacing what it covers unless stacked",
         params: &[
             TRACK,
-            optional("scene", ParamType::Integer, "scene number, from 0, of an empty clip slot"),
+            optional(
+                "scene",
+                ParamType::Item,
+                "the scene of an empty clip slot: its number, from 0, or {\"id\": n} with its scene_id",
+            ),
             optional("start", ParamType::Number, "arrangement beat it starts at, at least 0"),
             optional("length", ParamType::Number, "length in beats (default one bar of the time signature)"),
             optional("stack", ParamType::Bool, "in the arrangement, keep the clips the new one covers (default false)"),
@@ -944,7 +956,14 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
             p.launcher.columns.get_mut(column).and_then(|c| c.slots.get_mut(scene)).ok_or("the slot is missing")?;
         let replaced = slot.clip.is_some();
         slot.clip = Some(placed);
-        return Ok(json!({ "clip": placed_id.0, "track": track.0, "scene": scene, "replaced": replaced }));
+        let scene_id = scene_id(p, scene);
+        return Ok(json!({
+            "clip": placed_id.0,
+            "track": track.0,
+            "scene": scene,
+            "scene_id": scene_id,
+            "replaced": replaced,
+        }));
     }
     let start = match at {
         PasteAt::Beat(start) => start,
@@ -1386,12 +1405,7 @@ fn move_slot(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         None => None,
         Some(_) => Some(track_at(&session.project, params, "toTrack")?),
     };
-    let to_scene: Option<usize> = match Args::new(params).value("toScene") {
-        None => None,
-        Some(v) => {
-            Some(v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("toScene must be a whole number from 0")?)
-        }
-    };
+    let to_scene = opt_scene_at(&session.project, params, "toScene")?;
 
     // An empty track of the other kind takes the clip's (#945).
     let from = session.project.launcher.columns.get(from_column).map(|c| c.track);
@@ -1490,6 +1504,7 @@ fn move_slot(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         "moved": true,
         "track": to_track.0,
         "scene": to_scene,
+        "scene_id": scene_id(project, to_scene),
         "swapped": swapped,
     }))
 }
@@ -1509,5 +1524,5 @@ fn launch_clip(session: &mut Session, params: &Value) -> Result<Value, CommandEr
         _ => return Err("that slot is empty and has no stop button".into()),
     };
     send(session, LaunchCommand::LaunchClip { column, slot: scene })?;
-    Ok(json!({ "scene": scene, "queued": queued }))
+    Ok(json!({ "scene": scene, "scene_id": scene_id(session.project(), scene), "queued": queued }))
 }
