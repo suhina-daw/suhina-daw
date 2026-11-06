@@ -20,6 +20,8 @@
 //! built into the host for tests ([`crate::test_vst3`]), and `test:vst3-mix` the same gain mixing
 //! its first two channels into the first.
 
+#[cfg(target_os = "macos")]
+mod bundle;
 mod editor;
 mod events;
 mod message;
@@ -85,6 +87,17 @@ pub(crate) fn finite(value: f64, otherwise: f64) -> f64 {
     if value.is_finite() { value } else { otherwise }
 }
 
+/// The text a macOS module contract's bundle comes from, when `path` is one: a folder
+/// that reads as UTF-8. It stands here rather than in [`bundle`], which needs
+/// CoreFoundation and only ships on macOS, so the null arm's facts — folder and text
+/// both, or nothing — are tested on every system's test run: the tests of
+/// [`bundle_text`] get it built on them (`test`), and macOS's own builds through
+/// [`bundle::Bundle::open`].
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn bundle_text(path: &Path) -> Option<&str> {
+    if path.is_dir() { path.to_str() } else { None }
+}
+
 /// Text from a fixed-size UTF-16 field (`String128`), up to its first zero.
 fn utf16(field: &[TChar]) -> String {
     let units: Vec<u16> = field.iter().take_while(|c| **c != 0).copied().collect();
@@ -103,6 +116,16 @@ fn ok(result: tresult) -> bool {
 
 /// A loaded plug-in file (or the built-in test plug-in) and its factory.
 struct ModuleFile {
+    /// The plug-in bundle as the module's macOS contract takes it ([`bundle::Bundle`]):
+    /// first field, and [`Drop for ModuleFile`][Drop] runs the module out (factory
+    /// release, the module's exit where it offers one, unload) before fields drop.
+    /// Fields drop in declaration order, the first one first, so this is dropped before
+    /// the library's own field drop would unload the module — which is why the exit work
+    /// stays in [`Drop for ModuleFile`][Drop]: a refactor that moves it to a field drop
+    /// would release the bundle the module still holds before the unload. Loaded for
+    /// the process's life ([`shared_module`]), so it outlives every call either way.
+    #[cfg(target_os = "macos")]
+    _bundle: Option<bundle::Bundle>,
     factory: Option<ComPtr<IPluginFactory>>,
     library: Option<libloading::Library>,
 }
@@ -144,8 +167,36 @@ pub(crate) fn macos_binary(macos: &Path, stem: &OsStr) -> Option<PathBuf> {
     files.into_iter().next()
 }
 
+/// The factory the loaded module hands over, as [`ModuleFile::open`]'s tails need it:
+/// the two calls the module's required entry asks for, same on every system.
+fn factory_from_library(library: &libloading::Library) -> Result<ComPtr<IPluginFactory>, String> {
+    // SAFETY: `GetPluginFactory` is the module's required entry: no arguments, returning an
+    // owned reference to its factory.
+    let get = unsafe { library.get::<extern "system" fn() -> *mut IPluginFactory>(b"GetPluginFactory\0") }
+        .map_err(|_| "the file has no GetPluginFactory; not a VST3 plug-in")?;
+    // SAFETY: the pointer is the factory reference the module handed over (or null).
+    unsafe { ComPtr::from_raw(get()) }.ok_or_else(|| "the plug-in has no factory".into())
+}
+
 impl ModuleFile {
     fn open(path: &Path) -> Result<Self, String> {
+        // `bundleEntry` (macOS): the counterpart of `InitDll` on Windows and `ModuleEntry`
+        // on Linux, and optional the same way: modules built on the current SDK initialise
+        // in their own static constructors and do not export it, and those that do
+        // (DPF-built modules, such as Cardinal and plugdata) take the handle or null
+        // either way, holding their own bundle when they need it. It is what macOS hosts
+        // that load the module as a bundle pass that stands out: the bundle's handle. The
+        // SDK's own hosts make and pass one, and a module may keep it and read it later
+        // without a null check — as Xfer's Serum 2 2.1.5 did, which crashed its host's
+        // main thread (a null dereference, #1223) the first time its editor's view was
+        // built. The handle is made here for the module to keep, not left null; where
+        // there is no bundle to make (the plug-in is a bare file, the path is not UTF-8,
+        // or the folder is not one), no handle exists, and null stays the contract's
+        // other arm. The bundle is kept before the library is loaded: a local drops
+        // before anything declared before it, and a module reaching its own exit paths
+        // after `bundleEntry` failed should keep seeing the handle it was handed.
+        #[cfg(target_os = "macos")]
+        let bundle = bundle::Bundle::open(path);
         let file = binary(path)?;
         // SAFETY: loading the library runs its initialisation code, which Rust cannot check;
         // that is what this process is for (ADR 0006). The library stays loaded while `self`
@@ -174,34 +225,65 @@ impl ModuleFile {
                 return Err("the plug-in's ModuleEntry failed".into());
             }
         }
+        // `bundleEntry` (macOS): called after the library is loaded, with the handle the
+        // bundle's `CFBundle` carries, and read one. Whether the module's entry ran and
+        // read it is what its error paths' clean-ups wait on: a module that exports
+        // `bundleExit` only is entered nowhere, and its counterpart is nobody's to call.
         #[cfg(target_os = "macos")]
-        {
-            // SAFETY: `bundleEntry` is the entry the VST3 module API defines on macOS, the
-            // counterpart of `InitDll` on Windows and `ModuleEntry` on Linux: hosts that load
-            // the module as a bundle call it before the factory. It is optional: modules built
-            // on the current SDK initialise in their own static constructors and do not export
-            // it. Those that do (DPF-built modules such as Cardinal and plugdata) build the
-            // plugin their class information is read from here, and answering class queries
-            // before it runs crashes them. The old contract passes the bundle's handle; these
-            // modules find their own bundle from the loaded file, so null is fine.
+        let bundle_entry_ran = {
+            let handle = bundle.as_ref().map_or(std::ptr::null_mut(), |bundle| bundle.handle());
+            // SAFETY: `bundleEntry` takes the bundle's handle, live for the whole call
+            // and beyond (held on the module as its `_bundle`), and answers whether it
+            // read one.
             let entry = unsafe { library.get::<extern "system" fn(*mut c_void) -> bool>(b"bundleEntry\0") };
-            if let Ok(entry) = entry
-                && !entry(std::ptr::null_mut())
-            {
-                return Err("the plug-in's bundleEntry failed".into());
+            match entry {
+                Ok(entry) if entry(handle) => true,
+                Ok(_) => return Err("the plug-in's bundleEntry failed".into()),
+                Err(_) => false,
             }
-        }
-        // SAFETY: `GetPluginFactory` is the module's required entry: no arguments, returning an
-        // owned reference to its factory.
-        let get = unsafe { library.get::<extern "system" fn() -> *mut IPluginFactory>(b"GetPluginFactory\0") }
-            .map_err(|_| "the file has no GetPluginFactory; not a VST3 plug-in")?;
-        // SAFETY: the pointer is the factory reference the module handed over (or null).
-        let factory = unsafe { ComPtr::from_raw(get()) }.ok_or("the plug-in has no factory")?;
-        Ok(Self { factory: Some(factory), library: Some(library) })
+        };
+        // The factory: the module's required entry ([`factory_from_library`]), and,
+        // where the module's entry ran on this system, its exit in front of the error:
+        // the unload a `library` drop does on the way out comes too late for anyone
+        // left to run it, which is how [`Drop for ModuleFile`][Drop] handles it.
+        let factory = factory_from_library(&library);
+        #[cfg(not(target_os = "macos"))]
+        let factory = factory?;
+        #[cfg(target_os = "macos")]
+        let factory = match factory {
+            Ok(factory) => factory,
+            Err(why) => {
+                // Where the module's entry ran ([`bundleEntry`]), its counterpart runs
+                // before the unload a plain `library` drop would do on the way out, the
+                // way [`Drop for ModuleFile`][Drop] runs it for the factory that got
+                // made; entry-less modules get none.
+                if bundle_entry_ran {
+                    // SAFETY: `bundleExit` is the optional counterpart of `bundleEntry`,
+                    // searched only where the module may export it; its answer, as in
+                    // [`Drop`][Drop]'s run of it, tells the caller nothing.
+                    let exit = unsafe { library.get::<extern "system" fn() -> bool>(b"bundleExit\0") };
+                    if let Ok(exit) = exit {
+                        exit();
+                    }
+                }
+                return Err(why);
+            }
+        };
+        Ok(Self {
+            #[cfg(target_os = "macos")]
+            _bundle: bundle,
+            factory: Some(factory),
+            library: Some(library),
+        })
     }
 
     fn test(mix: bool) -> Self {
-        Self { factory: crate::test_vst3::factory(mix), library: None }
+        Self {
+            #[cfg(target_os = "macos")]
+            _bundle: None,
+            factory: crate::test_vst3::factory(mix),
+            library: None,
+        }
     }
 
     fn factory(&self) -> Result<&ComPtr<IPluginFactory>, String> {
@@ -1880,5 +1962,48 @@ mod tests {
         // A folder that is not there holds nothing.
         assert_eq!(macos_binary(&dir.join("missing").join("MacOS"), stem), None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The facts the module contract's null bundle arm waits on: a folder is the text
+    /// it carries (CoreFoundation's model is UTF-8, which a normal folder path is), a
+    /// bare file is no bundle, and a path that is not there is neither.
+    #[test]
+    fn a_bundle_folders_text_is_herself_and_the_other_arms_hold_none() {
+        let dir = std::env::temp_dir().join(format!("suhina-vst3-bundle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(bundle_text(&dir).map(str::to_string), dir.to_str().map(str::to_string));
+        // A bare file, though named like one, is no bundle.
+        let file = dir.with_extension("vst3");
+        std::fs::write(&file, b"not a bundle").unwrap();
+        assert_eq!(bundle_text(&file), None);
+        // A path that is not there is neither.
+        assert_eq!(bundle_text(&dir.join("missing")), None);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&file);
+    }
+
+    /// A folder whose name is not UTF-8 stays the null arm. Makeable only where a file
+    /// system takes arbitrary bytes (Linux: macOS's APFS answers "Illegal byte
+    /// sequence" on creation and its names are UTF-8), which is where this runs — and
+    /// it can run only here, now that the facts stand in this module rather than in the
+    /// macOS files only.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn a_non_utf8_folder_stays_the_null_arm() {
+        use std::os::unix::ffi::OsStringExt;
+        // 0xFF is not UTF-8, so the folder's name cannot come out as `str`.
+        let name = std::ffi::OsString::from_vec(
+            format!("suhina-vst3-utf8-{}-", std::process::id())
+                .into_bytes()
+                .into_iter()
+                .chain([0xFF, 0x2F, 0x80, 0x81])
+                .collect(),
+        );
+        let folder = std::env::temp_dir().join(name);
+        std::fs::create_dir_all(&folder).unwrap_or_else(|e| panic!("create the folder: {e}"));
+        assert!(folder.is_dir(), "the folder exists (its name just is not UTF-8)");
+        assert_eq!(bundle_text(&folder), None);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }
