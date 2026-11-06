@@ -503,7 +503,8 @@ the palette's swatches, or **Select colour…**, which opens the theme editor's 
 menu itself, where a picker of its own would end the menu as a click outside it does —, and
 removes the tag — the first click on Remove asks, saying how many items carry it, and **Keep**
 stands it down; a second click removes the tag from the list and from every item carrying it.
-The menu adds a tag for the section too: a typed **New tag…** name and Enter, with the colour
+The menu adds a tag for the section too: a typed **New tag…** name, added with Enter or the
+**Add tag** button beside it, with the colour
 this menu shows outlined — the tag it was added from shows it —, shown dimmed until
 something carries it; the row's menu can rename, recolour or remove every tag there is. The
 footer's dots stay as they are (#1196): where the section reaches a tag's items as a

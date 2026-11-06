@@ -812,8 +812,9 @@ fn sidebar_view(
                 run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
             }
             ui.separator();
-            // A new tag from here: a typed name and Enter, with the colour this menu shows
-            // outlined, shown dimmed until something carries it (#1196).
+            // A new tag from here: a typed name, added with Enter or the Add tag button, in
+            // the colour this menu shows outlined, shown dimmed until something carries it
+            // (#1196).
             let new_id = Id::unique(("browser-section-new-tag", &tag.name));
             let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
             let field = crate::kit::widgets::text_input(
@@ -822,7 +823,9 @@ fn sidebar_view(
             );
             field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
             ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
-            if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !new_name.trim().is_empty() {
+            let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            let with_button = ui.button("Add tag").clicked();
+            if (with_enter || with_button) && !new_name.trim().is_empty() {
                 let taken = projects.file_library_mut().tags();
                 if taken.iter().any(|t| t.name == new_name.trim()) {
                     out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
@@ -1952,8 +1955,9 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
             }
             ui.separator();
-            // A new tag from here: a typed name and Enter, with the colour this menu shows
-            // outlined, shown dimmed until something carries it (#1196).
+            // A new tag from here: a typed name, added with Enter or the Add tag button, in
+            // the colour this menu shows outlined, shown dimmed until something carries it
+            // (#1196).
             let new_id = Id::unique(("browser-section-new-tag", &tag.name));
             let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
             let field = crate::kit::widgets::text_input(
@@ -1962,7 +1966,9 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             );
             field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
             ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
-            if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !new_name.trim().is_empty() {
+            let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            let with_button = ui.button("Add tag").clicked();
+            if (with_enter || with_button) && !new_name.trim().is_empty() {
                 let taken = projects.file_library_mut().tags();
                 if taken.iter().any(|t| t.name == new_name.trim()) {
                     out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));

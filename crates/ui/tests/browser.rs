@@ -1497,20 +1497,26 @@ fn the_tags_right_menu_adds_a_tag() {
     let (settings, folder) = (temp("tags-add-settings"), temp("tags-add"));
     pack(&folder);
     let mut harness = window(&settings, &folder);
-    // From a row of the section's right-click: a field that adds one with Enter.
+    // From a row of the section's right-click: a field that adds one, with a button beside it
+    // or with Enter.
     harness.get_by_label("Place Tag Red").click_secondary();
     harness.run();
     assert!(harness.query_by_label("New tag name").is_some(), "the menu offers adding a tag");
+    assert!(harness.query_by_label("Add tag").is_some(), "the button beside the field");
     harness.get_by_label("New tag name").click();
     harness.run();
     harness.get_by_label("New tag name").type_text("Punchy");
     harness.run();
-    harness.key_press(Key::Enter);
+    harness.get_by_label("Add tag").click();
     harness.run();
     assert!(harness.query_by_label("Place Tag Punchy").is_some(), "the section lists the new tag");
     let tags = harness.state_mut().projects_mut().file_library_mut().tags();
     let added = tags.iter().find(|t| t.name == "Punchy");
-    assert_eq!(added.map(|t| t.color.as_str()), Some(suhina_library::store::default_tags()[0].color.as_str()));
+    assert_eq!(
+        added.map(|t| t.color.as_str()),
+        Some(suhina_library::store::default_tags()[0].color.as_str()),
+        "the colour the menu's own tag shows"
+    );
     // Nothing carries it: the row is dimmed and the hover says so.
     harness.hover_at(harness.get_by_label("Place Tag Punchy").rect().center());
     harness.run();
@@ -1535,6 +1541,27 @@ fn the_tags_right_menu_adds_a_tag() {
     );
     let count = harness.state_mut().projects_mut().file_library_mut().tags().len();
     assert_eq!(count, 8, "seven defaults and the one added");
+    // From another tag's menu the colour is that one's own: Punchy's menu is not the next
+    // one in the default cycle's order.
+    harness.get_by_label("Place Tag Punchy").click_secondary();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    // The failed duplicate left "Punchy" in the field; Ctrl+A selects it, typing replaces it.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Warm");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().tags();
+    let punchy_color = tags.iter().find(|t| t.name == "Punchy").map(|t| t.color.clone()).unwrap_or_default();
+    assert_ne!(Some(punchy_color.as_str()), Some(suhina_library::store::default_tags()[2].color.as_str()));
+    assert_eq!(
+        tags.iter().find(|t| t.name == "Warm").map(|t| t.color.as_str()),
+        Some(punchy_color.as_str()),
+        "the menu's own tag's colour"
+    );
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
