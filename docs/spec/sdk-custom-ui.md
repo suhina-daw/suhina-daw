@@ -176,7 +176,8 @@ Canvas `size: [width, height]` defaults to `[640, 240]`. Optional
 `viewport_size: [width, height]` sets the preferred scrollable device body independently of the
 canvas, including node rows and stock controls. Both dimensions use logical pixels in 24..8192.
 The host adds a 20-pixel header and 6-pixel padding on each side. Available host space clips the
-viewport; oversized contents scroll without scaling. This works in row and stacked layouts.
+viewport; oversized contents scroll without scaling. This works in row and stacked layouts. A panel's
+scroll is its device's: it stays with the device when another is added, removed or moved before it.
 Omitted or null `viewport_size` preserves automatic sizing: row width is at least 220 or canvas
 width plus 12, row height fills the detail area; stacked width fills the column (normally 272),
 and height fits node rows, canvas and stock controls. Setting `size` does not scale artwork.

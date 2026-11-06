@@ -36,6 +36,8 @@ pub struct DeviceBox {
     pub index: usize,
     /// Where it is on the track, as the device commands take it.
     pub at: DeviceAt,
+    /// Which device it is, wherever it moves (`DeviceId::NONE` before the project gives ids).
+    pub id: suhina_engine::model::DeviceId,
     /// For a device group: its settings and branches.
     pub group: Option<GroupBox>,
     pub name: String,
@@ -671,6 +673,7 @@ pub(super) fn device_box(
     DeviceBox {
         index: path.last().copied().unwrap_or(0),
         at: DeviceAt(path.to_vec()),
+        id: d.id,
         group: d.as_group().map(|g| group_box(g, d, path, id, plugins)),
         name: device_display_name(d),
         theme_id: match &d.kind {

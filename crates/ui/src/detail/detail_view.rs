@@ -972,7 +972,7 @@ fn device_panel(
         {
             let list = Rect::from_min_max(Pos2::new(body.left(), rect.top() + EDITOR_TOP), body.max);
             if list.height() >= PARAM_ROW {
-                graph_controls(ui, list, graph, &state, list_height(device, graph), track, &device.at, actions);
+                graph_controls(ui, list, graph, &state, list_height(device, graph), track, device, actions);
             }
         }
         outline(painter);
@@ -996,7 +996,7 @@ fn device_panel(
         return clicked;
     }
     if let Some(graph) = &device.graph {
-        graph_controls(ui, body, graph, &state, list_height(device, graph), track, &device.at, actions);
+        graph_controls(ui, body, graph, &state, list_height(device, graph), track, device, actions);
         outline(painter);
         return clicked;
     }
