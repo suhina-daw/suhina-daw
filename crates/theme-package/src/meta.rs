@@ -227,10 +227,16 @@ pub fn svg(source: &str) -> Result<roxmltree::Document<'_>, String> {
         return Err("not an SVG image".into());
     }
     let lower = source.to_ascii_lowercase();
-    if ["<script", "<image", "<foreignobject", "href="].iter().any(|s| lower.contains(s)) {
+    if ["<script", "<image", "<foreignobject"].iter().any(|s| lower.contains(s)) || has_href(&lower) {
         return Err("an SVG holds only self-contained vector artwork".into());
     }
     Ok(doc)
+}
+
+/// Whether `lower` (lower case) names a link: `href`, then any space, then `=`, as the app's own check refuses
+/// both `href=` and `href =`.
+fn has_href(lower: &str) -> bool {
+    lower.match_indices("href").any(|(at, _)| lower[at + 4..].trim_start().starts_with('='))
 }
 
 /// Whether an SVG's root says a 16:9 picture, by its `viewBox` or else its `width` and `height`.

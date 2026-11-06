@@ -211,6 +211,15 @@ fn ids_are_made_from_names() {
 }
 
 #[test]
+fn a_folder_that_is_not_a_theme_keeps_its_id_from_a_copy() {
+    let mut themes = Themes::default();
+    themes.reserve(vec!["nord-copy".into(), "Night".into()]);
+    assert_eq!(themes.free_id("Nord copy"), "nord-copy-2");
+    assert_eq!(themes.free_id("night"), "night-2");
+    assert_eq!(themes.free_id("Other"), "other");
+}
+
+#[test]
 fn a_copy_of_a_theme_with_placed_controls_says_so() {
     let mut themes = Themes::default();
     let mut placed = night();

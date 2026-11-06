@@ -92,6 +92,8 @@ pub struct ThemeFiles {
     user_seen: Option<u64>,
     /// The folders last named as not themes, so each is named once until it changes.
     not_themes: Vec<String>,
+    /// The folder names last given to the window as taken, so a change is sent once.
+    reserved: Vec<String>,
 }
 
 impl ThemeFiles {
@@ -103,7 +105,31 @@ impl ThemeFiles {
             snapshots: HashMap::new(),
             user_seen: None,
             not_themes: Vec::new(),
+            reserved: Vec::new(),
         }
+    }
+
+    /// The names of every folder in the themes folder, themes or not: an id the app must not give
+    /// a new theme, since writing there would change files that are not its own.
+    fn folder_names(&self) -> Vec<String> {
+        let Some(Ok(dir)) = self.folder.as_ref().map(std::fs::read_dir) else { return Vec::new() };
+        let mut names: Vec<String> = dir
+            .filter_map(Result::ok)
+            .take(4096)
+            .filter(|e| std::fs::metadata(e.path()).is_ok_and(|m| m.is_dir()))
+            .filter_map(|e| e.file_name().to_str().map(str::to_owned))
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// The folder names, when they differ from those last given.
+    pub fn reserved_changed(&mut self) -> Option<Vec<String>> {
+        let names = self.folder_names();
+        (names != self.reserved).then(|| {
+            self.reserved.clone_from(&names);
+            names
+        })
     }
 
     /// Reads the theme `id` at `path` with its variants, one entry each: its `theme.css`, a
@@ -543,6 +569,8 @@ impl ThemeFiles {
             }
         }
         let (existing, _) = self.read_all();
+        // Every folder is taken, one that is not a theme (yet) as well: it is not the import's to write in.
+        let folders = self.folder_names();
         let existing: Vec<ThemeEntry> = existing.into_iter().filter(|e| !e.id.contains('@')).collect();
         let mut written: Vec<ThemeEntry> = Vec::new();
         for (stem, theme, files) in found {
@@ -552,6 +580,7 @@ impl ThemeFiles {
             let base = slug(if stem.is_empty() { &theme.name } else { &stem });
             let taken = |id: &str| {
                 theme::is_built_in(id)
+                    || folders.iter().any(|f| f.eq_ignore_ascii_case(id))
                     || existing.iter().chain(written.iter()).any(|e: &ThemeEntry| e.id.eq_ignore_ascii_case(id))
             };
             let mut id = base.clone();
@@ -1126,6 +1155,11 @@ fn persist_theme(folder: &Path, id: &str, theme: &Theme) -> Result<(), String> {
     let sheet_path = dir.join(THEME_CSS);
     if !std::fs::symlink_metadata(&sheet_path).is_ok_and(|m| m.is_file()) {
         return write_files(folder, package_files(id, theme)?);
+    }
+    // A `theme.css` with no `theme.json` beside it is not this theme's: it is a folder that is not a
+    // theme (yet), and what is in it is not ours to edit.
+    if !std::fs::symlink_metadata(dir.join(THEME_JSON)).is_ok_and(|m| m.is_file()) {
+        return Err(format!("{id} has a theme.css but no theme.json, so it was not changed"));
     }
     let source = read_text(&sheet_path)?;
     let sheet = theme::from_css(&source).0;

@@ -54,6 +54,9 @@ pub struct Themes {
     notice: Option<String>,
     /// File actions not taken by the app yet.
     actions: Vec<Pending>,
+    /// Folders in the themes folder that no theme here has (not themes, or not read): their names
+    /// are not free for a new theme.
+    reserved: Vec<String>,
 }
 
 /// A file action as it waits: a theme to save is looked up when the app takes it, so a theme
@@ -69,7 +72,7 @@ impl Default for Themes {
     fn default() -> Self {
         let entries: Vec<ThemeEntry> =
             theme::built_in_themes().into_iter().map(|(id, theme)| ThemeEntry { id: id.to_string(), theme }).collect();
-        Self { built_in: entries.len(), entries, folder: None, actions: Vec::new(), notice: None }
+        Self { built_in: entries.len(), entries, folder: None, actions: Vec::new(), notice: None, reserved: Vec::new() }
     }
 }
 
@@ -84,6 +87,11 @@ impl Themes {
             }
         }
         self.folder = folder;
+    }
+
+    /// The names of the folders in the themes folder; a new theme takes none of them.
+    pub fn reserve(&mut self, names: Vec<String>) {
+        self.reserved = names;
     }
 
     /// One theme file read again, added if it is new. Returns whether anything changed.
@@ -425,7 +433,10 @@ impl Themes {
         let base = slug(name);
         let mut id = base.clone();
         let mut number = 2;
-        while self.get(&id).is_some() || theme::is_built_in(&id) {
+        while self.get(&id).is_some()
+            || theme::is_built_in(&id)
+            || self.reserved.iter().any(|r| r.eq_ignore_ascii_case(&id))
+        {
             id = format!("{base}-{number}");
             number += 1;
         }

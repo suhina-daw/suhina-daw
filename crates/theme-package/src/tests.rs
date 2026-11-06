@@ -190,6 +190,8 @@ fn a_thumbnail_is_a_sixteen_by_nine_svg_and_layout_css_is_named() {
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"/>"#,
         r#"<svg xmlns="http://www.w3.org/2000/svg"/>"#,
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><image href="a.png"/></svg>"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="http://www.w3.org/1999/xlink" viewBox="0 0 160 90"><use x:href = "a.svg#b"/></svg>"#,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 90\"><use href\n=\"#b\"/></svg>",
     ] {
         assert!(with(refused).is_err(), "{refused}");
     }

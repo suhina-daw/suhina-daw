@@ -1270,6 +1270,11 @@ impl App {
 
     /// Uses the themes read from the theme files in `folder`, and draws with the one the settings
     /// name (the built-in one when there is no such file).
+    /// The names of the folders in the themes folder: ids a new theme does not take.
+    pub fn reserve_theme_ids(&mut self, names: Vec<String>) {
+        self.themes.reserve(names);
+    }
+
     pub fn set_themes(&mut self, ctx: &egui::Context, files: Vec<ThemeEntry>, folder: Option<String>) {
         self.themes.set(files, folder);
         // A variant in use whose file went: its theme's own values take its place.

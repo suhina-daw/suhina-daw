@@ -397,3 +397,56 @@ fn roles_that_share_an_artwork_file_do_not_overwrite_each_other_on_save() {
     assert_eq!(back.skin.assets[&other], svg(4), "the other role keeps its artwork");
     let _clean = std::fs::remove_dir_all(&dir);
 }
+
+/// A folder as nightlies since 2026-10-26 wrote it: `theme.css`, `layout.css`, no `theme.json`.
+fn nightly_folder(themes: &Path, id: &str) -> Vec<(PathBuf, Vec<u8>)> {
+    let dir = themes.join(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let css = format!(":root {{ --background: #101010; }}\n/* {id} */\n");
+    std::fs::write(dir.join(THEME_CSS), &css).unwrap();
+    std::fs::write(dir.join("layout.css"), "toolbar { order: 1; }\n").unwrap();
+    vec![(dir.join(THEME_CSS), css.into_bytes()), (dir.join("layout.css"), b"toolbar { order: 1; }\n".to_vec())]
+}
+
+fn unchanged(before: &[(PathBuf, Vec<u8>)]) {
+    for (path, bytes) in before {
+        assert_eq!(&std::fs::read(path).unwrap(), bytes, "{} was changed", path.display());
+    }
+}
+
+#[test]
+fn a_folder_that_is_not_a_theme_is_not_written_in_by_a_save_or_an_import() {
+    let dir = folder("hidden-folder");
+    let themes = dir.join("themes");
+    let before = nightly_folder(&themes, "nord-copy");
+    let mut files = ThemeFiles::new(Some(themes.clone()));
+    // Not listed, but its name is taken, and the window is told so for Duplicate and New.
+    assert!(files.read_all().0.is_empty());
+    assert_eq!(files.reserved_changed(), Some(vec!["nord-copy".to_string()]));
+    assert_eq!(files.reserved_changed(), None);
+
+    // A save under its id is refused, and its files are as they were.
+    assert!(files.write("nord-copy", &night()).is_err());
+    unchanged(&before);
+    assert!(!themes.join("nord-copy").join(THEME_JSON).exists());
+
+    // A dropped sheet of the same name takes the next id.
+    let drop = dir.join("drop");
+    std::fs::create_dir_all(&drop).unwrap();
+    let sheet = drop.join("nord-copy.css");
+    std::fs::write(&sheet, ":root { --background: #202020; }\n").unwrap();
+    let imported = files.import_with(&sheet, Again::Copy).unwrap();
+    assert_eq!(imported.ids, ["nord-copy-2"]);
+    unchanged(&before);
+
+    // The same for a package.
+    let packed = {
+        let mut other = ThemeFiles::new(Some(dir.join("other")));
+        other.write("nord-copy", &night()).unwrap();
+        other.export_package("nord-copy", &night()).unwrap()
+    };
+    let imported = files.import_with(&packed, Again::Copy).unwrap();
+    assert_eq!(imported.ids, ["nord-copy-3"]);
+    unchanged(&before);
+    let _clean = std::fs::remove_dir_all(&dir);
+}

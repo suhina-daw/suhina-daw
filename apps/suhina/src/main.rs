@@ -850,6 +850,9 @@ impl Window {
                 suhina_ui::kit::native_css::set_user_sheet(css);
                 ctx.request_repaint();
             }
+            if let Some(names) = reply.reserved {
+                self.app.reserve_theme_ids(names);
+            }
             if reply.replace {
                 self.app.set_themes(ctx, reply.entries, reply.folder);
             } else {

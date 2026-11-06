@@ -82,7 +82,7 @@ and explicit limits. Its palette reference is generated from the token registry.
 
 The original **Suhina Sheet** built-in theme demonstrates a light spreadsheet-like
 Launcher, green application chrome, compact cells and square controls. Its own
-self-contained SVG artwork lives under `assets/themes/sheet/` and is embedded with
+self-contained SVG artwork lives under `crates/ui/themes/suhina-sheet/assets/` and is embedded with
 the palette and CSS, so duplication/export includes the effective artwork without
 depending on installed files. It uses existing native controls, commands and views;
 it does not add spreadsheet functions or bundle third-party application artwork.

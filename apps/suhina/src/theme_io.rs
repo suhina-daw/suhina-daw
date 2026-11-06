@@ -29,6 +29,8 @@ pub struct Reply {
     pub conflict: Option<(std::path::PathBuf, String)>,
     /// The user's style sheet when it changed: `Some(None)` once it is removed.
     pub user_css: Option<Option<std::sync::Arc<str>>>,
+    /// The names of the folders in the themes folder when they changed: ids no new theme may take.
+    pub reserved: Option<Vec<String>>,
 }
 
 pub struct ThemeIo {
@@ -234,6 +236,7 @@ fn execute(files: &mut ThemeFiles, actions: Vec<FileAction>) -> Reply {
         reply.notices.push(Ok(format!("Read {} theme files", entries.len())));
     }
     reply.entries = entries;
+    reply.reserved = files.reserved_changed();
     reply.notices.extend(warnings.into_iter().map(Err));
     match files.user_css(reply.replace) {
         Some(Ok(css)) => reply.user_css = Some(css.map(std::sync::Arc::from)),
