@@ -1542,7 +1542,8 @@ fn plot_inside(points: &[(f32, f32)], top: f32, bottom: f32) -> Vec<Vec<(f32, f3
 
 /// The SDK's theme tokens (`--device-display`, `--device-series-1` …) as a panel's scope resolves
 /// them, each the theme's colour or the token's default; worked out once per panel and frame.
-struct Tokens([Color32; suhina_device_sdk::ui::THEME_TOKENS.len()]);
+/// Kept unmultiplied, so a translucent token keeps its exact RGB until a drawing's alpha is applied.
+struct Tokens([[u8; 4]; suhina_device_sdk::ui::THEME_TOKENS.len()]);
 impl Tokens {
     /// The tokens of the style scope open now: a rule on `:root`, `.device-panel` or
     /// `#device-<id>` reaches them.
@@ -1552,8 +1553,12 @@ impl Tokens {
             style
                 .as_ref()
                 .and_then(|s| s.variable(name))
-                .and_then(crate::kit::theme::parse_hex)
-                .unwrap_or(Color32::from_rgb(r, g, b))
+                // Any CSS colour the style engine reads: `rgb()`, a named colour, `color-mix()` …
+                .and_then(|value| match suhina_style::value::Color::parse(value.trim()) {
+                    Ok(suhina_style::value::Color::Rgba(rgba)) => Some(rgba),
+                    _ => None,
+                })
+                .unwrap_or([r, g, b, 255])
         }))
     }
     /// A drawing's colour: a token takes its colour, the palette's tokens the palette's (`color`).
@@ -1581,13 +1586,12 @@ fn color(c: [u8; 4]) -> Color32 {
             4 => palette.border,
             _ => palette.accent,
         };
-        return with_alpha(base, a);
+        return with_alpha(base.to_srgba_unmultiplied(), a);
     }
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
-/// `base` with its alpha multiplied by `alpha` (0 to 255).
-fn with_alpha(base: Color32, alpha: u8) -> Color32 {
-    let [r, g, b, a] = base.to_srgba_unmultiplied();
+/// `base` (unmultiplied) with its alpha multiplied by `alpha` (0 to 255).
+fn with_alpha([r, g, b, a]: [u8; 4], alpha: u8) -> Color32 {
     let alpha = (u16::from(a) * u16::from(alpha) + 127) / 255;
     Color32::from_rgba_unmultiplied(r, g, b, u8::try_from(alpha).unwrap_or(u8::MAX))
 }

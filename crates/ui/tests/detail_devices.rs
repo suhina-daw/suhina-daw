@@ -719,9 +719,30 @@ fn the_device_tokens_reach_the_panels_from_the_root_and_from_one_device() {
     let default = egui::Color32::from_rgb(0xF2, 0xA6, 0x5A);
     let root = painted(&mut harness, ":root { --device-series-1: #00ff00; }");
     let one = painted(&mut harness, "#device-multiband { --device-series-1: #ff00ff; }");
+    // Any CSS colour, its alpha too.
+    let translucent = painted(&mut harness, ":root { --device-series-1: rgb(0 255 0 / 50%); }");
     suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(
+        translucent.iter().any(|c| {
+            let [r, g, b, a] = c.to_srgba_unmultiplied();
+            r <= 2 && g >= 240 && b <= 2 && (1..=128).contains(&a)
+        }),
+        "an rgb() token with an alpha reaches the drawings translucent"
+    );
     assert!(root.contains(&green), "a rule on :root reaches the drawings");
     assert!(!root.contains(&default), "on both devices");
     assert!(one.contains(&magenta), "a rule on #device-multiband reaches Multiband's drawings");
     assert!(one.contains(&default), "and leaves the FM Synth's as they were");
+    // The expanded panel is in the device's scope too: opening it adds drawings in the device's
+    // own `--device-display`, not in the default.
+    let count = |colours: &[egui::Color32], colour| colours.iter().filter(|c| **c == colour).count();
+    let display = egui::Color32::from_rgb(10, 17, 23);
+    let css = "#device-fm-synth { --device-display: #ff00ff; }";
+    let compact = painted(&mut harness, css);
+    harness.get_by_label("Expand FM Synth").click();
+    let expanded = painted(&mut harness, css);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(harness.query_by_label("Close expanded panel").is_some());
+    assert!(count(&expanded, magenta) > count(&compact, magenta), "the expanded canvas takes #device-fm-synth's");
+    assert_eq!(count(&expanded, display), count(&compact, display), "and none of the default");
 }

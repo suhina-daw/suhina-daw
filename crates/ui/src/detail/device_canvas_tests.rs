@@ -244,6 +244,13 @@ fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
     let half = fill(Rect::from_min_size(Pos2::new(0.0, 30.0), Vec2::new(40.0, 20.0)));
     assert_eq!(half, Some(Color32::from_rgba_unmultiplied(255, 255, 255, 10)), "half of the theme's alpha");
 }
+/// A translucent token keeps its exact RGB until the drawing's alpha is applied: rounding it
+/// through a premultiplied colour first would tint a faint dark colour.
+#[test]
+fn a_token_takes_the_drawings_alpha_without_rounding_its_colour_twice() {
+    assert_eq!(with_alpha([7, 0, 0, 0x14], 128), Color32::from_rgba_unmultiplied(7, 0, 0, 10));
+    assert_eq!(with_alpha([200, 100, 50, 255], 255), Color32::from_rgb(200, 100, 50));
+}
 #[test]
 fn sample_markers_have_one_solid_color_without_an_outline() {
     let context = egui::Context::default();

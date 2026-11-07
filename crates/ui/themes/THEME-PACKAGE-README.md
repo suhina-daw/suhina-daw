@@ -168,7 +168,8 @@ of a device panel is `#its-id`, for example:
 Built-in devices that draw displays (the FM synth, Multiband) take five more colours as custom
 properties: `--device-display`, a display's dark ground, and `--device-series-1` to
 `--device-series-5`, a device's series of colours (bands, operators, a gain line, a spectrum).
-Set them on `:root` or `.device-panel` for every device, or on `#device-<id>` for one:
+Each takes any CSS colour, its alpha too. Set them on `:root` or `.device-panel` for every device,
+or on `#device-<id>` for one (its expanded panel included):
 
 ```css
 :root { --device-display: #101418; }
