@@ -986,6 +986,10 @@ button opens its clip in the editor.
 
 ## Shortcuts
 
+The piano roll's keys work after a click anywhere in a MIDI clip's detail area: the piano roll,
+and the clip's panel and note tools beside it, so Ctrl+X or Ctrl+D there act on the notes and not
+on the Arrangement's clips. A field being typed in takes the keys while it is edited.
+
 Built (the first version, and keyboard editing from [#344](https://github.com/suhina-daw/suhina-daw/issues/344)):
 
 | Keys | Does |

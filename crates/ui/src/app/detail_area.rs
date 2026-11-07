@@ -696,6 +696,15 @@ impl App {
                 let seeks = matches!(piano.address.get("clip"), Some(serde_json::Value::Number(_)));
                 let cx = piano_roll::Context { options, keymap: &keymap, copied, playhead, start_marker, seeks };
                 piano_roll::show(ui, rest, piano, piano_roll, cx, actions);
+                // A press anywhere in a MIDI clip's detail area, its panel and note tools too,
+                // keeps the keys with the piano roll: Ctrl+X, Ctrl+D and the others go on acting
+                // on the notes, not on the Arrangement's clips (a typed field still takes them).
+                if !info.audio
+                    && ui.input(|i| i.pointer.any_pressed())
+                    && crate::kit::widgets::pointer_over(ui, detail).is_some()
+                {
+                    piano_roll.focused = true;
+                }
                 picked
             } else if let (Some((_, _, device, _)), detail_view::Detail::Clip(info, chain)) = (ara, &shown) {
                 let (rest, picked) = detail_view::show_clip_column(ui, info, stacked, None, actions);

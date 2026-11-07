@@ -918,6 +918,25 @@ fn an_edit_key_with_no_notes_selected_stays_in_the_piano_roll() {
     assert!(h.state().piano_roll().focused, "and the keyboard is still the piano roll's");
 }
 
+/// A click in the clip's panel beside the piano roll keeps the keyboard with the piano roll, so
+/// Ctrl+D duplicates the selected note and not the clip in the Arrangement.
+#[test]
+fn a_click_in_the_clip_panel_keeps_the_keys_with_the_piano_roll() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let before = notes(&h);
+    let at = note_rect(&h, &before[0]).center();
+    click(&mut h, at);
+    // Just under the Scale row: the panel's figures, or its empty space when they do not fit.
+    let scale = h.get_by_label_contains("Scale: ").rect();
+    click(&mut h, egui::pos2(scale.left() + 2.0, scale.bottom() + 6.0));
+    assert!(h.state().piano_roll().focused, "the panel is the piano roll's");
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
+    h.run();
+    assert_eq!(notes(&h).len(), before.len() + 1, "the note is duplicated");
+    assert!(h.query_by_label_contains("Piano roll,").is_some(), "the clip is still the one shown");
+}
+
 /// A rectangle over no note selects in time: nothing is selected and the bar says what is; a rectangle
 /// over a note selects the note, and the bar its extent. A click leaves the insert mark.
 #[test]
