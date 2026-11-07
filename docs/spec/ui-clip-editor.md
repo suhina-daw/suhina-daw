@@ -828,8 +828,9 @@ clip scales) and is saved with the project; a clip has none until one is set.
   scroll). The chosen ones are ticked. Off, a root and a mode each run `clip.setScale`, one undo
   step (Ctrl+Z takes it back): a root keeps the mode the clip has (major when it has none), a mode
   keeps the root (C when it has none).
-- **The rows of the keys in the scale are lighter** than the others (the root's lighter still),
-  in place of the white-key and black-key rows a clip without a scale shows; each key in the scale
+- **The rows of the keys in the scale are tinted with the clip's colour** (8 % of it over the
+  dark rows, the root's 14 %), in place of the white-key and black-key rows a clip without a scale
+  shows, and the other rows stay dark; each key in the scale
   has a 2 px mark at the right edge of the key column. While the clip has a
   scale, each row of the key column in view is named for readers and tests: "Key E3 in scale", or
   "Key F3" for a key outside it.

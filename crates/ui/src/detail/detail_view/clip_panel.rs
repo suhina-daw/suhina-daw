@@ -838,9 +838,9 @@ pub(super) fn clip_part(
         Pos2::new(part.right(), root_rect.bottom()),
     );
     let root = panel.scale.map(|s| usize::from(s.root()));
-    let root_shown = root.and_then(|r| ROOT_LABELS.get(r)).copied().unwrap_or("—");
-    let roots: Vec<Option<(&str, bool)>> =
-        ROOT_LABELS.iter().enumerate().map(|(i, name)| Some((*name, root == Some(i)))).collect();
+    let name_of = |class: usize| crate::detail::piano_roll::pitch_class_name(u8::try_from(class).unwrap_or(0));
+    let root_shown = root.map_or("—", name_of);
+    let roots: Vec<Option<(&str, bool)>> = (0..12).map(|i| Some((name_of(i), root == Some(i)))).collect();
     let id = Id::unique(("clip-panel-scale-root", panel.clip.0));
     if let Some(picked) =
         drop_down(ui, painter, root_rect, id, "Scale root", root_shown, &roots, root_rect.width() + 20.0)
@@ -864,9 +864,6 @@ pub(super) fn clip_part(
     }
     y + NAME + FIELD
 }
-
-/// The roots as the Scale list shows them.
-const ROOT_LABELS: [&str; 12] = ["C", "C#/Db", "D", "D#/Eb", "E", "F", "F#/Gb", "G", "G#/Ab", "A", "A#/Bb", "B"];
 
 /// The Audio part: warp, the warp mode, the clip's tempo and the gain envelope's switch. Returns
 /// where it ends.

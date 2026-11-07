@@ -258,7 +258,7 @@ pub(super) fn draw(
         let own = if is_black(key) { black_row_style.background } else { row_style.background };
         let fill = match (clip.scale, own) {
             (None, Some(own)) => own,
-            _ => scale_view::row_fill(clip.scale, key, is_black(key)),
+            _ => scale_view::row_fill(clip.scale, key, is_black(key), clip.color),
         };
         grid_painter.fill_background(row, 0.0, fill);
         // The row under the pointer, so it can be followed to the strip that names it.

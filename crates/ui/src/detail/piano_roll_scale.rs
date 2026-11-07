@@ -143,17 +143,23 @@ pub fn rows(clip: &PianoClip, fold: Fold) -> KeyRows {
     }
 }
 
-/// How a key row is filled: with a scale, the keys in it lighter and its root lighter still;
-/// without one, white keys lighter than black keys.
-pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool) -> egui::Color32 {
+/// How a key row is filled: with a scale, every row dark and the keys in it tinted with the
+/// clip's `color` (a little, [`SCALE_TINT`]; the root more, [`ROOT_TINT`]); without one, white
+/// keys lighter than black keys.
+pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool, color: egui::Color32) -> egui::Color32 {
+    let tinted = |amount: f32| theme::window_background().lerp_to_gamma(color.to_opaque(), amount);
     match scale {
-        Some(scale) if scale.contains(key) && key % 12 == scale.root() => theme::control_hover(),
-        Some(scale) if scale.contains(key) => theme::control_background(),
+        Some(scale) if scale.contains(key) && key % 12 == scale.root() => tinted(ROOT_TINT),
+        Some(scale) if scale.contains(key) => tinted(SCALE_TINT),
         Some(_) => theme::window_background(),
         None if black => theme::window_background(),
         None => theme::panel_background(),
     }
 }
+
+/// How much of the clip's colour a row in the clip's scale takes, and its root's row.
+const SCALE_TINT: f32 = 0.08;
+const ROOT_TINT: f32 = 0.14;
 
 /// The 2 px mark at the right of the key column on a key in the scale (the root's brighter).
 pub(crate) fn key_mark(painter: &egui::Painter, scale: Option<Scale>, key: u8, row: Rect, color: egui::Color32) {
@@ -230,9 +236,10 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, clip: &PianoClip, fold: &mut Fold, a
                 picked = Some(json!({ "off": true }));
             }
             ui.separator();
-            let root = scale.map_or("C", Scale::root_name);
+            let root = scale.map_or("C", |s| crate::detail::piano_roll::pitch_class_name(s.root()));
             let roots = ui.menu_button(egui::RichText::new(format!("Root: {root}")).font(font.clone()), |ui| {
-                for (index, name) in ROOT_NAMES.iter().enumerate() {
+                for index in 0..ROOT_NAMES.len() {
+                    let name = crate::detail::piano_roll::pitch_class_name(u8::try_from(index).unwrap_or(0));
                     let on = scale.is_some_and(|s| usize::from(s.root()) == index);
                     if entry(ui, on, name, &format!("Scale root {name}"), true) && !on {
                         picked = Some(json!({ "root": index }));
@@ -331,11 +338,16 @@ mod tests {
     #[test]
     fn row_colours_follow_the_scale() {
         let c = Some(scale(0, ScaleMode::Major));
-        assert_eq!(row_fill(c, 60, false), theme::control_hover(), "the root");
-        assert_eq!(row_fill(c, 62, false), theme::control_background(), "in the scale");
-        assert_eq!(row_fill(c, 61, true), theme::window_background(), "outside it");
-        assert_eq!(row_fill(None, 61, true), theme::window_background());
-        assert_eq!(row_fill(None, 60, false), theme::panel_background());
+        let red = egui::Color32::from_rgb(220, 40, 40);
+        let dark = theme::window_background();
+        let (root, inside) = (row_fill(c, 60, false, red), row_fill(c, 62, false, red));
+        assert_eq!(root, dark.lerp_to_gamma(red, ROOT_TINT), "the root, the clip's colour a little more");
+        assert_eq!(inside, dark.lerp_to_gamma(red, SCALE_TINT), "in the scale, a little of the clip's colour");
+        assert_ne!(root, inside, "the root stands out");
+        assert_eq!(row_fill(c, 61, true, red), dark, "outside it");
+        assert_eq!(row_fill(c, 61, false, red), dark, "white or black alike");
+        assert_eq!(row_fill(None, 61, true, red), theme::window_background());
+        assert_eq!(row_fill(None, 60, false, red), theme::panel_background());
     }
 
     #[test]

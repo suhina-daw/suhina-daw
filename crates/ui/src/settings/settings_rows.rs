@@ -14,8 +14,8 @@ use crate::settings::settings_view::{Entry, Page, block, row};
 use crate::settings::track_sizes::TrackSize;
 use crate::settings::view_settings::{DetailLayout, FolderDrop, WaveformColour};
 use crate::settings::{
-    AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, OnOpen, PianoKeyNames, PianoKeyStyle,
-    PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
+    AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, NoteSpelling, OnOpen, PianoKeyNames,
+    PianoKeyStyle, PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
 };
 use suhina_update::Channel;
 
@@ -787,6 +787,17 @@ pub(crate) static ROWS: &[Entry] = &[
         |cx, r| {
             let options: Vec<(&str, PianoKeyNames)> = PianoKeyNames::ALL.iter().map(|n| (n.name(), *n)).collect();
             cx.choose(r, &options, |s| &mut s.piano_key_names);
+        },
+    ),
+    row(
+        Page::ClipEditor,
+        "Piano roll",
+        "Note names",
+        "Whether a black key is named as a sharp (C#) or a flat (Db)",
+        &["note_spelling"],
+        |cx, r| {
+            let options: Vec<(&str, NoteSpelling)> = NoteSpelling::ALL.iter().map(|n| (n.name(), *n)).collect();
+            cx.choose(r, &options, |s| &mut s.note_spelling);
         },
     ),
     row(

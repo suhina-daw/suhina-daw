@@ -261,6 +261,7 @@ pub(super) const FIELDS: &[Field] = &[
 pub(super) const LATER: &[Field] = &[
     named!("piano_key_style", piano_key_style, PianoKeyStyle),
     named!("piano_key_names", piano_key_names, PianoKeyNames),
+    named!("note_spelling", note_spelling, NoteSpelling),
     Field {
         key: "background_image",
         write: |s| s.background_image.replace(['\r', '\n'], ""),

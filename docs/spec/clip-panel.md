@@ -43,7 +43,7 @@ beside it, and controls are 6 points apart, so no two touch.
 | **Clip** (156 points) | **Start** and **End** side by side, each with **Set** at the right of its name | `clip.setStart`, `clip.setLength` |
 | | **Loop**: a switch the width of the part, lit while on | `clip.setLoop` |
 | | **Position** and **Length** of the loop side by side, each with **Set**; faint while the loop is off, a change turns it on | `clip.setLoop` (`start`, `end`) |
-| | **Scale**: the root (C, C#/Db … B) and the mode (None, then Major, Minor … Blues), each a list | `clip.setScale` |
+| | **Scale**: the root (C, C# … B, or C, Db … B with the setting *Note names* at flats) and the mode (None, then Major, Minor … Blues), each a list | `clip.setScale` |
 | **Audio** (112 points) | **Warp**: a switch the width of the part | `clip.setAudio` (`warp`) |
 | | **Mode**: a list of Re-pitch, Rhythmic, Tonal, Texture, Smooth, High quality | `clip.setAudio` (`mode`) |
 | | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
