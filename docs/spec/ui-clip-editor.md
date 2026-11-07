@@ -1014,7 +1014,7 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Ctrl+U | Quantises the selected notes, or every note, with the last settings |
 | Ctrl+A, Escape | Selects every note, clears the selection |
 | Left, Right | Moves the selection one grid step earlier, later |
-| Up, Down; Shift+Up, Shift+Down | Moves the selection a semitone; an octave |
+| Up, Down; Shift+Up, Shift+Down | Moves the selection a semitone (folded, each note to the next row shown, so it stays in the scale: `note.move` with `keys`); an octave |
 | Shift+Left, Shift+Right | Takes the selection's ends to the previous, the next grid line, or to the next note of the key (› Resizing) |
 | Alt+Left, Alt+Right; Alt+Shift+Left, Alt+Shift+Right | Moves the selection, or changes its length, by a 1/128 note, off the grid (› Moving, › Resizing) |
 | Ctrl+C, Ctrl+X, Ctrl+V | Copies, cuts, pastes notes |
@@ -1134,7 +1134,7 @@ note another writer deletes leaves it.
 | `note.list` | `clip` (or `track` with `index` or `scene`) | The clip's notes: index, id, time, length, key, velocity (1 to 127) |
 | `note.add` | clip, `notes`: a list of `{time, length, key, velocity?}`, `replace?` | Adds notes (velocity 100 when left out); returns their indices and ids |
 | `note.delete` | clip, `notes`: a list of indices or `{"id": n}` | Deletes them; returns their indices and ids |
-| `note.move` | clip, `notes`, `beats?`, `semitones?`, `replace?` | Moves them in time and in pitch; returns their indices and ids. With `replace: true` here and on the commands marked so, when the command changes a note, the notes it places overlap no other note of their key afterwards: a note covered whole is removed, one covered in part is cut back, and the result lists the removed notes as `replaced`, by their indices before the command |
+| `note.move` | clip, `notes`, `beats?`, `semitones?` or `keys?`, `replace?` | Moves them in time and in pitch (`keys`: the key each note goes to, one per entry of `notes`); returns their indices and ids. With `replace: true` here and on the commands marked so, when the command changes a note, the notes it places overlap no other note of their key afterwards: a note covered whole is removed, one covered in part is cut back, and the result lists the removed notes as `replaced`, by their indices before the command |
 | `note.resize` | clip, `notes`, `length?`, `by?`, `startBy?` or `lengths?`, `replace?` | Sets their length, changes it by `by` beats, moves each start by `startBy` beats and keeps each end (the left edge), or sets one length per entry of `notes`; one of the four |
 | `note.setVelocity` | clip, `notes`, `velocity?`, `by?` or `velocities?` | Sets their velocity, changes it by `by` (each kept within 1 to 127), or gives each note its own: `velocities` is one value, 1 to 127, per entry of `notes`, in the same order (a repeated index takes its last); one of the three |
 | `note.quantize` | clip, `notes?`, `grid`, `amount?`, `ends?`, `replace?` | Moves the starts (with `ends: true` the ends too) of the notes, or of every note when `notes` is left out, towards the nearest line of `grid` (as `launcher.setQuantization` takes it, such as `"1/16"` or `"1/8T"`; not `none`) by `amount` percent, 0 to 100 (default 100); returns the indices and how many moved |

@@ -546,6 +546,25 @@ impl PianoRollState {
             "pianoRoll.later" => ("note.move", moves(key_step(&chosen, grid, false), 0).0, 0),
             "pianoRoll.earlierFine" => ("note.move", moves(-FINE_STEP, 0).0, 0),
             "pianoRoll.laterFine" => ("note.move", moves(FINE_STEP, 0).0, 0),
+            "pianoRoll.up" | "pianoRoll.down" if crate::detail::piano_roll_scale::rows(clip, self.fold).folded() => {
+                // Folded, each note steps to the next row shown (a key of the scale, or one with
+                // notes), so a move never lands on a key the fold hides.
+                let rows = crate::detail::piano_roll_scale::rows(clip, self.fold);
+                let up = if action == "pianoRoll.up" { 1 } else { -1 };
+                let mut keys = Vec::with_capacity(acting.len());
+                for &index in &acting {
+                    let note = clip.notes.get(index)?;
+                    let step = rows.semitones(note.key, up);
+                    // A note at the top or the bottom row stops the whole move, as the plain one does.
+                    if step == 0 {
+                        return None;
+                    }
+                    keys.push(i32::from(note.key) + step);
+                }
+                params["keys"] = json!(keys);
+                self.replacing(&mut params);
+                return Some(Action::new("note.move", params));
+            }
             "pianoRoll.up" => ("note.move", 0.0, moves(0.0, 1).1),
             "pianoRoll.down" => ("note.move", 0.0, moves(0.0, -1).1),
             "pianoRoll.octaveUp" => ("note.move", 0.0, moves(0.0, 12).1),

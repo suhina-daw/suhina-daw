@@ -280,6 +280,25 @@ fn a_fold_maps_heights_to_the_shown_keys_and_back() {
     assert_eq!(layout.key_at(24.0 + 67.0 * 10.0 + 1.0), Some(60));
 }
 
+/// Folded to the scale, Up and Down take each selected note to the next key the rows show, so
+/// a note never lands on a key the fold hides; unfolded they go a semitone.
+#[test]
+fn folded_up_and_down_keep_the_notes_in_the_scale() {
+    let mut c = clip(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 64), note(0.0, 1.0, 67)]);
+    c.scale = Scale::new(0, suhina_engine::model::ScaleMode::Major);
+    let mut state = focused_on(&c);
+    state.selected = BTreeSet::from([0, 1, 2]);
+    state.fold = Fold::Scale;
+    let up = state.key_action("pianoRoll.up", &c, 0.0, None).map(|a| a.params);
+    // C, E, G go to D, F, A: two, one and two semitones.
+    assert_eq!(up.as_ref().and_then(|p| p.get("keys")).cloned(), Some(json!([62, 65, 69])), "{up:?}");
+    let down = state.key_action("pianoRoll.down", &c, 0.0, None).map(|a| a.params);
+    assert_eq!(down.as_ref().and_then(|p| p.get("keys")).cloned(), Some(json!([59, 62, 65])), "{down:?}");
+    state.fold = Fold::Off;
+    let plain = state.key_action("pianoRoll.up", &c, 0.0, None).map(|a| a.params);
+    assert_eq!(plain.as_ref().and_then(|p| p.get("semitones")).cloned(), Some(json!(1)), "{plain:?}");
+}
+
 #[test]
 fn z_fits_the_selection_and_shift_z_the_whole_clip() {
     let clip = clip(vec![note(2.0, 1.0, 60), note(3.0, 1.0, 62), note(6.0, 1.0, 64)]);

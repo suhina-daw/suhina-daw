@@ -525,6 +525,24 @@ fn a_move_to_the_start_lands_on_it_despite_rounding() {
     assert!(run(&mut session, "note.move", json!({ "track": 1, "index": 0, "notes": [0], "beats": -0.01 })).is_err());
 }
 
+/// `note.move` with `keys` takes each note to its own key (a move through a scale), in one undo
+/// step; keys and semitones together, a wrong count or a key past 127 are refused.
+#[test]
+fn a_move_with_keys_takes_each_note_to_its_own_key() {
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 64), note(1.0, 1.0, 67)]));
+    run(&mut session, "note.move", json!({ "track": 1, "index": 0, "notes": [2, 0], "keys": [69, 62] })).unwrap();
+    let keys: Vec<u8> = notes_of(&session, 1).iter().map(|n| n.key).collect();
+    assert!(keys.contains(&62) && keys.contains(&64) && keys.contains(&69), "{keys:?}");
+    for bad in [
+        json!({ "track": 1, "index": 0, "notes": [0], "keys": [61], "semitones": 1 }),
+        json!({ "track": 1, "index": 0, "notes": [0, 1], "keys": [61] }),
+        json!({ "track": 1, "index": 0, "notes": [0], "keys": [128] }),
+        json!({ "track": 1, "index": 0, "notes": [0], "keys": 61 }),
+    ] {
+        assert!(run(&mut session, "note.move", bad.clone()).is_err(), "{bad}");
+    }
+}
+
 #[test]
 fn a_mute_rides_through_the_other_note_tools() {
     let mut session = Session::new(project(scale_notes()));
