@@ -325,6 +325,17 @@ fn set(clip: ClipId, points: &[GainPoint]) -> Action {
     Action::new("clip.setEnvelope", params)
 }
 
+/// The gesture a drag of the envelope sends its frames in: one undo step for the whole drag.
+const GESTURE: &str = "clip-envelope";
+
+/// [`set`] as a frame of a drag: the clip plays the envelope as it is dragged, and the frames
+/// make one undo step.
+fn dragged(clip: ClipId, points: &[GainPoint]) -> Action {
+    let mut action = set(clip, points);
+    action.params["gesture"] = crate::interaction::commands::gesture(GESTURE);
+    action
+}
+
 /// `points` with a point at `beat` and `db` put in beat order; a bent segment it lands on is cut
 /// there so its two halves keep the curve's shape (`Curve::split`). Returns the points and the
 /// new one's index.
@@ -661,6 +672,14 @@ pub fn show(
         .gap(12.0)
         .show(|ui| ui.add(egui::Label::new(db_text(db)).wrap_mode(egui::TextWrapMode::Extend)));
     }
+    // While the button is down the envelope as dragged is set on every frame it changes, so the
+    // clip is heard as it is drawn; the frames are one gesture, one undo step.
+    if let Some(now) = draft(ui.ctx(), clip)
+        && ui.input(|i| i.pointer.any_down())
+        && now.points != view.envelope
+    {
+        actions.push(dragged(clip, &now.points));
+    }
     // Once the button is up, what the point or the curve moved to is set, and the draft goes:
     // also for a drag whose point stopped being drawn (its pass moved past the clip's end).
     if let Some(done) = draft(ui.ctx(), clip)
@@ -672,7 +691,7 @@ pub fn show(
             d.remove::<Lift>(lift_key());
         });
         if done.points != view.envelope {
-            actions.push(set(clip, &done.points));
+            actions.push(dragged(clip, &done.points));
         }
     }
     if let Some(index) = removed {

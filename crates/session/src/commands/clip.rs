@@ -495,6 +495,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Curves,
                 "each point's curve to the next, in the order of points, as automation.movePoint's curve: a bend from -1 to 1 or [x1, y1, x2, y2] each from -0.5 to 1.5; null or missing for straight",
             ),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_audio::set_envelope,

@@ -2653,6 +2653,9 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     harness.run();
     harness.hover_at(low);
     harness.run();
+    // The project has the point while the button is still down, so the clip is heard as dragged.
+    let live = loop_envelope(&harness);
+    assert!(live.len() == 1 && live[0].1 < 0.0, "set while dragging: {live:?}");
     harness.drop_at(low);
     harness.run();
     let points = loop_envelope(&harness);
@@ -2687,12 +2690,14 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     harness.run();
     harness.hover_at(point - egui::vec2(0.0, 12.0));
     harness.run();
+    let live = loop_envelope(&harness);
+    assert!(live[0].1 > points[0].1, "it rises in the project while dragged: {live:?}");
     harness.drop_at(point - egui::vec2(0.0, 12.0));
     harness.run();
     let moved = loop_envelope(&harness);
     assert_eq!(moved.len(), 1);
     assert!(moved[0].1 > points[0].1, "{moved:?} after {points:?}");
-    // One undo step puts it back where it was added.
+    // The drag's frames are one undo step: it puts the point back where it was added.
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
     assert_eq!(loop_envelope(&harness), points);

@@ -192,7 +192,9 @@ puts one back at 0 dB, Alt and a click removes one and Shift or Ctrl+Shift and a
 moves the line or the segment up and down; Ctrl and a click anywhere, which adds a point there, is
 left out, as Ctrl and a click selects clips in the Arrangement.
 
-Each change is one `clip.setEnvelope`, one undo step. The clip itself is moved by its name bar while
+Each change is one undo step. A drag sets the envelope on every frame it moves, with a `gesture`,
+so the clip is heard as the line is drawn while the button is down, and the drag's frames are one
+undo step; a click is one `clip.setEnvelope`. The clip itself is moved by its name bar while
 its envelope is edited. A slot's clip has no waveform there; its envelope is set by command.
 
 ## The grey box
@@ -212,7 +214,7 @@ column (#1190). The panel now keeps its controls 6 points apart, with their name
   `detected`, `manual`; manual by default).
 - `clip.findTempo {…}`: `{metadata, name, detected, found, bpm, source}`, nulls where a source
   finds nothing. Changes nothing.
-- `clip.setEnvelope {…, points, curves?}`: the envelope as pairs, `[beat, dB, beat, dB, …]`; `[]` clears it. `curves` gives each point its curve to the next, in the order of `points`: a bend from -1 to 1 or `[x1, y1, x2, y2]`, `null` for straight.
+- `clip.setEnvelope {…, points, curves?, gesture?}`: the envelope as pairs, `[beat, dB, beat, dB, …]`; `[]` clears it. `curves` gives each point its curve to the next, in the order of `points`: a bend from -1 to 1 or `[x1, y1, x2, y2]`, `null` for straight. Calls with the same open `gesture` (a drag) are one undo step.
 
 Every one changes only the clip it names and is one undo step.
 
