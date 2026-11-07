@@ -131,8 +131,9 @@ jobs:
             const pr = context.payload.pull_request;
             // Fork pull_request runs may not receive repository variables. Trust the App's
             // commit-bound proof here; the default-branch gateway and linker check membership.
-            // A fork's build needs a /test-build request for its commit, a maintainer's label too:
-            // test-build-links.yml links nothing else from a fork.
+            // From a fork, the label builds only with a /test-build request for this commit (the
+            // bot adds the label itself), also when a maintainer adds it: a label binds no commit
+            // anyone read, and test-build-links.yml links nothing else from a fork.
             const fromFork = !pr.head.repo?.id || pr.head.repo.id !== pr.base?.repo?.id;
             if (!(await authorizedBuild(context.actor, pr.number, pr.head.sha, new Date().toISOString(), false, fromFork))) {
               throw new Error('No authorized test-build request for this commit. Use /test-build on fork PRs.');
