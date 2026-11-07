@@ -286,7 +286,8 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
         })?;
         let seconds = region.duration_seconds.filter(|s| s.is_finite() && *s > 0.0)?;
         let data = session.audio().files.get(region.pool_key().as_ref())?.clone();
-        let path = std::path::PathBuf::from(region.absolute_file.as_deref().unwrap_or(&region.file));
+        // The file that was decoded, never another path the clip names (#617).
+        let path = session.loaded_path(&region.file, region.absolute_file.as_deref())?;
         let tempo = crate::files::file_tempo(&path, &data)?;
         let beats = seconds * tempo.bpm / 60.0;
         (beats.is_finite() && beats > 0.0).then_some((beats, seconds))

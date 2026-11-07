@@ -160,6 +160,17 @@ which run hostile parameter values, hostile buffers, every block size and 8…38
   setting says where they are, and says **Model missing** when it does not
   ([§ States](#states)); joining the missing-files view and relink is later work
   ([§ Limits](#limits)).
+- A project's stored path is read only from where its audio may be
+  ([missing-files.md › Project file boundaries](missing-files.md#project-file-boundaries)): inside
+  the project's folder, or trusted outside it (in the desktop app any local disk). A relative path
+  is read from the project's folder, never from the working folder. A network share or a device
+  path is not even looked at, and the panel's note says to choose the file again; a file chosen
+  with `device.setNamFile` is read wherever it is, also when the device named that path already,
+  and runs at once. Saving the project trusts the files its devices name, not one a removed
+  device or an earlier choice left; a trust that reads a file the old one did not lets a playing
+  engine run it without waiting for an edit. A device copied from one open project and pasted
+  into another runs the file the person chose there. Only a plain file is read, so a named pipe
+  cannot block the session.
 
 ## Sample rates
 

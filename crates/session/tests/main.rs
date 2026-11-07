@@ -38,6 +38,7 @@ mod note_quantize;
 mod note_tools;
 mod notes;
 mod plugins;
+mod project_paths;
 mod projects;
 mod range;
 mod recording;

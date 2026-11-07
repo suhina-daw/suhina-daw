@@ -1110,12 +1110,27 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     }
     let absolute = crate::files::absolute(std::path::Path::new(path));
     let absolute_text = absolute.display().to_string();
-    let asset = session.load_device_file(&kind, &absolute_text).map_err(CommandError)?;
+    let modified = std::fs::metadata(&absolute).ok().and_then(|m| m.modified().ok());
+    let asset = session.load_device_file(&kind, &absolute).map_err(CommandError)?;
     let name = suhina_device_registry::asset_name(&asset, &absolute).unwrap_or_default();
+    // The person's own choice: read wherever it is while the session runs, and run as read now,
+    // so a save trusts it even before an edit reads the devices' files again.
+    let files = &mut session.device_files;
+    files.chosen.insert(absolute_text.clone());
+    files.modified.insert(absolute_text.clone(), modified);
+    files.notes.remove(absolute_text.as_str());
+    files.assets.set(absolute_text.clone(), asset);
+    files.changed = true;
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
+    // The file the device names already (one the project named where it may not be read, chosen
+    // again) leaves the project as it was, so no edit carries it to a playing engine.
+    let unchanged = device.state.as_deref() == Some(absolute_text.as_bytes());
     device.state = Some(absolute_text.as_bytes().into());
+    if unchanged {
+        session.follow_device_files();
+    }
     Ok(json!({ "device": path_value(&path), "file": absolute_text, "name": name }))
 }
 

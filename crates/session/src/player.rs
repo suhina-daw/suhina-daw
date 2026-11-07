@@ -123,6 +123,11 @@ impl Player {
         self.controller.set_assets(assets);
     }
 
+    /// The models and IRs the engine's graphs are built with now.
+    pub fn device_assets(&self) -> &std::sync::Arc<suhina_engine::DeviceAssets> {
+        self.controller.assets()
+    }
+
     /// The engine's sample rate.
     pub fn sample_rate(&self) -> u32 {
         self.controller.sample_rate()
