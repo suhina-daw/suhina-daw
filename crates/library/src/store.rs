@@ -580,9 +580,20 @@ fn level_names(entries: &[TagEntry], parent: Option<u32>) -> Vec<String> {
 
 /// Removes the entry with `id` from the forest, keeping it (a folder takes its entries
 /// with it) ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+/// The entry with `id`, from wherever it sits in the forest — a nested tag's and a nested
+/// folder's too ([#1254]: any entry moves).
 fn take_entry(entries: &mut Vec<TagEntry>, id: u32) -> Option<TagEntry> {
-    let at = entries.iter().position(|e| e.id() == id)?;
-    Some(entries.remove(at))
+    if let Some(at) = entries.iter().position(|e| e.id() == id) {
+        return Some(entries.remove(at));
+    }
+    for entry in entries.iter_mut() {
+        if let TagEntry::Folder { tags, .. } = entry
+            && let Some(taken) = take_entry(tags, id)
+        {
+            return Some(taken);
+        }
+    }
+    None
 }
 
 /// Where the entry with `id` is held: its parent (`None` for the top) and its position in
