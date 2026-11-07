@@ -407,10 +407,10 @@ fn audition_sounds_a_note_on_the_press_and_at_each_pitch_of_a_drag() {
     h.step();
 }
 
-/// With the audition on, the selecting rectangle holds the notes it covers sounding while it is
-/// dragged, so a chord swept over sounds as one, and lets them go with it.
+/// With the audition on, the selecting rectangle sounds a note as it reaches it, while it is
+/// dragged; letting go of it sounds nothing new.
 #[test]
-fn audition_holds_the_notes_the_selecting_rectangle_covers() {
+fn audition_sounds_the_notes_the_selecting_rectangle_reaches() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     h.state_mut().piano_roll_mut().audition = true;
@@ -442,5 +442,5 @@ fn audition_holds_the_notes_the_selecting_rectangle_covers() {
         modifiers: egui::Modifiers::NONE,
     });
     h.step();
-    assert!(h.state().piano_roll().auditioning().is_empty(), "let go with the rectangle");
+    assert!(h.state().piano_roll().auditioning().is_empty(), "nothing new as it is let go");
 }
