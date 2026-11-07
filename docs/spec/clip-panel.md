@@ -193,8 +193,8 @@ moves the line or the segment up and down; Ctrl and a click anywhere, which adds
 left out, as Ctrl and a click selects clips in the Arrangement.
 
 Each change is one undo step. A drag sets the envelope on every frame it moves, with a `gesture`,
-so the clip is heard as the line is drawn while the button is down, and the drag's frames are one
-undo step; a click is one `clip.setEnvelope`. The clip itself is moved by its name bar while
+so the clip is heard as the line is drawn while the button is down (each new level reached by a
+30 ms glide, not a step, which crackled), and the drag's frames are one undo step; a click is one `clip.setEnvelope`. The clip itself is moved by its name bar while
 its envelope is edited. A slot's clip has no waveform there; its envelope is set by command.
 
 ## The grey box

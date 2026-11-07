@@ -931,6 +931,39 @@ fn an_unwarped_clip_carries_on_through_a_tempo_edit() {
     assert!(max_diff(&restarted[after_ramp..], &fresh[after_ramp..]) < 1e-6, "as the project at the new tempo plays");
 }
 
+#[test]
+fn an_envelope_edited_while_its_clip_plays_glides_to_the_new_gain() {
+    // A drag of the envelope swaps in a graph per frame; each step cut in at once crackled.
+    let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 120.0, StretchMode::Smooth);
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warped = false;
+    }
+    let mut lower = project.clone();
+    for clip in lower.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.gain_envelope = vec![GainPoint::new(0.0, -12.0)];
+    }
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 50, 480, |_| {});
+    controller.update(&lower).unwrap();
+    out.extend(blocks(&mut renderer, 20, 480, |_| {}));
+    // The peak of each 110-frame window (a period of 440 Hz is 109 frames) around the edit.
+    let peaks: Vec<f32> = out[22_000 * 2..32_000 * 2]
+        .chunks(220)
+        .map(|w| w.iter().step_by(2).fold(0.0f32, |m, s| m.max(s.abs())))
+        .collect();
+    let (first, last) = (peaks[0], peaks[peaks.len() - 1]);
+    assert!(last < first * 0.3, "down by 12 dB: {first} -> {last}");
+    let steepest = peaks.windows(2).map(|w| w[1] / w[0]).fold(1.0f32, f32::min);
+    assert!(steepest > 0.8, "no step from one window to the next: {steepest} in {peaks:?}");
+}
+
 /// Zero crossings per second of the left channel over frames `from..to`.
 fn hz_between(out: &[f32], from: usize, to: usize) -> f64 {
     let left: Vec<f32> = out[from * 2..to * 2].iter().step_by(2).copied().collect();

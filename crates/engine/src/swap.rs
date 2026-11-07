@@ -418,6 +418,7 @@ impl Renderer {
             self.stretch_fresh = true;
         }
         self.path_fades(&old, old_time, time);
+        self.glide_envelopes(&old, old_time, time);
         self.swap.held = Some(old);
         self.receive_swap();
     }
@@ -458,6 +459,35 @@ impl Renderer {
         if !self.path_fades.is_empty() {
             self.path_fade_at = time;
             self.path_fade_left = (crate::PATH_FADE_SECONDS * f64::from(self.sample_rate)) as u64;
+        }
+    }
+
+    /// The clips playing at arrangement frame `time` (`old_time` in `old`, the graph swapped out)
+    /// glide from the gain their old envelope had there to the new one's, so an envelope dragged
+    /// while it plays moves smoothly rather than in a step at each swap. Never allocates.
+    fn glide_envelopes(&mut self, old: &Graph, old_time: u64, time: u64) {
+        if !self.transport.running {
+            return;
+        }
+        let frames = crate::audio::ENVELOPE_GLIDE_SECONDS * f64::from(self.sample_rate);
+        let playing = |start: u64, end: u64, at: u64| start <= at && at < end;
+        let since = |start: u64, at: u64| at.saturating_sub(start) as f64;
+        for arranged in self.graph.audio_events.iter_mut().filter(|a| playing(a.event.start, a.event.end, time)) {
+            if let Some(before) =
+                old.audio_events.iter().find(|a| a.key == arranged.key && playing(a.event.start, a.event.end, old_time))
+            {
+                let was = before.event.fades().envelope_gain(since(before.event.start, old_time), 0.0);
+                let start = arranged.event.start;
+                arranged.event.fades_mut().glide_from(was, since(start, time), frames);
+            }
+        }
+        for event in self.graph.stretch_events.iter_mut().filter(|e| playing(e.start, e.end, time)) {
+            if let Some(before) =
+                old.stretch_events.iter().find(|e| e.key == event.key && playing(e.start, e.end, old_time))
+            {
+                let was = before.fades.envelope_gain(since(before.start, old_time), 0.0);
+                event.fades.glide_from(was, since(event.start, time), frames);
+            }
         }
     }
 
