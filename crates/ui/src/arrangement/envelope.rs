@@ -326,6 +326,15 @@ fn set(clip: ClipId, points: &[GainPoint]) -> Action {
     Action::new("clip.setEnvelope", params)
 }
 
+/// The least time between two sends of a drag, in seconds: about the engine's glide from one
+/// envelope to the next (`ENVELOPE_GLIDE_SECONDS`), so the sound moves on smoothly between them.
+const SEND_GAP: f64 = 0.03;
+
+/// When a drag last sent the envelope (the input's time), so the next waits [`SEND_GAP`].
+fn sent_key() -> Id {
+    Id::unique("clip-envelope-sent")
+}
+
 /// The gesture a drag of the envelope sends its frames in: one undo step for the whole drag.
 const GESTURE: &str = "clip-envelope";
 
@@ -679,13 +688,23 @@ pub fn show(
         .gap(12.0)
         .show(|ui| ui.add(egui::Label::new(db_text(db)).wrap_mode(egui::TextWrapMode::Extend)));
     }
-    // While the button is down the envelope as dragged is set on every frame it changes, so the
-    // clip is heard as it is drawn; the frames are one gesture, one undo step.
+    // While the button is down the envelope as dragged is set as it changes, so the clip is heard
+    // as it is drawn; the sends are one gesture, one undo step. At most one each SEND_GAP: a new
+    // graph a frame (150 a second) came faster than a stretched clip's voice is handed over, and
+    // the fades between its voices were cut short, which crackled.
     if let Some(now) = draft(ui.ctx(), clip)
         && ui.input(|i| i.pointer.any_down())
         && now.points != view.envelope
     {
-        actions.push(dragged(clip, &now.points));
+        let time = ui.input(|i| i.time);
+        let last = ui.data(|d| d.get_temp::<f64>(sent_key()));
+        match last.map(|last| time - last) {
+            Some(since) if since < SEND_GAP => ui.ctx().request_repaint_after_secs((SEND_GAP - since) as f32),
+            _ => {
+                ui.data_mut(|d| d.insert_temp(sent_key(), time));
+                actions.push(dragged(clip, &now.points));
+            }
+        }
     }
     // Once the button is up, what the point or the curve moved to is set, and the draft goes:
     // also for a drag whose point stopped being drawn (its pass moved past the clip's end).

@@ -931,6 +931,49 @@ fn an_unwarped_clip_carries_on_through_a_tempo_edit() {
     assert!(max_diff(&restarted[after_ramp..], &fresh[after_ramp..]) < 1e-6, "as the project at the new tempo plays");
 }
 
+/// A point dragged fast while the clip plays, as the window sends it: a new envelope every 30 ms
+/// (`SEND_GAP` in the envelope's view), its point swinging between 0 and -40 dB right where the
+/// clip plays. The sound never steps from one frame to the next more than the clip itself does,
+/// read directly or stretched; a stretched clip's voice that starts afresh at each edit fades in
+/// over the old one, and the fade ends before the next edit.
+#[test]
+fn an_envelope_dragged_fast_while_its_clip_plays_never_clicks() {
+    // 30 ms of frames: the window's least time between two sends of a drag.
+    let gap = SR as usize * 3 / 100;
+    let edits = 60;
+    for warped in [false, true] {
+        let tempo = if warped { 100.0 } else { 120.0 };
+        let (mut project, pool) = stretched_project(220.0, 4.0, 8.0, tempo, StretchMode::Smooth);
+        for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+            clip.audio.warped = warped;
+        }
+        let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+        let mut controller = renderer.controller();
+        let mut worker = renderer.take_stretch_worker();
+        let mut fill = |_| {
+            if let Some(w) = worker.as_mut() {
+                w.fill();
+            }
+        };
+        renderer.handle(LaunchCommand::Play);
+        let plain = blocks(&mut renderer, edits, gap, &mut fill);
+        let clean = largest_step(&plain, 1_000, edits * gap - 1_000);
+        let mut out = Vec::new();
+        for k in 0..edits {
+            let beat = ((edits + k) * gap) as f64 / f64::from(SR) * tempo / 60.0;
+            let db = -((k as f64 * 7.0) % 40.0);
+            let mut edited = project.clone();
+            for clip in edited.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+                clip.audio.gain_envelope = vec![GainPoint::new(beat, 0.0), GainPoint::new(beat + 0.125, db)];
+            }
+            let _ = controller.update(&edited);
+            out.extend(blocks(&mut renderer, 1, gap, &mut fill));
+        }
+        let worst = largest_step(&out, 1_000, edits * gap - 1_000);
+        assert!(worst <= clean * 1.5 + 1e-3, "warped {warped}: a step of {worst}, the clip's own largest {clean}");
+    }
+}
+
 #[test]
 fn an_envelope_edited_while_its_clip_plays_glides_to_the_new_gain() {
     // A drag of the envelope swaps in a graph per frame; each step cut in at once crackled.
