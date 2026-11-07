@@ -729,7 +729,9 @@ pub fn value_active(ctx: &egui::Context) -> bool {
                                 | egui::Key::Backspace
                         )
                 }
-                egui::Event::Text(text) => text.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | ',')),
+                egui::Event::Text(text) => {
+                    text.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | ',' | '/'))
+                }
                 _ => false,
             })
         })
@@ -790,7 +792,9 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
                 typed.pop();
                 false
             }
-            egui::Event::Text(text) if text.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | ',')) => {
+            egui::Event::Text(text)
+                if text.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | ',' | '/')) =>
+            {
                 typed.push_str(text);
                 false
             }
@@ -874,9 +878,49 @@ pub fn drag_value_axis(
     default: f64,
     horizontal: bool,
 ) -> Drag {
+    drag_value_inner(ui, response, preview, value, per_point, per_tick, range, default, horizontal, None)
+}
+
+/// [`drag_value`] for a control that reads what is typed into it itself (a time signature, typed
+/// as `3/4`): Enter puts the text in `typed` as it was typed and returns [`Drag::None`].
+#[allow(clippy::too_many_arguments)]
+pub fn drag_value_text(
+    ui: &Ui,
+    response: &Response,
+    preview: &mut Option<f64>,
+    value: f64,
+    per_point: f64,
+    per_tick: f64,
+    range: (f64, f64),
+    default: f64,
+    typed: &mut Option<String>,
+) -> Drag {
+    drag_value_inner(ui, response, preview, value, per_point, per_tick, range, default, false, Some(typed))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn drag_value_inner(
+    ui: &Ui,
+    response: &Response,
+    preview: &mut Option<f64>,
+    value: f64,
+    per_point: f64,
+    per_tick: f64,
+    range: (f64, f64),
+    default: f64,
+    horizontal: bool,
+    typed_out: Option<&mut Option<String>>,
+) -> Drag {
     let _style_class = crate::kit::style_class::enter_response("value", response);
     // Keys to the control clicked last: the arrows step it, Enter sets what was typed.
     let (steps, fine, typed) = value_keys(ui, response);
+    if let Some(out) = typed_out
+        && let Some(text) = typed.as_ref()
+    {
+        *preview = None;
+        *out = Some(text.clone());
+        return Drag::None;
+    }
     if let Some(typed) = typed
         && let Ok(number) = typed.replace(',', ".").trim().parse::<f64>()
         && number.is_finite()

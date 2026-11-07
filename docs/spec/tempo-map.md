@@ -200,17 +200,23 @@ edited in the window ([Editing in the window](#editing-in-the-window)).
 Every edit here is one of the commands above and one undo step.
 
 - **The control bar** shows the time signature playing, as it shows the tempo (a launched
-  scene's while it drives the clock). A click or a right-click on it opens a menu: a field that
-  takes any signature typed as `numerator/denominator` (`6/8`, `15/16`; Enter applies it) and
-  the common ones to pick (2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 9/8, 12/8, 15/16), the current one
-  ticked. It sets the project's signature in effect at the playhead: the start signature
+  scene's while it drives the clock), as two numbers that work like the tempo field. Dragging
+  the numerator up or down changes it from 1 to 99; dragging the denominator steps it through
+  1, 2, 4, 8 and 16. A drag sets the signature when it is released, as one undo step, and shows
+  where it will land while it moves. Clicked, a number takes the keys: the arrow keys step it,
+  and a signature typed as `3/4` or `3-4` (or one number for the number clicked) and Enter set
+  it. A double-click puts the number clicked back to 4. The chevron at its right, and only the
+  chevron, opens the common signatures to pick (2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 9/8, 12/8, 15/16),
+  the current one ticked. Its width fits the widest signature, 99 / 16, in the font it is drawn
+  with, as the tempo field's fits 999.999, also when a theme makes the font larger. It sets the project's signature in effect at the playhead: the start signature
   (`transport.setTimeSignature`) before the first change, otherwise the change the playhead is
   past (`timeSignature.add` at that change's bar, which replaces it). **Suhina:** while a scene's
   signature drives the clock, the field still edits the project's signature; the edit puts the
   clock back on the map ([Scenes and the tempo map](#scenes-and-the-tempo-map)), so the field
   then shows the signature it set.
 - **The ruler's right-click menu** (the bar ruler or the marker row, beside *Add marker here*)
-  has *Time signature from bar N*, with the same field and list, for the bar line nearest the
+  has *Time signature from bar N*, with a field for any signature typed as `6/8` (Enter applies
+  it) and the common ones, for the bar line nearest the
   click: at bar 1 it sets the start signature, after it a change at that bar. When a change
   starts on that bar, *Remove the time-signature change at bar N* deletes it
   (`timeSignature.delete`).

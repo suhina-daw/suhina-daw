@@ -656,16 +656,26 @@ pub fn time_signature_menu(ui: &mut Ui, bar: u32, current: TimeSignature, action
     }
     ui.data_mut(|d| d.insert_temp(id, text));
     ui.separator();
+    if time_signature_list(ui, bar, current, actions) {
+        ui.data_mut(|d| d.remove::<String>(id));
+    }
+}
+
+/// The common time signatures for the signature from `bar` (counted from 1), `current` ticked:
+/// a pick is one command and closes the menu. True when one was picked.
+pub fn time_signature_list(ui: &mut Ui, bar: u32, current: TimeSignature, actions: &mut Vec<Action>) -> bool {
+    ui.set_min_width(72.0);
     for (numerator, denominator) in TIME_SIGNATURES {
         let on = current.numerator == numerator && current.denominator == denominator;
         if ui.selectable_label(on, format!("{numerator}/{denominator}")).clicked() {
             if !on {
                 actions.push(time_signature_action(bar, json!(numerator), json!(denominator)));
             }
-            ui.data_mut(|d| d.remove::<String>(id));
             ui.close();
+            return true;
         }
     }
+    false
 }
 
 /// A clip slot's right-click menu: copy its clip, or paste the copied clip into it (`scene`
