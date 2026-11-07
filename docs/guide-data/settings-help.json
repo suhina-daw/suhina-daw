@@ -2468,7 +2468,7 @@
   },
   "Arrangement/Gain envelope/gain_envelope_step": {
     "summary": "Choose the steps a gain envelope point moves in when it snaps.",
-    "description": "While a gain envelope is edited, faint lines show this grid over the clip, and points added or dragged land on it unless Free move is on or Shift is held.",
+    "description": "While a gain envelope is edited, faint lines show this grid over the clip, and points added or dragged land on it unless Free move is on or Alt is held.",
     "options": [
       {
         "name": "0.5 dB",
@@ -2519,5 +2519,26 @@
       "docs/spec/clip-panel.md"
     ],
     "sourceFingerprint": "5995099e30ffb2851e79a17d49b9587e7bfd44b99179a2e6c156835c9554b6c2"
+  },
+  "Arrangement/Gain envelope/gain_envelope_editing": {
+    "summary": "Choose whether Edit gain envelope opens every audio clip's envelope at once or one clip's at a time.",
+    "description": "With all audio clips, Edit gain envelope (Alt+E, or the button by any clip's name) is a mode: every audio clip's envelope line takes points until you turn it off again, so you can set several clips side by side. With one clip at a time, only that clip's envelope opens, and opening another closes it.",
+    "options": [
+      {
+        "name": "All audio clips",
+        "description": "Every audio clip's envelope opens and closes together. This is the default."
+      },
+      {
+        "name": "One clip at a time",
+        "description": "Only the clip whose envelope you open can be edited."
+      }
+    ],
+    "whenToChange": "Choose one clip at a time if you click near the middle of clips to move them while editing envelopes and want the others left alone.",
+    "references": [
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/arrangement/envelope.rs",
+      "docs/spec/clip-panel.md"
+    ],
+    "sourceFingerprint": "30493d37606b9166b73cba5dd28eefe2f4c874971bc92ee7f4a0e87f9333f934"
   }
 }

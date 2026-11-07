@@ -63,12 +63,27 @@ pub(crate) struct ParamChange {
     value: f64,
 }
 
+/// A clip's new gain envelope, sent as a message (`Controller::set_clip_envelope`): the clip by
+/// its lane and its index on the lane in the arrangement, as the graph keys its events.
+pub(crate) struct EnvelopeChange {
+    seq: u64,
+    lane: usize,
+    clip: usize,
+    envelope: Option<Arc<crate::audio::Envelope>>,
+}
+
+/// Envelope messages that can wait; and envelopes on their way back to be freed.
+const ENVELOPE_QUEUE: usize = 64;
+const RETIRED_ENVELOPES: usize = 256;
+
 /// A graph and the renderer frame it takes over at.
 pub(crate) struct Swap {
     graph: Box<Graph>,
     at: u64,
     /// The last parameter message the graph's project already holds.
     param_seq: u64,
+    /// The last envelope message the graph's project already holds.
+    envelope_seq: u64,
     /// The arrangement frame the graph's stretch voices were moved to for `at`, or `None` if the
     /// transport was stopped (they are at the start).
     arrangement: Option<u64>,
@@ -93,6 +108,9 @@ pub(crate) struct SwapState {
     retired_plugins: Option<Producer<Processor>>,
     /// Processors whose slot no graph has had yet; allocated with room for `PLUGIN_QUEUE`.
     parked: Vec<(u64, Processor)>,
+    envelopes: Option<Consumer<EnvelopeChange>>,
+    /// Envelopes replaced, back to the controller, which frees them.
+    retired_envelopes: Option<Producer<Option<Arc<crate::audio::Envelope>>>>,
 }
 
 impl SwapState {
@@ -127,12 +145,18 @@ pub(crate) struct Updater {
     live_sends: Vec<(TrackId, TrackId)>,
     /// The tracks whose pan a knob's turn reaches without a new graph.
     live_pans: Vec<TrackId>,
+    envelopes: Producer<EnvelopeChange>,
+    retired_envelopes: Consumer<Option<Arc<crate::audio::Envelope>>>,
+    envelope_seq: u64,
 }
 
 impl Updater {
     fn collect(&mut self) {
         while let Ok(graph) = self.retired.pop() {
             drop(graph);
+        }
+        while let Ok(envelope) = self.retired_envelopes.pop() {
+            drop(envelope);
         }
         while let Ok(processor) = self.retired_plugins.pop() {
             drop(processor);
@@ -154,6 +178,10 @@ impl Renderer {
         let (params, param_consumer) = RingBuffer::new(PARAM_QUEUE);
         let (plugins, plugin_consumer) = RingBuffer::new(PLUGIN_QUEUE);
         let (retired_plugins_producer, retired_plugins) = RingBuffer::new(PLUGIN_QUEUE);
+        let (envelopes, envelope_consumer) = RingBuffer::new(ENVELOPE_QUEUE);
+        let (retired_envelopes_producer, retired_envelopes) = RingBuffer::new(RETIRED_ENVELOPES);
+        self.swap.envelopes = Some(envelope_consumer);
+        self.swap.retired_envelopes = Some(retired_envelopes_producer);
         self.swap.incoming = Some(incoming);
         self.swap.retired = Some(retired_producer);
         self.swap.params = Some(param_consumer);
@@ -179,6 +207,87 @@ impl Renderer {
             live_volumes: live_volumes(&self.graph),
             live_sends: live_sends(&self.graph.chains),
             live_pans: self.graph.chains.iter().filter(|c| c.built_pan.is_some()).map(|c| c.track).collect(),
+            envelopes,
+            retired_envelopes,
+            envelope_seq: 0,
+        }
+    }
+
+    /// Puts the gain envelopes that have arrived in place on their clips' events (read directly
+    /// and stretched alike): a playing clip glides to its new gain, as at a swap. The envelopes
+    /// replaced, and each message's own, go back to the controller to be freed; a message waits
+    /// until there is room for them. Never allocates or frees.
+    pub(crate) fn receive_envelopes(&mut self) {
+        let time = self.time();
+        let running = self.transport.running;
+        let frames = crate::audio::ENVELOPE_GLIDE_SECONDS * f64::from(self.sample_rate);
+        let (Some(incoming), Some(retired)) = (self.swap.envelopes.as_mut(), self.swap.retired_envelopes.as_mut())
+        else {
+            return;
+        };
+        let graph = &mut self.graph;
+        while let Ok(change) = incoming.peek() {
+            let (lane, clip) = (change.lane, change.clip);
+            let ours = |key: (usize, usize, usize)| key.0 == lane && key.1 == clip;
+            let count = graph.audio_events.iter().filter(|a| ours(a.key)).count()
+                + graph.stretch_events.iter().filter(|e| ours(e.key)).count();
+            if retired.slots() < count + 1 {
+                break;
+            }
+            let Ok(change) = incoming.pop() else { break };
+            let since = |start: u64, end: u64| (running && start <= time && time < end).then(|| (time - start) as f64);
+            for arranged in graph.audio_events.iter_mut().filter(|a| ours(a.key)) {
+                let at = since(arranged.event.start, arranged.event.end);
+                let old = arranged.event.fades_mut().replace_envelope(change.envelope.clone(), at, frames);
+                let _full = retired.push(old);
+            }
+            for event in graph.stretch_events.iter_mut().filter(|e| ours(e.key)) {
+                let at = since(event.start, event.end);
+                let old = event.fades.replace_envelope(change.envelope.clone(), at, frames);
+                let _full = retired.push(old);
+            }
+            let _full = retired.push(change.envelope);
+            remember_envelope(&mut graph.envelope_messages, (change.seq, lane, clip));
+        }
+    }
+
+    /// After a swap: the clips whose envelope arrived as a message after the new graph was built
+    /// (`envelope_seq`, the last its project held) take that envelope from `old`, the graph
+    /// replaced, which has it on its events, so a graph built before the message never plays the
+    /// envelope before it. Never allocates: the envelopes are shared, and those replaced go back
+    /// to the controller (a clip is left as built when there is no room for them).
+    fn carry_envelopes(&mut self, old: &crate::graph::Graph, envelope_seq: u64, time: u64) {
+        let Some(retired) = self.swap.retired_envelopes.as_mut() else { return };
+        let running = self.transport.running;
+        let frames = crate::audio::ENVELOPE_GLIDE_SECONDS * f64::from(self.sample_rate);
+        let graph = &mut self.graph;
+        for &(seq, lane, clip) in old.envelope_messages.iter().filter(|(seq, ..)| *seq > envelope_seq) {
+            let ours = |key: (usize, usize, usize)| key.0 == lane && key.1 == clip;
+            // The envelope the old graph plays for the clip: the message's.
+            let newest = old
+                .audio_events
+                .iter()
+                .find(|a| ours(a.key))
+                .map(|a| a.event.fades().envelope())
+                .or_else(|| old.stretch_events.iter().find(|e| ours(e.key)).map(|e| e.fades.envelope()));
+            let Some(newest) = newest else { continue };
+            let count = graph.audio_events.iter().filter(|a| ours(a.key)).count()
+                + graph.stretch_events.iter().filter(|e| ours(e.key)).count();
+            if retired.slots() < count {
+                continue;
+            }
+            let since = |start: u64, end: u64| (running && start <= time && time < end).then(|| (time - start) as f64);
+            for arranged in graph.audio_events.iter_mut().filter(|a| ours(a.key)) {
+                let at = since(arranged.event.start, arranged.event.end);
+                let replaced = arranged.event.fades_mut().replace_envelope(newest.clone(), at, frames);
+                let _full = retired.push(replaced);
+            }
+            for event in graph.stretch_events.iter_mut().filter(|e| ours(e.key)) {
+                let at = since(event.start, event.end);
+                let replaced = event.fades.replace_envelope(newest.clone(), at, frames);
+                let _full = retired.push(replaced);
+            }
+            remember_envelope(&mut graph.envelope_messages, (seq, lane, clip));
         }
     }
 
@@ -275,6 +384,7 @@ impl Renderer {
         let Some(swap) = self.swap.pending.take() else { return };
         let old_time = self.time();
         let param_seq = swap.param_seq;
+        let envelope_seq = swap.envelope_seq;
         let mut old = std::mem::replace(&mut self.graph, swap.graph);
         // The playhead stays on the same beat when the tempo map changed.
         if self.transport.running && *old.tempo != *self.graph.tempo {
@@ -395,7 +505,8 @@ impl Renderer {
         }
         // The unchanged clips' rings go on in the new graph (#743); the others start afresh,
         // moved to where the playhead was expected.
-        self.graph.ahead.adopt_from(&mut old.ahead);
+        let shift = i64::try_from(time).unwrap_or(i64::MAX).saturating_sub(i64::try_from(old_time).unwrap_or(i64::MAX));
+        self.graph.ahead.adopt_from(&mut old.ahead, shift);
         self.underruns_before += old.ahead.underruns();
         if self.transport.running {
             // A swap a few frames off where it was expected keeps the voices rendered for it: the
@@ -418,6 +529,8 @@ impl Renderer {
             self.stretch_fresh = true;
         }
         self.path_fades(&old, old_time, time);
+        self.carry_envelopes(&old, envelope_seq, time);
+        self.glide_envelopes(&old, old_time, time);
         self.swap.held = Some(old);
         self.receive_swap();
     }
@@ -461,6 +574,35 @@ impl Renderer {
         }
     }
 
+    /// The clips playing at arrangement frame `time` (`old_time` in `old`, the graph swapped out)
+    /// glide from the gain their old envelope had there to the new one's, so an envelope dragged
+    /// while it plays moves smoothly rather than in a step at each swap. Never allocates.
+    fn glide_envelopes(&mut self, old: &Graph, old_time: u64, time: u64) {
+        if !self.transport.running {
+            return;
+        }
+        let frames = crate::audio::ENVELOPE_GLIDE_SECONDS * f64::from(self.sample_rate);
+        let playing = |start: u64, end: u64, at: u64| start <= at && at < end;
+        let since = |start: u64, at: u64| at.saturating_sub(start) as f64;
+        for arranged in self.graph.audio_events.iter_mut().filter(|a| playing(a.event.start, a.event.end, time)) {
+            if let Some(before) =
+                old.audio_events.iter().find(|a| a.key == arranged.key && playing(a.event.start, a.event.end, old_time))
+            {
+                let was = before.event.fades().envelope_gain(since(before.event.start, old_time), 0.0);
+                let start = arranged.event.start;
+                arranged.event.fades_mut().glide_from(was, since(start, time), frames);
+            }
+        }
+        for event in self.graph.stretch_events.iter_mut().filter(|e| playing(e.start, e.end, time)) {
+            if let Some(before) =
+                old.stretch_events.iter().find(|e| e.key == event.key && playing(e.start, e.end, old_time))
+            {
+                let was = before.fades.envelope_gain(since(before.start, old_time), 0.0);
+                event.fades.glide_from(was, since(event.start, time), frames);
+            }
+        }
+    }
+
     /// Publishes the playhead for the controller.
     pub(crate) fn publish_position(&self) {
         let monitor = &self.graph.launcher.monitor;
@@ -484,6 +626,16 @@ fn after_loop(arrangement: u64, ahead: u64, looping: Option<(u64, u64)>) -> u64 
     match looping {
         Some((start, end)) if end > start && arrangement < end && at >= end => start + (at - end) % (end - start),
         _ => at,
+    }
+}
+
+/// Remembers an envelope message on a graph, in the room it was built with: the oldest gives way.
+/// Never allocates.
+fn remember_envelope(messages: &mut Vec<(u64, usize, usize)>, message: (u64, usize, usize)) {
+    if messages.len() < messages.capacity() {
+        messages.push(message);
+    } else if let Some(oldest) = messages.iter_mut().min_by_key(|m| m.0) {
+        *oldest = message;
     }
 }
 
@@ -685,7 +837,14 @@ impl Controller {
         }
         updater
             .swaps
-            .push(Swap { graph, at, arrangement, param_seq: updater.param_seq, scenes })
+            .push(Swap {
+                graph,
+                at,
+                arrangement,
+                param_seq: updater.param_seq,
+                envelope_seq: updater.envelope_seq,
+                scenes,
+            })
             .map_err(|_| crate::ControlError::Full("edits"))
             .map(|()| updater.tempo = sent)
     }
@@ -721,6 +880,30 @@ impl Controller {
             .push(ParamChange { seq, track, device, param, value })
             .map_err(|_| crate::ControlError::Full("parameter changes"))?;
         updater.param_seq = seq;
+        Ok(())
+    }
+
+    /// Puts `clip`'s gain envelope, the clip at index `index` on arrangement lane `lane`, in place
+    /// on what plays from the next audio block, without building a new graph: an envelope is not
+    /// how a clip is read or stretched, and a new graph for each frame of a drag handed every
+    /// stretched voice over, which a voice in the middle of a jump (a loop's wrap) did not survive.
+    /// The project should hold the envelope already, so the next graph built from it keeps it.
+    /// Fails if the message queue is full.
+    pub fn set_clip_envelope(
+        &mut self,
+        lane: usize,
+        index: usize,
+        clip: &suhina_model::Clip,
+    ) -> Result<(), crate::ControlError> {
+        let updater = &mut self.updater;
+        updater.collect();
+        let envelope = crate::audio::Envelope::of(clip, &crate::tempo::TempoClock::of(&updater.tempo));
+        let seq = updater.envelope_seq + 1;
+        updater
+            .envelopes
+            .push(EnvelopeChange { seq, lane, clip: index, envelope })
+            .map_err(|_| crate::ControlError::Full("envelope changes"))?;
+        updater.envelope_seq = seq;
         Ok(())
     }
 

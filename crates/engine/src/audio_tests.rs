@@ -252,7 +252,7 @@ fn outside_the_file_is_silent_and_bad_clips_are_rejected() {
 #[test]
 fn the_envelope_follows_an_unwarped_clip_carried_on_through_a_tempo_edit() {
     let audio = ClipAudio {
-        gain_envelope: vec![GainPoint { beat: 0.0, db: 0.0 }, GainPoint { beat: 2.0, db: -20.0 }],
+        gain_envelope: vec![GainPoint::new(0.0, 0.0), GainPoint::new(2.0, -20.0)],
         ..region(false, &[], 0.0)
     };
     let mut e = event(&clip(2.0, 0.0, None), &audio);

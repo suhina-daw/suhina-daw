@@ -47,7 +47,7 @@ beside it, and controls are 6 points apart, so no two touch.
 | **Audio** (112 points) | **Warp**: a switch the width of the part | `clip.setAudio` (`warp`) |
 | | **Mode**: a list of Re-pitch, Rhythmic, Tonal, Texture, Smooth, High quality | `clip.setAudio` (`mode`) |
 | | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
-| | **Edit gain envelope**: a switch that opens the clip's gain envelope on its waveform for editing, as Alt+E and the button by the clip's name do; it says how many points the envelope has | `clip.setEnvelope` |
+| | **Edit gain envelope**: a switch that opens the gain envelope on the waveform for editing (every audio clip's, or the clip's own, by Settings › *Envelope editing*), as Alt+E and the button by the clip's name do | `clip.setEnvelope` |
 | **Gain and Pitch** (128 points) | **Gain**: a vertical fader, its scale at its left (24, 0 half-way, −inf at the bottom), the dB readout under it | `clip.setGain` |
 | | **Pitch**: a knob in semitones; under it the semitones and the cents side by side, `st` and `ct` under them | `clip.setAudio` (`transpose`) |
 
@@ -64,14 +64,18 @@ other clips play is copied for this clip first.
 Every number in the column is a field that:
 
 - is dragged up or down, and the clip follows while it moves (a few times a second), the whole
-  drag one undo step (`continue` on the command), as the project's tempo field does;
+  drag one undo step (`continue` on the command), as the project's tempo field does. The tempo's
+  drag is also drawn on every frame in between: the Arrangement shows the clip stretched to the
+  tempo dragged so far, as it shows an edge stretch, until the project has it. So is the pitch
+  knob's on an unwarped clip, whose length the transpose changes (an octave up halves it);
 - a tempo, marker or loop field is dragged by the place under the pointer where it was pressed:
   the tempo's integer part steps 1 BPM and each decimal a tenth of the one before (#829); a
   marker's bar, beat or sixteenth steps a bar, a beat or a quarter beat. The place is underlined;
-- steps with the arrow keys after a click, and takes a number typed after a click with Enter, as
-  every value control does ([#707](https://github.com/suhina-daw/suhina-daw/issues/707));
-- opens a text field on a **double-click**: the number is selected in it, Enter sets it, Escape or a
-  click elsewhere leaves it as it was. A text that is not a number is ignored.
+- opens a text field on a **click** (a drag moves the value instead): the number is selected in
+  it, Enter sets it, Escape or a click elsewhere leaves it as it was, and the arrow keys step it
+  while it is open, as they step every value control
+  ([#707](https://github.com/suhina-daw/suhina-daw/issues/707)). A text that is not a number is
+  ignored. A double-click was needed before, and a click that only took the keys showed nothing.
 
 The fader and the knob follow a drag as the fields do, and take keys the same way: clicked, a
 number typed and Enter set them and the arrows step them (the fader 1 dB, Shift 0.1; the knob a
@@ -126,7 +130,8 @@ remembers which (`docs/spec/browser.md` › Warping).
 
 A clip's gain envelope shapes its level over time: points of a beat of the clip's content and an
 offset in dB from the clip's gain, −70 dB to +24 dB ([ADR 0035](../decisions/0035-clip-gain-envelope.md)).
-Between points it is straight in dB; before the first point and after the last it holds their
+Between points it is straight in dB, or bent along the first point's curve as an automation
+segment bends ([automation](automation.md) › Lanes and points); before the first point and after the last it holds their
 values; a clip with no points plays at its gain. The fader moves the whole envelope with it. Two
 points on one beat make a step. The fades multiply on top.
 
@@ -138,7 +143,10 @@ clip stretches its envelope with its audio.
 **The scale.** On a clip in the Arrangement the envelope is drawn over the waveform's area (under
 the name bar): 0 dB, the sample as it is, across its middle; the ceiling (Settings › Arrangement ›
 Gain envelope ceiling: +3, +6, +12 or +24 dB, +6 by default) at its top; −70 dB at its bottom.
-Each half is even in dB, so the lower half's steps are smaller than the upper half's. A point set
+The upper half is even in dB. The lower half goes by the gain a level plays at, as the waveform is
+drawn: the first dB of a cut, where most cuts are, take most of it (−1 dB about 11 % of the way
+down, −3 dB about 30 %, −6 dB half, −20 dB 90 %), so a cut of a few dB is a drag of many points,
+not of a few, and the line's height reads like the waveform's. A point set
 above the ceiling before it was lowered keeps its level, and the scale's top reaches it, so the line
 is always drawn where it is heard.
 
@@ -149,25 +157,74 @@ go.
 **Seeing it.** With **Show gain envelope** on (Settings › Arrangement, on by default), every audio
 clip with points shows its line, thin, while it is not being edited.
 
-**Editing it.** **Edit gain envelope** opens one clip's envelope for editing: Alt+E (`view.gainEnvelope`)
-with the clip selected, the small envelope button left of the clip's name, or the clip panel's
-switch; the same again closes it. While it is open:
+**Editing it.** **Edit gain envelope** opens envelopes for editing: Alt+E (`view.gainEnvelope`),
+the small envelope button left of a clip's name, or the clip panel's switch; the same again closes
+them. Settings › Arrangement › Gain envelope › *Envelope editing* (`gain_envelope_editing = all |
+one`) says which open:
 
-- the pointer over the clip's body is a pointing hand; over a point, an open hand, and a closed
-  one while it is dragged;
+- **All audio clips** (the default): it is a mode. Every audio clip's envelope opens and closes
+  together, from any clip's button or the panel, and Alt+E turns it on or off with or without a
+  clip selected, so the envelopes of several clips (doubled vocal takes) are set side by side;
+- **One clip at a time**: only that clip's envelope opens (Alt+E with the clip selected), and
+  opening another clip's closes it.
+
+While an envelope is open:
+
+- only the line and the points take the pointer: a click or a drag anywhere else on the clip
+  selects and moves it as ever. The pointer within 5 points of the line is a pointing hand; over a
+  point, an open hand, and a closed one while it is dragged;
 - faint lines show the dB grid (Settings › Gain envelope grid: 0.5, 1, 2, 3 or 6 dB, 1 dB by
   default; lines closer than 5 points are left out), the 0 dB line stronger;
-- a **click** on the body adds a point there: its beat and the level under the pointer, on the grid;
-- a **drag** from the body adds a point and moves it; a point is **dragged** to move it: sideways in
-  time, up and down in level on the grid and below the ceiling, kept between its neighbours. Shift
-  moves it a tenth as much and off the grid. Its value shows beside the pointer while the button is
-  down ("−3 dB");
-- **Free move**, a button under the name, lets points move freely, to a tenth of a dB, instead of
-  on the grid; Settings › Envelope points move says which it starts as;
-- a **double-click** on a point, or Delete with the pointer over it, removes it.
+- the points are round dots, as an automation lane's are; two never sit on each other: a click on
+  the line within a dot's width (8 points) of a point adds none, and a point let go within a dot's
+  width of another's dot, on any pass of a loop, is one with it;
+- a **click** on the line adds a point there, on the envelope grid, at the level the line has
+  there, so the line keeps its shape;
+- a **drag** from the line adds a point and moves it; a point is **dragged** to move it: sideways in
+  time on the envelope grid, up and down in level on the dB grid and below the ceiling;
+  dragged over another point it passes it, as on an automation lane, and on another point's beat it
+  stays on the side it came from. Within 3 points of the middle it goes to 0 dB itself, the sample's
+  own level. Alt holds it off both grids and the middle while it is dragged, as Free move does (and
+  as Alt frees a drag on the piano roll's grid); Shift moves it a tenth as much, off the grids too. Its value shows beside the pointer
+  while the button is down ("−3 dB");
+- the **ring** half-way along a sloping segment (hollow, as a device's curve handle is, so it is not
+  taken for a point) (one at least 28 points wide) bends it when
+  dragged up or down, as an automation lane's does, and a double-click on it straightens it; Alt
+  and a drag from the line bend the segment under the pointer the same way. A point added on a bent
+  segment cuts its curve in two, so the line keeps its shape (`Curve::split`);
+- **Free move**, a button under the name and an item of the clip's menu, lets points move freely,
+  in time and to a tenth of a dB, instead of on the grids; Settings › Envelope points move says
+  which it starts as;
+- the **envelope grid** is the envelope's own, not the Arrangement's: 1/16 until another is picked
+  under **Envelope grid** in any audio clip's menu (8 Bars to 1/32, as the piano roll's fixed grid,
+  and 1/64). The pick holds for every clip's envelope until the app quits. Finer than 1/64 is Free
+  move: 1/128 is about two points apart at a usual zoom;
+- while a clip's edge is dragged, its envelope is drawn with its waveform: a looping clip dragged
+  longer shows the envelope on every new pass at once;
+- **Shift** and a drag of the line moves the whole line up or down by the same dB, and
+  **Ctrl+Shift** and a drag moves only the segment under the pointer (its one or two points), on
+  the dB grid unless Free move is on or Alt held; the change shows beside the pointer ("−2 dB"). A
+  line without points gets one where the drag started;
+- **Alt+Shift** and a click on the line takes away the segment's points;
+- a **double-click** on a point puts it back at 0 dB where it is; **Alt** and a click on it, or
+  Delete with the pointer over it, removes it;
+- **Clear gain envelope** in the clip's menu takes all its points away, one undo step, so the clip
+  plays at its own level again; it is off while the clip has none.
 
-Each change is one `clip.setEnvelope`, one undo step. The clip itself is moved by its name bar while
+These follow a spectral editor's clip gain, where a click on the line adds a point, a double-click
+puts one back at 0 dB, Alt and a click removes one and Shift or Ctrl+Shift and a drag of a segment
+moves the line or the segment up and down; Ctrl and a click anywhere, which adds a point there, is
+left out, as Ctrl and a click selects clips in the Arrangement.
+
+Each change is one undo step. A drag sets the envelope as it moves, at most every 30 ms, with a `gesture`; an arrangement clip's envelope reaches the playing engine as a message, without a new graph ([ADR 0005](../decisions/0005-edits-while-playing.md), amendment: edits in the next block, 5),
+so the clip is heard as the line is drawn while the button is down (each new level reached by a
+30 ms glide, not a step, which crackled), and the drag's frames are one undo step; a click is one `clip.setEnvelope`. The clip itself is moved by its name bar while
 its envelope is edited. A slot's clip has no waveform there; its envelope is set by command.
+
+The points stay on the sound they were put on. Their beats are the content's, so whatever moves
+the audio against the beats moves them with it: a clip's tempo or a stretch scales them with the
+warp markers, and Warp turned on or off, or the project's tempo under unwarped audio, moves each
+to the beat its second of the file is at now, as the clip's offset, length and loop move.
 
 ## The grey box
 
@@ -186,7 +243,7 @@ column (#1190). The panel now keeps its controls 6 points apart, with their name
   `detected`, `manual`; manual by default).
 - `clip.findTempo {…}`: `{metadata, name, detected, found, bpm, source}`, nulls where a source
   finds nothing. Changes nothing.
-- `clip.setEnvelope {…, points}`: the envelope as pairs, `[beat, dB, beat, dB, …]`; `[]` clears it.
+- `clip.setEnvelope {…, points, curves?, gesture?}`: the envelope as pairs, `[beat, dB, beat, dB, …]`; `[]` clears it. `curves` gives each point its curve to the next, in the order of `points`: a bend from -1 to 1 or `[x1, y1, x2, y2]`, `null` for straight. Two points in one place (the same beat and dB), such as one dragged onto another, are one point; a beat holds at most two, a step, and a third there replaces the second. Calls with the same open `gesture` (a drag) are one undo step.
 
 Every one changes only the clip it names and is one undo step.
 
@@ -194,4 +251,4 @@ Every one changes only the clip it names and is one undo step.
 
 A clip's audio state is the clip's `audio` object (`gain`, `gain_envelope`, `transpose`, `warped`,
 `stretch`, `warp_markers`, `tempo_source`), written only when it is not the starting one; the
-region keeps the file. Version 9 ([`.suhina` format](suhina-format.md) › Versions).
+region keeps the file. Version 10 ([`.suhina` format](suhina-format.md) › Versions).

@@ -6,6 +6,7 @@
 //! one undo step; every number can be typed.
 
 use super::*;
+use crate::arrangement::Dragged;
 use crate::interaction::colour_picker;
 use crate::kit::widgets::Drag;
 use suhina_engine::model::{CLIP_TEMPO_RANGE, ROOT_NAMES, ScaleMode, TempoSource};
@@ -206,8 +207,8 @@ pub(super) struct Text<'a> {
 }
 
 /// A number field in `rect`: dragged up and down (the value follows while it moves, in one undo
-/// step), stepped with the arrows, typed after a click and Enter, and on a double-click a text
-/// field (Enter sets it, Escape or a click elsewhere leaves it). Named "`name`: `shown`".
+/// step), and on a click a text field with the number selected (Enter sets it, Escape or a click
+/// elsewhere leaves it; the arrows step it while it is open). Named "`name`: `shown`".
 #[allow(clippy::too_many_arguments)]
 pub(super) fn number_field(
     ui: &mut Ui,
@@ -221,6 +222,25 @@ pub(super) fn number_field(
 ) -> Option<Change> {
     let edit_id = id.with("typing");
     if let Some(mut typed) = ui.data(|d| d.get_temp::<String>(edit_id)) {
+        // The arrows step the value while the text field is open, as they step every value
+        // control (#707): taken before the field moves its cursor with them.
+        let steps = ui.input_mut(|i| {
+            let up = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)
+                || i.consume_key(egui::Modifiers::SHIFT, egui::Key::ArrowUp);
+            let down = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)
+                || i.consume_key(egui::Modifiers::SHIFT, egui::Key::ArrowDown);
+            i32::from(up) - i32::from(down)
+        });
+        if steps != 0 {
+            let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
+            let from = (text.parse)(&typed).unwrap_or(value);
+            let next =
+                (field.snap)(from + f64::from(steps) * field.per_tick * fine).clamp(field.range.0, field.range.1);
+            let shown =
+                (text.shown)(next).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
+            ui.data_mut(|d| d.insert_temp(edit_id, shown));
+            return Some(Change { value: next, more: false });
+        }
         let edit = egui::TextEdit::singleline(&mut typed)
             .id(id.with("text"))
             .font(theme::mono_font(theme::TEXT_SMALL))
@@ -278,7 +298,9 @@ pub(super) fn number_field(
     let mono = theme::mono_font(theme::TEXT_SMALL);
     let ink = if field.dim { theme::text_hint() } else { theme::text_value() };
     widgets::text_in(painter, text_area, field.align, &shown, mono.clone(), ink);
-    if response.double_clicked() {
+    // One click opens the text field (a drag moves the value instead): a double-click was
+    // needed before, and a click that only took the keys was easy to miss.
+    if response.clicked() {
         let start =
             (text.shown)(value).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
         ui.data_mut(|d| {
@@ -895,6 +917,9 @@ fn audio_part(
     );
     let mut set: Option<(f64, TempoSource, bool)> = None;
     let open = egui::Popup::menu(&response).show(|ui| {
+        // Wide enough for "File name: 120.00" on one line: the menu took the button's narrow
+        // width and broke every entry over two lines.
+        ui.set_min_width(140.0);
         let names = [
             (TempoSource::Metadata, "Metadata"),
             (TempoSource::Name, "File name"),
@@ -907,7 +932,8 @@ fn audio_part(
             Some(found) => {
                 for ((source, text), bpm) in names.into_iter().zip(found.iter()) {
                     let shown = bpm.map_or_else(|| format!("{text}: none"), |b| format!("{text}: {b:.2}"));
-                    if ui.add_enabled(bpm.is_some(), egui::Button::new(shown)).clicked() {
+                    let button = egui::Button::new(egui::RichText::new(shown)).wrap_mode(egui::TextWrapMode::Extend);
+                    if ui.add_enabled(bpm.is_some(), button).clicked() {
                         set = bpm.map(|b| (b, source, false));
                         ui.close();
                     }
@@ -942,9 +968,14 @@ fn audio_part(
     let value = panel.tempo.unwrap_or(f64::NAN);
     let shown_tempo = |v: f64| if v.is_finite() { format!("{v:.3}") } else { "—".to_string() };
     let text = Text { shown: &shown_tempo, parse: &plain_number, places: Some(&tempo_places) };
-    if let Some(change) = number_field(ui, painter, row(y, FIELD), id, "Tempo", value, text, tempo_field) {
+    let typed_tempo = number_field(ui, painter, row(y, FIELD), id, "Tempo", value, text, tempo_field);
+    if let Some(change) = typed_tempo {
         set = Some((change.value, TempoSource::Manual, change.more));
     }
+    // The tempo as dragged so far, for the Arrangement to draw the clip at on every frame; kept
+    // after the drag until the project has it, so the clip does not flash back for a frame.
+    let dragged = ui.data(|d| d.get_temp::<f64>(id.with("preview"))).map(thousandth);
+    publish_preview(ui, panel.clip, dragged, typed_tempo.map(|c| c.value), value, Dragged::Tempo);
     y += FIELD + 4.0;
     let half = (part.width() - 4.0) / 2.0;
     let halve = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(half, FIELD));
@@ -978,13 +1009,8 @@ fn audio_part(
     // Edit gain envelope: opens the envelope on the clip's waveform in the Arrangement for
     // editing, as Alt+E and the button by the clip's name do.
     if matches!(at, ClipRef::Arrangement(..)) {
-        let on = crate::arrangement::envelope::editing(ui.ctx()) == Some(panel.clip);
-        let text = if panel.envelope_points > 0 {
-            format!("Edit gain envelope · {}", panel.envelope_points)
-        } else {
-            "Edit gain envelope".into()
-        };
-        if toggle(ui, painter, row(y, TOGGLE), "Envelope", &text, on) {
+        let on = crate::arrangement::envelope::is_editing(ui.ctx(), panel.clip);
+        if toggle(ui, painter, row(y, TOGGLE), "Envelope", "Edit gain envelope", on) {
             crate::arrangement::envelope::toggle_editing(ui.ctx(), panel.clip);
         }
     }
@@ -1123,6 +1149,34 @@ fn gain_part(
     }
 }
 
+/// Leaves the value being dragged (`dragged`), or just sent at the drag's end (`sent`), for the
+/// Arrangement to draw `clip` at on every frame ([`crate::arrangement::TempoPreview`]); held until
+/// the project has it (`now`), or for a second.
+fn publish_preview(ui: &Ui, clip: ClipId, dragged: Option<f64>, sent: Option<f64>, now: f64, kind: fn(f64) -> Dragged) {
+    use crate::arrangement::TempoPreview;
+    let key = crate::arrangement::tempo_preview_key();
+    let value = |p: &TempoPreview| match p.value {
+        Dragged::Tempo(v) | Dragged::Transpose(v) => v,
+    };
+    let held = ui
+        .data(|d| d.get_temp::<TempoPreview>(key))
+        .filter(|p| p.clip == clip && std::mem::discriminant(&p.value) == std::mem::discriminant(&kind(0.0)));
+    let preview = match (dragged, sent) {
+        (Some(v), _) => Some(TempoPreview { clip, value: kind(v), frames: 60 }),
+        (None, Some(v)) if held.is_some() => Some(TempoPreview { clip, value: kind(v), frames: 60 }),
+        (None, _) => held
+            .filter(|p| p.frames > 0 && (value(p) - now).abs() > 1e-6)
+            .map(|p| TempoPreview { frames: p.frames - 1, ..p }),
+    };
+    ui.data_mut(|d| match preview {
+        Some(p) => {
+            d.insert_temp(key, p);
+        }
+        None if held.is_some() => d.remove::<TempoPreview>(key),
+        None => {}
+    });
+}
+
 fn pitch_part(
     ui: &mut Ui,
     painter: &egui::Painter,
@@ -1151,6 +1205,7 @@ fn pitch_part(
     });
     let mut set_semitones: Option<Change> = None;
     let mut set_cents: Option<Change> = None;
+    let mut sent: Option<f64> = None;
     match widgets::drag_value(ui, &response, &mut preview, semitones, 0.25, 1.0, SEMITONES, 0.0) {
         Drag::Moving(v) => {
             ui.data_mut(|d| d.insert_temp(preview_id, v));
@@ -1203,10 +1258,17 @@ fn pitch_part(
         let st = set_semitones.map_or(semitones, |c| c.value);
         let ct = set_cents.map_or(cents, |c| c.value);
         let transpose = (((st + ct / 100.0) * 100.0).round() / 100.0).clamp(SEMITONES.0, SEMITONES.1);
+        sent = Some(transpose);
         if change.more || (transpose - info.transpose).abs() > 1e-9 {
             let params = on_clip(at, json!({ "transpose": transpose }));
             actions.push(Action::new("clip.setAudio", with_more(params, change)));
         }
+    }
+    // An unwarped clip's pitch changes its length: the Arrangement draws it at the pitch as
+    // dragged on every frame, as for the tempo.
+    if !info.warped {
+        let dragged = ui.data(|d| d.get_temp::<f64>(preview_id)).map(|v| whole(v) + cents / 100.0);
+        publish_preview(ui, clip, dragged, sent, info.transpose, Dragged::Transpose);
     }
 }
 

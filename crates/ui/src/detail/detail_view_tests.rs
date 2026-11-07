@@ -1147,6 +1147,18 @@ fn panel_harness_tall(detail: Detail, height: f32) -> egui_kittest::Harness<'sta
 
 /// Two presses at `at` close together: a double-click. It waits first, as a person would, so a
 /// click just before does not make it a triple click.
+/// One click at `at`, well after any earlier one (so it is no double-click).
+fn click(harness: &mut egui_kittest::Harness<'static, Vec<Action>>, at: egui::Pos2) {
+    harness.hover_at(at);
+    harness.run();
+    for _ in 0..40 {
+        harness.step();
+    }
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
+}
+
 fn double_click(harness: &mut egui_kittest::Harness<'static, Vec<Action>>, at: egui::Pos2) {
     harness.hover_at(at);
     harness.run();
@@ -1247,8 +1259,9 @@ fn the_tempo_is_typed_halved_and_doubled() {
     harness.run();
     harness.get_by_label("Double the tempo").click();
     harness.run();
+    // One click opens the text field.
     let field = harness.get_by_label("Tempo: 96.000").rect().center();
-    double_click(&mut harness, field);
+    click(&mut harness, field);
     harness.get_by_label("Tempo value").click();
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     harness.get_by_label("Tempo value").type_text("124.5");
@@ -1263,12 +1276,33 @@ fn the_tempo_is_typed_halved_and_doubled() {
     assert_eq!(sets, [(48.0, "manual".into()), (192.0, "manual".into()), (124.5, "manual".into())]);
     assert!(harness.state().iter().all(|a| a.params["clip"] == json!(beat_b.0)));
     let before = harness.state().len();
-    double_click(&mut harness, field);
+    click(&mut harness, field);
     harness.get_by_label("Tempo value").click();
     harness.get_by_label("Tempo value").type_text("80");
     harness.key_press(egui::Key::Escape);
     harness.run();
     assert_eq!(harness.state().len(), before);
+}
+
+/// The tempo field opened with one click still steps with the arrows, a whole BPM each.
+#[test]
+fn the_tempo_field_opened_with_a_click_steps_with_the_arrows() {
+    use egui_kittest::kittest::Queryable;
+    let panel = AudioPanel {
+        tempo: Some(96.0),
+        tempo_source: Some(suhina_engine::model::TempoSource::Name),
+        ..AudioPanel::default()
+    };
+    let (detail, _) = audio_detail(panel, 0.0, 0.0);
+    let mut harness = panel_harness(detail);
+    let field = harness.get_by_label("Tempo: 96.000").rect().center();
+    click(&mut harness, field);
+    assert!(harness.query_by_label("Tempo value").is_some(), "one click opens the text field");
+    harness.key_press(egui::Key::ArrowUp);
+    harness.run();
+    let sets: Vec<f64> =
+        harness.state().iter().filter(|a| a.id == "clip.setTempo").filter_map(|a| a.params["bpm"].as_f64()).collect();
+    assert_eq!(sets, [97.0]);
 }
 
 /// Set beside a marker puts it at the playhead, as a beat of the clip's content, on a quarter beat.

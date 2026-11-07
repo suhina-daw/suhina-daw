@@ -38,8 +38,15 @@ pub(crate) fn set_envelope(session: &mut Session, params: &Value) -> Result<Valu
         return Err(format!("an envelope has at most {MAX_GAIN_POINTS} points").into());
     }
     let (low, high) = (*GAIN_POINT_RANGE.start(), *GAIN_POINT_RANGE.end());
+    // Each point's curve to the next, as automation's: a bend from -1 to 1 or four numbers;
+    // missing or null for a straight one.
+    let curves = match Args::new(params).value("curves") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(list)) if list.len() <= values.len() / 2 => list.clone(),
+        Some(_) => return Err("curves must be a list with at most one curve for each point".into()),
+    };
     let mut points = Vec::with_capacity(values.len() / 2);
-    for [beat, db] in values.as_chunks::<2>().0 {
+    for (index, [beat, db]) in values.as_chunks::<2>().0.iter().enumerate() {
         let (Some(beat), Some(db)) = (beat.as_f64(), db.as_f64()) else {
             return Err("points must be numbers".into());
         };
@@ -51,15 +58,48 @@ pub(crate) fn set_envelope(session: &mut Session, params: &Value) -> Result<Valu
         if !(db.is_finite() && (low..=high).contains(&db)) {
             return Err(format!("a point's dB must be from {low} to +{high}, got {db}").into());
         }
-        points.push(GainPoint { beat, db });
+        let curve = match curves.get(index) {
+            None | Some(Value::Null) => None,
+            Some(curve) => crate::automation::curve(&json!({ "curve": curve }))?,
+        };
+        points.push(GainPoint { beat, db, curve: curve.unwrap_or_default() });
     }
     // In beat order; points on one beat keep the order they were given in, so a step can be made.
     points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+    let points = merged(points);
     let (at, _, _) = audio_clip(session, params).map_err(|_| "only an audio clip has a gain envelope")?;
     let clip = clip_mut(&mut session.project, at).ok_or("the clip is missing")?;
     clip.audio.gain_envelope = points;
+    // Only the envelope changed: an arrangement clip's goes to the playing engine as a message.
+    // An ARA clip's is applied by its host's chain, which only a new graph reaches.
+    session.sync.envelope_edit = match at {
+        ClipAt::Arrangement(lane, index) if !clip.ara => Some((lane, index)),
+        _ => None,
+    };
     let listed: Vec<f64> = clip.audio.gain_envelope.iter().flat_map(|p| [p.beat, p.db]).collect();
-    Ok(json!({ "clip": clip.id.0, "points": listed }))
+    let curves: Vec<[f64; 4]> = clip.audio.gain_envelope.iter().map(|p| p.curve.to_array()).collect();
+    Ok(json!({ "clip": clip.id.0, "points": listed, "curves": curves }))
+}
+
+/// `points` (in beat order) with no two in one place: a point on the beat and dB of the one before
+/// it is one point, with the later one's curve to the next. On one beat at most two are kept, the
+/// first and the last, which draw a step; one between them would only sit on the step's edge.
+fn merged(points: Vec<GainPoint>) -> Vec<GainPoint> {
+    const SAME_BEAT: f64 = 1e-9;
+    const SAME_DB: f64 = 1e-6;
+    let mut out: Vec<GainPoint> = Vec::with_capacity(points.len());
+    for point in points {
+        let on_beat = |p: &GainPoint| (p.beat - point.beat).abs() <= SAME_BEAT;
+        // Whether the two before it are on its beat already: it would be a third.
+        let third = out.len() >= 2 && out.iter().rev().take(2).all(on_beat);
+        match out.last_mut() {
+            Some(last) if on_beat(last) && (last.db - point.db).abs() <= SAME_DB => last.curve = point.curve,
+            // A third point on the beat replaces the second: the step goes from the first to it.
+            Some(last) if third => *last = point,
+            _ => out.push(point),
+        }
+    }
+    out
 }
 
 /// A tempo source by the name the commands use.

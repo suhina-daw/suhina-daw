@@ -47,6 +47,15 @@ pub struct AudioView {
 }
 
 impl AudioView {
+    /// The tempo the clip's audio is warped from, by its first and last warp markers: what
+    /// `clip.setTempo` scales it from. `None` without two rising markers (unwarped audio).
+    pub fn tempo(&self) -> Option<f64> {
+        let (Some(first), Some(last)) = (self.markers.first(), self.markers.last()) else { return None };
+        let (beats, seconds) = (last.0 - first.0, last.1 - first.1);
+        let bpm = beats / seconds * 60.0;
+        (beats > 0.0 && seconds > 0.0 && bpm.is_finite()).then_some(bpm)
+    }
+
     /// The file position, in seconds, `elapsed` project beats after the clip starts, as the
     /// engine plays it.
     pub fn seconds(&self, elapsed: f64) -> f64 {
