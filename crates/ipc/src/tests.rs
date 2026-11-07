@@ -335,3 +335,36 @@ fn looking_for_an_answer_leaves_the_block_to_wait() {
     assert_eq!(link.process(&input, &mut output, LONG), Outcome::Done);
     assert_eq!(host.join().ok(), Some(2));
 }
+
+/// Two links with a block out each, answered one at a time when told to: a wait over both
+/// returns the one rung, and at its `until` none when neither is (#1256).
+#[test]
+fn a_wait_over_several_links_returns_the_one_answered() {
+    let mut first = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
+    let mut second = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
+    let (go_first, hold_first) = mpsc::channel();
+    let (go_second, hold_second) = mpsc::channel();
+    let hosts = [
+        halving_host(first.address(), 1, Some((0, hold_first))),
+        halving_host(second.address(), 1, Some((0, hold_second))),
+    ];
+    let input = ramp(BLOCK * 2, 1.0);
+    let mut output = vec![0.0; BLOCK * 2];
+    assert!(first.watch().is_none(), "nothing out, nothing to watch");
+    assert!(first.send_with_events(&input, &[], output.len()));
+    assert!(second.send_with_events(&input, &[], output.len()));
+    // Neither answered: a wait already past its time finds none.
+    assert_eq!(wait_any(&[first.watch(), second.watch()], Instant::now()), None);
+    assert!(go_second.send(()).is_ok());
+    assert_eq!(wait_any(&[first.watch(), second.watch()], Instant::now() + LONG), Some(1));
+    assert!(second.watch().is_none(), "answered");
+    // A link given up on is watched for the answer it still owes.
+    assert_eq!(first.wait(&mut output, Instant::now()), Outcome::Missed);
+    assert!(first.watch().is_none() && first.watch_ready().is_some());
+    assert!(go_first.send(()).is_ok());
+    assert_eq!(wait_any(&[None, first.watch_ready()], Instant::now() + LONG), Some(1));
+    assert_eq!(second.wait(&mut output, Instant::now()), Outcome::Done);
+    for host in hosts {
+        assert_eq!(host.join().ok(), Some(1));
+    }
+}

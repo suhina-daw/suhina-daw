@@ -378,14 +378,47 @@ pub(crate) fn run(
             start(chains, i, frames, context, capture.as_ref());
             continue;
         }
-        // Nothing answered: wait a little on the first chain still out.
-        if let Some(chain) = chains.iter_mut().find(|c| c.turn.started && !c.turn.done && c.is_waiting()) {
-            chain.answered(now + crate::chain::ANSWER_SLICE);
-        }
+        wait_for_answers(chains, now);
     }
     match main {
         Some(m) => to_output(chains, out, cue, Some(m), true, capture.as_mut()),
         None => to_output(chains, out, cue, None, false, capture.as_mut()),
+    }
+}
+
+/// The most chains' plug-ins one wait watches; more chains wait in turn.
+const MAX_WATCHED: usize = 64;
+
+/// While no plug-in has answered: sleeps in the operating system until one of the waiting
+/// chains' plug-ins answers or the earliest of their limits passes (#1256). When one of them
+/// cannot be watched, it waits on the first chain still out for at most
+/// [`crate::chain::ANSWER_SLICE`] instead, and the loop looks at all of them again. Never
+/// allocates.
+fn wait_for_answers(chains: &mut [Chain], now: std::time::Instant) {
+    let waiting = |c: &&Chain| c.turn.started && !c.turn.done && c.is_waiting();
+    let all = chains.iter().filter(waiting).count();
+    let mut watches: [Option<suhina_ipc::Watch>; MAX_WATCHED] = [None; MAX_WATCHED];
+    let mut until: Option<std::time::Instant> = None;
+    let mut watched = 0;
+    for chain in chains.iter().filter(waiting).take(MAX_WATCHED) {
+        if let (Some(watch), Some(slot)) = (chain.watch(), watches.get_mut(watched)) {
+            *slot = Some(watch);
+            watched += 1;
+        }
+        until = match (until, chain.limit()) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+    if watched > 0
+        && watched == all
+        && let Some(until) = until
+    {
+        suhina_ipc::wait_any(watches.get(..watched).unwrap_or_default(), until);
+        return;
+    }
+    if let Some(chain) = chains.iter_mut().find(|c| c.turn.started && !c.turn.done && c.is_waiting()) {
+        chain.answered(now + crate::chain::ANSWER_SLICE);
     }
 }
 

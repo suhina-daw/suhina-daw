@@ -699,9 +699,20 @@ impl Chain {
         }
     }
 
+    /// The plug-in it waits for, to wait for together with other chains' (#1256): its block
+    /// out, or the block it was late with. `None` when it waits for nothing, or for a plug-in
+    /// that cannot be watched. Never allocates.
+    pub(crate) fn watch(&self) -> Option<suhina_ipc::Watch<'_>> {
+        let index = self.waiting?;
+        match self.slots.get(index) {
+            Some(DeviceSlot::Plugin(plugin)) => plugin.watch(self.behind == Some(index)),
+            _ => None,
+        }
+    }
+
     /// Until when the block out may take: the block's deadline, or offline, where there is
     /// none, [`OFFLINE_TIMEOUT`] after it went out.
-    fn limit(&self) -> Option<Instant> {
+    pub(crate) fn limit(&self) -> Option<Instant> {
         self.deadline.or_else(|| self.sent_at.and_then(|at| at.checked_add(OFFLINE_TIMEOUT)))
     }
 

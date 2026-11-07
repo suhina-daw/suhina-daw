@@ -218,9 +218,14 @@ wait 6 ms. (Until #151 the chains went a stage at a time, every chain waiting fo
 chain's answer before any went on, so a chain waited once per plug-in for the slowest
 plug-in of that stage elsewhere: measured with three chains of three plug-ins whose heavy
 one, 3 ms a block, is at another place in each, see *Measurements*.) While no answer is in,
-the render thread sleeps on the first chain still out for at most 50 µs at a time
-(`ANSWER_SLICE`): that plug-in's answer wakes it at once, another's is seen at most that
-late. A chain whose plug-in has not answered by the deadline misses that block, as before;
+the render thread sleeps until any of the plug-ins it waits for answers, or the earliest of
+their deadlines (`suhina_ipc::wait_any`, #1256): on Windows on their links' events together
+(63 at a time) and a high-resolution timer, yielding only in the last millisecond, so a late
+plug-in no longer keeps the render thread spinning for the whole wait; on Linux and macOS on
+the first link still out, as a single link waits. A plug-in the engine cannot watch (a
+stand-in in tests) is waited on for at most 50 µs at a time (`ANSWER_SLICE`), and the others
+looked at again. A wait that Windows refuses (`WAIT_FAILED`) falls back to the event's own,
+coarser timeout instead of returning at once, and `suhina_ipc::a_wait_failed` says it happened. A chain whose plug-in has not answered by the deadline misses that block, as before;
 the others are not held up by it. An offline render gives each block out `OFFLINE_TIMEOUT`
 from when it went. `longest_us` is each plug-in's longest round trip, timed from the block's
 hand-over, since the engine may look at other chains before it takes an answer. A plug-in still at a block it was late with (one whose answer

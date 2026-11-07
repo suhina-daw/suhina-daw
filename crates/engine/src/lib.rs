@@ -21,6 +21,8 @@
 mod ahead;
 pub use assets::DeviceAssets;
 pub use control_error::ControlError;
+/// What a plug-in's link waits for, handed to the engine to wait for several at once (#1256).
+pub use suhina_ipc::Watch;
 mod control_error;
 pub use suhina_device_sdk::{DeviceAsset, DeviceFactory, Devices};
 mod assets;

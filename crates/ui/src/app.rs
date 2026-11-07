@@ -1216,6 +1216,10 @@ impl App {
         if !suhina_plugins::trace::on() {
             return;
         }
+        // Once: the render thread then waits for plug-ins on a coarser timeout (#1256).
+        if suhina_plugins::a_wait_failed() {
+            suhina_plugins::trace::state("plug-in waits", "a wait failed; waiting on the event's own timeout".into());
+        }
         let Some(player) = self.session().and_then(Session::player) else { return };
         let info = player.output_info();
         if let Some(info) = &info {

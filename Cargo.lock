@@ -5577,6 +5577,7 @@ dependencies = [
  "suhina-device-registry",
  "suhina-device-sdk",
  "suhina-dsp",
+ "suhina-ipc",
  "suhina-model",
  "suhina-stretch",
  "suhina-test-support",

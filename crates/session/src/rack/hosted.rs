@@ -371,6 +371,14 @@ impl PluginProcessor for Hosted {
         self.audio.ready(until)
     }
 
+    fn watch(&self) -> Option<suhina_engine::Watch<'_>> {
+        self.audio.watch()
+    }
+
+    fn watch_ready(&self) -> Option<suhina_engine::Watch<'_>> {
+        self.audio.watch_ready()
+    }
+
     /// Its host process and number there, unless releases from a block it could not take wait
     /// to be sent (they go on its own link first) or its link still has a block out.
     fn joint(&self) -> Option<Joint> {
