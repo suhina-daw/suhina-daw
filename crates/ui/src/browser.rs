@@ -1049,13 +1049,16 @@ pub fn duration_text(seconds: f64) -> String {
         return String::new();
     }
     // Under a minute the text shows tenths: round to them first, so 59.97 s reads 1:00, not
-    // 0:60.0.
-    let tenths = (seconds * 10.0).round() / 10.0;
-    if tenths < 60.0 {
-        return format!("0:{tenths:04.1}");
+    // 0:60.0. From a minute on it shows whole seconds, floored.
+    if seconds < 60.0 {
+        let tenths = (seconds * 10.0).round() / 10.0;
+        if tenths < 60.0 {
+            return format!("0:{tenths:04.1}");
+        }
+        return "1:00".into();
     }
-    let minutes = (tenths / 60.0).floor();
-    let rest = tenths - minutes * 60.0;
+    let minutes = (seconds / 60.0).floor();
+    let rest = seconds - minutes * 60.0;
     format!("{}:{:02}", minutes as u64, rest.floor() as u64)
 }
 

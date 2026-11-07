@@ -304,7 +304,7 @@ pub(crate) fn invert(session: &mut Session, params: &Value) -> Result<Value, Com
         let sum = i64::from(lowest) + i64::from(highest);
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
-            let key = (sum - i64::from(note.key)).clamp(0, 127) as u8;
+            let key = u8::try_from(sum - i64::from(note.key)).map_err(|_| "a key is out of range")?;
             if key != note.key
                 && let Some(slot) = notes.get_mut(index)
             {

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
-use suhina_engine::model::{ClipId, FadeCurve, FadeShape, Meter, Project, Rgb, TrackId};
+use suhina_engine::model::{ClipId, FadeCurve, FadeShape, Project, Rgb, TrackId};
 
 use crate::arrangement::automation_lanes::{self as automation, LanesState};
 use crate::arrangement::timeline::{ClipBox, Folds, Lane, Timeline, inside_lanes};
@@ -1211,7 +1211,6 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                     clip,
                     &x_of,
                     bar_beats,
-                    &timeline.meter,
                     &lane_at,
                     timeline,
                     &clip_order,
@@ -1456,7 +1455,6 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                     clip,
                     &x_of,
                     bar_beats,
-                    &timeline.meter,
                     &lane_at,
                     timeline,
                     &clip_order,

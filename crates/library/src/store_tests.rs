@@ -12,12 +12,12 @@ fn temp(name: &str) -> PathBuf {
 
 #[test]
 fn a_long_list_is_read_up_to_its_limit_without_comparing_every_entry() {
-    // 400 000 different pins: compared each with all before it, the read took minutes.
-    let pins: Vec<String> = (0..400_000).map(|i| format!("/p/{i}.wav")).collect();
+    // More different pins than the limit, then entries that are not text: each one read after the
+    // limit is reached would add a warning, so one warning shows the read stopped there.
+    let mut pins: Vec<Value> = (0..=MAX_PINS).map(|i| json!(format!("/p/{i}.wav"))).collect();
+    pins.extend((0..1000).map(|_| json!(7)));
     let mut warnings = Vec::new();
-    let started = std::time::Instant::now();
     let kept = texts(Some(&json!(pins)), MAX_PINS, "pinned", &mut warnings);
-    assert!(started.elapsed() < std::time::Duration::from_secs(20), "{:?}", started.elapsed());
     assert_eq!(kept.len(), MAX_PINS);
     assert_eq!(kept.first().map(String::as_str), Some("/p/0.wav"));
     assert_eq!(warnings.len(), 1, "{warnings:?}");
