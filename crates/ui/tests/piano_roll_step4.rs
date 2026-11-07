@@ -285,8 +285,8 @@ fn the_midi_tools_column_says_what_it_acts_on() {
     assert!(h.query_by_label(&format!("{total} notes")).is_some(), "the count under the head");
     let at = note_rect(&h, &notes(&h)[0]).center();
     click(&mut h, at);
-    assert!(h.query_by_label("Selected notes").is_some(), "one note selected");
-    assert!(h.query_by_label("1 of 4 notes").is_some(), "the count under the head");
+    assert!(h.query_by_label("Selection").is_some(), "one note selected");
+    assert!(h.query_by_label("1 of 4").is_some(), "the count under the head");
     h.key_press(Key::Escape);
     h.run();
     assert!(h.query_by_label("Whole clip").is_some(), "Escape clears the selection");
