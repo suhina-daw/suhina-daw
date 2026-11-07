@@ -254,9 +254,7 @@ impl StretchWorker {
             before.writers.iter().enumerate().map(|(index, w)| (w.key, index)).collect();
         for (index, writer) in self.writers.iter_mut().enumerate() {
             let Some(old_index) = by_key.remove(&writer.key) else { continue };
-            let (Some(old), Some(old_jump), Some(slot)) =
-                (before.writers.get_mut(old_index), before.shared.jumps.get(old_index), self.shared.adopted.get(index))
-            else {
+            let (Some(old), Some(slot)) = (before.writers.get_mut(old_index), self.shared.adopted.get(index)) else {
                 continue;
             };
             // A voice with a jump under way is handed over too: the new graph asks for that jump
