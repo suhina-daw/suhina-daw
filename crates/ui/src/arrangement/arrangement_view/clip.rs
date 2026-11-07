@@ -610,8 +610,7 @@ pub(super) fn clip_box<'a>(
     let tempo_extent = ui
         .data(|d| d.get_temp::<crate::arrangement::TempoPreview>(crate::arrangement::tempo_preview_key()))
         .filter(|p| p.clip == clip.id && clip.length > 0.0)
-        .and_then(|p| Some(p.bpm / clip.audio_view.as_ref()?.tempo()?))
-        .filter(|f| f.is_finite() && *f > 0.0 && (f - 1.0).abs() > 1e-6)
+        .and_then(|p| p.factor(clip.audio_view.as_ref()?))
         .map(|f| (clip.start, clip.start + clip.length * f));
     let released = released.or(others_edge).or(tempo_extent);
     // Copying leaves the clip where it is: its handles stay on it; moving takes them along.
@@ -1060,8 +1059,7 @@ pub(super) fn clip_box<'a>(
             let tempo_factor = ui
                 .data(|d| d.get_temp::<crate::arrangement::TempoPreview>(crate::arrangement::tempo_preview_key()))
                 .filter(|p| p.clip == clip.id && extent.is_none() && clip.length > 0.0)
-                .and_then(|p| Some(p.bpm / clip.audio_view.as_ref()?.tempo()?))
-                .filter(|f| f.is_finite() && *f > 0.0 && (f - 1.0).abs() > 1e-6);
+                .and_then(|p| p.factor(clip.audio_view.as_ref()?));
             let extent = extent.or(tempo_factor.map(|f| (start, start + clip.length * f)));
             let (rect, clip_area) = match extent {
                 Some((from, to)) => {

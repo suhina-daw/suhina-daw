@@ -349,3 +349,33 @@ fn a_warped_clips_tempo_comes_from_its_markers() {
     assert_eq!(view(Vec::new()).tempo(), None, "unwarped audio has none");
     assert_eq!(view(vec![(0.0, 1.0), (4.0, 1.0)]).tempo(), None, "markers that do not rise");
 }
+
+/// A tempo or an unwarped clip's pitch dragged in the clip panel draws the clip at the length
+/// it will have, on every frame between the values sent: an octave up halves an unwarped clip,
+/// a tempo from 83 to 166 BPM doubles a warped one.
+#[test]
+fn a_dragged_tempo_or_pitch_draws_the_clip_at_its_new_length() {
+    use crate::arrangement::{Dragged, TempoPreview};
+    let view = |markers: Vec<(f64, f64)>, rate: f64| AudioView {
+        file: String::new(),
+        offset: 0.0,
+        loop_range: None,
+        markers,
+        seconds_per_beat: 0.5,
+        rate,
+        gain_db: 0.0,
+        envelope: Vec::new(),
+    };
+    let preview = |value| TempoPreview { clip: ClipId(1), value, frames: 60 };
+    let unwarped = view(Vec::new(), 1.0);
+    let octave = preview(Dragged::Transpose(12.0)).factor(&unwarped).unwrap_or(0.0);
+    assert!((octave - 0.5).abs() < 1e-9, "{octave}");
+    // Already an octave up: dragged back to 0 it is twice as long as now.
+    let back = preview(Dragged::Transpose(0.0)).factor(&view(Vec::new(), 2.0)).unwrap_or(0.0);
+    assert!((back - 2.0).abs() < 1e-9, "{back}");
+    assert_eq!(preview(Dragged::Transpose(0.0)).factor(&unwarped), None, "the length it has");
+    let warped = view(vec![(0.0, 0.0), (16.0, 16.0 * 60.0 / 83.0)], 1.0);
+    let tempo = preview(Dragged::Tempo(166.0)).factor(&warped).unwrap_or(0.0);
+    assert!((tempo - 2.0).abs() < 1e-9, "{tempo}");
+    assert_eq!(preview(Dragged::Tempo(120.0)).factor(&unwarped), None, "unwarped audio has no tempo");
+}

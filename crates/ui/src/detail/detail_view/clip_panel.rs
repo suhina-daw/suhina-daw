@@ -6,6 +6,7 @@
 //! one undo step; every number can be typed.
 
 use super::*;
+use crate::arrangement::Dragged;
 use crate::interaction::colour_picker;
 use crate::kit::widgets::Drag;
 use suhina_engine::model::{CLIP_TEMPO_RANGE, ROOT_NAMES, ScaleMode, TempoSource};
@@ -929,24 +930,7 @@ fn audio_part(
     // The tempo as dragged so far, for the Arrangement to draw the clip at on every frame; kept
     // after the drag until the project has it, so the clip does not flash back for a frame.
     let dragged = ui.data(|d| d.get_temp::<f64>(id.with("preview"))).map(thousandth);
-    let key = crate::arrangement::tempo_preview_key();
-    let held = ui.data(|d| d.get_temp::<crate::arrangement::TempoPreview>(key)).filter(|p| p.clip == panel.clip);
-    let preview = match (dragged, typed_tempo) {
-        (Some(bpm), _) => Some(crate::arrangement::TempoPreview { clip: panel.clip, bpm, frames: 60 }),
-        (None, Some(change)) if held.is_some() => {
-            Some(crate::arrangement::TempoPreview { clip: panel.clip, bpm: change.value, frames: 60 })
-        }
-        (None, _) => held
-            .filter(|p| p.frames > 0 && (p.bpm - value).abs() > 1e-6)
-            .map(|p| crate::arrangement::TempoPreview { frames: p.frames - 1, ..p }),
-    };
-    ui.data_mut(|d| match preview {
-        Some(p) => {
-            d.insert_temp(key, p);
-        }
-        None if held.is_some() => d.remove::<crate::arrangement::TempoPreview>(key),
-        None => {}
-    });
+    publish_preview(ui, panel.clip, dragged, typed_tempo.map(|c| c.value), value, Dragged::Tempo);
     y += FIELD + 4.0;
     let half = (part.width() - 4.0) / 2.0;
     let halve = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(half, FIELD));
@@ -1120,6 +1104,34 @@ fn gain_part(
     }
 }
 
+/// Leaves the value being dragged (`dragged`), or just sent at the drag's end (`sent`), for the
+/// Arrangement to draw `clip` at on every frame ([`crate::arrangement::TempoPreview`]); held until
+/// the project has it (`now`), or for a second.
+fn publish_preview(ui: &Ui, clip: ClipId, dragged: Option<f64>, sent: Option<f64>, now: f64, kind: fn(f64) -> Dragged) {
+    use crate::arrangement::TempoPreview;
+    let key = crate::arrangement::tempo_preview_key();
+    let value = |p: &TempoPreview| match p.value {
+        Dragged::Tempo(v) | Dragged::Transpose(v) => v,
+    };
+    let held = ui
+        .data(|d| d.get_temp::<TempoPreview>(key))
+        .filter(|p| p.clip == clip && std::mem::discriminant(&p.value) == std::mem::discriminant(&kind(0.0)));
+    let preview = match (dragged, sent) {
+        (Some(v), _) => Some(TempoPreview { clip, value: kind(v), frames: 60 }),
+        (None, Some(v)) if held.is_some() => Some(TempoPreview { clip, value: kind(v), frames: 60 }),
+        (None, _) => held
+            .filter(|p| p.frames > 0 && (value(p) - now).abs() > 1e-6)
+            .map(|p| TempoPreview { frames: p.frames - 1, ..p }),
+    };
+    ui.data_mut(|d| match preview {
+        Some(p) => {
+            d.insert_temp(key, p);
+        }
+        None if held.is_some() => d.remove::<TempoPreview>(key),
+        None => {}
+    });
+}
+
 fn pitch_part(
     ui: &mut Ui,
     painter: &egui::Painter,
@@ -1148,6 +1160,7 @@ fn pitch_part(
     });
     let mut set_semitones: Option<Change> = None;
     let mut set_cents: Option<Change> = None;
+    let mut sent: Option<f64> = None;
     match widgets::drag_value(ui, &response, &mut preview, semitones, 0.25, 1.0, SEMITONES, 0.0) {
         Drag::Moving(v) => {
             ui.data_mut(|d| d.insert_temp(preview_id, v));
@@ -1200,10 +1213,17 @@ fn pitch_part(
         let st = set_semitones.map_or(semitones, |c| c.value);
         let ct = set_cents.map_or(cents, |c| c.value);
         let transpose = (((st + ct / 100.0) * 100.0).round() / 100.0).clamp(SEMITONES.0, SEMITONES.1);
+        sent = Some(transpose);
         if change.more || (transpose - info.transpose).abs() > 1e-9 {
             let params = on_clip(at, json!({ "transpose": transpose }));
             actions.push(Action::new("clip.setAudio", with_more(params, change)));
         }
+    }
+    // An unwarped clip's pitch changes its length: the Arrangement draws it at the pitch as
+    // dragged on every frame, as for the tempo.
+    if !info.warped {
+        let dragged = ui.data(|d| d.get_temp::<f64>(preview_id)).map(|v| whole(v) + cents / 100.0);
+        publish_preview(ui, clip, dragged, sent, info.transpose, Dragged::Transpose);
     }
 }
 
