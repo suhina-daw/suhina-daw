@@ -45,6 +45,10 @@ impl Shortcut {
             }
         }
         let key = Key::from_name(key.trim()).or_else(|| Key::from_name(&capitalised(key.trim())))?;
+        // A modifier is held with a key, never a key of its own ("Alt+AltLeft").
+        if is_modifier(key) {
+            return None;
+        }
         Some(Self { modifiers, key })
     }
 
@@ -93,6 +97,22 @@ impl Shortcut {
             + usize::from(self.modifiers.shift)
             + usize::from(self.modifiers.alt)
     }
+}
+
+/// Whether `key` is Shift, Ctrl, Alt or the system key itself, which the window reports as a
+/// key press of its own the moment it goes down, before the key it is held with.
+pub fn is_modifier(key: Key) -> bool {
+    matches!(
+        key,
+        Key::ShiftLeft
+            | Key::ShiftRight
+            | Key::ControlLeft
+            | Key::ControlRight
+            | Key::AltLeft
+            | Key::AltRight
+            | Key::SuperLeft
+            | Key::SuperRight
+    )
 }
 
 fn capitalised(text: &str) -> String {

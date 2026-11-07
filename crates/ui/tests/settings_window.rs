@@ -1359,3 +1359,32 @@ fn the_theme_in_use_is_marked_as_selected_in_the_list() {
     assert!(!selected(&harness, "Theme: Suhina Studio"));
     theme::set_palette(&harness.ctx, theme::Palette::DARK);
 }
+
+/// Setting a key waits for the key held with Ctrl or Alt: the modifier going down, which the
+/// window reports as a key press of its own, is not taken as the key ("Alt+AltLeft").
+#[test]
+fn setting_a_key_waits_past_the_modifier_for_the_key_held_with_it() {
+    let mut harness = short_window();
+    harness.get_by_label("Settings page: Keys").click();
+    settle(&mut harness);
+    harness.get_by_label("Filter shortcuts").focus();
+    settle(&mut harness);
+    harness.get_by_label("Filter shortcuts").type_text("arm the selected");
+    settle(&mut harness);
+    for (modifiers, modifier, key, text) in [
+        (Modifiers::COMMAND, Key::ControlLeft, Key::Backtick, "Ctrl+Backtick"),
+        (Modifiers::ALT, Key::AltLeft, Key::R, "Alt+R"),
+    ] {
+        harness.get_by_label("Change keys of selection.arm").click();
+        settle(&mut harness);
+        harness.key_down_modifiers(modifiers, modifier);
+        settle(&mut harness);
+        assert_eq!(harness.state().keymap().binding_text("selection.arm"), None, "still waiting for the key");
+        harness.key_press_modifiers(modifiers, key);
+        settle(&mut harness);
+        assert_eq!(harness.state().keymap().binding_text("selection.arm").as_deref(), Some(text));
+        harness.key_up_modifiers(modifiers, modifier);
+        settle(&mut harness);
+    }
+    assert!(suhina_ui::settings::keymap::Shortcut::parse("Alt+AltLeft").is_none(), "a modifier is no key");
+}
