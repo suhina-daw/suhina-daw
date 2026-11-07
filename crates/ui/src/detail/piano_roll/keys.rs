@@ -576,22 +576,6 @@ impl PianoRollState {
         self.key_live = None;
     }
 
-    /// The rectangle a drag is selecting with is at `rect`: the notes it has just reached sound at
-    /// once, each key once.
-    pub(super) fn audition_swept(&mut self, layout: &Layout, clip: &PianoClip, rect: Rect) {
-        let inside: BTreeSet<usize> = clip
-            .notes
-            .iter()
-            .enumerate()
-            .filter(|(_, n)| layout.note_rect(n).intersects(rect))
-            .map(|(i, _)| i)
-            .collect();
-        let reached: Vec<u8> =
-            inside.difference(&self.swept).filter_map(|i| clip.notes.get(*i)).map(|n| n.key).collect();
-        self.audition_keys(reached);
-        self.swept = inside;
-    }
-
     /// Whether notes this command places replace what is under them (Allow stacked notes off).
     pub(crate) fn replacing(&self, params: &mut Value) {
         if self.notes_replace {
