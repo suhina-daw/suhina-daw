@@ -1009,6 +1009,70 @@ fn an_unwarped_clip_swapped_often_reads_on_without_a_slip() {
     assert!(max_diff(&out, &plain) < 1e-6, "differs by {}", max_diff(&out, &plain));
 }
 
+/// A clip's envelope sent as a message (`Controller::set_clip_envelope`) takes effect on the
+/// playing graph, gliding, with no new graph: the level falls by 12 dB without a step.
+#[test]
+fn an_envelope_sent_as_a_message_glides_on_the_playing_graph() {
+    let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 120.0, StretchMode::Smooth);
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warped = false;
+    }
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 50, 480, |_| {});
+    let mut clip = project.arrangement.lanes[0].clips[0].clone();
+    clip.audio.gain_envelope = vec![GainPoint::new(0.0, -12.0)];
+    controller.set_clip_envelope(0, 0, &clip).unwrap();
+    out.extend(blocks(&mut renderer, 20, 480, |_| {}));
+    let peaks: Vec<f32> = out[22_000 * 2..32_000 * 2]
+        .chunks(220)
+        .map(|w| w.iter().step_by(2).fold(0.0f32, |m, s| m.max(s.abs())))
+        .collect();
+    let (first, last) = (peaks[0], peaks[peaks.len() - 1]);
+    assert!(last < first * 0.3, "down by 12 dB: {first} -> {last}");
+    let steepest = peaks.windows(2).map(|w| w[1] / w[0]).fold(1.0f32, f32::min);
+    assert!(steepest > 0.8, "no step: {steepest}");
+    // The replaced envelopes go back to the controller, which frees them.
+    controller.collect();
+}
+
+/// A stretched clip under the whole loop, its envelope sent as messages every 30 ms through
+/// several wraps (a drag): its voice is never handed over or moved, so not a frame is late and
+/// every pass sounds.
+#[test]
+fn envelope_messages_through_loop_wraps_leave_a_stretched_clip_playing() {
+    let beat = SR as usize / 2;
+    let gap = SR as usize * 3 / 100;
+    let (mut project, pool) = stretched_project(220.0, 2.0, 3.0, 120.0, StretchMode::Smooth);
+    project.arrangement.lanes[0].clips[0].start = 1.0;
+    project.transport.loop_range = Some(LoopRange { start: 1.0, end: 4.0 });
+    project.transport.loop_enabled = true;
+    let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    let mut worker = renderer.take_stretch_worker().unwrap();
+    renderer.handle(LaunchCommand::Play);
+    let mut out = Vec::new();
+    let passes = 4;
+    let mut clip = project.arrangement.lanes[0].clips[0].clone();
+    for k in 0..(passes * 3 + 1) * beat / gap {
+        clip.audio.gain_envelope = vec![GainPoint::new(1.0, -((k % 7) as f64))];
+        controller.set_clip_envelope(0, 0, &clip).unwrap();
+        out.extend(blocks(&mut renderer, 1, gap, |_| worker.fill()));
+        controller.collect();
+    }
+    for k in 1..passes {
+        let at = (k * 3 + 1) * beat;
+        assert!(rms(&out, at + beat / 2, at + beat) > 0.05, "pass {k} sounds");
+    }
+    assert_eq!(renderer.stretch_underruns(), 0, "the voice was never moved");
+}
+
 #[test]
 fn an_envelope_edited_while_its_clip_plays_glides_to_the_new_gain() {
     // A drag of the envelope swaps in a graph per frame; each step cut in at once crackled.

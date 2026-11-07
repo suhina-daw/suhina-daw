@@ -1140,6 +1140,7 @@ impl Renderer {
             }
         }
         self.receive_params();
+        self.receive_envelopes();
         // A rewind moves along even while the transport is stopped, so the stretched clips are
         // ready again by the next start.
         self.graph.ahead.service();

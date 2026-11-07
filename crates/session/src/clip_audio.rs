@@ -70,6 +70,12 @@ pub(crate) fn set_envelope(session: &mut Session, params: &Value) -> Result<Valu
     let (at, _, _) = audio_clip(session, params).map_err(|_| "only an audio clip has a gain envelope")?;
     let clip = clip_mut(&mut session.project, at).ok_or("the clip is missing")?;
     clip.audio.gain_envelope = points;
+    // Only the envelope changed: an arrangement clip's goes to the playing engine as a message.
+    // An ARA clip's is applied by its host's chain, which only a new graph reaches.
+    session.sync.envelope_edit = match at {
+        ClipAt::Arrangement(lane, index) if !clip.ara => Some((lane, index)),
+        _ => None,
+    };
     let listed: Vec<f64> = clip.audio.gain_envelope.iter().flat_map(|p| [p.beat, p.db]).collect();
     let curves: Vec<[f64; 4]> = clip.audio.gain_envelope.iter().map(|p| p.curve.to_array()).collect();
     Ok(json!({ "clip": clip.id.0, "points": listed, "curves": curves }))

@@ -144,6 +144,16 @@ klingt and JUCE's graph do), now:
 4. **Sounding notes follow their track's mix.** Each sine voice remembers its track and
    velocity; at a swap it takes the new graph's volume, pan and mute (and bus, if the track's
    chain changed) at once instead of keeping them until the note ends.
+5. **An arrangement clip's gain envelope is a message too** (`Controller::set_clip_envelope`,
+   used by `clip.setEnvelope` when the envelope is all the edit changed and the clip is not an
+   ARA clip). The controller builds the envelope off the audio thread and sends it through its
+   own lock-free queue; the renderer puts it on that clip's events, read directly and stretched
+   alike, at the start of the next block, a playing clip gliding to its new gain over 30 ms, and
+   sends each envelope it replaces back to the controller to be freed. A dragged envelope sent a
+   graph every 30 ms before, and each swap handed every stretched voice over: a voice in the
+   middle of a jump (at a loop's wrap) started its jump again at each swap and stayed silent
+   while the drag went on. A graph built before an envelope message and taken after it plays the
+   older envelope until the next message (the next frame of a drag, or the drag's last).
 
 ## Amendment: notes an edit takes away (2026-10-28)
 

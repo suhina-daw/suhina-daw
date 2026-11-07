@@ -204,7 +204,7 @@ puts one back at 0 dB, Alt and a click removes one and Shift or Ctrl+Shift and a
 moves the line or the segment up and down; Ctrl and a click anywhere, which adds a point there, is
 left out, as Ctrl and a click selects clips in the Arrangement.
 
-Each change is one undo step. A drag sets the envelope as it moves, at most every 30 ms (faster, a stretched clip's voice could not be handed on in time and the fades between its voices were cut, which crackled), with a `gesture`,
+Each change is one undo step. A drag sets the envelope as it moves, at most every 30 ms, with a `gesture`; an arrangement clip's envelope reaches the playing engine as a message, without a new graph ([ADR 0005](../decisions/0005-edits-while-playing.md), amendment: edits in the next block, 5),
 so the clip is heard as the line is drawn while the button is down (each new level reached by a
 30 ms glide, not a step, which crackled), and the drag's frames are one undo step; a click is one `clip.setEnvelope`. The clip itself is moved by its name bar while
 its envelope is edited. A slot's clip has no waveform there; its envelope is set by command.

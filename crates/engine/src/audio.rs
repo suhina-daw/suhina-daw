@@ -132,7 +132,7 @@ pub(crate) struct Envelope {
 
 impl Envelope {
     /// The envelope of `clip` on `clock`, or `None` when it has no points.
-    fn of(clip: &Clip, clock: &TempoClock) -> Option<Arc<Self>> {
+    pub(crate) fn of(clip: &Clip, clock: &TempoClock) -> Option<Arc<Self>> {
         let points = clip.audio.envelope_points();
         if points.is_empty() {
             return None;
@@ -212,6 +212,24 @@ impl Fades {
             }
             _ => gain,
         }
+    }
+
+    /// Puts `envelope` in place of the clip's envelope (an edit sent as a message, without a new
+    /// graph) and returns the one it replaces, for the controller to free: nothing is freed on
+    /// the audio thread. A clip playing `since_start` frames after its start glides from the gain
+    /// it had there to the new one over `frames`. Never allocates.
+    pub(crate) fn replace_envelope(
+        &mut self,
+        envelope: Option<Arc<Envelope>>,
+        since_start: Option<f64>,
+        frames: f64,
+    ) -> Option<Arc<Envelope>> {
+        let was = since_start.map(|at| (at, self.envelope_gain(at, 0.0)));
+        let old = std::mem::replace(&mut self.envelope, envelope);
+        if let Some((at, gain)) = was {
+            self.glide_from(gain, at, frames);
+        }
+        old
     }
 
     /// Glides from `before`, the gain the clip played `since_start` frames after its start with
