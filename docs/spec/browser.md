@@ -93,8 +93,11 @@ Three sections in an order the library keeps (each id-named kind of its own, [#1
 model), and Folders, which is not one of them: it always stays last. The order starts
 **Pinned, Tags, Library**. Each section's title draws a chevron: a click opens or closes the
 section by command, and the title's right-click menu opens or closes it and moves it among the
-others (Move up, Move down; the first section has no Move up, the last no Move down). The
-Tags section's title menu offers **New folder** ([#1254] › Tag folders), so a library reaches
+others (Move up, Move down; the first section has no Move up, the last no Move down). A
+section also moves by dragging its title ([#1254] review): a thin line under the pointer
+shows the slot — the pointer's half over a title picks above or below it, and the release
+commits; Escape or a release on empty sidebar space cancels. The Tags section's title menu
+offers **New folder** ([#1254] › Tag folders), so a library reaches
 its first folder from the mouse alone; adding a tag stays the rows' own menus' work. The
 sections' order and open state are the library's own, kept in `browser.json`
 ([Where it is kept](#where-it-is-kept)), so a closed section stays closed when the window
@@ -495,9 +498,15 @@ tags never share a name.
 **Tag folders** ([#1254] › Tag folders) hold tags and folders. A folder nests at most four
 deep (a deeper drop is refused), a tag lives in one folder at a time, and removing a folder
 lifts its whole cortège — tags and subfolders — into the parent (the top when it was top); the
-menu asks first, saying how many rows move up. Dragging a tag or folder row (a folder can
-never move under itself) moves it: before another row, into a folder, or to the empty space of
-the section for the top level.
+menu asks first, saying how many rows move up. A subfolder's row is indented like the
+Pinned section's groups are, and draws its chevron instead of a mark
+([#1254] review). Dragging a tag or folder row (a folder can never move under itself) moves
+it: before another row, into a folder — a closed one too, the status bar says so —, or to the
+empty space of the section for the top level. Several tags move as one: a Shift-click picks a
+tag (a ring marks it; the place keeps doing its own work), a drag of any picked one lands them
+all in the folder of the drop, in the pick's order — a drop before a row moves only the
+carried one. A right-click on any tag's menu offers **New folder** at the tag's own level,
+which reaches the first folder from the mouse on any tag.
 
 The rest is as it was with the ids in the rows' place (#1196): a right-click on a tag's dot in
 the footer renames it (a field, Enter; clicks inside that menu do not close it),
@@ -520,7 +529,8 @@ list is ranked as a search's list is, and a preset bank's tagged voice is not am
 A ctrl-click on the place's last tag shows the tree again.
 As
 any chosen place, the row shows a **×** that lets the place go. While items are dragged, a tag
-row lights up under the pointer and the drop tags every dragged item with the tag (folders and
+row lights up under the pointer — the same highlight as its hover says the tag a drop will go
+to ([#1254] review) — and the drop tags every dragged item with the tag (folders and
 headings left out); the drag stops the preview as any drop does not. The other way round, a
 tag row dragged out of the section carries the tag to the results, the item row it is over
 lights up, and a drop tags that item — or every selected item when the row is one of them, as

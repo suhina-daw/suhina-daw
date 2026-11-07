@@ -358,6 +358,13 @@ pub struct BrowserState {
     /// sidebar's row under the pointer, set as the rows are drawn ([#1254]). Where a drop
     /// moves the carried entry to.
     pub drop_tag_row: Option<u32>,
+    /// The tags picked for one carry (Shift-click; a plain click or a place's build clears
+    /// the set, [#1254] review): a drag of any of them lands them all in the folder of the
+    /// drop, in the pick's order.
+    pub tag_selection: Vec<u32>,
+    /// The section title a drag carries ([#1254] review: a section moves by dragging it
+    /// among the others; Folders is never carried).
+    pub drag_section: Option<suhina_library::SectionKind>,
     /// The results row a tag is carried over, which a drop tags; set as the rows are drawn.
     pub drop_item: Option<BrowserItem>,
     /// The section a carried section title is over, for reordering the sidebar's sections
@@ -426,6 +433,8 @@ impl Default for BrowserState {
             drag_tag: None,
             drag_tag_id: None,
             drop_tag_row: None,
+            tag_selection: Vec::new(),
+            drag_section: None,
             drop_section: None,
             drop_item: None,
             sidebar_scroll: 0.0,

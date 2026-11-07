@@ -681,6 +681,7 @@ fn sidebar_view(
     // menu that opens, closes and reorders — Folders is not one of them: it is always last
     // ([#1254] › Sidebar sections).
     let sections_list = projects.file_library_mut().sections();
+    let mut slots = Vec::new();
     for (at, section) in sections_list.iter().enumerate() {
         section_title(
             ui,
@@ -692,6 +693,7 @@ fn sidebar_view(
             at,
             sections_list.clone(),
             title_font.clone(),
+            &mut slots,
             state,
             projects,
             out,
@@ -741,6 +743,52 @@ fn sidebar_view(
                             None,
                         );
                     }
+                }
+            }
+        }
+    }
+    // A carried section title lands where the pointer is over another title: the pointer's
+    // half decides above or below it ([#1254] review). The thin line shows the slot; Folders
+    // is never a slot, and nothing outside the titles commits the move.
+    if ui.input(|i| i.key_pressed(Key::Escape)) {
+        state.drag_section = None;
+        state.drop_section = None;
+    }
+    if let Some(carried) = state.drag_section {
+        let pointer = ui.input(|i| i.pointer.latest_pos());
+        let slot =
+            slots.iter().enumerate().find(|(_, (rect, _))| pointer.is_some_and(|p| rect.intersect(area).contains(p)));
+        let released_now = ui.input(|i| i.pointer.primary_released());
+        match slot {
+            Some((slot_at, (rect, _))) => {
+                let after = pointer.is_some_and(|p| p.y > rect.center().y);
+                // The line at the slot's Y: above the half's title, or under it (the last
+                // one's under is the end, before the Folders section).
+                let line_y = if after { rect.bottom() + 2.0 } else { rect.top() - 2.0 };
+                painter.hline(area.x_range(), line_y, Stroke::new(2.0, theme::browser_text_primary()));
+                // Inserting before the kind of the slot the pointer is in; the carried kind
+                // does not count (its own halves target itself, which is no move).
+                let before =
+                    slots.iter().skip(slot_at).skip(usize::from(after)).map(|(_, k)| *k).find(|k| *k != carried);
+                state.drop_section = before;
+                if released_now {
+                    let mut order = slots.iter().map(|(_, k)| *k).collect::<Vec<SectionKind>>();
+                    order.retain(|k| *k != carried);
+                    let at = before.map_or(order.len(), |b| order.iter().position(|k| *k == b).unwrap_or(order.len()));
+                    order.insert(at, carried);
+                    let params = json!({ "order": order.iter().map(|k| json!(k.name())).collect::<Vec<_>>() });
+                    if run(projects, "library.setSections", params, out) {
+                        state.relist();
+                    }
+                    state.drag_section = None;
+                    state.drop_section = None;
+                }
+            }
+            None => {
+                // Nothing is a slot here: the drop cancels.
+                state.drop_section = None;
+                if released_now {
+                    state.drag_section = None;
                 }
             }
         }
@@ -1420,20 +1468,26 @@ fn tags_section(
                 state.drop_tag = Some(name.clone());
             }
         }
-        // A carried tag or folder lights its drop targets: a folder takes it in, a tag's
-        // row takes it before itself ([#1254] › Tag folders).
+        // A carried tag or folder lights its drop targets: a folder takes it in (closed
+        // ones too — the drop lands inside and the hint says so), a tag's row takes it
+        // before itself ([#1254] › Tag folders).
         let move_here = state.drag_tag_id.is_some()
             && !carried
             && rect.intersects(area)
-            && pointer.is_some_and(|p| rect.intersect(area).contains(p))
-            // A folder is not dropped inside a closed one: the hint says to open it.
-            && (matches!(row.entry, suhina_library::TagEntry::Tag(_)) || open);
+            && pointer.is_some_and(|p| rect.intersect(area).contains(p));
+        if move_here && is_folder && !open {
+            out.status = Some(Status::Hint(format!("Drop to put it in {}", name)));
+        }
         if move_here {
             state.drop_tag_row = Some(id);
         }
         let chosen = matches!(&state.place, Some(Place::Tag(tags)) if tags.contains(&id));
         let alone = state.place.as_ref() == Some(&Place::Tag(vec![id]));
-        let fill = if move_here {
+        let picked = state.tag_selection.contains(&id);
+        // What a drop of dragged items lands on lights as it would under the pointer
+        // ([#1254] review: which tag a drop goes to shows the same highlight).
+        let items_here = !is_folder && state.drag.is_some() && state.drop_tag.as_deref() == Some(name.as_str());
+        let fill = if move_here || items_here {
             theme::control_hover()
         } else if chosen {
             theme::control_active()
@@ -1451,10 +1505,15 @@ fn tags_section(
             let dim = !is_folder && count == 0;
             let center = Pos2::new(lead.x + (if is_folder { 16.0 } else { 7.0 }), rect.center().y);
             if is_folder {
-                painter.line_segment(
-                    [Pos2::new(center.x - 4.5, center.y), Pos2::new(center.x + 4.5, center.y)],
-                    Stroke::new(1.4, theme::text_hint()),
-                );
+                // A folder's mark: the top level's carries the dash; a subfolder is
+                // indented like Recent's groups are, the chevron says its kind
+                // ([#1254] review).
+                if row.depth == 0 {
+                    painter.line_segment(
+                        [Pos2::new(center.x - 4.5, center.y), Pos2::new(center.x + 4.5, center.y)],
+                        Stroke::new(1.4, theme::text_hint()),
+                    );
+                }
             } else {
                 let mut color = match &row.entry {
                     suhina_library::TagEntry::Tag(tag) => tag_color(&tag.color),
@@ -1464,7 +1523,7 @@ fn tags_section(
                     color = color.gamma_multiply(0.5);
                 }
                 painter.circle_filled(center, DOT / 2.0, color);
-                if chosen {
+                if chosen || picked {
                     painter.circle_stroke(center, DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
                 }
             }
@@ -1527,78 +1586,93 @@ fn tags_section(
         }
         if response.clicked() {
             let ctrl = ui.input(|i| i.modifiers).command;
-            match &row.entry {
-                suhina_library::TagEntry::Folder { .. } => {
-                    if ctrl {
-                        // A folder's tags, its subfolders' under them, add to the place, or
-                        // go off again ([#1254] › Tag folders).
-                        let mut under = Vec::new();
-                        collect_folder_tag_ids(std::slice::from_ref(&row.entry), &mut under);
-                        let carried = match &state.place {
-                            Some(Place::Tag(tags)) => tags,
-                            _ => &[0u32; 0][..],
-                        };
-                        let taken = !under.iter().all(|u| carried.contains(u));
-                        if taken {
-                            let mut tags = match &state.place {
-                                Some(Place::Tag(tags)) => tags.clone(),
-                                _ => Vec::new(),
+            let shift = ui.input(|i| i.modifiers).shift;
+            if shift {
+                // Shift-click picks tags for one carry: a drag of any of them lands them
+                // all in a folder ([#1254] review). A picked tag keeps its place work.
+                if state.tag_selection.contains(&id) {
+                    state.tag_selection.retain(|t| *t != id);
+                } else {
+                    state.tag_selection.push(id);
+                }
+            } else {
+                if !state.tag_selection.is_empty() {
+                    // A plain click clears the pick.
+                    state.tag_selection.clear();
+                }
+                match &row.entry {
+                    suhina_library::TagEntry::Folder { .. } => {
+                        if ctrl {
+                            // A folder's tags, its subfolders' under them, add to the place, or
+                            // go off again ([#1254] › Tag folders).
+                            let mut under = Vec::new();
+                            collect_folder_tag_ids(std::slice::from_ref(&row.entry), &mut under);
+                            let carried = match &state.place {
+                                Some(Place::Tag(tags)) => tags,
+                                _ => &[0u32; 0][..],
                             };
-                            for u in under {
-                                if !tags.contains(&u) {
-                                    tags.push(u);
+                            let taken = !under.iter().all(|u| carried.contains(u));
+                            if taken {
+                                let mut tags = match &state.place {
+                                    Some(Place::Tag(tags)) => tags.clone(),
+                                    _ => Vec::new(),
+                                };
+                                for u in under {
+                                    if !tags.contains(&u) {
+                                        tags.push(u);
+                                    }
+                                }
+                                state.place = Some(Place::Tag(tags));
+                            } else {
+                                let mut tags = match &state.place {
+                                    Some(Place::Tag(tags)) => tags.clone(),
+                                    _ => Vec::new(),
+                                };
+                                tags.retain(|t| !under.contains(t));
+                                state.place = if tags.is_empty() { None } else { Some(Place::Tag(tags)) };
+                            }
+                            state.category = Category::All;
+                            state.scroll = 0.0;
+                        } else {
+                            if run(
+                                projects,
+                                "library.setFolderOpen",
+                                json!({ "folder": format!("#{id}"), "open": !open }),
+                                out,
+                            ) {
+                                state.relist();
+                            }
+                            out.status = Some(Status::Hint(if open {
+                                format!("Closed {}. Click again to open it", name)
+                            } else {
+                                format!("Open {}. Ctrl-click tags with its tags", name)
+                            }));
+                        }
+                    }
+                    suhina_library::TagEntry::Tag(_) => {
+                        if chosen && ctrl && alone {
+                            state.place = None;
+                        } else if chosen && ctrl {
+                            // Ctrl-click takes the tag off the combined place again.
+                            if let Some(Place::Tag(tags)) = &mut state.place {
+                                tags.retain(|t| *t != id);
+                                if tags.is_empty() {
+                                    state.place = None;
                                 }
                             }
-                            state.place = Some(Place::Tag(tags));
-                        } else {
-                            let mut tags = match &state.place {
-                                Some(Place::Tag(tags)) => tags.clone(),
-                                _ => Vec::new(),
-                            };
-                            tags.retain(|t| !under.contains(t));
-                            state.place = if tags.is_empty() { None } else { Some(Place::Tag(tags)) };
-                        }
-                        state.category = Category::All;
-                        state.scroll = 0.0;
-                    } else {
-                        if run(
-                            projects,
-                            "library.setFolderOpen",
-                            json!({ "folder": format!("#{id}"), "open": !open }),
-                            out,
-                        ) {
-                            state.relist();
-                        }
-                        out.status = Some(Status::Hint(if open {
-                            format!("Closed {}. Click again to open it", name)
-                        } else {
-                            format!("Open {}. Ctrl-click tags with its tags", name)
-                        }));
-                    }
-                }
-                suhina_library::TagEntry::Tag(_) => {
-                    if chosen && ctrl && alone {
-                        state.place = None;
-                    } else if chosen && ctrl {
-                        // Ctrl-click takes the tag off the combined place again.
-                        if let Some(Place::Tag(tags)) = &mut state.place {
-                            tags.retain(|t| *t != id);
-                            if tags.is_empty() {
-                                state.place = None;
+                        } else if !chosen {
+                            if ctrl
+                                && let Some(Place::Tag(tags)) = &mut state.place
+                                && !tags.contains(&id)
+                            {
+                                // Ctrl-click adds the tag to the combined place: items with any of them.
+                                tags.push(id);
+                            } else {
+                                state.place = Some(Place::Tag(vec![id]));
                             }
+                            state.category = Category::All;
+                            state.scroll = 0.0;
                         }
-                    } else if !chosen {
-                        if ctrl
-                            && let Some(Place::Tag(tags)) = &mut state.place
-                            && !tags.contains(&id)
-                        {
-                            // Ctrl-click adds the tag to the combined place: items with any of them.
-                            tags.push(id);
-                        } else {
-                            state.place = Some(Place::Tag(vec![id]));
-                        }
-                        state.category = Category::All;
-                        state.scroll = 0.0;
                     }
                 }
             }
@@ -1683,6 +1757,20 @@ fn tags_section(
                     }
                 }
             }
+            // A new folder beside the tag: the right-click on any tag offers the first
+            // folder too, at the tag's own level ([#1254] review › New folder on any tag).
+            if ui.button("New folder").clicked() {
+                let store = projects.file_library_mut().tags();
+                let parent = suhina_library::store::find_entry_parent(&store, row.entry.id()).and_then(|(p, _)| p);
+                let params = match parent {
+                    Some(folder) => json!({ "parent": format!("#{folder}") }),
+                    None => json!({}),
+                };
+                if run(projects, "library.addTagFolder", params, out) {
+                    state.relist();
+                    ui.close();
+                }
+            }
             let armed = state.tag_remove_confirm.as_deref() == Some(row.entry.name());
             let label = if armed {
                 format!("Remove {}? ({count} items)", row.entry.name())
@@ -1719,27 +1807,44 @@ fn tags_section(
     if ui.input(|i| i.pointer.primary_released()) && state.drag_tag_id.is_some() && state.drop_item.is_none() {
         if let Some(carried) = state.drag_tag_id {
             let target: Option<u32> = state.drop_tag_row.filter(|id| *id != carried);
-            let mut params = json!({ "id": format!("#{carried}") });
-            match target {
-                Some(target) if folder_row_is_folder(&rows, target) => {
-                    params["folder"] = json!(format!("#{target}"));
+            // The picked ones move with the carried tag, in the pick's order — into a
+            // folder, or up to the top ([#1254] review). A drop before a row repositions
+            // only the carried one; the pick lifts itself here, never mid-position.
+            let filing = target.is_none() || matches!(target, Some(target) if folder_row_is_folder(&rows, target));
+            let carrying = if filing {
+                let mut all = state.tag_selection.clone();
+                if !all.contains(&carried) {
+                    all.push(carried);
                 }
-                Some(target) => {
-                    let others = projects.file_library_mut().tags();
-                    if let Some((t_parent, t_at)) = suhina_library::store::find_entry_parent(&others, target) {
-                        if let Some(p) = t_parent {
-                            params["folder"] = json!(format!("#{p}"));
-                        }
-                        params["position"] = json!(t_at);
+                all
+            } else {
+                vec![carried]
+            };
+            for entry_id in carrying {
+                let mut params = json!({ "id": format!("#{entry_id}") });
+                match target {
+                    Some(target) if folder_row_is_folder(&rows, target) => {
+                        params["folder"] = json!(format!("#{target}"));
                     }
+                    Some(target) if !filing => {
+                        let others = projects.file_library_mut().tags();
+                        if let Some((t_parent, t_at)) = suhina_library::store::find_entry_parent(&others, target) {
+                            if let Some(p) = t_parent {
+                                params["folder"] = json!(format!("#{p}"));
+                            }
+                            params["position"] = json!(t_at);
+                        }
+                    }
+                    _ => {}
                 }
-                None => {}
+                if !run(projects, "library.moveTag", params, out) {
+                    break;
+                }
             }
-            if run(projects, "library.moveTag", params, out) {
-                state.drag_tag = None;
-                state.drag_tag_id = None;
-                state.relist();
-            }
+            state.tag_selection.clear();
+            state.drag_tag = None;
+            state.drag_tag_id = None;
+            state.relist();
         }
         state.drag_tag_id = None;
     }
@@ -1761,18 +1866,35 @@ fn section_title(
     at: usize,
     sections_list: Vec<suhina_library::Section>,
     title_font: egui::FontId,
+    slots: &mut Vec<(Rect, SectionKind)>,
     state: &mut BrowserState,
     projects: &mut Projects,
     out: &mut BrowserOut,
 ) {
     *y += 8.0;
     let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, *y), Vec2::new(area.width() - PAD, 12.0));
-    let response = ui.interact(rect.intersect(area), Id::unique(("browser-section", kind.name())), Sense::click());
+    let response =
+        ui.interact(rect.intersect(area), Id::unique(("browser-section", kind.name())), Sense::click_and_drag());
+    // The slot the carry lands in: this title's own rect tells the sidebar's landing which
+    // title the pointer is over ([#1254] review).
+    slots.push((rect.intersect(area), kind));
+    if response.drag_started() {
+        // A drag of the title carries it among the others ([#1254] review).
+        state.drag_section = Some(kind);
+    }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{} section", kind.title())));
     widgets::chevron(painter, Pos2::new(area.left() + PAD + 4.0, rect.center().y), open, theme::browser_text_hint());
     let text_rect =
         Rect::from_min_max(Pos2::new(area.left() + PAD + 14.0, rect.top()), Pos2::new(rect.right(), rect.bottom()));
-    widgets::text_in(painter, text_rect, Align2::LEFT_CENTER, kind.title(), title_font, theme::browser_text_hint());
+    let carried = state.drag_section == Some(kind);
+    widgets::text_in(
+        painter,
+        text_rect,
+        Align2::LEFT_CENTER,
+        kind.title(),
+        title_font,
+        if carried { theme::browser_text_hint().gamma_multiply(0.5) } else { theme::browser_text_hint() },
+    );
     *y += 15.0;
     if response.clicked()
         && run(projects, "library.setSectionOpen", json!({ "section": kind.name(), "open": !open }), out)
