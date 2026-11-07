@@ -14,8 +14,11 @@ name: Test build links
 # as one run instead of one per platform: the runners are a shared, limited resource
 # (docs/releasing.md › Test builds).
 #
-# test-build.yml from a fork runs as the fork has it, so a build is linked only for a maintainer
-# or an App run backed by a verified trusted request for its exact head. See docs/releasing.md.
+# test-build.yml from a fork runs as the fork has it, so a build is linked only for a maintainer's
+# run of a branch in this repository, or a run backed by a verified trusted request (/test-build)
+# for its exact head: a fork's run needs that request even when a maintainer started it. Suhina's
+# updater lists a fork's build only when this comment links it (docs/spec/updates.md). See
+# docs/releasing.md.
 #
 # Each linked build is also posted to the Discord testing forum (scripts/discord_test_build.py):
 # the bot (secret DISCORD_BOT_TOKEN, variables DISCORD_GUILD_ID and DISCORD_TESTING_FORUM_ID) finds
@@ -137,9 +140,10 @@ jobs:
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             const trusted = [...String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean), ...String(process.env.TRUSTED_CONTRIBUTORS || '')
               .split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase())];
-            const authorizedBuild = async (actor, number, sha, at, checkMembership = true) => {
-              if (String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean).includes(String(actor).toLowerCase())) return true;
-              if (actor !== 'suhina-bot[bot]') return false;
+            const authorizedBuild = async (actor, number, sha, at, checkMembership = true, fromFork = false) => {
+              const maintainer = String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean).includes(String(actor).toLowerCase());
+              if (maintainer && !fromFork) return true;
+              if (!maintainer && actor !== 'suhina-bot[bot]') return false;
               const comments = await github.paginate(github.rest.issues.listComments, {
                 ...context.repo, issue_number: number, per_page: 100,
               });
@@ -158,7 +162,11 @@ jobs:
               }
               return false;
             };
-            if (!(await authorizedBuild(actor, number, run.head_sha, run.created_at))) {
+            // A fork's run builds the workflow files as the fork has them, so a maintainer starting
+            // it (a label, Update branch, close and reopen) says nothing about its code: it is
+            // linked only with a /test-build request for its exact commit, whoever started it.
+            const fromFork = !run.head_repository?.id || run.head_repository.id !== run.repository?.id;
+            if (!(await authorizedBuild(actor, number, run.head_sha, run.created_at, true, fromFork))) {
               core.info('No authorized request for this run and commit; nothing to link.');
               return;
             }

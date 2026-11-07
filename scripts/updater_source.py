@@ -41,6 +41,14 @@ PINNED = (
     'let wanted = format!("suhina-nightly-{platform}.");',
     'let suffix = format!("-{platform}");',
     '.strip_prefix("suhina-pr")',
+    # What makes a test build trusted: a run of a branch here, or a link in the comment that
+    # test-build-links.yml writes (docs/spec/updates.md › Channels).
+    'format!("https://api.github.com/repos/{REPOSITORY}/issues/{pr}/comments?per_page=100")',
+    'const LINK_MARKER: &str = "<!-- suhina-test-build -->";',
+    'const LINK_AUTHOR: &str = "github-actions[bot]";',
+    'let prefix = format!("https://github.com/{REPOSITORY}/actions/runs/");',
+    'listed.push(Listed { build, run: run_id, artifact: id, from_fork: head_repository != repository });',
+    'if item.from_fork && !asked.entry(pr).or_insert_with(|| linked(pr)).contains(&(item.run, item.artifact)) {',
 )
 
 # Everything in the updater that decides what is downloaded and from where. Keep in step with
@@ -72,6 +80,10 @@ ALLOWED_EXACT = (
 )
 # A test build's pull request page; `{REPOSITORY}` is the constant above, formatted in.
 ALLOWED_PAGE = re.compile(r"https://github\.com/(suhina-daw/suhina-daw|\{REPOSITORY\})/pull/(\d+|\{pr\})")
+# A pull request's comments, read for the test-build link, and the links read out of that comment,
+# which are compared and never fetched.
+ALLOWED_COMMENTS = re.compile(r"https://api\.github\.com/repos/(suhina-daw/suhina-daw|\{REPOSITORY\})/issues/(\d+|\{pr\})/comments\?per_page=100")
+ALLOWED_RUN_LINK = re.compile(r"https://github\.com/(suhina-daw/suhina-daw|\{REPOSITORY\})/actions/runs/(\d+(/artifacts/\d+)?)?")
 # Reserved by RFC 2606, so it never resolves: the tests' example answers.
 TEST_URL = re.compile(r"https://[a-z0-9.-]+\.invalid(/[a-zA-Z0-9._/-]*)?")
 
@@ -84,7 +96,9 @@ GIT_FILE = "100"
 
 def url_allowed(url: str) -> bool:
     """Whether a URL found in a watched file is one the updater uses, or a test's."""
-    return url in ALLOWED_EXACT or bool(ALLOWED_PAGE.fullmatch(url) or TEST_URL.fullmatch(url))
+    return url in ALLOWED_EXACT or any(
+        pattern.fullmatch(url) for pattern in (ALLOWED_PAGE, ALLOWED_COMMENTS, ALLOWED_RUN_LINK, TEST_URL)
+    )
 
 
 def problems(files: dict[str, str]) -> list[str]:

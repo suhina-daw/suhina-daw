@@ -183,8 +183,19 @@ fn check(channel: Channel, current: &str) -> Result<(Option<Build>, Vec<Build>),
             Ok((newer, vec![nightly]))
         }
         Channel::TestBuilds => {
-            let builds =
-                github::test_builds(&net::get(github::ARTIFACTS_URL, None)?, platform, &version::core(current))?;
+            // A fork's build is listed only when its pull request's test-build comment links it; a
+            // comment page that cannot be read links nothing.
+            let linked = |pr| {
+                net::get(&github::comments_url(pr), None)
+                    .and_then(|json| github::linked_artifacts(&json))
+                    .unwrap_or_default()
+            };
+            let builds = github::test_builds(
+                &net::get(github::ARTIFACTS_URL, None)?,
+                platform,
+                &version::core(current),
+                linked,
+            )?;
             Ok((newer_test_build(current, &builds), builds))
         }
     }

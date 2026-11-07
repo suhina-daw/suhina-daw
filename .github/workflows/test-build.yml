@@ -95,9 +95,10 @@ jobs:
           script: |
             const trusted = [...String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean), ...String(process.env.TRUSTED_CONTRIBUTORS || '')
               .split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase())];
-            const authorizedBuild = async (actor, number, sha, at, checkMembership = true) => {
-              if (String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean).includes(String(actor).toLowerCase())) return true;
-              if (actor !== 'suhina-bot[bot]') return false;
+            const authorizedBuild = async (actor, number, sha, at, checkMembership = true, fromFork = false) => {
+              const maintainer = String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean).includes(String(actor).toLowerCase());
+              if (maintainer && !fromFork) return true;
+              if (!maintainer && actor !== 'suhina-bot[bot]') return false;
               const comments = await github.paginate(github.rest.issues.listComments, {
                 ...context.repo, issue_number: number, per_page: 100,
               });
@@ -130,7 +131,10 @@ jobs:
             const pr = context.payload.pull_request;
             // Fork pull_request runs may not receive repository variables. Trust the App's
             // commit-bound proof here; the default-branch gateway and linker check membership.
-            if (!(await authorizedBuild(context.actor, pr.number, pr.head.sha, new Date().toISOString(), false))) {
+            // A fork's build needs a /test-build request for its commit, a maintainer's label too:
+            // test-build-links.yml links nothing else from a fork.
+            const fromFork = !pr.head.repo?.id || pr.head.repo.id !== pr.base?.repo?.id;
+            if (!(await authorizedBuild(context.actor, pr.number, pr.head.sha, new Date().toISOString(), false, fromFork))) {
               throw new Error('No authorized test-build request for this commit. Use /test-build on fork PRs.');
             }
             core.setOutput('allowed', true);

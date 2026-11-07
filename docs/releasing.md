@@ -144,7 +144,8 @@ request there, and is grouped by its head repository and branch instead.
 | Pull request | Built |
 |---|---|
 | opened and pushed by a maintainer | on every push; a newer push cancels a build still running |
-| anyone else's, from a fork or a branch | when a maintainer adds `test-build`, or a trusted contributor comments `/test-build`, for the authorized commit |
+| anyone else's, from a branch in this repository | when a maintainer adds `test-build`, or a trusted contributor comments `/test-build`, for the authorized commit |
+| from a fork | when a maintainer or trusted contributor comments `/test-build`, for that commit; the label alone, a maintainer's too, is refused |
 
 A pull request with the `test-build-windows` label is built for Windows only, which keeps the
 shared runners free while only that platform is being tried; its comment lists the other two as
@@ -196,8 +197,12 @@ merge cleanly fails the run and is named in the error.
 
 The build has a read-only token and no secrets, and for a fork GitHub runs `test-build.yml` as the
 fork has it; so `test-build-links.yml`, which runs from `main` and never runs pull request code,
-links only runs a maintainer started or a `suhina-bot[bot]` run with a bot-authored authorization
-for that exact commit, written before the run started. It rechecks the original human comment
+links only a maintainer's run of a branch in this repository, or a run with a bot-authored
+authorization for that exact commit, written before the run started. A fork's run needs that
+authorization even when a maintainer started it: adding a label, *Update branch*, closing and
+reopening all start one, and the fork's own workflow files decide what it builds, so who started it
+says nothing about its code. `scripts/build_reuse.py` counts a fork's earlier build under the same
+rule. It rechecks the original human comment
 and current `TRUSTED_CONTRIBUTORS` membership. The build checks the App's proof without relying
 on repository variables, which may be unavailable in fork PR runs; the default-branch gateway
 and linker check membership. A rerun retains the original run actor's authorization, not the
@@ -206,8 +211,8 @@ a forged or stale proof, removed trusted user, edited/deleted request or another
 cannot authorize a link. All role checks read the repository variable `MAINTAINERS`, using
 comma/whitespace-separated logins, optional `@` prefixes and case-insensitive exact matching.
 An empty list grants no maintainer authority. Set it at repository level, not as an environment
-override. For fork PRs, maintainers also use `/test-build`: the build may not receive repository
-variables, so direct maintainer labels cannot reliably be authorized there. Automatic builds
+override. For fork PRs, maintainers also use `/test-build`: a label is refused there, since it
+binds no commit the maintainer read, and the build may not receive repository variables anyway. Automatic builds
 of maintainer PRs continue for branches in this repository.
 
 Trusted contributors use `/test-build` on an open PR, as described in

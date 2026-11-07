@@ -32,6 +32,8 @@ Suhina asks GitHub once per start, in the background, which build is the newest 
 
 - **Nightly:** `GET https://api.github.com/repos/suhina-daw/suhina-daw/releases/tags/nightly`
 - **Test builds:** `GET https://api.github.com/repos/suhina-daw/suhina-daw/actions/artifacts`
+  and, for each pull request with a build from a fork, `GET https://api.github.com/repos/suhina-daw/suhina-daw/issues/<number>/comments`
+  (see *Channels*)
 
 Nothing about the user, the projects or the machine is in the request; it carries a
 `User-Agent: Suhina/<version>` header, as GitHub asks every client to. As with any web request,
@@ -138,6 +140,16 @@ Settings › Agents and updates › Updates › *Channel*:
   platform (artifacts named `suhina-pr<number>-<platform>`; builds of several pull requests
   together are not listed). Help › *Check for updates…* lists them and installs the one picked;
   the start panel offers a newer build of the pull request the running build is from.
+  Only trusted builds are listed. An artifact's name says nothing about who made it: a pull request
+  from a fork runs the workflow files as the fork has them, so it can upload a build under any
+  pull request's name. A build is listed when its run is of a branch in this repository, which only
+  people who can write to it can push, or when the pull request's *Test build* comment links that
+  run and artifact. That comment counts only from `github-actions[bot]` and starting with
+  `<!-- suhina-test-build -->`: `test-build-links.yml` writes it from `main`, and links a fork's
+  build only after a `/test-build` request for its commit ([releasing.md › Test
+  builds](../releasing.md#test-builds)). An artifact without its run's repository ids, or a
+  comment page that cannot be read, lists nothing, and an untrusted build never replaces a trusted
+  one as the newest.
 
 ### Connecting to the GitHub CLI
 

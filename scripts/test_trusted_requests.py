@@ -35,7 +35,7 @@ const comment = {id: 12, body: '/close', user, updated_at: '2026-10-22T10:00:00Z
   issue_url: 'https://api.github.com/repos/owner/repo/issues/4', ...input.comment};
 const context = {repo: {owner: 'owner', repo: 'repo'}, actor: input.actor || 'suhina-bot[bot]',
   eventName: input.eventName || 'pull_request', payload: {action: input.action || 'labeled', label: {name:'test-build'}, sender:{login:input.sender}, comment,
-    issue: {number: 4, ...input.issue}, pull_request: {number: 4, head: {sha}, user:{login: input.author || 'Maintainer'}},
+    issue: {number: 4, ...input.issue}, pull_request: {number: 4, head: {sha, repo: {id: input.headRepo ?? 1}}, base: {repo: {id: 1}}, user:{login: input.author || 'Maintainer'}},
     workflow_run: input.run}};
 const outputs = {}, calls = [];
 const core = {setOutput: (k,v) => outputs[k]=v, info: () => {}};
@@ -235,6 +235,18 @@ class TrustedRequests(unittest.TestCase):
                          {'comment':{'body':'/close'}} ]:
             self.assertFalse(self.run_script(code,**(valid|changes))['result'])
 
+    def test_a_maintainer_starting_a_forks_run_still_needs_the_request(self):
+        source = script('test-build-links.yml', 'id: link')
+        helper = 'const trusted =' + source.split('const trusted =', 1)[1].split('\n};', 1)[0] + '\n};'
+        call = "\nreturn authorizedBuild(context.actor,4,'a'.repeat(40),'2026-10-22T10:02:00Z',true,%s);"
+        proof = {'body':'<!-- trusted-build '+'a'*40+' Trusted 12 -->','created_at':'2026-10-22T10:01:00Z'}
+        own = dict(actor='Maintainer', comment={'body':'/test-build'})
+        self.assertTrue(self.run_script(helper + call % 'false', **own)['result'])
+        self.assertFalse(self.run_script(helper + call % 'true', **own)['result'])
+        self.assertTrue(self.run_script(helper + call % 'true', **own, comments=[proof])['result'])
+        self.assertFalse(self.run_script(helper + call % 'true', actor='outsider', comment={'body':'/test-build'},
+                                         comments=[proof])['result'])
+
     def test_build_gate_rejects_missing_authorization(self):
         source = script('test-build.yml', '- name: Authorize the labelled commit')
         self.assertIsNotNone(self.run_script(source)['error'])
@@ -244,6 +256,16 @@ class TrustedRequests(unittest.TestCase):
         # the default-branch linker independently rejects revoked membership (tested above).
         self.assertIsNone(self.run_script(source, trusted='', comment={'body':'/test-build'}, comments=[proof])['error'])
         self.assertIsNotNone(self.run_script(source, trusted='', comment={'body':'/test-build'}, comments=[])['error'])
+
+    def test_a_maintainers_label_on_a_fork_needs_a_request_for_the_commit(self):
+        # A fork's build runs the fork's workflow files, so the label alone does not do, a
+        # maintainer's either: test-build-links.yml would not link it.
+        source = script('test-build.yml', '- name: Authorize the labelled commit')
+        proof = {'body':'<!-- trusted-build '+'a'*40+' Trusted 12 -->','created_at':'2026-10-22T10:01:00Z'}
+        self.assertIsNone(self.run_script(source, actor='Maintainer')['error'])
+        self.assertIsNotNone(self.run_script(source, actor='Maintainer', headRepo=2)['error'])
+        self.assertIsNone(self.run_script(source, actor='Maintainer', headRepo=2,
+                                          comment={'body':'/test-build'}, comments=[proof])['error'])
 
     def test_linker_does_not_borrow_rerunner_authority(self):
         source = script('test-build-links.yml', 'id: link')
