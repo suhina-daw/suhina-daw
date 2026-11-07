@@ -1808,6 +1808,38 @@ fn section_title(
                 ui.close();
             }
         }
+        // The Tags section's top level is reachable from here: a new tag (a name no tag
+        // has, coloured from the named colours) and a new folder ([#1254] › Tag folders) —
+        // the ways the first folder comes into a library that has none yet.
+        if kind == SectionKind::Tags {
+            ui.separator();
+            let new_id = Id::unique("browser-section-new-tag");
+            let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
+            let field = crate::kit::widgets::text_input(
+                ui,
+                egui::TextEdit::singleline(&mut new_name).id(new_id).hint_text("New tag…").desired_width(120.0),
+            );
+            field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
+            ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
+            let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            let with_button = ui.button("Add tag").clicked();
+            if (with_enter || with_button) && !new_name.trim().is_empty() {
+                let taken = projects.file_library_mut().tag_flat();
+                if taken.iter().any(|t| t.name == new_name.trim()) {
+                    out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
+                } else if run(projects, "library.setTag", json!({ "name": new_name.trim() }), out) {
+                    out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
+                    ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+                    state.relist();
+                    // A refused name keeps the menu, so the name can be corrected.
+                    ui.close();
+                }
+            }
+            if ui.button("New folder").clicked() && run(projects, "library.addTagFolder", json!({}), out) {
+                state.relist();
+                ui.close();
+            }
+        }
     });
 }
 
