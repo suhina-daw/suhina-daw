@@ -1536,7 +1536,19 @@ fn tags_section(
                 }
             }
             let text = Rect::from_min_max(
-                Pos2::new(center.x + (if is_folder { 7.0 } else { DOT / 2.0 + 3.0 }), rect.top()),
+                Pos2::new(
+                    if is_folder && row.depth == 0 {
+                        // The dash-carrying top level: the name sits after its mark.
+                        center.x + 7.0
+                    } else if is_folder {
+                        // A subfolder's name beside its chevron: no dash keeps a gap
+                        // ([#1254] review).
+                        center.x - 4.0
+                    } else {
+                        center.x + DOT / 2.0 + 3.0
+                    },
+                    rect.top(),
+                ),
                 Pos2::new(rect.right() - PAD, rect.bottom()),
             );
             let tinted = if dim {
