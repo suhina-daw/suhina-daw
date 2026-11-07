@@ -225,6 +225,12 @@ pub struct PianoRollState {
     pub(super) audition_pending: Vec<u8>,
     pub(super) audition_off: Option<(u64, f64)>,
     pub(super) audition_sounding: Vec<u8>,
+    /// The keys the selecting rectangle holds sounding while it covers their notes, and the track
+    /// they sound on.
+    pub(super) swept: Vec<u8>,
+    pub(super) swept_track: Option<u64>,
+    /// The keys the rectangle covers this frame, while it is dragged.
+    pub(super) sweep_wanted: Option<Vec<u8>>,
     /// A press in the grid holds what it sounds until it is let go.
     pub(super) audition_press: bool,
     /// Which other clips show as ghost notes, picked in the toolbar's ghost menu; kept until
@@ -295,6 +301,9 @@ impl Default for PianoRollState {
             audition_pending: Vec::new(),
             audition_off: None,
             audition_sounding: Vec::new(),
+            swept: Vec::new(),
+            swept_track: None,
+            sweep_wanted: None,
             audition_press: false,
             ghost_source: GhostSource::default(),
             fold: Fold::default(),

@@ -90,12 +90,14 @@ pub(crate) fn stop(session: &mut Session, _: &Value) -> Result<Value, CommandErr
     Ok(json!({ "stopped": true }))
 }
 
-/// `preview.noteOn`: plays `key` through `track`'s instrument until `preview.noteOff`. The note
+/// `preview.noteOn`: plays `key` through `track`'s instrument until `preview.noteOff`; with `add`
+/// alongside the notes already held there, which go on sounding. The note
 /// is prepared on this thread and held on the audio thread, so nothing allocates, locks or does
 /// I/O there. Transport kind: the project and the undo history are untouched.
 pub(crate) fn note_on(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_at(&session.project, params, "track")?;
     let keys = held_keys(params)?;
+    let add = Args::new(params).opt_bool("add")?.unwrap_or(false);
     let midi = match Args::new(params).value("velocity") {
         None => DEFAULT_VELOCITY,
         Some(v) => v.as_f64().filter(|v| (1.0..=127.0).contains(v)).ok_or("velocity must be 1 to 127")?,
@@ -115,7 +117,11 @@ pub(crate) fn note_on(session: &mut Session, params: &Value) -> Result<Value, Co
         Some(track),
         fallback,
     );
-    controller.preview_note_on(notes, gain).map_err(CommandError::from)?;
+    if add {
+        controller.preview_note_add(notes, gain).map_err(CommandError::from)?;
+    } else {
+        controller.preview_note_on(notes, gain).map_err(CommandError::from)?;
+    }
     match keys.as_slice() {
         [key] if Args::new(params).value("keys").is_none_or(Value::is_null) => {
             Ok(json!({ "track": track.0, "key": key, "velocity": midi }))

@@ -63,10 +63,13 @@ pub(crate) enum PreviewCommand {
         gain: f32,
     },
     /// Plays a note now and holds it until a [`PreviewCommand::Release`] names it: the piano
-    /// roll's key column (`preview.noteOn`).
+    /// roll's key column (`preview.noteOn`). With `add`, the notes join those already held on
+    /// the same track, which go on sounding (the piano roll's selecting rectangle); otherwise
+    /// what plays stops first.
     Hold {
         notes: Box<PreviewNotes>,
         gain: f32,
+        add: bool,
     },
     /// Releases what [`PreviewCommand::Hold`] holds: one key, or every held key when `key` is
     /// `None`.
@@ -292,7 +295,16 @@ impl Preview {
                         released: false,
                     });
                 }
-                PreviewCommand::Hold { notes, gain } => {
+                PreviewCommand::Hold { notes, gain, add } => {
+                    let joins =
+                        add && self.sample.is_none()
+                            && self.notes.as_ref().is_some_and(|play| {
+                                play.held_only && !play.released && play.notes.track == notes.track
+                            });
+                    if joins {
+                        self.join(notes, gain);
+                        continue;
+                    }
                     self.stop(chains, 0);
                     let mut held = [NOT_HELD; 128];
                     for note in &notes.notes {
@@ -323,6 +335,27 @@ impl Preview {
     /// Releases the held preview keys, at `frame` of the block: one key, or every held key. A
     /// note hold whose last key is let go ends the preview. A preview that plays to an end of its
     /// own (a MIDI file) has no held keys and is left alone.
+    /// Adds held `notes` to the held preview that plays on the same track: they start in the next
+    /// frame and are held until let go, and the notes already held go on. The instrument that
+    /// sounds stays: a fallback device moves into the new notes, and the one that came with them
+    /// goes back with the old notes, so nothing is made or freed here.
+    fn join(&mut self, mut notes: Box<PreviewNotes>, gain: f32) {
+        let Some(play) = self.notes.as_mut() else { return };
+        std::mem::swap(&mut play.notes.fallback, &mut notes.fallback);
+        for note in &notes.notes {
+            if let Some(held) = play.held.get_mut(usize::from(note.key)) {
+                *held = HELD_UNTIL_OFF;
+            }
+        }
+        let old = std::mem::replace(&mut play.notes, notes);
+        play.next = 0;
+        play.target = gain;
+        if let Some(retired) = self.retired.as_mut() {
+            let _full = retired.push(Retired::Notes(old));
+        }
+        self.monitor.playing.store(true, Ordering::Relaxed);
+    }
+
     fn release(&mut self, chains: &mut [Chain], key: Option<u8>) {
         let Some(play) = self.notes.as_mut() else { return };
         let mut chain = play.chain.and_then(|i| chains.get_mut(i));

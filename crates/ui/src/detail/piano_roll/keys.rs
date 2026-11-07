@@ -576,6 +576,16 @@ impl PianoRollState {
         self.key_live = None;
     }
 
+    /// The rectangle a drag is selecting with is at `rect`: the keys of the notes it covers, lowest
+    /// first, each once, for the audition to hold (see `audition_frame`).
+    pub(super) fn audition_swept(&mut self, layout: &Layout, clip: &PianoClip, rect: Rect) {
+        let mut keys: Vec<u8> =
+            clip.notes.iter().filter(|n| layout.note_rect(n).intersects(rect)).map(|n| n.key).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        self.sweep_wanted = Some(keys);
+    }
+
     /// Whether notes this command places replace what is under them (Allow stacked notes off).
     pub(crate) fn replacing(&self, params: &mut Value) {
         if self.notes_replace {

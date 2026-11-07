@@ -197,6 +197,7 @@ impl PianoRollState {
     /// `track`. The window counts the time; nothing waits on the audio thread.
     pub(super) fn audition_frame(&mut self, ui: &Ui, track: Option<u64>, actions: &mut Vec<Action>) {
         let now = ui.input(|i| i.time);
+        self.sweep_frame(track, actions);
         // A press holds what it sounds: the same keys asked for again, while the press lasts or as
         // it ends, go on sounding, and so a drag sounds a new note only at a new pitch.
         let held = self.audition_press;
@@ -243,18 +244,66 @@ impl PianoRollState {
         }
     }
 
+    /// The selecting rectangle's sound, once a frame: the notes it covers are held as long as it
+    /// covers them, a note it reaches joining those that sound (`preview.noteOn` with `add`), one
+    /// it leaves let go, and every one let go with the rectangle. So a chord swept over sounds as
+    /// one, the notes building up, never as a run of short notes cutting each other off.
+    fn sweep_frame(&mut self, track: Option<u64>, actions: &mut Vec<Action>) {
+        let sweeping = matches!(self.gesture, Some(super::Gesture::Select { .. }));
+        match (self.sweep_wanted.take(), track) {
+            (Some(mut wanted), Some(track)) if self.audition && sweeping => {
+                wanted.truncate(MAX_AUDITION_KEYS);
+                if self.swept.is_empty() {
+                    // The rectangle's first note takes the place of a note an earlier click sounds.
+                    self.audition_off = None;
+                    self.audition_sounding.clear();
+                }
+                let gone: Vec<u8> = self.swept.iter().filter(|k| !wanted.contains(k)).copied().collect();
+                let new: Vec<u8> = wanted.iter().filter(|k| !self.swept.contains(k)).copied().collect();
+                let kept = self.swept.len() - gone.len();
+                for key in gone {
+                    actions.push(Action::new("preview.noteOff", json!({ "track": track, "key": key })));
+                }
+                if !new.is_empty() {
+                    actions.push(Action::new(
+                        "preview.noteOn",
+                        json!({ "track": track, "keys": new, "velocity": self.last_velocity, "add": kept > 0 }),
+                    ));
+                }
+                self.swept = wanted;
+                self.swept_track = Some(track);
+            }
+            (None, _) if sweeping => {}
+            _ => actions.extend(self.release_swept()),
+        }
+    }
+
+    /// Lets go of what the selecting rectangle holds: `preview.noteOff`, or `None` when it holds
+    /// nothing.
+    fn release_swept(&mut self) -> Option<Action> {
+        let track = self.swept_track.take();
+        let held = !std::mem::take(&mut self.swept).is_empty();
+        self.sweep_wanted = None;
+        let track = track.filter(|_| held)?;
+        Some(Action::new("preview.noteOff", json!({ "track": track })))
+    }
+
     /// Lets go of the notes the audition sounds, for a piano roll that is no longer shown:
     /// `preview.noteOff`, or `None` when nothing sounds.
     pub fn stop_audition(&mut self) -> Option<Action> {
         self.audition_pending.clear();
         self.audition_sounding.clear();
-        let (track, _) = self.audition_off.take()?;
-        Some(Action::new("preview.noteOff", json!({ "track": track })))
+        let swept = self.release_swept();
+        match self.audition_off.take() {
+            Some((track, _)) => Some(Action::new("preview.noteOff", json!({ "track": track }))),
+            None => swept,
+        }
     }
 
-    /// The keys the audition sounds now, for tests and readers.
+    /// The keys the audition sounds now (those the selecting rectangle holds while it is dragged),
+    /// for tests and readers.
     pub fn auditioning(&self) -> &[u8] {
-        &self.audition_sounding
+        if self.swept.is_empty() { &self.audition_sounding } else { &self.swept }
     }
 
     /// The velocity lane's height as its top edge was dragged; `None` for the default height.
@@ -362,5 +411,36 @@ mod tests {
         // A piano roll no longer shown lets its note go at once.
         assert_eq!(state.stop_audition().map(|a| a.id), Some("preview.noteOff"));
         assert!(frame(&ctx, 9.0, &mut state).is_empty());
+    }
+
+    /// The selecting rectangle holds what it covers: a note it reaches joins those sounding
+    /// (`add`), one it leaves goes off by itself, and letting go of the rectangle lets go of all.
+    #[test]
+    fn the_selecting_rectangle_builds_a_chord_and_lets_it_go() {
+        let ctx = egui::Context::default();
+        let mut state = PianoRollState { audition: true, ..PianoRollState::default() };
+        state.set_preview_velocity(90);
+        state.gesture = Some(super::super::Gesture::Select { from: Pos2::ZERO, add: false });
+        let sweep = |state: &mut PianoRollState, keys: &[u8], time: f64| {
+            state.sweep_wanted = Some(keys.to_vec());
+            frame(&ctx, time, state)
+        };
+        let first = sweep(&mut state, &[65], 1.0);
+        assert_eq!(
+            first,
+            [("preview.noteOn".into(), json!({ "track": 3, "keys": [65], "velocity": 90, "add": false }))]
+        );
+        let more = sweep(&mut state, &[56, 65], 1.1);
+        assert_eq!(more, [("preview.noteOn".into(), json!({ "track": 3, "keys": [56], "velocity": 90, "add": true }))]);
+        assert!(sweep(&mut state, &[56, 65], 1.2).is_empty(), "the same notes go on");
+        assert!(frame(&ctx, 5.0, &mut state).is_empty(), "held while the rectangle lasts, however long");
+        assert_eq!(state.auditioning(), [56, 65]);
+        let left = sweep(&mut state, &[56], 5.1);
+        assert_eq!(left, [("preview.noteOff".into(), json!({ "track": 3, "key": 65 }))]);
+        state.gesture = None;
+        let off = frame(&ctx, 5.2, &mut state);
+        assert_eq!(off, [("preview.noteOff".into(), json!({ "track": 3 }))]);
+        assert!(state.auditioning().is_empty());
+        assert!(frame(&ctx, 5.3, &mut state).is_empty(), "once");
     }
 }

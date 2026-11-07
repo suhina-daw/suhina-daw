@@ -524,8 +524,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   draw it, not when the button is let go, and for as long as the button is held. A drag sounds the
   notes at each new pitch they reach, and moving them in time only sounds nothing new. A note added
   to the selection (a click, Shift+click) sounds at once, so notes sound in the order they were
-  picked. A selecting rectangle sounds nothing while it is dragged; as it is let go the notes it reached
-  sound together, as a chord, so a chord picked with it sounds as one. A drag on the keys sounds
+  picked. A selecting rectangle holds the notes it covers sounding for as long as it covers them: a note
+  it reaches joins those already sounding (`preview.noteOn` with `add`), one it leaves goes off,
+  and they all go off when it is let go, so a chord swept over builds up and sounds as one. A drag on the keys sounds
   each key as it reaches it. A key sounds once, however many of its notes were reached together. Notes
   moved by the arrow keys and those a stroke drew sound where they are. Each sounding is one
   `preview.noteOn` with its keys (at most 16, each once) at the velocity a new note takes, and a
@@ -1148,7 +1149,7 @@ note another writer deletes leaves it.
 | `clip.setLoop` | clip, `loop?`, `start?`, `end?` | With `loop` alone: `true` turns the loop on (keeping the loop the clip has, else from 0 over its length), `false` off. With `start` and `end` (content beats, end after start), sets the loop and turns it on; while the clip loops, one of them alone moves that end. `loop: false` with `start` or `end` is an error. Any clip, MIDI or audio |
 | `clip.setLength` | clip, `length` | How long the clip plays, in beats (above 0, at most 120 000). An arrangement clip keeps its start and may not run into the next clip on its lane (the nearest that starts after it); fades are shortened to fit. Any clip |
 | `clip.setStart` | clip, `offset` | The start marker, in content beats (0 to 120 000). A clip that does not loop keeps its end marker, so its length changes by as much (and an arrangement clip may not run into the next clip); a looping clip keeps its length, and the marker must be before the loop's end. Any clip |
-| `preview.noteOn` | `track`, `key` or `keys`, `velocity?` | Plays `key`, or the keys of `keys` together (1 to 128, each 0 to 127, counted once), through the track's instrument until `preview.noteOff` (transport kind: the project and the undo history are untouched) |
+| `preview.noteOn` | `track`, `key` or `keys`, `velocity?`, `add?` | Plays `key`, or the keys of `keys` together (1 to 128, each 0 to 127, counted once), through the track's instrument until `preview.noteOff`; with `add: true` alongside the keys already held on the track, which go on sounding, otherwise in their place (transport kind: the project and the undo history are untouched) |
 | `preview.noteOff` | `track`, `key?` | Releases the preview note of `key` on that track, or every held preview note when `key` is left out |
 
 Limits, so a hostile input cannot break the project or exhaust memory: time from 0 to 120 000 beats

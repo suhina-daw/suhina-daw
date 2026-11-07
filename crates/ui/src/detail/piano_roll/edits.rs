@@ -326,17 +326,11 @@ pub(super) fn commit(
             if !*add {
                 state.selected.clear();
             }
-            let mut reached = Vec::new();
             for (i, note) in clip.notes.iter().enumerate() {
                 if layout.note_rect(note).intersects(rect) {
                     state.selected.insert(i);
-                    reached.push(note.key);
                 }
             }
-            // What the rectangle reached sounds together as it is let go, as a chord, lowest key
-            // first; nothing sounded while it was dragged.
-            reached.sort_unstable();
-            state.audition_keys(reached);
             // What it covered is selected in time, the empty parts too, and one that adds keeps what
             // was selected in time: the stretch runs over both.
             let (start, end) = swept_span(note_grid(clip, layout.beat_width), layout, &clip.notes, rect);
