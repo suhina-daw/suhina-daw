@@ -731,6 +731,14 @@ fn added_keys_join_the_held_ones() {
     let tail = beat_peaks(&mut renderer, 2)[1];
     assert!(tail < held * 0.05, "released: {tail} of {held}");
     assert!(run(&mut session, "preview.noteOn", json!({ "track": "Drums", "key": 60, "add": "yes" })).is_err());
+    // With a length the keys go off at its end by themselves.
+    run(&mut session, "preview.noteOn", json!({ "track": "Drums", "keys": [60], "length": 0.5 })).unwrap();
+    assert!(beat_peaks(&mut renderer, 1)[0] > 0.01, "it sounds");
+    beat_peaks(&mut renderer, 4);
+    assert!(!session.player().unwrap().preview_monitor().playing(), "over at its end");
+    for bad in [json!(0.0), json!(-1.0), json!(65.0), json!("long")] {
+        assert!(run(&mut session, "preview.noteOn", json!({ "track": "Drums", "key": 60, "length": bad })).is_err());
+    }
 }
 
 #[test]

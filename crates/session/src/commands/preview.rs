@@ -44,6 +44,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("keys", ParamType::Integers, "instead: several keys to play together, 1 to 128 of them"),
             optional("velocity", ParamType::Number, "how hard, 1 to 127 (default 100)"),
             optional(
+                "length",
+                ParamType::Number,
+                "how long the keys sound, in beats at the project's tempo (1/64 to 64); without it they are held until preview.noteOff",
+            ),
+            optional(
                 "add",
                 ParamType::Bool,
                 "true: the keys join the notes already held on the track, which go on sounding; false (default) stops them first",
