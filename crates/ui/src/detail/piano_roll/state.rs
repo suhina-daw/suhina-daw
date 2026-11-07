@@ -225,8 +225,6 @@ pub struct PianoRollState {
     pub(super) audition_pending: Vec<u8>,
     pub(super) audition_off: Option<(u64, f64)>,
     pub(super) audition_sounding: Vec<u8>,
-    /// The notes the selecting rectangle is on, so only those it has just reached sound.
-    pub(super) swept: BTreeSet<usize>,
     /// A press in the grid holds what it sounds until it is let go.
     pub(super) audition_press: bool,
     /// Which other clips show as ghost notes, picked in the toolbar's ghost menu; kept until
@@ -297,7 +295,6 @@ impl Default for PianoRollState {
             audition_pending: Vec::new(),
             audition_off: None,
             audition_sounding: Vec::new(),
-            swept: BTreeSet::new(),
             audition_press: false,
             ghost_source: GhostSource::default(),
             fold: Fold::default(),

@@ -524,8 +524,8 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   draw it, not when the button is let go, and for as long as the button is held. A drag sounds the
   notes at each new pitch they reach, and moving them in time only sounds nothing new. A note added
   to the selection (a click, Shift+click) sounds at once, so notes sound in the order they were
-  picked. A selecting rectangle sounds each note as it reaches it, for 0.12 s, so a quick sweep is a
-  quick run of short notes, and nothing sounds again when it is let go. A drag on the keys sounds
+  picked. A selecting rectangle sounds nothing while it is dragged; as it is let go the notes it reached
+  sound together, as a chord, so a chord picked with it sounds as one. A drag on the keys sounds
   each key as it reaches it. A key sounds once, however many of its notes were reached together. Notes
   moved by the arrow keys and those a stroke drew sound where they are. Each sounding is one
   `preview.noteOn` with its keys (at most 16, each once) at the velocity a new note takes, and a
