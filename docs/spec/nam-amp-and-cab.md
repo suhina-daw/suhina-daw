@@ -261,6 +261,31 @@ render (`render_offline…`) and a live player see the identical assets. Loading
 audio pool's does — at command or project-open time, in the session's thread (as `.sd` graphs
 are read and validated at command time) — never on the audio thread.
 
+## Stock presets
+
+The two devices' stock presets live under `presets/nam-amp-modeler/` and `presets/nam-cab-loader/`
+([ADR 0014](../decisions/0014-stock-presets.md)), built into the executable and named
+`<preset name>.<device id>.preset.suhina`. The browser lists them under *Stock presets*, by device,
+and the search finds them; they are also added with `device.add {stock}` and `track.add {stock}`,
+or dragged from the browser onto a track — one undo step each.
+
+A preset of the shared preset format holds the device's parameter values — the controls
+([§ The devices' parameters](#the-devices-parameters)) and nothing else. It does not name a model
+or an impulse response: the file the device runs is its state
+([§ Model and IR files](#model-and-ir-files)), and a preset leaves it as the user has set it, so
+adding one to a device that already points at a file keeps that file, and adding one to a device
+with none leaves it none. The Amp Modeler's five set how the capture is trimmed and shaped; the
+Cab Loader's five set what the cabinet is stripped down to:
+
+- **NAM Amp Modeler:** Bright Clean (a finish on the bright side), Tight High Gain (the low end
+  pulled back for a tight sound), Warm Crunch, Dark Lead (a darker top and a short rise in the
+  delay), Clean Boost (the gain up, the EQ off).
+- **NAM Cab Loader:** Rumble Cut, Dark Cabinet, Bright Cabinet, Mid Dip (a dip at 900 Hz),
+  Second Cab (the phase reversed and the volume a step down, to blend under a first cabinet).
+
+No preset brings a model or an impulse response of its own: those would name files Suhina ships,
+and which files those can be is a decision of its own ([§ Limits](#limits)).
+
 ## The panels
 
 Both panels are `devices/<name>/panel.json` layouts ([ADR 0021] › Amendment: device panels):
@@ -340,6 +365,9 @@ the panel's Model missing note.
 - Browsers and libraries do not list `.nam` files yet; the folders and the pick dialog are the
   whole surface. Drag-and-drop of a `.wav` from the browser onto a Cab Loader is a natural
   follow-on (the file row's dropdown lists it all the same).
+- No stock preset names a model or an impulse response ([§ Stock presets](#stock-presets));
+  presets that also bring a file need files Suhina ships and a preset format that may name a
+  built-in file, and are a follow-up of their own.
 
 [issue 489]: https://github.com/suhina-daw/suhina-daw/issues/489
 [ADR 0004]: ../decisions/0004-built-in-devices.md

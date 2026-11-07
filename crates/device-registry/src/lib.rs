@@ -395,6 +395,43 @@ const STOCK_FILES: &[(&str, &str)] = &[
     ("fm-synth/struck-fm-keys", include_str!("../../../presets/fm-synth/Struck FM Keys.fm-synth.preset.suhina")),
     ("fm-synth/wide-trance-pad", include_str!("../../../presets/fm-synth/Wide Trance Pad.fm-synth.preset.suhina")),
     ("fm-synth/slow-warm-pad", include_str!("../../../presets/fm-synth/Slow Warm Pad.fm-synth.preset.suhina")),
+    (
+        "nam-amp-modeler/bright-clean",
+        include_str!("../../../presets/nam-amp-modeler/Bright Clean.nam-amp-modeler.preset.suhina"),
+    ),
+    (
+        "nam-amp-modeler/tight-high-gain",
+        include_str!("../../../presets/nam-amp-modeler/Tight High Gain.nam-amp-modeler.preset.suhina"),
+    ),
+    (
+        "nam-amp-modeler/warm-crunch",
+        include_str!("../../../presets/nam-amp-modeler/Warm Crunch.nam-amp-modeler.preset.suhina"),
+    ),
+    (
+        "nam-amp-modeler/dark-lead",
+        include_str!("../../../presets/nam-amp-modeler/Dark Lead.nam-amp-modeler.preset.suhina"),
+    ),
+    (
+        "nam-amp-modeler/clean-boost",
+        include_str!("../../../presets/nam-amp-modeler/Clean Boost.nam-amp-modeler.preset.suhina"),
+    ),
+    (
+        "nam-cab-loader/rumble-cut",
+        include_str!("../../../presets/nam-cab-loader/Rumble Cut.nam-cab-loader.preset.suhina"),
+    ),
+    (
+        "nam-cab-loader/dark-cabinet",
+        include_str!("../../../presets/nam-cab-loader/Dark Cabinet.nam-cab-loader.preset.suhina"),
+    ),
+    (
+        "nam-cab-loader/bright-cabinet",
+        include_str!("../../../presets/nam-cab-loader/Bright Cabinet.nam-cab-loader.preset.suhina"),
+    ),
+    ("nam-cab-loader/mid-dip", include_str!("../../../presets/nam-cab-loader/Mid Dip.nam-cab-loader.preset.suhina")),
+    (
+        "nam-cab-loader/second-cab",
+        include_str!("../../../presets/nam-cab-loader/Second Cab.nam-cab-loader.preset.suhina"),
+    ),
 ];
 
 /// The stock presets, read once. A file that does not read is left out; a test keeps there being none.
