@@ -922,9 +922,31 @@ fn audio_part(
     let value = panel.tempo.unwrap_or(f64::NAN);
     let shown_tempo = |v: f64| if v.is_finite() { format!("{v:.3}") } else { "—".to_string() };
     let text = Text { shown: &shown_tempo, parse: &plain_number, places: Some(&tempo_places) };
-    if let Some(change) = number_field(ui, painter, row(y, FIELD), id, "Tempo", value, text, tempo_field) {
+    let typed_tempo = number_field(ui, painter, row(y, FIELD), id, "Tempo", value, text, tempo_field);
+    if let Some(change) = typed_tempo {
         set = Some((change.value, TempoSource::Manual, change.more));
     }
+    // The tempo as dragged so far, for the Arrangement to draw the clip at on every frame; kept
+    // after the drag until the project has it, so the clip does not flash back for a frame.
+    let dragged = ui.data(|d| d.get_temp::<f64>(id.with("preview"))).map(thousandth);
+    let key = crate::arrangement::tempo_preview_key();
+    let held = ui.data(|d| d.get_temp::<crate::arrangement::TempoPreview>(key)).filter(|p| p.clip == panel.clip);
+    let preview = match (dragged, typed_tempo) {
+        (Some(bpm), _) => Some(crate::arrangement::TempoPreview { clip: panel.clip, bpm, frames: 60 }),
+        (None, Some(change)) if held.is_some() => {
+            Some(crate::arrangement::TempoPreview { clip: panel.clip, bpm: change.value, frames: 60 })
+        }
+        (None, _) => held
+            .filter(|p| p.frames > 0 && (p.bpm - value).abs() > 1e-6)
+            .map(|p| crate::arrangement::TempoPreview { frames: p.frames - 1, ..p }),
+    };
+    ui.data_mut(|d| match preview {
+        Some(p) => {
+            d.insert_temp(key, p);
+        }
+        None if held.is_some() => d.remove::<crate::arrangement::TempoPreview>(key),
+        None => {}
+    });
     y += FIELD + 4.0;
     let half = (part.width() - 4.0) / 2.0;
     let halve = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(half, FIELD));

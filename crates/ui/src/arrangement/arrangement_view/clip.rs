@@ -594,6 +594,7 @@ pub(super) fn clip_box<'a>(
         k == key && (clip.start - from).abs() < 1e-9 && (clip.start + clip.length - to).abs() < 1e-9
     }) {
         state.edge_released = None;
+        state.stretch_released = None;
     }
     let released = state.edge_released.filter(|(k, ..)| *k == key).map(|(_, from, to, _)| (from, to));
     // Another selected clip's edge dragged: this one's same edge moves as far (#956); or it was
@@ -779,6 +780,7 @@ pub(super) fn clip_box<'a>(
                         actions.push(Action::new(if stretch { "clip.stretch" } else { "clip.trim" }, params));
                     }
                     state.edge_released = Some((key, from, to, 30));
+                    state.stretch_released = stretch.then_some(grab);
                 }
             }
         }
@@ -1045,6 +1047,14 @@ pub(super) fn clip_box<'a>(
                     state.edge_released.filter(|(k, ..)| *k == key).map(|(_, from, to, _)| (from, to)).or(others_edge)
                 }
             };
+            // The clip's tempo dragged in the clip panel: drawn at it on every frame, stretched
+            // from its start, between the few times a second the tempo is sent.
+            let tempo_factor = ui
+                .data(|d| d.get_temp::<crate::arrangement::TempoPreview>(crate::arrangement::tempo_preview_key()))
+                .filter(|p| p.clip == clip.id && extent.is_none() && clip.length > 0.0)
+                .and_then(|p| Some(p.bpm / clip.audio_view.as_ref()?.tempo()?))
+                .filter(|f| f.is_finite() && *f > 0.0 && (f - 1.0).abs() > 1e-6);
+            let extent = extent.or(tempo_factor.map(|f| (start, start + clip.length * f)));
             let (rect, clip_area) = match extent {
                 Some((from, to)) => {
                     let rect = clip_rect(space, from, to - from, x_of);
@@ -1062,14 +1072,20 @@ pub(super) fn clip_box<'a>(
             });
             // An audio clip's edge dragged with Ctrl and Alt stretches its audio: drawn stretched
             // as it goes, about the edge that stays, not only once it is let go.
-            let stretching = state
+            // Let go of, it stays drawn stretched until the project has the new length.
+            let dragged = state
                 .edge_drag
                 .filter(|d| d.key == key && clip.audio && state.stretch_alt && edge_keys(ui).1 && clip.length > 0.0)
-                .zip(extent);
+                .map(|d| d.grab);
+            let released_stretch = state
+                .stretch_released
+                .filter(|_| state.edge_drag.is_none() && clip.audio && clip.length > 0.0)
+                .filter(|_| state.edge_released.is_some_and(|(k, ..)| k == key));
+            let stretching = dragged.or(released_stretch).or(tempo_factor.map(|_| EdgeGrab::Right)).zip(extent);
             match stretching {
-                Some((drag, (from, to))) => {
+                Some((grab, (from, to))) => {
                     let factor = (to - from) / clip.length;
-                    let anchor = if drag.grab == EdgeGrab::Left { clip.start + clip.length } else { clip.start };
+                    let anchor = if grab == EdgeGrab::Left { clip.start + clip.length } else { clip.start };
                     let stretched = move |beat: f64| x_of(anchor + (beat - anchor) * factor);
                     envelope_place = Some(crate::arrangement::envelope::Place {
                         rect: wave_area(rect),

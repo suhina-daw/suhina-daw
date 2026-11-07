@@ -341,6 +341,7 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
         released.3 = released.3.saturating_sub(1);
         if released.3 == 0 {
             state.edge_released = None;
+            state.stretch_released = None;
         }
     }
     // Showing one track, the view is not scrolled down; where it was is kept for later.

@@ -272,7 +272,9 @@ With Ctrl and Alt held (Settings › Arrangement › *Ctrl+Alt-drag on an edge s
 default) an
 audio clip's edge stretches its audio to the new length, its pitch kept: `clip.stretch {track, index, start?, end?}` scales the clip's warp markers and its gain
 envelope (an unwarped clip is warped first) and gives the clip a content of its own when another
-clip plays the same, as the content's length in beats changes.
+clip plays the same, as the content's length in beats changes. The clip is drawn stretched while
+the edge is dragged and stays drawn so once let go, until the project has the new length: drawn
+unstretched in its new extent for those frames, its waveform flashed at its old scale.
 
 **Each audio clip is its own.** Its gain, gain envelope, transpose, warp and warp markers are the
 clip's: a duplicate, a pasted copy and a split's parts start with the same and change apart, and

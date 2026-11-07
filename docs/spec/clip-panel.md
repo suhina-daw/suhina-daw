@@ -62,7 +62,9 @@ other clips play is copied for this clip first.
 Every number in the column is a field that:
 
 - is dragged up or down, and the clip follows while it moves (a few times a second), the whole
-  drag one undo step (`continue` on the command), as the project's tempo field does;
+  drag one undo step (`continue` on the command), as the project's tempo field does. The tempo's
+  drag is also drawn on every frame in between: the Arrangement shows the clip stretched to the
+  tempo dragged so far, as it shows an edge stretch, until the project has it;
 - a tempo, marker or loop field is dragged by the place under the pointer where it was pressed:
   the tempo's integer part steps 1 BPM and each decimal a tenth of the one before (#829); a
   marker's bar, beat or sixteenth steps a bar, a beat or a quarter beat. The place is underlined;

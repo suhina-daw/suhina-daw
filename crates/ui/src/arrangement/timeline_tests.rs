@@ -328,3 +328,24 @@ fn inside_lanes_counts_the_tracks_a_group_holds() {
     assert_eq!(inside_lanes(&lanes, group + 1), 0);
     assert_eq!(inside_lanes(&lanes, lanes.len() + 5), 0);
 }
+
+/// A warped clip's tempo, from its first and last warp markers: what a tempo drag in the clip
+/// panel scales the clip from while it draws it ahead of the project.
+#[test]
+fn a_warped_clips_tempo_comes_from_its_markers() {
+    let view = |markers: Vec<(f64, f64)>| AudioView {
+        file: String::new(),
+        offset: 0.0,
+        loop_range: None,
+        markers,
+        seconds_per_beat: 0.5,
+        rate: 1.0,
+        gain_db: 0.0,
+        envelope: Vec::new(),
+    };
+    // 16 beats over 11.566 s: 83 BPM.
+    let bpm = view(vec![(0.0, 0.0), (16.0, 16.0 * 60.0 / 83.0)]).tempo().unwrap_or(0.0);
+    assert!((bpm - 83.0).abs() < 1e-9, "{bpm}");
+    assert_eq!(view(Vec::new()).tempo(), None, "unwarped audio has none");
+    assert_eq!(view(vec![(0.0, 1.0), (4.0, 1.0)]).tempo(), None, "markers that do not rise");
+}
