@@ -1604,6 +1604,37 @@ fn a_stretched_clip_under_the_whole_loop_plays_each_pass_without_a_gap() {
     }
 }
 
+/// A stretched clip under the whole loop, its envelope dragged (a new graph every 30 ms) through
+/// several wraps: every pass sounds. A swap after a wrap could leave the clip reading its voice
+/// that waited at the loop end, ahead of the playhead, and a whole pass was silent.
+#[test]
+fn a_stretched_loop_whose_envelope_is_dragged_sounds_on_every_pass() {
+    let beat = SR as usize / 2;
+    let gap = SR as usize * 3 / 100;
+    let (mut project, pool) = stretched_project(220.0, 2.0, 3.0, 120.0, StretchMode::Smooth);
+    project.arrangement.lanes[0].clips[0].start = 1.0;
+    project.transport.loop_range = Some(LoopRange { start: 1.0, end: 4.0 });
+    project.transport.loop_enabled = true;
+    let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    let mut worker = renderer.take_stretch_worker().unwrap();
+    renderer.handle(LaunchCommand::Play);
+    let mut out = Vec::new();
+    let passes = 4;
+    for k in 0..(passes * 3 + 1) * beat / gap {
+        let mut edited = project.clone();
+        for clip in edited.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+            clip.audio.gain_envelope = vec![GainPoint::new(1.0, -((k % 7) as f64))];
+        }
+        let _ = controller.update(&edited);
+        out.extend(blocks(&mut renderer, 1, gap, |_| worker.fill()));
+    }
+    for k in 1..passes {
+        let at = (k * 3 + 1) * beat;
+        assert!(rms(&out, at + beat / 2, at + beat) > 0.05, "pass {k} sounds: {}", rms(&out, at + beat / 2, at + beat));
+    }
+}
+
 /// Dragging a playing clip's tempo sends a new graph for every step: each one plays the clip's
 /// new voice on from the old one's sound, with no click where the two meet.
 #[test]

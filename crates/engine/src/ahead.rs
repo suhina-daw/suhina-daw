@@ -912,7 +912,15 @@ impl AheadReader {
             self.shared.underruns.fetch_add(wanted, Ordering::Relaxed);
             // Behind by more than a block, with nothing left to drop: rendering on from there
             // would only feed frames that are dropped. Jump ahead of the playhead instead.
-            if reader.next < from && from - reader.next > BLOCK_FRAMES as u64 && reader.consumer.slots() == 0 {
+            // Ahead of the playhead, its ring holds frames not due yet: a voice left where a
+            // loop's wrap or a swap went past it (a clip read from its first voice again while
+            // that waited at the loop end). Reading on would be silent until the playhead came
+            // round to it, a whole pass; it jumps back to the playhead instead.
+            // Past the lead a jump of its own puts it ahead by (below), so that jump plays on.
+            let lead = wanted + (JUMP_BLOCKS + 2) * BLOCK_FRAMES as u64;
+            let ahead = reader.next > from.saturating_add(lead) && !reader.rewound;
+            let behind = reader.next < from && from - reader.next > BLOCK_FRAMES as u64 && reader.consumer.slots() == 0;
+            if ahead || behind {
                 let requested = jump.requested.load(Ordering::Acquire) + 1;
                 let to = from + wanted + JUMP_BLOCKS * BLOCK_FRAMES as u64;
                 jump.to.store(to, Ordering::Release);
@@ -1117,6 +1125,21 @@ mod handover_tests {
         assert_eq!(new.readers[0].jumping, Some(1));
         assert_eq!(new.shared.jumps[0].to.load(Ordering::Acquire), 30_000);
         assert_eq!(new.shared.jumps[0].requested.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn a_voice_ahead_of_the_playhead_jumps_back_to_it() {
+        // Left at a loop's end while the playhead went round to its start (a swap after a wrap
+        // could read a clip from that voice again): silent until the playhead came round to it,
+        // a whole pass, unless it moves.
+        let mut reader = reader();
+        let _ = reader.take_worker_unfilled();
+        reader.readers[0].next = 60_000;
+        let mut out = vec![0.0; 512];
+        reader.read(0, 1_000, &mut out);
+        assert!(reader.readers[0].jumping.is_some(), "it jumps");
+        let to = reader.shared.jumps[0].to.load(Ordering::Acquire);
+        assert!((1_000..10_000).contains(&to), "to just past the playhead: {to}");
     }
 
     #[test]
