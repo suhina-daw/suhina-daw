@@ -1533,11 +1533,11 @@ fn midi_harness(
 fn the_midi_panels_tabs_run_the_note_tools() {
     use egui_kittest::kittest::Queryable;
     let mut harness = midi_harness(None, &[1, 2], egui::vec2(1000.0, 320.0), false);
-    assert!(harness.query_by_label("Selected notes").is_some(), "the chip says what the tools act on");
-    assert!(harness.query_by_label("2 of 4 notes").is_some(), "and how many");
+    assert!(harness.query_by_label("Selection").is_some(), "the chip says what the tools act on");
+    assert!(harness.query_by_label("2 of 4").is_some(), "and how many");
     // The figures are under the Clip part, the tools beside them.
     let scale = harness.get_by_label_contains("Scale: ").rect();
-    let chip = harness.get_by_label("Selected notes").rect();
+    let chip = harness.get_by_label("Selection").rect();
     let reverse = harness.get_by_label("Reverse").rect();
     assert!(chip.top() >= scale.bottom() && chip.right() <= reverse.left(), "{scale:?} {chip:?} {reverse:?}");
     harness.get_by_label("Reverse").click();

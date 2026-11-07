@@ -117,7 +117,7 @@ impl Tools<'_> {
     /// What the tools act on, as the chip in the tab row says it.
     pub(crate) fn head(&self) -> &'static str {
         match (self.selected.is_empty(), self.nothing) {
-            (false, _) => "Selected notes",
+            (false, _) => "Selection",
             (true, true) => "No notes in time",
             (true, false) => "Whole clip",
         }
@@ -134,15 +134,11 @@ impl Tools<'_> {
         }
     }
 
-    /// The count beside the head: "4 notes", "1 note", "3 of 12 notes".
+    /// The count beside the head: "4 notes", "1 note", or "3 of 12" for a selection.
     pub(crate) fn count_text(&self) -> String {
         let count = self.count();
         let plural = if count == 1 { "note" } else { "notes" };
-        if self.selected.is_empty() {
-            format!("{count} {plural}")
-        } else {
-            format!("{count} of {} notes", self.notes.len())
-        }
+        if self.selected.is_empty() { format!("{count} {plural}") } else { format!("{count} of {}", self.notes.len()) }
     }
 
     /// What an Apply button says it acts on: "3 notes", "1 note", or "clip".

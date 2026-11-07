@@ -457,23 +457,25 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
     bar.bottom()
 }
 
-/// The chip at the top of the figures: what the tools act on (**Whole clip**, **Selected notes**,
-/// **No notes in time**) and how many notes that is, lit while notes are selected.
+/// The head of the figures: what the tools act on (**Whole clip**, **Selection**, **No notes in
+/// time**) at the left, how many notes that is at the right, and a hairline under them, as a
+/// section's title. A selection lights the head in the accent; it is a heading, not a button.
 fn chip(ui: &Ui, painter: &egui::Painter, rect: Rect, tools: &Tools<'_>) {
     let head = tools.head();
     let count = tools.count_text();
     let selected = !tools.selected.is_empty();
-    let fill = if selected { theme::control_selected() } else { theme::control_background() };
-    let ink = if selected { theme::text_on(theme::control_selected()) } else { theme::text_secondary() };
-    painter.fill_background(rect, 3.0, fill);
-    let inner = rect.shrink2(Vec2::new(6.0, 0.0));
+    let (head_ink, count_ink) =
+        if selected { (theme::accent(), theme::text_primary()) } else { (theme::text_hint(), theme::text_secondary()) };
     let tiny = theme::ui_font(theme::TEXT_TINY);
     let mono = theme::mono_font(theme::TEXT_TINY);
     let count_width = widgets::text_width(ui, &count, mono.clone());
-    let count_rect = Rect::from_min_max(Pos2::new(inner.right() - count_width, inner.top()), inner.max);
-    let head_rect = Rect::from_min_max(inner.min, Pos2::new(count_rect.left() - 6.0, inner.bottom()));
-    widgets::text_in(painter, head_rect, Align2::LEFT_CENTER, head, tiny, ink);
-    widgets::text_in(painter, count_rect, Align2::RIGHT_CENTER, &count, mono, ink);
+    let count_rect = Rect::from_min_max(Pos2::new(rect.right() - count_width, rect.top()), rect.max);
+    let head_rect = Rect::from_min_max(rect.min, Pos2::new(count_rect.left() - 6.0, rect.bottom()));
+    widgets::text_in(painter, head_rect, Align2::LEFT_CENTER, head, tiny, head_ink);
+    widgets::text_in(painter, count_rect, Align2::RIGHT_CENTER, &count, mono, count_ink);
+    let line = rect.bottom() - 0.5;
+    painter
+        .line_segment([Pos2::new(rect.left(), line), Pos2::new(rect.right(), line)], theme::hairline(theme::border()));
     // The head and the count are named for a reader and a test, as the piano roll's parts are.
     ui.interact(head_rect, Id::unique("piano-roll-tools-head"), Sense::hover())
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, head));

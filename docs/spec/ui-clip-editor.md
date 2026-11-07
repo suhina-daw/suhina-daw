@@ -790,10 +790,10 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **An audio clip's column** is its panel, in parts (Clip, Audio, Gain and Pitch) with a gain
   fader, a pitch knob with cents, the clip's tempo, Set buttons and numbers to type:
   [clip panel spec](clip-panel.md) ([#1190](https://github.com/suhina-daw/suhina-daw/issues/1190)).
-- **What the tools act on, in figures**: first a chip with what the tools act on, **Whole clip**,
-  **Selected notes** (lit while notes are selected) or **No notes in time** (a time selection that
-  holds no note start; the tools then act on nothing), and how many notes that is (`4 notes`,
-  `3 of 12 notes`). Under it, for the selection or, with nothing selected, the whole clip, and
+- **What the tools act on, in figures**: first a heading row, as a section's title with a
+  hairline under it: what the tools act on, **Whole clip**, **Selection** (in the accent while
+  notes are selected) or **No notes in time** (a time selection that holds no note start; the
+  tools then act on nothing), and at its right how many notes that is (`4 notes`, `3 of 12`). Under it, for the selection or, with nothing selected, the whole clip, and
   only when they say something:
   - **Pitch**: the range of the keys, by name, such as `C3` for one key or `C3–G3` for several.
   - **From** and **To**: the span in the clip's beats, as the ruler writes them (bar and beat,
