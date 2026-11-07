@@ -640,3 +640,21 @@ fn a_lane_keeps_its_height_when_it_shows_another_parameter() {
     lanes.focus(track, LaneKey::mixer(PAN));
     assert_eq!(lanes.lane_height(track, &LaneKey::mixer(PAN)), 90.0);
 }
+
+/// A parameter moved in a plug-in's own editor moves its lane's faint line at once, not only when
+/// the plug-in lists its parameters again (#1205).
+#[test]
+fn a_plug_in_parameter_moved_in_its_editor_moves_its_line_at_once() {
+    let (project, track) = plugin_project();
+    let mut lists = PluginLists::default();
+    lists.lists.insert((track, 0), plugin_list());
+    let mut params = Params::build_with(&project, lists.clone());
+    let gain = LaneKey { device: Some(0), param: "0".into() };
+    assert_eq!(params.param(track, &gain).map(|p| p.current), Some(0.5));
+    let mut moved = lists.clone();
+    moved.moved.push((track, 0, 0, 0.8));
+    params.take_plugins(&project, moved);
+    assert_eq!(params.param(track, &gain).map(|p| p.current), Some(0.8));
+    // The same lists: nothing else was built again.
+    assert!(params.param(track, &LaneKey { device: Some(0), param: "4".into() }).is_some());
+}

@@ -3590,8 +3590,20 @@ impl App {
         for (track, index, id, values) in asked {
             session.ask_plugin_texts_at(track, &[index], id, &values);
         }
-        // A parameter moved in a plug-in's own editor shows in its track's open lanes (#1205).
+        // A parameter moved in a plug-in's own editor shows in its track's open lanes (#1205),
+        // and their faint lines follow the value it has now at once.
         let touched = session.take_touched_params();
+        for &(track, index, id) in &touched {
+            let value = session
+                .project()
+                .channel_of_track(track)
+                .and_then(|c| c.devices.get(index))
+                .and_then(|d| d.params.iter().find(|p| suhina_engine::param_id(&p.id) == Some(id)))
+                .map(|p| p.value);
+            if let Some(value) = value {
+                lists.moved.push((track, index, id, value));
+            }
+        }
         let open: Vec<(TrackId, usize)> = session
             .project()
             .tracks

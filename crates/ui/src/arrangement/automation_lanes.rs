@@ -490,6 +490,10 @@ pub struct PluginLists {
     pub lists: HashMap<(TrackId, usize), std::sync::Arc<[suhina_plugins::ParamInfo]>>,
     /// Each plug-in's own texts for values it was asked about, as the session keeps them.
     pub texts: HashMap<(TrackId, usize), std::sync::Arc<suhina_session::ParamTexts>>,
+    /// Parameters moved in a plug-in's own editor since the last frame and the value each has
+    /// now (track, device, parameter id, value): a lane's faint line follows them at once,
+    /// not only when the plug-in lists its parameters again a couple of seconds later.
+    pub moved: Vec<(TrackId, usize, u32, f64)>,
 }
 
 impl PartialEq for PluginLists {
@@ -502,6 +506,7 @@ impl PartialEq for PluginLists {
         ) -> bool {
             a.len() == b.len() && a.iter().all(|(key, x)| b.get(key).is_some_and(|y| std::sync::Arc::ptr_eq(x, y)))
         }
+        // `moved` is this frame's news, not what the parameters were built with.
         same(&self.lists, &other.lists) && same(&self.texts, &other.texts)
     }
 }
@@ -515,9 +520,27 @@ impl Params {
 
     /// Builds the parameters again with `plugins` when they are not the lists the parameters
     /// were built with (#1205).
-    pub fn take_plugins(&mut self, project: &Project, plugins: PluginLists) {
+    pub fn take_plugins(&mut self, project: &Project, mut plugins: PluginLists) {
+        let moved = std::mem::take(&mut plugins.moved);
         if self.plugins != plugins {
             *self = Self::build_with(project, plugins);
+        }
+        for (track, device, id, value) in moved {
+            let key = LaneKey { device: Some(device), param: id.to_string() };
+            // A move by hand also turns the parameter's lane off: the header says so at once.
+            let enabled = project
+                .channel_of_track(track)
+                .and_then(|c| c.devices.get(device))
+                .and_then(|d| d.automation.iter().find(|l| l.param == key.param))
+                .map(|l| l.enabled);
+            if let Some(param) = self.tracks.get_mut(&track).and_then(|params| params.iter_mut().find(|p| p.key == key))
+                && value.is_finite()
+            {
+                param.current = value;
+                if let Some(enabled) = enabled {
+                    param.enabled = enabled;
+                }
+            }
         }
     }
 
