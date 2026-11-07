@@ -16,6 +16,9 @@
 //! other's instances never wait on each other. An instance's own thread does not touch its block
 //! while another runs it: the engine sends a plug-in's block either on its own link or as a
 //! follower on another's, never both at once.
+//!
+//! Every audio thread runs its blocks with subnormal numbers flushed to zero, set again before each
+//! instance's part, since a plug-in may change the mode while it runs ([`crate::denormals`]).
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -134,8 +137,11 @@ pub(crate) fn serve<B: Block + 'static>(instance: u32, block: B, served: &mut Se
     lock(&MEMBERS).insert(instance, Arc::clone(&shared));
     let samples = served.channels() as usize * served.max_frames() as usize;
     let mut between = vec![0.0f32; samples];
+    let flush = crate::denormals::Flush::detect();
+    flush.apply();
     while !stop.load(Ordering::Acquire) {
         served.serve_joint(POLL, |input, events, followers, output| {
+            flush.apply();
             shared.run(input, events, output);
             for &follower in followers {
                 // An instance that is gone passes the sound through.
@@ -143,6 +149,8 @@ pub(crate) fn serve<B: Block + 'static>(instance: u32, block: B, served: &mut Se
                     continue;
                 };
                 between.copy_from_slice(output);
+                // The plug-in before it may have changed the mode.
+                flush.apply();
                 next.run(between, events, output);
             }
         });
@@ -189,6 +197,73 @@ mod tests {
         let thread = std::thread::spawn(move || serve(instance, block, &mut served, &thread_stop).is_some());
         assert!(wait_serving(instance, Duration::from_secs(5)));
         (link, stop, blocks, thread)
+    }
+
+    /// Half the smallest normal `f32` in every sample: subnormal unless the thread flushes it to
+    /// zero. With `clears`, it then turns flushing off, as a plug-in that sets a mode of its own
+    /// does. Counts its blocks.
+    struct Subnormal {
+        clears: bool,
+        blocks: Arc<std::sync::atomic::AtomicU32>,
+    }
+
+    impl Block for Subnormal {
+        fn process(&mut self, _input: &[f32], _events: &[Event], output: &mut [f32]) {
+            self.blocks.fetch_add(1, Ordering::Relaxed);
+            output.fill(std::hint::black_box(f32::MIN_POSITIVE) * std::hint::black_box(0.5));
+            if self.clears {
+                crate::denormals::clear();
+            }
+        }
+    }
+
+    /// A `Subnormal` instance serving its own link on a thread of its own, its block count, and
+    /// what stops it. Its first block comes once the thread serves, so nothing waits here.
+    fn subnormal(
+        instance: u32,
+        clears: bool,
+    ) -> (Link, Arc<AtomicBool>, Arc<std::sync::atomic::AtomicU32>, std::thread::JoinHandle<bool>) {
+        let link = Link::create(2, 64).unwrap_or_else(|e| panic!("{e}"));
+        let mut served = Served::open(&link.address()).unwrap_or_else(|e| panic!("{e}"));
+        let stop = Arc::new(AtomicBool::new(false));
+        let blocks = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let (thread_stop, block) = (stop.clone(), Subnormal { clears, blocks: blocks.clone() });
+        let thread = std::thread::spawn(move || serve(instance, block, &mut served, &thread_stop).is_some());
+        (link, stop, blocks, thread)
+    }
+
+    /// Sends one block on `link` and waits for its answer (the deadline is an hour away: only the
+    /// answer ends the wait in practice).
+    fn round_trip(link: &mut Link, followers: &[u32]) -> [f32; 8] {
+        let mut output = [1.0f32; 8];
+        assert!(link.send_joint(&[1.0f32; 8], &[], followers, output.len()));
+        assert_eq!(link.wait(&mut output, Instant::now() + Duration::from_secs(3600)), Outcome::Done);
+        output
+    }
+
+    /// #1258: a plug-in's block runs with subnormal numbers flushed to zero, also after a plug-in
+    /// turned flushing off, in its own next block and in a follower it runs before.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[test]
+    fn blocks_run_with_subnormals_flushed_even_after_a_plug_in_turns_it_off() {
+        let flushed = |output: [f32; 8]| output.iter().all(|s| s.to_bits() == 0);
+        let (mut first, stop_first, _, first_thread) = subnormal(9_011, true);
+        let (mut second, stop_second, second_blocks, second_thread) = subnormal(9_012, false);
+        // Its first block, and the next one, which comes after it turned flushing off.
+        for _ in 0..2 {
+            let output = round_trip(&mut first, &[]);
+            assert!(flushed(output), "{output:?}");
+        }
+        // The second answers a block of its own, so its thread serves it and it can follow.
+        assert!(flushed(round_trip(&mut second, &[])));
+        // Run after the first, which turns flushing off, on the first one's thread.
+        let output = round_trip(&mut first, &[9_012]);
+        assert!(flushed(output), "{output:?}");
+        assert_eq!(second_blocks.load(Ordering::Relaxed), 2, "the second ran as a follower");
+        for (stop, thread) in [(stop_first, first_thread), (stop_second, second_thread)] {
+            stop.store(true, Ordering::Release);
+            assert_eq!(thread.join().ok(), Some(true));
+        }
     }
 
     #[test]

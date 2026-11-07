@@ -39,8 +39,9 @@
 //! scanner. ARA (ADR 0033): a VST3 instance loaded with a document is bound to a document
 //! controller the host builds from it (`ara`, over bindings generated from the vendored ARA
 //! headers, `ara_sys`), reads the sources' shared memory and keeps the plug-in's edits in its
-//! state. The second crate allowed `unsafe`: opening plug-in files and the VST3 COM calls, each
-//! block documented.
+//! state. Every plug-in block runs with subnormal numbers flushed to zero (`denormals`). The second
+//! crate allowed `unsafe`: opening plug-in files, the VST3 COM calls and the audio threads'
+//! floating-point mode, each block documented.
 
 mod ara;
 #[allow(
@@ -58,6 +59,7 @@ mod ara;
 mod ara_sys;
 mod audio;
 mod clap;
+mod denormals;
 mod hosted;
 mod param_notes;
 mod processors;
