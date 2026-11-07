@@ -1364,6 +1364,9 @@ fn tag_folder_menu(
         }
     }
     if ui.button("Add folder").clicked() && run(projects, "library.addTagFolder", json!({ "parent": my }), out) {
+        // The branch itself opens, so the new folder shows wherever it sits
+        // ([#1254] review).
+        tag_branch_open(projects, out, folder_id);
         state.relist();
     }
     let carried = suhina_library::store::tag_count(&under_folder_tags(&projects.file_library_mut().tags(), folder_id));
@@ -1787,6 +1790,11 @@ fn tags_section(
                     None => json!({}),
                 };
                 if run(projects, "library.addTagFolder", params, out) {
+                    // The target's branch opens, so the new folder shows wherever it
+                    // landed ([#1254] review).
+                    if let Some(folder) = parent {
+                        tag_branch_open(projects, out, folder);
+                    }
                     state.relist();
                     ui.close();
                 }
@@ -2032,6 +2040,23 @@ fn section_title(
             ui.close();
         }
     });
+}
+
+/// A subfolder's making opens the branch from its target up ([#1254] review): the new row
+/// shows however deeply the target sat, and the branch keeps its own leaves.
+fn tag_branch_open(projects: &mut Projects, out: &mut BrowserOut, folder_id: u32) {
+    let mut chain = Vec::new();
+    {
+        let store = projects.file_library_mut().tags();
+        let mut cursor = Some(folder_id);
+        while let Some(id) = cursor {
+            chain.push(id);
+            cursor = suhina_library::store::find_entry_parent(&store, id).and_then(|(p, _)| p);
+        }
+    }
+    for id in chain {
+        run(projects, "library.setFolderOpen", json!({ "folder": format!("#{id}"), "open": true }), out);
+    }
 }
 
 fn row_menu(

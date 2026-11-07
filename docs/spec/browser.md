@@ -499,7 +499,8 @@ tags never share a name.
 **Tag folders** ([#1254] › Tag folders) hold tags and folders. A folder nests at most four
 deep (a deeper drop is refused), a tag lives in one folder at a time, and removing a folder
 lifts its whole cortège — tags and subfolders — into the parent (the top when it was top); the
-menu asks first, saying how many rows move up. A subfolder's row is indented like the
+menu asks first, saying how many rows move up; a made subfolder opens its target's branch,
+so the new row shows however deeply the target sat ([#1254] review). A subfolder's row is indented like the
 Pinned section's groups are, and draws its chevron instead of a mark
 ([#1254] review). Dragging a tag or folder row (a folder can never move under itself) moves
 it: before another row, into a folder — a closed one too —, or to the

@@ -2230,3 +2230,41 @@ fn the_tags_section_leads_with_its_folders() {
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn adding_a_subfolder_opens_the_targets_branch() {
+    let (settings, folder) = (temp("branch-open-settings"), temp("branch-open"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Cowboy" })).unwrap();
+    harness.run();
+    // Cowboy hides inside a closed folder ([#1254]: closed folders show no children).
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.setFolderOpen", &json!({ "folder": "#8", "open": false }))
+        .unwrap();
+    harness.run();
+    assert!(harness.query_by_label_contains("Folder Belt").is_none(), "the closed target hides its children");
+    // A folder added to the closed Cowboy's menu lands under it, and the branch opens.
+    harness.get_by_label("Folder Cowboy (0 tags)").click_secondary();
+    harness.run();
+    // The menu's own "Add folder", not the section's "+ Add folder": whichever node sits
+    // beside the clicked row (the higher one).
+    let adds: Vec<_> = harness.get_all_by_label("Add folder").collect();
+    let menu = adds.iter().map(|n| n.rect()).min_by_key(|rect| rect.top() as u32).map(|rect| rect.center()).unwrap();
+    click_at(&mut harness, menu);
+    harness.run();
+    let tree = harness.state_mut().projects_mut().file_library_mut().tags();
+    assert!(
+        suhina_library::store::folders_iter(&tree).any(|f| f.name == "Cowboy" && f.open)
+            && suhina_library::store::folders_iter(&tree).any(|f| suhina_library::store::entry_depth(&tree, f.id) == 2),
+        "the new subfolder sits under Cowboy with the branch open"
+    );
+    assert!(
+        harness.query_by_label_contains("Folder Folder").is_some(),
+        "the subfolder shows without opening anything by hand"
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
