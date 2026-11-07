@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "name": "Suhina Glass",
+  "author": "The Suhina contributors",
+  "description": "An original cool-blue glass theme for Suhina: translucent bars, soft highlights, subtle track materials and independent text roles. Glassiness sets how far the desktop shows through the menu bar, toolbar, status bar, menus and dialogs, and half that through the rest of the window; an optional private PNG background is selected in Appearance.",
+  "swatch": "var(--ground)",
+  "default-variant": "Deep Sea"
+}

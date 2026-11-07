@@ -1187,7 +1187,8 @@ fn rgba(color: egui::Color32) -> [u8; 4] {
     color.to_srgba_unmultiplied()
 }
 fn accent_text(accent: egui::Color32) -> [u8; 4] {
-    let luminance = 0.2126 * f32::from(accent.r()) + 0.7152 * f32::from(accent.g()) + 0.0722 * f32::from(accent.b());
+    let [r, g, b, _] = accent.to_srgba_unmultiplied();
+    let luminance = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
     if luminance > 145.0 { [29, 28, 26, 255] } else { [255, 255, 255, 255] }
 }
 fn widget_palette() -> WidgetPalette {
@@ -1539,8 +1540,40 @@ fn plot_inside(points: &[(f32, f32)], top: f32, bottom: f32) -> Vec<Vec<(f32, f3
     lines
 }
 
-/// A drawing's colour: one of the SDK's theme tokens takes the theme's custom property (or its
-/// default), keeping the drawing's alpha.
+/// The SDK's theme tokens (`--device-display`, `--device-series-1` …) as a panel's scope resolves
+/// them, each the theme's colour or the token's default; worked out once per panel and frame.
+/// Kept unmultiplied, so a translucent token keeps its exact RGB until a drawing's alpha is applied.
+struct Tokens([[u8; 4]; suhina_device_sdk::ui::THEME_TOKENS.len()]);
+impl Tokens {
+    /// The tokens of the style scope open now: a rule on `:root`, `.device-panel` or
+    /// `#device-<id>` reaches them.
+    fn resolve() -> Self {
+        let style = crate::kit::style_class::computed();
+        Self(suhina_device_sdk::ui::THEME_TOKENS.map(|(_, name, [r, g, b])| {
+            style
+                .as_ref()
+                .and_then(|s| s.variable(name))
+                // Any CSS colour the style engine reads: `rgb()`, a named colour, `color-mix()` …
+                .and_then(|value| match suhina_style::value::Color::parse(value.trim()) {
+                    Ok(suhina_style::value::Color::Rgba(rgba)) => Some(rgba),
+                    _ => None,
+                })
+                .unwrap_or([r, g, b, 255])
+        }))
+    }
+    /// A drawing's colour: a token takes its colour, the palette's tokens the palette's (`color`).
+    fn color(&self, c: [u8; 4]) -> Color32 {
+        let [r, g, b, a] = c;
+        suhina_device_sdk::ui::THEME_TOKENS
+            .iter()
+            .zip(&self.0)
+            .find(|((rgb, ..), _)| *rgb == [r, g, b])
+            .map_or_else(|| color(c), |(_, base)| with_alpha(*base, a))
+    }
+}
+
+/// A colour of the SDK's palette: one of its theme tokens ([3, 1, k]) takes the theme's colour,
+/// its alpha times the drawing's, so a translucent theme colour stays translucent.
 fn color(c: [u8; 4]) -> Color32 {
     let [r, g, b, a] = c;
     // The theme's own colours by token ([3, 1, k]): text, panel, control, border, accent.
@@ -1553,17 +1586,14 @@ fn color(c: [u8; 4]) -> Color32 {
             4 => palette.border,
             _ => palette.accent,
         };
-        return Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), a);
-    }
-    if let Some((_, property, default)) = suhina_device_sdk::ui::THEME_TOKENS.iter().find(|(rgb, ..)| *rgb == [r, g, b])
-    {
-        let base = crate::kit::style_class::property(property)
-            .as_deref()
-            .and_then(crate::kit::theme::parse_hex)
-            .map_or(*default, |c| [c.r(), c.g(), c.b()]);
-        return Color32::from_rgba_unmultiplied(base[0], base[1], base[2], a);
+        return with_alpha(base.to_srgba_unmultiplied(), a);
     }
     Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+/// `base` (unmultiplied) with its alpha multiplied by `alpha` (0 to 255).
+fn with_alpha([r, g, b, a]: [u8; 4], alpha: u8) -> Color32 {
+    let alpha = (u16::from(a) * u16::from(alpha) + 127) / 255;
+    Color32::from_rgba_unmultiplied(r, g, b, u8::try_from(alpha).unwrap_or(u8::MAX))
 }
 fn normalized(p: &GraphParameter, log: bool) -> f64 {
     if log && p.min > 0.0 {
@@ -1580,8 +1610,10 @@ fn paint_scaled(
     origin: Pos2,
     values: &Values,
     loaded: &Loaded,
+    tokens: &Tokens,
     scale: Vec2,
 ) {
+    let color = |c: [u8; 4]| tokens.color(c);
     let weight = scale.x.min(scale.y);
     let lookup = |id: &str, norm: bool, log: bool| values.read(id, norm, log);
     let value = |v: &UiValue| v.evaluate(&lookup);
@@ -1823,6 +1855,7 @@ fn paint_control(
     bounds: Rect,
     values: &Values,
     loaded: &Loaded,
+    tokens: &Tokens,
     response: Option<&egui::Response>,
     accent_on: bool,
 ) {
@@ -1919,7 +1952,7 @@ fn paint_control(
                 continue;
             }
         }
-        paint_scaled(painter, std::slice::from_ref(draw), origin, values, loaded, scale);
+        paint_scaled(painter, std::slice::from_ref(draw), origin, values, loaded, tokens, scale);
         if !knob_effects
             && matches!(draw, Draw::Circle { .. })
             && let Some((center, radius)) = circle
@@ -2088,11 +2121,12 @@ pub(crate) fn show(
     // a group (#672) is named by its last step.
     let device = at.0.last().copied().unwrap_or(0);
     let loaded = images(ui.ctx(), canvas);
+    let tokens = Tokens::resolve();
     let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
     let background = if canvas.background == DeviceUi::default().background {
         crate::kit::theme::palette().panel_background
     } else {
-        color(canvas.background)
+        tokens.color(canvas.background)
     };
     // A clear background (a header strip's) leaves what is under the canvas showing.
     if canvas.background[3] > 0 {
@@ -2109,7 +2143,7 @@ pub(crate) fn show(
     if canvas.animate_when.as_ref().is_some_and(|v| v.evaluate(&|id, norm, log| values.read(id, norm, log)) > 0.0) {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
     }
-    paint_scaled(&painter, &canvas.layers, rect.min, &values, &loaded, stretch);
+    paint_scaled(&painter, &canvas.layers, rect.min, &values, &loaded, &tokens, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;
     let stroke_id = ui.scope_id().with(("sd-draw", track.0, device));
@@ -2227,6 +2261,7 @@ pub(crate) fn show(
                 bounds,
                 &values,
                 &loaded,
+                &tokens,
                 Some(&response),
                 canvas.accent_on,
             );
@@ -2316,6 +2351,7 @@ pub(crate) fn show(
                 bounds,
                 &values,
                 &loaded,
+                &tokens,
                 Some(&response),
                 canvas.accent_on,
             );
@@ -2346,6 +2382,7 @@ pub(crate) fn show(
                 bounds,
                 &values,
                 &loaded,
+                &tokens,
                 Some(&response),
                 canvas.accent_on,
             );
@@ -2367,6 +2404,7 @@ pub(crate) fn show(
                 bounds,
                 &values,
                 &loaded,
+                &tokens,
                 Some(&response),
                 canvas.accent_on,
             );
@@ -2399,6 +2437,7 @@ pub(crate) fn show(
                 bounds,
                 &values,
                 &loaded,
+                &tokens,
                 None,
                 canvas.accent_on,
             );
@@ -2483,6 +2522,7 @@ pub(crate) fn show(
             bounds,
             &values,
             &loaded,
+            &tokens,
             Some(&response),
             canvas.accent_on,
         );
@@ -2525,17 +2565,17 @@ pub(crate) fn show(
                 } else if key_open {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
-                let frame = egui::Frame::popup(ui.style())
-                    .corner_radius(0)
-                    .fill(color(loaded.palette.panel))
-                    .stroke(Stroke::new(1., color(loaded.palette.accent)));
                 let mut picked = None;
-                popup.frame(frame).show(|ui| {
+                // The standard popup frame, as every other dropdown's; `.popup` styles its rows and
+                // `.button:checked` the chosen one (#1239).
+                popup.show(|ui| {
+                    let _popup = crate::kit::style_class::enter("popup");
+                    let mut styled_ui = crate::kit::style_class::ui(ui);
+                    let ui = &mut *styled_ui;
                     ui.spacing_mut().item_spacing.y = 0.;
                     ui.spacing_mut().scroll =
                         egui::style::ScrollStyle { bar_width: 6., ..egui::style::ScrollStyle::solid() };
                     ui.spacing_mut().interact_size.y = 14.;
-                    ui.visuals_mut().selection.bg_fill = color(loaded.palette.accent);
                     let choices: Vec<(f64, &str)> = if let Some(Widget::ValueMenu { choices }) = &control.widget {
                         choices.iter().map(|(v, label)| (f64::from(*v), label.as_str())).collect()
                     } else {
@@ -2565,11 +2605,7 @@ pub(crate) fn show(
                     egui::ScrollArea::vertical().max_height(240.).show(ui, |ui| {
                         for (value, label) in choices {
                             let selected = p.value.round() == value;
-                            let text = egui::RichText::new(label).size(11.).color(color(if selected {
-                                loaded.palette.accent_text
-                            } else {
-                                loaded.palette.text
-                            }));
+                            let text = egui::RichText::new(label).size(11.);
                             let clicked = if matches!(control.widget, Some(Widget::WaveformMenu)) {
                                 let response = ui.add_sized(
                                     Vec2::new(ui.available_width(), 18.),
@@ -2593,11 +2629,11 @@ pub(crate) fn show(
                                     points,
                                     Stroke::new(
                                         1.,
-                                        color(if selected {
-                                            loaded.palette.accent_text
+                                        if selected {
+                                            ui.visuals().selection.stroke.color
                                         } else {
-                                            loaded.palette.accent
-                                        }),
+                                            crate::kit::theme::accent()
+                                        },
                                     ),
                                 ));
                                 response.clicked()

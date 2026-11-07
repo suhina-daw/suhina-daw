@@ -90,7 +90,6 @@ pub(super) fn project(contents: Vec<ClipContent>, slots: Vec<Vec<Slot>>) -> Proj
             .collect(),
         contents,
         launcher: suhina_model::Launcher {
-            mappings: Vec::new(),
             scenes: vec![Scene::default(); scenes],
             columns: slots
                 .into_iter()

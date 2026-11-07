@@ -218,6 +218,20 @@ fn panels_follow_a_dragged_line_at_the_playhead() {
 }
 
 #[test]
+fn a_clips_start_counts_bars_through_the_time_signature_changes() {
+    // Eight bars of 4/4 (32 beats), then 3/4: beat 64 is beat 3 of bar 19, not bar 17.
+    let mut project = demo_project();
+    project.transport.time_signature_changes = vec![suhina_engine::model::TimeSignatureChange {
+        bar: 8,
+        time_signature: suhina_engine::model::TimeSignature { numerator: 3, denominator: 4 },
+    }];
+    let beat_b = project.arrangement.lanes[0].clips[1].id;
+    let detail = build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)));
+    let Detail::Clip(info, _) = detail else { panic!("expected the clip") };
+    assert_eq!(info.start, "19.3");
+}
+
+#[test]
 fn a_selected_slot_clip_shows_its_scene_loop_and_fades() {
     let mut project = demo_project();
     let column = project.launcher.columns.iter_mut().find(|c| c.track == TrackId(2)).expect("Bass has slots");
@@ -932,8 +946,7 @@ fn a_theme_lays_a_generated_list_side_by_side() {
     project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
     let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
     let graph = chain.devices[0].graph.as_ref().unwrap();
-    let (theme, _) =
-        crate::kit::theme::from_sheet(".device { --suhina-param-columns: 3; --suhina-param-row: 48px; }", "");
+    let (theme, _) = crate::kit::theme::from_css(".device { --suhina-param-columns: 3; --suhina-param-row: 48px; }");
     crate::kit::skin::configure(&theme.skin);
     let cells = parameter_layout(&graph.parameters, 300.0, f32::INFINITY, &[]);
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
@@ -1597,4 +1610,70 @@ fn the_swing_row_sets_the_projects_swing_or_the_clips_own() {
     let last = harness.state().0.last().cloned();
     assert_eq!(last.as_ref().map(|a| a.id), Some("clip.setSwing"));
     assert_eq!(last.map(|a| a.params["global"].clone()), Some(json!(false)));
+}
+
+/// A plug-in's panel, a generated list and a canvas panel in one row are as tall as each other,
+/// the tallest's height, never under a compact panel's (#1238).
+#[test]
+fn the_panels_in_a_row_are_one_height() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let mut project = with_plugin();
+    project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    project.channels[0].devices.push(Device::new("EQ", DeviceKind::Builtin("eq".into())));
+    let detail = build(&project, Some(TrackId(1)), None);
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(2400.0, 500.0)).build_ui(|ui| {
+        show_row(ui, &detail, &[], &mut Vec::new(), &mut Vec::new());
+    });
+    harness.run_steps(3);
+    let heights: Vec<f32> = ["Verb", "Utility", "EQ"]
+        .iter()
+        .map(|name| harness.get_by_label(&format!("Device {name}")).rect().height())
+        .collect();
+    assert!(heights.iter().all(|h| (h - heights[0]).abs() < 0.5), "one height: {heights:?}");
+    assert!(heights[0] >= device_row_height() - 0.5, "at least a compact panel's: {heights:?}");
+}
+
+/// Stacked lists each keep their own scroll, also when a device before them goes: the scroll is
+/// the device's, not its place's (#826).
+#[test]
+fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let mut project = demo_project();
+    project.channels[0].devices = vec![Device::new("Pitch", DeviceKind::Builtin("pitch".into()))];
+    for _ in 0..2 {
+        project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    }
+    let _ = project.assign_ids();
+    let mut harness =
+        Harness::builder().allow_missing_glyphs().with_size(egui::vec2(STACK_WIDTH, 700.0)).build_ui_state(
+            |ui, detail: &mut Detail| {
+                show_stack(ui, detail, &[], &mut Vec::new(), &mut Vec::new());
+            },
+            build(&project, Some(TrackId(1)), None),
+        );
+    harness.run_steps(10);
+    let gains =
+        |harness: &Harness<'_, Detail>| harness.query_all_by_label("Gain").map(|n| n.rect().left()).collect::<Vec<_>>();
+    let start = gains(&harness);
+    // The second Utility's list, scrolled sideways.
+    let second = harness.query_all_by_label("Device Utility").nth(1).unwrap().rect().center();
+    harness.hover_at(second);
+    harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(-150.0, 0.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    harness.run_steps(10);
+    let scrolled = gains(&harness);
+    assert!(scrolled[1] < start[1] - 50.0 && scrolled[0] == start[0], "only the second list scrolls: {scrolled:?}");
+    // Pitch goes: the Utilities move up a place each and keep their own scroll.
+    project.channels[0].devices.remove(0);
+    *harness.state_mut() = build(&project, Some(TrackId(1)), None);
+    harness.hover_at(egui::pos2(1.0, 699.0));
+    harness.run_steps(10);
+    assert_eq!(gains(&harness), scrolled, "each list keeps its own scroll");
 }

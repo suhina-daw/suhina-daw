@@ -42,44 +42,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         run: back_to_arrangement,
         policy: Policy::DEFAULT,
     },
-    CommandSpec {
-        id: "launcher.addMapping",
-        label: "Map a computer key or a MIDI note to a slot, a scene or a track's stop button: its press launches it (and its release releases a gate or repeat clip); a source already mapped moves to the new target",
-        params: &[
-            param(
-                "source",
-                ParamType::Text,
-                "key:<name> (key:Q, key:1, key:Space) or note:<channel 1-16>:<note 0-127>",
-            ),
-            param("target", ParamType::Text, "slot, scene or stop"),
-            optional("track", ParamType::Track, "track id or name, for slot and stop"),
-            optional("scene", ParamType::Integer, "scene number, from 0, for slot and scene"),
-        ],
-        kind: CommandKind::EDIT,
-        run: mapping::add_mapping,
-        policy: Policy::DEFAULT,
-    },
-    CommandSpec {
-        id: "launcher.removeMapping",
-        label: "Remove a key or note mapping: the one of a source, or every mapping of a target",
-        params: &[
-            optional("source", ParamType::Text, "key:<name> or note:<channel>:<note>"),
-            optional("target", ParamType::Text, "slot, scene or stop, instead of source"),
-            optional("track", ParamType::Track, "track id or name, for slot and stop"),
-            optional("scene", ParamType::Integer, "scene number, from 0, for slot and scene"),
-        ],
-        kind: CommandKind::EDIT,
-        run: mapping::remove_mapping,
-        policy: Policy::DEFAULT,
-    },
-    CommandSpec {
-        id: "launcher.mappings",
-        label: "List the keys and MIDI notes mapped to slots, scenes and stop buttons (source, target, track, scene, whether the target is gone)",
-        params: &[],
-        kind: CommandKind::READ,
-        run: mapping::list_mappings,
-        policy: Policy::DEFAULT,
-    },
 ];
 
 fn launcher_state(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
@@ -114,11 +76,11 @@ fn launcher_state(session: &mut Session, _: &Value) -> Result<Value, CommandErro
             json!({
                 "track": column.track.0,
                 "track_name": track_name(p, column.track),
-                "playing": status.playing.map(|slot| json!({ "scene": slot, "clip": clip_name(slot) })),
+                "playing": status.playing.map(|slot| json!({ "scene": slot, "scene_id": scene_id(p, slot), "clip": clip_name(slot) })),
                 "queued": match status.queued {
                     None => Value::Null,
                     Some(Queued::Stop) => json!("stop"),
-                    Some(Queued::Launch(slot)) => json!({ "scene": slot, "clip": clip_name(slot) }),
+                    Some(Queued::Launch(slot)) => json!({ "scene": slot, "scene_id": scene_id(p, slot), "clip": clip_name(slot) }),
                 },
                 "plays_arrangement": !status.overrides_arrangement,
             })

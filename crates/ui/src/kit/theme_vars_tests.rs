@@ -18,7 +18,7 @@ fn from_sheet(text: &str) -> (Theme, Vec<String>) {
 }
 
 #[test]
-fn the_core_set_registers_every_token_and_setting_with_suhina_darks_values() {
+fn the_core_set_registers_every_token_and_setting_with_suhina_studios_values() {
     let core = core();
     for (key, _, _) in crate::kit::theme::Palette::DARK.tokens() {
         assert!(is_core(&token_property(key)), "{key}");
@@ -39,7 +39,6 @@ fn every_built_in_theme_reads_back_from_its_own_sheet() {
         let (theme, warnings) = from_sheet(&text);
         assert!(warnings.is_empty(), "{id}: {warnings:?}");
         assert_eq!(core_values(&theme), core_values(&original), "{id}");
-        assert_eq!(theme.name, original.name, "{id}");
     }
 }
 
@@ -54,12 +53,11 @@ fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     assert_eq!(theme.colors.accent, parse_hex("#5E81AC").unwrap());
     let (frost, warnings) = Variant::from_json(
         "frost",
-        r##"{ "name": "Frost", "appearance": "light",
+        r##"{ "name": "Frost",
               "values": { "--accent": "var(--nord-blue)", "--glow": "0.2", "--meter-segments": "99" } }"##,
     )
     .unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(frost.light, Some(true));
     let (chosen, warnings) = with_variant(&theme, Some(&frost));
     assert_eq!(chosen.colors.accent, parse_hex("#88C0D0").unwrap());
     assert_eq!(chosen.vars.variant.as_deref(), Some("frost"));
@@ -102,11 +100,35 @@ fn editing_the_model_writes_only_the_values_that_differ_from_the_theme() {
 }
 
 #[test]
+fn a_colour_derived_from_a_setting_follows_every_change_of_the_setting() {
+    let (mut theme, _) = from_sheet(
+        "@property --tint { syntax: \"<color>\"; initial-value: #112233; label: \"Accent\"; }\n\
+         :root { --accent: var(--tint); --selection: color-mix(in srgb, var(--tint), white 50%); }",
+    );
+    let mut edit = |tint: &str| {
+        theme.vars.values.insert("--tint".into(), tint.into());
+        resolve(&mut theme);
+        sync(&mut theme);
+        assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--tint"]);
+        (theme.colors.accent, theme.colors.selection)
+    };
+    let first = edit("#FF0000");
+    assert_eq!(first.0, parse_hex("#FF0000").unwrap());
+    let second = edit("#00FF00");
+    assert_eq!(second.0, parse_hex("#00FF00").unwrap());
+    assert_ne!(first.1, second.1);
+
+    // A colour edited by hand is still the variant's, over what the setting gives.
+    theme.colors.accent = parse_hex("#ABCDEF").unwrap();
+    sync(&mut theme);
+    assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--accent", "--tint"]);
+}
+
+#[test]
 fn variant_files_round_trip_and_bad_ones_are_named() {
     let variant = Variant {
         id: "polar-night".into(),
         name: "Polar Night".into(),
-        light: Some(false),
         values: [("--accent".to_string(), "#81A1C1".to_string())].into(),
     };
     let (read, warnings) = Variant::from_json("polar-night", &variant.to_json()).unwrap();
@@ -118,7 +140,7 @@ fn variant_files_round_trip_and_bad_ones_are_named() {
         Variant::from_json("x", r##"{ "name": "", "appearance": "dim", "values": { "accent": "#fff", "--a": "}" } }"##)
             .unwrap();
     assert_eq!(warnings.len(), 4, "{warnings:?}");
-    assert!(lenient.values.is_empty() && lenient.light.is_none());
+    assert!(lenient.values.is_empty());
 }
 
 #[test]
@@ -133,7 +155,7 @@ fn host_rules_are_read_from_a_sheet_and_the_rest_is_left_to_the_engine() {
     let mut theme = Theme::default();
     let warnings = theme_css::read_host_rules(&mut theme, text);
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(theme.name, "Night");
+    assert_eq!(theme.name, Theme::default().name, "a theme's name is its theme.json's, not its sheet's");
     assert_eq!(theme.skin.assets.get("knob.body").map(String::as_str), Some("assets/knob.body.svg"));
     assert_eq!(theme.skin.controls["mixer-pan"].offset().x, 4.0);
     assert!(!theme.skin.controls["mixer-pan"].hidden, "a rule in @media is not a placement");
@@ -141,13 +163,37 @@ fn host_rules_are_read_from_a_sheet_and_the_rest_is_left_to_the_engine() {
 }
 
 #[test]
-fn a_variant_may_set_a_helper_variable_the_theme_sets_in_root() {
+fn a_variant_holds_values_for_declared_controls_only() {
     let (theme, _) = from_sheet(":root { --well: #101010; --accent: var(--well); }");
-    let (variant, _) = Variant::from_json("day", r##"{ "name": "Day", "values": { "--well": "#FAFAFA" } }"##).unwrap();
+    let (variant, _) =
+        Variant::from_json("day", r##"{ "name": "Day", "values": { "--well": "#FAFAFA", "--accent": "#ABCDEF" } }"##)
+            .unwrap();
     let (chosen, warnings) = with_variant(&theme, Some(&variant));
-    assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(chosen.colors.accent, parse_hex("#FAFAFA").unwrap());
-    assert!(chosen.skin.variant.as_deref().unwrap().contains("--well: #FAFAFA"));
+    // `--well` is a variable of the theme's own, not a control it declares: the variant cannot set it.
+    assert!(warnings.iter().any(|w| w.contains("--well") && w.contains("declares no such control")), "{warnings:?}");
+    assert_eq!(chosen.colors.accent, parse_hex("#ABCDEF").unwrap());
+    assert!(!chosen.skin.variant.as_deref().unwrap().contains("--well"));
+    let (_, warnings) = Variant::from_json("x", r##"{ "name": "X", "appearance": "light", "values": {} }"##).unwrap();
+    assert!(warnings.iter().any(|w| w.contains("appearance")), "{warnings:?}");
+}
+
+#[test]
+fn the_swatch_and_thumbnail_follow_the_variant() {
+    let mut theme = from_sheet(":root { --accent: #102030; }").0;
+    theme.meta.swatch = "var(--accent)".into();
+    theme.thumbnail = Some(Arc::from(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 9"><rect fill="var(--accent)"/></svg>"#,
+    ));
+    resolve(&mut theme);
+    assert_eq!(theme.swatch, Some(parse_hex("#102030").unwrap()));
+    let variant = Variant { id: "b".into(), name: "B".into(), values: [("--accent".into(), "#405060".into())].into() };
+    let (chosen, _) = with_variant(&theme, Some(&variant));
+    assert_eq!(chosen.swatch, Some(parse_hex("#405060").unwrap()));
+    assert!(chosen.picture.as_deref().unwrap().contains(r##"fill="#405060""##), "{:?}", chosen.picture);
+    theme.meta.swatch = "currentColor".into();
+    let warnings = resolve(&mut theme);
+    assert_eq!(theme.swatch, None);
+    assert!(warnings.iter().any(|w| w.contains("swatch")), "{warnings:?}");
 }
 
 #[test]
@@ -225,7 +271,7 @@ fn a_button_may_have_artwork_of_its_own_per_state() {
 fn layout_css_holds_only_the_placements_that_differ_from_the_sheet() {
     let sheet = ".control-mixer-pan { --suhina-anchor-bottom: mixer-toggles top 6px; }\n\
                  .control-mixer-name { width: 80px; }";
-    let (from_sheet, _) = crate::kit::theme::from_sheet(sheet, "");
+    let (from_sheet, _) = crate::kit::theme::from_css(sheet);
     let mut moved = from_sheet.clone();
     let mut name = moved.skin.controls["mixer-name"];
     name.set_offset(egui::vec2(0.0, 8.0));

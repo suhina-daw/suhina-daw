@@ -7,7 +7,7 @@
 use serde_json::{Value, json};
 use suhina_model::{FollowAction, FollowKind};
 
-use crate::commands::{Args, column_index, scene_index};
+use crate::commands::{Args, column_index, scene_id, scene_index};
 use crate::{CommandError, Session};
 
 /// The parameter list of `clip.setFollowAction`, for its errors.
@@ -43,7 +43,7 @@ pub(crate) fn set_follow_action(session: &mut Session, params: &Value) -> Result
     if let Some(clip) = slot.and_then(|s| s.clip.as_mut()) {
         clip.follow_action = follow;
     }
-    Ok(json!({ "scene": scene, "follow_action": describe(&follow) }))
+    Ok(json!({ "scene": scene, "scene_id": scene_id(&session.project, scene), "follow_action": describe(&follow) }))
 }
 
 /// A follow action as commands report it.

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Computer keys that launch slots, scenes and stop buttons, and the mapping mode that sets
-//! them (`docs/spec/ui-session-view.md` › Launch keys). A key down is the press and a key up the
+//! them: the project's controller mappings, made with `mapping.add` and `mapping.remove`
+//! (`docs/spec/ui-session-view.md` › Launch keys, `docs/spec/midi-mapping.md` › Launch keys). A key down is the press and a key up the
 //! release, and both run the command the mouse would ([`suhina_session::mapped_command`]). A
 //! mapped key wins over a shortcut while the Launcher view is shown and no text field has the
 //! keyboard; the window decides that and calls [`LaunchKeys::handle`] only then.
@@ -114,12 +115,12 @@ impl LaunchKeys {
         if event.repeat {
             return Outcome::Taken;
         }
-        let mut params = target_params(target);
+        let mut params = json!({ "target": target_params(target) });
         if matches!(event.key, Key::Delete | Key::Backspace) {
-            actions.push(Action::new("launcher.removeMapping", params));
+            actions.push(Action::new("mapping.remove", params));
         } else if let Some(source) = source {
             params["source"] = json!(source.name());
-            actions.push(Action::new("launcher.addMapping", params));
+            actions.push(Action::new("mapping.add", params));
         } else {
             return Outcome::Pass;
         }
@@ -127,9 +128,10 @@ impl LaunchKeys {
     }
 }
 
-/// The `target`, `track` and `scene` parameters of the mapping commands for `target`.
+/// `target` as the `target` parameter of the `mapping.*` commands: its command, and the track
+/// and scene that command fixes.
 pub fn target_params(target: MappingTarget) -> serde_json::Value {
-    let mut params = json!({ "target": target.kind() });
+    let mut params = json!({ "command": target.command() });
     if let Some(track) = target.track() {
         params["track"] = json!(track.0);
     }
@@ -174,7 +176,7 @@ pub fn overlay(painter: &Painter, rect: Rect, label: Option<&str>, picked: bool,
 mod tests {
     use super::*;
     use suhina_engine::model::{
-        Clip, ContentId, LaunchMapping, LaunchMode, LaunchSettings, LauncherColumn, Scene, Slot, TrackId,
+        Clip, ContentId, ControllerMapping, LaunchMode, LaunchSettings, LauncherColumn, Scene, Slot, TrackId,
     };
 
     /// One column of one slot, its clip in `mode`, and Q mapped to it.
@@ -187,7 +189,7 @@ mod tests {
             .launcher
             .columns
             .push(LauncherColumn { track: TrackId(1), slots: vec![Slot { clip: Some(clip), has_stop: true }] });
-        project.launcher.mappings.push(LaunchMapping {
+        project.controller_mappings.push(ControllerMapping {
             source: MappingSource::key("Q").unwrap(),
             target: MappingTarget::Slot { track: TrackId(1), scene: 0 },
         });
@@ -252,9 +254,10 @@ mod tests {
         keys.pick(MappingTarget::Scene { scene: 0 });
         assert_eq!(keys.handle(&project, &key(Key::W, true), &mut actions), Outcome::Taken);
         assert_eq!(keys.handle(&project, &key(Key::Delete, true), &mut actions), Outcome::Taken);
-        assert_eq!(ids(&actions), ["launcher.addMapping", "launcher.removeMapping"]);
-        assert_eq!(actions[0].params, json!({ "target": "scene", "scene": 0, "source": "key:W" }));
-        assert_eq!(actions[1].params, json!({ "target": "scene", "scene": 0 }));
+        assert_eq!(ids(&actions), ["mapping.add", "mapping.remove"]);
+        let target = json!({ "command": "scene.launch", "scene": 0 });
+        assert_eq!(actions[0].params, json!({ "target": target, "source": "key:W" }));
+        assert_eq!(actions[1].params, json!({ "target": target }));
         // Picking it again drops it; Escape leaves the mode.
         keys.pick(MappingTarget::Scene { scene: 0 });
         assert_eq!(keys.mode.selected, None);
@@ -267,8 +270,12 @@ mod tests {
     fn targets_give_the_commands_their_parameters() {
         assert_eq!(
             target_params(MappingTarget::Slot { track: TrackId(3), scene: 1 }),
-            json!({ "target": "slot", "track": 3, "scene": 1 })
+            json!({ "command": "clip.launch", "track": 3, "scene": 1 })
         );
-        assert_eq!(target_params(MappingTarget::Stop { track: TrackId(3) }), json!({ "target": "stop", "track": 3 }));
+        assert_eq!(target_params(MappingTarget::Scene { scene: 2 }), json!({ "command": "scene.launch", "scene": 2 }));
+        assert_eq!(
+            target_params(MappingTarget::Stop { track: TrackId(3) }),
+            json!({ "command": "track.stop", "track": 3 })
+        );
     }
 }

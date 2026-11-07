@@ -88,7 +88,6 @@ fn per_track_clip_project_validates() {
             takes: Vec::new(),
         },
         launcher: Launcher {
-            mappings: Vec::new(),
             scenes: vec![Scene::default(), Scene::default()],
             columns: vec![LauncherColumn {
                 track: TrackId(1),

@@ -62,6 +62,12 @@ impl Place {
             Self::Recent(Some(Group::Projects) | None) | Self::Pinned | Self::Folder(_) => None,
         }
     }
+
+    /// Whether the place can hold samples, so the list can show as the sample map (#862): a
+    /// folder, Pinned, and Recent of every kind or of samples.
+    pub fn holds_samples(&self) -> bool {
+        matches!(self, Self::Folder(_) | Self::Pinned | Self::Recent(None | Some(Group::Samples)))
+    }
 }
 
 /// How the results area shows what was found.
@@ -1048,9 +1054,18 @@ pub fn duration_text(seconds: f64) -> String {
     if !seconds.is_finite() || seconds < 0.0 {
         return String::new();
     }
+    // Under a minute the text shows tenths: round to them first, so 59.97 s reads 1:00, not
+    // 0:60.0. From a minute on it shows whole seconds, floored.
+    if seconds < 60.0 {
+        let tenths = (seconds * 10.0).round() / 10.0;
+        if tenths < 60.0 {
+            return format!("0:{tenths:04.1}");
+        }
+        return "1:00".into();
+    }
     let minutes = (seconds / 60.0).floor();
     let rest = seconds - minutes * 60.0;
-    if seconds < 60.0 { format!("0:{rest:04.1}") } else { format!("{}:{:02}", minutes as u64, rest.floor() as u64) }
+    format!("{}:{:02}", minutes as u64, rest.floor() as u64)
 }
 
 #[cfg(test)]

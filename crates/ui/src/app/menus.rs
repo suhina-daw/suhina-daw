@@ -193,9 +193,8 @@ mod tests {
             for shape in &output.shapes {
                 // Red, faded while the menu opens.
                 if let egui::Shape::Rect(rect) = &shape.shape
-                    && rect.fill.r() > 0
-                    && rect.fill.g() == 0
-                    && rect.fill.b() == 0
+                    && let [r, 0, 0, _] = rect.fill.to_array()
+                    && r > 0
                 {
                     biggest = biggest.max(rect.rect.area());
                 }

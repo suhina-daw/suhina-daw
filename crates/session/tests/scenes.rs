@@ -54,7 +54,6 @@ fn project_built() -> Project {
                 LauncherColumn { track: TrackId(1), slots: vec![slot(Some(1)), slot(Some(2))] },
                 LauncherColumn { track: TrackId(2), slots: vec![slot(None), slot(Some(3))] },
             ],
-            mappings: Default::default(),
         },
         ..Project::default()
     }
@@ -133,7 +132,7 @@ fn a_scene_is_renamed_and_given_a_tempo_and_time_signature() {
     let id = session.project().launcher.scenes[0].id.0;
     assert_eq!(
         grid["scenes"][0],
-        json!({ "scene": 0, "id": id, "name": "Verse", "tempo_bpm": 96.5, "time_signature": "7/8" })
+        json!({ "scene": 0, "id": id, "scene_id": id, "name": "Verse", "tempo_bpm": 96.5, "time_signature": "7/8" })
     );
     // Leaving the values out clears them; an empty name clears the name.
     run(&mut session, "scene.setTempo", json!({ "scene": 0 })).unwrap();
@@ -176,6 +175,92 @@ fn malformed_scene_parameters_are_refused_and_change_nothing() {
     for (id, params) in bad {
         assert!(run(&mut session, id, params.clone()).is_err(), "{id} {params} was accepted");
     }
+    assert_eq!(session.project(), &project());
+    assert!(!session.can_undo());
+}
+
+/// The id of the scene named `name`.
+fn scene_id_of(session: &Session, name: &str) -> u32 {
+    session.project().launcher.scenes.iter().find(|s| s.name == name).unwrap().id.0
+}
+
+#[test]
+fn a_scene_named_by_its_id_is_found_where_it_has_moved() {
+    let mut session = Session::new(project());
+    let drop = scene_id_of(&session, "Drop");
+    // Scenes inserted before it move Drop down; its id still names it.
+    let inserted = run(&mut session, "scene.insert", json!({ "scene": 0, "name": "Count" })).unwrap();
+    assert_eq!(inserted["scene_id"], scene_id_of(&session, "Count"));
+    let renamed = run(&mut session, "scene.rename", json!({ "scene": { "id": drop }, "name": "Chorus" })).unwrap();
+    assert_eq!(renamed["scene"], 2);
+    assert_eq!(renamed["scene_id"], drop);
+    assert_eq!(names(&session), ["Count", "Intro", "Chorus"]);
+    // Every command that takes a scene takes the id: a clip's slot by scene, a launch, a move.
+    let tempo = run(&mut session, "scene.setTempo", json!({ "scene": { "id": drop }, "bpm": 128 })).unwrap();
+    assert_eq!((tempo["scene"].clone(), tempo["scene_id"].clone()), (json!(2), json!(drop)));
+    let notes = run(&mut session, "note.list", json!({ "track": 1, "scene": { "id": drop } })).unwrap();
+    assert_eq!(notes.as_array().map(Vec::len), Some(1));
+    let created = run(&mut session, "clip.create", json!({ "track": 2, "scene": 0 })).unwrap();
+    assert_eq!(created["scene_id"], scene_id_of(&session, "Count"));
+    let intro = scene_id_of(&session, "Intro");
+    let moved =
+        run(&mut session, "clip.moveSlot", json!({ "track": 2, "scene": 0, "toScene": { "id": intro } })).unwrap();
+    assert_eq!((moved["scene"].clone(), moved["scene_id"].clone()), (json!(1), json!(intro)));
+    // Inserting before a scene named by id puts the new one in its place.
+    let before = run(&mut session, "scene.insert", json!({ "scene": { "id": drop }, "name": "Break" })).unwrap();
+    assert_eq!(before["scene"], 2);
+    assert_eq!(names(&session), ["Count", "Intro", "Break", "Chorus"]);
+    // project.launcher gives each slot's scene id beside its number.
+    let grid = run(&mut session, "project.launcher", json!({})).unwrap();
+    assert_eq!(grid["tracks"][0]["slots"][3]["scene"], 3);
+    assert_eq!(grid["tracks"][0]["slots"][3]["scene_id"], drop);
+    assert_eq!(grid["scenes"][3]["scene_id"], drop);
+    // A deleted scene's id names nothing.
+    let deleted = run(&mut session, "scene.delete", json!({ "scene": { "id": drop } })).unwrap();
+    assert_eq!((deleted["deleted"].clone(), deleted["scene_id"].clone()), (json!(3), json!(drop)));
+    let err = run(&mut session, "scene.rename", json!({ "scene": { "id": drop }, "name": "X" })).unwrap_err();
+    assert!(err.contains(&format!("no scene has id {drop}")), "{err}");
+}
+
+/// The clip commands that name a slot by scene take the scene's id as well as its number.
+#[test]
+fn the_clip_commands_take_a_scene_by_its_id() {
+    let mut session = Session::new(project());
+    let drop = scene_id_of(&session, "Drop");
+    run(&mut session, "scene.insert", json!({ "scene": 0, "name": "Count" })).unwrap();
+    let by_id = json!({ "id": drop });
+    run(&mut session, "clip.copy", json!({ "track": 1, "scene": by_id })).unwrap();
+    run(&mut session, "clip.paste", json!({ "track": 2, "scene": by_id })).unwrap();
+    assert!(session.project().launcher.columns[1].slots[2].clip.is_some());
+    // The scene is found; the clip there is a MIDI clip, which has no fades.
+    let err = run(&mut session, "clip.setFades", json!({ "track": 1, "scene": by_id, "in": 0 })).unwrap_err();
+    assert!(err.contains("only an audio clip"), "{err}");
+    let deleted = run(&mut session, "clip.delete", json!({ "track": 2, "scene": by_id })).unwrap();
+    assert_eq!(deleted["deleted"], 2);
+    assert!(session.project().launcher.columns[1].slots[2].clip.is_none());
+}
+
+#[test]
+fn malformed_scene_ids_are_refused_and_change_nothing() {
+    let mut session = Session::new(project());
+    let bad = [
+        ("scene.rename", json!({ "scene": { "id": 999 }, "name": "X" })),
+        ("scene.rename", json!({ "scene": { "id": 0 }, "name": "X" })),
+        ("scene.rename", json!({ "scene": { "id": -1 }, "name": "X" })),
+        ("scene.rename", json!({ "scene": { "id": "1" }, "name": "X" })),
+        ("scene.rename", json!({ "scene": {}, "name": "X" })),
+        ("scene.insert", json!({ "scene": { "id": 999 } })),
+        ("scene.delete", json!({ "scene": { "id": 4_294_967_296_u64 } })),
+        ("note.list", json!({ "track": 1, "scene": { "id": 999 } })),
+        ("clip.moveSlot", json!({ "track": 1, "scene": 0, "toScene": { "id": 999 } })),
+        ("clip.create", json!({ "track": 2, "scene": { "id": 999 } })),
+    ];
+    for (id, params) in bad {
+        let err = run(&mut session, id, params.clone());
+        assert!(err.is_err(), "{id} {params} was accepted");
+    }
+    let err = run(&mut session, "scene.rename", json!({ "scene": { "id": 999 }, "name": "X" })).unwrap_err();
+    assert!(err.contains("no scene has id 999"), "{err}");
     assert_eq!(session.project(), &project());
     assert!(!session.can_undo());
 }

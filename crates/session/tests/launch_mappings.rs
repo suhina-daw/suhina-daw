@@ -1,10 +1,10 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Keys and MIDI notes mapped to slots, scenes and stop buttons (`launcher.addMapping`,
-//! `launcher.removeMapping`, `launcher.mappings`), and the commands their presses and releases
-//! run, through a real renderer rendered offline (`docs/spec/clip-launching.md` › Launching from
-//! keys and notes).
+//! Keys and MIDI notes mapped to slots, scenes and stop buttons, the project's controller
+//! mappings (`mapping.add`, `mapping.remove`, `mapping.list`), and the commands their presses and
+//! releases run, through a real renderer rendered offline (`docs/spec/midi-mapping.md` › Launch
+//! keys, `docs/spec/clip-launching.md` › Launching from keys and notes).
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
 
 use serde_json::{Value, json};
@@ -47,7 +47,6 @@ fn project_built() -> Project {
         channels: vec![channel(1), channel(2)],
         contents: vec![content(1), content(2)],
         launcher: Launcher {
-            mappings: Vec::new(),
             scenes: vec![Scene::default(), Scene::default()],
             columns: vec![
                 LauncherColumn {
@@ -102,76 +101,142 @@ fn mappings_are_edits_with_undo_and_are_listed() {
     let mut session = Session::new(project());
     let added = run(
         &mut session,
-        "launcher.addMapping",
-        json!({ "source": "key:Q", "target": "slot", "track": "Drums", "scene": 0 }),
+        "mapping.add",
+        json!({ "source": "key:Q", "target": { "command": "clip.launch", "track": "Drums", "scene": 0 } }),
     )
     .unwrap();
-    assert_eq!(added["command"], "clip.launch");
-    assert_eq!((&added["track"], &added["scene"]), (&json!(1), &json!(0)));
-    run(&mut session, "launcher.addMapping", json!({ "source": "note:10:36", "target": "scene", "scene": 1 })).unwrap();
-    run(&mut session, "launcher.addMapping", json!({ "source": "key:Space", "target": "stop", "track": 2 })).unwrap();
-    let list = run(&mut session, "launcher.mappings", json!({})).unwrap();
+    assert_eq!(added["target"], json!({ "command": "clip.launch", "track": 1, "scene": 0 }));
+    assert_eq!((&added["index"], &added["release"]), (&json!(0), &json!("clip.release")));
+    // A scene by its id, as every command takes one (#1156).
+    let second = session.project().launcher.scenes[1].id.0;
+    run(
+        &mut session,
+        "mapping.add",
+        json!({ "source": "note:10:36", "target": { "command": "scene.launch", "scene": { "id": second } } }),
+    )
+    .unwrap();
+    run(
+        &mut session,
+        "mapping.add",
+        json!({ "source": "key:Space", "target": { "command": "track.stop", "track": 2 } }),
+    )
+    .unwrap();
+    let list = run(&mut session, "mapping.list", json!({})).unwrap();
+    let scene_id = |i: usize| session.project().launcher.scenes[i].id.0;
     assert_eq!(
         list["mappings"],
         json!([
-            { "source": "key:Q", "label": "Q", "target": "slot", "command": "clip.launch", "track": 1, "scene": 0, "broken": false },
-            { "source": "note:10:36", "label": "Ch 10 Note 36", "target": "scene", "command": "scene.launch", "scene": 1, "broken": false },
-            { "source": "key:Space", "label": "Space", "target": "stop", "command": "track.stop", "track": 2, "broken": false },
+            { "index": 0, "source": "key:Q", "label": "Q", "target": { "command": "clip.launch", "track": 1, "scene": 0 }, "scene_id": scene_id(0), "release": "clip.release", "broken": false },
+            { "index": 1, "source": "note:10:36", "label": "Ch 10 Note 36", "target": { "command": "scene.launch", "scene": 1 }, "scene_id": scene_id(1), "broken": false },
+            { "index": 2, "source": "key:Space", "label": "Space", "target": { "command": "track.stop", "track": 2 }, "broken": false },
         ])
     );
+    // What the list gives as a target is what mapping.add and mapping.remove take.
+    let target = list["mappings"][1]["target"].clone();
+    assert!(run(&mut session, "mapping.add", json!({ "source": "key:T", "target": target })).is_ok());
+    run(&mut session, "edit.undo", json!({})).unwrap();
 
     // A source mapped again moves to its new target; it stays one mapping.
-    let moved =
-        run(&mut session, "launcher.addMapping", json!({ "source": "key:Q", "target": "scene", "scene": 0 })).unwrap();
-    assert_eq!(moved["replaced"], "slot");
-    assert_eq!(session.project().launcher.mappings.len(), 3);
-    assert_eq!(session.project().launcher.mappings[0].target, MappingTarget::Scene { scene: 0 });
+    let moved = run(
+        &mut session,
+        "mapping.add",
+        json!({ "source": "key:Q", "target": { "command": "scene.launch", "scene": 0 } }),
+    )
+    .unwrap();
+    assert_eq!(moved["replaced"], json!({ "command": "clip.launch", "track": 1, "scene": 0 }));
+    assert_eq!(moved["index"], 0);
+    assert_eq!(session.project().controller_mappings.len(), 3);
+    assert_eq!(session.project().controller_mappings[0].target, MappingTarget::Scene { scene: 0 });
 
-    // Removing by source, and every mapping of a target.
-    run(&mut session, "launcher.addMapping", json!({ "source": "key:W", "target": "stop", "track": 2 })).unwrap();
-    let removed = run(&mut session, "launcher.removeMapping", json!({ "target": "stop", "track": "Bass" })).unwrap();
-    assert_eq!(removed["removed"].as_array().unwrap().len(), 2);
-    run(&mut session, "launcher.removeMapping", json!({ "source": "note:10:36" })).unwrap();
-    assert_eq!(session.project().launcher.mappings.len(), 1);
+    // Removing every mapping of a target, by source, and by index.
+    run(&mut session, "mapping.add", json!({ "source": "key:W", "target": { "command": "track.stop", "track": 2 } }))
+        .unwrap();
+    let removed =
+        run(&mut session, "mapping.remove", json!({ "target": { "command": "track.stop", "track": "Bass" } })).unwrap();
+    let indices: Vec<&Value> = removed["removed"].as_array().unwrap().iter().map(|m| &m["index"]).collect();
+    assert_eq!(indices, [&json!(2), &json!(3)]);
+    run(&mut session, "mapping.remove", json!({ "source": "note:10:36" })).unwrap();
+    assert_eq!(session.project().controller_mappings.len(), 1);
+    let removed = run(&mut session, "mapping.remove", json!({ "index": 0 })).unwrap();
+    assert_eq!(removed["removed"][0]["source"], "key:Q");
+    assert!(session.project().controller_mappings.is_empty());
 
     // One undo step each.
     run(&mut session, "edit.undo", json!({})).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project().launcher.mappings.len(), 4);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project().controller_mappings.len(), 4);
     for _ in 0..5 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
-    assert!(session.project().launcher.mappings.is_empty());
+    assert!(session.project().controller_mappings.is_empty());
     assert!(!session.can_undo());
+}
+
+#[test]
+fn the_launcher_mapping_commands_are_gone() {
+    let mut session = Session::new(project());
+    for id in ["launcher.addMapping", "launcher.removeMapping", "launcher.mappings"] {
+        assert!(suhina_session::commands().iter().all(|c| c.id != id), "{id}");
+        assert!(run(&mut session, id, json!({})).is_err(), "{id}");
+    }
 }
 
 #[test]
 fn malformed_mappings_are_errors_and_change_nothing() {
     let mut session = Session::new(project());
-    run(&mut session, "launcher.addMapping", json!({ "source": "key:Q", "target": "scene", "scene": 0 })).unwrap();
+    run(&mut session, "mapping.add", json!({ "source": "key:Q", "target": { "command": "scene.launch", "scene": 0 } }))
+        .unwrap();
     let before = session.project().clone();
+    let scene = |scene: Value| json!({ "command": "scene.launch", "scene": scene });
     let bad = [
-        ("launcher.addMapping", json!({ "source": "Q", "target": "scene", "scene": 99 })),
-        ("launcher.addMapping", json!({ "source": "key:", "target": "scene", "scene": 99 })),
-        ("launcher.addMapping", json!({ "source": "key:two words", "target": "scene", "scene": 99 })),
-        ("launcher.addMapping", json!({ "source": "note:0:60", "target": "scene", "scene": 99 })),
-        ("launcher.addMapping", json!({ "source": "note:1:128", "target": "scene", "scene": 99 })),
-        ("launcher.addMapping", json!({ "source": 5, "target": "scene", "scene": 99 })),
-        ("launcher.addMapping", json!({ "source": "key:W", "target": "pad", "scene": 99 })),
-        ("launcher.addMapping", json!({ "source": "key:W" })),
-        ("launcher.addMapping", json!({ "source": "key:W", "target": "scene" })),
-        ("launcher.addMapping", json!({ "source": "key:W", "target": "scene", "scene": 2 })),
-        ("launcher.addMapping", json!({ "source": "key:W", "target": "scene", "scene": 99 })),
-        ("launcher.addMapping", json!({ "source": "key:W", "target": "scene", "scene": u64::MAX })),
-        ("launcher.addMapping", json!({ "source": "key:W", "target": "slot", "scene": 99 })),
-        ("launcher.addMapping", json!({ "source": "key:W", "target": "slot", "track": "Nope", "scene": 99 })),
-        ("launcher.addMapping", json!({ "source": "key:W", "target": "stop" })),
-        ("launcher.addMapping", json!({ "source": "key:W", "target": "stop", "track": 1, "extra": 1 })),
-        ("launcher.removeMapping", json!({})),
-        ("launcher.removeMapping", json!({ "source": "key:W" })),
-        ("launcher.removeMapping", json!({ "source": "key:Q", "target": "scene", "scene": 99 })),
-        ("launcher.removeMapping", json!({ "target": "scene", "scene": 1 })),
-        ("launcher.removeMapping", json!({ "source": "bad" })),
+        ("mapping.add", json!({ "source": "Q", "target": scene(json!(1)) })),
+        ("mapping.add", json!({ "source": "key:", "target": scene(json!(1)) })),
+        ("mapping.add", json!({ "source": "key:two words", "target": scene(json!(1)) })),
+        ("mapping.add", json!({ "source": "note:0:60", "target": scene(json!(1)) })),
+        ("mapping.add", json!({ "source": "note:1:128", "target": scene(json!(1)) })),
+        ("mapping.add", json!({ "source": "cc:1:20", "target": scene(json!(1)) })),
+        ("mapping.add", json!({ "source": 5, "target": scene(json!(1)) })),
+        ("mapping.add", json!({ "source": "key:W" })),
+        ("mapping.add", json!({ "target": scene(json!(1)) })),
+        // The target: not an object, an old kind's name, no command, a command that is not a
+        // launch command, a parameter missing, one the command does not take.
+        ("mapping.add", json!({ "source": "key:W", "target": "scene", "scene": 1 })),
+        ("mapping.add", json!({ "source": "key:W", "target": "scene" })),
+        ("mapping.add", json!({ "source": "key:W", "target": 3 })),
+        ("mapping.add", json!({ "source": "key:W", "target": {} })),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": 5, "scene": 1 } })),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": "slot", "track": 1, "scene": 1 } })),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": "track.setVolume", "track": 1 } })),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": "scene.launch" } })),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": "scene.launch", "scene": null } })),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": "scene.launch", "scene": 1, "track": 1 } })),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": "clip.launch", "scene": 1 } })),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": "clip.launch", "track": 1 } })),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": "track.stop" } })),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": "track.stop", "track": 1, "extra": 1 } })),
+        ("mapping.add", json!({ "source": "key:W", "target": scene(json!(1)), "extra": 1 })),
+        // What the target names does not exist.
+        ("mapping.add", json!({ "source": "key:W", "target": scene(json!(2)) })),
+        ("mapping.add", json!({ "source": "key:W", "target": scene(json!(u64::MAX)) })),
+        ("mapping.add", json!({ "source": "key:W", "target": scene(json!(-1)) })),
+        ("mapping.add", json!({ "source": "key:W", "target": scene(json!({ "id": 999 })) })),
+        ("mapping.add", json!({ "source": "key:W", "target": scene(json!("1")) })),
+        (
+            "mapping.add",
+            json!({ "source": "key:W", "target": { "command": "clip.launch", "track": "Nope", "scene": 0 } }),
+        ),
+        ("mapping.add", json!({ "source": "key:W", "target": { "command": "track.stop", "track": 99 } })),
+        ("mapping.remove", json!({})),
+        ("mapping.remove", json!({ "source": "key:W" })),
+        ("mapping.remove", json!({ "source": "bad" })),
+        ("mapping.remove", json!({ "source": "key:Q", "target": scene(json!(0)) })),
+        ("mapping.remove", json!({ "source": "key:Q", "index": 0 })),
+        ("mapping.remove", json!({ "target": scene(json!(1)) })),
+        ("mapping.remove", json!({ "target": scene(json!(99)) })),
+        ("mapping.remove", json!({ "index": 1 })),
+        ("mapping.remove", json!({ "index": -1 })),
+        ("mapping.remove", json!({ "index": "0" })),
     ];
     for (id, params) in bad {
         assert!(run(&mut session, id, params.clone()).is_err(), "{id} {params}");
@@ -184,27 +249,27 @@ fn malformed_mappings_are_errors_and_change_nothing() {
 fn a_project_keeps_at_most_max_mappings() {
     let mut session = Session::new(project());
     let mut project = session.project().clone();
-    project.launcher.mappings = (0..MAX_MAPPINGS)
-        .map(|i| LaunchMapping {
+    project.controller_mappings = (0..MAX_MAPPINGS)
+        .map(|i| ControllerMapping {
             source: MappingSource::note(1 + (i / 128) as u8, (i % 128) as u8).unwrap(),
             target: MappingTarget::Scene { scene: 0 },
         })
         .collect();
     session = Session::new(project);
-    let err = run(&mut session, "launcher.addMapping", json!({ "source": "key:Q", "target": "scene", "scene": 0 }))
-        .unwrap_err();
+    let scene = |n: usize| json!({ "command": "scene.launch", "scene": n });
+    let err = run(&mut session, "mapping.add", json!({ "source": "key:Q", "target": scene(0) })).unwrap_err();
     assert!(err.contains("at most"), "{err}");
     // A source already mapped still moves.
-    run(&mut session, "launcher.addMapping", json!({ "source": "note:1:0", "target": "scene", "scene": 1 })).unwrap();
+    run(&mut session, "mapping.add", json!({ "source": "note:1:0", "target": scene(1) })).unwrap();
 }
 
 #[test]
 fn presses_and_releases_run_the_commands_the_mouse_runs() {
     let mut session = Session::new(project());
-    let add = |session: &mut Session, params: Value| run(session, "launcher.addMapping", params).unwrap();
-    add(&mut session, json!({ "source": "key:Q", "target": "slot", "track": 1, "scene": 0 }));
-    add(&mut session, json!({ "source": "key:1", "target": "scene", "scene": 1 }));
-    add(&mut session, json!({ "source": "note:1:36", "target": "stop", "track": 2 }));
+    let add = |session: &mut Session, params: Value| run(session, "mapping.add", params).unwrap();
+    add(&mut session, json!({ "source": "key:Q", "target": { "command": "clip.launch", "track": 1, "scene": 0 } }));
+    add(&mut session, json!({ "source": "key:1", "target": { "command": "scene.launch", "scene": 1 } }));
+    add(&mut session, json!({ "source": "note:1:36", "target": { "command": "track.stop", "track": 2 } }));
     let p = session.project();
     assert_eq!(mapped_command(p, &key("Q"), true), Some(("clip.launch", json!({ "track": 1, "scene": 0 }))));
     // A trigger clip does not listen for its release.
@@ -228,15 +293,47 @@ fn presses_and_releases_run_the_commands_the_mouse_runs() {
 #[test]
 fn a_mapping_whose_track_is_gone_is_kept_unused_and_undo_brings_it_back() {
     let mut session = Session::new(project());
-    run(&mut session, "launcher.addMapping", json!({ "source": "key:Q", "target": "slot", "track": 2, "scene": 1 }))
-        .unwrap();
+    run(
+        &mut session,
+        "mapping.add",
+        json!({ "source": "key:Q", "target": { "command": "clip.launch", "track": 2, "scene": 1 } }),
+    )
+    .unwrap();
     run(&mut session, "track.delete", json!({ "track": "Bass" })).unwrap();
-    assert_eq!(session.project().launcher.mappings.len(), 1);
+    assert_eq!(session.project().controller_mappings.len(), 1);
     assert_eq!(mapped_command(session.project(), &key("Q"), true), None);
-    let list = run(&mut session, "launcher.mappings", json!({})).unwrap();
+    let list = run(&mut session, "mapping.list", json!({})).unwrap();
     assert_eq!(list["mappings"][0]["broken"], true);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(mapped_command(session.project(), &key("Q"), true).map(|(id, _)| id), Some("clip.launch"));
+}
+
+/// A mapping stays on its scene when scenes are inserted, duplicated or deleted before it; one on
+/// a deleted scene goes with it, and undo brings it back.
+#[test]
+fn a_mapping_follows_its_scene_when_scenes_are_inserted_or_deleted() {
+    let mut session = Session::new(project());
+    let add = |session: &mut Session, source: &str, target: Value| {
+        run(session, "mapping.add", json!({ "source": source, "target": target })).unwrap();
+    };
+    add(&mut session, "key:Q", json!({ "command": "clip.launch", "track": 2, "scene": 1 }));
+    add(&mut session, "key:W", json!({ "command": "scene.launch", "scene": 0 }));
+    add(&mut session, "key:E", json!({ "command": "track.stop", "track": 1 }));
+    let at = |session: &Session, source: &str| {
+        let mappings = &session.project().controller_mappings;
+        mappings.iter().find(|m| m.source.name() == source).and_then(|m| m.target.scene())
+    };
+    run(&mut session, "scene.insert", json!({ "scene": 0 })).unwrap();
+    assert_eq!((at(&session, "key:Q"), at(&session, "key:W"), at(&session, "key:E")), (Some(2), Some(1), None));
+    run(&mut session, "scene.duplicate", json!({ "scene": 1 })).unwrap();
+    assert_eq!((at(&session, "key:Q"), at(&session, "key:W")), (Some(3), Some(1)));
+    run(&mut session, "scene.delete", json!({ "scene": 0 })).unwrap();
+    assert_eq!((at(&session, "key:Q"), at(&session, "key:W")), (Some(2), Some(0)));
+    run(&mut session, "scene.delete", json!({ "scene": 0 })).unwrap();
+    assert_eq!(at(&session, "key:Q"), Some(1));
+    assert_eq!(at(&session, "key:W"), None, "a mapping on a deleted scene goes with it");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(at(&session, "key:W"), Some(0));
 }
 
 #[test]
@@ -244,10 +341,20 @@ fn a_held_key_plays_a_gate_clip_and_its_release_stops_it() {
     let (mut session, mut renderer) = playing();
     run(&mut session, "clip.setLaunchMode", json!({ "track": "Drums", "scene": 0, "mode": "gate" })).unwrap();
     run(&mut session, "clip.setQuantization", json!({ "track": "Drums", "scene": 0, "value": "none" })).unwrap();
-    run(&mut session, "launcher.addMapping", json!({ "source": "key:Q", "target": "slot", "track": 1, "scene": 0 }))
+    run(
+        &mut session,
+        "mapping.add",
+        json!({ "source": "key:Q", "target": { "command": "clip.launch", "track": 1, "scene": 0 } }),
+    )
+    .unwrap();
+    run(
+        &mut session,
+        "mapping.add",
+        json!({ "source": "note:1:60", "target": { "command": "scene.launch", "scene": 1 } }),
+    )
+    .unwrap();
+    run(&mut session, "mapping.add", json!({ "source": "key:S", "target": { "command": "track.stop", "track": 2 } }))
         .unwrap();
-    run(&mut session, "launcher.addMapping", json!({ "source": "note:1:60", "target": "scene", "scene": 1 })).unwrap();
-    run(&mut session, "launcher.addMapping", json!({ "source": "key:S", "target": "stop", "track": 2 })).unwrap();
 
     assert_eq!(press(&mut session, &key("Q"), true), Some("clip.launch"));
     advance(&mut renderer, BEAT);

@@ -53,7 +53,6 @@ pub(crate) fn project((region, audio): Source, length: f64, fade_in: f64, fade_o
             takes: Vec::new(),
         },
         launcher: Launcher {
-            mappings: Vec::new(),
             scenes: vec![Scene::default()],
             columns: vec![LauncherColumn { track: TrackId(1), slots: vec![Slot { clip: Some(clip), has_stop: true }] }],
         },

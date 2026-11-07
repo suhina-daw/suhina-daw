@@ -1,0 +1,7 @@
+{
+  "name": "Frost",
+  "values": {
+    "--ground": "#D6E6EE",
+    "--tint": "#0F6C8E"
+  }
+}

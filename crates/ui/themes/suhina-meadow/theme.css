@@ -1,0 +1,143 @@
+/* Suhina Meadow, reduced to a few settings: most colours below follow them. */
+@property --paper { syntax: "<color>"; initial-value: #ECE9D8; label: "Paper"; group: "Colours"; }
+@property --tint { syntax: "<color>"; initial-value: #316AC5; label: "Accent"; group: "Colours"; }
+@property --glassiness { syntax: "<integer>"; initial-value: 48; label: "Glassiness"; group: "Material"; range: 0 90; step: 1; }
+@property --panel-clear { syntax: "<integer>"; initial-value: 15; label: "Panel transparency"; group: "Material"; range: 0 90; step: 1; }
+@property --browser-clear { syntax: "<integer>"; initial-value: 40; label: "Browser transparency"; group: "Material"; range: 0 90; step: 1; }
+:root {
+  --accent: var(--tint);
+  --background-image: url("background.png");
+  --background-opacity: 100;
+  --border: color-mix(in oklab, var(--paper), black 21.7%);
+  --border-strong: #7F9DB9;
+  --browser-text-hint: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 2%), black 42.9%);
+  --browser-text-primary: color-mix(in oklab, white, black 79.4%);
+  --browser-text-secondary: color-mix(in oklab, white, black 63.1%);
+  --browser-text-value: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 79.2%), black 54.2%);
+  --clip-audioDefault: #C99070;
+  --clip-midiDefault: #83A9B4;
+  --control-activeBackground: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 65.3%), white 63.6%);
+  --control-background: color-mix(in oklab, var(--paper), white 46.3%);
+  --control-hoverBackground: #FFF9D9;
+  --control-playingBackground: #D1E5BE;
+  --control-selectedBackground: var(--tint);
+  --grid-major: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 0.6%), black 16.7%);
+  --grid-minor: color-mix(in oklab, color-mix(in oklab, var(--paper), white 32.8%), black 6.7%);
+  --kind-bass: #A84F4F;
+  --kind-clap: #5EC0B0;
+  --kind-closedHat: #C6AC5E;
+  --kind-crash: #E0A0C8;
+  --kind-cymbal: #A497CC;
+  --kind-effect: #9CC49C;
+  --kind-hat: #D8C47A;
+  --kind-kick: #D06E5E;
+  --kind-openHat: #D08F6E;
+  --kind-other: #8A8680;
+  --kind-percussion: #8FC06E;
+  --kind-ride: #C8B8E8;
+  --kind-rim: #8CA8E0;
+  --kind-snare: #73AAC0;
+  --kind-tom: #B074A4;
+  --kind-tonal: #6EB0D0;
+  --kind-vocal: #E8D0A0;
+  --liquid: var(--glassiness) 24 12;
+  --meter-hot: #D4AB26;
+  --meter-normal: #35B52E;
+  --pan-background: white;
+  --pan-centre: color-mix(in oklab, color-mix(in oklab, var(--paper), white 57.9%), black 29.3%);
+  --panel-background: color-mix(in srgb, var(--paper), transparent var(--panel-clear)%);
+  --panel-hoverBackground: #E4E0CB;
+  --recording: #D13D29;
+  --recording-background: #F0D1C6;
+  --selection: #E5A629;
+  --session-header-height: 24px;
+  --session-return-width: 80px;
+  --session-scene-width: 84px;
+  --session-slot-height: 24px;
+  --session-track-width: 92px;
+  --slot-empty: #8E9A99;
+  --text-hint: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 2%), black 42.9%);
+  --text-inverse: white;
+  --text-onColorDark: color-mix(in oklab, white, black 79.8%);
+  --text-onColorLight: white;
+  --text-playing: #10290C;
+  --text-primary: color-mix(in oklab, white, black 79.8%);
+  --text-secondary: color-mix(in oklab, white, black 63.1%);
+  --text-value: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 79.2%), black 54.2%);
+  --track-1: #C99070;
+  --track-2: #D8BA64;
+  --track-3: #83A9B4;
+  --track-4: #A699B8;
+  --track-5: #95AA80;
+  --track-6: #C18F9E;
+  --track-7: #879BBE;
+  --track-8: #80ADA1;
+  --track-headerBackground: var(--paper);
+  --track-headerSelectedBackground: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 60.5%), white 67.2%);
+  --track-mutedBackground: color-mix(in oklab, color-mix(in oklab, var(--paper), white 24%), black 9.5%);
+  --window-background: color-mix(in srgb, white 0.00%, transparent);
+}
+
+/* Copyright (C) 2026 The Suhina contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Original classic desktop / paper theme over an original meadow image.
+ */
+@layer suhina-meadow {
+  .window, .session, .arrangement { background-color: transparent; color: color-mix(in oklab, white, black 79.8%); }
+  .application-bar, .menu-bar, .project-tabs {
+    /* Intentional transparency over this theme's private background PNG. */
+    background-color: transparent;
+    background-image: linear-gradient(color-mix(in srgb, #4293FF 90.20%, transparent), color-mix(in srgb, #1D68E5 85.10%, transparent) 45%, color-mix(in srgb, #0752CF 87.45%, transparent));
+    color: white;
+    border-color: #003CA8;
+  }
+  .toolbar, .status-bar { background-color: color-mix(in srgb, var(--paper), transparent var(--panel-clear)%); color: color-mix(in oklab, white, black 79.8%); }
+  .browser, .detail, .device-panel {
+    background-color: color-mix(in srgb, color-mix(in oklab, var(--paper), white 93.3%), transparent var(--browser-clear)%);
+    color: color-mix(in oklab, white, black 79.8%);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, white 73.33%, transparent), inset -1px 0 0 color-mix(in srgb, white 40.00%, transparent);
+  }
+  .track-header { background-color: transparent; background-image: linear-gradient(color-mix(in srgb, white 53.33%, transparent), color-mix(in srgb, var(--paper) 40.00%, transparent)); }
+  .track-name { background-color: transparent; background-image: linear-gradient(color-mix(in srgb, white 46.67%, transparent), color-mix(in srgb, white 26.67%, transparent)); }
+  .mixer {
+    /* Intentional transparency over this theme's private background PNG. */
+    background-color: transparent;
+    background-image: linear-gradient(120deg, color-mix(in srgb, white 43.92%, transparent), color-mix(in srgb, #DCEAFF 25.10%, transparent));
+    box-shadow: inset 1px 0 0 color-mix(in srgb, white 80.00%, transparent), inset -1px 0 0 color-mix(in srgb, #7F9DB9 46.67%, transparent);
+  }
+  .button { color: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 79.2%), black 54.2%); background-color: var(--paper); border-color: #7F9DB9; border-radius: 2px; }
+  .button:hover { color: #003C74; background-color: #FFF4C9; border-color: #E5A629; }
+  .knob { color: var(--tint); background-color: var(--paper); }
+  .value, .dropdown, .text-input { color: color-mix(in oklab, white, black 79.8%); background-color: white; border-radius: 0px; }
+  .fader-scale { color: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 2.5%), black 48.8%); }
+  .meter { background-color: color-mix(in oklab, var(--paper), white 91.3%); }
+  .meter-vertical .meter-level { background: linear-gradient(to top, #21A92B, #7CCE3E 76%, #E3C02C 91%, #D85430); }
+  .meter-horizontal .meter-level { background: linear-gradient(to right, #21A92B, #7CCE3E 76%, #E3C02C 91%, #D85430); }
+}
+
+/* Control placements. */
+.control-mixer-color { left: 0px; top: 0px; bottom: auto; display: none; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
+.control-mixer-meter { left: -48px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
+.control-mixer-pan { left: 25px; top: 0px; bottom: auto; display: block; right: auto; width: 24px; height: 24px; --suhina-direction: vertical; }
+.control-mixer-volume { left: 18px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
+.control-mixer-volume-readout { left: -24px; top: 0px; bottom: auto; display: block; right: auto; width: 30px; height: auto; --suhina-direction: vertical; }
+.control-mixer-volume-scale { left: -40px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
+.pan { --suhina-appearance: knob; }
+
+/* Artwork. */
+arm { image: url("assets/arm.svg"); }
+button { image: url("assets/button.svg"); }
+cue { image: url("assets/cue.svg"); }
+fader.cap { image: url("assets/fader.cap.svg"); }
+fader.rail { image: url("assets/fader.rail.svg"); }
+knob.body { image: url("assets/knob.body.svg"); }
+knob.pointer { image: url("assets/knob.pointer.svg"); }
+meter { image: url("assets/meter.svg"); }
+play { image: url("assets/play.svg"); }
+record { image: url("assets/record.svg"); }
+solo { image: url("assets/solo.svg"); }
+stop { image: url("assets/stop.svg"); }
+track.audio { image: url("assets/track.audio.svg"); }
+track.body { image: url("assets/track.body.svg"); }
+track.midi { image: url("assets/track.midi.svg"); }
+track.name { image: url("assets/track.name.svg"); }

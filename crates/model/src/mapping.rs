@@ -1,13 +1,18 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Launch mappings: a computer key or a MIDI note that launches a slot, a scene or a track's stop
-//! button (`docs/spec/clip-launching.md` › Launching from keys and notes).
+//! Controller mappings: a source (a computer key or a MIDI note) that runs a target command. The
+//! targets built so far are the launch commands, a slot, a scene or a track's stop button
+//! (`docs/spec/midi-mapping.md` › Launch keys, `docs/spec/clip-launching.md` › Launching from keys
+//! and notes).
 
 use crate::TrackId;
 
 /// The longest key name a mapping keeps.
 pub const KEY_NAME_MAX: usize = 24;
+
+/// The most mappings a project keeps, so a script or a file cannot grow the project without bound.
+pub const MAX_MAPPINGS: usize = 1024;
 
 /// What a mapping listens to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -58,7 +63,8 @@ impl MappingSource {
     }
 }
 
-/// What a mapping launches. Scenes count from 0, like [`crate::Launcher::scenes`].
+/// What a mapping runs: a launch command and the parameters it fixes. Scenes count from 0, like
+/// [`crate::Launcher::scenes`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MappingTarget {
     /// The slot of `track` in `scene`: the press is `clip.launch`, the release `clip.release`.
@@ -70,12 +76,28 @@ pub enum MappingTarget {
 }
 
 impl MappingTarget {
-    /// The kind as the commands and the project file write it.
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Self::Slot { .. } => "slot",
-            Self::Scene { .. } => "scene",
-            Self::Stop { .. } => "stop",
+    /// The commands a target can name, as the commands and the project file write them.
+    pub const COMMANDS: [&'static str; 3] = ["clip.launch", "scene.launch", "track.stop"];
+
+    /// The parameters `command` takes beside itself, `track` and `scene`; `None` when it is not
+    /// one of [`MappingTarget::COMMANDS`].
+    pub fn takes(command: &str) -> Option<&'static [&'static str]> {
+        match command {
+            "clip.launch" => Some(&["track", "scene"]),
+            "scene.launch" => Some(&["scene"]),
+            "track.stop" => Some(&["track"]),
+            _ => None,
+        }
+    }
+
+    /// The target that runs `command` with `track` and `scene`, when the command is one of
+    /// [`MappingTarget::COMMANDS`] and the parameters it needs are given; `None` otherwise.
+    pub fn from_command(command: &str, track: Option<TrackId>, scene: Option<usize>) -> Option<Self> {
+        match command {
+            "clip.launch" => Some(Self::Slot { track: track?, scene: scene? }),
+            "scene.launch" => Some(Self::Scene { scene: scene? }),
+            "track.stop" => Some(Self::Stop { track: track? }),
+            _ => None,
         }
     }
 
@@ -103,9 +125,10 @@ impl MappingTarget {
     }
 }
 
-/// One source that launches one target. A project keeps at most one mapping per source.
+/// One source that runs one target, an entry of [`crate::Project::controller_mappings`]. A project
+/// keeps at most one mapping per source.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LaunchMapping {
+pub struct ControllerMapping {
     pub source: MappingSource,
     pub target: MappingTarget,
 }
@@ -157,19 +180,44 @@ mod tests {
     #[test]
     fn targets_name_their_command() {
         let slot = MappingTarget::Slot { track: TrackId(2), scene: 1 };
-        assert_eq!(
-            (slot.kind(), slot.command(), slot.track(), slot.scene()),
-            ("slot", "clip.launch", Some(TrackId(2)), Some(1))
-        );
+        assert_eq!((slot.command(), slot.track(), slot.scene()), ("clip.launch", Some(TrackId(2)), Some(1)));
         let scene = MappingTarget::Scene { scene: 3 };
-        assert_eq!(
-            (scene.kind(), scene.command(), scene.track(), scene.scene()),
-            ("scene", "scene.launch", None, Some(3))
-        );
+        assert_eq!((scene.command(), scene.track(), scene.scene()), ("scene.launch", None, Some(3)));
         let stop = MappingTarget::Stop { track: TrackId(4) };
+        assert_eq!((stop.command(), stop.track(), stop.scene()), ("track.stop", Some(TrackId(4)), None));
+        for target in [slot, scene, stop] {
+            assert_eq!(MappingTarget::from_command(target.command(), target.track(), target.scene()), Some(target));
+            assert!(MappingTarget::COMMANDS.contains(&target.command()));
+        }
+    }
+
+    #[test]
+    fn a_target_needs_a_known_command_and_its_parameters() {
+        let (track, scene) = (Some(TrackId(1)), Some(0));
+        assert_eq!(MappingTarget::from_command("clip.launch", track, None), None);
+        assert_eq!(MappingTarget::from_command("clip.launch", None, scene), None);
+        assert_eq!(MappingTarget::from_command("scene.launch", track, None), None);
+        assert_eq!(MappingTarget::from_command("track.stop", None, scene), None);
+        assert_eq!(MappingTarget::from_command("track.setVolume", track, scene), None);
+        assert_eq!(MappingTarget::from_command("slot", track, scene), None);
+        // A parameter the command does not take is not part of the target.
         assert_eq!(
-            (stop.kind(), stop.command(), stop.track(), stop.scene()),
-            ("stop", "track.stop", Some(TrackId(4)), None)
+            MappingTarget::from_command("track.stop", track, scene),
+            Some(MappingTarget::Stop { track: TrackId(1) })
         );
+    }
+
+    #[test]
+    fn a_project_with_duplicate_or_too_many_mappings_does_not_validate() {
+        let mapping = |source: MappingSource| ControllerMapping { source, target: MappingTarget::Scene { scene: 0 } };
+        let q = MappingSource::key("Q").unwrap();
+        let mut project = crate::Project { controller_mappings: vec![mapping(q.clone())], ..Default::default() };
+        assert_eq!(project.validate(), Ok(()));
+        project.controller_mappings.push(mapping(q));
+        assert_eq!(project.validate(), Err(vec![crate::ValidationError::DuplicateMapping("key:Q".into())]));
+        project.controller_mappings = (0..=MAX_MAPPINGS)
+            .map(|i| mapping(MappingSource::note(1 + (i / 128 % 16) as u8, (i % 128) as u8).unwrap()))
+            .collect();
+        assert_eq!(project.validate(), Err(vec![crate::ValidationError::TooManyMappings(MAX_MAPPINGS + 1)]));
     }
 }

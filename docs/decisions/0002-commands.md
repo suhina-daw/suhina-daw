@@ -123,7 +123,8 @@ UI, CLI, control channel and MCP server all dispatch commands by id. We take the
     commands come from agents, and one rule with none is the one they cannot misremember, where an
     exception is a wrong scene played without an error whenever it is forgotten. A scene's name is
     text and its place a number, so `"1"` and `1` stay apart, and `project.launcher` lists each
-    scene's place, id and name side by side. (#1149 counted scenes from 1 for a day, 2026-11-03, and
+    scene's place, id and name side by side. A scene parameter also takes `{"id": n}`, and a
+    result that reports a scene gives its `scene_id` beside it (#1156), as other lists' items do. (#1149 counted scenes from 1 for a day, 2026-11-03, and
     went back before it merged.)
 11. **What a command runs on and what it does are two things.** A spec's `kind` is a `Target`
     (one project, the open projects, the plug-ins, a running plug-in, the library, audio and MIDI)

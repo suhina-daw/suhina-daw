@@ -45,6 +45,27 @@ fn active_toggle_text_stays_visible_over_transparent_or_gradient_panels() {
 }
 
 #[test]
+fn active_toggle_text_stays_visible_when_the_inverse_ink_is_translucent() {
+    let original = theme::palette();
+    let mut palette = original;
+    // Nearly transparent white ink on a black lit fill: opaque white would read, this does not.
+    palette.control_selected = Color32::BLACK;
+    palette.text_inverse = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
+    let ctx = egui::Context::default();
+    theme::set_palette(&ctx, palette);
+    motion::set_enabled(&ctx, false);
+    let mut output = ctx.run_ui(Default::default(), |ui| {
+        let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
+        let response = button_area(ui, rect, Id::unique("faint-ink-toggle"), "Track on");
+        let (fill, text) = toggle_colors(ui, &response, true);
+        assert_ne!(text, palette.text_inverse, "the faint ink is replaced");
+        assert!(theme::text_contrast(text, fill) >= 4.5, "{text:?} on {fill:?}");
+    });
+    output.textures_delta.clear();
+    theme::set_palette(&ctx, original);
+}
+
+#[test]
 fn shared_form_controls_keep_surfaces_transparent_and_do_not_restyle_buttons() {
     let ctx = egui::Context::default();
     let mut text = String::from("Project name");
@@ -271,4 +292,13 @@ fn text_in_draws_nothing_where_only_an_ellipsis_would_fit() {
     assert_eq!(cut.len(), 1);
     assert!(cut[0].0 <= 24.5, "{cut:?}");
     assert_eq!(texts(400.0).len(), 1, "the whole name");
+}
+
+#[test]
+fn a_silent_value_steps_up_from_the_scale_end_and_stays_when_stepped_down() {
+    let range = (-70.0, 6.0);
+    assert_eq!(stepped(f64::NEG_INFINITY, range, 1.0), -69.0);
+    assert_eq!(stepped(f64::NEG_INFINITY, range, -1.0), f64::NEG_INFINITY);
+    assert_eq!(stepped(-10.0, range, -1.0), -11.0);
+    assert_eq!(stepped(5.5, range, 3.0), 6.0);
 }
