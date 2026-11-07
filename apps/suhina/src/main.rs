@@ -82,6 +82,10 @@ Options > Settings > Theme > Themes folder, or SUHINA_THEMES=<folder>, which win
 const APP_ID: &str = "Suhina";
 /// The app id before the program was renamed: where its settings were kept.
 const OLD_APP_ID: &str = "Loopwerk"; // rename_suhina: keep
+/// How long the process may take to end once quitting has let go of the projects (#823): what
+/// still runs then (plug-ins unloading in their hosts, one after another) is left to the hosts,
+/// which end on their own once this process is gone.
+const EXIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(3);
 const SETTINGS_FILE: &str = "settings.txt";
 const KEYMAP_FILE: &str = "keymap.json";
 const THEMES_FOLDER: &str = "themes";
@@ -326,6 +330,7 @@ fn main() -> ExitCode {
             Ok(Box::new(window))
         }),
     );
+    suhina_plugins::trace!("quit: the window is gone");
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -460,15 +465,43 @@ impl eframe::App for Window {
     /// Quitting: backups that quitting calls for are written, and the journal says nothing is
     /// left to offer next time.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        let started = std::time::Instant::now();
+        // Each step of the end, with its time, so a trace says which one a slow quit waits on
+        // (#823).
+        suhina_plugins::trace!("quit: on_exit");
         self.themes.finish();
-        let _finished_in_time = self.app.finish_backups();
-        let _let_go_in_time = self.app.let_go_of_projects();
+        let finished_in_time = self.app.finish_backups();
+        suhina_plugins::trace!("quit: backups written ({finished_in_time}) at {:?}", started.elapsed());
+        let let_go_in_time = self.app.let_go_of_projects();
+        suhina_plugins::trace!("quit: projects let go ({let_go_in_time}) at {:?}", started.elapsed());
         // Restart now, after an update: the new build starts as this one closes.
         if self.app.restart_wanted()
             && let Err(e) = suhina_update::relaunch()
         {
             eprintln!("error: {e}");
         }
+        end_by(EXIT_LIMIT, || std::process::exit(0));
+    }
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        // Its parts drop after this: the trace's next line says how long they took (#823).
+        suhina_plugins::trace!("quit: dropping the window's parts");
+    }
+}
+
+/// Calls `end` once `limit` has passed, unless the process has ended before (#823): quitting
+/// ends the process then even when something left over (a plug-in unloading, a thread joined
+/// on the way out) would keep it running with no window.
+fn end_by(limit: std::time::Duration, end: impl FnOnce() + Send + 'static) {
+    let started = std::thread::Builder::new().name("ending".into()).spawn(move || {
+        std::thread::sleep(limit);
+        suhina_plugins::trace!("quit: still running {limit:?} after the projects were let go; ending");
+        end();
+    });
+    if let Err(e) = started {
+        eprintln!("error: could not watch the end of the process: {e}");
     }
 }
 
@@ -1156,6 +1189,16 @@ fn write_whole(path: &Path, text: &str) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// The end of the process is called for once its limit has passed (#823).
+    #[test]
+    fn quitting_ends_the_process_after_its_limit() {
+        let (ended, end) = std::sync::mpsc::channel();
+        super::end_by(std::time::Duration::ZERO, move || {
+            let _ = ended.send(());
+        });
+        assert!(end.recv().is_ok(), "the end was called");
+    }
+
     use super::*;
 
     fn parse(v: &[&str]) -> Result<Option<Args>, String> {

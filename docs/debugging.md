@@ -120,7 +120,11 @@ meanwhile: `closed project let go in …` says how long it took. Quitting lets e
 once and shows "Closing Suhina" for up to 2 s: `quit: projects let go in …`, or
 `quit: projects not let go, closing anyway after 2s` when a plug-in was still busy (an ARA plug-in
 finishing an analysis can hold its host for many seconds); its host process then ends on its own
-once the plug-in is done.
+once the plug-in is done. After the window closes, `quit: on_exit`, `quit: backups written`,
+`quit: projects let go`, `quit: dropping the window's parts` and `quit: the window is gone` mark
+each step of the end with its time, so a slow quit shows which step it waits on (#823). The
+process ends at most 3 s after the projects were let go, whatever is still running then
+(`quit: still running … ending`): a plug-in still unloading is left to its host.
 
 Once a second a `frames:` line sums up: how many frames, their drawing time on average and the
 longest, and the longest wait between two frames. A long wait with short drawing means the time
