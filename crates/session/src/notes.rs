@@ -446,14 +446,35 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
             v.as_i64().filter(|s| (-127..=127).contains(s)).ok_or("semitones must be a whole number, -127 to 127")?
         }
     };
-    if !Args::new(params).has("beats") && !Args::new(params).has("semitones") {
-        return Err("give beats (in time) or semitones (in pitch)".into());
+    let keys = key_list(params)?;
+    if keys.is_some() && Args::new(params).has("semitones") {
+        return Err("give semitones or keys, not both".into());
+    }
+    if !Args::new(params).has("beats") && !Args::new(params).has("semitones") && keys.is_none() {
+        return Err("give beats (in time), semitones (in pitch) or keys (a key for each note)".into());
     }
     if beats.abs() > MAX_BEAT {
         return Err(format!("beats must be within ±{MAX_BEAT}").into());
     }
     edit_notes(&mut session.project, params, |notes| {
         let moved = indices(params, notes)?;
+        // `keys`: one per entry of `notes`, in the order given; a repeated index takes its last.
+        let mut key_of: std::collections::HashMap<usize, u8> = std::collections::HashMap::new();
+        if let Some(keys) = &keys {
+            let named = Args::new(params)
+                .value("notes")
+                .and_then(Value::as_array)
+                .ok_or("notes must be a list of note indices to give keys")?;
+            if keys.len() != named.len() {
+                return Err(
+                    format!("keys must have one key per note: {} notes, {} keys", named.len(), keys.len()).into()
+                );
+            }
+            let mut finder = Named::new(notes, NoteId);
+            for (value, key) in named.iter().zip(keys) {
+                key_of.insert(finder.at(value).map_err(note_miss)?, *key);
+            }
+        }
         let mut changed = Vec::with_capacity(moved.len());
         for &index in &moved {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -464,10 +485,13 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
             if !(0.0..=MAX_BEAT).contains(&time) {
                 return Err(format!("note {index} would start at beat {time}, outside 0 to {MAX_BEAT}").into());
             }
-            let key = u8::try_from(i64::from(note.key) + semitones)
-                .ok()
-                .filter(|k| *k <= 127)
-                .ok_or_else(|| format!("note {index} would leave the keys 0 to 127"))?;
+            let key = match key_of.get(&index) {
+                Some(key) => *key,
+                None => u8::try_from(i64::from(note.key) + semitones)
+                    .ok()
+                    .filter(|k| *k <= 127)
+                    .ok_or_else(|| format!("note {index} would leave the keys 0 to 127"))?,
+            };
             changed.push((index, Note { time, key, ..*note }));
         }
         for (index, note) in &changed {
@@ -476,7 +500,7 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
             }
         }
         // Moved notes replace what they land on; a move of nothing replaces nothing.
-        let replaced = if replaces(params) && (beats.abs() >= EPSILON || semitones != 0) {
+        let replaced = if replaces(params) && (beats.abs() >= EPSILON || semitones != 0 || keys.is_some()) {
             replace_under(notes, &moved)
         } else {
             Vec::new()
@@ -633,6 +657,26 @@ pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Valu
 }
 
 /// `params.velocities`: one velocity, 1 to 127, per entry of `notes`; `None` when left out.
+/// `params.keys` of `note.move`: one key, 0 to 127, per entry of `notes`; `None` when left out.
+fn key_list(params: &Value) -> Result<Option<Vec<u8>>, CommandError> {
+    let list = match Args::new(params).value("keys") {
+        None => return Ok(None),
+        Some(v) => v.as_array().ok_or("keys must be a list of keys, 0 to 127, one per note")?,
+    };
+    if list.len() > MAX_NOTES_PER_COMMAND {
+        return Err(format!("at most {MAX_NOTES_PER_COMMAND} keys in one command, got {}", list.len()).into());
+    }
+    list.iter()
+        .map(|v| {
+            v.as_u64()
+                .and_then(|k| u8::try_from(k).ok())
+                .filter(|k| *k <= 127)
+                .ok_or_else(|| CommandError::from("each of keys must be a whole number from 0 to 127"))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
 fn velocity_list(params: &Value) -> Result<Option<Vec<f64>>, CommandError> {
     let list = match Args::new(params).value("velocities") {
         None => return Ok(None),
