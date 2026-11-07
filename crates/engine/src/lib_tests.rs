@@ -974,6 +974,41 @@ fn an_envelope_dragged_fast_while_its_clip_plays_never_clicks() {
     }
 }
 
+/// An unwarped clip of rich sound (noise, as a voice's consonants are) swapped into a new graph
+/// every 30 ms, as a drag of its envelope does, plays every sample where it would without the
+/// swaps: a read position that slipped a few samples at a swap was no click on a sine and a
+/// click on a voice.
+#[test]
+fn an_unwarped_clip_swapped_often_reads_on_without_a_slip() {
+    let gap = SR as usize * 3 / 100;
+    let (mut project, mut pool) = stretched_project(220.0, 4.0, 8.0, 120.0, StretchMode::Smooth);
+    let mut seed = 1u32;
+    let noise: Vec<f32> = (0..176_400)
+        .map(|_| {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 8) as f32 / (1u32 << 24) as f32 - 0.5
+        })
+        .collect();
+    pool.files
+        .insert("sine.wav".into(), std::sync::Arc::new(AudioData { sample_rate: 44_100, channels: 1, samples: noise }));
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warped = false;
+    }
+    let build = || Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+    let mut plain = build();
+    plain.handle(LaunchCommand::Play);
+    let plain = blocks(&mut plain, 60, gap, |_| {});
+    let mut renderer = build();
+    let mut controller = renderer.controller();
+    renderer.handle(LaunchCommand::Play);
+    let mut out = Vec::new();
+    for _ in 0..60 {
+        let _ = controller.update(&project);
+        out.extend(blocks(&mut renderer, 1, gap, |_| {}));
+    }
+    assert!(max_diff(&out, &plain) < 1e-6, "differs by {}", max_diff(&out, &plain));
+}
+
 #[test]
 fn an_envelope_edited_while_its_clip_plays_glides_to_the_new_gain() {
     // A drag of the envelope swaps in a graph per frame; each step cut in at once crackled.

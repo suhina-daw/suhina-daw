@@ -596,12 +596,21 @@ pub(crate) const DECLICK_FRAMES: usize = 64;
 /// How far the new graph's first frame may be from where the old graph's sound was heading
 /// before it counts as a step and is eased: sound that goes on through an edit is left exact.
 const DECLICK_STEP: f32 = 0.05;
+/// How many times the sound's own recent largest move a frame the step must be before it is eased:
+/// the line through two frames misses the next by at most about two such moves.
+const DECLICK_MOTION: f32 = 2.5;
+/// How the recent largest move decays a frame: to half in about 700 frames (16 ms at 44.1 kHz), so
+/// a loud passage that ended leaves the guard sharp again soon.
+const DECLICK_MOTION_DECAY: f32 = 0.999;
 
 /// Eases away the step between the last frame of one graph and the first of the next.
 #[derive(Debug, Default)]
 struct Declick {
     /// The last two frames written, the latest first.
     last: [[f32; 2]; 2],
+    /// How far the sound has moved from one frame to the next lately, per channel: the largest
+    /// move, decaying ([`DECLICK_MOTION_DECAY`] a frame).
+    motion: [f32; 2],
     step: [f32; 2],
     left: usize,
     /// A new graph took over: the next frame written measures the step.
@@ -610,7 +619,7 @@ struct Declick {
 
 impl Declick {
     /// Corrects `frames` (interleaved stereo) for a step still being eased, and remembers their
-    /// last frames. Never allocates.
+    /// last frames and how far the sound moves. Never allocates.
     fn ease(&mut self, frames: &mut [f32]) {
         if self.pending && frames.len() >= 2 {
             self.pending = false;
@@ -618,14 +627,31 @@ impl Declick {
             let [latest, before] = self.last;
             let heading = [2.0 * latest[0] - before[0], 2.0 * latest[1] - before[1]];
             let step = [heading[0] - frames[0], heading[1] - frames[1]];
-            if step.iter().all(|s| s.is_finite()) && step.iter().any(|s| s.abs() > DECLICK_STEP) {
+            // A step only when it stands out from how far the sound itself has moved a frame
+            // lately: a voice, noise or a cymbal moves far between two frames, and the line
+            // through the last two misses the next by as much again, so every swap under it was
+            // "eased" by a ramp of its own, a click the sound never had (heard when a drag of a
+            // vocal's envelope swapped a graph in every 30 ms).
+            let stands_out = |i: usize| step[i].abs() > DECLICK_STEP.max(DECLICK_MOTION * self.motion[i]);
+            if step.iter().all(|s| s.is_finite()) && (stands_out(0) || stands_out(1)) {
                 self.step = step;
                 self.left = DECLICK_FRAMES;
             }
         }
+        let mut previous = self.last[0];
         for frame in frames.as_chunks_mut::<2>().0 {
+            // Measured on the sound as it comes, before any easing.
+            for (i, (now, was)) in frame.iter().zip(previous).enumerate() {
+                let moved = (now - was).abs();
+                if let Some(motion) = self.motion.get_mut(i)
+                    && moved.is_finite()
+                {
+                    *motion = moved.max(*motion * DECLICK_MOTION_DECAY);
+                }
+            }
+            previous = [frame[0], frame[1]];
             if self.left == 0 {
-                break;
+                continue;
             }
             let weight = self.left as f32 / DECLICK_FRAMES as f32;
             frame[0] += self.step[0] * weight;
