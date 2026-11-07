@@ -103,6 +103,25 @@ fn a_gain_envelope_shapes_one_clip_and_undoes_in_one_step() {
 }
 
 #[test]
+fn two_envelope_points_in_one_place_are_one_and_a_beat_holds_a_step() {
+    let dir = TempDir::new("clip-audio-merge");
+    let mut session = two_clips(&wav(&dir, "pad.wav", 2.0, 0.5));
+    let a = clips(&session)[0].id;
+    // A point dropped on another (same beat, same dB) is one point.
+    let out = run(&mut session, "clip.setEnvelope", json!({ "clip": a.0, "points": [0.0, 0.0, 2.0, -6.0, 2.0, -6.0] }))
+        .unwrap();
+    assert_eq!(out["points"], json!([0.0, 0.0, 2.0, -6.0]));
+    // Two on one beat at other levels are a step; a third there is where the step goes to.
+    let out = run(
+        &mut session,
+        "clip.setEnvelope",
+        json!({ "clip": a.0, "points": [2.0, 0.0, 2.0, -6.0, 2.0, -12.0, 4.0, -12.0] }),
+    )
+    .unwrap();
+    assert_eq!(out["points"], json!([2.0, 0.0, 2.0, -12.0, 4.0, -12.0]));
+}
+
+#[test]
 fn a_split_clip_keeps_its_part_of_the_envelope_and_a_loop_repeats_it() {
     let dir = TempDir::new("clip-audio-split");
     let mut session = Session::new(blank_project());

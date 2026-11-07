@@ -139,6 +139,13 @@ impl Graph {
         let mut stretch_events = Vec::new();
         let mut stretch_voices = Vec::new();
         let mut stretch_heard = Vec::new();
+        // Second voices of the stretched clips that play across the loop's wrap (#1268).
+        let mut stretch_twins = Vec::new();
+        let loop_frames = project
+            .transport
+            .looping()
+            .map(|r| (tempo::frame_of(&tempo, r.start), tempo::frame_of(&tempo, r.end)))
+            .filter(|(start, end)| end > start);
         let mut hosted = Vec::new();
         for (lane_index, lane) in project.arrangement.lanes.iter().enumerate() {
             for (clip_index, placed) in lane.clips.iter().enumerate().filter(|(_, c)| c.enabled) {
@@ -200,6 +207,13 @@ impl Graph {
                                 let (start, end) = (to_frame(clip.start), to_frame(clip.start + clip.length));
                                 let length = end.saturating_sub(start);
                                 let key = ahead::voice_key(clip, region, data, (start, length), tempo_key);
+                                // Played up to the loop end and again after the wrap: its voice is
+                                // read to the wrap, so a twin waits at the loop start.
+                                if loop_frames.is_some_and(|(_, loop_end)| start < loop_end && loop_end <= end)
+                                    && let Some(twin) = StretchVoice::on_map(clip, data.clone(), &tempo, sample_rate)
+                                {
+                                    stretch_twins.push((stretch_voices.len(), twin));
+                                }
                                 stretch_voices.push((voice, start, length, key, clip.id.0));
                                 stretch_heard.push(track_gains(project, track).is_some());
                                 stretch_events.push(StretchEvent {
@@ -273,7 +287,7 @@ impl Graph {
             .collect();
         let rings_began = std::time::Instant::now();
         let voices = stretch_voices.len();
-        let mut ahead = AheadReader::new(stretch_voices, sample_rate);
+        let mut ahead = AheadReader::new(stretch_voices, stretch_twins, sample_rate);
         ahead.set_heard(&stretch_heard);
         let rings_took = rings_began.elapsed();
         let launcher_began = std::time::Instant::now();

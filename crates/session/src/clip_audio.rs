@@ -66,12 +66,34 @@ pub(crate) fn set_envelope(session: &mut Session, params: &Value) -> Result<Valu
     }
     // In beat order; points on one beat keep the order they were given in, so a step can be made.
     points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+    let points = merged(points);
     let (at, _, _) = audio_clip(session, params).map_err(|_| "only an audio clip has a gain envelope")?;
     let clip = clip_mut(&mut session.project, at).ok_or("the clip is missing")?;
     clip.audio.gain_envelope = points;
     let listed: Vec<f64> = clip.audio.gain_envelope.iter().flat_map(|p| [p.beat, p.db]).collect();
     let curves: Vec<[f64; 4]> = clip.audio.gain_envelope.iter().map(|p| p.curve.to_array()).collect();
     Ok(json!({ "clip": clip.id.0, "points": listed, "curves": curves }))
+}
+
+/// `points` (in beat order) with no two in one place: a point on the beat and dB of the one before
+/// it is one point, with the later one's curve to the next. On one beat at most two are kept, the
+/// first and the last, which draw a step; one between them would only sit on the step's edge.
+fn merged(points: Vec<GainPoint>) -> Vec<GainPoint> {
+    const SAME_BEAT: f64 = 1e-9;
+    const SAME_DB: f64 = 1e-6;
+    let mut out: Vec<GainPoint> = Vec::with_capacity(points.len());
+    for point in points {
+        let on_beat = |p: &GainPoint| (p.beat - point.beat).abs() <= SAME_BEAT;
+        // Whether the two before it are on its beat already: it would be a third.
+        let third = out.len() >= 2 && out.iter().rev().take(2).all(on_beat);
+        match out.last_mut() {
+            Some(last) if on_beat(last) && (last.db - point.db).abs() <= SAME_DB => last.curve = point.curve,
+            // A third point on the beat replaces the second: the step goes from the first to it.
+            Some(last) if third => *last = point,
+            _ => out.push(point),
+        }
+    }
+    out
 }
 
 /// A tempo source by the name the commands use.

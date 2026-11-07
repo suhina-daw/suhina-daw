@@ -1490,6 +1490,35 @@ fn a_stretched_clip_starts_each_loop_pass_as_cleanly_as_the_first() {
     }
 }
 
+/// A stretched clip that plays right up to the loop end (the loop drawn over the clip, the most
+/// common loop) starts every pass at once too: its voice is read until the wrap, so a second
+/// voice of the clip waits at the loop start (#1268). It was silent for blocks after each wrap.
+#[test]
+fn a_stretched_clip_under_the_whole_loop_plays_each_pass_without_a_gap() {
+    let beat = SR as usize / 2;
+    for mode in [StretchMode::Smooth, StretchMode::HighQuality] {
+        // Two seconds of 220 Hz squeezed onto three beats from beat 1; the loop is the clip.
+        let (mut project, pool) = stretched_project(220.0, 2.0, 3.0, 120.0, mode);
+        project.arrangement.lanes[0].clips[0].start = 1.0;
+        project.transport.loop_range = Some(LoopRange { start: 1.0, end: 4.0 });
+        project.transport.loop_enabled = true;
+        let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+        let mut worker = renderer.take_stretch_worker().unwrap();
+        renderer.handle(LaunchCommand::Play);
+        // Blocks of 2048, as an ASIO device asks for them, the worker filling between them.
+        let out = blocks(&mut renderer, (10 * beat) / 2048 + 1, 2048, |_| worker.fill());
+        let pass = |k: usize| (k * 3 + 1) * beat;
+        let first = &out[pass(0) * 2..(pass(0) + beat) * 2];
+        for k in 1..3 {
+            let at = pass(k);
+            assert!(rms(&out, at, at + 2_048) > 0.1, "{mode:?} pass {k}: sound from the wrap on");
+            let worst = max_diff(&out[at * 2..(at + beat) * 2], first);
+            assert!(worst < 0.05, "{mode:?} pass {k}: differs from the first by {worst}");
+        }
+        assert_eq!(renderer.stretch_underruns(), 0, "{mode:?}");
+    }
+}
+
 /// Dragging a playing clip's tempo sends a new graph for every step: each one plays the clip's
 /// new voice on from the old one's sound, with no click where the two meet.
 #[test]

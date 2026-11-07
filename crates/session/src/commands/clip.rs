@@ -488,7 +488,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param(
                 "points",
                 ParamType::Numbers,
-                "the points as pairs, a beat of the content (from 0) and then dB from the clip's gain (-70 to +24): [0, 0, 4, -12] falls 12 dB over the first four beats; two points on one beat make a step",
+                "the points as pairs, a beat of the content (from 0) and then dB from the clip's gain (-70 to +24): [0, 0, 4, -12] falls 12 dB over the first four beats; two points on one beat make a step; two in one place (same beat and dB) are one, and a third on a beat replaces the second",
             ),
             optional(
                 "curves",

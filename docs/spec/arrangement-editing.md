@@ -748,9 +748,12 @@ end; dragging its middle moves the whole region, keeping its length. A click on 
 on** or **Turn loop off**) turn looping on or off. With a time selection or clips selected, Ctrl+L
 loops their span; pressed again while the loop is on over that very span, it turns looping off.
 
-**Limits.** A time-stretched audio clip in the region is silent for a moment after each wrap in
-real-time playback, until the stretch worker has caught up with the loop start, as after any jump
-while playing; offline it plays without a gap.
+A time-stretched audio clip plays the loop start at once after each wrap, in real time as offline.
+Its stretched audio is rendered ahead (ADR 0003), so it is ready at the loop start before the wrap
+comes: a clip that has played out is moved there ahead, and a clip that plays up to the loop end
+(a loop drawn over the clip) has a second voice that waits at the loop start while the first plays
+to the end; the two take turns at each wrap (#1268). Only a loop shorter than about half a second
+can still leave a moment of silence after a wrap.
 
 ## Tracks
 

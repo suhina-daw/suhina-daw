@@ -214,7 +214,7 @@ column (#1190). The panel now keeps its controls 6 points apart, with their name
   `detected`, `manual`; manual by default).
 - `clip.findTempo {…}`: `{metadata, name, detected, found, bpm, source}`, nulls where a source
   finds nothing. Changes nothing.
-- `clip.setEnvelope {…, points, curves?, gesture?}`: the envelope as pairs, `[beat, dB, beat, dB, …]`; `[]` clears it. `curves` gives each point its curve to the next, in the order of `points`: a bend from -1 to 1 or `[x1, y1, x2, y2]`, `null` for straight. Calls with the same open `gesture` (a drag) are one undo step.
+- `clip.setEnvelope {…, points, curves?, gesture?}`: the envelope as pairs, `[beat, dB, beat, dB, …]`; `[]` clears it. `curves` gives each point its curve to the next, in the order of `points`: a bend from -1 to 1 or `[x1, y1, x2, y2]`, `null` for straight. Two points in one place (the same beat and dB), such as one dragged onto another, are one point; a beat holds at most two, a step, and a third there replaces the second. Calls with the same open `gesture` (a drag) are one undo step.
 
 Every one changes only the clip it names and is one undo step.
 

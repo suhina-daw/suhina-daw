@@ -60,6 +60,10 @@ const HORIZON_RINGS: u64 = 4;
 /// the worker to hand the voice over.
 const CLOSED: u64 = u64::MAX;
 
+/// Mixed into a twin voice's key ([`AheadReader::new`]), so a twin is handed over only to the next
+/// graph's twin of the same clip.
+const TWIN_KEY: u64 = 0x9e37_79b9_7f4a_7c15;
+
 /// The rings made so far, so each has its own number (a voice's handover names the ring).
 static RINGS: AtomicU64 = AtomicU64::new(1);
 
@@ -132,6 +136,9 @@ struct Writer {
     /// Where the voice is to move before it renders next: moving it at once built and started
     /// every stretcher of the project, the far ones too, which held an edit up half a second.
     seek_to: Option<u64>,
+    /// A clip's second voice for a loop's wrap ([`AheadReader::new`]): it renders only where a
+    /// jump moves it, and rests at its end otherwise.
+    twin: bool,
 }
 
 /// One voice on the audio side.
@@ -165,6 +172,13 @@ struct Reader {
     fade_started: bool,
     /// Its ring went to a voice of the next graph.
     handed: bool,
+    /// The clip's second voice, when it plays across a loop's wrap: one voice plays up to the
+    /// wrap while the other waits at the loop start, and they take turns (#1268).
+    twin: Option<usize>,
+    /// This voice's clip plays from its twin now.
+    on_twin: bool,
+    /// This is a twin: it is read only through its clip's first voice.
+    is_twin: bool,
 }
 
 /// Renders stretched clips ahead into the rings the [`AheadReader`] reads. A
@@ -291,7 +305,8 @@ impl StretchWorker {
     /// later ones to their start.
     fn move_to(&mut self, to: u64) {
         for (writer, jump) in self.writers.iter_mut().zip(&self.shared.jumps) {
-            let local = to.saturating_sub(writer.start).min(writer.length);
+            // A twin rests at its end again: its clip's first voice plays from here.
+            let local = if writer.twin { writer.length } else { to.saturating_sub(writer.start).min(writer.length) };
             writer.seek_to = (local < writer.length).then_some(local);
             writer.produced = local;
             // A jump asked for before the rewind is void: the rewind drained it.
@@ -440,26 +455,55 @@ impl AheadReader {
     /// Splits `voices` (each with its clip's start and length in arrangement frames, its
     /// [`voice_key`] and its clip's id) into a reader and its worker, with a ring per voice
     /// holding [`AHEAD_SECONDS`] at `sample_rate`.
-    pub(crate) fn new(voices: Vec<(StretchVoice, u64, u64, u64, u32)>, sample_rate: u32) -> Self {
+    ///
+    /// `twins` are second voices of clips that play across a loop's wrap (the index of the clip's
+    /// voice in `voices`, and another voice of the same clip): the voice playing up to the wrap
+    /// is read to its last frame, so it cannot be moved to the loop start ahead; its twin is, and
+    /// the two take turns at each wrap. A twin renders only once moved there.
+    pub(crate) fn new(
+        voices: Vec<(StretchVoice, u64, u64, u64, u32)>,
+        twins: Vec<(usize, StretchVoice)>,
+        sample_rate: u32,
+    ) -> Self {
         let frames = ((AHEAD_SECONDS * f64::from(sample_rate)) as usize).max(2 * BLOCK_FRAMES);
-        let jumps = voices.iter().map(|_| Jump::default()).collect();
-        let adopted = voices.iter().map(|_| AtomicU64::new(0)).collect();
-        let handed_jump = voices.iter().map(|_| AtomicU64::new(0)).collect();
-        let handed_from = voices.iter().map(|_| AtomicU64::new(0)).collect();
+        let firsts = voices.len();
+        // Each twin as its clip's voice: the same place, its own key (a twin is handed over to
+        // the next graph's twin), its clip's id.
+        let twins: Vec<(StretchVoice, u64, u64, u64, u32, usize)> = twins
+            .into_iter()
+            .filter_map(|(of, voice)| {
+                let &(_, start, length, key, clip) = voices.get(of)?;
+                Some((voice, start, length, key ^ TWIN_KEY, clip, of))
+            })
+            .collect();
+        let count = firsts + twins.len();
+        let jumps = (0..count).map(|_| Jump::default()).collect();
+        let adopted = (0..count).map(|_| AtomicU64::new(0)).collect();
+        let handed_jump = (0..count).map(|_| AtomicU64::new(0)).collect();
+        let handed_from = (0..count).map(|_| AtomicU64::new(0)).collect();
         let shared = Arc::new(Shared { jumps, adopted, handed_jump, handed_from, ..Shared::default() });
-        let mut readers = Vec::with_capacity(voices.len());
-        let mut writers = Vec::with_capacity(voices.len());
-        for (voice, start, length, key, clip) in voices {
+        let mut readers = Vec::with_capacity(count);
+        let mut writers = Vec::with_capacity(count);
+        let all =
+            voices.into_iter().map(|(voice, start, length, key, clip)| (voice, start, length, key, clip, None)).chain(
+                twins
+                    .into_iter()
+                    .map(|(voice, start, length, key, clip, of)| (voice, start, length, key, clip, Some(of))),
+            );
+        for (voice, start, length, key, clip, twin_of) in all {
             let (producer, consumer) = RingBuffer::new(frames * 2);
             let ring = RINGS.fetch_add(1, Ordering::Relaxed);
             // A ring of nothing, for the place a replaced voice's ring takes at a swap.
             let (_, fade) = RingBuffer::new(0);
+            let is_twin = twin_of.is_some();
+            // A twin rests at its end until a wrap moves it.
+            let at = if is_twin { length } else { 0 };
             readers.push(Reader {
                 consumer,
                 ring,
                 start,
                 length,
-                next: 0,
+                next: at,
                 rewound: false,
                 jumping: None,
                 heard: true,
@@ -469,8 +513,26 @@ impl AheadReader {
                 fade_left: 0,
                 fade_started: false,
                 handed: false,
+                twin: None,
+                on_twin: false,
+                is_twin,
             });
-            writers.push(Writer { voice, producer, key, ring, start, produced: 0, length, jumped: 0, seek_to: None });
+            writers.push(Writer {
+                voice,
+                producer,
+                key,
+                ring,
+                start,
+                produced: at,
+                length,
+                jumped: 0,
+                seek_to: None,
+                twin: is_twin,
+            });
+            let index = readers.len().saturating_sub(1);
+            if let Some(first) = twin_of.and_then(|of| readers.get_mut(of)) {
+                first.twin = Some(index);
+            }
         }
         let worker = StretchWorker {
             writers,
@@ -534,6 +596,7 @@ impl AheadReader {
             std::mem::swap(&mut reader.ring, &mut old.ring);
             reader.next = old.next;
             reader.rewound = old.rewound;
+            reader.on_twin = old.on_twin;
             reader.jumping = None;
             // A jump the old graph asked for after the handover went to the old writer, not to
             // the one rendering this ring now: the ring's frames no longer start at `next`. This
@@ -555,6 +618,17 @@ impl AheadReader {
         if fresh {
             self.fade_from(before);
         }
+        // A clip that played from its twin goes on there only when that ring came along too.
+        for index in 0..self.readers.len() {
+            let Some(twin) = self.readers.get(index).and_then(|r| r.twin) else { continue };
+            let twin_handed = self.readers.get(twin).is_some_and(|t| t.handed);
+            if let Some(reader) = self.readers.get_mut(index)
+                && reader.on_twin
+                && !twin_handed
+            {
+                reader.on_twin = false;
+            }
+        }
         // `handed` marks this swap only.
         for reader in &mut self.readers {
             reader.handed = false;
@@ -569,10 +643,12 @@ impl AheadReader {
             return;
         }
         for reader in &mut self.readers {
-            if reader.handed {
+            if reader.handed || reader.is_twin {
                 continue;
             }
-            let Some(old) = before.readers.iter_mut().find(|r| r.clip == reader.clip && !r.handed) else { continue };
+            let Some(old) = before.readers.iter_mut().find(|r| r.clip == reader.clip && !r.handed && !r.is_twin) else {
+                continue;
+            };
             if old.jumping.is_some() || old.rewound {
                 continue;
             }
@@ -621,7 +697,8 @@ impl AheadReader {
             return false;
         }
         let lead = START_FRAMES;
-        self.readers.iter().filter(|r| r.heard).all(|reader| {
+        // A twin rests until a wrap moves it: nothing waits for it.
+        self.readers.iter().filter(|r| r.heard && !r.is_twin).all(|reader| {
             let end = reader.start.saturating_add(reader.length);
             if reader.start > at + lead || end <= at {
                 return true;
@@ -659,12 +736,9 @@ impl AheadReader {
             return;
         }
         let lead = self.ring_frames;
-        for (reader, jump) in self.readers.iter_mut().zip(&self.shared.jumps) {
+        for index in 0..self.readers.len() {
+            let Some(reader) = self.readers.get(index).filter(|r| !r.is_twin) else { continue };
             let clip_end = reader.start.saturating_add(reader.length);
-            // Only a voice the playhead does not read again before the wrap.
-            if clip_end > now {
-                continue;
-            }
             let local = if reader.start <= start && start < clip_end {
                 start - reader.start
             } else if start < reader.start && reader.start < end.min(start.saturating_add(lead)) {
@@ -672,7 +746,18 @@ impl AheadReader {
             } else {
                 continue;
             };
-            request_jump(reader, jump, local);
+            // The voice the clip plays from now, and the one waiting, if it has a twin.
+            let (playing, waiting) = match reader.twin {
+                Some(twin) if reader.on_twin => (twin, Some(index)),
+                Some(twin) => (index, Some(twin)),
+                None => (index, None),
+            };
+            // A voice the playhead reads again before the wrap stays; its twin goes instead.
+            let moved = if clip_end > now { waiting } else { Some(playing) };
+            let Some(moved) = moved else { continue };
+            if let (Some(reader), Some(jump)) = (self.readers.get_mut(moved), self.shared.jumps.get(moved)) {
+                request_jump(reader, jump, local);
+            }
         }
         for (reader, jump) in self.readers.iter_mut().zip(&self.shared.jumps) {
             complete_jump(reader, jump);
@@ -681,18 +766,45 @@ impl AheadReader {
 
     /// At a loop's wrap to arrangement frame `to`: every voice goes on from there, each by a jump
     /// of its own. The voices [`AheadReader::prepare_wrap`] moved there already keep their rings
-    /// and play at once; a voice that played up to the wrap is silent until the worker has moved
-    /// it, and that silence counts as late. Never blocks or allocates.
+    /// and play at once, and a clip that played up to the wrap goes on from its twin, which waited
+    /// there. Any other voice is silent until the worker has moved it, and that silence counts as
+    /// late. Never blocks or allocates.
     pub(crate) fn wrap_to(&mut self, to: u64) {
         if self.shared.drained.load(Ordering::Acquire) != self.shared.requested.load(Ordering::Acquire) {
             self.move_to(to);
             return;
         }
         self.shared.playhead.store(to, Ordering::Release);
-        for (reader, jump) in self.readers.iter_mut().zip(&self.shared.jumps) {
+        for index in 0..self.readers.len() {
+            let Some(reader) = self.readers.get_mut(index).filter(|r| !r.is_twin) else { continue };
             reader.fade_left = 0;
             let local = to.saturating_sub(reader.start).min(reader.length);
-            request_jump(reader, jump, local);
+            let (on_twin, twin) = (reader.on_twin, reader.twin);
+            let playing = match twin {
+                Some(twin) if on_twin => twin,
+                _ => index,
+            };
+            // A twin moved to the loop start ahead takes over, with its ring ready; the voice
+            // that played up to the wrap waits for the next one.
+            if let Some(twin) = twin {
+                let waiting = if on_twin { index } else { twin };
+                let ready = match (self.readers.get(waiting), self.shared.jumps.get(waiting)) {
+                    (Some(r), Some(jump)) => match r.jumping {
+                        Some(_) => jump.to.load(Ordering::Acquire) == local,
+                        None => r.next == local && !r.rewound,
+                    },
+                    _ => false,
+                };
+                if ready {
+                    if let Some(reader) = self.readers.get_mut(index) {
+                        reader.on_twin = !on_twin;
+                    }
+                    continue;
+                }
+            }
+            if let (Some(reader), Some(jump)) = (self.readers.get_mut(playing), self.shared.jumps.get(playing)) {
+                request_jump(reader, jump, local);
+            }
         }
         self.service();
     }
@@ -720,8 +832,11 @@ impl AheadReader {
             if let Ok(chunk) = reader.consumer.read_chunk(queued) {
                 chunk.commit_all();
             }
-            reader.next = to.saturating_sub(reader.start).min(reader.length);
-            reader.rewound = true;
+            // A twin rests at its end, as its writer does; each clip plays from its first voice.
+            reader.next =
+                if reader.is_twin { reader.length } else { to.saturating_sub(reader.start).min(reader.length) };
+            reader.rewound = !reader.is_twin;
+            reader.on_twin = false;
             // A jump under way is void: the rewind moves the voice.
             if reader.jumping.take().is_some() {
                 let requested = jump.requested.load(Ordering::Acquire);
@@ -740,6 +855,11 @@ impl AheadReader {
     /// is under way or has delivered nothing yet (that silence is the jump's); never blocks or
     /// allocates.
     pub(crate) fn read(&mut self, index: usize, from: u64, out: &mut [f32]) {
+        // A clip playing from its twin since a wrap is read there.
+        let index = match self.readers.get(index) {
+            Some(Reader { twin: Some(twin), on_twin: true, .. }) => *twin,
+            _ => index,
+        };
         let got = self.read_ring(index, from, out);
         let fade_frames = self.fade_frames;
         if let Some(reader) = self.readers.get_mut(index)
@@ -960,7 +1080,7 @@ mod handover_tests {
         };
         let clip = Clip { audio, ..Clip::new(ContentId(1), 0.0, 4.0) };
         let Some(voice) = StretchVoice::new(&clip, data, 100.0, SR) else { panic!("no voice") };
-        AheadReader::new(vec![(voice, 0, LENGTH, 7, 1)], SR)
+        AheadReader::new(vec![(voice, 0, LENGTH, 7, 1)], Vec::new(), SR)
     }
 
     /// The new graph's reader after its worker took the voice over and the swap, with a jump
