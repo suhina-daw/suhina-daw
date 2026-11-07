@@ -229,9 +229,8 @@ pub struct PianoRollState {
     /// not again while it stays covered; and the track the rectangle's notes sound on.
     pub(super) swept: Vec<u8>,
     pub(super) swept_track: Option<u64>,
-    /// The keys the rectangle covers this frame, while it is dragged, each with how long its note
-    /// is in beats (the longest, for a key with several).
-    pub(super) sweep_wanted: Option<Vec<(u8, f64)>>,
+    /// The keys the rectangle covers this frame, while it is dragged.
+    pub(super) sweep_wanted: Option<Vec<u8>>,
     /// A press in the grid holds what it sounds until it is let go.
     pub(super) audition_press: bool,
     /// Which other clips show as ghost notes, picked in the toolbar's ghost menu; kept until
