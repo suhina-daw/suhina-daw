@@ -1428,3 +1428,142 @@ fn set_buttons_stay_greyed_while_the_playhead_is_outside_the_clip() {
     harness.run();
     assert!(harness.state().is_empty());
 }
+
+/// A MIDI clip's panel with its note tools, as the detail area shows it beside the piano roll:
+/// the demo's Beat B (four notes), `scale` its scale, `stacked` the layout.
+fn midi_harness(
+    scale: Option<suhina_engine::model::Scale>,
+    selected: &[usize],
+    size: egui::Vec2,
+    stacked: bool,
+) -> egui_kittest::Harness<'static, (Vec<Action>, crate::detail::piano_roll::PianoRollState)> {
+    let project = demo_project();
+    let beat_b = project.arrangement.lanes[0].clips[1].id;
+    let notes: Vec<Note> = project
+        .content(project.arrangement.lanes[0].clips[1].content)
+        .and_then(|c| {
+            c.lanes.iter().find_map(|l| match &l.data {
+                LaneData::Notes(notes) => Some(notes.to_vec()),
+                LaneData::Audio(_) => None,
+            })
+        })
+        .unwrap_or_default();
+    let Detail::Clip(mut info, _) = build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)))
+    else {
+        panic!("expected the clip")
+    };
+    if let Some(panel) = info.panel.as_mut() {
+        panel.scale = scale;
+    }
+    let selected: std::collections::BTreeSet<usize> = selected.iter().copied().collect();
+    let address = json!({ "clip": beat_b.0 });
+    egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(size)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(
+            move |ui, (actions, state): &mut (Vec<Action>, crate::detail::piano_roll::PianoRollState)| {
+                let tools = crate::detail::midi_tools::Tools {
+                    address: &address,
+                    notes: &notes,
+                    selected: &selected,
+                    length: 16.0,
+                    nothing: false,
+                };
+                let midi = MidiTools { tools: &tools, state, show_tools: true };
+                show_clip_column(ui, &info, stacked, Some(midi), actions);
+            },
+            (Vec::new(), crate::detail::piano_roll::PianoRollState::default()),
+        )
+}
+
+/// The tools' tabs: the Notes tab's one-click tools, then the Transform tab's Humanise with its
+/// settings in milliseconds and chords kept together, applied with a button that says to what
+/// (#1214, #1222).
+#[test]
+fn the_midi_panels_tabs_run_the_note_tools() {
+    use egui_kittest::kittest::Queryable;
+    let mut harness = midi_harness(None, &[1, 2], egui::vec2(1000.0, 320.0), false);
+    assert!(harness.query_by_label("Selected notes").is_some(), "the chip says what the tools act on");
+    assert!(harness.query_by_label("2 of 4 notes").is_some(), "and how many");
+    // The figures are under the Clip part, the tools beside them.
+    let scale = harness.get_by_label_contains("Scale: ").rect();
+    let chip = harness.get_by_label("Selected notes").rect();
+    let reverse = harness.get_by_label("Reverse").rect();
+    assert!(chip.top() >= scale.bottom() && chip.right() <= reverse.left(), "{scale:?} {chip:?} {reverse:?}");
+    harness.get_by_label("Reverse").click();
+    harness.run();
+    let reversed = harness.state().0.last().cloned();
+    assert_eq!(reversed.as_ref().map(|a| a.id), Some("note.reverse"));
+    assert_eq!(reversed.map(|a| a.params["notes"].clone()), Some(json!([1, 2])));
+    harness.get_by_label("Transform tab").click();
+    harness.run();
+    assert!(harness.query_by_label("Reverse").is_none(), "the Notes tab's tools are away");
+    assert!(harness.query_by_label("Keep chords together: On").is_some());
+    harness.get_by_label("Humanise 2 notes").click();
+    harness.run();
+    let humanise = harness.state().0.last().cloned();
+    assert_eq!(humanise.as_ref().map(|a| a.id), Some("note.humanize"));
+    let params = humanise.map(|a| a.params).unwrap_or_default();
+    assert_eq!((&params["ms"], &params["velocity"], &params["chords"]), (&json!(10.0), &json!(8.0), &json!(true)));
+    // Ramp velocity from the list: its own settings and its own command.
+    harness.get_by_label("Transformation: Humanise").click();
+    harness.run();
+    harness.get_by_label("Ramp velocity").click();
+    harness.run();
+    assert!(harness.query_by_label("Ramp from: 20").is_some(), "{:?}", harness.state().1.transform);
+    harness.get_by_label("Ramp 2 notes").click();
+    harness.run();
+    assert_eq!(harness.state().0.last().map(|a| a.id), Some("note.rampVelocity"));
+}
+
+/// Dragging Humanise's Timing changes the setting and leaves the panel where it is (#1214).
+#[test]
+fn dragging_humanises_timing_does_not_move_the_panel() {
+    use egui_kittest::kittest::Queryable;
+    let mut harness = midi_harness(None, &[], egui::vec2(1000.0, 260.0), false);
+    harness.state_mut().1.tools_tab = crate::detail::midi_tools::ToolsTab::Transform;
+    harness.run();
+    let field = harness.get_by_label("Timing: 10 ms").rect();
+    let apply = harness.get_by_label("Humanise clip").rect();
+    harness.hover_at(field.center());
+    harness.run();
+    harness.drag_at(field.center());
+    harness.run();
+    for dy in [8.0, 16.0, 24.0] {
+        harness.hover_at(field.center() - egui::vec2(0.0, dy));
+        harness.run();
+    }
+    harness.drop_at(field.center() - egui::vec2(0.0, 24.0));
+    harness.run();
+    assert!(harness.state().1.tools.humanize_ms > 10.0, "dragged up, the timing grows");
+    assert!(harness.state().0.is_empty(), "a setting is no command");
+    assert_eq!(harness.get_by_label("Humanise clip").rect(), apply, "nothing moved");
+}
+
+/// Fit to scale fits to the clip's own scale: the command names no root or mode.
+#[test]
+fn fit_to_scale_uses_the_clips_scale() {
+    use egui_kittest::kittest::Queryable;
+    let scale = suhina_engine::model::Scale::new(2, suhina_engine::model::ScaleMode::Minor);
+    let mut harness = midi_harness(scale, &[], egui::vec2(1000.0, 260.0), false);
+    assert!(harness.query_by_label("Scale: Minor").is_some(), "the Clip part shows the scale");
+    harness.get_by_label("Fit to scale").click();
+    harness.run();
+    let fit = harness.state().0.last().cloned();
+    assert_eq!(fit.as_ref().map(|a| a.id), Some("note.fitToScale"));
+    let params = fit.map(|a| a.params).unwrap_or_default();
+    assert!(params.get("root").is_none() && params.get("scale").is_none(), "{params}");
+}
+
+/// Stacked, the tools part goes under the Clip part, the two not overlapping.
+#[test]
+fn a_stacked_midi_panel_puts_the_tools_under_the_clip_part() {
+    use egui_kittest::kittest::Queryable;
+    let harness = midi_harness(None, &[], egui::vec2(260.0, 700.0), true);
+    let scale = harness.get_by_label("Scale: None").rect();
+    let head = harness.get_by_label("Whole clip").rect();
+    assert!(head.top() >= scale.bottom(), "{scale:?} {head:?}");
+    assert!(harness.query_by_label("Fit to scale").is_some());
+}

@@ -654,34 +654,33 @@ impl App {
         let piano_roll = &mut self.piano_roll;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
             if let (Some(piano), detail_view::Detail::Clip(info, _)) = (&piano, &shown) {
-                let (mut rest, picked) = detail_view::show_clip_column(ui, info, stacked, actions);
+                // The clip's panel: the Clip part with what the tools act on under it, and the note
+                // tools beside them while they are shown (the toolbar's three-slider button;
+                // › Note tools).
+                let selected = piano_roll.acting().clone();
+                // A time selection with no note in it gives the tools nothing to act on.
+                let nothing = selected.is_empty() && piano_roll.span_end().is_some();
+                let tools = crate::detail::midi_tools::Tools {
+                    address: &piano.address,
+                    notes: &piano.notes,
+                    selected: &selected,
+                    length: piano.length,
+                    nothing,
+                };
+                let show_tools = piano_roll.tools_open;
+                let midi = (!info.audio).then_some(detail_view::MidiTools {
+                    tools: &tools,
+                    state: &mut *piano_roll,
+                    show_tools,
+                });
+                let (rest, picked) = detail_view::show_clip_column(ui, info, stacked, midi, actions);
                 let picked = detail_view::Picked { showing: picked.showing, ..detail_view::Picked::default() };
-                // The MIDI tools column, between the clip's properties and the note grid. With the
-                // detail area stacked there is no room beside the notes, so it is not drawn there
-                // (the quantise settings and Ctrl+U still work: › Other note tools).
-                if piano_roll.tools_open && !stacked {
-                    let selected = piano_roll.acting().clone();
-                    // A time selection with no note in it gives the tools nothing to act on.
-                    let nothing = selected.is_empty() && piano_roll.span_end().is_some();
-                    let tools = crate::detail::midi_tools::Tools {
-                        address: &piano.address,
-                        notes: &piano.notes,
-                        selected: &selected,
-                        length: piano.length,
-                        nothing,
-                    };
-                    let before = actions.len();
-                    rest = crate::detail::midi_tools::show(ui, rest, &tools, piano_roll, actions);
-                    if nothing {
-                        actions.truncate(before);
-                    }
-                }
                 let seeks = matches!(piano.address.get("clip"), Some(serde_json::Value::Number(_)));
                 let cx = piano_roll::Context { options, keymap: &keymap, copied, playhead, start_marker, seeks };
                 piano_roll::show(ui, rest, piano, piano_roll, cx, actions);
                 picked
             } else if let (Some((_, _, device, _)), detail_view::Detail::Clip(info, chain)) = (ara, &shown) {
-                let (rest, picked) = detail_view::show_clip_column(ui, info, stacked, actions);
+                let (rest, picked) = detail_view::show_clip_column(ui, info, stacked, None, actions);
                 detail_view::show_ara_editor(ui, rest, chain, device, actions, &mut places);
                 picked
             } else if stacked {

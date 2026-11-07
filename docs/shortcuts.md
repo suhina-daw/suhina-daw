@@ -143,7 +143,7 @@ status bar.
 | Group the selected tracks (`selection.group`); with devices picked in a strip's list or the chain, put them into a device group ([spec](spec/device-groups.md)) | Ctrl+G |
 | Take the picked device group of one branch apart (`selection.ungroup`) | Ctrl+Shift+G |
 | In the Launcher view, with a clip slot selected: launch it (`selection.launch`); select the slot above, below, in the track to the left or right (`selection.up`, `.down`, `.left`, `.right`; [spec](spec/ui-session-view.md) › Launching and selecting) | Enter; Up, Down, Left, Right |
-| Quantise the piano roll's selected notes, the notes that start in its time selection, or all its notes, with the settings the quantise block in the MIDI tools column keeps (`pianoRoll.quantize`, [spec](spec/ui-clip-editor.md) › Quantise) | Ctrl+U |
+| Quantise the piano roll's selected notes, the notes that start in its time selection, or all its notes, with the settings Quantise in the note tools' Transform tab keeps (`pianoRoll.quantize`, [spec](spec/ui-clip-editor.md) › Quantise) | Ctrl+U |
 | Open or close the shown track's plug-in editor — the device the chain panel selects, else the track's first running plug-in (`view.plugin`; [spec](spec/ui-clip-editor.md) › The device chain) | P |
 | Add an arrangement marker at the playhead, or at the play start marker while stopped (`marker.addAtPlayhead`; [spec](spec/arrangement-editing.md#markers)) | M |
 | Turn arrangement looping on or off; on without a loop region makes one over the first 4 bars (`transport.setLoopEnabled`; [spec](spec/arrangement-editing.md#loop-region)) | Ctrl+L |

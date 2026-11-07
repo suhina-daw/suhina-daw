@@ -46,6 +46,9 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
     harness.run();
     harness.get_by_label(CLIP).click();
     harness.run();
+    // A detail area tall enough for the figures under the clip panel's Clip part (› Clip column).
+    let splitter = harness.get_by_label("Detail area splitter").rect().center();
+    drag(&mut harness, splitter, splitter - egui::vec2(0.0, 160.0), 6);
     harness
 }
 
@@ -333,7 +336,14 @@ fn the_whole_clip_tools_reverse_double_and_ramp() {
         reversed[0]
     );
 
-    h.get_by_label("Ramp").click_accesskit();
+    // Ramp velocity is a transformation: the Transform tab, the list, Apply.
+    h.get_by_label("Transform tab").click();
+    h.run();
+    h.get_by_label("Transformation: Humanise").click();
+    h.run();
+    h.get_by_label("Ramp velocity").click_accesskit();
+    h.run();
+    h.get_by_label("Ramp clip").click_accesskit();
     h.run();
     let ramped = notes(&h);
     let velocities: Vec<u8> = ramped.iter().map(|n| suhina_session::midi_velocity(n.velocity)).collect();
@@ -349,10 +359,14 @@ fn the_whole_clip_tools_reverse_double_and_ramp() {
 fn humanise_twice_gives_two_different_results() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    h.get_by_label("Humanise").click_accesskit();
+    h.get_by_label("Transform tab").click();
+    h.run();
+    assert!(h.query_by_label("Transformation: Humanise").is_some(), "Humanise is chosen at first");
+    assert!(h.query_by_label("Keep chords together: On").is_some(), "chords are kept by default");
+    h.get_by_label("Humanise clip").click_accesskit();
     h.run();
     let once = notes(&h);
-    h.get_by_label("Humanise").click_accesskit();
+    h.get_by_label("Humanise clip").click_accesskit();
     h.run();
     let twice = notes(&h);
     assert_ne!(once, twice, "each press draws afresh: {once:?} against {twice:?}");
@@ -362,15 +376,16 @@ fn humanise_twice_gives_two_different_results() {
 fn the_three_slider_icon_hides_and_shows_the_column() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    assert!(h.query_by_label("Whole clip").is_some(), "the column shows at first");
+    assert!(h.query_by_label("Notes tab").is_some(), "the tools show at first");
     h.get_by_label("MIDI tools").click();
     h.run();
     assert!(!h.state().piano_roll().tools_open);
-    assert!(h.query_by_label("Whole clip").is_none(), "the column is hidden");
+    assert!(h.query_by_label("Notes tab").is_none(), "the tools are hidden");
+    assert!(h.query_by_label("Whole clip").is_some(), "what they act on still shows");
     h.get_by_label("MIDI tools").click();
     h.run();
     assert!(h.state().piano_roll().tools_open);
-    assert!(h.query_by_label("Whole clip").is_some(), "and comes back");
+    assert!(h.query_by_label("Notes tab").is_some(), "and they come back");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -383,14 +398,17 @@ fn the_clip_column_describes_the_selection() {
     let mut h = piano_app(&mut renderer, Settings::default());
     let notes = notes(&h);
     let total = notes.len();
-    assert!(h.query_by_label(&format!("Notes: {total}")).is_some(), "nothing selected: the count");
-    assert!(h.query_by_label_contains("From: ").is_none(), "no selection rows without a selection");
+    assert!(h.query_by_label(&format!("{total} notes")).is_some(), "nothing selected: the count");
+    // With nothing selected the figures are the whole clip's.
+    for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
+        assert!(h.query_by_label_contains(label).is_some(), "the whole clip's {label}");
+    }
 
     let at = note_rect(&h, &notes[0]).center();
     click(&mut h, at);
     let selected = h.state().piano_roll().selected.len();
     assert_eq!(selected, 1);
-    assert!(h.query_by_label(&format!("Notes: 1 of {total}")).is_some());
+    assert!(h.query_by_label(&format!("1 of {total} notes")).is_some());
     for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
         assert!(h.query_by_label_contains(label).is_some(), "{label}");
     }
@@ -403,7 +421,7 @@ fn the_clip_column_describes_the_selection() {
     tool(&mut h, "Mute");
     let at = note_rect(&h, &notes[0]).center();
     click(&mut h, at);
-    assert!(h.query_by_label(&format!("Notes: 1 of {total}, 1 muted")).is_some());
+    assert!(h.query_by_label("Muted: 1").is_some());
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -537,24 +555,26 @@ fn the_right_button_and_the_wheel_still_choose_tools_and_delete_nothing() {
 // ---------------------------------------------------------------------------------------------
 
 #[test]
-fn with_the_detail_area_stacked_the_column_is_hidden_and_ctrl_u_still_quantises() {
+fn with_the_detail_area_stacked_the_tools_go_under_the_clip_part_and_ctrl_u_still_quantises() {
     let mut renderer = engine();
     // The clip is selected with the detail area in its usual place, where it is in view, and the
-    // device chain is stacked afterwards: with the column beside the view there is no room for the
-    // MIDI tools column.
+    // device chain is stacked afterwards: the tools part goes under the Clip part, above the note
+    // grid, when the column is tall enough to leave the grid its room.
     let mut h = piano_app(&mut renderer, Settings::default());
     let ctx = h.ctx.clone();
     h.state_mut().set_settings(&ctx, Settings { device_layout: DeviceLayout::Stack, ..Settings::default() });
     h.run();
-    assert!(h.query_by_label("Whole clip").is_none(), "there is no room for the column");
-    assert!(h.query_by_label("Quantise notes").is_none(), "and none for its controls");
-    // The quantise settings and Ctrl+U still work where there is no column.
+    let grid = h.get_by_label_contains("Piano roll,").rect();
+    if let Some(head) = h.query_by_label("Whole clip") {
+        assert!(head.rect().bottom() <= grid.top() + 0.5, "the tools are above the grid: {:?} {grid:?}", head.rect());
+    }
+    // The quantise settings and Ctrl+U work whether the tools show or not.
     h.key_press_modifiers(Modifiers::COMMAND, Key::U);
     h.run();
     let quantised = notes(&h);
     assert!(
         quantised.iter().all(|n| (n.time / 0.25 - (n.time / 0.25).round()).abs() < 1e-6),
-        "Ctrl+U quantised without the column: {quantised:?}"
+        "Ctrl+U quantised: {quantised:?}"
     );
     assert_eq!(h.state().piano_roll().quantize.amount, 100.0, "the settings it keeps are intact");
 }

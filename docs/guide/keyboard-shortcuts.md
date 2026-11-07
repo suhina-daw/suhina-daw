@@ -180,7 +180,7 @@ of one square of the grid, which follows the zoom and the grid setting.
 | Shift+Right | `pianoRoll.longer` | Piano roll | Takes each selected note's end to the next grid line, or to the start of the next note of its key when that comes first (unless stacked notes are allowed). |
 | Alt+Shift+Left | `pianoRoll.shorterFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) shorter, off the grid. |
 | Alt+Shift+Right | `pianoRoll.longerFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) longer, off the grid, stopping at the next note of their key unless stacked notes are allowed. |
-| Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings in the quantise block of the MIDI tools column. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
+| Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings of Quantise in the Transform tab of the clip panel's note tools. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
 
 Copy, cut, paste, duplicate and delete in the piano roll use the [Editing](#editing) keys. With no
 note selected (or nothing copied, for paste) they act on the clip instead.

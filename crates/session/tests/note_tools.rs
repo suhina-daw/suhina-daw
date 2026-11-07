@@ -4,7 +4,7 @@
 //! The MIDI tools: `note.setMuted`, `note.humanize`, `note.fitToScale`, `note.invert`,
 //! `note.reverse`, `note.legato`, `note.stretch`, `note.randomizeVelocity` and
 //! `note.rampVelocity` — editing a MIDI clip's notes, one undo step each, and refusing bad input
-//! (`docs/spec/ui-clip-editor.md` › Muting, › Other note tools (MIDI tools column)).
+//! (`docs/spec/ui-clip-editor.md` › Muting, › Note tools (the clip panel's tools)).
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers outside #[test] functions
 
@@ -409,6 +409,55 @@ fn ramping_spreads_the_velocities_evenly_in_time_order() {
     run(&mut session, "note.rampVelocity", json!({ "track": 1, "index": 0, "notes": [1], "from": 20, "to": 20 }))
         .unwrap();
     assert_eq!(*session.project(), once);
+}
+
+/// Humanise keeps a chord's notes together, keeps each note's end, and moves a start no further
+/// than its limit in milliseconds at the project's tempo (#1214).
+#[test]
+fn humanize_keeps_chords_together_and_ends_in_place() {
+    // A C major chord at beat 1, then a note on C at beat 2.
+    let chord = vec![note(1.0, 1.0, 60), note(1.0, 1.0, 64), note(1.0, 1.0, 67), note(2.0, 1.0, 60)];
+    let mut built = project_built(chord.clone());
+    built.transport.tempo_bpm = 120.0;
+    let mut session = Session::new(suhina_test_support::with_ids(built));
+    run(&mut session, "note.humanize", json!({ "track": 1, "index": 0, "ms": 50, "velocity": 0, "seed": 3 })).unwrap();
+    let after = notes_of(&session, 1);
+    assert!(after[0].time != 1.0, "the seed moves the chord: {after:?}");
+    assert_eq!(after[0].time, after[1].time, "the chord's notes start together");
+    assert_eq!(after[1].time, after[2].time);
+    // 50 ms at 120 BPM is a tenth of a beat.
+    for (before, after) in chord.iter().zip(&after) {
+        assert!((after.time - before.time).abs() <= 0.1 + 1e-12, "{before:?} {after:?}");
+    }
+    // The chord's ends stay at beat 2, unless that would run into the next C.
+    assert!((after[1].time + after[1].duration - 2.0).abs() < 1e-9, "{:?}", after[1]);
+    assert!(after[0].time + after[0].duration <= after[3].time + 1e-9, "no overlap on C: {after:?}");
+
+    // Without chords the notes of the chord move apart.
+    let mut apart = Session::new(project(chord.clone()));
+    run(&mut apart, "note.humanize", json!({ "track": 1, "index": 0, "ms": 50, "chords": false, "seed": 3 })).unwrap();
+    let spread = notes_of(&apart, 1);
+    assert!(spread[0].time != spread[1].time || spread[1].time != spread[2].time, "{spread:?}");
+}
+
+#[test]
+fn humanize_takes_ms_or_time_and_refuses_both_or_too_much() {
+    let mut session = Session::new(project(scale_notes()));
+    let base = json!({ "track": 1, "index": 0, "seed": 1 });
+    let with = |extra: Value| {
+        let mut params = base.clone();
+        if let (Some(map), Value::Object(more)) = (params.as_object_mut(), extra) {
+            map.extend(more);
+        }
+        params
+    };
+    assert!(run(&mut session, "note.humanize", with(json!({ "ms": 10, "time": 0.1 }))).is_err());
+    assert!(run(&mut session, "note.humanize", with(json!({ "ms": 51 }))).is_err());
+    assert!(run(&mut session, "note.humanize", with(json!({ "ms": -1 }))).is_err());
+    assert!(run(&mut session, "note.humanize", with(json!({ "chords": "yes" }))).is_err());
+    assert_eq!(notes_of(&session, 1), scale_notes(), "a refused call changes nothing");
+    assert!(run(&mut session, "note.humanize", with(json!({ "time": 0.05 }))).is_ok(), "beats still work");
+    assert!(run(&mut session, "note.humanize", with(json!({ "ms": 0, "velocity": 0 }))).is_ok());
 }
 
 #[test]

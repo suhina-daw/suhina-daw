@@ -48,7 +48,7 @@ fn send(ui: &Ui, id: Id, value: f64, done: bool) -> Option<Change> {
 }
 
 /// A bar of the project in beats, never 0.
-fn bar_of(panel: &AudioPanel) -> f64 {
+pub(super) fn bar_of(panel: &AudioPanel) -> f64 {
     if panel.bar_beats.is_finite() && panel.bar_beats > 0.0 { panel.bar_beats } else { 4.0 }
 }
 
@@ -101,7 +101,7 @@ fn tempo_places(text: &str) -> Vec<(usize, usize, f64)> {
 }
 
 /// A number typed, with a unit after it ("96 BPM", "-6 dB") left off.
-fn plain_number(text: &str) -> Option<f64> {
+pub(super) fn plain_number(text: &str) -> Option<f64> {
     let number: String =
         text.trim().chars().take_while(|c| c.is_ascii_digit() || matches!(c, '-' | '+' | '.' | ',')).collect();
     number.replace(',', ".").parse::<f64>().ok().filter(|n| n.is_finite())
@@ -163,22 +163,22 @@ pub(super) fn fader_db(t: f64) -> f64 {
 
 /// How a number field takes its value.
 #[derive(Clone, Copy)]
-struct Field {
-    range: (f64, f64),
-    per_point: f64,
-    per_tick: f64,
+pub(super) struct Field {
+    pub range: (f64, f64),
+    pub per_point: f64,
+    pub per_tick: f64,
     /// Rounds a dragged value to its step.
-    snap: fn(f64) -> f64,
+    pub snap: fn(f64) -> f64,
     /// Where its text sits: at the right for a position or a tempo, centred under a fader or knob.
-    align: Align2,
+    pub align: Align2,
     /// Drawn faint: a value that does not apply now (the loop's, while the loop is off).
-    dim: bool,
+    pub dim: bool,
 }
 
 fn tenth(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
 }
-fn whole(v: f64) -> f64 {
+pub(super) fn whole(v: f64) -> f64 {
     v.round()
 }
 fn thousandth(v: f64) -> f64 {
@@ -193,23 +193,23 @@ fn field_surface(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::
 }
 
 /// The places of a text a drag steps: each a range of characters and its step.
-type Places<'a> = dyn Fn(&str) -> Vec<(usize, usize, f64)> + 'a;
+pub(super) type Places<'a> = dyn Fn(&str) -> Vec<(usize, usize, f64)> + 'a;
 
 /// How a field reads typed text and which places of its text a drag steps.
-struct Text<'a> {
-    shown: &'a dyn Fn(f64) -> String,
-    parse: &'a dyn Fn(&str) -> Option<f64>,
+pub(super) struct Text<'a> {
+    pub shown: &'a dyn Fn(f64) -> String,
+    pub parse: &'a dyn Fn(&str) -> Option<f64>,
     /// The places of the text, each a range of characters and its step: a drag steps the place
     /// under the pointer where it was pressed, as the project's tempo field does (#829). `None`
     /// steps the whole value by `per_point`.
-    places: Option<&'a Places<'a>>,
+    pub places: Option<&'a Places<'a>>,
 }
 
 /// A number field in `rect`: dragged up and down (the value follows while it moves, in one undo
 /// step), stepped with the arrows, typed after a click and Enter, and on a double-click a text
 /// field (Enter sets it, Escape or a click elsewhere leaves it). Named "`name`: `shown`".
 #[allow(clippy::too_many_arguments)]
-fn number_field(
+pub(super) fn number_field(
     ui: &mut Ui,
     painter: &egui::Painter,
     rect: Rect,
@@ -402,7 +402,14 @@ pub(super) fn clip_name(
 }
 
 /// A small button, as the kit draws one; returns whether it was clicked.
-fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str, enabled: bool) -> bool {
+pub(super) fn small_button(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    text: &str,
+    label: &str,
+    enabled: bool,
+) -> bool {
     let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-button", label)), label);
     let fill = if enabled {
         motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response))
@@ -418,7 +425,7 @@ fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label:
 }
 
 /// A switch the width of its part, showing `text`, lit while on; named "`name`: On" or "Off".
-fn toggle(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, text: &str, on: bool) -> bool {
+pub(super) fn toggle(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, text: &str, on: bool) -> bool {
     let state = if on { "On" } else { "Off" };
     let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-switch", name)), format!("{name}: {state}"));
     let (fill, ink) = widgets::toggle_colors(ui, &response, on);
@@ -431,7 +438,7 @@ fn toggle(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, text: &str, 
 }
 
 /// A name over a control: the name at the left of `rect`, small.
-fn name_over(painter: &egui::Painter, rect: Rect, text: &str, align: Align2) {
+pub(super) fn name_over(painter: &egui::Painter, rect: Rect, text: &str, align: Align2) {
     widgets::text_in(painter, rect, align, text, theme::ui_font(theme::TEXT_TINY), theme::text_secondary());
 }
 
@@ -439,7 +446,7 @@ fn name_over(painter: &egui::Painter, rect: Rect, text: &str, align: Align2) {
 /// the field, the value in it lit. The list's entries are buttons named as they read; `None` is a
 /// line between entries. Returns the index of the entry picked.
 #[allow(clippy::too_many_arguments)]
-fn drop_down(
+pub(super) fn drop_down(
     ui: &Ui,
     painter: &egui::Painter,
     rect: Rect,
@@ -485,17 +492,17 @@ fn drop_down(
 
 /// The widths and gaps of the panel's parts in a row, as the design has them: Clip, Audio, then
 /// Gain and Pitch.
-const CLIP_PART: f32 = 156.0;
+pub(super) const CLIP_PART: f32 = 156.0;
 const AUDIO_PART: f32 = 112.0;
 const GAIN_PART: f32 = 128.0;
-const PART_GAP: f32 = 12.0;
+pub(super) const PART_GAP: f32 = 12.0;
 /// The panel's width in a row: its three parts, their gaps and its padding.
 pub(super) const ROW_WIDTH: f32 = CLIP_PART + AUDIO_PART + GAIN_PART + PART_GAP * 2.0 + 16.0;
 /// A name over a field, a field, a toggle, and the space between controls.
-const NAME: f32 = 14.0;
-const FIELD: f32 = 18.0;
-const TOGGLE: f32 = 20.0;
-const GAP: f32 = 6.0;
+pub(super) const NAME: f32 = 14.0;
+pub(super) const FIELD: f32 = 18.0;
+pub(super) const TOGGLE: f32 = 20.0;
+pub(super) const GAP: f32 = 6.0;
 /// The height of the Gain and Pitch part when the panel is stacked.
 const STACKED_GAIN: f32 = 150.0;
 
@@ -506,8 +513,9 @@ pub(super) fn stacked_height(_info: &ClipInfo) -> f32 {
     clip + 14.0 + audio + 14.0 + STACKED_GAIN + 16.0
 }
 
-/// The title row of an audio clip's panel: its colour (a click opens the palette), its name (a
-/// double-click renames it) and its length in beats.
+/// The title row of a clip's panel: its colour (a click opens the palette), its name (a
+/// double-click renames it), its length in beats and, for a clip with an editor, the Clip /
+/// Devices switch. Returns the switch's pick.
 pub(super) fn title_row(
     ui: &mut Ui,
     painter: &egui::Painter,
@@ -516,32 +524,30 @@ pub(super) fn title_row(
     at: ClipRef,
     panel: &AudioPanel,
     actions: &mut Vec<Action>,
-) {
+) -> Option<Showing> {
     let swatch = Rect::from_center_size(Pos2::new(rect.left() + 8.0 + 6.0, rect.center().y), Vec2::splat(12.0));
     let colour = panel.color.map_or(theme::text_hint(), colour_picker::color32);
     painter.rect_filled(swatch, 2.0, colour);
     painter.rect_stroke(swatch, 2.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     // `clip.setColor` names arrangement clips: a slot's clip shows its colour without the palette.
-    if !matches!(at, ClipRef::Arrangement(..)) {
-        title_rest(ui, painter, rect, swatch, info, at, panel, actions);
-        return;
+    if matches!(at, ClipRef::Arrangement(..)) {
+        let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-colour", panel.clip.0)), "Clip colour");
+        egui::Popup::menu(&response).show(|ui| {
+            if let Some(picked) = colour_picker::swatch_row(ui, panel.color) {
+                let params = json!({ "clip": panel.clip.0, "color": colour_picker::hex(picked) });
+                actions.push(Action::new("clip.setColor", params));
+                ui.close();
+            }
+            if ui.button("Track colour").clicked() {
+                actions.push(Action::new("clip.setColor", json!({ "clip": panel.clip.0, "color": "none" })));
+                ui.close();
+            }
+        });
     }
-    let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-colour", panel.clip.0)), "Clip colour");
-    egui::Popup::menu(&response).show(|ui| {
-        if let Some(picked) = colour_picker::swatch_row(ui, panel.color) {
-            let params = json!({ "clip": panel.clip.0, "color": colour_picker::hex(picked) });
-            actions.push(Action::new("clip.setColor", params));
-            ui.close();
-        }
-        if ui.button("Track colour").clicked() {
-            actions.push(Action::new("clip.setColor", json!({ "clip": panel.clip.0, "color": "none" })));
-            ui.close();
-        }
-    });
-    title_rest(ui, painter, rect, swatch, info, at, panel, actions);
+    title_rest(ui, painter, rect, swatch, info, at, panel, actions)
 }
 
-/// The title row after the swatch: the clip's name and its length.
+/// The title row after the swatch: the clip's name, its length and the Clip / Devices switch.
 #[allow(clippy::too_many_arguments)]
 fn title_rest(
     ui: &mut Ui,
@@ -552,21 +558,46 @@ fn title_rest(
     at: ClipRef,
     panel: &AudioPanel,
     actions: &mut Vec<Action>,
-) {
+) -> Option<Showing> {
+    let mut right_edge = rect.right() - 8.0;
+    let mut picked = None;
+    if let Some(showing) = info.switch {
+        let width = SWITCH_PART * 2.0 + 1.0;
+        let at = Rect::from_center_size(
+            Pos2::new(right_edge - width / 2.0, rect.center().y),
+            Vec2::new(width, SWITCH_HEIGHT),
+        );
+        picked = switch(ui, painter, at, showing);
+        right_edge = at.left() - 8.0;
+    }
     let length = format!("{} beats", (panel.length_beats * 100.0).round() / 100.0);
     let mono = theme::mono_font(theme::TEXT_TINY);
     let length_width = widgets::text_width(ui, &length, mono.clone());
     let right =
-        Rect::from_min_max(Pos2::new(rect.right() - 8.0 - length_width, rect.top()), rect.max - Vec2::new(8.0, 0.0));
+        Rect::from_min_max(Pos2::new(right_edge - length_width, rect.top()), Pos2::new(right_edge, rect.bottom()));
     widgets::text_in(painter, right, Align2::RIGHT_CENTER, &length, mono, theme::text_hint());
     let name =
         Rect::from_min_max(Pos2::new(swatch.right() + 8.0, rect.top()), Pos2::new(right.left() - 8.0, rect.bottom()));
-    if info.others.is_empty() {
+    if info.picked.len() > 1 {
+        // Several MIDI clips picked: the name is a list of them, the one the piano roll edits lit;
+        // picking another gives it the focus (#1054).
+        let field = Rect::from_center_size(name.center(), Vec2::new(name.width(), FIELD));
+        let shown = info.picked.iter().find(|(.., focused)| *focused).map_or("", |(_, _, name, _)| name.as_str());
+        let entries: Vec<Option<(&str, bool)>> =
+            info.picked.iter().map(|(_, _, name, focused)| Some((name.as_str(), *focused))).collect();
+        let id = Id::unique("clip-panel-editing");
+        if let Some(index) = drop_down(ui, painter, field, id, "Editing", shown, &entries, field.width().max(160.0))
+            && let Some((track, clip, _, false)) = info.picked.get(index)
+        {
+            actions.push(Action::new("view.focusClip", json!({ "track": track.0, "clip": clip.0 })));
+        }
+    } else if info.others.is_empty() {
         clip_name(ui, painter, name, &info.name, at, actions);
     } else {
         let text = format!("{} selected", info.others.len() + 1);
         widgets::text_in(painter, name, Align2::LEFT_CENTER, &text, theme::ui_font(theme::TEXT), theme::text_primary());
     }
+    picked
 }
 
 /// The audio clip's parts in `area` under the title row: side by side in a row, one under another
@@ -605,7 +636,7 @@ pub(super) fn audio_panel(
 
 /// Two fields side by side with their names over them, each with a Set button at the right of its
 /// name when the playhead is known; returns the rects of the two fields.
-fn pair(part: Rect, top: f32) -> [(Rect, Rect); 2] {
+pub(super) fn pair(part: Rect, top: f32) -> [(Rect, Rect); 2] {
     let half = (part.width() - GAP) / 2.0;
     [0.0, 1.0].map(|i| {
         let left = part.left() + i * (half + GAP);
@@ -616,13 +647,13 @@ fn pair(part: Rect, top: f32) -> [(Rect, Rect); 2] {
 }
 
 /// The Set button at the right of a name row.
-fn set_button(name: Rect) -> Rect {
+pub(super) fn set_button(name: Rect) -> Rect {
     Rect::from_min_max(Pos2::new(name.right() - 24.0, name.top()), Pos2::new(name.right(), name.bottom() - 1.0))
 }
 
 /// The Clip part: the start and end markers, the loop with its position and length, and the
 /// scale. Returns where it ends.
-fn clip_part(
+pub(super) fn clip_part(
     ui: &mut Ui,
     painter: &egui::Painter,
     part: Rect,
@@ -659,7 +690,12 @@ fn clip_part(
         panel.playhead.filter(|_| clicked)
     };
     let mut y = part.top();
-    // Start and End: where in its audio the clip plays from and to.
+    // Rows that do not fit under the part's bottom are left out whole, not cut.
+    let fits = |y: f32, height: f32| y + height <= part.bottom() + 0.5;
+    if !fits(y, NAME + FIELD) {
+        return y;
+    }
+    // Start and End: where in its content the clip plays from and to.
     let [(start_name, start_field), (end_name, end_field)] = pair(part, y);
     name_over(painter, start_name, "Start", Align2::LEFT_BOTTOM);
     name_over(painter, end_name, "End", Align2::LEFT_BOTTOM);
@@ -703,6 +739,9 @@ fn clip_part(
         actions.push(Action::new("clip.setLength", with_more(params, change)));
     }
     y += NAME + FIELD + GAP;
+    if !fits(y, TOGGLE) {
+        return y;
+    }
     // The loop switch, the width of the part.
     let switch = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), TOGGLE));
     if toggle(ui, painter, switch, "Loop", "Loop", info.looping) {
@@ -712,6 +751,9 @@ fn clip_part(
         actions.push(Action::new("clip.setLoop", on_clip(at, json!({ "loop": !info.looping }))));
     }
     y += TOGGLE + GAP;
+    if !fits(y, NAME + FIELD) {
+        return y;
+    }
     // Position and Length: dimmed while the loop is off; a change turns it on.
     let (start, end) = info.loop_range.unwrap_or(info.markers);
     let length = (end - start).max(0.25);
@@ -762,6 +804,9 @@ fn clip_part(
         actions.push(Action::new("clip.setLoop", with_more(params, change)));
     }
     y += NAME + FIELD + GAP;
+    if !fits(y, NAME + FIELD) {
+        return y;
+    }
     // The scale: its root and its mode, each a list under its field.
     let name = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), NAME));
     name_over(painter, name, "Scale", Align2::LEFT_BOTTOM);

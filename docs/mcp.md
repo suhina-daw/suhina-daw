@@ -265,9 +265,13 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `"1/8T"`, `"1 bar"`, as `launcher.setQuantization` takes it) by `amount` percent (default 100,
   onto the line); with `ends: true` the ends move too. One undo step; a bad grid, an amount
   outside 0 to 100 or a note that does not exist fails and changes nothing.
-- **MIDI tools.** The piano roll's MIDI tools column runs the same commands an agent can:
-  `note.humanize {notes?, time?, velocity?, seed?}` moves each start and velocity a small random
-  amount, `note.fitToScale {notes?, root?, scale?}` moves each note to the nearest key of a scale
+- **MIDI tools.** The note tools of a MIDI clip's panel (its Notes and Transform tabs) run the
+  same commands an agent can: `note.humanize {notes?, ms?, time?, velocity?, chords?, seed?}` moves
+  each start and velocity a little, like a person playing: a normally distributed draw within
+  `ms` milliseconds at the project's tempo (0 to 50, 10 when left out) or `time` beats (0 to 1;
+  not both), and within `velocity` steps; with `chords` (true when left out) notes that start
+  together move together, and a note's end stays put unless it would run into the next note on
+  its key, `note.fitToScale {notes?, root?, scale?}` moves each note to the nearest key of a scale
   (a key name such as `"C"` or `"F#"`, and `major`, `minor`, `dorian`, `blues` and the rest),
   `note.invert {notes?}` mirrors the pitches, `note.reverse {notes?}` turns them round in time,
   `note.legato {notes?}` makes each note last until the next one starts, on any key, `note.stretch {notes?,

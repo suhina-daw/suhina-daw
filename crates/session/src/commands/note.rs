@@ -213,14 +213,20 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.humanize",
-        label: "Move the starts and velocities of notes of a MIDI clip by a random draw; the same seed gives the same result, and the result gives the seed",
+        label: "Move the starts and velocities of notes of a MIDI clip slightly, like a person playing: a normally distributed draw within the limits, chords kept together, ends kept unless they would overlap the next note on the key; the same seed gives the same result, and the result gives the seed",
         params: &[
             CLIP_TRACK,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTE_SELECTION,
-            optional("time", ParamType::Number, "how far a start may move, in beats, 0 to 1 (default 0.02)"),
+            optional(
+                "ms",
+                ParamType::Number,
+                "how far a start may move, in milliseconds at the project's tempo, 0 to 50 (default 10); not with time",
+            ),
+            optional("time", ParamType::Number, "how far a start may move, in beats, 0 to 1; not with ms"),
+            optional("chords", ParamType::Bool, "notes that start together move together (default true)"),
             optional("velocity", ParamType::Number, "how far a velocity may move, in MIDI steps, 0 to 127 (default 8)"),
             optional(
                 "seed",

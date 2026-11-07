@@ -550,7 +550,7 @@ fn the_right_button_and_the_wheel_choose_the_tools() {
     h.run();
     assert_eq!(h.state().piano_roll().tool, Tool::Draw);
     assert!(h.state().piano_roll().selected.is_empty());
-    assert!(!h.state().piano_roll().quantize_open, "no menu opened");
+    assert!(!h.state().piano_roll().quantize_open(), "no menu opened");
 }
 
 /// Shift and Draw: a drag draws notes back to back, each as long as the note last drawn or

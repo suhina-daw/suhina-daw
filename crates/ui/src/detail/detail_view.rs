@@ -29,6 +29,7 @@ mod clip_panel;
 mod clip_properties;
 mod expanded;
 mod group_panel;
+mod midi_panel;
 mod model;
 mod parameters;
 
@@ -36,6 +37,7 @@ pub use self::clip_panel::{find_tempo_key, tempo_candidates_key};
 use self::clip_properties::*;
 pub use self::expanded::*;
 use self::group_panel::*;
+pub use self::midi_panel::MidiTools;
 pub use self::model::*;
 use self::parameters::*;
 #[cfg(test)]
@@ -90,7 +92,7 @@ pub fn show_row(
         Detail::Nothing => hint(&painter, area, "Select a track or a clip to see it here"),
         Detail::Devices(chain) => return chain_row(ui, &painter, area, chain, selected, actions, places),
         Detail::Clip(info, chain) => {
-            let (column, picked) = clip_properties(ui, &painter, area, info, false, actions);
+            let (column, picked) = clip_properties(ui, &painter, area, info, false, None, actions);
             clip_for_readers(ui, column, info);
             let rest = Rect::from_min_max(Pos2::new(column.right() + 1.0, area.top()), area.max);
             // The chain is drawn beside the clip's properties: a click on one of its panels
@@ -449,7 +451,7 @@ pub fn show_stack(
         Detail::Nothing => hint(&painter, area, "Select a track or a clip"),
         Detail::Devices(chain) => return chain_stack(ui, &painter, area, chain, selected, actions, places),
         Detail::Clip(info, chain) => {
-            let (column, picked) = clip_properties(ui, &painter, area, info, true, actions);
+            let (column, picked) = clip_properties(ui, &painter, area, info, true, None, actions);
             clip_for_readers(ui, column, info);
             let rest = Rect::from_min_max(Pos2::new(area.left(), column.bottom() + 1.0), area.max);
             // The chain is drawn under the clip's properties: its panels pick as they do with
@@ -466,11 +468,17 @@ pub fn show_stack(
 }
 
 /// The clip's properties column for a clip whose editor fills the rest of the detail area (the
-/// piano roll): on the left in a row, on top when `stacked`. Returns the rest. The quantise
-/// controls and the MIDI tools live in the column beside this one
-/// (› Other note tools in `docs/spec/ui-clip-editor.md`). With it, the part the Clip / Devices
-/// switch was clicked to, if it was.
-pub fn show_clip_column(ui: &mut Ui, info: &ClipInfo, stacked: bool, actions: &mut Vec<Action>) -> (Rect, Picked) {
+/// piano roll): on the left in a row, on top when `stacked`. Returns the rest. With `midi` a MIDI
+/// clip's panel shows its note tools beside its Clip part (› Note tools in
+/// `docs/spec/ui-clip-editor.md`). With the rest, the part the Clip / Devices switch was clicked
+/// to, if it was.
+pub fn show_clip_column(
+    ui: &mut Ui,
+    info: &ClipInfo,
+    stacked: bool,
+    midi: Option<MidiTools<'_, '_>>,
+    actions: &mut Vec<Action>,
+) -> (Rect, Picked) {
     let _style_class = crate::kit::style_class::enter("clip-editor");
     let mut styled_ui = crate::kit::style_class::ui(ui);
     let ui = &mut *styled_ui;
@@ -479,7 +487,7 @@ pub fn show_clip_column(ui: &mut Ui, info: &ClipInfo, stacked: bool, actions: &m
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::window_background());
     crate::kit::native_css::background(&painter, area);
-    let (column, picked) = clip_properties(ui, &painter, area, info, stacked, actions);
+    let (column, picked) = clip_properties(ui, &painter, area, info, stacked, midi, actions);
     clip_for_readers(ui, column, info);
     let rest = if stacked {
         Rect::from_min_max(Pos2::new(area.left(), column.bottom() + 1.0), area.max)

@@ -7,6 +7,7 @@ last_verified: 2026-11-05
 covers:
   - crates/ui/src/detail/detail_view/clip_properties.rs
   - crates/ui/src/detail/detail_view/clip_panel.rs
+  - crates/ui/src/detail/detail_view/midi_panel.rs
   - crates/ui/src/detail/detail_view/model.rs
   - crates/ui/src/arrangement/envelope.rs
   - crates/session/src/clip_audio.rs
@@ -22,7 +23,8 @@ is laid out in groups, each control the kind that fits its value
 clip alone: two clips that play the same file have their own gain, envelope, pitch and warp
 ([#742](https://github.com/suhina-daw/suhina-daw/issues/742),
 [ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: per-clip audio). A MIDI clip's
-column is as the clip editor spec describes it.
+panel shares its title row and its Clip part, with the note tools beside them
+([clip editor spec](ui-clip-editor.md) › Clip column, › Note tools; #1222).
 
 ## Layout
 

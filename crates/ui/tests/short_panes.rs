@@ -221,8 +221,9 @@ fn the_splitter_stops_at_the_piano_rolls_least_height() {
     // Five key rows at the default 12 px row height, at least.
     let grid = h.get_by_label_contains("Piano roll,").rect();
     assert!(grid.height() >= 5.0 * 12.0 - 0.5, "five key rows: the grid is {} px", grid.height());
-    // The clip column's five rows are all there, under its title, inside the detail area.
-    for label in ["Track: ", "Start: ", "Length: ", "Loop: ", "Notes: "] {
+    // The clip panel's first rows are there, under its title, inside the detail area: the markers,
+    // the loop switch and the tools' tabs.
+    for label in ["Start marker: ", "End marker: ", "Loop: ", "Notes tab"] {
         let row = h.get_by_label_contains(label).rect();
         assert!(row.bottom() <= bottom + 0.5, "{label} is whole: {row:?} over {bottom}");
     }
@@ -352,9 +353,11 @@ fn at_the_least_height_the_selection_rows_are_left_out_not_cut() {
     click(&mut h, pos2(grid.right() - 4.0, grid.top() + 4.0));
     h.key_press_modifiers(Modifiers::COMMAND, Key::A);
     h.run();
-    assert!(h.query_by_label_contains("Pitch: ").is_some(), "the selection rows show at the default height");
+    // The figures sit under the Clip part: a taller detail area shows them.
+    pull_to(&mut h, bottom - 340.0);
+    assert!(h.query_by_label_contains("Pitch: ").is_some(), "the selection rows show in a tall detail area");
     pull_to(&mut h, bottom - 90.0);
-    assert!(h.query_by_label_contains("Notes: ").is_some(), "the Notes row fits");
+    assert!(h.query_by_label_contains("Notes tab").is_some(), "the tools' tabs fit");
     for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
         if let Some(row) = h.query_by_label_contains(label) {
             assert!(row.rect().bottom() <= bottom + 0.5, "{label} is drawn whole or not at all: {:?}", row.rect());

@@ -126,40 +126,40 @@ fn ctrl_u_quantises_only_the_selected_notes() {
 }
 
 #[test]
-fn the_quantise_block_in_the_clip_column_sets_the_grid_and_ends_that_ctrl_u_keeps() {
+fn quantise_in_the_transform_tab_sets_the_grid_and_ends_that_ctrl_u_keeps() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     let late = notes(&h);
     // The quantise button is the toolbar's icon; its label is its name.
     h.get_by_label("Quantise").click();
     h.run();
-    assert!(h.state().piano_roll().quantize_open);
-    // The block is part of the clip column on the left, not a panel over the note grid: its
-    // controls sit left of the grid and outside it.
+    assert!(h.state().piano_roll().quantize_open());
+    // Quantise is the Transform tab of the clip panel's tools on the left, not a panel over the
+    // note grid: its controls sit left of the grid and outside it.
     let grid = h.get_by_label_contains("Piano roll,").rect();
-    for button in ["Quantise notes", "Close quantise"] {
+    for button in ["Quantise clip", "Transformation: Quantise"] {
         let rect = h.get_by_label(button).rect();
-        assert!(!rect.intersects(grid), "{button} is in the column: {rect:?} {grid:?}");
+        assert!(!rect.intersects(grid), "{button} is in the panel: {rect:?} {grid:?}");
     }
-    h.get_by_label("Quantise grid 1/16").click();
+    h.get_by_label("Quantise grid: 1/16").click();
     h.run();
     assert!(h.query_by_label("1/4").is_some(), "the grid menu is open");
     h.get_by_label("1/4").click_accesskit();
     h.run();
-    h.get_by_label("Move ends too").click();
+    h.get_by_label("Move ends too: Off").click();
     h.run();
     let settings = h.state().piano_roll().quantize;
     assert_eq!((settings.grid, settings.amount, settings.ends), ("1/4", 100.0, true));
-    h.get_by_label("Quantise notes").click();
+    h.get_by_label("Quantise clip").click();
     h.run();
     let after = notes(&h);
     assert_ne!(after, late);
     assert!(after.iter().all(|n| on_grid(n.time, 1.0) && on_grid(n.time + n.duration, 1.0)), "{after:?}");
-    // Escape closes the block and the properties move back up; Ctrl+U after an undo uses the
-    // same settings.
+    // Escape goes back to the Notes tab, the view as it was; Ctrl+U after an undo uses the same
+    // settings.
     h.key_press(Key::Escape);
     h.run();
-    assert!(!h.state().piano_roll().quantize_open);
+    assert!(!h.state().piano_roll().quantize_open());
     assert_eq!(h.get_by_label_contains("Piano roll,").rect(), grid, "the view is as it was");
     h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     h.run();
