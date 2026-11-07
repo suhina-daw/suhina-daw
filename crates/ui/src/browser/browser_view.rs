@@ -202,7 +202,7 @@ fn run(projects: &mut Projects, id: &str, params: serde_json::Value, out: &mut B
     match projects.execute(id, &params) {
         Ok(_) => true,
         Err(e) => {
-            suhina_plugins::trace!("{} refused: {}", id, e.message());
+            suhina_plugins::trace!("{} refused {} — {}", id, params, e.message());
             out.status = Some(Status::Error(e.message().to_owned()));
             false
         }
